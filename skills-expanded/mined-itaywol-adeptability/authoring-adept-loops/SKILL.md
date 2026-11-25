@@ -1,0 +1,1 @@
+../../../.adeptability/staging/.claude/skills/authoring-adept-loops/SKILL.md

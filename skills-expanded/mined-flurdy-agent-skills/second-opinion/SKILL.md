@@ -1,0 +1,471 @@
+---
+name: second-opinion
+description: Query an independent peer or a configurable local/OpenRouter review panel, with distinct quorum and evidence-backed consensus interpretation policies.
+allowed-tools: "Read,Edit(//tmp/**/second-opinion.*/**),Bash(claude -p * --tools Read,Grep,Glob),Bash(codex exec --sandbox read-only *),Bash(gemini --sandbox -o text *),Bash(~/.agents/skills/second-opinion/scripts/subscription-route-check.py:*),Bash(~/.agents/skills/second-opinion/scripts/disabled-models.py:*),Bash(git ls-files:*),Bash(~/.agents/skills/review-pr/scripts/gh-pr-snapshot.py:*),Bash(~/.agents/skills/second-opinion/scripts/review-panel.sh:*),Grep,Glob,AskUserQuestion"
+model-tier: standard
+model: sonnet
+effort: high
+version: "3.12.0"
+author: "flurdy"
+---
+
+# Second Opinion
+
+Query one independent CLI peer or a bounded named review panel for plans, PRs, code, or bugs.
+`quorum` and `consensus` execute the same enabled routes from the selected panel exactly once. Quorum
+uses the profile's successful-route threshold; consensus interpretation additionally requires its
+unique-provider threshold. Agreement and vote count never establish correctness.
+
+## Usage
+
+```text
+/second-opinion
+/second-opinion review-pr 123
+/second-opinion validate-plan "<plan>"
+/second-opinion triage-bug "<description>"
+/second-opinion ask "<question>"
+
+# One independent route
+/second-opinion ask "..." --agent peer       # explicit/default independent peer
+/second-opinion ask "..." --agent claude
+/second-opinion ask "..." --agent claude --effort xhigh
+/second-opinion ask "..." --agent codex
+/second-opinion ask "..." --agent gemini
+/second-opinion ask "..." --agent codex --model <id>
+
+# Policy-neutral named panels
+/second-opinion review-pr --agent quorum                    # defaults to premium
+/second-opinion ask "..." --agent quorum --panel focused    # explicit small panel
+/second-opinion validate-plan "..." --agent consensus       # defaults to extreme
+/second-opinion review-pr --agent consensus --panel large
+/second-opinion ask "..." --agent quorum --panel large \
+  --route-model claude-fable=opus --route-effort claude-fable=max
+
+# Opt-in random sample of a selected panel (defaults unchanged without --sample)
+/second-opinion ask "..." --agent quorum --panel large --sample 1
+/second-opinion validate-plan "..." --agent consensus --panel large --sample 3 --sample-seed s1
+
+```
+
+`--timeout <minutes>` defaults to 10 and is capped at 30.
+
+## Requirements
+
+- Single/local routes: the selected `claude`, `codex`, or `gemini` CLI installed and authenticated.
+- Panel orchestration: `jq` plus `scripts/review-panel.sh`.
+- Claude Code pre-approval: `allowed-tools` covers only the documented invocations below; see
+  [permissions and portability](references/permissions.md). Other clients use their own settings.
+- Every route: Python 3.10+ for `scripts/disabled-models.py`, which applies the optional user-owned
+  [disabled-model policy](references/disabled-models.md). Read it when a route is denied or the
+  policy is reported invalid.
+- OpenRouter subset only: `curl`, plus either `OPENROUTER_API_KEY` or `secret-api-key` with `SECRET_API_KEY_PROJECT`, and a configured panel/profile in
+  `~/.agents/second-opinion/config.json`. Optional exact-model `modelPolicies` in that user-local
+  file may set `consent: "allow"`; absent or invalid policies remain confirmation-required.
+- PR context: `gh`, Python 3.10+, and the installed `review-pr/scripts/gh-pr-snapshot.py` collector.
+  Missing/partial/stale evidence stops PR dispatch; local routes also require a proven invoking
+  checkout. Read [PR evidence and stale-safety](references/pr-evidence.md) for every PR invocation.
+
+Read [references/review-panels.md](references/review-panels.md) when `quorum` or `consensus` is
+selected. If the selected panel contains OpenRouter routes, also read
+[references/openrouter-consensus.md](references/openrouter-consensus.md) completely before executing.
+Model/effort precedence is in
+[references/external-model-resolution.md](references/external-model-resolution.md).
+
+## Model independence and cost
+
+The [billing evidence contract](references/billing-evidence.md) defines native Pi evidence
+and the stable user-owned subscription preference. Neither authorizes execution, fanout, API/BYOK
+routes, or named-panel spend.
+
+A second opinion should come from a different vendor than the model that produced the work:
+
+- Claude session → Codex first, then Gemini.
+- GPT/Codex session → Claude first, then Gemini.
+- Other session → the best available independent Claude or Codex route.
+
+`peer` is the explicit name for this selection and is also the no-`--agent` default. Direct
+`claude`, `codex`, and `gemini` remain supported.
+
+Agents denied for the invoking directory by the [disabled-model policy](references/disabled-models.md)
+are ineligible for `peer`: skip them and report each skipped agent with its rule and reason. An
+explicitly requested denied agent stops without substitution.
+
+Prefer subscription/OAuth routes for one peer. Treat API-key/BYOK and unknown-cost direct routes as
+metered and obtain current-run consent before invocation. A loaded user-owned
+`review-subscription-policy` may allow named Claude or Codex models without another billing prompt
+when the CLI reports the declared subscription login and no API override is present. This is the
+user's durable billing preference, not proof of zero incremental cost; it never authorizes execution
+scope or fanout. A named panel does not infer billing from a
+provider name. Its configured local routes are the approved local subset; every OpenRouter route is a
+separately metered subset unless an exact user-local `modelPolicies` entry explicitly sets
+`consent: "allow"`.
+
+For a direct single agent only:
+
+- no `--model` → when the resolved route is Claude, use the skill default `opus`; Codex and Gemini
+  retain their CLI-native defaults;
+- `--model smart` → retain the CLI-native default;
+- `--model fast` → use a verified CLI-native fast alias, otherwise retain and report the native
+  default;
+- `--model <id>` → pass the literal ID through;
+- `--effort <level>` → for Claude only, pass the literal supported level (`low`, `medium`, `high`,
+  `xhigh`, or `max`) through; for Codex/Gemini, reject it and use their existing native controls.
+
+For panels, generic `--model` is invalid. Use repeated `--route-model ID=VALUE` and
+`--route-effort ID=VALUE`. OpenRouter identities cannot be overridden. Unsupported effort is rejected,
+never translated. OpenRouter route effort is sent as `reasoning.effort`; verify model
+support first. Optional route `maxOutputTokens` may lower the profile ceiling (hard maximum
+128,000 tokens including reasoning). Omitted fields retain the profile cap and native effort;
+effort does not guarantee answer headroom. See the panel reference for schema and provenance.
+
+## 1. Parse arguments
+
+Extract:
+
+- mode: `review-pr`, `validate-plan`, `triage-bug`, or `ask`;
+- target: PR URL, `owner/repo#number`, current-repository shorthand, plan, bug description, or question;
+- PR-only optional `--expected-head` SHA, passed unchanged to the shared collector;
+- agent: `peer`, `claude`, `codex`, `gemini`, `quorum`, or `consensus`;
+- panel: a local profile name;
+- timeout: 1–30 minutes, default 10;
+- direct model and optional effort, or repeated route-specific model/effort overrides;
+- panel-only sampling: `--sample <1-8>`, optional `--sample-seed <seed>` and
+  `--sample-quorum <n>`.
+
+Defaults and validation:
+
+- no agent → `peer`;
+- `quorum` with no panel → `premium`;
+- `consensus` with no panel → `extreme`;
+- reject unsupported agent names;
+- reject `--panel`, `--route-model`, or `--route-effort` for a direct single agent;
+- accept direct `--effort low|medium|high|xhigh|max` only for the Claude route; reject it for Codex/Gemini;
+- reject generic `--model` for `quorum` or `consensus`;
+- reject `--sample`, `--sample-seed`, or `--sample-quorum` for a direct single agent, and the seed
+  or quorum without `--sample`. Sampling is never inferred or defaulted.
+
+For natural-language requests, "quorum" means `--agent quorum --panel premium` unless another panel
+is explicitly requested. "Focused quorum" and "focussed quorum" mean `--agent quorum --panel focused`.
+"Flash quorum" means `--agent quorum --panel flash`.
+A plain "second opinion" without a quorum or panel request remains `peer`; never widen it to a panel.
+Explicit flags take precedence. `/ask-quorum` uses premium; `/ask-premium` is its explicit equivalent.
+`/ask-flash` is the explicit equivalent of a flash quorum.
+If premium is missing, disabled, or unavailable, report that without silently selecting focused.
+If flash is missing, disabled, or unavailable, report that without selecting another panel.
+Panel selection never bypasses route availability, sanitization, or OpenRouter consent.
+
+If no mode is supplied, ask what to review. `consensus` must always be explicitly named; never infer
+it from task risk, panel size, or an API key.
+
+## Guarded-session preflight
+
+Before gathering artifact-producing context or executing any route in Pi, read
+[guarded-plan.md](references/guarded-plan.md) when the session is guarded or its authority is unclear.
+Named panels in guarded sessions use only the installed
+[path-free private transport](references/panel-stdin.md). Read that reference before invocation;
+use its stdin requests instead of every caller-file preparation, command and cleanup step in §4.
+The same check, local-run, metered-subset and evaluate stages and approvals still apply. An older
+guard or missing helper is unavailable support: stop rather than creating files or bypassing it.
+Do not emulate a panel, silently select a direct peer, or acquire source-write authority solely for
+a supported read-only consultation. Direct routes retain their own read-only and billing checks.
+
+## 2. Gather and sanitize context
+
+### review-pr
+
+Follow [PR evidence and stale-safety](references/pr-evidence.md) completely: collect through the
+`review-pr` authority, retain repo/node/head/base/state identity, sanitize one fixed packet, gate
+local routes on the already-matching invoking checkout, and revalidate after opinions return.
+No independent mutable metadata/diff collection or default-branch substitution is permitted.
+
+A partial/stale/failed packet is not ready to send. Missing local checkout proof makes local routes
+unavailable, not permission to read the workspace. Final validation failure yields **no current PR
+assessment**; preserve original opinions only as stale/unvalidated evidence. This skill supplies
+independent claims, never a merge verdict, publication, requirements sign-off, or automatic fixes.
+
+### validate-plan
+
+```bash
+git ls-files | head -100
+```
+
+Ask for feasibility, completeness, dependencies, risks, and simpler alternatives, followed by the
+plan.
+
+### triage-bug
+
+Ask for likely root causes, relevant components, investigation steps, falsification tests, and
+potential fixes, followed by the bug description.
+
+### ask
+
+Pass the question with current-repository context.
+
+For every mode, remove secrets, credentials, `.env` contents, private keys, and irrelevant personal
+data. Never silently truncate oversized context; summarize before route selection and say so. Local CLI
+routes are read-only repository reviewers and may inspect files in the current repository, so use
+them only when that repository's readable contents are safe to share with those providers. For PR
+mode, the stricter verified-cwd eligibility and final revalidation contract above is mandatory. OpenRouter receives the sanitized prompt as its user message plus a fixed, non-secret completion
+contract; it receives no tools or repository access.
+
+## 3. Execute one peer/direct agent
+
+Resolve `peer` using the independence rule, then invoke exactly one eligible route. Pass the actual
+assembled packet without allowing writes.
+
+Immediately before every direct launch, from the invoking directory, run
+`~/.agents/skills/second-opinion/scripts/disabled-models.py check-direct {claude|codex|gemini}`.
+Exit 0 continues to the route's own checks. Exit 3 means the policy denies that agent here: do not
+launch, report its `reasons`, and do not substitute another agent. Exit 2 means the policy is
+invalid: launch nothing and report its `policy.error`. PR mode must pass its just-in-time local preflight first;
+an unavailable route is not permission to substitute another provider or cwd.
+
+### Claude
+
+Without `--model`, use `opus`; `smart` retains the CLI-native default. Pass any other requested
+model literally, and when effort is explicit, pass it through to Claude Code. Immediately before launch, run
+`~/.agents/skills/second-opinion/scripts/subscription-route-check.py claude {model}`; it uses
+`claude auth status --json` and returns only non-identifying login classification and API override names. A matching loaded subscription policy requires
+`subscriptionLogin: true`, its declared login classification, the requested model in its allowlist,
+and no `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, or Bedrock/Vertex/Foundry
+API override. Report the route and policy provenance, never credential values. If any check fails,
+obtain current-run confirmation. Otherwise run the read-only call below without a
+billing prompt. Model aliases and internal helper models are deliberately outside this stable user
+preference; Claude remains responsible for its subscription behavior. Preserve and report actual
+model usage when available, but do not turn it into another approval list.
+
+```bash
+claude -p "{assembled_prompt}" {model_flag} {effort_flag} --tools Read,Grep,Glob
+```
+
+`{model_flag}` is `--model <id>` unless the CLI-native default is retained; `{effort_flag}` is
+`--effort <level>` only when explicit. `--tools` grants the panel route's read-only tools and must
+stay last, because it takes a list and would otherwise absorb the following arguments.
+
+### Codex
+
+All modes, including PR review, use the assembled packet rather than a branch-based native review:
+
+```bash
+codex exec --sandbox read-only {exec_model_flag} "{assembled_prompt}"
+```
+
+For `codex exec`, `{exec_model_flag}` is `--model <id>` for an explicit resolved model and empty for
+the native default. A loaded subscription policy may supply its first allowed model when `peer`
+selects Codex and the user did not provide one. Immediately before launch, run
+`~/.agents/skills/second-opinion/scripts/subscription-route-check.py codex {model}`; it requires
+`Logged in using ChatGPT` from `codex login status`, the requested model in the policy allowlist,
+and no `OPENAI_API_KEY`, `CODEX_API_KEY`, or `CODEX_ACCESS_TOKEN` API override. Otherwise obtain
+current-run confirmation. Never print credential values.
+
+### Gemini
+
+```bash
+gemini --sandbox -o text {model_flag} -p "{assembled_prompt}"
+```
+
+`{model_flag}` is `-m <id>` for an explicit model and empty for the native default.
+
+Apply the parsed timeout. If the route fails or times out, preserve the error and offer another
+independent direct route; never retry or substitute silently.
+
+## 4. Execute a named panel
+
+The guarded-session preflight must have passed before this step. Use the same exact sanitized
+user prompt for every route. The OpenRouter helper adds only its fixed completion contract as a
+system message.
+
+**Guarded sessions:** use [panel-stdin.md](references/panel-stdin.md) for the transport of all four
+stages below; do not create caller files. The literal JSON packet is visible in the Bash tool call
+and transcript, so it must already be sanitized. Do not place prompt text in provider CLI argv.
+
+**Caller-file interface outside guarded sessions:** create one private scratch directory with
+`~/.agents/skills/second-opinion/scripts/review-panel.sh scratch`. It prints a fresh mode-700
+directory under `$TMPDIR` (default `/tmp`). Keep every caller file there: write the prompt with
+`Write` and save each command's JSON output, for example by redirecting stdout. The commands below
+describe this interface; guarded sessions send the equivalent fields to the stdin helper, preserving
+the same gates. [Permissions](references/permissions.md) explains why files remain here.
+
+### 4.1 Check and bind
+
+```bash
+~/.agents/skills/second-opinion/scripts/review-panel.sh check \
+  --panel {panel_name} \
+  --prompt-file {prompt_file} \
+  {repeated_route_overrides}
+```
+
+Retain and display:
+
+- ordered route IDs, kinds, providers, roles, availability, effective model/effort, and provenance;
+- configured quorum and consensus thresholds, enabled/disabled routes, and limits, including fixed
+  OpenRouter completion-contract bytes;
+- `panelSha256`, `openrouterSha256`, and `promptSha256`;
+- `disabledModels` (policy status and matched rules) and every `policyDeniedRoutes` entry with its
+  reasons. Denied routes still count towards both thresholds but are never invoked.
+
+With `--sample`, read [route sampling](references/review-panels.md#opt-in-route-sampling) first.
+Pass `--exclude-provider` for the current session's provider (`anthropic`, `openai`, or `google`)
+unless the user explicitly asked for same-provider routes. Display `sampling` (seed, pool, selected,
+ineligible routes and reasons, `sameProviderFill`) and repeat every sampling option, including the
+reported `--sample-seed`, unchanged in every later stage. Insufficient pools stop; never widen the
+pool, lower the count, re-check with another seed to avoid a route, or replace a failed route.
+One sampled opinion is never consensus.
+
+If profile validation fails or the disabled-model policy is invalid, stop before any route invocation. Missing route prerequisites degrade the
+panel; they do not authorize substitution.
+
+### 4.2 Run the local subset
+
+```bash
+~/.agents/skills/second-opinion/scripts/review-panel.sh run-local \
+  --panel {panel_name} \
+  --prompt-file {prompt_file} \
+  --panel-sha256 {panelSha256} \
+  --prompt-sha256 {promptSha256} \
+  --timeout {timeout_seconds} \
+  {repeated_route_overrides}
+```
+
+For PR mode, perform the local preflight from the evidence contract immediately before this call.
+If the invoking checkout is ineligible, do not run the local subset; report its routes unavailable
+with the context reason and let evaluation preserve missing results. Never forge successful results.
+
+Preserve the returned JSON array exactly (inline for the private transport; a file in the scratch
+directory for the caller-file interface). The coordinator invokes each enabled
+local route at most once, in bounded parallel batches, with read-only tools/sandboxing and prompt
+stdin. Disabled and policy-denied routes are not invoked. Preserve missing CLIs, timeouts, and failures.
+
+### 4.3 Decide the OpenRouter subset
+
+If `openrouter.requestCount == 0`, skip this step.
+
+If prerequisites are unavailable, make no request and allow evaluation to report those routes as
+missing/unavailable. If `openrouter.consentRequired` is false, every selected route has an exact,
+user-local `consent: "allow"` policy: invoke `run-openrouter --configured-consent` with all three
+digests and the same profile, prompt, timeout, and overrides. Otherwise, immediately before requests
+use one `AskUserQuestion` that discloses only the OpenRouter routes whose policies remain `ask`:
+exact routes/models/vendors, request count, concurrency, prompt cap (including the displayed fixed
+completion-contract bytes), each route's `effectiveMaxOutputTokens` and `effectiveEffort`,
+subset `maxOutputTokensTotal`, timeout, variable pricing, and that OpenRouter credits
+will be consumed.
+
+- **Approve** → invoke `run-openrouter --confirmed` with all three digests and the same profile,
+  prompt, timeout, and overrides.
+- **Decline/ambiguous/abandoned** → invoke `decline-openrouter` with all three digests. It generates
+  explicit declined results and makes no network request.
+
+Configured authorization is exact-model and user-local; it is never inferred from a provider, panel,
+prior approval, or spend. Interactive consent applies once and is never persisted. A panel, subset,
+prompt, or policy digest mismatch requires a new check and fresh consent. Never retry, substitute,
+or expand a metered subset.
+
+### 4.4 Evaluate mechanical quorum
+
+For the caller-file interface, save the `check`, local-result, and OpenRouter-result JSON in the scratch directory, then run:
+
+```bash
+~/.agents/skills/second-opinion/scripts/review-panel.sh evaluate \
+  --policy {quorum|consensus} \
+  --check-file {check_file} \
+  --results-file {local_results_file} \
+  --results-file {openrouter_results_file}
+```
+
+Omit a result file only when that subset did not run and produced no results. The evaluator preserves
+panel order, reports disabled and unavailable routes, counts successful routes and unique successful
+providers, reports same-provider corroboration, and evaluates `quorumMet` and `consensusEligible`
+against their separate threshold units. OpenRouter routes count as successful only when they
+return non-empty text with the fixed completion marker, normalized finish reason `stop`, and no tool
+calls. The helper strips the marker and classifies every other transport-success response as
+`incomplete`; this is protocol completion, not semantic validation. Results retain bounded response
+ID/model/provider, normalized and native finish reasons, usage, and tool-call count, but never tool
+arguments or hidden reasoning text. The evaluator deliberately does not compare natural-language
+claims. The stdin helper owns its private-file cleanup. For the caller-file interface, run
+`~/.agents/skills/second-opinion/scripts/review-panel.sh cleanup {scratch_dir}` after evaluation,
+success or failure, and whenever the run stops early. It removes only a directory `scratch` could
+have created.
+
+## 5. Present panel results
+
+For PR mode, finish the PR evidence contract's final revalidation **before** this section or any
+single-route assessment. If it fails, show transport/quorum counts and responses only under their
+stale/unvalidated label; do not synthesize current evidence-backed agreements or PR conclusions.
+
+First show every route faithfully:
+
+```markdown
+## Review Panel: `{panel}` — {quorum|consensus}
+
+| Route | Kind | Provider | Role | Model / effort | Status |
+|---|---|---|---|---|---|
+| ... |
+
+**Quorum:** {successful routes}/{quorum required} — met / not met
+**Provider coverage:** {successful unique providers}
+```
+
+For the consensus policy, add `**Consensus threshold:** {successful unique providers}/{consensus
+required} — eligible / not eligible`. Then include each successful response under its route heading and
+every error, incomplete response, decline, or timeout under Unavailable routes. For an incomplete OpenRouter route, report its preserved
+visible response and termination diagnostics without treating either as independent coverage.
+
+### Quorum policy
+
+When quorum is met, present findings by route/provider without requiring agreement. When not met,
+state that quorum failed and identify unavailable routes. Do not relabel repeated claims as
+consensus.
+
+### Consensus policy
+
+If `consensusEligible` is false, state **no consensus assessment was made**. Preserve returned
+opinions but do not synthesize agreement, even when the lower ordinary quorum was met.
+
+If eligible, compare claims and report all five categories:
+
+1. **Evidence-backed agreements** — independently supported claims, not repeated prompt premises.
+2. **Disagreements / uncertainty** — conflicting conclusions and unresolved evidence.
+3. **Shared assumptions** — repeated claims without independent support.
+4. **Same-provider corroboration** — explicitly separate from independent-provider agreement.
+5. **Unavailable routes** — missing, declined, failed, and timed-out perspectives.
+
+Never convert a majority into correctness.
+
+## 6. Repository-grounded assessment
+
+For PR mode, complete the original-identity remote recheck and any required full local recheck in
+the PR evidence contract first. A failed check means no current PR assessment; show historical
+opinions with their stale/unvalidated status instead. Never assess against unrelated or moved cwd.
+
+For eligible results, critically verify every material external claim against the supplied scope
+and its matching repository evidence. Missing supporting context remains Uncertain, not a new search
+scope. This is advisory claim validation, not `verify-task` coverage or `review-pr` merge clearance.
+Present a concise assessment table:
+
+```markdown
+### My Assessment
+
+| # | Finding | Verdict | Evidence |
+|---|---|---|---|
+| 1 | ... | Valid / Non-issue / Already handled / Uncertain | file/path:line or reason |
+```
+
+List only genuinely actionable items. A unique, well-evidenced concern may outweigh repeated weak
+claims; repeated unsupported claims remain invalid.
+
+## Error handling and rules
+
+- Never let any route modify files.
+- Never send secrets or credentials to a route.
+- Never expose OpenRouter credentials or place the bearer token in argv.
+- Never give OpenRouter routes tools or repository access.
+- Never invoke a disabled profile or route, retry/substitute a failed route, or silently change a
+  configured panel.
+- Always report effective OpenRouter consent policy and basis alongside route provenance.
+- Always report effective route provenance; use `skill-default` for the implicit direct-Claude
+  `opus` selection and `native-default` when the runtime does not reveal a concrete setting.
+- Preserve external responses faithfully before adding your own assessment; the OpenRouter transport
+  completion marker is protocol metadata and is removed before presentation.
+- Never count an `incomplete` OpenRouter result toward quorum or describe the completion contract as
+  semantic validation.
+- A partial panel is partial coverage, not a complete panel.

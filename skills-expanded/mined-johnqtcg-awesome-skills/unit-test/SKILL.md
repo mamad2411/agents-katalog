@@ -1,0 +1,504 @@
+---
+name: unit-test
+description: 'Use when the user asks for unit tests (e.g, "单元测试", "unit test"), wants to add/fix Go tests, wants table-driven and subtest organization, or wants to enforce a minimum coverage gate (default 80% for logic packages). Prioritize bug discovery (especially boundary, mapping loss, and concurrency defects) over test volume. Do NOT use for benchmarks, fuzz tests, integration tests, E2E tests, load tests, or mock generation.'
+allowed-tools: Read, Write, Grep, Glob, Bash(dirname *)
+---
+
+# Go Unit Test
+
+Create and refine Go tests for this repository with table-driven cases and explicit bug-hunting rules.
+
+## Quick Reference
+
+| When you need to… | Jump to |
+|---|---|
+| Quick tests for simple functions | Light mode — §Execution Modes |
+| Normal feature development | Standard mode (default) — §Execution Modes |
+| High-risk / release / concurrent code | Strict mode — §Execution Modes |
+| Fix or triage failing tests | §Test Execution Hardening |
+| Supplement coverage on existing code | §Coverage Gate Policy |
+| Know if a Killer Case is required | Standard + Strict modes: always required — §Killer Case |
+| Check Go version compatibility | §Go Version Gate |
+| Write a Killer Case | §Killer Case — Definition + load `references/killer-case-patterns.md` |
+
+## Hard Rules
+
+- Name test files as `<target_file>_test.go`, co-located with source.
+- Assertion strategy (adapt to project):
+  - **If project uses testify**: `require` for fatal preconditions, `assert` for value checks.
+  - **If project uses standard library only**: use `t.Fatalf` for fatal preconditions, `t.Errorf` for value checks. Include got/want in messages: `t.Errorf("Name = %q, want %q", got, want)`.
+  - **If project uses go-cmp**: use `cmp.Diff` for deep struct comparison. Prefer over field-by-field assertion for complex output.
+  - **Detection**: Check existing `_test.go` files for `"github.com/stretchr/testify"` imports. Follow project convention.
+- Keep tests deterministic; isolate time, randomness, environment, and network.
+  - Prefer `t.Setenv` for env changes; avoid leaking global state between tests. Note: `t.Setenv` panics under `t.Parallel()` (see Go Version Gate) — for a parallel subtest that needs env isolation, inject config explicitly instead of mutating the process environment.
+- Prefer stable fakes/stubs over heavy mock chains.
+  - Unit tests SHOULD NOT require real external services (DB/Redis/HTTP) unless explicitly requested; that belongs to integration tests.
+- Do NOT test constructors (`NewXxx`) or private helpers unless explicitly requested **OR** they contain non-trivial logic (validation/defaulting/option-merging) that can break runtime invariants.
+- For service-layer code with interfaces, focus on methods declared in the interface. For pure functions/handlers, focus on exported functions/endpoints.
+- Run with the race detector (`go test -race`). Scope is the **tested package set**, not always `./...`: PR mode narrows it to changed packages, and a Light pure-function target with no `go`/`chan`/`sync` may run `-race` on just that package rather than the whole repo. **Precedence when the rules below disagree: `race.required` config > PR scope > mode default.** `race.required: false` disables `-race` entirely (state it in the report); otherwise `-race` is required on every tested package.
+- **Killer Case hard constraint (Standard + Strict)**: each test target (interface method / exported function / handler endpoint) must include at least 1 "killer case" (fault-injection or boundary-kill case) that is expected to fail on a known bad mutation/path.
+- In the report, for each killer case, name its critical assertion(s) and report **`Kill: Verified`** — you injected the named defect through `go test -overlay` (never by editing the source), re-ran the test, observed the FAIL, and quote the failure line — or **`Kill: Unverified`** plus why you could not run it. An unverified kill is a **defect hypothesis, not a demonstrated result**: never write it as one.
+- **Do NOT claim an assertion is indispensable unless you checked that separately.** Injecting the defect shows the *case* catches it; only deleting the named assertion **while the defect is still injected** and seeing the test PASS shows that *assertion* is what catches it. Redundant assertions are normal — report `Assertion necessity` only when that removal check was actually run, never as a blanket statement. → recipe: `references/killer-case-patterns.md` § Verifying the Kill.
+
+### Killer Case — Definition (Standard + Strict Modes)
+
+A **killer case** is a test case designed to catch a specific, named defect. It has four mandatory components:
+
+1. **Defect hypothesis**: a concrete statement of what could go wrong (e.g., "loop uses `i < len-1` instead of `i < len`, dropping the last element")
+2. **Fault injection or boundary setup**: test input that triggers the defect if present
+3. **Critical assertion**: the specific `assert`/`require` call that would fail if the defect exists
+4. **Kill verification**: `Kill: Verified` (defect injected, failure observed and quoted) or `Kill: Unverified` (+ reason it was not executed). An *assertion-necessity* claim is a separate, optional one — see Hard Rules
+
+A killer case is NOT just another edge case — it is explicitly tied to a defect hypothesis. If you cannot name the defect it catches, it is not a killer case.
+
+When writing a killer case and you need concrete Go patterns or templates:
+→ Load `references/killer-case-patterns.md` for 6 Go templates covering off-by-one, mapping loss, concurrency, nil-safety, boundary, and error-path defects.
+
+### Anti-examples (DO NOT write these tests)
+- Testing Go standard library behavior (e.g., json.Marshal serializes struct correctly)
+- Testing trivial getters/setters with no logic
+- Testing constructor NewXxx that only assigns fields (unless it has validation/defaulting)
+- Writing one case per possible string input instead of using representative boundaries
+- Asserting only `err == nil` without verifying the returned value
+- Tests that depend on execution order of other tests
+- Tests that assert log output format (fragile, couples to logging implementation)
+- Mocking everything: if you mock 5+ dependencies, the test tests the mocks, not the code
+- Over-reliance on snapshot/golden files for volatile output (timestamps, UUIDs, map iteration order) — golden files are fine for stable serialization formats, but not for output that changes across runs
+- Testing implementation details instead of behavior: asserting internal method call order, private field values, or specific goroutine scheduling rather than observable outputs and side effects
+- Using `t.Skip()` to get a case to "pass" — a skipped case asserts nothing. Report it as a gap, never as coverage (see Reporting Integrity)
+- Covering an input scenario without asserting the behaviour the hypothesis promised — e.g. asserting `len(got) == 0` for empty input and calling a nil-vs-empty contract verified. `len(nil) == 0`, so that assertion cannot tell `[]` from `null`
+
+### Coverage Gate Policy (Default + Scope)
+
+- Coverage gate: **>= 80%** by default **for logic-heavy packages** (pure/domain/transform code).
+- For integration-heavy/IO-heavy packages (infra, clients, wiring, DB adapters):
+  - Coverage may be lower (typical **60–80%**) **only with explicit rationale**.
+  - Even when coverage is lower, **Boundary Checklist discipline remains mandatory** (full checklist in Standard + Strict; Light Boundary Check in Light mode). Failure Hypothesis and Killer Case discipline apply in Standard + Strict modes only.
+- Never inflate coverage by adding low-signal tests with weak assertions.
+
+#### Multi-Package Coverage
+
+When testing spans multiple packages, **state the measurement scope, then read the number from the merged profile** — not from the per-package console line:
+
+```bash
+go test -coverpkg=./... -coverprofile=cover.out -covermode=atomic ./...
+go tool cover -func=cover.out    # per-function truth for every package in the profile
+```
+
+- Under `-coverpkg`, a package with no test binary of its own still prints `coverage: 0.0% of statements` **even when a sibling package's tests fully cover it**. That console line is not that package's coverage; the profile is.
+- **"Has no `_test.go` file" is NOT a valid exclusion reason.** The profile decides: covered by another package's tests → it counts toward the gate; genuinely uncovered → report it as a coverage gap (same rule as PR-Diff Scoped Testing), do not exclude it.
+- Valid exclusions, each stated with its reason: generated code (see Generated Code Exclusion), `cmd/**` entry points held to a smoke test, packages the task explicitly puts out of scope, vendored third-party code.
+- Use one `coverprofile` per package (`go test -coverprofile=pkg_a.out -covermode=atomic ./pkg/a`) only for fine-grained analysis of that one package — its scope is that package alone, so it cannot answer the gate question for the set.
+
+### Go Version Gate
+
+Before generating tests, check `go.mod` for the project's Go version. Adapt test patterns accordingly:
+
+| Feature | Minimum Go Version | Adaptation |
+|---|---|---|
+| `t.Setenv` | 1.17 | Below 1.17: use `os.Setenv` + `t.Cleanup`. **Never** call it in a test that (or whose ancestor) calls `t.Parallel()` — it panics on **every** Go version, because it mutates process-wide env. This is not version-gated; there is no release where the combination became safe. |
+| Range var capture fix | 1.22 | Below 1.22: copy the loop variable (`tt := tt`) before any `t.Run` + `t.Parallel()` closure. On 1.22+ the per-iteration variable makes this redundant. |
+| `t.Chdir` | 1.24 | Added in Go 1.24 (below 1.24: `os.Chdir` + `t.Cleanup`). Like `t.Setenv`, it changes process-wide state and **cannot** be combined with `t.Parallel()` — it panics if the test has a parallel ancestor. |
+
+If `go.mod` cannot be read, state the assumption and proceed with Go 1.21 defaults.
+
+### Tool Approval and Sandbox
+
+- **No `go`, `git` or `sort` command is pre-approved**, because a prefix rule cannot exclude flags: `go test -exec <prog>` and `go vet -vettool=<prog>` run any program (and `go test -exec` still prints `ok` when the program exits 0), while `git diff --output=<file>` and `sort -o <file>` write any file — all four reproduced. Each such command asks once; that prompt is the review step.
+- **Inside Claude Code's sandbox the default build cache is not writable**: `go test` fails with `open …/go-build/…: operation not permitted`. Prefix Go commands with `GOCACHE="${TMPDIR:-/tmp}/go-build"` — this skill's own test harness does the same.
+
+### Test Execution Hardening
+
+- **Shuffle**: Run with `go test -shuffle=on` to catch tests that depend on execution order. If any test fails only under shuffle, it has hidden state coupling — fix the test, not the ordering.
+- **Fuzzing collaboration**: When a function already has a fuzz test (`func FuzzXxx`), unit tests should cover structured boundary cases that fuzzing is unlikely to find (e.g., specific business rule violations, multi-field interaction). Do not duplicate what fuzzing covers (random byte input, crash discovery). If fuzzing is appropriate but missing, note it in the report as a recommendation.
+
+### PR-Diff Scoped Testing
+
+When testing in a CI / PR review context:
+
+- **Base ref is the PR's target branch, not a hardcoded name.** Use `BASE="${PR_BASE:-origin/main}"` with a merge-base three-dot range. Resolve changed files → package patterns with a `./` prefix: a bare `internal/foo` is read by `go` as an *import path* (`package internal/foo is not in std`); the `./` prefix makes it a directory.
+  ```bash
+  BASE="${PR_BASE:-origin/main}"
+  git diff --name-only "$BASE...HEAD" -- '*.go' \
+    | while IFS= read -r f; do printf './%s\n' "$(dirname "$f")"; done \
+    | sort -u \
+    | while IFS= read -r d; do go list "$d" 2>/dev/null; done
+  ```
+  Portable (no GNU-only `xargs -d`, which fails on BSD/macOS `xargs`); `IFS= read -r` keeps paths intact; empty diff yields no packages. Assumes gofmt-standard paths (no newlines in filenames).
+- **Changed packages ≠ their dependents.** `go list` resolves *forward* imports only — there is no flag for "who imports X". Testing changed packages alone can miss a regression in a caller. To include direct dependents, filter `go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...` for each changed import path. If you skip that, run changed packages only and **state explicitly in the report that dependent packages were not covered** — do not imply the command above already includes them.
+- Run `go test -race` on the resulting package set; the coverage gate applies only to changed packages, not the whole repo.
+- If a changed package has no `_test.go` file, flag it as a gap.
+
+Discovery uses `git`, `dirname`, `sort`, and `go list`; only `dirname` is pre-approved (see §Tool Approval and Sandbox), so the others ask once. The optional dependents step also uses `grep`.
+
+### Generated Code Exclusion
+
+Do NOT generate tests for files matching these patterns:
+- `*.pb.go` (protobuf generated)
+- `*_gen.go`, `wire_gen.go` (code generators)
+- `mock_*.go`, `*_mock.go` (generated mocks)
+- Files containing the directive `// Code generated .* DO NOT EDIT`
+
+If the user explicitly requests testing generated code, proceed but note that generated files are typically validated by their generator's own test suite.
+
+## Repository Config (Optional)
+
+When present, load repository config from `.unit-test.yaml` (or `.unit-test.json`) before test generation.
+
+Config keys:
+
+- `coverage.logic_min`: default minimum coverage for logic-heavy packages (default `80`)
+- `coverage.infra_min`: minimum coverage for infra-heavy packages when policy is stricter than default (optional)
+- `coverage.package_rules`: per-package overrides with explicit rationale
+- `assertion_style`: `auto|testify|stdlib|go-cmp` (prefer `auto`)
+- `race.required`: whether `-race` execution is mandatory in this repo (`true|false`). Highest precedence — `false` overrides the default `-race` requirement (see Hard Rules)
+- `commands.test`: custom test command template
+- `commands.coverage`: custom coverage command template
+- `mode`: `auto|light|standard|strict` — set the minimum mode floor (default `auto`). Auto-selection still runs; if it detects a higher mode than the configured floor, the higher mode wins. For example, `mode: light` allows Light for simple targets but still auto-promotes to Standard/Strict when triggers fire. `mode: strict` forces Strict for all targets.
+
+If config is missing, use this skill's defaults and state: `Repository unit-test config not found; using skill defaults`.
+
+## Execution Modes (Light / Standard / Strict)
+
+Select mode **before** writing tests. Declare the selected mode and rationale at the start of output.
+
+### Mode Selection
+
+| Criterion | Light | Standard | Strict |
+|-----------|-------|----------|--------|
+| Target count | ≤ 3 simple targets | 1-8 targets | > 8 targets (not a standalone trigger — see note) |
+| Concurrency | None (no `go func`, channels, `sync.*`) | Any | Shared mutable state, error fan-in |
+| Dependencies | ≤ 1 failing dependency | Multiple | Complex error chains |
+| Branching | ≤ 3 branches per function | Any | Complex state machines |
+| Security | Not security-sensitive | Any | Auth, crypto, input sanitization |
+| Context usage | Pass-through only | Any | Cancellation/deadline logic |
+| Collection transforms | No slice/map transforms (scalar I/O only) | Any | — |
+| Invariant patterns | None (trivial arithmetic commutativity like `Add(a,b)` does not count) | Non-trivial PBT trigger detected (roundtrip, idempotency, preservation, domain-level commutativity, parse validity) | — (use Standard) |
+
+- **Light**: ALL Light criteria must be met. For simple pure functions with scalar I/O, utilities, type conversions. NOT for collection/slice/map transforms (these need the full boundary checklist to catch off-by-one and dropped-element bugs).
+- **Standard**: Default. Use when any Light criterion is violated but no Strict trigger fires.
+- **Strict**: ANY Strict *risk* criterion (the rows **below** Target count — concurrency, dependencies, branching, security, context) triggers this mode. Target count alone does not. For concurrent, security-sensitive, or high-risk code.
+
+**Mode is risk-driven, not count-driven.** The `Target count` row is a *signal*, not a hard trigger: the actual Strict triggers are the risk rows (concurrency, complex error chains, security, state machines). Ten trivial getters/pure functions do NOT warrant Strict just for crossing `> 8 targets` — stay at Light/Standard and record the rationale. Promote on risk density (what could break silently), not on how many targets there are.
+
+When in doubt, choose Standard.
+
+### Mode Requirements
+
+| Feature | Light | Standard | Strict |
+|---------|-------|----------|--------|
+| Table-driven tests | Required (2+ cases) | Required (2+ cases) | Required (2+ cases) |
+| Mutation-resistant assertions | Required | Required | Required |
+| Race detection (`-race`) | Required | Required | Required |
+| Coverage gate (80%) | Required | Required | Required |
+| Reporting Integrity | Required | Required | Required |
+| Case budget per target | **3-6** | **5-12** | **8-15+** |
+| Failure Hypothesis List | Skip | Required | Required |
+| Killer Case per target | Skip | Required (1) | Required (1+) |
+| Kill verification (`Kill: Verified`/`Unverified`) | Skip | Required | Required |
+| Boundary Checklist | **Light (5 items)** | Full (12 items) | Full (12 items) |
+| Scorecard | **Light (7 checks)** | Full (13 checks) | Full (13 checks) |
+| Property-based test guidance | N/A | Recommend if applicable | Required when pattern matches |
+| JSON Summary | Skip | Required | Required |
+
+### Light Boundary Check (5 items)
+
+Mark each `Covered` or `N/A`:
+
+1. `nil`/zero-value input (if parameter type allows)
+2. Empty collection / zero-length input
+3. Single element / boundary size (n=1)
+4. Error from dependency (if any)
+5. Invalid/malformed input (if format constraints exist)
+
+### Light Scorecard (7 checks)
+
+| # | Tier | Check |
+|---|------|-------|
+| L1 | Hygiene | File naming and location correct |
+| L2 | Hygiene | Table-driven style used (targets with 2+ cases; single-scenario may be flat) |
+| L3 | **Critical** | Assertions are mutation-resistant (business fields, not existence-only) |
+| L4 | Hygiene | Happy path covered |
+| L5 | Standard | Critical dependency error paths covered (or N/A) |
+| L6 | Standard | `-race` execution result reported (or N/A with rationale) |
+| L7 | **Critical** | Coverage meets gate (logic >= 80%) |
+
+**N/A handling**: Standard and Hygiene items marked N/A with explicit rationale count as PASS for tier and total calculations (same rule as the full scorecard). The two Critical items follow the full scorecard's restricted rule: **L3 (mutation-resistant assertions) is never N/A**; **L7 (coverage) is N/A only** for `cmd/**` smoke-tested entry points, generated code, or when coverage genuinely can't run and the exact commands are output.
+
+PASS when: both Critical (L3, L7) PASS (L7 N/A only under the restricted coverage conditions above), Standard >= 1/2, Hygiene >= 2/3, total >= 6/7.
+
+State `Light mode: standard scorecard not applicable` in output.
+
+## Target Type Adaptation
+
+Adapt test organization based on the target code type:
+
+| Target Type | Top-level Test Naming | t.Run Organization | Killer Case Granularity |
+|---|---|---|---|
+| Service interface | TestXxxService | By interface method | 1 per interface method |
+| Package-level functions | TestFuncName | By function | 1 per exported function |
+| HTTP handler | TestHandlerName | By HTTP method + path | 1 per endpoint |
+| CLI command/runner | TestRunnerXxx | By command/subcommand | 1 per command |
+| Middleware | TestMiddlewareName | By pass-through / block / error | 1 per middleware |
+
+**HTTP handler tests**: use `httptest.NewRequest` + `httptest.NewRecorder`. Verify status code, response body, headers. Inject dependencies via Deps struct or handler constructor.
+
+**Pure function tests**: direct table-driven, no mock needed. Focus on input boundaries and output correctness.
+
+## Defect-First Workflow (Standard + Strict Modes)
+
+Before writing cases, produce a short **Failure Hypothesis List** from the target code:
+
+1. Loop/index risks: `i < n`, `i <= n`, `i+1`, `n-1`, slice/map access.
+2. Collection transform risks: input->output cardinality mismatch, dropped first/last item, wrong key mapping.
+3. Branching risks: terminal state branch, empty/singleton branch, error short-circuit branch.
+4. Concurrency risks: goroutine error fan-in, shared variable writes, panic recovery path.
+5. Context/time risks: `context.Canceled`, `DeadlineExceeded`, missing ctx propagation, timeout not enforced.
+
+Then map each hypothesis to at least one concrete test case name.
+
+For each hypothesis, also name **the change to the implementation that would violate it** (its mutation). Two consequences:
+- If you cannot name one, the hypothesis is not checkable as written — rewrite it until you can.
+- The case must carry an assertion that the named change would break. Supplying the input is **not** verification: an "empty input" case with only a length assertion leaves `out := make([]string, 0, n)` → `var out []string` passing, so a stated non-nil contract goes unverified.
+
+Then define at least one **killer case** per test target and map it to a specific defect hypothesis.
+
+If this mapping is missing, do not proceed to large test generation.
+
+## High-Signal Test Budget (Anti-Bloat)
+
+Avoid generating huge suites with weak assertions.
+
+| Mode | Cases per target (typical budget / soft ceiling) | Notes |
+|------|-----------------|-------|
+| Light | 3-6 | Happy path + key error/edge paths |
+| Standard | 5-12 | Full budget below + killer case |
+| Strict | 8-15+ | Extended budget + property-based tests when applicable |
+
+**These ranges are typical budgets and soft ceilings, NOT minimums to pad to.**
+Case count is driven by the target's **distinct logic paths**, not by the number
+in the table. If a target has fewer distinct paths than the range's lower bound,
+stop at the real paths — never manufacture low-value cases (near-duplicate
+inputs, existence-only assertions) just to reach a minimum. A single-scenario
+target may legitimately have one case; a sprawling one may exceed the ceiling
+only when each extra case covers a genuinely distinct path.
+
+Standard/Strict default budget per target:
+
+- 1 happy path
+- 1 terminal/last-element boundary path
+- 1 empty or single-element path
+- 1 dependency error propagation path per critical dependency
+- 1 invariant/path-completeness path
+- 1 killer case (mandatory, Standard + Strict)
+
+Only exceed the budget when new cases cover distinct logic paths.
+
+## Bug-Finding Techniques → `references/bug-finding-techniques.md`
+
+| # | Technique | Key Rule |
+|---|-----------|----------|
+| 1 | Mutation-Resistant Assertions | Assert concrete business fields, not just `!= nil` |
+| 2 | Collection Mapping Completeness | Assert len + identity + first/middle/last for transforms |
+| 3 | Off-by-One Precision | Test n=0,1,2,3 for every index boundary |
+| 4 | Dependency Error Propagation | Inject failure per dependency, verify no partial payload |
+| 5 | Concurrency & Panic Recovery | Channel barriers, -race, panic recovery path → also see `references/concurrency-testing.md` |
+| 6 | Branch Completeness | Both branches: marker behavior + payload completeness |
+| 7 | Killer Case Design | Fault-injection tied to defect hypothesis → also see `references/killer-case-patterns.md` |
+
+For detailed patterns and Go code examples, load the reference file.
+
+## Property-Based Testing (Standard: optional | Strict: required when applicable)
+
+Property-based testing finds bugs that hand-picked boundary cases miss by verifying invariants over randomized input.
+
+### When to Recommend
+
+| Pattern | Invariant | Example |
+|---------|-----------|---------|
+| Roundtrip | `decode(encode(x)) == x` | marshal/unmarshal, serialize/deserialize |
+| Idempotency | `f(f(x)) == f(x)` | normalization, canonicalization |
+| Preservation | `len(output) == len(input)` | transforms that must not drop/duplicate items |
+| Commutativity | `f(a,b) == f(b,a)` | set operations, merge functions |
+| Parse validity | valid input → no panic | parsers, validators |
+
+### Quick Example (`testing/quick`)
+
+```go
+func TestRoundtrip(t *testing.T) {
+    f := func(input string) bool {
+        decoded, err := Decode(Encode(input))
+        return err == nil && decoded == input
+    }
+    if err := quick.Check(f, nil); err != nil {
+        t.Error(err)
+    }
+}
+```
+
+For complex domain types, use hand-rolled generators with deterministic seeds. See `references/property-based-testing.md`.
+
+**Relationship to table-driven tests**: Property-based tests verify invariants over wide input space; table-driven tests verify exact expected values at specific boundaries. Use both when target has both invariants AND boundary risks.
+
+### Mode Applicability
+- **Light**: Not applicable. If an invariant pattern is detected, auto-promote to Standard (see Mode Selection table).
+- **Standard**: Note in report if property-based testing would add value; do not require.
+- **Strict**: Required recommendation when target matches any trigger pattern above; include at least one property test or justify why none apply.
+
+## Fixed Boundary Checklist (Standard + Strict — Per Test Target)
+
+For Light mode, use the Light Boundary Check (5 items) in Execution Modes.
+
+→ Load `references/boundary-scorecard.md` for the full 12-item checklist.
+
+## Test Structure Standard
+
+1. Top-level test naming follows the [Target Type Adaptation](#target-type-adaptation) table.
+2. `t.Run` groups map to test targets (interface methods, exported functions, or endpoints).
+3. Use table-driven cases inside each group (subject to the 2+-scenario rule in item 5).
+4. Keep case names defect-oriented and readable in `go test -v`.
+5. Table-driven is required once a target has **2+ meaningful scenarios**. A target with a single genuine scenario may use a flat test — do not manufacture a one-row table to satisfy the form (matches the repo "table-driven for 2+ scenarios" convention).
+6. Prefer `t.Parallel()` for independent subtests.
+  - Do NOT use `t.Parallel()` when subtests share mutable globals, temp dirs without isolation, or process-wide resources.
+
+## Incremental Mode (Fix / Add Tests)
+
+When the task is fixing failing tests or adding tests to existing code, use these simplified flows instead of the full workflow.
+
+### Fix failing test:
+1. Read failing test and target code
+2. Identify root cause: test bug vs implementation bug
+3. Fix the actual bug side (do NOT weaken assertions just to make tests pass)
+4. Run `go test -run TestXxx -v -race` to verify the fix
+5. Skip full scorecard and use incremental scorecard only (see Auto Scorecard applicability for mode-aware rules).
+
+### Add tests for existing code:
+1. Read target code, identify untested paths
+2. **(Standard + Strict only)** Build targeted Failure Hypothesis List (only for uncovered paths)
+3. Design cases for gaps only (do not rewrite existing tests)
+4. Run coverage diff: compare before/after
+5. Simplified Scorecard, scored over the new cases only — see §Auto Scorecard *Applicability*, which is the single place the incremental item lists live.
+
+### Coverage recovery:
+1. Run `go test -coverprofile=before.out`
+2. Identify uncovered lines with `go tool cover -func=before.out`
+3. Write targeted cases for uncovered branches
+4. Verify coverage gate met
+
+## Workflow
+
+0. **Assess target code complexity and select execution mode** (Light/Standard/Strict). Declare mode and rationale.
+1. Check `go.mod` for Go version; note version-dependent test pattern adaptations (see Go Version Gate).
+2. Exclude generated code files from test scope (see Generated Code Exclusion).
+3. Read target code and identify test targets (interface methods, exported functions, handler endpoints).
+4. **(Standard + Strict only)** Build Failure Hypothesis List (loops, mapping, branch, concurrency, context/time).
+5. **(Standard + Strict only)** For each target, define 1 mandatory killer case and bind it to one hypothesis.
+6. Design minimal high-signal cases (Light: 3-6, Standard: 5-12, Strict: 8-15+ per target).
+7. Implement tests with strong field-level assertions.
+8. Run focused tests:
+  - `go test ./path/to/pkg -run TestXxx -v -race`
+9. Run package tests:
+  - `go test ./path/to/pkg -race`
+10. Measure coverage (prefer atomic for concurrency safety):
+  - `go test ./path/to/pkg -coverprofile=coverage.out -covermode=atomic -race`
+  - `go tool cover -func=coverage.out`
+11. If coverage < required gate OR key hypotheses untested, add targeted cases only.
+12. **(Standard + Strict only)** Verify each killer case *by executing it*: inject its named defect with `go test -overlay` — the source file is never edited — re-run the test and confirm it FAILS (recipe: `references/killer-case-patterns.md` § Verifying the Kill). Report `Kill: Verified` with the observed failure line, or `Kill: Unverified` + reason if the environment cannot run it.
+
+### Reporting Integrity (Mandatory)
+
+- Do NOT claim `-race` or coverage results unless you actually ran the commands and observed output.
+- If you cannot run commands in the current environment, say so, and output the exact commands for the user to run plus what to look for.
+- A **skipped** case is discovered, not verified. Never mark a boundary item `Covered`, a hypothesis addressed, or a killer case `Kill: Verified` on the strength of a case that reported `--- SKIP`. If a case genuinely must skip here, say which and report the item as a gap.
+
+## Auto Scorecard (13 Checks)
+
+Score each item `PASS` / `FAIL` / `N/A (reason)`. Output `Total: X/13` and final result.
+
+Each item has a weight tier that determines its impact on the final verdict:
+
+| Tier | Items | Rule |
+|------|-------|------|
+| **Critical** (must PASS) | 5, 11, 13 | Any Critical FAIL → overall FAIL regardless of total |
+| **Standard** | 7, 8, 9, 10, 12 | Must achieve >= 4/5 Standard PASS |
+| **Hygiene** | 1, 2, 3, 4, 6 | Must achieve >= 4/5 Hygiene PASS |
+
+Applicability:
+
+- **Light mode**: Use Light Scorecard (7 checks); state `Light mode: standard scorecard not applicable`.
+- **Standard/Strict mode**: Full 13-check scorecard mandatory.
+- **Incremental mode (Standard/Strict targets)**: Simplified scorecard (items 5, 7, 8, 11); state `Incremental mode: full scorecard skipped`.
+- **Incremental mode (Light targets)**: Use Light Scorecard (items L3, L5, L7 only); PASS when all 3 items are PASS or N/A with rationale; state `Incremental + Light mode: minimal scorecard`.
+
+→ Load `references/boundary-scorecard.md` for the full 13-item checklist and PASS criteria.
+
+## Output Expectations
+
+Include:
+
+- Execution mode (Light/Standard/Strict) with selection rationale
+- Targets tested + case counts
+- Go version (from `go.mod`) and version-dependent adaptations applied
+- Generated files excluded from scope (list, or "none")
+- Failure Hypothesis List and which case covers each
+- Killer case list per target:
+  - case name
+  - linked defect hypothesis
+  - critical assertion(s)
+  - `Kill: Verified` (+ the observed failure line) or `Kill: Unverified` (+ reason)
+  - `Assertion necessity` — include ONLY if the assertion-removal check was run; omit it otherwise
+- Boundary checklist per target (Covered/N/A + reason)
+- Coverage and race results (or N/A + exact commands)
+- Scorecard and final PASS/FAIL
+- Remaining untested risks (if any)
+
+**Light mode output reduction**: Skip Failure Hypothesis List, Killer Case list, and JSON Summary. Report only: mode + rationale, targets + case counts, Light Boundary Check, coverage/race results, Light Scorecard, remaining risks.
+
+For list/transform logic, include explicit statement:
+
+- whether first/middle/last items were validated
+- whether output cardinality and identity completeness were validated
+
+### Machine-Readable Summary (JSON) — Standard + Strict Only
+
+Also output a compact JSON block for CI/pipeline ingestion (skip for Light mode):
+
+```json
+{
+  "summary": {
+    "pass": true,
+    "score": "12/13",
+    "go_version": "1.22"
+  },
+  "targets": [
+    {
+      "name": "TestOrderService",
+      "type": "Service interface",
+      "cases": 8,
+      "killer_cases": 2,
+      "hypothesis_covered": ["H1", "H3"]
+    }
+  ],
+  "coverage": {
+    "package": "internal/domain/order",
+    "line_pct": 87.5,
+    "gate": 80,
+    "met": true
+  },
+  "race": {
+    "executed": true,
+    "clean": true
+  },
+  "scorecard": {
+    "critical_pass": 3,
+    "critical_total": 3,
+    "standard_pass": 5,
+    "standard_total": 5,
+    "hygiene_pass": 4,
+    "hygiene_total": 5
+  }
+}
+```
+
+## Skill Maintenance
+Regression checks: `bash "<path-to-skill>/scripts/run_regression.sh"`.

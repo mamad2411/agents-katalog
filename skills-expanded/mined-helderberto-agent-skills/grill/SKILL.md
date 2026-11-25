@@ -1,0 +1,38 @@
+---
+name: grill
+description: Interview in rounds until a plan or idea has no open decisions.
+disable-model-invocation: true
+argument-hint: '[idea | slug]'
+---
+
+# Grill
+
+Topic: `$ARGUMENTS`, an idea or a slug naming earlier work; empty → the plan in the conversation.
+
+Interview the user relentlessly until you reach a shared understanding. Map the plan as a **design tree**: every decision branches into the decisions that hang off it.
+
+Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled — the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer, worded so a bare "yes" accepts it. Then wait for the user's answers before the next round.
+
+Format a round like so:
+
+```
+❓ **Q1 — <question title>**: <question body, may be multiple paragraphs, including multiple choices>
+
+➡️ <your recommended answer>
+
+---
+
+❓ **Q2 — <question title>**: <question body>
+
+➡️ <your recommended answer>
+```
+
+Each answered round reshapes the tree: settled decisions push the frontier outward and unblock the questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
+
+**Facts are your job; decisions are the user's.** If a frontier question can be answered from the codebase or environment, dispatch a subagent with a fresh context window to find it — never ask the user for anything you could look up yourself. Don't block the round on a running lookup: only the questions downstream of it wait; ask the rest of the frontier now.
+
+**Write as you go.** A domain term settles → call the Skill tool with `domain-modeling` to write it into the glossary. A decision settles that is hard to reverse, surprising without context, and a real trade-off → call the Skill tool with `to-adr` to record it. Do both inline, the moment it settles, not in a batch at the end.
+
+Done when the frontier is empty: every branch visited, nothing left silently assumed. Do not act until the user explicitly confirms the shared understanding — "whatever you think is best" or "you decide" is delegation, not confirmation; put the specific decision back to them.
+
+Next: `/hb:to-spec <slug>`, with `<slug>` derived from the idea.

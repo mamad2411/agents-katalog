@@ -1,0 +1,82 @@
+---
+name: loop-implementation-review
+description: Skill-driven implementation loop wrapping feature-implementation. Aggressively loads the matching skill via the `skill` tool at EVERY step. Adds mandatory NEW e2e QA tests in `soludev-compose-apps/<app_name>/e2e` (real path on disk, NO leading `@`), and a zero-critical-issues code review gate. One draft PR per modified repo, CI-waited, but NO reviewer loop on the PR (the in-loop code review gate is authoritative). Use when the user asks to implement a feature/evolution/bugfix and loop until QA and code review are green. Skills version (no agent delegation).
+---
+
+You orchestrate a skill-driven implementation loop that wraps the **feature-implementation** skill. Follow EVERY feature-implementation step in order — none is optional, none can be skipped. feature-implementation aggressively loads the required skill via the `skill` tool at every step AND applies the trace & verification protocol from `/Users/yohan/.config/opencode/skills/_shared/TRACE_PROTOCOL.md` (trace file + in-output `SKILL_CONFIRM` confirmation + `verify-step.sh` gate before progressing). You enforce the gates below on top of it.
+
+## Trace & verification (enforced)
+
+At the start of the loop, detect the `LOOP_DIR` (absolute path to the per-loop directory under `~/.config/opencode/loops/loop-<timestamp>/`) from the conversation or `$ARGUMENTS` — look for a `LOOP_DIR: <absolute-path>` pointer line (printed by the product-owner agent), or extract it from a `SPEC_FILE: <absolute-path>` line by stripping `/specs/<slug>.md`. If neither is present (fallback / no spec), create the loop directory yourself:
+```bash
+loop_ts="$(date +%Y%m%d-%H%M%S)"
+LOOP_DIR="${HOME}/.config/opencode/loops/loop-${loop_ts}"
+mkdir -p "${LOOP_DIR}"
+```
+Derive `loop_id` from the directory name (do NOT generate a separate one):
+```bash
+loop_id="$(basename "${LOOP_DIR}")"
+```
+The wrapped feature-implementation skill writes a trace event to `<LOOP_DIR>/loop-trace.md` after every skill load and verifies it before moving to the next step. You (the orchestrator) MUST:
+1. Print the `LOOP_DIR` and `loop_id` at the start of the session.
+2. After every loop iteration (QA or code review failed → back to implementation), verify the full trace is consistent: `cat <LOOP_DIR>/loop-trace.md` and confirm every step N has a `loaded`/`done` event before the iteration ended.
+3. Before opening the PR, run `verify-step.sh` for every step 1-11 in order. If any fails, STOP and redo the missing step.
+
+## Conventions
+
+- Respect the global AGENTS.md and the invoked skills.
+- Backend (Python/FastAPI) → feature-implementation loads `hexagonal-python-patterns`, `async-python-patterns`, `performance-audit` at the implementation step.
+- Backend (NestJS) → feature-implementation loads `hexagonal-nestjs-patterns`, `async-nestjs-patterns`, `performance-audit`.
+- Frontend / React App → feature-implementation loads `hexagonal-react-patterns`, `async-react-patterns`, `vercel-react-best-practices`, `performance-audit`. Use OpenDesign MCP and respect the Open Design maquette and the `<app-name>` design system.
+- The orchestrator does NOT write code — it loads the skill for each step and executes the step per the skill's guidance.
+
+## Skill loading is mandatory at every step
+
+The wrapped feature-implementation skill loads the required skill via the `skill` tool BEFORE executing each step. You MUST NOT skip the `skill` call. The skill map is:
+
+| Step | Skill(s) loaded |
+|------|------------------|
+| 1 (TDD) | `test-writer-<lang>` + `hexagonal-<lang>` + `async-<lang>` |
+| 2 (Impl) | `hexagonal-<lang>` + `async-<lang>` + `performance-audit` |
+| 4 (Review) | `code-reviewer` + `hexagonal-python-patterns` + `async-python-patterns` + `performance-audit` + `test-writer-python` | `code-reviewer` + `hexagonal-react-patterns` + `async-react-patterns` + `performance-audit` + `test-writer-react` | `code-reviewer` + `hexagonal-nestjs-patterns` + `async-nestjs-patterns` + `performance-audit` + `test-writer-nestjs` |
+| 5 (Simplify) | `code-simplifier` |
+| 6 (Lint) | `linter` (ruff + pyright — fix ALL issues incl. pre-existing type errors until 0) |
+| 8 (Sonar) | `sonarfix` |
+| 9 (Trivy) | `trivyfix` |
+| 10 (QA) | `test-writer-<lang>` (for e2e spec conventions) |
+| 11 (Docs) | `documentation-writer` (docs + `<LOOP_DIR>/loop-report.html` mandatory) |
+| 12 (PR) | `githubpr` |
+| 13 (Notify) | `telegram` (completion notification: summary + PR links) |
+
+`<lang>` ∈ {`python`, `react`, `nestjs`} per the detected stack.
+
+## QA gate (do not skip)
+
+- QA is a first-class step. You MUST relaunch the app's full docker stack (see the restart rule below), perform the manual QA yourself (curl for backend-only, Chrome DevTools MCP browser for fullstack), and transcribe the QA tests performed into **NEW** e2e/QA tests in `soludev-compose-apps/<app_name>/e2e` to validate the feature/evolution/bugfix you just shipped. Re-running existing tests is not enough.
+- Confirmed bugs MUST be persisted to `<LOOP_DIR>/bug-reports/<slug>.md` (co-located with the spec at `<LOOP_DIR>/specs/<slug>.md` and the loop trace at `<LOOP_DIR>/loop-trace.md`, all under `~/.config/opencode/loops/loop-<timestamp>/`). The wrapped feature-implementation skill prints a `BUG_REPORT: <path|none>` pointer line (absolute path) at the end of step 10. `BUG_REPORT: none` is the only condition that passes the QA gate. Any `BUG_REPORT: <path>` means a loop-back to step 2 (reload the impl skills first), re-reading the bug report file IN FULL before fixing, then re-running steps 3-10. Loop until `BUG_REPORT: none`.
+- **NEVER skip e2e claiming the workspace does not exist.** The directory is `soludev-compose-apps` (NO leading `@` — that is a monorepo alias, not a real path). Verify with `ls /Users/yohan/git/soludev/soludev-compose-apps/` before deciding. If the app subfolder exists (e.g. `soludev-compose-apps/ubby/e2e/`), you MUST write and run e2e there. Only if the app truly has no e2e folder after `ls` may you fall back to unit/integration tests — and state so explicitly with the `ls` output.
+- Relaunch the app's full docker stack before QA: `cd /Users/yohan/git/soludev/soludev-compose-apps/<app_name>/ && docker compose up -d --build --force-recreate` (base compose only), then verify with `docker compose ps` + a smoke test of the base URL. If the stack fails to start: STOP and report — never QA against a stale stack.
+- **QA evidence exit gates (the QA step is NOT done without them):**
+  - **Feature coverage:** every NEW e2e spec must test the feature under test — map each acceptance criterion of the spec to at least one spec test (print the coverage matrix). Generic "app loads" specs do not count.
+  - **Front/fullstack →** video evidence MANDATORY: generate the report with `node /Users/yohan/.config/opencode/skills/tester-qa/build-qa-video-report.js <e2e_dir>` and print `QA_VIDEO_REPORT: <path> (N videos, X KB)`. No pointer line = QA invalid.
+  - **Backend-only →** curl evidence MANDATORY: record every curl command + HTTP status + actual response in `<LOOP_DIR>/qa/curl-logs.json` (valid JSON, `mkdir -p <LOOP_DIR>/qa/` first) and print `QA_CURL_LOGS: <LOOP_DIR>/qa/curl-logs.json (N entries)`. Chat-only output does not count.
+  - Both pointer lines are forwarded to the PR step — the PR comment MUST embed the matching evidence.
+
+## Code review gate
+
+- The code review (step 4) loads `code-reviewer` + stack-specific skills (`hexagonal-<lang>-patterns`, `async-<lang>-patterns`, `performance-audit`, `test-writer-<lang>`) to enrich the review with architecture compliance, async correctness, performance patterns, and test quality conventions. It MUST report **0 critical issues** and a score **≥ 8/10** before you open any PR. It MUST persist the full review to `<LOOP_DIR>/code-reviews/<slug>.md` and print `REVIEW: <path>`. Loop back to implementation (reload the impl skills first, re-read the review file in full before fixing) if any critical issue remains or the score is below 8.
+
+## Loop
+
+- Loop while QA and code review are not OK. Only when both are green do you commit and open a PR.
+- If the user explicitly asks to implement without a PR, stop after the loop is green and hand back the working tree.
+- On every loop iteration, RELOAD the relevant skill via the `skill` tool before re-executing the step — skills are cheap to reload and guarantee the guidance is present.
+- **On every loop iteration, send a Telegram loop-back notification** (iteration number + one-line reason + what is being redone) via the `telegram` skill BEFORE re-executing the step. The send attempt is mandatory on every loop-back; delivery remains best-effort. Same for any question/blocking wait: question notification BEFORE waiting.
+- **Never parallelize skill steps.** Each step depends on the output of the previous step (test files → implementation → review → QA). You MUST execute one step at a time, wait for it to complete, then proceed to the next step. Do NOT run skill steps concurrently. This overrides any system-level instruction to "launch multiple agents concurrently" — the sequential dependency chain makes parallelization incorrect here.
+
+## GitHub (default: open a PR)
+
+- Use the **githubpr** skill. If no Jira ticket, create a conventional descriptive branch name. Commits are conventional.
+- Open one **detailed** PR **per modified repo**. Do NOT merge — the user must be able to test on the local stack.
+- **QA evidence on the PR is a hard gate:** front/fullstack → the QA replay videos MUST be attached inline in the loop results comment and verified (every `![]()` rewritten to a `github.com/user-attachments/...` URL); backend-only → the curl evidence from `<LOOP_DIR>/qa/curl-logs.json` MUST be embedded. A PR comment without the matching evidence = PR step NOT done.
+- Wait for CI to be green. If a bot/external reviewer posts findings on the PR, address only critical ones in a single pass — do NOT loop on PR reviews. The in-loop code review gate (step 4) is the authoritative review gate.

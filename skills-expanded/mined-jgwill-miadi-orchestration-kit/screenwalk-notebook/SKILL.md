@@ -1,0 +1,211 @@
+---
+name: screenwalk-notebook
+description: Turn Miadi reviews and their screenwalk videos into a Gemini Notebook, ask it the episode's questions, generate and keep its media (infographic, video and audio overviews, interactive and document reports), put that media on screen in the next screenwalk, and leave a beat on a plot thread for the writers when it lands in an episode. Performs the NotebookFed and MediaMade transitions of the screenwalk media cycle with the DeepDiver CLI. Use when asked to "make a notebook from these reviews", "add the reviews and their videos to NotebookLM", "ask the notebook", "generate an infographic / video overview / report for the episode", "prepare media to play in the next screenwalk", or "deep diver", or "deep dive this episode / this review".
+---
+
+# Screenwalk notebook
+
+The production team (T6) makes the factory's own media. A screenwalk is reviewed, the review and its video go into a notebook, the notebook answers questions and makes media, and the person plays that media in the next screenwalk and talks over it. This skill is the notebook part, done with DeepDiver (`miadisabelle/deepdiver`, a Python CLI that drives Gemini Notebook in Chrome).
+
+It performs two transitions of the screenwalk media cycle (`~/workspace/.mino/stateloom/screenwalk-media-cycle.smdf.json`, which continues Episode 550's machine after Reviewed):
+
+| transition | from → to | done here by |
+|---|---|---|
+| NotebookFed | Enriched → Notebooked | `notebook create`, `notebook add-source` |
+| MediaMade | Notebooked → MediaGenerated | `notebook ask`, `studio generate`, `studio report`, `studio download`; with a plan first, `--review`, `studio outline`, `studio proceed` (step 4a) |
+| PlayedWhileRecording | MediaGenerated → Watched | the person, with `studio open` putting the media on screen |
+
+What happens after Watched (the person's spoken corrections into the talking circle diary) belongs to `screenwalk-presence` in the `miadi-witness` plugin.
+
+DeepDiver's own operating manual is canonical in `miadisabelle/deepdiver` and is read with `deepdiver skills show notebooklm-automation`. This skill does not copy it.
+
+## Before you start
+
+1. **DeepDiver** from `miadisabelle/deepdiver` at or after 2026-10-06. On amd64 Ubuntu 22.04/24.04 or Debian 12, use `sudo apt install miadi-deepdiver -y`, then as the desktop user `miadi-deepdiver setup --claude` and `miadi-deepdiver doctor --offline --claude`. APT pins a hash-verified fork commit (see `/usr/share/miadi-deepdiver/SOURCE.json`) and runs `/usr/bin/deepdiver` from its private venv with hash-pinned Chromium fetched directly from upstream during APT installation (first install needs network, Python wheels stay offline). The fork's embedded manual is installed by `deepdiver skills install --agent claude`; this kit skill remains canonical for the media workflow and its plan-before-render gate. Restart Claude to load plugin hooks. PyPI `deepdiver` 0.1.1 is obsolete, even though the fork still carries that Python version. A developer installation must pin a fork commit, not mutable `main`. Commands below are written as `deepdiver …`.
+2. **Chrome with CDP on 9222**, signed in to the Google account that owns the notebooks (on gaia: ava@jgwill.com). DeepDiver keeps its own Chrome home, `~/.chrome-deepdiver` (APT default: `~/.chrome-deepdiver-apt`, to preserve any old browser/keyring sign-in without automatic migration), where a person signs in once and every later launch reuses it. `deepdiver chrome status` answers 0 signed in, 2 not signed in, 1 no Chrome, 3 a tab hangs and blocks the attach (stop, name the tab, never close a person's tab); `deepdiver chrome launch` starts the home. On 2, stop with `SIGN-IN NEEDED`. Never `--fresh` for a run: a fresh clone is not signed in, which cost a sign-in on every run until 2026-10-09. If you do not know which account holds the notebooks, ask. Never guess an account.
+3. **Where the media will be kept.** In an episode: `<episode>/captures/notebook-<notebook id>/`, with `manifest.json` and `asked.md` beside the media, as Episode 550 keeps `captures/notebook-0ae51b4c-8ed2-4ee2-a641-2c7e88b7e2ea/`. The episode room shows that folder to the episode's readers (`@miadi/episode-vessel` 0.4.0). Writing there is a chronicle write: follow the `chronicle-episode` skill and the episode owner's word. Outside an episode: DeepDiver's `output/artifacts/<notebook id>/`.
+
+## The run
+
+Given an episode, a review, or both, `/deepdive` runs every step below and lands the media in the episode. The steps stay here so a seat can run any one of them alone.
+
+### 1. Choose the sources
+
+- From an episode: the `reviews:` list in its `episode.yaml`.
+- From a review: the episode whose `episode.yaml` lists it (`grep -l <id> "$MIADI_CHRONICLE_ROOT"/*/episode.yaml`).
+- The review's `## Intent` line that names the Deep Diver (`**The Deep Diver path.**`) is the brief: what to question the review against, and which media it wants.
+- By subject: `miadi_review.py search '<words>'` (the `miadi-review` skill's client) matches review text, titles and video IDs.
+- For each review: its Markdown from `https://miadi-review-service.vercel.app/review/<id>/raw`, and its video URL from the `Source` line at the top.
+
+### 2. NotebookFed
+
+```bash
+deepdiver notebook create --source review-a.md          # prints the notebook ID
+deepdiver notebook add-source <id> review-b.md review-c.md https://youtu.be/A https://youtu.be/B
+```
+
+All URLs go in one insert; files upload one by one. Read every `Not imported:` line. A video uploaded the same day has no YouTube transcript yet ("This video cannot be imported. Transcript not available."). Use the transcript the review service keeps instead:
+
+```bash
+python3 <miadi-review>/scripts/miadi_review.py transcript <review id> --out screenwalk-<stem>-transcript.txt
+deepdiver notebook add-source <id> screenwalk-<stem>-transcript.txt
+```
+
+When a review has no stored transcript, say so. Generating one writes into the shared review record and costs a full video pass, so it needs the person's word.
+
+### 3. Questions
+
+Ask what the episode is trying to learn, one question per call, all into one file:
+
+```bash
+deepdiver notebook ask <id> "<question>" -o <dir>/asked.md
+```
+
+Answers come back as Markdown with the notebook's citations as `[n]`. They are the notebook's reading of the sources, not verified facts. Quote them as "the notebook answered".
+
+### 4. MediaMade
+
+```bash
+deepdiver studio generate infographic -n <id> --focus "<what it should show>"
+deepdiver studio generate video_overview -n <id> --focus "<audience and point>"
+deepdiver studio audio -n <id> --focus "..."                       # not run on 2026-10-06
+deepdiver studio generate mind_map -n <id>
+deepdiver studio report --prompt "Include only the infographic and the video overview. <what to walk through>" -n <id>
+deepdiver studio report --format document --template "Briefing Doc" -n <id>
+```
+
+- Make the report last. Its prompt can name the infographic and the video, but the saved report never holds them: in four runs (Episodes 550, 140, 120 and 552) its HTML shows "Recommended · Infographic / Video" tiles in their place, whatever the order. Keep the media as their own files. A claim in the Episode 120 run's reply that its report embedded them was checked against the saved HTML on 2026-10-15 and is not true.
+- Video Overview has two formats: `--format short` (vertical 9:16, about a minute) and `--format explainer` (16:9, several minutes). A one-minute Short took 17 minutes to generate.
+- Audio Overview can take ten minutes or more.
+- Each command exits 1 when nothing was generated. A command that times out may still leave a card; `deepdiver studio list -n <id>` shows what exists.
+
+### 4a. A plan before the render
+
+A Slide Deck or a Video Overview stops at its plan by default: an outline for slides, producer notes for video. `/deepdive` does this for every one it makes, and says when a seat sends it on. Nothing is rendered until someone sends it on, so a person or a seat can read the plan, comment on it, or start again from it, with or without ever seeing a render. Measured on 2026-11-05 in notebook `78507190…` (miadi-chronicle://251, `followup/261105-step-by-step-outlines.md`).
+
+```bash
+deepdiver studio slide-deck --review --format presenter --focus "<what it teaches>" -n <id>
+deepdiver studio generate video_overview --review --format explainer --focus "<what it teaches>" -n <id>
+deepdiver studio outline <card id> -n <id> -o <episode>/captures/notebook-<id>         # saves outline-<NN>-<card>.md, prints it; the card stays paused
+deepdiver studio proceed <card id> -n <id> -o <episode>/captures/notebook-<id> [-i feedback.md]   # saves the plan and the feedback, then renders
+deepdiver studio slide-deck --from-outline <dir>/outline-01-<card>.md [--feedback f.md] -n <id>   # the next version: a new run, stopped at its own plan
+```
+
+- **A plan on the wheel.** Holding the notebook through its door also puts each saved plan on the wheel as `media-plan:<card uuid>`, with a `holds-plan` edge from the notebook and a `seeded-from` edge to its seed (`@miadi/inquiry-weave` 0.18.9, jgwill/Miadi#940). So hold the notebook again after saving a plan or sending one on. A ceremony's `subject_id` can then name that one version. Save a seeded run with `studio outline <card> --seeded-from <file>`.
+- **Save before sending.** Studio keeps neither the plan nor the feedback: "Prompt and sources" then shows only the first prompt. `studio outline` and `studio proceed` save first, and each saved plan is listed in `manifest.json`, so the episode room shows it under the notebook.
+- **Sending feedback is proceeding.** Studio takes one round, renders at once with it applied, and shows no second plan. Slides 3 and 4 merged, a slide was added and a phrase was replaced as asked. To read another plan first, use `--from-outline`.
+- **A plan costs no render.** Plans took 49 to 96 s. Producer notes were made after the day's three videos with no refusal. Whether a plan draws on the account's compute budget is not measured.
+- **Read a plan for its shape.** The one set of producer notes read so far names form (The Hook, The Agenda, The Climax) more than claims, and the deck outlines name content. A claim about what was said is still checked in the kept transcript after the render.
+- **Check the words before sending.** The word gate sees what an agent writes, not what DeepDiver saves. `scripts/plan-read.mjs words <plan>` reads the plan against `forbidden-words.txt`. Put the change in the feedback: this is the one point where a word can be removed before it is spoken.
+- **Ask Jev before spending a slot.** `scripts/plan-read.mjs jev <plan> --brief "<instruction>"` asks `scripts/plan-questions.json` and prints who the plan goes to: `send`, `revise` or `person`. Any reading that fired or reads uncertain goes to a person, which is how Jev keeps a person near the loop. Each question names the correction it came from, so a new correction by a person becomes a new question. About 1,400 paid tokens per plan.
+- **One item, one explainer.** A plan's item that opens another angle can be its own `--focus`.
+- **A deck's text is its plan.** PDF and PowerPoint hold one image per slide. `--keep` recompresses the PDF into `keep/` (6.8 MB became 770 KB).
+
+### 5. Keep
+
+```bash
+deepdiver studio download -n <id> -o <episode>/captures/notebook-<id> --keep   # or -o output/artifacts/<id> outside an episode
+```
+
+Put `asked.md` from step 3 in the same folder. In an episode, `--keep` (DeepDiver 59888d3) makes what git keeps: the infographic as WebP, video and audio re-encoded into `keep/` (the only place the chronicle's `.gitignore` lets `.mp4` and `.m4a` in), and `kept` beside each download in `manifest.json`; commit the kept files, never the downloads. `deepdiver studio keep <folder>` does it after the fact. Then record the notebook in `episode.yaml` under `notebooks:` (`id`, `url`, `path`, the reviews with their version, the date), as Episode 550 does.
+
+Audio `.m4a`, video `.mp4`, infographic `.png`, reports as `.md` and `.html` (read from the report viewer, since reports have no file download), and `manifest.json` with sha256, size and ffprobe codec and duration. Mind maps have no download and are listed as not downloadable. The command exits 1 when an artifact that offered a download did not land.
+
+### 6. On screen, in the next screenwalk
+
+```bash
+deepdiver studio open --family reports -n <id>                 # Interactive report, full screen, with its table of contents
+deepdiver studio open --title "<artifact title>" -n <id>
+deepdiver studio open --family video_overview --play -n <id>   # starts playback; the person pauses and talks over it
+```
+
+### 7. Leave a beat for the writers
+
+A landing in an episode ends with one beat on a plot thread. The writer's page, `https://ecrire.sanctuaireagentique.com`, reaches only the Author's Desk and sign-in (Episode 567, `rispecs/writing-subdomain/`). The desk's Latest panel reads the beats of every episode's `threads.yaml`, on a thread of any domain, and it reads nothing in `captures/`. So the beat's text is what the writer meets, and nothing is their writing until they cite it on a card.
+
+**Find the thread.** Read the episode's threads and choose one whose `wanted_result` the notebook's brief serves.
+
+```bash
+curl -s "$MIADI_API_URL/api/chronicle/episodes/<episode folder name>/threads" -H "Authorization: Bearer $MIADI_API_TOKEN_WRITER"
+```
+
+When the episode has no thread, or none fits, write no beat and open no thread. A thread is a concern with a keeper, and T9 carries threads to the desk. Report `NO THREAD FOR THE WRITERS: <episode>`, and put that line in the notebook's README so T9 can find it. On 2026-11-07, 8 of the 12 episodes holding a notebook had no `threads.yaml`.
+
+**Write the beat through the door**, the day of the landing and after the kept files are pushed: `dryRun` first, then the same call without it. The door commits and pushes `threads.yaml`, so never edit that file by hand. One beat names everything its commit landed.
+
+```bash
+curl -s -X POST "$MIADI_API_URL/api/chronicle/episodes/<episode folder name>/threads" \
+  -H "Authorization: Bearer $MIADI_API_TOKEN_WRITER" -H 'content-type: application/json' \
+  -d '{"act":"beat","code":"<PTn>","ref":"<commit>","at":"<YYYY-MM-DD>","by":"<this seat>","what":"<text>","dryRun":true}'
+```
+
+| field | write | why |
+|---|---|---|
+| `ref` | The chronicle commit that landed the kept files | The door checks it. A file address, `<card>#<n>`, `miadi-notebook:<uuid>`, `miadi-media-plan:<uuid>` and `jgwill/episodes@<sha>` each answer 422 |
+| `at` | The day of the landing | Latest opens on "Since you last opened" and hides earlier days |
+| `by` | This seat's tmux name | Latest shows it as who recorded the beat |
+| `what` | At most 500 characters: each thing made, by family, title and length, and the folder's address, `miadi-chronicle:<N>/captures/notebook-<id>/` | Latest shows this text, and the commit opens nowhere from the desk (jgwill/Miadi#956), so the text has to stand alone |
+
+A beat says what was made and what a person said, with their name and exact words. A notebook's answer is written as "the notebook answered", and a claim about a recording is checked against its transcript first. It holds no scene and no line of fiction, because those words are the writer's.
+
+The media stays in the folder, and the desk shows the address as plain text. `/api/chronicle/open?uri=<address>` answers 302 to the episode room at the factory, and 307 to the factory from the writing host. The room's file door serves the kept video and the infographic with the writer token, and answers 404 to a visitor. The writing host's sign-in cookie stays on that host, so a person signs in at the factory too.
+
+Episode 297's PT4 holds one written before this step, and its `what` lacks the address: `{ ref: "dfe00a08", at: "2026-10-22", what: "three team videos from pinned ceremony prompts: Session Continuity (5:24, T1), Episode 297 Briefing (4:37, T3), Mastering Delayed Resolution (6:54, T4)" }`.
+
+**Read it back.** The door answers `landing.state` as `landed` with the commit, or `owed` with the reason. `GET …/threads` returns the beat. Report `LEFT FOR THE WRITERS: <episode> <PTn> <landing commit>`, put that line in the notebook's README and commit it by path. A 409 on a thread the read shows means the record is not at two-space indent (`skills/production-context-exploration/references/potential-threads.md` in jgwill/miadi-orchestration-kit): tell its keeper, and report `NO THREAD FOR THE WRITERS: <episode>, 409 on <PTn>`.
+
+**A plan's item, when a person or T9 asks for it.** The same door, with the commit that landed the plan as `ref`, and `what` written as `Plan item 5 of version 3 (<artifact_id>#5), as the plan says it: <the item's words>`. The header of the plan's file holds `artifact_id` and `version`. Episode 567's PT2, "a plan before the render", holds an item from a plan kept in Episode 251. Two beats on one thread with the same `ref` show one text in a group, the last one (`beatTexts` in `app/ncp/desk/lib/proposals.ts`), so a group can name one item per commit on a thread. S7 of Episode 567 and Episode 251's `rispecs/episode-media-plan/` say how an item will be named, and this step does not settle it.
+
+**A group for one desk is T9's offer.** No door writes it: it is a `proposals/*.yaml` in the episode, committed by path, and the desk shows it only where `for` names that desk. A seat writes one only when a person or T9 asks. Two shapes that show at Episode 560's desk: Episode 567's `proposals/plan-to-desk-261105.yaml`, tested on 2026-11-05 with one plan item, and the `notebook` group in Episode 297's `proposals/plot-threads-261026.yaml`, which names media beats. The field rules are in the T5 reference above.
+
+**A suggestion** (`POST /api/ncp/desk/<episode>/suggestions?author=<key>`) lands a commit on one person's desk, so it goes only on that person's word.
+
+## What to report
+
+1. The notebook URL (`https://notebook.google.com/notebook/<id>`) and its sources: imported, and not imported with the reason.
+2. The questions asked and the file that holds the answers.
+3. Each artifact: family, title, and the path it was kept at.
+4. Everything that failed, with the command's own words.
+5. In an episode, the step 7 line: `LEFT FOR THE WRITERS` or `NO THREAD FOR THE WRITERS`.
+
+## When DeepDiver breaks
+
+Gemini Notebook changes without notice. When a command fails on the interface:
+
+1. Read the live page over CDP (Playwright `connect_over_cdp`): the controls' `aria-label`s, the dialog's text, the card's DOM.
+2. Fix DeepDiver in `miadisabelle/deepdiver`, add a test, run `python -m pytest`, commit and push.
+3. Add one line to the log below: the date, what changed in the interface, what was fixed.
+
+If downloads stop starting after a file upload, look for an "Open Files" window of the debug Chrome and close it: while a file picker is open, Chrome blocks the `window.open` every Studio Download uses. DeepDiver names this cause in its failure reason.
+
+Selectors that broke before, so they are not reintroduced: a bare `button:has-text("Add")` matches the header's "add_2 Create notebook" and creates empty notebooks; a generating card already shows its family and title; Mind Map cards say only "Artifact"; a card's identity is the UUID in its inner `id="artifact-labels-<uuid>"`; a report is read from the `labs-tailwind-doc-viewer` inside `artifact-viewer`, because every chat answer is the same element and comes first.
+
+## Log
+
+- **0.1, 2026-10-06.** Written by Mia from the first two production notebooks: `78507190…` (review `f9d6fb1e` and its screenwalk) and `0ae51b4c…` (Episode 550's screenwalk reviews `d64a2fdf`, `6c3f477f`, `b2558ceb`, `6a2b5b59`, their videos, and one stored transcript). That day DeepDiver was fixed for the card-menu download, notebook creation, the "Websites" source panel, completion detection and card identity, and gained Reports, `notebook ask`, `studio open` and import-failure reporting. Two of four same-day videos could not be imported.
+- **0.1.1, 2026-10-07.** From the second notebook's video and downloads: Video Overview formats are Short and Explainer, and video takes far longer than other media; an open file picker blocks downloads, which DeepDiver now avoids and names.
+- **0.1.2, 2026-10-07.** The T6 lead, carrying notebook 0ae51b4c into Episode 550, found that the saved Interactive report was the notebook's first chat answer. Reports saved from a notebook with chat history before `miadisabelle/deepdiver` 9cefb64 hold a chat answer and must be saved again. A signed-out Chrome profile now fails with "Not signed in" instead of reporting zero cards.
+- **0.1.3, 2026-10-09.** On William's word, relayed by the Deep Diver seat: an episode keeps a notebook's media in `<episode>/captures/notebook-<notebook id>/` with `manifest.json` and `asked.md`, the shape Episode 550 set and the episode room serves. Deep Diver's open items are kept in Episode 251, `owner/open-261009.md`.
+
+- **0.2.0, 2026-10-09.** From the Episode 140 run, on William's word ("a skill that we give it the episode or the review … and the whole process starts"): `/deepdive` takes an episode, a review, or both and runs to the landing in the episode. Every DeepDiver launch had cloned the profile into a new folder that Google did not keep signed in, so each run needed a new sign-in; DeepDiver now keeps `~/.chrome-deepdiver` signed in once, and `chrome status` says whether it is (`miadisabelle/deepdiver` 5ef6f00, Episode 251 DD8; verified live that night: the folder William signed in to was moved into the home and relaunched signed in). The first run, Episode 140, kept its 31 MB video overview out of git and its video traveled re-encoded in `keep/` at 6.5 MB. `/trynow` counts as signed out.
+
+- **0.2.1, 2026-10-10.** From `/deepdive 120`, the command's first run by a seat that did not write it (findings F4 to F8): a review the episode lacks enters through the episode door, which writes its wheel node and edge (a hand edit left them out); the door's pinned `reviews:` version is never rewritten; the media's focus falls back to the episode's goal; each review's open inquiries are one question; one `notebooks:` shape for every episode; `studio download --keep` replaces the hand conversion, and its manifest records what is kept.
+
+- **0.2.2, 2026-10-15.** From the first pass started by "Ready for Deep Diver" (review 4346d23a, Episode 552, notebook 3eb56742): a notebook enters its episode through the notebook door (`chronicle_episode_notebook`), which puts its node and edge on the wheel; several episodes can hold one review, and the media goes to the one the review is about; a review with no questions to borrow gets two written by the seat; the saved report never embeds the media (checked in all four runs). DeepDiver now drives a notebook tab or a blank one, never a person's tab on another site (`miadisabelle/deepdiver` 9b40f6f).
+
+- **0.2.3, 2026-10-20.** From Episode 297's notebook 5a00e2d8, made by a fork of the episode's Mia seat: the infographic viewer's button is "Close infographic", which DeepDiver did not close. Left open after a generation, it covered the Studio panel, so the next Video Overview finished unseen and timed out after 1800 s, the next one never started, `studio report` found no Reports tile and `studio list` showed no cards. DeepDiver now closes any open artifact viewer, including on arriving at a notebook already open (`miadisabelle/deepdiver` 2a0e343). When a generation times out, run `studio list` before you regenerate. Also: give each artifact its audience, and record its exact instruction in `perspectives.md` beside `asked.md`, so the instruction can become a versioned prompt (William, take 261020080805).
+
+- **0.5.0, 2026-11-05.** On Guillaume's word, from the banner "You can now create Slides and Videos step-by-step": step 4a, the plan before the render (`miadisabelle/deepdiver` `studio outline`, `studio proceed`, `--review`, `--from-outline`). `/deepdive` keeps rendering by default until the person decides who sends a plan on (DD24 in miadi-chronicle://251). "Try it" on the banner posts "Help me create slides about this" into the notebook's chat, so do not press it in a notebook an episode holds.
+
+- **0.6.0, 2026-11-05.** On Guillaume's "that's good" to this direction, read by Mia as a go on D1 and D2 of jgwill/miadi-orchestration-kit#133: `/deepdive` stops every explainer and deck at its plan, with the seat's own checks (`scripts/plan-read.mjs`). The first trial, on the three plans of notebook `78507190`, sent all three to a person with low confidence, and read the video's producer notes as furthest from their brief. Its readings are in `captures/notebook-78507190-…/jev-trial-261105/` in miadi-chronicle://251.
+
+- **0.6.1, 2026-11-05.** A plan is an element on the wheel, `media-plan:<card uuid>`, on Guillaume's "I think the media plan name makes sense" (take 261105231653), read by Mia as the go.
+
+- **0.7.0, 2026-11-07.** From the Mino witness seat's brief, at William's request ("there might be nothing inside of a team right away that relate to these practices, and it's going to be really important that we do"): step 7, what a landing leaves the writers. Dry runs on the live door, nothing written: a chronicle commit answered 200 on Episodes 120, 297, 550, 566 and 567; a file address, `<card>#<n>`, `miadi-notebook:<uuid>`, `miadi-media-plan:<uuid>` and `jgwill/episodes@<sha>` answered 422; Episode 251, with no `threads.yaml`, answered 404; 501 characters of `what` answered 400. No seat has run this step yet.
+
+## Related
+
+- `screenwalk-presence` (plugin `miadi-witness`): what a seat says in a screenwalk, and what happens after the playback.
+- `miadi-review`: the review client, step 1 of the review process.
+- `miadisabelle/deepdiver` `docs/MIADI_FACTORY.md`: DeepDiver's place in the factory, its contract and open decisions.
+- Episode 550, *The Screenwalk as a Media Type*, and review `miadi-review:f9d6fb1e-75f4-4635-96d9-8f2d0bcff5eb`, where this use of Deep Diver was first discussed.

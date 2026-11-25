@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jinhong270/ai-agent (path: Xiao-Q/skills/okx-cex-trade/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when the user asks to 'buy BTC', 'sell ETH', 'place a limit order', 'place a market order', 'cancel my order', 'amend my order', 'long BTC perp', 'short ETH swap', 'open a position', 'close a posi

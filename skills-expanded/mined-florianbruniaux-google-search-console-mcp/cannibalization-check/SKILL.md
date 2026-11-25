@@ -1,0 +1,1 @@
+../../../.agents/skills/cannibalization-check/SKILL.md

@@ -1,0 +1,10 @@
+---
+name: tdd-react
+description: Provides the React testing reference for the tdd skill. Covers test layers, the Vitest projects (node, browser, storybook, storybook-dark), Storybook stories with attached `.test()` behaviors as component tests, vitest-browser-react hook tests, MSW, and Playwright patterns for the frontend package. Use when writing or reviewing tests under apps/web/ as part of a red-green-refactor loop, choosing a test layer, mocking HTTP, or testing a component, hook, or service.
+---
+
+# TDD for React (frontend package)
+
+The stack reference the generic `tdd` skill (`.claude/skills/tdd/SKILL.md`) points at for the React frontend. The red-green-refactor loop, the determinism roll-up, and the worthiness audit live in `tdd`; this skill holds only the React and Vitest specifics.
+
+Read `.claude/doctrine/testing.md` before choosing a test: it owns which test to write and at which layer. Then read [references/tests-react.md](references/tests-react.md) for how to write it, before writing the first red test.

@@ -1,0 +1,199 @@
+---
+name: jp-lit-research
+description: >-
+  日本語人文社会系文献調査スキル。jp-lit MCP サーバーを使って NDL・CiNii・J-STAGE・IRDB・JDCat・NIHU Bridge・国会会議録などを横断検索し、
+  書誌確認・所蔵調査・テーマ文献探索・古語表記ゆれ検索・デジコレ全文OCR・図版検索を行う。
+  「文献DBで調べて」「文献DBを始めます」など、文献DB という起動語を明示した文献調査依頼で使用する。
+  一度発火したらセッション中は継続して調査を進める。
+  SKIP: 「調べて」単体・API ドキュメント調査・Web 検索・一般的な質問への説明。
+---
+
+# 日本語文献調査スキル（jp-lit-research）
+
+この `SKILL.md` は短い司令塔である。詳細な DB 選択、検索語展開、証拠評価、cache/refine/export 操作は参照ファイルへ逃がし、毎回守る契約だけをここに残す。
+
+## 起動条件
+
+- ユーザーが「文献DBで調べて」「文献DBを始めます」など、文献DB の使用を明示した日本語文献・人文社会系調査で使う。
+- 一度発火したらセッション中は継続して調査を進める。以後の「同様に」「次は近代で」などの継続指示にもこの Skill を適用する。
+- 「調べて」単体、API ドキュメント調査、一般 Web 検索、一般的な説明だけの依頼では使わない。
+- `jp-lit-verification` Skill が対象にする文献実在性検証とは分ける。
+
+## 必ず守る
+
+- MCP は検索・取得に徹し、調査戦略・source 選択・検索語展開・典拠評価はこの Skill が担う。
+- 新しい調査を始めるときは `jp_lit_start_session` を先に呼び、返された `session_id` をその調査の stateful tool（検索・取得・照合・典拠補助・annotation・trace・export）へ毎回明示的に渡す。同じ調査では同じ ID を使い回し、独立した調査線では別の ID を使う。
+- jp-lit の `session_id` は調査ノートを指すアプリケーション側 ID であり、MCP 通信接続の `Mcp-Session-Id` ではない。`cache_key` は個々の保存結果を指し、この2つとも通信セッションとは分けて扱う。
+- 未知の文献・資料・調べ方を探索する調査では、実検索前にレファ協・NDL リサーチ・ナビを参考にして調査計画を立てる。
+- NDL リサーチ・ナビは API / MCP source ではなく Web 上の調べ方案内として扱う。原則として Web 検索で `site:ndlsearch.ndl.go.jp/rnavi <固有名詞または主題語>` を試し、固有名詞 query が不発なら `site:ndlsearch.ndl.go.jp/rnavi <調査類型> 調べ方` や `人物文献 伝記 探す`、`雑誌記事 探し方`、`新聞記事 探し方`、`日本文学 論文 調べ方` のように抽象化して探す。
+- レファ協・NDL リサーチ・ナビで固有名詞 query が不発なら、抽象度を上げた調べ方 query（例: `作家 逸話 調べ方`、`文学者 回想 逸話 資料`、`近代文学 人物調査`）を試し、そこで示唆された DB / 参考図書 / 索引を初手計画に反映する。
+- 人文系調査は無料オンライン資料だけで完結しないことが多い。レファ協・NDL リサーチ・ナビが参考図書、専門索引、年鑑、目録、事典、契約 DB、館内限定 DB、商用新聞 DB を示唆した場合は、計画と最終回答に `参考書誌確認` / `要有料DB確認` として積極的に残し、確認先と検索語案を出す。
+- レファ協・NDL リサーチ・ナビが参考図書・レファ本・事典・辞典・書誌・索引・年鑑を示唆した場合は、`ndl_reference_books` を明示指定し、紹介文・参考NDCで候補を選ぶ。候補一覧から所蔵・閲覧可否を推定せず、detail後に `cinii_books`、カーリル、各館 OPAC で別確認する。
+- 新規テーマの実検索では、検索前に `reference/02-source-and-query.md` または `heuristics/source-selection.md` の初動 source 選択ルールを確認する。
+- 新規テーマの実検索初手は、原則として `ndl_search` と `japan_search` を両方使う。レファ協・NDL リサーチ・ナビやドメイン判定で有効な DB / source が示唆された場合は、その source も初手に加える。
+- `source` 未指定のラウンドロビン検索は、8 source を同じ query で比較する強い理由がある場合だけ使い、使う理由を trace と回答に残す。
+- 新規テーマでは検索前に短い調査方針を提示し、ユーザー確認後に検索する。継続指示では既定方針を 1〜2 文で宣言して検索を続けてよい。
+- 1 回の検索で終えず、結果を見て次の query / source / 深掘り可否を決める。
+- 初見分野の用語・人・場・原典への入口を求める依頼では `workflows/field-orientation.md` を読む。既存の見取り図がある継続調査は、その記録と未確認事項を引き継ぐ。
+- 生の検索結果、OCR payload、`raw` JSON を会話へ大量に貼らない。cache / session を原本とし、会話には要点と判断を残す。
+- cache は検索結果・取得 payload の保管場所であり、調査報告そのものではない。
+- 調査トレース報告 / handoff report は、主エージェントが統合判断するための人間可読な調査報告として扱う。低レベル trace とは分ける。
+- 調査目的、source 選択理由、検索試行、採用/保留/除外理由、本文確認範囲、未確認事項、次アクションは `jp_lit_update_session_trace` と `jp_lit_annotate_session.trace` に残す。
+- 取得失敗・アクセス停止・`source_errors` を含む部分成功では、[失敗時の手順](heuristics/failure-modes.md#取得失敗アクセス停止時の手順)を読む。経路・観測日時・応答・判断根拠・未確認範囲・次の行動を残し、検索entryがない場合は同じsessionの `open_questions` / `next_actions` に保存する。
+- 過去調査の棚卸し・一覧・再開候補確認では `jp_lit_list_sessions` を使う。主題・タイトル・メモなど明確な検索語がある場合は `jp_lit_find_sessions` を使う。
+- 独立した調査線が複数ある場合は、サブエージェント分担をデフォルト寄りに検討する。各担当は担当範囲・検索ログ・採否理由・未確認事項を trace に残し、主エージェントへ調査トレース報告 / handoff report を返す。サブエージェント使用時は handoff report を受け取るまで完了扱いにしない。
+- 長期調査では、compaction や後日再開に備えて rolling checkpoint を作る。主エージェントが統合判断を持ち続け、サブエージェントや sequential 担当単位は検索・候補整理・ノイズ判定の report を返す。
+- 地方公共図書館ルートでカーリル図書館MCPを使う場合、Cursor / Claude Code / Codex では、ユーザーがカーリル図書館MCPを登録し初回 OAuth 認可済みなら同一エージェントから `search_libraries` / `search_books` を使える。Codex では `codex mcp add calil --url https://mcp-beta.calil.jp/mcp` と `codex mcp login calil` による直結を通常ルートにする。接続できない場合は MCP / OAuth 設定を直し、必要に応じて各館 OPAC、新聞・雑誌所蔵一覧、図書館レファレンス相談を次アクションに残す。
+- 最終回答には `検索概要`、`今回の確認範囲`、`調査ログ` を置く。短い回答でも圧縮して残す。
+- `調査ログ` では各検索の `total`、`取得件数`、`抽出件数` を分ける。
+- 検索しなかった場合も `調査ログ: 今回は検索なし（理由: ...）` と明示する。
+- `availability.online=true`、PDF / HTML / デジコレリンク、オンライン入口の発見を本文読了と混同しない。
+- 文献リストでは、候補確度、確認範囲、本文状態を分けて書く。
+- 単独の `確認済み` を文献リストの主要ラベルとして使わない。必要な場合は `候補確度: 書誌確認済み`、`確認: 本文`、`本文: 確認済み` のようにレイヤーを明示する。
+- 検索結果だけで本文・要旨・目次のいずれも確認できていない候補は、`検索ヒットのみ / 関連性未確定` として保留に置く。
+- 本文未読の候補を、本文を読んだように要約・分類・位置づけしない。
+- 自費出版・個人出版支援・オンデマンド出版系の資料は、論点一致だけで `優先: 高` にしない。媒体評価と専門的受容を確認する。
+- 学会誌・研究会誌・紀要・専門誌の書評は、一般レビューではなく専門的受容・批判の資料として扱い、機械的に落とさない。
+- Web は補助確認に限る。ただし NDL リサーチ・ナビ確認は調査前情報収集の一部として原則実行する。文献DBを主経路とし、Web由来情報をDB書誌・要旨・目次・本文確認と混同しない。
+- 刊行直後の反応、論争、イベント、未発表資料への言及が調査の発端として有効な場合は、既存Web補助確認の速報Web分岐として `reference/04-ephemeral-web-discovery.md` を読む。投稿は確証にせず、同じ `session_id` に発見経路を残して正式 source で裏取りする。
+- デジコレ公式画面のブラウザ操作は既定では行わない。公式画面の確認が調査範囲に有効なら、調査計画の提示時に未ログイン検索を実行してよいか確認する。
+- ログイン済み Chrome の利用は未ログイン検索とは別の権限とする。ただし「ログイン済みタブがあるから見て」など利用者が明示的に許可済みなら再確認しない。内蔵 Browser から Chrome へ、または未ログイン検索からログイン済み閲覧へ無断で切り替えない。
+- 許可済みのデジコレ公式画面で得た候補は会話内の別一覧で終わらせず、`jp_lit_record_ndl_browser_search` で API 検索と同じ `session_id` に保存し、`jp_lit_refine_results(session_id=...)` で統合する。権限・状態・`result_refs`・annotation/export の詳細は `workflows/fulltext-page-lookup.md` を読む。
+- デジコレ本体の網羅性を確認するかどうかは MCP の検索件数で決めない。許可を得て公式画面を確認した場合も、MCP の次世代デジタルライブラリー API 範囲と公式画面範囲を分けて報告する。
+- 選別済みの `ndl_digital` 候補は、OCR・閲覧経路・ブラウザ確認を判断する前に詳細化する。デジコレ PID が既知なら title を再検索しない。`pids` は1〜10件を受け付けるが、1件なら `jp_lit_get_record` の `pid`、2〜10件なら `jp_lit_get_records` の `pids` で現在の `manual_viewing` と `next_digital_library.available` を確認する。PID一覧全件の自動詳細化はしない。
+
+## 本文確認ラベル
+
+候補ごとに `確認:` と `本文:` を併記する。候補の書誌・関連性の確からしさが必要な場合は、本文状態とは別に `候補確度:` を付ける。
+
+候補ごとに本文状態を次のどれかで示す。
+
+- `本文: 未確認`
+- `本文: オンライン入口あり未読`
+- `本文: オンライン入口なし`
+- `本文: アクセス制限`
+- `本文: 確認済み`
+
+`本文: 確認済み` は、エージェントが本文または該当箇所を読んだ場合だけ使う。
+
+候補確度ラベル:
+
+- `候補確度: 書誌確認済み`
+- `候補確度: 有力候補`
+- `候補確度: 弱い候補`
+- `候補確度: 関連性未確定`
+
+`候補確度: 書誌確認済み` は本文読了を意味しない。検索ヒットのみの場合は `確認: 検索ヒットのみ` とし、関連性未確定であることを同じ項目に書く。
+
+## 最小ワークフロー
+
+1. 依頼を intent に分類する。
+2. `jp_lit_start_session` で調査用 `session_id` を発行する。同じ調査の継続なら既存IDを引き継ぐ。
+3. 原則として、レファ協・NDL リサーチ・ナビを参考に調査前情報収集を行う。レファ協toolには同じ `session_id` を渡す。NDL リサーチ・ナビは Web 検索で探し、固有名詞 query が不発なら抽象度を上げた調べ方 query を試す。
+4. `ndl_search` + `japan_search` + 調査前情報収集で示唆された source を初手実行 source として、検索語の初期案を作る。
+5. 新規テーマでは検索方針を提示し、確認を取る。
+6. 同じ `session_id` を明示して最小限の source / query で検索する。
+7. 結果を読み、次の一手を決める。
+8. 必要なら同じ `session_id` で query / source を変えて再検索する。
+9. 候補、保留、除外、確認範囲、調査ログを整理して返す。
+
+## intent 分類
+
+| intent | 典型的な依頼 | 詳細 |
+| --- | --- | --- |
+| `bibliography_lookup` | 書誌・所蔵・初出を確認したい | `workflows/bibliography-lookup.md` |
+| `topic_literature_review` | 主題に関する文献リストが欲しい | `workflows/topic-literature-review.md` |
+| `historical_term_search` | 旧字・異体字・時代語で探したい | `workflows/historical-term-search.md` |
+| `fulltext_page_lookup` | 本文中の語・該当ページを探したい | `workflows/fulltext-page-lookup.md` |
+| `image_illustration_search` | 図版・挿絵・画像を探したい | `workflows/image-illustration-search.md` |
+| `research_guide` | 調べ方や使う DB を知りたい | `workflows/research-guide-lookup.md` |
+
+複数 intent が混在する場合は、まず `bibliography_lookup`、次に `topic_literature_review` を処理する。依頼が曖昧で source・資料種別・時代が決められない場合は検索前に短く確認する。
+
+## 参照ファイル
+
+- `reference/01-core-workflow.md`: 対話的な探索ループ、計画提示、継続調査、cache/session/refine/export の基本。
+- `reference/02-source-and-query.md`: source 選択、検索語展開、ページング、典拠・分類からの語彙展開。
+- `reference/03-evidence-and-output.md`: 証拠評価、候補表示、本文確認ラベル、調査ログ、trace、出力詳細。
+- `reference/04-ephemeral-web-discovery.md`: 速報性が高く消えやすいWeb投稿を調査の発端として記録し、正式 source の確認へつなぐ場合。
+- [workflows/field-orientation.md](workflows/field-orientation.md): `research_guide` / `topic_literature_review` で、初見分野の見取り図と次の読書候補を作る場合。
+- `heuristics/source-selection.md`: DB 選択で迷う場合。
+- `heuristics/query-expansion.md`: 表記ゆれ、旧字、異体字、古語が重要な場合。
+- `heuristics/evidence-grading.md`: 文献価値や根拠の強さを評価する場合。
+- `heuristics/failure-modes.md`: 取得失敗・アクセス停止の経路判断と保存例、0 件、ノイズ過多、本文未確認、所蔵確認不成立の対処。
+- `heuristics/db-characteristics.md`: DB の特性説明が必要な場合。
+- `heuristics/clarifying-questions.md`: 検索前確認や曖昧さ解消が必要な場合。
+- `workflows/`: intent ごとの詳細手順が必要な場合。
+- `reference/regional-public-library-research.md`: 地方人物・地方紙・地方雑誌・郷土資料で、地域公共図書館とカーリル図書館MCPを使う場合。
+- `scripts/plan-regional-library-search.mjs`: 地域候補とカーリル MCP 用検索計画を JSON で整理したい場合。カーリルは直接呼ばず、`search_libraries` / `search_books` に渡す候補を整理する。
+
+既存結果の再整理、並べ替え、差分、export、annotation を求められたら、`reference/01-core-workflow.md` と関連 tool 説明を読む。
+
+## 標準出力テンプレート
+
+```md
+## 検索概要
+
+- 検索回数:
+- 使用 source:
+- 検索語:
+- 取得件数:
+- 表示件数:
+- 選別基準:
+
+## 主要候補
+
+1. 書誌
+   - 種別:
+   - source:
+   - 確認:
+   - 本文:
+   - 優先:
+   - 根拠:
+   - 仮整理:
+   - 次:
+
+## 保留・弱い除外候補
+
+## 除外した代表例
+
+## 参考書誌・有料DBの次アクション
+
+## 今回の確認範囲
+
+## 調査ログ
+
+| # | source | query | total | 取得件数 | 抽出件数 | 備考 |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+```
+
+候補が少ない場合でも、`保留・弱い除外候補` は `なし（理由: ...）` と書く。明確な除外がない場合は `除外した代表例: なし / 未点検` と状態を示す。
+レファ協・リサーチ・ナビで参考図書・専門索引・有料 DB が示唆された場合は、`参考書誌・有料DBの次アクション` に確認先・検索語案・今回未確認であることを残す。該当がない場合は `なし（今回の調査前情報収集では示唆なし）` と書く。
+
+## 調査方法の保存
+
+`jp_lit_search.search_context` で送信条件・ignored入力・source別件数を確認する。調査方法の保存依頼には `jp_lit_export_session(session_id=SID, profile="methods", format="markdown")` を使い、JSONも選べる。記録単位は検索条件ごとの最新entry。旧contextは未記録のまま扱い、横断totalの重複可能性・全実行履歴未保証・本文確認との区別を説明する。`agent_annotations` は申告として機械観測と分ける。
+
+## 最終回答前チェック
+
+- `検索概要` があるか。
+- `今回の確認範囲` があるか。
+- `調査ログ` があるか。
+- 各検索の `total` / `取得件数` / `抽出件数` を分けたか。
+- 取得失敗・停止がある場合、正常0件と件数不明を分け、試した経路・観測日時・応答・判断根拠・未確認範囲・次の行動を報告し、同じsessionへ保存したか。
+- source 選択・検索試行・採否理由・未確認事項を session trace に残したか。
+- stateful tool の全呼び出しに対象調査の `session_id` を明示したか。
+- サブエージェント使用時は handoff report を受け取り、必要なら cache / session trace へ戻って確認したか。
+- 自費出版系の候補を主題一致だけで高優先にしていないか。
+- 中心文献に対する学術書評・専門誌書評・批判・応答を探したか。
+- レファ協・リサーチ・ナビで示唆された参考図書・専門索引・有料 DB を、無料オンライン確認範囲と分けて `参考書誌・有料DBの次アクション` に出したか。
+- Web を主経路化せず、Web補助確認として根拠を分けたか。
+- 速報Web投稿を使った場合、`agent_web` / `ephemeral` の発見記録と正式 source の確認結果を分けたか。
+- NDL リサーチ・ナビを Web 検索で確認し、見つからなかった場合も `調査ログ` に query と結果を残したか。
+- 検索しなかった場合に `調査ログ: 今回は検索なし（理由: ...）` と書いたか。
+- `availability.online=true` やリンク確認を `本文: 確認済み` と混同していないか。
+- 文献リストの主要ラベルとして単独の `確認済み` を使っていないか。
+- 検索ヒットのみの候補を関連文献や本文確認済み資料として扱っていないか。
+- 本文未読の候補を本文読解済みのように要約していないか。
+- デジコレ公式画面を使った場合、許可範囲、ログイン状態、検索範囲を MCP の結果と分けて記録したか。
+- 詳細判断が必要な箇所で適切な reference / heuristics / workflows を読んだか。

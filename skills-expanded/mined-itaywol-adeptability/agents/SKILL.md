@@ -1,0 +1,1 @@
+../../.adeptability/staging/skills/agents/SKILL.md

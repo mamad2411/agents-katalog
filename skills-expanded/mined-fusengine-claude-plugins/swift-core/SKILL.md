@@ -1,0 +1,99 @@
+---
+name: swift-core
+description: Use when implementing Swift 6 fundamentals — concurrency, architecture, testing, i18n, or performance — across any Apple platform.
+versions:
+  swift: 6.4.2
+  ios: 27.2
+user-invocable: false
+references: references/concurrency.md, references/architecture.md, references/testing.md, references/i18n.md, references/performance.md, references/swift-6-4.md, references/sdk-27-changes.md
+related-skills: swiftui-core, solid-swift, ios, macos, ipados, watchos, visionos
+---
+
+<objective>
+Covers Swift 6 language and platform fundamentals shared across iOS, macOS, iPadOS, watchOS, and visionOS: async/await and actors with strict concurrency checking, Sendable typing, app architecture (MVVM with @Observable as the recommended default, Clean Architecture for complex apps), testing with Swift Testing first (XCTest as the legacy path), String Catalog-based localization, and performance profiling with Instruments.
+
+References cover each area in depth: concurrency, architecture/DI, testing, i18n, and performance.
+
+Best practices: prefer actors over classes with locks for shared state, @Observable over ObservableObject, structured concurrency over completion handlers, String Catalogs for all user-facing text, profiling in Release (-O) builds, and value types (structs) over classes where possible.
+</objective>
+
+# Swift Core
+
+Swift 6 fundamentals shared across all Apple platforms.
+
+## Agent Workflow (MANDATORY)
+
+Before ANY implementation, spawn 3 agents in parallel, one `Agent` call each with a `name`:
+
+1. **fuse-ai-pilot:explore-codebase** - Analyze existing Swift patterns
+2. **fuse-ai-pilot:research-expert** - Verify latest Swift 6 docs via Context7/Exa
+3. **mcp__apple-docs__search_apple_docs** - Check Swift concurrency patterns
+
+After implementation, run **fuse-ai-pilot:sniper** for validation.
+
+---
+
+## Overview
+
+### When to Use
+
+- Implementing async/await, actors, Sendable
+- Designing app architecture (MVVM, Clean Architecture)
+- Writing tests with Swift Testing (XCTest only for legacy and UI tests on Xcode 27.2 and earlier)
+- Localizing with String Catalogs
+- Profiling with Instruments
+
+### Why Swift Core
+
+| Feature | Benefit |
+|---------|---------|
+| Actors | Thread-safe shared state without locks |
+| @Observable | Simple reactive state (replaces ObservableObject) |
+| String Catalogs | Automatic localization with Xcode 15+ |
+| Instruments | Built-in performance profiling |
+
+---
+
+## Key Concepts
+
+### Concurrency (Swift 6)
+Modern async/await with strict concurrency checking. Actors provide thread-safe state, Sendable marks safe types.
+
+### Architecture
+MVVM with @Observable is the recommended pattern. Clean Architecture for complex apps with domain separation.
+
+### Testing
+Swift Testing first: `@Test`, `#expect` / `#require`, exit tests (macOS only among Apple platforms), attachments, `Issue.record(severity:)`, `Test.cancel()`. UI tests in Swift Testing arrive with Xcode 27.3 (beta); XCTest stays the legacy and UI-test path on 27.2. Details in testing.md.
+
+### Internationalization
+String Catalogs are mandatory. All user-facing text must be localized.
+
+### Performance
+Profile with Instruments. Use lazy loading, avoid heavy work in view body.
+
+---
+
+## Reference Guide
+
+| Need | Reference |
+|------|-----------|
+| Async/await, actors, Sendable | [concurrency.md](references/concurrency.md) |
+| MVVM, Clean Architecture, DI | [architecture.md](references/architecture.md) |
+| Swift Testing, exit tests, attachments, XCTest legacy, UI tests | [testing.md](references/testing.md) |
+| String Catalogs, localization | [i18n.md](references/i18n.md) |
+| Instruments, optimization | [performance.md](references/performance.md) |
+| Swift 6.4.x: Swift Build/SwiftPM, Subprocess 1.0, language additions | [swift-6-4.md](references/swift-6-4.md) |
+| Xcode/OS 27.0-27.2 (current) + 27.3 beta: breaking changes, deprecations, release notes | [sdk-27-changes.md](references/sdk-27-changes.md) |
+
+---
+
+## Best Practices
+
+1. **Actors for shared state** - Prefer actors over classes with locks
+2. **@Observable over ObservableObject** - Simpler, better performance
+3. **Structured concurrency** - async/await, no completion handlers
+4. **String Catalogs** - ALL user-facing text must be localized
+5. **Profile in Release** - Always profile with `-O` optimization
+6. **Value types** - Prefer structs over classes
+7. **Swift Testing first** - New tests use `@Test` / `#expect`; XCTest only for legacy and, until Xcode 27.3 ships, UI tests
+8. **Swift 6.2 defaults** - Decide default MainActor isolation and approachable concurrency per target (`SWIFT_DEFAULT_ACTOR_ISOLATION`, `SWIFT_APPROACHABLE_CONCURRENCY`), see concurrency.md

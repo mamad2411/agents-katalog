@@ -1,0 +1,134 @@
+---
+name: spine-intake
+description: "Collects PaperSpine workflow options and writes config for flash/pro, scene, language, and inputs. (internal /paperspine step)"
+---
+
+
+<!--ACAT-ADAPTED: 资产回填自 WUBING2023/PaperSpine@1fe46f0e76aa（单技能拆分重组编排）。溯源见 references/UPSTREAM.md。2026-09-09 专项治理。-->
+# PaperSpine Intake
+
+Use this skill before substantive PaperSpine work when the workflow is not yet
+configured.
+
+## Required Output
+
+Create:
+
+- `paper_rewriting_output/paper_spine_config.json`
+- `paper_rewriting_output/paper_spine_config.md`
+
+The JSON must contain:
+
+```json
+{
+  "workflow": "rewrite_existing",
+  "scene": "journal",
+  "tier": "flash",
+  "output_language": "en",
+  "target_name": "",
+  "materials_dir": "",
+  "draft_path": "",
+  "user_motivation": "",
+  "official_urls": [],
+  "special_requirements": [],
+  "word_output": "none",
+  "translation_package": "none",
+  "reference_mode": "local_first",
+  "reference_paths": ["."],
+  "citation_target_count": 20,
+  "humanize_tier": "medium"
+}
+```
+
+Allowed values:
+
+- `workflow`: `rewrite_existing`, `build_from_materials`
+- `scene`: `journal`, `conference`, `report_review`, `competition`
+- `tier`: `flash`, `pro`
+- `output_language`: `en`, `zh`
+- `word_output`: `none`, `docx`
+- `translation_package`: `none`, `zh`; use `zh` only when
+  `output_language` is `en`
+- `reference_mode`: `local_first`, `specified_paths`, `web`
+- `reference_paths`: local folders/files to index for references; default `.`
+- `citation_target_count`: final intended citation count; default `20`
+- `humanize_tier`: `none`, `light`, `medium`, `heavy`; default `medium`;
+  consumed by `spine-rewrite`, `spine-build`, and `spine-humanize`
+
+## Interaction Rules
+
+The command-line wizard is the supported interactive UI. When a real terminal
+is available, route through `spine-config-ui` and use the bundled external
+terminal wizard; do not downgrade to asking the user to hand-write JSON or type
+every option in chat.
+
+One launch of the wizard fulfills both roles at once: it opens the interactive
+window (the `spine-config-ui` responsibility) and collects + writes the config
+files (the `spine-intake` responsibility). Run the wizard once — do not invoke
+`spine-config-ui` and `spine-intake` as two separate wizard runs.
+
+Do not run the intake wizard directly from a hidden agent tool execution
+surface: stdin may not be connected and the command can hang. The UI is a real
+terminal TUI with Up/Down option switching, Left/Right field switching, Enter
+edit/confirm, and `S` save. When configuration is missing, launch the wizard
+automatically. If needed, run the launcher by its absolute path inside the
+repository checkout (never a path relative to the project directory):
+
+```powershell
+# Resolve the launcher from the repository checkout. Run commands from the
+# user's project folder, where `scripts/` does not exist, so a relative path is
+# the most common reason the UI window never opens.
+$repo = git rev-parse --show-toplevel
+$launcher = Join-Path $repo "academic-toolkit/skills/spine-intake/scripts/launch_paperspine_ui.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher -OutputDir paper_rewriting_output
+```
+
+This opens a separate interactive PowerShell window. For a user-run terminal,
+this direct command is also supported:
+
+```bash
+WIZARD="$(git rev-parse --show-toplevel)/academic-toolkit/skills/spine-intake/scripts/intake_wizard.py"
+python "$WIZARD" --output-dir paper_rewriting_output
+```
+
+The wizard provides arrow-key menus in a real terminal, falls back to numbered
+menus when needed, shows descriptions for each option, runs a final review
+screen and edit loop, and writes both JSON and Markdown config.
+
+Use native structured questions only if the current execution environment can
+provide them reliably. If neither terminal execution nor native questions are
+available, then and only then ask the user to answer with the fallback template.
+
+Read `references/interactive-intake.md` for the exact question order and
+fallback template.
+
+## Defaults
+
+- `journal` and `conference` default to `en`.
+- Chinese course, Chinese competition, and explicit Chinese writing requests
+  default to `zh`.
+- If the user has a draft, choose `rewrite_existing`.
+- If the user has a folder of experiment settings, results, figures, notes,
+  PDFs, Word files, or reports, choose `build_from_materials`.
+- If the user does not choose tier, default to `flash`.
+- If the user does not request Word output, default `word_output` to `none`.
+- If the paper is English, offer `translation_package: zh` as an optional
+  Chinese reading package for intermediate artifacts and final structure.
+- Default `reference_mode` to `local_first`.
+- Default `reference_paths` to `["."]` unless the user provides paths.
+- Default `citation_target_count` to `20`.
+
+## Global UI Language
+
+On first setup, or when the user asks to change PaperSpine interface language,
+run the wizard in global setup mode:
+
+```bash
+WIZARD="$(git rev-parse --show-toplevel)/academic-toolkit/skills/spine-intake/scripts/intake_wizard.py"
+python "$WIZARD" --setup-global --output-dir paper_rewriting_output
+```
+
+Use the wizard's terminal UI for all config fields. Prefer the arrow-key UI in a
+real terminal; use numbered command-line menus as fallback. Avoid asking the
+user to manually type JSON/options unless terminal execution is impossible.
+

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hk-vk/skills (path: registry/usetoast/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: useToast documentation and resources. Use this skill when working with useToast or when the user mentions usetoast.

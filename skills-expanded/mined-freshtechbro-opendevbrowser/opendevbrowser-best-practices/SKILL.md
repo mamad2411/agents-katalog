@@ -1,0 +1,490 @@
+---
+name: opendevbrowser-best-practices
+description: This skill should be used when the user asks to design or run OpenDevBrowser provider workflows, scraping pipelines, QA/debug automation, parity checks across modes, or resilient browser operations with codified scripts and artifacts.
+version: 2.6.0
+---
+
+# OpenDevBrowser Best Practices
+
+This is the primary battery pack for OpenDevBrowser operations.
+
+Use this skill when you need:
+- provider-oriented workflows (`web`, `community`, `social`),
+- script-first runbooks,
+- parity across `managed`, `extension`, `cdpConnect`,
+- diagnostics for QA/debug (`console`, `network`, trace context),
+- safe write flows with explicit policy notice.
+
+For frontend, design-system, screenshot-to-code, or `/canvas` composition tasks, load `opendevbrowser-design-agent` immediately after this pack so the work is design-contract-first instead of operations-only.
+
+## Pack Contents
+
+- `artifacts/provider-workflows.md` - canonical provider execution flows.
+- `artifacts/parity-gates.md` - mode/surface parity matrix and acceptance gates.
+- `artifacts/debug-trace-playbook.md` - diagnostics workflow and trace bundle model.
+- `artifacts/fingerprint-tiers.md` - hardening tiers and when to use each.
+- `artifacts/macro-workflows.md` - macro design and expansion standards.
+- `artifacts/browser-agent-known-issues-matrix.md` - known browser-agent failure modes mapped to required controls.
+- `artifacts/command-channel-reference.md` - CLI/tool/`/ops`/`/canvas`/`/cdp` surface map plus cross-agent skill-sync targets.
+- `artifacts/canvas-governance-playbook.md` - `/canvas` preflight, blocker, and feedback-evaluation guidance.
+- `artifacts/skill-runtime-surface-matrix.md` - canonical skill-pack and runtime-family inventory for real-task audits.
+- `assets/templates/mode-flag-matrix.json` - mode + flag verification template.
+- `assets/templates/ops-request-envelope.json` - `/ops` request envelope template.
+- `assets/templates/cdp-forward-envelope.json` - `/cdp` relay envelope template.
+- `assets/templates/robustness-checklist.json` - shared issue-status checklist for workflow robustness audits.
+- `assets/templates/surface-audit-checklist.json` - docs/surface audit checklist template.
+- `assets/templates/skill-runtime-pack-matrix.json` - machine-readable canonical skill/runtime matrix for the audit runner.
+- `assets/templates/canvas-handshake-example.json` - canonical `/canvas` handshake example.
+- `assets/templates/canvas-generation-plan.v1.json` - required `canvas.plan.set` request skeleton.
+- `assets/templates/canvas-feedback-eval.json` - target-attributed feedback evaluation checklist.
+- `assets/templates/canvas-blocker-checklist.json` - machine-readable blocker and warning audit map.
+- `scripts/odb-workflow.sh` - prints codified command sequences by workflow.
+- `scripts/run-robustness-audit.sh` - validates workflow skill coverage against known issue IDs.
+- `scripts/validate-skill-assets.sh` - validates required artifacts/templates.
+
+## Quick Start
+
+1. Validate the skill pack:
+
+```bash
+./skills/opendevbrowser-best-practices/scripts/validate-skill-assets.sh
+```
+
+2. Pick a workflow:
+
+```bash
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh provider-crawl
+```
+
+3. Execute the printed sequence with session-specific values.
+
+4. Surface full controls directly from CLI help when auditing runtime accessibility:
+
+```bash
+npx opendevbrowser --help
+npx opendevbrowser help
+```
+
+5. Run robustness coverage checks across workflow skills:
+
+```bash
+./skills/opendevbrowser-best-practices/scripts/run-robustness-audit.sh
+```
+
+6. Pair with the dedicated design pack for frontend work:
+
+```bash
+./skills/opendevbrowser-design-agent/scripts/validate-skill-assets.sh
+./skills/opendevbrowser-design-agent/scripts/design-workflow.sh contract-first
+```
+
+## Help-Led Surface Discovery
+
+Start every surface audit with generated help so the capability map reflects the currently shipped runtime:
+
+- `screencast / browser replay`: `screencast-start`, `screencast-stop`
+- `desktop observation`: `desktop-status`, `desktop-windows`, `desktop-active-window`, `desktop-capture-desktop`, `desktop-capture-window`, `desktop-accessibility-snapshot`
+- Desktop-assisted browser review: `review-desktop`
+- `computer use / browser-scoped computer use`: `--challenge-automation-mode off|browser|browser_with_helper`, `status-capabilities`, `session-inspector-plan`, `session-inspector-audit`, plus manager-owned `review`, `session-inspector`, and workflow fallback metadata
+
+Boundary rules:
+- desktop observation is public and read-only
+- the optional helper remains browser-scoped and is not a desktop agent
+- generated help, `docs/CLI.md`, and `docs/SURFACE_REFERENCE.md` must stay aligned whenever this wording changes
+
+## Validated Capability Lanes
+
+Load this section directly with:
+
+```text
+opendevbrowser_skill_load opendevbrowser-best-practices "validated capability lanes"
+```
+
+Current validated lanes:
+
+Routine artifact-bearing workflow runs should omit `--output-dir`; inspect the returned `artifact_path` first, then `.opendevbrowser/<namespace>/<runId>` for research, shopping, inspiredesign, or product-video artifacts before publishing claims. If a wrapper requires an explicit workflow root, use `--output-dir .opendevbrowser`; the runtime appends `<namespace>/<runId>`. Browser evidence omitted outputs use `.opendevbrowser/screenshot/<uuid>/capture.png` for screenshots and `.opendevbrowser/screencast/<uuid>` for browser replay, while explicit caller paths remain caller-controlled.
+
+1. Public-first YouTube transcript retrieval.
+
+```bash
+node scripts/youtube-transcript-live-probe.mjs --url "https://www.youtube.com/watch?v=aircAruvnKk" --youtube-mode auto --out artifacts/capability-fix/youtube-transcript-auto.json
+```
+
+Rules:
+- keep transcript runs public-first
+- browser-assisted transcript fallback is opt-in only
+- if browser fallback is enabled, use an isolated automation profile instead of a daily logged-in Google profile
+
+2. Evidence-gated research primitive with explicit public source families.
+
+```bash
+npx opendevbrowser research run --topic "Chrome extension debugging workflows" --days 30 --sources web,community --browser-mode managed --mode json --output-format json
+```
+
+Rules:
+- load `opendevbrowser-research` before research tasks so planning, evidence review, confidence, and limitations stay skill-guided
+- treat `research run` as provider-constrained and low-level; inspect `summary.md`, `report.md`, `records.json`, `context.json`, `meta.json`, and `bundle-manifest.json` before publishing claims
+- use `--source-selection` only to explain selector semantics; use explicit `--sources web,community` for public topical examples
+- add shopping only with `--source-selection shopping` or explicit `--sources ...shopping...` when the task is deliberately commercial
+- `--source-selection auto` resolves to public-first `web,community`; use `all`, `social`, or explicit social sources only when social evidence is intentional
+
+3. Deterministic shopping reruns with explicit providers.
+
+```bash
+npx opendevbrowser shopping run --query "wireless ergonomic mouse" --providers shopping/bestbuy,shopping/ebay --budget 150 --browser-mode managed --use-cookies --challenge-automation-mode browser_with_helper --mode json --output-format json
+npx opendevbrowser shopping run --query "27 inch 4k monitor" --providers shopping/bestbuy,shopping/ebay --budget 350 --sort lowest_price --browser-mode managed --use-cookies --challenge-automation-mode browser_with_helper --mode json --output-format json
+npx opendevbrowser shopping run --query "wireless earbuds" --providers shopping/amazon --region us --browser-mode managed --use-cookies --challenge-automation-mode browser_with_helper --mode json --output-format json
+```
+
+Rules:
+- use explicit providers plus `--browser-mode managed` for the most reproducible reruns
+- inspect `buyingReadiness.status`; transport success and emitted offers are not enough for buying guidance when readiness is `partial` or `fail`
+- treat `--region` as advisory unless `meta.selection.region_authoritative=true`
+- inspect `meta.primaryConstraintSummary` first on no-offer runs
+- if `meta.primaryConstraint.guidance` is present, follow `meta.primaryConstraint.guidance.reason` and `meta.primaryConstraint.guidance.recommendedNextCommands[]`
+- if guidance is absent, inspect `meta.offerFilterDiagnostics` before calling a no-offer run a provider outage
+
+4. Design-contract synthesis with repeated public references.
+
+```bash
+npx opendevbrowser inspiredesign run --brief "Design a premium docs workspace" --url "https://example.com/reference-a" --url "https://example.com/reference-b" --browser-mode managed --use-cookies --challenge-automation-mode browser_with_helper --include-prototype-guidance --mode json --output-format json
+npx opendevbrowser inspiredesign harvest --brief "Design a premium docs workspace" --query "best docs product landing pages" --provider web/default --max-references 5 --visual-evidence required --browser-mode managed --mode path --output-format json
+npx opendevbrowser inspiredesign harvest --brief "Premium digital photography studio landing page" --query "Pinterest premium digital photography studio landing page cinematic parallax portfolio" --provider social/pinterest --max-references 5 --visual-evidence required --browser-mode managed --profile pinterest-design --use-cookies --cookie-policy required --challenge-automation-mode browser_with_helper --mode json --output-format json
+npx opendevbrowser inspiredesign harvest --brief "Premium digital photography studio landing page" --provider social/pinterest --url "https://www.pinterest.com/pin/<pin-id>/" --max-references 1 --visual-evidence required --browser-mode managed --profile pinterest-design --use-cookies --cookie-policy required --challenge-automation-mode browser_with_helper --mode json --output-format json
+```
+
+Rules:
+- keep inspiredesign references public-first; explicit-url `inspiredesign run --url ...` uses deep capture for DOM/layout evidence, while Pinterest harvest/recovery commands keep `captureMode=off` for byte-backed pin-media extraction; `--visual-evidence required` controls screenshot evidence when the selected strategy explicitly calls for screenshots and does not enable deep capture for canonical pin-media harvest
+- use repeated `--url` flags instead of packed URL strings
+- provide `--query` or at least one `--url` for `inspiredesign harvest`; use `--query` when provider discovery is part of the task
+- use `inspiredesign harvest` when visual reference discovery, screenshot PNG artifacts, ranked references, metadata-only visual JSON, deterministic `media-analysis.json`, `meta-prompt.md`, or motion-design follow-through is required
+- treat `social/pinterest` as a browser-native site recipe, not a default full social provider; default Pinterest harvest applies extension auth only when `extensionAuthReady` is current and the caller has not set incompatible auth transport or cookie settings; explicit `browserMode`, `profile`, `useCookies`, `cookiePolicyOverride`, or `challengeAutomationMode` values other than `browser_with_helper` opt out, while explicit `challengeAutomationMode=browser_with_helper` is compatible and may merge with the implicit extension, cookies, and required cookie policy defaults; for managed recovery, use a dedicated headed profile with `--profile <name>`, cookies, and `--cookie-policy required`; use registry-backed explicit CDP profiles through `cdp-profile start` plus `connect --profile` for browser/session primitives until provider workflows expose an explicit-CDP transport selector
+- for multi-pin Pinterest design harvests, run query discovery with `--query ... --provider social/pinterest` and trust the broad-query harvest only when query-discovered canonical `https://www.pinterest.com/pin/<id>/` URLs become ranked references with manifest-backed first-party pin-media bytes in the same bundle; omitted `--output-dir` runs return `artifact_path`, so inspect that path before assuming `.opendevbrowser/inspiredesign/<runId>`; if the query bundle remains diagnostic-only, read `meta.discovery.acceptedUrls` and `discovery-diagnostics.json`, keep only canonical pin URLs, then use one canonical recovery harvest per selected pin with omitted `--output-dir`
+- `discovery-diagnostics.json` records accepted and rejected URL counts, blocker diagnostics, and recovery actions; login/challenge and search-shell diagnostics are recovery paths, not product-ready evidence, and `login_or_challenge_state` blocks Pinterest product authority
+- canonical Pinterest pin harvests and recovery paths use `captureMode=off` and open the exact canonical pin in the active managed or extension workflow session before byte-backed pin-media extraction, which is required for reliable GIF and video pin capture in live sessions
+- trust multi-pin Pinterest harvest outputs only when top-level `ready=true`, `productSuccess=true`, `artifactAuthority=product_ready`, `evidenceAuthority=pin_media_ready`, `ranked-references.json` is non-empty, and `pin-media-index.json` proves pin-media-first manifest-backed authority for the selected pin; `snapshot_ready` and `motion_ready` are not substitutes for canonical pin-media readiness, `login_or_challenge_state` blocks authority, unavailable supplemental viewport screenshot evidence is recorded as skipped and satisfied by pin media when authority is complete, `media-analysis.json` remains advisory, and `motion-evidence.json` remains browser replay authority
+- treat `media-analysis.json` as a deterministic design-fact surface from trusted saved pin media, not as readiness authority; `pin-media-index.json` remains the only pin-media readiness and provenance authority
+- use `media-analysis.json` for palette, tone, layout, OCR-free typography structure, text-region layout, sampled saved-media motion facts, `motionSignature`, limitations, and non-goals; do not claim readable text extraction, exact copy, font families, OCR, model vision, Tesseract, OpenCV, Sharp, browser canvas analysis, browser replay evidence, interaction choreography, new dependencies, or raw `mediaAnalysis` in `canvas-plan.request.json`
+- for richer `media-analysis.json`, prefer hosts with FFmpeg and FFprobe available; they are recommended optional host tools, are not bundled static binaries, and are not downloaded by default
+- before Pinterest video or GIF harvest work, run `npx opendevbrowser status-capabilities --output-format json` and inspect `host.mediaAnalysis`; media-analysis binaries resolve from `OPENDEVBROWSER_FFMPEG_PATH` and `OPENDEVBROWSER_FFPROBE_PATH`, then `inspiredesign.mediaAnalysis.ffmpegPath` and `inspiredesign.mediaAnalysis.ffprobePath`, then `ffmpeg` and `ffprobe` on `PATH`, then common absolute install directories for implicit `PATH`-source ENOENT misses only; invalid env or config paths stay diagnostic and do not fall back
+- for daemon-backed macOS runs, a current LaunchAgent includes `EnvironmentVariables.PATH` with common Homebrew, MacPorts, Nix, and system binary directories; if `host.mediaAnalysis` is unexpectedly missing tools, rerun `opendevbrowser daemon install` from a stable install so old LaunchAgents without the required PATH entries can be repaired
+- missing or invalid FFmpeg or FFprobe binaries degrade `media-analysis.json` only; they do not fail pin-media readiness, do not replace `pin-media-index.json`, and `media-analysis.json` never satisfies product readiness; empty `motion-evidence.json` means no authoritative browser replay screencast was captured, not that trusted saved GIF/video media was unanalyzed
+- inspect top-level `ready`, `productSuccess`, `artifactAuthority`, `evidenceAuthority`, manifest-backed evidence, plus `nextStepGuidance.readiness`, `reasonCode`, `primaryAction`, `paramsExamples`, `validationChecks`, and `doNotProceedIf` before continuing from any harvest
+- visual harvest must not bypass `policy_blocked`, unresolved `auth_required`, `challenge_detected`, or `rate_limited`; inspect diagnostics instead of forcing screenshots through blocked references
+- if readiness is `needs_recovery`, `blocked`, or `diagnostic_only`, follow the recovery-first command examples and do not continue to Canvas
+- after a product-ready run or harvest with top-level `ready=true`, `productSuccess=true`, `artifactAuthority=product_ready`, non-diagnostic `evidenceAuthority`, ranked references, manifest-backed evidence, and no `doNotProceedIf` blockers, read `advanced-brief.md` first, inspect `evidence.json`, `ranked-references.json`, `bundle-manifest.json`, `discovery-diagnostics.json` for query harvests, `media-analysis.json`, `visual-evidence.json`, `screenshot-index.json`, `motion-evidence.json`, `pin-media-evidence.json`, `pin-media-index.json`, and `meta-prompt.md` when present, load `opendevbrowser_skill_load opendevbrowser-best-practices "quick start"`, `opendevbrowser_skill_load opendevbrowser-design-agent "canvas-contract"`, and `opendevbrowser_skill_load opendevbrowser-motion-design "quick start"`, open a Canvas session, fill the ids in `canvas-plan.request.json`, run `opendevbrowser canvas --command canvas.plan.set --params-file ./canvas-plan.request.json --output-format json`, confirm `planStatus=accepted`, then patch only the governance blocks listed in `design-agent-handoff.json`. Treat Pinterest pin-media as design-ready only when `pin-media-index.json` proves persisted first-party bytes; remote media URLs and `media-analysis.json` alone are not proof
+- pair this lane with `opendevbrowser-design-agent` when the brief moves from contract synthesis into implementation or `/canvas`
+
+## Agent Sync Targets
+
+Skill-pack installation and discovery are synchronized for:
+- `opencode` (`~/.config/opencode/skill`, project `./.opencode/skill`)
+- `codex` (managed OpenDevBrowser packs sync through `~/.agents/skills` and project `./.agents/skills`; `$CODEX_HOME/skills` and `./.codex/skills` remain discovery compatibility roots)
+- `claudecode` (`$CLAUDECODE_HOME/skills` fallback `~/.claude/skills`, project `./.claude/skills`)
+- `ampcli` (`$AMP_CLI_HOME/skills` fallback `~/.amp/skills`, project `./.amp/skills`)
+- `agents` (`~/.agents/skills`, project `./.agents/skills`)
+
+Install and update refresh managed copies of these canonical packs, adopt matching markerless canonical copies only when repairing or promoting a managed OpenDevBrowser target, and preserve drifted markerless directories outside managed repair for user review. Uninstall removes marker- or sentinel-managed canonical packs and leaves unrelated directories untouched.
+If a global npm install or update seems stale, compare `command -v opendevbrowser`, `which -a opendevbrowser`, and `npm prefix -g`; the active binary may live under a different prefix from npm's default global prefix.
+
+## Required Operating Rules
+
+- Prefer refs from `opendevbrowser_snapshot` over raw selectors.
+- Use one action per decision loop: snapshot -> action -> snapshot.
+- Keep a single correlation context (`requestId`, `sessionId`) across a run.
+- Before daemon-backed workflows, run `opendevbrowser status --daemon --output-format json` and require `data.fingerprintCurrent === true`.
+- For extension readiness, require `data.fingerprintCurrent === true`, `data.relay.extensionConnected === true`, and `data.relay.extensionHandshakeComplete === true`.
+- For user-owned Google OAuth continuity, use `--google-auth-intent user-owned` with extension `/ops`: `opendevbrowser launch --google-auth-intent user-owned --extension-only --wait-for-extension --output-format json`.
+- Treat `--google-auth-intent user-owned` as fail-closed for `--no-extension`, `--headless`, `--extension-legacy`, and direct CDP.
+- Managed and direct `cdpConnect` use best-effort readable system Chrome-family cookie bootstrap, but copied cookies are not Google auth proof; add `--disable-system-cookie-bootstrap` when investigating perceived logout or auth invalidation.
+- Google-sensitive cookies are skipped by default during managed and direct `cdpConnect` bootstrap; use `--allow-google-cookie-bootstrap` only for diagnostic runs that explicitly accept that risk.
+- Inspect sanitized `diagnostics.authProvenance` for mode and cookie-bootstrap provenance. Do not record private cookies, tokens, account identifiers, full profile paths, or account screenshots.
+- After Google sign-in or account chooser actions, recover the OAuth popup with `targets-list --include-urls`, then `target-use --target-id <target-id>`.
+- Treat `data.relay.opsConnected`, `data.relay.canvasConnected`, and `data.relay.cdpConnected` as diagnostic or lane-specific presence fields; `data.relay.cdpConnected` is active-legacy-session-only.
+- Treat missing or false `data.fingerprintCurrent` as not current; use the matching binary, restart from the current install, or isolate shared runs with `OPENCODE_CONFIG_DIR`, `OPENCODE_CACHE_DIR`, and unique daemon or relay ports.
+- Do not conflate `daemon_fingerprint_mismatch` with native messaging host drift.
+- Run the same workflow shape across all three modes before claiming parity.
+- Default to read/research workflows. Social posting probes remain disabled unless explicitly requested via direct-run opt-in (`--include-social-posts`).
+- Apply rate-limit/backoff discipline (`Retry-After` aware) whenever 429 pressure appears.
+- Re-check extension readiness on resume when a run crosses idle windows.
+
+## Parallel Operations (Reliable As-Is)
+
+- Safe parallelism today is `session-per-worker` (one session per page/tab command stream).
+- Keep each session single-writer for target/page actions; run commands serially inside that session.
+- Do not run independent concurrent streams that alternate `target-use` within one session.
+- Use default extension `/ops` for relay-backed concurrency; use `/cdp` only for legacy compatibility paths.
+- For managed parallel runs with persisted profiles, use unique profile paths per session (or disable persistence) to avoid profile lock collisions.
+- Treat extension headless attempts (`--extension-only --headless`) as expected `unsupported_mode`; route headless workloads through managed/cdpConnect instead.
+- Do not route user-owned Google OAuth continuity through managed/cdpConnect. Use extension `/ops` or stop and ask for a non-Google test account/profile.
+- Before extension-mode runs, preflight `npx opendevbrowser status --daemon --output-format json` and require `data.fingerprintCurrent === true`, `data.relay.extensionConnected === true`, and `data.relay.extensionHandshakeComplete === true`; do not require `data.relay.opsConnected`, `data.relay.canvasConnected`, or `data.relay.cdpConnected` unless that lane is actively in use.
+
+Operational references:
+- `artifacts/provider-workflows.md` (see Workflow E)
+- `scripts/odb-workflow.sh parallel-multipage-safe`
+- `docs/CLI.md` (concurrency semantics)
+- `docs/SURFACE_REFERENCE.md` (transport and policy constraints)
+- `docs/TROUBLESHOOTING.md` (parallel crosstalk and profile-lock remediation)
+
+## Known-Issue Robustness Baseline
+
+- Source matrix: `artifacts/browser-agent-known-issues-matrix.md`
+- Reusable checklist: `assets/templates/robustness-checklist.json`
+- Coverage validator: `scripts/run-robustness-audit.sh`
+
+Use issue IDs from the matrix in each workflow skill (`ISSUE-01` ... `ISSUE-12`) so robustness checks stay machine-verifiable and DRY.
+
+## Provider Workflows (Codified)
+
+### Provider Search Workflow
+
+Goal: deterministic query + extraction from one provider.
+
+```text
+opendevbrowser_launch noExtension=true
+opendevbrowser_goto sessionId="<session-id>" url="<provider-search-url>"
+opendevbrowser_wait sessionId="<session-id>" until="networkidle"
+opendevbrowser_snapshot sessionId="<session-id>" format="actionables"
+# extract targeted results using refs
+opendevbrowser_network_poll sessionId="<session-id>" max=50
+```
+
+### Provider Crawl Workflow
+
+Goal: multipage fetch + extraction with bounded depth.
+
+```text
+opendevbrowser_launch noExtension=true
+opendevbrowser_goto sessionId="<session-id>" url="<seed-url>"
+opendevbrowser_wait sessionId="<session-id>" until="networkidle"
+opendevbrowser_snapshot sessionId="<session-id>" format="actionables"
+# capture links/data, enqueue next pages in host logic
+opendevbrowser_scroll sessionId="<session-id>" dy=1000
+opendevbrowser_wait sessionId="<session-id>" until="networkidle"
+```
+
+### QA Debug Workflow
+
+Goal: isolate frontend regressions quickly.
+
+```text
+opendevbrowser_snapshot sessionId="<session-id>" format="outline"
+opendevbrowser_console_poll sessionId="<session-id>" max=100
+opendevbrowser_network_poll sessionId="<session-id>" max=100
+opendevbrowser_screenshot sessionId="<session-id>"
+```
+
+QA replay debug evidence lane exception: use browser replay when timing matters:
+
+```text
+opendevbrowser_screencast_start sessionId="<session-id>" outputDir="./artifacts/qa-replay"
+# run the suspect flow
+opendevbrowser_screencast_stop sessionId="<session-id>" screencastId="<screencast-id>"
+```
+
+### Read-Only Social Validation Workflow
+
+Goal: validate authenticated read/search capability without posting.
+
+1. Choose the least-privileged session mode that matches the auth need. For non-Google social validation, prefer a dedicated managed headed profile or registry-backed explicit CDP profile; require `data.fingerprintCurrent === true` from JSON daemon status before running.
+2. Require extension readiness (`data.relay.extensionConnected === true` and `data.relay.extensionHandshakeComplete === true`) only when the workflow explicitly uses extension `/ops`, needs live active-tab reuse, or depends on user-owned Google OAuth continuity.
+3. Navigate/search target social surface.
+4. Capture `debug-trace-snapshot` and `network-poll` evidence.
+5. Record blocker/auth status only (no write action), and do not treat copied cookies, raw `--profile`, or raw CDP attach as login proof.
+
+## Workflow Router Script
+
+Use the router script to avoid retyping flows:
+
+```bash
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh provider-search
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh provider-crawl
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh inspiredesign
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh qa-debug
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh social-readonly-check
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh parity-check
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh release-direct-gates
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh surface-audit
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh ops-channel-check
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh cdp-channel-check
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh mode-flag-matrix
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh robustness-audit
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh canvas-preflight
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh canvas-feedback-eval
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh skill-runtime-audit
+./skills/opendevbrowser-best-practices/scripts/odb-workflow.sh validated-capabilities
+```
+
+## Modes and Surface Parity
+
+Always run acceptance on:
+- Modes: `managed`, `extension`, `cdpConnect`
+- Surfaces: tool API, CLI, daemon RPC
+
+Reference: `artifacts/parity-gates.md`
+
+Parity gate test:
+
+```bash
+npm run test -- tests/parity-matrix.test.ts
+```
+
+Treat `tests/parity-matrix.test.ts` as contract coverage only. Live release proof comes from the direct-run harnesses below.
+This pack is the canonical owner of direct-run release evidence policy; other docs and skill packs should point here instead of restating the full policy.
+
+Real-world provider+mode scenario harness (soak replacement):
+
+```bash
+npm run build
+node scripts/provider-direct-runs.mjs --out artifacts/provider-direct-realworld.json
+node scripts/live-regression-direct.mjs --out artifacts/live-regression-direct.json
+```
+
+Surface inventory source of truth:
+- `docs/SURFACE_REFERENCE.md` (78 CLI commands, 70 tools, 59 `/ops` commands, 41 `/canvas` commands, 67 CLI-tool pairs, `/cdp` envelope contracts; mirrored by `npx opendevbrowser --help` and `npx opendevbrowser help`). These hardcoded counts are validator-covered and must be refreshed from generated public-surface truth whenever counts change.
+- `artifacts/command-channel-reference.md` (skill-pack operational digest)
+- `artifacts/skill-runtime-surface-matrix.md` and `assets/templates/skill-runtime-pack-matrix.json` (canonical pack/runtime audit inventory)
+
+Direct-run release note:
+- `scripts/live-regression-direct.mjs` is the preferred release harness for `/canvas`, annotate, and CLI smoke. It uses temporary managed profiles for managed probes, waits for `/ops` drain before the legacy `/cdp` step, and keeps manual annotation timeouts as explicit `skipped` boundaries in `--release-gate` mode.
+- `scripts/provider-direct-runs.mjs --include-high-friction --include-auth-gated` is the preferred provider release harness. Treat `provider-live-matrix` and `live-regression-matrix` as debug-only helpers, not refreshed release evidence.
+- Explicit `artifacts/release/vX.Y.Z/...` paths are local-only release proof outputs. For normal omitted workflow outputs, inspect the returned `artifact_path` first; the persisted bundle is under `.opendevbrowser/<namespace>/<runId>`.
+
+## Skill Runtime Audit and Realignment
+
+This pack is the canonical owner of repo-local skill runtime audit policy and skill-pack runtime realignment.
+
+Use these assets when the task is to inventory or validate the full OpenDevBrowser skill/runtime surface:
+- `artifacts/skill-runtime-surface-matrix.md`
+- `assets/templates/skill-runtime-pack-matrix.json`
+- `scripts/skill-runtime-audit.mjs`
+
+Audit runtime rule:
+- `scripts/skill-runtime-audit.mjs` keeps smoke mode isolated and reproducible with temp harnesses, but full mode must reuse the current configured daemon and environment for `provider-direct` and `live-regression` so extension state, cookies, and auth-backed scenarios are exercised for real when available.
+
+Realignment rule:
+- when a pack drifts behind current runtime behavior, update the skill to match the repo reality and strengthen the workflow guidance instead of making the pack merely stop failing validation.
+
+## Canvas Governance Handshake
+
+Use the design-canvas surface when the workflow needs persisted design documents, explicit governance state, preview tabs, or overlay selection.
+
+Recommended command order:
+1. `opendevbrowser_canvas` or `opendevbrowser canvas --command canvas.session.open --output-format json` to get `canvasSessionId`, `leaseId`, `preflightState`, `planStatus`, governance block states, generation-plan requirements, and `guidance.recommendedNextCommands`.
+2. Read the handshake before mutating. The handshake is the source of truth for:
+   - `planStatus`
+   - `preflightState`
+   - `governanceRequirements.requiredBeforeMutation`
+   - `governanceRequirements.requiredBeforeSave`
+   - `generationPlanRequirements.requiredBeforeMutation`
+   - `generationPlanRequirements.allowedValues`
+   - `generationPlanIssues`
+   - `allowedLibraries`
+   - `mutationPolicy.allowedBeforePlan`
+   - `guidance.recommendedNextCommands`
+   - `guidance.reason`
+   - `guidance.nextStepGuidance`, `guidance.paramsExamples`, `guidance.fieldExamples`, `guidance.validationChecks`, and `guidance.doNotProceedIf` when a repair envelope is present
+   - treat `allowedLibraries.components`, `allowedLibraries.icons`, and `allowedLibraries.styling` as separate policy lanes:
+     `components` are reusable UI adapters such as `shadcn`,
+     `icons` are approved icon families,
+     `styling` is for utility/theme adapters such as `tailwindcss`
+3. Require `preflightState="handshake_read"` or inspect the returned invalid-plan state before moving on. If the response already carries `guidance.recommendedNextCommands`, follow that list instead of guessing.
+4. Submit `canvas.plan.set --output-format json` with all required non-empty objects:
+   - `targetOutcome`
+   - `visualDirection`
+   - `layoutStrategy`
+   - `contentStrategy`
+   - `componentStrategy`
+   - `motionPosture`
+   - `responsivePosture`
+   - `accessibilityPosture`
+   - `validationTargets`
+   Minimum nested fields that commonly cause `generation_plan_invalid` if omitted:
+   - `visualDirection.themeStrategy`
+   - `layoutStrategy.navigationModel`
+   - `componentStrategy.interactionStates`
+   - `motionPosture.reducedMotion`
+   - `responsivePosture.requiredViewports`
+   - `accessibilityPosture.keyboardNavigation`
+   - `validationTargets.requiredThemes`
+   - `validationTargets.browserValidation`
+   - `validationTargets.maxInteractionLatencyMs`
+5. Immediately inspect the `canvas.plan.set` response.
+   - If `planStatus="accepted"` or `preflightState="plan_accepted"`, follow the returned `guidance.recommendedNextCommands`.
+   - If the command fails with `generation_plan_invalid`, inspect `details.missingFields`, `details.issues`, `guidance.paramsExamples`, `guidance.fieldExamples`, `guidance.validationChecks`, `guidance.doNotProceedIf`, and the handshake `generationPlanIssues`, then repair the params file before resubmitting.
+   - Use `canvas.plan.get` or `canvas.capabilities.get` only as diagnostics when the repair examples are not enough.
+6. Only after the plan is accepted, call `canvas.document.patch`.
+7. After every successful `canvas.document.patch`, `canvas.preview.render`, `canvas.preview.refresh`, `canvas.feedback.poll`, `canvas.document.save`, or `canvas.document.export`, read `guidance.recommendedNextCommands` and `guidance.reason` before deciding the next command.
+8. Use `canvas.preview.render`, `canvas.tab.open`, `canvas.overlay.mount`, and `canvas.overlay.select` when a browser-backed live view is required.
+9. Use `canvas.feedback.poll` for snapshot audits between mutation rounds. When the plan is still missing or invalid, expect a synthetic `preflight-blocker` item instead of normal stage feedback. Use `canvas.feedback.subscribe` -> `canvas.feedback.next` -> `canvas.feedback.unsubscribe` when a live pull-stream is needed.
+10. Use `canvas.document.save` or `canvas.document.export` to persist artifacts.
+
+Code-sync surface:
+- `canvas.session.attach` joins an existing canvas session as an `observer` or reclaims the write lease with `attachMode=lease_reclaim`.
+- `canvas.code.bind`, `canvas.code.unbind`, `canvas.code.pull`, `canvas.code.push`, `canvas.code.status`, and `canvas.code.resolve` manage framework-adapter-backed document bindings when a canvas file is round-tripped to repo code.
+- Built-in code-sync lanes are `builtin:react-tsx-v2`, `builtin:html-static-v1`, `builtin:custom-elements-v1`, `builtin:vue-sfc-v1`, and `builtin:svelte-sfc-v1`; legacy `tsx-react-v1` manifests migrate to `builtin:react-tsx-v2` on load.
+- Bound source manifests live under `.opendevbrowser/canvas/code-sync/<documentId>/<bindingId>.json`, and workspace routes reject duplicate repo paths or duplicate binding ids before child mutation.
+- Preview/export projection defaults to `canvas_html`; `bound_app_runtime` is opt-in only when the binding requests it and runtime bridge preflight succeeds.
+
+Current `/canvas` parity notes:
+- All 41 public `canvas.*` commands are agent-callable through `opendevbrowser_canvas` and `opendevbrowser canvas --command ...`.
+- Use `canvas.workspace.open`, `canvas.workspace.status`, `canvas.workspace.child.add`, `canvas.workspace.child.execute`, `canvas.workspace.child.close`, and `canvas.workspace.close` for multi-child orchestration over existing child sessions. Workspaces store refs-only manifests under `.opendevbrowser/canvas-workspace/<workspaceId>/workspace-manifest.json`; child documents remain owned by their child sessions.
+- Route child mutations through `canvas.workspace.child.execute` only after checking the target child. Workspace guardrails reject duplicate child ids, sessions, leases, document ids, repo paths, code-sync binding ids, stale child routes, and nested workspace route attempts before dispatch.
+- Preview budget states are `focused_live`, `pinned_live`, `background_live`, `thumbnail`, `paused`, and `degraded`. Treat `thumbnail`, `paused`, and `degraded` as budget or recovery states, not proof of live bound-app parity.
+- `canvas.feedback.subscribe` live streaming is public through the CLI only: use `--output-format stream-json` for the built-in polling bridge.
+- Tool-driven agents can achieve the same public streaming behavior by calling `canvas.feedback.subscribe`, then repeating `canvas.feedback.next`, and finally `canvas.feedback.unsubscribe`.
+- `canvas.tab.sync` and `canvas.overlay.sync` are internal extension runtime helpers, not public commands.
+- `canvas_html` is still the default preview/export contract. `bound_app_runtime` is opt-in and only valid when runtime preflight, app-side instrumentation, and code-sync binding policy succeed.
+- Component and icon libraries currently render semantically, not package-faithfully. Treat `shadcn`, `tailwindcss`, `tabler`, `microsoft-fluent-ui-system-icons`, `3dicons`, and `@lobehub/fluent-emoji-3d` as metadata and constrained render lanes, not as general library import/export parity.
+- Annotation remains a separate surface today, but popup and canvas both ship per-item and combined `Copy` / `Send` actions. `Send` delivers directly into the active agent chat when scope is safe and degrades to stored-only `annotate --stored` retrieval when scope is missing, ambiguous, or relay enqueue fails. New captures and stored payloads use Annotation V2 compact handoff by default: `schemaVersion: 2`, `compact.screenshotMode="none"`, redaction metadata, selector bundles, canvas identity when available, and screenshot-free shared inbox storage. `annotate --stored` resolves the shared repo-local inbox first, then the extension-local fallback; browser replay artifacts stay in the screencast lane and are never written into the shared inbox.
+
+Tailwind usage rule:
+- When `allowedLibraries.styling` includes `tailwindcss`, use it for layout, spacing, responsive, and state styling over canonical tokens/theme variables.
+- Do not treat Tailwind as a component inventory source or invent generation-plan allowlists for it; keep styling policy in `allowedLibraries` / `libraryPolicy`.
+- Preview/export should materialize a deterministic utility-class layer and stay self-contained; do not depend on a remote Tailwind CDN for canvas preview correctness.
+
+Failure handling:
+- `plan_required`: immediately call `canvas.plan.set`.
+- `generation_plan_invalid`: resubmit `canvas.plan.set` with every required non-empty generation-plan block present, using `generationPlanIssues` plus `details.missingFields` and `details.issues` as the repair checklist.
+- `revision_conflict`: reload with `canvas.document.load` and replay the patch batch against the latest revision.
+- `unsupported_target` or `restricted_url`: move the preview to a normal http(s) tab or fall back to managed mode.
+- If a freshly rebuilt unpacked extension still shows old `/canvas` or popup behavior, reload the extension in Chrome before trusting the live result; stale MV3 runtime state can preserve old service-worker logic after `npm run extension:build`.
+- If workspace panes, drafts, selection, or previews look mixed after rebuild or reload, reload the unpacked extension, reconnect the relay, reopen the workspace, and inspect `canvas.workspace.status` before treating child isolation as broken.
+
+Operational references:
+- `artifacts/canvas-governance-playbook.md`
+- `assets/templates/canvas-handshake-example.json`
+- `assets/templates/canvas-generation-plan.v1.json`
+- `assets/templates/canvas-feedback-eval.json`
+- `assets/templates/canvas-blocker-checklist.json`
+
+## Diagnostics and Traceability
+
+Current diagnostics tools:
+- `opendevbrowser_session_inspector` (session-first summary with relay health, target state, trace proof, and next-action guidance)
+- `opendevbrowser_console_poll`
+- `opendevbrowser_network_poll`
+- `opendevbrowser_debug_trace_snapshot` (combined page + console + network + exception channels)
+
+Reference: `artifacts/debug-trace-playbook.md`
+
+## Fingerprint Hardening
+
+Apply the minimum tier that meets reliability goals.
+
+- Tier 0: baseline deterministic automation.
+- Tier 1: coherence profile (default recommended).
+- Tier 2: runtime hardening.
+- Tier 3: adaptive managed hardening (optional).
+
+Reference: `artifacts/fingerprint-tiers.md`
+
+## Macro Guidance
+
+Use macros as normalized entrypoints for provider workflows.
+
+- Keep macro definitions declarative and typed.
+- Expand macros to canonical provider queries.
+- Emit provenance metadata (`macro`, `resolvedQuery`, `provider`).
+
+Reference: `artifacts/macro-workflows.md`

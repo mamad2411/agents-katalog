@@ -1,0 +1,297 @@
+---
+name: proposal-visualization
+description: >
+  Present a proposal, plan, migration or architecture as one HTML page that a
+  human can read, comment on and approve at a glance. The page has a before/after
+  figure that draws only what changes, figures coloured by who owns each part,
+  a clickable wireframe with an ownership overlay, and every decision, question,
+  risk and step as a coded card that comments can anchor to. Host-neutral: any
+  agent that writes HTML can follow it. Triggers on "visualize the proposal",
+  "make an artifact so we can comment", "diagram the architecture", "wireframe
+  it", "show what we will do", "give us something to approve", "present the plan".
+  Also holds the commands for attaching that page to a GitHub issue as an HTML artifact.
+  Triggers also on "add the HTML as an artefact on the issue", "a visual artifact on the issue",
+  "issue artifact", "questions I can look at and comment on".
+---
+
+# Proposal visualization
+
+## Why this exists
+
+On 2026-09-24 the owner approved the packaging of Miadi's tide reply annotator
+from one page, and said of its before/after figure: "it really enabled me to
+approve this phase very rapidly". The owner asked that the pattern be kept for every
+agent that shows its work visually, not only Claude Code. This skill is that
+pattern. The page it came from is `reference/annotate-core-and-ui.html`.
+Read it before building a new one.
+
+Tracked in jgwill/miadi-orchestration-kit#53.
+
+## The page's one job
+
+A reader who has not followed the work sees what exists now, what will exist
+after, what they are being asked to decide, and can answer each decision by
+commenting on it. Everything on the page serves one of those four things.
+
+## Parts, in order
+
+Leave out any part the proposal does not need. Keep the order of the ones you use.
+
+1. **Header.** A name for the proposal (two to four words), one sentence saying
+   what will exist, a status chip ("Awaiting your go (D4)"), and one short card
+   per package or unit being created or changed. Then a "How to respond" line:
+   "Comment on a card or cite its code. A go on D4 starts the build."
+2. **Who gets what.** One card per audience (the people using it, other apps or
+   teams, the platform's maintainers). Each card ends with a "Today:" line, so
+   the difference is visible without reading further.
+3. **Today → after.** Two columns of facts. Today is current reality, with
+   paths and numbers. After is written as things that will exist, never as
+   problems removed.
+4. **Before / after figure.** Two panels drawn on the same grid. Draw the
+   difference: the arrow that appears, the arrow that disappears, the arrow that
+   changes direction. A caption states that change in one sentence. This is the
+   figure the owner approved from. Do not skip it when the proposal changes structure.
+5. **Ownership figures.** A flow or loop where each step is coloured by who owns
+   it (the new package vs the host app, for example), and a nesting figure when
+   data or types split between layers. Say in the caption what the colours mean.
+6. **Mechanism figure,** only when a subtle behaviour is the value being
+   preserved, for example a timeline of an iOS selection event and a grace window.
+7. **Clickable wireframe.** The real screen the change lands on, as it will look
+   after the change, in the product's own look. It runs the proposed behaviour
+   where that is cheap. When a second host will use the same component, put a
+   second frame beside the first in that host's colours.
+   - Build it from the product's real content: its real page (the same
+     breadcrumb, title and cards), its colour tokens, and real records from the
+     work, such as the images, names and dates already in the folder. Mark what
+     is example data "example". Mark a real item placed where it is not yet
+     placed "real, proposed placement".
+   - Why: on 2026-10-07 the owner said of the episode-images wireframe that it
+     showed "the actual result that it would look like on the user interface".
+     He read the proposal from the screen he already knows, not from a diagram
+     of it.
+   - When more than one owner renders the screen, offer a toggle, on by default,
+     that outlines each region and labels who renders or supplies it. It is
+     suggested, not required. The owner called it an interesting experience
+     because it put ownership on the screen itself.
+8. **Reference.** The public API or config as tabs, one per entry point.
+9. **What review changed,** when a reviewer or another agent corrected the
+   draft: one coded card per correction with its evidence path.
+10. **Build order.** Numbered steps (a real sequence), each with the check that
+    closes it, such as a test file, a verify script or a deploy.
+11. **Risks, decisions, questions.** Coded cards (below).
+12. **Footer.** Sources, who drafted and who reviewed, and the date the
+    evidence was checked.
+
+## Certain and uncertain: score the cards before publishing
+
+On 2026-10-10 the owner asked that a proposal say which of its cards the agent would
+execute without him and which need him, and that the split come from the decision engine,
+not from the agent's own sense of it (session `miadi-episodic-memory-schema-and-mw-261010`).
+The Jev review the practice stands on is miadi-review://b02ec47d-cd92-4829-84ed-238aafd1d9d6,
+and the study that revised it is `jev-study-261026.md` in Episode 564
+(miadi-chronicle://564). His rule of 2026-10-09: act when his word and the engine agree at
+0.8 or above; otherwise come back.
+
+The run is `scoring/score-proposal.mjs`. It reads every coded card on the page (A, E, D, Q
+by default) and sends each one to Jev with three things: the card, the owner's request in his
+words (`--request`), and a facts file written for the page (`--facts`). It asks
+`questions.json`:
+
+- six literal yes/no triggers, one trigger each: does the card delete something that exists,
+  touch a credential, name something new, spend money, write to a repository that is not his,
+  reach an outside audience;
+- for steps, whether the request implies it, whether it is reversible, and whether the facts
+  ground it; for decisions, whether only he can make it and whether the recommendation is sound.
+  These are kept in the ledger and stay off the band until his rulings show whether they
+  separate;
+- `obvious_now`: do now, do after his go, needs a decision, or `other` when none of those fits.
+
+The Decision Gate's D1 rule is written into `obvious_now`'s instructions, never sent as state.
+Jev reads the state as data: in Episode 549 a rule sent as state turned 6 "author" answers
+into 22. `policy.json` holds the thresholds and says who set them. Bands, in this order:
+
+- **needs you** when any trigger reads at or above `owner_at` (0.5), whatever `obvious_now`
+  says. That is the D1 rule.
+- **needs you** when any trigger reads between 0.4 and 0.6. An uncertain reading errs toward him.
+- **needs you** when `obvious_now` is `needs_decision` or `other`.
+- **would do now** when `obvious_now` is `do_now` at a confidence of `act_at` or above.
+- **after your go** otherwise.
+
+A choice's confidence is `(p_max - 1/n) / (1 - 1/n)`: how far the top option sits above an even
+split over its `n` options. So 0.8 on `obvious_now`'s four options means a top probability of
+0.85. Each record keeps both numbers.
+
+Write the facts file before scoring. It names the paths, numbers and versions each card
+rests on. The page's "Today" list is page-level and a card rarely restates its path, so
+`evidence_sufficient` averaged 0.24 on it. Without `--facts` the script falls back to that
+list and says so.
+
+```bash
+cd skills/proposal-visualization/scoring
+node score-proposal.mjs page.html --request request.md --facts facts.md --dry   # the requests, nothing sent
+node score-proposal.mjs page.html --request request.md --facts facts.md --out scores.json
+```
+
+The dry run prints the estimated tokens and the paid tokens to expect, at the ratio
+Episode 562 measured over 2,001 calls (paid = 1.61 × the estimate). The model is pinned in
+`questions.json` (`jev-1.14.0` for version 0.3.0; 0.2.0 was `jev-1.13.0`). Never pass an
+alias: `jev-latest` is 1.13.0 on jev-ai.pro and 1.14.0 on TypeSafe, and the script refuses it. `obvious_now`'s
+options are rotated card by card, because Jev leans toward the option that comes first.
+
+Then on the page: a chip on every scored card (`Jev · do_now 0.70 · after your go`), one
+section with the three lists, and a "Revision N" band saying the run happened.
+
+The ledger is `~/.miadi/decisions/proposal-score.jsonl`, outside every repository. Per card
+it keeps one `call` record: requested and resolved model, billing headers, tokens estimated
+beside tokens paid, the option order sent and the facts file's hash. Per question it keeps
+one `decision` record. Nothing is calibrated yet: 113 cards were scored by 2026-10-26 and
+none of the owner's answers was written down. His one-word answer on each "needs you" card is
+a ruling on that card's `obvious_now` decision. The script prints the command for each one,
+and `policy.json` holds it under `calibration`. After twenty rulings in a class,
+`lane-check.mjs calibrate` reports the cut that agreed with him, and a person sets the
+threshold from it.
+
+What leaves the host, per card: the card's text, the request file, the facts file and the
+questions. Never the page's other sections, never a key. The decider and the gate are
+lane-check's (`jgwill/smcraft` `examples/decision-gate/lane-check`), imported by path until
+they move into this kit; `LANE_CHECK_DIR` points at another checkout.
+
+An empty "would do now" is a result, not a failure. Over the first 113 cards, 7 were "would do
+now", 61 "after your go" and 45 "needs you".
+
+## Coded cards
+
+- Prefixes: `D` decisions, `Q` questions, `R` risks, `A` actions/steps,
+  `C` corrections, `N` later-phase outcomes. Invent a new prefix when needed
+  and say what it stands for the first time it appears.
+- One card per item, each with `id="<code>"`, so a comment tool or an
+  annotation tool anchors to exactly one item and a link can jump to it.
+- Put the code inside the card's heading: `<h3><span class="code">D1</span>The
+  question</h3>`. The artifact viewer labels a comment with the nearest heading
+  before the place it sits. With the code before the heading, a comment placed
+  on `D5` was shown under D4's title (2026-11-14, on the owner's phone).
+- A code keeps its meaning for the whole conversation and across revisions.
+  Never reassign one. When a step is replaced, give the replacement a new code
+  and say which codes it replaces.
+
+## Figures
+
+- Hand-build them as inline SVG or HTML/CSS. Do not use mermaid: inside artifact
+  viewers its theme fights the page's colours and node text loses contrast.
+- Text is always the foreground token, on a solid fill. Put the accent colour
+  on strokes, rings and fills, never on small text.
+- Label every arrow with what moves or happens (`imports types`, `mounts ./dom`).
+  An unlabeled arrow only says "related somehow".
+- One claim per figure. Put the claim in `<figcaption>` and in the SVG's
+  `aria-label`.
+- Wide figures go in their own `overflow-x: auto` container with a `min-width`,
+  so the page body never scrolls sideways on a phone.
+- SVG `<marker>` ids must be unique across the whole page (`a1`, `a2`, ...),
+  because several inline SVGs share one document.
+
+## Contrast is computed, never judged by eye
+
+Before publishing, compute every text colour against every surface it sits on,
+in both themes. Body text needs 4.5:1. Never dim text with `opacity`: it blends
+toward the background and can halve the ratio. Use a muted colour token instead.
+
+```js
+const L = h => { const c = [0, 2, 4].map(i => parseInt(h.slice(i + 1, i + 3), 16) / 255)
+  .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] }
+const ratio = (a, b) => { const x = L(a), y = L(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
+// run ratio(text, surface) for every pair; anything under 4.5 changes before publishing
+```
+
+## Evidence
+
+- Every `file:line`, commit, version and count on the page is read from the
+  source in the same session the page is written. Label anything you could not
+  check as unverified, or leave it out.
+- Tie each correction and each "Today" fact to a path the reader can open.
+
+## Theme and layout
+
+- Define the full light palette as tokens on `:root`. Redefine the tokens for
+  dark under `@media (prefers-color-scheme: dark)` guarded by
+  `:root:not([data-theme="light"])`, and again under `:root[data-theme="dark"]`.
+  Give `body` an explicit background.
+- When the host product has design tokens (Miadi: the neutral scale in
+  `app/globals.css` plus the medicine-wheel gold `#ffd700` as the structural
+  accent), use them.
+- The wireframe may keep the product's own fixed look (a dark cockpit stays
+  dark). Set its colours explicitly.
+- Works at 400px wide with a 16px side gutter. Grids fall to one column.
+
+## Revisions after comments
+
+When the owner comments:
+
+1. Read every comment, including the threads your tools cannot reply to. The
+   artifact comments tool returns only the threads the owner sent to Claude,
+   and the owner often sends the last one and leaves the others unsent. Read
+   those from the page in the owner's browser (Claude in Chrome): open the
+   artifact, enter comment mode, "More comment options", "Show all comments",
+   then read each thread in the "All comments" panel. A script result is cut at
+   about 1,000 characters, so read a long comment in slices. Clicking a thread
+   scrolls the page to the card it sits on. Keep the comments word for word in
+   the work's vessel before acting on them.
+2. Add a "Revision N" band under the header. It lists each comment and what it
+   changed, by code ("D1 approved", "Q4 answered: …", "N1 added from your
+   /chronicle comment").
+3. Mark decided cards as decided and say who decided. Leave only open items in
+   the Decide section.
+4. Republish to the same address, so the comments stay attached.
+
+## A visual page on a GitHub issue
+
+Asked for "a visual artefact on the issue", or for questions a person can look at and comment on? This section is enough: do not read GitHub's documentation again. Earned 2026-11-05 on jgwill/miadi-orchestration-kit#133, when a session spent its budget finding all of this out.
+
+1. **Copy the template.** `reference/card-page-template.html` holds the tokens, the icons, a card of each kind and a figure. Keep only the parts your page needs, and put real content in. Write it in the work's vessel.
+2. **Score it.** "Certain and uncertain" explains the bands. Write the person's words in `request.md` and the paths and numbers the cards rest on in `facts.md`. It costs about 2,200 paid Jev tokens per card, and each card's text goes to Jev:
+   ```bash
+   node scoring/score-proposal.mjs page.src.html --request request.md --facts facts.md --only A,D,Q --out scores.json
+   python3 scripts/inject-scores.py page.src.html scores.json page.html
+   ```
+3. **Shoot it**, and read the shots once. It starts its own headless browser, so it raises nothing on the screen a person is using:
+   ```bash
+   python3 scripts/page-shots.py page.html <folder>
+   ```
+4. **Send the shots to the `miadi-ui-critic` agent** when the page belongs to the Miadi ecosystem, and fix what it rates `breaks`.
+5. **File the issue** with the `structural-issue-authoring` skill, and put every question in its body too, since a person may read only the issue. Filing it needs the person's word, and asking for it counts. Link the page to the issue.
+6. **Attach the page.** A second run updates the same artifact and keeps its version history:
+   ```bash
+   python3 scripts/issue-artifact.py <owner/repo> <issue number> page.html
+   ```
+7. **Publish the same file to claude.ai** with the artifact publisher, where a person can comment on a card directly. Add its link to the issue.
+8. **Answers come back in two places:** `gh issue view <n> -R <owner/repo> --comments`, and the artifact tools' `read_comments`. Then follow "Revisions after comments", and run step 6 again.
+
+What GitHub's issue artifacts do, as of 2026-11-05 (public preview, so check when something fails):
+
+- The type is `embedded_html`. REST: `POST /repos/{owner}/{repo}/issues/{n}/artifacts` with `{type, name, body}`, `PATCH .../artifacts/{number}`, API version `2026-03-10`. A personal token works, and a GitHub App token was reported to get 404. `gh issue artifact create <n> page.html` needs gh 2.103, and gaia has 2.83.
+- A person opens it under the issue's Artifacts, in Source view, and chooses Preview. **The panel is at most 768 px wide,** so use one column of at most 720 px. A wide figure gets `overflow-x: auto`.
+- **There is no anchored comment on it.** So each card shows its code, and the page says how to answer: comment on the issue and start with the code.
+- The preview's sandbox is not documented. Make the page complete with no script and no outside request: inline CSS and SVG only, a switch as a CSS checkbox. How a page looks inside the sandbox has not been seen by an agent: a signed-out browser shows the issue with no Artifacts section at all, so ask the person to confirm the first time.
+- Say in your report what you could not see.
+
+## Publishing
+
+- **Host with an artifact publisher** (for example Claude Code): publish the
+  file, and republish to the same address for revisions.
+- **Any other host:** write one self-contained `.html` file into the work's
+  vessel (the episode folder, the PDE folder or the repo's working notes, never
+  `/tmp`). The only external request allowed is fonts, with a system fallback
+  stack. Give the reader the path.
+
+## Before you publish
+
+- [ ] The before/after figure draws the change, and its caption states it
+- [ ] Every arrow is labelled and every figure has a caption
+- [ ] Contrast was computed for every text/surface pair in both themes
+- [ ] Every code has its own card with `id`, and no code was reused
+- [ ] Every cited path and line was checked in this session
+- [ ] The wireframe marks example data as example and has the ownership toggle
+- [ ] Nothing scrolls sideways at 400px
+- [ ] The cards were scored, the three lists are on the page, and the "needs you" list holds only what the D1 rule or the engine sent there
+
+🌸: A reader who sees exactly what changes can decide in minutes, and one who has to piece it together from prose often cannot decide at all.

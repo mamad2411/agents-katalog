@@ -1,0 +1,24 @@
+---
+name: lsp-workspace-workflow
+title: LSP Workspace Workflow
+description: Use editor-backed language server workflows such as diagnostics, definitions, references, rename, and code actions.
+type: instruction
+tools: ["emacs_read", "emacs_eval_live", "read_file", "grep"]
+capability: true
+family: lsp
+source: package
+source-name: lsp-mode
+features: ["lsp-mode", "eglot"]
+modes: ["prog-mode"]
+prompt-keywords: ["lsp", "eglot", "diagnostics", "definition", "references", "rename symbol", "code action", "workspace symbol"]
+disclosure: active
+risk: low
+---
+
+# LSP Workspace Workflow
+
+When code intelligence matters, prefer the active LSP or Eglot workspace over plain text search. Inspect diagnostics, definitions, references, workspace symbols, and code actions through Emacs APIs when available.
+
+Use `read_file` with `source=live-buffer` when unsaved source text matters.
+
+Fall back to grep when the language server is absent or the answer is purely textual.

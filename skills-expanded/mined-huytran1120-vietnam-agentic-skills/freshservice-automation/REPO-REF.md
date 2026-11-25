@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/huytran1120/vietnam-agentic-skills (path: skills/freshservice-automation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Automate Freshservice ITSM tasks via Rube MCP (Composio): create/update tickets, bulk operations, service requests, and outbound emails. Always search tools first for current schemas."

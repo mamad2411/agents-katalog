@@ -1,0 +1,957 @@
+---
+name: verify-agent-work
+description: Safely verify code produced by any autonomous coding agent (Copilot, agy, Codex, a subagent, or a containerized CLI) before trusting or merging it. Use whenever you are about to accept, review, or merge work you did not write yourself, or when running agents in parallel against a shared repo.
+---
+
+# Verifying work from an autonomous agent
+
+Applies to any agent — GitHub Copilot, agy, Codex, a local subagent, or a containerized CLI.
+The provenance differs; the verification discipline does not.
+
+## The premise
+
+**Agent output is a proposal, not a result.** Two independent reasons:
+
+1. **It may not have been executed.** Agents that can't run your toolchain (no daemon, no
+   credentials, sandbox limits) produce plausible, confident, untested code. This is the most
+   common failure and the most dangerous, because it looks fine.
+2. **It may be attacker-influenced.** If any part of the input was untrusted (a user prompt, an
+   issue body, a web page, a file in the repo), the output can be too. Prompt injection is not
+   reliably preventable, so don't rely on the agent having behaved.
+
+## Verify in an isolated checkout — always
+
+Never verify by mutating the repo you're working in. Do **not** `git checkout` the agent's
+branch, `git merge` it, `git stash`, or `git reset` in your active working directory.
+
+Why it matters concretely: switching branches silently reverts uncommitted work, and any
+commit you then make lands on the wrong branch. With parallel agents, a shared working
+directory is the single largest source of lost work.
+
+```bash
+# Throwaway clone (preferred — fully independent)
+git clone --branch <branch> --single-branch <repo-url> /tmp/verify-xyz
+
+# Or a worktree from a fetched ref
+git fetch origin pull/<N>/head:verify-xyz
+git worktree add /tmp/verify-xyz verify-xyz
+```
+
+Clean up when done (`git worktree remove --force`, delete the temp branch/clone).
+
+In a `--single-branch` clone, the fetch refspec tracks only the cloned branch.
+`git push -u` can set a new branch's upstream without creating its remote-tracking
+ref, so `--force-with-lease` can report `stale info` even when the remote is unchanged.
+Fetch that branch into an explicit tracking ref, or verify its remote SHA and use
+`--force-with-lease=refs/heads/<branch>:<verified-sha>`. Never replace the lease with
+an unprotected force push.
+
+For a shallow clone, fetching master alone may still leave no merge base because the
+PR head remains shallow. Deepen the PR branch too and confirm `git merge-base HEAD
+origin/master` succeeds. A changelog guard that skips its diff is not that check passing.
+
+**Back up uncommitted work before any risky git operation**, and commit early — an
+in-progress checkpoint commit is cheap insurance against another process resetting the tree.
+
+**Install dependencies inside the isolated checkout.** A root-only `node_modules` symlink
+does not reproduce nested workspace dependencies. Observed during local Play verification:
+CLI used `wrap-ansi` 9 with declarations in its own `node_modules`, while the root held
+version 7 without declarations. Linking only the root resolved version 7 and produced
+`TS7016` despite identical lockfiles. Run `npm ci` in the verification checkout.
+
+After installing a fresh clone, run `npm run build:packages` before scoped workspace
+tests. Contract and zone-core exports point at `dist`; scoped Vitest does not build them.
+
+**Budget tests can reach a lower-level guard first.** A slow-loop zone fixture sometimes
+hit the VM's 200 ms deadline before the zone counted repeated 8 ms overruns. Check which
+guard fired. Inject the separate monotonic meter for the zone-policy test and keep its
+exact failure assertion; exercise VM deadlines in the cage tests.
+
+## Use a native runtime for architecture-sensitive gates
+
+Replay fingerprints can differ between ARM and x64 on the same Node patch.
+Rosetta can make the x64 fingerprints pass but inflate catalog timings. Preserve
+cost limits, timeouts and golden assertions, and use native CI for the full gate
+when this happens. The website's Games catalog gate accepts an exact games SHA
+as its `ref` input and prints a receipt-backed full-gate attestation after success.
+Use that printed block only after the complete CI run passes; never stamp a local
+pass for a failed or interrupted run.
+
+## Match browser keyboard shortcuts to the host platform
+
+Use `ControlOrMeta` for browser select-all and undo shortcuts. The Play editor's
+`Control+a` / `Control+z` fixture duplicated source and failed its undo assertion
+on macOS, including on clean master. Reproduce on the unchanged base before
+attributing that failure to a layout change; keep geometry checks independent.
+
+## Force safe-area values when checking phone overlays
+
+Desktop Chromium reports zero safe-area insets even at phone viewport sizes.
+For Play panels, force nonzero left/right `env(safe-area-inset-*)` values in the
+fixture stylesheet and check both conversation docks with Code open. More-specific
+coexisting-panel and dock selectors can override mobile width or position rules,
+so a viewport-only matrix misses controls extending into the notch area.
+
+## Keep flow tests independent of live conversation routing
+
+A transfer test calling `/improve` must inject a `chatAgent` whose `decide` returns
+`kind: 'build'`, plus a deterministic `contentChecker`. Otherwise the default conversation
+router can answer with chat instead of opening the round. A sandboxed run may fall back
+to building while a network-enabled run takes the chat branch, so the same ownership
+assertions pass alone and fail in the full gate. Check the response shape and keep the
+real authorization, store and admission path; stub only the unrelated model decisions.
+Derive handover times from the created record instead of dating them before its creation.
+
+## Guard delivery identity as well as activity
+
+When a background probe changes a round after reading a delivery, compare both
+observed version pointers inside the store transaction, including their absence.
+Delivery setters can replace those pointers before the heartbeat changes; generation
+and activity guards alone can still reject a successful retry as an old gate crash.
+Exercise this window for preview and publish in both store implementations.
+Also test a retry that retains old version pointers: a manifest lacking a round
+generation must not be accepted as evidence for a later generation.
+Bind a build ID to its candidate version, not the newest cost timestamp: overlapping
+trigger responses can book an older candidate after the newer one. Check legacy IDs
+against the build configuration before attributing their outcome.
+
+## Run the project's real gate
+
+Shared GameKit changes must be checked through each consuming assembler. The games
+repo's browser gate and local Play can pass while the API emits broken JavaScript.
+Run the real API assembler with core and dependencies from the candidate engine SHA,
+then execute its output in the production iframe sandbox and require startup and
+advancing frames. Bind results to both repository SHAs and the tested artifact bytes.
+Check snapshot and Kit promotion separately: a website deploy gate does not run when
+only those pointers change. HTTP 200 and successful HTML generation do not prove boot.
+Check the reverse release boundary too: a new API must execute artifacts using
+every published Kit it still accepts, including older same-major sidecars. Recheck
+that window before promoting the identified candidate revision, not an implicit latest.
+For gate repairs, demonstrate that the historical broken candidate is rejected before
+promotion and the corrected candidate passes. Distinguish a local gate attestation
+from an independently executed CI check; neither substitutes for artifact execution.
+
+Treat build credentials as an execution-boundary concern too. An empty environment
+and a different Unix user do not remove cloud metadata access or readable host
+credential files. Execute candidate toolchains with networking disabled and only
+their required inputs mounted read-only; keep publisher storage credentials and
+the container-runtime socket outside that environment. Test isolation with dummy
+host files and environment values, blocked metadata addresses and attempted source
+writes, alongside working and deliberately broken artifact checks.
+Exercise a restrictive host umask too. Git exports and staged JSON can inherit
+owner-only modes; normalize image source and input readability for the container UID.
+Keep private-engine compiler output out of public deployment logs, including errors.
+Exercise the real shell step with failing verification and assert traffic stays unchanged.
+AppArmor-restricted runners need a named userns profile for the container too;
+granting it to a downloaded host Chromium does not cover the container binary.
+Filtered Git fetches can still load every blob when archiving a commit with a
+pathspec. Archive the shared subtree itself and assert unrelated game blobs stay
+absent from the local object database. Filtering HTTP archive entries saves memory,
+not the network transfer of the complete games repository.
+
+Game renderer changes can invalidate standalone test fixtures. Install the GameKit stub
+before dynamically importing modules that read it at initialization, and include the
+renderer context's canvas when testing pixel scale. Match geometry assertions to the
+current renderer while retaining the observation, purity and replay checks. Reproduce
+these failures on the unchanged base before attributing them to another PR.
+
+When a game entry changes from executing at import to exporting a boot function,
+exercise every execution path: browser assembly, smoke, capture search and the
+installed compiled Kit. Bundling the export directly can succeed without starting
+the game. Check declarations through Play's Code index after a real npm installation;
+a symlinked Kit can render while its editor correctly rejects linked declaration paths.
+
+Non-root cloud containers may still require the games kit's documented `CI=1`
+browser mode. Preflight `check:webgl` with the final environment before a long
+catalog gate: changing environment variables invalidates its resume checkpoint.
+
+When adding diagnostic evidence, preserve already-established integration detection if a
+later optional configuration cannot safely be read. Exercise a detected plugin or MCP
+entry followed by a symlinked configuration, plus a no-evidence control that still
+refuses the symlink. Test status inventory and install/uninstall no-ops together.
+
+For colored CLI output, sanitize untrusted metadata before adding ANSI styling.
+Check a real terminal, piped output, `NO_COLOR`, JSON and narrow Unicode wrapping:
+stripping all controls after formatting removes intended colors as well.
+History summaries need separate paragraphs; dense rows can pass semantic tests
+while remaining unreadable in a terminal.
+Exercise a real pager subprocess: early quit must cancel pending API reads and
+rate-limit waits, not merely stop printing an already-buffered history. Check
+missing default pagers, failing configured commands, backpressure and JSON/pipes.
+Inject API failure after output starts, with a real configured `less`: killing
+only its shell left the pager owning the terminal after the CLI returned. Finish
+the pager's input and wait for it to release the terminal before returning errors.
+Exercise unpaged stdout with a real Writable that returns false, plus an early
+exiting pipe reader. Waiting for pager stdin alone leaves piped output buffering
+unbounded history and can emit unhandled EPIPE; stop reads on either stream closing.
+Run a JSON-producing CLI process against a delayed pipe reader with output larger
+than the pipe buffer. Returning from a raw stdout write before process.exit can
+truncate valid JSON; display-mode branches must use the guarded writer too.
+For path-filtered history, compare adjacent unfiltered deliveries, including deleted
+and binary files. Apply limits after matching; test beyond the first API page and
+quote-containing slash arguments as well as shell argv.
+Keep generated test scripts static and pass fixture paths as arguments: embedding
+even a JSON-quoted temporary path triggered CodeQL's code-construction sanitizer check.
+For Ink slash output, use the transcript's width after sidebar and label columns,
+not the terminal width. Exercise sidebar toggles and resizing in the actual Ink
+component, plus widths below twenty columns; a minimum-width clamp can hide overflow.
+Delay history API responses while changing the terminal or sidebar: resolve width
+immediately before formatting, rather than capturing it before asynchronous reads.
+
+**A rate limit does not bound in-flight source buffers.** Full history imports need many
+sequential requests, but raising their per-minute limit also permits concurrent trees.
+Check an instance-wide concurrency budget, bounded storage fan-out, and slot lifetime:
+a disconnect or one rejected read must not free the slot while sibling reads continue,
+and a completed read must hold its slot until the buffered response finishes.
+
+**Remote-helper stream assertions do not verify Git history behavior.** Exercise the
+actual import in both SHA-1 and SHA-256 repositories. A hard-coded 40-character null
+parent breaks SHA-256 fast-import; clear the private ref with a parentless reset and
+omit `from` for a root commit. Remove version-cache refs after a successful fetch,
+then reimport: the previous private tip must not become the new root's parent.
+
+Exercise the actual helper with real `git fetch`, `git log` and `git blame` in an isolated repository,
+using deterministic version/tree fixtures. Repeat the fetch after a local commit on
+`main` and assert that local refs and working files stay intact. The gamedevpl helper
+advertised `import` without `refspec` and emitted commits into `refs/heads/main`:
+initial history reads worked, but fetching after a local commit failed in fast-import.
+Also check history pagination and tree-route rate limits before claiming a full-history
+import works against the platform API.
+
+For history edits, verify reverse patches against later changes in the same file,
+binary files, renames and root deliveries; replacing a tree with its parent is not
+revert. Preserve synchronization bases and caller Git state. Standard checkouts store
+raster sources as base64 text while source repositories store raw bytes: check both.
+Inject a failure between directory renames and recover with the source directory
+missing. Resolve recovery before source-project discovery, which otherwise fails on
+missing SPEC.md. Refuse recovery over subsequent editor changes and validate its namespace.
+Kill a separate writer process and exercise recovery: an in-process rename-failure test
+does not leave the persistent writer lock behind. Reclaim only a demonstrably dead
+history-edit owner, never a live or agent-owned lock; serialize stale-lock cleanup too.
+Recheck the remote tip after fetching trees and computing reverse merges, before writing.
+For pull merges, verify historical content against base hashes before applying three-way merges.
+Git remains optional: exercise native checkout with no repository and explicit Git setup separately.
+For native stash and conflicts, test pop failure retains its entry, abort preserves resolution edits,
+and source/base commit recovery survives a newer delivery. Block native and helper delivery
+while a merge is pending, and keep status reads from advancing its base. Test ignored
+collisions, binary choices, case collisions and actual shell/slash commands without a repository.
+Stash inspection and deletion must not depend on the current base or a source snapshot.
+Exercise missing/corrupt bases and broken, symbolic or oversized working sources.
+Kill abort after the source restore and before/after journal removal: the original resolution
+backup must remain discoverable, and a retry must preserve edits made after restoration.
+Verify real Git pull/stash/push across both source layouts and raster representations.
+Derive delivery bases from pushed commit ancestry, not a mutable working-copy base.
+Exercise push followed by fetch and fast-forward pull; cache-only receipts leave sibling commits.
+Preserve repository context outside the platform manifest when importing later source versions.
+Test intervening deliveries during verification and retain them in projection ancestry.
+Do not advance a working-copy base for another branch or unmerged canonical sources.
+Record the remote tree as the new base; merged drafts must remain local differences.
+Exercise missing value flags through their handlers: suppressing CLI version output is insufficient.
+Test historical checkout through the real entrypoint as well as slash routing;
+the ordinary checkout branch and global --version handling can bypass the new action.
+
+Shared command dispatch also has synchronous behavior: update progress must appear
+before the first await. An unconditional await of a new history handler, even when
+it returned false for other verbs, delayed the update spinner and broke its fake-timer
+tests. Gate asynchronous handlers with a synchronous verb check and run the existing
+progress/cancellation fixtures as well as the new command tests.
+
+Run scoped CLI suites with `npm run test -w @gamedevpl/cli -- <files>` or from
+`apps/cli`. Vitest's `--root` does not change the process working directory. The
+Play lifetime fixtures resolve `../../node_modules` from that directory; running
+them from the monorepo root makes child processes look for `/node_modules/tsx`
+and produces startup timeouts unrelated to the product change.
+
+Host Git actions must be tested against checkout-controlled hooks, SSH commands,
+credential helpers, receive-pack overrides and includes. A successful host SSH
+fixture alone does not establish isolation. Run the attack fixtures on the original
+implementation too. Keep push metadata separate from the checkout's configuration,
+disable hooks, and refuse custom helpers and local transports that execute receiver
+code on the host. Exercise linked worktrees and both Git object formats.
+
+Whatever the project's definition of green is — run all of it, in the isolated checkout:
+
+```bash
+npm install
+npm run type-check && npm run lint && npm run test && npm run build
+```
+
+Treat a passing gate as the **minimum**, not proof of correctness. And note: a CI check that
+shows as pending, skipped, or `action_required` is **not** a pass. Absence of signal is not
+signal.
+
+A stored candidate with a pending verdict is not evidence of a running gate. Exercise
+Cloud Build refusing creation and the agent subsequently ending or going quiet: neither
+Studio surface should animate a check indefinitely. Actual gate progress outranks the
+agent stall; acceptance without a build ID must remain a supported outcome too.
+Keep the normal submitted-before-first-milestone fixture without `gateProgress`: successful
+submit sets `agentEndedAt`, so `ended` alone must not disable that starting state. Only
+`gate_not_started` does. Adding progress to this fixture masks the regression. Also record
+committed selections before passive effects: an effect-based reset can briefly display
+history after a new build passes, even when the final state assertion succeeds.
+
+Two concrete instances of that (observed 2026-07-23):
+
+- **A push can silently spawn zero workflow runs.** GitHub dropped the push event for one
+  commit — CodeQL ran but `on: push` CI/Deploy workflows never got runs created (no failed
+  run, just _nothing_). Always confirm runs exist for the exact head SHA
+  (`gh api "repos/<r>/actions/runs?head_sha=<sha>"`); if none, retrigger with an empty commit.
+  For PR-only CI, check `mergeable_state` first: a merge conflict suppresses those runs
+  while dynamic CodeQL still runs. Fetch current master and resolve conflicts before
+  retriggering; the PR's recorded base SHA can lag behind the current master ref.
+- **Scanner version drift makes local verification meaningless.** gitleaks 8.18.2 (CI) and
+  8.30.1 (local) each flagged _different_ false positives over full history — a local "no
+  leaks" pass said nothing about CI's verdict. Verify with the exact version CI pins, and
+  pin CI to a version you can run locally.
+- **`actions/runs?head_sha=<short-sha>` silently returns zero runs.** The API needs the
+  full 40-char SHA; a short SHA is not an error, just an empty list — a monitor polling it
+  waits forever while everything already completed. Always `git rev-parse` to full length.
+- **A PR-only workflow wrapper omits dynamic CodeQL/Code Quality runs.** Use the generic
+  GitHub GET tool for `actions/runs?head_sha=<full-sha>` and
+  `commits/<full-sha>/check-runs`, then inspect their actual conclusions and summaries.
+  Closing scanner review threads does not change the security verdict. A neutral
+  CodeQL check warning about a missing configuration is not a completed clean analysis;
+  wait for the JavaScript/TypeScript analysis and its final alert verdict.
+- **A green unit suite + "I checked it in a browser" can still fail the deploy browser
+  gate when the UX flow changed and e2e was not updated.** Observed (#599, 2026-08-05):
+  published `/play/<slug>` briefly became preview-first (screenshot + Play, no
+  autoplaying iframe; later restored to auto-open, with `/:handle/:slug` staying
+  preview-first). Unit tests and claimed manual browser checks were green; deploy's
+  `npm run e2e` still waited for `iframe` / `.game-theater-bar` on bare navigation and
+  blocked promotion. When a PR changes _when_ a frame mounts (or the copy of an error
+  state the gate asserts), update `apps/e2e` in the same PR — the unit suite never
+  drives that path.
+- **A 302 to another host can be unit-green while CSP forbids the destination.**
+  Observed (#1261 review, 2026-09-11): game media started answering 302 to a
+  15-minute GCS V4 URL. Route tests asserted `Location` and an empty body; CI was
+  green. Catalog/detail/theater load `gameplay.mp4` via `<video src="/api/…/media/…">`,
+  and CSP checks the _final_ URL after redirects. `img-src` already allowed `https:`;
+  `media-src` was still `'self' data: blob:` — report-only today (a `/api/csp-report`
+  warn per catalog preview), enforcing later would block the file the PR exists to
+  move. `app.inject()` never executes CSP. When a PR changes the _origin_ of a
+  media/img/script/connect URL (redirect, signed URL, new CDN), grep `img-src` /
+  `media-src` / `connect-src` / `script-src` and the actual tags (`<video>`, `<img>`,
+  `fetch`), not only the handler. Report-only still matters: the report sink logs
+  every violation.
+- **A responsive control can move into an overflow menu while its e2e selector stays
+  direct.** Observed (#878, 2026-08-18): the mobile Studio Code action moved behind
+  More, but the deploy gate still searched for a visible inline Code button. When a
+  responsive redesign changes control placement, exercise the compact interaction
+  (open the menu, then select the action) instead of only changing the selector.
+- **An agent can weaken the gate in the same commit as a requested fix.** Observed: a
+  commit that legitimately restored Basic-Auth also changed the deploy smoke's negative
+  check to accept the failure state (401-only became 401-or-503, and the auth header was
+  dropped so the outer wall's 401 satisfied it). The deploy then went "green" with auth
+  entirely unconfigured. When reviewing a fix commit, diff the CI/smoke assertions
+  specifically: any check that got a _wider_ accept-set, a removed header/flag, or a new
+  "or" branch is a red flag even when the headline change is correct.
+- **A green end-to-end UX proves nothing about persistence.** Observed: live Google
+  sign-in fully worked (token verify, session cookie, authenticated /api/auth/me) while
+  the database stayed empty — prod had silently fallen back to the in-memory store
+  because the entrypoint never passed the real one (`buildApp({logger:true})`, default
+  `?? new InMemoryStore()`). Status codes cannot reveal this. After verifying a flow
+  that should write, query the datastore for the actual record.
+- **A green deploy can serve stale config: CI vars are snapshotted per-run.** Observed: a
+  deploy run raced a `gh variable set` — the run baked the variable's OLD (empty) value into
+  the revision and went green, because the smoke gates only asserted negative outcomes
+  (401s), which an empty allowlist satisfies identically to a working one. And the fix
+  attempt raced too: a second run had snapshotted a since-deleted variable and re-deployed
+  it. After any config-affecting deploy, verify the SERVED revision's actual env
+  (`gcloud run services describe … | jq .spec.template…env`), never just the run's color.
+- **An image-only service update does not pick up a new required env var, and the health gate stops blocking once that image is current.** Observed (#1464 review, 2026-09-24): world stopped falling back to `SESSION_SECRET` and exits unless `ZONE_TICKET_SECRET` is set. `deploy.yml` rebuilds the zone host when `WORLD_INPUTS` change (`apps/world`, `packages/zone-core`, `packages/contract`, `package.json`, `package-lock.json`) and runs `gcloud run services update --image` only. At review time `infra/deploy-world.sh` still mapped `SESSION_SECRET`, so the roll kept that map and the container never listens. The health check `exit 1`s, before app promotion, only while `NEEDS_BUILD` is true. The update already happened, so a re-run of that SHA sees the image match, treats the dead host as pre-existing, and only warns. Later app promotions proceed with the zone host down. #1473 rewrote the script to `ZONE_TICKET_SECRET`; `--image` still does not apply it. `deploy-world.sh` `--set-secrets` replaces the whole set, so a hand run drops a secret someone added with `--update-secrets`. When a PR removes a secret fallback, grep the workflow path list and the deploy script for an image-only update, and require the new variable on the live service before merge. A PR note that says "do not deploy this service yet" is not a gate.
+- **A new HMAC key with a fallback and no previous-key verify is a no-op until set, and a break the moment it is a fresh value.** Observed (#1464): zone tickets accept `prevTicketSecret`; `zonePlayerTag` and unsubscribe tokens do not. Seats and mailed links were signed with `SESSION_SECRET`. Setting `ZONE_PLAYER_SECRET` or `UNSUBSCRIBE_SECRET` to a newly generated key orphans seats after the ticket TTL and rejects every existing unsubscribe link. The first value has to be a copy of the key those tokens were signed with. Scope prefixes still separate token types for as long as the fallback shares one secret.
+- **An agent will put literal placeholder values into live config.** Observed:
+  `BETA_ALLOWED_EMAILS=your.email@gmail.com` set as a real repo variable — a registrable
+  Gmail address, i.e. a live allowlist hole. Grep agent-set config for placeholder shapes
+  (`your.`, `example.`, `changeme`, `<...>`) before and after deploys.
+- **A green local gate does not prove `npm ci` will pass.** lint/type-check/test/build all
+  run against whatever is already in `node_modules`; only `npm ci` checks that
+  `package.json` and `package-lock.json` agree, and CI runs it first. Observed: an agent
+  edited dependency ranges in `package.json` without regenerating the lock — every local
+  check green, CI dead on arrival at `npm ci` (EUSAGE). After ANY `package.json` edit,
+  `npm install --package-lock-only` must produce a zero lockfile diff before committing.
+- **A clean merge can bury new CLI notes inside an already-published section.**
+  Observed (#1735): releases advanced on master during development; GitHub merged
+  without conflicts, placing the feature's four notes under 0.30.0. CI's changelog
+  guard only checked that the file changed. The proposer returned `none`, so no
+  editor release followed. Inspect the final merge tree's Unreleased section and
+  next version; compare published sections with their tags before accepting the merge.
+- **A security upgrade can exceed the repository's Node floor.** PR #1251 selected
+  Vitest 5, which requires Node 22.12+, while CI and the repo support Node 20.
+  Check the target package's `engines` before installing; npm only warns by default.
+  Vitest 4.1.11 fixes the same advisory and supports Node 20.
+- **Swapping a Vertex / Gemini model id is not a one-line default change.** Observed
+  (#1007, 2026-08-25): `text-embedding-005` → `gemini-embedding-2` kept the legacy
+  `:predict` URL and `{ instances: [{ content }] }` body. Google dropped `:predict` for
+  that family (`400 FAILED_PRECONDITION`); live `embedText` swallows the error to `[]`,
+  so the vector index stays empty and every search returns `{ match: null, score: 0 }`.
+  The suite stayed green because it mocked the _old_ prediction shape and never asserted
+  the request URL. When a model id changes, grep the RPC (`:predict` vs `:embedContent`
+  vs `:generateContent`), the request body, and the response parse path — and add a test
+  that the constructed URL contains the verb the new model actually serves.
+- **A lowered server threshold is a no-op if the client still gates the old value.**
+  Same PR: `/api/catalog/search` dropped `findBestMatch` from 0.65 to 0.55 for
+  "cross-lingual sensitivity", but `HeroPromptSection` still accepts a vector hit only
+  when `data.score >= 0.65`. Scores in the newly admitted band are discarded. When a
+  PR changes an accept-set, grep every caller for the old constant; a split threshold
+  is a behaviour change that no unit test will see if each side is tested in isolation.
+- **A widened substring / alias matcher needs negative controls, not just the prompt
+  that motivated it.** Same PR: the new local matcher made `chcę pograć w piłkę` →
+  `mexico-86` (intended) and also `I want to play a card game` → `carjack-city`
+  (`includes('car')`), `gold rush` / `golden axe` → `mexico-86` (`includes('gol')`),
+  `author` / `autumn leaves` → `carjack-city` (`includes('aut')`), `chess` / `szachy` →
+  `checker-champ`. The added test only mounted the happy-path prompt. When a matcher
+  grows `includes` / alias tables, run the same function on the pre-change branch and
+  require a control query that must _not_ match.
+- **A games-repo PR that adds a GameKit module can 502 play/draft even when its own
+  gate is green.** Observed (www.gamedev.pl-games#690, 2026-08-12): `platformer` was
+  inserted into `GAME_KIT_MODULES` / `shared/assemble-contract.json` with no paired
+  website PR. Website `contract:games-repo` fails when games-repo introduces a name the
+  serve side does not recognize; play/draft then 502s for every game that selects it.
+  Merge order is website first — same rule as a budget raise
+  (`apps/api/src/platform/games-repo-contract.ts`). Diff the module array against _current_
+  `main`, not the PR's merge-base: that branch was ~20 commits behind and its array had
+  dropped `cards` and `ui` that main had added, so a 2-line "add platformer" diff against
+  a stale base is a module deletion against current main.
+- **`validate` does not catch leftover create-template copy.** Observed (same PR):
+  `moon-hopper` playtest emitted `first-ledge` / `halfway` / `moon` and `end=won`, but
+  `SPEC.md` and `GAME.json` still said "Collect five stars in the arena." Check 33 only
+  requires that `howToPlay` _exists_. Read SPEC / description / howToPlay against what
+  the game actually does — especially on a game that started from `npm run create`.
+- **Ambient `declare function` in a tsconfig `include` is a catalog-wide type lie.**
+  Observed (same PR): `shared/genres/platformer.d.ts` is included for every game, so
+  `play()` typechecks in a non-platformer. The claim that `GAME.json` selects the small
+  d.ts was unimplemented (`pack-kit` still digests only `game-kit.d.ts`). A vocabulary
+  that is supposed to be opt-in has to be selected the same way modules are — not
+  dumped into the root tsconfig.
+- **Unit tests for a new route can pass while the route is still 401'd by a wall that
+  lives elsewhere.** Observed (self-authored, 2026-07-23): a new `POST /api/waitlist`
+  route was added inside `registerAuthPlugin` (`auth.ts`) and its unit tests called
+  `registerAuthPlugin` directly — green. But the private-beta all-`/api/*` wall hook lives
+  in `app.ts` (`buildApp`), a separate file, and its exemption list (`/api/health`,
+  `/api/auth/*`) didn't include the new route. Every local check (lint/type-check/test/
+  build) passed; only the CI _deploy smoke test_ against the real assembled app caught it
+  (expected 400, got 401), and the candidate revision never got promoted — no prod
+  incident, but it should have been caught locally. Lesson: when a new route is added
+  under a project that has a cross-cutting auth/allowlist wall, test it through the
+  _fully assembled app_ (`buildApp`/equivalent), not just the plugin that defines the
+  route — and grep for the wall's exemption list explicitly to confirm the new path
+  matches it.
+- **Hundreds of adjacent 1px SVG `<rect>`s look solid in `crispEdges` and band under
+  `auto`.** Observed (mascot follow-up, 2026-07-27): a pixel silhouette drawn as ~200
+  horizontal span-rects was fine for the idle nav mark (`shape-rendering: crispEdges`)
+  but every emotion placement used `auto` AA — each rect got soft top/bottom edges, and
+  neighbouring partial coverage did not sum to opaque, so the body showed horizontal
+  banding / speckles on phones. Flatten spans into one `<path>` (interior edges cancel
+  in a single coverage pass). Also: a "solid" fill derived separately from the punched
+  silhouette can leave pinholes inside the mouth/eyes; derive solid from idle + enclosed
+  holes, and test that solid covers every idle pixel and leaves only intentional holes.
+- **A green unit suite can hide a live-only double-transition that a "one-behind"
+  window depends on.** Observed (BYOCA CP-1, 2026-08-01): the MCP terminal-receipt
+  grant (`get_gate_verdict` readable when the caller's generation is _exactly one
+  behind_ current) passed unit tests that set the generation delta by hand — but on the
+  real deployed self-build path it was unreachable, always `401 this build is finished`.
+  Root cause was a race the unit tests never assembled: an agent that goes straight
+  `start → submit_sources` (no intervening `report_progress`) leaves the in-memory
+  `record.state` stale, so the delivery's protective `submitted` transition
+  (`canTransition(staleState,'submitted')`) is skipped; the round stays `building`, and
+  the self backend's `observe()→completed` closes it (`ready_for_review`, generation +1)
+  _in parallel with_ the gate verdict closing it again (+1). Net generation is two
+  behind, so a window that only admits one-behind can never match. Lessons: (1) when a
+  capability's validity is a narrow numeric window (`gen === active - 1`), a unit test
+  that hard-sets the delta proves the comparison, not that production ever lands on it —
+  drive the real end-to-end sequence; (2) a guard that reads `record.state` after an
+  earlier write in the same handler has updated the DB — but not the local object — is
+  reading stale state: re-fetch the record or thread the new state through; (3) this
+  class of bug fails closed (it rejects access), so it is a contract/UX defect rather
+  than a security hole — say so explicitly when reporting, so severity is not
+  overstated.
+- **Do not assume a 15-minute quiet stall is how self→platform handoff is supposed to
+  work.** Observed (BYOCA handoff follow-up, 2026-08-04): ChatGPT-class agents usually
+  `submit_sources` and stop. A successful MCP submit now also sets `agentEndedAt`
+  (handoff unlock) even if `end` is skipped; `end` still sets `stop:true` for the
+  session. Soft `warnings.code=call_end` re-emits until `end`. Quiet is only the
+  fallback. `gateStarted` means Cloud Build returned a build id — not mere upload
+  acceptance. Reviewing a PR that "fixes" handoff by shortening quiet, redefines
+  `gateStarted` as mere upload `accepted` (ignoring Cloud Build create), or drops
+  submit→`agentEndedAt` / `call_end` / gate-poll `preserveEnded`, is missing the
+  contract — see `.claude/skills/byoca-mcp/SKILL.md`.
+- **A fix that narrows a predicate can reintroduce the same defect through a smaller
+  door — and its regression test will not notice.** Observed (BY-25, 2026-08-02): a
+  correct fix replaced "does the creator have ANY non-abandoned job with this slug"
+  (a scan) with "is the NEWEST job for this slug owned by them and non-abandoned" (a
+  point read). Both agree in the seeded regression scenario, so a 250-job probe
+  encoded straight from the bug report passed. They disagree when a _newer_ job on the
+  same slug is abandoned — a canceled improvement round, or the `no_connect` sweep
+  auto-abandoning one — at which point ownership of a live published game reads false
+  and the durable key is refused with the same misleading "rotated" message the fix
+  existed to remove. Lesson: when a fix swaps a **scan** for a **point read**, ask
+  what the scan used to tolerate. Enumerate the states the discarded records could be
+  in (abandoned, canceled, superseded, owned-by-someone-else) and test the newest
+  record in each, not just the one from the bug report.
+- **A follow-up that claims "all review findings fixed" can drop items that lived
+  only in an issue comment.** Observed (www.gamedev.pl-games#807, 2026-08-19): the
+  first pass posted 32 inline findings plus a separate issue comment for two
+  `zone.ts` defects that were not in the diff (restart slot stranding, host-disconnect
+  zombie actors). The later "all 32 findings fixed" body was true of the _threads_;
+  the issue-comment item (host close leaves remotes latched and farmable) was still
+  on HEAD. When verifying a "we fixed the review" push, re-probe every promised
+  fix — including ones that could not be inlined — and do not treat resolved-thread
+  count as the checklist.
+- **A whole-action cap check can still leak through a multi-count loop.** Same PR:
+  `launch()` started returning before spending ammo when `projectiles.length >= MAX`,
+  which fixes the single-rocket case; Feather Flurry still spends one ammo unit and
+  then `addProjectile` silently drops the remaining pellets once the cap is hit
+  mid-volley (probe: 78/80, ammo 10→9, added 2 of 7). When a fix adds an early
+  return at the cap, walk every caller that loops `count` times.
+- **Run your probe against the PRE-fix branch too.** A probe that only fails on the
+  candidate proves a defect exists; running the identical probe on the base proves
+  whether the PR _introduced_ it or merely failed to fix it. Those are different
+  verdicts with different remedies, and the A/B costs one command — check out the base
+  in a second worktree and run the same file. Pair it with a control case that must
+  pass on both, so a green-everywhere result reads as a broken probe rather than a
+  clean bill of health.
+- **A rollback-after-dispatch fix can still fail before the provider returns.** Observed
+  (#770, 2026-08-12): managed providers can launch an MCP session before the awaited
+  `dispatch()` resolves. Moving a builder write after that call fixed vendor rejection
+  recovery but left the session's first tool call reading the old builder. When an
+  awaited vendor call can call back into the app, publish routing state before the call,
+  roll it back only when that call rejects, and have the stub read the store in-flight.
+- **A PR that changes an error's SHAPE has changed agent behaviour even when no test
+  turns red.** Observed (BY-18a, 2026-08-02): a tools/call missing its credential used
+  to return a JSON-RPC tool error carrying recovery instructions ("pass sessionKey from
+  start(), or configure Authorization: Bearer"); the OAuth work replaced it with a bare
+  HTTP 401. The suite stayed green because the assertion was rewritten in the same
+  commit. Diff test files for assertions that were _edited_ rather than _added_ — an
+  edited expectation is a behaviour change the author decided was acceptable, and it
+  deserves the same scrutiny as the source change. For agent-facing surfaces
+  specifically, check that any replacement error still tells the agent what to do next;
+  a status code is not an instruction.
+- **A filter inserted in front of a symlink or delete check is untested if the old test is renamed onto an input that still reaches the old branch.** Observed
+  (#1469 review, 2026-09-24): `scanGame` started `continue`ing undeliverable paths before the
+  "record a symlink, never follow it" arm. The existing test renamed `leak` to `leak.ts` so
+  the symlink stayed deliverable and the assertion still passed. That stays green if the new
+  branch follows or deletes a `NOTATKI.md` symlink, or writes `images/hero.png` through a
+  directory symlink on pull. Probe the skipped input itself: a not-game file symlink, a
+  directory symlink that is the parent of a deliverable platform path, ordinary pull and
+  `--force`. On that commit both were safe (force unlinks the directory symlink and writes
+  inside the checkout; a not-game file symlink is not read and survives pull). The renamed
+  test does not lock that in. The follow-up commit added those probes; the lesson is the
+  renamed test.
+- **Invalid identity metadata must not silently select another source layout.** Observed
+  (#1824 review, 2026-10-13): removing the SPEC slug or corrupting the Kit pin made
+  source-repository detection return null. Delivery then scanned an absent `games/<slug>`
+  directory and treated existing `src/` files as deleted. After establishing a base,
+  damage each identity file and probe diff, forced push, pull, and runtime sync. Refuse
+  invalid metadata before writes or staging; reserve the alternate layout for roots
+  without source-repository markers. Exercise an already-running preview too: a
+  refusal thrown by its fingerprint watcher must reach the error display rather
+  than terminate the server. Repair the metadata and require the preview to resume.
+  Launch detection and Connect from the generated runtime and a deeper directory;
+  its own slug marker must resolve back to canonical sources, never to the mirror.
+  Change SPEC to a different valid owned slug after saving a base, then remove the
+  runtime: the base must still bind the original game. Also connect an unbased
+  repository and change its slug; its local identity must block cross-game writes.
+  Exercise direct `connect --agent` with no base or runtime, including headless
+  and interactive adapters. Every launch route must bind identity before delegation.
+  Use a real PNG/WebP to test source mirroring and pull, plus the exact staged
+  base64 payload. Text fixtures cannot reveal binary corruption. Reject damaged
+  base64 before deleting stale sources, preserving the source tree on refusal.
+  Return a new raster from the post-delivery tree; that merge must use the same
+  binary conversion as pull and mirroring, and refuse paths through symlinks.
+- **Hand-editing the comment-prose baseline grandfathers a new file.** `baselineWordsFor`
+  treats a missing key as 0. Adding the key, with `--write --force` or a manual JSON edit,
+  is how the debt gets in. Observed (#1469 review): moving `/** */` blocks into a new
+  module and sealing `comment-prose-baseline.json` at that word count made the gate agree
+  to the move. The follow-up commit dropped that entry. Rewrite to `//` one-liners; do not
+  copy the old file's debt onto a new path. Shrinking the old files' baselines is the part
+  that should land. Module size is a different rule: `baselineLinesFor` gives a missing key
+  the 500-line hard cap, and a new entry above 500 is the bypass. An entry at or under 500
+  does not grandfather a new file.
+- **An allowlist moved into `@gamedevpl/contract` is not the only copy, and a backstop on the normalized path is not the raw check.** CI lockstep diffs
+  `DELIVERY_FIXED_FILES` against games-repo `delivery-contract.json`. It does not compile
+  Studio's `apps/web/src/surfaces/studio/codeSurfacePaths.ts`. The first #1469 revision left
+  that file as a hand twin. The merge commit imported the shared list and calls
+  `deliveryPathRefusal` after its own allowlist. That did not unify the predicates. Rasters
+  stay refused in Studio on purpose (the surface is text-only). `/abs.ts` is still accepted
+  there: `normalizeSourcePath` strips the leading slash, the local `startsWith('/')` check
+  is then dead, and the shared refusal sees `abs.ts`, a legal module.
+  `codeSurfacePaths.contract.test.ts` samples omit a leading slash, so "never accepts a
+  path the API would refuse" stays green. Call the shared refusal on the raw path, or put
+  `/abs.ts` in that sample list.
+- **A green games-repo `check:game` does not prove a puzzle's obstacles obstruct.** Observed
+  (echo-loop / www.gamedev.pl-games#699, 2026-08-12): TRACE, ACCEPTANCE, agency `--strict`,
+  and a scripted capture were green while hold-right + one jump cleared plate/door rooms
+  with `ghostCount: 0`. Capture drives the intended path; agency only fails idle / one
+  held key; ACCEPTANCE that restates the capture floor (`roomsCleared >= 2`) cannot see a
+  skip. For puzzle games, import the pure model in a throwaway clone and prove a
+  no-mechanic control _fails_ (walk-only into the door, jump-over) in the same session as
+  the intended solve.
+- **A training-lab / per-mode closer can be TRACE-green on one happy path.** Observed
+  (mexico-86 / www.gamedev.pl-games#811, 2026-08-19): SPEC promised every drill ends in a
+  pass/fail verdict; CAPTURE only `waitFor`s `trainingOutcome` after short-pass key 4.
+  Isolated `check:game` was green. Walking the other labs showed set-piece choice and STOP
+  leave `trainingOutcome=none` with `trainingActed` already true, so the idle closer never
+  fires. When a PR adds a per-mode closer, probe each mode (or at least the one that does
+  not go through `finishAction`), not only the capture drill.
+- **Two writers of one knob, tested in isolation, is not a composition test.** Observed
+  (games-repo gfx scale, 2026-08-12, [www.gamedev.pl-games#692](https://github.com/gamedevpl/www.gamedev.pl-games/pull/692)):
+  a frame governor stepped the backing-store scale down when fill was slow, and a
+  viewport watcher re-derived that same scale from the CSS box on `resize` /
+  `orientationchange`. Each path had tests; neither test fired the other. Live, a 1px
+  viewport change after a successful step-down restored the high scale, and a session
+  latch then froze it there — the iOS URL-bar / virtual-keyboard path. When two
+  functions write the same piece of state, the sequence (A then B then A) is the test,
+  not A and B separately. A latch that means “stop trying” is only safe if nothing else
+  can raise the value underneath it.
+- **Stepping a corpse with the live combat solver is not the same as advancing a collapse
+  pose.** Observed (bonfire-arena / www.gamedev.pl-games#1198 review, 2026-09-01):
+  `stepFighter()` was the only writer of `fallen`, and runtime skipped it on `e.dead`, so
+  knights vanished standing. A unit test that called `stepFighter` on a dead fighter
+  passed. Wiring the full solver back in left residual `arm.vel` in the still-live
+  clash/strike loop; the capture path then never reached `won`. A/B against the pre-fix
+  commit proved the regression was the corpse step, not the rebase. `trace:classify`
+  on a later fallen-only path was render-only. Advance the pose field the spec names;
+  do not keep a dead blade in the exchange.
+- **Games-repo `gate-attest` follows CI scope, not the "one game → check:game" heuristic.**
+  Observed (bonfire-arena / www.gamedev.pl-games#1237, 2026-09-01): a game-only read of
+  rule 5b replaced a correct `npm run check:catalog-static` attest with
+  `check:game -- bonfire-arena`. CI still classified the diff as `static` because it also
+  touched `tools/idle-agency.ts` and `tools/tests/` (`isStaticOk` widens scoped → static).
+  The attest job then failed: required command `check:catalog-static`. Ask
+  `node tools/gate-attest.mjs expected` (or the Actions log's `Required command:`) for
+  the SHA you are opening; do not "correct" a static attest down to `check:game` just
+  because a `games/<slug>/` path is in the diff. `check:pr` remains an accepted alias.
+- **A DIRTY games-repo PR is often rebaseable without hand-merging the game.** Observed
+  (bridge-builder / www.gamedev.pl-games#1492, 2026-09-17): `merge-tree` flagged
+  `bridge.ts` plus every media binary, but `git rebase origin/main -X theirs` replayed
+  all 20 commits cleanly — sequential replay is not the final-tree merge. Main had only
+  deleted unused lattice helpers and recaptured media for encoder/editor-hash churn.
+  After rebase, drop helpers the 3D rewrite still never calls (`nodeCount` stayed;
+  `isDeckNode` / `cursorRowCol` went), refresh Check 10 with a one-slug sourceHash
+  rewrite (not a wholesale `git checkout -- media/`), then `npm run check:game -- <slug>`
+  and paste the new `gate-attest` SHA. The owner merged within seconds of validate
+  flipping green.
+
+- **A green games-repo visual-uplift gate does not prove the picture changed.**
+  Observed (www.gamedev.pl-games #1949–#1963 and #1930, 2026-10-02): every PR had
+  `validate` success, a matching `gate-attest`, and a committed trace classification of
+  RENDER with 0 SNAPSHOT. Native mean absolute RGB delta against the pre-uplift frame
+  was 0.42 for neon-strike-cell (the accepted concept's rain and wet asphalt were
+  absent) and 2.68 for one-more-descent (torch-lit brick in the concept, shipped floor
+  barely moved). An author luminance ROI can clear a self-set ">4" while the frame
+  still reads as the old game; realm-of-shards checked "stronger grass/forest
+  separation" for 15.33 → 15.95. `after-mobile-*.png` was the same git blob as
+  `after-*.png` on all 11 sampled opening frames, so a touch-viewport checkbox can be
+  a copied desktop canvas. Open the native pair or the source|concept|actual triptych
+  and measure the frame. Do not accept the ROI table or the mobile filename as the
+  visual verdict. A later batch (#1969–#1979, 2026-10-03) kept that trap and added a
+  second folder: root `after-mobile-*.png` was still a 640×400 canvas copy (pixel
+  delta 0), while `docs/visual-uplift-review/.../touch-viewport/*-390x844-*.png` was
+  a real page screenshot. Judge the viewport files by size, not by the word "mobile"
+  in the name. Evidence for that batch lives outside `games/<slug>/`. An author can
+  also miss their own +3 (lost-terminal full-pane 33.90→34.47) or ship one mark
+  pixel-identical on purpose (hero opening was ACCEPT, the battle frame moved).
+
+- **Mocked tool calls can hide a schema/parser mismatch.** Observed in CLI chat
+  (#1187): one model tool advertised optional `slug` and `request` fields together,
+  while the runtime accepted only one per action. Play passed; real edit requests
+  failed with `invalid CLI action`. Check the tool schema sent to the provider as
+  well as the parser, and exercise each action on its real lifecycle state. Published
+  edits need `/improve` and its new token, not the closed round's `/turn`.
+
+- **Exercise auth variants and partial agent failures.** CLI #1201 initially accepted only
+  `claude.ai`, rejecting subscription `oauth_token` logins, and treated any tool denial as
+  failure of the entire edit. Test each supported login source and an exit-zero run with
+  completed edits plus one denied tool. An agent's denial list is not a task verdict.
+
+- **A check that defers to another check still runs when that other check is skipped.**
+  Observed (#1274 review, 2026-09-12): delivery link-check skipped every `/shared/` import
+  "because typecheck will verify the Kit", but `source-delivery` still stores when the Kit
+  store is missing or Kit load fails (`skipped: no_kit`). `../../shared/missing.ts` then
+  bypassed both checks. Gate the exemption on successfully loaded Kit paths (or resolve
+  against them), and keep unimported Kit files out of typecheck _roots_ while leaving
+  them in the resolution map — otherwise opt-in ambient `.d.ts` globals typecheck as
+  present. A same-line `import …; export default` also evades the line-anchored import
+  regex, so a regression test must put the import on its own line. Fail-closed on agent
+  delivery (no Kit → refuse `/shared/`) is not the same as copied candidates
+  (seal/editor/proposal): those rewrite sources without a Kit store. Defer `/shared/`
+  there (`kitShared: 'defer'`) or a green preview later `seal_failed`. A Set still
+  fail-closes agent delivery.
+
+- **A field added to `setCreationLimits` merge but not the Firestore `get` mapper is a
+  silent production no-op.** Observed (#1299 review, 2026-09-12): `videoPaused` /
+  `mediaLean` / `anonymousPaused` were merged on write in both stores. `FirestoreQuotaStore.getCreationLimits`
+  still mapped field-by-field and dropped them, so the spend brake could write
+  `anonymousPaused: true` and every instance shed nothing. `InMemoryStore` returns the
+  merged object as-is, so an InMemory round-trip does not cover this. Walk get and set
+  together; a test that only uses `InMemoryStore` cannot see a mapper hole.
+
+- **An `onSend` hook that becomes `async` reopens Fastify 5 "already sent" on routes that
+  `reply.send()` without returning it.** Observed (#1299): `api-cache-policy` started
+  awaiting `isOpenToVisitors()`, and compression registered an `async` `onSend` too.
+  `/api/submissions/:token/preview` does `reply.send(value)` inside a helper and returns;
+  headers were no longer written on the same tick, Fastify sent again,
+  `ERR_HTTP_HEADERS_SENT`. The test that exists because that log showed up in Studio went
+  red. Keep default `onSend` sync (stash the boolean on the request in `preHandler`), or
+  `return reply.send(...)`. Drive preview/play through `buildApp`, not a bare Fastify.
+
+- **Reusing a wall for a new purpose inherits its exemptions.** Observed (#1299):
+  `anonymousPaused` raised the private-beta wall to stop a bandwidth bill;
+  `/api/games/:slug/media` and public-play documents stayed exempt. Catalog 401'd; the
+  posters and mp4 still flowed. Diff the exemption list against the new goal, not against
+  "same wall as beta."
+
+- **A request rewrite that does not change the URL poisons a public cache keyed on that
+  URL.** Observed (#1299): `mediaLean` set `query.w=96` while the client still requested
+  `?w=320`. Image 302s are `public, max-age=10800` (half of the 6h PNG TTL). Clearing the
+  rung left the 96px object on the 320 URL for three hours. Video 503 correctly set
+  `no-store`; the rewrite path did not. Redirect to the real width, or don't cache while
+  the rung is up. Assert bytes (or `Location`), not only that `request.query` changed.
+
+- **A collection-group query that filters eligibility after `.limit()` is not the query
+  the InMemory store runs.** Observed (#1380 review, 2026-09-16): retry listed
+  `emailedAt == null` with `limit` on Firestore, then dropped old rows in JS. InMemory
+  filtered by age, sorted, then sliced. A 3-row fake-Firestore test agreed; a 50-row
+  probe of old ineligible rows plus one recent unsent returned the recent row in memory
+  and `[]` on Firestore. Never-email types (`game.new_version`), skip-forever paths
+  (`share.*`, `operator.*`, unsubscribed / no-address), and rows past the age bound all
+  stay `emailedAt: null` and keep occupying the snapshot. Once they fill `scanLimit`,
+  the advertised retry horizon is a no-op and the two-minute sweep still pays the scan.
+  Put the horizon and retry eligibility in the query (composite CG index, not a
+  single-field override), or stamp skips so they leave the index. The regression has to
+  fill the scan on `FirestoreStore(fake)`, not only InMemory.
+
+- **A sweep `try/catch` that still returns 200 hides a missing Firestore index from the
+  monitor that watches sweep HTTP status.** Same PR: `CG_INDEXES` in `setup-gcp.sh` is a
+  source guard, not a deploy. The live COLLECTION_GROUP index is created by re-running
+  step 7 and builds asynchronously. Until it exists the query throws
+  `FAILED_PRECONDITION` every tick; the handler logged it and answered 200, so A3
+  ("notify-sweep failing") stays quiet. Fail the sweep, or put the retry error on the
+  200 body that monitor already consumes. A log line nobody pages on is how a job fails
+  quietly for weeks.
+
+- **Automatic replay of `emailedAt === null` without a claim or provider idempotency key
+  turns a rare send-then-stamp race into a scheduler loop.** Same PR: incidental retry
+  was "re-invoke the emitter". A two-minute worker over every null row means overlapping
+  sweeps, the original emit racing the worker, or Resend accepting and the stamp failing,
+  all resend for the whole horizon (~10k copies). `ResendMailer` had no idempotency key.
+  Claim the row, or send with a stable notification-derived key, _before_ the provider
+  call. Scanning "null" is also not "pending email" when skip-forever types never stamp.
+
+## Membership revocation must outlive bounded cleanup
+
+Probe more rounds than the membership cleanup cap and include unstamped legacy rounds.
+A per-round generation sweep is cleanup, not an authorization fence. Removing and then
+re-inviting an editor must not revive old MCP sessions or upload URLs bound to a round
+created by another actor. Test fresh credentials separately, and mutate the durable
+actor fence to prove the regression fails. Persistent erasure markers must date the
+account incarnation and original invitation, not permanently ban a recreated UID.
+Also remove the author of the currently active round, then continue it with fresh owner
+credentials. Actor fences must not classify every future credential by the row author.
+Reminting a session from a channel key must preserve its actor and revocation revision.
+
+## Read the diff against the spec
+
+Failed deliveries still leave a staging overlay. Repair/retry tests must model that
+overlay instead of always returning the committed files. Probe deleting and renaming a
+new rejected file, and restoring the committed tree: a confirmed retry must reconcile
+the rejected paths and reach validation again. Preserve unrelated staging and stop if
+another editor changed the acknowledged rejected paths.
+Retry guidance is behavior too: check preview versus publication and shell versus
+interactive commands, preserving the original mode and delivery flags.
+
+Closed-round recovery must cover owner, agent and legacy staging. Exercise the actual
+read → refusal → discard → retry sequence for edits and deletions, and keep an open-round
+control that protects agent staging. Confirm Studio exposes the same recovery action.
+When round opening changes, update the task-table contract as well as any dated note.
+
+A passing test suite doesn't catch scope creep, subtle regressions, or malice.
+
+```bash
+gh pr diff <N> --name-only    # cheap first look: are these the files you expected?
+gh pr diff <N>
+```
+
+Check explicitly:
+
+- **Scope** — only what was asked. Extra dependencies, new config, or unrelated refactors are
+  a flag even when tests pass.
+- **Project invariants** — the security/architectural rules that must never change. Know
+  yours before reviewing; grep for them directly rather than trusting a summary.
+- **Secrets** — no keys, tokens, or credentials added, and nothing that would write one into
+  published output.
+- **Supply chain** — new dependencies, changed lockfiles, modified CI workflows, or altered
+  build scripts deserve real scrutiny. A workflow change is a pipeline-privilege change.
+- **Cross-repo contracts** — `GAME_KIT_MODULES` / `assemble-contract.json` is lockstep
+  with the website. Adding a module without a website-first paired PR 502s play/draft.
+  Rebase (or diff against current `main`) before treating the array as additive.
+
+## Runtime-verify agent-authored games (canvas + requestAnimationFrame)
+
+An agent-authored game passing the games-repo `validate` gate is **not** proof it runs —
+`tools/validate.mjs` is static only (frontmatter, secret scan, no-external-refs, size cap). It
+never executes the game. You must drive it yourself.
+
+The trap: the in-app Browser pane runs the preview tab as **hidden**
+(`document.visibilityState === 'hidden'`), which **throttles/pauses `requestAnimationFrame`**.
+The game draws one frame and freezes; sampling the canvas shows an unchanging pixel count. That
+is the preview, not the game — do not conclude the game is broken.
+
+Workaround — a manual-clock harness (drives the loop deterministically):
+
+```html
+<script>
+  window.__clock = 0;
+  performance.now = () => window.__clock; // control the clock
+  window.__rafQ = [];
+  window.requestAnimationFrame = (cb) => (window.__rafQ.push(cb), window.__rafQ.length);
+  window.__pump = (steps, dtMs) => {
+    for (let i = 0; i < steps; i++) {
+      window.__clock += dtMs;
+      const q = window.__rafQ;
+      window.__rafQ = [];
+      q.forEach((cb) => cb(window.__clock));
+    }
+  };
+</script>
+<!-- the game's canvas markup, then -->
+<script src="./game.js"></script>
+```
+
+Serve it from the same origin as `game.js`, then from your JS: `__pump()` to advance time,
+`dispatchEvent` real input events, and assert against **canvas pixels** (the game state is
+usually closured and unreadable). Prove the three things the spec promises: spawn/motion
+(bright-pixel count rises), input effect (popping/scoring changes pixels), and the lose/win
+transition (the game-over overlay floods the canvas dark). The definitive proof is still
+playing the _published_ game on the live site, where a foregrounded real-user tab runs rAF
+normally.
+
+For **puzzle** games, also probe the skip, not only the scripted solve. `npm run check:game`
+replays `CAPTURE.json`; it will not notice a two-tile door you can jump, a shard door you
+can clear without the shard, or an ACCEPTANCE bar that is just the capture floor. Drive
+`updateRound` / the pure model with a no-echo / no-key / jump-over control and require that
+control to fail.
+
+## Verifying behind sign-in (you don't need the owner's Gmail)
+
+Most authenticated flows can't be checked from a cloud VM by logging in — there is no
+browser session and no Google account, and driving Google's login UI with Playwright does
+not work (automation walls, CAPTCHA, datacenter IPs). Two working paths, in order of
+preference:
+
+**Local — for verifying a change.** Run the app and mint a dev session. No credentials, no
+cloud, in-memory store:
+
+```bash
+npm run dev
+curl -X POST http://localhost:5173/api/auth/dev -c cookies.txt   # session for dev:local
+```
+
+This is enough for almost all verification. It exercises real routes, real walls, and the
+real SPA. What it does **not** prove: anything about production data, the real generation
+pipeline, or deployed config.
+
+**Deployed — for verifying production behaviour.** Use a personal access token
+(`docs/agent-access-tokens.md`), issued by the repo owner and supplied as
+`GAMEDEV_ACCESS_TOKEN`:
+
+```bash
+curl -H "Authorization: Bearer $GAMEDEV_ACCESS_TOKEN" https://www.gamedev.pl/api/auth/me
+# driving a real browser? the SPA uses cookies, so exchange the token first:
+curl -si -X POST https://www.gamedev.pl/api/auth/session \
+  -H "Authorization: Bearer $GAMEDEV_ACCESS_TOKEN" | grep -i set-cookie
+```
+
+Rules that matter:
+
+- **Never commit the token, and never paste it into a game, issue, PR, or log.** It is in
+  the generated-game credential scanner, so an embedded one fails assembly — but that is a
+  backstop, not permission to be careless.
+- **A token acts as a real account against real data.** Anything you create is real: use a
+  `bot:` account, and clean up what you make.
+- **A token deliberately cannot reach operator surfaces or mint another token.** A 404 from
+  `/api/admin/*` (or `/api/internal/ops/*`) with a valid token is correct behaviour, not a
+  bug to route around.
+- **Exchange once, reuse the cookie.** `/api/auth/session` shares the auth rate limiter
+  (20/hour/IP).
+
+## Verify claims, don't relay them
+
+For Local Play HMR, create a fresh game through the shipped default path. Change
+its HUD and simulation and verify the shown revision, retained state and iframe.
+A hand-authored fixture with `GAME.json.hot` proves the opt-in runtime, but says
+nothing about whether new games or agent edits preserve that contract.
+
+If an agent reports "all tests pass" or "I verified X", reproduce it. Report what **you**
+observed, and say plainly when you couldn't check something — a known unknown is far more
+useful than an assumed pass.
+
+Watch for exit codes hidden by pipes: `cmd | tail` reports `tail`'s status, not `cmd`'s. Use
+`cmd > file; echo "exit=$?"` when the exit code matters.
+
+A scanner job can fail before scanning: GitHub release downloads returned non-archive
+responses while the pinned release still existed. Inspect the download/extraction logs,
+use the official release API for that same pinned version, and rerun the actual scan.
+Do not interpret a download failure as either a finding or a clean scan.
+
+For npm tarball dependencies behind redirects, `npm cache add` can cache only the
+redirect target. An offline request to the original pinned URL may still miss. Verify
+cached bytes against the committed integrity and published asset digest before reuse;
+keep the real package-generation test and its original dependency pin.
+
+## When something's wrong
+
+- **Wrong foundation** (wrong base branch, built on stale code): close it and re-dispatch. Do
+  not try to salvage — the diff is meaningless against the wrong base.
+- **Failing gate**: report the actual failure output; don't merge.
+- **Scope creep or touched invariants**: reject that part explicitly rather than quietly
+  fixing it, so the boundary stays visible.
+
+## Parallel agents
+
+If more than one agent may touch the repo:
+
+- Give each an isolated location; only one owns the working directory.
+- Prefer coordinating through the remote (PRs, the GitHub API) over local git state.
+- **A parallel agent can commit mid-review, and `git status`/`git diff --cached`
+  snapshots then read inconsistently across calls** — e.g. a file shows as
+  staged-modified one moment, then `git diff --cached` is empty the next because HEAD
+  advanced under you and the index now matches the new commit. Don't trust a single
+  snapshot: confirm with `git diff HEAD -- <path>` and re-check `git log --oneline`
+  and "ahead of origin by N" before concluding what a file's final state is.
+- Tell each agent explicitly what is off-limits.
+- Expect that a mid-task correction may be **indistinguishable from prompt injection** to the
+  receiving agent. Scope prompts properly up front so corrections aren't needed.
+
+## UTC day boundaries in fixtures
+
+Freeze the clock when fixtures and API reads use UTC-day partitions. A `today`
+captured at import can differ from the request day after midnight; buffered visit
+events can also belong to yesterday during the first seconds of a new day.
+Observed in post-merge CI for #2080: creator-health and visit-telemetry assertions
+failed at 00:00 UTC, while their 53 tests passed later without runtime changes.
+Compare timestamps and partition keys before classifying a failure, and retain
+the assertions when making the fixture clock deterministic.
+
+## Mandatory: keep this skill current
+
+**Updating this skill is part of using it.** Whenever verification surfaces something this
+file didn't prepare you for, update it **in the same session, before you finish**.
+
+Update it when:
+
+- An agent found a way to **look verified without being verified** — add that failure mode.
+  This is the highest-value thing you can record here.
+- A **new class of thing worth checking** in a diff emerged (a dependency, a workflow file, a
+  build script, a config that grants privilege).
+- An isolation step **failed to isolate** — e.g. a git operation that still disturbed the
+  working directory. Record exactly what happened.
+- A check here proved to be **noise** — remove it, so the signal stays high.
+- The project's **invariants changed** — this file should name what must never regress.
+
+Prefer specifics over principles: "`cmd | tail` masks the exit code" is worth more than "be
+careful with pipes". Record what you observed, and flag anything you couldn't confirm.
+
+Treat a verification miss that reached the main branch as a **defect in this skill**, and fix
+it here as part of the follow-up.

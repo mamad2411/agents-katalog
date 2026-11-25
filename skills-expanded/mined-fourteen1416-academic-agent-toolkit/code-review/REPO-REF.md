@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fourteen1416/academic-agent-toolkit (path: vendor/forks/claude-code-templates/cli-tool/components/skills/sentry/code-review/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Perform code reviews following Sentry engineering practices. Use when reviewing pull requests, examining code changes, or providing feedback on code quality. Covers security, performance, testing, and

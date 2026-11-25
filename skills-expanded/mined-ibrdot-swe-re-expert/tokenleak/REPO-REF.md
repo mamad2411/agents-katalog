@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ibrdot/swe-re-expert (path: plugins/agentic-awesome-skills-claude/skills/tokenleak/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Token-lean rules for coding agents: cut the context re-sent on every later call (big reads, noisy logs, re-reads, serial calls) without losing correctness."

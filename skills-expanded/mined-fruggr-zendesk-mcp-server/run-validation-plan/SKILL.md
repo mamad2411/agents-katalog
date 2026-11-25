@@ -1,0 +1,199 @@
+---
+name: run-validation-plan
+description: Execute a functional validation plan and report the findings. Use whenever you're asked to validate, QA, functionally verify, or check a feature/bugfix on a branch, or you're handed a functional validation plan to run — even when the skill isn't named.
+---
+
+# Run a validation plan — validator protocol
+
+You are the **independent validator** (the executor counterpart to the
+`functional-validation-plan` author skill). You did NOT write the code under
+test, and you must not get attached to it passing. Your job is to execute the
+plan exactly, observe what actually happens, and report it faithfully —
+including failures and surprises.
+
+**You are independent because of your context, not your login.** Every agent in
+this repo acts under the same human's GitHub account, so the author shown on a
+PR comment — including comments from earlier runs, which are *not* yours — tells
+you nothing about which session wrote it. What makes you the independent
+validator is that this session did not write the code: you were handed the
+branch and the plan, not the implementer's reasoning. So don't try to work out
+whether you might secretly be the author, don't hedge verdicts with doubt about
+your own identity, and don't stack disclaimers. State your role once, in the
+report's `Run by:` line, and let the repository owner judge it — the call is
+theirs, not yours.
+
+## Input & environment
+
+- **The plan is the verbatim `## Functional validation plan` section of the PR
+  description** — never a paraphrase reconstructed from the implementer's chat or
+  your own memory (that would break the independence this protocol exists to
+  protect). Obtain it in this order, stopping at the first that works:
+  1. **If the launcher handed it to you** (the plan text, or a PR number / URL,
+     injected into your session at launch), use that.
+  2. **Otherwise resolve the PR from the branch you are already on** — you do not
+     *search* for it. With the GitHub CLI: `gh pr view --json body,number` (no
+     argument = the current branch's PR). If the GitHub MCP is connected instead,
+     use `mcp__github__pull_request_read`. **Never `gh pr list` or any
+     head/search lookup** — you are sitting on the PR branch, so resolve it
+     directly.
+  - Do not assume a specific GitHub channel exists: the GitHub MCP
+    (`mcp__github__*`) is **not guaranteed** to be mounted in a validator session
+    — often only the server-under-test MCP is. Check what's available and fall
+    back to `gh`; don't burn a turn calling GitHub MCP tools that aren't there.
+
+### Your environment is already set up — do NOT re-create it
+
+This session was launched **on the PR branch, in a checkout of the code under
+test, with the stdio MCP server already running and authenticated**. Everything
+you need is under your feet, except the HTTP server (next section). Concretely:
+
+- **You are already on the branch.** The working tree *is* the code to validate.
+  Do **not** `git fetch` / `checkout` / `clone` / `pull` the PR branch, and do not
+  switch branches — you'd only move *away* from what you're meant to test. To name
+  the code you validated, just read the current SHA (`git rev-parse HEAD`); if you
+  want to confirm it's the PR head, compare against the PR — don't fetch to "get"
+  it.
+- **The stdio MCP server is live and authenticated in this session.** Its tools are
+  already loaded as `mcp__<server>__*` (e.g. `mcp__zendesk-local__*`) — but only
+  the **server under test** is mounted; do **not** assume the GitHub MCP
+  (`mcp__github__*`) is also present (see plan retrieval above — fall back to
+  `gh`). A valid
+  token is already wired in — the running server uses it, and any helper script
+  reuses the same auth (`ZENDESK_OAUTH_TOKEN`, else the cached token file resolved
+  by the auth layer). **Do not go looking for the token, the auth flow, or the
+  base URL in the source** to "set things up": there is nothing to configure. If a
+  tool returns a 401/credential error, that is a *finding* to report (`BLOCKED`),
+  not a cue to start wiring auth.
+- **You drive the feature by calling the real `mcp__<server>__*` tools directly.**
+  No build, no install, no `pnpm` step (HTTP aside, below), no `mcp:live` / `scripts/` CLI harness to
+  "start" the server — calling the tools *is* exercising the running server. The
+  only sanctioned script is a read-only ground-truth capture probe when the plan
+  explicitly names one (it reuses the same already-present auth — see below).
+
+### Two transports, two states: you start HTTP, the human connects it
+
+`.mcp.json` declares three servers, and only one is running when you start:
+
+| Server | State at launch | What you do |
+| --- | --- | --- |
+| `zendesk-local` (stdio) | started by the session, signed in | call `mcp__zendesk-local__*` directly |
+| `zendesk-local-http` (HTTP, `http://localhost:3000/mcp`) | **declared, not running**: the session reports it as failed to connect | start it, then ask the human to connect it |
+| `zendesk-local-http-admin` (HTTP, `http://localhost:3000/mcp/admin`) | the same server's admin back-office, same state | once it runs, ask the human to connect it too when the plan uses `/mcp/admin` |
+
+A failed `zendesk-local-http` at launch is the expected state, not a blocker.
+When the plan has scenarios on HTTP, this is the one exception to "don't start
+anything":
+
+1. **Start it yourself**, in the background, from the checkout:
+   `ZENDESK_SUBDOMAIN=fruggr pnpm dev:http`. Poll
+   `curl -s http://localhost:3000/healthz` for up to 60 s (it usually answers
+   200 within seconds). No 200 by then is a failed start: stop the server and
+   report it as one (below).
+2. **Ask the human to connect it**, then stop and wait for their answer: "The
+   HTTP server is running on port 3000. Please reconnect `zendesk-local-http`
+   (`/mcp` in Claude Code) and complete the Zendesk sign-in in your browser."
+   Only the human can do this: you never reconnect a server, open the sign-in
+   link or handle a token yourself.
+3. Once they confirm, the tools appear as `mcp__zendesk-local-http__*`. Run the
+   HTTP scenarios through them.
+
+Ask the human the same way for anything else only they can provide: a sign-in
+as a second Zendesk user, a read-only sign-in, a reconnection between two
+scenarios. Say exactly what you need and why, then wait. A reconnection in
+Claude Code reuses the grant it holds, scopes included: for a read-only sign-in,
+run `pnpm mcp:live list --url <endpoint> --read-only-scope` and ask the human to
+complete that sign-in instead.
+
+An HTTP scenario is `BLOCKED` when the server fails to start (quote the error),
+when the human declines or cannot connect it, or for the same credential and
+egress failures as on stdio; never because the server was not connected at
+launch. Stop the server when you are done.
+How it works, and the `pnpm mcp:live --url` alternative:
+[`docs/live-testing.md`](../../../docs/live-testing.md).
+
+## Protocol
+
+1. **Record what you're testing.** Capture the commit SHA the branch is at
+   (`git rev-parse HEAD`) so the report names the exact code validated.
+2. **Set up observation** as the plan says (e.g. log level, which file to watch).
+3. **Run each scenario in order.** For each: apply the state manipulation on a
+   throwaway copy, make the exact `mcp__<server>__*` tool call(s) the plan
+   specifies, and capture the **actual** observable — log event(s), file
+   before/after, tool result or error text.
+4. **Compare to expected.** Mark each scenario `OK` only if the actual observable
+   matches the plan's expected one. Anything else is `FAIL` (or `BLOCKED` if a
+   prerequisite — creds, egress — was unavailable; say which).
+5. **Don't fix, don't massage.** You never edit the code to make a scenario pass,
+   and you never round a partial/ambiguous result up to OK. Report exactly what
+   you saw.
+6. **Ask before you skip.** A scenario that needs something only the human can
+   provide (the HTTP connection, another user's sign-in) is asked for, not
+   skipped. `BLOCKED` is for what stays unavailable after you asked.
+
+## Reporting
+
+Post the report as a **PR comment** in **English**, resolving the channel the same
+way as the plan retrieval: `gh pr comment` (on the current branch) or, if the
+GitHub MCP is connected, `mcp__github__add_issue_comment`. If neither is available
+(no GitHub write access), output the full report for the human to paste. Structure:
+
+```markdown
+## Functional validation report — <commit SHA>
+
+Run by: independent validator session (did not write the code)
+
+| ID | Verdict | Evidence |
+| -- | ------- | -------- |
+| S1 | OK      | log `oauth_token_refreshed_cached`; file accessToken old→new, expiresAt now future |
+| S2 | FAIL    | expected refresh in skew window; got cache hit, no refresh log. Token served stale. |
+| S3 | BLOCKED | needs egress to *.zendesk.com — not available in this env |
+
+## Summary
+
+<green, or list of failing/blocked IDs and one-line why>
+```
+
+Per-row evidence must be concrete enough that the author can verify it without
+re-running: name the log event, the field that changed, the error string. "Concrete"
+means the **structure** — field names, formatting markers (headings, footers,
+counts), types, the shape of the payload — *not* the live values (see next).
+
+### Redact real data — the server hits a production tenant
+
+The MCP server under test is wired to a **real, live Zendesk tenant with
+production data**, not a fixture or sandbox. Every tool output can carry live
+customer PII and confidential business data: requester/agent names, email
+addresses and phone numbers, organization names, ticket subjects / descriptions /
+comment bodies, attachment contents, custom-field values, and the tenant
+subdomain / API URLs. The report is posted to a **public GitHub PR** — so **never
+paste real data into it**.
+
+- **Expunge every real value before it leaves a tool result for the report.**
+  Replace it with a placeholder that preserves only what the scenario tests:
+  `<redacted>`, `<requester name>`, `<tenant url>`, `<int>`, etc. Keep the
+  structural evidence the author actually needs — field *names*, headings,
+  footers, counts, types, formatting markers — and drop the customer *values*.
+- Numeric IDs (ticket/macro/user ids) are lower-risk and may be kept when a
+  scenario needs them for reproduction, but never pair them with the name,
+  email, subject or body they belong to.
+- This applies to **every** outbound channel, not just the PR comment: pasted
+  output for a human, any scratch file you write, and any log excerpt you quote.
+- If the harness blocks a post for sensitive content, treat that as a correct
+  catch — redact and repost, don't try to force the original through.
+
+## Hard rules
+
+- Faithful reporting over a green result. A wrong "OK" is worse than an honest FAIL.
+- Independent: validate behaviour against the plan's expectations, not against the
+  implementer's explanation of why it should work.
+- Report the run, nothing else. No meta-commentary on who you are, on whether
+  the pass "counts", or on what the author should now do — one `Run by:` line
+  covers it and the owner decides the rest.
+- Real tools only (`mcp__<server>__*`), throwaway copies of any mutable state.
+- HTTP is yours to start and the human's to connect: start it, ask, wait. Never
+  reconnect it or sign in yourself, and never skip its scenarios without asking.
+- The tenant is **production**: never let a real value (PII, org, ticket
+  content, subdomain) reach the report or any other output — redact to
+  structure-only placeholders (see "Redact real data").
+- One report per run, naming the commit SHA. On a re-run after a fix, post a fresh
+  report against the new SHA rather than editing the old one.

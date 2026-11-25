@@ -1,0 +1,128 @@
+---
+name: unity-core
+description: >-
+  Use for any Unity task: writing, reviewing, or architecting Unity code,
+  choosing between two Unity tools that do the same job, or when the user
+  mentions Unity, CoreCLR, IL2CPP, Awaitable, Addressables, Content
+  Directories, DOTS, ECS, Jobs, Burst, assembly definitions, Input System,
+  audio, project structure, CI, builds, tests, or performance. Load it
+  alongside the domain skills unity-ui, unity-editor-tools, unity-rendering,
+  unity-multiplayer, unity-cli, and unity-play.
+---
+
+# Unity Core
+
+Ship on the **default stack** below. Each row names the one tool to reach for,
+so the choice is already made — spend the thinking on the feature instead.
+
+This skill describes the latest Unity version the team uses, and nothing
+older. The Editor and desktop players run on CoreCLR; Android, iOS, and the
+Web build with IL2CPP. Code targets C# 9 and .NET Standard 2.1 until Unity
+ships .NET 10 and C# 14; [runtime.md](./runtime.md) owns what the runtime
+changes for your code.
+
+For what a build actually ships, read its release notes and Unity's
+Discussions posts: the manual still carries pages written for earlier versions.
+
+## The default stack
+
+| Need | Reach for | Instead of |
+| --- | --- | --- |
+| Any new UI | **UI Toolkit** — [unity-ui](../unity-ui/SKILL.md) | UGUI |
+| UI Toolkit UI on screen or in the world | **Panel Renderer**, see [unity-ui](../unity-ui/SKILL.md#panel-renderer) | `UIDocument` (legacy), UGUI world canvas, render texture |
+| Text | **Advanced Text Generator** | hand-rolled layout |
+| Player-facing text in several languages | **Localization module** + Smart Strings, see [unity-ui](../unity-ui/SKILL.md#localization) | the Localization package, hand-rolled string tables |
+| Authoring UI for a custom tool | **UI Toolkit** — [unity-editor-tools](../unity-editor-tools/SKILL.md) | Odin, IMGUI, a node canvas |
+| Heterogeneous items in one authored list | **`[SerializeReference]`** + `AdvancedDropdown` | one list per type |
+| Tool icons | **Built-in Editor icons**, then `painter2D` | shipping PNG variants per state |
+| Async | **`Awaitable`** + `CancellationToken` | coroutines, raw `Task` |
+| Static state across Play Mode entries | **`[AutoStaticsCleanup]`**, see [runtime.md](./runtime.md#static-state) | expecting a reload to reset it |
+| Runtime loading | **Addressables** + `AssetReference`, every group on the **Content Directory** schema; post-install content goes through a project system until Unity ships remote Content Directories, see [assets.md](./assets.md#addressables); settings needed before the first scene go through the [Preloaded Assets](./assets.md#settings-needed-before-the-first-scene) | `Resources/`, `Loadable<T>` without Addressables |
+| Input | **Input System** action maps | legacy Input Manager |
+| Audio | **built-in AudioMixer** — [workflow.md](./workflow.md) | FMOD/Wwise |
+| Render pipeline | **URP** — [unity-rendering](../unity-rendering/SKILL.md) | Built-In, HDRP |
+| Custom render passes | **Render Graph** | `ScriptableRenderPass.Execute` |
+| Lighting, static scenes | **Adaptive Probe Volumes** + baked lightmaps | Light Probe Groups |
+| Light baking | **Unity Compute Light Baker**, set as the Default Light Baker | every other light-baking backend |
+| Lighting, dynamic scenes | **Surface Cache GI** | baking a scene that moves |
+| Draw-call reduction and occlusion | **GPU Resident Drawer** + GPU occlusion culling | static batching |
+| Pooling | **`UnityEngine.Pool`** | hand-rolled pools |
+| Object identity | **`EntityId`** (64-bit) | `GetInstanceID()`, `int` ids |
+| Hot paths | **Jobs + Burst** | a full ECS rewrite |
+| Netcode | **Unity Netcode** with GhostObjects — [unity-multiplayer](../unity-multiplayer/SKILL.md) | Netcode for GameObjects |
+| Authority | **client-server** | distributed authority |
+| Sessions, matchmaking, relay | **Multiplayer Services** | Lobby + Matchmaker + Relay separately |
+| Server builds | **Dedicated Server** + Multiplayer Roles | a hand-stripped client build |
+| Testing multiple peers | **Multiplayer Play Mode** | several Editor installs |
+| Per-platform build config | **Build Profiles** | hand-edited global Build Settings |
+| Build-time scene processing | **`AssetPostprocessor.OnProcessScene`** | `IProcessSceneWithReport`, `[PostProcessScene]` |
+| Tests | **Unity Test Framework**, edit-mode first | play-mode by default |
+| Tests while the Editor is open | **`unity command run_tests`** — [unity-cli](../unity-cli/iteration.md) | closing the Editor for `unity test` |
+| Release builds | **CoreCLR** on desktop; **IL2CPP** on Android, iOS, and the Web | IL2CPP on desktop |
+| Driving the Editor from an agent | **Unity CLI** — [unity-cli](../unity-cli/SKILL.md) | asking the user to click through the Editor |
+
+Leave a default only where the linked reference gives that row an escape hatch.
+Say which row you left and what made it worth leaving.
+
+## Reference
+
+| Topic | File |
+| --- | --- |
+| CoreCLR runtime, static state, serialization, `EntityId` | [runtime.md](./runtime.md) |
+| Composition, asmdefs, `Awaitable`, Jobs/Burst/ECS, profiling, allocations | [architecture.md](./architecture.md) |
+| Exceptions, nullability, `async void`, the `UnityEngine.Object` null trap | [code-standards.md](./code-standards.md) |
+| Folder layout, naming, GUID-safe renames | [project-structure.md](./project-structure.md) |
+| Addressables, Content Directories, import settings, scenes, prefabs | [assets.md](./assets.md) |
+| Input, audio, version control, CI, builds, testing | [workflow.md](./workflow.md) |
+| Device measurement, character animation, particles, managed code stripping, Android LTO, iOS memory limits | [performance.md](./performance.md) |
+
+## Domain skills
+
+Each domain has its own skill, which applies this default stack and review pass.
+When the task touches a domain, load its skill; when that skill is not
+installed, say which one is missing and work from the rows above.
+
+| Domain | Skill |
+| --- | --- |
+| UI Toolkit, USS versus CSS, design tokens, data binding, MVP, localization | [unity-ui](../unity-ui/SKILL.md) |
+| Custom Editor tools, inspectors, `[SerializeReference]` | [unity-editor-tools](../unity-editor-tools/SKILL.md) |
+| Pipeline, lighting, GPU-driven rendering | [unity-rendering](../unity-rendering/SKILL.md) |
+| Netcode, authority, sessions, dedicated server | [unity-multiplayer](../unity-multiplayer/SKILL.md) |
+| Unity CLI, driving the Editor from an agent, iterating while the user tests in the Editor | [unity-cli](../unity-cli/SKILL.md) |
+| An agent playing the game in Play Mode, reproducing a gameplay bug by playing | [unity-play](../unity-play/SKILL.md) |
+| Performance review of a diff or folder: rule scan of code, Editor audit of assets and settings | [unity-performance](../unity-performance/SKILL.md) |
+
+For engine-agnostic replication theory, use `coop-session`.
+
+## Review pass
+
+Read changed code against every row of the default stack, then account for each
+line below — name the file and line where it holds, or fix it:
+
+Several rows are conditional: they bind only when the change performs the
+operation they describe. "Not applicable, this change does not do that" is a
+complete answer, and the right one. Test the condition, never the presence of a
+token — and never infer the rule from how many neighbouring files show the same
+pattern, since copy-paste propagates a mistake as reliably as a convention.
+
+```
+- [ ] Statics reset through `[AutoStaticsCleanup]` or a lifecycle hook, so entering Play Mode twice behaves identically
+- [ ] Every Awaitable carries a CancellationToken scoped to its component
+- [ ] Every CancellationTokenSource this change creates, linked ones included, is disposed by its owner
+- [ ] Assets load through Addressables, and every handle is released or bound to a lifetime token
+- [ ] Update() free of allocation, GetComponent, Find*, and LINQ
+- [ ] Runtime spawns come from a pool
+- [ ] No runtime ParticleSystem.Simulate fast-forwards a Noise system by seconds
+- [ ] Object identity flows through EntityId
+- [ ] Player-facing strings come from Localization tables
+- [ ] [SerializeField] on fields only ([field: SerializeField] for properties)
+- [ ] Logic sits in plain C# in its own asmdef, covered by edit-mode tests
+- [ ] Renamed assets moved with their .meta, via git mv
+- [ ] Networked state gated on its package's authority check: IsServer or CanWriteState in a GhostBehaviour, HasAuthority in a NetworkBehaviour
+- [ ] Editor code under an Editor asmdef, runtime types in runtime assemblies
+- [ ] Any rename or move of a [SerializeReference] type in this change lands with [MovedFrom] naming its real former address (no former address, no attribute)
+- [ ] Custom inspectors built on UI Toolkit, with IMGUIContainer only where named
+```
+
+When the user asks for something off the default stack, name the row, state what
+it costs, and follow their call.

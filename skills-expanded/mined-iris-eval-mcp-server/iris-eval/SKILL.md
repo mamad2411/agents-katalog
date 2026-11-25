@@ -1,0 +1,274 @@
+---
+name: iris-eval
+description: Evaluate AI agent outputs for quality, safety, and cost using the Iris MCP server. Use when reviewing agent responses, checking for PII leaks, scoring output quality, or tracking execution costs.
+allowed-tools: [Read, Write, Bash, Grep, Glob]
+metadata:
+  filePattern: ["**/mcp.json", "**/.well-known/mcp.json", "**/mcp-server*"]
+  bashPattern: ["iris", "mcp-server", "evaluate", "eval"]
+---
+
+<!--
+  RENDERED FILE — do not edit the two SKILL.md files by hand.
+  Source: skills/iris-eval/SKILL.template.md, rendered by
+  scripts/claims/render-llms.mjs into skills/iris-eval/SKILL.md (the npm
+  package) and claude-plugin/skills/agent-eval/SKILL.md (the plugin
+  marketplace). Edit the template, run `npm run llms:render`, commit both.
+  `npm run llms:check` fails CI when either file drifts from the render.
+-->
+
+# Iris — stop shipping agents on vibes
+
+Iris is an MCP server for agent evaluation: it scores output quality, catches
+safety failures, and enforces cost budgets. 12 MCP tools, 28 built-in
+deterministic rules, optional LLM-as-judge (bring your own key). No SDK. No code changes.
+
+Iris runs as an MCP server: add it to your client config (Quick Start below) or start it with `npx -y @iris-eval/mcp-server`.
+
+## When to Use
+
+- An agent returned output and you want to verify its quality
+- You need to check agent responses for PII leaks (21 patterns: SSN, credit card, phone, email, IBAN, passport, DOB, medical record number, public IP address (loopback, private and documentation ranges are ignored), API key, and the modern credential class — AWS/Slack/SendGrid/GitHub/Google/npm/DigitalOcean tokens, PEM private-key blocks, seed phrases)
+- You want to track per-execution costs and flag expensive runs
+- You need to compare agent quality across different prompts or models
+- You want eval rules that run on every execution the agent sends to Iris
+- You need semantic judgment (LLM-as-judge) or citation verification on top of the heuristics
+
+## Quick Start
+
+```bash
+npx @iris-eval/mcp-server --self-test   # first: offline, exit 0 = healthy
+npx -y @iris-eval/mcp-server install <client>   # writes the client's MCP config: claude-code, claude-desktop, cursor, windsurf, continue, vscode, cline, zed, codex, gemini
+```
+
+Or add to your MCP config by hand:
+
+```json
+{
+  "mcpServers": {
+    "iris-eval": {
+      "command": "npx",
+      "args": ["-y", "@iris-eval/mcp-server"]
+    }
+  }
+}
+```
+
+## Core workflow (the eval loop)
+
+**When.** After an answer the user will act on, after a task that used tools,
+and before saying a run was clean — log it and evaluate it. Not every line;
+the outputs that matter. Read `verdict.basis` and `interpretations` before
+you report.
+
+1. **Log** the agent execution: `log_trace` with `input`, `output`,
+   `tool_calls` (and `tools`, your tools/list result), token usage and cost.
+   Pass `evaluate: true` and the same call scores it — the response carries the
+   full evaluation, linked. This builds the record everything else reads.
+2. **Score** a stored output later, or re-score it: `evaluate_output` with the
+   `trace_id`. Omit `eval_type` and every bundle runs; name one to narrow the
+   run. Heuristic, deterministic, free. `input` lets the hallucination signals
+   cross-check the output against the material the agent was given, and
+   `tool_calls` (or the stored trace) let the trajectory rules judge what the
+   agent did.
+3. **Judge** semantically when heuristics aren't enough:
+   `evaluate_with_llm_judge` (7 templates: accuracy, helpfulness, safety, correctness, faithfulness, task_completed, relevance).
+   Requires the user's own API key — see "LLM judge setup" below. Without a
+   key the tool returns `IRIS_JUDGE_NOT_ENABLED` with the steps in its
+   `recovery`; the deterministic rules never need one.
+4. **Verify citations** in research/RAG outputs: `verify_citations` extracts
+   citations, fetches sources (SSRF-guarded, opt-in), and checks each claim.
+5. **Inspect** history: `get_traces` with filters; costs aggregate across
+   agents and time windows.
+
+## The 12 tools
+
+| Tool | What it does |
+|------|-------------|
+| `log_trace` | Store one agent execution (input, output, tool calls, spans, cost, tokens) and get the trace_id later calls key on. |
+| `evaluate_output` | Score an output with deterministic rules: a ship verdict with its basis, per-rule evidence, what was unjudged. |
+| `get_traces` | Query stored traces with filters, pagination and sorting; optionally with the dashboard summary. |
+| `compare_runs` | Did this change make the agent worse? Compares two runs: worse, better, equivalent, or too little evidence to tell. |
+| `compare_traces` | How reliably does the agent answer the same question? Per-case pass rates, flaky cases, and an interval that respects repeats. |
+| `evaluate_runs` | Re-score every trace in a run under the current rules into a new run, so a rules change is compared, not overwritten. |
+| `list_rules` | The rule inventory: every built-in rule with what it needs, its effective criticality and published accuracy, plus every deployed custom rule. |
+| `deploy_rule` | Deploy a custom rule that fires on every future evaluate_output call of its bundle — persisted, active immediately, audited. |
+| `delete_rule` | Remove a deployed custom rule — or, with enabled, disable or re-enable it without removing it — effective on the next evaluate_output call. |
+| `delete_trace` | Remove one stored trace by id; its spans go with it, and every evaluation linked to it keeps its verdict and loses its text. |
+| `evaluate_with_llm_judge` | Score an output with an LLM judge on your own key: a 0..1 score, a rationale, the spend. |
+| `verify_citations` | Is each citation in an output supported by its source? Extracts, fetches (opt-in, SSRF-guarded) and judges on your key. |
+
+`evaluate_output` runs every bundle by default (`eval_type: "all"`: completeness, relevance, safety, cost and custom); pass one bundle's name to score only that bundle. `evaluate_with_llm_judge` has 7 templates: accuracy, helpfulness, safety, correctness, faithfulness, task_completed, relevance. `log_trace` also exports to an OTLP collector when `IRIS_OTEL_ENDPOINT` is set.
+
+## How to Read a Result
+
+A result carries **two** fields that answer different questions. Read both.
+
+| Field | What it is | How to use it |
+|---|---|---|
+| `score` | Weighted average across the rules that ran — a 0..1 **quality gradient**. | Trend it; compare prompts and models. Never read it alone as a safety signal. |
+| `passed` | The **ship / no-ship verdict**, composed by the *kind* of claim each rule makes: a policy you configured gates, a critical detector vetoes, a check that had to answer and could not makes it **unknown** (`passed: false`), and the rest is one probability weighed against your loss ratio. The score is never consulted. | This is the field a gate branches on; `verdict.basis` names the layer that decided. |
+| `interpretations` | Why a rule that failed did not decide, and the setting that would change that; which question was not judged and the input that would let it be; whether the verdict was a close call. | Read it before saying "clean". |
+| `critical_failures` | Names of the critical rules that failed. Present only when non-empty. | If present, the eval failed *because of these*, not because of the score. |
+| `critical_skipped` | Critical rules that did not judge the output (e.g. a regex killed at the 100 ms sandbox budget, or a `cost_threshold` rule with no `cost_usd`). Present only when non-empty. | Treat as **unknown**, not clean, if you must fail closed. |
+| `rule_results` | Per-rule `{ ruleName, passed, score, message, skipped?, skipReason?, critical, criticalSource }`. | Tells you exactly what tripped, and which rules could not judge. |
+| `eval_type` | The bundle that actually ran. | Confirm you evaluated what you meant to. |
+
+**A high score does not mean safe.** By default `no_pii`, `no_injection_patterns`
+and `no_blocklist_words` are **critical**: when one fails, `passed` is forced to
+`false` no matter how high the score is, and the rule is named in
+`critical_failures`. The score is deliberately left untouched. Concretely,
+output containing a real SSN scores about **0.765** — squarely in what a
+score-only reading would call "good" — and still returns `passed: false`. Any
+deployed custom rule with severity `high` or `critical` behaves the same way.
+Which built-in rules are critical is a deployment setting; every rule result
+carries the effective `critical` flag and `criticalSource`, and `list_rules`
+reports the roster this server applies.
+
+**`eval_type` defaults to `all`.** Omit it and every bundle runs — completeness,
+relevance, safety, cost and any custom rules — with a per-bundle `categories`
+map, and the response carries a `note` saying the default ran. A bundle with
+nothing to judge (cost without `cost_usd`, relevance without `input`) reports
+`passed: null` there — not evaluated, not failing. Name a bundle to narrow the
+run, for example safety only:
+
+```json
+{ "output": "<agent text>", "eval_type": "safety", "input": "<the original ask>" }
+```
+
+Inline `custom_rules` are additive: they fire alongside whichever bundle
+`eval_type` selected, in the same call and the same score. Pass
+`eval_type: "custom"` to run only your rules.
+
+So: branch on `passed`, read `critical_failures` to explain *why*, treat a
+non-empty `critical_skipped` as unknown, and use `score` for trend and
+comparison.
+
+Each heuristic rule fires independently with a clear pass/fail result — every
+score is deterministic and reproducible. LLM-judge scores are semantic and
+carry the judge's reasoning.
+
+## The 28 built-in eval rules
+
+| Category | Rule | What It Checks |
+|----------|------|---------------|
+| Completeness | non_empty_output | Output isn't empty or whitespace-only |
+| Completeness | min_output_length | Output meets a configurable minimum length |
+| Completeness | sentence_count | Output contains complete sentences |
+| Completeness | expected_coverage | Key expected elements are present |
+| Completeness | says_something | The answer says something: fails a promise in place of the work, a bare "Done."/"OK" where the call says no tool was called, a placeholder ("null", "…", an unfilled template slot, lorem ipsum) or a "here is …" with nothing after it where the ask asked for something written, an announcement that ends on a colon with nothing after it, the ask handed back, or one passage on a loop. A question answered "OK" or "null", an action reported done, and a refusal pass |
+| Relevance | keyword_overlap | Output vocabulary overlaps the input's |
+| Relevance | topic_consistency | Output stays on the prompt's topic |
+| Safety | no_pii | No PII leaked (21 patterns) — **critical by default: a failure hard-fails the whole eval** |
+| Safety | no_injection_patterns | No prompt-injection attempts in the output (38 patterns) — **critical by default: a failure hard-fails the whole eval**. no_injection_patterns inspects the agent's OUTPUT text for injection-shaped content — attack phrasing and structural directives the output echoes or complies with — and never reads the input, so it is not an input firewall. |
+| Safety | no_blocklist_words | No prohibited terms — **critical by default: a failure hard-fails the whole eval** |
+| Safety | no_stub_output | No placeholder/stub markers (TODO, [INSERT, …) |
+| Safety | no_hallucination_markers | No fabricated/contradicted claims vs the provided input (25 context-grounded signals) |
+| Safety | no_silent_tool_failure | A tool call that failed is acknowledged, not answered over. Reads `tool_calls`; **skips** without them |
+| Cost | cost_under_threshold | Execution cost within budget |
+| Cost | verbosity_ratio | Token usage proportionate to the output |
+| Safety | grounded_in_reads | The output cites no file, directory or URL that neither the ask nor any tool output mentions. Reads `tool_calls`; **skips** without them, and **skips** when a read was truncated — a location absent from a partial read is not evidence it was invented |
+| Safety | no_injection_compliance | An instruction addressed to the model inside a TOOL RESULT was obeyed. Directive wording is matched as literal phrases over a capped, normalised slice — never a regular expression, because a tool result is attacker-controlled. FAILS when a LATER call's arguments carry at least three terms the directive introduced and the ask never used; the same terms merely repeated in the answer are REPORTED on a passing result, because measured on its own family that weaker signal cannot tell reporting an injection from complying with one. Reads `tool_calls`; **skips** without them. `injection_compliance_trusted_tools` exempts a tool whose output is your own |
+| Completeness | ask_coverage | An ask that numbers or bullets its parts is answered in every part. Reads `input`; **skips** unless the ask declares its parts — a prose multi-part question is not split, because a full stop declares nothing |
+| Completeness | valid_tool_arguments | Every tool call names a tool in the catalogue and carries arguments its schema accepts. Reads `tool_calls` and `tools` (your MCP tools/list result, verbatim); **skips** without either, and an invalid call the agent retried successfully is recorded rather than failed |
+| Cost | no_tool_loop | The agent must not repeat itself. No tool called with the same input more than `max_tool_repeats` times (default 3); no 2- or 3-call sequence repeating more than twice; and, when you send `tools`, no single TARGET read more than `max_target_rereads` times (default 3) across every tool your catalogue marks `readOnlyHint` — the same file read through three different tools is one wasted read. A repetition at a REGULAR cadence is a poll, not a loop, and passes; that needs start times, which arrive with OpenTelemetry spans. Reads `tool_calls`; **skips** without them |
+| Cost | max_steps | A task must finish within a step budget — more tool calls than `max_steps` (default 50) fails. At the shipped default it ADVISES; set `max_steps` and it GATES, because only you know what your own agents do. Reads `tool_calls`; **skips** without them |
+| Cost | cost_anomaly | Cost against this agent's own recent history (modified z over its last 200 traces); a measurement that reports and never decides; skips below twenty prior costed traces |
+| Relevance | tool_choice | The right tool for the ask, from the `tools` catalogue: fires when an uncalled tool fits the ask's actionable terms at least 0.5 and beats the tools called by at least 0.34, naming both. Reads `input`, `tool_calls` and `tools`; **skips** without any of them. A heuristic detection: lowers the score, never vetoes |
+| Relevance | answers_the_ask | The output answers THIS ask. On an ask of two content terms or more, two outputs fail it at once, even where a measurement skipped: a short refusal (25 words or fewer, opening with a decline) that names too few of the ask's terms to pass keyword_overlap, and the ask handed back (an output made only of the ask's own words and no longer than the ask by more than a fifth, as a one-word answer that is one of the ask's words is). Otherwise it fires when BOTH relevance measurements fail (keyword_overlap AND topic_consistency), and skips when either of them skips or the ask has fewer than two content terms. Read this way, from the words, it **advises at the shipped thresholds**: the failure is reported and does not decide the verdict. Set the threshold of a measurement that judged the output and it gates (on an output too brief for topic_consistency, only keyword_overlap's counts); configure a relevance judge (`IRIS_RELEVANCE_JUDGE_MODEL` and a provider key) and the judge decides, and the rule gates |
+| Completeness | tool_sequence | The calls the caller expected against the calls made, in a mode (strict, unordered, subset, superset, ordered_subset — the default), matching by name and, when the expectation names arguments, by exact or subset input. Reads `tool_calls` and `expected_trajectory.tool_calls`; **skips** without either. A policy: gates because the caller stated the expectation |
+| Cost | step_budget | The tool-call count against THIS task's budget: `expected_trajectory.step_budget` (or the number of expected calls) × `tolerance` (default 1.5). Reads `tool_calls` and `expected_trajectory`; **skips** without either. A policy: gates because the caller stated the budget |
+| Completeness | no_unusual_action | A run against the same agent's earlier runs of its own case: fails when it called a tool known to act (the catalogue's `readOnlyHint: false` or `destructiveHint: true`, else a name whose first verb acts, or a shell's or interpreter's name) and none of the case's 20 most recent earlier runs called it. A look-up, and a tool neither the catalogue nor its name places, are named and not counted. An inference: from five earlier runs a fire is weighed in the verdict by what it was worth on agent runs labelled outside Iris; with three or four it reports and says why (`advisoryWhy`); `eval.advisoryRules` sets it to report only. Reads `tool_calls` and the case's stored history; **skips** without tool calls, below three earlier runs, and on a call with no `trace_id`, which has no history |
+| Completeness | no_dropped_step | A run against the same agent's earlier runs of its own case: fails when it never called a tool that every one of the case's 20 most recent earlier runs called. A measurement: reports, and at the shipped configuration decides no verdict. Reads `tool_calls` and the case's stored history; **skips** when no tool calls were sent, below three earlier runs, and when no tool was called by every earlier run |
+
+How often each rule is right is measured and published, with intervals, at
+https://iris-eval.com/proof.
+
+## Custom rules
+
+`deploy_rule` registers a custom eval rule that fires on every
+`evaluate_output` of its `evalType`. `list_rules` enumerates; `delete_rule`
+removes. A definition is `{ name, type, config, weight? }` where `type` is one
+of `regex_match`, `regex_no_match`, `min_length`, `max_length`,
+`contains_keywords`, `excludes_keywords`, `json_schema`, `cost_threshold`,
+`action_policy`, and `config` holds that type's keys (`pattern`/`flags`,
+`min_length`, `max_length`, `keywords`/`threshold`, `max_cost`, `schema`,
+`allow`/`deny`). Severity `high`/`critical` makes the rule
+a hard veto; `low`/`medium` only affects the score. Use custom rules to encode
+product-specific quality bars — a required disclaimer, banned phrases, output
+length bands, a per-agent cost ceiling.
+
+`action_policy` is the one that judges what the agent DID rather than what it
+wrote: `{ "allow": [{ "tool": "read_file", "args": { "/path": "/workspace/**" } }],
+"deny": [{ "tool": "bash" }] }`. A tool is named by glob; an argument is
+addressed by JSON Pointer (the same notation `valid_tool_arguments` reports
+errors in) and matched by glob, with a `-` segment meaning any array element.
+Deny is evaluated first and wins, and **`allow` being present means a tool it
+does not name is DENIED** — the thing an author who wrote `allow` meaning
+"these are especially fine" most needs to know. Argument values are
+canonicalised before matching, so `/workspace/../etc/passwd`, its
+percent-encoded form and its fullwidth-dot form all fail an
+`allow` on `/workspace/**`. **Like every custom rule, it ADVISES until you
+deploy it at severity `high` or `critical`** — its own message says so on every
+result, including a passing one.
+
+## Patterns worth suggesting
+
+- **Quality gate before ship**: evaluate representative outputs with
+  `eval_type: "safety"`; treat `passed: false` as blocking and a non-empty
+  `critical_skipped` as unknown. Cost rules catch budget regressions.
+- **Eval-driven development**: write rules first (the quality spec), then
+  iterate the agent until they pass — the eval loop is the test suite.
+- **Regression tracking**: log traces in CI runs; compare score drift across
+  versions to catch silent quality decay (eval drift).
+- **Capture that must not depend on the model**: the tools fire when the model
+  calls them. For CI gates and batches, `iris-eval ingest --evaluate --fail-on
+  <basis>` reads traces from stdin or a file with no server running; for services,
+  `POST /api/v1/traces` on the dashboard port (requires `--dashboard`) takes the
+  same body as `log_trace` and can evaluate in the same request; for Claude Code,
+  the separate `iris-eval-capture` plugin records every turn through hooks.
+
+## Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| IRIS_HOME | ~/.iris | Directory for all per-user files: `config.json`, `iris.db`, `custom-rules.json`, `audit.log`, `preferences.json` |
+| IRIS_API_KEY | (none) | API key for HTTP transport + dashboard auth |
+| IRIS_DB_PATH | ~/.iris/iris.db | SQLite database path (overrides IRIS_HOME for the DB only) |
+| IRIS_LOG_LEVEL | info | Logging verbosity |
+| IRIS_DASHBOARD | (off) | Set `true` to enable the web dashboard (and with it `POST /api/v1/traces`) |
+| IRIS_DASHBOARD_PORT | 6920 | Dashboard port |
+| IRIS_OTEL_ENDPOINT | (none) | OTLP/HTTP collector for trace export |
+| IRIS_ANTHROPIC_API_KEY / IRIS_OPENAI_API_KEY | (none) | Your own key for the LLM judge and citation verifier |
+| IRIS_LLM_JUDGE_MAX_COST_USD_PER_EVAL | 0.25 | Hard cost cap per LLM judge call |
+
+## LLM judge setup
+
+**Enable the LLM judge (optional; the deterministic rules never need it)**
+1. Get an API key from Anthropic or OpenAI.
+2. Put it in the environment of the process that runs Iris, not only your shell. Claude Code, Claude Desktop, Cursor and most MCP clients: the "env" block of the iris-eval entry in your MCP config — "iris-eval": { "command": "npx", "args": ["-y", "@iris-eval/mcp-server"], "env": { "IRIS_ANTHROPIC_API_KEY": "sk-ant-..." } } (IRIS_OPENAI_API_KEY for an OpenAI key). Docker: -e IRIS_ANTHROPIC_API_KEY=... on the run command. HTTP or CI: export it before starting iris-eval.
+3. Restart the MCP session. A running process never sees a variable set after it started.
+4. Confirm from inside your client: read iris://capabilities — judge.enabled must be true there. A key exported in your shell is not passed to the process your client spawns unless its config lists it. On a machine, `npx @iris-eval/mcp-server --self-test` prints the judge line for that shell, and GET /api/v1/health reports judge.enabled on a running dashboard.
+5. Spend guard: each call is capped by IRIS_LLM_JUDGE_MAX_COST_USD_PER_EVAL (default 0.25 USD) and refused before any spend if the worst case would exceed it. Every judge call Iris makes on your key draws on one daily budget, IRIS_LLM_JUDGE_DAILY_BUDGET_USD (default 1 USD per UTC day); past it, no call is made until midnight UTC. Iris calls the provider directly with your key and never proxies it.
+6. Optional: set IRIS_RELEVANCE_JUDGE_MODEL to a priced model id (claude-haiku-4-5, for example) to have answers_the_ask ask the judge whether each answer addresses its ask, and fail an off-topic one. That is one judge call per evaluation that carries an input, on your key and under the cap above; the key alone never turns it on. Each call sends that input and output to the model's provider, with the personal data and credentials no_pii flags replaced first (IRIS_RELEVANCE_JUDGE_REDACT=off sends them as they are). It draws on that daily budget and makes at most IRIS_RELEVANCE_JUDGE_MAX_CALLS_PER_REQUEST calls per request (default 20); past either, answers_the_ask reads the ask lexically and says why.
+
+## Example Workflows
+
+Detailed walkthroughs with real engine output:
+- [PII Detection](examples/pii-detection.md) — catch leaked personal data
+- [Quality Scoring](examples/quality-scoring.md) — score output quality
+- [Cost Tracking](examples/cost-tracking.md) — monitor per-execution costs
+
+## Notes
+
+- Traces persist locally in SQLite (`~/.iris/iris.db`); stored text is verbatim, including anything `no_pii` flags.
+- Dashboard: `npx @iris-eval/mcp-server --dashboard` → http://localhost:6920. Demo data without wiring an agent: `--demo`.
+- OpenTelemetry export: set `IRIS_OTEL_ENDPOINT` and `log_trace` also emits OTLP/HTTP to any collector.
+
+## Links
+
+- Website: https://iris-eval.com
+- Playground: https://iris-eval.com/playground
+- Measured rule accuracy: https://iris-eval.com/proof
+- GitHub: https://github.com/iris-eval/mcp-server
+- npm: https://npmjs.com/package/@iris-eval/mcp-server
+- Full machine-readable reference: https://iris-eval.com/llms-full.txt

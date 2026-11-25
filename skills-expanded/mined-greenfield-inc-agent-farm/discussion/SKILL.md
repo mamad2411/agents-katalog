@@ -1,0 +1,109 @@
+---
+name: discussion
+description: Interactive back-and-forth to clarify, understand, or figure something out - an idea, an approach, a tradeoff, or a suspected bug. Use when the user wants to think out loud or explore before committing to anything - e.g. "let's discuss X", "help me understand Y", "why is Z happening", "what should we do about W". Produces clarity plus a dated decision log, not deliverables; work items are created afterward with /create-brief.
+argument-hint: "[idea, question, or topic]"
+---
+
+# Discussion
+
+## Topic: $ARGUMENTS
+
+Read `.references/artifact-storage.md`; share decision logs and safe research
+in Grain when available, retaining local handoff paths. Pass the workspace ID
+and storage rule to helpers; artifact storage follows the discussion's scope.
+
+Have an interactive, opinionated discussion. The goal is shared clarity - understanding
+the problem, weighing the options, or pinning down what's actually happening - not a
+document. When the discussion converges on something worth building or fixing and no work
+item exists, capture starts through the `create-brief` skill - invoked by the user or
+this agent; this skill's job still ends at clarity.
+
+## Conversation and research only - unless asked
+
+Don't edit source files, propose diffs to apply, or write documents, specs, tickets,
+or verification criteria unless the user explicitly asks for one mid-discussion.
+Capture belongs to the `create-brief` skill. Two exceptions: Step 3's decision
+log - a record of what was decided, not a deliverable - and Step 2's throwaway
+probes, which are research.
+
+## Steps
+
+### 1. Dispatch the right specialist for each question
+Delegate legwork to sub-agents so bulky exploration stays out of this thread. Pick by
+what the user is actually asking:
+
+- **How does our code work? What exists today?** → the `codex` skill, role
+  `code-researcher` (returns file:line findings).
+- **What do the docs / ecosystem / other people do?** → the `web-researcher`
+  sub-agent (returns a cited dossier). Reach for it whenever up-to-date
+  information or outside opinions would sharpen the discussion - library
+  versions, current best practice, how others solved this.
+- **Why is this broken? Is this a bug?** → the `codex` skill, role `investigator`
+  (reproduces and root-causes, returns a finding with evidence and confidence).
+  If reproduction requires driving the running app, dispatch `frontend-verifier`
+  first to exercise the flow and capture evidence, then pass its transcript along
+  with the defect report.
+
+Only research what the discussion actually needs - let questions pull research, not
+the other way around. Dispatch mid-conversation as new questions arise; run
+independent dispatches in parallel.
+
+**Success criteria**: every claim you make about the codebase, ecosystem, or defect
+traces to a sub-agent finding, a probe result, or a user statement, not a guess.
+
+### 2. Discuss and converge
+- Present findings and options with tradeoffs; be opinionated - recommend with
+  reasoning, defer to user judgment.
+- **Validate, never guess.** A checkable fact (what the code does, what a tool
+  supports, what a doc says) gets checked - Step 1's specialists or a direct
+  look - before it shapes a decision; state what was validated vs what remains
+  assumption. Where a choice hinges on an intangible - the user's risk
+  appetite, priorities, taste - ask the user; never substitute an assumption
+  for their answer.
+- **Probe before you ask.** Classify a fork before surfacing it. When the answer
+  is observable by running something - behavior, timing, output, perf, layout -
+  build the cheapest throwaway probe under `./tmp/`, run it, and present the
+  result with a recommendation. Probes run local and read-only against isolated
+  state; anything that touches production or mutates real data gets the user's
+  go-ahead first. Reserve questions for the product and preference calls no
+  experiment settles. A probe answers faster than the user can, and hands them a
+  result to react to.
+- Name disagreements and unresolved choices instead of papering over them.
+- Keep altitude: decisions and direction, not file-by-file detail.
+
+**Success criteria**: the user says the question is answered, the direction is clear,
+or they're ready to capture a work item.
+
+### 3. Log the decisions, then hand off
+When the discussion converges, write the decision log to
+`./tmp/discussions/YYYY-MM-DD-<slug>.md`: the decisions made and why, the
+direction chosen and over what alternatives, constraints the user stated,
+open questions. A few lines each - dated and slugged so parallel
+workstreams never collide. This is how intent survives past the
+conversation: `/create-brief`'s drafting step reads it, and anyone resuming
+the thread starts from it instead of from memory.
+
+Make this first handoff source-grounded using `.references/pr-writing.md`:
+record the origin/starting request separately from the current agreed
+direction. For each material revision, preserve what changed, why it changed,
+and which constraint, outcome, or approach it superseded. The discussion and
+the existing Socratic/user-alignment path may forge, refine, or reject the
+initial idea; record that result rather than treating the origin as binding.
+Label user statements, repository evidence, inference, and assumptions. If
+the reason for a choice was never established, write `Rationale not
+established` and leave the question open; do not fill the gap with an
+unstated assumption. The decision log is still a concise record of decisions,
+not a second brief.
+
+When the discussion has converged on capturable work with no existing item, start capture
+yourself with `/create-brief` - single-outcome or multi-phase, the phase cut is the capture
+skill's step. Publish remains gated by the capture skill's alignment pause. Otherwise, suggest
+the relevant next steps:
+
+```
+Decision log: ./tmp/discussions/YYYY-MM-DD-<slug>.md
+
+Suggested next steps:
+- `/create-brief [title]` - capture the work (feature or bug, single-outcome or multi-phase) as a brief
+- `/discussion [follow-up]` - keep exploring a different aspect
+```

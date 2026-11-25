@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ishaanyk/gemini-1b-local-agent (path: skills/azure-ai-translation-text-py/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Azure AI Text Translation SDK for real-time text translation, transliteration, language detection, and dictionary lookup. Use for translating text content in applications.

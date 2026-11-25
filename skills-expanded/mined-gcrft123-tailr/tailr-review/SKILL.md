@@ -1,0 +1,204 @@
+---
+name: tailr-review
+description: The Tailr review loop — wait for the reviewer's batch of visual markup on the running dev server, apply each mark, and report it as it lands. Use whenever a Tailr session is running or being started, whenever a batch of marks arrives, and whenever the user talks about marking up the app, the review URL, or handing you visual feedback from the browser.
+user-invocable: false
+license: MIT
+---
+
+# Tailr — the review loop
+
+Tailr lets the person you are working with mark up their running dev server in
+the browser — click an element, say what is wrong — and hand you every mark at
+once as a batch. You apply the batch and report each mark as it lands.
+
+The rules below are the whole protocol. They are the same rules `tailr init`
+writes into a project's `AGENTS.md` / `CLAUDE.md`; this plugin carries them
+instead, so nothing in the user's repository has to be edited.
+
+<!-- tailr:start -->
+
+## Tailr — visual markup from the reviewer
+
+The reviewer marks up the running app in the browser and hands you the changes
+as one batch. Check whether a session is up with `status` (exit 2 means none).
+If one is already running, don't start another and don't hand out the review URL
+again — pick the loop up where it stands. If there isn't one, start it — `start`
+detaches inside Tailr and returns once the review URL is ready, so do not
+background the command yourself and do not touch files under `.tailr/`:
+
+    npx tailr start --target http://localhost:<dev server port>
+
+It prints a review URL (usually http://localhost:4100). Tell the reviewer to use
+that URL, not the original port. Tailr proxies the app and injects its overlay;
+the source is not modified.
+
+The loop is `wait` → `pull` → `progress` per mark → `done` or `fail`.
+
+| Command | MCP tool | |
+|---|---|---|
+| `npx tailr start --target <url>` | `tailr_start` | start a session (detached); exit 0 when the review URL is ready |
+| `npx tailr stop` | `tailr_stop` | stop the session |
+| `npx tailr status` | `tailr_status` | is a batch waiting? exit 0 yes · 3 session up, nothing waiting · 2 no session |
+| `npx tailr wait` | `tailr_wait` | block until Send is pressed; exit 0 a batch is waiting · 3 timed out, start it again · 2 session ended |
+| `npx tailr pull` | `tailr_pull` | lease the batch, printed as JSON |
+| `npx tailr variants <ref> <names…>` | `tailr_variants` | name the versions you built for one mark |
+| `npx tailr slider <ref> --min --max` | `tailr_slider` | report the continuous parameter you wired for a slider mark |
+| `npx tailr progress <ref>` | `tailr_progress` | report one mark as applied |
+| `npx tailr done` | `tailr_done` | the run finished |
+| `npx tailr fail "reason"` | `tailr_fail` | it returned incomplete |
+| `npx tailr config [name:value…]` | `tailr_config` | their settings — `sfx`, `modifier`, `tutorial`. Only when they ask |
+
+Each mark carries a `ref` ("01"), a `type`, the `route` it was made on, a
+best-effort source `address`, a CSS `selector`, the element's text, and the
+reviewer's `comment`.
+
+- `comment` — change that element as described
+- `remove` — delete that element
+- `text` — carries `before`/`after`; change the text to `after`
+- `point` — carries page `x`/`y` instead of an element. The reviewer marked a
+  place, not a thing: they may want something new there, or may just be noting
+  the spot. Their comment says which.
+- `choice` — the reviewer picked between versions you built, or kept a value
+  on a slider you built. See below.
+
+### Versions
+
+A `comment` or `point` mark can carry `"variations": 3`. That asks for three
+different answers to the same comment, all built at once, so the reviewer can
+compare them on the running page and keep one.
+
+Build every version into the source together, each guarded on the switch Tailr
+sets for that mark: the attribute `data-tailr-var-<ref>` on `<html>`, whose
+value is the version number.
+
+    /* mark 03, version 2 */
+    [data-tailr-var-03="2"] .cart-total { font-size: 24px; border-radius: 14px }
+
+Version 1 must also be what renders when the attribute is absent, so the page is
+never broken for anyone who isn't looking through Tailr. Anything that has to
+re-render rather than restyle reads
+`document.documentElement.getAttribute("data-tailr-var-03")` and listens for
+the `tailr:variant` event on `document`; its `detail` carries
+`{ ref, variant, label }`, and the chosen version can be read from that event.
+
+Then name them, in order, before you report that mark applied:
+
+    npx tailr variants 03 "Softer edges" "Full width" "Two columns"
+
+One to three concrete words each. They are the whole basis on which someone who
+cannot read the diff decides, so `"Two columns"` earns its place and
+`"Option B"` does not.
+
+### Sliders
+
+A `comment` or `point` mark can carry `"slider": true`. That asks you to make
+the element numerically variable — glow intensity, a bevel depth, a 3d
+parameter, anything the reviewer can scrub. Build one continuous parameter into
+the source, guarded on the switch Tailr sets for that mark: the attribute
+`data-tailr-slide-<ref>` on `<html>`, whose value is the number.
+
+    /* mark 03, intensity driven by the slider */
+    [data-tailr-slide-03] .hero { --glow: attr(data-tailr-slide-03 number) }
+
+The default value must also be what renders when the attribute is absent.
+Anything that has to re-render rather than restyle reads
+`document.documentElement.getAttribute("data-tailr-slide-03")` and listens for
+the `tailr:slide` event on `document`; its `detail` carries
+`{ ref, value, label, min, max, unit }`, and the number can be read from that event.
+
+Then report the range, before you report that mark applied:
+
+    npx tailr slider 03 --min 0 --max 100 --value 40 --label "Glow" --unit "%"
+
+A mark may ask for versions and a slider together; do both.
+
+A `choice` mark closes either kind. For versions it carries `variantOf` and
+`variant`:
+
+- `variant: 2` — keep version 2 as the plain, unguarded code. Delete the other
+  versions and every `data-tailr-var-<ref>` guard for that ref.
+- `variant: 0` — keep none of them. Remove all the versions and the guards, and
+  put the element back the way it was before you built them.
+
+For a slider it carries `sliderOf` and `value`:
+
+- `value: 42` — bake that number into the source as the plain value. Remove the
+  `data-tailr-slide-<ref>` switch.
+- `value: null` (or `variant: 0`) — discard the slider. Remove the switch and
+  put the element back as it was.
+
+### Rules that matter
+
+- Run `wait` as a long-running background process and treat its exit as the
+  notification. Never ask the reviewer to tell you a batch has arrived, and
+  never poll for one.
+- Closing a run is not the end of your turn. `done` is what frees the reviewer
+  to send again, so arm `wait` again before you stop — after every run, for as
+  long as the session is up. A closed run with nothing listening is how a
+  session dies quietly: they press Send and it reaches nobody, and the only
+  person who can tell is you.
+- The exception is an agent Tailr can wake by itself, and you do not get to
+  assume you are one. Check it: `status` reports `wakesAgent` (`wakesYou` on
+  the MCP tool), and only while that is true does Send reach you without
+  `wait` — then end your turn and let the next batch arrive on its own. It is
+  false unless Tailr found a thread to wake, so if you have not looked, you
+  still owe it a `wait`.
+- Every run ends on a reply the reviewer can read: what changed for each mark,
+  and anything you could not do. Arm `wait` first and reply last, as your
+  answer after the final tool call, not in your reasoning. Many clients fold
+  reasoning and anything written between tool calls into a collapsed log and
+  show only the message a turn ends on, so a summary left anywhere else never
+  reaches them.
+  `tailr_wait` holds your turn open, so it cannot come before a last message.
+  Where your client can run the shell `wait` in the background and tell you
+  when it exits, use that after a run instead; where it cannot, reply first.
+- The reviewer can end the session from the page, which stops the server. `wait`
+  then exits 2. That is them finishing, not a crash: don't restart the session,
+  and don't ask them to reopen the review URL. A last batch of `choice` marks
+  usually arrives just before it — that is the cleanup, and it is the one batch
+  worth closing quickly, because they are waiting on it to leave.
+- Do not create, edit, or delete anything under `.tailr/`. Session state is
+  Tailr's; use `start`, `stop`, and `status` instead.
+- Report each mark with `progress` as you land it, not all at once at the end.
+  The reviewer watches them clear on screen; batching makes it look like nothing
+  is happening.
+- Always close the run with `done` or `fail`. Until you do, the reviewer cannot
+  send another batch. If you hit something you can't do, `fail` with what
+  actually went wrong — Tailr won't invent an explanation, it points them back
+  to you.
+- The guards are scaffolding, not code. They live for exactly one round trip:
+  you write them when a mark asks for versions or a slider, and the `choice`
+  mark that comes back is what takes them out. Never leave a guard standing
+  after its choice has landed, and never write one for anything the reviewer
+  didn't ask to see versions or a slider of.
+- When the source address and the selector disagree, trust the source address.
+- If a mark is ambiguous, ask rather than picking an interpretation.
+- Run these commands from the project directory; that's how Tailr finds the
+  session.
+<!-- tailr:end -->
+
+## Running the commands from this plugin
+
+This plugin registers Tailr's **MCP server**, so `tailr_start`, `tailr_stop`,
+`tailr_status`, `tailr_wait`, `tailr_pull`, `tailr_progress`, `tailr_done` and
+`tailr_fail` are available to you directly. Prefer them to the CLI: they are
+always present, whereas the `npx tailr` shorthand only resolves in a project
+that has installed Tailr.
+
+The exception is `wait` after a run. `tailr_wait` holds your turn open for as
+long as it waits, so your reply about the batch can never be the message your
+turn ends on. Where your client can run a shell command in the background and
+tell you when it exits, run `npx -y @gcrft123/tailr wait` that way instead; its
+exit brings you back.
+
+Where you do reach for the CLI, use the full package name so it works in a
+project that has not installed anything:
+
+    npx -y @gcrft123/tailr <command>
+
+Start a session with `tailr_start` (or `npx -y @gcrft123/tailr start --target
+<url>`). It detaches inside Tailr and returns once the review URL is ready —
+do not background it with `&`, and do not touch files under `.tailr/`.
+
+If the project has Tailr as a dependency, plain `npx tailr` is equivalent and
+shorter.

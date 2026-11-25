@@ -1,0 +1,256 @@
+---
+name: planning
+description: Guides the orchestrator through Phase 2.0 (Planning) of the governed workflow — structuring the execution plan (with per-item scope), proposing acceptance criteria, and collaborating with the plan-advisor teammate.
+---
+
+# Planning Skill
+
+Phase 2.0 of the governed workflow. The orchestrator and plan-advisor teammate collaborate to produce an execution plan with scope embedded in each execution item, and acceptance criteria. The plan must pass backend validation and user review before execution begins.
+
+---
+
+## Plan Structure
+
+The execution plan has two audiences: **the user** (who reviews it in the admin panel) and **the agents** (who execute it). Structure accordingly.
+
+### Plan description
+
+The `description` field is a paragraph answering four questions:
+
+1. **What** are we building?
+2. **Why** — motivation from the ticket
+3. **How** — high-level approach (not implementation details, but the architectural direction)
+4. **What is out of scope** — explicitly state boundaries
+
+This paragraph is the first thing the user reads. Keep it under 5 sentences. No class names, no file paths.
+
+### Sub-phases
+
+Each sub-phase has `id`, `name`, `tasks`, and `scope`. Sub-phases map to execution cycles (3.1, 3.2, ...) — each goes through implementation, validation, review, and commit.
+
+**Default: one sub-phase.** A small or single-area change — for example, adding a service and repository layer to an existing backend feature — is always exactly ONE sub-phase. Do not split it.
+
+**Split only for genuinely large jobs** that change a lot of code across clearly different areas, where each area should be fully implemented and validated before the next area begins. A concrete example of a large new feature that warrants three sub-phases:
+
+1. Sub-phase 1 — backend: implement all changes across all layers (entity, repository, service, controller) including unit tests, fully. Validated and committed before frontend work begins.
+2. Sub-phase 2 — frontend: after the backend is implemented and validated, implement the whole frontend plus its UI/unit tests with full coverage. Validated and committed before E2E work begins.
+3. Sub-phase 3 — end-to-end: large no-mock UI/Cucumber/E2E tests that span the full stack.
+
+**Do NOT split when:**
+- Two changes depend on each other (e.g., an entity and the service that uses it) — these belong in the same sub-phase even if they're in different files.
+- The split would create sub-phases so small they don't warrant independent review.
+- You're splitting just to organize by file or class — that's what tasks within a sub-phase are for.
+- The whole job is backend-only, even if it touches several layers — a backend-only feature, no matter how many files, is one sub-phase.
+
+**The litmus test: will the reviewer get lost?** If the combined diff would be large and span multiple concerns (backend AND frontend AND E2E), split it. If the reviewer can follow the changes as a single coherent unit, keep it together. When in doubt, one sub-phase is always the right answer for anything backend-only or small.
+
+**Remember the cost of splitting**: a sub-phase is a full cycle that ends in the user manually reviewing and approving a diff. Two sub-phases means the user stops twice — every split you propose is spending the user's attention, not just yours.
+
+**Compile-coupling check — required before finalising any multi-sub-phase split**: verify each sub-phase leaves the tree compiling on its own. Check module dependency direction in the build files. If anything in sub-phase N only compiles once sub-phase N+1 exists, the boundary is wrong and the task must move to the sub-phase where it actually compiles.
+
+**Two more anti-patterns:**
+- If a unit is merely LARGE, split it into more TASKS inside one sub-phase, not into more sub-phases — task-level splitting gives review granularity at zero gate cost, and is almost always the right move.
+- NEVER split along a build-order dependency chain (entity → repository → service → view). That is one feature arriving in dependency order, not several independently reviewable units.
+
+### Tasks — two-layer structure
+
+Every task has a human layer and an agent layer:
+
+- **`title`**: Human-readable summary. One sentence describing WHAT this step does at a business level. No class names, no method names, no parameter values. The user reads this to understand the plan at a glance.
+  - Good: "Create the service that generates default narrative segments from a chapter template"
+  - Bad: "Create NarrativeService with getTemplate(), saveTemplate(), generateDefault()"
+
+- **`description`**: Technical specification for the implementing agent. Class names, method signatures, parameter values, file paths, API contracts, edge cases to handle. This is the agent's work order — it must contain everything the agent needs to do the work without guessing.
+  - Example: "NarrativeService with methods getTemplate(UUID chapterId), saveTemplate(NarrativeTemplate), generateDefault(UUID chapterId), regenerateSegment(UUID segmentId). Hardcoded taxonomy version = 2023-12-22. Use JmixDataRepository for persistence. Return Optional where absence is possible."
+
+- **`files`**: Array of file paths the task will touch. Used for scope enforcement and parallel conflict detection.
+
+- **`agent`**: Agent type to assign. See the agent selection matrix in the main SKILL.md.
+
+- **`group`**: Optional. Tasks with the same group name run in parallel (fork/join). Tasks without a group or with unique group names run sequentially. Groups execute in order of first appearance within the sub-phase.
+  - **Interface contract**: When a group has 2 or more engineers whose code meets at a shared boundary, write a short contract into the plan description or a scratchpad before dispatch. List the command ids, shared types and interfaces with their exact shape (e.g. `WorkspaceRef`), the argument type each handler receives, and the event and context-key names. Pass the contract to every engineer in the group as binding. Engineers must not rename or redefine a contract item; if one needs a change, they report it back instead of diverging locally. Validation checks the code against the contract.
+
+- **`status`**: Always `"pending"` at plan creation.
+
+**Separation rule**: Never combine "implement + write tests" into a single task. Production code and test code are always separate tasks assigned to different agent types.
+
+### System diagrams
+
+Required for every plan. The `systemDiagram` field is an array of Mermaid diagrams:
+
+1. **Class/entity diagram** (required): Key classes, entities, or components and their relationships. Use Mermaid `classDiagram` syntax.
+2. **Sequence diagram(s)** (required): Control flow through the system for the main use cases. Use Mermaid `sequenceDiagram` syntax. Create one diagram per distinct flow — multiple sequence diagrams are encouraged when the feature involves multiple user-facing flows.
+
+Format:
+```json
+"systemDiagram": [
+  {"title": "Class Diagram", "diagram": "classDiagram\n  class UserService {\n    +createUser()\n  }"},
+  {"title": "Auth Flow", "diagram": "sequenceDiagram\n  Client->>+API: POST /login\n  API->>+UserService: authenticate()"}
+]
+```
+
+#### Mermaid syntax caution
+
+A malformed diagram fails to render in the admin panel with a parse error — exactly at the moment the user is trying to review the plan. Avoid this:
+
+- **No `;` inside message or node labels.** Mermaid treats `;` as a statement separator, not punctuation. `Detail-->>Admin: notify; checkbox reverts to false` breaks parsing — rewrite as `notify, checkbox reverts to false` or split into two lines.
+- **Be careful with `:` and quote characters inside labels.** `:` after the arrow already separates the label from the syntax — an extra `:` or a stray `"`/`'` inside the label text can be misread as a new token. When a label needs punctuation, prefer commas and plain prose.
+- **Diagram strings are embedded in JSON.** Any line break inside a diagram must be a `\n` escape, not a literal newline — a literal newline breaks the JSON, not just the diagram.
+
+### Editing an existing plan — prefer the granular tool
+
+`workspace_set_plan` resubmits the WHOLE plan. When changing only one part of an already-drafted or already-approved plan, prefer the tool scoped to that change — it is less error-prone and, for two of them, does not force the user to re-approve:
+
+| Tool | What it does | Resets plan approval? |
+|------|---------------|------------------------|
+| `workspace_update_subphase(subphase_id, name?, tasks?, scope?)` | Patches ONE execution item in place, including its scope, without resubmitting the plan | Yes |
+| `workspace_delete_subphase(subphase_id)` | Removes an execution item; remaining items are renumbered to stay sequential. Cannot delete the last remaining sub-phase | Yes |
+| `workspace_set_plan_diagrams(diagrams, replace=True)` | Replaces or appends the plan's `systemDiagram` list | No |
+| `workspace_set_plan_description(description)` | Replaces the plan's `description` | No |
+| `workspace_set_plan` | Replaces the whole plan | Yes |
+
+**Resetting plan approval blocks file edits until the user re-approves** — do not use a whole-plan-replacing tool for a change that a targeted tool covers, or you will force an unnecessary re-approval wait.
+
+---
+
+## Scope Definition
+
+Scope is defined **per execution item**, embedded directly inside each item submitted via `workspace_set_plan` or `workspace_extend_plan`. There is no separate `workspace_set_scope` call — scope lives in the plan.
+
+Each execution item carries a `scope` field with `must` and `may` arrays:
+
+- **must**: Broad areas where absence of changes means the task is incomplete. Keep this list short — if the ticket says "add BDD scenarios", the BDD module is must-scope.
+
+- **may**: Specific files and packages identified during planning. Most paths from the execution plan belong here. Permitted but not required.
+
+Format inside each execution item:
+```json
+{
+  "id": "3.1",
+  "name": "Backend implementation",
+  "scope": {
+    "must": ["src/main/java/**/entity/", "src/main/java/**/service/"],
+    "may": ["src/main/resources/db/changelog/", "src/main/java/**/util/"]
+  },
+  "tasks": [...]
+}
+```
+
+During execution, the hook enforces the current sub-phase's scope automatically. When the user approves the plan in the admin panel (while the workspace is at 2.0), scope is approved as part of the plan — there is no separate scope approval step.
+
+For test-type acceptance criteria, add the test file paths to the relevant sub-phase's `must` array.
+
+---
+
+## Acceptance Criteria
+
+Acceptance criteria are **authored here, during planning (phase 2.0)**. This is the canonical place to propose criteria via `workspace_propose_criteria`. Calling `workspace_propose_criteria` before phase 2.0 is rejected by the backend.
+
+Criteria are validated programmatically when the last sub-phase commits. If any accepted criterion with a validator fails, advancement to review is blocked. Approving the plan also accepts all proposed criteria — there is no separate per-criterion accept/reject step.
+
+### Reviewing existing criteria
+
+Call `workspace_get_criteria()` for the full criteria list. The user may have defined criteria during workspace setup. Review them for completeness — do they cover the ticket's requirements?
+
+### Proposing additional criteria
+
+Call `workspace_propose_criteria` for any gaps (types: `unit_test`, `integration_test`, `bdd_scenario`, `custom`).
+
+#### Feasibility check — confirm before proposing, not after
+
+Before proposing any test criterion, confirm a test of that KIND already exists in this repo — not merely that the naming convention matches. Grep for an existing test of the same layer (view, controller, repository, scheduled job, migration); a package named `view` may contain only tests of extracted helpers, which makes view-level criteria unsatisfiable.
+
+If no test of that kind exists, exactly one of three things is true, and you must pick one explicitly:
+
+1. **The layer is testable and simply untested** — proceed and say so.
+2. **The layer is not testable as written**, and the plan must include the change that makes it testable — add it as a plan task; do not leave it to the implementer to discover mid-execution.
+3. **It genuinely cannot be automated** — make it a `custom` criterion with manual steps, and do not disguise a manual check as a test.
+
+**Making a layer testable does not mean extracting a new class.** When logic must move to become testable, prefer moving it into an EXISTING collaborator that is already covered by tests over creating a new class. Create a new type only when the logic is complex enough to deserve its own name. "It needs a unit test" is not by itself a reason for a new class — check first whether an existing service, and its existing test class, can host it.
+
+**Shape assertions adversarially.** Prefer the assertion that fails on the specific bug you are guarding against, not the one that merely exercises the feature (e.g. assert the constructed URL string, not upload success). If a criterion would pass on the broken version of the code, it is not a criterion.
+
+The `details_json` shape per type (`file` + `test_names`, `file` + `scenario_names`, `instruction`) and its JSON-string encoding are in the `workspace_propose_criteria` tool description. Rules the tool does not state:
+
+**Mandatory rules for `unit_test` and `integration_test` criteria:**
+
+1. **`file` and `test_names` go in `details_json`** — the validator ignores `description` for automated checks.
+
+2. **`file`** — full path to the test class, relative to project root. Use the project's actual directory structure (check existing tests with Glob/Grep to confirm the path convention).
+
+3. **`test_names`** — array of exact test method names. **Before proposing any test-type criterion, you MUST read actual existing test files of the same kind (unit / integration / BDD) in the repository and understand their naming structure.** This is not optional. Criteria are verified by a literal substring check — the validator searches for the exact method name as a string in the test file at commit time. If the name does not match precisely, validation fails and the commit is blocked. The test names **cannot be changed** after the plan is approved.
+
+   How to get the names right:
+   - Use Glob to find test files in the same module/package (`**/UserServiceTest.java`, `**/*IntegrationTest.java`, etc.)
+   - Read those files to see the exact naming pattern in use
+   - Common patterns: `methodName_shouldBehavior_whenCondition`, `test_method_name_condition`, `testMethodNameCondition` — but only the pattern actually used in this repo is correct
+   - **Match the convention exactly, character for character** — the test names you propose will be searched as literal substrings at validation time
+
+4. **One call per test class** — if you need unit tests for `UserService` and `OrderService`, that's two `workspace_propose_criteria` calls (one for `UserServiceTest`, one for `OrderServiceTest`), not one call per test method and not one call with mixed files.
+
+5. **`description`** is a human-readable summary shown in the admin panel. Keep it short — the technical details belong in `details_json`.
+
+### Gate rule
+
+All acceptance criteria must be accepted (or deleted) before the plan can advance to user review. Criteria with status `proposed` or `rejected` will block advancement. To remove one you no longer want, call `workspace_delete_criteria(criterion_id)` — this is only allowed while the criterion is not yet accepted; once plan approval accepts all proposed criteria, deletion is refused, so clean up unwanted criteria before the plan is approved.
+
+---
+
+## Collaboration with Plan-Advisor
+
+Message the plan-advisor via `SendMessage(to: "plan-advisor", ...)`. Re-spawn it only on session recovery (see the governed-workflow skill). Present the outline without implementation assumptions so the advisor forms independent judgment.
+
+### Scope decisions are not only in the ticket
+
+Ticket text is not the only source of scope. Decisions the user makes during preparation review are equally binding, and an advisor reading only the ticket will flag them as scope creep. When you carry such a decision into the plan, record the rationale in the task description so downstream reviewers do not re-litigate it. The converse also holds: a user decision is not immune from review. Decisions get recorded WITH their reasoning, so whoever meets them next can evaluate the reasoning rather than guess at intent.
+
+### Step 1 — Resume and present
+
+Message the plan-advisor with a **structured brief that enumerates every deliverable** — a free-form "review this" prompt is measurably weaker.
+
+```
+SendMessage(
+  to: "plan-advisor",
+  prompt: "We are in the planning phase. Review the research findings via workspace_get_state.
+           Here is my proposed plan outline:
+           {outline — sub-phases, task summaries, scope boundaries}
+
+           Deliver each of the following, labeled:
+           1. VERDICT — per task, OK or CONCERN with reasoning.
+           2. COMPILE-COUPLING AUDIT — for any module boundary crossed by the split, confirm each sub-phase compiles standalone.
+           3. TEST CONVENTIONS — the verbatim naming pattern grepped from real test files in this repo, cited as file:line.
+           4. PARALLEL GROUPS — group assignment for parallel tasks, stating the shared-file constraint that justifies (or forbids) each grouping.
+           5. SIZE/PLACEMENT — any oversized or misplaced task.
+           6. UNCOVERED REQUIREMENTS — list every ticket requirement that no task in the plan currently owns. This is the highest-yield check — do not skip it.
+           7. SETTLED — the following are final, do not relitigate: {list, e.g. sub-phase count, chosen architecture, decisions made during preparation review with their rationale}."
+)
+```
+
+### Step 2 — Review and discuss
+
+The plan-advisor reviews every task and sends a numbered list with verdicts. For each concern:
+- Accept and adjust the plan, OR
+- Reject with reasoning
+
+Discuss until consensus on each point.
+
+### Step 3 — Expansion
+
+After consensus, the plan-advisor expands the plan with technical details (class names, method signatures, file paths in task descriptions).
+
+### Step 4 — Orchestrator review
+
+Review the expansion. Send numbered remarks on specific tasks if needed. The plan-advisor responds and adjusts. **One round maximum**, then finalize.
+
+### Step 5 — Finalize
+
+Execute in order:
+1. `workspace_set_plan` — full plan JSON with execution items, each carrying its own `scope` (must/may). Resets plan approval status to pending. For later corrections use the granular tools above.
+2. `workspace_update_progress` for phase `"2"` with a summary of the plan.
+3. `workspace_advance` — refused until the user approves the plan in the admin panel (see Plan approval wait below). Approving the plan also approves scope and accepts all proposed criteria; advancing then moves directly to 3.1.0.
+
+**Advance 2.0 -> 3.1.0** requires: valid plan with at least 1 execution sub-phase + progress entry `"2"` + >=1 acceptance criterion with no pending/rejected criteria + plan approved by user in the admin panel. There is no separate 2.1 gate phase and no separate scope approval — one plan approval covers everything.
+
+**Plan approval wait**: after submitting the plan, tell the user it awaits approval and end the turn — do not poll. When the user messages or a scheduled check fires, check `workspace_get_state` once; if `plan_status='approved'`, call `workspace_advance`.
+
+---

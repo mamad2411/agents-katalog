@@ -1,0 +1,82 @@
+---
+name: deliver-work
+description: "Use whenever work leaves your working tree: staging and committing, writing a commit message, pushing, opening, updating or merging a pull request, finishing, keeping or deleting a branch or worktree; preparing or publishing a release (version bump, changelog, release notes, tag, package publish); and deploying, rolling out, rolling back or restoring production. Read it before running git commit, git push, a merge, a tag or a publish command, even when the user only says commit or ship. It checks the branch, the staged files and the remote before each step, and exactly what each step includes."
+---
+
+# Deliver Work
+
+Take finished work into a commit, a pushed or merged branch, a pull request, a release or production, only as far as the user said yes.
+
+The **Rules** are binding; if one cannot be met, stop and say why. Everything else is judgment: adapt it when another choice serves its goal better.
+
+## Routes
+
+| Situation | Read |
+| --- | --- |
+| An ordinary commit of your own changes | Commit, below |
+| Committing with mixed owners or concerns, a file holding included and excluded changes, or generated, sensitive or unexplained files; Git mid-operation, unmerged, detached or with a changed submodule; nothing to commit; amend, empty commit or skipped hooks asked for; a failed commit or hook | [commit](references/commit.md) |
+| Pushing to a remote branch | [branch closeout: Simple Push](references/branch-closeout.md#simple-push) |
+| Merging, a pull request, or keeping, discarding or deleting a branch or worktree | [branch closeout](references/branch-closeout.md) |
+| A version, release notes, tag or registry publication | [release](references/release.md) |
+| Deploying, exposing a change to users, rolling back or restoring production | [launch](references/launch.md) |
+
+Start every route with [delivery-state](scripts/delivery-state.mjs) (`node <deliver-work-directory>/scripts/delivery-state.mjs`): branch, upstream counts from local refs, staged, unstaged and untracked counts, a Git operation in progress, every worktree with the one holding this session's directory flagged, the latest tag, the version and the changelog's Unreleased entries. It reads only; what needs the network it reports unavailable. With `--task <task folder> --base <ref> --step <commit|push|pull-request>` it also prints Review Work's `Review:` lines for HEAD, which The Review Check below reads.
+
+A request spanning routes, such as "commit and push": take them in order, each within its own yes, and stop at the first that fails.
+
+## Rules
+
+- Merging, a pull request, deleting or discarding a branch, worktree or uncommitted work, deploying, and every exposure stage need their own yes, like commit, push and release. Loading this skill, a readiness question or an approved plan gives none, and one route's success never authorizes the next.
+- Never use `--amend`, `--allow-empty`, `--no-verify`, a force push, a history rewrite, a moved release tag or an overwritten published version unless the user asked for that exact action; never bypass or blindly retry a failing hook or check.
+- Never stage or publish Working Records (`.freeflow/tasks/**`, or a Freeflow store's task folders), secrets, credentials, private keys, local environment files or unexplained sensitive content. Only Track Work's script syncs the Freeflow store, and only to the user's own private remote.
+- Never absorb or unstage pre-existing staged changes, or remove a worktree, checkout or other state you did not create. Never run a destructive reset, clean, branch or remote deletion, worktree removal or force push merely to produce a clean status.
+- After a commit, push, publication or deployment step fails or loses its acknowledgement, inspect what changed before retrying, and stop while it stays unknown; a network error does not mean nothing happened.
+
+## The Review Check
+
+Goal: every pull request, and every step the review rules name, crosses only with a review on record for the commit that crosses it.
+
+Before opening a pull request, and before a push or a commit, run delivery-state with `--base <the branch it goes to> --step <commit|push|pull-request>` and read its `Review:` lines, Review Work's [review-status](../review-work/scripts/review-status.mjs). They name the `Review at:` rule and where it comes from: the project's Review Rules at that base (without `--base`, at the merge-base with the default branch, never at the change itself), else the user's `rules/review.md` in the Freeflow home, else Freeflow's default, every pull request. No review due at this step, or one on record for the head: go on. Due and none on record: run the floor's review first (one reviewer, one round), as Review Work's The Review Gate says. A stale line names the diff-only re-review that covers the commits since. Until Freeflow's gates enforce it, this check is yours: nothing in the host stops the step without it.
+
+## Commit
+
+Goal: one commit that holds exactly the supported state.
+
+1. **Boundary.** The user asked for this commit, or the work agreement they gave covers it, such as a commit at a return point they agreed; a Working Record can carry that agreement, not create it. Fresh checks support the state, or the user asked to preserve incomplete work; a review they selected is done, its findings settled.
+2. **Inspect** before touching the index: [commit-state](scripts/commit-state.mjs) lists every staged, unstaged and untracked path as yours, pre-existing or unknown (from a `snapshot` taken before your first edit, or `--mine <path>`), with partly staged files, sensitive-looking paths and Working Records flagged; then read `git diff` and `git diff --cached`. Staged does not mean yours. If the second Routes row matches, read [commit](references/commit.md) now.
+3. **Stage** only what the claim needs: explicit paths or hunks, with the tests, docs and generated output it requires; stage broadly only when every changed path was inspected and belongs. Then `git diff --cached --check`: conflict markers or whitespace damage stop the commit; fix them in the content they belong to, never edit content just to silence the check.
+4. **Message** in the repository's style; otherwise a short imperative subject naming what this commit holds, and a body only for what the diff cannot show: why, trade-offs, residual risk, why incomplete work is kept. Invent no trailers.
+5. **Check** `git show --stat --oneline HEAD` and `git status --short --branch`: the claimed contents, nothing unexpected left.
+6. **Record** the commit on the current Slice, as a one-line result naming its SHA, through [Track Work](../track-work/SKILL.md), when a Working Record exists.
+
+Rules for a commit:
+
+- Claim no more than the checks and selected review support. A preservation commit the user asked for may hold incomplete or failing work: say so, and do not take it as leave to cross what is unresolved.
+- A commit is never a Slice of its own; after it, stage no leftovers and begin no other Slice.
+
+## Other Owners
+
+A choice that is the user's goes to [Discuss Work](../discuss-work/SKILL.md), with the supported routes as options; what a check supports, to [Verify Work](../verify-work/SKILL.md); a failure without a known cause, to Execute Work's [diagnose](../execute-work/references/diagnose.md); a selected review not yet run, reported for [Review Work](../review-work/SKILL.md).
+
+## Stop
+
+Stop and return the smallest blocking fact when:
+
+- what a route's yes covers is unclear;
+- live state differs from what was verified, reviewed or approved: changes, source commit, version, artifact, configuration or target;
+- required evidence, a selected review, or the review the step needs (The Review Check) is missing;
+- a destination is unclear: remote, branch, base, pull-request target, registry, channel or environment;
+- a conflict needs more than a mechanical resolution of both sides' settled intended behavior, such as a behavior, source-of-truth or owner decision; never end a conflict by taking ours or theirs.
+
+## Report
+
+End with the lines that apply:
+
+```text
+Route:      <route and stage, and what the yes covered>
+Identity:   <SHA and subject, branch and remote, pull-request URL, version and tag, artifact and target>
+Evidence:   <each check on the final state and what it shows; the selected review's outcome>
+Not shown:  <what this does not establish (pushed is not merged, merged not released, a prepared release not published, published not deployed); what went unverified>
+Remaining:  <unpushed or uncommitted work, pending CI or review, observation windows left, temporary machinery with its owner and cleanup, partial failures and recovery>
+Next:       <the next route as a question, and whose call it is>
+```

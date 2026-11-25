@@ -1,0 +1,259 @@
+---
+name: blofin-net
+description: Build C#/.NET BloFin integrations with BloFin.Net, including AccountApi, SpotApi, FuturesApi, REST clients, websocket subscriptions, spot and futures market data, balances, spot and futures order placement/cancellation, positions, leverage, margin mode, position mode, BloFinCredentials with passphrase, BloFin symbols, dependency injection, HttpResult REST handling, WebSocketResult subscription handling, CallResult batch-item handling, local order books, trackers, and Shared API V2 strict capabilities and aggregates. Use when the user asks for BloFin spot or futures market data, account or trading code, websocket updates, error handling, or converting raw BloFin API usage to idiomatic BloFin.Net.
+---
+
+# BloFin.Net
+
+## Overview
+
+Use `BloFin.Net` for BloFin-specific C# application code. Prefer this skill over the generic `cryptoexchange-net` skill when the user asks for BloFin spot or futures endpoint groups, BloFin symbols, account settings, order placement, positions, leverage, deposits/withdrawals, or BloFin credentials.
+
+Use `cryptoexchange-net` instead when the user wants the same code to run across multiple exchanges through `CryptoExchange.Net.SharedApis`.
+
+## Setup
+
+This skill targets `BloFin.Net` 4.0.0, which introduced the complete Spot API surface alongside the existing futures support.
+
+Install the exchange package:
+
+```bash
+dotnet add package BloFin.Net --version 4.0.0
+```
+
+Use these namespaces in examples:
+
+```csharp
+using BloFin.Net;
+using BloFin.Net.Clients;
+using BloFin.Net.Enums;
+using CryptoExchange.Net.Objects;
+```
+
+Add `using CryptoExchange.Net.SharedApis;` only for shared cross-exchange code.
+
+## Client Roots
+
+Create REST clients for request/response endpoints:
+
+```csharp
+var rest = new BloFinRestClient();
+```
+
+Create socket clients for websocket subscriptions:
+
+```csharp
+var socket = new BloFinSocketClient();
+```
+
+Current source-checked API surfaces:
+
+- `rest.AccountApi`: general account balances, transfers, account config, API key info, deposits, withdrawals, and account SharedApis
+- `rest.SpotApi.ExchangeData`: spot symbols, tickers, order books, trades, and klines
+- `rest.SpotApi.Account`: spot balances and transfers
+- `rest.SpotApi.Trading`: spot orders, batch orders, algo orders, cancellations, order history, and user trades
+- `rest.SpotApi.SharedApi`: exchange-agnostic SharedApis REST interfaces for spot workflows
+- `rest.FuturesApi.ExchangeData`: futures symbols, tickers, order books, trades, index/mark prices, funding rates, klines, and position tiers
+- `rest.FuturesApi.Account`: futures balances, margin mode, position mode, leverage reads and updates
+- `rest.FuturesApi.Trading`: futures positions, orders, batch orders, TP/SL orders, trigger orders, cancellations, close position, user trades, price limits, and position history
+- `rest.FuturesApi.SharedApi`: exchange-agnostic SharedApis REST interfaces for futures workflows
+- `socket.SpotApi`: spot public trade, kline, ticker, and order-book subscriptions plus private order, algo-order, and balance subscriptions
+- `socket.SpotApi.SharedApi`: exchange-agnostic SharedApis socket interfaces for spot workflows
+- `socket.FuturesApi`: futures public subscriptions plus private position, order, trigger-order, and balance subscriptions
+- `socket.FuturesApi.SharedApi`: exchange-agnostic SharedApis socket interfaces for futures workflows
+
+Do not use exchange roots from other libraries such as `ExchangeApi`, `UsdFuturesApi`, `FuturesApiV2`, `SpotApiV3`, `CoinFuturesApi`, or `PerpetualFuturesApi`. `SpotApi` is a valid BloFin.Net 4.0.0 root.
+
+Read `references/api-surfaces.md` when choosing a client root or endpoint group.
+
+## Credentials
+
+Public spot and futures market data does not need credentials:
+
+```csharp
+var client = new BloFinRestClient();
+```
+
+Private account, trading, deposits/withdrawals, futures account settings, and private websocket calls need `BloFinCredentials` with API key, API secret, and passphrase:
+
+```csharp
+var client = new BloFinRestClient(options =>
+{
+    options.ApiCredentials = new BloFinCredentials("API_KEY", "API_SECRET", "PASSPHRASE");
+});
+```
+
+Use placeholders or environment variables in generated code. Do not hardcode real credentials.
+
+## Result Handling
+
+REST methods return `HttpResult<T>` or `HttpResult`. Websocket subscription methods return `WebSocketResult<UpdateSubscription>`. Some batch REST operations return `HttpResult<CallResult<T>[]>`; check both the outer result and each item result. Always check `Success` before reading `Data`.
+
+```csharp
+var ticker = await client.FuturesApi.ExchangeData.GetTickersAsync("ETH-USDT");
+if (!ticker.Success)
+{
+    Console.WriteLine(ticker.Error);
+    return;
+}
+
+Console.WriteLine(ticker.Data.FirstOrDefault()?.LastPrice);
+```
+
+Use `result.Error.Code`, `result.Error.Message`, `result.Error.ErrorType`, and `result.Error.IsTransient` when writing diagnostics or retry logic. Retry only transient errors.
+
+## Symbols And Enums
+
+- BloFin spot and futures symbols use dash format, for example `ETH-USDT`.
+- Do not use Binance-style compact symbols such as `ETHUSDT`.
+- Use `KlineInterval` for candles.
+- Common account and trading enums include `AccountType`, `ProductType`, `OrderSide`, `OrderType`, `MarginMode`, `PositionMode`, and `PositionSide`.
+- Use exchange data and price limits before generating production order quantities or prices.
+
+Let the library generate client order IDs unless the user needs external correlation. BloFin examples often use explicit client IDs for traceability.
+
+## REST Patterns
+
+Public spot ticker:
+
+```csharp
+var spotTicker = await client.SpotApi.ExchangeData.GetTickersAsync("ETH-USDT");
+```
+
+Authenticated spot balances:
+
+```csharp
+var spotBalances = await client.SpotApi.Account.GetBalancesAsync(AccountType.Spot, "USDT");
+```
+
+Spot limit order:
+
+```csharp
+var spotOrder = await client.SpotApi.Trading.PlaceOrderAsync(
+    symbol: "ETH-USDT",
+    side: OrderSide.Buy,
+    type: OrderType.Limit,
+    quantity: 0.01m,
+    price: 1m);
+```
+
+Public futures ticker:
+
+```csharp
+var ticker = await client.FuturesApi.ExchangeData.GetTickersAsync("ETH-USDT");
+```
+
+Authenticated general account balance:
+
+```csharp
+var balances = await client.AccountApi.GetAccountBalancesAsync(AccountType.Futures, "USDT");
+```
+
+Authenticated futures balances:
+
+```csharp
+var futuresBalances = await client.FuturesApi.Account.GetBalancesAsync(ProductType.UsdtFutures);
+```
+
+Futures limit order:
+
+```csharp
+var order = await client.FuturesApi.Trading.PlaceOrderAsync(
+    symbol: "ETH-USDT",
+    side: OrderSide.Buy,
+    orderType: OrderType.Limit,
+    quantity: 1m,
+    marginMode: MarginMode.Cross,
+    price: 1m,
+    positionSide: PositionSide.Long);
+```
+
+Positions and leverage:
+
+```csharp
+var positions = await client.FuturesApi.Trading.GetPositionsAsync("ETH-USDT");
+var leverage = await client.FuturesApi.Account.GetLeverageAsync("ETH-USDT", MarginMode.Cross);
+```
+
+## Websocket Patterns
+
+Keep socket handlers fast. Offload heavier work to a queue or channel.
+
+```csharp
+var socket = new BloFinSocketClient();
+
+var sub = await socket.SpotApi.SubscribeToTickerUpdatesAsync(
+    "ETH-USDT",
+    update => Console.WriteLine(update.Data.LastPrice));
+
+if (!sub.Success)
+{
+    Console.WriteLine(sub.Error);
+    return;
+}
+
+// On shutdown:
+await socket.UnsubscribeAsync(sub.Data);
+```
+
+Use `UnsubscribeAsync` or `UnsubscribeAllAsync` on shutdown. Do not leave example subscriptions running.
+
+## Shared API V2
+
+Use Shared APIs only when portability matters. Depend on the narrow capability needed by the workflow:
+
+```csharp
+using CryptoExchange.Net.SharedApis;
+
+using var client = new BloFinRestClient();
+IGetTickerRest ticker = client.FuturesApi.SharedApi;
+
+var result = await ticker.GetTickerAsync(
+    new GetTickerRequest(
+        new SharedSymbol(TradingMode.PerpetualLinear, "ETH", "USDT")));
+```
+
+Use `IBloFinSharedApiClient` as the exchange aggregate. Its aggregate properties—`AccountRest`, `SpotRest`, `FuturesRest`, `SpotSocket`, `FuturesSocket`—expose the supported Shared API surfaces at compile time. Use `GetCapability` only when the capability, trading mode, or transport is selected dynamically.
+
+For portable spot workflows, use `client.SpotApi.SharedApi` and `TradingMode.Spot`:
+
+```csharp
+IGetTickerRest ticker = client.SpotApi.SharedApi;
+var result = await ticker.GetTickerAsync(
+    new GetTickerRequest(
+        new SharedSymbol(TradingMode.Spot, "ETH", "USDT")));
+```
+
+For WebSocket workflows, use the narrow subscription interface exposed by the applicable socket surface, such as `ISubscribeTickerSocket` or `ISubscribeTradesSocket`. Do not mix BloFin-native request/model types with Shared API request/model types.
+
+## Dependency Injection
+
+When working in ASP.NET Core or worker services, prefer DI and reuse clients:
+
+```csharp
+services.AddBloFin(options =>
+{
+    options.ApiCredentials = new BloFinCredentials("API_KEY", "API_SECRET", "PASSPHRASE");
+});
+```
+
+Inject `IBloFinRestClient` and `IBloFinSocketClient`, or the registered shared interfaces used by the target project. Match the repository's existing DI pattern if one is present.
+
+## Local Order Books And Trackers
+
+Use `BloFinOrderBookFactory.CreateSpot(...)` or its `Spot` factory for a maintained spot order book. Use `BloFinTrackerFactory.CreateUserSpotDataTracker(...)` for maintained spot balances and orders. The futures equivalents remain available through `CreateFutures(...)` and the futures tracker methods.
+
+## Safety Rules
+
+- Read `references/safety.md` before generating spot or futures trading, leverage, margin mode, position mode, close-position, transfer, withdrawal, or credential code.
+- Prefer read-only examples for account inspection.
+- Prefer safe limit-order examples over market orders unless the user explicitly asks for immediate execution.
+- Futures examples can change leverage, margin mode, position mode, or create real exposure; make that explicit.
+- Include cleanup for example orders or subscriptions when appropriate.
+
+## References
+
+- Read `references/api-surfaces.md` for endpoint groups and client roots.
+- Read `references/usage.md` for task-specific snippets.
+- Read `references/safety.md` for account, spot and futures trading, transfer, withdrawal, and credential guardrails.
+- In a maintainer checkout with sibling repositories, read `../BloFin.Net/Examples/ai-friendly/` for complete compilable examples.

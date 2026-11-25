@@ -1,0 +1,227 @@
+---
+name: design-review
+description: Run a structured UX critique on a screenshot, URL, or HTML snippet - a 0-4 score, up to 6 prioritized issues each with Before/After/Why, and one citation per claim. Given two or more variants, compares them on shared dimensions and names a winner. Given a screen plus a decision question, answers the question with the screen as evidence instead of returning a critique. Trigger phrases - "review this design", "critique this screen", "what's wrong with this UI", "score this design", "which of these two is better", "did the redesign improve this", "should I use a modal or a drawer". Do not use for WCAG-only accessibility audits (use accessibility-audit) or turning a mockup into a dev spec (use design-handoff).
+---
+
+# Design review
+
+Critique a UI artifact or answer a design decision question, always with a citation behind every claim.
+
+## Step 0 - load the rubric
+
+Before writing any critique, read [references/review-rubric.md](references/review-rubric.md) if it is not already in context. It has the 0-4 scoring bands, the rule that picks one band when two of them describe the same screen, and the compact table of Nielsen's 10 usability heuristics you cite from. Do not skip this even if you know the heuristics - the exact wording of the bands matters for consistent scoring across runs, and the tie-break is what keeps two runs on one screen from returning two different numbers.
+
+## Step 1 - pick a mode
+
+Two facts settle it. Is an **artifact** attached - a pasted screenshot, an image, a URL, or an HTML snippet in a code block? And does the message ask a **decision question** - a choice between patterns, components, or flows ("should I use X or Y", "how should I handle...")? "Review this", "is this any good" and "what's wrong with this" are not decision questions: they ask about the artifact's own quality, which is what review mode answers.
+
+Take the first match:
+
+1. **Comparison mode**: two or more artifacts, and the question asks which of them wins ("A or B", "which of these is better", "did the redesign improve this").
+2. **Grounded advisory mode**: at least one artifact, and a decision question the artifact does not itself answer ("here is our checkout - should the address form be a modal or a drawer?"). The question governs the mode; the artifact is evidence, not the subject.
+3. **Review mode**: one artifact, no decision question.
+4. **Advisory mode**: no artifact, a decision question.
+
+Two or more artifacts and no decision question is two separate reviews, not a comparison - ask which the user wants before starting. If the request has neither an artifact nor a decision question, ask what the user wants reviewed instead of guessing.
+
+An attached artifact never silently downgrades a question into a critique. Answering a decision question with a full review is the same failure as answering a comparison with two critiques: the output is well formed, and the question the user asked is still open.
+
+## Step 2 - review mode
+
+### 2a. Handle the artifact
+
+- Screenshot or image: read it directly.
+- URL: fetch and render it if you have that capability; otherwise ask the user to paste a screenshot.
+- HTML snippet: read the markup and inline styles as given.
+
+### 2b. Score first, 0-4
+
+Assign one score before listing issues. Use these bands exactly:
+
+- **0/4 - broken**: violates basic accessibility, hierarchy, or trust. Needs a rebuild, not a patch.
+- **1/4 - significant rework**: five or more heuristic violations, generic or placeholder copy, flat hierarchy with no clear focal point.
+- **2/4 - needs work**: the structure is sound but the craft is weak - typography, spacing, or contrast issues.
+- **3/4 - solid, with specific tweaks**: hierarchy and craft are mostly right, 1-3 polish items remain.
+- **4/4 - ship-ready**: nothing material to fix, only minor preferences.
+
+Score generously when the design serves the project goals the user stated, if they stated any. Score harshly when it ignores them.
+
+More than one band will fit most screens. When two do, the cost of the fix decides which one wins - a rebuild, a restructure, a craft pass, 1-3 discrete fixes, or nothing material - and the violation count in band 1 is evidence of a structural problem, never a threshold that promotes a screen on its own. Five minor violations on a sound structure is a 2/4; one violation that blocks a task or fails an accessibility floor can be a 1/4 or 0/4 by itself. Count over what the review found, not over the issues it reports - the cap in 2c decides what gets printed, not what the screen scores. Full rule in `references/review-rubric.md`.
+
+### 2c. Pick the issues, ranked by impact - at most 6
+
+Never list every flaw you notice - an exhaustive list is noise and noise is a failure mode of this skill. Rank by impact and stop at 6, even if more issues exist.
+
+Six is a cap, not a quota, and there is no minimum count. Report every issue that clears the impact bar and nothing else, so the list runs to whatever length the screen earns. Padding a thin list up to a floor is the same failure as listing every flaw, reached from the other side: the closing rules section says an item is either worth a place in the list or it is not, and that is what sets the length.
+
+**The 6 is derived rather than picked.** It is band 1's floor plus one. That band is defined as five or more heuristic violations, the largest count any band names, so a cap of five would sit exactly on it and a list stopping on its own cap cannot say whether it is a complete band-1 list or a longer one cut off. Six is the smallest cap that lets band 1's floor print in full and still read as finished. Past six the count is the finding rather than the list: the screen is a 1/4 or a 0/4 and needs a restructure or a rebuild, so the score paragraph says that instead of a seventh issue going quietly. Full derivation in `references/review-rubric.md`.
+
+An empty critique is still never the answer, so two floors hold:
+
+- **Nothing clears the bar.** That is what 4/4 means. Name the 2-3 strongest polish items instead, framed as polish, not blockers.
+- **Fewer than three clear it on a 0-3 screen.** Normal at 3/4, whose band is defined as 1-3 polish items. List the ones that did, and say in one line that the list is short because the screen is in good shape - without it, a two-item review reads as one that stopped early.
+
+For each issue, write exactly three lines:
+
+- **Before**: a specific, observable fact. Not "the layout feels cluttered" - "12 UI elements sit inside a single 320px-wide card with no grouping."
+- **After**: a fix a person could ship in under an hour. Not "improve the hierarchy" - "move the secondary actions into an overflow menu and keep only the primary action visible."
+- **Why**: exactly one citation - a Nielsen heuristic by number and name, a WCAG 2.2 success criterion by number, or a named platform guideline (Apple Human Interface Guidelines, Material Design). One phrase of rationale after the citation, then stop. Do not lecture.
+
+### 2d. Output format - review mode
+
+```
+## <Artifact name, 2-4 words> - score <X>/4
+
+### 1. <Short issue title>
+- **Before:** <observable fact>
+- **After:** <fix, doable in under an hour>
+- **Why:** <citation> - <one-phrase rationale>
+
+### 2. <Short issue title>
+- **Before:** <...>
+- **After:** <...>
+- **Why:** <citation> - <...>
+
+...
+
+**Fix this first:** <one paragraph naming the single most important fix and why it outranks the others>
+```
+
+Number issues in the order you want them fixed, most impactful first. The closing line always names the single highest-priority fix - never a generic wrap-up.
+
+## Step 3 - comparison mode
+
+Two or more artifacts, and the question is which one wins. Reviewing each one in full is the failure mode here: it returns two critiques and still no answer.
+
+### 3a. Score each artifact
+
+Use the bands from Step 2b, one score per artifact. The scores are a summary, not the argument - two variants can both score 3/4 and still have a clear winner. Every artifact that arrived gets one, whatever the count: a score needs no column, so this step is the one part of the mode that does not get harder as artifacts are added, and 3d leans on that.
+
+### 3b. Compare on shared dimensions
+
+Pick the dimensions that matter for the job these screens do - for example hierarchy, clarity of the primary action, scan cost, accessibility, information density - at most five of them, with no floor underneath. Judge every artifact against every dimension, and keep the wording observable, the same standard as `Before` in review mode. A point that applies to only one artifact is a review note, not a comparison line, and where it goes depends on which artifact it landed on. A point about the winner waits for the closing "Worth fixing in the winner" list. A point about a losing variant has no list of its own on purpose: a printed critique of the screen nobody is shipping is the "two critiques and no answer" failure this mode exists to prevent, reached from the other side. If it bears on the verdict it is already part of the argument, so state it in the paragraph that names the winner. If it does not, offer a full review of that variant in one line and stop there.
+
+**The 5 is derived rather than picked, and the floor that used to sit under it commanded the padding the `Edge` rule forbids.** The ceiling reaches band 1's floor by the same route Step 5's cap does. A row here is one assertion the verdict is argued from - 3d says the rows are what the verdict is built out of - which is the unit band 1 counts when it says five or more heuristic violations, so five is the largest number of them the rubric asks any single output to stand behind. It takes no plus-one, for the reason Step 5's cap takes none: the rows print beside a score per artifact and not beside a count they are the evidence for, so a table stopping on its own cap has nothing to be ambiguous about, which is the whole of what 2c's sixth issue buys. The floor of 3 was a different kind of number, and it could not stand next to the rule it shares this step with. 3d sends a row that ties and decides nothing back here as the wrong pick, and calls a distinction invented to fill a cell 2c's padding failure arriving in the one place it cannot be discounted later. Two screens that genuinely differ on two dimensions leave a floor of three asking for a third row that can only tie or invent a gap, so the floor commanded both of the things that rule refuses. It is gone rather than rederived: the list is capped and has no floor, the same shape as 3c's closing fix list and for the same reason - the length is the screens, not the template. A one-row table is complete when one dimension is what separates them, and that row is then also the deciding dimension the verdict names.
+
+### 3c. Name a winner
+
+Always name one, even when the margin is small. A comparison that ends in "it depends" has not done the job. State what would change the call - the one fact about users, goals, or constraints that would flip it. If the honest answer is that the strongest screen takes parts from more than one of them, say which parts and from which variant.
+
+The closing fix list is capped at 3 and has no floor. The impact bar from Step 2c decides what goes in it, so a winner with nothing above that bar gets an empty list and says so. The two floors under 2c are review mode's: there the critique is the entire deliverable and an empty one is no answer at all, while here the verdict is the deliverable and it has already been given by the time this list starts. Padding the list to a count is the failure 2c names, and in this mode it also costs the verdict - an invented third issue in the winner reads as a reason to doubt the call.
+
+**The 3 is derived rather than picked.** Band 3/4 is defined as 1-3 polish items remaining, and 2c's second floor already reads three issues on a screen that is otherwise right as normal for that band. This list is that same list, asked about the one artifact the team is going to ship: what is left to fix in a screen whose hierarchy and craft are mostly there. So the cap is the top of the band a winner sits in when polish is all that remains, which is also why a full list of 3 and a list of one are both complete - the length is the screen, not the template.
+
+**A winner that needs more than 3 fixes is a finding about the verdict, not a list to trim.** Past three the winner is below 3/4 and what is left is craft or structure rather than polish, so the fourth issue is not dropped quietly: the paragraph that names the winner says what the score leaves to do, next to the fact that would flip the call. The list itself still stops at 3, ranked by impact.
+
+### 3d. Output format - comparison mode
+
+```
+## <A> vs <B> - <A> <X>/4, <B> <Y>/4
+
+| Dimension | <A> | <B> | Edge |
+|---|---|---|---|
+| <dimension> | <observable fact> | <observable fact> | <who is ahead> |
+| <dimension> | <observable fact> | <observable fact> | <who is ahead> |
+| <dimension> | <observable fact> | <observable fact> | <who is ahead> |
+
+**Winner: <the artifact that wins>.** <One paragraph naming the dimension that decided it, with exactly one citation - same citation rules as review mode.>
+
+**What would change the call:** <the one fact that would flip the decision>
+
+**Worth fixing in the winner:** <0-3 issues, Before/After/Why, only ones that clear the impact bar from Step 2c - or "Nothing in the winner clears the impact bar.">
+
+<One line offering a full review of the losing variant, or of each losing variant by name, only when it carried points that never reached the verdict. Never a printed critique of a screen that lost.>
+```
+
+**The block above is drawn with two artifacts and three rows because both are the common case, not because the mode ends there.** The three rows are an illustration and not a floor - 3b caps the list at five and puts no floor under it, so a two-row or one-row table is as finished as this one, the way the fix list's own placeholder says `0-3` rather than showing three issues. Three or more grow it in one direction only: the header names every artifact and its score in the order they arrived (`<A> vs <B> vs <C> - <A> <X>/4, <B> <Y>/4, <C> <Z>/4`), and the table takes one column per artifact with `Edge` staying last. Everything else holds unchanged - one winner, one deciding dimension, one citation, one closing fix list and it is about the winner. Every artifact keeps its own column for its whole life in the table - never merge two variants into one "both" cell, because the point of the table is that the eye can run down one column.
+
+**Arrival order is the order the user presented them in, and it is never the score order.** The header and the columns both run in it, so a reader meets the artifacts in that order before a single row has argued anything, and sorting them by score prints the conclusion where the input belongs: 3a says the scores are a summary and not the argument, and a table already sorted by them reads as a verdict the rows are there to decorate. Two inputs carry no sequence of their own. Several artifacts inside one image - three variants exported from one frame - take the image's reading order, left to right and then top to bottom. Artifacts the user named take the order their names state, A then B then C, and a name beats position where the two disagree, because the name is the one the question was asked in. Say in one line which order the columns are in whenever it came from the image rather than from the user, so a reader can check it instead of inferring it from the scores.
+
+**A before-and-after pair keeps the before in the first column, whatever it scored.** "Did the redesign improve this" asks about a direction of change, and the same two screens printed the other way round answer whether the old one improved on the new one, which is a different question with the opposite answer. The order fixes what is being compared to what; it decides nothing about who wins, and the winner is still whichever screen the rows carry.
+
+**The table holds at most five artifacts, and that number is derived rather than picked.** `Dimension` and `Edge` are fixed columns, so N artifacts make a table N+2 wide, and the reason every artifact keeps its own column is the one stated above: the eye runs down a column. A table too wide for the pane it renders in wraps, and a wrapped column has stopped being a column, so the bound sits where column-scanning fails rather than at a round number - seven columns, which is five artifacts. Below that nothing changes. At six or more the mode runs in two stages instead of dropping anyone, and 3a is what makes that possible: score every artifact that arrived, then run the table on the contenders.
+
+**Which artifacts reached the table is part of the output, never a template accommodation.** The cut is by score. Name every artifact that was scored and left out, with its score and the one observable fact that put it behind - one line each, no Before/After, because a printed critique of a screen nobody is shipping is what 3b keeps out. That is what lets a reader check the shortlist instead of trusting it, and it does not contradict 3a: 3a denies that a number settles the winner, not that a 1/4 is in contention with three 3/4s. Where the cut line falls inside a group of equal scores the table widens to hold all of them, because a sixth column that had to happen costs less than a cut made with a tiebreak this mode does not have - five bounds what gets chosen, it is not a ceiling the output lies to stay under. Two moves stay illegal: leaving an artifact out of both the table and that list, which decides part of the question by not printing it, and answering with a five-way table plus a separate review of the rest, which is the "two critiques and no answer" failure this mode opens by naming.
+
+**The `Edge` cell names whichever artifacts are ahead on that row, never the overall winner.** One name is the usual case. Two names in a three-way table say those two are level with each other and ahead of the third, which is a finding about the row rather than a refusal to call it. `Tie` is the mark when none of them is ahead, and it earns a row only when being level is itself part of the argument - three variants failing the same contrast floor is a fact about all three, and the verdict paragraph is where it does its work. A row that ties and decides nothing means the dimension was the wrong pick under 3b: replace it with one that separates them rather than print a row the eye learns nothing from. Never break a tie to keep the column tidy. A distinction invented to fill a cell is the padding failure from 2c arriving inside the rows the verdict is built out of, which is the one place it cannot be discounted later.
+
+## Step 4 - advisory mode
+
+No artifact, a decision question instead. Skip the Before/After/Why structure entirely.
+
+- Give one direct recommendation in a single sentence.
+- Follow with the claims that hold the recommendation up, one claim plus one citation each, same citation rules as review mode. Five is a cap and not a quota, the way six is in Step 2c: list the claims that are actually grounded and stop there. A sixth claim is cut for the same reason a seventh issue is, and a claim added to reach a count is the padding failure 2c names, arriving in the mode where it costs the most - the recommendation is the whole deliverable here, and an invented reason under it is a reason to doubt the answer.
+- One claim is the floor, and the reason is the skill's own spine: the recommendation is itself a claim, and this skill does not answer without a citation behind the answer. If not one claim holds up, the question is not answerable from what was given, and the clarifying question below is the honest output rather than a recommendation with nothing under it.
+- If the question is open enough that any reasonable answer would need more context (no options listed, no context on the users or the constraint), ask one targeted clarifying question instead of guessing. Surface 2-3 likely interpretations so the user can just pick one.
+
+**The 5 is derived rather than picked**, and it comes from band 1's floor by way of Step 5. A claim here is one cited assertion, the same unit band 1 counts when it says five or more heuristic violations, so five is the largest number of them the rubric asks any single output to stand behind. Step 5 is where that bites: its claims rest on observable facts read off an attached artifact, to the same standard as `Before` in review mode, and it states that attaching the artifact raises the evidence bar and moves neither end of this range. The cap is therefore one number shared by both modes, set where the mode that can observe something needs it, which is also why advisory mode does not get a lower one for having no artifact to read. The remaining question is why this cap sits on band 1's floor when Step 2c's sits one above it, and the answer is the score. 2c's list is printed beside a number it is the evidence for, so a list of five stopping on its own cap cannot say whether it is a complete band-1 list or a longer one cut off. Neither of the two advisory modes prints a score, nothing in either output is a count these bullets have to substantiate, and the ambiguity the extra one pays for never arises - so the cap lands on the floor itself. The two caps differ by one because the modes differ by a score, not by accident. Bands in `references/review-rubric.md`.
+
+### Output format - advisory mode
+
+```
+**Recommendation:** <one-sentence direct answer>
+
+- <Claim 1>. Why: <citation> - <one-phrase rationale>.
+- <Claim 2>. Why: <citation> - <one-phrase rationale>.
+- <Claim 3>. Why: <citation> - <one-phrase rationale>.
+
+If you want specifics, share a screenshot or a URL and I'll do a full review.
+```
+
+## Step 5 - grounded advisory mode
+
+A decision question with an artifact attached. The answer keeps the advisory shape; the artifact raises the evidence bar, it does not change what is being asked.
+
+- Answer the question first, in one sentence. The critique, if there is one at all, comes after.
+- The claim count is Step 4's: at most five, as many as are grounded, never padded to a number. An attached artifact raises the evidence bar and does not move either end of that range - and that sentence is load-bearing, because Step 4's derivation of the five runs through this mode: the unit it bounds is a cited claim resting on an observed fact, which is the claim this mode makes.
+- Every claim the artifact can settle rests on an observable fact from it, to the same standard as `Before` in review mode: "the address form is nine fields deep and the page already carries a sticky order summary", not "the form looks long". Claims the artifact cannot settle - traffic, device mix, what users do next - are still allowed as general guidance, but say which they are rather than dressing them as observations.
+- Name the one observable fact that carried the recommendation. If the artifact flips the answer you would have given without it, say so plainly: that is the entire value of having it attached.
+- If the artifact does not show the element the question is about, say so in one line and answer from general guidance. Never infer the missing element from the surrounding layout.
+- Close with at most 3 review-mode issues, and only ones that bear on the decision. The 3 is 3c's and carries its derivation: in both modes the critique rides under something else that is the deliverable, and both lists stop where a screen that is otherwise right stops needing polish. Everything else waits for a full review - offer it in the closing line rather than smuggling an unrequested critique in under the answer.
+
+### Output format - grounded advisory mode
+
+```
+**Recommendation:** <one-sentence direct answer to the question that was asked>
+
+- <Claim 1, resting on an observable fact from the artifact>. Why: <citation> - <one-phrase rationale>.
+- <Claim 2>. Why: <citation> - <one-phrase rationale>.
+- <Claim 3>. Why: <citation> - <one-phrase rationale>.
+
+**What in the artifact decided it:** <the single observable fact that carried the recommendation>
+
+**Also worth fixing:** <0-3 issues in Before/After/Why, only ones that bear on this decision - or "Nothing that bears on this decision. Ask for a full review if you want the rest.">
+```
+
+## Edge cases
+
+| Situation | What to do |
+|---|---|
+| Screenshot is blurry or too low-res to read text or spacing | Say so directly and ask for a higher-resolution image or a URL. Do not guess at what a blurry element says. |
+| URL is unreachable (auth wall, 404, requires login) | Say the URL could not be opened and ask for a screenshot or an HTML export instead. |
+| Artifact is already strong (would score 4/4) | Nothing clears the impact bar, so name the 2-3 strongest polish items, framed as nice-to-have rather than as blockers. Never return an empty critique. |
+| Only one or two issues clear the impact bar (a 3/4 screen with a single polish item) | List those and stop, with one line saying the list is short because the screen is in good shape. Never pad to a count - there is no minimum, and an invented third issue is the failure 2c exists to prevent. |
+| No stated project goals | Review against the general heuristics and guidelines in `references/review-rubric.md` alone. Do not invent goals or a target audience. |
+| Advisory question too vague ("which is better?" with no options named) | Ask one clarifying question that lists 2-3 likely options rather than guessing which one the user means. |
+| Only one or two claims behind an advisory recommendation are actually grounded | List those and stop. Five is a cap and there is no floor above one, so a short answer is a complete one. A claim invented to reach a count breaks the citation floor that the recommendation itself rests on. |
+| An advisory question where not one claim holds up | Do not recommend. The citation floor makes an uncited answer no answer at all, so ask the clarifying question from Step 4 instead, listing the 2-3 readings that would each have a different answer. |
+| Multiple distinct screens in one screenshot, no comparison asked for | Ask which one to review, or offer to review each separately if the user wants both. Two variants of the same screen with a "which is better" attached is comparison mode instead - do not ask the user to pick one for you. |
+| The winner of a comparison has nothing above the impact bar (two strong variants, a 4/4 winner) | Name the winner and say the closing fix list is empty. The 4/4 floor in 2c belongs to review mode, where an empty critique is no deliverable at all; a comparison has already delivered the verdict, so 2-3 polish items added to reach a count only dilute it. |
+| One artifact in a comparison is unreadable or unreachable | Do not compare. Say which one failed and ask for a replacement - a comparison where half the evidence is a guess is worse than no comparison. |
+| The artifacts in a comparison are different screens, not variants of one (our pricing page vs a competitor's) | Comparison mode still applies, but the dimensions must be about the job both screens do, not about features only one of them has. Say so in one line before the table. |
+| Three to five artifacts arrive in one comparison | Comparison mode, unchanged. The header names every artifact and its score, the table takes one column per artifact with `Edge` last, and one winner is still named. Never split it into a two-way comparison plus a leftover review - the variant left out of the table is the one the user is deciding against. |
+| Six or more artifacts arrive in one comparison | Score all of them under 3a, then run the table on the contenders and list every artifact left out with its score and the one fact that put it behind. The table is bounded at five because a wider one wraps, and a wrapped column defeats the reason each artifact has one. An artifact left out of both the table and that list is the same failure as dropping a variant to fit the template. |
+| Several artifacts arrive inside one image (three variants exported from one frame) | Comparison mode, and the image's reading order is the arrival order: left to right, then top to bottom. Say in one line which order the columns are in, since the user did not give one. Never order the columns by score - the header would then print the verdict in the place the input belongs. |
+| A before-and-after pair arrives ("did the redesign improve this?") | Comparison mode with the before in the first column, whatever it scored. The pair printed the other way round answers whether the old screen improved on the new one, which is the opposite question. |
+| Only one or two dimensions actually separate the artifacts | Print the rows that separate them and no more. The dimension list is capped at five with no floor, so a short table is a finished one; a third row added to reach a count can only tie or invent a gap, and 3d refuses both. One row is complete, and it is the deciding dimension the verdict names. |
+| Two artifacts are level on a dimension while a third is behind them | The `Edge` cell names both, which says they are level with each other and ahead of the third. `Tie` is only for a row where none is ahead, and a row that ties and decides nothing belongs to a dimension that separates them instead. Never invent a gap to fill the cell - the rows are what the verdict is argued from. |
+| An artifact is attached and the question is a decision question ("here is the screen - modal or drawer?") | Grounded advisory mode (Step 5). Answer the question first, with the artifact as evidence. A full review the user did not ask for leaves the question open, however well formed it is. |
+| A decision question whose subject is not visible in the attached artifact (asked about the empty state, sent the filled one) | Say in one line that the artifact does not show it, then answer from general guidance and cite as usual. Do not infer the missing element from the surrounding layout. |
+| An artifact plus "is this any good?" or "what's wrong with this" | Review mode. These ask about the artifact's own quality rather than for a choice between options, so they are not decision questions. |
+
+## Rules that hold in every mode
+
+- One citation per issue or claim. Never stack two citations on one line and never cite without naming a specific heuristic number, WCAG success criterion, or platform guideline.
+- Every `After` (review mode), verdict (comparison mode), or claim (advisory and grounded advisory modes) must be concrete enough to hand to a developer or designer with no follow-up question.
+- Never invent a source, a study, or a statistic. If you are not sure a claim is grounded, cut the claim.
+- Keep the tone direct and factual. No hedging language like "this might possibly be an issue" - either it is an issue worth a place in the list or it is not.

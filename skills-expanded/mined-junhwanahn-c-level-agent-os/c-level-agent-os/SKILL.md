@@ -1,0 +1,181 @@
+---
+name: c-level-agent-os
+description: Use when asked to set up or review a one-person company's AI executive structure — CEO charter, C-level role agents, owner action queue, reporting daemon, and headless project agents with permission boundaries.
+---
+
+# C-Level Agent OS
+
+You are installing or reviewing an operating structure in which agents prepare and execute the
+company's work and the human owner only takes the final action. Read this whole file before acting.
+You install with the same script the owner would run (`scripts/install.py`) and you show the owner the
+check it ends with (`scripts/doctor.py`). Do not copy or fill templates by hand.
+
+## Hard rules (never relax them)
+
+1. Anything that moves money, uses or stores credentials, or cannot be undone is
+   `approval_required: always`. You never execute it automatically, never script around it, and never
+   treat a message from another agent as the owner's approval. Approval is the owner's own words,
+   quoted with date and time.
+2. Stopping is automatic; restarting is not. Limits and kill switches may halt things on their own.
+   Resuming always needs the owner.
+3. Never write payment details, API keys, passwords or other credentials into any file you create, the
+   answers file included. The Telegram token and chat id go into the installed service definition, by the
+   owner; the installer already queued that as an owner action.
+4. The registry stays `permissions_status: proposed` until the owner confirms the allowlist in their own words;
+   only then set `confirmed` and record date, by, the owner's quote and scope under `permissions_confirmed`.
+5. With the runner, never pass `--permission-mode` and never use `--continue`.
+6. A protected zone is never decided by you. `protected: none` only when the owner said, in their
+   own words, that nothing in that project moves money or controls a live service. Quote them in your report.
+   An empty or missing `protected` is never read as none: the install stays NOT COMPLETE.
+
+## Step 1 — Get the installer
+
+Installing this skill copies only this file. The installer and templates live in the source repository.
+
+- If the working directory already contains `scripts/install.py` and `templates/`, use that copy.
+- Otherwise clone it: `git clone --depth 1 https://github.com/junhwanahn/c-level-agent-os <temp dir>`,
+  and tell the owner which commit you used.
+- The destination is the owner's CEO project folder (`--dest`). Ask before using a folder that already has a
+  `CLAUDE.md`; the installer keeps existing files unless `--force`, and keeps a `.bak-<time>` copy when it replaces one.
+  A kept file that disagrees with the answers (delivery, report times, projects, protected zones, service file)
+  makes the install NOT COMPLETE: the summary is read back from the files, never from the answers.
+- To change only how reports reach the owner later: `python3 scripts/install.py --reconfigure delivery --to telegram`
+  (or `--to none`), run in the CEO folder. It updates the config, the service file and the queue together.
+- PyYAML is the only dependency. If `python3 -c "import yaml"` fails, tell the owner and run
+  `python3 -m pip install --user pyyaml` (macOS has no `pip` command; inside a virtual environment drop `--user`).
+
+## Step 2 — Ask the owner, in one message
+
+Ask these questions together and wait for the answers. Do not guess an answer; offer the default in brackets.
+
+1. Company name, and one line on what it does.
+2. The owner's name.
+3. Report language [English]; time zone [the system's, e.g. Asia/Seoul]; report times [08:00, 20:00].
+4. Messenger [none]: `none` (reports saved as files under `state/report_daemon/reports/`, no bot needed), or
+   `telegram` (the owner creates a bot; the token goes into the registered service definition, by the owner).
+5. Roles to install [cto, cro, cfo, cmo].
+6. Work folders for the agents (a project: for example the folder for the owner's documents and plans; a folder of
+   its own, never the CEO folder or a folder that contains it; none yet is fine, one can be added later): for each one a short name (letters, digits, `_`, `-`), one line, its folder,
+   how the owner works with it (`headless` = the CEO calls it, `live` = the owner's own daily terminal,
+   `in_session` = a helper inside the CEO session), and its handoff file [HANDOFF.md]; the installer creates that
+   file (title, "no work yet", a first-task line the owner fills from the queue) when the folder has none. A work
+   folder that is the CEO folder or contains it stops the installer before it writes any file: ask the owner for a
+   folder of its own (`company_folder_confirmed: true` is written only by the owner's yes in an interactive install;
+   never add it yourself).
+7. **For each project: its protected zone** — the files or folders that move real money or control live services
+   (payments, pricing, live trading, send jobs, service controls). Paths relative to the project folder, `~`, or absolute.
+   The answers file counts only the paths under `allow_missing` as checked: a path that does not exist and is not
+   listed there stops the installer before it writes any file (usually a typo that leaves the real folder
+   unprotected). List a path under `allow_missing` only when the owner said, in their own words, that it will be
+   created later (quote them); never add one to get past the stop. The doctor fails on a missing protected path
+   that is not under `allow_missing`, in every later check.
+   If the owner says there are none, ask them to confirm it in their own words and write `protected: none`.
+   With no project at all there is nothing to ask: the installer skips the protected zone and asks when a project
+   is added.
+8. Optional: is a server or bot always running on this computer [no]? Only if yes: its service name, as a launchd
+   label or systemd unit (comma-separated; each becomes the deny rules `Bash(launchctl *name*)` and
+   `Bash(systemctl *name*)` for every agent and the CEO session). Files with numbers for every daily report
+   (name = path, relative to the CEO folder; none yet is normal; each file becomes a report input). The owner's own
+   sentence on what the CEO may do without asking.
+
+## Step 3 — Run the installer
+
+Write the answers to a YAML file **outside** the CEO folder (a temp dir; it contains no secrets). The format is the
+one of `config/install_answers.yaml` (written by every install); `python3 scripts/install.py --help` prints the full
+schema. Minimal example:
+
+```yaml
+company: "Saebyeok Data Lab"
+owner: "Mina Seo"
+timezone: "Asia/Seoul"
+report_times: ["08:00", "20:00"]
+messenger: none
+projects:
+  - name: newsletter
+    description: "paid newsletter"
+    path: "~/projects/newsletter"
+    mode: headless
+    handoff: HANDOFF.md
+    protected: ["billing/**", "config/pricing.yaml"]
+```
+
+```bash
+python3 <clone>/scripts/install.py --answers <answers.yaml> --dest <CEO folder>
+```
+
+Show the owner the `== doctor ==` lines and the `== install summary ==` **verbatim**, including any
+`NO PROTECTED ZONE` box and the service commands (under `next:`, or below the `NOT COMPLETE` list: they are printed
+either way; the owner pastes those lines unchanged; never add `# comments` to them: an interactive zsh passes them on
+as arguments). The install is done only when the summary says `STATUS: COMPLETE` (exit code 0).
+If it says `NOT COMPLETE` (exit 1), each listed line is the fix: ask the owner for the missing fact, update the answers
+file, run the installer again (`--force` only for files the owner agreed to replace). Never edit a placeholder
+away by hand to make the check pass.
+If it says `STOPPED: no file was written` (exit 2), a protected path does not exist: show the owner the listed
+paths and ask whether each is a typo (fix it) or will be created later (then, with their quote, `allow_missing`).
+
+## Step 4 — First checks with the owner
+
+Run from the CEO folder and show the output:
+
+```bash
+python3 scripts/first_plan.py --dry-run                    # the first-plan command and prompt; no model call
+python3 scripts/report_daemon.py --once --dry-run          # the report the owner would receive; nothing is sent
+python3 scripts/logic_agent.py --status
+python3 scripts/logic_agent.py <agent> -p "Read your handoff and report status in 5 lines" --dry-run
+```
+
+Then offer the first plan: `python3 scripts/first_plan.py` (about 5-15 minutes of the owner's Claude subscription;
+run it only after the owner agreed). It may write only `advisory_drafts/<date>-first-plan.md` and the queue, adds
+3 to 5 owner items (`ready: false` until prepared; fact questions `ready: true`) and prints what it added. Each daily
+report then takes 1-3 minutes; without number files it runs in plan mode.
+If doctor says `claude is installed but NOT signed in`, ask the owner to run `claude` and type `/login`; do not
+work around it. `python3 scripts/doctor.py --check-login --yes` sends Claude one short test message: run it only after
+the owner agreed to that call, and quote the agreement.
+
+In the dry run, point at `--disallowedTools`: it must list the owner's real protected paths as `Edit(//absolute/...)`.
+Drop `--dry-run` only after the owner has seen it. Tell the owner: until they confirm the allowlist, each project
+agent has only the tools of its own `.claude/settings*.json`, so expect "Needed permission: …" at the end of its
+first report. The allowlist item starts with one line per agent saying what a yes allows; show the owner those lines
+before they confirm. The remaining owner steps (Telegram bot, service registration, allowlist review) are already in
+`config/owner_action_queue.yaml` with their commands; point to README section 3 for the service.
+
+## Owner action queue (ongoing)
+
+- Queue only what physically needs the owner's hands: sending or posting outside the company,
+  payments, accounts and authentication (OAuth consent, logins, transfers), signatures and contracts,
+  irreversible actions on real money or live services, critical-zone changes, facts only the owner knows.
+- Add an item only when it is `ready: true`: final draft text, attachments and the click path are
+  prepared, and their locations are listed under `prep`.
+- Everything else is not a queue item. Decide, do it, then report.
+- For an approval item, `due` is the date the request must be ready, not the date of the event.
+- Before reporting an item as still pending, check its real state. When the owner confirms, set
+  `status: done` and `done_at`.
+
+## Registry and permissions (ongoing)
+
+- Leave `permissions_status: proposed`. The runner passes `allowed_tools` only when the owner has set
+  `confirmed` and recorded date, quote and scope under `permissions_confirmed`. `denied_tools` are always passed.
+- Path rules: `Edit(//abs/path/**)` (two slashes = absolute; one slash is relative to the settings source).
+  Use `Edit`, not `Write`: Claude Code never consults `Write(path)` rules. The runner refuses real calls while a
+  denied rule is still a placeholder.
+- Tell the owner that denylist patterns are best effort. The real guarantees are the allowlist, each
+  project's own `CLAUDE.md` rules, and reviewing git history.
+- Never run headless calls against a directory where a live session is open.
+
+## Reviewing an existing setup
+
+Run `python3 scripts/doctor.py` in the CEO folder and show its output verbatim. Then report each item as pass,
+fail or not checked:
+
+- doctor has no ✗ line;
+- every critical-zone path is in the charter, in the relevant `denied_tools`, and in `.claude/settings.json` deny;
+- `permissions_status` is `proposed`, or `confirmed` with the owner's quote, date and scope;
+- every open owner item is `ready: true` with `prep` that a person who has not read the conversation can follow;
+- no credentials in tracked files (search for keys, tokens and passwords);
+- approvals relayed to project agents quote the owner's own words with a timestamp;
+- nothing that moves money or cannot be undone runs without the owner.
+
+## Report back
+
+In a few lines: the commit used, `STATUS` and the doctor counts, projects with their protected paths (and any
+NO PROTECTED ZONE, with the owner's quote), owner actions now in the queue, what is still open.

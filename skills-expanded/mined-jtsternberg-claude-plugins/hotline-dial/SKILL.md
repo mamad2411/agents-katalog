@@ -1,0 +1,999 @@
+---
+name: hotline-dial
+description: "Call another Claude Code or Codex workspace — quick calls, work orders, conference calls, follow-ups, and Codex thread adoption. 'Call/dial/message/delegate to <workspace or project>'. Also dials a workspace on ANOTHER machine over SSH (--remote <ssh-target>, herdr on that box)."
+argument-hint: "--label <2-4 words> [--headless] [--herdr] [--codex] [--remote <ssh-target>] [--detached] [--window <name|ref>] [workspace] [task/question...]"
+allowed-tools: Bash, ListAgents, SendMessage
+---
+
+# Hotline: Dial
+
+Dial another workspace to ask questions, delegate work, or collaborate.
+
+`dial.sh` does the plumbing — identity, resolution, transport choice, session
+cache, launch, boot wait — in **one command** and hands back one JSON object.
+Your job is the judgment: which workspace, which mode, and what to do about the
+status it returns.
+
+## Arguments
+
+- **`$0`** (optional): Where to dial — a dirmap ID, path, fuzzy name, or a
+  **session ID**, which dials that *conversation*: the callee resumes it, forked by
+  default for Claude; Codex continues its thread directly. To reach only the repo
+  a session lives in, pass the workspace.
+- **`$1+`** (optional): The task/question for the remote workspace.
+- **`--resume <session-id>`**: continue a conversation that is not the target —
+  a session in one repo while the callee is dialed into another. A session ID passed
+  as the target already implies this, so you rarely need the flag. Forks by default,
+  so hotline protocol noise stays out of the original transcript; `--no-fork`
+  contributes to it instead. With `--agent codex`, continues a Codex thread
+  directly, without a fork. → `--resume <session-id>` `[--no-fork]`
+- **`--headless`**: force the headless transport (`claude -p`) for this dial even when cmux is up. Debugging the headless path, A/B-ing transports, or wanting `claude -p`'s structured output. Costs programmatic-usage credit; the cmux default doesn't. → `--headless`
+- **`--detached`** / **`--new-workspace`**: spawn the callee in a disconnected new workspace tab instead of a side-by-side surface. The tab auto-closes once the response is captured, so nothing is left to watch or clean up. → `--placement detached`
+- **`--window <name|ref>`**: land the callee as a surface in a specific cmux window (find-or-create), for grouping workers by project. A `window:<n>` ref targets that window; a bare name reuses the window holding a workspace titled `<name>`. Wins over `--detached` if both are given. → `--window <name|ref>`
+- **`--label <text>`** — **REQUIRED on every dial**, and normally yours to write rather than the user's: 2-4 words naming what this callee is *doing*, e.g. `fix-hotline-titles`, `review pr 2393`, `audit the cache gate`. It becomes the callee's session name, which is what you read in the cmux tab strip — `◑ hotline: fix-hotline-titles (work_order)`, glyph and all. Nothing else tells two callees in one repo apart. Missing, empty, or whitespace-only is an args error. On a **follow-up** it is ignored: the callee keeps the name first contact gave it. → `--label <text>`
+- **`--herdr`**: host the callee as a **herdr agent** instead of a cmux surface — a persistent pane owned by the herdr server, so the callee **survives a detach, a closed lid, or a dropped SSH session**. That is the reason to ask for it: a long work order you do not want tied to the life of a window. Requires herdr running, here or — with `--remote` below — on another box. Takes any mode, including `conference`, and either the side or detached placement (herdr splits a pane off yours for both). → `--transport herdr`
+- **`--remote <ssh-target>`**: run the callee **on another box** — herdr splits a pane and starts claude *there*, and hotline reads its answer back over ssh. For work that belongs on that machine: its checkout, its GPU, its network. It **selects herdr on its own** (nothing else can host anywhere but here) and is detached by nature, so `--remote <target>` alone is the whole invocation. Needs a non-interactive ssh hop plus herdr *and* claude on that box; if any of that is missing the dial is an **error**, never a quiet local call. → `--remote <ssh-target>`
+- **`--codex`**: the callee is a **Codex** agent instead of claude, hosted over local or remote herdr (it selects herdr on its own), with cached follow-ups and Codex thread adoption. Its answer comes back through the same response wait. See **`--agent codex`** below. → `--agent codex`
+
+```
+/hotline:hotline-dial dotfiles what branch are you on?
+/hotline:hotline-dial coaching write the about page
+/hotline:hotline-dial 5b1dda91-... what went wrong?            # resumes that conversation
+/hotline:hotline-dial my-repo run the test suite               # a fresh callee in the repo
+/hotline:hotline-dial --headless dotfiles what branch are you on?
+/hotline:hotline-dial --detached dotfiles run the full test suite
+/hotline:hotline-dial --window lindris backend tests, please
+/hotline:hotline-dial --herdr dotfiles run the 40-minute migration
+/hotline:hotline-dial --remote jt@buildbox lindris run the integration suite
+/hotline:hotline-dial --codex cmb2 fix the failing field test
+```
+
+Strip those flags out of the args before reading `$0` and `$1+`, and pass the
+mapped wrapper flag shown above.
+
+## Native fast path — Claude Code only
+
+For direct messages to an already-running session across Claude, Codex, or T3, use `hotline:hotline-send`.
+
+Launching is the default. Claude Code can also hand a message straight to a session
+that is *already running* (`ListAgents` + `SendMessage`) — that is the exception, and
+it needs positive evidence in the user's own words. Take it **only when both hold**:
+
+1. **The user names a running session, not a workspace.** "My other session", "the
+   session/terminal/tab that's working on X", a name they were shown from `ListAgents`
+   or set with `/rename`, or a reply to a `<cross-session-message>` you received. A
+   workspace, project, or folder name is not a session reference: "dial/call
+   <workspace>" always launches. `ListAgents` will usually show live sessions in that
+   folder — hotline's own callees live there — so a live match on a project slug is
+   expected noise, not a signal.
+2. **The message is answerable from where that session already sits** — a fact, a
+   nudge, a quick question about its own state. Anything it must go read or fetch (a
+   URL, an issue, a file) or do is a work order: launch it, so it lands on a surface
+   and the switchboard.
+
+The user's words decide this, not a probe: do not run `ListAgents` to find out whether
+native applies. In doubt, launch.
+
+When both hold, read `${CLAUDE_PLUGIN_ROOT}/skills/dial/references/native-messaging.md`
+for the mechanics; it sends you back here if the live sessions don't match.
+
+Codex: substitute the installed Hotline plugin directory for the leading path
+segment above.
+
+**Under Codex, skip it** — `ListAgents`/`SendMessage` are Claude Code only. The
+flow below works from any harness.
+
+## The one command
+
+Write the message to a file and dial. One block, so nothing depends on shell
+state carrying over:
+
+```bash
+# Codex: this path resolves under Claude Code; substitute the Hotline plugin directory.
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+PROMPT_FILE=$(mktemp /tmp/hotline-prompt-XXXXX)
+cat > "$PROMPT_FILE" <<'HOTLINE_PROMPT_EOF'
+<the task or question, verbatim — as many lines as you need>
+HOTLINE_PROMPT_EOF
+bash "$PLUGIN_ROOT/skills/dial/scripts/dial.sh" \
+  --target "<the user's exact words for the target>" \
+  --mode work_order \
+  --label "<2-4 word slug of the task>" \
+  --prompt-file "$PROMPT_FILE"
+```
+
+The quoted heredoc delimiter means the message is copied verbatim — no quoting,
+escaping, or `jq` hazards, however long or gnarly it is.
+
+Flags: `--mode quick|work_order|conference` (required),
+`--label <text>` (required — 2-4 words naming what the callee is doing),
+`--prompt-file <path>` (or `--prompt <text>` for a one-liner),
+`--headless`, `--transport cmux|herdr|headless`, `--remote <ssh-target>`,
+`--agent claude|codex`,
+`--placement side|detached`,
+`--window <name|ref>`, `--resume <session-id>` `[--no-fork]`,
+`--refresh-identity`,
+`--fresh` (ignore the cached session for this target and start a new one —
+contradicts `--resume`), `--tools <list>`,
+`--boot-timeout <seconds>`, `--caller-session <id>`,
+`--status-class <WORD>=<class>` (repeatable).
+
+Run `dial.sh --help` for the full contract.
+
+**STATUS words the callee may end on.** A STATUS word is any UPPER_SNAKE token, and
+its class decides what the wait does: `done` and `out_of_scope` exit 0,
+`awaiting_review` exits 4, `blocked` exits 7. The built-ins are `DONE`,
+`WORK_COMPLETE` (done), `OUT_OF_SCOPE`, `AWAITING_REVIEW` and `BLOCKED`. When your
+work order defines its own word, declare it on the dial:
+`--status-class NEEDS_OVERSEER=blocked`, or `HOTLINE_STATUS_CLASSES="NEEDS_OVERSEER=blocked,SHIPPED=done"`
+in the environment of whatever wraps dial.sh (a flag wins over the env for the same
+word). Declare it on every dial, follow-ups included: the map is per call dir
+(`status_classes.txt`), and the waiter and the callee's caller notice both read it.
+An undeclared word that ends the callee's turn, on a line ending in `call_id=`,
+ends the wait on exit 9 with class `unknown` (see below); the callee's push notice
+reports it the same way. A bare `STATUS: WORD` with no call_id is read as prose. Any STATUS line may carry free text before `call_id=`
+(`STATUS: NEEDS_OVERSEER merge PR 12 or hold? call_id=<nonce>`), which the response
+JSON returns as `.detail`; a non-built-in word also sets `.status`.
+
+For a follow-up that must continue a particular call, pass `--expected-session <id>`
+with the original callee's recorded `session_id.txt` (the Codex thread ID or Claude
+session ID). It accepts cached reuse only: a missing, different, or unavailable
+entry returns JSON `status: error` and exit 9 before delivery, without launching a
+replacement. For Codex this guard currently supports local herdr only and requires
+intact call metadata and live process ownership of the recorded rollout and home.
+For Claude it checks the cache entry's ID; it cannot prove the pane has not since
+changed sessions. Do not combine the flag with `--fresh`, `--resume`, or
+`--refresh-identity`. Identity refresh launches a separate Claude call, so the
+combination is refused during argument validation; omit `--refresh-identity` for
+guarded reuse. Automation must treat an unrecognized flag or any nonzero exit as
+failure, never as a completed
+call. Persist the call's original ID independently of Hotline's mutable cache.
+
+## What it returns
+
+Exactly one JSON object on stdout, always. Read `.status`:
+
+| `.status` | exit | What it means | What you do |
+|---|---|---|---|
+| `connected` | 0 | The callee is up. `.remote_session_id`, `.workspace`, `.transport`, `.call_dir`, `.surface_ref`, `.first_contact`, `.fallbacks` describe the call. On a follow-up into a live surface, `.confirmed`, `.retried_enter` and `.submit_frames` describe how the delivery landed. | Report the connection to the user, then wait for the response (below) — unless `.awaiting_response` is `false`. |
+| `replay` | 2 | Identity needed a second pass. `.fingerprint` is now in the transcript. | Run **the identical command again**. Nothing else. Don't explain it to the user. |
+| `needs_disambiguation` | 3 | The reference matched several workspaces; `.candidates` has them. | Ask the user which one, then re-run with `--target <their chosen path>`. |
+| `error` | 1 | `.stage` (`args`/`identity`/`resolve`/`transport`/`fire`/`boot`/`deliver`), `.detail` (real stderr), `.recovery` (one-line hint). | Surface `.detail` and `.recovery` to the user, and leave the retry to them. |
+
+`deliver` is the one stage that leaves something live behind: the callee's REPL is
+up and this message was never proven to land in it, so there is an open pane — empty
+on first contact, mid-conversation on a follow-up. Say so — re-dialling blind can
+double-deliver, because the paste may have arrived just after the confirmation
+window closed. The exception announces itself in `.recovery`: a trust-dialog refusal
+is made before anything is pasted, so its recovery says nothing was delivered and
+re-dialing is safe — the TRUST DIALOG entries in
+`${CLAUDE_PLUGIN_ROOT}/skills/dial/references/error-recovery.md`, under § CMUX
+Failures for a cmux call and § herdr Failures for a herdr one.
+
+Codex: substitute the installed Hotline plugin directory for the leading path
+segment above.
+
+`.confirmed` names the tier that proved a delivery: `transcript` read the nonce out
+of the callee's JSONL and is definitive; `screen` inferred it from the rendered
+viewport. `.retried_enter: true` means the paste's own submit key was dropped and one
+corrective Enter submitted it — the delivery is good, but a run of them is worth
+reporting.
+
+`.submit_frames` counts the turns the payload landed as. **Above one means the callee
+received the work order split across several turns** — still delivered, and
+`.confirmed` says so, but the callee read it in pieces, which is worth reporting and
+never a reason to re-dial (that would run the order twice). It is a floor rather than
+a tally: a queued paste is counted when the queue flushes, so 1 is not itself proof of
+a single clean turn. The field is absent, rather than 0, wherever the count could not
+be taken: a cmux with no event stream, a herdr callee, or a first contact.
+
+`.length_check` (`{sent, seen, short}`, cmux 0.65.0 and later only) compares the length
+cmux reports for the submitted prompt with the payload's length. **`short: true` means
+the callee may have received a truncated work order** — the nonce is at the head, so
+`.confirmed` cannot see a lost tail. Check the callee's transcript before relying on it,
+and never re-dial on it alone: the payload is already in the callee's queue. The field is
+absent wherever it could not be read cleanly: an older cmux, a first contact,
+`HOTLINE_PASTE_INGEST_WINDOW=0`, more than one submit in the workspace during the
+window, a frame from an older cmux app whose preview is ellipsized with a length equal to
+`message_length`, or text with combining or joined characters.
+
+`transport` means the backend the caller asked for is not usable here — herdr is not
+installed, or no herdr server answered. **It is never a degradation**: an explicit
+`--transport herdr` is an ask for a callee that survives a disconnect, and quietly
+handing back a cmux surface instead would be a lie the user only discovers hours later. Pass
+`.detail` and `.recovery` through as-is; both name the fix.
+
+## The herdr transport (opt-in, local or remote)
+
+`--transport herdr` hosts the callee as a **named herdr agent** in a persistent
+pane, split off the caller's own pane. What you get for it is durability: the herdr
+server owns the PTY, so the callee outlives a detach, a closed lid and a dropped
+SSH session — and it is still a pane next to yours, which is why side placement and
+conference mode both work here.
+
+| Combination | Answer |
+|---|---|
+| `--transport herdr`, any mode, `--placement side` or `--detached` | supported — first contact and follow-ups |
+| `--placement window` / `--window <ref>` | refused — hotline creates no herdr workspaces or tabs, so there is no window to place a callee in. Not a phase gate; a feature nobody has built |
+| `--resume <someone-else's-session-id>` | refused for Claude sessions — herdr hosts a Claude callee with a session id hotline presets so the transcript is readable; `claude --resume` cannot take that preset. Codex thread adoption is supported with `--agent codex`. Continuing a session **you** dialed needs no flag (see below) |
+| `--remote <ssh-target>` | supported — see below. Implies `--transport herdr` and, unless a placement was typed, `--detached` |
+| `--remote` with an explicit `--placement side` | refused — a pane on another box is beside nothing here. Side placement is accepted for a *local* herdr dial only |
+| `--remote` with `--transport cmux`/`headless` | refused — remote hosting is herdr-only; a cmux surface lives in this machine's window server and `claude -p` is a local process |
+
+**Follow-ups need no flag and no surface machinery.** Re-dial the same target with
+`--transport herdr --detached` and the cached agent is re-targeted by name
+(`herdr agent prompt`), so the conversation continues in the same session and the
+same transcript. The named agent *is* the session, so there is no host to resolve,
+no input box to clear, and nothing superseded to close.
+
+**A cached agent that has exited** falls back to a fresh callee, reported in
+`.fallbacks`, and that callee has **none of the prior conversation** — herdr cannot
+re-host an existing claude session. The fallback entry says so outright; relay it if
+the answer depends on prior context.
+
+**A cached agent that is `blocked` on input fails the dial instead** (`stage:
+transport`), and that difference is deliberate. A follow-up submitted into a
+permission gate would answer the gate rather than start a turn — but that agent is
+still live and still holds the only copy of the conversation, so answering with a
+fresh callee would leave it running and unreachable through hotline. Nothing is
+submitted and nothing is started: tell the user to clear it (`herdr agent attach
+<name>` shows what it is asking), then re-dial exactly as before and the same agent
+is re-targeted with its context intact.
+
+**`--mode conference` hands the pane to the user.** The callee is started beside
+the caller exactly as a work order is, the prompt is delivered the same way, and
+then — only then, and only for a conference — hotline **focuses** the callee's pane
+(`herdr agent focus <name>`). `.awaiting_response` comes back `false`: the session
+is the user's to talk to, so there is nothing to poll. Report the pane and stop.
+Every other herdr dial splits with `--no-focus` and never moves the user.
+
+(`herdr session attach <name>` is a different thing and not the conference story:
+it attaches a *detached* herdr session from another terminal.)
+
+cmux stays the default, and an ambient signal never selects herdr: being inside a
+herdr pane (`HERDR_ENV=1`) only makes the option *available*. Two things select it
+— `--transport herdr` per call, and the opt-in `HOTLINE_TRANSPORT_AUTO=1` (see the
+environment section), which lets `HERDR_ENV=1` decide for a dial that names no
+transport.
+
+`--headless` and `--transport herdr` together are refused — two explicit,
+incompatible asks, and dropping either one silently would discard a flag the user
+typed on purpose. An ambient `HOTLINE_FORCE_HEADLESS=1` is different: a per-call
+`--transport` outranks an environment default, and `.transport` reports what ran.
+
+Two consequences worth telling the user about:
+
+- **`.surface_ref` holds the herdr AGENT NAME** for a herdr call, not a cmux
+  surface handle. It is the durable handle: `herdr agent get <name>` for its state,
+  `herdr agent attach <name>` to watch it.
+- **The pane is left open after the response.** Outliving the call is the point, so
+  hotline does not close it the way it closes a detached cmux tab. When the user is
+  done: `herdr pane close $(cat <call_dir>/herdr_pane.txt)` — or, for a remote call,
+  `ssh <.remote_target> herdr pane close <.remote_pane>`, both of which the emitted
+  JSON carries for exactly this reason.
+
+### `--remote <ssh-target>` — the callee on another box
+
+Same transport, one ssh hop. herdr's own `--remote` only attaches its TUI and
+rejects every subcommand, so hotline drives the **ordinary herdr CLI on that box**
+over ssh — `ssh <target> herdr pane split …`, `agent start`, `agent prompt`,
+`agent wait` — against that box's own local server. Every verb, every refusal and
+every proof tier is the local arm's; what changes is which machine answers.
+
+What the dial needs, and what it says when it is missing (all `stage: transport`,
+all errors rather than degradations — there is no local substitute for "run this
+over there"):
+
+| Missing | The error names |
+|---|---|
+| the ssh hop | that the target could not be reached **non-interactively**, and that hotline never answers a password or a browser check |
+| herdr on that box | the target, not the caller's own install |
+| a herdr server there | that nothing answered *there* — being inside a herdr pane yourself proves nothing about it |
+| a pane to split there | `HOTLINE_HERDR_REMOTE_PANE`, the remote-only override |
+| `claude` on that box's **non-login** PATH | `ssh <target> command -v claude`, because a claude under `~/.local/bin` may resolve for a human and not for an ssh command |
+
+**The target is an absolute path on THAT box.** Fuzzy names, dirmap ids and
+session-id lookups all resolve against this machine, so a remote dial takes the path
+as it exists there and resolves it over the hop — which is also why a missing path
+(`stage: resolve`) and an unreachable box (`stage: transport`) are reported
+separately: they need opposite fixes. Two consequences to relay rather than debug:
+`identity_stale` reads **true** for every remote target (the identity cache is
+written by a pickup that ran *in* that directory, which never happened here — it
+means unknown, not stale), and `--refresh-identity` is refused for a remote target
+because it would run a local `claude` against a path that is not local.
+
+Three more things worth telling the user:
+
+- **The answer is read from the remote transcript.** `~/.claude/projects/<encoded
+  realpath>/<session>.jsonl` on *that* box — both halves asked of it, never assumed
+  from here — fetched over the same hop and parsed by the unchanged extractor. So
+  `.response`, `AWAITING_REVIEW`, preemption and the exit codes are identical to a
+  local call.
+- **The work order never rides the ssh command line.** It is submitted through a
+  fixed remote command that reads stdin, so it stays out of the local `ps` and its
+  only argv exposure is the sub-second one on the box actually running it.
+- **Tailscale SSH may want a browser check.** Its notice is filtered out of every
+  read, but when the check period has lapsed a non-interactive hop cannot complete
+  and the dial fails naming the `login.tailscale.com` URL. The fix is for the user
+  to run `ssh <target> true` themselves once.
+
+Follow-ups work exactly as the local ones do — re-dial the same target with the same
+`--remote`, and the cached agent on that box is re-targeted by name. **Re-dialing
+that workspace WITHOUT `--remote`, or with a different box, is REFUSED**
+(`stage: transport`): the cache records which box a handle belongs to, an agent name
+from another machine cannot be re-addressed from here, and starting a fresh callee
+instead would leave that one running with nothing pointing at it — the cache write
+replaces the entry that named it. The error names the cached agent, its box, and the
+two moves: re-dial naming that box to **continue** the conversation, or add `--fresh`
+to **abandon** it and start a new callee here. `--fresh` then reports what it left
+running, and the command that closes it, as `abandoned-callee(…)`.
+
+`.fallbacks` lists what the wrapper worked around on its way. All of them are
+already handled; mention them only if the user is debugging or the degradation
+matters to them (a detached tab instead of the side-by-side surface they
+expected, say).
+
+| Entry | What happened |
+|---|---|
+| `cmux-cli-missing→headless` | cmux is up but cmux-cli isn't installed, so the call was re-fired headless. |
+| `cmux-unavailable→headless` | No cmux at all. |
+| `terminal-paste-unavailable→headless(...)` | cmux is up and answered, but does not list `terminal.paste` in `result.methods` — the verb every cmux delivery uses. **Upgrade cmux.** |
+| `python3-missing→headless` | No `python3` on PATH. The control-socket helper is python3-stdlib, so cmux delivery cannot run at all. **Install python3** (nothing to do with cmux). |
+| `cmux-socket-unreachable→headless(<diag>)` | The control socket could not be reached — no socket file, connection refused, timeout, or a reply that wasn't JSON. The diagnostic is the real OS error. Usually cmux is not actually running, or `$CMUX_SOCKET_PATH` points somewhere stale; `~/.local/state/cmux/last-socket-path` names the live one. **Do not upgrade cmux for this.** |
+| `cmux-rpc-error→headless(rc=N <diag>)` | The socket answered but refused the preflight (`rc=1` = `ok:false`, `rc=2` = a bad call from us). The diagnostic carries its error. This one is worth reporting — it usually means the helper and cmux disagree about the protocol. |
+| `surface-context→detached` | Side-by-side needs the caller's own surface context and it wouldn't resolve, so the callee landed in its own workspace tab. |
+| `surface-reuse→fresh(<reason>)` | A follow-up could not use the live surface, and nothing had been sent when that was decided (gone, mid-turn, post-interrupt, dirty input box, an RPC the socket rejected, or `detached-mid-turn` — a DETACHED callee whose previous exchange is still being waited on, whose auto-close would destroy a message queued behind it). It opened a fresh one instead; `<reason>` says which. A paste that went out and could not be confirmed is never this — it is a hard `stage: "deliver"` error, because re-delivering into a fresh `--resume` of the same session would run the work order twice. |
+| `surface-reuse-skipped(no-cached-surface)` | A follow-up had no surface to reuse — first contact was headless, or a previous fold-in to headless cleared a stale ref. A `--detached` first contact records the surface inside its workspace tab, so it does NOT land here; once that tab auto-closes on completion, a later follow-up reports `surface-reuse→fresh(...)` instead. |
+| `surface-cleanup→closed(<handle>)` | A follow-up opened a new surface, so the old one held a REPL nobody would speak to again. It was proven idle and proven to be the superseded exchange, then closed. |
+| `surface-cleanup-skipped(<reason>)` | The old surface was left alone. Common reasons: it is mid-turn; `parked-input` (real unsent text in its box, which closing would discard — Claude Code's own placeholder does not count once it is proven to be one, though anything unproven still reads as text and spares the surface); its identity couldn't be proven from the prior nonce; `positional-ref-unsafe` (the cached handle is a `surface:N` ref, which can name a different surface than it did — closing requires a UUID); it was already gone; or cmux refused (it will not close the last surface in a workspace). `HOTLINE_CLOSE_SUPERSEDED=0` reports `disabled`. |
+| `transport-auto→cmux(<reason>)` | `HOTLINE_TRANSPORT_AUTO=1` was set inside a herdr pane, but the herdr preflight failed — so the dial went to the cmux default instead. A degrade, not an error: nothing explicit was asked for. `<reason>` is the preflight's own (no server, no splittable pane, herdr not installed). |
+| `herdr-conference-focus-failed(<agent>: <reason>)` | A herdr conference connected and the callee has the prompt, but `herdr agent focus` refused — so the user's focus did not move. Tell them which pane to go to (`herdr agent attach <agent>`). |
+| `identity→refreshed` / `identity→refresh-failed(...)` | `--refresh-identity` ran (or tried to). |
+| `session-cache→fresh(<session-id>)` | `--fresh` found a cached session for this target and deliberately did not resume it; `<session-id>` is the one abandoned. This entry is added before the new callee is launched, so it appears on a failed dial too — the repoint it implies only actually happens on a **successful** one (boot-confirm is what writes the new session into the cache). A dial that reports this entry AND an error left the cache pointing at the same abandoned id it always did; retrying still names that same id until a dial through this stage succeeds. On success: the call reports `first_contact: true`, and the cache now points at the new session. |
+| `abandoned-callee(<handle> on <box>; …)` | `--fresh` overrode a box mismatch, so the callee named here is still RUNNING on `<box>` and no local cleanup will reach it. The entry carries the command that closes it (`ssh <box> herdr pane close <pane>`, or `herdr agent list` when no call dir still remembers the pane). Without `--fresh` this state is a `stage: transport` refusal instead. |
+| `session-cache→fresh(transport <a>→<b>)` | The cached handle belongs to a different BACKEND on this machine (a cmux surface is not a herdr agent name), so it was not re-addressed and the new callee starts without the prior context. A different BOX is a refusal, not this. |
+
+A follow-up that opens a second surface **always** records why. If you see a new
+tab with `fallbacks:[]`, that is a bug — report it rather than explaining it
+away.
+
+`.awaiting_response` is `false` for a conference call **on first contact**, on either
+transport — that session is handed to the user in a visible surface (cmux) or a
+focused pane (herdr), so there is nothing to poll. Report it and stop.
+
+### `--agent codex` — a Codex callee
+
+`--agent codex` starts `codex` instead of claude — in a herdr pane by default
+(`herdr agent start --kind codex`), a cmux surface, or headless — delivers the work order as a `$hotline:hotline-ringing` mention
+(Codex loads the same ringing skill from the installed hotline plugin) plus a
+one-line STATUS reminder, and reads the answer from the callee's **Codex rollout**
+(`~/.codex/sessions/…/rollout-*-<thread>.jsonl`), found by the call nonce. The
+rollout is normalized into the rows the Claude transcript reader already parses, so
+`wait-for-response.sh`'s exit codes and `response.json` are unchanged.
+`.agent` is `"codex"` in the connected JSON, `.confirmed` is `"rollout"`, and
+`.remote_session_id` is the codex thread id.
+
+| Combination | Result |
+|---|---|
+| `--agent codex` over herdr (default), any mode, side or detached | supported. A re-dial of the same target reuses the cached live codex agent with a `$hotline:hotline-ringing [FOLLOW_UP]` message and a new nonce; if that agent died, a new one runs `codex resume <thread>` so the conversation continues (`herdr-agent-reuse→resumed` in `.fallbacks`) |
+| `--agent codex --remote <ssh-target>` | supported (herdr) — checks remote `codex` on PATH, confirms the nonce on that box, and mirrors the rollout from its `$HOME/.codex/sessions` each response poll |
+| `--resume <codex-thread-id>`, or a thread id as the target | supported over local herdr and cmux (and default-home remote herdr) — launches `codex resume <id>` and continues that thread, unforked; a thread-id target gets its workspace from the rollout. Claude session ids are refused (`args`), as is `--resume` over headless |
+| `--agent codex --transport cmux`, quick/work_order, side/detached/window | supported — `codex` runs in the surface; first contact waits for codex's composer (refusing on a dialog) and is confirmed by the nonce in the rollout. First contact only: a re-dial starts a new callee |
+| `--transport cmux --mode conference` | refused (`args`) — the cmux conference path is claude-only; use herdr |
+| `--agent codex --headless` (or `--transport headless`) | supported — runs `codex exec --json -o <file> -` with the prompt on stdin; the reply is codex's last message, with bare STATUS lines (no nonce) as for claude headless. First contact only |
+| `HOTLINE_CALLEE_ENV*` | supported on every host — delivered as `-c shell_environment_policy.set.<KEY>=<value>`, which reaches the commands codex runs |
+| `--tools` | refused (`args`) — claude's allowlist has no honest codex mapping; use `HOTLINE_CODEX_ARGS="-s read-only"` for a sandbox |
+| a cached callee of the other kind | starts fresh with an agent-kind mismatch in `.fallbacks`; claude and codex never follow up into each other's callees. Only herdr codex calls are cached at all — cmux and headless ones go to dial history only |
+
+Local lookup uses the selected `HOTLINE_CODEX_HOME` (and persisted call home for
+waiters), otherwise `${CODEX_HOME:-~/.codex}/sessions`; with `--remote`, it runs
+on the remote box under its `$HOME/.codex/sessions`. When local default lookup
+misses and no explicit home was selected, hotline searches directories matching
+`$HOME/.codex*/sessions`. One matching account selects that home and records
+`codex-home→auto(<home>)` in `.fallbacks`; multiple matching accounts are refused
+with their paths. Auto-selection defaults unset `HOTLINE_HERDR_PLACEMENT` to `tab`.
+Before a local resume launch, `lsof` must show no Codex process holding that
+rollout; an existing owner refuses the launch with its PID and nothing delivered.
+Close the existing pane/surface before retrying. See Environment knobs.
+
+Herdr Codex startup observes the same callee within a wall-clock budget and a
+probe cap; a blocked start never triggers a second agent launch. Two current
+composer snapshots must agree with the live agent's readiness before delivery.
+An isolated earlier gate header above that composer is stale evidence; a complete
+visible choice UI remains a refusal, including when a background composer is
+visible. Unreadable or unresolved frames time out without claiming a human trust
+choice is required. Hotline never sends a trust response or changes trust config.
+
+Startup gates are refused before anything is typed (`stage: deliver`, `sent:false`):
+Codex's folder-trust dialog, its **hooks-review** dialog (shown whenever hooks are
+new or changed — herdr reports that one as ready, so hotline waits for Codex's
+composer to appear before typing), and the update prompt (suppressed with
+`-c check_for_update_on_startup=false`). hotline never answers a trust decision:
+run `codex` in the directory once and answer it, or pass
+`HOTLINE_CODEX_ARGS="--disable hooks"` to skip hooks for that callee only.
+`codex exec` (headless) shows no dialogs at all — and it **persists folder trust**
+for the target directory in `~/.codex/config.toml` without asking (verified on
+codex-cli 0.165.0), so a later interactive codex there skips the trust dialog too.
+Approvals and sandbox come from your `~/.codex/config.toml`;
+`HOTLINE_DANGEROUSLY_SKIP_PERMISSIONS=1` adds `--dangerously-bypass-approvals-and-sandbox`.
+
+## Your judgment calls
+
+The wrapper deliberately makes none of these.
+
+**Which mode.** Ask if it's genuinely unclear: "quick question, task to hand off,
+or something to work on together?"
+
+| Mode | When | Think... |
+|---|---|---|
+| `quick` | Need a fast answer | "What port does your dev server run on?" |
+| `work_order` | Need autonomous work done | "Run the test suite and tell me what broke." |
+| `conference` | Need back-and-forth | "Let's pair on this API integration." |
+
+**Pass the user's *exact words* to `--target`, and let the wrapper resolve them.**
+"Dial the writing workspace" goes in as `the writing workspace`, not as your guess
+at which repo that is. The resolver plus dirmap exist to do that matching, and they
+see dirmap entries and cached identities you don't; a guess substituted here
+bypasses the whole chain and dials the wrong place.
+
+**Then sanity-check what came back.** If `.workspace` doesn't obviously relate to
+what the user said, confirm before relaying anything:
+
+> You asked to dial "the writing workspace." That resolved to **dotfiles**
+> (`/Users/you/.dotfiles`). Right workspace?
+
+Skip the confirmation only when the match is plainly correct ("blog" → `my-blog`).
+
+**A session ID dials the conversation.** Pass it through as the target and the
+callee resumes that session, so a message about what it said, did or decided —
+"what went wrong?", "summarize your last turn", "why did you take that approach?"
+— reaches a callee that was actually in the room. When the user hands you a
+session ID but the work needs only the *repo* ("run the suite there"), pass the
+workspace instead; the session ID is not the way to ask for a blank slate.
+
+**Then fork or assist.** Continuing a session **forks** it by default, so hotline
+protocol noise doesn't land in their transcript. If the user's intent is clearly
+to *help that session* ("continue that conversation", "help it fix its bug"), add
+`--no-fork` to contribute to it directly. When in doubt, fork.
+
+A `--no-fork` dial of a session that is still live in a cmux surface is a follow-up
+into that surface, never a second REPL: hotline finds it from the session's last
+call and reports `live-session-adopted` in `fallbacks`. A busy or dirty input box
+refuses reuse, and for this path that is an `error` (stage `deliver`), not a fall
+back to a fresh surface: nothing is launched, because a fresh `--resume` would be
+the second REPL. Wait for the REPL to go idle, or type into the named surface, then
+re-dial. A delivery proven only by the screen (the REPL may have been `/resume`d or
+`/clear`ed into another session) is reported as an unconfirmed `deliver` error too —
+do not re-dial it.
+
+`--fresh` contradicts a session-ID target and is refused: one says continue that
+conversation, the other says ignore what exists. Pass the workspace with `--fresh`
+to start new there.
+
+**Fresh phase, fresh session.** A re-dial to the same target silently resumes
+the cached session. When the next dispatch must NOT inherit the previous one's
+context — a reviewer for work this caller's last callee implemented, any
+pipeline phase whose value is a skeptical fresh read — pass `--fresh`: it
+ignores the cached session and surface and opens a brand-new session — and, if
+that dial succeeds, repoints the cache at it (`.fallbacks` records
+`session-cache→fresh(<abandoned id>)`; see the table above for what a *failed*
+`--fresh` dial leaves the cache pointing at instead).
+A plain re-dial is for continuing a conversation; `--fresh` is for starting
+one in the same workspace with a new brain.
+
+**Name the callee: `--label` is required.** 2-4 words for what the callee is
+*doing*, not where it lives — `fix-hotline-titles`, `review pr 2393`, `audit the
+cache gate`. The directory is the one thing every callee in a run already shares,
+so it is the one thing that cannot tell them apart.
+
+**You write the label**, from the work order you are about to send: the issue id
+it names, or the verb phrase at the top of it. The user will rarely type one, and
+there is no default to fall back on — an unlabelled dial is refused.
+
+Where it shows up:
+
+- **The cmux tab strip**, via the callee's session name. claude publishes its
+  session name as the terminal title and cmux renders that live, so the tab reads
+  `◑ hotline: review pr 2393 (work_order)` — activity glyph in front, changing as
+  the callee works. Nothing here pins a static title, precisely so that glyph
+  survives: a pinned title outranks claude's own for the life of the tab, and
+  losing the glyph loses how you spot a callee that is stuck or waiting.
+- **A detached callee's workspace name**, `hotline: <label>` — a detached
+  placement has no tab inside the caller's window, so the workspace is what the
+  strip shows.
+- **The herdr sidebar's tab label**, for the `tab` and `workspace` placements: the
+  call nonce's last 6 characters, then the label.
+- **A herdr split pane's terminal title**, the same session name as above. A split
+  has no tab of its own to label, but it does have a title.
+
+Missing, empty, or whitespace-only is an **args error**, refused before anything
+with a side effect — including on a follow-up, because whether a dial is first
+contact is not known when its arguments are read. A **follow-up ignores** the
+label, silently: the callee keeps the name first contact gave it, since a name
+re-typed against "and now step 2" would be worse than the one chosen when the job
+was described in full. Nothing lands in `.fallbacks` for it — a clean reuse worked
+around nothing, and `first_contact: false` already says the value went unused.
+
+**A stale-looking candidate list.** If `needs_disambiguation` candidates carry
+empty or obviously outdated `identity` blobs, re-running with
+`--refresh-identity` regenerates the resolved target's identity cache before the
+call — always, not only past the cache TTL, because a within-TTL identity can
+still be wrong. It costs a real headless `claude` call, tens of seconds and
+programmatic credit, which is why it is opt-in rather than automatic. The payload
+reports `identity_stale` either way.
+
+## Then wait for the response
+
+Report the connection first — the user should not wait on the callee to hear
+that it's up:
+
+> Connected to **[workspace name]** (session: `[session-id]`). Working on it —
+> I'll relay the response when it's ready.
+
+Then wait in the foreground, or explicitly arm the Codex completion watcher below.
+Report the connection in commentary while continuing to wait. Ending your turn
+with a shell waiter running does not arm a callback: a PTY/session handle and
+`response.json` cannot themselves start another model turn.
+
+```bash
+# Codex: this path resolves under Claude Code; substitute the Hotline plugin directory.
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+CALL_DIR="<.call_dir from the dial payload>"
+bash "$PLUGIN_ROOT/skills/dial/scripts/wait-for-response.sh" "$CALL_DIR" >/dev/null
+RESPONSE=$(jq -r '.response' "$CALL_DIR/response.json")
+printf '%s\n' "$RESPONSE"
+```
+
+**Claude Code:** use `run_in_background` exactly once when a wait outlasts the
+tool timeout, and consume its task completion notification. Adding `nohup … &`
+leaves the harness tracking a wrapper that exits immediately. Preserve the
+callee's existing Claude `SendMessage` notice path.
+
+**Codex foreground:** continue awaiting the running tool/session until it exits;
+on a tool timeout, re-run the waiter on the same call directory. A tool returning
+a running-session handle requires another wait; it is not an armed notification.
+
+**Codex idle caller (opt-in):** before ending your turn, arm one watcher for the
+existing call. Resolve your exact thread ID and owning home first: the home must
+contain exactly one matching rollout with your session metadata. An unset home
+environment value is not evidence that the default home owns the thread. The
+command rejects a UUID that differs from your exported `CODEX_THREAD_ID`. This
+local-only path requires Python 3 and a running Codex daemon in that home with
+`queue --resume`; it does not start a daemon, install auth, or change trust.
+
+Codex: substitute the installed Hotline plugin directory for the path below.
+
+```bash
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+python3 "$PLUGIN_ROOT/scripts/completion-watch.py" arm "<call_dir>" --caller-thread "<your exact UUID>" --caller-home "<absolute owning Codex home>"
+```
+
+Only report background readiness after exit 0 with `state: armed` (the worker
+handshake and daemon probe passed), or a reused record with `watcher_live: true`.
+An arm refusal means keep waiting in the foreground and report the error. Do not
+run a second waiter alongside an armed watcher. It snapshots its bundled waiter
+runtime into the private call directory so plugin-cache reconciliation cannot
+remove its helpers; it invokes only the waiter, never the dialer.
+
+The watcher pins `queue --remote` to the verified local daemon socket and queues
+one `[Hotline completion] call_id=…` notice after the waiter exits, including
+waiter errors. It cannot fall back to an embedded server if that daemon dies.
+An idle caller starts a new turn; a busy caller
+receives queued input after its current turn. Read `response.json` if present and
+`completion/status.json` plus `completion/waiter.stderr`; relay the result or
+failure. A queue acknowledgment means `enqueued`; `arrived` requires that notice
+in the exact caller's submitted user transcript. Neither proves model action.
+`arrival_unconfirmed` means no arrival was observed within the bounded window,
+including a caller still busy, a resume warning, or a receiver lost after arming.
+
+The lifetime is bounded by `--timeout` (default 1800 seconds, maximum 86400), the
+waiter shutdown margin, bounded CLI checks, and `--arrival-timeout` (default 120,
+maximum 3600 seconds). Sleep, host exit, a killed watcher, CLI removal, or daemon
+failure can interrupt it. No recurring model wake or scheduled polling is used.
+
+For inspection (no re-enqueue):
+
+Codex: substitute the installed Hotline plugin directory for the path below.
+
+```bash
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+python3 "$PLUGIN_ROOT/scripts/completion-watch.py" status "<call_dir>"
+```
+
+Re-arming the same identity reuses a live worker or a recorded terminal outcome;
+a dead worker before enqueue can resume waiting. Once `completion/enqueue.started`
+exists, automatic re-enqueue is forbidden even after a crash or CLI failure: the
+delivery outcome may be unknown. Inspect the private diagnostics and caller
+transcript, then read the result or resume the foreground waiter on the SAME call
+directory. Never re-dial merely to recover a lost completion notice. Keep the call
+directory until recovery is finished.
+
+Read the response **from `response.json`**, as above — not from the script's
+captured stdout piped into `jq`. Under zsh (the Bash tool's shell) `echo` on
+captured JSON mangles backslash escapes (`\n`, `\f`, `\u001b`, …) into raw
+bytes that `jq` then rejects.
+
+**A timeout is not the end of the call.** The `--timeout` budget bounds how long
+*this invocation* waits, not the call, and re-running the script on the same
+`CALL_DIR` resumes with a fresh budget — it re-reads the transcript (or the
+screen) and sends nothing, so it can never double-queue work. Prefer that over
+re-dialing when a work order is simply slower than the budget. A real remote
+failure still short-circuits immediately instead of waiting again.
+
+Exit codes that are not failures:
+
+- **Exit 3 — the callee was reassigned.** (Not to be confused with `dial.sh`'s
+  own exit 3, `needs_disambiguation` — different script, different meaning.) A
+  cmux call sits in a visible surface, so the user can type into it. When they
+  do, the script keeps polling for a grace window (180s, `HOTLINE_PREEMPT_GRACE`)
+  and only exits 3 if no STATUS for your nonce arrives in it — a mid-call
+  *redirect* of the same work order is tolerated and resolves normally. Exit 3
+  therefore means they handed the session a different task, and `error.txt` names
+  the preempting prompt. The surface and session are left live on purpose — the
+  verdict is read off a transcript, so go check it. Report it plainly, and note the
+  work you asked for may well have finished anyway: read the callee's transcript or
+  look at the surface. **Do not silently re-dial.**
+- **Exit 4 — reply ready, work order not finished.** The callee emitted
+  `STATUS: AWAITING_REVIEW`: it reported a checkpoint and is idle waiting on you.
+  Read `.response` exactly as on exit 0 (the JSON also carries
+  `"awaiting_review": true`, the durable form of the signal). The surface and
+  session are left live on purpose — relay the report, then send the follow-up by
+  dialing the same target again. The wrapper routes it back into that same
+  surface. On headless there is no live surface; the follow-up resumes the
+  session.
+- **Exit 5 — the callee is waiting on a human** (herdr calls only). herdr reported
+  its lifecycle as `blocked` with no STATUS for your nonce: it is sitting on a
+  permission gate or asking a question, so more time cannot help. `error.txt` says
+  what to look at; `herdr agent attach <name>` shows the actual prompt (prefixed with
+  `ssh <target>` for a `--remote` call, which the message itself does). Tell the user
+  what is needed, and once it is cleared re-run the wait on the same `CALL_DIR` — it
+  resumes with a fresh budget and reads the answer. (Unattended callees avoid the
+  *tool-permission* case by dialing with `HOTLINE_DANGEROUSLY_SKIP_PERMISSIONS=1` — a
+  real trust decision, and no help against the startup trust dialog, which no
+  permissions knob bypasses. See § Environment knobs.)
+- **Exit 6 — the callee's turn ended without answering** (herdr calls only). herdr
+  settled it `idle`/`done`, no STATUS for your nonce, and either its last turn ended
+  on an API error (`API Error: Connection lost mid-response` and the like, seen on
+  two settled reads) or its transcript — and, locally, its subagents' transcripts —
+  sat unchanged for `HOTLINE_STALL_SECONDS` (default 600). It will not
+  answer on its own. **Resume with a follow-up dial to the same target** — hotline
+  re-targets the same agent and the session continues with its context; tell it the
+  last turn ended early and to finish. If it was only idle waiting on its own
+  background work, re-run the wait on the same `CALL_DIR` instead. `error.txt` names
+  which condition fired.
+- **Exit 7 — the callee asked a question.** Its turn ended on
+  a blocked-class STATUS: `STATUS: BLOCKED call_id=<nonce>`, or a word you
+  declared with `--status-class WORD=blocked` — not ringing-protocol statuses, but
+  ones your own work order may define for "I need an answer before I can go on".
+  Read `.response` as on exit 0: it is the callee's question (the JSON also carries
+  `"blocked": true`, `.status` for a declared word, and `.detail` when the STATUS
+  line carried text before `call_id=`). The surface and session are left live, as on exit 4 — answer
+  with a follow-up dial to the same target. Unlike exit 5, the transcript holds the
+  callee's own words. On headless there is no live surface; the follow-up resumes the
+  session. A BLOCKED the callee later worked past (a later WORK_IN_PROGRESS or
+  terminal STATUS) does not count, and neither does one written mid-turn.
+- **Exit 9 — the callee ended on a STATUS word this dial never declared.** Its
+  last STATUS, ending its turn, was a word in no class, on a line ending in
+  `call_id=<nonce>`. The JSON carries `"class": "unknown"`, the raw word as
+  `.status`, any `.detail`, and `.response` as on exit 0; the surface and session
+  are left live, as on exit 7. Read the word: the callee follows a convention your
+  work order defines. Act on it, and declare it (`--status-class WORD=class`) on
+  later dials so the wait classifies it.
+- **Exit 8 — your own follow-up superseded this call.** You dialed a follow-up
+  into the same session before this call resolved, and the callee has started on it
+  (the follow-up's prompt reached it, or it emitted a STATUS under the follow-up's
+  nonce), so its answer arrives under that nonce. Stderr names the follow-up's call
+  dir, also in `$CALL_DIR/superseded_by.json` (`call_dir`, `call_id`): **wait on that
+  call dir instead.** Nothing is closed — the follow-up is running in the same
+  surface. While the follow-up is only queued behind the busy old turn, the wait goes
+  on: that turn can still answer this call's nonce, and that answer resolves it as
+  usual (exit 0/4/7). A follow-up from a different caller session, or a human typing
+  into the surface, still reads as exit 3.
+
+Leave the call dir where it is when the exchange is done; cleanup is the
+wrapper's job, not yours. Every dial starts by reaping call dirs older than
+`HOTLINE_CALL_SWEEP_DAYS` (default 3 days), and that age floor is what makes the
+reap safe: every session on the machine shares the `hotline-call-*` namespace,
+so a younger dir may be another caller's call still waiting on its response.
+Leaving the dir also keeps a `deliver` failure recoverable, because its pending
+prompt is the surviving copy the recovery path reads.
+
+Follow-ups need nothing special: dial the same target again with the next
+message. The wrapper finds the cached session, re-addresses the host it lives in —
+a cmux surface, or a herdr agent by name — and sends the message raw (never
+re-wrapping the ringing command).
+
+## Reporting to the user
+
+For Codex reports sent to another agent through `codex queue`, prefix every
+message with the sender's name or role in brackets. Apply this to checkpoints,
+completion reports, blockers and callbacks, so the receiving thread can identify
+who is speaking. For example:
+
+> [Hotline builder] Tested account-home contract is ready; see the report for the source command and validation results. No live smoke has started.
+
+Queue acceptance confirms enqueueing; it does not prove the receiving agent has
+read or acted on the report.
+
+First exchange — surface the connection details:
+
+> Connected to **[workspace name]** (session: `[session-id]`).
+> If you want to take over this conversation at any point, let me know and I'll
+> give you the command to resume it in another terminal.
+>
+> **Their response:** [response text]
+
+After that, just relay: > **[workspace name]:** [response text]
+
+If the callee includes a `HOTLINE_NOTE:` in its response, always pass it on — it
+means the protocol hit a snag.
+
+## Takeover
+
+If the user wants the conversation directly:
+
+> Run this in another terminal:
+> ```
+> claude --resume [session-id]
+> ```
+> Let me know when you're done and I'll reconnect to get the final state.
+
+When they return, dial the same target again with "Summarize what happened since
+the caller took over."
+
+## Environment knobs
+
+Set these in `~/.claude/settings.json`'s `"env"` block or the shell:
+
+- **`HOTLINE_CODEX_HOME=<absolute-directory>`** — select the Codex process account.
+  New calls require `--agent codex` over local cmux, or `--fresh`/explicit
+  thread resume with `HOTLINE_HERDR_PLACEMENT=tab` or `workspace` on local herdr. The directory must already exist and be readable/writable; spaces
+  are supported. Hotline passes `--env CODEX_HOME=...` when creating the tab, before
+  starting Codex (cmux exports it in the launch script), and records the canonical home in `codex_home.txt` so later waiters
+  discover rollouts in the same account even outside the caller environment.
+  Re-dial the same target/caller with `--agent codex` and without `--fresh` to
+  continue the cached process. An explicit home must match; omitting it inherits
+  the selected home from the cache/call metadata, independent of ambient
+  `CODEX_HOME`. Each follow-up copies `codex_home.txt`, `codex_rollout.txt` and
+  host metadata, and validates the live Codex pane/thread against the launch
+  record before submitting input. Native herdr may omit `agent_session`; local
+  `lsof` must prove that one foreground Codex process owns exactly the pinned
+  rollout even when a matching thread ID is reported. Missing, different or
+  ambiguous rollout ownership refuses reuse. Missing/inconsistent metadata, a different
+  account or a dead selected-account agent refuses the call before delivery;
+  start a new explicit-home `--fresh` call to recover. Unpinned legacy calls keep
+  their existing dead-agent resume behavior.
+  Herdr's Codex integration reports `agent_session` through a `SessionStart`
+  hook; `--disable hooks` suppresses that identity report. The verified local
+  rollout-ownership path above supports this missing-field runtime without
+  enabling hooks. A PID alone is insufficient. Hotline never installs/enables
+  hooks or answers trust gates to obtain identity. Native hook-based reporting
+  requires a separately reviewed Herdr integration and hook configuration in
+  the selected home; check shared `hooks.json` symlinks before any installation.
+  Herdr split launches, remote and headless are refused when set. Explicit
+  local resume is supported over cmux and herdr tab/workspace placement.
+  New calls with no override retain the default account behavior.
+  `HOTLINE_CALLEE_ENV` configures Codex tool
+  subprocesses through `shell_environment_policy`; it does not select the account
+  that authenticates the Codex process. Keep the home on every new selected-account
+  dial; use the call directory with `wait-for-response.sh` for the existing call.
+
+- **`HOTLINE_CODEX_MODEL=<model>`** — `--agent codex` only: passed as `codex -m`.
+- **`HOTLINE_CODEX_ARGS="<args>"`** — `--agent codex` only: extra codex argv,
+  whitespace-split (no quoting), e.g. `--disable hooks` or `-p <profile>`.
+
+- **`HOTLINE_DANGEROUSLY_SKIP_PERMISSIONS=1`** — adds
+  `--dangerously-skip-permissions` to the receiver's `claude`. **Off by default,
+  and a real trust decision.** Without it, a call landing in an unattended pane
+  stalls at the first permission gate with nobody there to click "Yes". If a call
+  hangs at "Combobulating…" with no progress, suspect exactly that.
+  It covers **in-session tool permission gates only.** No permissions setting
+  bypasses Claude Code's *startup trust dialog* — not this knob, not
+  `claude --dangerously-skip-permissions` itself, not `bypassPermissions` as the
+  settings default (`-p`/`--print` is the only escape, and a hotline callee is
+  interactive), so an unattended dial into an untrusted repo parks on that dialog
+  regardless. **Trust attaches to the git repository, not the directory**: a
+  worktree or subdirectory of an already-trusted repo dials clean and never gets
+  a trust record of its own, while a fresh `git init` is a new repo with its own
+  boundary, and a directory that is not a git repo is not gated at all. So only a
+  repo Claude Code has not trusted needs the one human action — run `claude` in it
+  and answer "Yes, I trust this folder" — before dialing into it unattended.
+- **`HOTLINE_FORCE_HEADLESS=1`** — every dial takes the headless transport,
+  regardless of cmux. Same destination as the per-call `--headless`.
+- **`HOTLINE_CLAUDE_MODEL=opus`** — model override for the callee.
+- **`HOTLINE_CLAUDE_APPEND_SYSTEM_PROMPT_FILE=<path>`** — appends the file's
+  contents to the callee's system prompt (`claude --append-system-prompt-file`),
+  for steering the callee's behavior — e.g. an "Opus 5" operating prompt. Passed
+  as a file, never inline, so the prompt never rides an argv where `ps` could
+  read it; the file must stay readable until the callee boots. Applies at first
+  contact only (a session's system prompt is set once, at birth); follow-ups
+  reuse that session. A missing/unreadable path fails the dial up front.
+- **`HOTLINE_CALLEE_ENV="KEY=VALUE KEY2=VALUE2"`** — environment variables for the
+  callee, which its Bash tool then sees. Space-separated pairs; keys are variable
+  names, values are non-empty with no spaces, each key once — anything else fails
+  the dial at the `args` stage before anything launches. Your own exports never
+  reach a cmux or herdr callee (its pane's shell is the terminal app's or the herdr
+  server's, not yours); this does, on every transport, as `claude --settings
+  '{"env":{...}}'`. The payload reports it as `.callee_env: "settings"`. **Only a
+  fresh claude process receives it**: a follow-up typed into a live callee cannot
+  change a running process's environment, so it reports `"not-redelivered"` with a
+  `.callee_env_note`, while a launch that resumes — every headless follow-up, a cmux
+  relaunch after reuse refused — is a fresh process and gets this dial's value (so
+  set it on those follow-ups too). Values ride the callee's argv, where `ps` shows
+  them: use it for markers such as a pipeline role or run id, never secrets. Unset,
+  no flag is passed and the payload has no `callee_env` key.
+- **`HOTLINE_CALLEE_ENV_FORWARD="NAME NAME2"`** — copy these variables from *your
+  own* environment into that same block, values verbatim (empty and spaced values
+  included). A name you don't have set is skipped, so one global setting serves
+  dialers with and without it — e.g. `GH_APP_ID GH_APP_INSTALLATION_ID
+  GH_APP_KEY_FILE` hands a callee its dialer's GitHub App. Same argv exposure: never
+  name a variable holding a secret's *value*.
+- **`HOTLINE_CALLEE_GIT_CONFIG="<key-glob> ..."`** — forward your `GIT_CONFIG_KEY_n`/
+  `GIT_CONFIG_VALUE_n` entries whose key matches a glob, in order, renumbered with
+  their own `GIT_CONFIG_COUNT`; the rest are dropped (another tool's block — a
+  signing key in a per-process `/tmp` dir — must not follow you). Matched
+  `author.*`/`committer.*` name and email are also set as `GIT_AUTHOR_*`/
+  `GIT_COMMITTER_*`, because git ranks those env vars above config and a callee's
+  host (a herdr server unit) may set them to a fallback identity. No match forwards
+  nothing. Precedence, last wins: forwarded, git config, then `HOTLINE_CALLEE_ENV`.
+- **`HOTLINE_CALLER_SESSION_ID=<id>`** — supply the caller identity directly.
+  Skips the fingerprint dance entirely, so `replay` never happens. This is the
+  escape hatch when identity discovery fails.
+- **`HOTLINE_SURFACE_READY_TIMEOUT=<seconds>`** — PTY-readiness budget for a new
+  surface (default 30 for side-by-side; 8 for window or detached).
+- **`HOTLINE_CALL_SWEEP_DAYS=<n>`** — age floor (default 3) for the TTL sweep
+  that runs at the start of every dial, reaping `hotline-call-*` dirs under
+  `HOTLINE_CALL_HOME` (default `/tmp`) older than this. `find -mtime` drops the
+  fractional day, so the effective floor is **n+1 full days**: at the default, a
+  dir 3 days 23 hours old survives one more hour. It errs toward sparing, never
+  toward reaping something too young. This sweep is the only cleanup
+  a finished call gets.
+- **`HOTLINE_PASTE_BOX_TIMEOUT=<seconds>`** — how long delivery waits for the
+  callee's REPL to draw its input box before refusing to paste. Defaults to
+  `--boot-timeout` (itself 60 for cmux), because both are waiting for the same
+  thing; set this only to decouple them. It is not a politeness timer: a payload
+  delivered to a surface that has not yet exec'd `claude` goes to the **shell**,
+  which would run it, so a miss here is a refusal rather than a gamble.
+- **`HOTLINE_PENDING_TTL=<seconds>`** — how long a `replay` fingerprint stays
+  valid in `~/.agents-hotline/pending/` (default 600). A round-trip takes
+  seconds; anything older is treated as a leftover and discarded.
+
+One selects the transport, and it is the only variable that does:
+
+- **`HOTLINE_TRANSPORT_AUTO=1`** — opt in to herdr being chosen without
+  `--transport`. It selects herdr only when **all** of these hold: the value is
+  exactly `1`; the dial named no `--transport`; it is not headless (`--headless` /
+  `HOTLINE_FORCE_HEADLESS`); the caller is inside a herdr pane (`HERDR_ENV=1`); and
+  the herdr preflight passes. A failed preflight is a **degrade** to the cmux
+  default with a `transport-auto→cmux(...)` entry in `.fallbacks`, not an error —
+  nothing explicit was asked for. `.transport` always reports what actually ran.
+
+The rest are herdr-only and select nothing — `--transport herdr` or the opt-in
+above still does that:
+
+- **`HOTLINE_HERDR_PANE=<pane-id>`** — the pane hotline splits to host the callee.
+  Defaults to the caller's own `$HERDR_PANE_ID`, then to the first pane herdr
+  reports. Name one when the automatic choice lands somewhere awkward.
+- **`HOTLINE_HERDR_PLACEMENT=split|tab|workspace`** — where the callee's pane goes
+  (default `split`, a sibling of the anchor pane). `tab` gives the callee its own
+  tab in the workspace that owns the anchor; `workspace` gives it its own tab inside
+  the group workspace named by `HOTLINE_HERDR_WORKSPACE`. Name one of the latter two
+  when a run dials several callees off one pane: as splits they land in a single tab,
+  and past a handful of slivers the leftmost panes cannot be reached.
+- **`HOTLINE_HERDR_WORKSPACE=<label>`** — the group workspace `placement=workspace`
+  hosts the callee in, looked up by label and created if no workspace answers to it.
+  Required for that placement, ignored by the other two. One label per group, chosen
+  by the caller, is how a run's callees end up together.
+- **`HOTLINE_HERDR_TAB_LABEL=<text>`** — the callee's tab label VERBATIM, for a
+  `tab` or `workspace` placement. The escape hatch for a shape `--label` does not
+  offer; `--label` is the flag to reach for, and it produces the standard shape — the
+  call nonce's last 6 characters, then the label. herdr's sidebar truncates the tail
+  and a run's callees usually share one repo, so the unique token leads. The budget
+  and its split live in `herdr_tab_label` (`scripts/herdr-state.sh`).
+- **`HOTLINE_HERDR_SPLIT_DIRECTION=right|down`** — which way a `split` placement
+  goes (default `right`).
+- **`HOTLINE_HERDR_PANE_SETTLE=<seconds>`** — pause before the first readiness probe
+  of a freshly split pane (default 1), and the starting value the retry backoff
+  doubles from. `agent start` requires the pane to be at its shell prompt.
+- **`HOTLINE_HERDR_START_BUDGET=<seconds>`** — the whole wall clock the launcher may
+  spend getting the pane to its prompt and retrying a busy start (default 30). The
+  wait itself is a poll on `pane process-info` — the pane is available exactly when
+  its foreground process group is the shell — so a slow shell costs poll time, not
+  start attempts. Exhausting the budget lets the next start go ahead so herdr's own
+  refusal is what gets reported.
+- **`HOTLINE_HERDR_READY_POLL=<seconds>`** — how often that poll re-reads the pane
+  (default 0.5).
+- **`HOTLINE_HERDR_START_ATTEMPTS=<n>`** — how many `agent start` invocations to make
+  after herdr reports the pane ready (default 4). Readiness is read one instant and
+  acted on the next, so this covers only that race; the wait for a booting shell is
+  `HOTLINE_HERDR_START_BUDGET`'s job, not this one's.
+- **`HOTLINE_HERDR_FIRST_SETTLE=<seconds>`** — pause between `agent start`'s
+  readiness claim and the FIRST delivery into that agent (default 1). `agent start`
+  reports the REPL interactive-ready once, at return, and under load that claim can
+  lead actual keystroke acceptance; this is the wall clock a re-probe cannot buy.
+- **`HOTLINE_HERDR_READY_TRIES=<n>`** — how many times first-contact delivery
+  re-reads `agent get` waiting for `interactive_ready` and a non-`blocked` state
+  (default 20, at `HOTLINE_PASTE_CONFIRM_SLEEP`'s cadence). Exhausting it refuses the
+  delivery with `sent:false`, so nothing was submitted and a re-dial is safe.
+- **`HOTLINE_HERDR_FIRST_CONFIRM_TRIES=<n>`** — the transcript-confirmation budget
+  for a FIRST delivery (default 40, four times the follow-up budget). First contact
+  waits on the callee's transcript being *created*, not appended, so the follow-up
+  budget reported landed payloads as unconfirmed under load.
+- **`HOTLINE_CMUX_FIRST_CONFIRM_TRIES=<n>`** — the same first-contact transcript budget
+  for the cmux transport (default 40, at `HOTLINE_PASTE_CONFIRM_SLEEP`'s cadence).
+  Follow-ups keep `HOTLINE_PASTE_CONFIRM_TRIES`.
+- **`HOTLINE_HERDR_BLOCKED_SETTLE=<seconds>`** — pause between the two reads that
+  confirm a follow-up's cached agent is really `blocked` (default 1). That state
+  fails the dial, so a blink must not be acted on.
+- **`HOTLINE_HERDR_WAIT_SLICE_MS=<ms>`** — how long one `herdr agent wait` blocks
+  before the response wait re-reads the transcript (default 30000).
+- **`HOTLINE_STALL_SECONDS=<seconds>`** — how long a herdr callee may sit settled
+  `idle`/`done` with an unchanging transcript and no STATUS before the response wait
+  exits 6 (default 600; `0` turns this window off). Growth in the session's
+  `subagents/*.jsonl` counts as activity on a local call; a `--remote` call reads
+  only the main transcript and does not see them. The API-error check that also
+  exits 6 is always on.
+- **`HOTLINE_HERDR_STALL_SETTLE=<seconds>`** — pause between the two settled reads
+  that must both find the turn ended on an API error before the wait exits 6
+  (default 5). Claude Code can auto-continue seconds after an error row.
+- **`HOTLINE_HERDR_KEEP_FAILED_PANE=1`** — keep the pane after a failed launch. Off
+  by default (a failed dial should leak nothing); on, the pane's scrollback is the
+  only evidence of a launch that died before the agent was detected.
+
+These four apply to a **`--remote`** dial only:
+
+- **`HOTLINE_HERDR_REMOTE_PANE=<pane-id>`** — the pane on the REMOTE box that
+  hotline splits, defaulting to the first pane that box's herdr reports. Named
+  separately from `HOTLINE_HERDR_PANE` on purpose: a pane id means nothing on
+  another machine, so a habitual local override must never be applied to one.
+  `$HERDR_PANE_ID` (the caller's own pane) is ignored for a remote dial.
+- **`HOTLINE_REMOTE_SSH_TIMEOUT=<seconds>`** — the floor on each ssh hop's budget
+  (default 60). A hop carrying a blocking herdr verb gets the herdr `--timeout` plus
+  30s instead, so `agent start` is not killed out from under a working launch.
+  Every hop is time-boxed: a Tailscale check period that has lapsed would otherwise
+  block a `BatchMode` hop indefinitely.
+- **`HOTLINE_REMOTE_SSH_PERSIST=<seconds>`** — how long the shared ssh connection
+  outlives the last hop (default 300). One `ControlMaster` connection is shared by
+  every process of one dial, so the tailnet check and any key handshake happen once;
+  this has to outlast the gap between the dial returning and the response wait
+  starting.
+- **`HOTLINE_REMOTE_SSH_CONNECT_TIMEOUT=<seconds>`** — ssh's own connect budget
+  (default 10).
+
+If the `/cmux-cli:using-cmux-cli` skill is available and a cmux-routed call
+misbehaves, invoke it — it documents the workspace/surface/tty semantics this
+transport depends on, which beats guessing at connection failures.
+
+For what the dial flow itself speaks over cmux's control socket — the three RPC
+methods, the snake_case-and-verify-the-echo addressing rule, `terminal.replay`'s
+`anchor`, and the fact that `terminal.viewport` is a setter that would reflow the
+callee's REPL — read
+`${CLAUDE_PLUGIN_ROOT}/skills/dial/references/cmux-rpc.md`.
+
+Codex: substitute the installed Hotline plugin directory for the leading path
+segment above.
+
+## Transparency: always surface problems
+
+**Every problem reaches the user, in the same turn you hit it.** A nonzero
+`.status`, an unexpected response, a permission issue, a resolution that doesn't
+match what the user said — report each one with the specific error and the stage
+it failed at, then say what you did about it.
+
+**Bad:** "CMUX failed, falling back to headless."
+**Good:** "The side-by-side surface couldn't be opened — `.detail` says
+`[exact error]`. The wrapper re-routed through headless, so the call went
+through, but it's in no visible pane."
+
+The user is your partner in debugging this system. Hidden errors waste their time
+and make the plugin harder to improve.
+
+## Error recovery
+
+**Read `${CLAUDE_PLUGIN_ROOT}/skills/dial/references/error-recovery.md`** when
+`.status` is `error` and `.recovery` isn't enough — it covers the specific failure
+modes per stage, and the cmux transport forensics behind a follow-up that appears
+to vanish.
+
+Codex: substitute the installed Hotline plugin directory for the leading path
+segment above.

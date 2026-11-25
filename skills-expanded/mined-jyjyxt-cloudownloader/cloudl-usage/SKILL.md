@@ -1,0 +1,168 @@
+---
+name: cloudl-usage
+description: Use at the start of any Cloudl session — this is the top-level map of what `cloudl` can do, how to discover adapters, what flags and output formats are universal, and which specialized skill to load next. Point here when an agent asks "what can cloudl do?" or "how do I find the right command?".
+allowed-tools: Bash(cloudl:*), Read
+---
+
+# cloudl-usage
+
+Cloudl turns any website, Electron desktop app, or external CLI into a uniform `cloudl <site> <command>` surface that agents can drive without screen-scraping. This skill is the orientation layer — once you know what you want to do, load one of the specialized skills below.
+
+## The three pillars
+
+- **Adapter commands** — `cloudl <site> <command> [...]`. Built-in adapters live in `clis/`, user adapters in `~/.cloudl/clis/`. Each is backed by a strategy (`PUBLIC | COOKIE | INTERCEPT | UI | LOCAL`) that tells you whether a Chrome session is needed.
+- **Browser driving** — `cloudl browser *` subcommands (`open`, `state`, `click`, `type`, `select`, `find`, `extract`, `network`, …) for ad-hoc interaction and scraping when no adapter covers the task. See `cloudl-browser`.
+- **Current-tab binding** — `cloudl browser <session> bind` attaches the Chrome tab the user already opened/logged into to that browser session. Follow-up commands use `cloudl browser <session> ...`. See `cloudl-browser` before using it; bound sessions still block tab mutation.
+- **External CLI passthrough** — `cloudl gh`, `cloudl docker`, `cloudl vercel`, etc. Managed via `cloudl external install <name>` (auto-install from `external-clis.yaml`) or `cloudl external register <name>` (bring your own).
+
+## Install
+
+```bash
+# Node.js >= 20.18.1
+git clone https://github.com/jyjyxt/cloudownloader.git
+cd cloudownloader
+npm install
+npm link
+cloudl doctor
+```
+
+`cloudl doctor` prints a structured `DoctorReport` — daemon status, extension connection, version checks, and a live browser connectivity probe. Scope is narrow: it diagnoses the **browser bridge** (daemon + extension + Chrome wiring). `PUBLIC` / `LOCAL` adapters, `cloudl list`, `validate`, `verify`, plugin commands, and external-CLI passthrough don't need it to be green — only `COOKIE` / `INTERCEPT` / `UI` adapters and the `cloudl browser *` subcommands do. Flag: `-v` (verbose).
+
+## Prerequisites by command type
+
+| Strategy tag on `cloudl list` | What it needs |
+|--------------------------------|---------------|
+| `PUBLIC` | Nothing — pure HTTP, no browser. |
+| `COOKIE` | Chrome logged into the target site + **Cloudl** extension installed manually from [GitHub Releases](https://github.com/jyjyxt/cloudownloader/releases). Command captures the credential from your live session — no re-login. |
+| `INTERCEPT` | Same as COOKIE, plus cloudl opens an automation window to capture a signed request. |
+| `UI` | Same as COOKIE, full DOM interaction. |
+| `LOCAL` | No browser; talks to a local/dev endpoint. |
+
+Electron desktop apps (cursor, codex, chatwise, discord-app, doubao-app, antigravity, chatgpt-app) route through CDP against the running app — same cookie-less flow as a logged-in browser. Make sure the app is running before invoking.
+
+## Discover what's installed — don't read this file, run a command
+
+```bash
+cloudl list                    # table, grouped by site
+cloudl list -f json            # machine-readable; pipe to jq or your agent
+cloudl list | grep -i twitter  # find commands for a specific site
+cloudl <site> --help           # see that site's commands + flags
+cloudl <site> <command> --help # see positional args and command-specific flags
+```
+
+Do not hard-code adapter lists — there are 100+ sites and the count moves every week. `cloudl list -f json` is the source of truth; it emits one entry per command with `{site, name, aliases, description, strategy, browser, args, columns, ...}`. For an agent, that is always better than grepping a doc.
+
+Before falling back to raw `cloudl browser` commands on high-change authenticated sites, check whether a site adapter already exposes the workflow. For example, ChatGPT web has higher-level commands for conversation reads and Deep Research result extraction; discover the current surface with `cloudl chatgpt --help` or `cloudl list -f json`.
+
+## Universal flags (work on every adapter command)
+
+| flag | effect |
+|------|--------|
+| `-f, --format <fmt>` | `table` (default in TTY) · `yaml` (default in non-TTY) · `json` · `plain` · `md` · `csv`. Pass explicitly when you want a specific shape; agents almost always want `-f json`. |
+| `-v, --verbose` | Debug logs + stack traces on failure; also sets `CLOUDL_VERBOSE=1` for the process. |
+
+Command-specific flags (`--limit`, `--tab`, `--filter`, …) are not universal — consult `<site> <command> --help`.
+
+## Output formats
+
+- `json` — pretty-printed, 2-space indent. Default choice for agents.
+- `plain` — prints a single primary field for chat-style commands (`response`/`content`/`text`/`value`). Useful for piping to another tool.
+- `yaml` — fallback when output is not a TTY and `-f` is not explicit.
+- `table` — color-coded, site-grouped; meant for humans.
+- `md`, `csv` — straightforward tabular dumps.
+
+A few commands override the default via `cmd.defaultFormat` (e.g. chat commands default to `plain`), so don't assume without reading `--help`.
+
+## Environment variables
+
+| variable | default | purpose |
+|----------|---------|---------|
+| `CLOUDL_BROWSER_CONNECT_TIMEOUT` | `45` | Seconds to wait for the browser bridge. |
+| `CLOUDL_BROWSER_COMMAND_TIMEOUT` | `60` | Per-command timeout. |
+| `CLOUDL_CDP_ENDPOINT` | — | Manual CDP endpoint override (dev / remote Chrome / Electron). |
+| `CLOUDL_CACHE_DIR` | `~/.cloudl/cache` | Network capture + browser-state cache. |
+| `CLOUDL_WINDOW` | command-specific | `foreground` or `background` browser window mode. |
+| `CLOUDL_VERBOSE` | `false` | Verbose logging (also triggered by `-v`). |
+
+## Self-repair
+
+When an adapter command fails because the site changed (selectors drifted, API rotated, response schema shifted), re-run with `--trace retain-on-failure`. The error envelope includes a `trace` block pointing at `summary.md`; patch only the `adapterSourcePath` from that summary and retry. Max 3 repair rounds. The full flow is in `cloudl-autofix`.
+
+## Writing your own adapter
+
+Two-path storage:
+
+- **Private**: `~/.cloudl/clis/<site>/<command>.js` — no build step, hot-available, not visible in the public package.
+- **Public / PR**: `clis/<site>/<command>.js` — for upstream contribution; requires build.
+
+Scaffolding & verification:
+
+```bash
+cloudl browser init <site>/<command>   # generates a skeleton
+cloudl validate [target]               # semantic checks on the loaded registry (description, domain, pipeline step names, func|pipeline|_lazy presence, arg duplicates) — no network, no browser
+cloudl verify [target] [--smoke]       # run the command with synthetic args
+cloudl browser verify <site>/<command> # end-to-end smoke inside the bridge
+```
+
+Adapters import only `@jyjyxt/cloudl/registry` and `@jyjyxt/cloudl/errors`. `columns` must align 1:1 (in name and order) with keys of the object returned by `func`. For the full workflow see `cloudl-adapter-author`.
+
+## Plugins
+
+Plugins are third-party extensions pulled from git, separate from the main adapter registry:
+
+```bash
+cloudl plugin install github:user/repo    # install
+cloudl plugin list [-f json]              # see installed
+cloudl plugin update [name] | --all       # keep current
+cloudl plugin uninstall <name>
+cloudl plugin create <name>               # scaffold a new plugin
+```
+
+## External CLI passthrough
+
+Wraps external command-line tools so you can discover + invoke them through the same `cloudl …` entrypoint:
+
+```bash
+cloudl external install gh    # auto-install via brew/apt/npm per external-clis.yaml
+cloudl external register my-tool \
+    --binary my-tool \
+    --install "npm i -g my-tool" \
+    --desc "My internal CLI"
+cloudl external list
+cloudl gh pr list --limit 5   # passthrough; stdio is inherited, exit code propagated
+cloudl docker ps
+```
+
+Built-in entries live in `src/external-clis.yaml`; user overrides and additions in `~/.cloudl/external-clis.yaml`. Commonly shipped: `gh`, `docker`, `vercel`, `lark-cli`, `longbridge`, `dws`, `wecom-cli`, `obsidian`, `ntn`, `tg(tg-cli)`, `discord(discord-cli)`, `wx(wx-cli)`.
+
+Some official CLIs use shell-script installers instead of a shell-free package-manager command. Entries without an `install` config, such as `ntn`, must be installed manually from their homepage before passthrough use.
+
+## Shell completion
+
+```bash
+cloudl completion bash   # also: zsh, fish
+# -> script on stdout; source or save per your shell's convention
+```
+
+## Where to go next
+
+| If you're about to… | Load this skill |
+|---------------------|-----------------|
+| Drive a live browser ad-hoc (no adapter available, or prototyping) | `cloudl-browser` |
+| Write a new adapter, or add a command to an existing site | `cloudl-adapter-author` |
+| Fix a broken adapter after a command failure | `cloudl-autofix` |
+| Route a search / lookup / research request to the right adapter | `smart-search` |
+
+## Commands that used to exist
+
+The following were removed in the PR #1094 consolidation — don't try to invoke them:
+
+- `cloudl explore <url>` — superseded by `cloudl browser network` + `cloudl browser find` for live API discovery, and by the `cloudl-adapter-author` workflow for capture.
+- `cloudl record <url>` — removed; manual capture now lives in `cloudl browser network --detail`.
+- `cloudl web read` / `cloudl desktop *` as top-level groups — folded into their respective adapters (`cloudl web read` still exists as the `web` adapter's `read` command, but there is no standalone `web` / `desktop` top-level group command).
+
+## Don't
+
+- Don't paste this skill's command list into your plan; it will rot. Call `cloudl list -f json` at the start of a task instead.
+- Don't assume every adapter needs a browser — strategy `PUBLIC` and `LOCAL` don't. Check the `strategy` field.
+- Don't silently fall back from a failing adapter to a hand-rolled `fetch` — `--trace retain-on-failure` gives you the browser evidence and adapter source path. Do that first.

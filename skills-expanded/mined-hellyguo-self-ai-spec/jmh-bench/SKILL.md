@@ -1,0 +1,239 @@
+---
+name: jmh-bench
+description: "使用 JMH 编写并运行 Java 基准测试，输出可信的性能数据。适用于微基准测试、性能回归对比、优化效果验证。"
+---
+
+# JMH 基准测试执行指南
+
+## 核心要求
+
+1. 测试默认参数：
+
+- 预热10次
+- 测试5次
+- 每次预热执行100ms
+- 每次测试执行20ms
+- 4线程执行
+- fork 3次
+
+2. 测试首推用mvnd
+
+## 前置准备
+
+### 1. 获取环境信息
+
+执行 skill `/java-env` 获取 Java 开发环境信息：
+
+```
+skill java-env
+```
+
+确认：
+- mvnd/maven 目录位置
+- JDK 版本匹配项目需求
+
+### 2. 配置 pom.xml
+
+在项目中添加 JMH 依赖：
+
+```xml
+<dependencies>
+    <!-- JMH Core -->
+    <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-core</artifactId>
+        <version>1.37</version>
+    </dependency>
+    
+    <!-- JMH Annotations -->
+    <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-generator-annprocess</artifactId>
+        <version>1.37</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+
+<build>
+    <plugins>
+        <!-- 编译插件，确保 annotation processor 生效 -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.11.0</version>
+            <configuration>
+                <annotationProcessorPaths>
+                    <path>
+                        <groupId>org.openjdk.jmh</groupId>
+                        <artifactId>jmh-generator-annprocess</artifactId>
+                        <version>1.37</version>
+                    </path>
+                </annotationProcessorPaths>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+## 执行方式
+
+### 方式一：Maven Exec 插件（推荐）
+
+```bash
+# 编译项目
+mvn clean compile -q
+
+# 运行全部基准测试
+mvn exec:exec -Dexec.executable="java" \
+    -Dexec.args="-cp %classpath org.openjdk.jmh.Main" -q
+
+# 运行指定基准测试类
+mvn exec:exec -Dexec.executable="java" \
+    -Dexec.args="-cp %classpath org.openjdk.jmh.Main BenchmarkClassName" -q
+
+# 运行指定基准测试（带参数）
+mvn exec:exec -Dexec.executable="java" \
+    -Dexec.args="-cp %classpath org.openjdk.jmh.Main BenchmarkClassName -wi 3 -i 3 -t 1 -f 1" -q
+```
+
+**参数说明：**
+- `-wi N`: Warmup 迭代次数
+- `-i N`: Measurement 迭代次数  
+- `-t N`: 线程数
+- `-f N`: Fork 次数
+
+### 方式二：run_bench.sh 脚本
+
+创建脚本 `run_bench.sh`：
+
+```bash
+#!/bin/bash
+
+# Run JMH benchmark
+# Usage: ./run_bench.sh [BenchmarkClass] [jmh_args...]
+
+PROJECT_DIR=$(dirname "$0")
+cd "$PROJECT_DIR"
+
+BENCHMARK_CLASS="${1:-}"
+JMH_ARGS="${2:-}"
+
+# Build classpath
+CLASSPATH="target/classes:target/test-classes:$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout -q)"
+
+# Run JMH
+if [ -n "$BENCHMARK_CLASS" ]; then
+    java -cp "$CLASSPATH" org.openjdk.jmh.Main "$BENCHMARK_CLASS" $JMH_ARGS
+else
+    java -cp "$CLASSPATH" org.openjdk.jmh.Main
+fi
+```
+
+使用方式：
+```bash
+chmod +x run_bench.sh
+
+# 运行全部
+./run_bench.sh
+
+# 运行指定类
+./run_bench.sh MyBenchmark
+
+# 运行指定类带参数
+./run_bench.sh MyBenchmark "-wi 5 -i 5"
+```
+
+### 方式三：Maven 管理的 JMH
+
+当 JMH 依赖配置为 test scope，需通过 Maven 构建后直接运行：
+
+```bash
+# 编译并安装（生成 JMH 元数据）
+mvn clean install -DskipTests
+
+# 运行全部基准测试（JSON 输出）
+java -cp "$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout):target/classes:target/test-classes" org.openjdk.jmh.Main -rf json
+
+# 运行指定基准测试类
+java -cp "$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout):target/classes:target/test-classes" org.openjdk.jmh.Main com.example.MyBenchmark -f 1 -wi 2 -i 2
+
+# 运行指定基准测试（自定义参数）
+java -cp "$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout):target/classes:target/test-classes" org.openjdk.jmh.Main com.example.MyBenchmark -wi 5 -i 5 -t 1 -f 3
+```
+
+**参数说明：**
+- `-rf json`: 结果保存为 JSON 文件
+- `-l`: 列出所有可用基准
+- 其他参数同上
+
+**项目配置要求：**
+```xml
+<!-- pom.xml 需包含 -->
+<dependencies>
+    <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-core</artifactId>
+        <version>1.37</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-generator-annprocess</artifactId>
+        <version>1.37</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.13.0</version>
+            <configuration>
+                <annotationProcessorPaths>
+                    <path>
+                        <groupId>org.openjdk.jmh</groupId>
+                        <artifactId>jmh-generator-annprocess</artifactId>
+                        <version>1.37</version>
+                    </path>
+                </annotationProcessorPaths>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+## 常用命令模板
+
+| 场景 | 命令 |
+|------|------|
+| 快速验证 | `-wi 3 -i 3 -t 1 -f 1` |
+| 标准测试 | `-wi 5 -i 5 -t 4 -f 2` |
+| 精确测试 | `-wi 10 -i 10 -t 1 -f 3` |
+| 列出所有Benchmark | `-l` |
+| 项目完整测试（Maven 管理 JMH） | `mvn clean install -DskipTests && java -cp "$(mvn dependency:build-classpath -Dmdep.outputFile=/dev/stdout):target/classes:target/test-classes" org.openjdk.jmh.Main -rf json` |
+
+## 输出解读
+
+典型输出示例：
+```
+Benchmark                         Mode  Cnt    Score    Error  Units
+MyBenchmark.testMethod           thrpt    5  123456.789 ± 5000  ops/s
+```
+
+**指标说明：**
+- `thrpt`: Throughput 吞吐量（ops/s）
+- `avgt`: Average Time 平均耗时（us/op）
+- `sample`: Sampling 时间采样
+- `Score`: 平均值
+- `Error`: 置信区间误差（99.9%）
+
+## 最佳实践
+
+1. **Warmup 充足** - 至少 5 次预热，让 JIT 编译稳定
+2. **避免 GC 影响** - 测试前可手动触发 GC：`System.gc()`
+3. **Blackhole 消费** - 防止死代码消除：`bh.consume(result)`
+4. **State 隔离** - 使用 `@State(Scope.Thread)` 避免线程竞争
+5. **单线程对比** - 多框架对比时先用 `-t 1` 消除并发因素
+6. **单方法申明批量** - 对单方法内部执行大量批量操作的，使用 `@OperationsPerInvocation` 注解申明

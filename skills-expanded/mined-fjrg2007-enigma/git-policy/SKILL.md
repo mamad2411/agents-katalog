@@ -1,0 +1,322 @@
+---
+name: git-policy
+description: Commit, branch, and pull request standards - conventional commits, atomic changes, branch naming, commit timing, PR quality, and preserving commits and changes that other developers or agents made. Use when committing, branching, staging changes, or creating/updating a pull request, and BEFORE any operation that removes or rewrites commits or uncommitted changes - revert, reset, rebase, amend, force push, branch deletion, discarding or cleaning the working tree, stash, or resolving a conflict.
+---
+
+## Git & Contribution Policy (Senior Engineering Standards)
+
+---
+
+## Core Principle
+
+- All commits and pull requests must follow professional engineering standards.
+- Treat all contributions as production-grade changes.
+- Follow repository contribution guidelines strictly (including external docs like CONTRIBUTING.md if present).
+- This skill owns commit/branch/PR mechanics. Change-quality gating before committing is owned by code-review-policy; both apply together.
+
+---
+
+## Branching & Commit Timing
+
+- Commit or push only when the user asks for it; do not commit speculatively.
+- A topic branch is for work that goes through review (a PR, a full gate run). A change below the gate's trivial threshold (`gate-trivial-lines`: a logo or icon swap, a copy or one-line visual fix) commits straight to the branch you are on - the default branch included, unless it is protected or the push is rejected - with no branch, no PR and no gate run. Anything larger on the default branch gets a topic branch first.
+- Use descriptive branch names scoped by type (e.g. feat/, fix/, chore/).
+- Keep branches focused on a single concern.
+
+---
+
+## Branch Cleanup
+
+- Short-lived topic branches (fix/*, feat/*, chore/*) created for one change are disposable. Once that change has landed in the default branch - or the branch is otherwise dead (abandoned experiment, superseded work) - delete it, both local and remote, so the branch list does not rot.
+- Delete a branch only when its work is safely preserved. Safe: the branch is fully merged into the default branch (`git branch --merged <default>` lists it). Careful: a squash-merged or rebase-merged branch does NOT show up as merged even though its content is already in the default branch - confirm the change is really there (compare content, or check the merged PR) before deleting.
+- When in ANY doubt that a branch still holds unmerged, unreleased, or otherwise relevant commits, do NOT delete it - ask the user first. Leaving a stale branch is cheap; losing a branch that held unique work is not.
+- Never delete a protected or long-lived branch (the default branch, release/*, or any branch the repo marks as protected) unless the user explicitly asks.
+- Prune deleted upstreams periodically with `git fetch --prune` so gone remote branches stop lingering locally.
+- Where enigma is installed, clean up with `enigma branches tidy` right after your branch lands instead of deleting by hand: it proves containment by content (squash merges included), clears idle worktrees, merged gate-mirror branches and stale tracking refs, and records every tip so `git branch <name> <sha>` restores it. It also runs on its own after agent turns, at most hourly per repository; a manual run is for the branch you just finished.
+
+---
+
+## Preserving Work That Is Not Yours
+
+A repository is shared. Other developers and other agents commit to it and edit the same working tree, often while you are working in it. A commit, branch, stash or uncommitted change you did not create in this task belongs to someone else, and it is not yours to remove - however unrelated, broken, or in your way it looks.
+
+- These operations remove or rewrite work: `git revert`, `git reset`, `git rebase`, `git commit --amend` on a pushed commit, `git push --force`, `git branch -D`, `git checkout -- <path>`, `git restore`, `git clean`, `git stash drop|clear`, and resolving a conflict by taking one side wholesale (`--ours`, `--theirs`, `-X`). Before running any of them, list exactly what it takes away and who wrote it:
+  - Commits: `git log --format="%h %an %ad %s" <range>`. For a push that is not a fast-forward, `git fetch` first, then `git log <your-branch>..origin/<branch>` - that list is what the remote holds and your push would erase.
+  - Working tree: `git status --short`, `git diff`, and `git stash list`.
+- Everything on that list is yours from this task -> proceed. Anything on it is not -> stop, leave it intact, and ask the user, naming the commits and their authors. A request for an outcome ("undo my last change", "clean this up", "make CI green") covers that outcome, never whatever else the command happens to sweep along.
+- Changes in the working tree that you did not make - modified files you never touched, untracked files you did not create - are another agent's or the user's work in progress. Do not revert, stash, clean, reformat, or "fix" them. Stage your own paths by name (`git add <path>`); never `git add -A` or `git commit -a` over a tree that holds someone else's changes.
+- When someone else's commit breaks your build or your tests, report it (commit, author, what fails). Do not revert it or rewrite it to get your own change through.
+- Revert only the commit the user named, one commit at a time, after reading `git show --stat <sha>`. Reverting a range or a merge commit undoes every author in it, so that needs the user's approval with the list in front of them.
+- Integrate remote changes by rebasing or merging ONTO them. A rejected push means the remote has work you do not; the answer is `git pull --rebase`, never `--force`. Force-push only to a branch that is yours alone, only with `--force-with-lease`, and never to the default, a protected, or a shared branch.
+- Enforcement note: in Claude Code this is also refused deterministically by a PreToolUse hook (`enigma __push-guard`) that reads the remote tip before any rewriting push (`--force`, `-f`, `--force-with-lease`, a `+` refspec, a branch deletion) and denies it when a commit would leave the branch that another author pushed and that has no patch-equivalent on the pushed side; `--mirror` and a forced `--all` are refused outright. Installed on install, update, and account sync. Every other tool on the machine (Codex, Kimi, OpenCode, an IDE, the terminal) meets the same check as a global git `pre-push` hook (`hook.enigma-push-guard`). Never pass `--no-verify` to get a push through: that flag is the user's deliberate override, not yours. The rule here still applies on every runtime.
+- Resolve conflicts hunk by hunk, keeping both intents. Taking your side wholesale deletes the other person's change without a trace in the diff.
+- Before a destructive step, record the tip (`git rev-parse HEAD`) so it can be put back, and afterwards diff against it to confirm that nothing beyond the intended change is gone. If you find you removed someone's work, say so at once with the SHA and restore it (`git reflog`, `git branch <name> <sha>`) - a silent loss is found days later, when the reflog has expired.
+
+---
+
+## Cloning & Fetch Efficiency
+
+- When cloning or pulling a repository, do not fetch the full history unless it is actually needed. A shallow fetch saves disk space, bandwidth, and time.
+- Default to a shallow clone for one-off use (building, inspecting, running, or extracting current files): `git clone --depth=1 <url>`.
+- To narrow further, combine with `--single-branch` (one branch only) and `--no-tags` (skip tag refs).
+- The full history IS required (do not shallow-clone) when the task depends on it: bisecting, blame/log archaeology, rebasing/cherry-picking across many commits, generating changelogs/release notes, or any operation that walks past commits.
+- A shallow clone can be deepened later if history turns out to be needed: `git fetch --unshallow` (full) or `git fetch --depth=<n>` (more commits). Prefer this over re-cloning.
+- For huge repos where you only need part of the tree, consider `--filter=blob:none` (blobless partial clone) or sparse-checkout instead of a full clone.
+
+---
+
+## Identity & Git Configuration Safety
+
+- Commits and pull requests must be authored SOLELY by the local user's configured Git identity (user.name / user.email). This is non-negotiable.
+- Never use an AI-managed, autogenerated, shared, or assistant-provided Git identity, and never set yourself as author or committer.
+- Never add co-author or AI-attribution trailers to commit messages or PR bodies. Specifically, do NOT append "Co-Authored-By: Claude", "Co-Authored-By: <any assistant>", "Generated with Claude Code", a "Claude-Session:" (or equivalent) link back to the assistant session, or any other AI credit.
+- Do not override the Git identity unless the user explicitly requests it.
+- The commit/PR must read as if the user authored it; no trace of the assistant in author fields, trailers, or footers.
+- Enforcement note: in Claude Code this is also disabled deterministically via settings.json (`attribution.commit` / `attribution.pr` set to "", `attribution.sessionUrl: false` for the `Claude-Session:` link trailer, and `includeCoAuthoredBy: false`); the enigma installer sets this automatically. The rule here still applies on every runtime, settings or not.
+
+### An Attribution Trailer Carries An Identity You Were Given
+
+When the user asks for a human co-author, the trailer is `Co-authored-by: Name <email>` - and the email is a fact about a real person, so it is never inferred, completed, or guessed from a username. Writing a plausible address is worse than writing none: it is wrong in a way that looks right, it goes into history permanently, and it silently credits nobody or the wrong person.
+
+- A username is not an email. `FJRG2007` tells you nothing about the mailbox, and neither `name@gmail.com` nor `team.name@gmail.com` nor a company domain is a deduction - each is an invention that happens to be well-formed.
+- Get it from a source, in this order: what the user told you; the repository's own history for that person (`git log --all --author="<name>" --format="%an <%ae>" | sort -u`, or `.mailmap`) - `--all`, because a co-author who only ever committed on another branch is invisible to the HEAD-only default; or GitHub, where `gh api users/<login> --jq '.id, .login, .email'` returns their numeric id and their public email when they have set one.
+- The GitHub no-reply address is only constructible from that id, and its form depends on the account: `ID+LOGIN@users.noreply.github.com` for accounts created after 18 July 2017, and `LOGIN@users.noreply.github.com` for older accounts that enabled email privacy before that date. So it is a value you look up, not one you assemble from a username.
+- For the co-author to be credited, the address must be one attached to their account. If you cannot source it, ask - one question costs a turn, a wrong trailer costs a rewrite of history.
+- The same rule covers every identity a commit or PR can carry: reviewers, `Reported-by`/`Signed-off-by` trailers, an issue or PR number, a CVE id, a release version. If you did not read it somewhere, you do not write it.
+
+---
+
+## Commit Strategy
+
+### Conventional Commit Style (Required)
+- Use structured commit formats: <type>: <short description>
+
+
+### Allowed types:
+- feat: new features
+- fix: bug fixes
+- chore: maintenance tasks
+- refactor: code restructuring without behavior change
+- perf: performance improvements
+- docs: documentation changes
+- test: testing changes
+- build: build system changes
+- ci: CI/CD changes
+
+---
+
+## Commit Emoji Convention (Ciphera Style, Default On)
+
+- Commit subjects use a leading type emoji by default: `<emoji> <type>: <short description>`.
+  Example: `✨ feat: add dual-provider matching`.
+- This is the one sanctioned exception to the global no-emoji rule: it applies ONLY to the
+  commit subject line - and to the PR title, because a squash merge turns the PR title into the
+  merge commit's subject. Commit bodies, PR bodies, code, comments, identifiers, and chat
+  responses stay emoji-free. Do not add more than one emoji, and place it only at the start of the subject.
+- Use exactly this type-to-emoji map (do not invent others):
+  - ✨ feat: new features
+  - 🐛 fix: bug fixes
+  - 🔧 chore: maintenance tasks
+  - ♻️ refactor: code restructuring without behavior change
+  - ⚡ perf: performance improvements
+  - 📝 docs: documentation changes
+  - ✅ test: testing changes
+  - 📦 build: build system changes
+  - 👷 ci: CI/CD changes
+  - 🎨 style: formatting-only changes
+  - 🔒 security: security fixes or hardening
+  - ⏪ revert: reverting a previous commit
+- Always keep a valid Conventional Commit `<type>:` after the emoji; the emoji augments it, never replaces it.
+- If the target repository defines its own commit convention (CONTRIBUTING.md, commitlint), follow the repo.
+
+### Opt-out
+
+- A user can disable commit emojis. When disabled, omit the leading emoji and commit as plain
+  `<type>: <short description>`; everything else in this policy is unchanged.
+- Disabled when `.enigma.json` (in the repo root or the user home) contains `"commitEmoji": false`,
+  or via `enigma config commit-emoji off`. Re-enable with `enigma config commit-emoji on`.
+- Check for this opt-out before composing a commit; treat commit emojis as on when no config is present.
+
+---
+
+## Commit Quality Rules
+
+- Commits must be atomic (one logical change per commit).
+- Do not mix unrelated changes in a single commit.
+- Commit messages must be meaningful and human-readable.
+- Avoid vague messages like "fix" or "update".
+
+---
+
+## Public Surface Hygiene (Never Publish the Operator's Environment)
+
+A commit message, a branch name, a PR title, body, or comment, and a reviewer note are
+permanent, public, and indexed. Treat everything you write there - and everything the diff
+itself carries - as readable by anyone, forever.
+
+Unless the user explicitly asked for that exact value to be published, none of this belongs
+in a commit, branch, PR, or the code and docs the change adds:
+
+- Deployment domains, subdomains, URLs, host names, server IPs, ports, or the name of the
+  machine something runs on.
+- Absolute local paths that expose an account or a machine (`C:\Users\<name>\...`,
+  `/home/<name>/...`, `/Users/<name>/...`), the OS username, or the machine name.
+- Personal or internal email addresses, account handles, customer or company names, and
+  content from private trackers.
+- Internal infrastructure detail a reviewer does not need: how the operator reaches
+  production, what is installed on their laptop, which host holds the live data.
+
+Where the value came from does not matter. A URL the user pasted so you could fix a bug, a
+path printed by a command you ran, a hostname read from a local `.env` - being given it is
+permission to USE it, never permission to publish it.
+
+Write a placeholder instead (`example.com`, `your-domain.tld`, `<project-root>`, `$HOME`), a
+relative path, or the name of the config key that holds the value rather than its contents.
+Keep explanations generic: "not reproducible in this environment" instead of naming the
+operator's host and how it is reached. When the real value is genuinely required and was not
+given to you, ask for it.
+
+Before committing and before opening a PR, re-read the message, the branch name, and the
+diff for these classes specifically. Catching it here costs one edit; catching it after a
+push costs the remediation below. The `sec-operator-env-leak` guardrail blocks the one form
+of this that has an exact signature (this machine's own home directory reaching a tracked
+file); everything else on the list is yours to catch.
+
+---
+
+## Removing Leaked or Sensitive Data (Discreet-Commit Carve-Out)
+
+Applies ONLY when remediating sensitive data the user wants removed from a repository - a
+committed secret, credential, private path, internal/customer name, PII value, or an asset
+rendered from one (e.g. a screenshot). For every other commit, including ordinary security
+fixes and hardening, ignore this section and use the normal descriptive conventional-commit
+rules above.
+
+When such a removal is requested, FIRST present the remediation choices and let the user
+decide (visibility and irreversibility are their call), then act:
+
+1. Rewrite history (`git filter-repo` / BFG + force-push) - the only option that truly
+   removes the data. Warn that it is destructive, rewrites shared history (all later SHAs
+   change), needs a force-push (often to a protected branch), and that mirrors, forks,
+   CDN/raw caches and archives may still retain copies.
+2. Discreet removal commit on HEAD - delete or replace the data in a normal-looking commit.
+   Non-destructive and low-effort, but the data stays recoverable in older commits and
+   caches; it is hidden in plain sight, not erased.
+
+Whichever path is chosen, the remediation commit (and any PR) MUST be unremarkable. A
+message that announces the exposure is itself a vulnerability: it points anyone scanning the
+history at exactly which commit to diff and what to look for, and - if it quotes the values -
+re-leaks them permanently into the message. So, in this case only:
+
+- Do NOT put leak, secret, credential, exposure, PII, "sensitive", "redact", "scrub" or
+  "hidden" in the subject or body, and do NOT use the `🔒 security` type. Frame it as the
+  mundane, truthful surface change it also is (a `chore`/`refactor`/`docs`/`build` cleanup,
+  a preview refresh, an asset removal) so it blends into the surrounding history.
+- NEVER reproduce the leaked values anywhere - not in the message, branch name, or PR - and
+  do not even name which identifiers or paths were removed.
+- Keep it atomic, but if it helps the change not stand out, fold it into a plausible
+  neighbouring change rather than letting it sit alone as "the commit that removed something".
+- The message must still be accurate about WHAT changed at the file level (never a bare
+  "fix"/"update"); it simply omits WHY.
+
+Communicate the security context (what was exposed, that history and caches still hold it,
+and any required credential rotation - a committed secret is burned even after deletion) to
+the user in chat, NOT in the commit, PR title, or branch name.
+
+---
+
+## Pull Request Engineering Standards
+
+### PR Creation Rules
+- Every PR must include:
+  - Clear title describing the change
+  - Structured description of what changed and why
+  - Context of the problem being solved
+  - Any trade-offs or side effects
+
+### PR Quality Requirements
+- Must be small and reviewable
+- Must not include unrelated changes
+- Must pass all tests before submission
+- Must follow existing repository architecture and style
+
+---
+
+## Automation (Commit Scripts Awareness)
+
+- If a repository includes automation scripts (e.g. commit.sh):
+  - Prefer using existing scripts instead of manual commits
+  - Ensure scripts are executed in the correct environment (bash, git bash, WSL)
+- Validate commit prefix selection before execution
+
+---
+
+## Code of Conduct for Contributions
+
+- Respect project licenses and legal constraints.
+- Understand that all merged code becomes part of the project.
+- Follow repository coding standards strictly.
+- Be open to feedback and peer review without resistance.
+
+---
+
+## Anti-AI Fingerprinting Rule
+
+- Do not introduce patterns that reveal AI origin in commit history.
+- Avoid repetitive or generic commit structures.
+- Maintain natural, professional, repository-consistent commit descriptions.
+
+---
+
+### PR Communication Rules
+
+- PR communication must assume ownership and responsibility for the changes.
+- Never refer to "the author", "the agent", "the AI", or third-person wording.
+- Use direct ownership language such as:
+  - "I refactored..."
+  - "This PR updates..."
+  - "I added validation..."
+
+- Avoid meta-commentary about the development process unless strictly relevant.
+- Do not mention:
+  - Internal scratch files
+  - AI workflows
+  - Temporary reasoning artifacts
+  - Hidden notes files
+  - Out-of-band debugging context
+  - Internal generation process
+
+- PR descriptions must contain only information relevant for reviewers and maintainers.
+
+---
+
+### Formatting & Writing Rules
+
+- Prefer standard ASCII punctuation in commits, PR titles, and technical communication.
+- Avoid typographic punctuation such as "—", smart quotes, or decorative Unicode characters.
+- Use "-" instead of "—".
+- Do not use arrows (→). Use "->".
+
+- Avoid robotic or overly templated phrasing.
+- Keep PR communication concise, natural, and technically relevant.
+- Remove filler sections that do not help code review or maintenance.
+
+---
+
+### Reviewer Notes Policy
+
+- Reviewer notes must only include information directly useful for reviewing the change.
+- Do not reference private, gitignored, local-only, or inaccessible files.
+- Do not instruct reviewers to retrieve external/internal notes outside the PR unless explicitly required by repository policy.
+- Avoid documenting debugging history unless it affects architecture, behavior, or future maintenance.
+
+## Safety & Final Validation
+
+Before creating a commit or PR:
+
+- Verify only relevant files are included
+- Verify nothing that someone else authored is removed, reverted, or overwritten by it (see Preserving Work That Is Not Yours)
+- Ensure no debug or temporary code is committed
+- Ensure no secrets or sensitive data are included
+- Ensure no operator-environment values leaked in (deployment domains, host names, IPs, absolute local paths with the OS username, personal emails) - in the diff, the message, the branch name, and the PR text
+- Ensure the change aligns with repository architecture

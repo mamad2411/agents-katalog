@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hebbs-ai/boringos (path: packages/@boringos/core/src/modules/brain/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Brain — your company's foundation brain

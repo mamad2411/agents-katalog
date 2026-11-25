@@ -1,0 +1,90 @@
+---
+name: pdf-design
+description: Makes PDFs that look designed, not like a printed website — client reports, proposals, one-pagers, dossiers and slide decks where every page is composed as a whole, full-bleed, with no white frame and no half-empty pages (A4 portrait, A4 landscape or 16:9). Text stays vector and selectable, six themes are built in, any brand you already have (a DESIGN.md, a tokens.json, a CSS file or a live URL) becomes a theme automatically, and a quality check measures every page and renders a PNG of each one so the agent can review its own work before delivering. Use when the user asks for a PDF, a report, a proposal, a deck or presentation as PDF, a brochure, a one-pager, "make this look professional", or says the PDF "looks like a web page".
+license: MIT
+compatibility: Needs Node.js 22+ and Chrome, Chromium or Edge. Works in Claude Code, Codex, Cursor, Gemini CLI and any agent with a terminal. Experimental in claude.ai.
+---
+
+# pdf-design — PDFs with designed pages
+
+Goal: a PDF that looks like it came out of a layout program, not a printed web page.
+**Every sheet is designed as a whole. Nothing flows from one sheet to the next.**
+
+## Files in this skill
+
+Paths are relative to the folder that contains this `SKILL.md`.
+
+| File | What for |
+|---|---|
+| `references/rules.md` | Print design rules and how much fits on a sheet. **Read before planning.** |
+| `references/page-types.md` | Catalogue of sheet layouts and components, with HTML. |
+| `references/themes.md` | The six themes, and how to turn a brand you already have into one. **Read before choosing a theme.** |
+| `assets/base.css` | The sheet engine and components. Never edited per document. |
+| `assets/themes/*.css` | `poster`, `gallery`, `ledger`, `archive`, `product`, `stage`. Each one carries colour, type **and** layout. |
+| `scripts/print.mjs` | HTML → PDF, quality check and one PNG per sheet. |
+| `scripts/brand.mjs` | A DESIGN.md, tokens.json, CSS, HTML page or URL → a theme, a contrast audit and a preview sheet. |
+| `scripts/fonts.mjs` | Downloads a Google Font for a new theme. |
+
+Complete examples live in the repository's `examples/` folder (`report-a4.html`, `deck-16-9.html`).
+
+## Workflow
+
+### 1. Brief
+Take what the conversation already says; ask only what is missing:
+- What the document is, who reads it, and what it must make them do (decide, sign, act).
+- Format: **A4 portrait** for reports that are read. **16:9** (or A4 landscape) for proposals shown on a screen.
+- Theme: **always ask "do you already have a style?"** Never assume the user wants one of the six built-in themes.
+
+| Their answer | What you do |
+|---|---|
+| "No, pick one" | A built-in theme: `poster`, `gallery`, `ledger`, `archive`, `product` or `stage`. Table of voices in `references/themes.md`. |
+| "Yes — here it is" | They give you a `DESIGN.md`, a `tokens.json`, a brand CSS, a web page or a URL. Run `node scripts/brand.mjs <source> --name <slug> -o <doc-folder>/<slug>.css --fonts`. |
+| "Yes, but it is in my head" | Ask for paper colour, ink colour, one accent and the two typefaces. Copy the built-in theme closest to it next to the document and change the values. |
+
+After `brand.mjs`, **print its preview sheet and look at it** before building the real document:
+`node scripts/print.mjs <slug>-preview.html`. Read its report: it says which value it guessed and
+which it had to move for contrast. Fix anything wrong by hand, then `node scripts/brand.mjs --check <slug>.css`.
+
+### 2. Sheet plan — show it to the user before building
+
+| Sheet | Type | Headline (the conclusion) | Content | Layout |
+|---|---|---|---|---|
+| 1 | cover | … | … | dark, title at the bottom |
+
+- One idea per sheet. The headline states the conclusion, not the topic: "Instagram brings the people. The website loses them.", not "Channels".
+- Check that it fits with the "How much fits" table in `rules.md`. If it does not fit, it is two sheets.
+- If a sheet is short, merge it with another or make its content bigger. Never leave half a page empty.
+
+### 3. Build
+- Put the document where the user works: `<project>/documents/<name>.html`.
+- `<body class="format-a4" data-theme="archive">` — formats: `format-a4`, `format-a4-landscape`, `format-16-9`. Themes: one of the six built-in names, or a path relative to the document (`data-theme="./brand.css"`).
+- A theme sets the margins and the type scale, so **do not override `--t-*` or font sizes in the document** unless you mean to fight it. Themes differ a lot in density: pick one that matches how much the document has to say.
+- No `<link>` to the skill is needed: `print.mjs` injects `base.css` and the theme. The document's own `<style>` goes in `<head>` and uses the theme variables (`--c-*`, `--f-*`).
+- One `<section class="sheet">` per page, with `head` · `content` · `foot`. Layouts in `page-types.md`.
+- Logos: `<!-- include: logo.svg -->` pastes an SVG sprite at print time.
+- Not allowed: Google Fonts by URL, content outside the sheets, and the symbols ⚠ ✓ ● → … or emoji (the theme fonts do not have them).
+
+### 4. Print and review
+
+```
+node <this-skill-folder>/scripts/print.mjs <document.html>
+```
+
+Add `--theme=<name>` to print the same file with another theme without editing it. The PDF and the
+review folder then carry the theme name, so several themes of one document do not overwrite each other.
+
+- `[ERROR]` → do not deliver. Fix and print again.
+- `[WARN]` → fix it, or justify it (for example `data-airy` on a cover).
+- **Look at every PNG** in `<document>-review/`. The script cannot judge aesthetics: balance, hierarchy, uneven gaps, contrast. Review questions: `rules.md`, section 10.
+- Repeat until there are 0 errors and every sheet could sit in a magazine.
+- To preview in a browser, open `<document>-review/_printed.html` (the self-contained copy).
+
+### 5. Deliver
+One line with the path of the PDF (it sits next to the HTML). The `-review` folder is a working folder, not a deliverable.
+
+## Never
+- Print a "web page" HTML with `@page { margin: … }`: that is exactly the white frame this skill removes.
+- Shrink the type to make something fit. Move it to another sheet.
+- Paste screenshots into the PDF. Text must stay selectable.
+- Invent a brand colour without saying so. If `brand.mjs` guessed a value, tell the user which one.
+- Use `content--spread` with blocks of very different weight: it leaves uneven gaps.

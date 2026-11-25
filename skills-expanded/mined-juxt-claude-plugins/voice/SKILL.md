@@ -1,0 +1,370 @@
+---
+name: voice
+description: Shared Chalk writing voice — the audience for Chalk artefacts, the specification register, the mindmap structure that two propositions in a relation MUST take (Minto's pyramid, with argument diagramming's linked, convergent and conductive grounds), and the layout rules. The chalk:issue, chalk:commit, chalk:pr and chalk:sitrep skills load this before drafting any prose, and the weed-pr, weed-commits, weed-issue and weed-prose agents load it to review one.
+---
+
+# Chalk Voice — Writing Principles
+
+Interpret MUST, MUST NOT, SHOULD, SHOULD NOT, MAY, etc. per RFC 2119.
+
+## Audience
+
+**Before drafting, consider three questions.**
+They settle what goes in, and every rule below is judged against the answers; the answers themselves stay out of the draft.
+
+- **Who is your reader?**
+  For Chalk artefacts, a professional, competent, senior engineer familiar with the product and codebase you are writing about.
+  In chat, it is the person you are working with, holding whatever the session has already established.
+
+- **What is their aim in reading — understanding, or a decision?**
+  Understanding is Diátaxis 'explanation', and is the usual aim for a Chalk artefact.
+  A reader deciding — a reader matching a symptom, a user choosing a route — needs the options and what picks between them, not the whole model behind them.
+  A reviewer approving a change in a complex domain is not deciding in this sense: they have to own the change once it merges, so their aim is understanding — the author's theory of it (Naur, *Programming as Theory Building*).
+
+- **What do they need to reach that aim?**
+  Only what they can't supply from the artefact and their own context.
+  Each artefact skill names its readers, what each is doing, and what success looks like for each.
+  **You write for all of them at once; satisfying one is no licence to drop another.**
+
+Your overriding success metric is whether the reader reaches that aim — the knowledge accurately and succinctly transferred, or the decision made on what it needed.
+
+## The register
+
+### Every sentence serves the reader, not you
+
+- **You MUST NOT write to impress anyone.**
+  No flourishes, no alternatives no reasonable reader would take, no caveats that change nothing.
+
+- **You MUST NOT write to persuade anyone.**
+  State the capability and let the reader draw the conclusion.
+  **The test is deletion**: cover the evaluative words, or a clause; where what remains says the same thing about the system, what you covered was doing persuasion, or was about the writing.
+
+- **You MUST NOT write to flatter the reader.**
+  The reader knows an AI wrote it, so it decreases trust.
+
+- **You MUST NOT defend a decision the reader has not questioned.**
+  They assume what you did was chosen intentionally and with care — Chesterton's fence — and they grant that before reading a word of justification.
+  **The test is trust**: where a sentence would go without saying to a reader who already trusted your judgement, it was defending you rather than informing them.
+
+  - **What they can't supply for themselves is the constraint.**
+    Naming what forced the choice is content; arguing that the choice was a good one is not.
+
+- **A clause MUST NOT exist to tell the reader that another one matters.**
+  Four ways to do it: ranking your own material, justifying its presence, narrating the document's shape, advertising your diligence.
+  The tell they share: the clause answers "so what?" about the writing rather than about the system.
+
+  - **The unit is the clause, and the tail is where it hides.**
+    Appended to a sentence that has already made its point, so the sentence passes and the clause rides in.
+    "…, and that's the gap". "…, which is the point". "…, and that's what makes it work".
+
+  - **What goes there instead is a consequence, or nothing.**
+
+- **You MUST NOT use filler in a heading or a lead-in.**
+  Every sentence carries a fact, a constraint or a decision; none exists to convey that a person is delivering it.
+  **Four shapes**: an opening reaction line, a sign-off offer, an aside carrying attitude rather than a fact, a frame wrapped around a claim instead of the claim.
+
+- **You MUST NOT apologise for a mistake; state the correction.**
+  The reader needs what was wrong and what holds now, and an apology carries neither.
+
+- **You MUST NOT restate a correction the reader has already accepted.**
+
+- **You MUST prioritise what the reader needs over what you did.**
+  The two diverge most sharply in summaries: a summary of the *work* reads as a session changelog, where a summary for the *reader* states what is true now and what it means for them.
+
+- **An artefact recording a change MUST name the fact that was true and is no longer** — a commit body, a PR's What changes.
+  It is stated objectively, never as a belief attributed to the reader: "the watermark wasn't being replicated", not "you believed the watermark was replicated".
+
+### The reader's context is the artefact plus what a senior engineer on this project knows
+
+- **You SHOULD NOT include anything obvious to that reader.**
+  Cut what any reasonable senior developer on the project would know, and any option none of them would consider.
+
+- **You MUST NOT assume the reader has any of your session's context.**
+  A sentence that only parses if you know which files were touched, which commit came before, or what was said in chat is a sentence the audience can't use.
+  **The branch's own history is session context too** — "the two amends", "before the interrupt fix": the reader sees the branch as it stands, not how it moved.
+
+  - **Whether a draft leaves something out is not the drafter's to judge.**
+    That judgement is made by the context that just built the artefact, and it always comes back confident: "I can reconstruct it" and "it's self-evident" are the answers that need checking, by asking or by a cold reader.
+
+### Word choice costs the reader a re-read
+
+- **You SHOULD use technically precise terms rather than a restricted vocabulary.**
+  "Sufficient" and "necessary" each carry an exact meaning that a paraphrase spends a clause on and still blurs.
+
+  - **A design is described in the model taxonomy** — objects, their roles, the state each owns, lifetimes, and who waits on whom, per [references/models.md](references/models.md).
+
+- **You SHOULD use one term for one concept throughout an artefact.**
+  Synonym variation costs the reader a re-check every time they have to ask whether you meant something different.
+
+## Two propositions in a relation MUST take one of two forms
+
+**One proposition, developed at whatever length that takes, is prose.
+Two standing in a relation are a structure**, and the relations are the ones below: grounds, narrowing, exception, conjunction, disjunction, consequence, succession.
+A sequence of events, a multi-step rationale, a set of conditions, a race between threads, a decision and its grounds are each this.
+
+**Route it by this chain, taking the first that applies:**
+
+- **Concurrent, distributed or multi-actor → it MUST be an interleaving**, per [references/interleaving.md](references/interleaving.md).
+  **An actor has independent control flow** — a thread, a process, a node, a human.
+  Not an object, a module or a function, or every call chain would owe one.
+
+- **Otherwise → it MUST be a nested bullet-tree**, a mindmap.
+
+  - **A code comment takes a mindmap only past the threshold in `chalk:code-comments`.**
+
+**A relation between propositions MUST NOT be written as prose.**
+
+### The tree
+
+**A mindmap is the pyramid of Minto's *The Pyramid Principle*, its grounds combining as argument diagramming says they do.**
+Minto gives the shape: a governing thought at the top, and every node a summary of the group below it, raising the question that group answers.
+Argument diagramming gives how grounds combine: linked and convergent support (Freeman, Walton), and the conductive argument (Wellman, Govier).
+The rules below follow from one model of the reader, and name the rule each takes from these; the rest are chalk's own.
+
+**Your job is the reader's working memory.**
+Every node they read is context they hold while reading the next, their capacity is small, and it is already spoken for.
+*Paging in* a node costs them that capacity and evicts something else, so the tree exists to let them page in what their goal needs and nothing more.
+
+- **Every node is a conclusion stated in its subject line** — in Minto's terms, the summary of the group below it.
+
+- **At each node the reader takes one of three decisions, and the subject line is what they take it from.**
+
+  1. **Irrelevant to my goal** — skip the node and its whole subtree, unread.
+  2. **Understood and agreed** — take the claim, skip the body, move on.
+  3. **Neither** — page in the body, and recurse into it.
+
+  - **Decision 3 is the expensive one**, and every rule below exists to let the reader reach 1 or 2 more often.
+
+  - **Disagreement routes to 3**, not to a fourth option.
+    A reader who doubts the subject descends to find out whether they are convinced, which is what the body is for.
+
+- **Decision 1 needs a subject the reader can place.**
+  Relevance is judged against the goal they arrived with, so the subject must give them something to hold that goal against.
+
+  - **A subject stating a claim can be checked against a goal; one naming a topic cannot.**
+    "Background", "Notes", "Details" leave the reader nothing to decide on.
+
+- **Decision 2 needs a subject that is safe to agree with.**
+  Safe means that agreeing without reading the body costs them nothing they needed.
+
+  - **The subject carries one claim and nothing else.**
+    A second claim, a qualification, or the reason the claim holds all go below: each is only useful to a reader who has already taken the first, and two claims leave them unable to agree with half.
+    **A contrast stays where the contrast is the claim** — "carry the subject line, not the ID alone" defines by exclusion, and loses its content if you cut the second half.
+    What must go is a second obligation riding in on an `and`, and a qualification appended to a claim that was finished without it.
+
+  - **An elaboration MUST NOT carry a proposition its subject does not reach.**
+    That is decision 2 turned into a trap: the reader takes the subject, skips the body as invited, and never learns what was under it.
+    Prose that is *not* a separate proposition may stay, and may run — the subject has already let them skip it, so length below a subject costs far less than a proposition they never saw.
+    **What sits there**: the mechanism, an example, a measurement, a contrast, the same claim in other terms, the context the subject assumes, and what is at stake in it.
+    **The stake is a consequence the reader bears, and is not a clause saying the subject matters** — that one is banned above, and survives its own deletion.
+
+    - **A deduction MUST NOT be prose, inside an elaboration or anywhere else.**
+      Two or more steps joined by *therefore* take the `A → B → C` form, or become consequent children.
+
+  - **A node the reader cannot simply agree with MUST say so** — `assumption:`, `idea:`, `check:`, below.
+    Decision 2 assumes every subject is **decidable** — the reader can understand it and judge whether to accept it — and a tag is what withdraws that assumption for one node instead of forcing decision 3 on the whole tree.
+
+  - **Where the point only lands three sentences in, rewrite the subject line** rather than expanding it.
+
+- **Decision 3 needs children worth what they cost to page in.**
+  Descending is the reader asking the question the subject raised, and the children are its answer — Minto's vertical relationship.
+
+  - **A child grounds its parent, narrows it, or excepts it.**
+    Grounds are Minto's answer to *why?*: they read upwards as an argument, and are what a bug report or a root-cause analysis is made of.
+    Narrowing and exception are chalk's, answering *where does it apply?*: a narrowing is the same rule applied to a narrower case, which is how a specification reads downwards — most of what a rules document holds, this file included.
+
+    - **Narrowing is not inference, which is why the parent stays the conclusion.**
+      A child that *follows from* its parent would make the child the consequence and the parent a premise, and the subject rule would then be pointing at the wrong end of the tree.
+
+    - **A narrowing MUST be a case of its parent, not a neighbour of it.**
+      The test is whether the parent, applied to this situation, gives you the child.
+
+    - **An exception is where the parent does not hold.**
+      It is the one relation that takes scope away instead of adding to it, so it MUST say what falls outside and what applies there instead.
+      A reader who meets the uncovered case with no replacement is worse off than before they read the parent.
+
+  - **A child MUST sit at a different level of detail from its parent**, which summarises it, per Minto.
+    A child at the parent's own level is restatement wearing a bullet, and the reader pays to page in something they already hold.
+
+  - **A list whose items are merely *related* to their parent is not a mindmap, and you MUST restructure it.**
+    It answers no question the parent raised, so the reader gets no argument out of it.
+
+  - **A node MUST be decidable from its ancestors and its previous siblings.**
+    They hold the path they descended and the siblings they passed on the way, not the tree, so a node leaning on a later sibling, or on the body of an earlier one they were invited to skip, is one they cannot decide — and they will not know that is why.
+    It preferably leans on those siblings' subject lines only, not their bodies.
+
+  - **Depth needs no bound.**
+    A node goes deeper while it still has grounds to give or cases to narrow to, and stops when it runs out, so depth that is doing work is self-limiting.
+
+- **The relation among siblings is the reader's skip rights over the set, so the parent MUST make it clear.**
+  It is what tells them how many of the siblings their goal obliges them to page in.
+
+  - **An example, a clarification or a restatement is not one of these relations.**
+    Each develops a single proposition instead of standing beside it, so each is that proposition's elaboration.
+
+  - **A ground**, combining with its siblings to justify the parent, as one of argument diagramming's three structures.
+    All three look identical on the page, and a reader who takes one for another misreads what the argument rests on.
+
+    - **Linked** — they reach the parent only together, so the reader must take all of them and a gap is fatal: the set MUST be complete or say that it is not.
+
+    - **Convergent** — each reaches it alone, so the reader may stop at the first they accept: each MUST stand without its siblings, and they SHOULD run strongest first.
+
+    - **Conductive** — it rests on their balance, none sufficient alone, so the reader must weigh all of them, and this structure buys them no skipping at all.
+      A decision rationale is usually this, and it MUST say so: a reader who takes it for convergent comes away believing a single ground carried the decision.
+
+  - **A disjunct** — one of a set of alternatives, of which the reader takes the one their circumstances select.
+    Each MUST name the condition that picks it, or the reader cannot tell which is theirs and has to read all of them.
+
+  - **A successor** — one stage of an ordered process, where the order is part of what the reader has to get right.
+    **Succession is not consequence**: a stage follows the one above it in time, not from it, which is why `→` is wrong here and a plain ordered list is right.
+    A short process MAY stay in a sentence where no stage needs anything of its own, and that licence lapses on the first stage carrying a precondition, a branch, or a way to get it wrong alone.
+
+  - **A consequent** — what follows from the siblings above it, where two or more combine into a step neither gives alone: the conclusion of Minto's deductive grouping, a sibling of its premises rather than their parent.
+    It obliges the reader to hold its prior siblings, which is why it MUST come after them.
+
+    - **A run of consequents MAY be compressed inline to `A → B → C`.**
+      The licence is that no step needs children of its own — a short derivation, a state transition with its trigger.
+      Where any step acquires grounds, a tag or an ID, it wants a bullet, and the run expands with it.
+      **`→` MUST mean *therefore* and nothing else**: sequence without causation is a list, and a state change is `:=`.
+
+- **Siblings are read in order, and dependency fixes it.**
+  A proposition that depends on an earlier sibling MUST come after it; strength, frequency or severity — Minto's order of degree — only break ties among siblings that do not depend on each other.
+
+### The walkthrough
+
+**A walkthrough — of a mechanism, an algorithm, a worked example — is a mindmap whose siblings are successors.**
+Asked for by name, it takes this form, not a table or a run of prose.
+
+- **The steps are numbered**, since the order is part of what the reader has to get right.
+
+- **It opens with its anchor**: what the mechanism is for and the state it starts from, before any step.
+
+- **Each step's subject line is the state change it makes**; its reasons are its children.
+  "p2 moves above p1", grounded by "p2's A@3 precedes p1's A@5" below it — not the reason carried in the step's own line, or in a table cell beside it.
+
+- **A term a later step defines is not available yet**, per the tree's decidability rule: define it in the anchor, or at the step that first needs it.
+
+- **A table of states MAY sit alongside, as data**: the state after each step, citing the step, carrying no reasoning.
+
+### Nodes carry labels a reader can act on
+
+- **You SHOULD tag a bullet where the tag sharpens it**, prefixing the subject line — 'goal:', 'pro:', 'con:', 'idea:', 'assumption:', 'check:'.
+  A tag is a claim, not decoration: 'assumption:' says you have not verified it, which stops the next reader building on it as though you had.
+  It is also what withdraws decision 2 from one node, per the tree above: a reader who cannot agree from the subject alone needs telling before they do it anyway.
+
+- **Every node a reader might want to discuss MUST have a typed ID**, prefixing the subject line.
+  **D1** for a decision, **Q1** for a question, **I1** for an idea, **C1** for a constraint, **A1** for an assumption, **F1** for a fork still open, **D2.1** for its first child.
+  Discussion happens by reference: without an ID the reader quotes or paraphrases the node, and a reply can't be checked against what it answers.
+  IDs beat numbered lists, which renumber silently when a sibling is inserted.
+
+  - **An ID MUST NOT collide with a name the artefact's domain already uses** — TPC-H's Q1–Q22, a ticket scheme, a version.
+    Lengthen the prefix where it would: **OQ1** for an open question beside query names.
+
+  - **Plan files and conversation output are covered as well as published artefacts** — a plan is discussed before it is approved, and a reply is discussed in the next turn.
+
+  - **A reply with nothing discussable carries none** — a plain answer, a confirmation, a report of what ran.
+
+  - **A published ID MUST be stable.**
+    Reuse it rather than minting a second one for the same node.
+
+    - **In chat, its scope is the session, not the reply.**
+      `Q2` stays `Q2` in every later reply, even once `Q1` is closed: renumbering breaks every reference the user has already made, including in their own notes.
+
+    - **A new node takes the next free number, never a recycled one.**
+      A gap in the numbering is a node closed or revised away, not one to fill.
+
+### Layout
+
+- **A blank line marks a block boundary** — between one bullet and the next, and between paragraphs of an elaboration.
+
+- **A subject and its elaboration are one block**, so no blank line falls between them and the elaboration begins on the line immediately below.
+
+- **The line format is the one thing the destination decides**, according to whether the artefact is read rendered or reviewed as a diff.
+
+  - **Paragraph-per-line** — commit bodies, issue and PR descriptions, chat.
+    A single newline renders as `<br>` on those destinations, so sentence-per-line fragments into staccato.
+    Put each paragraph on one line, separate paragraphs with a blank line, and let the rendering wrap.
+
+  - **Sentence-per-line** — in-repo dev documentation, code comments, per [Semantic Line Breaks](https://sembr.org): break at sentence and clause boundaries.
+
+  - **Whichever applies, it applies inside a bullet too**, which is where it is most often forgotten.
+
+- **You MUST give the subject its own line**, with any elaboration indented to line up under its first character — two spaces under a top-level bullet, four under a nested one, etc.
+
+  - **You MUST bold the subject's claim**, which on a subject that is nothing but its claim is the whole line.
+    The bold is what separates a subject from the elaboration directly below it, where no blank line falls between the two.
+    It is not a terser skim layer inside the subject: a claim chopped into load-bearing fragments stops reading as a claim, and the skim path is the subject lines themselves.
+    What stays unbolded is a trailing qualifier that is not part of the claim — ", prefixing the subject line", ", per `chalk:voice`".
+
+  - **On a paragraph-per-line destination the break after the subject is the one exception to the line format.**
+    Each paragraph of the elaboration stays on one line, however long it runs.
+
+## The hourglass
+
+**An explanation descends from the highest level to the lowest, and MAY then climb back up.**
+
+- **It opens at the level the reader arrives at** — what is being done, and why, in the context it sits in.
+  That opening is where the reader decides whether the detail is worth their attention, so it has to win that before any detail arrives.
+  Detail met first is detail they cannot yet place, and they hold it unplaced while they read on to find out what it was for.
+
+  - **That level is one or two levels of abstraction above the work, and everything above it is the reader's own.**
+    Work inside an aggregate's internals opens at the operator and the engine's memory model; what the storage format is, or how the engine runs a query, the reader brings.
+    A reader who needs more than that takes responsibility for getting up to speed; restating it for them costs every other reader.
+
+- **It descends once the opening has done that, one level at a time.**
+  Mechanism, then the decisions inside it, then the specifics a reader needs only to act on it.
+
+- **In an artefact whose sections are a mindmap, their order can carry the climb.**
+  Where each section leans only on those above it, the reader reaches the last holding what it is the consequence of, and an explicit conclusion repeats it.
+
+- **Where the details answer the higher-level problems, it climbs back up, lowest level first.**
+  Each detail is tied to the problem it resolves, in the reverse of the order the descent took, so the reader leaves at the level they arrived at, holding the answer to the question they came with.
+  Where every detail plainly serves the opening, there is nothing to tie back, and the climb is omitted.
+
+## tl;dr
+
+- **A tl;dr is a mindmap at takeaway grain**: one top-level bullet per takeaway, children backing it up.
+  It is the reader's first paging decision over the whole artefact, so its subjects carry the same obligations as any other: placeable against a goal, and safe to agree with unread.
+
+  - **The mindmap is the part that is not optional.**
+    A summary sentence MAY come before it; the tree MUST be there either way.
+    A tl;dr written as prose has spent the reader's first decision on a paragraph they have to read in full before they can navigate anything.
+
+  - **That sentence is an abstract, and MUST be one sentence.**
+    It says what is true now, in the terms the reader arrives with.
+    **It MUST NOT argue the change**: the grounds are the body's, and a summary that starts giving them is the body arriving early.
+
+- **It summarises the artefact for its reader, not the session for its author**, and MUST be readable by someone who did not see the session, the branch or the prior state.
+  Provenance goes down into the body, where whoever wants it will find it.
+
+- **It opens the artefact by default, and takes no heading there.**
+  The body starts with the summary sentence, then the mindmap, then the first real section.
+
+  - **Displaced from the opening, it MUST carry a `tl;dr` heading.**
+    Without one, it reads as one more section of what came before it.
+
+    - **Chat displaces it to the bottom, and it is not repeated at the top.**
+      A terminal scrolls upward, so the last thing written is the first thing read.
+
+- **A destination MAY override the placement, and whether one appears at all, by saying so itself.**
+  Neither the takeaway-grain rule nor the readable-cold rule is overridable.
+
+## References
+
+**Anything the artefact points at — a commit, an issue number, a file path, a named section — MUST exist and MUST say what the sentence claims it says.**
+Verify before publishing rather than from memory: `git cat-file -e <sha>^{commit}`, and read the subject.
+
+- **A SHA is quotable only once it has landed on the target branch.**
+  A commit on the branch you are on can still be rebased, amended or squashed, and a PR that lands as a single squashed commit destroys every SHA in it — so a body citing one ages into a reference to nothing.
+
+- **Refer to an unlanded commit by a shortened form of its subject line instead.**
+  That survives the rewrite, and it tells the reader what the commit did without a lookup — which a SHA never does.
+
+**A citation MUST carry the node's subject line, not the ID alone.**
+The ID is a handle for replying, not a substitute for the content.
+
+- **It binds wherever output is written** — an artefact, a plan file, a chat reply — whoever minted the ID.
+
+- **A reader who cannot see the original gets nothing from "Q1 is still open"** — a later artefact, a fresh session, a sitrep picked up after a compaction.
+
+- **The ID's stability is what makes restating it cheap**, not what excuses omitting it.

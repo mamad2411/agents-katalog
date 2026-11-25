@@ -1,0 +1,67 @@
+---
+name: tool-forge
+description: 自适应工具铸造：探测 TOOL_GAP 后为当前 Agent 铸造工具与技能骨架并登记能力目录。触发词：缺工具、TOOL_GAP、造一个工具、自适应构建、forge、工具铸造、补技能。
+status: active
+---
+
+# tool-forge — 自适应工具铸造协议
+
+## 定位
+
+驱动本项目的 Agent 在发现**工具/技能缺口**时，按本协议为自己铸造可调用资产，
+而不是空等外部交付或伪造执行结果。
+
+## 输入契约
+
+- 已运行 `python -m engine.workflow_cli probe`（或明确的缺口描述）
+- 缺口名称与目的（purpose）
+
+## 执行步骤
+
+1. **确认缺口类型**
+   - `python_package` / `cli`：环境类——**不自动伪造安装**，按 probe hint 配置或改用替代
+   - 任务缺工具/技能：进入铸造
+   - 环境适配元数据铸造已退役，不再作为缺口类型
+
+2. **铸造资产**
+   ```bash
+   cd academic-toolkit
+   python -m engine.workflow_cli forge --tool my-tool --purpose "一句话目的"
+   python -m engine.workflow_cli forge --skill my-skill --purpose "一句话目的" --linked-tool my-tool
+   ```
+   默认不覆盖已有文件；确需覆盖加 `--force`。
+
+3. **实现真实逻辑**
+   - 打开 `tools/<name>.py` 按任务实现；骨架的 `implemented: false` 必须在真实完成前保持诚实
+   - 输出保持 `--json` 机读契约，便于 evidence 与门禁消费
+
+4. **补全技能契约**
+   - 完善 `skills/<name>/SKILL.md` 的输入/输出/步骤/铁律
+   - 短横线命名的技能须映射进 `capabilities/catalog.json`（映射一致性由工具箱 asset 系门禁与 `tools/check_asset_utilization.py --strict` 校验）
+
+5. **自检与留痕**
+   ```bash
+   python tools/<name>.py --json
+   python -m pytest -q   # 若改了 catalog/skills（仓库根全套件）
+   ```
+   通过当前执行会话运行forge命令并声明真实输入输出；命令回执和内容摘要由程序记录。
+
+## 输出契约
+
+- 铸造结果 JSON（路径、status=created/exists、invoke 命令）
+- catalog 登记状态（技能类）
+- 实现状态：scaffolded → implemented（有真实测试/产物后才可改）
+
+## 质量铁律
+
+- TOOL_GAP：铸造前不宣称能力已存在
+- 无证据＝未执行：evidence 必须包含真实命令与产物
+- 名称约束：`[a-z0-9][a-z0-9-]{1,63}`
+- 默认不覆盖已有工具/技能（防误伤既有资产）
+
+## 关联
+
+- 实现: `academic-toolkit/engine/host/tool_forge.py`
+- 探测: `academic-toolkit/engine/host/capability_probe.py`
+- 自举: `skills/agent-bootstrap`
+- 目录: `capabilities/catalog.json`

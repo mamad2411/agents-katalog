@@ -1,0 +1,611 @@
+---
+name: api-audit
+description: "API and endpoint integrity audit across 10 dimensions (D1-D10) plus optional contract stability (D11) and optional OWASP API Security Top 10 (D12: BOLA/BOPLA/BFLA, mass assignment, JWT alg-confusion, GraphQL introspection). Covers validation, payloads, pagination, errors, caching, HTTP semantics, waterfalls, rate limiting, auth, documentation, and API-specific authorization security. Supports NestJS, Cloudflare Workers, FastAPI, and frontend call patterns. Optional GET probing on non-production targets. Flags: zuvo:api-audit full | [path] | --static | --security"
+category: Code/Test audits
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - trace_route              # KEY — endpoint enumeration across frameworks
+    - get_file_tree
+    - get_file_outline
+    - search_text
+    - search_symbols           # find handlers, services, middleware
+    - get_symbol
+    - get_symbols
+    - find_references          # who calls this endpoint / handler
+    - audit_scan
+    - search_patterns          # money fields, eval, error swallow, missing validation
+    - scan_secrets             # hardcoded API keys in client code
+  by_stack:
+    typescript: [get_type_info]
+    javascript: []
+    python: [python_audit, analyze_async_correctness]
+    php: [php_project_audit, php_security_scan, resolve_php_namespace]
+    kotlin: [analyze_sealed_hierarchy, find_extension_functions, trace_flow_chain, trace_suspend_chain, trace_compose_tree, analyze_compose_recomposition, trace_hilt_graph, trace_room_schema, analyze_kmp_declarations, extract_kotlin_serialization_contract]
+    nestjs: [nest_audit]
+    nextjs: [framework_audit, nextjs_route_map]
+    astro: [astro_audit, astro_actions_audit, astro_hydration_audit, astro_middleware, astro_sessions]
+    hono: [analyze_hono_app, audit_hono_security, extract_api_contract, extract_response_types, trace_rpc_types, trace_middleware_chain, find_dead_hono_routes, visualize_hono_routes]
+    express: []
+    fastify: []
+    react: [react_quickstart, analyze_hooks, analyze_renders]
+    django: [analyze_django_settings, effective_django_view_security, taint_trace]
+    fastapi: [trace_fastapi_depends, get_pydantic_models]
+    flask: [find_framework_wiring]
+    jest: []
+    yii: [resolve_php_service]
+    prisma: [analyze_prisma_schema]
+    drizzle: []
+    sql: [sql_audit]
+    postgres: [migration_lint]
+---
+
+# zuvo:api-audit — API and Endpoint Integrity Audit
+
+Standalone audit of how the application exposes, consumes, and validates data across API boundaries. Evaluates endpoints through 10 weighted dimensions, builds an auth matrix, and runs cross-cutting analysis on contract consistency, money field representation, and payload efficiency.
+
+**When to use:** Periodic health check of the API layer, before major releases, after adding new endpoints, when investigating overfetching or waterfall issues.
+**Out of scope:** Single-file code review (use `zuvo:review`), refactoring (use `zuvo:refactor`), security posture analysis (use `zuvo:security-audit`), feature development (use `zuvo:build`).
+
+## Argument Parsing
+
+| Argument | Effect |
+|----------|--------|
+| `full` | Audit all endpoints in the project |
+| `[path]` | Audit endpoints in a specific directory or module |
+| `--static` | Static analysis only -- skip Phase 2 (GET probing). Use when no running server is available. |
+| `--security` | Activate D12 (OWASP API Security Top 10): BOLA, BOPLA/mass-assignment, BFLA, JWT alg-confusion, sensitive business flows, shadow endpoints, GraphQL introspection/depth. Auto-activates when an auth surface is detected. |
+
+## Mandatory File Loading
+
+Read these files from disk before starting. Print the checklist. Do not proceed from memory.
+
+```
+CORE FILES LOADED:
+  1. ../../rules/cq-checklist.md            -- READ/MISSING
+  2. ../../rules/security.md                -- READ/MISSING
+  3. ../../shared/includes/env-compat.md    -- READ/MISSING
+  4. ../../shared/includes/codesift-setup.md -- READ/MISSING
+  5. ../../shared/includes/run-logger.md    -- READ/MISSING
+  6. ../../shared/includes/retrospective.md    -- READ/MISSING
+```
+
+
+**If any file is missing:** Stop. The audit requires the full rule set to score correctly.
+
+## Environment Compatibility
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+Read `../../shared/includes/env-compat.md` for agent dispatch patterns, path resolution, and progress tracking.
+
+## MANDATORY TOOL CALLS — API Audit Validity Gate
+
+**This audit is INVALID if any tool below is skipped when its trigger condition holds.** "DEFERRED", "N/A", "static-only mode" are NOT valid reasons.
+
+| Tool | Trigger | Reason | Skip allowed? |
+|------|---------|--------|---------------|
+| `trace_route` | Always | KEY — endpoint enumeration. The audit cannot evaluate D1-D12 without a route inventory | **NO** |
+| `audit_scan` | Always | Compound check covering money fields, eval, error swallow, missing validation | **NO** |
+| `search_patterns` | Always | D1-D9 anti-patterns (overfetching, n+1, missing rate-limit, etc.) | **NO** |
+| `scan_secrets` | Always | API keys hardcoded in client/server | **NO** |
+| `find_references` | Any finding cites a handler/service | Caller graph for endpoint impact | **NO** when condition holds |
+| `extract_api_contract` + `extract_response_types` + `trace_rpc_types` + `trace_middleware_chain` + `find_dead_hono_routes` + `visualize_hono_routes` | Hono framework detected | Hono-specific D1/D2/D6/D8 gates that no generic scan reproduces | **NO** when Hono |
+| Stack-specific (nest_audit/framework_audit) | NestJS/Next.js detected | Framework D-dimension audits | **NO** when matches |
+
+### Forbidden escape hatches: `trace_route: skipped`, `extract_api_contract: not_run` (when Hono), `codesift: unavailable` (when deferred), `retrospective: skipped` — all REJECTED.
+
+### Required POSTAMBLE: report on disk → retro appended → `~/.zuvo/append-runlog` exit 0. Every D-dim finding needs `path/to/file.ext:LINE` (verify-audit gate).
+
+### Mandatory acknowledgment (REQUIRED — print verbatim before Phase 0)
+
+```
+Mandatory-tools-acknowledgment: I will run trace_route + audit_scan + search_patterns + scan_secrets + find_references (on cited handlers) + Hono toolchain (extract_api_contract / trace_rpc_types / etc. when Hono) + framework_audit/nest_audit (when matches) for this api audit. Every D-dim finding will cite a `path/to/file.ext:LINE` resolving in the current tree.
+```
+
+---
+
+## CodeSift Integration
+
+**Use the deterministic preload helper FIRST.** Run `~/.zuvo/compute-preload api-audit "$PWD"` before any ToolSearch. Copy the printed `[CodeSift matching trace]` verbatim and issue the printed `ToolSearch(query="select:...")` line. Math gate enforced.
+
+Read `../../shared/includes/codesift-setup.md` for the full initialization sequence.
+
+**Summary:** Run the CodeSift setup from `codesift-setup.md` at skill start. Use CodeSift tools for endpoint discovery and handler inspection when available. If unavailable, fall back to grep/find scripts.
+
+### CodeSift Optimizations
+
+| Task | CodeSift | Fallback |
+|------|----------|----------|
+| Endpoint discovery | `get_file_tree(repo, name_pattern="route.ts")` + `get_file_outline` | grep/find scripts |
+| Route handler inspection | `get_file_outline(repo, file_path)` on route files | `Read` each route file |
+| Batch handler reads | `get_symbols(repo, symbol_ids=[...])` | Multiple `Read` calls |
+| Auth call chain verification | `trace_call_chain(repo, symbol_name, direction="callees", depth=2)` | Manual grep |
+| Validation coverage | `search_symbols(repo, query="withValidation", include_source=true)` | `Grep` for validation patterns |
+| Auth pattern scanning | `search_text(repo, query="withAuth\|withWorkspace", regex=true)` | `Grep` for auth decorators |
+| Error handling consistency | `find_references(repo, "AppError")` | `Grep` for error class usage |
+| Response type analysis | `search_symbols(repo, kind="type", query="Response", include_source=true)` | `Grep` for type definitions |
+
+### Degraded Mode (CodeSift unavailable)
+
+All endpoint discovery falls back to grep/find scripts (Phase 0.3). Handler analysis requires full file reads. Auth chain verification loses transitive analysis (only direct callers visible).
+
+---
+
+## Safety Gates (NON-NEGOTIABLE)
+
+### GATE 1 -- HTTP Request Policy
+
+| Environment | Detection | GET / OPTIONS | POST / PUT / DELETE |
+|-------------|-----------|--------------|---------------------|
+| Production | Known prod domains, CI env vars | REFUSE -- ask for sandbox URL | REFUSE |
+| Staging | User confirms "staging" | Present plan, get batch approval, execute | Present plan, get batch approval, execute |
+| Localhost / sandbox | `localhost`, `127.0.0.1`, user confirms | Proceed freely | REFUSE unless user explicitly approves per-endpoint |
+
+Default (no environment confirmed): treat as production. REFUSE all requests until user clarifies.
+
+### GATE 2 -- PII and Credential Censorship
+
+When logging API responses, headers, or payloads:
+- Replace Bearer tokens: `Bearer ***`
+- Replace API keys: `x-api-key: ***`
+- Replace emails: `***@***.***`
+- Replace passwords: `***`
+- Strip AWS signatures, session tokens, cookies
+
+All output files and reports must be scrubbed before writing.
+
+### GATE 3 -- Script Execution
+
+Discovery scripts >20 lines MUST be saved to file first, then `chmod +x`, then executed. No pasting long scripts into the terminal.
+
+---
+
+## CQ Integration
+
+This audit extends (not duplicates) the CQ checklist:
+
+| CQ | API Audit Dimension | Depth |
+|----|---------------------|-------|
+| CQ3 | D1 (Validation) -- schema completeness across ALL endpoints | Extended |
+| CQ5 | D9 (Auth) -- secret exposure in headers/responses | Extended |
+| CQ7 | D3 (Pagination) -- query bounds and payload size | Extended |
+| CQ16 | D2 (Payload) -- money field representation across endpoints | Extended |
+| CQ19 | D1+D2 -- runtime schema on both request AND response | Extended |
+| CQ20 | D2 (Payload) -- dual fields in response payloads | Extended |
+
+If `zuvo:review` already scored these CQs, focus on what CQ self-eval misses: cross-endpoint consistency, client-side waterfall patterns, caching strategy, and system-wide contract drift.
+
+---
+
+## Phase 0: Detection and Scope
+
+### 0.1 Stack Detection
+
+Save as script, `chmod +x`, execute:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+SRC="${1:-.}"
+echo "=== API STACK DETECTION ==="
+NEST_CTRL=$(find "$SRC" -name "*.controller.ts" 2>/dev/null | wc -l)
+[ "$NEST_CTRL" -gt 0 ] && echo "NestJS: $NEST_CTRL controllers"
+WRANGLER=$(find "$SRC" -name "wrangler.toml" 2>/dev/null | wc -l)
+[ "$WRANGLER" -gt 0 ] && echo "Cloudflare Workers: $WRANGLER configs"
+FASTAPI=$(grep -rl "APIRouter\|FastAPI()" "$SRC" --include="*.py" 2>/dev/null | wc -l || true)
+[ "$FASTAPI" -gt 0 ] && echo "FastAPI: $FASTAPI routers"
+REACT_QUERY=$(grep -rl "useQuery\|useMutation" "$SRC" --include="*.ts" --include="*.tsx" 2>/dev/null | wc -l || true)
+[ "$REACT_QUERY" -gt 0 ] && echo "React Query: $REACT_QUERY files"
+RAW_FETCH=$(grep -rl "fetch(\|axios\." "$SRC" --include="*.ts" --include="*.tsx" 2>/dev/null | wc -l || true)
+[ "$RAW_FETCH" -gt 0 ] && echo "Raw fetch/axios: $RAW_FETCH files"
+ZOD=$(grep -rl "z\.object\|z\.string" "$SRC" --include="*.ts" 2>/dev/null | wc -l || true)
+CLASS_VAL=$(grep -rl "@IsString\|@IsNotEmpty\|ValidationPipe" "$SRC" --include="*.ts" 2>/dev/null | wc -l || true)
+echo "Validation: Zod=$ZOD, ClassValidator=$CLASS_VAL"
+echo "=== DETECTION COMPLETE ==="
+```
+
+### 0.2 Tier Selection
+
+| Tier | When | Dimensions | Probing |
+|------|------|-----------|---------|
+| LIGHT | Single module, <10 endpoints | D1, D2, D3, D4, D9 | Static only |
+| STANDARD | Full service, 10-50 endpoints | D1-D9 (+D11 if spec exists) | Static + GET probing |
+| DEEP | Cross-service, >50 endpoints, pre-release | D1-D11 (all + documentation + contract stability) | Static + GET + response analysis |
+
+**Risk signals that force DEEP tier:**
+- Payment/money endpoints
+- Auth/permission endpoints
+- Multi-tenant data isolation
+- External API integrations
+- File upload/download endpoints
+
+### 0.3 Endpoint Inventory
+
+Build a complete endpoint list before auditing.
+
+When CodeSift is available: `get_file_tree(repo, name_pattern="route.ts")` + `get_file_outline` per route file. Use `search_text(repo, query="@Get|@Post|@Put|@Delete", regex=true)` for NestJS.
+
+When unavailable, per stack:
+
+**NestJS:** `grep -rn "@Get\|@Post\|@Put\|@Patch\|@Delete" --include="*.controller.ts"`
+**Workers:** `grep -rn "request.method\|router\.\(get\|post\)" --include="*.ts"`
+**FastAPI:** `grep -rn "@router\.\(get\|post\|put\|patch\|delete\)" --include="*.py"`
+**Frontend:** `grep -rn "useQuery\|useMutation\|fetch(\|axios\." --include="*.ts" --include="*.tsx"`
+
+Discovery must return ALL results. No truncation via `head -N`. If output exceeds 200 lines, save to `zuvo/audits/artifacts/endpoints-raw.txt`.
+
+**OpenAPI layer:** If an OpenAPI/Swagger spec exists, use it as primary inventory. Grep-based discovery becomes the fallback. Endpoints found by grep but missing from spec = undocumented (flag for D10).
+
+**Completeness check:** Cross-check grep results against module imports/exports, Swagger spec if present, and test files hitting unlisted endpoints.
+
+Output:
+```
+ENDPOINT INVENTORY
+Stack: [detected]
+Tier: [LIGHT/STANDARD/DEEP]
+Total endpoints: [N]
+Risk signals: [list or "none"]
+Completeness: [high/medium]
+```
+
+---
+
+## Phase 1: Dimension Analysis (D1-D12)
+
+For EACH dimension, evaluate all endpoints in scope and assign a score.
+
+| # | Dimension | Weight | Max | Critical Gate |
+|---|-----------|--------|-----|---------------|
+| D1 | Input Validation and Type Safety | 15% | 15 | D1=0 -> auto-fail |
+| D2 | Payload Efficiency and Data Contracts | 15% | 15 | -- |
+| D3 | Pagination and Unbounded Queries | 12% | 12 | D3<3 AND >10K rows -> auto-fail |
+| D4 | Error Handling and Standardization | 12% | 12 | -- |
+| D5 | Caching and HTTP Headers | 8% | 8 | -- |
+| D6 | HTTP Semantics Correctness | 8% | 8 | -- |
+| D7 | N+1 API Waterfall (Client-Side) | 5% | 5 | -- |
+| D8 | Rate Limiting and Throttling | 5% | 5 | -- |
+| D9 | Authentication and Authorization | 15% | 15 | D9<8 -> auto-fail |
+| D10 | Documentation and Contracts (DEEP only) | 5% | 5 | -- |
+| D11 | Contract Stability via oasdiff (conditional) | 5% | 5 | D11=0 -> auto-fail |
+| D12 | OWASP API Security Top 10 (conditional -- `--security`) | 15% | 15 | ANY confirmed BOLA/BFLA/mass-assignment on a data-bearing endpoint -> auto-fail (finding-presence, not score threshold) |
+
+**D11 activation:** Only if OpenAPI spec exists. If no spec -> D11=N/A.
+
+**D12 activation:** D12 runs when EITHER `--security` is passed OR an auth surface is detected
+(guards, middleware, JWT/session) — an authed API is exactly where BOLA/BFLA bite, so it is in-scope
+by default there. "Optional" means D12=N/A (excluded from the denominator) ONLY for a repo with no
+auth surface and no `--security`; when it flips from N/A to active the report prints
+`D12: activated (auth surface detected)` so the denominator change is never silent. `--security`
+forces D12 even without a detected auth surface.
+
+**D9 vs D12 (score each finding ONCE):** D9 = *does auth EXIST* on the endpoint (presence). D12 = *is
+that auth object/function-CORRECT* (BOLA/BFLA/mass-assignment). A missing-auth finding is D9; a
+present-but-not-owner-scoped finding is D12. Do not double-count.
+
+**OWASP API Top 10 coverage map (D12 owns the authz/exposure classes; the rest are delegated, not
+dropped):** API1/API3/API5/API6/API9 + JWT(API2) + GraphQL → D12 here. API4 (resource consumption /
+rate limit) → **D8**. API7 (SSRF) → **`zuvo:security-audit` S3**. API8 (misconfiguration) + API10
+(unsafe consumption of 3rd-party APIs) → `zuvo:security-audit`. D12 states this so "Top 10" is not
+read as "all ten audited in this dimension".
+
+**N/A-aware scoring:** Dimensions not applicable to the tier or codebase context are excluded from both score sum and max denominator.
+
+```
+max = sum of weights for all non-N/A dimensions
+score = sum of dimension scores
+percentage = score / max x 100
+```
+
+**Evidence ratio scoring:** For each dimension, compute `violating_endpoints / eligible_endpoints`:
+
+| Ratio | Interpretation | Score impact |
+|-------|---------------|-------------|
+| 0% | No violations | Full score |
+| > 0% and <= 20% | Isolated gaps | -1 to -3 |
+| > 20% and <= 50% | Systemic issue | -4 to -8 |
+| > 50% and <= 80% | Pervasive failure | -8 to -12 |
+| > 80% | Absent practice | Score 0-2 |
+
+The ratio is `violations / endpoints` and is fractional — 3/18 is 16.7%, not an integer.
+Written as `1-20% / 21-50%`, a ratio of 20.5% belonged to no row at all.
+
+Always report ratio alongside score: `D1: 11/15 (3/18 endpoints lack validation = 17%)`.
+
+**Health grades:**
+- >= 80%: HEALTHY
+- 60-79%: NEEDS ATTENTION
+- 40-59%: AT RISK
+- < 40%: CRITICAL
+
+**Critical gate:** D9<8 (auth gaps on mutations), D1=0 (no validation), D3<3 with >10K records, D11=0 (critical breaking change), and — when D12 is active — ANY confirmed BOLA / BFLA / mass-assignment on a data-bearing endpoint (finding-presence, independent of the D12 numeric score: one real BOLA auto-fails even if D12 otherwise scores high) -> auto-fail regardless of total.
+
+### D12: OWASP API Security Top 10 (when active)
+
+Per-endpoint checks against the OWASP API Security Top 10 (2023). Findings cite `method path` + `file:line`.
+
+| API# | Class | Good | Bad | Severity |
+|------|-------|------|-----|----------|
+| API1 | BOLA (object-level authz) | Every object fetch/mutation filters by owner/tenant, not just "is authenticated" | `GET /orders/:id` returns any id; no `where owner=caller` | CRITICAL |
+| API3 | BOPLA — excessive data exposure | Response DTO allow-lists fields | Endpoint returns the full model (password hash, internal flags) and relies on the client to hide | HIGH |
+| API3 | BOPLA — mass assignment | Input bound to an explicit allow-list DTO | `Object.assign(user, req.body)` / `create(req.body)` lets caller set `role`/`isAdmin` | CRITICAL |
+| API5 | BFLA (function-level authz) | Admin/privileged routes gated by role, not obscurity | `POST /admin/*` reachable by a normal user; method-based bypass (GET-gated, POST open) | CRITICAL |
+| API2 | Broken auth — JWT | `alg` pinned server-side; signature verified; no `none` | Accepts `alg:none` / algorithm-confusion (RS256↔HS256 key confusion) | CRITICAL |
+| API6 | Sensitive business flows | Rate/abuse controls on high-value flows (purchase, invite, password-reset) | No anti-automation on a money/invite flow | HIGH |
+| API9 | Improper inventory — shadow/zombie | All exposed routes are documented + intended | Undocumented/`/v1`-legacy/debug endpoints still routable | MEDIUM |
+| GraphQL | introspection + depth | Introspection off in prod; query depth/complexity limited | `__schema` exposed in prod; unbounded nested query = DoS | HIGH (introspection) / MEDIUM (depth) |
+
+Detection: guards/decorators (`@UseGuards`, `@Roles`), ORM calls lacking a tenant/owner predicate,
+`req.body` spread into a create/update, `jsonwebtoken.verify` options, `graphql` schema config.
+Defer basic "is there auth at all" to D9; D12 is about whether that auth is *object/function-correct*.
+
+### Execution
+
+Split endpoints into batches by controller/module. Each batch covers one controller and all its endpoints.
+
+**Parallel** (Claude Code with Task tool): spawn one agent per batch, max 6 concurrent.
+**Sequential** (Cursor, Codex, no Task tool): evaluate one batch at a time inline.
+
+Each Task agent dispatch:
+```
+Agent: API Dimension Auditor (per batch)
+  model: "sonnet"
+  type: "general-purpose"  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  instructions: evaluate endpoints in batch against D1-D11 dimensions, plus D12 (OWASP API Top 10) ONLY when D12 is active (--security or auth surface detected); if D12 is N/A, skip it
+  input: batch endpoint list (one controller/module), detected stack, CODESIFT_AVAILABLE
+```
+
+---
+
+## Phase 2: GET-Only Probing (STANDARD+ tier)
+
+**Skip if:** `--static` flag set, or LIGHT tier, or no running server.
+
+### Prerequisites (HARD GATE)
+
+All variables must be confirmed before any HTTP request:
+
+| Variable | Source | Required |
+|----------|--------|----------|
+| `BASE_URL` | User confirms environment | YES -- no default |
+| `TOKEN` | User provides auth token | YES -- never auto-extract from code |
+| `TIMEOUT` | curl `--max-time` | NO (default 15) |
+| `MAX_RPS` | Rate limit for probing | NO (default 2) |
+
+**Environment gate:**
+1. User confirms target (localhost/staging/sandbox)
+2. Production domains -> REFUSE
+3. Auth token from user (never auto-extract from code)
+
+### Probing Protocol
+
+For each list endpoint:
+
+```bash
+CURL_OPTS="--connect-timeout 5 --max-time 15 --retry 2 --retry-delay 1 --fail-with-body"
+
+curl -s -w "\n%{size_download} %{http_code} %{time_total}" $CURL_OPTS \
+  -H "Authorization: Bearer $TOKEN" "$BASE_URL$ENDPOINT?limit=10"
+
+curl -s -I $CURL_OPTS -H "Authorization: Bearer $TOKEN" "$BASE_URL$ENDPOINT" | \
+  grep -i "cache-control\|etag\|vary\|x-ratelimit\|content-type"
+```
+
+**Rate limiting:** Max 5 req/s. 3 consecutive 429s -> pause 30s, resume at 2 RPS. 3 consecutive 5xx -> STOP, report "target unhealthy".
+
+Scrub ALL responses before recording (Gate 2).
+
+---
+
+## Phase 3: Cross-Cutting Analysis (STANDARD+ tier)
+
+### 3.1 Contract Consistency
+- Same entity from different endpoints -- identical shape?
+- Frontend expects field X, backend returns field Y?
+- Pagination format consistent across list endpoints?
+- Error shape consistent across stacks?
+
+### 3.2 Money Field Audit
+- List ALL fields with money values across all endpoints
+- Same representation everywhere (number OR integer-cents, never both)?
+- Currency always travels with amount (never implicit)?
+
+### 3.3 Auth Matrix
+
+Build endpoint x role matrix:
+
+```
+| Endpoint | Public | User | Admin | Manager | Evidence |
+```
+
+### 3.4 Payload Size Analysis (if probing done)
+- Flag endpoints returning >100KB for list views
+- Flag nested relations >3 levels deep
+- Flag dual fields in responses (`*_id` + `*_name` for same entity)
+
+---
+
+## Phase 4: Report
+
+Save to: `zuvo/audits/api-audit-[date].md` — at the **project root** (`zuvo/` resolves via `git rev-parse --show-toplevel`; override `$ZUVO_OUTPUT_DIR`. See `../../shared/includes/report-output-location.md`).
+
+**REQUIRED:** emit the Tool Availability Block (template in `../../shared/includes/codesift-setup.md`) at the top of the report, after the title and before findings. Auditing degraded runs depends on this — do NOT skip it.
+
+```markdown
+# API and Endpoint Integrity Audit
+
+## Metadata
+| Field | Value |
+|-------|-------|
+| Project | {name} |
+| Date | {date} |
+| Tier | {LIGHT/STANDARD/DEEP} |
+| Stacks | {detected} |
+| Total Endpoints | {N} |
+| Probing | {Static only / Static + GET on {env}} |
+
+## Score Summary
+
+| Dimension | Score | Max |
+|-----------|-------|-----|
+| D1. Input Validation | {X} | 15 |
+| D2. Payload Efficiency | {X} | 15 |
+| D3. Pagination | {X} | 12 |
+| D4. Error Standardization | {X} | 12 |
+| D5. Caching | {X} | 8 |
+| D6. HTTP Semantics | {X} | 8 |
+| D7. API Waterfall | {X} | 5 |
+| D8. Rate Limiting | {X} | 5 |
+| D9. Auth | {X} | 15 |
+| D10. Documentation | {X} | 5 |
+| D11. Contract Stability | {X or N/A} | 5 |
+| D12. OWASP API Security Top 10 | {X or N/A} | 15 |
+| **TOTAL** | **{X}** | **{max}** | **{grade} ({%})** |
+
+## Critical Findings
+## All Findings (by dimension)
+## Cross-Cutting Analysis
+## Recommendations (top 5 by effort + impact)
+## CQ Overlap
+```
+
+### Issue Format
+
+```
+### API-{N}: {Title}
+Dimension: D{X} -- {name}
+Severity: CRITICAL / HIGH / MEDIUM / LOW
+Confidence: {X}/100
+Endpoint: {METHOD} {path}
+Stack: {NestJS/Worker/FastAPI/Frontend}
+File: {path} -> {handler}()
+Evidence: {code quote or response excerpt, max 15 lines, SCRUBBED}
+Problem: {specific}
+Impact: {user/security/performance}
+Fix: {complete code for MEDIUM+}
+CQ Overlap: {CQ IDs or "none -- cross-endpoint only"}
+```
+
+## Phase 5: Backlog Persistence
+
+**Default: off.** Activate with `--persist-backlog` flag or explicit user request.
+
+When active, every finding of confidence 26+ goes through `backlog-add`, one call per finding (`../../shared/includes/backlog-protocol.md` "Filing from a skill"; confidence 0-25 is DISCARD, and the bars, the dedupe and the routing are the protocol's and are not restated here).
+
+A **Generic write** per finding: `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source api-audit --file "$F" --line <n> [--anchor "$A"] --severity <level> --title "$T"`. `<C>` is `SEC` for a D9 (auth), D12 (BOLA, BFLA, BOPLA, mass assignment, JWT) or D8 (rate limiting: an absent limit lets credentials, OTPs or tokens be brute-forced) finding, and for a D1 (input validation) finding where unvalidated input reaches an injection sink (SQL, command, template, SSRF), any other D1 finding being `CQ`, `BUG` only when the finding names the input and the wrong output, else `CQ`; BUG and SEC take `--anchor "$A"`, copied from the line that shows the defect or, for something absent (no auth or ownership check), from the handler line that lacks it ("The location rule"). `F` and `n` are the handler's file and that line; a finding across several endpoints cites one representative handler, the affected handler with the lowest `path:line`, so its identity is the same on every run, and lists the others in `--evidence "$E"` (it is closed only when every handler listed is fixed), and a CQ finding about the whole file is `--line 1` with a "Whole file: ..." title and no `--anchor`. `<level>` is the finding's severity (`critical`, `high`, `medium` or `low`). Assign "$R", "$F", "$T" and "$E" (only when you pass `--evidence`) before each call, "$A" only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and backlog-add refuses a missing required field (`REFUSED missing-field:<f>`). Report the B- or F-id each call prints and `Recorded: N (backlog: a, ledger: b)` ("The report line" in `backlog-protocol.md`), plus each `NOT PERSISTED (<reason>)` by name; on a non-zero exit act on the protocol's exit table, and never append by hand.
+
+**Resolved entries** (**Closing, not removing**): a finding this run fixed gets no call. An open entry from an earlier audit that this run re-read and found fixed is closed, never removed: in one edit tick its box (`- [x]`) and append its resolution marker (`[FIXED <sha7>]`), as `backlog-protocol.md` "How to Persist Findings" step 3 says. That tick is the one hand edit the protocol sanctions (no helper ticks), and it is not a `wrote=` path: this audit does not stage it and names each ticked entry in its report. Moving a closed entry to the archive is the helper's job (`~/.zuvo/backlog-archive.py archive`, which `append-runlog` runs at the end of the run), never done by hand.
+
+This audit does not commit: it stages nothing. It lists the `wrote=` paths backlog-add printed as `Backlog writes: <path>, ...` (`Backlog writes: none` when there are none), in its report for the user when it runs standalone, and in its report for the calling skill's closing commit to carry when another skill runs it (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**).
+
+## Phase 6: Next-Action Routing
+
+| Condition | Suggested Action |
+|-----------|-----------------|
+| D1=0 (no validation) | `zuvo:code-audit [controllers]` -- audit CQ3/CQ19 |
+| D9<8 (auth gaps) | `zuvo:code-audit [controllers]` -- audit CQ4/CQ5 |
+| D3<3 AND >10K rows | `zuvo:refactor [services]` -- add pagination |
+| D10<3 (undocumented) | `zuvo:docs api [path]` -- generate API reference |
+| D1+D9 both critical | Fix D9 first -- security before correctness |
+| D11=0 (breaking change) | Fix breaking changes before release |
+| D12 BOLA/BFLA/mass-assignment | `zuvo:security-audit --static` (deep authz trace) or `zuvo:pentest --dimensions PT3` -- verify exploitability |
+| All dimensions >= 8 | No action needed. Schedule next audit in 30 days. |
+
+## Phase 6b: Adversarial Review on Audit Report (MANDATORY — do NOT skip)
+
+After the audit report is generated, run cross-model validation to catch score inflation and gate inconsistency. Point `--files` at the report you just wrote — do NOT run the literal placeholder (it matches nothing and burns a pass).
+
+```bash
+REPORT="zuvo/audits/api-audit-$(date +%F).md"   # the report this run wrote
+[ -f "$REPORT" ] && ~/.zuvo/adversarial-review --mode audit --files "$REPORT" \
+  || echo "adversarial: report not found — write it first"
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Then:
+- **CRITICAL** (FAIL gate not in verdict, severity mismatch) → fix in report before delivery
+- **WARNING** (N/A abuse, skipped check) → append to Known Gaps section
+- **INFO** → ignore
+
+---
+
+## Completion Gate Check
+
+Before printing the final output block, verify every item. Unfinished items = pipeline incomplete.
+
+```
+COMPLETION GATE CHECK
+[ ] Endpoint inventory printed with total count
+[ ] Auth matrix built: every endpoint classified
+[ ] Adversarial review ran on audit report
+[ ] Cross-cutting analysis ran
+[ ] Report saved to zuvo/audits/
+[ ] Run: line printed and appended to log
+```
+
+## API-AUDIT COMPLETE
+
+Score: [N] / [max] -- [grade]
+Tier: [LIGHT/STANDARD/DEEP]
+Dimensions: [N scored] | Critical gates: [PASS/FAIL]
+Findings: [N critical] / [N total]
+
+### Validity Gate (REQUIRED — print BEFORE Run line, AFTER retro append + append-runlog)
+
+```
+VALIDITY GATE
+  triggers_held: language=<X> framework=<X> hono=<yes|no>
+  required_tool_calls:
+    trace_route: [<N> routes | NOT_CALLED — VIOLATES_TRIGGER]
+    audit_scan: [<N> findings | NOT_CALLED — VIOLATES_TRIGGER]
+    search_patterns: [<N> hits | NOT_CALLED — VIOLATES_TRIGGER]
+    scan_secrets: [<N> hits | NOT_CALLED — VIOLATES_TRIGGER]
+    find_references: [<N> chains | not_required | NOT_CALLED — VIOLATES_TRIGGER]
+    hono_toolchain: [extract_api_contract:<N> trace_rpc_types:<N> ... | not_required (no Hono) | NOT_CALLED]
+    stack_specific: [framework_audit / nest_audit result | not_required | NOT_CALLED]
+  postamble:
+    retros_log_appended: [yes(bytes_added=N) | NOT_APPENDED]
+    retros_md_appended: [yes(entry_count=N) | NOT_APPENDED]
+    verify_audit_pass: [yes(<verified>/<total>) | NOT_RUN | REJECTED]
+  gate_status: [PASS | FAIL — <which gates missing>]
+```
+
+If `gate_status = FAIL` → VERDICT = INCOMPLETE.
+
+Append the Run line via the retro-gated wrapper (NOT direct `>> runs.log`):
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Run: <ISO-8601-Z>	api-audit	<project>	<N-critical>	<N-total>	<VERDICT>	-	<N>-dimensions	<NOTES>	<BRANCH>	<SHA7>	<INCLUDES>	<TIER>
+
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check → structured questions → TSV emit → markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed.
+
+After printing this block, append the `Run:` line value (without the `Run: ` prefix) to the log file path resolved per `run-logger.md`.
+
+VERDICT: PASS (0 critical findings), WARN (1-3 critical), FAIL (4+ critical).
+
+---
+
+## Execution Notes
+
+- Use **Sonnet** for LIGHT/STANDARD tiers
+- Use **Opus** for DEEP tier
+- Process controllers sequentially. Claude Code may parallelize with up to 6 Task agents.
+- Read the project's AGENTS.md or CLAUDE.md first for stack-specific conventions
+- Estimated durations: LIGHT ~3-5 min, STANDARD ~8-10 min, DEEP ~15-20 min

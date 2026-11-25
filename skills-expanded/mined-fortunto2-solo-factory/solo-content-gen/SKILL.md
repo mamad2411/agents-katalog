@@ -1,0 +1,188 @@
+---
+name: solo-content-gen
+description: Use when "create content", "write LinkedIn post", "social media pack", "marketing copy", "promotion content", "posts from this article", "repurpose this post", "посты из статьи", or need social posts from a PRD or from a published write-up. Do NOT use for community thread responses (/community-outreach) or video scripts (/video-promo).
+license: MIT
+metadata:
+  author: fortunto2
+  version: "1.3.0"
+  openclaw:
+    emoji: "📝"
+allowed-tools: Read, Grep, Glob, Write, AskUserQuestion, mcp__solograph__kb_search, mcp__solograph__project_info, mcp__solograph__symbol_search
+argument-hint: "<project-name or path>"
+---
+
+# /content-gen
+
+Generate a promotion content pack from a project's PRD or README. Produces 3 ready-to-use content pieces: LinkedIn post, Reddit answer draft, and Twitter/X thread. For video scripts, use `/video-promo`.
+
+## Mode: posts from a published write-up
+
+When the input is a post that is already published (the canonical write-up on the user's own site),
+the job is distribution, not copywriting from scratch. Each channel gets its own rewrite, never a copy:
+
+- **One contract per channel**, kept as data the user can edit (voice, audience, language, length
+  limit, where the link goes, which media it needs, cadence, how it gets out: scheduled queue, a
+  draft the user posts, or an upload after an OK). Read it before writing; do not carry a voice in
+  your head from the last post.
+- **Write for that channel's audience.** A professional network wants the lesson and the number; a
+  build-in-public feed wants the story and the surprise; a channel of strangers wants the general
+  insight with the user's work as one example inside it, not a diary entry.
+- **Facts only from the write-up.** Every number in a draft appears in the source post. A claim the
+  post does not make does not appear in the derivative.
+- **One link, tagged.** The canonical post URL with `utm_source=<channel>&utm_medium=social&utm_campaign=<slug>`,
+  placed where the channel wants it (end of a Telegram post, LinkedIn's first comment rather than the
+  body, the last part of an X thread).
+- **If the project has a gated contract tool** (a `brief` that assembles the full context and a
+  `draft` that validates against the contract), use it and nothing else: brief, write, draft, fix
+  until every gate passes. A post that does not fit a channel is skipped with a written reason, never
+  left silently undone.
+- **Never post from the user's accounts** unless the contract says that channel's mechanics allow it;
+  drafts for the user are the default.
+
+## MCP Tools (use if available)
+
+- `kb_search(query)` — find related methodology and principles
+- `project_info(name)` — get project details, stack, description
+- `symbol_search("<words>")` — find key features in codebase (symbol names, every project; Grep inside one)
+
+If MCP tools are not available, fall back to Glob + Grep + Read.
+
+## Steps
+
+1. **Parse project** from `$ARGUMENTS`.
+   - If project name: find PRD at `docs/prd.md`, or README.md, or CLAUDE.md.
+   - If path: read directly.
+   - If empty: ask via AskUserQuestion — "Which project to generate content for?"
+
+2. **Extract core messaging** from PRD/README (parallel reads):
+   - **Problem:** What pain does this solve? (1 sentence)
+   - **Solution:** What does the product do? (1 sentence)
+   - **ICP:** Who is the target user? (persona)
+   - **Key features:** Top 3-5 differentiating features
+   - **Unique angle:** What nobody else does (gap from research.md if exists)
+   - **Social proof:** Any metrics, users, downloads (if available)
+
+3. **Forced reasoning — messaging framework:**
+   Before generating content, write out:
+   - **Hook:** What stops the scroll? (pain point or surprising stat)
+   - **Proof:** Why should they believe you? (demo, numbers, authority)
+   - **CTA:** What's the one action? (try, sign up, download)
+   - **Tone:** Based on ICP — casual/professional/technical/friendly
+
+4. **Generate content pieces:**
+
+   ### 4a. LinkedIn Post
+   Format: Hook line → Story (before/after) → Insight → CTA
+   - 1300-1500 chars max
+   - First line is the hook (visible before "see more")
+   - Use line breaks for readability
+   - End with question to drive engagement
+
+   ### 4b. Reddit Answer Draft
+   Format: Helpful answer that naturally mentions the product
+   - NOT promotional — value-first, product mention is secondary
+   - Suggest 3-5 subreddits where this would be relevant
+   - Write as if answering someone's genuine question
+   - Include "disclaimer: I built this" transparency
+
+   ### 4c. Twitter/X Thread (5-7 tweets)
+   Format: Hook tweet → Problem → Solution → Demo → Social proof → CTA
+   - Each tweet: 240-280 chars max
+   - Tweet 1: standalone hook (works without thread)
+   - Last tweet: CTA with link
+   - Include emoji sparingly (1-2 per tweet max)
+
+5. **Generate Release Notes** (if project has git history):
+
+   ```bash
+   git log --oneline --since="1 month ago" 2>/dev/null | head -20
+   ```
+
+   If commits exist, generate user-facing release notes:
+   - Group by: New features, Improvements, Bug fixes
+   - Translate technical commit messages into user language
+   - Skip internal commits (chore, refactor, test, docs)
+   - Keep tone consistent with ICP (casual for consumer, professional for B2B)
+
+   Format:
+   ```markdown
+   ## What's New (v{version})
+
+   **New**
+   - {user-facing feature description}
+
+   **Improved**
+   - {improvement in user terms}
+
+   **Fixed**
+   - {bug fix in user terms}
+   ```
+
+   Include in content pack. If no git history, skip this section.
+
+6. **Write content pack** to `docs/content-pack.md`:
+
+   ```markdown
+   # Content Pack: {Project Name}
+
+   **Generated:** {YYYY-MM-DD}
+   **ICP:** {target persona}
+   **Core message:** {one-line value prop}
+
+   ## Messaging Framework
+   - **Hook:** {hook}
+   - **Proof:** {proof}
+   - **CTA:** {cta}
+
+   ---
+
+   ## 1. LinkedIn Post
+   {ready to copy-paste}
+
+   ## 2. Reddit Draft
+   **Target subreddits:** r/..., r/..., r/...
+   {answer draft}
+
+   ## 3. Twitter/X Thread
+   {numbered tweets}
+
+   ## 4. Release Notes
+   {release notes from step 5, or "No git history — skipped"}
+
+   > For video script, run `/video-promo {project}`.
+
+   ---
+   *Generated by /content-gen. Edit before publishing.*
+   ```
+
+7. **Output summary** — print core message + list of generated content pieces.
+
+## Notes
+
+- All content is draft — always review before publishing
+- Reddit draft should feel genuinely helpful, not promotional
+- For video scripts, use `/video-promo` (owns video generation entirely)
+- Rerun after major product updates to refresh messaging
+- Works best with detailed PRD — falls back to README if no PRD
+
+## Gotchas
+
+1. **LinkedIn algorithm penalizes external links** — links in the post body reduce reach by 40-50%. Put the link in the FIRST COMMENT instead, and mention "link in comments" in the post.
+2. **Twitter/X thread hooks must work standalone** — tweet 1 appears alone in feeds without the thread. If it doesn't grab attention by itself, no one clicks "Show this thread".
+3. **Reddit self-promotion rules** — most subreddits enforce a 10:1 ratio (10 helpful comments per 1 promotional post). A brand-new account posting product links gets instantly removed.
+4. **AI writing patterns are detectable** — em dashes, "game-changer", "dive into", rule-of-three lists, "In today's fast-paced world". Run output through `/humanize` before publishing.
+5. **Release notes ≠ changelog** — user-facing release notes should describe BENEFITS ("faster checkout"), not technical changes ("refactored payment module"). Skip internal commits entirely.
+
+## Common Issues
+
+### No PRD found
+**Cause:** Project doesn't have `docs/prd.md` or README.
+**Fix:** Provide a project path with PRD, or run `/validate` first to generate one.
+
+### Content too generic
+**Cause:** PRD lacks specific differentiators or ICP details.
+**Fix:** Ensure PRD has detailed problem statement, ICP persona, and unique angle. Add `research.md` for competitive context.
+
+### Wrong tone for audience
+**Cause:** ICP not clearly defined in PRD.
+**Fix:** Specify the target audience in PRD. LinkedIn = professional, Reddit = casual/technical, Twitter = punchy/conversational.

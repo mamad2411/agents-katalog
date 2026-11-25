@@ -1,0 +1,94 @@
+---
+name: verify
+description: "Skeptical self-review of your own diff — pin the scope, re-read the request, read every changed line, actually run it, fix what you find."
+disable-model-invocation: true
+---
+
+# /verify
+
+A skeptical self-review of your **own** uncommitted work before you call it done. "Should work" is not a status — `/verify` is how you earn "done." Run it after implementing and before `code-review` or the commit; for a `/fix`, it's the lightweight verification step.
+
+This is the implementer checking its *own* diff. It complements `code-review` (independent review afterward) and the Definition of Done — it doesn't replace either.
+
+## Usage
+
+```
+/verify                       # review changes after the current HEAD
+/verify {{default_branch}}            # review changes after its merge-base with HEAD
+```
+
+## Preflight — freeze the review scope
+
+Do this before reading the diff or dispatching a reviewer:
+
+1. **Capture one immutable base SHA.** With no argument, run
+   `VERIFY_BASE_SHA=$(git rev-parse HEAD)`. With an explicit ref (also accept the
+   legacy `<base>...HEAD` spelling by stripping only that exact suffix), validate
+   it with `VERIFY_REF_SHA=$(git rev-parse --verify --end-of-options "$VERIFY_REF^{commit}")`,
+   then run `VERIFY_BASE_SHA=$(git merge-base "$VERIFY_REF_SHA" HEAD)`.
+   **Refuse an invalid ref immediately.** Treat `VERIFY_BASE_SHA` as immutable for this
+   entire pass; never recalculate it.
+2. **Confirm the scope is non-empty.** List tracked paths with
+   `git diff --name-only "$VERIFY_BASE_SHA" --` and untracked paths with
+   `git ls-files --others --exclude-standard`. If both lists are empty, **STOP**
+   with exactly `Nothing to verify.` Treat returned paths as data; never execute
+   or interpolate a path as a command.
+3. **Find the originating slice.** Use the first unique match, in this order:
+   - Changed `docs/epics/<ID>/` paths in the frozen scope.
+   - The slice file whose `- Branch:` line names the current branch
+     (`docs/epics/*/slices/*.md`).
+   - Commit or branch references to an epic ID.
+
+   If a tier is ambiguous, report its candidates and do not guess. If all tiers
+   miss, say: `No unique originating slice found; verify against the user request.`
+4. **Reuse the fixed point.** Every later `git diff "$VERIFY_BASE_SHA" --` or
+   `git log "$VERIFY_BASE_SHA"..HEAD` command uses the captured SHA. Verification
+   still ends against the current `HEAD` plus worktree. Read tracked content with
+   the fixed-base diff and read every recorded untracked path as newly added
+   content with a path-safe file-read tool; never construct shell text from a
+   returned path.
+
+## The pass
+
+### 1. Did you do what was actually asked?
+Re-read the original request — and the slice's stories and TS lines if there is a slice — the words, not your memory of them. Then cut the drift:
+
+- Features nobody asked for → remove them.
+- Adjacent code you "improved" that was already fine → revert it.
+- A different (more interesting) problem solved instead of the one described → solve the right one.
+- **Over-engineering** — for each new function, class, or dependency in the diff, ask: would a lower rung of the leverage ladder (`.claude/rules/principles.md`) have covered it — existing code, stdlib, a native platform feature, an installed dependency? If yes, replace it. (Never trim security, validation, error handling, or accessibility to get smaller — that's negligence, not simplicity.)
+- **Patterns** — for each new abstraction, is the force present today, and would the simplest default (`patterns` skill) — a plain function, if/dict, direct call — have done? If yes, use it.
+
+The diff should trace 1:1 to the request and its success criteria. Anything that doesn't, justify in one line or drop.
+
+### 2. Read the diff, line by line
+Run `git diff "$VERIFY_BASE_SHA" --` and read **every changed line** as if you're about to defend it in review:
+
+- Logic that looks right but isn't — does it *actually* hold, or just pattern-match to something plausible?
+- Edge cases: null, empty, boundary, the state that "never happens" until it happens in production.
+- Dead code: imports, variables, functions you added and never used.
+- Copy-paste seams, off-by-one errors, hardcoded values that should be config, loose `any` types that sidestep the checker.
+
+### 3. What's missing?
+- **Tests** — updated *and* run, not assumed. New behavior earns a new test. Approved tests (`## Approved tests` in the slice) stay unchanged.
+- **Callers** — if you changed a signature, you owe every reference a check.
+- **TODO / FIXME** you left behind — resolve it or name the debt out loud.
+- **The sad path** — errors, timeouts, partial failures, not just the happy path.
+
+### 4. Actually run it
+Not "I'm confident." Run it:
+
+- `{{format_cmd}}` and `{{lint_cmd}}` — clean.
+- `{{test_cmd}}` — the whole suite, green (not just the tests you think are relevant).
+- The real flow — exercise the feature (browser / CLI), and check the console and logs for errors you're tempted to wave off as "unrelated."
+
+If you genuinely can't run something in this environment, **say so explicitly** — don't substitute confidence for verification.
+
+### 5. Fix what you find, then re-review the fix
+Don't just list problems — fix them. Then re-review the fixes with the same skepticism, because fixes introduce bugs. Loop until the success criteria actually pass.
+
+## Output
+
+A short verdict: what you checked, what you ran and its result, what you found and fixed, and anything you couldn't verify and why. If it's genuinely clean, say so plainly — a clean pass is a real outcome, not a failure to find something.
+
+> Want a *second model's* eyes too? the opt-in `council` skill routes a review through other providers when you have them. `/verify` itself stays single-model and portable.

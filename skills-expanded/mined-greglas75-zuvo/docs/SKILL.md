@@ -1,0 +1,458 @@
+---
+name: docs
+description: >
+  Write and update technical documentation from actual codebase analysis.
+  Generates README, API reference, runbook, onboarding guide, or changelog.
+  Supports update mode that patches stale sections without rewriting from
+  scratch. Modes: readme [path], api [path], runbook [topic], onboarding,
+  update [file], changelog [range].
+category: Utility
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - get_file_tree
+    - get_file_outline
+    - search_text
+    - search_symbols
+    - get_symbol
+    - get_symbols
+    - find_references
+    - codebase_retrieval        # semantic — "how does X work" for runbook/onboarding
+    - trace_route               # for API reference docs
+    - analyze_complexity        # complexity callouts in onboarding
+    - architecture_summary
+    - changed_symbols           # changelog mode
+    - diff_outline
+  by_stack:
+    typescript: [get_type_info]
+    javascript: []
+    python: [python_audit, analyze_async_correctness]
+    php: [php_project_audit, php_security_scan, resolve_php_namespace]
+    kotlin: [analyze_sealed_hierarchy, find_extension_functions, trace_flow_chain, trace_suspend_chain, trace_compose_tree, analyze_compose_recomposition, trace_hilt_graph, trace_room_schema, analyze_kmp_declarations, extract_kotlin_serialization_contract]
+    nestjs: [nest_audit]
+    nextjs: [framework_audit, nextjs_route_map]
+    astro: [astro_audit, astro_actions_audit, astro_hydration_audit]
+    hono: [analyze_hono_app, audit_hono_security, extract_api_contract]
+    express: []
+    fastify: []
+    react: [react_quickstart, analyze_hooks, analyze_renders]
+    django: [analyze_django_settings, effective_django_view_security, taint_trace]
+    fastapi: [trace_fastapi_depends, get_pydantic_models]
+    flask: [find_framework_wiring]
+    jest: []
+    yii: [resolve_php_service, find_php_views]
+    prisma: [analyze_prisma_schema]
+    drizzle: []
+    sql: [sql_audit]
+    postgres: [migration_lint]
+---
+
+# zuvo:docs — Technical Documentation
+
+Generate or update documentation by reading the actual codebase -- not from templates, not from memory, from real code.
+
+**Iron rule:** Never write a claim in documentation without reading the source file it references first. Every section maps back to a source file via the Evidence Map.
+
+**Scope:** README, API reference, runbooks, onboarding guides, changelogs.
+**Out of scope:** Architecture diagrams (use `zuvo:architecture`), code comments (out of scope), user-facing product docs (out of scope).
+
+## Argument Parsing
+
+| Input | Action |
+|-------|--------|
+| _(empty)_ | Check if README.md exists. If yes: update it. If no: generate one. If user interaction is available, ask for preference. |
+| `readme [path]` | Write or update README for the module at [path] |
+| `api [path]` | Generate API reference from route/controller files at [path] |
+| `runbook [topic]` | Write operational runbook for a specific process |
+| `onboarding` | Write onboarding guide for new developers |
+| `update [file]` | Read existing doc, verify claims against source, patch stale sections |
+| `changelog` | Generate CHANGELOG.md from git history |
+| `changelog [range]` | Generate changelog for a specific range (e.g., v1.2.0..v1.3.0) |
+
+**Non-interactive environments (Codex, Cursor):**
+- No arguments: default to `readme` for project root
+- Target file exists: default to `update` mode (patch, not overwrite)
+
+---
+
+## Mandatory File Loading
+
+### PHASE 0 — Bootstrap (before reading any source)
+
+```
+  1. ../../shared/includes/codesift-setup.md      -- [READ | MISSING -> WARN]
+  2. ../../shared/includes/env-compat.md          -- [READ | MISSING -> WARN]
+```
+
+`retrospective.md` and `run-logger.md` are END-of-run includes — they are loaded at completion, not here.
+
+## Environment Compatibility
+
+Read `../../shared/includes/env-compat.md` for user interaction patterns.
+
+## CodeSift Integration
+
+Read `../../shared/includes/codesift-setup.md` for initialization.
+
+**Key tools for this skill:**
+
+| Doc type | Task | CodeSift tool | Fallback |
+|----------|------|--------------|----------|
+| README | Project structure | `get_file_tree(repo, path_prefix="src", compact=true)` | `ls -R src/` |
+| README | Module overview | `detect_communities(repo, focus="src")` | Manual directory analysis |
+| API | Endpoint discovery | `search_symbols(repo, kind="function", file_pattern="**/api/**")` | Grep for route decorators |
+| API | Handler source + callers | `find_and_show(repo, query=<handler>, include_refs=true)` | Read each file |
+| API | Schema discovery | `search_symbols(repo, query="Schema", kind="variable", include_source=true)` | Grep for Zod/validator |
+| Update | Verify file paths | `get_file_tree(repo, path_prefix=<path>)` | ls / Glob |
+| Update | Verify API shapes | `get_symbol(repo, symbol_id)` | Read the file |
+| Any | Context assembly | `assemble_context(repo, query=<topic>, token_budget=4000)` | Multiple Read calls |
+
+---
+
+## Run Logging
+
+Read `../../shared/includes/run-logger.md` for log format and file path resolution.
+Read `../../shared/includes/retrospective.md` for log format and file path resolution.
+
+## Stack-Aware Commands (Required)
+
+Before writing any doc with shell commands, detect the project's package manager and tooling. Never hardcode `npm` -- use what the project actually uses.
+
+| Signal | Install | Dev | Test | Build |
+|--------|---------|-----|------|-------|
+| `pnpm-lock.yaml` | `pnpm install` | `pnpm dev` | `pnpm test` | `pnpm build` |
+| `yarn.lock` | `yarn` | `yarn dev` | `yarn test` | `yarn build` |
+| `bun.lockb` | `bun install` | `bun dev` | `bun test` | `bun run build` |
+| `package-lock.json` | `npm install` | `npm run dev` | `npm test` | `npm run build` |
+| `pyproject.toml` (poetry) | `poetry install` | `poetry run ...` | `poetry run pytest` | `poetry build` |
+| `requirements.txt` | `pip install -r requirements.txt` | `python manage.py runserver` | `pytest` | -- |
+| `go.mod` | `go mod download` | `go run .` | `go test ./...` | `go build` |
+| `Cargo.toml` | `cargo build` | `cargo run` | `cargo test` | `cargo build --release` |
+| `composer.json` | `composer install` | `php artisan serve` | `vendor/bin/phpunit` | -- |
+
+If commands come from package.json scripts or Makefile targets, use the exact script name.
+
+---
+
+## Mandatory Source Reading
+
+For every doc type, read the relevant source files before writing anything:
+
+| Doc type | Read first |
+|----------|-----------|
+| README | package.json or pyproject.toml, main entry point, existing README if any |
+| API docs | Route/controller files, DTO/schema files, auth guard files |
+| Runbook | The service code being operated, existing runbooks in docs/ |
+| Onboarding | package.json, docker-compose.yml, CI config, existing onboarding docs |
+| Changelog | Git log for the target range |
+
+---
+
+## Mode: README
+
+### Output Structure
+
+```markdown
+# [Service/Package Name]
+
+> [One sentence -- what is this and why does it exist?]
+
+## Quick Start
+
+[Minimum steps to get running locally, using stack-aware commands]
+
+## Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+
+## Development
+
+[Dev, test, lint, build commands -- from package.json/Makefile, verified]
+
+## Project Structure
+
+[Directory listing with one-line descriptions, from actual ls/tree]
+
+## API
+
+[Link to API docs or brief summary]
+
+## Contributing
+
+[Branch strategy, PR requirements]
+```
+
+Quality checklist: Quick start works in under 5 commands. All env vars documented. Commands match actual scripts. No template copy-paste.
+
+---
+
+## Mode: API Reference
+
+### Output Structure
+
+```markdown
+# API Reference -- [Service Name]
+
+**Base URL:** `/api/v1`
+**Auth:** [from actual auth guard detection]
+
+## [Resource Name]
+
+### GET /[resource]
+
+[Description from reading the handler code]
+
+**Auth:** [from guard/middleware on this route]
+**Query Parameters** [from DTO/schema]
+**Response 200** [from actual return type/shape]
+**Errors** [from error handling in the handler]
+```
+
+Quality checklist: Every endpoint has auth requirement noted. All request fields documented with types. All meaningful error codes listed. Response shapes come from code, not invention.
+
+---
+
+## Mode: Runbook
+
+### Output Structure
+
+```markdown
+# Runbook: [Operation Name]
+
+**When to use:** [Trigger condition]
+**Time required:** ~[N] minutes
+**Who can run this:** [Role]
+**Risk level:** [Low | Medium | High]
+
+## Prerequisites
+## Steps (numbered, with commands and expected output)
+## Verification (how to confirm success)
+## Rollback (how to undo if something goes wrong)
+## Escalation (who to contact)
+```
+
+---
+
+## Mode: Onboarding Guide
+
+### Output Structure
+
+```markdown
+# Developer Onboarding -- [Project Name]
+
+**Time to first working local environment:** ~[N] minutes
+
+## Environment Setup (prerequisites, clone, install, config)
+## Key Systems (what does what, where it lives)
+## Common Tasks (run tests, add endpoint, deploy)
+## Who to Ask (topic -> person -> channel)
+```
+
+---
+
+## Mode: Update (Staleness Check)
+
+When `update [file]` is invoked, follow this procedure strictly. Never rewrite from scratch.
+
+### Step 1: Extract Claims
+
+Read the existing doc. Extract every factual claim as a checklist item: commands, file paths, env vars, API endpoints, architecture descriptions.
+
+### Step 2: Verify Each Claim
+
+For each claim, read the source file it references:
+
+| Claim type | Where to verify |
+|------------|----------------|
+| Shell commands | package.json scripts, Makefile, pyproject.toml |
+| File paths | ls / Glob -- does the path exist? |
+| Env vars | .env.example, config loader |
+| API endpoints | Route/controller files |
+| Architecture | Import graph, docker-compose, infra config |
+
+Mark each: verified (still true), stale (incorrect), unverifiable (source missing).
+
+### Step 3: Patch
+
+- Verified claims: leave unchanged
+- Stale claims: update with correct information from source
+- Unverifiable claims: add `<!-- TODO: verify -- source not found -->`
+- Missing info: add new sections only if source reveals undocumented features
+
+### Step 4: Summary
+
+```
+Update summary for [file]:
+  [N] sections unchanged
+  [N] sections updated: [list]
+  [N] sections unverifiable: [list]
+  [N] new sections added: [list]
+```
+
+If more than 50% of claims are stale, suggest full rewrite with `readme [path]` instead.
+
+---
+
+## Mode: Changelog
+
+### Step 1: Check for git-cliff
+
+```bash
+npx git-cliff --version 2>/dev/null
+```
+
+### Step 2: Generate
+
+If git-cliff available:
+
+```bash
+npx git-cliff --output CHANGELOG.md          # full
+npx git-cliff v1.2.0..v1.3.0 --output CHANGELOG.md  # range
+```
+
+If not available, fall back to manual parsing:
+
+```bash
+git log --oneline --no-merges $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD
+```
+
+Classify by conventional commit prefix (feat/fix/refactor/docs/chore), format as Markdown.
+
+### Step 3: Enrich
+
+Read the generated changelog. For cryptic messages, read the actual diff and add one-line context. Group related commits. Highlight breaking changes.
+
+---
+
+## Evidence Map (Required)
+
+Every generated doc must include a hidden Evidence Map tracing each section to its source:
+
+```markdown
+<!-- Evidence Map
+| Section | Source file(s) |
+|---------|---------------|
+| Quick Start | package.json:scripts (line 5-12) |
+| Configuration | .env.example (line 1-15) |
+| API: GET /users | src/routes/users.controller.ts:24-45 |
+-->
+```
+
+Rules:
+- Every section with factual claims needs at least one source entry
+- Commands must trace back to the script definition file
+- If a section has no source: `<!-- TODO: needs source verification -->`
+
+---
+
+## Command Validation Gate (Before Output)
+
+After writing any doc with shell commands:
+
+1. Extract all bash code blocks from the generated doc
+2. Check each command against its source (package.json scripts, Makefile targets, etc.)
+3. Flag mismatches and fix them before output
+
+```
+Command validation:
+  pnpm dev        -> matches package.json scripts.dev
+  pnpm test       -> matches package.json scripts.test
+  pnpm run lint   -> no "lint" in scripts (found "lint:check") -> FIXED
+```
+
+---
+
+## Output Paths
+
+| Doc type | Default path |
+|----------|-------------|
+| readme | `[target-path]/README.md` |
+| api | `docs/api/[service-name].md` |
+| runbook | `docs/runbooks/[topic].md` |
+| onboarding | `docs/onboarding.md` |
+| changelog | `./CHANGELOG.md` |
+
+If target file exists, ask before overwriting (except in update mode). Non-interactive environments default to update mode.
+
+---
+
+## Adversarial Review on Generated Docs (MANDATORY — do NOT skip)
+
+After generating or updating documentation, run cross-model validation to catch inaccuracies and stale content. Point `--files` at the doc file(s) you just wrote — do NOT run the literal placeholder (it matches nothing and burns a pass).
+
+```bash
+DOC="<the doc path you just wrote, e.g. README.md or docs/<feature>.md>"
+[ -f "$DOC" ] && ~/.zuvo/adversarial-review --mode audit --files "$DOC" \
+  || echo "adversarial: set DOC to the generated/updated doc path first"
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Then:
+- **CRITICAL** (incorrect API signatures, wrong commands, stale references) → fix in doc before delivery
+- **WARNING** (missing sections, vague descriptions) → note in completion output
+- **INFO** → ignore
+
+---
+
+## Completion Gate Check
+
+Before printing the final output block, verify every item. Unfinished items = pipeline incomplete.
+
+```
+COMPLETION GATE CHECK
+[ ] Mandatory source files read before writing
+[ ] Every shell command verified against source (package.json/Makefile)
+[ ] Evidence Map present: factual claims trace to source file:line
+[ ] Adversarial review ran on generated doc
+[ ] Run: line printed and appended to log
+```
+
+## Completion
+
+After completing any mode, print:
+
+```
+DOCS COMPLETE
+-----
+Mode:  [readme | api | runbook | onboarding | update | changelog]
+Run: <ISO-8601-Z>	docs	<project>	-	-	<VERDICT>	-	<DURATION>	<NOTES>	<BRANCH>	<SHA7>	<INCLUDES>	<TIER>
+-----
+```
+
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check → structured questions → TSV emit → markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed.
+
+**Append via wrapper (REQUIRED).** Never `>>` directly to `~/.zuvo/runs.log` — the wrapper is the gate that verifies a retro entry exists for this run. Order: retro bash executed → wrapper invoked → completion claimed.
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Expected stdout: `OK: appended to runs.log (retro verified for <skill> on <project>)`. If exit 2 with `RETRO_REQUIRED` — go execute the retro bash from `retrospective.md` first; never bypass with `ZUVO_SKIP_RETRO_GATE=1`. After the wrapper succeeds, print a `Logs:` evidence line (`tail -1 ~/.zuvo/retros.log`, `grep -c "^<!-- RETRO -->" ~/.zuvo/retros.md`, `tail -1 ~/.zuvo/runs.log`) before claiming completion. Printing the markdown retro section without executing the bash leaves all three log files empty.
+
+`<DURATION>`: use the mode label (`readme`, `api`, `runbook`, `onboarding`, `changelog`, or `update`).
+
+---
+
+## Principles
+
+1. Read the code, write the docs. Every claim must be verifiable in the source.
+2. Write for the reader. README is for someone who just found the repo. Runbook is for someone at 2am.
+3. Start with the most useful information. Quick Start before architecture details.
+4. Stale docs are worse than no docs. Mark uncertainty with TODO rather than leaving wrong information.

@@ -1,0 +1,535 @@
+---
+name: excalidraw-diagram
+description: Create Excalidraw diagrams as editable `.excalidraw` JSON that make a visual argument — architecture, flowchart, sequence, state, ER, timeline, swimlane, quadrant, loop/flywheel, layers, nested, tree, org chart, venn, pyramid, process, medallion, data flow, IT current-state, evidence/protocol explainers, before/after comparisons, and charts — with themed brand skins, a taste gate, progressive type refs, and a mandatory render-inspect loop. Prefer this over static HTML/SVG or Mermaid-slop when the diagram must open in Excalidraw/Obsidian/VS Code, prove claims with evidence artifacts, or iterate until it looks right. Triggers on "make a diagram", "draw the architecture", "visualize this", "excalidraw", "flowchart", "system design diagram", "sketch this out", "whiteboard it", or brand-matched technical diagrams.
+license: MIT
+metadata:
+  version: "0.3.0"
+  homepage: https://excalidraw-skill-pack.vercel.app
+  repository: https://github.com/isatimur/excalidraw-skill-pack
+  keywords: [excalidraw, diagram, flowchart, architecture-diagram, system-design, visualization, whiteboard, sketch, diagram-as-code, mind-map, evidence-artifacts, taste-gate]
+---
+
+# Excalidraw Diagram Creator
+
+Generate `.excalidraw` JSON files that **argue visually**, not just display information.
+
+Editable forever. Themeable. Renderable to PNG. Open in Excalidraw, Obsidian, or VS Code. Twenty-nine typed layouts with progressive disclosure, a first-run brand gate, a taste gate that deletes until the argument is sharp, and a mandatory render-inspect loop — so the diagram is never “done” until it looks right.
+
+**Setup:** If the user asks you to set up this skill (renderer, dependencies, etc.), use the installed adapter docs or the project README.
+
+## 0. First-run theme gate
+
+**Before generating the first diagram in a new project, verify the theme is intentional.**
+
+Resolve the active theme (`--theme` → project `.excalidraw-skill-pack.json` → `~/.excalidraw-skill-pack/config.json` → `default-sketchy`). If the project still rides the bundled default and the user has a brand, **pause and ask**:
+
+> "This project is still on `default-sketchy`. Customize the theme to match your brand first? (a) pull from a website URL, (b) extract from an installed skill, (c) extract from a local design-token folder, (d) paste tokens manually, (e) proceed with the default for now."
+
+Then follow [`references/onboarding.md`](references/onboarding.md). Once onboarded (project config points at a theme, or the user explicitly chose default), skip this gate.
+
+Don't silently ship default-skinned diagrams into a branded project.
+
+## Output Contract
+
+When you create or edit a diagram:
+
+1. Produce a valid `.excalidraw` / `excalidraw-skeleton` / `mermaid` document, not a prose-only answer.
+2. Prefer skeleton format while drafting; hydrate to a full `.excalidraw` for the shareable deliverable.
+3. If the user names an output path, write there. Otherwise use `./diagram.excalidraw`.
+4. Prefer the active theme for all color, typography, element, and layout decisions — read its `palette.md` before drawing.
+5. Pick a diagram type from [`references/types/index.md`](references/types/index.md) and **load that type's reference** before generating elements.
+6. Run the taste gate in [`references/taste-gate.md`](references/taste-gate.md) before declaring done.
+7. Render and inspect the PNG. Fix visible defects. Loop until it passes.
+8. In the final response, report the `.excalidraw` path, rendered image path if created, theme used, type used, and any validation caveats.
+
+Do not add nonstandard Excalidraw properties such as `label` on **full** elements. Labels are text elements (or skeleton `label: { text }` which the hydrator converts). For full-element shape labels, bind a text element to the container with `containerId`, and keep the text element immediately after its container in `elements`.
+
+**Cursor note:** when installed via the Cursor adapter, progressive-disclosure files live at `.cursor/excalidraw-skill-pack/references/` (same tree as `packages/core/references/`). Load type/taste/onboarding docs from there.
+
+## Customization
+
+**All colors, typography, and layout rules live in the active theme.** Themes are standalone packages: `default-sketchy` is bundled in core; additional themes ship as `@excalidraw-skill-pack/theme-*` (npm) or `excalidraw-skill-pack-theme-*` (PyPI). See [`references/color-palette.md`](references/color-palette.md).
+
+The active theme is resolved per call (`--theme` flag), per project (`.excalidraw-skill-pack.json`), or globally (`~/.excalidraw-skill-pack/config.json`). The MCP server's `generate_diagram_prompt` tool splices the active theme's `palette.md` and any requested `layouts/<template>.md` into the agent's system prompt at call time.
+
+To author a new theme: `npx @excalidraw-skill-pack/create-theme my-brand`. See `https://excalidraw-skill-pack.vercel.app/themes/create`.
+
+---
+
+## Core Philosophy
+
+**Diagrams ARGUE, not DISPLAY.**
+
+A diagram isn't formatted text. It's a visual argument that shows relationships, causality, and flow that words alone can't express. The shape should BE the meaning.
+
+**The highest-quality move is usually deletion.** Every node earns its place. Accent color is reserved for the 1–2 things the reader should look at first. Target density: ~4/10. The diagram isn't done when everything is added — it's done when nothing can be removed. See [`references/taste-gate.md`](references/taste-gate.md) and [`references/anti-patterns.md`](references/anti-patterns.md).
+
+**The Isomorphism Test**: If you removed all text, would the structure alone communicate the concept? If not, redesign.
+
+**The Education Test**: Could someone learn something concrete from this diagram, or does it just label boxes? A good diagram teaches — it shows actual formats, real event names, concrete examples.
+
+**Why Excalidraw (not static HTML/SVG):** the artifact stays editable, opens in the tools people already use, themes as publishable packages, and the render-inspect loop catches visual defects that prompt-only SVG never sees.
+
+---
+
+## Diagram Types (progressive disclosure)
+
+**Always load the matching type file before drawing.** The lean index lives in [`references/types/index.md`](references/types/index.md); each type has layout conventions, Excalidraw patterns, anti-patterns, and a complexity budget.
+
+| If you're showing… | Use | Reference |
+|---|---|---|
+| Components + connections in a system | **Architecture** | [type-architecture.md](references/types/type-architecture.md) |
+| Decision logic with branches | **Flowchart** | [type-flowchart.md](references/types/type-flowchart.md) |
+| Time-ordered messages between actors | **Sequence** | [type-sequence.md](references/types/type-sequence.md) |
+| States + transitions + guards | **State** | [type-state.md](references/types/type-state.md) |
+| Entities + fields + relationships | **ER / data model** | [type-er.md](references/types/type-er.md) |
+| Events positioned in time | **Timeline** | [type-timeline.md](references/types/type-timeline.md) |
+| Cross-functional handoffs | **Swimlane** | [type-swimlane.md](references/types/type-swimlane.md) |
+| Two-axis positioning | **Quadrant** | [type-quadrant.md](references/types/type-quadrant.md) |
+| Reinforcing cycle / flywheel | **Loop** | [type-loop.md](references/types/type-loop.md) |
+| Hierarchy by containment | **Nested** | [type-nested.md](references/types/type-nested.md) |
+| Parent → children | **Tree** | [type-tree.md](references/types/type-tree.md) |
+| Ownership / reporting / escalation | **Org chart** | [type-org-chart.md](references/types/type-org-chart.md) |
+| Stacked abstractions | **Layers** | [type-layers.md](references/types/type-layers.md) |
+| Set overlap | **Venn** | [type-venn.md](references/types/type-venn.md) |
+| Ranked hierarchy or drop-off | **Pyramid** | [type-pyramid.md](references/types/type-pyramid.md) |
+| Multi-actor sequential workflow | **Process** | [type-process.md](references/types/type-process.md) |
+| Protocol / system claim with proof | **Evidence** (moat) | [type-evidence.md](references/types/type-evidence.md) |
+| Before → after engineered contrast | **Comparison** (moat) | [type-comparison.md](references/types/type-comparison.md) |
+| Multi-tier data quality | **Medallion** | [type-medallion.md](references/types/type-medallion.md) |
+| Payload movement + transforms | **Data flow** | [type-data-flow.md](references/types/type-data-flow.md) |
+| Legacy landscape / modernization | **IT current-state** | [type-it-state.md](references/types/type-it-state.md) |
+| End-to-end stack on a cluster | **High-level** | [type-high-level.md](references/types/type-high-level.md) |
+| Sources → core → consumers | **DP integration** | [type-dp-integration.md](references/types/type-dp-integration.md) |
+| Per-role access permissions | **DP security matrix** | [type-dp-security-matrix.md](references/types/type-dp-security-matrix.md) |
+| Multi-axis profile | **Radar** | [type-radar.md](references/types/type-radar.md) |
+| Tasks on a schedule | **Gantt** | [type-gantt.md](references/types/type-gantt.md) |
+| Categorical magnitudes | **Bar** | [type-bar.md](references/types/type-bar.md) |
+| Trends over time | **Line** | [type-line.md](references/types/type-line.md) |
+| Distribution / correlation | **Scatter** | [type-scatter.md](references/types/type-scatter.md) |
+
+Rules of thumb:
+
+- If a 3-column table communicates the same thing, pick the table.
+- If combining two types, pick the dominant axis — don't hybridize grammars.
+- If past the complexity budget, split into overview + detail.
+- Prefer **Evidence** or **Comparison** when the goal is to *teach or convince*, not merely *label*.
+
+## Depth Assessment (Do This First)
+
+Before designing, determine what level of detail this diagram needs:
+
+### Simple/Conceptual Diagrams
+Use abstract shapes when:
+- Explaining a mental model or philosophy
+- The audience doesn't need technical specifics
+- The concept IS the abstraction (e.g., "separation of concerns")
+
+### Comprehensive/Technical Diagrams
+Use concrete examples when:
+- Diagramming a real system, protocol, or architecture
+- The diagram will be used to teach or explain (e.g., YouTube video)
+- The audience needs to understand what things actually look like
+- You're showing how multiple technologies integrate
+
+**For technical diagrams, you MUST include evidence artifacts** (see below).
+
+---
+
+## Research Mandate (For Technical Diagrams)
+
+**Before drawing anything technical, research the actual specifications.**
+
+If you're diagramming a protocol, API, or framework:
+1. Look up the actual JSON/data formats
+2. Find the real event names, method names, or API endpoints
+3. Understand how the pieces actually connect
+4. Use real terminology, not generic placeholders
+
+Bad: "Protocol" → "Frontend"
+Good: "AG-UI streams events (RUN_STARTED, STATE_DELTA, A2UI_UPDATE)" → "CopilotKit renders via createA2UIMessageRenderer()"
+
+**Research makes diagrams accurate AND educational.**
+
+---
+
+## Evidence Artifacts
+
+Evidence artifacts are concrete examples that prove your diagram is accurate and help viewers learn. Include them in technical diagrams.
+
+**Types of evidence artifacts** (choose what's relevant to your diagram):
+
+| Artifact Type | When to Use | How to Render |
+|---------------|-------------|---------------|
+| **Code snippets** | APIs, integrations, implementation details | Dark rectangle + syntax-colored text (see color palette for evidence artifact colors) |
+| **Data/JSON examples** | Data formats, schemas, payloads | Dark rectangle + colored text (see color palette) |
+| **Event/step sequences** | Protocols, workflows, lifecycles | Timeline pattern (line + dots + labels) |
+| **UI mockups** | Showing actual output/results | Nested rectangles mimicking real UI |
+| **Real input content** | Showing what goes IN to a system | Rectangle with sample content visible |
+| **API/method names** | Real function calls, endpoints | Use actual names from docs, not placeholders |
+
+**Example**: For a diagram about a streaming protocol, you might show:
+- The actual event names from the spec (not just "Event 1", "Event 2")
+- A code snippet showing how to connect
+- What the streamed data actually looks like
+
+**Example**: For a diagram about a data transformation pipeline:
+- Show sample input data (actual format, not "Input")
+- Show sample output data (actual format, not "Output")
+- Show intermediate states if relevant
+
+The key principle: **show what things actually look like**, not just what they're called.
+
+---
+
+## Multi-Zoom Architecture
+
+Comprehensive diagrams operate at multiple zoom levels simultaneously. Think of it like a map that shows both the country borders AND the street names.
+
+### Level 1: Summary Flow
+A simplified overview showing the full pipeline or process at a glance. Often placed at the top or bottom of the diagram.
+
+*Example*: `Input → Processing → Output` or `Client → Server → Database`
+
+### Level 2: Section Boundaries
+Labeled regions that group related components. These create visual "rooms" that help viewers understand what belongs together.
+
+*Example*: Grouping by responsibility (Backend / Frontend), by phase (Setup / Execution / Cleanup), or by team (User / System / External)
+
+### Level 3: Detail Inside Sections
+Evidence artifacts, code snippets, and concrete examples within each section. This is where the educational value lives.
+
+*Example*: Inside a "Backend" section, you might show the actual API response format, not just a box labeled "API Response"
+
+**For comprehensive diagrams, aim to include all three levels.** The summary gives context, the sections organize, and the details teach.
+
+### Bad vs Good
+
+| Bad (Displaying) | Good (Arguing) |
+|------------------|----------------|
+| 5 equal boxes with labels | Each concept has a shape that mirrors its behavior |
+| Card grid layout | Visual structure matches conceptual structure |
+| Icons decorating text | Shapes that ARE the meaning |
+| Same container for everything | Distinct visual vocabulary per concept |
+| Everything in a box | Free-floating text with selective containers |
+
+### Simple vs Comprehensive (Know Which You Need)
+
+| Simple Diagram | Comprehensive Diagram |
+|----------------|----------------------|
+| Generic labels: "Input" → "Process" → "Output" | Specific: shows what the input/output actually looks like |
+| Named boxes: "API", "Database", "Client" | Named boxes + examples of actual requests/responses |
+| "Events" or "Messages" label | Timeline with real event/message names from the spec |
+| "UI" or "Dashboard" rectangle | Mockup showing actual UI elements and content |
+| ~30 seconds to explain | ~2-3 minutes of teaching content |
+| Viewer learns the structure | Viewer learns the structure AND the details |
+
+**Simple diagrams** are fine for abstract concepts, quick overviews, or when the audience already knows the details. **Comprehensive diagrams** are needed for technical architectures, tutorials, educational content, or when you want the diagram itself to teach.
+
+---
+
+## Container vs. Free-Floating Text
+
+**Not every piece of text needs a shape around it.** Default to free-floating text. Add containers only when they serve a purpose.
+
+| Use a Container When... | Use Free-Floating Text When... |
+|------------------------|-------------------------------|
+| It's the focal point of a section | It's a label or description |
+| It needs visual grouping with other elements | It's supporting detail or metadata |
+| Arrows need to connect to it | It describes something nearby |
+| The shape itself carries meaning (decision diamond, etc.) | Typography alone creates sufficient hierarchy |
+| It represents a distinct "thing" in the system | It's a section title, subtitle, or annotation |
+
+**Typography as hierarchy**: Use font size, weight, and color to create visual hierarchy without boxes. A 28px title doesn't need a rectangle around it.
+
+**The container test**: For each boxed element, ask "Would this work as free-floating text?" If yes, remove the container.
+
+---
+
+## Design Process (Do This BEFORE Generating JSON)
+
+### Step 0: Assess Depth Required
+Before anything else, determine if this needs to be:
+- **Simple/Conceptual**: Abstract shapes, labels, relationships (mental models, philosophies)
+- **Comprehensive/Technical**: Concrete examples, code snippets, real data (systems, architectures, tutorials)
+
+**If comprehensive**: Do research first. Look up actual specs, formats, event names, APIs.
+
+### Step 1: Understand Deeply
+Read the content. For each concept, ask:
+- What does this concept **DO**? (not what IS it)
+- What relationships exist between concepts?
+- What's the core transformation or flow?
+- **What would someone need to SEE to understand this?** (not just read about)
+
+### Step 2: Map Concepts to Patterns
+For each concept, find the visual pattern that mirrors its behavior:
+
+| If the concept... | Use this pattern |
+|-------------------|------------------|
+| Spawns multiple outputs | **Fan-out** (radial arrows from center) |
+| Combines inputs into one | **Convergence** (funnel, arrows merging) |
+| Has hierarchy/nesting | **Tree** (lines + free-floating text) |
+| Is a sequence of steps | **Timeline** (line + dots + free-floating labels) |
+| Loops or improves continuously | **Spiral/Cycle** (arrow returning to start) |
+| Is an abstract state or context | **Cloud** (overlapping ellipses) |
+| Transforms input to output | **Assembly line** (before → process → after) |
+| Compares two things | **Side-by-side** (parallel with contrast) |
+| Separates into phases | **Gap/Break** (visual separation between sections) |
+
+### Step 3: Ensure Variety
+For multi-concept diagrams: **each major concept must use a different visual pattern**. No uniform cards or grids.
+
+### Step 4: Sketch the Flow
+Before JSON, mentally trace how the eye moves through the diagram. There should be a clear visual story.
+
+### Step 5: Generate JSON
+Only now create the Excalidraw elements. **See below for how to handle large diagrams.**
+
+### Step 6: Taste Gate
+Run [`references/taste-gate.md`](references/taste-gate.md). Delete until the argument is sharp. Reject anything in [`references/anti-patterns.md`](references/anti-patterns.md).
+
+### Step 7: Render & Validate (MANDATORY)
+After generating the JSON, you MUST run the render-view-fix loop until the diagram looks right. This is not optional — see the **Render & Validate** section below for the full process.
+
+### Step 8: Report the Artifact
+Return the file path, theme, type, and what changed. Do not paste the full JSON unless the user asked for it.
+
+---
+
+## Excalidraw Correctness Contract
+
+Every generated element must be complete enough for Excalidraw and the renderer to load without repair:
+
+- Include `id`, `type`, `x`, `y`, `width`, `height`, `angle`, `strokeColor`, `backgroundColor`, `fillStyle`, `strokeWidth`, `strokeStyle`, `roughness`, `opacity`, `seed`, `version`, `versionNonce`, `isDeleted`, `groupIds`, `boundElements`, `link`, and `locked` where applicable.
+- Text elements include `text`, `originalText`, `fontSize`, `fontFamily`, `textAlign`, `verticalAlign`, `containerId`, and `lineHeight`.
+- Bound shape labels use `boundElements` on the shape and `containerId` on the text. The text element follows the shape immediately.
+- Arrows use `points`, `startBinding`, `endBinding`, `startArrowhead`, and `endArrowhead`. Use `focus`/`gap` bindings, not ad hoc endpoint guesses.
+- Use descriptive, stable IDs such as `ingest_box`, `eval_loop_arrow`, `artifact_code_text`.
+- Use unique numeric `seed` and `versionNonce` values. For multi-section diagrams, namespace seeds by section.
+- Keep `opacity: 100`; use color, stroke width, scale, and spacing for hierarchy.
+- Use `roughness: 0` for polished technical diagrams and `roughness: 1` only for intentionally sketchy/whiteboard diagrams.
+- Keep text readable at export size. Minimum body text is 16px; prefer 18-24px for labels.
+
+See `element-templates.md` and `json-schema.md` for copy-paste structures.
+
+---
+
+## Comprehensive / large diagram strategy
+
+See [references/comprehensive-diagrams.md](references/comprehensive-diagrams.md) — consult it when building a large or comprehensive diagram section by section.
+
+---
+
+## Visual language (patterns, shapes, color, layout, text)
+
+See [references/visual-language.md](references/visual-language.md) — consult it when choosing patterns, shapes, colors, and layout for a diagram.
+
+---
+
+## Authoring Format: Skeleton (recommended) vs Full Elements
+
+There are two ways to write a diagram. **Default to the skeleton format** — it is dramatically less verbose and eliminates a whole class of malformed-JSON defects.
+
+### Skeleton format (preferred)
+
+Set `"type": "excalidraw-skeleton"` and write the *minimum* per element. The renderer hydrates it via Excalidraw's `convertToExcalidrawElements`, which auto-generates `id`, `seed`, `versionNonce`, `boundElements`, `containerId`, the bound text-label elements, and arrow point geometry.
+
+```json
+{
+  "type": "excalidraw-skeleton",
+  "elements": [
+    { "type": "rectangle", "id": "ingest", "x": 100, "y": 100, "width": 160, "height": 80,
+      "strokeColor": "#1e1e1e", "backgroundColor": "#ffffff", "roughness": 0,
+      "label": { "text": "Ingest" } },
+    { "type": "ellipse", "id": "store", "x": 480, "y": 110, "width": 140, "height": 80,
+      "label": { "text": "Store" } },
+    { "type": "arrow", "x": 270, "y": 140, "width": 200, "height": 0,
+      "start": { "id": "ingest" }, "end": { "id": "store" }, "label": { "text": "writes" } }
+  ]
+}
+```
+
+What you still provide:
+- `type`, `x`, `y`, and (for shapes) `width`/`height`.
+- `label: { text }` for a bound text label — no separate text element, no `containerId` wiring.
+- All style props you'd normally set (`strokeColor`, `backgroundColor`, `fillStyle`, `strokeWidth`, `strokeStyle`, `roughness`, `fontSize`, `fontFamily`, `opacity`) — pull these from the active theme exactly as before. The skeleton only removes *boilerplate*, not styling control.
+
+**Arrow binding — the one gotcha:** a bound arrow still needs approximate geometry. Give it `x`/`y` (a point near the source) and `width`/`height` (the delta toward the target), then:
+- bind to **existing** elements with `"start": { "id": "..." }` / `"end": { "id": "..." }`, or
+- **auto-create** new endpoint shapes with `"start": { "type": "rectangle" }` / `"end": { "type": "ellipse" }`.
+Without coordinates (`x:0, y:0`), the arrow renders detached at the origin.
+
+**Frames** (native section boundaries): `{ "type": "frame", "name": "Backend", "children": ["id1", "id2"] }`.
+
+### Mermaid fast-path (structured diagrams)
+
+For **rigid, structured** diagrams — flowcharts, sequence diagrams, class diagrams — don't hand-author elements at all. Write Mermaid and let the renderer convert it:
+
+```json
+{
+  "type": "mermaid",
+  "definition": "flowchart LR\n  A[Client] -->|request| B(API)\n  B --> C{Auth?}\n  C -->|yes| D[(DB)]\n  C -->|no| E[Reject]"
+}
+```
+
+The renderer parses it with `@excalidraw/mermaid-to-excalidraw`, hydrates to full elements, and renders in the active theme's hand-drawn style. `hydrate` works on Mermaid docs too, producing an editable `.excalidraw`.
+
+**When to use which:**
+- **Mermaid** — the structure is the whole point (a flow, a sequence, a class hierarchy) and Mermaid's auto-layout is good enough. Cheapest possible authoring.
+- **Skeleton / full elements** — a *visual argument*: evidence artifacts, multi-zoom, deliberate composition, free-floating text, anything Mermaid's rigid layout can't express. This is where the methodology earns its keep.
+
+Only flowchart/sequence/class are natively supported; other Mermaid types fall back to an image. If a Mermaid diagram comes out looking like a generic labeled grid, that's the signal to switch to the skeleton format and *argue*.
+
+### Hydrating to an openable file
+
+A skeleton file does **not** open directly in Excalidraw (it expects fully-qualified elements). The renderer reads skeletons fine, but to produce an editable/shareable `.excalidraw`:
+
+```bash
+excalidraw-render hydrate diagram.excalidraw -o diagram.full.excalidraw
+```
+
+Draft as a skeleton → render + iterate (fast, cheap) → hydrate to a full file for the final deliverable.
+
+### Full-element format
+
+Hand-write fully-qualified elements (the **Excalidraw Correctness Contract** above governs this path) only when you need control the skeleton can't express — exact `seed` reproducibility, custom multi-waypoint arrow `points`, or hand-tuned geometry. For everything else, skeleton wins.
+
+## JSON Structure
+
+Full-element envelope (what `hydrate` produces and what the full-element path uses):
+
+```json
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [...],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": 20
+  },
+  "files": {}
+}
+```
+
+## Element Templates
+
+See `references/element-templates.md` for copy-paste JSON templates for each element type (text, line, dot, rectangle, arrow). Pull colors from `references/color-palette.md` based on each element's semantic purpose.
+
+---
+
+## Render & Validate (MANDATORY)
+
+You cannot judge a diagram from JSON alone. After generating or editing the Excalidraw JSON, you MUST render it to PNG, view the image, and fix what you see — in a loop until it's right. This is a core part of the workflow, not a final check.
+
+### How to Render
+
+Use the installed renderer (any of these — whichever the environment provides):
+
+```bash
+# Node CLI (npm)
+npx @excalidraw-skill-pack/render <path-to-file.excalidraw> --theme <theme>
+
+# Python CLI (PyPI) — installs the `excalidraw-render` command
+excalidraw-render <path-to-file.excalidraw> --theme <theme>
+```
+
+If you're in an MCP-enabled agent, call the `render_diagram` tool instead. All paths accept full `.excalidraw`, `excalidraw-skeleton`, and `mermaid` documents and write a PNG next to the file. Then use the **Read tool** on the PNG to actually view it.
+
+### The Loop
+
+After generating the initial JSON, run this cycle:
+
+**1. Render & View** — Run the render script, then Read the PNG.
+
+**2. Audit against your original vision** — Before looking for bugs, compare the rendered result to what you designed in Steps 1-4. Ask:
+- Does the visual structure match the conceptual structure you planned?
+- Does each section use the pattern you intended (fan-out, convergence, timeline, etc.)?
+- Does the eye flow through the diagram in the order you designed?
+- Is the visual hierarchy correct — hero elements dominant, supporting elements smaller?
+- For technical diagrams: are the evidence artifacts (code snippets, data examples) readable and properly placed?
+
+**3. Check for visual defects:**
+- Text clipped by or overflowing its container
+- Text or shapes overlapping other elements
+- Arrows crossing through elements instead of routing around them
+- Arrows landing on the wrong element or pointing into empty space
+- Labels floating ambiguously (not clearly anchored to what they describe)
+- Uneven spacing between elements that should be evenly spaced
+- Sections with too much whitespace next to sections that are too cramped
+- Text too small to read at the rendered size
+- Overall composition feels lopsided or unbalanced
+
+**4. Fix** — Edit the JSON to address everything you found. Common fixes:
+- Widen containers when text is clipped
+- Adjust `x`/`y` coordinates to fix spacing and alignment
+- Add intermediate waypoints to arrow `points` arrays to route around elements
+- Reposition labels closer to the element they describe
+- Resize elements to rebalance visual weight across sections
+
+**5. Re-render & re-view** — Run the render script again and Read the new PNG.
+
+**6. Repeat** — Keep cycling until the diagram passes both the vision check (Step 2) and the defect check (Step 3). Typically takes 2-4 iterations. Don't stop after one pass just because there are no critical bugs — if the composition could be better, improve it.
+
+### When to Stop
+
+The loop is done when:
+- The rendered diagram matches the conceptual design from your planning steps
+- No text is clipped, overlapping, or unreadable
+- Arrows route cleanly and connect to the right elements
+- Spacing is consistent and the composition is balanced
+- You'd be comfortable showing it to someone without caveats
+
+### First-Time Setup
+The renderer drives headless Chromium via Playwright. If a render fails because the browser isn't installed:
+```bash
+# Node renderer
+npx playwright install chromium
+# Python renderer
+excalidraw-render --help   # the package installs Playwright; if missing:
+python -m playwright install chromium
+```
+
+---
+
+## Quality Checklist
+
+### Depth & Evidence (Check First for Technical Diagrams)
+1. **Research done**: Did you look up actual specs, formats, event names?
+2. **Evidence artifacts**: Are there code snippets, JSON examples, or real data?
+3. **Multi-zoom**: Does it have summary flow + section boundaries + detail?
+4. **Concrete over abstract**: Real content shown, not just labeled boxes?
+5. **Educational value**: Could someone learn something concrete from this?
+
+### Conceptual
+6. **Isomorphism**: Does each visual structure mirror its concept's behavior?
+7. **Argument**: Does the diagram SHOW something text alone couldn't?
+8. **Variety**: Does each major concept use a different visual pattern?
+9. **No uniform containers**: Avoided card grids and equal boxes?
+
+### Container Discipline
+10. **Minimal containers**: Could any boxed element work as free-floating text instead?
+11. **Lines as structure**: Are tree/timeline patterns using lines + text rather than boxes?
+12. **Typography hierarchy**: Are font size and color creating visual hierarchy (reducing need for boxes)?
+
+### Structural
+13. **Connections**: Every relationship has an arrow or line
+14. **Flow**: Clear visual path for the eye to follow
+15. **Hierarchy**: Important elements are larger/more isolated
+
+### Technical
+16. **Text clean**: `text` contains only readable words
+17. **Font**: `fontFamily: 3`
+18. **Roughness**: `roughness: 0` for clean/modern (unless hand-drawn style requested)
+19. **Opacity**: `opacity: 100` for all elements (no transparency)
+20. **Container ratio**: <30% of text elements should be inside containers
+
+### Visual Validation (Render Required)
+21. **Rendered to PNG**: Diagram has been rendered and visually inspected
+22. **No text overflow**: All text fits within its container
+23. **No overlapping elements**: Shapes and text don't overlap unintentionally
+24. **Even spacing**: Similar elements have consistent spacing
+25. **Arrows land correctly**: Arrows connect to intended elements without crossing others
+26. **Readable at export size**: Text is legible in the rendered PNG
+27. **Balanced composition**: No large empty voids or overcrowded regions

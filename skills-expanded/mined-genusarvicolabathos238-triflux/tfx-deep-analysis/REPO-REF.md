@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/genusarvicolabathos238/triflux (path: skills/tfx-deep-analysis/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 다각도 심층 분석이 필요할 때 사용한다. 'deep analyze', '심층 분석', '제대로 분석', '3관점 분석', '편향 없이 분석' 같은 요청에 사용. 아키텍처 결정, 기술 부채 평가, 대규모 리팩터링 전 분석에 적극 활용."

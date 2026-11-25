@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/huytran1120/vietnam-agentic-skills (path: skills/social-media-setup/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Social media register: platforms and handles, post captions and hashtags, publishing cadence, approval status and profile checklist. Use for social account setup.'

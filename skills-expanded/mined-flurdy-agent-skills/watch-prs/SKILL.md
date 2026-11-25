@@ -1,0 +1,167 @@
+---
+name: watch-prs
+description: >
+  Start a recurring PR status dashboard — runs /pr-status on an adaptive cadence
+  (fast when CI is in flight, backing off when settled) until end of day. Unattended:
+  renders tables and suggested next actions, never prompts or blocks.
+allowed-tools: "Bash(~/.agents/skills/watch-telemetry/scripts/watch_telemetry.py record:*)"
+model-tier: standard
+model: sonnet
+effort: medium
+version: "2.6.1"
+author: "flurdy"
+---
+
+# Watch PRs
+
+Run `/pr-status` on a self-rescheduling loop until a stop hour. Each tick is an ordinary
+`/pr-status` run that ends by scheduling the next one. Unattended — leave it in a tab.
+
+`/pr-status` owns the shared read-only feedback call at
+`~/.agents/skills/pr-status/scripts/gh-pr-feedback.py`; the watcher must not duplicate it. This
+preserves stable identity/update comparisons and makes partial fetches visible on each dashboard.
+
+## Usage
+
+```
+/watch-prs            # adaptive cadence, stop at 18:00   (default)
+/watch-prs 17         # adaptive, stop at 17:00
+/watch-prs 10m        # fixed 10-minute interval, stop at 18:00
+/watch-prs 5m 17      # fixed 5m, stop at 17:00
+```
+
+## Execution telemetry
+
+Only for a normal valid execution request, not when reading this file as context, record once:
+
+```text
+~/.agents/skills/watch-telemetry/scripts/watch_telemetry.py record watch-prs {harness} invocation
+```
+
+Bind `{harness}` to `pi` or `claude` from the known current harness, never a model name or shell
+probe; otherwise skip. Use only already-permitted recording. Never enable collection, change
+permissions, or wait for telemetry approval. Missing/denied/failed recording must not block work.
+Do not count `status`, `reset`, `recheck`, `disposition`, or internal ticks as invocations. The
+self-contained tick prompt owns tick recording; do not record again on a nested skill read.
+See [the counter contract](../watch-telemetry/SKILL.md) for opt-in, partial coverage and retention.
+
+## Instructions
+
+Parse arguments: a positive interval matching `\d+m` (absent → adaptive mode, the default), and a
+stop hour from `0` through `23` (default `18`). If an argument is invalid, explain the accepted
+forms and stop. Resolve today's stop hour in local time. If the current time is already at or past
+that deadline, say so and don't start.
+
+### Pi protocol v1
+
+If `watch_loop` is available, use this path instead of Claude scheduling:
+
+1. Call `watch_loop` with `action: status`. Continue only when its result reports
+   `protocolVersion: 1`. If another watch is `armed`, `running`, or `paused`, do not replace it;
+   show the status and point at `/watch-status`, `/watch-stop`, or `/watch-resume`. If the version
+   differs, explain the mismatch and stop without scheduling anything.
+2. Convert today's local stop hour to an ISO-8601 timestamp with its timezone offset for `stopAt`.
+3. Use this self-contained tick prompt in the start call:
+
+   ```text
+   When already permitted, first run `~/.agents/skills/watch-telemetry/scripts/watch_telemetry.py record watch-prs pi tick` once; telemetry failure must not block the watch. Then Load and follow the skill named `pr-status` now. Render its full dashboard as visible text. Do not execute any suggested action. Read the final `next-tick:` line and use its numeric N as the adaptive delay when required. Finish only after the dashboard with the matching `watch_loop complete` call injected by the runtime.
+   ```
+
+4. For adaptive mode, make the terminating start call with:
+
+   ```yaml
+   action: start
+   protocolVersion: 1
+   label: PRs
+   mode: adaptive
+   initialDelaySeconds: 60
+   missedCompletionPolicy: retry
+   stopAt: <today's local deadline as ISO-8601>
+   tickPrompt: <the prompt above>
+   ```
+
+   The first dashboard lands after about one minute. Each later tick passes `/pr-status`'s numeric
+   `next-tick:` recommendation as `delaySeconds`; the runtime clamps it to 60–3600 seconds.
+
+5. For fixed mode, convert the requested minutes to seconds and make the terminating start call
+   with:
+
+   ```yaml
+   action: start
+   protocolVersion: 1
+   label: PRs
+   mode: fixed
+   initialDelaySeconds: <interval seconds>
+   intervalSeconds: <interval seconds>
+   missedCompletionPolicy: retry
+   stopAt: <today's local deadline as ISO-8601>
+   tickPrompt: <the prompt above>
+   ```
+
+   Fixed ticks ignore the dashboard's `next-tick:` value. The runtime owns the interval from each
+   successful completion and reports any 60–3600-second clamp.
+
+State the selected mode and local deadline before `action: start`, because a successful start ends
+the turn. Every tick must render the dashboard before `watch_loop complete` (`action: complete`).
+Protocol v1 also exposes model-facing `watch_loop stop` (`action: stop`); this watcher leaves
+ordinary deadline and manual stopping to the runtime and `/watch-stop`.
+
+### Claude Code fallback
+
+If `watch_loop` is unavailable, retain the existing Claude Code path below. Do not imitate a
+missing runtime tool. Both Claude modes start through the `/loop` skill; adaptive mode additionally
+needs `ScheduleWakeup` to pace itself. If `/loop` is unavailable, explain that recurring watches are
+unsupported and stop.
+
+**Session-model guard (adaptive mode only).** Before starting the Claude adaptive path, state which
+model powers this session — your system prompt names it ("You are powered by …"). If it is any
+Fable model, do NOT start the adaptive loop: say why, point at the alternatives below, and end the
+turn without starting it. This is not a capability judgment you can pass by intending
+to render first — on wakeup turns Fable-class models emit their main output as the turn's final
+message after tool calls, and `ScheduleWakeup` ends the turn the instant it returns, mechanically
+discarding that message; every tick will be blank regardless of intent. Alternatives: run the
+watcher in a tab launched with `claude --model sonnet` (session-only, leaves the saved default
+alone), or use fixed mode (`/watch-prs 10m`), whose cron ticks carry no scheduling duty and work
+on any model. Sonnet- and Opus-class sessions pass this guard.
+
+This skill selects Sonnet for coordination. Retain the adaptive guard as a fallback if the runtime
+uses another model; the hint alone is not proof of the effective model.
+
+#### Adaptive mode (default)
+
+`ScheduleWakeup` paces a loop runtime that already exists — it is the self-pacing primitive of a
+no-interval `/loop`, not a way to start one. Called standalone it still reports a scheduled wakeup,
+but the call is orphaned: no cron entry is written and no tick ever fires. So adaptive mode starts
+through `/loop` as well, with the interval omitted.
+
+Do NOT run `/pr-status` in this turn, and do NOT call `ScheduleWakeup` yourself. Invoke the `/loop`
+skill with no interval and this prompt, substituting the stop hour:
+
+```
+/loop When already permitted, first run `~/.agents/skills/watch-telemetry/scripts/watch_telemetry.py record watch-prs claude tick` once; telemetry failure must not block the watch. Then invoke the pr-status skill and compose its full read-only dashboard without printing it yet. Do not execute suggested actions. Then call ScheduleWakeup once (delaySeconds = N from the dashboard's next-tick line, prompt = this message verbatim, noop = false), or ScheduleWakeup(stop: true) if that wake would land past {stop_hour}:00; after it returns, print the full dashboard — tables, changes, suggested actions, next-tick line — as the closing message of the turn
+```
+
+Each tick is then a plain `/pr-status` run inside the loop the harness is already running.
+`/pr-status` closes with `next-tick: {hot|warm|cold} (~{N}s) — {reason}`; that `N` (hot ~180s /
+warm ~600s / cold 1200–1800s, 600 if the line is missing) is the next delay.
+
+Schedule first, print last. Claude Code replaces text written before the final tool call with a
+one-line auto summary, so a dashboard printed before `ScheduleWakeup` never shows its tables;
+text after the call is shown in full. Sonnet and Opus sessions do this; Fable sessions are kept
+out of adaptive mode by the guard above because they drop text after the call.
+
+#### Fixed mode (interval given)
+
+Invoke the `/loop` skill with the literal interval; the `next-tick:` line is ignored:
+
+```
+/loop {interval} When already permitted, first run `~/.agents/skills/watch-telemetry/scripts/watch_telemetry.py record watch-prs claude tick` once; telemetry failure must not block the watch. Then invoke the pr-status skill and render its full read-only dashboard. Do not execute suggested actions.
+```
+
+Tell the loop to stop at `{stop_hour}:00` local time.
+
+## Note
+
+`/pr-status` is read-only and never prompts, so this loop runs unattended. Its suggested-action
+footer points at `/ready-to-merge`, `/review-comments`, etc. when normalized feedback is new or
+materially edited — you run those yourself; the watcher never acts. For an attended release gatekeeper, use `/watch-release`.

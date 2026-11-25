@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hemlock-lyk/hemlock (path: backend/hemlock/data/builtin_skills/oauth-oidc-misconfiguration/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: SKILL: OAuth and OIDC Misconfiguration — Redirects, PKCE, Scopes, and Token Binding

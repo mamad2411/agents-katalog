@@ -1,0 +1,24 @@
+---
+name: emacs-command-variable-introspection
+title: Emacs Command And Variable Introspection
+description: Inspect Emacs commands, variables, bindings, defaults, and buffer-local values.
+type: instruction
+tools: ["emacs_read", "emacs_eval_live"]
+capability: true
+family: emacs-introspection
+source: builtin
+source-name: emacs
+features: ["emacs"]
+modes: ["emacs-lisp-mode", "lisp-interaction-mode"]
+prompt-keywords: ["command", "commands", "variable", "variables", "customize", "symbol", "binding", "describe-function", "describe-variable"]
+disclosure: active
+risk: low
+---
+
+# Emacs Command And Variable Introspection
+
+Use Emacs introspection functions to inspect commands and variables. Distinguish symbol existence, function binding, interactive command status, default values, and buffer-local values.
+
+When checking key bindings, inspect the active keymaps in the relevant buffer.
+
+Do not guess the representation of unfamiliar variables or complex values. Inspect the value's type and shape with a purpose-built helper or `describe-variable` before extracting fields. If an operation reports `Wrong type argument`, inspect `type-of` next instead of retrying with another guessed representation.

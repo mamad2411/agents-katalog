@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jeffgreen311/eve-agent-v2-unleashed (path: .claude/skills/context-driven-development/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Context-Driven Development

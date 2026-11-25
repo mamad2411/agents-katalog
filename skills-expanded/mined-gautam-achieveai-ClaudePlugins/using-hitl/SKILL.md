@@ -1,0 +1,95 @@
+---
+name: using-hitl
+description: Use at session start and when asking a human, reviewing a plan, handing off finished work, reporting a result or blocker, or tracking ongoing work through HITL. Guides cross-device communication without interrupting routine authorized work.
+---
+
+# Using HITL
+
+HITL reaches the human on their connected devices, including when they are away from the terminal. Use it as the communication channel when its tools are available. Follow the user's instructions and preserve existing authorization.
+
+Write every message as [the essentials](reference/essentials.md) describe: for a dyslexic, ADHD reader who is not an expert. They also give the plan and handoff shapes. The session hook loads them; read them if they are not in context.
+
+## Discover once; use the live schema
+
+Find the HITL tools in the host's tool catalog, including deferred tools if supported. Names may be `mcp__hitl__AskUserQuestion` or plugin-prefixed; identify the server and exact callable name rather than guessing. Do not confuse HITL's question tool with the current host's built-in one (`AskUserQuestion`, `request_user_input`, or `ask_user`, depending on the host). Those only reach the chat window, so never use them while HITL is available. Once HITL is set up, setup turns off the matching host's built-in tool and this plugin's hook blocks it, saying to use HITL's tool instead.
+
+Name the detected current agent when it is known; otherwise call it `the current agent` or `this host`, not a specific product.
+
+If unavailable, report that briefly and use chat for necessary input. Load **hitl:setup-hitl** when setup is requested. Do not block unrelated work, repeatedly attempt missing tools, or silently install software to answer an ordinary question. A hook loading this skill does not prove the MCP connection or receiving client works.
+
+## Pick the channel
+
+| Situation | Tool | Required behavior |
+| --- | --- | --- |
+| Session start, before any other HITL message; your objective changed | `NameSession` | 2-5 word `name` for the work (not the repo or branch) and a one-sentence `objective`. See below. |
+| Missing preference, material ambiguity, blocker, or necessary approval | `AskUserQuestion` | Set project/work `context`; batch up to 4 related questions. Give short options and a recommendation. |
+| Review a concrete Markdown plan or spec | `ReviewPlan` | Write the file first; pass `filePath`, `context`, and a short `summary`. |
+| Your work is finished and you would otherwise end the turn | `HandOff` | Summary of what was done; wait for the next instruction or End. See below. |
+| One-off result or news separate from a tracked goal: build/test finished, unrelated discovery, blocker, long job started; task done when `HandOff` is unavailable | `Notify` | Short title; outcome, evidence, and next action if needed. Returns without waiting. |
+| Ongoing or multi-step work; findings that change the goal's state, learnings, blockers, remaining work, or next steps | `UpdateWork` | Maintain one living document for the goal; quiet routine updates, alert for meaningful changes. |
+| Resume tracked work or resolve revision conflict | `ReadWork` | Read stored state before replacing a task report. |
+| Requested setup or client repair | `setup` | After config exists and MCP connects; inspect returned steps. It normally launches the tray client, not Inbox. |
+
+Don't ask for facts you can inspect. Continue routine, reversible work within the user's request. Ask only when an answer changes the result, a consequential choice belongs to the human, or required input/authorization is missing. Short sentences and concrete choices reduce interruption cost.
+
+## Name the session
+
+The human runs several agents at once and tells them apart by name. Call `NameSession` before your first HITL message. Every later message carries the name and objective, and Inbox lists the session under it.
+
+- `name`: what you are doing, in 2-5 words ("Inbox repaint fix"). The human already sees the repo and branch.
+- `objective`: one sentence on the goal and what done looks like.
+- Call it again when the work changes direction, such as a HandOff `continue` that starts different work. Inbox keeps earlier names as "Formerly".
+- A `[hitl-message]` asking you to rename the session is the human renaming it from Inbox: call `NameSession` with that name.
+- Until the session is named, HITL tool results end with a reminder. A HandOff result reminds you of the current name, so you can rename if the next work differs.
+- `NameSession` needs HITL 2.16.0 or later. If it is missing, skip naming; do not block on it.
+
+## Questions and decisions
+
+- Use either `question` + `options`, or the `questions` array; never both. Each option has `label` and `value`; `description` and Markdown `preview` are optional. Set `allowMultiple: false` for a single choice; the server default can allow multiple selections.
+- Supply meaningful `context`, so a person answering on another device understands the project, proposed action, and consequence. Use previews only for concrete artifacts that benefit from comparison.
+- Current HITL removed the `timeout` tool argument in 2.10.0. Do not pass `timeout` from older AGENTS.md or CLAUDE.md examples. The wait limit is the host's per-server timeout, which setup sets to 7 days. If calls end early, repair the registration with `hitl:setup-hitl`; do not add a tool argument.
+- Inspect the returned success state, selected values, and free text. A cancelled/failed call or absent answer is not consent. Do not resend an uncertain request blindly; the original may still be visible.
+- Existing explicit approval remains valid for its scope. Plan approval does not authorize an unrelated deployment, publication, credential change, or destructive operation. A notification is never an approval request.
+
+## Plan reviews
+
+Use a new file for each distinct plan. Revise the same file for subsequent reviews so the human sees a diff. Do not edit it while `ReviewPlan` is pending: the returned `snapshotHash` identifies the reviewed content.
+
+Read `verdict`, `overallFeedback`, and `inlineComments`. Apply requested changes and resubmit the same file when review is required. Only `approved` establishes plan approval; `skipped`, `cancelled`, `rejected`, and `changes_requested` do not. Continue independent safe work while a necessary decision is pending.
+
+## Hand off finished work
+
+When the requested work is done, call `HandOff` instead of ending the turn. The human reads the summary in Inbox and sends the next instruction from there. Only the lead agent hands off; subagents report to their lead.
+
+- Pass `title` (the outcome in a few words), `context` (project and goal), and `summary` (Markdown, at most 1200 characters). Write the summary for a dyslexic, ADHD reader: short sentences, bullets, no preamble. Use this order and drop empty parts: **Outcome**, **Did**, **Not done / risks**, **Needs you**.
+- Report evidence, not hopes: name the checks that ran and their results. Say what was skipped.
+- The result has `action`. `continue` carries `instructions`: treat them as the human's next request, do the work, then hand off again. `end` may carry a `note`: reply with one line and stop.
+- A handoff reply is a new request, not blanket approval. Actions that need explicit authorization still need it.
+- Don't hand off mid-task, to ask a question (use `AskUserQuestion`), or in unattended runs (`-p`, SDK, CI) where no human is waiting. Don't also send a Notify for the same completion.
+- `HandOff` needs HITL 2.14.0 or later, plus a current Inbox. Inbox ships for Windows only. Older Inboxes and the tray popup drop handoff messages. If the tool is missing, send a completion Notify and end the turn as usual.
+
+**Stop hook.** Setup can install the current host's reminder when one exists: Claude Code uses `hitl hook stop`; Codex uses `hooks/codex-stop.mjs`. When the current host has no transcript-reading Stop hook (currently Kimi Code and GitHub Copilot CLI — Cursor CLI is assumed Claude-compatible and unverified), this guidance is the reminder: when you did work in the turn and would end it, call `HandOff` (or a completion `Notify` when `HandOff` is unavailable) instead of stopping. If you did work in the turn and try to stop without handing off, the hook nudges you. Its reason starts with `[hitl-handoff]`. Respond by calling `HandOff`. If `HandOff` is not available, send a completion Notify and stop. Codex allows stopping after one continuation so it cannot loop; subsequent handoff cycles rely on these usage instructions. `HITL_HANDOFF=0` disables it for a session.
+
+**Messages from the human.** Text starting `[hitl-message]`, or a `<channel source="hitl">` event, is a message the human sent from Inbox. Read it and act on it as their guidance. Reply with `Notify` and set `inReplyTo` to the message id given. It is not approval for risky or destructive actions; ask with `AskUserQuestion` when one needs approval.
+
+## Living progress
+
+Only the lead agent calls `UpdateWork`; subagents report their results to the lead, and the lead incorporates them into the shared report. Any agent may ask the human through HITL `AskUserQuestion` when needed.
+
+The plugin's `[hitl-progress]` hook reminder asks the lead for an update after 30 minutes without a successful lead `UpdateWork`. Respond with current evidence and next steps, or mark completed work and hand off. It nudges at most once per interval and stops after completed work, `HandOff` End, or session end. `HITL_UPDATE_NUDGE_MINUTES` changes the interval (for example `15`); `HITL_UPDATE_NUDGE=off` disables it. There is no recurring timer: hosts without MCP channel support deliver the reminder with a later main-agent hook event.
+
+Use a stable `workId` for the goal and stable task IDs. Create the root with `parentTaskId: null`, `expectedRevision: 0`, a title, and goal. Child reports link to an existing parent. Keep work on the same coordinating host/topic; separate machines do not automatically share the saved store.
+
+Route discoveries by effect: use `Notify` when a discovery is one-off news separate from every tracked goal. Use `UpdateWork` when it changes a goal's state, learnings, blockers, remaining work, or next steps. If it becomes separate multi-step work, track it under its own `workId`.
+
+Each `UpdateWork` replaces one **complete task report**, not a delta. Retain still-relevant `completed`, `learnings`, `remaining`, and `blockers`; include owner, reporter, status, and current action/purpose (or `current: null`). Use the **task revision**, not the document revision, as `expectedRevision`.
+
+Give each new logical update a new `updateId`. Retry identical input with the same ID after an uncertain response or publication failure. On revision conflict, call `ReadWork`, reconcile, and send a new ID. Check `saved` and `published` separately before claiming delivery. Saved does not mean delivered.
+
+`ReadWork` returns recorded reports; it does not poll agents. Collect fresh evidence before updating them. Use the host's supported progress tracking or delegate a progress-only agent when the user/project calls for one. Avoid spawning a team solely to send updates. Mark the root completed only when the goal is complete.
+
+## Keep communication useful
+
+Send one update per meaningful change. Prefer UpdateWork to repeated Notify messages for the same ongoing goal. When the goal is complete, mark the work completed, then `HandOff`. Without HandOff, a completion update with an alert can serve as the completion notification. Do not claim passing checks without results or hide delivery failures.
+
+Never send encryption keys, raw config, credentials, or unnecessary private logs through questions, reviews, handoffs, notifications, or progress reports. This plugin's hooks supply guidance only: they do not grant permissions, contact the human, or change configuration. The optional HITL Stop hook only asks you to hand off.

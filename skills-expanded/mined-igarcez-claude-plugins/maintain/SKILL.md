@@ -1,0 +1,229 @@
+---
+name: maintain
+description: "Branch of /intel: audit the intelligence layer end-to-end (subcommand maintain). Internal: loaded by the intel command; not a standalone task."
+---
+
+# intel maintain
+
+Audit the intelligence layer end-to-end. Do not modify code outside the intelligence layer and the
+pointer-stanza file (`CLAUDE.local.md`, or `CLAUDE.md` in a layer that keeps the stanza there) unless
+the user explicitly approves.
+Requires the shared shapes from the `intel:shape` skill and the registry from `intel:migrations` —
+load both first if they are not already in context.
+
+## 0. Confirm before running (token cost)
+
+`intel maintain` is **token-intensive**: it reads every `intelligence/**/*.md` file at all depths and
+the full `CLAUDE.md` and `CLAUDE.local.md`, re-verifies cited paths/commands/constants against the
+codebase, and scans recent
+git history for coverage gaps. On a large layer this can consume a lot of context.
+
+Before any other work, warn the user and get explicit confirmation with `AskUserQuestion`:
+*"`/intel maintain` audits the entire intelligence layer and can use a lot of tokens. Run the full
+audit now?"* — options **Run full audit** and **Cancel**. On **Cancel**, stop immediately and do no
+further work. Only continue to the steps below on explicit confirmation.
+
+## 0a. Pending migrations
+
+Compute the pending set from `intel:migrations` ("How to compute the pending set" — the layer's
+ledger first, Detect only for ids missing from it). If any migration is pending, load `intel:upgrade`
+and let it apply them before auditing anything — the audit below assumes the current layout. Record
+the applied ids for the step 6 report.
+
+## 1. Index ↔ files consistency
+
+The layer nests to **any depth**: `intelligence/index.md` indexes the top-level topics, and every
+**hub** (`intelligence/<path>/index.md`) indexes the files beside it in its own folder — recursively.
+Audit every level.
+
+- List every `intelligence/**/*.md` (files at all depths). Classify each as an **index** (any file
+  named `index.md`) or a **leaf** (everything else).
+- `intelligence/index.md` ↔ top level — report:
+  - Top-level topics present but **not** indexed (`intelligence/*.md` other than `index.md`, and
+    `intelligence/*/index.md` hubs) → propose an index bullet (ask the user for the `If <trigger>`
+    wording via `AskUserQuestion`, then add).
+  - Index entries pointing to **missing** files → propose either creating the file (run the `add`
+    flow scoped to that topic) or removing the index line. Ask which.
+  - Duplicate index entries for the same file → consolidate.
+  - Bullets whose target is not relative to the index's own folder (e.g. a leftover
+    `(intelligence/<topic>.md)`, or `(<topic>.md)` pointing at what is now a hub) → fix the target.
+- Each hub ↔ its own folder — apply the same checks at every depth, recursively: sibling files present
+  but absent from the hub's `## Index`; hub bullets pointing at missing files; duplicate entries;
+  targets not relative to the hub. A hub whose folder holds 0–1 files besides `index.md` is a merge
+  candidate (step 3b), at any depth.
+- **Dangling relative links anywhere in the layer** — not just `## Index` bullets. Resolve every
+  relative Markdown target in every `intelligence/**/*.md` against the folder of the file holding it,
+  and report any that does not exist. A link that resolves once `../` is prepended is a file that
+  moved deeper without its links being re-based (see "Moving a file re-bases every relative link in
+  it" in `intel:shape`) — treat that as a safe fix.
+- `intelligence/local/index.md` ↔ its own folder — audit it exactly like any other hub (sibling
+  files missing from its `## Index`, bullets pointing at missing files, duplicates, targets not
+  relative to the hub, nested local hubs at any depth). An empty `## Index` in a local layer with no
+  sub-files is correct, not a finding.
+- The local layer is **never** indexed from `intelligence/index.md`. Report any root-index bullet
+  whose target is under `intelligence/local/` and offer to delete that bullet (the tracked index must
+  not reference the gitignored folder — see "The machine-local layer" in `intel:shape`).
+- Local layer presence — when `intelligence/local/index.md` is missing, or the repo `.gitignore`
+  lacks the exact line `intelligence/local/`, treat as a **safe fix**: follow "Creating the local
+  layer" in `intel:shape` and list it in the report.
+
+## 2. Preamble drift
+
+Compare the `# Project intelligence index` and `## How to use this index` block in
+`intelligence/index.md` against the canonical preamble in "Shape of `intelligence/index.md`" in
+`intel:shape`, and the `## Project intelligence` stanza — in `CLAUDE.local.md` when that file carries
+it, otherwise in `CLAUDE.md` — against "Shape of the pointer-stanza file". If either has drifted
+(wording changes, missing rules), report the diff and offer to restore the canonical text. Do not
+silently overwrite, and never touch content below the stanza. When neither file carries the stanza,
+report it and offer to write `CLAUDE.local.md` per step 6 of `intel:setup`.
+
+Check the local layer's preamble the same way against "Shape of `intelligence/local/index.md`" in
+`intel:shape`, and report its drift under the local section of the report.
+
+## 2a. Citation-convention presence
+
+Ensure the project records the code-citation convention (see "Citing code locations" in `intel:shape`)
+so future authors — and agents that read the intelligence layer without running this command — follow
+it. Check for an intel file documenting it: a dedicated `intelligence/intel-citations.md`, or a
+`## Citing code locations` section in an existing conventions/code-style file.
+
+If absent, treat as a **safe fix**: create `intelligence/intel-citations.md` from the "Citing code
+locations" rules in `intel:shape`, add an index bullet (`If writing or editing any intelligence/*.md
+file, or citing a code location → read intelligence/intel-citations.md`), and list it in the report.
+This is how the convention propagates into every project the skill maintains.
+
+## 3. Per-file accuracy audit — fan out subagents
+
+Auditing every file inline floods the main context with code reads that matter only long enough to
+produce a finding. Instead, dispatch **one subagent per leaf** (an index's accuracy is its bullets,
+covered in step 1 — never assign an `index.md`) — all in a single message so they run in parallel.
+Dispatch the
+step-5 coverage-gap agent in the same batch. Subagents cannot talk to the user: they verify, apply
+safe fixes in their own file, and report; every judgement call bubbles up through their report.
+
+Each auditor's prompt must contain:
+
+- The assigned file's path, and that it may edit **only that file** — everything else is read-only.
+  Leaves under `intelligence/local/` get an auditor too, on the same terms.
+- The audit checklist:
+  - Re-verify every command (Makefile targets, npm/composer scripts, binaries) still exists with
+    the same signature.
+  - Re-verify every path/glob still resolves.
+  - Spot-check cited conventions against 1–2 real files.
+  - Re-verify cited **code locations**: each symbol / quoted-string anchor still resolves, and any
+    `:line` is current — refresh drifted line numbers by **re-grepping the symbol**, never by
+    hand-counting.
+  - Check for contradictions between the file and current code (e.g. file says "tests live in
+    `tests/`" but tests now live in `spec/`).
+  - For a file under `intelligence/local/`: confirm every rule is still an environment fact about
+    this machine, and flag any rule that has become a project convention (belongs in the tracked
+    layer).
+  - For a tracked file: flag any rule that is machine-local — paths under `$HOME`, personal
+    plugins/agents/skills, this-workstation-only tooling, personal ports or service names — as a
+    `reclassify` item. Never move it; the main thread decides.
+- The full "Citing code locations" rules copied from `intel:shape` — a subagent does not inherit
+  your loaded skills; the rules must travel in the prompt.
+- Authority to apply **safe fixes** directly in its assigned file: typos, wrong paths, renamed
+  commands with an obvious replacement, drifted `:line` refreshes. Everything else is report-only.
+- The report format to return:
+  - `status`: OK | drift-minor (fixed) | drift-major
+  - `fixes`: safe fixes applied (exact line, before → after)
+  - `major`: drift-major items (exact line, what is wrong, proposed correction)
+  - `structure`: line count; distinct sub-areas covered; split candidate yes/no, and if yes the
+    proposed sub-files with an `If <sub-trigger>` each (criteria in step 3b)
+  - `contradictions`: file-vs-code conflicts found
+  - `reclassify`: rules that belong in the other layer (exact line, current layer, proposed layer)
+
+Collect all reports before continuing. Trust them — do not re-verify audited items in the main
+thread; spot-check only a report that is internally inconsistent.
+
+## 3b. Structure audit — split over-broad files, merge decayed hubs
+
+The aim is the **narrowest context per request**: a reader should rarely load a file far larger than
+the task needs. Judge the `structure` signals from the step-3 auditor reports, plus the hub shapes
+from step 1, against the split/merge criteria (see "When a file grows too broad: split into a
+sub-index" in `intel:shape`) — no re-reading of the files themselves should be needed.
+
+- **Split candidates.** Flag any leaf where all three hold: it is past ~150 lines or visibly
+  sprawling; it covers ≥3 sub-areas whose triggers rarely co-occur (a reader for one task needs one
+  section and never the others); and splitting would cut what a typical reader loads. For each
+  candidate, propose the split via `AskUserQuestion` — list the proposed sub-files and the
+  `If <sub-trigger>` for each, and let the user reassign/rename. On approval:
+  1. Create the `intelligence/<topic>/` folder.
+  2. Move each section into `intelligence/<topic>/<sub>.md`, preserving its rules verbatim and
+     re-grepping any cited code locations (never hand-count lines — see "Citing code locations"
+     in `intel:shape`).
+  3. Write `intelligence/<topic>/index.md`: optional `## Shared` core (rules every sub-topic needs)
+     plus a `## Index` of the new sub-triggers, targets relative to the folder (`(<sub>.md)`).
+  4. Delete the old flat `intelligence/<topic>.md`.
+  5. Retarget the parent bullet to `(<topic>/index.md)` and broaden its `If <trigger>` wording to the
+     whole area if it was specific to the old flat file.
+  6. Re-base every relative link that moved into the folder — each one now resolves one level deeper
+     (see "Moving a file re-bases every relative link in it" in `intel:shape`).
+- **Merge candidates.** Flag any hub whose folder now holds 0–1 files besides `index.md`, or whose
+  sub-files are each tiny and always read together. Propose collapsing back via `AskUserQuestion`:
+  fold the sub-files' content into a flat `intelligence/<topic>.md`, delete the folder including its
+  `index.md`, retarget the parent bullet back to `(<topic>.md)`, and re-base the folded-in relative
+  links for their new, shallower home.
+
+Splitting and merging are **judgement calls** — never restructure silently; confirm via
+`AskUserQuestion` first, then apply in step 4.
+
+## 4. Apply fixes
+
+Per-file safe fixes were already applied by the step-3 auditors — carry their `fixes` lists into the
+report. What remains for the main thread:
+
+- **Cross-file safe fixes** (index bullets from step 1, the citation-convention file from step 2a) —
+  apply directly and list what changed.
+- **Judgement calls** (drift-major items, rule no longer applies, convention has shifted, file should
+  be split or merged) — surface via `AskUserQuestion` before changing anything, then apply what the
+  user approves.
+- **Reclassification** (auditor `reclassify` items) — for each, ask via `AskUserQuestion` whether to
+  move it. On approval: delete the rule from its current file and append it to the target file in the
+  other layer (creating `intelligence/local/<topic>.md` plus its local-index bullet when no local
+  file fits, following the `add` write rules), and never leave the rule duplicated in both layers.
+  On decline, leave both files untouched and list the item in the report.
+
+## 5. Coverage gap check
+
+Run as a subagent, dispatched in the same batch as the step-3 auditors. Its prompt: scan recent
+commits (`git log --since='3 months ago' --name-only`) for recurring workflow signals, compare them
+against the `intelligence/index.md` index (include the index in the prompt), and return candidate topics not
+covered by any intelligence file (e.g. lots of changes under `infra/` with no intelligence file) —
+report-only, no writes. For each returned gap, ask the user whether to add a new intelligence file
+via `/intel add <topic>`.
+
+## 6. Report
+
+Print a structured summary:
+
+```
+Intelligence audit
+==================
+Migrations:          <applied ids, or "none pending">
+Index ↔ files:       <N OK, M issues fixed, K issues raised>
+Preamble:            <ok | drifted, restored | drifted, awaiting decision>
+Citation convention: <present | added intel-citations.md>
+Per-file accuracy:   <N OK, M drift-minor (fixed), K drift-major (raised)>
+Structure:           <N splits, M merges — proposed/applied; sub-files touched>
+Coverage gaps:       <list of topics flagged for the user>
+
+Machine-local layer (intelligence/local/, gitignored)
+-----------------------------------------------------
+Presence:            <ok | created | .gitignore line added>
+Index ↔ files:       <N OK, M issues fixed, K issues raised>
+Preamble:            <ok | drifted, restored | drifted, awaiting decision>
+Per-file accuracy:   <N OK, M drift-minor (fixed), K drift-major (raised)>
+Reclassified:        <rules moved tracked → local, local → tracked, or "none">
+
+Changes applied:
+- <file>: <one-line summary>
+...
+
+Open decisions:
+- <question>
+...
+```
+
+Do not commit. Leave the user to review and stage.

@@ -1,0 +1,107 @@
+---
+name: review-verify
+user-invocable: false
+version: 4.10.0
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Internal run-it verification review pass of the agentic-workflow review pack —
+  composed in-turn by review-change and product-audit; not a menu entry. Runs
+  the project's gate and the changed behavior for real — commands, exit codes,
+  observed output — instead of assuming; what cannot be executed goes to the
+  manual checklist. Findings only; never edits code.
+---
+
+# Review Verify (internal)
+> **Runner commands** below are `runner <subcommand> [args…]` — the launcher, its
+> order and the pin are owned by
+> [references/RUNNER.md](../runner-contract/references/RUNNER.md): read it before the
+> first command, then keep it for the whole unit — nowhere else spells either.
+
+Review-pack pass: follow this file inline as the routed step — findings only,
+never edits, never refactors (identity and guardrails owned by
+`skills/review-implementation/references/FINDER_CONTRACT.md` §Pass identity).
+
+**Shift from discoverer to auditor of recorded evidence (S5).** The implementer's
+claim-evidence loop is the primary verification. This review *audits* the
+recorded evidence: re-runs a sample of the recorded commands instead of
+re-deriving the whole change. This is the cost-scaling invariant — reviewers
+dig into code only when evidence is absent or contradicts.
+
+## Scope
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md` (§Scope):
+read it before the checklist and apply it as written, stating the scope at the
+top of the returned table. Missing reference → STOP.
+
+## Checklist
+
+The tally is `skills/review-implementation/references/FINDER_CONTRACT.md`
+§Checklist discipline's contract: `evaluated` equals this list's item count, and
+`pass + findings + n/a` equals it — a count above the item count is fabricated.
+
+✓ **Evidence audit.** Sample the unit doc's Evidence rows: re-run ≥ 3 of the
+  recorded commands and compare observed output against what the implementer
+  recorded. Mismatch → finding: "evidence contradicts observation at <file:line>".
+✓ **Claim-evidence loop verification.** Check the fold's claim table (if
+  present): every row has `status: ✓`. Any `✗` row means the implementer's
+  turn did not complete its claim-evidence loop.
+✓ **Unit-route triage currency.** Re-run `runner unit-route --triage
+  <slug>` and compare the `Steps:` line against the unit doc's Evidence section.
+  Mismatch → stale triage.
+✓ **Gate evidence is consumed, not re-run.** Run `runner gate-receipt verify`; it answers the receipt's state: `current` + `pass` (exit 0) means the
+  declared closure has not moved — cite its `checks[]` ids and `manifest.digest`
+  as the gate evidence; `missing` (3), `stale` (4) or `invalid` (5) is a finding
+  routed to `runner gate-receipt run`, never a prompt to run the gate
+  from this review and never an implicit pass; a current `fail`/`degraded`
+  receipt fails the review with the failing check ids and their fragments
+✓ The change's primary claimed behavior was exercised for real (run the
+  CLI/endpoint/function; paste the actual observed output) — *in addition to*
+  the evidence audit, verify at least one behavioral claim not covered by
+  recorded evidence
+✓ At least one failure-mode from the SPEC's dev scenarios was reproduced (bad
+  input, missing file, error path) and behaved as specified
+✓ New/changed tests actually fail when the implementation is reverted or
+  broken (mutate or stash to prove they assert something — restore after)
+✓ No test was skipped/disabled to get green (grep for skip/only/todo markers
+  in the diff)
+✓ The build artifact/dev server starts cleanly (no new warnings that indicate
+  breakage)
+✓ Anything that can only be confirmed by a human (visual, device, locale,
+  load) is listed explicitly under "Manual" — never silently dropped
+
+## Materiality bar
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md`
+(§Materiality bar): read it before the checklist and apply it as written — cite the rule it violates beside the evidence; never pad the table.
+Missing reference → STOP.
+
+## Return exactly
+
+`Sev` and `Impact` are the two published closed sets (`BLOCKER | CRITICAL |
+WARNING | SUGGESTION` and `blocking | docs-only | report-only`); their meanings
+are owned by `review-implementation` (`CLASSIFY.md` §Severity ladder) — assign a
+token, never a prose grade.
+
+```
+REVIEW VERIFY — scope: <scope>
+
+| # | Finding | Sev | Impact | Evidence | Suggested fix |
+|---|---------|-----|--------|----------|---------------|
+| 1 | <what>  | BLOCKER|CRITICAL|WARNING|SUGGESTION | blocking|docs-only|report-only | <file:line> | <smallest action> |
+
+Checklist: <n> evaluated, <n> pass, <n> findings, <n> n/a (<which + why>)
+Summary: <1-2 sentences>
+Manual (a human must check): <bullet list, or "none">
+Decision: PASS | FAIL
+```
+
+FAIL if any `BLOCKER`, `CRITICAL` or `WARNING` finding is open; PASS otherwise.
+`SUGGESTION` findings never block — they route to the caller's triage step.
+
+## Done when
+
+- Every checklist item was evaluated with evidence (file:line or command output)
+  or explicitly marked n/a with the reason.
+- The fixed-format block above is returned — nothing more, nothing less — and
+  no code was changed.

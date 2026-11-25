@@ -1,0 +1,97 @@
+---
+name: context-recall
+description: >
+  Retrieve full pre-compaction conversation history from saved transcript
+  files when the compact summary is insufficient or earlier session details
+  are missing. Use when asked about past decisions, tool results, or content
+  that predates the latest compaction; when mapping Done to Working Intent /
+  Recent User Requests after compaction; before ui__reportResult(success) if
+  intent or Completion Criteria are incomplete or unverified; when the agent
+  would say it does not remember; or when the compact summary's Context
+  recovery / fallback note names a transcript path. Triggers: "what did we
+  discuss earlier", "before the context was reset", "older messages",
+  "pre-compaction", "context recall", "recover history", "before declaring
+  done", "컴팩션 이전 대화", "과거 히스토리", "예전에 뭐라고 했지", "아까 정한",
+  "아까 뭐였지".
+---
+
+# Context Recall
+
+Compaction already saves transcripts on disk. Prefer those files over guessing
+or redoing work. This skill complements the compact summary's
+`### Context recovery` suffix — it does not replace it.
+
+After compaction, empty Active Request is not a Done signal. Before
+`ui__reportResult(success)`, restate Working Intent / Recent User Requests
+against Completion Criteria; if uncertain, read the latest epoch file first.
+
+## Workflow
+
+If the answer is still visible in the current context, just answer from it. Only when it is not
+(a compact summary is present, or earlier content is missing) and no explicit path was given, run
+the `workspace__globFiles` call in step 2 first, before grepping the workspace. This is the case for
+questions like "아까 정한 거 뭐였지".
+
+### 1. Prefer an explicit path from the compact summary
+
+- If `### Context recovery` names `.libragent/pre_compaction_epoch_{N}.md`,
+  read that path with `workspace__readFile`.
+- If a fallback note names
+  `.libragent/tool-results/compaction/fallback-….md`, read that **exact**
+  path. Those files live under internal `tool-results` and are **not**
+  discoverable via `globFiles` — do not try to browse for
+  them.
+
+### 2. Otherwise discover epoch transcripts
+
+```
+workspace__globFiles(path=".libragent", filePattern="pre_compaction_epoch_*.md")
+```
+
+Epoch numbers are **monotonic** (`1`, `2`, `3`, …). Retention keeps only the
+newest ~3 files, so `pre_compaction_epoch_1.md` may already be gone. Always
+read the **highest N** first (most recent compaction).
+
+### 3. Read concrete paths only
+
+```
+workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md")
+```
+
+Epoch files are chronological: the latest requests and work are at the **end**.
+Read the tail first with a negative `size`:
+
+```
+workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-200)
+```
+
+Then read earlier parts (default top-down read) only if needed.
+
+Never pass globs to `workspace__readFile`. Read older epochs only if the
+newest file is insufficient.
+
+## What's Inside
+
+Each epoch file is Markdown with:
+
+- `# Pre-compaction Transcript` header and session id
+- `---\n[timestamp] ROLE` separators
+- User/assistant text (truncated ~1500 bytes per block)
+- Thinking blocks (truncated ~1500 bytes)
+- `[TOOL CALL] name(args)` lines — **not** tool result bodies
+
+For tool outputs, inspect workspace files those tools wrote (or other session
+artifacts). Do not expect result payloads inside the epoch file.
+
+If the tail is only assistant text and tool calls, find the latest user request by
+searching for the last `] USER` separator line (`workspace__grepFiles`, or
+`grep -n '\] USER' <path> | tail -1`). User text can also contain `] USER`, so
+check that the match is followed by a `---` separator above it.
+
+## Do Not
+
+- Hard-code `epoch_1` / `epoch_2` — discover first, then pick highest N
+- Pass wildcards to `workspace__readFile`
+- Assume fallback paths under `.libragent/tool-results/` are listable
+- Re-research from scratch when an epoch file exists
+- Answer "I don't remember" when an epoch or fallback path is available

@@ -1,0 +1,298 @@
+---
+name: multi-perspective
+description: "Explore a research question through several independent analytical perspectives and synthesize their agreements and disagreements. Use when one line of reasoning is insufficient and distinct viewpoints should be preserved."
+allowed-tools: Read, Write, Edit, Glob, Grep, Task, AskUserQuestion
+argument-hint: "[research question, hypothesis, or design choice]"
+skill-dependencies: [devils-advocate, proofread]
+---
+
+# Multi-Perspective Exploration
+
+Spawn 3-5 parallel agents, each with a distinct disciplinary lens and epistemic prior, to independently investigate a research question. Then synthesise their findings into a structured comparison that surfaces agreements, tensions, and blind spots.
+
+The core insight: a single-perspective analysis inherits the biases of that perspective. Deliberately introducing cognitive diversity — grounded in real disciplinary traditions — produces more robust research designs.
+
+## Output Path
+
+Per `rules/review-artefact-routing.md` (auto-loads in research projects (path-scoped to `paper-*/` and `paper/`)):
+
+- **Source slug:** `multi-perspective`
+- **Write reports to:** `reviews/<scope>/multi-perspective/YYYY-MM-DD-HHMM.md` inside the project, where `<scope>` is the paper slug (e.g., `paper-jtp`, `paper-philtech`) for paper-level reviews or `_project` for project-level reviews. Path is relative to the research project root, not the Task-Management repo.
+- **Never** at project root (`./CRITIC-REPORT.md`-style filenames are forbidden — pre-rule layout).
+- **Idempotency:** the timestamp includes minutes (`YYYY-MM-DD-HHMM`), so same-day runs are naturally separated. If multiple reports are generated in the same minute, append a descriptor (`{timestamp}-r2.md`, `{timestamp}-revision.md`) — never overwrite.
+- **Index update:** if `reviews/INDEX.md` exists, write a one-line entry under "Latest per source" pointing at the new file. Otherwise `review-recap` will rebuild the index next time it runs.
+- **Infrastructure repos** (Task-Management, atlas-workspace, etc.): this section does not apply — the path-scoped rule won't load there.
+
+
+## When to Use
+
+- Early-stage research design: "Is this the right question? Is this the right method?"
+- When choosing between competing identification strategies
+- When a paper needs to convince reviewers from different traditions
+- Before committing to a theoretical framework
+- When you suspect your approach has blind spots
+
+## When NOT to Use
+
+- **Quick feedback** — use `devils-advocate` (single-perspective adversarial)
+- **Literature search** — use an installed scholarly-search workflow (discovery, not deliberation)
+- **Generating new questions** — use `a dedicated discovery workflow` (this skill evaluates, not generates)
+- **Paper proofreading** — use `proofread` or `paper-critic` agent
+
+## Workflow
+
+### Phase 1: Frame the Question
+
+Read `$ARGUMENTS` and any referenced files. Formulate a clear, debatable research question or design choice. Good inputs:
+
+- "Should I use DiD or synthetic control for this policy evaluation?"
+- "Is bounded rationality or information asymmetry the better theoretical lens for this phenomenon?"
+- "What are the threats to my identification strategy for [paper X]?"
+- "How would different disciplines approach [phenomenon Y]?"
+
+If the input is vague, ask one clarifying question before proceeding.
+
+### Phase 2: Generate Perspectives
+
+Generate 3-5 distinct perspectives. Each perspective is defined by:
+
+| Field | Description |
+|-------|-------------|
+| **Label** | Short name (e.g., "Behavioural Economist", "Organisational Theorist") |
+| **Discipline** | Academic field and tradition |
+| **Epistemic prior** | What this perspective takes as given, and what it questions |
+| **Methodological preference** | Preferred empirical approach and evidence standards |
+| **Likely concern** | What this perspective would worry about most |
+
+For rules and templates, see [`references/perspective-templates.md`](references/perspective-templates.md).
+
+Present the generated perspectives to the user and get approval before proceeding. The user may want to add, remove, or adjust perspectives.
+
+### Phase 3: Investigate
+
+Three sub-steps — parallel investigation, then user check-in, then anonymised cross-evaluation. The check-in is what differentiates this skill from a passive multi-perspective analysis.
+
+#### 3.1 Parallel investigation
+
+Spawn one sub-agent per perspective using the fresh-context sub-agent mechanism. Each agent receives:
+
+```
+You are a [LABEL] investigating this research question:
+
+[QUESTION]
+
+Your disciplinary background: [DISCIPLINE]
+Your epistemic prior: [EPISTEMIC PRIOR]
+Your methodological preference: [METHODOLOGICAL PREFERENCE]
+Your primary concern: [LIKELY CONCERN]
+
+Context about the project:
+[Relevant project context — CLAUDE.md summary, paper abstract if available]
+
+TASK: Analyse this question from your perspective. Address:
+1. How would you frame this question in your discipline?
+2. What theoretical framework would you apply?
+3. What empirical strategy would you recommend, and why?
+4. What are the main threats to validity from your perspective?
+5. What would you find most/least convincing in the current approach?
+6. What is the one thing the researcher is probably overlooking?
+
+Be specific and grounded. Cite real methodological traditions and papers where relevant.
+Write 300-500 words. Do not hedge — commit to your perspective's position.
+```
+
+**Agent configuration:**
+- Use `subagent_type: general-purpose` for each
+- Run all agents in parallel (up to 5 concurrent, per orchestration convention)
+- Each agent writes to a temp file; collect results after all complete
+
+#### 3.2 User check-in (interactive mode)
+
+After collecting all perspective outputs, present them to the user as a structured summary and run an interactive check-in. This is the key differentiator from a passive multi-perspective analysis — the user participates as an active contributor, not a spectator.
+
+**What to present:**
+- Each perspective's key position (2-3 sentences, not the full output)
+- The main disagreements visible so far
+- Any assumptions the perspectives made about the research context
+
+**Then ask (via the available structured-question mechanism):**
+
+> "Here's where the perspectives stand so far. Before they peer-review each other, I want to check in:
+>
+> 1. **Reveal constraints:** Is there anything these perspectives don't know that would change their analysis? (e.g., data limitations, institutional constraints, supervisor preferences, timeline)
+> 2. **Redirect:** Is any perspective completely off-base or exploring an irrelevant direction?
+> 3. **Challenge:** Do you want to push back on any specific claim before cross-evaluation?"
+
+**How the user's input feeds forward:**
+- Constraints revealed here are injected into the cross-evaluation prompt as "Additional context from the researcher" — each evaluator sees them
+- If a perspective is marked as off-base, it is still included in cross-evaluation (for completeness) but flagged: "The researcher considers this direction less relevant because [reason]"
+- Challenges are posed directly to the relevant perspective in the cross-evaluation round as an additional evaluation criterion
+
+**When to skip:** If the user says "skip check-in", "just run it", or "non-interactive", proceed directly to 3.3. The default is interactive.
+
+#### 3.3 Anonymised cross-evaluation
+
+Before synthesising, run a peer-review round where each perspective critiques all others — without knowing which lens produced which output. This forces content-based evaluation rather than tribal dismissal.
+
+**Setup:** Anonymise each perspective's output by replacing the label with a neutral identifier (Perspective A, B, C, ...). Strip any self-identifying language (e.g., "as an econometrician, I...").
+
+**Spawn one evaluator agent per perspective** using the fresh-context sub-agent mechanism. Each receives:
+
+```
+You are a [LABEL] ([DISCIPLINE]).
+
+Below are [N] anonymous analyses of this research question:
+
+[QUESTION]
+
+---
+[Perspective A output — anonymised]
+---
+[Perspective B output — anonymised]
+---
+[Perspective C output — anonymised]
+---
+
+TASK: Evaluate each perspective on these criteria (1-5 scale):
+1. **Rigour** — Is the reasoning sound? Are claims supported?
+2. **Relevance** — Does it address the core question?
+3. **Novelty** — Does it surface something the others miss?
+4. **Practicality** — Could the researcher act on this advice?
+
+[IF USER PROVIDED INPUT IN PHASE 3.2, ADD:]
+Additional context from the researcher:
+- Constraints: [user-revealed constraints]
+- Challenges: [user's pushback on specific claims]
+- Relevance notes: [any perspectives the user flagged as less relevant, with reason]
+
+Factor this researcher context into your evaluation — perspectives that ignore known constraints should score lower on Practicality.
+
+For each perspective, provide:
+- Scores (4 numbers)
+- One strength (1 sentence)
+- One weakness (1 sentence)
+- Would you change your own analysis based on this? (yes/no + why)
+
+Then rank all perspectives from most to least valuable for the researcher.
+Be honest — evaluate the content, not the style. 200-300 words total.
+```
+
+**Agent configuration:**
+- Use `subagent_type: general-purpose` for each
+- Run all evaluator agents in parallel
+- Each agent must NOT see which label produced which output
+
+**What this produces:**
+- A cross-evaluation matrix (each perspective rated by every other)
+- Self-revision signals (perspectives that update their view after seeing others)
+- Consensus rankings (which perspectives were rated highest across evaluators)
+
+Include the cross-evaluation matrix in the final report (Section "Peer Evaluation") so the user can see where perspectives found each other compelling or weak.
+
+### Phase 4: Synthesise
+
+Read all agent outputs **and their peer evaluations** and produce a structured synthesis. Weight the synthesis by peer evaluation scores — perspectives rated highly across evaluators get more influence than those rated poorly:
+
+#### 4.1 Agreement Map
+
+What do all (or most) perspectives agree on? These are robust findings — if sceptics from different traditions converge, the point is likely sound.
+
+#### 4.2 Tension Map
+
+Where do perspectives disagree? For each tension:
+- What is the disagreement about? (framing, method, assumption, evidence standard)
+- Is it resolvable? (empirically testable vs. fundamentally different values)
+- What would it take to resolve it?
+
+#### 4.3 Blind Spot Detection
+
+What did one perspective flag that no others mentioned? These are the most valuable findings — they reveal assumptions that are invisible within the primary discipline.
+
+#### 4.4 Recommendations
+
+Based on the synthesis:
+1. **Strengthen:** What should the researcher do to address the most serious concerns?
+2. **Acknowledge:** What limitations should be explicitly discussed in the paper?
+3. **Test:** What additional analyses could resolve the key tensions?
+4. **Reframe:** Should the question or approach be reconsidered?
+
+### Phase 5: Output
+
+Create `reviews/<scope>/multi-perspective/` if it does not exist (`mkdir -p`), where `<scope>` is the paper slug or `_project` as applicable. Write the report to `reviews/<scope>/multi-perspective/YYYY-MM-DD-HHMM.md` (or print to console for quick use).
+
+## Output Format
+
+```markdown
+# Multi-Perspective Analysis
+
+**Question:** [The research question or design choice]
+**Date:** YYYY-MM-DD
+**Perspectives:** [N] ([list of labels])
+
+## Perspectives
+
+### 1. [Label]: [Discipline]
+**Prior:** [One sentence]
+**Analysis:** [Agent's full response]
+
+### 2. [Label]: [Discipline]
+...
+
+## Peer Evaluation
+
+| Perspective | Avg Rigour | Avg Relevance | Avg Novelty | Avg Practicality | Overall Rank |
+|-------------|-----------|--------------|------------|-----------------|--------------|
+| [Label] | X.X | X.X | X.X | X.X | #N |
+
+**Key cross-evaluation findings:**
+- [Which perspectives updated their view after seeing others]
+- [Where evaluators converged on a strength/weakness]
+
+## Synthesis
+
+### Agreements
+- [Point 1 — which perspectives agree, and why this is robust]
+- [Point 2]
+
+### Tensions
+
+| Tension | Perspectives | Nature | Resolvable? |
+|---------|-------------|--------|-------------|
+| [Description] | A vs. B | Methodological | Yes — via [test] |
+| [Description] | C vs. D, E | Conceptual | No — different values |
+
+### Blind Spots
+- [Finding] — flagged by [perspective], missed by all others
+- [Finding]
+
+### Recommendations
+1. **Strengthen:** [Most important action]
+2. **Acknowledge:** [Limitation to discuss]
+3. **Test:** [Additional analysis]
+4. **Reframe:** [If applicable]
+
+## Next Steps
+- [ ] [Actionable item 1]
+- [ ] [Actionable item 2]
+```
+
+## Council Mode Enhancement
+
+Standard mode spawns fresh-context workers with different personas. Council
+mode upgrades this to genuine model diversity through an explicitly configured
+external council backend: models blind-review each other's perspectives and a
+chairman synthesises weighted by peer scores. **Trigger:** "council
+multi-perspective" / "thorough multi-perspective". Full orchestration and
+invocation: [`../shared/council-protocol.md`](../shared/council-protocol.md).
+
+**Value:** High — the natural fit for council mode. Multi-perspective analysis is about cognitive diversity, so genuinely different models beat persona-differentiated instances of one model: a strict upgrade.
+
+## Cross-References
+
+| Skill | When to use instead/alongside |
+|-------|-------------------------------|
+| `devils-advocate` | Quick single-perspective adversarial feedback |
+| Installed scholarly-search workflow | Find the papers that perspectives reference |
+| `interview-me` | Develop the research idea through structured conversation |
+| Referee 2 agent | Formal paper audit with code verification |
+| `references/computational-many-analysts.md` | When combining qualitative perspectives with quantitative many-analysts |

@@ -1,0 +1,66 @@
+---
+name: docs
+description: Use this skill when editing documentation, working with files in Doc/, adding versionadded or versionchanged markers, creating NEWS entries for bug fixes or features, updating What's New (Doc/whatsnew/), or building the HTML docs. Covers reStructuredText (.rst) format, documentation validation, and NEWS file requirements.
+---
+
+# CPython Documentation
+
+CPython documentation is in reStructuredText (ReST) format in the `Doc/` tree.
+
+## Documentation Tooling
+
+```bash
+# Set up documentation build environment
+make -C Doc venv
+
+# Validate documentation (run this to check your changes)
+make -C Doc check
+
+# Build HTML documentation (if full build is needed)
+make -C Doc html
+```
+
+## Version Markers
+
+When adding `versionadded::`, `versionchanged::`, or similar markers, always use `next` as the version "number" - the doc build and release process fills in the real version.
+
+```rst
+.. versionadded:: next
+
+.. versionchanged:: next
+   Description of what changed.
+```
+
+A `versionchanged` note is for a change users will plausibly notice; a fix to an esoteric edge case doesn't need one.
+
+## NEWS Entries
+
+Bug fixes and new features require a `Misc/NEWS.d/next/` file entry.
+
+The filename must refer to the real GitHub issue number in the upstream `python/cpython` repository. **Never invent an issue number - ask the user which one to use.**
+
+Filename format: `Misc/NEWS.d/next/<CATEGORY>/<YYYY-MM-DD-HH-MM-SS>.gh-issue-<NUMBER>.<NONCE>.rst`
+
+- **`<CATEGORY>`**: must be one of the existing directory names under `Misc/NEWS.d/next/` on the current branch — list that directory to see the valid set (e.g. `Library`, `Core_and_Builtins`, `C_API`); don't invent a category.
+- **`<YYYY-MM-DD-HH-MM-SS>`**: the current UTC time.
+- **`<NONCE>`**: 6 characters from the urlsafe-base64 alphabet (`A-Z a-z 0-9 _ -`), e.g. `_f-cFH`. Any unique value works; it only prevents filename collisions.
+
+**Entry body**: follow the devguide's [How to write a NEWS entry](https://devguide.python.org/getting-started/pull-request-lifecycle/#how-to-write-a-news-entry). The changelog is read mainly by users scanning for what affects them, most of whom won't open the issue or diff, so the entry must stand alone:
+
+- One or two sentences, starting with an imperative verb that says what kind of change it is: *Fix*, *Add*, *Remove*, *Deprecate*, *Allow*, *Raise*.
+- Name what changed with Sphinx roles (`:func:`, `:class:`, `:meth:`, `:exc:`, `:mod:`) so readers can jump to the docs; say what a user will notice, and under what conditions. Then stop.
+- Leave out implementation details and the bug's root cause, what happened before when the fix already implies it, how the problem was found or who reported it, tests, benchmark figures (unless it's a performance change), filler ("improves robustness"), and references to the PR itself ("this PR", "this change").
+- Valid reST wrapped at 80 columns, no indentation or leading `-`, and no issue number in the body — the filename already carries it.
+- Attribution is optional: a final `Patch by Jane Doe.` sentence.
+
+Example (from the devguide):
+
+```rst
+Fix :class:`logging.handlers.TimedRotatingFileHandler` permanently stopping
+rollover after a rollover failed or its backup file already existed, for
+example at a DST change.
+```
+
+## What's New
+
+User-visible changes worth highlighting to people upgrading also get an entry in the in-development release's `Doc/whatsnew/<version>.rst` (the highest-numbered file in `Doc/whatsnew/`), in the section for the affected module. Follow the style of neighboring entries. Not every NEWS entry needs one — reserve it for changes a typical upgrader would care about. (The `backport` skill covers what happens to whatsnew entries when a change is backported.)

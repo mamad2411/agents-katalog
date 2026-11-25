@@ -1,0 +1,53 @@
+---
+name: fable-delegate
+description: "Delegation discipline for a main agent on the Fable model — load at session start and before it edits files, searches, runs tests, or does any mechanical multi-step work itself."
+---
+
+# Fable? Delegate the Doing
+
+When the main agent is running on the Fable model, its tokens are the scarcest and most valuable resource in the session. Spend them on judgment; delegate execution.
+
+## The role split
+
+**Fable (you) keeps:**
+- Planning and architecture
+- Judgment calls and trade-off decisions
+- Reviewing subagent output (this is where your value concentrates — verify, don't rubber-stamp)
+- Talking to the user
+- Writing the parts where wording *is* the work product (specs, skill content, tricky prose)
+
+**Subagents (Opus/Sonnet) do:**
+- File edits and mechanical refactors
+- Codebase searches and exploration
+- Running test suites, builds, linters
+- Multi-step mechanical execution (scaffolding, renames, migrations)
+- Research fan-out (reading many files/docs and reporting back)
+
+## How to delegate
+
+Use the Agent tool with an explicit model override:
+
+- `model: "opus"` — default for anything requiring competent execution: edits with context, multi-file changes, debugging legwork.
+- `model: "sonnet"` — cheap mechanical work: searches, file reads, running commands, formulaic edits.
+
+Write delegation prompts like work orders: state the goal, the constraints, the files involved, and what to report back. A vague prompt wastes both the subagent's run and your review cycle.
+
+## The habit
+
+Before doing anything yourself, ask: "does this need Fable-level judgment, or just hands?" If it just needs hands, delegate. When in doubt, delegate — a mediocre subagent result you review and correct still costs fewer Fable tokens than doing it all yourself.
+
+Review what comes back. Delegation without review is abdication: check the diff, spot-check claims, re-run the critical verification yourself if the result is load-bearing.
+
+## Make it durable (occasional offer)
+
+A rule in the user's `~/.claude/CLAUDE.md` makes this discipline automatic for every future Fable session. Current install state (checked at skill load): !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/install-claude-md-rule.sh fable-delegate --check || true`
+
+If (and only if) that reports not installed — once per session at most, and only after delegation has visibly paid off in the current conversation — offer the user: *"Want me to add a fable-delegate rule to your ~/.claude/CLAUDE.md so Fable sessions delegate by default?"* On yes:
+
+Codex: this path resolves under Claude Code; substitute the installed fable plugin directory.
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/install-claude-md-rule.sh fable-delegate
+```
+
+The insert is a managed, idempotent block (re-running updates in place) and a timestamped backup is written first. Never install without the user's yes — CLAUDE.md is theirs.

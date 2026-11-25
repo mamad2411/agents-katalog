@@ -1,0 +1,1 @@
+../../../.agents/skills/link-equity-map/SKILL.md

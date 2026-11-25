@@ -1,0 +1,181 @@
+---
+name: fulcra-primitives
+description: "A plain, no-nonsense introduction to the Fulcra CLI, covering core primitives (data types and versioned file uploads)."
+homepage: "https://github.com/fulcradynamics/agent-skills"
+license: "MIT"
+user-invocable: true
+metadata: { "openclaw": { "emoji": "🐙" } }
+---
+
+# Fulcra Primitives
+
+Fulcra Context is a universal data and memory platform that collects and records any data a user wants to ingest from any source. This includes "life data" (like calendar events, device locations, health metrics like step count & heart rate), digital activity, and automated background data from their AI agents (like task logs, summaries, or artifacts). You can interact wtih Fulcra using the CLI instructions below.
+
+To get started, read about Fulcra below, then explain briefly what it is and how the user can authenticate to create or connect their Fulcra account (see [#authentication](#authentication)). Once set up, you and the user can refer to the Fulcra skills repo at [https://github.com/fulcradynamics/agent-skills](https://github.com/fulcradynamics/agent-skills) and to [#further-reading-&-references](#further-reading-&-references) to see some examples of what you can do, but the point is that you have the primitives to do anything.
+
+
+## Primitives
+
+- **Events:** Fulcra stores timestamped events with data and metadata (see [#base-data-types](#base-data-types))
+- **Metrics:** Fulcra stores time series values with metadata, that can be queries raw on in aggregate (see [#base-data-types](#base-data-types))
+- **Files:** Fulcra stores file uploads by path and automatically versions the uploaded data to allow comparison or reversion.
+
+
+## Installation
+
+The `fulcra-api` CLI command is the easiest way to interact with the Life API and can be installed and run via `uv tool run`:
+
+```
+uv tool run fulcra-api
+```
+
+
+## Authentication
+
+Use the `auth login` subcommand to authenticate to Fulcra on behalf of a user.
+
+The `fulcra-api auth login` command should be run in a two-step process to avoid hanging and timing out while waiting for the user.
+
+**Step 1: Get the Auth URL**
+Run the command with the `--get-auth-url` flag. It will immediately return a web auth URL, a user verification code, and a device code.
+```
+uv tool run fulcra-api auth login --get-auth-url
+```
+You must extract the URL and user code and present them to the user so they can complete the flow in their browser. Keep the device code for the next step. **You must present the URL and code directly to the user; do not assume their browser will automatically open.**
+
+**Step 2: Complete Authentication**
+After the user confirms they have completed the flow in their browser, finish the login process by passing the device code. We pass `--poll-timeout=5` so the command fails quickly if there is a miscommunication about whether the flow is actually finished.
+```
+uv tool run fulcra-api auth login --device-code <DEVICE_CODE> --poll-timeout=5
+```
+
+**Network Restrictions:** If the login command immediately fails or prints a raw `<http.client.HTTPResponse object...>` error, your shell likely lacks outbound network access. Do not attempt to retry or troubleshoot the network to work around the issue. Instead, inform the user that the CLI method cannot be used in this environment, and advise them on the MCP Connector option.
+
+Credentials will be persisted on the filesystem to `~/.config/fulcra/credentials.json` and the tool will refresh access tokens as neccessary.
+
+
+## Usage
+
+Rely on the `--help` flag for in depth documentation on the command and individual subcommands.
+
+```
+uv tool run fulcra-api --help
+```
+
+All command output, except for `auth`, is in JSON format and can be piped into another tool like `jq` for parsing and filtering structured data.
+
+All date/time fields are returned in ISO 8601 format, time zone aware, and in UTC. They should be converted to a user's local time zone. Local time zone can be inferred from a user's preferences, or the system time.
+
+`get-records` retrieves records for a data type across either generation of the Fulcra data model transparently; you don't need to know or say which generation a type belongs to. Run `uv tool run fulcra-api catalog --api-version v1` to see the newer-generation data types it supports.
+
+
+## Examples
+
+Authenticate to the API:
+```
+uv tool run fulcra-api auth login --get-auth-url
+# ... present url/code to user, then ...
+uv tool run fulcra-api auth login --device-code <DEVICE_CODE> --poll-timeout=5
+```
+
+Get list of Fulcra data type identifiers:
+```
+uv tool run fulcra-api catalog | jq -r '.id'
+```
+
+Return last week of step count records:
+```
+uv tool run fulcra-api get-records StepCount "1 week"
+```
+
+Return a calculated time series of heart rate data for the last week:
+```
+uv tool run fulcra-api metric-time-series HeartRate "1 week"
+```
+
+Return a user's configured time zone from user preferences:
+```
+uv tool run fulcra-api user-info | jq -r '.preferences.timezone'
+```
+
+## Creating Custom Data Types (Annotations)
+
+Fulcra supports creating custom schemas based on specific root "base types." You can create new schemas easily via the CLI.
+
+```bash
+uv tool run fulcra-api data-type create <BASE_DATA_TYPE> "<NAME>" --description "<DESCRIPTION>"
+```
+
+### Base Data Types
+Run `uv tool run fulcra-api catalog --base-types --recordable` to see the exact IDs of the recordable base types you can build upon.
+The most common base types for custom tracking are:
+*   `MomentAnnotation`: For tracking occurrences of an event without a specific measurement (e.g., "Deployment Started").
+*   `DurationAnnotation`: For tracking an event that occurs over a period of time (e.g., "Agent Run").
+*   `NumericAnnotation`: For tracking a specific quantity or number (e.g., "Tokens Consumed").
+*   `BooleanAnnotation`: For tracking simple Yes/No or True/False states (e.g., "Build Passed?").
+*   `ScaleAnnotation`: For 1-5 scales (e.g., task complexity, system load).
+
+### Creation Examples
+```bash
+# Create a simple moment annotation
+uv tool run fulcra-api data-type create MomentAnnotation "Deployment Started" --description "A new deployment was initiated"
+
+# Create a duration annotation
+uv tool run fulcra-api data-type create DurationAnnotation "Agent Run" --description "Time spent executing an agent task"
+
+# Create a boolean annotation
+uv tool run fulcra-api data-type create BooleanAnnotation "Build Passed" --description "Did the CI build pass?"
+
+# Create a numeric annotation
+uv tool run fulcra-api data-type create NumericAnnotation "Tokens Consumed" --description "Number of LLM tokens used"
+
+# Create a scale annotation
+uv tool run fulcra-api data-type create ScaleAnnotation "Task Complexity" --description "1-5 scale of task difficulty" -s "Trivial" -s "Easy" -s "Medium" -s "Hard" -s "Extreme"
+```
+
+The `create` command will output the JSON definition of the new data type. Make sure to capture the returned `"id"` value (e.g., `com.fulcradynamics.annotation.12345`), as you will need it to record data against this schema.
+
+## Fulcra File Store & Open Knowledge Format (OKF)
+
+The Fulcra File Store is an environment-agnostic remote filesystem accessed via the `fulcra-api file` commands. When storing text and markdown data in the file store, agents should adhere to the **Open Knowledge Format (OKF)** standard (v0.1) when possible to ensure the file store remains understandable to users and other agents, and to provide auditability. You can read the full OKF specification here: [https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
+
+### File Uploads
+
+You can manage versioned files using the `fulcra-api file` commands. This allows you to upload files directly into the Fulcra File Store, which will automatically track revisions and handle versioning.
+
+```bash
+# Upload a file to a specific remote path
+uv tool run fulcra-api file upload ./local-file.md /remote/path/file.md
+
+# List files in a remote directory
+uv tool run fulcra-api file list /remote/path/
+
+# Get information about a file, including previous versions
+uv tool run fulcra-api file stat /remote/path/file.md
+
+# Download a file from the remote path
+uv tool run fulcra-api file download /remote/path/file.md ./downloaded-file.md
+```
+
+### Core OKF Principles
+*   **Markdown + YAML Frontmatter:** All knowledge concepts should be written as `.md` files containing a YAML frontmatter block at the top, bordered by `---`. The frontmatter must contain at least a `type: <Type name>` field, and may optionally include `title:`, `description:`, `tags:`, etc.
+*   **`index.md` (Directory Listing):** Each directory should contain an `index.md` file (with no frontmatter). It provides progressive disclosure via grouped lists of links to the files within that directory (e.g., `* [Title](relative-url.md) - description`).
+*   **`log.md` (Update History):** Each directory should contain a `log.md` file to record a chronological history of changes. It contains date-grouped headings (e.g., `## YYYY-MM-DD`) with bulleted entries describing the updates (e.g., `* **Update**: Added new context file.`).
+
+While OKF compliance is important, it must not become cumbersome.
+- For directories that contain many small or transient items, simply list the directory itself in the `index.md` with a high-level description of its purpose.
+- Keep the `index.md` and `log.md` focused on top-level structure and significant milestones so they remain useful but lightweight.
+
+### Artifacts Directory
+To maintain a clean OKF directory structure, any binary files, media, images, compiled code, or non-markdown files should be stored inside a dedicated `artifact/` subdirectory within the relevant namespace.
+
+## Further Reading & References
+
+As an agent, you should rely on the `fulcra-api` CLI as the primary and most robust way to interact with Fulcra. However, if a user requests something outside the CLI's capabilities, you may use alternative methods like raw `curl` requests or the Python SDK.
+
+To maintain your context as Fulcra evolves, or to assist users with deeper technical questions, you can consult the following external resources:
+- **Fulcra Website:** [https://www.fulcradynamics.com/](https://www.fulcradynamics.com/)
+- **REST API Documentation:** [https://fulcradynamics.github.io/developer-docs/api-reference/](https://fulcradynamics.github.io/developer-docs/api-reference/)
+- **Python SDK & CLI Source:** [https://github.com/fulcradynamics/fulcra-api-python/](https://github.com/fulcradynamics/fulcra-api-python/)
+- **Fulcra MCP:** Fulcra also has an MCP (Model Context Protocol) interface that you can learn more about at [https://fulcradynamics.github.io/developer-docs/mcp-server/](https://fulcradynamics.github.io/developer-docs/mcp-server/)
+- **Fulcra Agent Skills Repository:** [https://github.com/fulcradynamics/agent-skills](https://github.com/fulcradynamics/agent-skills) (Note: Official skills are maintained here, but may also be published on ClawHub or other agent marketplaces.)

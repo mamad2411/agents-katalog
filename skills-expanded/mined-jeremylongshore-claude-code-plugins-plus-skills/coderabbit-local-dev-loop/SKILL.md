@@ -1,0 +1,97 @@
+---
+name: coderabbit-local-dev-loop
+description: >-
+  Operate CLI reviews inside an agentic coding loop with bounded diffs, current authentication, and fix verification. Use when this operator task needs a current, evidence-backed
+  CodeRabbit workflow. Trigger with "review local changes with CodeRabbit".
+allowed-tools: Read,Glob,Grep,Write,Edit
+version: 2.0.0
+argument-hint: "[target] [evidence-or-scope]"
+model: inherit
+effort: high
+author: Jeremy Longshore <jeremy@intentsolutions.io>
+license: MIT
+compatibility: Requires current CodeRabbit documentation and approved access for any live organization, repository, billing, or API change
+tags: [saas, coderabbit, cli, local-development, agentic-loop]
+---
+# CodeRabbit Local Review Loop
+
+## Overview
+
+Use the native CLI before push and feed findings back into coding. Keep auth, scope, and spend visible.
+
+## Prerequisites
+
+- Identify the CodeRabbit organization, Git provider, repository, plan, and accountable owner.
+- Read `references/official-docs.md` and re-check any time-sensitive contract before execution.
+- Use synthetic or read-only evidence until the approval boundary is satisfied.
+- Preserve the repository's independent CI, security, and human-review requirements.
+
+## Current Contract
+
+- The CLI reviews local changes before commit.
+- `coderabbit review --plain` is the agent-friendly command.
+- Interactive and Agentic-key login are distinct.
+- CLI allowances and billing follow current plan contracts.
+
+## Authentication
+
+Treat Git-provider sessions, CodeRabbit web sessions, CLI credentials, and CodeRabbit API keys as separate credentials. Use only an already-approved session or secret-manager reference, never print a secret, and do not place credentials in `.coderabbit.yaml`, source files, logs, or deliverables.
+
+## Instructions
+
+1. Confirm repo state, diff scope, auth mode, allowance, and excluded files.
+
+2. Run a bounded plain review and capture findings without secrets.
+
+3. Classify findings, fix approved items, and rerun changed scope.
+
+4. Stop on repeats, scope expansion, auth errors, or usage limits.
+
+## Tool Discipline
+
+- Use **Glob** to locate candidate configuration and evidence files without widening scope.
+- Use **Grep** to find relevant fields, commands, identifiers, and stale claims.
+- Use **Read** to inspect the smallest required files and authoritative evidence.
+- Use **Write** only for a new approved local draft or evidence artifact.
+- Use **Edit** only for a bounded approved change whose rollback is known.
+- Do not use these file tools as a substitute for authenticated CodeRabbit or provider operations.
+
+## Approval Boundaries
+
+Require approval before credits, headless keys, wider review scope, or pushing. Keep analysis and drafts local until approval is explicit, and record who approved the action and its scope.
+
+## Output
+
+A receipt with scope, mode, dispositions, changed files, rerun result, and risks. Include source dates, unknowns, and the exact boundary between observed fact and recommendation.
+
+## Error Handling
+
+| Condition | Response |
+|---|---|
+| Current contract is unclear or docs disagree | Stop mutation, cite both sources, and request owner resolution. |
+| Required access or approval is missing | Produce a draft and evidence plan only. |
+| Validation or pilot behavior differs from expectation | Restore the prior state and retain the failed evidence. |
+| Output contains secrets or private code | Stop, quarantine the artifact, redact it, and notify the data owner. |
+
+## Examples
+
+### Example 1
+
+Review staged changes before commit and rerun after a race fix.
+
+### Example 2
+
+Use Codex integration with injected secret auth.
+
+## Validation
+
+- Confirm every claim against the dated sources in `references/official-docs.md`.
+- Verify the requested scope, owner, approval, happy path, failure path, and rollback.
+- Re-read the effective configuration or provider state after any approved change.
+- Report unsupported fields, undocumented endpoints, and unverified assumptions as failures.
+
+## Resources
+
+- [Official documentation and contract notes](references/official-docs.md)
+- Re-check the dated contract before any live operation.
+- Treat unresolved or changed vendor behavior as a stop condition.

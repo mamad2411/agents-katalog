@@ -1,0 +1,98 @@
+---
+name: obsidian-wiki
+description: >-
+  用于在 Obsidian 中学习和维护个人 Wiki：吸收文章或课程、整理概念与实践、综合多个来源、
+  根据已有笔记回答问题、复习自测、把散篇重组成可直接发布的长文、核对笔记与代码的版本、
+  笔记配图与个人 IP 生图交接、笔记归位和链接维护，以及没有现成库时初始化可分享的 Wiki。
+  触发示例：初始化知识库、把这份资料融入知识库、我之前学过什么、更新这个主题、检查知识冲突。
+  Do NOT use for: 不涉及知识库的普通问答、需求缺陷与任务分工的业务管理、周报与工作项汇总、外部平台操作、不涉及知识库的纯文字改写。
+compatibility: Requires Python 3.10+ (standard library only). Existing vaults can be used directly; a new vault can be initialized with the bundled bootstrap script.
+---
+
+# Obsidian 学习 Wiki
+
+让学习留下能解释、能验证、能继续更新的知识。先查已有内容，再吸收新材料；按问题组织知识，
+让来源、个人理解和当前结论可以区分。PARA 只决定存放位置，不代替学习流程。
+结构和篇幅随问题变化；固定的是证据与适用条件，不是章节、配图数量或统一文风。
+
+## 独立运行与路径
+
+本 skill 只依赖自己的文件和 Python 标准库，不要求其他 skill、插件或检索服务。
+脚本命令相对于本 skill 目录；从其他目录调用时使用完整脚本路径。
+
+```sh
+python3 scripts/vault_path.py --explain
+python3 scripts/vault_path.py "/本次指定的知识库" --explain
+python3 scripts/init_vault.py "/新知识库路径" --git --configure
+```
+
+路径来源依次为本次显式路径、`OBSIDIAN_VAULT_PATH`、
+`$AGENT_SKILLS_CONFIG_DIR/obsidian-vault-path`（配置目录默认 `~/.agent-skills/config`），
+再兼容旧配置 `~/.config/obsidian-vault-path`。未配置时仍可处理用户给出的材料，不能猜库写入。
+用户明确要求初始化时，先使用用户给出的目标路径运行 `init_vault.py`；脚本只创建缺失结构，
+不会覆盖已有笔记或 `.obsidian/`。新库会生成统一 Agent 协议 `AGENTS.md`、库内地图 `VAULT.md`，
+以及可选的 Git 仓库和本机路径配置。Git、分享边界见
+[初始化与分享知识库](references/vault-bootstrap.md)。
+
+## 先选本次动作
+
+| 用户要做什么 | 工作方式 | 按需读取 |
+| --- | --- | --- |
+| 没有现成 vault，想初始化一个可分享的学习库 | 使用目标路径创建最小 PARA 结构，可选初始化 Git 和本机路径配置 | [初始化与分享知识库](references/vault-bootstrap.md)、[归位规则](references/vault-map.md) |
+| 保存、吸收文章/课程/自己的理解 | 查重、定位相关知识、整合有价值的增量 | [知识模型](references/knowledge-model.md)、[资料与查询流程](references/wiki-operations.md) |
+| 根据知识库提问或复习自测 | 找到相关笔记和证据，在对话中回答；默认只读 | [资料与查询流程](references/wiki-operations.md)、[学习笔记](references/resource-notes.md) |
+| 写学习笔记、重组文章、改善排版 | 找到理解主线，简单处省略，名词/流程/代码讲透；按可直接发布标准组织叙述与 Markdown | [学习笔记](references/resource-notes.md)、[写作规范](references/writing-conventions.md)、[研究与综合](references/research-and-synthesis.md) |
+| 写源码/机制解读、审阅技术长文 | 先给可检验的心智模型与具体场景，再落到源码；区分读取/加载/消费/执行，核对跨篇一致性 | [机制与源码解读](references/source-review.md)、[学习笔记](references/resource-notes.md)、[研究与综合](references/research-and-synthesis.md) |
+| 给 Wiki 笔记做图、使用个人 IP、交接生图提示词或补回图片 | 先确定图要表达的知识；用内置角色参考，按实际工具能力生成或留下待生成块 | [技术配图](references/technical-visuals.md)、[个人 IP 与生图交接](references/personal-ip.md) |
+| 根据新资料修订、核对版本、纠正旧结论 | 对照受影响的判断，更新正文及相依示例，保留适用范围 | [知识模型](references/knowledge-model.md)、[知识更新](references/knowledge-updates.md) |
+| 审阅知识库、检查过期或矛盾 | 报告证据、受影响页面和修订建议，检查正文是否依赖其他文章；请求修复才写入 | [资料与查询流程](references/wiki-operations.md) |
+| 改文案、移动、改名、合并、整理索引 | 保留已有内容与属性，处理受影响的入链 | [归位规则](references/vault-map.md)、[写作规范](references/writing-conventions.md) |
+| 改写**库内已有**的项目说明、会议纪要或周报笔记 | 只动已有文字：不汇总工作项、不改状态与负责人、不生成周期周报；库外的纯文字整理不需要本 skill | [工作材料编辑](references/work-note-editing.md) |
+
+用户已说“融入知识库”“保存答案”时直接在相应范围写入，无需再次确认。
+只说“帮我理解”“考考我”“检查一下”不自动创建页面或操作日志。
+
+## 写作与导航偏好
+
+需要保持文件列表顺序的学习笔记，使用目录内独立的两位数编号（如 `01 主题.md`、`02 主题.md`），
+不用 `01.02` 式多级章节号，也不只靠 MOC 顺序而删除文件排序号。
+MOC 以所在目录及其子目录的引用列表为主，保持简洁，不默认扩展为学习说明或跨目录关联页。
+知识文章按可直接发布到公众号/博客的标准写：不提及、不链接、不依赖其他库内文章；本文真正依赖的名词、流程和代码在本文讲清，用不到的前置知识不必补；笔记间导航只放 MOC，外部证据来源正常保留。
+命名与独立成篇规则见 [写作规范](references/writing-conventions.md)。详略按理解难点分配：简单处省略，名词、繁琐流程与关键代码讲透；纯文字讲不清时用例子、表、图或逐行说明。机制与源码长文先给可检验的心智模型和具体场景，再引源码；区分读取、加载、消费与执行，也要区分源数据、派生视图、持久化增量与请求投影。不要把“由某个类算好”当成解释：写清谁创建、谁持有、谁写、谁读、何时注入。审阅这类文章时优先核对绝对化措辞、步骤顺序与跨篇一致性，详见 [机制与源码解读](references/source-review.md)。配图按内容灵活安排，
+默认采用与内置个人 IP 协调的清爽手绘知识图解，保留内容决定图形、配色与画幅的自由。
+角色以 `assets/personal-ip/researcher-v1-reference.png` 为视觉基准；需要人物时实际查看并传入参考图，
+不能仅用文字重造角色。无生图或参考图输入能力时，按个人 IP 交接规则留下原生 `[!todo]+` 待生成块。
+完整写作、实质性扩写或重组文章时，
+在安排结构阶段读取 [技术配图](references/technical-visuals.md)，完成配图判断再执行；
+局部改字、改名或只维护 MOC 不触发新增配图。
+
+## 写入的共同规则
+
+1. 从文件名、主题入口或关键词找到候选笔记，只读当前主题及必要来源。
+   新建或归位时读归位规则，沿用实际结构；小幅改文案不必遍历系统目录和所有参考文件。
+2. 先确定主笔记及新信息改变了什么。已有段落能容纳就更新；资料没有增量时说明原因，
+   不为一次输入制造摘要页、实体页和索引页的整套副本。暂存请求可只留下来源卡。
+3. 保留用户手写观点、例子、学习顺序和有效属性。原始材料不因总结而被覆盖；
+   用户判断、材料陈述、实际验证和综合推断分开表达，关键结论链接到直接支持它的来源。
+4. 新资料改变旧认识时按知识更新流程定位具体判断、代码和图；不同版本可以并存。
+   局部核验不代表整篇已验证，无法判定的分歧保留，不以最后收到的资料自动覆盖旧结论。
+5. 只更新确实受影响的相关页面和导航，按页面用途遵循写作规范。知识页可保留注明时间范围的事实摘要；
+   不另建需要持续维护的业务状态主档，不触发别的 skill 或自动同步。
+6. 修改后复读差异，检查结论与来源、已有理解是否被误删，以及受影响的链接。
+   对只改文字的任务无需全库扫描；移动/改名/拆分前先搜索全库入链，之后核对指向与锚点。
+
+## 检查与交付
+
+```sh
+python3 scripts/health_check.py --vault "/知识库路径"
+python3 scripts/health_check.py --vault "/知识库路径" --strict
+```
+
+默认检查用于已有库；`--strict` 用于刚初始化的库或分享前检查核心结构。只查断链或插件路径时，
+再单独运行 `check_links.py`、`check_paths.py`。检查器只读：退出码 `0` 无失败、`1` 有问题、`2` 输入不可用。
+脚本不判断知识真伪、来源支持程度或 Markdown 链接/标题锚点；边界见 [结构检查](references/structural-checks.md)。
+原有断链与本次新增问题分开，不能为通过检查编造笔记或删除有意预留的链接。
+
+交付说明本次理解了什么、实际更新的笔记和依据、仍有的疑问及检查范围。
+知识文章还要说明是否仍引用其他库内文章、是否按可直接发布标准检查；有依赖就指出具体段落。
+迁移学习方式时读 [渐进采用](references/adoption.md)，不把每次笔记编辑扩大成全库重构。

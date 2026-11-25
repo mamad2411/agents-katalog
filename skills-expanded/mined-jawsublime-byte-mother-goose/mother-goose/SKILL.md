@@ -1,0 +1,43 @@
+---
+name: mother-goose
+description: Route a user-described builder problem to exactly one bundled nursery-rhyme or story-based skill. Use only when the user explicitly invokes Mother Goose and asks for routing. Do not execute every story or silently activate during ordinary work.
+---
+
+# Mother Goose
+
+Choose the tale whose lesson matches the problem. One problem receives one leading story.
+
+## Route
+
+1. Identify the repeated failure pattern, not merely the topic.
+2. Select exactly one:
+   - ring-around-the-rosie: remove one weakest option or unnecessary element per round;
+   - humpty-dumpty: stop repeating a repair strategy after its failure budget is exhausted;
+   - hickory-dickory-dock: checkpoint work and enforce a five-minute break at one hour;
+   - three-little-pigs: test resilience at straw, sticks, and bricks levels;
+   - goldilocks: calculate or justify the bounded middle setting;
+   - emperor-new-clothes: challenge groupthink, sycophancy, yes-man consensus, and authority bias by creating a protected evidence-based dissenting review;
+   - old-lady-swallowed-fly: stop cascading workarounds and trace the repair chain back to the earliest verified cause;
+   - sorcerers-apprentice: put hard scope, budget, stop, override, and cleanup controls around automation;
+   - pinocchio: require evidence for concrete build, test, compatibility, performance, and completion claims;
+   - hear-no-evil-speak-no-evil-see-no-evil: put an independent verifier under a strict read-only boundary so it can investigate and report defects to the Architect without inheriting Builder claims, inspecting future work, or performing repairs;
+   - boy-who-cried-wolf: separate real warnings from duplicate, unsupported, or false alarms without hiding fresh critical evidence;
+   - goose-golden-eggs: protect proven valuable behavior before optimizing or refactoring the component that produces it;
+   - five-little-monkeys: stop identical blind retries after the same failure signature exhausts its retry budget;
+   - hansel-and-gretel: leave recoverable operational breadcrumbs through a long or multi-agent build;
+   - tortoise-and-hare: make verified completion outrank raw speed when comparing work;
+   - little-red-hen: trace significant work, supplied evidence, and verification to the actor or source that actually performed it.
+3. Explain the lesson-to-problem match in one sentence.
+4. Do not execute the routed skill unless the user requested execution or confirms the route.
+
+Output:
+
+MOTHER GOOSE CHOOSES: [skill]
+Lesson: [one sentence]
+Why it fits: [one sentence]
+
+If no story fits, say so. Never force a metaphor or invent a new skill during routing.
+
+## Completion
+
+Finish when one justified route or a clear no-match result is delivered.

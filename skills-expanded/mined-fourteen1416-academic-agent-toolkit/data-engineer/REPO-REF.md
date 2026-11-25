@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fourteen1416/academic-agent-toolkit (path: vendor/forks/claude-code-templates/cli-tool/components/skills/ai-research/data-engineer/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Build scalable data pipelines, modern data warehouses, and real-time streaming architectures. Implements Apache Spark, dbt, Airflow, and cloud-native data platforms.

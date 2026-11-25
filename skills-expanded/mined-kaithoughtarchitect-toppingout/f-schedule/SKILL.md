@@ -1,0 +1,135 @@
+---
+name: f-schedule
+description: >
+  Break a decision-complete plan (a /f-blueprint BLUEPRINT, or any plan too big
+  for one job) into a PROJECT: one ticket file per job, a dependency graph, and
+  the first project board (BOARD.json + a generated board page). Use when the user runs
+  /f-schedule, says "break this plan into tickets", "decompose this into jobs",
+  "turn this plan into a project", or when a plan has more than one PR's worth of work.
+  Proposed-first: shows the cut and waits for the owner's go before writing.
+  Not for writing the plan (f-blueprint), not for planning one ticket's job
+  (the foreman's scoping + PLAN.md), not for board updates after that (f-board).
+  Also answers to its old name, /f-decompose.
+---
+
+# Topping Out: Decompose
+
+**One plan in, one project out: a ticket per job, and a board you can follow.**
+
+**A new head after a topping out** (`METHOD.md` §11b) gets a **new project folder and board** (`foreman/projects/<new slug>/`), never the topped-out board, which is the old project's frozen record. Read the topping out report's carried-over items before cutting: they are candidates for the new board.
+
+In Topping Out (`METHOD.md` §12–§13), a job is always **one ticket**: one PR, one module area, roughly 8–9 work orders. A plan bigger than that becomes a **project**. This skill cuts it.
+
+```
+/f-survey → /f-blueprint (the blueprint) → /f-plancheck (cold cross-family read) → /f-schedule (tickets + board) → pick a job
+        → one job per ticket (f-board start) → /f-signoff → f-board close → next job
+        (repeat while a next job is confirmed; at the head, top out and stop: METHOD.md §11b)
+```
+
+## Usage
+
+```
+/f-schedule <path to BLUEPRINT>            # propose the cut, then write on go
+/f-schedule --split <project-slug> <job-id>  # split one job that scoping found too big
+```
+
+## Where things go
+
+- **The project folder:** `foreman/projects/<project-slug>/` **in the records repo** (jobs, work orders, reviews), not the product repo (in a single-repo setup, the same `foreman/projects/` path).
+- **The templates:** `templates/` inside this skill's folder (`PROJECT.md`, `TICKET.md`, and `BOARD-v2.json`, the board a v2 cut writes; `BOARD.json` is the older shape, kept as the board tool's test fixture).
+- **The draft:** before the owner's go, the board exists only as a draft in the repo's gitignored `scratch/f-schedule-<slug>/BOARD.json`, so `width` can measure it (Phase 3). Nothing is written in the project folder until "go".
+- **The board tool:** the `f-board` skill's `render_board.py` (installed: `.claude/skills/f-board/render_board.py`).
+- **The job header for a job:** `Project: <slug>`, `Job: <id>`, `SourcePlan: <path>`, never `Blueprint`, so `/f-signoff` can't retire the whole project's plan (`skills/f-signoff`, "The blueprint is never retired here").
+
+## Phase 0 · The f-plancheck gate
+
+**First, the end-game lock:** run `node <skills>/f-signoff/endgame.mjs check --root <records root>`. Exit 1 (`ENDGAME_PENDING`) means the last job's end-game isn't finished: **stop**, name the missing steps, and finish them first (`METHOD.md` §10). Exit 2 or 3 is an error, never a pass. In lane mode check this lane's lock: `endgame.mjs check --lane <X> --root <records root>`.
+
+The plan must carry a **`gate: plancheck` line** (older plans: `gate: plan-read`, the same gate under its old name) (written by `/f-plancheck`, the cold cross-family read of the blueprint), and every finding it raised must be applied or answered in the plan. **No gate line (`grep -nE '^\*{0,2}gate: (plancheck|plan-read)' <plan>`; f-plancheck writes it in bold) → stop** and tell the owner to run `/f-plancheck <plan>` first. A plan with unanswered f-plancheck findings is not decision-complete. Apply them under the f-plancheck discipline (`METHOD.md` §13): one read, each finding judged against the locked decisions, evidence-backed findings only, every fate recorded in the blueprint's `## Plan check findings` table (copied into `PROJECT.md`'s). **A row with a blank fate → stop**: the transfer step (`METHOD.md` §13) isn't done.
+
+## Phase 1 · Read (no writes)
+
+1. **Read the plan whole.** Extract, quoting exactly:
+   - the **head**: the one outcome the plan exists for, and how it's judged (usually its final owner-facing acceptance, never a green gate alone);
+   - the **locked decisions** (D-ids);
+   - the **verification points** (VP-ids), each with its "cheaper wrong route to reject";
+   - the **tasks** and their prerequisites;
+   - the **assumptions, HALTs and outward items** (spend, live access, installs, owner decisions).
+2. **Read the plan's later dated notes and any job it spawned.** A later note can retire an earlier requirement. Where they disagree, list it for the owner; never pick silently.
+3. **Measure what's already built** (repository before plan): commits, files, tests, partial work, open jobs and their HALT receipts, with the commands.
+4. **If the product uses a ticket tracker** (e.g. Jira): read the live board for the plan's area. Map each job to an **existing** key where one fits (**never mint a key**, never propose minting one); compare the tracker's "blocks" links with the jobs' `needs`. Disagreements go on the owner's list; the tracker isn't silently overridden, and neither is the plan.
+
+## Phase 2 · Cut the jobs
+
+1. **One job = one ticket = one PR = one module area**, sized for roughly 8–9 work orders.
+2. **Research, qualification and owner decisions are their own jobs.** A question that ends in the owner's answer is a decision job (stored state `decision`, with the question and its owner); research that produces a file (a document, an audit, data) is a **build** job and goes through a PR (`RULES.md` rule 13). **Never hide them inside a build job**: in one product, a first job halted with buildable work trapped behind two research HALTs.
+3. **Every VP maps to at least one job.** An unmapped VP is a gap: report it.
+4. **Every plan task maps to a job, or to "not carried, on purpose"** with its reason.
+5. **Dependencies are explicit and honest.** Ask of each edge: what does this job import, call or read from the other? The answer goes in `uses` (`"uses": {"03": "RecordStore in src/records/store.py"}`). Nothing: drop the edge. An ordering rule with no code use (a release step, the owner's go-live, a privacy order such as "forget must erase records before more are written") is a **gate** (`"gates": ["04a"]`): the job may build before it but not land before it. Never add a `needs` only because two jobs touch the same files: footprints keep those apart. Missing edges are the other error: two jobs that share code with no edge between them.
+5b. **Interface first.** Before cutting, list the decisions and files several jobs will consume (types, contracts, schema shapes, shared config, registries). They become **one small early interface job**; wiring and aggregation (the file that imports everything, the final registration) become **one late job**; everything else is cut by the decision each job owns, never by pipeline stage (not "parse, then store, then show"). Two jobs that would decide the same question (a name, a format, an error policy): the decision moves into the blueprint, or one job gets a `needs` on the other. Two jobs whose footprints or `consumes` meet: the plan names which one writes the end-to-end test that crosses both, or adds a small joining job that does. The interface job's acceptance names each consumer.
+5c. **Footprint, barriers, consumes, requires.** Each build job declares its **footprint**: module folders, a block's `src` and its `tests` together (`src/catalogue/`, `tests/catalogue/`), never a file list; declare generously (a false overlap costs a little pairing, a missed one a stop). Its **barriers**: `migrations`, `deps`, `ci`, `config`, `schema`, `outside:<name>` (a shared sandbox, a staging database), and a hot file from the profile by its path. What it **consumes**: interfaces it reads from other modules. What its machine **requires**: `screen`, `browser`, `owner`, `windows`, `macos`, `linux`, `docker`, `postgres`, `gpu`, `reach:<name>` (a UI or walkthrough means `screen` and `browser`; an owner decision or live walk means `owner`); none means any machine.
+5d. **Estimated work orders** (`est_work_orders`), steadier than hours. The cap is the repo profile's "Max work orders per job" (default 9): over it, split the job; under 3, consider merging it into a neighbour, because each job carries a fixed proving cost. Each build job's ticket also gets its **difficulty** (1 to 5, how hard rather than how big) and the builder it recommends, from the checklist in `METHOD.md` §2 step 3a.
+5e. **Planned growth.** Boards grow (about 60% over the cut on the boards we measured). Areas the plan names but can't detail yet are **placeholders** (`kind: "placeholder"`, with needs and, if you can, an estimate): never started, promoted with `promote` at a re-cut. Leftovers already known (owed docs, small guards, helpers outside every footprint) go into a **sweep job**; later batches become new sweep jobs, added in attended work.
+6. **Kind and state from evidence:** a job delivered by a PR is `kind: build` (`merged` only with a PR, a merge SHA and its job; otherwise `open`); a job delivered by the owner's call is `kind: decision` (`decision`, with its question and owner; `resolved` once decided). The tool derives ready/blocked; a need is satisfied by `merged` or `resolved`.
+7. **Job 00** is often the plan's frozen controls or foundation already on main.
+8. **First `next`:** an eligible job; prefer the one that unblocks most, then the one with most partial work.
+
+With more than ~10 jobs, run `simplicity-critic` on the cut (any job doing two jobs? two jobs that are one?).
+
+## Phase 3 · Propose (stop; write nothing in the project folder)
+
+Write the draft board (`scratch/f-schedule-<slug>/BOARD.json`, from `templates/BOARD-v2.json`, with `project.cut` copied from the repo profile: its noise files, hot files, re-proof allowance and "Max work orders per job"), check it, and measure it: `FOREMAN_BOARD_NO_OPEN=1 python <path>/render_board.py scratch/f-schedule-<slug>/BOARD.json check`, then `… width`. **Two-lane estimate under 1.5x:** show the owner the longest chain and ask whether an interface-first re-cut (5b) can widen it before going on. A board that is truly sequential is fine; the report then says one lane is enough.
+
+**One lane or two: always asked, as its own decision card.** Every head's proposal ends with this card, after the width report, **even when the repo profile has no "Lanes" row** (then option B says what setting it up takes). Never fold it into a paragraph or skip it because one lane is recommended: the owner must see the choice every time. Use the host's question tool when it has one (Claude Code: a question with the two options, the recommended one first), and print the card as well:
+
+```
+🚧 YOUR CALL · one lane or two for this head?
+
+    ★ A  🛣️  One lane: one job at a time, as today            ← recommended
+      B  🛣️🛣️  Two lanes: two jobs at once on two machines, about <n>x faster on this board
+
+    Why A: <one line: the estimate, how well the board pairs, what is set up>
+    Two lanes needs: <"ready: A = <machine>, B = <machine>" | what is missing: the profile's "Lanes" row (which two machines), your standing word for the foreman-lanes branch, about 10 minutes>
+    Not now? A is the default: no answer, or anything not clearly B, is one lane.
+```
+
+The star goes on the recommended option, whichever it is. Recommend one lane when the estimate is under about 1.3x or the repo profile has no "Lanes" row; two only when both machines are set up and the board pairs well. No answer, or anything not clearly "two", is one lane. Two without the profile's "Lanes" row and the owner's standing word for the coordination branch stops and says what's missing. The answer goes in `PROJECT.md` with the owner's words; for two, the board gets `project.lanes: ["A", "B"]`, `project.lane_caps` from the row, and `next: {"A": null, "B": null}`, and its first push creates the coordination branch (`snippets/board_push.sh <remote> <board> --init`). Changing later: only at a re-cut point with no job in progress, on the owner's word.
+
+Show the owner:
+- the head;
+- the job table: id, title, state, needs, the VPs it carries, the tracker key if any, one line on what it builds;
+- the decision jobs: what must be decided, by whom, what each unblocks;
+- unmapped VPs or tasks, plan disagreements, tracker disagreements;
+- the decision list (5b): each shared decision and the job that owns it;
+- the width report, word for word, with its warnings;
+- placeholders and sweep jobs, and that the board will likely grow;
+- the recommended first job, and why;
+- **last, the 🚧 lanes card above**, on its own, so the decision is the last thing on screen.
+
+## Phase 4 · Write (each act on its own word)
+
+**On "go" for the project** (records repo, the foreman's own records):
+1. `PROJECT.md` from the template: the head, the D-table and VP→job map quoted verbatim, the jobs, the owner's decisions, what's not carried, the reconciliation with what's built.
+2. One `tickets/TICKET-<nn>-<slug>.md` per job. Acceptance **quoted**, never reworded. **"Why this job" says in two or three plain sentences what the job makes possible** (from the task's Outcome), never only "Plan task Tn, cut as one job". **No state field:** state lives only in `BOARD.json`.
+3. `BOARD.json`, from the draft (`project.schedule: 2`, `project.cut`, and per job `ticket`, `footprint`, `barriers`, `consumes`, `requires`, `uses`, `gates`, `est_work_orders`): `project.title` = **the blueprint's title** (it is the board's name on every render; the owner may edit the text later), `project.head.outcome` and `head.test` from the head above, `version: 1`, today, `next`, `publish: {"url": null, "local_html": "board.html"}`, each job's `kind`, stored state and **`summary`: one plain sentence, under about 20 words, saying what the job builds, taken from the blueprint task's **Outcome**; plan and VP references go after it in brackets** (*"Loads the catalogue as a runtime block, so later jobs can use it. (T2, VP-6)"*, never *"Plan task T2; carries VP-6."*). The owner reads it on the board to know what a job does without opening the ticket.
+4. Validate and render: `python <path>/render_board.py foreman/projects/<slug>/BOARD.json`. It refuses bad states, unknown needs or gates, cycles through needs and gates, a merged job without its SHA, a decision job without its question, an ineligible `next`, and on a v2 board a `needs` without `uses` and an open build job without its ticket, footprint or estimate.
+
+**Separate word: publish the board page** (publish mode `artifact` only; a new private page, icon `diagram`). Record the URL in `publish.url` and `publish.granted: true`, and run the tool once more. From then on, `f-board` republishes to that one link.
+
+**Separate word: a note on the source plan** (it lives in `foreman/blueprints/ready/` in the records repo; also add "→ `foreman/projects/<slug>/`" to its entry in `foreman/blueprints/README.md`): one line at the top, "Decomposed into `<records>/foreman/projects/<slug>/` on <date>; the project and its tickets are now the execution order." Never delete or rewrite the plan.
+
+Commit nothing unless the owner asks.
+
+## `--split <project-slug> <job-id>`
+
+When scoping shows a job is bigger than one PR (a plan over the repo profile's "Max work orders per job", default 9): `render_board.py BOARD.json split <id> --into "a=Title A,b=Title B" [--chain] [--active a] [--rewire "05=a,06=b"] [--est "a=4,b=5"] [--ticket "a=<path>,b=<path>"]` (on a v2 board `--est`, `--ticket` for every child and a `--rewire` entry for every dependent are required; children inherit the parent's footprint, barriers, gates, requires and uses; `--chain` writes the uses between children) (one event: the children replace the job; each dependent named in `--rewire` needs the child it actually uses, the rest need every child, or the last one with `--chain`; use `--chain` only when the second child uses the first one's code; a job in progress continues on its `--active` child; one version, a supersession record). Under an autonomous run the foreman may split the job it is running this way, with the guards in `RULES.md`, "Its own job's split"; an attended split is the owner's word. Then move the VPs across in new ticket files (each VP still carried) and record the split in `PROJECT.md`. A merged or decision job can't be split.
+
+## Re-cutting
+
+Only unstarted jobs are re-cut, plus the running job's own split at scoping (above). IDs are kept; each change is appended to `PROJECT.md` with a dated reason. Three points: a job's survey, right after the interface job lands, and when a job runs past twice the median estimate. After any re-cut: the edge check (5), the footprints (5c), `project.cut` copied again from the profile, and `width`.
+
+## Report
+
+The project folder, job counts by state, the first `next`, the board link (once published), and every gap or disagreement still open.
+
+End with the 5-line status block (`templates/J-STATUS.md`).

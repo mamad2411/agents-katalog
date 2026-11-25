@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fourteen1416/academic-agent-toolkit (path: vendor/forks/scientific-agent-skills/skills/biopython/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Provides Biopython workflows for sequence manipulation, file parsing (FASTA/GenBank/PDB), phylogenetics, and programmatic NCBI/PubMed access (Bio.Entrez). Supports batch processing, custom molecular-b

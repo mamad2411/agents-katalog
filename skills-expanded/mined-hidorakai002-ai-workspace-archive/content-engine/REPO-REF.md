@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hidorakai002/ai-workspace-archive (path: claude_hackathon_winners___notable_projects/hackathon_winners/everything-claude-code/skills/content-engine/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Create platform-native content systems for X, LinkedIn, TikTok, YouTube, newsletters, and repurposed multi-platform campaigns. Use when the user wants social posts, threads, scripts, content calendars

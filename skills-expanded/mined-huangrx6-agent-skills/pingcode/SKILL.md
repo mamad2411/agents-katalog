@@ -1,0 +1,76 @@
+---
+name: pingcode
+description: >-
+  Use when querying or updating PingCode projects and work items, including tasks, bugs, sprints,
+  statuses, assignees, comments, and attachments. 中文：PingCode 里查待办、查缺陷、拆需求、
+  建史诗/故事/任务、改状态、看迭代、看项目进度、看流转历史、看关联/关注人、下载附件、批量改、按条件搜索或排查授权。Use for PingCode work tracking and authentication or API errors. Do NOT use for local Git work or administration of members,
+  permissions, or CI pipelines.
+compatibility: Requires Python 3.10+ and a PingCode account (API token or OAuth).
+---
+
+# PingCode 项目与工作项
+
+入口为本 skill 的 `scripts/pingcode.py`：`python3 <skill路径>/scripts/pingcode.py <子命令>`。
+使用类型化命令和生成端点表，不凭记忆拼 API 路径。当前端点表为官方 **REST API V2**
+（2026-10-14 快照）；V1 路径不在表内。首次配置或授权失败时读
+[auth.md](references/auth.md)。
+
+## 操作原则
+
+- 只执行用户请求的范围。编号先解析成真实 ID；名字解析有歧义时列候选，请用户指定，不能取首项。
+- 更新或删除前核对目标及当前字段。类型化 update/set-state/delete 命令已读取目标，
+  不必为了流程固定再查一遍；需要向用户消除歧义时才单独 `show`。
+- 用户已明确授权且参数齐全时直接执行。复杂多字段或批量操作可用 `--dry-run` 检查计划；
+  dry-run 仍允许为解析 ID 发起只读请求。删除、树形创建和批量补日期要求 `--yes`，
+  这是 CLI 执行开关，不要求重复获取已有授权。
+- 评论会对外发送信息，仅在用户明确要求评论时执行；上传附件也须属于请求范围。
+- 拆分或录入需求时，史诗、特性、用户故事、任务都要有可执行描述；用户提供截图时，
+  创建后上传附件并在描述里回链，见 [workitem-authoring.md](references/workitem-authoring.md)。
+- 创建/计划默认从 `--sprint`、带日期的 `--parent` 或项目日期继承起止时间；都没有时会在
+  stderr 提示。缺失日期用 `workitem fill-dates` 预览后加 `--yes` 回填。
+- 负责人尽量明确：`--assignee 姓名` 或 `--assignee @me`；确认先不分配就用
+  `--unassigned`（`--assignee none` 同义）。不写会按未分配处理并提示，不要自己猜人。
+- 写操作失败或超时后先检查是否已生效，再决定重试，避免重复创建。批量/树形操作报告已完成部分，
+  不宣称自动回滚或可直接整棵重跑。
+- 批量写操作（bulk-update）退出码 0 不等于逐条成功：按输出里的「已更新/失败」条数核对。
+  迭代字段按类型可用（默认 scrum 只有用户故事能挂），bulk 挂迭代不可用；
+  大批量迁移、排期与逐日先后顺序的做法见 [batch-migration.md](references/batch-migration.md)。
+- 凭据与令牌不回显；状态只用 `auth status` / `config show`，不要读取或粘贴凭据文件内容。
+- 工作项不缓存；字典默认缓存 6 小时。目标刚改名、新建或状态配置变化时用 `--no-cache`。
+
+## 常用入口
+
+| 任务 | 命令 |
+| --- | --- |
+| 我的未完成任务 / 缺陷 | `workitem mine --open-only [--type bug] [--project X]` |
+| 条件列表 / 结构化搜索 | `workitem list …` / `workitem search …` |
+| 详情 | `workitem show SCR-12 [--all]` |
+| 创建 / 更新 / 改状态 | `workitem create …` / `workitem update SCR-12 …` / `workitem set-state SCR-12 状态` |
+| 树形创建 / 单字段批量更新 | `workitem create-plan --file plan.json [--yes]` / `workitem bulk-update …` |
+| 创建 / 删除关联 | `workitem relate SCR-12 --to SCR-5 [--type relate]` / `workitem unrelate … --yes` |
+| 评论 / 附件 | `workitem comment/comments/comment-delete/attachments/attach/download/attach-code/attach-remove …` |
+| 流转历史 / 内部关联 / 关注人 | `workitem history SCR-12` / `workitem relations SCR-12` / `workitem participants SCR-12` |
+| 标签 / 关注人写入 | `workitem tags/tag/untag …` / `tag create/update/delete …` / `workitem watch/unwatch … [--group]` |
+| 工时 / 迭代 / 看板 | `worklog …` / `sprint create/update …` / `board create/entry/swimlane/delete …` |
+| 补齐起止时间 | `workitem fill-dates --project X [--start … --end …] [--yes]` |
+| 删除工作项 | `workitem delete SCR-12 --yes` |
+| 项目列表 / 详情 / 进度 / 成员 / 创建 / 更新 | `project list/show/progress/members/create/update …` |
+| 字典 / 默认项目 | `list projects\|sprints\|types\|states\|priorities\|tags\|users\|project_states\|processes\|workitem_properties\|relation_types\|workload_types` / `config context --project X` |
+| 授权与诊断 | `auth login/status/logout` / `whoami` / `config show` |
+
+“未完成”按 `state.type` 排除 `completed` 和 `closed`，不能按中文状态名猜。
+状态表只约束可选 ID，具体状态流转仍由服务端校验；企业令牌不能识别 `@me`。
+
+## 按需查阅
+
+- [commands.md](references/commands.md)：参数、搜索语法、树形计划与批量操作。
+- [workitem-authoring.md](references/workitem-authoring.md)：需求拆分、描述模板和截图附件流程。
+- [batch-migration.md](references/batch-migration.md)：大批量建树/迁移、迭代排期、并行提速与校验闭环（实战沉淀）。
+- [fields.md](references/fields.md)：字段映射、状态、编号解析和分页。
+- [auth.md](references/auth.md)：配置路径、两种令牌与错误处理。
+- [api.md](references/api.md)：端点表、参数来源、维护和通用 API。
+- [README.md](README.md)：本地运行与测试。
+
+通用 `api` 用于范围内未封装的接口；表中存在端点不代表获得了执行权限。
+`--force` 只跳过端点存在性校验，不能替代官方契约或扩大到成员、权限、部门、DevOps 管理。
+当前随附端点表没有项目删除接口；不要把“删除项目”替换成改状态或删除工作项。

@@ -1,0 +1,176 @@
+---
+name: linkedin-cta
+description: Write the closing ask on a LinkedIn post, the CTA and the P.S., to drive comments, saves, follows, and DMs. Use for questions about a post's CTA, comment prompts, repost or save asks, follow asks, the P.S., or a comment-gate. Do NOT use for the body (use storytelling), the opening line (use hooks), or the profile (use profile).
+---
+
+# LinkedIn CTAs & P.S. Sections
+
+You are a specialist in closing LinkedIn posts with maximum impact: the CTA and the P.S.
+
+## Reference
+
+Read `{SKILL_BASE}/resources/writing/writing-guide.md` for P.S. rules and Growth Today voice, and `{SKILL_BASE}/resources/performance/performance-playbook.md` for the engagement lever and winning formulas.
+
+## CTA types by goal
+
+| Goal | CTA type | Example |
+|---|---|---|
+| Comments / discussion (BoF) | Comment-gate | Comment "CLAY" and I'll send the table. |
+| Reach (ToF) | Repost / save ask | Repost this if your team needs it. |
+| Followers (ToF) | Follow ask | I break down this stuff weekly. Follow Growth Today. |
+| Leads (BoF) | DM or comment-gate | DM me "GTM" and I'll set it up. |
+| Discussion (MoF) | Question / "over to you" | Over to you: what's your current setup? |
+
+## CTA performance (from an analysis of 12,000+ GTM posts)
+
+| CTA close | Typical comments (median) |
+|---|---|
+| Repost / save ask | 41 |
+| Comment-gate | 29 |
+| Question / "over to you" | 7 |
+| Follow ask | 5 |
+| No explicit CTA | 3 |
+
+Read it this way:
+
+- **Once you have an audience, the comment-gate becomes the top comment driver**, roughly 2.5 to 3x a no-CTA post, with the highest ceiling (gated posts are the ones that tend to go viral).
+- **For very small accounts, the effect is muted**: a repost or save ask can edge out the gate, which is why the raw median above puts repost/save on top. As the audience grows, the gate becomes the best comment lever.
+- **For reach, a repost or save ask drives the most reactions** (the ToF lever), even though it earns fewer comments.
+- A follow and a bare "over to you" question sit below the gate for driving comments.
+
+### CTA effect at a glance (from the 12k analysis)
+
+The CTA's job is comments, so the key column is comment lift versus a no-CTA post. Avg engagement is mean reactions plus comments.
+
+| CTA type | Comment lift vs no-CTA | Median comments | Avg engagement | Best for |
+|---|---|---|---|---|
+| Repost / save ask | 12.8x (see note) | 51 | 179 | Reach plays. The number is inflated by selection: these asks cluster on already-strong posts, so treat it as indicative, not a lever that adds 12x on its own. |
+| Comment-gate | 4.5x | 18 | 200 | The reliable comment driver once you have an audience (10k+). Real resource drops only. |
+| Follow ask | 1.2x | 5 | 66 | Barely above no-CTA. Personal-brand growth, not comments. |
+| Question / over-to-you | 1.2x | 5 | 53 | Light discussion. Use a specific question, never a bare "agree?". |
+| No CTA | 1.0x (baseline) | 4 | 54 | The floor. |
+
+The comment-gate is the dependable lever, but it is size-dependent (see the by-band table below). Repost/save looks huge only because strong posts are the ones that tend to carry a save ask.
+
+### The comment-gate is a scale play (by the follower band)
+
+| Follower band | Comment-gate | Question | No CTA |
+|---|---|---|---|
+| <2k | 2 | 1 | 1 |
+| 2-5k | 5 | 4 | 3 |
+| 5-10k | 8 | 3 | 4 |
+| 10-20k | 24 | 9 | 5 |
+| 20-50k | 103 | 12 | 12 |
+| 50k+ | 216 | 80 | 60 |
+
+- **Smaller personal brands do not use gated resources, and their high-performing posts often include a question or no CTA at all.**
+- **It turns on around 10 to 20k and dominates at 20k+**, where useful gated resources become the single biggest comment driver.
+- Full by-band benchmarks (format, hook, length, percentile tiers) are in `performance-playbook.md`.
+
+## CTA design rules
+
+- One CTA per post. Multiple CTAs dilute the action.
+- Be specific. "Comment the worst hiring call you ever made" pulls more than a vague "thoughts?".
+- Lower the barrier. A one-word comment is easier than a paragraph.
+- Match the CTA to the content: framework or cheat sheet, ask for a save or comment-gate; opinion, ask a question; personal brand, ask for a follow.
+- Avoid a bare "Agree?". It invites a yes or no, not a real comment (it is one of the weakest closes).
+
+## P.S., mandatory in every post
+
+P.S. appears in **63% of top-performing posts**.
+
+**Type 1, resource offer (BoF):**
+```
+P.S. We built the [specific resource] for this workflow.
+Comment "[KEYWORD]" and I'll send it over.
+Make sure we're connected.
+```
+
+**Type 2, service signal (pipeline):**
+```
+P.S. We build these systems for B2B GTM teams at Growth Today.
+If you want us to set this up for you, DM me "GTM".
+```
+
+**Type 3, follow CTA (ToF/MoF without a resource):**
+```
+P.S. I break down exactly how we build these systems every week.
+Follow Brigitta Ruha if you want the next one.
+```
+
+**P.S. rules:**
+- Always on its own line, separated from the body by a blank line.
+- Never more than 3 lines.
+- Never put an external link in the P.S. (LinkedIn suppresses external links).
+- After the P.S., the post is done. No more content.
+- Match the P.S. type to the funnel stage: BoF gets Type 1 or 2, ToF and MoF get Type 3.
+
+## CTA by funnel stage
+
+**ToF (awareness), maximize reach and reposts:**
+```
+Repost this if your team needs to see it.
+P.S. [Follow CTA, Type 3]
+```
+
+**MoF (consideration), maximize discussion:**
+```
+Over to you: [specific question about their situation]
+P.S. [Follow CTA or service signal]
+```
+Examples: "Over to you: what's your current ICP research setup?" / "which part would you change first?" / "are you running this manually or automated?"
+
+**BoF (conversion), maximize intent signals:**
+```
+Comment "[KEYWORD]" and I'll send it over.
+Connect with me first so I can send it over.
+P.S. [Service signal, Type 2]
+```
+
+## Comment-gate best practices
+
+Comment-gate posts pull roughly **2.5x the comments of a no-CTA post** once you have an audience. High comment volume signals the algorithm to expand distribution.
+
+**Only use a comment-gate when:**
+1. You have a real deliverable to send (template, guide, list, playbook).
+2. You are connected to commenters or can DM them.
+3. You will follow up and actually deliver.
+
+**Format:**
+```
+Comment "[KEYWORD]" and I'll send it over.
+Connect with me first so I can send it over.
+```
+
+**Keyword choices:** "ICP" (ICP frameworks), "CLAY" (Clay templates), "STACK" (tech stack), "SYSTEM" (workflow reveals), "GTM" (GTM playbooks), "SIGNAL" (intent signal lists).
+
+## Examples
+
+**Example 1, BoF (Clay workflow template):**
+```
+Comment "CLAY" and I'll send the table.
+Connect with me first so I can send it over.
+
+P.S. We build signal-based outbound systems for B2B GTM teams at Growth Today.
+If you want us to build this for you, DM me "GTM".
+```
+
+**Example 2, MoF (contrarian take on cold email):**
+```
+Over to you: what's your current reply rate, and the one thing you'd change?
+
+P.S. I break down what's actually working in outbound every week.
+Follow Growth Today if you want the next breakdown.
+```
+
+**Example 3, ToF (AI trend explainer):**
+```
+Repost this if your GTM team is still figuring out where AI fits.
+
+P.S. I translate AI developments into GTM plays every week.
+Follow Growth Today if you want the next one.
+```
+
+---
+
+*Created by [Growth Today](https://www.growthtoday.co), an AI-native GTM engineering firm. Maintained and updated by [Brigitta Ruha](https://www.linkedin.com/in/brigittaruha/). More open Claude Skills for go-to-market teams: https://www.growthtoday.co/claude-skills*

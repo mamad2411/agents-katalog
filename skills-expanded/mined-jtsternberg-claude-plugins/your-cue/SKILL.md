@@ -1,0 +1,392 @@
+---
+name: your-cue
+description: >
+  Read-only briefing across every live agent session — who is working, who is
+  waiting on the user, what finished overnight — ending in one cue per
+  workstream and a single prioritized "Next for you:". Use for a morning
+  briefing or a status sweep of delegated work.
+when_to_use: |
+  Also when the user asks what their agents are doing, what needs them, what
+  happened while they were away, or wants a catch-up across workspaces.
+---
+
+# Your Cue — tell the human what each workstream needs from them
+
+Catch-up is the input; the cue is the product. A list of running agents is not
+a briefing. Every workstream leaves this skill with a verb the human can act
+on, or an explicit "nothing" and the reason.
+
+Takes no arguments. Invoked as `/maestro:your-cue` (Codex:
+`$maestro:your-cue`), it sweeps whatever is reachable and briefs.
+
+## Rule zero — read only, start to finish
+
+Discovery and inspection only: pane focus, seen state, notifications, and
+session input all survive untouched. This run changes nothing, in either host,
+except the one sidebar marker described below.
+
+Read-only and safe:
+
+- **cmux** — `cmux tree --all --json`, `cmux identify --json`, `cmux sidebar-state`,
+  `cmux list-notifications`,
+  `cmux read-screen --surface <id> --scrollback --lines <n>`.
+- **herdr** — `herdr agent list`, `herdr agent get|read`,
+  `herdr workspace list|get`, `herdr tab list|get`, `herdr pane list|get|read`.
+- **graveyard** — `graveyard candidates --json --no-verdict`.
+
+Never run, even to "just check":
+
+- **cmux** `focus-pane` and `focus-panel` (they move the human's focus, so
+  their next keystrokes go into the pane; `focus-panel` runs only on a `j`
+  reply after the briefing, below), `send-key` (lands in a live REPL and can destroy an in-flight
+  tool call), `clear-notifications` and `clear-history` (both destroy state the
+  briefing is reporting on).
+- **herdr** `prompt` and `send-keys` (submit input to the agent), `focus`
+  (steals focus), `rename`, `start`, `attach`, and every `pane`/`tab`/
+  `workspace` verb outside the read list above.
+- **graveyard** `bury` — burial is a *cue* in this briefing, never an action.
+
+**The one write: mark the `Next for you:` target.** When that line points at a
+cmux row, color its workspace and add a `cue_pointer` status pill, and flash its
+pane, following the cmux-cli skill's "Point the user at a surface that already
+exists" recipe. Name the marker in the line (`… — the orange workspace with the
+👉 pill`). Mark only that one target, clear any `cue_pointer` pill an earlier
+briefing left on a different workspace, and record the prior color so it can be
+restored. Focus, notifications, and session input still stay untouched. herdr
+rows get no mark, so their locator has to do the work alone.
+
+**Jumping is how the human gets to a session the briefing names.** Number every
+rendered item, in render order across all sections, and tag each item that has
+a `jump` target in `locate.sh`'s row with `j<n>`. `Next for you:` carries a bare
+`j` for its own target. The briefing itself never moves focus. A `j` or `j<n>`
+reply is the human asking to be taken there, so run the cmux-cli skill's
+`focus-panel` call with that row's `jump.surface_id`, `jump.workspace_id`, and
+`jump.window_id`. Then confirm with `identify` that it landed and say where they
+are. Keep the numbered rows from the briefing's own `locate.sh` run so the
+numbers mean what the human saw. If that surface is gone, say so and re-run
+`locate.sh` rather than jumping by title. An item with no `jump` (herdr, or
+`unlocated`) gets no tag. `j` is reserved for jumping, so give answer tokens
+other letters.
+
+`herdr agent read` with `--source recent` is the enrich read; bare
+`cmux read-screen` without `--scrollback` returns the human's scrolled
+viewport, not the live bottom, so always pass `--scrollback`.
+
+## 1. Check reachability
+
+`graveyard candidates --json --no-verdict` is the fast path when `graveyard` is
+installed: one unified cmux + herdr inventory that
+works from outside both hosts. Without graveyard, take the portable path — `herdr agent list` plus
+`cmux tree --all --json` and `cmux sidebar-state`.
+
+Always pass `--no-verdict`. Without it graveyard classifies every row with a
+local model — tens of seconds on a cold cache, plus a stderr line when that
+model is missing. This briefing reads none of those verdicts, and that stderr
+line is not a host error.
+
+**Probe each host yourself, even on the fast path.** One cheap read per
+transport — `herdr agent list`, `cmux tree --all --json` — is the only honest
+reachability signal. Graveyard does not report a host being down: with the
+`herdr` CLI unavailable it exits 0, writes nothing to stderr under `--no-verdict`,
+and relabels every herdr row's `transport` as `cmux`. A row count that looks
+complete is not evidence both hosts answered, and `transport` is not a
+reachability field.
+
+**Stop and ask before briefing partial coverage.** When only one transport
+answers, ask whether the human wants the one-host briefing now or wants to
+resume when both are reachable — do not silently brief half the fleet as if it
+were the fleet. When neither answers, offer a transcript-only briefing and wait
+for a yes. A partial run that the human approved gets a `Coverage` section
+naming what was unreachable.
+
+## 2. Inventory the live agents
+
+Graveyard rows carry `session_id`, `agent`, `transport`, `idle_seconds`,
+`busy`, `buryable`, `targetable`, `reason`, `workspace_title`, `tab_title`,
+`cwd` — usually enough on their own. Enrich only where a row is missing a
+visible name or a status you need:
+
+- `herdr agent list` adds `name` (the herdr agent/tab handle),
+  `agent_status`, and `terminal_title_stripped` (the tab label). It does *not*
+  carry a workspace title — resolve that with `herdr workspace get
+  <workspace_id>`, one extra read, or from `herdr workspace list`. The title
+  comes back as `result.workspace.label`, not `title`.
+- `herdr agent get`/`read` key on the herdr `name`, not the Claude session
+  UUID. Passing a session UUID returns `agent_not_found`.
+- `cmux tree --all --json` and `cmux sidebar-state` supply surface titles,
+  busy/idle pills, and unread notifications for cmux rows. The tree nests
+  windows → workspaces (`title`) → panes → surfaces (`title`).
+- `cmux list-notifications` names the unread notifications themselves, which is
+  the cheapest `Waiting on you` signal a cmux row gives you.
+
+**Native status outranks graveyard's `busy`.** Graveyard reports
+`busy: false, buryable: true` for agents `herdr agent list` reports as
+`working` — its idle clock and the host's lifecycle state are not the same
+signal. When they disagree, the host wins: the row goes under
+`Working`, and it gets no burial cue.
+
+Terminal reads are the expensive, intrusive-feeling step: shortlist first, then
+`cmux read-screen --surface <id> --scrollback --lines <n>` (or
+`herdr agent read`) only for the rows whose state is still unclear.
+
+Every item the human sees carries a locator they can follow with their eyes and
+keys. Build them with the bundled script — it joins each graveyard row to its
+exact surface, falls back to a title match only when that match is unique, and
+never joins on `cwd`, which many sessions share:
+
+Codex: this path resolves under Claude Code; substitute the directory containing
+this `SKILL.md`.
+
+```bash
+SKILL_DIR="${CLAUDE_SKILL_DIR}"
+TMP="$(mktemp -d)"
+graveyard candidates --json --no-verdict > "$TMP/gy.json"
+bash "$SKILL_DIR/scripts/locate.sh" --graveyard "$TMP/gy.json" > "$TMP/loc.json"
+```
+
+Without graveyard, `locate.sh --herdr` lists every cmux surface and herdr pane.
+It reads one `cmux tree` snapshot plus `cmux identify` and the herdr `list`
+verbs — nothing else — and each row comes back with `locator`, `group`, and
+`item`:
+
+- cmux: `<tab title> — <window> › ⌘<n> <workspace> › <pane position>, tab <k>/<m>`.
+  cmux windows have no title, so a window is `this window` (the one this
+  briefing runs in) or `the "<workspace it is showing>" window`. `⌘<n>` and the
+  tab number are the keys the human presses; the pane position (`left`,
+  `middle`, `right › top`) comes from the workspace's split layout. The window
+  drops out when only one exists, the pane when the workspace has one, the tab
+  when the pane has one.
+- herdr: `<agent name> — <workspace label> (#<n>) › tab <tab label> (#<n>) › pane <k> of <m>`.
+
+A row with `located: false` renders as its `unlocated: <tab title>` locator plus
+the smallest id that finds it; `reason` says why (`ambiguous-title`,
+`no-match`, `cmux-unreachable`, `herdr-unreachable`). Never guess a position for
+it. Session UUIDs, refs, and pane ids are internal lookup keys, not output.
+
+## 3. Nest the hotline callees
+
+Read the call registry through `/hotline:hotline-call-status` (Codex:
+`$hotline:hotline-call-status`). Each line gives `caller_session_id`,
+`caller_path`, `target`, `callee_session_id`, `mode`, `last_contact`,
+`host_handle`, `transport`, and `remote`.
+
+maestro does not depend on hotline, so skip this step **when the hotline plugin
+is not installed** — nothing dialed anybody through a registry that does not
+exist, and every step-2 session is a workstream of one.
+
+**Filter to the live inventory first.** The registry is append-only and nothing
+prunes it, so the filter typically discards the overwhelming majority of rows —
+skip it and the briefing is unreadable. Nest a callee only when its
+`callee_session_id` or `host_handle` matches a session or handle in the
+inventory from step 2, *and* its caller is in that inventory too. Every other
+row is stale — ignore it silently, and never mention a caller or callee the
+human cannot currently see.
+
+**The tab title finds callees the registry misses.** Hotline titles every tab it
+dials into `hotline: … (<mode>)`, and live callees routinely have no registry row
+that matches, or a row whose caller is no longer live. Every live inventory row
+whose tab title starts `hotline:`, or that the registry names as a callee, is a
+**hotline callee**. When it cannot nest under a live caller, it becomes its own
+workstream, rendered `hotline callee, caller not live` — never dropped, and the
+dead caller stays unnamed. Every hotline callee goes on step 4's catch-up list,
+because only its transcript says whether the human took it over.
+
+**A remote callee is off-box, not stale.** `remote` carries the SSH target when
+the callee runs on another machine, so its `callee_session_id` and `host_handle`
+belong to that box and can never appear in a step-2 inventory built from local
+reads. A row with a non-empty `remote` — or a `host_handle` naming another
+machine — whose caller *is* in the inventory survives the filter: nest it under
+that caller as `remote callee on <host>, not inventoried here` with
+`Your cue: nothing — remote host not inventoried`, or `Your cue: clarify` when
+the caller looks blocked on it. Add one `Coverage` line naming that host.
+Dropping the row briefs a live workstream as absent.
+
+A surviving callee renders nested beneath its caller, by visible name. A callee
+that is itself a caller nests two deep — the chain is the point. Show a child
+when it explains the parent's blocker or contradicts the parent's apparent
+state; otherwise the caller's line is enough. A registry entry is a
+record of a dial, not proof of life — the transports in step 2 are the
+liveness authority.
+
+## 4. Catch up only where needed
+
+A host reporting the agent as working settles the row. Every other row goes on
+the catch-up list: idle or finished agents, rows whose screen doesn't say what
+task they were on, and every hotline callee from step 3. Burial cues need a
+transcript check, so an idle row left off the list can never earn one.
+`sessions-catch-up` is model-invocable, so route to it yourself; never pull a
+raw transcript into your own context instead.
+
+**Batch the list, then dispatch every batch in one message so they run
+concurrently.** About five sessions per subagent; 41 sessions in 8 batches has
+finished in about 80 seconds. Above about 60 listed sessions, ask before
+dispatching: list the rows by visible locator, say how many batches it would
+take, and wait. Under Claude Code each batch is one Agent call with
+`model: "haiku"` — `model: "sonnet"` when the transcripts are tangled. Every
+work order is the same, naming its batch's session ids and marking which are
+hotline callees:
+
+> For each session id below, invoke
+> `/session-tools:sessions-catch-up <session-id> --window 8 --max-chars 8000`.
+> Perform only that skill's digest and briefing steps: skip its `--deep` offer
+> and skip its `nudge.mjs bump`, both of which write state this briefing must
+> not touch. A session whose last turn asks the human to choose — options laid
+> out after the question, an A/B/C list — is `WAITING_ON_HUMAN` even when the
+> digest's Tail state says it is not blocked.
+>
+> Report per session, nothing else:
+>
+> ```text
+> <session-id>
+> <three sentences: what it was doing, where it stopped, what it needs>
+> STATE: COMPLETE | PARTIAL | BLOCKED | WAITING_ON_HUMAN
+> TAKEOVER: yes "<the human's last typed prompt, at most 15 words>" | no | unknown
+> ```
+>
+> `TAKEOVER` only for sessions marked hotline callee. The work order and every
+> later caller message are not typed by the human: a user turn that begins
+> `[CALL_ID:`, or is a `/hotline:hotline-ringing` command (`[FOLLOW_UP]`
+> included). Harness-injected turns — task notifications, hook output, system
+> reminders — are not typed either. Any other user turn is the human typing
+> into the callee: `yes`. `unknown` when the digest's turns don't reach back to
+> the work order and none of them is typed.
+
+That report is all that reaches you. You never run the digest and
+never see the transcript.
+
+Under Codex, use its subagent mechanism the same way when one is available. With
+none, invoke
+`$session-tools:sessions-catch-up <session-id> --window 8 --max-chars 8000` inline
+for each listed session — same two skips, same report — and keep only the report
+in your working notes.
+
+A session whose report never came back stays unverified: list it by its visible
+locator with `Your cue: clarify`.
+
+Both bounds are real flags on the digest command, and both degrade gracefully:
+
+- **Eight turns** — `--window 8`.
+- **8,000 characters** — `--max-chars 8000`, against a default of 40,000. The
+  digest sheds cheapest-first to fit the budget: per-turn detail, then the
+  prompt list, then the compaction summary, then the window itself down to a
+  floor of four turns. The clamp never removes `Recent turns`, so the newest
+  turn survives at 8,000 — the turn that says where the agent stopped.
+
+## 5. Render the briefing
+
+One workstream is one session plus any live callees it dialed — a callee gets
+its own line only when step 3 says to show it — so a session that dialed nobody
+is a workstream of one. A plot is a workspace holding one or more workstreams.
+One cue per workstream, never one cue spanning two unrelated sessions.
+
+Render only the sections that have content. Every workstream ends with
+`Your cue:` — a concrete verb (answer, approve, review, review and close,
+resume, clarify, close, bury) when the human has a move, or
+`Your cue: nothing — <reason>` when the agent is still working or the result is
+settled. "Nothing needed" is a
+conclusion you state, not a line you omit.
+
+**Group by where the human will look.** With two or more windows, open with
+`locate.sh`'s `legend` line so each window label has a referent. Within each
+section, sort by window and then workspace; when two or more items in a section
+share a `group`, print that group once as a sub-header and give each item only
+its `item` (`left pane, tab 3/5`) and title. `Next for you:` always carries the
+full `locator`, because it is the line read alone.
+
+**Step 4's `STATE` picks the section.** `WAITING_ON_HUMAN` and `BLOCKED` go
+under `Waiting on you`, `COMPLETE` under `Finished while you were away`. A
+`PARTIAL` row the host reports idle has stopped short of done: it goes under
+`Waiting on you` with `resume` or `clarify`.
+
+**A taken-over callee is the human's now.** A `TAKEOVER: yes` row renders as
+`human-driven hotline callee — last typed: "<prompt>"`. It is no longer a
+delegated worker: an orchestrator sends it work only after asking the human. Its
+cue comes from its `STATE` like any other row. `TAKEOVER: unknown` renders as
+`hotline callee, takeover unverified`.
+
+```text
+## Your cue
+
+Windows: this window (showing "<workspace>") · the "<workspace>" window
+
+Waiting on you
+1. <visible agent locator> — <current status>. Your cue: <specific action>. `j1`
+- <window> › ⌘<n> <workspace>
+  2. <pane, tab k/m> "<tab title>" — <current status>. Your cue: <specific action>. `j2`
+  3. <pane, tab k/m> "<tab title>" — <current status>. Your cue: <specific action>. `j3`
+
+Working
+4. <visible agent locator> — <current task>. Your cue: nothing — it is still working. `j4`
+
+Finished while you were away
+5. <visible agent locator> — <outcome and verification caveat>. Your cue: <review, close,
+   continue, bury this session/plot, or nothing with reason>. `j5`
+
+Coverage
+- <only when a host was unavailable, or a remote callee's host is not inventoried>
+
+Next for you: <the highest-priority action and visible locator, naming the sidebar mark;
+`jump` (j) when it has a jump target; "nothing" only while work remains active>.
+<If fully idle: outcome, any scheduled pending job, and readiness for the next instruction;
+omit the Next for you line when no action is needed>.
+```
+
+`Next for you:` is one line, one action, never a menu — the single
+highest-priority non-nothing cue, carrying its visible locator so the human
+knows where to go. Use `Next for you: nothing` only when no human action is
+needed and implementation, review, or waiting on an armed reporting callback is
+still active. When the work is finished, state the outcome, any scheduled pending
+job, and that you are idle and ready for the next instruction. A future timer
+alone does not imply current work; a completed briefing need not end with `nothing`.
+
+**A cue to answer or clarify carries its subject.** A briefing is read hours
+after the question was asked, so the answer tokens alone (`answer "fold" or
+"defer"`) name nothing the human can act on. Add a clause naming what the
+decision is about, and where the orchestrator kept a decisions ledger
+(`/tmp/maestro/decisions-<session-id>.md`, written by the sibling `conduct`
+skill), its path followed by the anchor as a separate token
+(`… .md - #decide-92`), because a path fused to an anchor opens nothing — both
+found by reading the ledger, never invented. Relay each answer token with the
+one-letter alias the orchestrator gave it (`"fold" (F)`), since that letter is
+what the orchestrator will accept as the answer.
+
+### Burial cues
+
+`Your cue: bury this session` requires both halves: step 4 reported
+`STATE: COMPLETE` with no substantive follow-up in its three sentences, **and**
+graveyard reports `buryable: true` for that `session_id`. One half alone is not
+a burial cue. A human-driven callee needs a third: its last typed prompt was
+answered, not left open.
+
+**Unverified is not failed.** A row whose step 4 report never came back, or
+never ran because the human declined a large dispatch, had its transcript half
+unchecked. When completion is not established from the transcript, render
+`Your cue: review and close` — or `Your cue: nothing — <reason>` where that
+fits — never a burial cue. A burial cue is only ever emitted after the
+transcript check actually happened.
+
+`Your cue: bury this plot` requires every `targetable` session sharing that
+`workspace_title` to be finished and `buryable`. One live sibling downgrades it
+to a per-session cue.
+
+Burial stays text in the briefing: this skill leaves execution to the human or
+to a later explicit request, and never runs `graveyard bury` itself.
+
+## Anti-patterns
+
+| Anti-pattern | Instead |
+|---|---|
+| A list of running sessions | A cue per workstream |
+| Silently briefing one host | Stop and ask, then add `Coverage` |
+| Session UUIDs, refs, or a bare `pane 2` in prose | `locate.sh` locators: window › `⌘n` workspace › pane position, tab k/m |
+| `<tab> in <workspace>` with no window or position, or a title-joined guess | The script's locator; `unlocated` when it can't join exactly or uniquely |
+| Reading full transcripts into your context | `--window 8 --max-chars 8000`, cheaper model |
+| Nesting every registry row | Only callees present in the live inventory |
+| Dropping a `hotline:` tab the registry can't match | Its own workstream: `hotline callee, caller not live` |
+| Briefing a callee the human typed into as a delegated worker | `human-driven hotline callee`, with the last typed prompt |
+| Summarizing the first few unclear rows and listing the rest | Batch every listed row, dispatch all batches at once |
+| Burying, focusing, or notifying anything | Read-only; burial is a cue |
+| Marking every waiting row, or leaving a stale mark | Mark only the `Next for you:` target; clear the previous `cue_pointer` |
+| Jumping during the briefing, or by title | Jump only on a `j`/`j<n>` reply, by that row's `jump` UUIDs |
+| Ending with a menu | One `Next for you:` |
+| An `answer`/`clarify` cue that is only answer tokens | Add the subject clause, and the ledger path plus separate anchor when one exists |

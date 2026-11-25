@@ -1,0 +1,304 @@
+---
+name: code-part-modification
+description: "以最小改动完成缺陷修复或功能变更，通过影响分析、自愈验证与全量关联检查避免蝴蝶效应。适用于局部代码修改、Bug 修复、小功能增量等需要控制影响面的场景。"
+---
+
+# 局部代码修改技能（code-part-modification）
+
+## 核心原则
+
+> 本文件中的 `templates/...` 均指本技能目录下的 `templates/` 子目录。
+
+- **最小化修改**：只修改完成目标功能所需的最小代码范围，避免"顺手优化"
+- **无蝴蝶效应**：确保修改不影响其他功能，不引入隐性依赖，不破坏现有契约
+
+## 适用场景
+
+| 场景 | 说明 |
+| ------ | ------ |
+| Bug修复 | 修复特定缺陷，确保不影响其他功能 |
+| 功能增加 | 添加新功能，最小化对现有代码的影响 |
+| 功能修改 | 修改现有功能，保持向后兼容 |
+| 功能封闭 | 废弃或关闭功能，清理相关代码 |
+
+## 执行流程
+
+```dot
+digraph code_part {
+    rankdir=TB;
+    "理解需求" -> "定位修改点";
+    "定位修改点" -> "影响范围分析";
+    "影响范围分析" -> "分解子任务";
+    "分解子任务" -> "有可测试环境?";
+    "有可测试环境?" -> "编写单元测试" [label="是"];
+    "有可测试环境?" -> "提取代码到测试" [label="否"];
+    "编写单元测试" -> "实现最小修改";
+    "提取代码到测试" -> "实现最小修改";
+    "实现最小修改" -> "验证修改";
+    "验证修改" -> "验证通过?";
+    "验证通过?" -> "全量关联检查" [label="是"];
+    "验证通过?" -> "自愈修复" [label="否"];
+    "自愈修复" -> "验证修改";
+    "全量关联检查" -> "关联检查通过?";
+    "关联检查通过?" -> "修改完成" [label="是"];
+    "关联检查通过?" -> "关联细节修复" [label="否"];
+    "关联细节修复" -> "全量关联检查";
+}
+```
+
+---
+
+## Phase 1: 需求理解与修改点定位
+
+### 1.1 需求理解
+
+明确修改目标：
+
+- **Bug修复**：复现路径、错误信息、期望行为
+- **功能增加**：新功能描述、输入输出、边界条件
+- **功能修改**：修改前行为、修改后行为、兼容性要求
+- **功能封闭**：关闭范围、保留功能、清理范围
+
+使用模板 `templates/requirement.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/requirement.md`。
+
+### 1.2 定位修改点
+
+| 方法 | 工具 | 适用场景 |
+| ------ | ------ | ---------- |
+| AST 精准搜索 | ast-grep-mcp `find_code_by_rule` | 按方法签名、调用模式精准定位 |
+| 简单模式搜索 | ast-grep-mcp `find_code` | 按方法名/字段名快速搜索引用点 |
+| 关键字搜索 | grep/rg | 根据错误信息定位（兜底） |
+| 调用链追踪 | IDE/代码分析 | 理解数据流 |
+| 日志追踪 | 日志文件 | 定位运行时位置 |
+| 堆栈分析 | 异常堆栈 | Bug修复定位 |
+
+**ast-grep-mcp 用法**：
+
+按方法签名定位：
+```
+find_code(pattern: 'void $METHOD($$$ARGS)', language: java, project_folder: "<dir>")
+```
+
+按方法调用点定位（蝴蝶效应检查用）：
+```
+find_code(pattern: '$OBJ.methodName($$$ARGS)', language: java, project_folder: "<dir>")
+```
+
+按字段读写点定位：
+```
+find_code(pattern: '$OBJ.fieldName', language: java, project_folder: "<dir>")
+```
+
+> **注意**：MCP 不支持 `--globs` 排除目录，需限定 `project_folder` 或人工过滤。大型项目（>10k 文件）可能超时。
+
+输出：修改点清单（文件、行号、修改类型、说明）
+
+### 1.3 影响范围分析
+
+| 检查维度 | 检查项 | 方法 |
+| ---------- | -------- | ------ |
+| 内部调用 | 谁调用了这个方法/函数？ | grep 调用点 |
+| 上游系统 | 哪些外部系统调用此接口？ | 接口文档、日志 |
+| 下游系统 | 此代码调用了哪些外部系统？ | 代码分析 |
+| 数据库 | 涉及哪些表、字段？ | SQL 分析 |
+| UI界面 | 界面显示哪些字段？ | 前端代码分析 |
+| 配置 | 依赖哪些配置项？ | 配置文件分析 |
+
+使用模板 `templates/impact-analysis.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/impact-analysis.md`。
+
+---
+
+## Phase 2: 任务分解
+
+将修改任务分解到**可独立验证**的粒度：
+
+| 粒度   | 标准                 | 示例                         |
+|--------|----------------------|------------------------------|
+| 太大   | 无法独立验证         | "重构订单模块"               |
+| 合适   | 有明确的验证器       | "修改订单状态字段校验逻辑"   |
+| 太小   | 验证成本高于修改成本 | "修改变量名"                 |
+
+使用模板 `templates/tasks.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/tasks.md`。
+
+---
+
+## Phase 3: 测试策略
+
+### 3.1 测试环境判断
+
+```dot
+digraph test_strategy {
+    rankdir=LR;
+    "开始" -> "可直接测试?";
+    "可直接测试?" -> "编写单元测试" [label="是"];
+    "可直接测试?" -> "可隔离?" [label="否"];
+    "可隔离?" -> "提取代码到测试" [label="是"];
+    "可隔离?" -> "Mock外部依赖" [label="需Mock"];
+    "可隔离?" -> "集成测试" [label="集成环境"];
+    "可隔离?" -> "手动验证" [label="无法自动化"];
+    "提取代码到测试" -> "编写单元测试";
+    "Mock外部依赖" -> "编写单元测试";
+}
+```
+
+### 3.2 代码提取策略
+
+| 策略     | 适用场景               | 方法                           |
+|----------|------------------------|--------------------------------|
+| 提取方法 | 逻辑可独立但嵌入大方法 | 将目标逻辑提取为独立方法       |
+| 提取类   | 依赖复杂无法直接测试   | 提取纯逻辑类，无外部依赖       |
+| 复制修改 | 无法隔离的代码         | 复制一份修改，原代码保持不变   |
+
+使用模板 `templates/test-cases.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/test-cases.md`。
+
+---
+
+## Phase 4: 最小化修改实现
+
+| 原则 | 说明 | 反例 |
+| ------ | ------ | ------ |
+| 单一职责 | 每次修改只做一件事 | 同时修Bug和重构 |
+| 最小范围 | 只修改必要的代码 | "顺手"修改其他代码 |
+| 保持兼容 | 不破坏现有接口 | 修改返回值结构 |
+| 可回滚 | 修改可独立回滚 | 多功能耦合修改 |
+
+使用模板 `templates/changes.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/changes.md`。
+
+---
+
+## Phase 5: 自愈循环验证
+
+### 5.1 验证器
+
+| 验证类型 | 验证器 | 命令 |
+| ---------- | -------- | ------ |
+| 单元测试 | JUnit/pytest/go test | `mvn test -Dtest=XxxTest` |
+| 代码规范 | lint/checkstyle | `mvn checkstyle:check` |
+| 类型检查 | TypeScript/mypy | `tsc --noEmit` |
+| 静态分析 | SonarQube/spotbugs | `mvn spotbugs:check` |
+| 集成测试 | 测试套件 | `mvn verify` |
+
+### 5.2 自愈循环规则
+
+| 循环次数 | 处理策略 |
+| ---------- | ---------- |
+| 1-3次 | 自动修复，继续循环 |
+| 4-5次 | 重新评估方案，可能需要人工介入 |
+| >5次 | 停止，记录问题，请求人工帮助 |
+
+使用模板 `templates/verification.log.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/verification.log`。
+
+---
+
+## Phase 6: 全量关联检查
+
+### 6.1 关联影响矩阵
+
+| 修改点 | UI | 数据库 | 上游系统 | 下游系统 | 内部模块 |
+| -------- | ---- | ---- | ---------- | ---------- | ---------- |
+| 参数校验 | ✗ | ✗ | ✗ | ✗ | 需检查 |
+| 返回值 | 需检查 | ✗ | ✗ | 需检查 | 需检查 |
+| 数据库字段 | ✗ | 需检查 | ✗ | ✗ | 需检查 |
+| 接口契约 | 需检查 | ✗ | 需通知 | 需通知 | 需检查 |
+
+### 6.2 蝴蝶效应检查方法
+
+1. **AST 搜索**：ast-grep-mcp `find_code` 按方法名/字段名搜索所有引用点
+2. **静态分析**：IDE"查找用法"
+3. **调用链追踪**：追踪方法调用链
+4. **字段追踪**：追踪字段所有读写点
+5. **接口追踪**：追踪接口所有调用点
+
+**ast-grep-mcp 蝴蝶效应检查示例**：
+
+搜索方法所有调用点：
+```
+find_code(pattern: '$OBJ.targetMethod($$$ARGS)', language: java, project_folder: "<dir>")
+```
+
+搜索字段所有读写点：
+```
+find_code(pattern: 'this.targetField', language: java, project_folder: "<dir>")
+```
+
+搜索接口所有实现类：
+```
+find_code_by_rule(
+  project_folder: "<dir>",
+  yaml: '''
+    id: interface-impl
+    language: java
+    rule:
+      pattern: 'class $NAME implements $IFACE $$$REST'
+    constraints:
+      IFACE:
+        regex: 'TargetInterface'
+  '''
+)
+```
+
+使用模板 `templates/association-checklist.md` 与 `templates/butterfly-check.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/`。
+
+---
+
+## Phase 7: 输出文档
+
+使用模板 `templates/report.md`，产物写入 `docs/code-part-modification/task-{yyyymmdd}-{seq}/report.md`。
+
+### 文件结构
+
+```text
+docs/code-part-modification/
+└── task-{yyyymmdd}-{seq}/
+    ├── requirement.md
+    ├── impact-analysis.md
+    ├── tasks.md
+    ├── test-cases.md
+    ├── changes.md
+    ├── verification.log
+    ├── butterfly-check.md
+    └── report.md
+```
+
+---
+
+## 最佳实践
+
+| 主题 | 要点 |
+| ------ | ------ |
+| 修改粒度 | 单Bug=1修改点；功能增强=1功能点；重构=1类/模块 |
+| 测试优先级 | 必须：修改点单元测试+直接调用方集成；建议：影响范围回归；可选：全量回归 |
+| 回滚策略 | 每次修改可独立回滚，记录回滚命令和影响 |
+| 文档同步 | API文档、README、CHANGELOG、内部文档 |
+
+---
+
+## 与其他技能集成
+
+| 技能 | 用途 |
+| ------ | ------ |
+| `code-review` | 修改完成后审查代码 |
+| `code-detect-dup` | 检查是否引入重复代码 |
+| `java-coverage` | 单元测试生成与覆盖率提升 |
+| `sql-extract` | SQL 相关修改点的 SQL 语句抽取 |
+
+---
+
+## 常见问题
+
+| 问题 | 方案 |
+| ------ | ------ |
+| 修改点无法测试 | 提取方法/类 → Mock隔离 → 复制到测试环境 → 集成测试 |
+| 如何确保不影响其他功能 | 全量关联检查 → 回归测试 → 检查调用点 → 验证接口兼容性 |
+| 多个修改点如何处理 | 识别依赖 → 按序逐一修改 → 独立验证 → 集成验证 |
+| 验证一直失败 | 记录次数(>5停止) → 重新评估方案 → 人工介入 → 替代方案 |
+
+---
+
+## 检查清单
+
+**开始前**：需求已明确 / 修改点已定位 / 影响范围已分析
+
+**修改中**：修改遵循最小化原则 / 测试已覆盖修改点 / 自愈循环验证通过
+
+**完成后**：全量关联检查完成 / 蝴蝶效应检查通过 / 文档已更新 / 任务报告已输出

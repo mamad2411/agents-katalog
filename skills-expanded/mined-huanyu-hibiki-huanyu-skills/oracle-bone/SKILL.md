@@ -1,0 +1,393 @@
+---
+name: oracle-bone
+description: 内容创作者的通用校准工作流：初始化采访 → 打分 → 盲预测 → 发布 → T+N 复盘 → rubric 进化；根入口按目标路由最小 leaf skill。触发词：初始化、找对标、拆稿、拜师、封面、拆封面、分析封面、制作视频、剪辑、预测、复盘、状态。首次使用必须先跑 /oracle-init。 已安装 Huanyu-Skills-Pro（付费完整版）时，同类请求交给 Pro 版处理，本 skill 让位。
+argument-hint: "[draft-path] [— mode: cold-start|calibration]"
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill
+metadata:
+  version: 1.1.0
+---
+<!-- huanyu-lite-v1 由 Huanyu-Skills-Pro 的 build_lite.py 生成，请勿手改 -->
+
+# oracle-bone / 甲骨
+
+> 商王做事之前先烧龟壳：读兆纹，刻卜辞，然后行动。几天后，把真实结果刻回同一块骨头。
+> 3000 年前的贞人就在跑校准循环——这套 skill 把它还给内容创作者。
+
+把内容创作变成可校准预测循环：**打分 → 盲预测 → 发布 → 复盘 → 进化 rubric**
+
+本文件是**总协议 + 任务路由器**。具体工作流在 `skills/oracle-*/SKILL.md` 各子 skill 里；明确需求命中后直接执行对应 leaf skill，不把简单请求扩成长链。
+
+## 根入口路由规则
+
+调用 `/oracle-bone` 时，先恢复当前目标、项目状态、已有材料与阶段：
+
+1. 一个 leaf skill 已完整覆盖最终交付时，直接进入它；
+2. 只有同一交付物需要独立且必要的能力时才组合；
+3. 信息不足且会改变路由时，只问一个澄清问题；
+4. 只交付当前请求范围，不自动启动后续链；
+5. “拆包装 / 拆视频动效 / 爆款视频视觉分析”直接路由 `video-production-workflow`，不在 oracle-study 内重复。
+
+交互中明确区分：已知事实、用户经验、AI 推断、待验证假设。对标分析只处理公开可观察的产出与机制，不推测创作者的私生活、动机或未公开能力。
+
+**方法论通用，rubric 当前默认视频版**：方法论（5 阶段闭环）适用任何能被量化的内容形态——视频 / 文章 / 播客 / Newsletter / 短文 thread。当前默认 starter 是**观点类视频** rubric（7 维，参考博主 25+ 已发样本拟合）+ 转化类视频 starter；其他形态可参照 `starter-rubrics/` 格式自写，再借 bump 调权重。
+
+**默认假设：用户是从零开始的新人**（一条都没发过）——cold-start 期预测会**简化**（7 维打分 + 一句话 bet，不强求 bucket 数字，避免 false precision）。已有 5+ 篇数据的老手走 calibration 模式解锁完整 7 组件预测。
+
+---
+
+## 🔴 三条不可妥协原则（🛑 STOP：用户要求打破任一条 = 拒绝执行并说明原因）
+
+任何一条被违反，整个校准循环退化为"凭直觉的自我安慰"。如果用户要求打破其中任何一条，**拒绝执行并说明原因**。
+
+1. **盲预测（Blind prediction）**：预测必须在看到任何实际数据**之前**写完。一旦写完，`## 预测` 段是 immutable——只能往 `## 复盘` 段追加。完整规范：[shared-references/blind-prediction-protocol.md](shared-references/blind-prediction-protocol.md)。**hooks/prediction-immutability 在 harness 层强制执行**（hook 为 Claude Code 格式；不支持 hooks 的 runtime 降级为 predict Phase 0 自检 + 用户 review 软防线，同样拒绝写已见数据的预测）。
+
+   **污染边界**：「见过数据」仅指**当前这条作品**的实际表现数据（播放/点赞/评论/转化）。**其他作品**的实绩数据是合法输入——那是校准的燃料：经 retro 进校准池后供 predict 当锚点、bump 当重打样本。因此「预测 004 时参考 003 的实绩/复盘结论」合法且鼓励；「预测 004 时参考 004 自己发布后的数据」违规——改走 `_redo.md` reconstructed。
+
+2. **升级 = 全量重打（Bump = full re-score）**：rubric 升级时，校准池所有有实绩数据的样本必须用新公式重打分；新排序与实际表现排序若在 ≥4/5 样本上不一致，升级被拒；升级必须经跨模型独立审核。完整规范：[shared-references/bump-validation-protocol.md](shared-references/bump-validation-protocol.md)。
+
+3. **rubric 是工作台，不是博物馆**：被新数据推翻或被吸收为正式维度的观察，**删掉**。绝不留"我曾经以为 X，但其实..."的考古层。git history 才是档案。完整规范：[shared-references/observation-lifecycle.md](shared-references/observation-lifecycle.md)。
+
+---
+
+## 能力边界与已知限制（先知道它不能做什么）
+
+1. **不保证爆款，也不直接产生流量**——本系统是校准器不是放大器：预测越来越准，不替内容变好；精度上限由校准池样本量决定（confidence 表见 state-management.md）。
+2. **cold-start 前 5 篇预测精度 ±50%**——写预测的目的是**采集校准数据**，不是做发布决策；先用 `oracle-study --mode benchmark` 导入对标可显著改善。
+3. **hooks 是 Claude Code 格式**——不支持的 runtime 降级为 skill 内自检 + review 软防线，保护强度依赖流程纪律。
+4. **数据采集依赖 adapter，adapter 会失败**——登录墙 / 反爬 / 断网时走手动粘贴路径，**绝不静默编造或估算数据**（协作契约 #3）。
+5. **AI 写的 draft 是脚手架不是成品**——不改写直接拍会拉低 ER 并污染校准数据（seed Refusals 有警告分支）。默认起稿 = **oracle-voice 语音起稿**（从用户录音原话长出来）；AI draft 降级为 seed 显式降级路径。
+6. **一个项目一份 state**——`.oracle-state.json` 全局唯一于各项目根；多账号 / 多项目 = 多个项目根各自 init，不支持单 state 混装。
+
+---
+
+## init 档案与轨道机制（内容规划驱动）
+
+oracle-bone **不硬编码任何内容分层**。`/oracle-init` 通过采访为用户建立三份档案，整个系统后续按档案执行：
+
+| 档案 | 内容 | 被谁消费 |
+|---|---|---|
+| `user-profile.md` | 创作者档案：变现方式 / 客单价 / 专业优势 / 形象三词 / 内容风格 / 内容喜好 / 内容红线 | seed / voice / study / who-for / cover |
+| `content-plan.md` | 内容规划：**单一 / 双轨 / 三轨**（对应内容漏斗 破圈→认知→转化）+ 各轨占比 + 各轨成功指标 | seed 分流 / recommend 比例过滤 / bump 分池 / status 看板 |
+| `audience-profiles.md` | 各轨受众画像（含"一般关注"人群） | simulate-audience / who-for / seed 受众校准 |
+
+**轨道 = 漏斗层**。init 产出几轨就是几轨（1-3），注册进 `.oracle-state.json` 的 `tracks.definitions`。每轨四要素：独立 rubric 权重、成功指标、review skill 路由、retro 窗口：
+
+- 破圈 / 认知类轨道（流量导向）→ review 走 `oracle-who-for`，retro 窗口 `[3d]`
+- 转化类轨道（获客导向）→ review 走 `oracle-open-source`，retro 窗口 `[3d, 7d, 30d]`，加载 `references/conversion-track-playbook.md`
+
+候选池每条标 track；预测 header 带 track；校准池分轨分桶；bump 分轨重打；看板分轨显示。交叉题算 0.5+0.5。规划可修订：compass-retro 建议 + 用户拍板同步 state。
+
+init 采访依据：`references/xu-zuohao-positioning-distill.md` + `references/content-funnel-theory.md`。
+
+### stage_constraint：当前最大约束（不是等级）
+
+> 烧龟壳之前先问"这次卜的是哪件事"。约束字段决定系统当前**最该修什么**——定位未明的人追热点、产能受限的人三轨全铺，都是开错药。阶段/约束描述当前最大短板，不描述账号等级。
+
+init 时暂定（oracle-init Phase 4.5）+ compass-retro 每 2 期回写，存 `state.stage_constraint`：
+
+| 约束值 | 判定信号 | 对链路的影响 |
+|---|---|---|
+| `positioning_unclear` 定位未明 | 形象三词/专业优势答不上 | seed 优先 Mode A 经历锚点，热点路径降级提示；who-for 逐稿跑 |
+| `expression_unstable` 表达不稳 | 定位清晰但 script_patterns 空 + 未导对标；或连续 B 类（表达）问题 | 提示 oracle-study practice 拆稿补 pattern；draft 必过 no-ai-slop |
+| `capacity_limited` 产能受限 | cadence 目标 vs 实际可投入差距大；buffer 长期橙红 | recommend 附注"优先 derivative 一稿多吃"；cadence 下调候选 |
+| `conversion_blocked` 转化受阻 | 转化轨有播放但零咨询/付费信号 | 转化轨 seed 必过 playbook"极刚痛点 6 问"；review 强制 open-source |
+| `none` 无显著约束 | 四类信号都不显著 | 不硬贴标签——没有最大约束本身就是好状态 |
+
+**纪律**：判定带依据 + 升级条件；证据不足保守取更早约束。切换需连续两次 compass-retro 同向证据或用户拍板（防单期噪声）；约束与轨道分流**正交**，叠加生效。
+
+---
+
+## 作品目录结构（全局约定）
+
+每期作品的所有产物（draft / prediction / brief / cover prompt / 发布文案 / 置顶评论等）统一放在 `<NNN>_<标题>/` 下（编号制，如 `003_从龟壳到算法/`）。
+
+- **初始化时机**：`oracle-seed` 起 draft 时一次性建目录
+- **所有 skill 共享**：publish / shoot / retro / cover 等都按此结构定位产物
+- 完整 schema：[shared-references/content-folder-schema.md](shared-references/content-folder-schema.md)
+
+```
+<NNN>_<最终标题>/
+├── predictions/<YYYY-MM-DD>_<id>_<短标题>.md   # oracle-predict 落盘（## 预测 段 immutable）
+├── voice/round-<N>/                             # oracle-voice 转写轮次档案
+├── prompt/cover/                                # oracle-cover 生成（_base.md + 平台比例派生）
+├── scripts/<最终标题>.md                         # 定稿；简介/置顶评论直接 append 到末尾段
+└── audience-brief.md / open-source-audit.md     # review skill 产出（按轨道二选一）
+```
+
+**约束**：
+1. `predictions/` `voice/` `prompt/cover/` `scripts/` = oracle-bone 链路产物；制作管线产物（分镜 / 录屏 / 素材）放作品目录其他子目录，不混入。
+2. 简介直接写脚本末尾 `## 发布文案` 段，**不建独立 description 文件**。
+3. `oracle-title` 选定要改名：`mv` 作品目录 + `mv` 脚本文件 + 同步 prediction header 的 Title / Script Path 字段。
+
+---
+
+## 每期完整链路（顺序敏感）
+
+```
+oracle-seed (按 track 分流定选题 + 建目录 + 录音聊天卡)
+    ↓
+oracle-voice (录音→转文字→双心态循环→3 候选稿→定稿；情绪先行，原话保真)
+    ↓
+oracle-title (候选 + 终审推荐 ⭐，确认后改名级联)
+    ↓
+oracle-description (简介 append 到脚本末尾) → oracle-cover (封面 prompt 按平台比例派生)
+    ↓
+oracle-no-ai-slop (AI 味检测与修正 —— 预测前必跑)
+    ↓
+按轨道选 post-draft review:
+  流量/共鸣轨 → oracle-who-for（以 init 画像为基线逐稿深化）
+  转化轨     → oracle-open-source
+    ↓
+[可选] oracle-simulate-audience (用 init 画像模拟评论区)
+       oracle-compliance (违禁词/限流风险扫描，任意轮可复检)
+    ↓
+oracle-predict v1 (落盘 predictions/<id>.md，basis=pre_shoot)
+    ↓
+实际制作（AI 不可见，等用户回来）
+    ↓
+oracle-shoot (登记拍摄 + buffer +1；成稿与预测稿 diff 超阈值 → predict v2)
+    ↓
+    ↓
+实际发布到平台
+    ↓
+oracle-publish (合规 gate → 登记 URL + buffer -1)
+    ↓
+oracle-pinned-comment (发布后黄金窗口) → oracle-derivative (T+1 衍生)
+    ↓
+oracle-retro (窗口按轨道 → ## 复盘 段追加 → 观察入 rubric_notes)
+    └─ 每 2 期 → oracle-compass-retro (账号级罗盘复盘 + 规划修订候选)
+```
+
+🔴 **主链路顺序铁律**：predict → （制作）→ shoot → （发布）→ publish → retro。
+
+🔴 **三类动作与 skill 的映射（🛑 STOP：绝不能错配）**：
+
+| 状态 | 正确 skill | 错误动作 |
+|---|---|---|
+| 写了稿，没拍 | （什么都不跑，等用户拍）| ❌ 不该 publish |
+| 拍了，没发 | oracle-shoot + buffer+1 | ❌ 不该 publish |
+| 拍了，发了 | oracle-shoot → oracle-publish | ✅ |
+
+`oracle-publish` 严格只用于「已实际发到平台且有真实 URL」。predict 落盘 ≠ 发布，scheduled ≠ 发布。**没有真实 URL 就不是 publish。**
+
+> 拍 vs 发分两个动作：buffer 警戒系统需要明确知道"拍了但没发" vs "已发"两种状态。详见 [shared-references/cadence-protocol.md](shared-references/cadence-protocol.md)。
+
+---
+
+## 路由表（触发词 → 子 skill）
+
+| 用户说 | 调用 | 前置条件 |
+|---|---|---|
+| "初始化" / "init" / "首次使用" | `/oracle-init` | 无（这是入口） |
+| "找对标" / "学这个账号" / "看几条样本表现" / "learn from" | `/oracle-study --mode benchmark` | 账号或样本级公开信号 |
+| "拆这条稿" / "学他的表达" / "拜师" / "apprentice" | `/oracle-study --mode practice` | 单条机制练习；旧入口兼容转发 |
+| "既看账号规律又拆一条" / "双向学习" | `/oracle-study --mode dual` | 共享素材归档，benchmark 与 practice 分离 |
+| "找选题" / "我不知道做什么" / "seed" | `/oracle-seed` | 已 init（cold-start 用户专用一次性种子动作） |
+| "录音起稿" / "语音起稿" / "转写这段录音" | `/oracle-voice` | 已 init + 选题已定（聊天卡或作品目录）；`—transcribe-only` 裸转写 |
+| "打分这篇 [path]" / "score this [path]" | `/oracle-score` | rubric_notes.md 存在（不存在时自动从 starter-rubric 兜底） |
+| "给我标题" / "选标题" / "哪个标题好" / "标题候选" / "诊断标题" | `/oracle-title` | 有 draft（生成 + 终审推荐 + 确认后改名级联；自带候选可直评） |
+| "写简介" / "视频描述" / "description" | `/oracle-description` | 有定稿脚本 |
+| "封面" / "cover" / "封面 prompt" / "生成封面" | `/oracle-cover --mode generate` | 有定稿脚本 |
+| "拆封面" / "分析封面" / "对标封面" / "cover-analyze" | `/oracle-cover --mode analyze` | 已 init + 有参考封面图；旧入口兼容转发 |
+| "这是拍给谁的" / "受众是谁" / "who-for" | `/oracle-who-for` | 已 init + 有 draft（流量/共鸣类轨道每条建议跑） |
+| "自我开源" / "这条够真诚吗" / "open-source" | `/oracle-open-source` | 已 init + 有 draft（转化类轨道专用） |
+| "模拟评论" / "换位思考" / "评论区预判" | `/oracle-simulate-audience` | 已 init（直接用 audience-profiles.md，发布前压力测试） |
+| "AI 味" / "去 AI 味" / "读着不顺" | `/oracle-no-ai-slop` | 有 draft（预测前必跑） |
+| "合规检查" / "查违禁词" | `/oracle-compliance` | 有 draft（发布前 gate，任意轮可复检） |
+| "启动预测" / "start prediction" / "给这稿子打分并预测" | `/oracle-predict` | 已 init + 有最终稿 |
+| "拍了 X" / "shot it" / "录完了" | `/oracle-shoot` | 对应预测已写（buffer +1） |
+| "剪辑计划" / "成片回来了" / "验收成片" / "拆视频包装" / "爆款视频分析" | `video-production-workflow` | 终稿或视频素材；由 VPW 负责制作与视觉分析 |
+| "同步飞书" / "飞书看板" | `/oracle-feishu` | 已 init + 用户已配飞书 CLI 与 `.oracle-secrets.json`（单向只读镜像） |
+| "已发布" / "I shipped it" / "发布链接是 X" | `/oracle-publish` | 对应预测文件存在（buffer -1） |
+| "置顶评论" / "引导评论" | `/oracle-pinned-comment` | 已发布（黄金窗口内） |
+| "衍生内容" / "图文" / "切片" | `/oracle-derivative` | 已发布（T+1） |
+| "复盘" / "retro this" / "T+3d 数据来了" | `/oracle-retro` | 对应预测文件存在 + 已过该轨道 retro 窗口 |
+| "罗盘复盘" / "账号诊断" | `/oracle-compass-retro` | 已有 ≥2 期已复盘作品 |
+| "升级 rubric" / "bump rubric" / "调整权重" | `/oracle-bump` | 校准池 ≥ MIN_SAMPLES_FOR_BUMP |
+| "推荐选题" / "next topic" | `/oracle-recommend` | candidates.md 存在且非空 |
+| "抓热点" / "fetch trends" / "今天有什么可做的" | `/oracle-trends` | trend-sources adapter 已配置（日常补充候选池） |
+| "状态" / "status" / "看板" | `/oracle-status` | 任意时刻可调 |
+| "迁移" / "升级 state" / "migrate" | `/oracle-migrate` | 已 init；git pull 拉了新版后；SessionStart hook 提示 schema mismatch 后 |
+| "这次推荐不准" / "你判错了" / "记个教训" / "记产品反馈" | 反馈分流协议（见路由表下说明） | 任意时刻 |
+
+---
+
+**反馈分流协议**：用户指出判断/推荐不准 → 展示拟写入项 → 确认后追加 `meta-retros/product-feedback.md`。只喂 compass-retro Phase 5 候选规则提取，**不进** rubric_notes / 三档案 / 校准池；若同时暴露创作者事实 → 拆走档案写入确认协议（契约 #9），不混写。
+
+**按需读取纪律**：每次只读当前流程真正需要的文件，不默认加载全部方法论 / references / 模板——26 个子 skill + 13 份协议全量进上下文既浪费 token 也稀释注意力。各子 skill 的 Workflow 已声明自己要读什么，照声明读，不扩读。体积预算（棘轮，只许收紧）与跨文件同步规则见 [MAINTENANCE.md](MAINTENANCE.md)；要全局口径时用 `python tools/context.py <项目根> --task <子skill后缀>` 取 ≤6KB 摘要（只读）。
+
+---
+
+## 协作契约（默认对所有用户生效）
+
+从实战教训泛化的 12 条协作纪律，完整版见 [shared-references/collaboration-contract.md](shared-references/collaboration-contract.md)：
+
+1. **方案菜单**：改稿/修复默认出 2-4 个方案 + 每案特点/成本/风险 + ⭐推荐 + 等用户选；用户明确说「直接做/你就执行」才代选。
+2. **双角度交叉验证**：改稿后重跑 score 对比（composite + 各维度变化），不涨则回退提示。
+3. **真实数据原则**：禁硬编占位数据；缺用 `[等真实数据]` 标记；真值到手立即替换并回溯清污染。
+4. **发现即改**：发现问题直接改，改完报告结果；不输出「我发现问题了」的过程叙述。
+5. **术语即解释**：任何分流/分叉/几问的术语首次提出必须配「这是 X，对应 Y 决策」解释。
+6. **假性确认防线**：用户说「按你的意思执行」→ 先复述将动的具体项再动手；没明说的决策点列出来等拍板。
+7. **验证后报告**：任何「完成」声明前必须 stat/read 验证文件实际状态；跑脚本看输出 marker，不只看 exit code。
+8. **不代答不甩锅**：出选项 + 标推荐 + 等选是默认；既不甩锅式提问，也不未经同意代选。
+9. **档案写入确认**：改三份档案任何字段前，展示拟改/旧值→新值/依据 → 确认后落盘 + 档案末尾 `## 变更记录` 追加一行（首次修订创建该段）。
+10. **产出前自检**：seed / voice / title / description / cover 交付前过质量门——开场命中四原则与 ≥2 钩子方向？"你"视角连续缺失 ≤2 段？核心信息前移？兴趣属性有支撑？——不满足先重写再交。
+11. **交互预算三档**：确认密度按 `state.interaction_level`；full-auto 只守不可逆硬门，三档不豁免，随时切换。
+12. **审稿三轴**：审查类输出逐条过——每个 finding 指到具体位置、发现同类扫全文、critical 必带修法（提不出的标「待查」不阻塞）；往返最多 2 轮后带警告放行。
+
+---
+
+## 🔴 必须拒绝的请求（🛑 STOP：命中即硬拒绝）
+
+下列模式会**直接破坏**三条原则之一，无论用户怎么说，都拒绝执行：
+
+- 「帮我预测一下，但我先告诉你播放量你来反推就行」→ 违反原则 #1。改用 `_redo.md` 路径记为 reconstructed
+- 「直接挑 composite 最高的，不用解释」→ 拒绝。永远展示维度评分 + 至少一个锚点对比
+- 「跳过校准池重打，直接换公式」→ 违反原则 #2
+- 「跳过外部模型审核，自己说了算」→ 仅当 `CROSS_MODEL_AUDIT=false` 显式设置且 state file 标记自审时允许
+- 「删掉这份预测，我想重写」→ 违反原则 #1。预测是 immutable。如有正当理由重做，写新文件 `_redo.md`，原版必须保留
+- 「凭你的感觉给我推荐选题，不用打分」→ 拒绝。本工具不做 gut-feel forecast——那是它诞生**之前**的状态
+- 「把 rubric_notes.md 里所有历史观察都留着，加个时间戳分组就行」→ 违反原则 #3。git history 是档案，不是 markdown 文件
+- 「能不能把 THRESHOLD 从 4/5 降到 3/5 让这次 bump 过」→ 拒绝。改 THRESHOLD 本身是元层级 bump，单独走流程
+
+详细的拒绝场景在每个子 skill 的 `Refusals` 段。
+
+---
+
+## state 与路径约定
+
+- `.oracle-state.json` 是**全局唯一** state 文件（项目根下），不建每期 state。所有 shoots / retros / 校准样本 / 轨道注册都合到这一份。操作前先读全局，验证已有事实，再追加。完整约定：[shared-references/state-management.md](shared-references/state-management.md)
+- 项目根由 init 配置（state.project_root）；skill 包目录 ≠ 用户项目目录，用户数据落项目根
+- state schema：见 DESIGN.md §7.2 与 `migrations/registry.md`
+
+### 平台坑备查
+
+Windows / Obsidian / 文件锁等平台特定问题统一见 `references/platform-notes.md`（rename 被锁 → copy+delete fallback；文件夹名避开冒号等）。
+
+---
+
+## 文件清单
+
+```
+oracle-bone/
+├── SKILL.md                           # 本文件（总协议 + 路由）
+├── README.md                          # 门面
+├── DESIGN.md                          # 设计文档（完整流程梳理）
+├── skills/                            # 26 个 canonical skill + 3 个兼容 alias wrapper
+│   ├── oracle-init/SKILL.md           # 入口：五 Phase onboarding
+│   ├── oracle-study/SKILL.md          # 对标学习（benchmark / practice / dual）
+│   ├── oracle-migrate/SKILL.md        # schema 迁移
+│   ├── oracle-trends/SKILL.md         # 热点抓取（信源分层）
+│   ├── oracle-recommend/SKILL.md      # 候选池排序推荐（按占比过滤）
+│   ├── oracle-seed/SKILL.md           # 对话式选题（默认接 voice 起稿）
+│   ├── oracle-voice/SKILL.md          # 语音起稿循环（转写→3 候选稿→定稿）
+│   ├── oracle-score/SKILL.md          # 单稿打分（不落盘）
+│   ├── oracle-title/SKILL.md          # 标题候选生成 + 淘汰制终审 + 改名级联
+│   ├── oracle-description/SKILL.md    # 多平台简介
+│   ├── oracle-cover/SKILL.md          # 封面 prompt（按平台比例派生）
+│   ├── oracle-no-ai-slop/SKILL.md     # AI 味检测修正（预测前必跑）
+│   ├── oracle-who-for/SKILL.md        # 受众价值采访（流量轨）
+│   ├── oracle-open-source/SKILL.md    # 开源度审查（转化轨）
+│   ├── oracle-simulate-audience/SKILL.md  # 评论区预演
+│   ├── oracle-compliance/SKILL.md     # 平台合规审查
+│   ├── oracle-predict/SKILL.md        # 盲预测 + immutable 日志（核心）
+│   ├── oracle-shoot/SKILL.md          # 登记拍摄（buffer+1）
+│   ├── oracle-publish/SKILL.md        # 发布登记（buffer -1，合规 gate）
+│   ├── oracle-pinned-comment/SKILL.md # 置顶评论
+│   ├── oracle-derivative/SKILL.md     # 衍生内容
+│   ├── oracle-retro/SKILL.md          # 数据回收 + 复盘
+│   ├── oracle-compass-retro/SKILL.md  # 账号级罗盘复盘
+│   ├── oracle-bump/SKILL.md           # rubric 升级（全量重打 + 跨模型审）
+│   ├── oracle-status/SKILL.md         # 状态看板（分轨 + buffer 警戒）
+│   └── oracle-feishu/SKILL.md         # 飞书多维表格同步（只读镜像，用户自配 CLI）
+├── migrations/                        # schema 演进单一来源
+│   ├── registry.md                    # LATEST_SCHEMA + 版本链表
+│   └── <from>-to-<to>.md              # 每步迁移 WHAT/WHY/HOW
+├── shared-references/                 # 跨 skill 共享协议（12 份）
+│   ├── blind-prediction-protocol.md   # 原则 #1
+│   ├── bump-validation-protocol.md    # 原则 #2
+│   ├── observation-lifecycle.md       # 原则 #3
+│   ├── prediction-anatomy.md          # 合格预测 7 组件
+│   ├── scoring-procedure.md           # 打分规程（score/predict/trends 共用）
+│   ├── candidate-schema.md            # 候选项统一 schema
+│   ├── cadence-protocol.md            # 节奏协议（buffer 警戒/拍发分离）
+│   ├── state-management.md            # state 读写约定
+│   ├── revision-loop-protocol.md      # 改稿闭环
+│   ├── migration-protocol.md          # schema 演进哲学
+│   ├── content-folder-schema.md       # 作品目录 schema
+│   ├── content-funnel-protocol.md     # 漏斗采访协议
+│   └── collaboration-contract.md      # 协作契约
+├── starter-rubrics/                   # 各内容形态先验 rubric
+│   ├── opinion-video.md               # 观点视频（默认）
+│   ├── opinion-video-zero.md          # v0 等权占位（cold-start）
+│   ├── conversion-video.md            # 转化类视频
+│   ├── long-form-essay.md             # ⬜ 扩展位
+│   └── short-form-text.md             # ⬜ 扩展位
+├── templates/                         # skill 写进用户项目的文件骨架
+│   ├── user-profile.template.md       # init Phase 2
+│   ├── content-plan.template.md       # init Phase 3
+│   ├── audience-profiles.template.md  # init Phase 4
+│   ├── rubric_notes.template.md
+│   ├── prediction.template.md
+│   ├── candidates.template.md
+│   ├── content-assets.template.md
+│   ├── audience-brief.template.md
+│   ├── open-source-audit.template.md
+│   ├── benchmark.template.md
+│   ├── script_patterns.template.md
+│   ├── workflow.template.md
+│   ├── status.template.md
+│   └── content.db.schema.sql
+├── hooks/                             # harness 强制层
+│   ├── prediction-immutability.json/.sh   # 阻断预测段编辑
+│   ├── session-start.json/.sh             # 会话自动状态报告
+│   └── meta-logging.json / log-event.sh   # 被动记录
+├── tools/                             # 独立 CLI 脚本
+│   ├── context.py                     # 任务状态摘要（只读 ≤6KB，退出码 0/2/3）
+│   ├── score-curve.py                 # 预测精度收敛曲线（md-to-sqlite / validate-bump 预留）
+│   ├── snapshot_store.py              # 采集快照库（runs + snapshots 时序模型，latest vs prev diff）
+│   ├── data_normalizer.py             # 四平台作品数据统一归一器
+│   ├── link_resolver.py               # 发布链接解析 + 作品自动匹配（oracle-publish 用）
+│   └── dashboard.py                   # 分析引擎：五维指标 + quantile 规则建议（compass-retro / status 用）
+├── adapters/                          # 数据源适配
+│   ├── perf-data/                     # 复盘数据源
+│   ├── candidate-pool/                # 候选池数据源
+│   ├── trend-sources/                 # 热点抓取源
+│   └── script-extraction/             # 视频/音频转脚本
+├── references/                        # 开放参考资料库（用户可自由添加）
+│   ├── xu-zuohao-positioning-distill.md   # 《做号》定位画像提炼（init 采访依据）
+│   ├── dbskill-essence-distill.md         # dbskill 精华提炼（九大模块 + 接线表）
+│   ├── content-funnel-theory.md           # 内容漏斗三层模型摘要
+│   ├── conversion-track-playbook.md       # 转化轨手册（13 条第一性原理 + 选题 6 问）
+│   ├── hook-prototypes.md                 # 开场内容原型库（10 原型 + 留存优先级；seed/study/title 消费）
+│   └── platform-notes.md                  # Windows/Obsidian/文件锁平台坑
+└── examples/
+    └── script_patterns.example.md     # script_patterns 全填示例
+```
+
+### 🔴 Adapter 铁律（所有 runtime 通用，含 Codex 等）
+
+1. **所有 adapter 都是确定性 Bash 脚本**——数据采集/转录/解析一律 shell 调脚本。**禁止** GUI 自动化 / 亲手开浏览器替代 adapter 干活；脚本坏了按其 README 失败模式速查修，**换方式采集 = 绕过确定性来源 = 拒绝**
+2. **解释器必须用 adapter 自带的 `.venv`**（依赖隔离，系统 python 没装 playwright/faster-whisper）：
+   - `<包根>` = 本 SKILL.md 所在目录（`skills/oracle-*/SKILL.md` 的上两级）
+   - Windows：`<包根>\adapters\perf-data\auto-collect\.venv\Scripts\python.exe`
+   - macOS/Linux：`<包根>/adapters/perf-data/auto-collect/.venv/bin/python`
+   - `.venv` 不存在 → 按该 adapter README 的安装节先建（uv venv + uv pip install），不要换系统 python 硬跑
+3. **登录态/授权问题**照各 adapter 的协议办（如 auto-collect 的 `NEEDS_AUTH` 退出码 → 跑 `--auth-only`），不要自创恢复动作
+
+---
+
+## Tone & voice
+
+写面向用户的文案（commit / 复盘小结）匹配**直白克制**风格——直接说失败（「composite 8.47 但实际 16.8w——rubric 高估了 SR」），不用模糊措辞软化。
+
+---
+
+## 给开发者：扩展本 skill
+
+- 新内容形态 → `starter-rubrics/<form>.md`；新热点源 → `adapters/trend-sources/<name>.md`（符合 [candidate-schema.md](shared-references/candidate-schema.md) 契约）
+- 改原则 → `shared-references/<protocol>.md`（引用它的 skill 自动跟进）；改路由 → 本文件路由表；改子 skill → 对应 `skills/oracle-*/SKILL.md`
+- 上下文预算 / 协议同步规则 / 发布前检查 → [MAINTENANCE.md](MAINTENANCE.md)（tests/ 有预算棘轮测试）
+- 更多方法论 → 放 `references/`，子 skill 按需引用
+
+完整设计见 [DESIGN.md](DESIGN.md)。

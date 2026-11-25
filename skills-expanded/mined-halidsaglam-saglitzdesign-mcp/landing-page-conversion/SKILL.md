@@ -1,0 +1,77 @@
+---
+name: landing-page-conversion
+description: Build or improve landing pages and marketing sites that convert, not just look good. Use when writing a hero, structuring a page, choosing a CTA, adding social proof, or diagnosing why a page isn't converting. Covers positioning, copy-first workflow, the above-the-fold contract, page narrative, CTAs, trust, and pricing — grounded in StoryBrand, Cialdini, and conversion research.
+sources: conversion-ux, marketing-website-roadmap, positioning-messaging, value-proposition-jtbd, storybrand-copywriting, influence-persuasion, ethical-design, web-hero-sections, forms-inputs
+---
+
+# Landing Page Conversion
+
+A beautiful page with unclear positioning converts worse than a plain page with sharp positioning. Fix upstream first: **positioning → copy → structure → design → speed.**
+
+> Full depth (frameworks, real examples, benchmarks) is in the **SaglitzDesign MCP** (`npx saglitzdesign-mcp`): docs `conversion-ux`, `storybrand-copywriting`, `value-proposition-jtbd`, `influence-persuasion`, `growth-frameworks`, `web-hero-sections`; tools `audit_ux_copy` (readability, weak CTAs), `create_design_system`, `generate_layout_system`, and the `/saglitzdesign:build_landing_page` workflow.
+
+## Order of operations
+
+1. **Positioning first.** One sentence: for [segment] who [struggle], [product] is the [category] that [key value], unlike [alternative]. Decide the ONE conversion goal of the page.
+2. **Value proposition.** Map the customer's job-to-be-done (functional/social/emotional) to your value. This becomes the headline.
+3. **Copy before layout.** Write the real headline, subhead, CTA, and section copy before designing. Never design with lorem ipsum.
+4. **Then design & build**, then optimize.
+
+## The above-the-fold contract
+
+In ~5 seconds a visitor must answer: **What is this? Who's it for? Why care? What do I do next?**
+
+- **Headline:** outcome-focused, specific, ≤10 words. "Ship your app in days, not months" — not "Welcome" or "Empower your workflow."
+- **Subhead:** 1–2 lines on how/who.
+- **One primary CTA**, value-forward: "Start free trial", "Get the template" — never "Submit".
+- **Risk reducers** next to it: "Free · No credit card · Cancel anytime."
+- **Real product visual** (screenshot/video) beats abstract illustration.
+- **Proof strip** (logos / rating / count) right under the hero.
+
+## Page narrative (proven order)
+
+Hero (promise + CTA + proof) → problem / how-it-works (3 steps) → benefit sections (benefit-led headings, features as evidence) → deep social proof (named testimonials with faces + results) → pricing (if self-serve) → objections / FAQ → final CTA → footer.
+
+Repeat the CTA every ~1.5–2 viewport heights. Every CTA on the page points to the **same** action.
+
+## Vary the shape between builds
+
+The narrative order above is what converts, and it holds regardless of layout; the macrostructure — how the hero, sections, nav, and footer are actually laid out — is a separate axis, and it's the one that makes every generated landing page look interchangeable when it stays fixed. Before writing CSS, look for a prior stamp comment in the project's existing stylesheets. If one is there, differ from **every axis it records** — the shape, and the navigation and footer treatments if it names them. A stamp that records only a shape (the earlier format) tells you nothing about the previous nav or footer, so differ on the shape and choose the other two freely. Shapes:
+
+- `centered-stack` — single column, vertically stacked, hero and sections centered
+- `split-panel` — hero splits into copy and visual side by side; sections below stay full width
+- `sidebar-shell` — persistent side navigation runs the page (product-tour style landing)
+- `bento-grid` — features and proof arranged as an asymmetric grid instead of stacked sections
+- `rail-scroll` — full-bleed panels alternating edge-to-edge, no shared column width
+
+Leave your own stamp as the first line of the CSS you write, naming all three axes so the next run has something to differ from — the shape from the list above, and a short hyphenated token of your own for the navigation and the footer:
+
+```css
+/* saglitzdesign · macrostructure: bento-grid · nav: centered-logo · footer: fat-sitemap */
+```
+
+Record all three even when you only varied one. A stamp that names the shape alone is what the first version of this instruction produced, and it asked the next run to differ from a nav and a footer the artifact did not carry. No tool writes this — you're already producing the CSS, so the comment is yours to add.
+
+## Persuasion, ethically (Cialdini)
+
+- **Social proof:** specific numbers ("12,483 teams" > "thousands"); named testimonials with photo + role + concrete result.
+- **Authority:** security/compliance badges near signup/payment; real credentials.
+- **Scarcity:** only if real. Fake countdowns and confirm-shaming convert once and destroy trust.
+
+## CTA & form rules
+
+- The CTA must be the highest-contrast element in its viewport (squint test).
+- Signup = email + password or SSO only. Ask for the rest later. Multi-step beats one long form.
+- Show value before the wall (free tier, interactive demo, sample output).
+
+## Diagnosing low conversion
+
+Check in this order: **positioning → offer/headline → proof → friction (form/speed) → design.** Fix the biggest funnel drop-off first; test one variable at a time (headline/offer tests move more than button color). Speed is CRO — every second of load costs conversions.
+
+## Anti-patterns
+
+- Designing the hero before positioning exists.
+- Carousel heroes (slide 2+ is never seen); "Learn more" as the primary CTA.
+- Anonymous testimonials; hidden pricing on a self-serve product.
+- Newsletter modal before the visitor reads anything.
+- Multiple competing CTAs; jargon headlines.

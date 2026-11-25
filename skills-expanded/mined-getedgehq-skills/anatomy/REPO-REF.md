@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/getedgehq/skills (path: anatomy/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Build crafted, highly detailed, interactive isometric SVG figures that explain a technical idea as a real physical object (a test rig, a dial gauge, a cabinet of drawers, a plotter, a lock), with many

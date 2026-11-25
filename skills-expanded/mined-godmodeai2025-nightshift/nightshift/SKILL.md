@@ -1,0 +1,191 @@
+---
+name: nightshift
+license: Apache-2.0
+compatibility: "Requires Claude Code CLI (claude -p), bash, python3 >= 3.9, jq. Docker with Compose v2 for the default isolated run; sandbox-exec is the macOS option."
+description: "Generates a complete autonomous Claude Code setup as ZIP from a project path and task description. Includes a validated runbook with genre templates, security hooks, heartbeat watchdog, a container setup with an egress allowlist, a token budget with a hard stop, and a morning receipt. Use this skill whenever someone wants to run Claude Code autonomously, overnight, or unattended. Also use for headless Claude Code, dangerously-skip-permissions setup, autonomous agent runs, or batch project work. Trigger phrases: Nachtlauf, Nightshift, autonom arbeiten, über Nacht, YOLO mode einrichten, Claude absichern, Runbook erstellen."
+---
+
+# Claude Nightshift
+
+Generates a complete autonomous Claude Code setup as ZIP — validated runbook, security hooks, heartbeat watchdog, a Docker Compose setup that fences the run, a cost governor that stops it at a budget, and a receipt in the morning. The user provides a project path and a task description; the skill produces everything needed to let Claude Code work unattended.
+
+## Why this exists
+
+Running Claude Code with `--dangerously-skip-permissions` alone breaks down after ~20 minutes: context gets compacted, Claude forgets the plan, repeats steps, or drifts. Nightshift solves this with four layers: a validated runbook as external memory, a compact-recovery hook that re-injects the plan, security hooks that block destructive commands, and a watchdog that monitors liveness.
+
+## Input
+
+$ARGUMENTS — interpret as:
+
+| Input | Action |
+|-------|--------|
+| *(empty)* | Interactive: ask for project path, task, genre |
+| `[path] [task]` | Direct: auto-detect genre, confirm with user |
+| `genre list` | Show all 8 genre templates with phases |
+| `validate [path/runbook.md]` | Validate an existing runbook |
+
+## Workflow
+
+### Step 1: Gather input
+
+Ask the user for:
+1. **Project path** — absolute path to the project directory
+2. **Task** — what Claude should accomplish
+3. **Stack info** (optional) — auto-detect from package.json, Cargo.toml, pyproject.toml if available
+
+### Step 2: Select genre
+
+Suggest the most fitting genre based on the task description. Confirm with the user (use `ask_user_input` if available). Each genre provides a phase template and risk checks.
+
+**Available genres:** refactoring (5 phases), feature (6 phases), migration (5 phases), bugfix (5 phases), testing (4 phases), cleanup (4 phases), devops (4 phases), documentation (4 phases)
+
+Genre details and phase definitions are embedded in `scripts/build_zip.py` under `GENRE_TEMPLATES`.
+
+### Step 3: Generate runbook
+
+Fill the genre template with concrete, project-specific steps. Every step needs at least one of: a file path, a shell command, or a concrete action with function/class names. Vague steps like "implement auth" cause Claude to guess — and guessing in headless mode means wasted API calls or broken code.
+
+**Example of a good step:**
+```
+- [ ] Create src/services/token-service.ts with: generateAccessToken(userId), verifyToken(token)
+```
+
+**Example of a bad step:**
+```
+- [ ] Implement the auth module
+```
+
+### Step 3b: Add autonomy zones
+
+Every runbook gets a section that tells Claude what it may do freely, what it should log, and what is forbidden. This prevents two failure modes: Claude hesitating on trivial operations (too cautious) and Claude overreaching on critical files (too aggressive).
+
+```markdown
+### Autonomiebereiche
+🟢 Frei (ohne Rückfrage, ohne Protokoll):
+- Dateien lesen
+- Dateien erstellen/ändern in src/, tests/, docs/
+- Dependencies installieren
+- Tests ausführen
+- Git add + commit
+
+🟡 Protokollpflichtig (in log.md dokumentieren warum):
+- Dateien löschen
+- Konfigurationsdateien ändern (.env.example, tsconfig, etc.)
+- Mehr als 3 Dateien in einem Schritt ändern
+- Dependency-Major-Upgrades
+
+🔴 Verboten (auch mit skip-permissions):
+- Dateien außerhalb des Projektordners
+- Secrets/Credentials/API-Keys anfassen
+- Produktionsdatenbank schreiben
+- Force-Push
+```
+
+Adapt the zones to the project. A devops genre needs more freedom for config files; a documentation genre can restrict write access to docs/ only.
+
+### Step 3c: Define error budget
+
+Without an error budget, Claude either stops at the first failing test (wasting the whole run) or ignores real regressions. Define explicit thresholds:
+
+```markdown
+### Fehler-Toleranz
+- 1 fehlschlagender Test: Fix versuchen, max. 2 Versuche, dann weiter
+- 2-3 fehlschlagende Tests: Warnung in log.md, Phase abschließen
+- Über 3 fehlschlagende Tests: STOPPEN, Zustand sichern, log.md schreiben
+- Linter-Warnings: Ignorieren, nur Errors zählen
+```
+
+Adapt thresholds to the project. A testing genre needs stricter budgets; a cleanup genre can be more lenient.
+
+### Step 4: Validate runbook
+
+Run the 15-point validation (structure, quality, safety, genre-check, autonomy zones, error budget). Show results to the user. The build script in step 5 writes the ZIP regardless of the score, so fix a failing check before running it, or ask the user whether to proceed anyway.
+
+The validation catches: missing rollback section, vague steps, steps targeting paths outside the project, hardcoded secrets, `rm -rf` in step text, too many or too few steps, missing autonomy zones, missing error budget.
+
+### Step 5: Generate ZIP
+
+Copy and configure the build script:
+
+```bash
+# scripts/build_zip.py sits next to this SKILL.md: under ~/.claude/skills/
+# after installing from the release, under /mnt/skills/user/ on claude.ai.
+SKILL_DIR="$HOME/.claude/skills/nightshift"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="/mnt/skills/user/nightshift"
+cp "$SKILL_DIR/scripts/build_zip.py" ~/build_nightshift.py
+```
+
+Set variables directly in the script OR pass as environment variables:
+- `PROJEKTPFAD` — absolute project path (or `export NIGHTSHIFT_PROJECT=/path`)
+- `AUFGABE_TITEL` — task title
+- `AUFGABE_KURZ` — short title for git commit message
+- `TESTBEFEHL` — test command from stack detection
+- `STACK_INFO` — detected technologies
+- `GENRE` — selected genre
+- `RUNBOOK` — the validated runbook text (the core content)
+- `NIGHTSHIFT_OUT` — where the ZIP is written. The default `/mnt/user-data/outputs/nightshift-setup.zip` exists on claude.ai only; everywhere else set it, e.g. `NIGHTSHIFT_OUT=~/nightshift-setup.zip python3 ~/build_nightshift.py`
+- `NIGHTSHIFT_BUDGET_USD` — dollar ceiling of a run, default 25.00. The runner reads the same variable at run time, so a single night can be cheaper or dearer without regenerating the setup.
+- `NIGHTSHIFT_BUDGET_TOKENS` — additional token ceiling, 0 means none.
+
+```bash
+python3 ~/build_nightshift.py
+```
+
+### Step 6: Present output
+
+1. Present the ZIP with `present_files`
+2. Show a short installation guide with concrete paths
+3. Show runbook summary: genre, step count, phases
+
+## Generated files
+
+The ZIP contains:
+
+| File | Purpose |
+|------|---------|
+| runbook.md | Task plan with checkboxes — Claude's external memory |
+| .claude/settings.json | Hooks: PreToolUse (security), PostToolUse (heartbeat), SessionStart (compact recovery), Stop (checkpoint + stall detection) |
+| nightshift-run.sh | Main script: isolation check, headless mode + skip-permissions, PID lock, graceful shutdown, receipt from the exit trap |
+| nightshift-run-bg.sh | Background starter (nohup) |
+| nightshift-docker.sh | Builds the images and runs the night in the container |
+| Dockerfile | Two targets: runner with Claude Code, egress with a tinyproxy allowlist |
+| docker-compose.yml | Project as the only host mount, internal network, read-only root, dropped capabilities |
+| nightshift-cost.sh | Counts tokens from the stream-json output, estimates the cost, stops the run at the budget |
+| nightshift-receipt.sh | Writes receipt.json and receipt.md per run, also after a crash |
+| nightshift-watchdog.sh | Heartbeat monitor. NIGHTSHIFT_WATCHDOG_AKTION picks the reaction: melden (default), beenden, neustart. |
+| nightshift-sandbox.sb | macOS sandbox profile: restricts writes to project + /tmp. Reads outside the project and outbound traffic on 443 stay open. |
+| CLAUDE-nightshift.md | Append to CLAUDE.md for project conventions + run memory |
+| README-nightshift.md | Full installation and usage guide |
+
+## Run Memory (decisions.md)
+
+Nightshift runs are ephemeral — Claude starts fresh each time. But architecture decisions made in one run should inform the next. The runbook's Abschluss phase includes a step to document decisions in `decisions.md`. The CLAUDE-nightshift.md instructs Claude to read this file at the start of every run. This gives persistence across runs without requiring a long-lived session.
+
+Format: date, decision, reasoning. Append-only, never overwrite.
+
+## Stall Detection (Loop Prevention)
+
+The Stop hook tracks progress between checks. If the number of completed runbook steps has not increased after 3 consecutive checks, a STALL WARNING is injected into Claude's context. This catches loops where Claude repeatedly fails at the same step (e.g., a flaky test) without triggering the error budget. The warning tells Claude to check its error budget and skip the step if allowed.
+
+## Error handling
+
+| Situation | Action |
+|-----------|--------|
+| No git repo | Warn that rollback is limited. Adjust runbook rollback section. |
+| No test command detected | Ask user. Fall back to echo placeholder and flag in validation. |
+| .claude/settings.json exists | Read existing file, merge hooks — never overwrite. |
+| CLAUDE.md exists | Append nightshift section — never overwrite. |
+| Project path missing | Ask again. |
+| More than 20 steps needed | Suggest splitting into 2 nightshift runs. |
+
+## Security
+
+- PreToolUse hook blocks a fixed list of command patterns: rm against dangerous targets (root, home and its direct children, globs, parent paths, .git, system directories), mkfs, dd writing to a device, sudo, chmod 777, curl piped into bash, eval. Fork bombs are not on that list, there is no pattern for them.
+- Two PreToolUse entries, one implementation for both skills in `gemeinsam.py`. `"matcher": "Bash"` greps the command text; `"matcher": "Write|Edit|MultiEdit|NotebookEdit"` resolves the target path and blocks every write outside the project directory (`NIGHTSHIFT_PROJEKT`, `/project` in the container), plus `.claude/settings.json` inside it. Without jq both block instead of waving the call through.
+- The path barrier resolves symlinks on both sides before comparing, so a link out of the project is blocked. What it does not see: a write performed by a Bash command (`echo >`, `tee`, `cp`, `mv`), any read, tools contributed by MCP servers, and a link created between the check and the write. It is a barrier for the four write tools, not a boundary for the run. See [SECURITY.md](../SECURITY.md).
+- The container is the default fence: only the project is mounted, the home directory lives in a volume, and the sole route outward is a proxy that allows api.anthropic.com and answers everything else with 403.
+- Sandbox profile restricts writes to project directory + /tmp at kernel level. Reads outside the project and outbound network traffic are not restricted. It is the macOS option, not the default.
+- The runner measures which of the two it sits behind and aborts with exit code 3 when it finds neither. It is a probe, not a declaration: container markers for the first, an unreadable `/Users` for the second. `NIGHTSHIFT_SANDBOXED` is a cross-check only and unlocks nothing; a value that contradicts the measurement ends the run with 3. `NIGHTSHIFT_ALLOW_UNSANDBOXED=1` is the documented way out; tell the user what it costs, and note that the receipt then says `keine`.
+- PID lock prevents duplicate runner instances
+- Cost governor: tokens are counted, the dollar figure is estimated from a dated price table, and at the budget Claude's process group is stopped with exit code 9. An unknown model name is billed at twice the most expensive known row; a stream without usage events yields `unbekannt` rather than a measured zero. The estimate is an estimate; the invoice is the Anthropic dashboard.
+- Every run leaves nightshift-receipts/<run>/receipt.json and receipt.md. Fields the run could not determine read "unbekannt", never 0.

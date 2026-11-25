@@ -1,0 +1,186 @@
+---
+name: diptrace-evidence-capture
+description: RAG-backed. Collect reviewable DipTrace evidence with native headless PCB acceptance when supported, open/save/close for all four editors and supported native capture; for unsupported actions guide an operator through quarantined source/open-save/re-export capture, dry-run ingest, MCP validation, explicit confirmation, and metadata recording. Use for native round-trip, refill/DRC, XML re-export or recording evidence; «нативная приёмка платы», «прогони через DipTrace», «сними свидетельство round-trip». Use when the user says “Guide an operator through a reviewable DipTrace round-trip capture.”
+---
+
+Read [runtime access](../shared/runtime.md) before choosing between explicit-path
+MCP, a live bridge session, and native/headless CLI. Their availability is separate.
+
+# DipTrace evidence capture
+
+RAG: **engineering memory by default** — [shared workflow](../shared/rag.md).
+Use DipTrace course knowledge as working context for editor, verification and export
+procedures; translate it to verified native profiles and actual MCP/CLI capabilities.
+
+Prefer the most deterministic available evidence path without promoting runtime or operator claims
+to trusted provenance. For supported opening/saving, PCB validation, or recording, use the native headless helper
+first. Windows, WSL-to-Windows, and installed Linux/macOS Wine backends are described in
+[runtime access](../shared/runtime.md), including their different path/desktop handling.
+For a formal operator-supplied format-evidence candidate or an unsupported native action,
+use the legacy operator workflow in
+[`references/operator-workflow.md`](references/operator-workflow.md).
+
+Use public `tools/list` for exact callable names and `get_capabilities` for session, document,
+and feature availability. `run_native_check` wraps supported native helpers as
+private-copy background jobs; local module/helper interfaces remain available too.
+Neither dispatch nor job completion is an acceptance verdict.
+
+## Open/save/close and capture
+
+The base headless `roundtrip` opens and saves `pcb`, `schematic`, `component`, and
+`pattern` documents in the actual editor. It is a local CLI, so it need not appear in
+MCP `tools/list`. Check the installed helper/module and backend before reporting that
+native opening is unavailable. The command saves its input: use an isolated copy for
+a read-only review, and retain original/copy hashes and process evidence.
+
+Base roundtrip does not re-export XML or run native ERC/DRC. For a native `.dch`/`.dip`,
+export XML with `diptrace_mcp.native_xml_export` on a private copy (the source is never
+saved; see [runtime access](../shared/runtime.md)). Use the separate bounded schematic
+helper below for schematic Save As/re-export/ERC evidence and the PCB profile for PCB
+XML re-export, refill and DRC. Preserve supported evidence and report the exact
+remaining unsupported action. Do not invent another export command.
+
+For requested real-window MP4/GIF capture, use the cinematic headless command in
+[runtime access](../shared/runtime.md); it requires ffmpeg and a valid replay/profile.
+Ordinary native verification does not require the legacy quarantine/attestation
+pipeline. Use that pipeline only when a formal evidence candidate is requested.
+
+## Bounded schematic evidence
+
+The source module `diptrace_mcp.schematic_native_acceptance` supports `.dchxml` on
+non-elevated Windows, with an owned hidden desktop and executable-hash-pinned English
+Schematic profiles for 5.3.0.3 and 5.3.5.1 (same menu positions, different command
+IDs, each reviewed separately). Use its local CLI, frozen-helper
+`schematic-acceptance` dispatch, or `run_native_check` schematic checks. Check
+availability, `--help`, selected executable and source version first. Startup
+dialog approvals must name exact operator-reviewed PNG hashes; never infer approval.
+
+```powershell
+py -B -m diptrace_mcp.schematic_native_acceptance `
+  --diptrace-root "C:\Program Files\DipTrace" `
+  --project "C:\work\design.dchxml" --expected-sha256 <actual-source-sha256> `
+  --output-dir "C:\work\new-evidence-directory" --erc --capture
+```
+
+The output directory must not exist. The helper copies the guarded input, uses Save
+As to a separate XML, reopens/exports in another process, then independently reopens
+the final export. `--inspect` only opens/captures/closes its isolated input. Optional
+`--erc` captures a known native ERC result; a complete positive-error-list profile is
+not yet verified. ffmpeg is required for capture, ERC images and startup-dialog images.
+
+Unknown startup dialogs are not dismissed. First inspect their lossless client PNG;
+`--startup-dialog-sha256` authorizes only explicitly reviewed exact images. The bounded
+schematic profile supports a project-owned `TFMyMessage` with a unique visible/enabled
+OK button and `TForm106` titled `DipTrace News` through `WM_CLOSE` only. Both layers of
+a News/message stack must be authorized, even when News is disabled; only the unique
+enabled dialog can be acted on, once per class per process. The active image is captured
+again and must stay identical, with verified ownership and caption, before the action.
+Unknown or competing dialogs remain blocked. Inspect the News checkbox state before
+approval: closing may persist its existing preferences; the helper never toggles its
+controls or follows its download link. Never guess a hash or use a blanket nag dismissor.
+Focus/locale/rendering differences require another review, not a weaker match or automatic retry.
+
+`completed: true` / exit 0 reports native execution only, NOT schematic acceptance.
+`erc_status` is `not_run`, `no_errors_found` (the result image equals a pinned reviewed
+success image of that build) or, for any other result dialog,
+`erc_status: review_required`. In that case view the captured ERC client PNG: an image
+reading exactly "No errors found" is a clean native ERC, recorded separately as
+`operator` evidence with its hash reported for pinning; anything else is an ERC finding
+to resolve. Never rewrite the native report or invent an operator attestation.
+
+Judge the re-export on physical pin/pad/net/NC records, shared units and wire contacts.
+Native re-serialization of the same design is not a defect and needs no new candidate:
+angle literals (pi -> 3.1416), coordinate deltas below 0.001 mm, renumbered style/pattern
+ids, pruned unused patterns, reassigned UpdateIds or port object ids, collinear-point
+pruning. Recentered symbols or embedded patterns, added pin length and rerouted wires,
+which can appear even over successive exports, are real geometry changes, not rounding:
+review them in the page-fit readability inspection and do not replace the source with a
+re-export that carries them unreviewed. No helper result grants trusted provenance.
+
+## Native PCB acceptance first
+
+Run the bounded native PCB rail when the task is refill/DRC/save/reopen/XML round-trip evidence:
+
+```powershell
+py -m diptrace_mcp.pcb_native_acceptance run `
+  --diptrace-root "C:\Program Files\DipTrace" `
+  --project "C:\work\board.dipxml" `
+  --output-xml "C:\work\evidence\board.native.dipxml"
+```
+
+For a binary `.dip` project, provide `--baseline-xml expected.dipxml`. The helper snapshots the
+baseline before GUI mutation, runs the real PCB editor on the isolated Win32 desktop by default,
+invokes the bounded `diptrace-5.3-en-v1` menu profile, saves/closes/reopens, exports distinct XML,
+and writes a `*.native-evidence.json` sidecar. The profile covers English 5.3.0.3 and
+5.3.5.1: the refill command is resolved by its Objects menu group because 5.3.5.1 reveals
+an extra item only while the menu is open, and the hidden desktop's Direct3D startup
+message is recorded and acknowledged.
+
+Interpret the result exactly:
+
+- `PASS` / exit `0`: DRC matched a verified success token, structural invariants stayed equal, and
+  the full XML semantic fingerprint equals the immutable baseline.
+- `FAIL` / exit `1`: the native pipeline failed, DRC exposed a positive error count, structural
+  invariants changed, or desktop/window-station/session safety evidence changed.
+- `HUMAN_REVIEW_REQUIRED` / exit `2`: native transport completed but a locale/dialog is unknown,
+  no immutable baseline exists, or a full semantic delta remains after stable structural checks.
+
+Do not reinterpret `HUMAN_REVIEW_REQUIRED` as PASS. Do not recover from an unknown menu/dialog by
+coordinate clicks, `SendInput`, physical cursor movement, or synthesized keyboard shortcuts. A new
+DipTrace build/locale must first establish a reviewed native profile or fall back to operator
+capture.
+
+The native summary binds components, nets/endpoints, traces/points, vias, copper and plane layers,
+via styles, copper pours, ratlines, unresolved multi-pad nets, duplicate IDs, hashes, PIDs and
+Win32 desktop/session identity. It does not prove electrical correctness or grant fixture trust.
+
+## Legacy mandatory stage order
+
+1. **Candidate capture:** choose a committed question recipe and initialize an operator-owned
+   allowed root. Record three distinct roles in order: `source`, `open_save`, `reexport`. Each role
+   gets its own path, SHA-256, XML inventory, and stage-specific attestations. If a private binary
+   input matters, bind its metadata only on the source record with repeatable
+   `--input-artifact ROLE=PATH`; its bytes remain outside quarantine and Git.
+2. **Candidate finalization:** answer every required recipe check from actual GUI observation, then
+   finalize. The result is `operator_supplied_unverified`, `candidate_only=true`, and grants no
+   validation level.
+3. **Dry-run ingest:** run the shipped `ingest_fixtures.py --dry-run`. It re-reads every role,
+   validates candidate and detached hashes, reports conflicts, and has no apply implementation.
+4. **MCP validation:** bind `source` and `saved`, plus `reexport` when available, to the selected
+   document and call `validate_roundtrip_evidence`. Require exact role paths and hashes. This call
+   is read-only and still grants no trusted authority.
+5. **Explicit confirmation:** show the operator the candidate ID, document SHA, role hashes,
+   semantic comparison summary, conflicts, and metadata files that would be written. Silence,
+   script success, or prior capture consent is not confirmation.
+6. **Metadata record:** only after that confirmation call `record_roundtrip_evidence`. It may write
+   `<document>.roundtrip-evidence.json` and `<document>.provenance.json`; it never changes design
+   bytes and never grants high trust.
+
+Do not make fixture-tree changes. A separate reviewed source change is required to add trusted
+registry entries.
+
+## Quantitative and provenance boundaries
+
+- Native XML and legacy XML inputs are bounded at 128 MiB; DTD and entity declarations are refused.
+- Legacy capture requires exactly 3 distinct role paths: `source`, `open_save`, and `reexport`.
+- Supported XML source types are PCB, Schematic, Component Library, and Pattern Library.
+- Supported document units are recorded literally as `mm`, `inch`, and `mil`.
+- Optional private inputs are bounded to 32 files of 128 MiB each and must remain under the allowed
+  root, outside `.diptrace-capture`, with no symlink, junction, or hard-link alias.
+- A SHA-256 is exactly 64 lowercase hexadecimal characters and is rechecked at each evidence
+  handoff.
+- Native `PASS` is an execution/round-trip verdict only. Trust promotion remains a separate reviewed
+  registry/fixture action.
+
+The packaged legacy scripts are byte-identical mirrors of
+[`../../scripts/capture_diptrace_evidence.py`](scripts/capture_diptrace_evidence.py) and
+[`../../scripts/ingest_fixtures.py`](scripts/ingest_fixtures.py); their hashes are pinned in
+[`../SOURCES.sha256`](../SOURCES.sha256).
+
+## Result
+
+Return [`../shared/result.schema.json`](../shared/result.schema.json). Label native GUI execution
+facts and exact hashes as `document` evidence, deterministic XML comparison as `analytical`, human
+visual judgements as `operator`, and planning advice as `heuristic`. Missing artifacts, hash
+mismatches, unknown native UI state, unresolved checklist items, changed private inputs, path
+aliases, failed comparisons, or absent required confirmation prevent a trusted completion claim.

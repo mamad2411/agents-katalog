@@ -1,0 +1,376 @@
+---
+name: content-fix
+description: >
+  Apply fixes from content-audit findings. Reads audit JSON, classifies fixes
+  by safety tier (SAFE/MODERATE), applies templates per fix type. Handles
+  encoding artifacts (NBSP, mojibake), broken markdown, CMS migration debris,
+  and typography issues. Modes: default (SAFE only), --auto (SAFE+MODERATE),
+  --dry-run, --finding CC1-nbsp-present, --fix-type encoding-strip.
+category: Content
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - get_file_tree
+    - search_text
+    - search_patterns
+  by_stack: {}
+---
+
+# zuvo:content-fix — Apply Content Audit Fixes
+
+Read content-audit JSON findings. Classify by safety tier. Apply mechanical fixes. Verify build. Report.
+
+**Scope:** Post-audit fix application for content file quality findings.
+**Out of scope:** SEO fixes (`zuvo:seo-fix`), content writing, spelling corrections, link target changes.
+
+## Mandatory File Loading
+
+Read these files before any work begins:
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+1. `../../shared/includes/env-compat.md` -- Agent dispatch and environment adaptation
+2. `../../shared/includes/content-fix-registry.md` -- Canonical fix_type, safety, contracts
+3. `../../shared/includes/fix-output-schema.md` -- JSON report contract
+4. `../../shared/includes/content-check-registry.md` -- Check slugs reference
+5. `../../shared/includes/backlog-protocol.md` -- Filing findings through `backlog-add`
+6. `../../shared/includes/verification-protocol.md` -- Build verification rules
+7. `../../shared/includes/run-logger.md` -- Run logging contract
+8. `../../shared/includes/retrospective.md` -- Retrospective protocol
+9. `../../shared/includes/knowledge-prime.md` -- Project knowledge priming
+10. `../../shared/includes/knowledge-curate.md` -- Learning extraction after work
+11. `../../shared/includes/no-pause-protocol.md` -- HARD rule: no mid-batch pauses
+
+Print the checklist:
+
+```
+CORE FILES LOADED:
+  1. env-compat.md              -- [READ | MISSING -> STOP]
+  2. content-fix-registry.md    -- [READ | MISSING -> STOP]
+  3. fix-output-schema.md       -- [READ | MISSING -> STOP]
+  4. content-check-registry.md  -- [READ | MISSING -> STOP]
+  5. backlog-protocol.md        -- [READ | MISSING -> STOP]
+  6. verification-protocol.md   -- [READ | MISSING -> STOP]
+  7. run-logger.md              -- [READ | MISSING -> STOP]
+  8. retrospective.md              -- [READ | MISSING -> STOP]
+  9. ../../shared/includes/knowledge-prime.md  -- READ/MISSING
+  10. ../../shared/includes/knowledge-curate.md -- READ/MISSING
+ 11. ../../shared/includes/no-pause-protocol.md -- READ/MISSING (HARD: no mid-batch pauses)
+```
+
+If any file is missing, STOP.
+
+## Safety Gates (NON-NEGOTIABLE)
+
+### GATE 1 — Write Scope
+
+**Allowed write targets:**
+- Content files from the audit manifest (files listed in audit JSON findings)
+- `zuvo/audits/` for the fix report (`.md` and `.json`)
+- `memory/backlog.md` (closing a resolved entry: tick it and its resolution marker; the archive helper moves it) and `memory/findings/` (written by `backlog-add`)
+
+**FORBIDDEN:**
+- Installing packages or dependencies
+- Writing to files not referenced by audit findings
+- Modifying config files, build scripts, or non-content files
+- Deleting files
+
+### GATE 2 — Dirty File Check
+
+Before modifying any file:
+1. `git status --porcelain -- <file>` — check for BOTH staged and unstaged changes
+2. If the file has ANY uncommitted changes (staged or unstaged): mark finding
+   as `NEEDS_REVIEW`
+3. Do not modify dirty files
+
+### GATE 3 — Stale Audit Protection
+
+If audit JSON `timestamp` is >24h old:
+- Default mode (SAFE only): proceed with warning
+- `--auto` mode: **require user confirmation** before mutating
+- `--dry-run` mode: proceed with warning
+
+### GATE 4 — PROVISIONAL Audit Handling
+
+If audit JSON `result` is `"PROVISIONAL"` (has `INSUFFICIENT DATA` blocking
+gates):
+- Default mode (SAFE only): proceed normally — SAFE fixes are safe regardless
+  of incomplete gates
+- `--auto` mode: restrict to SAFE fixes only (do not apply MODERATE). Warn:
+  "Audit is PROVISIONAL — restricting to SAFE fixes. Re-run content-audit
+  with --live-url for full coverage."
+
+---
+
+## Arguments
+
+| Argument | Behavior |
+|----------|----------|
+| (default) | Apply SAFE fixes only (`encoding-strip`, `markdown-fix`, `typography-fix`) |
+| `--auto` | Apply SAFE + MODERATE fixes (`encoding-mojibake`, `artifact-remove`) |
+| `--dry-run` | Show what would be fixed, change nothing |
+| `--finding CC1-nbsp-present,CC2-broken-italic` | Fix specific findings by stable ID |
+| `--fix-type encoding-strip,markdown-fix` | Fix specific fix_type categories |
+| `[json-path]` | Use specific JSON file instead of latest |
+
+---
+
+### Knowledge Prime
+
+Run the knowledge prime protocol from `knowledge-prime.md`:
+```
+WORK_TYPE = "implementation"
+WORK_KEYWORDS = <keywords from user request>
+WORK_FILES = <files being touched>
+```
+
+---
+
+## Phase 0: Load Findings
+
+### 0.1 Locate audit JSON
+
+1. If `[json-path]` provided: use that file
+2. Otherwise: glob `zuvo/audits/content-audit-*.json`, select most recent by timestamp
+3. If no JSON found: "No audit JSON found. Run `zuvo:content-audit` first." STOP.
+
+### 0.2 Validate schema
+
+Check `version` field. Supported: `"1.0"`, `"1.1"`.
+
+Required fields:
+```
+version, skill, timestamp, result, score.overall, findings[]
+Required per finding: id, dimension, check, status, fix_type, fix_params
+```
+
+### 0.3 Check freshness
+
+Read `timestamp`. Apply GATE 3 if >24h old.
+
+### 0.4 Print summary
+
+```
+ AUDIT: content-audit [date] ([age]) | Grade: [A-D] ([score]%) | [N] findings
+  SAFE:     [N] findings (auto-fixable)
+  MODERATE: [N] findings (fixable with --auto)
+  MANUAL:   [N] findings (advisory only)
+```
+
+---
+
+## Phase 1: Detect Framework & Classify
+
+### 1.1 Stack detection
+
+Same inline detection as content-audit Phase 0.1.
+
+### 1.2 Classify findings
+
+For each finding with a non-null `fix_type`:
+
+| fix_type | Safety | Default mode | --auto mode |
+|----------|--------|-------------|-------------|
+| `encoding-strip` | SAFE | Apply | Apply |
+| `markdown-fix` | SAFE | Apply | Apply |
+| `typography-fix` | SAFE | Apply | Apply |
+| `encoding-mojibake` | MODERATE | Skip | Apply |
+| `artifact-remove` | MODERATE | Skip | Apply |
+
+Findings with `fix_type: null` are MANUAL — never auto-applied.
+
+---
+
+## Phase 2: Apply Fixes
+
+### 2.0 Pre-flight per file
+
+Before modifying any file:
+1. Save a snapshot of the original content (in memory, for rollback)
+2. Check GATE 2 (dirty file check)
+3. If multiple findings target the same file: batch all fixes into one edit
+
+### 2.1 SAFE fixes (auto-applied)
+
+For each SAFE finding:
+
+**`encoding-strip`:**
+- Replace NBSP (U+00A0) with regular space (U+0020)
+- Remove zero-width characters (U+200B, U+200C, U+200D, U+FEFF)
+- Remove BOM marker from file start
+- Remove soft hyphens (U+00AD)
+- Remove replacement characters (U+FFFD) — flag for manual review
+- Scope: body content AND frontmatter string fields
+- Skip content inside fenced code blocks
+
+**`markdown-fix`:**
+- Close unclosed `*` or `_` at paragraph end (append matching marker)
+- Fix split italic: `* *text*` → `*text*`
+- Remove orphan `\` lines (stack-aware: only for Hugo/Goldmark)
+
+**`typography-fix`:**
+- Collapse 2+ spaces to 1 (outside code blocks, tables, indentation)
+- Fix `..` → `.` (preserve `...` ellipsis)
+- Fix `,,` → `,`
+
+### 2.2 MODERATE fixes (with --auto only)
+
+**`encoding-mojibake`:**
+- Replace garbled sequences using the mojibake signature table from
+  `content-fix-registry.md`
+- Skip matches inside fenced code blocks (may be intentional examples)
+- Verify each replacement produces valid UTF-8
+
+**`artifact-remove`:**
+- Remove WordPress shortcodes: extract inner content where possible
+- Remove PHP tags: `<?php ... ?>` blocks entirely
+- Remove `<font>` tags: keep inner text
+- Remove excessive inline styles (>50 chars)
+- **Joomla paths (`/images/stories/`, `index.php?option=com_`):** do NOT
+  auto-replace — target path is unknown. Mark as `NEEDS_REVIEW` with evidence
+  and suggested manual action. These are always flagged for human review even
+  in `--auto` mode.
+
+### 2.3 MANUAL findings
+
+Never auto-applied. Appear in report as advisory with suggested changes:
+- Spelling corrections
+- Content duplication resolution
+- Frontmatter rewrites
+- Link target changes
+
+---
+
+## Phase 3: Build Verification
+
+Detect project build command:
+1. `package.json` scripts: `build`, `astro build`, `next build`
+2. Hugo: `hugo` binary
+3. If no build command: skip, note in report
+
+Build verification follows `verification-protocol.md`:
+- `build_result: PASS` requires exit code 0
+- `build_result: FAIL` for any non-zero exit code
+
+Build failure → rollback per-file snapshots from Phase 2.0.
+
+---
+
+## Phase 4: Adversarial Review (MANDATORY — do NOT skip)
+
+```bash
+# Scoped review patch on stdout — the git index is NEVER touched (no staging).
+# PATH args = the content files this run fixed (Phase 2.0 snapshot list).
+# Quote each SEPARATELY — never one space-joined string or a bare $FILES: zsh does
+# not word-split an unquoted expansion, so the helper gets the whole list as ONE
+# path, matches nothing and exits 2. Use "${FILES[@]}" for an array.
+# With NO PATH args the helper reviews the WHOLE dirty tree, untracked files
+# included, and that content is sent to the external providers — always scope it.
+# `|| _prc=$?` (never `; _prc=$?`): under `set -e` the plain form aborts the shell
+# at the assignment, so exit 3 and the BLOCKED branch would never be reached.
+# The BLOCKED branch ends in `false`, so the block's own exit status is non-zero:
+# printing alone lets a `set -e` / `if ! …` caller sail past a review that never
+# ran. `false`, not `exit`, so an inlining caller's shell is not killed.
+if [ -x "$HOME/.zuvo/build-review-patch" ]; then
+  _prc=0; _patch=$("$HOME/.zuvo/build-review-patch" "<fixed-file-1>" "<fixed-file-2>") || _prc=$?
+  if [ "$_prc" -eq 3 ]; then echo "adversarial review: skipped (no changes)"
+  elif [ "$_prc" -ne 0 ]; then echo "BLOCKED: build-review-patch failed (rc=$_prc). Adversarial review did NOT run; do NOT proceed to commit and do NOT report this skill complete" >&2; false
+  else printf '%s\n' "$_patch" | ~/.zuvo/adversarial-review --mode code; fi
+else
+  ~/.zuvo/adversarial-review --mode code --files "<changed files>"
+fi
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Fix CRITICAL immediately. WARNING (localized) → fix.
+
+---
+
+## Phase 5: Report
+
+### 5.1 Report template
+
+```
+CONTENT FIX REPORT -- [project name]
+----
+Findings: [N] total | [N] fixed | [N] needs review | [N] manual
+Grade:    [before] -> [estimated after] (confirmed fixes only)
+Build:    [PASS | FAIL (rolled back N) | NOT VERIFIED]
+----
+
+FIXED (SAFE — auto-applied):
+  F1: Stripped 42 NBSP characters              content/post-1.md    [VERIFIED]
+  F2: Closed unclosed italic                   content/post-3.md:18 [VERIFIED]
+
+FIXED (MODERATE — applied with --auto):
+  F3: Fixed mojibake: Ä… → ą (12 occurrences)  content/post-5.md    [VERIFIED]
+
+NEEDS REVIEW:
+  F4: encoding-strip on dirty file             content/draft.md
+      Reason: File has uncommitted changes
+
+MANUAL (advisory):
+  F5: Spelling correction needed               content/about.md:7
+      Suggestion: "forumują" → "formują"
+
+Run: <ISO-8601-Z>	content-fix	<project>	-	-	<VERDICT>	<N-fixes>	fix	<NOTES>	<BRANCH>	<SHA7>	<INCLUDES>	<TIER>
+
+NEXT STEPS:
+  1. Review NEEDS_REVIEW items
+  2. Apply MANUAL fixes manually
+  3. Re-audit: zuvo:content-audit
+```
+
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check → structured questions → TSV emit → markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed.
+
+**Append via wrapper (REQUIRED).** Never `>>` directly to `~/.zuvo/runs.log` — the wrapper is the gate that verifies a retro entry exists for this run. Order: retro bash executed → wrapper invoked → completion claimed.
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Expected stdout: `OK: appended to runs.log (retro verified for <skill> on <project>)`. If exit 2 with `RETRO_REQUIRED` — go execute the retro bash from `retrospective.md` first; never bypass with `ZUVO_SKIP_RETRO_GATE=1`. After the wrapper succeeds, print a `Logs:` evidence line (`tail -1 ~/.zuvo/retros.log`, `grep -c "^<!-- RETRO -->" ~/.zuvo/retros.md`, `tail -1 ~/.zuvo/runs.log`) before claiming completion. Printing the markdown retro section without executing the bash leaves all three log files empty.
+
+### 5.2 Save JSON report
+
+Write to `zuvo/audits/content-fix-YYYY-MM-DD.json` conforming to
+`fix-output-schema.md` v1.1. Auto-increment `-2.json` for same-day runs.
+
+### Knowledge Curation
+
+After work is complete, run the knowledge curation protocol from `knowledge-curate.md`:
+```
+WORK_TYPE = "implementation"
+CALLER = "zuvo:content-fix"
+REFERENCE = <git SHA or relevant identifier>
+```
+
+### 5.3 Update backlog
+
+Per `shared/includes/backlog-protocol.md` "Filing from a skill":
+
+| Finding status | Backlog action |
+|----------------|---------------|
+| FIXED | No record; the matching open entries are closed once the fix is committed (**Closing, not removing**; the rule below the table) |
+| NEEDS_REVIEW | Record (`backlog-add`; `--file "$F"` when a repo file causes it, `--target "$U"` for a live page), `E` starting `content-review:`. The helper bumps a re-sighting. |
+| MANUAL | Record, as for NEEDS_REVIEW, `E` starting `content-manual:` |
+
+FIXED matches each open entry with the same file (or target) and the same title check ID whose cited code this run re-read and found fixed (for a file entry, its line and anchor); every other entry with that file and check ID stays open. A target (live-page) entry is closed only by a later live audit that re-reads the page; a source-file patch alone never closes it. content-fix does not commit, so there is no `<sha7>` to write: an entry FIXED matches stays open, the report lists its B-id on one line, `Close after commit: B-…, B-… | none`, and whoever commits the fix closes each one it lists (`backlog-protocol.md` "How to Persist Findings" step 3: tick `- [x]` and append `[FIXED <sha7>]`). A legacy entry written in the old `{file}|{dimension}|{check}` fingerprint format is matched by that fingerprint's file and check segments. `E` is the prefix from the table plus what was observed, the evidence that the finding is real.
+
+A **Generic write** per recorded finding: `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source content-fix --file "$F" --line <n> [--anchor "$A"] --evidence "$E" --title "$T"` when a repository file causes it. A finding on a live page or host with no repository file causing it takes `--target "$U" --evidence "$E"` in place of `--file`, `--line` and `--anchor`, whatever the class: `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source content-fix --target "$U" --evidence "$E" --title "$T"`. A live defect that a repository file causes is filed by that file (the file form), with the URL in `--evidence "$E"`; the target form is only for a finding with no repository file causing it. `<N>` is your confidence that the finding is real. This skill files `CQ` or `BUG` only: `<C>` is `CQ` for a failed check and `BUG` only when the finding names the input and the wrong output; BUG takes `--anchor "$A"`, copied from the line that shows the defect ("The location rule"). `T` starts with the audit finding's `check` ID, `<check-id>: <title>` (e.g. `mojibake-detected`), NOT the fix_type, so FIXED can close the entry later. A whole-file finding is `--line 1` with a "Whole file: ..." title (after the check ID) and no `--anchor`; a whole-file BUG is filed at the line that shows the defect instead, with `--anchor "$A"` copied from it, never at line 1. Assign "$R", "$E" and "$T" before each call, "$F" only for a file finding, "$U" only for a target finding, "$A" only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and backlog-add refuses a missing required field (`REFUSED missing-field:<f>`). Report the B- or F-id each call prints and `Recorded: N (backlog: a, ledger: b)` ("The report line" in `backlog-protocol.md`), plus each `NOT PERSISTED (<reason>)` by name; on a non-zero exit act on the protocol's exit table, and never append by hand.
+
+Recording findings through `backlog-add` commits and stages nothing. This skill lists the `wrote=` paths backlog-add printed as `Backlog writes: <path>, ...` (`Backlog writes: none` when there are none) in its final summary, whether it runs standalone or inside another skill, for the calling skill's closing commit to carry when there is one (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**). With `--dry-run` make no `backlog-add` call and tick no entry: list in the report what would be recorded (status, file or target, check ID) and what would be closed.

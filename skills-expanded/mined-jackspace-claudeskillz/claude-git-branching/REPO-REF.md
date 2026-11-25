@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jackspace/claudeskillz (path: skills/claude-git-branching/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Expert Git workflow management for Claude Code sessions with branch naming conventions, push retry logic, conflict resolution, and PR automation specifically designed for AI-assisted development workf

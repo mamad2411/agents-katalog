@@ -1,0 +1,348 @@
+---
+name: receive-review
+description: >
+  Process code review feedback with technical rigor. Activates when the user
+  shares review comments, PR feedback, or asks to address reviewer suggestions.
+category: Pipeline
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - search_symbols           # locate code referenced in review
+    - get_symbol
+    - get_symbols
+    - get_file_outline
+    - find_references          # verify reviewer's "this affects X" claims
+    - trace_call_chain
+    - search_text
+    - search_patterns
+    - changed_symbols          # in case review covers a diff range
+    - diff_outline
+  by_stack:
+    typescript: [get_type_info]
+    javascript: []
+    python: [python_audit, analyze_async_correctness]
+    php: [php_project_audit, php_security_scan, resolve_php_namespace]
+    kotlin: [analyze_sealed_hierarchy, find_extension_functions, trace_flow_chain, trace_suspend_chain, trace_compose_tree, analyze_compose_recomposition, trace_hilt_graph, trace_room_schema, analyze_kmp_declarations, extract_kotlin_serialization_contract]
+    nestjs: [nest_audit]
+    nextjs: [framework_audit, nextjs_route_map]
+    astro: [astro_audit, astro_actions_audit, astro_hydration_audit]
+    hono: [analyze_hono_app, audit_hono_security]
+    express: []
+    fastify: []
+    react: [react_quickstart, analyze_hooks, analyze_renders, analyze_context_graph]
+    django: [analyze_django_settings, effective_django_view_security, taint_trace]
+    fastapi: [trace_fastapi_depends, get_pydantic_models]
+    flask: [find_framework_wiring]
+    jest: []
+    yii: [resolve_php_service]
+    prisma: [analyze_prisma_schema]
+    drizzle: []
+    sql: [sql_audit]
+    postgres: [migration_lint]
+---
+
+# zuvo:receive-review
+
+Protocol for responding to code review feedback. Every review comment gets the same structured treatment: understand it, verify it against the actual code, decide whether to fix or push back, then implement precisely.
+
+## Mandatory File Loading
+
+Before starting work, read each file below. Print the checklist with status.
+
+```
+CORE FILES LOADED:
+  1. ../../shared/includes/codesift-setup.md    -- READ/MISSING
+  2. ../../shared/includes/run-logger.md        -- READ/MISSING
+  3. ../../shared/includes/retrospective.md     -- READ/MISSING
+  4. ../../shared/includes/knowledge-prime.md   -- READ/MISSING
+  5. ../../shared/includes/knowledge-curate.md  -- READ/MISSING
+  6. ../../shared/includes/backlog-protocol.md  -- READ/MISSING
+```
+
+`codesift-setup.md` is first because the frontmatter declares 14 CodeSift tools and Step 3 (VERIFY)
+depends on them — without the setup they are never preloaded, and the step that exists to catch a
+reviewer citing stale code falls back to reading from memory, which is the failure it guards against.
+`backlog-protocol.md` is loaded because the adversarial handling below records non-localized
+WARNINGs through `backlog-add`; the protocol defines that call, its variables and its exit table.
+
+---
+
+### Knowledge Prime
+
+Run the knowledge prime protocol from `knowledge-prime.md`:
+```
+WORK_TYPE = "implementation"
+WORK_KEYWORDS = <keywords from user request>
+WORK_FILES = <files being touched>
+```
+
+---
+
+## The 6-Step Protocol
+
+Process each review item through all six steps before moving to the next item.
+
+### Step 1: READ
+
+Read the complete feedback without reacting. Do not start fixing anything.
+
+- If the feedback is a PR comment thread, read every comment in the thread (not just the latest).
+- If the feedback is a list, read the entire list before acting on any item.
+- Identify each distinct action item. Number them for tracking.
+
+Output:
+```
+Review items identified: N
+1. [file:line] <one-line summary>
+2. [file:line] <one-line summary>
+...
+```
+
+### Step 2: UNDERSTAND
+
+For each item, restate what the reviewer is asking for in your own words. This is not parroting -- it is demonstrating that the requirement is understood.
+
+Ask yourself:
+- What behavior does the reviewer want changed?
+- What is the reviewer's underlying concern (correctness, performance, readability, security)?
+- Is this a request for a specific change, or a question that needs answering?
+
+If the intent is unclear after reading, ask the user for clarification BEFORE proceeding. Do not guess.
+
+### Step 3: VERIFY
+
+Read the actual code that the review comment refers to. Do not rely on memory or the reviewer's description of the code.
+
+For each item:
+1. Read the file at the referenced line.
+2. Read surrounding context (the full function, the imports, the callers if relevant).
+3. Determine the current behavior -- what does this code actually do right now?
+
+This step exists because reviewers sometimes reference stale code, wrong line numbers, or misread the logic. Verify the premise before accepting the conclusion.
+
+### Step 4: EVALUATE
+
+For each item, make a technical judgment: fix or push back.
+
+**Fix when:**
+- The reviewer identified a real bug or correctness issue.
+- The suggestion improves clarity without adding unnecessary complexity.
+- The change aligns with the codebase's established patterns.
+- The reviewer points out a missing edge case or error path.
+
+**Push back when:**
+- The suggestion breaks existing functionality (verify by tracing callers).
+- The change violates YAGNI -- it adds abstraction for a scenario that does not exist.
+- The reviewer's claim is technically incorrect for this language, framework, or version.
+- The reviewer lacks full context about why the code is structured this way (e.g., a deliberate trade-off documented elsewhere).
+- The suggestion conflicts with an architecture decision already made in this codebase.
+- The suggestion duplicates logic that already exists elsewhere.
+
+Pushing back is not disagreement for its own sake. It is protecting the codebase from well-intentioned changes that would make it worse. Every pushback must include a specific technical reason.
+
+### Step 5: RESPOND
+
+Formulate a response for each item. Two formats only.
+
+**If fixing:**
+```
+Fixed. <What changed and why.>
+```
+
+Example: "Fixed. Added null check before accessing `user.profile` -- the query can return null when the user has been soft-deleted."
+
+**If pushing back:**
+```
+Pushing back: <Technical reason with evidence.>
+```
+
+Example: "Pushing back: This endpoint intentionally returns 200 with an empty array instead of 404 because the frontend grid component treats 404 as a fatal error (see `DataGrid.tsx:47`). Changing to 404 would break the dashboard view."
+
+#### Forbidden Responses
+
+Do NOT use any of the following:
+- "You're absolutely right!"
+- "Great point!"
+- "Good catch!"
+- "Thanks for the feedback!"
+- "Totally agree!"
+- Any form of gratitude or performative agreement before the fix.
+
+These phrases signal compliance, not comprehension. The response must demonstrate that the code was read, the concern was understood, and the fix was verified -- not that the reviewer's ego was stroked.
+
+Conversely, do NOT be combative. "Pushing back" is a neutral technical statement, not an argument. If the user or reviewer disagrees with the pushback, re-evaluate with the new information they provide.
+
+### Step 6: IMPLEMENT
+
+Execute fixes one item at a time. After each fix:
+
+1. Make the change.
+2. Run affected tests. If no specific tests exist for the changed code, run the full test suite.
+3. Verify the fix addresses the reviewer's concern -- re-read the comment and confirm the new code satisfies it.
+4. If the fix introduces a test gap (new branch, new error path), write a test for it.
+5. Move to the next item.
+
+Do NOT batch all fixes into one large change. Sequential, verified fixes prevent cascading errors where fix #3 breaks what fix #1 corrected.
+
+### Adversarial Review (MANDATORY — do NOT skip)
+
+After all items are implemented:
+
+```bash
+# Scoped review patch on stdout — the git index is NEVER touched (no staging).
+# PATH args = the files changed while addressing the review items.
+# Quote each SEPARATELY — never one space-joined string or a bare $FILES: zsh does
+# not word-split an unquoted expansion, so the helper gets the whole list as ONE
+# path, matches nothing and exits 2. Use "${FILES[@]}" for an array.
+# With NO PATH args the helper reviews the WHOLE dirty tree, untracked files
+# included, and that content is sent to the external providers — always scope it.
+# `|| _prc=$?` (never `; _prc=$?`): under `set -e` the plain form aborts the shell
+# at the assignment, so exit 3 and the BLOCKED branch would never be reached.
+# The BLOCKED branch ends in `false`, so the block's own exit status is non-zero:
+# printing alone lets a `set -e` / `if ! …` caller sail past a review that never
+# ran. `false`, not `exit`, so an inlining caller's shell is not killed.
+if [ -x "$HOME/.zuvo/build-review-patch" ]; then
+  _prc=0; _patch=$("$HOME/.zuvo/build-review-patch" "<fixed-file-1>" "<fixed-file-2>") || _prc=$?
+  if [ "$_prc" -eq 3 ]; then echo "adversarial review: skipped (no changes)"
+  elif [ "$_prc" -ne 0 ]; then echo "BLOCKED: build-review-patch failed (rc=$_prc). Adversarial review did NOT run; do NOT proceed to commit and do NOT report this skill complete" >&2; false
+  else printf '%s\n' "$_patch" | ~/.zuvo/adversarial-review --mode code; fi
+else
+  ~/.zuvo/adversarial-review --mode code --files "<changed files>"
+fi
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Exceptions (user authority wins over MANDATORY):
+- User forbade staging: nothing to do — the helper never writes the index. If the helper is missing, use the `--files` fallback above (never stage) and confirm the staged diff is unchanged.
+- User explicitly forbade invoking other AI / adversarial review: skip it and record `ADVERSARIAL: skipped (user directive: <quote>)` in the completion summary.
+
+If the review output reports truncation (diff exceeds the reviewer input cap), split the diff on file boundaries, review each chunk, and aggregate findings — a truncated review is NOT full coverage.
+
+Wait for complete output. Handle findings by severity:
+- **CRITICAL** — confirm it first: two or more lanes in its `.agreement` group, or your own check (a failing test, a reproduced input, the cited code read and the defect traced). Confirmed → fix immediately, whatever file it is in: a confirmed CRITICAL is never recorded instead of fixed, and the drive-by filing below covers only non-CRITICAL findings. A single-lane CRITICAL you cannot confirm is triaged as a WARNING and reported as `[CRITICAL→WARNING single-lane]` (`adversarial-loop.md` Step 4).
+- **WARNING** — "A file this run edits" means a file of the reviewed diff or one Step 6 changed, a set fixed before the findings are handled, so the order they are handled in never changes a source. In a file this run edits: fix it if localized (< 10 lines); otherwise record it with `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source receive-review --file "$F" --line <n> [--anchor "$A"] --title "$T"` (`backlog-protocol.md` "Filing from a skill", **Adversarial review**, the same call as **Generic write**; `R` is the absolute path of the repository root; `<N>` maps the finding's `CONFIDENCE:` word, high = 85, medium = 60, low = 30, a mapping defined here because neither `backlog-protocol.md` nor `severity-vocabulary.md` defines one; a WARNING about the whole file, with no single line, cites `--line 1` with a "Whole file: …" title ("The location rule"); pass `--anchor "$A"` only when the class requires one, BUG, SEC or DATA, or the finding carries one, never an invented one; assign `"$R"`, `"$F"` and `"$T"` before the call, and `"$A"` only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`)). Report the B- or F-id it prints; a finding still not persisted is listed under `NOT PERSISTED (<reason>)`, never appended by hand. In a file this run does not edit: the drive-by command below, never this one.
+- **INFO** — known concerns (max 3, one line each), reported in the summary and never recorded (no `backlog-add` call).
+
+Do NOT discard findings based on confidence alone. Confidence measures how sure the reviewer is, not how important the issue is; even a low one maps to 30, and `backlog-add`'s bars, not this skill, decide where it is kept. A CRITICAL with low confidence means "verify this — if true, it's serious."
+
+If a finding contradicts an explicit user instruction or stated invariant, do not silently apply either side: verify the finding's premise, then disposition it as a Step 5 pushback (citing the invariant) or a fix, and record the decision in the summary.
+
+"Pre-existing" is NOT a reason to skip a finding. If the issue is in a file this run edits, it is handled as any WARNING there: fix it if localized (< 10 lines), otherwise record it with the WARNING command (`--source receive-review`). If not, record it with `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source drive-by:receive-review --file "$F" --line <n> [--anchor "$A"] --title "$T"` (`drive-by-findings.md`; `backlog-protocol.md` "Filing from a skill", **Adversarial review**; the anchor, the whole-file rule and the variables as for the WARNING command above, the source being `drive-by:receive-review`, not `receive-review`). The file decides the source, not the severity or whether the finding is new: a non-CRITICAL finding in a file this run does not edit takes this drive-by command only, never the WARNING one. The adversarial review found a real problem — don't dismiss it just because it existed before your changes.
+
+receive-review neither stages nor commits. It lists the `wrote=` paths every `backlog-add` call printed in the completion summary, for whoever commits (the user, or the outer skill via `Backlog writes:`) (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**).
+
+---
+
+## Source-Specific Handling
+
+The source of the feedback affects trust calibration but not the protocol. All items still go through all six steps.
+
+### From the User (Direct Feedback)
+
+Trust level: **high**. The user knows their codebase and their intent.
+
+- Implement after understanding. Do not second-guess unless something is technically impossible.
+- If the request is unclear, ask. Do not interpret ambiguity as permission to improvise.
+- If the user asks for something that would break tests, say so and propose an alternative, but defer to the user's decision.
+
+### From External Reviewers (PR Comments, Team Members)
+
+Trust level: **standard**. The reviewer may not have full context.
+
+- Verify every factual claim against the actual code.
+- Check whether the suggested change breaks any callers or dependents.
+- Consider whether the reviewer is seeing a different version of the code (stale diff).
+- If the suggestion is valid but incomplete (e.g., "add validation here" without specifying what validation), fill in the details based on codebase patterns and report what was added.
+
+### From Automated Tools (Linters, SAST, AI Reviewers)
+
+Trust level: **skeptical**. Automated tools produce false positives.
+
+- Verify every finding against the actual code. Automated tools flag patterns, not bugs -- the pattern may be intentional.
+- Check if the flagged code is covered by tests that prove correctness.
+- For security findings: take seriously, but verify the attack vector is reachable in this specific application (not just theoretically possible).
+- For style findings: only fix if the project has adopted the rule. Do not enforce rules the team has not agreed to.
+- For AI reviewer suggestions: treat as hypotheses, not instructions. AI reviewers hallucinate context, misread control flow, and suggest fixes that break invariants. Verify everything.
+
+---
+
+## Ordering
+
+When the review contains multiple items, process them in this order:
+
+1. **Correctness bugs** -- anything that produces wrong results.
+2. **Security issues** -- anything that exposes data or enables unauthorized access.
+3. **Error handling gaps** -- missing catches, swallowed errors, unhandled edge cases.
+4. **API contract issues** -- wrong status codes, missing fields, broken pagination.
+5. **Performance concerns** -- N+1 queries, unbounded fetches, missing indexes.
+6. **Code clarity** -- naming, structure, documentation.
+
+This ordering ensures that if the review is partially addressed (e.g., user says "enough for now"), the most critical items were handled first.
+
+---
+
+## Knowledge Curation
+
+After work is complete, run the knowledge curation protocol from `knowledge-curate.md`:
+```
+WORK_TYPE = "implementation"
+CALLER = "zuvo:receive-review"
+REFERENCE = <git SHA or relevant identifier>
+```
+
+---
+
+## Completion
+
+After all items are processed, produce a summary:
+
+```
+Review complete. N items processed.
+
+Fixed:
+  1. [file:line] <what changed>
+  2. [file:line] <what changed>
+
+Pushed back:
+  3. [file:line] <reason>
+
+Recorded: [N (backlog: a, ledger: b): each B- or F-id, or NOT PERSISTED (<reason>) by name | "none"]
+Backlog writes: [<path>, … | none]
+Tests: N passing, 0 failing.
+Run: <ISO-8601-Z>	receive-review	<project>	-	-	<VERDICT>	-	<DURATION>	<NOTES>	<BRANCH>	<SHA7>	<INCLUDES>	<TIER>
+```
+
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check → structured questions → TSV emit → markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed.
+
+**Append via wrapper (REQUIRED).** Never `>>` directly to `~/.zuvo/runs.log` — the wrapper is the gate that verifies a retro entry exists for this run. Order: retro bash executed → wrapper invoked → completion claimed.
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Expected stdout: `OK: appended to runs.log (retro verified for <skill> on <project>)`. If exit 2 with `RETRO_REQUIRED` — go execute the retro bash from `retrospective.md` first; never bypass with `ZUVO_SKIP_RETRO_GATE=1`. After the wrapper succeeds, print a `Logs:` evidence line (`tail -1 ~/.zuvo/retros.log`, `grep -c "^<!-- RETRO -->" ~/.zuvo/retros.md`, `tail -1 ~/.zuvo/runs.log`) before claiming completion. Printing the markdown retro section without executing the bash leaves all three log files empty.
+
+`<DURATION>`: use `N-comments` (number of review items processed).
+
+If any fix introduced new tests, list them separately:
+
+```
+New tests added:
+  - <test file>: <test name>
+```

@@ -1,0 +1,86 @@
+---
+name: hippocamp-memory
+description: Use Hippocamp memory to load global identity and workflow context from the Lagoon clone and project context from the Lagoon projects folder. Trigger this at the start of top-level task threads, when you need durable memory recall, or when you need to checkpoint meaningful progress.
+---
+
+# Hippocamp Memory
+
+Use this skill when the user wants persistent memory across agent sessions.
+
+This same skill can be installed into Codex, Claude Code, or Grok Build.
+For Codex, use `npm run install:codex`; that installer copies this skill into `~/.codex/skills/hippocamp-memory/`, registers the Hippocamp MCP server, and refreshes `~/.codex/AGENTS.md`.
+For Claude Code, use `npm run install:claude`; that installer copies this skill into `~/.claude/skills/hippocamp-memory/`, registers the Hippocamp MCP server, and refreshes `~/.claude/CLAUDE.md`.
+For Grok Build, use `npm run install:grok`; that installer copies this skill into `~/.grok/skills/hippocamp-memory/`, registers the Hippocamp MCP server with `HIPPOCAMP_AGENT=grok`, and refreshes `~/.grok/rules/hippocamp.md`.
+Upgrade uses the same path: run `npm run upgrade:codex`, `npm run upgrade:claude`, or `npm run upgrade:grok` from a source checkout, or `npx hippocamp@latest upgrade-codex` / `upgrade-claude` / `upgrade-grok` after publishing.
+
+## Scope
+
+- Global memory lives at the root of the local Lagoon clone pointed to by `HIPPOCAMP_GLOBAL_ROOT`.
+- Project memory lives under `projects/<slug>/` inside that same Lagoon clone.
+- The current project slug is inferred from `HIPPOCAMP_PROJECT_ROOT` or the current working directory. An empty folder (nothing but `.git`) has no project and uses global memory.
+- The Hippocamp MCP server exposes the tools that read and write those locations.
+
+## Default Workflow
+
+1. At the start of every top-level coding task, call `wake_up` before inspecting files, planning, or editing.
+2. Read the wake-up output before searching.
+3. Use `search_memory` as the normal path for task-specific recall after wake-up.
+   Keep the default 5 results for a single fact. Pass `maxResults` 10-20 when the question combines several past sessions (counts, totals, comparisons, timelines), and search again if the results look incomplete.
+4. If search returns no result, continue without memory. Do not read whole event logs as a fallback.
+5. During work, use `append_event` only for meaningful milestones.
+6. When appending events, pass a `title` and 1-8 concise `keywords` so fuzzy recall can find the event later. Never write under `events/` with `write_memory_file`.
+7. `write_memory_file` and `append_event` sync by default.
+8. If a sync is skipped or fails, call `sync_memory` explicitly.
+9. At the end of the task, if project state actually changed, use `write_memory_file` to update curated files such as:
+   - `current_state.md`
+   - `open_threads.md`
+   - `identity.md`
+   - `how_i_work.md`
+   - `preferences.md`
+
+## Behavior Rules
+
+- Do not full-scan memory on every thread.
+- Prefer curated summaries over raw event history.
+- Do not re-read `current_state.md` or `open_threads.md` after `wake_up`; they are already loaded.
+- For small tasks, `append_event` is enough; skip curated file rewrites.
+- Use event keywords as short recall handles; `search_memory` ranks indexed events by keywords, title, and body with typo tolerance, and keywords weigh the most.
+- Search returns bounded coherent evidence and does not scan unindexed event logs as a fallback.
+- Keep curated files short and legible.
+- Preserve any `<!-- hippocamp-dream-through: ... -->` comment in `current_state.md`; Dream uses it to avoid reviewing the same events again.
+- Rewrite `current_state.md` as a short snapshot of what is true now. Do not prepend dated entries to it; milestone detail belongs in `append_event` only.
+- Remove resolved items from `open_threads.md` instead of keeping them.
+- Do not duplicate GitHub-owned facts such as commits, PRs, issues, reviews, or CI results. Store artifact references plus the missing rationale, preference, assumption, or follow-up context.
+- Use `project` scope for project-specific state.
+- Use `global` scope only for durable personal context that should follow the user across projects.
+- Avoid rewriting unrelated memory files.
+- Treat `sync_memory` as the recovery path when default sync cannot safely proceed.
+
+## Suggested Files
+
+Global:
+
+- `identity.md`
+- `how_i_work.md`
+- `preferences.md`
+- `open_loops.md`
+
+Project:
+
+- `project.md`
+- `current_state.md`
+- `open_threads.md`
+- `events/YYYY-MM-DD.md`
+- `events/YYYY-MM-DD.index.json`
+
+## Tooling
+
+Expected MCP tools:
+
+- `wake_up`
+- `read_memory_file`
+- `write_memory_file`
+- `append_event`
+- `list_memory_files`
+- `search_memory`
+- `sync_memory`

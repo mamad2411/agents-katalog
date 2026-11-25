@@ -1,0 +1,181 @@
+---
+name: post-merge
+description: >
+  Runs after a PR merges: syncs the base branch, deletes the merged branch and worktree, closes
+  out linked issues without asking (even on a develop base), then recommends the next issue.
+  Trigger on: "merged PR #42", "PR is merged", "just merged the auth fix", "I merged #123".
+---
+
+# Post-Merge Workflow
+
+Three phases: sync and clean the working tree, tidy up the issues the PR addressed, then recommend what to do next.
+
+## Phase 0: Sync and Clean the Working Tree
+
+Do this first. Most post-merge rework comes from the next task starting against a stale base branch or a leftover feature branch/worktree — clean it up now while you have the context.
+
+### 1. Find the base and head branches
+
+Don't assume `main`. Read what the PR actually merged into:
+
+```bash
+gh pr view [NUMBER] --json number,title,baseRefName,headRefName,mergedAt
+```
+
+`baseRefName` is the branch to sync (often `develop` or `main`); `headRefName` is the merged feature branch to delete.
+
+### 2. Sync the base branch
+
+```bash
+git fetch --prune
+git checkout [BASE_BRANCH]
+git pull --ff-only
+```
+
+If your current checkout is a worktree pinned to the merged feature branch, you can't switch it to the base — leave it and handle the worktree in step 3.
+
+### 3. Delete the merged branch and its worktree
+
+```bash
+git worktree list                    # find any worktree holding the feature branch
+git worktree remove [WORKTREE_PATH]  # only if it lives in a worktree
+git branch -d [HEAD_BRANCH]          # safe delete — refuses if not actually merged
+```
+
+Use lowercase `git branch -d`; it only deletes branches that are fully merged. Don't reach for `-D` unless you've confirmed the work really landed. `git worktree remove` refuses to drop a worktree with uncommitted changes — don't `--force` past that without checking what's there first. If the project has a prune-merged-branches helper, use it (dry-run, then apply); those scripts typically skip `develop`/`main`/`release/*` and worktree-held branches.
+
+### 4. Confirm clean state
+
+```bash
+git status
+git branch --show-current
+```
+
+You want to be on the synced base branch, working tree clean, with the feature branch gone. Now move to Phase 1.
+
+---
+
+## Phase 1: Issue Cleanup
+
+Updating and closing the linked issues is the **default, automatic outcome** of this phase — do it without pausing to ask permission. The only judgment call is whether an issue is *fully* addressed (check its boxes and close it) or only *partially* (check boxes, comment, leave open). When the user says "the PRs are merged" with no numbers, first confirm which ones actually merged — a "they're all in" claim is often only partly true — and act only on the ones that did.
+
+### 1. Get the PR
+
+If the user gave you a PR number, use it. If they described it by name (or said "merged" with no number), find it:
+
+```bash
+gh pr list --state merged --limit 10
+```
+
+Then pull the details and confirm it actually merged before acting:
+
+```bash
+gh pr view [NUMBER] --json number,title,body,state,mergedAt,headRefName,closingIssuesReferences
+```
+
+Only proceed for PRs where `state` is `MERGED`. If the user named several, check each — don't take "they're merged" to mean all of them are.
+
+### 2. Find linked issues
+
+Check two places:
+
+- `closingIssuesReferences` from the JSON above (GitHub auto-detects closing keywords) — **but this is only populated when the PR targets the repo's default branch.** For a PR merged into a non-default base (e.g. `develop`), it's empty and GitHub will NOT auto-close anything, so the manual comment + checkbox + close below is mandatory, not optional.
+- Scan the PR body manually for patterns: `closes #N`, `fixes #N`, `resolves #N`, `related to #N`
+
+If the user mentioned a specific issue in their message, include that too.
+
+### 3. Update each linked issue
+
+For each issue:
+
+**a) Get current state:**
+```bash
+gh issue view [ISSUE_NUMBER] --json number,title,body,state,labels
+```
+
+**b) Post a completion comment** — keep it short, link the PR:
+```
+Addressed in PR #[NUMBER] — merged [date].
+```
+
+**c) Update acceptance criteria checkboxes** — if the issue body has a checklist and the PR clearly addressed specific items, edit the body to check them off. Only check what was actually delivered; leave unchecked items alone. Use `gh issue edit [NUMBER] --body "..."` with the updated text.
+
+**d) Close the issue** if it's fully addressed (all checklist items done, or no checklist and the PR directly resolves it) — automatically, no confirmation:
+```bash
+gh issue close [ISSUE_NUMBER] --comment "Closed by #[PR_NUMBER]."
+```
+
+If the issue is only partially addressed, leave it open — just post the comment and check the relevant boxes.
+
+**e) Update any parent epic / tracking issue.** If the closed issue shows up as a checklist line in an epic or meta-issue (e.g. `- [ ] #61 ...`), tick that line too so the epic reflects reality — fetch the epic body, flip the one line, and `gh issue edit [EPIC] --body-file ...`.
+
+### 4. Report what you did
+
+One short summary: which issues were updated, which were closed, which were left open and why.
+
+---
+
+## Phase 2: What's Next
+
+### 1. Pull all open issues
+
+```bash
+gh issue list --state open --limit 200 --json number,title,labels,createdAt,body,milestone
+```
+
+`gh issue list` has no offset flag, so read past 200 by raising `--limit`, not by paging.
+
+### 2. Score each issue
+
+For each issue, assess these dimensions — you don't need to output scores, just use them to reason:
+
+**Value (higher = do sooner)**
+- Bug that breaks existing functionality → high
+- Blocks other issues or unlocks a milestone → high
+- User-facing improvement → medium
+- Internal refactor / chore with no user impact → lower
+- Labels like `critical`, `blocking`, `P0` → boost
+
+**Effort (lower = do sooner, all else equal)**
+- Labels like `good first issue`, `small`, `quick` → low effort
+- Labels like `epic`, `large`, `needs-design` → high effort
+- Issue body describes a narrow, well-scoped change → low
+- Issue body is vague or touches many systems → high
+
+**Age bonus**
+- Issues that have been open longer tend to get deprioritized unfairly. Give a small bonus to issues open more than a few weeks, and a bigger one for anything over a couple of months. This isn't a tiebreaker — a low-value chore open for 6 months still loses to a critical bug opened yesterday.
+
+**Context from the merged PR**
+- If the merged PR unblocks something specific (e.g., a dependency, an API, a design token), boost any issue that was waiting on it.
+- Issues in the same area of the codebase as the just-merged work may be good to batch — you're already in context.
+
+### 3. Pick one
+
+Give a single recommendation. Not a ranked list — one issue, with 2-4 sentences explaining why it's the right call right now. The reasoning should be concrete: "this is a bug that affects X, it's well-scoped, and the PR you just merged sets up the infrastructure it needs" — not "high value, low effort."
+
+If there's a genuinely close second worth knowing about, mention it in one sentence. Don't list the whole top 5.
+
+### 4. Format
+
+```
+Next: #[NUMBER] — [title]
+
+[2-4 sentence reasoning. Be specific about why now, why this one over the alternatives.]
+
+(Alternatively: #[NUMBER] — [one sentence if there's a close second])
+```
+
+Keep it tight. The goal is a quick decision, not a planning session.
+
+### 5. Update the project's home page, if it has one
+
+If the user's agent instructions or the projects root's index name a project home page tool and this
+repo has a config for it, point the page at the recommendation:
+
+1. Set the config's next-step field to the recommended issue: its number, one or two plain
+   sentences on what to do and why, the first command to run if there's an obvious one, and where
+   it came from (`post-merge, <date>`).
+2. Run the tool's refresh for this repo and republish the built page to the config's artifact URL.
+
+Skip this silently when there's no tool or no config for the repo. A failed refresh is one line in
+the report, not a reason to stop.

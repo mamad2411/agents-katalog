@@ -1,0 +1,443 @@
+---
+description: Execute almost every tool operation through A11 Flow, including single
+  reads, searches, edits, commands, and requests. Use one-step Flows for small operations
+  and compose known chains or independent work in one call. Keep intermediate values
+  out of model context and return bounded evidence for the next decision. The execution
+  tool is flow_run; flow_actions and flow_check provide optional discovery and checking.
+name: a11-flow
+
+---
+# Execute tools through Flow
+
+Use `flow_run` for almost every executable tool operation, including one-step
+work. Call underlying tools inside the Flow. After a result needs a fresh
+decision, use another Flow for the next operation. Direct calls are reserved
+for discovery/checks, user interaction, session controls, completion reporting,
+tools unavailable through Flow, and explicit user requests. Never invoke a Flow
+tool recursively from a Flow.
+
+Use action contracts already in context. Discovery and compile-only checks are
+optional: request missing contracts with `flow_actions(names: [...])`, or use
+`flow_check` when compiler feedback would help. Execute with `flow_run`, which
+compiles and checks permissions before dispatch. Fix clear compiler diagnostics
+and retry the Flow; a correctable syntax error does not require direct tools.
+
+Pass raw source and an `inputs` object keyed by the flow's input ports. Supply a
+list for a stream port and one value for a unary port. The result is an object
+keyed by the declared output ports; return only what the next decision needs.
+Use `run` for actions marked `runnable: true`; `call` dispatches to the peer and
+requires a stream supplied by the host.
+
+The compact reference below is the primary language guide. Consult extended
+guides only for a specific question it does not answer.
+
+
+# Flow: compact agent reference
+
+Flow combines streaming tools into one action: filter intermediates before they
+reach model context and fix orchestration without per-call model decisions.
+Execute almost every tool operation through the host's Flow runner, including
+a single read, search, edit, command, or HTTP request. A one-step Flow is the
+default for small operations too. Combine related phases in one invocation;
+an entry flow can compose sibling flows. Filter and bound outputs. For
+surrounding content, use `context` on original file lines rather than manual
+ranges. When fresh judgment
+is needed, return its evidence and execute the next operation in another Flow.
+Use direct calls only for discovery/guides/checks, user interaction, session
+controls, completion reporting, tools the runner cannot invoke, or an explicit
+user request. Never wrap the Flow runner in itself. Statements overlap; data,
+`after`, and `wait all` order them. Arrival order can remain nondeterministic.
+Reuse action/port contracts already in context; discover only missing contracts.
+Discovery and compile-only checks are optional, not prerequisites to execution.
+For ordinary tool chains, write one flow using runtime-provided tools directly.
+Avoid modules, module contracts, and imports outside `std` unless building a
+reusable library; do not redeclare tool contracts already supplied by the host.
+
+Prefer specialized non-shell actions and Flow stages for file access, search,
+HTTP, filtering, and transformations whenever they can solve the task. Reserve
+process tools for actual program execution, such as tests and builds, or work
+that available actions cannot perform. When a process is needed, prefer a
+direct executable with arguments over Bash unless shell syntax is required.
+
+Choose a small output budget before writing each Flow. Set source-side query,
+path, item, and byte limits where available. Filter with `where`/`match` and
+project needed fields with `map` before returning results. Combine `first N`
+to cap returned items with `truncate M` to bound each text value; either alone
+can still return too much. Flatten list values before limiting their entries.
+Avoid returning whole files, response bodies, objects, or unbounded `collect`
+results when selected evidence answers the question. Increase limits only when
+the bounded result leaves a concrete gap.
+
+Keep full data needed by downstream actions inside the Flow; truncate the
+branch returned to the model. Retain identifiers, errors, and available counts
+or truncation indicators so the next Flow can retrieve missing evidence.
+
+For file/tool-output matches (tests, web fetches, external systems), prefer
+`context e before N after M` on original lines/items per source; filtering first
+loses neighbors. Use search hits to locate source spans. Split unary text with
+`std::split(text, "\n") | flatten`. Keep N/M small; `first G` caps groups, then
+`map std::join(it, "\n") | truncate C` caps each text excerpt. Successful checks
+need only status/counts. Preserve complete causal diagnostics and structured
+details; save full logs and expand only for a concrete gap.
+
+Use this reference first. Consult extended guides only when your specific
+concern is genuinely not answered here; do not load them as routine background.
+
+For missing details: [guide](doc/docs/guides/flow.md),
+[language/API](doc/docs/api/flow.md),
+[checking/tooling](doc/docs/guides/flow-tooling.md).
+
+## Syntax
+
+`e` = expression, `s` = stream, `T` = type; `[ ... ]` in tables means optional.
+Examples use separate lines; tables use semicolons only to separate alternatives.
+One statement per logical line; incomplete expressions, types, pipelines, and
+modifier tails may continue across lines. Braces delimit scopes; `#` comments. Keywords accept
+lowercase or UPPERCASE. Functions need `std::` unless imported; stages do not.
+Flows join owned work; emitting an output does not finish execution.
+Strings and `"""` strings decode `\0` (NUL), `\a`, `\b`, `\f`, `\n`, `\r`,
+`\t`, `\v`, `\"`, `\'`, and `\\`. Other escapes yield the following character.
+Regex literals `/.../` use RE2 with optional `i`, `m`, `s` flags; write
+`/\W+/`, not `"\W+"` (the string loses its backslash). Quoted search and
+separator strings remain literal.
+
+| Form | Meaning |
+|---|---|
+| `flow name [exported] { ... }` | Define a callable action; `flow { ... }` is a CLI entry with `argv`/`argc`. |
+| `in x: T [stream] [required]`; `out y: T [stream]` | Unary unless `stream`; optional means absence, not a default. `required` means present, not nonempty. Port names come from contracts. |
+| `describe "..."`; `header "key" as h [default "..."]` | Action description; incoming header binding. |
+| `x = e`; `T x = e`; `a, b = e` | Eager initialization once per scope; infer or check/coerce type; destructure RHS once. Initializer required. |
+| `x = e` again | Reassign in source order; child updates join back. Reject conflicting parallel updates. |
+| `s = source \| stage` | Lazy stream alias: unused pipelines do not execute. Readers share production. Nested scopes replay outer streams; explicit `take` uses a shared cursor. A list is one value; `flatten` expands it. |
+| `x = take s`; `x = try take s` | Successive reads: EOF errors / returns `{has_value:false}`. Present items have `value`, including null. Upstream errors propagate. |
+| `j = run action(port: s, ...)`; `j = call action(s, ...)` | Local handler / peer dispatch. A bare `s` feeds input `s` from source `s`; argument order is free. Calls execute even if unused. Read `j.output`; write `j.input`. Unused outputs drain; unfed inputs close immediately, fed inputs after their last writer. |
+| `s \| run f(config: e)`; `s \| call m::f(...)` | Once per whole stream. Exactly one unsupplied input (optional inputs count) and one declared output. Interface required. |
+| `run f(input: s) \| packb -> out`; `call m::f(input: s) -> out` | Pipeline starter: every input supplied, including optional inputs, and exactly one declared output. A transfer reads and starts it; an unread pipeline alias does not. Bare calls remain eager. |
+| `s \| map (run f(input: it)).output` | Per-item invocation; distinct from whole-stream application. |
+| `a -> b -> out`; `s -> a, b`; `s -> _` | Right-associative: forward all b, then all a. Terminal commas broadcast. Independent attachments to a shared handle interleave after its prefix. Handles are sinks, never payloads or sources. |
+| `if e { ... } else if e { ... } else { ... }` | Boolean conditional scopes. |
+| `if x = option { ... } else { ... }` | Evaluate once; bind the present payload only in the success branch. Fresh name; no enclosing-name conflicts. Else-if initializers are lazy. |
+| `for x[, y...] in s [parallel N] { ... } [until e / while e]` | Per-item scopes, optional tuple destructuring; sequential by default. A bare list literal (`for x in [a,b,c]`) expands one level; empty → no passes. Other sources retain stream values; use `\| flatten` for named lists or list-valued pipelines. Parallel iterations may interleave writes. Trailing condition runs after the complete pass; forbidden with parallel passes. |
+| `repeat [state = e] [max N] { ... } [until e / while e]` | Repeat with condition and/or literal bound. `state <- e` supplies next pass's state; ordinary reassignment also works. |
+| `... after a, b`; `after a, b { ... }` | Gate activation, including arguments/initializers, on completion. Bound blocks/loops name completion. |
+| `wait all` | Scope-local phase barrier: work activated earlier completes before later work activates. A stream may first be read on either side; independent readers of the same stream stay in one phase. Successive `take` reads share one cursor and may cross phases. No binding/modifiers. |
+| `wait j`; `wait all of a, b`; `wait first of a, b` | Wait for subjects; the race yields the zero-based winning index. Explicit-subject waits are not scope-wide barriers. |
+| `status j`; `outcome = wait j` | Completion status: `.ok`, `.code`, `.message`, `.details`. Unhandled failure ends the scope. |
+| `id j` | Read a run or call's assigned action ID as one string, without waiting for completion. |
+| `try run/call ...`; `attempt = try { ... }`; `try s -> dest` | Tolerate call / block / transfer failure; inspect its status. No rollback of outputs/effects. Tolerating a call does not suppress aborted-output read errors. |
+| `n = node([id])`; `close n`; `abort n [code [message]]` | Create/attach stream node; close normally / with error. `n.id` passes its identity to a tool. |
+| `nodes m { ... }`; `nodes m`; `... via m` | Scoped/named node map. Local calls keep intermediates off the wire unless `tee`. |
+| `cancel j`; `fail [code [message]]`; `fail status_value` | Cancel an action / fail the scope. Use conditions, data dependencies, or `after` to gate side effects. Valid codes are listed below. |
+| `skip N s` | Drop the first N items for every reader; `drop N` affects one pipeline. |
+| `log [level] e`; `logf [level] "fmt" e, ...` | Log without output ports; default `info`; levels: `debug`, `info`, `warning`, `error`, `critical`. |
+| Call tail: `timeout D`, `deadline t`, `after subjects`, `via m`, `tee`, `id e`, `id-into dest`, `with "k": e`, `forward headers "pattern"` | Positive relative duration / absolute time; earlier limit wins. `id-into` writes the assigned action ID once. Deadline is eager; `after` delays its entire expression. Waits also accept timeout/deadline. |
+| `mod m [exported] { ... }`; `declare mod m { ... }`; `declare flow m::f { interface }` | Modules/members default private. Contracts describe local, imported, or host-supplied implementations; structs are fully defined. No modules inside flows/structs; `std` reserved. |
+| `import "dir/lib.flow" [as m]`; `from lib import f [as g], T`; `from lib import *` | Default namespace `lib`; symbol/wildcard imports also work in module/flow scopes. `from std import f` exposes standard names. Filesystem imports require approved host roots. |
+| `const [T] kName [exported] = value`; inside a flow `const [T] kName = value` | Module constants are closed expressions of literals, lists, records, and other module constants; they can be exported/imported and used in static declarations. Local constants capture one scalar value when reached. Both the binding and its Flow-owned contents are immutable. `kThisLetterCase` is a convention, never required. |
+| `export symbol [as alias]`; `struct T [exported] { fields }` | Explicit reexport; record type. Fields: `name: T`, `required` or `default LITERAL_OR_MODULE_CONST` (exclusive), numeric bounds `1..10`, text RE2 regex `matching /pattern/i`, `matching "pattern"`, or a module constant, `one of [...]`, list `unique`. |
+| `m::f`, `a11::sdk::Interaction`; `j.output`, `v.field`, `v[index]` | Static qualification / runtime projection. Registered host types need no import; wire tags retain dotted spelling. |
+| `v?.field`, `v?[key]`; `s \| present` | Safe projection returns `std::option[T]`: missing is absent, present null remains present. Safe chaining unwraps an option base. `present` drops absent options and emits present payloads. |
+| `T{field:e}`; `e as T`; `[e, ...]`; `{key:e, ...other}` | Typed record, cast, list, object/spread. Object fields omit absent options and unwrap present ones. Strings: `"..."` or triple quotes. Literals: `true`, `false`, `null`. |
+| `+`, `-`, `*`, `/`, `%`; `== != < <= > >= in`; `not`, `and`, `or` | Checked numeric arithmetic, comparison/membership, short-circuit logic. `%` requires integers; strict integer `/` requires an exact quotient. Time ± duration, duration ± duration, time − time, unary duration minus, and duration × number in either order are supported. Space subtraction: `a-b` is a name. |
+
+`fail` and `abort` accept these named failure codes: `CANCELLED`, `UNKNOWN`,
+`INVALID_ARGUMENT`, `DEADLINE_EXCEEDED`, `NOT_FOUND`, `ALREADY_EXISTS`,
+`PERMISSION_DENIED`, `RESOURCE_EXHAUSTED`, `FAILED_PRECONDITION`, `ABORTED`,
+`OUT_OF_RANGE`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE`, `DATA_LOSS`, and
+`UNAUTHENTICATED`. Use the whole canonical name, for example
+`fail FAILED_PRECONDITION "Validation did not pass"`. Lowercase names also
+work. `OK` is recognized as a status code but does not indicate failure.
+
+`parallel` accepts integer expressions such as `parallel workers` or
+`parallel (workers + 1)`, evaluated once when the loop or stage starts. Dynamic
+counts must be positive signed 32-bit integers. Dynamic loops retain parallel
+safety restrictions on outer-variable updates and trailing conditions.
+
+## Types and conversions
+
+Prefer `list[T]` and `list(value)`: `list` is available without an import as an
+alias of `std::list`. The qualified spelling remains valid.
+
+| Types | Meaning |
+|---|---|
+| `int`/`integer`, `i8`–`i128`, `u8`–`u128`, `f32`, `f64`, `number`, `bool`, `string`, `bytes`, `null` | `int` is checked signed 64-bit; qualified integer widths and finite floats check capacity. `number` retains permissive coercion. Same-name conversions are unqualified. |
+| `object`, `object[V]` | String-keyed heterogeneous / uniformly typed values; no key-type parameter. |
+| `list[T]`, `std::json`, `std::any` | One list value, JSON-compatible data, unrestricted payload. |
+| `std::time`, `std::duration` | Instant / interval. Parse text with `std::parse_time` or `std::parse_duration`; timezone-less time text is UTC. Duration literals use `ns us ms s m h`, e.g. `1m30s`. |
+| `std::status`, `std::option[T]`, `std::stream[T]` | Status data, explicit presence, live stream capability. Prefer optional binding below. Explicit `.has_value` tests presence; absent `.value` access fails. |
+| Standard-type conversions `i32(v)`, `int(v)`, `list(v)`, etc.; `v as T`; `s \| as T` | Convert/validate. Numeric width conversions reject nonintegral or out-of-range values; `number(v)` remains permissive. A failing cast in `try as T` is handled per item. |
+| `std::text`, `std::boolean`, `std::array[T]` | Aliases of string, bool, list. Exposing a standard type also exposes its supported conversion. |
+
+Use decimal text such as `u128("18446744073709551616")` for values beyond the
+signed 64-bit literal range. Numeric port values remain ordinary wire integers
+and numbers; Flow checks their declared widths when reading them.
+Floating literals support scientific notation, for example `1e3` and `2.5E-2`.
+
+## Optional reads
+
+Prefer optional binding. Each initializer runs once; the name exists only in its
+success branch. Only EOF means absence; errors and cancellation propagate.
+Null, false, zero and empty payloads remain present.
+
+```a11flow
+flow direct_name {
+  in  rows: object stream
+
+  out name: string
+
+  if row = try take rows {
+    row.name -> name
+  }
+}
+
+flow stored_name {
+  in  rows: object stream
+
+  out name: string
+
+  candidate = try take rows
+  if row = candidate {
+    row.name -> name
+  }
+}
+```
+
+A stored option may be reused. Ordinary records require an explicit validated
+`std::option(...)` conversion; matching field names alone do not make an option.
+
+Use `T settings = try take options or T{}` for a lazy default. With an option
+on the left, `or` unwraps a present payload, including null, false, zero and
+empty values. Only absence evaluates the fallback. This also works with stored
+`std::option[T]` values. Upstream errors propagate. For ordinary values, `or`
+keeps its truthiness-based short-circuit behavior.
+
+## Ordered transfers
+
+Arrows associate right: `later -> earlier -> result` forwards all of `earlier`,
+then all of `later`. A terminal comma list broadcasts that ordered sequence.
+Ordering controls consumption; separately declared producing actions still
+activate concurrently unless gated.
+
+```a11flow
+flow ordered {
+  in  earlier: string stream
+  in  later:   string stream
+
+  out result: string stream
+
+  later -> earlier -> result
+}
+
+flow shared_tail {
+  in  prefix: string stream
+  in  left:   string stream
+  in  right:  string stream
+
+  out result: string stream
+
+  tail = prefix -> result
+  left -> tail
+  right -> tail
+  wait tail
+}
+```
+
+The shared tail emits `prefix`, then interleaves `left` and `right`. Aliases
+share the handle; they do not repeat its transfer. `wait tail` includes attached
+writers and owned cleanup. Register attachments before a scope barrier: placing
+`wait all` between `tail` and its attachments creates a diagnosed cycle.
+Handles are destinations, never stream sources or payloads. Broadcast lists
+currently accept terminal destinations only; a handle may itself broadcast.
+
+## Functions
+
+All names below use `std::`, except primitive/object conversions above.
+Brackets mark optional arguments; `v` is a value, `s` text, `xs` a list.
+
+| Function(s) | Result |
+|---|---|
+| `len(v)` | Length. |
+| `lower(v)`, `upper(v)`, `trim(v)` | ASCII case / surrounding whitespace. |
+| `casefold(v)` | Unicode 17.0 full case folding for case-insensitive comparisons; valid UTF-8 required. Can expand characters (`ß` → `ss`); no normalization or locale rules. |
+| `contains(v,x)`, `startswith(s,p)`, `endswith(s,p)` | Membership / prefix / suffix; `p` may be a list of alternatives. |
+| `replace(s,old,new)`, `slice(v,start[,stop])` | Replace all / slice; `old` may be a literal string or `/regex/`. Regex replacements use `$1`, `${name}`, `$$`. Negative slice indices work. |
+| `split(s[,sep])`, `join(xs[,sep])` | Split on whitespace runs, omitting empties, by default / join with empty separator by default. A quoted separator is literal; `/regex/` splits by pattern. |
+| `keys(v)`, `values(v)` | Lists in sorted-key order. |
+| `merge(a,b,...)` | Merge records; later keys win. |
+| `match(pattern,s[,"at"])`, `matches(/regex/,s[,"at"])`, `matches_pattern(s,/regex/)` | Extract one match, every regex match, or a boolean. An offset name wraps each capture as `{value: ..., at: ...}`. Templates support typed holes. |
+| `strformat(fmt,args...)` | printf-style formatting: `%s`, `%d`, `%.2f`, `%2$s`; time `%(%H:%M)s`. |
+| `now()`; `infinite_future()`, `infinite_past()`, `infinite_duration()`, `zero_duration()` | Current instant and temporal boundary values. Unary minus negates a duration. |
+| `floor(x)`, `ceil(x)`, `round(x)` | Round numeric values down, up, or to nearest. Halfway values round away from zero. Integers stay unchanged; floats keep their width. |
+| `nanoseconds(x)`, `microseconds(x)`, `milliseconds(x)`, `seconds(x)`, `minutes(x)`, `hours(x)` | A number constructs a duration; a duration returns an integral count truncated toward zero (`seconds(250ms)` → `0`). Text is rejected; invalid input and overflow fail. |
+| `time(v)`, `duration(v)`; `parse_time(s)`, `parse_duration(s)` | Direct temporal conversions accept numeric/temporal values; only the parsers accept text. Declared temporal ports decode wire text at the boundary. |
+| `b64encode(v)`, `b64decode(s)`, `b64urlencode(v)`, `b64urldecode(s)` | Base64 / URL-safe encoding and decoding to bytes. |
+| `utf8encode(s)`, `utf8decode(bytes)` | Text ↔ UTF-8 bytes. |
+| `to_chunk(v[,mimetype])`, `from_chunk(chunk)` | Host-aware encode/decode, preserving payload metadata. |
+| `zip(a,b,...)`, `interleave(a,b,...)` | Lockstep tuple stream / arrival-ordered merged stream. |
+| `list(v)`, `json(v)`, `any(v)`, `status(v)`, `option(v)` | Standard conversions; a scalar converted to list becomes one item. |
+
+## Stages
+
+Write `s | STAGE`; `it` is the current item. Parallel per-item stages restore
+input order unless `unordered`; `sort` reorders deliberately. `first` ends
+consumption, not producer ownership/cancellation. `collect`, `sort`, `last`,
+and reductions need EOF; bound endless sources upstream. Counts for `first`,
+`last`, `drop`, `truncate`, `batch`, `window`, and `chunk` are scalar integer
+expressions, evaluated once per activation outside `it`.
+
+| Stage | Effect |
+|---|---|
+| `map e`; `where e` | Transform / filter each item. |
+| `as T` | Convert each item to T; `try as T failures into dest` routes failed items and continues. |
+| `take while e`; `take until e` | Prefix while true / until true; exclude the boundary item. |
+| `first N`; `last N`; `drop N`; `distinct` | Prefix / suffix / skip / deduplicate. |
+| `truncate N`; `chunk N` | Shorten each value / split text or bytes into ≤N-byte chunks. |
+| `batch N`; `window N`; `group e`; `flatten` | Batches / full-width rolling windows / groups closed by e / expand lists. `batch` and `group` flush partial groups at EOF; `window` does not. |
+| `present` | Drop absent `std::option[T]` items and emit present payloads, including null/false/zero/empty values. |
+| `context e before N after M [numbered [base B]]` | Excerpts with N preceding items; each match within M trailing items resets the tail. EOF flushes. Counts: nonnegative int32, evaluated once outside `it`. `numbered`: `{index, value}`, counting every source item from B (default 1). Active excerpts can grow; bound endless sources upstream. |
+| `sort [by e] [desc]` | Collect and order; ascending by default. |
+| `match "pattern"`, `match /regex/`, `match all /regex/` `[offset "at"]`; `mime "text/*"` | Extract one or every nonoverlapping match per value, dropping nonmatches / filter representations. |
+| `collect`; `consume`; `count` | One list (empty → `[]`) / require exactly one item and EOF / item count (empty → 0). |
+| `sum [e]`; `min [e]`; `max [e]`; `avg [e]` | Aggregate items or projections. Empty: `sum` → 0; `min`/`max`/`avg` → no item (`take` then fails). |
+| `fold INITIAL as acc, e`; `scan INITIAL as acc, e` | Final / every accumulator; INITIAL is a literal, including a record. Empty `fold` yields INITIAL. |
+| `join ["sep"]`; `text`; `strformat "fmt"` | Stream → one string (default separator empty) / each item → text / format each item. |
+| `json`; `packb` | JSON parse/encode / MessagePack representation. |
+| `then s` | Entire first stream, then s. |
+| `timeout D`; `pace D` | Maximum inactivity gap / minimum inter-item interval. |
+| `log [level] e`; `logf [level] "fmt" e,...` | Observe and pass items through. |
+| `try STAGE [failures into DEST]` | Tolerate item failures; route status-compatible records with `it` and zero-based `seq`, or log. |
+| `STAGE parallel N [unordered]` | Parallel per-item transforms/filters; not reductions, sorting, or stateful prefix predicates. |
+| `run f(args...)`; `call f(args...)` | Whole-stream action adapter; ordinary call modifiers apply. |
+
+For example, `lines | map std::split(it, /\W+/) | flatten | where it == "Rae"
+| count -> count`. Use `and`, `or`, and `not` in predicates; diagnostics point
+to these spellings if `&&`, `||`, or `!` is written.
+
+## Examples
+
+These examples collectively pack in language forms to teach breadth; do not
+copy their complexity into routine tool chains. When a human will read or
+maintain the Flow, favor clear names, descriptions, and logical spacing.
+For mere runtime-tool combinations, prefer simplicity and token savings.
+
+Default: combine available runtime tools; return only the small result:
+
+```a11flow
+flow extract_errors {
+  in  source: string required
+  in  target: string required
+
+  out written: int
+
+  file = run read_file(path: source)
+
+  saved = run write_file(
+    path: target,
+    content: file.lines
+      | where std::contains(it, "ERROR")
+      | first 100
+      | map std::strformat("%s\n", it)
+  )
+
+  saved.bytes_written -> written
+}
+```
+
+Library features only when needed: typed modules, aliases, custom stages,
+validation, parallel work, bounded outputs. This example is for a human to
+read; replace the description placeholders with useful user-facing text:
+
+```a11flow
+from std import trim, len
+
+struct Hit exported {
+  name:  string required
+  score: int required 0..100
+}
+
+mod text exported {
+  flow clean exported {
+    in  input: string stream
+
+    out output: string stream
+
+    input
+      | map trim(it)
+      | where len(it) > 0
+      -> output
+  }
+}
+
+export text::clean as clean
+
+flow rank exported {
+  describe "<Explain this flow's purpose to the user.>"
+
+  in  lines: string stream "<Describe the expected line format.>"
+
+  out best:  Hit stream "<Describe the ranked results.>"
+  out total: int        "<Describe what the total measures.>"
+
+  bad = node()
+  hits = lines
+    | run clean()
+    | match "{name:word}={score:int}"
+    | try map Hit{name: it.name, score: it.score} parallel 4 failures into bad
+
+  hits | sort by it.score desc | first 3 -> best
+  hits | sum it.score -> total
+
+  bad | log warning it.message -> _
+}
+```
+
+Recovery: optional input, remote calls, timing, headers, scoped nodes, status,
+reassignment, and a phase barrier. The declaration describes a host-supplied
+API; omit it when discovery already supplies that contract:
+
+```a11flow
+declare flow fetch_page {
+  in  url: string
+
+  out text: string
+}
+
+flow fetch_first {
+  in  urls:   string stream
+  in  budget: std::duration
+
+  out text: string
+
+  header "authorization" as token default ""
+
+  std::duration allowance = try take budget or 30s
+  std::time limit = std::now() + allowance
+
+  nodes scratch
+
+  bool found = false
+  for url in urls | first 3 {
+    page = try call fetch_page(url: url)
+        via scratch
+        timeout 5s
+        deadline limit
+        with "authorization": token
+
+    outcome = wait page
+    if outcome.ok {
+      page.text | truncate 1000 -> text
+      found = true
+    } else {
+      log warning outcome.message
+    }
+  } until found
+
+  wait all
+
+  if not found {
+    fail not_found "no candidate succeeded"
+  }
+}
+```
+
+Check before execution with `a11 flow check FILE`.

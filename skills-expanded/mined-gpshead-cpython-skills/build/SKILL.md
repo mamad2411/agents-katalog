@@ -1,0 +1,151 @@
+---
+name: build
+description: Use this skill when you need to compile CPython, run tests, verify your changes work, check if a fix is correct, or debug test failures. Covers building from source with ./configure and make, ccache for faster rebuilds, Argument Clinic regeneration, and the unittest-based test system (NOT pytest). Essential for any task that requires running code or tests.
+---
+
+# Building and Testing CPython
+
+## Building CPython
+
+Build in a `build/` subdirectory at repo root, never in the source tree.
+
+### Setup and Configuration
+
+```bash
+# Build directory setup
+REPO_ROOT=<path-to-cpython-git-repo>
+BUILD_DIR=$REPO_ROOT/build
+```
+
+**`$BUILD_DIR`, `$BUILT_PY`, and `$NCPU` throughout this skill (and the `style` skill) are placeholders, not persistent shell state.** Each Bash invocation starts a fresh shell, so substitute the concrete values into every command you run — e.g. `make -C build patchcheck`, not `make -C $BUILD_DIR patchcheck` in a shell where the variable was never set.
+
+#### Determine CPU Count
+
+Run `nproc` (Linux) or `sysctl -n hw.ncpu` (macOS) to get the number of CPU cores.
+**Avoid `$(nproc)` or `$(sysctl -n hw.ncpu)` command substitution inside other commands** — embedded substitutions make commands harder for the user to audit and can trigger extra permission prompts. Read the output once and use the literal number:
+
+```bash
+NCPU=<number from nproc or sysctl output>
+```
+
+#### ccache Setup (Recommended)
+
+ccache dramatically speeds up rebuilds by caching compilation results. Check if available:
+
+```bash
+which ccache
+```
+
+**If ccache is not installed**:
+- macOS (Homebrew): Install directly with `brew install ccache` (no sudo required)
+- Containerized/root environments: Install directly with `apt-get install -y ccache` or `dnf install -y ccache`
+- Otherwise, ask the user for permission to install:
+  - Debian/Ubuntu: `sudo apt-get install ccache`
+  - Fedora/RHEL: `sudo dnf install ccache`
+
+**Configure with ccache** (if available):
+```bash
+cd $BUILD_DIR && CC="ccache gcc" ../configure --with-pydebug
+```
+
+**Configure without ccache** (fallback):
+```bash
+cd $BUILD_DIR && ../configure --with-pydebug
+```
+
+#### Performance/Benchmarking Builds
+
+When doing benchmarking or performance measurement of C code changes, **omit `--with-pydebug`** from configure:
+
+```bash
+cd $BUILD_DIR && CC="ccache gcc" ../configure  # No --with-pydebug
+```
+
+Debug builds have significant overhead that distorts performance measurements. However, **do not use `--enable-optimizations`** unless explicitly asked—it enables PGO (Profile-Guided Optimization) which is slow to compile. Non-PGO release builds are sufficient for the majority of performance comparison work.
+
+```bash
+# Build using all CPU cores (initial or incremental)
+make -C $BUILD_DIR -j $NCPU
+```
+
+**Platform notes**:
+- Linux: `BUILT_PY=$BUILD_DIR/python`
+- macOS: `BUILT_PY=$BUILD_DIR/python.exe` (note .exe extension)
+- Windows: Ask user how to build (uses Visual Studio, different process)
+
+### Argument Clinic
+
+After editing `.c` files that change function signatures, docstrings, or argument specs:
+```bash
+make -C $BUILD_DIR clinic
+```
+
+**Never edit files in `**/clinic/**` subdirectories** - they're auto-generated.
+
+### Other Regeneration Targets
+
+Clinic is one of several generated-source families. When you edit a source-of-truth file, rerun its generator rather than hand-editing the output — CI's `make regen-all` consistency check fails on hand-merged generated files:
+
+- `make regen-cases` — after editing `Python/bytecodes.c` (interpreter/uop definitions)
+- `make regen-all` — regenerates everything; slower, but the safe catch-all
+
+### Verify Build
+
+```bash
+$BUILT_PY --version
+$BUILT_PY -c "print('Hello from CPython!')"
+```
+
+### Build Troubleshooting
+
+- **Missing dependencies**: Configure reports missing libraries
+- **Stale build**: `make clean` in BUILD_DIR and rebuild
+- **Clinic files out of sync**: `make -C $BUILD_DIR clinic`
+- **Clean build**: `rm -rf $BUILD_DIR && mkdir $BUILD_DIR && cd $BUILD_DIR && CC="ccache gcc" ../configure --with-pydebug && make -j $NCPU` (omit `CC=...` if ccache unavailable)
+
+## Running CPython Tests
+
+**Critical rules:**
+1. **Run tests with `$BUILT_PY` (the locally-built interpreter), never `python`/`python3` from `$PATH`** - the system Python won't have your changes. (Exception: `Tools/` build and regen scripts, e.g. `Tools/clinic/clinic.py`, are designed to run under a pre-existing `python3`.)
+2. CPython tests are `unittest` based - never use `pytest`
+3. Filter with `--match`, which takes a glob pattern - not `-k` (this is not pytest)
+
+Prerequisite: `BUILT_PY=build/python` or `build/python.exe`
+
+### Running Tests
+
+```bash
+# Single test module (recommended - proper discovery, parallel execution)
+$BUILT_PY -m test test_zipfile -j $NCPU
+
+# Multiple modules
+$BUILT_PY -m test test_csv test_json -j $NCPU
+
+# Direct execution (quick but may miss test packages)
+$BUILT_PY Lib/test/test_csv.py
+
+# Specific test by glob pattern (use --match, NOT -k!)
+$BUILT_PY -m test test_zipfile --match "*large*" -j $NCPU
+$BUILT_PY -m test test_csv --match "TestDialect*"
+$BUILT_PY -m test test_json --match "TestEncode.test_encode_string"
+
+# Full test suite (takes significant time - prefer targeted modules for iteration)
+make -C $BUILD_DIR test
+
+# Useful flags: -v (verbose), -f (fail fast), --timeout 120 (detect hangs), --list-tests, --help
+```
+
+**Test packages** (directories like `test_asyncio/`) require `load_tests()` in `__init__.py` to work with `python -m test`.
+
+### Code Coverage
+
+```bash
+# Collect coverage (uses trace mechanism via libregrtest)
+$BUILT_PY -m test --coverage test_csv test_json --coveragedir .claude/coverage/ -j $NCPU
+
+# Reports go to specified coveragedir
+```
+
+### Debugging
+
+Add `breakpoint()` in test code, then run the test with `-v` for verbose output.

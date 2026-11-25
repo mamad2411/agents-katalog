@@ -1,0 +1,15 @@
+---
+name: retro
+description: "Run a post-launch retro against the success criteria and update the ledger."
+disable-model-invocation: true
+argument-hint: [what shipped]
+allowed-tools: Read Glob Grep
+metadata:
+  internal: true
+---
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/foreigners-pov/SKILL.md` and follow it for this whole task, including the question budget and the brain rules.
+
+Then run `${CLAUDE_PLUGIN_ROOT}/skills/foreigners-pov/modules/retro.md` on: $ARGUMENTS
+
+If nothing is named, use the most recently shipped entries in `.foreigners-pov/ledger.md`.

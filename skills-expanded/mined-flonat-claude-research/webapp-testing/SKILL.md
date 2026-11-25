@@ -1,0 +1,129 @@
+---
+name: webapp-testing
+description: "Exercise and verify a local web application through Playwright, including user flows and rendered behaviour. Use when testing a running local app rather than issuing an isolated browser command. For ad hoc automation, use $playwright-cli."
+license: Complete terms in LICENSE.txt
+allowed-tools: Bash(uv*, mkdir*, ls*, kill*), Read, Write
+skill-dependencies: [playwright-cli]
+---
+
+# Web Application Testing
+
+To test local web applications, write native Python Playwright scripts.
+
+Use this skill when the task needs local server lifecycle management, custom
+Python assertions, or a repeatable test script. For ad-hoc browser navigation
+and interaction that does not need custom Python, use `$playwright-cli`.
+
+**Helper Scripts Available**:
+- `scripts/with_server.py` - Manages server lifecycle (supports multiple servers)
+
+**Always run helper scripts with `--help` first** to see usage. DO NOT read the source until you try running the helper and find that a customized solution is absolutely necessary. These scripts can be very large and thus pollute your context window. They exist to be called directly as black-box scripts rather than ingested into your context window.
+
+## Dependency Preflight
+
+Before writing a native Playwright script, verify the selected project environment:
+
+```bash
+uv run python -c "from importlib.metadata import version; print(version('playwright'))"
+```
+
+If the import fails:
+
+1. For a one-off page inspection without custom assertions, use the declared
+   `$playwright-cli` fallback.
+2. For repeatable assertions or managed server testing, ask before installing
+   dependencies. After approval, install into the project's development
+   environment rather than adding a browser runtime to production dependencies:
+
+   ```bash
+   uv pip install --python <project>/.venv/bin/python playwright
+   uv run python -m playwright install chromium
+   ```
+
+3. Re-run the import preflight, then continue with native Python Playwright.
+
+If the project already declares a Playwright dev extra, prefer syncing that
+extra over an ad-hoc environment install. Never use bare `pip` or a
+machine-global Python environment.
+
+## Decision Tree: Choosing Your Approach
+
+```
+User task → Is it static HTML?
+    ├─ Yes → Read HTML file directly to identify selectors
+    │         ├─ Success → Write Playwright script using selectors
+    │         └─ Fails/Incomplete → Treat as dynamic (below)
+    │
+    └─ No (dynamic webapp) → Is the server already running?
+        ├─ No → Run: uv run python scripts/with_server.py --help
+        │        Then use the helper + write simplified Playwright script
+        │
+        └─ Yes → Reconnaissance-then-action:
+            1. Navigate and wait for networkidle
+            2. Take screenshot or inspect DOM
+            3. Identify selectors from rendered state
+            4. Execute actions with discovered selectors
+```
+
+## Example: Using with_server.py
+
+To start a server, run `--help` first, then use the helper:
+
+**Single server:**
+```bash
+uv run python scripts/with_server.py --server "npm run dev" --port 5173 -- uv run python your_automation.py
+```
+
+**Multiple servers (e.g., backend + frontend):**
+```bash
+uv run python scripts/with_server.py \
+  --server "cd backend && uv run python server.py" --port 3000 \
+  --server "cd frontend && npm run dev" --port 5173 \
+  -- uv run python your_automation.py
+```
+
+To create an automation script, include only Playwright logic (servers are managed automatically):
+```python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True) # Always launch chromium in headless mode
+    page = browser.new_page()
+    page.goto('http://localhost:5173') # Server already running and ready
+    page.wait_for_load_state('networkidle') # CRITICAL: Wait for JS to execute
+    # ... your automation logic
+    browser.close()
+```
+
+## Reconnaissance-Then-Action Pattern
+
+1. **Inspect rendered DOM**:
+   ```python
+   page.screenshot(path='/tmp/inspect.png', full_page=True)
+   content = page.content()
+   page.locator('button').all()
+   ```
+
+2. **Identify selectors** from inspection results
+
+3. **Execute actions** using discovered selectors
+
+## Common Pitfall
+
+❌ **Don't** inspect the DOM before waiting for `networkidle` on dynamic apps
+✅ **Do** wait for `page.wait_for_load_state('networkidle')` before inspection
+
+## Best Practices
+
+- **Use bundled scripts as black boxes** - To accomplish a task, consider whether one of the scripts available in `scripts/` can help. These scripts handle common, complex workflows reliably without cluttering the context window. Use `--help` to see usage, then invoke directly.
+- Use `sync_playwright()` for synchronous scripts
+- Always close the browser when done
+- Use descriptive selectors: `text=`, `role=`, CSS selectors, or IDs
+- Add appropriate waits: `page.wait_for_selector()` or `page.wait_for_timeout()`
+
+## Reference Files
+
+- **examples/** - Examples showing common patterns:
+  - `element_discovery.py` - Discovering buttons, links, and inputs on a page
+  - `static_html_automation.py` - Using file:// URLs for local HTML
+  - `console_logging.py` - Capturing console logs during automation

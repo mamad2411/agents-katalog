@@ -1,0 +1,388 @@
+---
+name: testing-complexity-claims
+description: Designs and reviews tests for every complexity, behavioral, and performance claim in documentation. Use when adding or changing claims, auditing claim or API coverage, or creating module complexity tests.
+---
+
+# Testing Complexity Claims
+
+Turn each documentation claim into executable evidence when execution can
+settle it, and explicitly account for the claims it cannot settle.
+
+## Model the File on the csv Tests
+
+`tests/test_csv_complexity.py`, paired with `docs/stdlib/csv.md`, is the
+reference test file. Read it in full before writing or reviewing a module's
+tests, and shape the new file after it rather than after whichever test files
+were touched most recently: a file modelled on its neighbours inherits their
+departures from the reference and adds its own. The parts to reproduce:
+
+- **A module docstring that carries the evidence.** It opens "Tests for
+  docs/stdlib/<module>.md." and says in a paragraph how the page's claims are
+  settled. A "Measurement scope:" list then gives the evidence per claim:
+  for a timing or allocation measurement, the sizes used, the ratio or traced
+  peak asserted, and where it matters the versions; for a direct behavioural
+  check, what was observed; for a source-only bound, the released CPython
+  file it follows from. A "Not settled here:" list closes it with the
+  category C and D claims and the reason for each, and the dimensions the
+  measurements held fixed. Everything a later reader needs to re-run or
+  extend a measurement is there; nothing about what the page used to say is.
+- **`from __future__ import annotations`**, then a `PAGE` path and an
+  `EXPECTED_BLOCKS` count as module constants.
+- **Small named helpers** for the measurements the file repeats: a fastest-of-
+  N timer in nanoseconds, a traced-peak-allocation probe, a block extractor
+  and a subprocess runner.
+- **One test class per table section or claim**, named for the behaviour it
+  establishes (`TestReadingIsLazy`, `TestWritingHoldsOneRow`,
+  `TestSnifferWalksTheWholeSample`), with a docstring that quotes or
+  paraphrases the row it covers and says how the test separates the documented
+  behaviour from the plausible wrong one. Test method names read as sentences:
+  `test_building_a_reader_reads_nothing`.
+- **A `TestDocumentedExamples` class** that asserts the block count, runs each
+  block that can be executed safely in its own subprocess and working
+  directory, records the concrete reason for any block it excludes, reports
+  failures by page and line, and mutation-tests its own runner by flipping
+  one assertion in a block, asserting first that the mutation changed the
+  source.
+
+The file carries no API coverage test of its own. Name coverage is the job of
+the page-scoped audit gate in *Inventory Before Testing*; run that, and do
+not add a `dir()`-based extractor to the test file.
+
+## Choose a Durable Level of Abstraction
+
+Concentrate reviews and tests on Big-O characteristics that matter to a
+reader's choice: the growth class, its size variables, meaningful best/average/
+worst distinctions, output size, callback cost, and bounded versus unbounded
+behavior. A finding should normally change one of those conclusions.
+
+Do not turn constant factors, benchmark ratios, incidental CPython steps, rare
+custom-protocol behavior, or minor wording in test comments into review
+findings unless they make the documented complexity materially misleading.
+Respect explicitly scoped bounds such as "after first access", "cache hit",
+"auxiliary space", or "excluding callback cost". Do not flag omitted
+out-of-scope work unless the page presents the bound as total or the omission
+materially changes a reader's decision.
+Use CPython source to establish the durable bound, not to reproduce a release's
+implementation in prose or tests. When caller-defined work can dominate, name
+it once as a variable such as callback cost or key cost rather than cataloguing
+pathological implementations.
+
+Inventories remain exhaustive so false claims are not silently blessed, but
+report and fix them at the highest useful level. Prefer one stable growth-class
+test over several microbenchmarks that pin mechanisms or constants likely to
+change between releases.
+
+## Inventory Before Testing
+
+Read the page and list all claims, not only Big-O notation:
+
+- every Time, Space, and Notes table cell;
+- complexity annotations in code blocks;
+- prose about operation counts, copying, caching, laziness, allocation,
+  short-circuiting, implementation, or relative cost;
+- version-specific behavior and API contracts;
+- performance recommendations and comparisons;
+- stated example output or exceptions.
+
+Map every inventory item to one test or to an explicit untestable rationale.
+Test names and docstrings are labels, not evidence: confirm each assertion
+actually distinguishes the documented behavior from a plausible wrong one.
+
+An inventory of existing claims cannot reveal omitted APIs. Use the shared
+page-scoped audit gate in *Coverage Is a Claim* in
+`documenting-complexity-modules` before reviewing and on the final page:
+
+```bash
+uv run python scripts/audit_documentation.py --page docs/stdlib/os.md --check --include-review
+```
+
+Use the actual English page path. Resolve reported misses and account explicitly
+for unresolved/unavailable and unclassified APIs. Do not duplicate the audit
+with module-specific `dir()` coverage extractors. Zero misses establishes name
+coverage only: each added API still needs a justified bound and claim evidence.
+Report API completeness separately from correctness; passing claim tests alone
+does not establish a complete module review. A module belonging exclusively to
+another platform is not a coverage defect; an import that fails for any other
+reason still is. See *A Foreign Platform's Gap Is Not This Platform's Blocker*
+in `documenting-complexity-modules` for the three classes and what each one
+still has to report.
+
+## Classify Each Claim
+
+### A. Explanatory claim beyond the table
+
+Write a focused test. Prefer direct observation:
+
+- count `__eq__`, callback, comparison, iterator, filesystem, or protocol calls;
+- assert identity, mutation, allocation, laziness, cache reuse, output size, or
+  exception behavior;
+- substitute a counting or recording object at the operation boundary;
+- compare state before and after the operation.
+
+Two probes settle most space and dimension claims on their own.
+
+**Check identity before you price a space bound.** An accessor that returns an
+existing object is O(1), however big that object is; one that builds a fresh
+copy is O(n). `vars(obj)`, `EnumClass.__members__`, `cursor.description` and
+`Row.keys()` all read as O(n) and are not. `a is b`, or a traced peak of zero,
+separates them with no tolerance - and the matching `.copy()` is the control
+that proves the O(1) is real rather than an unmeasured operation.
+
+**Vary shape at a fixed total to expose a hidden dimension.** When one variable
+is doing the work of two, build two inputs with the *same* total and different
+shape; a bound with only one variable predicts they cost the same. Equal-length
+query strings split into ten fields or a thousand differ by x27; equal node
+counts flat or nested differ by x2; directory trees of equal entry count differ
+by x8 deep against bushy; a one-character CSV row costs 923x more against a
+10,000-field header than a 10-field one. Each of those gaps is a size variable
+the row was missing.
+
+Place a stdlib page's prose-claim tests in its `tests/test_<module>_complexity.py`,
+creating the file if it does not exist. Prose claims on builtin pages go in
+`tests/test_builtin_claims.py`, organized by page, unless the builtin already
+has a cohesive test file.
+
+### B. Restatement of the page's table
+
+Cover it in `tests/test_<module>_complexity.py`, shaped as *Model the File on
+the csv Tests* describes. Test all meaningful terms and cases in the row - not
+merely the happy path. For `O(k + B)`, vary `k` while
+holding `B` stable and vary `B` while holding `k` stable when practical. Check
+space claims with identity, mutation, output size, or allocation measurement as
+appropriate.
+
+### C. Claim execution cannot settle
+
+Record the page and reason in the relevant test file's module docstring. Typical
+examples include network round trips without a real peer, backend-dependent
+costs, removed modules, and definitional or source-only facts. Cite released
+CPython source or official docs in the documentation where appropriate.
+
+Do not disguise category C as a skipped test, and never mark a wrong translation
+or unverified claim current merely to make checks pass.
+
+### D. Claim only another platform can settle
+
+A row about `winreg`, `msvcrt`, `os.startfile` or a Unix-only signal call is
+testable - somewhere else. Guard it with a platform condition, in the same way
+a version-specific claim is guarded by `sys.version_info`:
+
+```python
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only API")
+```
+
+The guard is the point. A test that fails because it asserts another platform's
+behavior is a defect in the test, not evidence about the module, and leaving it
+red trains the next reader to ignore a red suite. A test whose claim your
+platform can reach must not be skipped to make the suite green.
+
+Two things follow for reporting. A skip here is not coverage: the claim is
+unverified on every run this project actually performs, so say so in the module
+docstring next to the category C entries rather than counting it as tested. And
+a suite that is green on Linux says nothing about the Windows-only rows in it -
+never describe such a page as fully verified without naming which rows only CI
+on another platform, or a reader on one, could confirm.
+
+## Corrections Are New Claims
+
+A fix does not only remove a wrong claim, it writes a replacement — and that
+replacement arrives with none of the scrutiny the original just received.
+Inventory and classify it before publishing it, exactly as you did the text it
+replaces. Over a sustained review cycle most surviving defects are found in
+prose written by earlier fixes rather than in the original page.
+
+The measurement that motivated the fix usually covers one sentence. The
+explanation written around it goes in untested, and that is where corrections
+go wrong:
+
+- naming a mechanism the measurement did not observe ("sorts the input for a
+  deterministic order", where the sorted path was measured and the fallback is
+  not ordered at all);
+- asserting a lifetime or invariant in passing ("the cached entry lives as long
+  as its key does", where an unrelated call clears the cache);
+- restating a bound for a path that was not measured, such as an
+  immediate-failure cost presented as the cost of every failure;
+- naming one end of a range as though it were the whole, such as a worst case
+  with no best case, or the reverse.
+
+Apply one rule to every sentence of a correction: if it claims something about
+cost, ordering, lifetime, allocation, or call counts, and no test distinguishes
+it from its negation, either test it or cut it. Prefer cutting to hedging, and a
+shorter true row to a longer one carrying a fresh untested clause.
+
+When a correction rests on a single measured input, record in the test docstring
+which dimensions were *not* varied — element cost, operand width, input order,
+arity, callback cost. A named untested axis can be checked later; an implied one
+reads as covered.
+
+## Keep Measurements in the Test
+
+Settling a claim generates prose: the ratio you just measured, the code path you
+just read, a caveat about the one input shape you used. Almost none of it
+belongs on the page. The page carries the Big-O characteristic and the size
+variables it is expressed in; the numbers, the mechanism and the untested axes
+go in the test and its docstring, where they can be re-run and where the next
+CPython release fails them loudly instead of leaving a stale sentence behind.
+
+So "either test it or cut it" has a third outcome, and it is often the right
+one: keep the test, drop the sentence. A fact that needed a stopwatch to settle
+is usually a fact the page should state qualitatively — which side wins and
+why, not by how much — or not at all. Trimming a claim discharges it; a claim
+that is gone needs no test, and the inventory shrinks with the page.
+
+## Use Timing Only When Necessary
+
+If direct observation cannot distinguish the growth class:
+
+1. Measure before choosing sizes or thresholds.
+2. Compare at least three input sizes spanning two orders of magnitude, in
+   equal multiplicative steps so the intervals are comparable, and assert a
+   ratio that separates the claimed shape from the excluded one; avoid
+   absolute nanosecond limits. Work out what each candidate predicts for
+   the ratio before measuring - a 4x step costs 4x if linear and 16x if
+   quadratic - and check every interval against both. One interval settles
+   nothing when the operation sums terms of different order: it reports
+   whichever term dominates at that size, so a quadratic sitting under a
+   linear one reads as linear until the inputs are large enough. Two points
+   suffice only where the shapes differ by orders of magnitude, as a cache hit
+   does from a rebuild.
+3. Choose inputs large enough that setup, timer resolution, and fixed overhead
+   do not dominate. Move setup outside the timed operation.
+4. Use repeated runs and the fastest sample where that matches local tests.
+5. Pick the framing with the widest empirical gap, not the smallest example
+   that happens to pass.
+6. Mark the test `@pytest.mark.timing`.
+7. Run it on the pinned interpreter, which is the newest supported version. CI
+   covers the whole matrix, so reproduce the matrix locally only for a test
+   whose claim is about another version, and then run just that version. Prefer
+   one robust invariant over version branching: a behaviour can change in a
+   middle release and change back, so the two boundaries settle nothing about
+   the versions between them.
+8. Include measured values in assertion failures so regressions are
+   diagnosable. Those values stay in the test; never quote them on the page.
+
+Avoid microbenchmarks when a call counter, identity check, or state observation
+can prove the same fact without tolerance.
+
+## Validate Examples and Test Strength
+
+- Execute every Python fenced block on an edited page. A generic extractor may
+  compile each block with a filename containing the Markdown line number, then
+  execute it in a fresh namespace. Account explicitly for examples requiring
+  optional third-party packages or external services.
+- Assert that the page contains the expected number of examples so an extractor
+  cannot silently test nothing.
+- Verify displayed output and claimed exceptions where they matter; successful
+  execution alone does not validate comments.
+- When using source substitution, monkeypatching, or text mutation, first assert
+  the substitution matched and changed the target. A mutation that never
+  applied proves nothing.
+- Exercise representative input shapes. Ordered, random, duplicate-heavy,
+  adversarial, shallow, and deep inputs can expose different paths.
+- Keep tests deterministic and restore global state, caches, warning filters,
+  import paths, decimal contexts, and garbage-collector state.
+
+## Review Against Sources
+
+Use a released CPython branch matching the documented version, never `main`.
+Trace the operation actually reached by the test, including eager setup,
+fallbacks, caches, callbacks, and output construction. Source review informs the
+test but does not replace runnable evidence for claims execution can settle.
+
+## Verifying a Divergence From the Official Page
+
+On 3.15.0 and later, CPython's own time-complexity page is presumed correct for
+the operations it prices; `documenting-complexity-modules` says how to read it
+and pair its rows with ours. A claim here that conflicts with it carries the
+burden of proof, and gets more scrutiny than any other claim, not the same:
+
+1. **Restate the official claim exactly** - its row, its footnotes and the
+   page's cost model - and confirm the conflict survives under that model.
+   Most do not: a subclass in the test, a non-set operand, a key whose hash is
+   not O(1), a table left sparse by removal, an amortized bound read as a
+   per-call one, or a size variable that counts something else.
+2. **Find the mechanism in released source** at the newest tag of each line
+   the conflict concerns: the function, and either the loop in it that does
+   work the official bound leaves out, or the shortcut that skips work the
+   official bound prices. A conflict over cost with no mechanism is a
+   measurement artefact until one is found. A conflict that is an ambiguity
+   in the official text needs no mechanism; quote the words and the two
+   readings, and still settle each reading by running code where it can be.
+3. **Measure to confirm the official bound, not ours.** Shape the input to give
+   the official claim its best chance. Vary each variable of both bounds on
+   its own while holding the others fixed, over at least three sizes spanning
+   two orders of magnitude, with thresholds far from what each bound predicts.
+   Exclude the confounders that mimic an extra term: element deallocation
+   (keep the elements alive elsewhere), garbage collection, freelists and the
+   3.15 small-int cache, allocator reuse, sparse tables, timer resolution.
+4. **Confirm it a second, independent way** - a counter or traced allocation
+   beside the stopwatch, or a second input shape - on the oldest and newest
+   supported lines from 3.15 on that have the operation. Record the platform
+   and interpreter of each; a local ratio is not CI.
+5. **Have the result reviewed by someone asked to argue for the official
+   page.**
+6. **Say which kind of divergence it is**: the official bound is wrong under
+   its own cost model (too high or too low), it is ambiguous (a variable
+   undefined, a case unscoped), or it leaves out a term ordinary use reaches.
+   Each is reportable; the report needs to say which.
+
+If the conflict dissolves at any step, correct the page as
+`documenting-complexity-modules` says and stop. Only a divergence that passes
+every step that applies to its kind stays.
+
+### The Divergence Registry
+
+Every divergence that survives is recorded in
+`tests/test_official_complexity_divergences.py`, created on first need and
+shaped like the csv tests, so that each can be reported to CPython without
+rediscovering it. Its module docstring opens "Divergences between this
+repository and CPython's official time-complexity page." and lists one entry per
+divergence:
+
+- the official row or footnote verbatim, with its tag, file and section
+  (`v3.15.N:Doc/builtins/time-complexity.rst`, then the section and the
+  row's Operation cell or footnote number);
+- the page and row here, and the bound they give;
+- the conflict in one sentence, and its kind from step 6;
+- the mechanism, as a function in released source;
+- the measurement: sizes, shapes, asserted ratios, versions and platforms;
+- status: `not reported`, or the CPython issue URL once the maintainer has
+  filed one.
+
+Give each entry a test class that asserts the behaviour our page documents,
+marked `timing` if it times, so a release that changes the implementation
+fails it loudly. Keep a minimal stdlib-only reproduction in the file as a
+source string the test executes, short enough to paste into a CPython issue
+and unable to rot because the suite runs it.
+
+Do not open or comment on a CPython issue yourself: reporting upstream is the
+maintainer's decision. When a later tag changes the official page
+(`git diff v3.15.0 v3.15.N -- Doc/builtins/time-complexity.rst`), re-check
+every entry against the new text, line by line. An entry names the supported
+lines it holds on; where a line's page now agrees, narrow the entry to the
+lines that still differ. Only when no supported line differs does it leave the
+registry, together with the page clause that pointed at it, and its tests move
+to the module's own test file rather than leaving with it.
+
+## Finish
+
+Run the focused module and claim tests while iterating, then:
+
+```bash
+make check
+```
+
+Before declaring coverage complete, reconcile the claim inventory against the
+final page line by line. Report any category C claims and their source evidence,
+and any category D claims the running platform skipped; do not say "all claims
+tested" when some are only sourced, skipped elsewhere, or remain uncertain.
+Report every divergence from the official time-complexity page that survived
+verification separately, with its registry entry, so it reaches the maintainer
+as a candidate CPython report rather than as one more passing test.
+
+This licenses nothing about `make check`: lint, types, tests and the audit must
+all pass before a commit, on every platform and without exception. A foreign-platform claim reaches a green suite by being
+guarded so it *skips*; an unguarded `import winreg` that breaks collection is a
+defect in the test to fix, never a failure to explain away. The only thing a
+foreign platform excuses is an import error in the audit's own output, which
+does not fail it.

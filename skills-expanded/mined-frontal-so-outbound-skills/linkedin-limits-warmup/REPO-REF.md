@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/frontal-so/outbound-skills (path: skills/linkedin-limits-warmup/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: LinkedIn limits for 2024-2026 with warm-up protocol for inactive accounts. Use when planning LinkedIn campaigns, avoiding account restrictions, or warming up new/dormant accounts.

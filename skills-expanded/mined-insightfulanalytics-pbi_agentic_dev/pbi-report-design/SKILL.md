@@ -1,0 +1,342 @@
+---
+name: pbi-report-design
+version: 26.40.3
+description: The Power BI report design canon covering design identity, visual hierarchy and the 3-30-300 rule, page shapes, layout and alignment, chart selection, KPI and card design, tables and matrices, and how Power BI applies color and alt text. The shared reference home for report design judgment, routed to by the create-pbi-report, pbir-cli, review-report, modifying-theme-json, and custom-visual skills. Load when committing a design identity or making a layout, chart-selection, KPI or conditional-formatting decision for a report.
+---
+
+# Power BI Report Design
+
+> **Use `pbir` for every report mutation.** The `pbir-format` skill is read-only schema context.
+> If the CLI is unavailable or lacks an operation, stop and report the gap.
+
+Best practices and guidelines for Power BI report design. Follow these guidelines strictly to avoid generic, poorly formatted reports ("Power BI Slop").
+
+Be innovative, pushing boundaries while adhering to data visualization rules and guidelines. Work within Power BI's constraints, aiming for simplicity and effectiveness over aesthetics and decoration. Focus reports, pages, and visuals on answering specific questions and minimizing cognitive load -- not on looking "pretty and impressive".
+
+When a user request contradicts these guidelines, push back and explain better alternatives. The goal is to inform the user of options that lead to improved outcomes.
+
+## Design identity (commit before layout)
+
+Before any layout work, lock the report's identity so every later choice has something to cite:
+
+1. **Pick one tone** ... a committed ink budget (`restrained`, `corporate`, `editorial`, or `technical`) that fixes accent count, saturation, gridline weight, and how forward annotation gets
+2. **Pick one signature** (two at most) ... a single recurring element (header band, single-accent-hue rule, fixed nav rail, KPI silhouette, callout style, target-line convention) repeated identically on every page, so the report reads as one artifact
+3. **Route each page to one shape** by the question it answers (`summary`, `monitoring`, `exploration`, `comparison`, `narrative`)
+
+Recording tone and signature once is what turns "use muted colors" into a propagating decision. See `references/design-identity.md` for the tone budgets and signature catalog, and `references/page-shapes.md` for routing each page to a shape. Serialize the identity into the theme via the `modifying-theme-json` skill, not into per-visual overrides.
+
+## Core rules
+
+1. **3-30-300 Rule:** The most important and least detailed information should be in the top-left (KPIs, cards, etc.) while the least important and most detailed information should be in the bottom-right
+2. **Titles:** All report pages should have a title using a `textBox` visualType or a title in a background image added to the report page canvas. A visual's own title and subtitle go in its container `title` and `subTitle` slots, never in a separate textbox placed above or over it. Textboxes are for the page title, a header over several visuals, a callout, a line that mixes formatting inside it, and text that belongs to no single visual (`references/page-titles.md`)
+3. **Visual positioning and alignment:** Visuals sit inside the page and align to shared edges and column lines. Margin and gap values come from the design system in use (see *Standards this skill does not set*); `references/layout-guidelines.md` has the arithmetic that places a row exactly
+4. **Themes:** Reports should use a theme that differs from the default Power BI themes; a suggested theme is the `sqlbi` theme (see the `modifying-theme-json` skill for applying templates). Themes are preferred because they provide a set of default styles for all charts that can adhere to good design practices and brand or style guidelines
+5. **Semantic Models:** Reports in Power BI are complex. They are dependant on an underlying semantic model (either in the .SemanticModel folder, called a "thick report" or a published model in Power BI/Fabric, called a "thin report"). Much of the functionality from a Power BI report comes from its semantic model design or DAX code
+6. **Report extensions, or thin report measures:** It is possible to create calculation logic in Power BI report, called "thin report measures" or "visual calculations". These should be used sparingly and only for "report-specific" scenarios
+7. **Visual fields:** All data visuals should have field bindings, and all field bindings should be for fields that actually exist in the model; there is no reason for visuals to exist that have no fields bound
+8. **Chart selection:** Build from the default vocabulary. The routing block in `references/chart-selection.md` maps each analytical task to the core visual type that answers it, and a familiar form costs the reader nothing to decode. A form outside that block is built only when it clears the two-condition gate in the same file ("Leaving the default vocabulary"), and the condition is stated before the build rather than defended after it.
+9. **Use of color:** Color and formatting decisions must cite the locked identity (the chosen tone and signature), not be picked per visual. Colors come from the theme (ThemeDataColor) rather than inline hex, so the identity propagates and re-themes cleanly.
+10. **Pre-attentive attributes:** Styles and colors should be used to steer and direct attention, and not to decorate charts. Formatting of visuals should be intentional and not purely aesthetic. Styles should where possible be stored in the theme and not in bespoke visual configuration.
+11. **Fonts:** Use a face Power BI ships; a custom font renders only on machines that have it installed. Faces and sizes otherwise come from the design system in use.
+12. **Page intent:** Route each page to exactly one shape by the question it answers (see `references/page-shapes.md`). A page trying to answer two questions is two pages.
+
+## Standards this skill does not set
+
+Accessibility, color, type and spacing standards (contrast ratios, palettes and status colors, faces and sizes, margins and gaps) and the closing review of a finished design are not set here. Take them from the design system or house rules the session has loaded; where none is loaded, hold to WCAG 2.2 AA. This skill covers how Power BI builds them: theme colors, selectors and conditional formatting (`references/visual-colors.md`), positions and alignment (`references/layout-guidelines.md`), alt text (below), and text classes and theme sizes (the `modifying-theme-json` skill).
+
+## The insight test (run before building a chart)
+
+A chart is cheap to reject on the spec and expensive to reject on the canvas. Run these five tests against the *proposed* chart, before any `pbir add visual`. They are rejection tests, not a generation quota: a chart that passes all five gets built as specced, and no extra candidates are generated to compete with it.
+
+1. **The title states the insight, not the shape.** "Additions peaked in 2019 and have halved since" is a title; "Titles by year" is a caption for an axis that already says so.
+2. **Every mark carries a measure.** A mark placed for texture, balance, or to fill a panel is decoration. Cut it.
+3. **Every figure has a denominator, and one denominator.** A percentage whose base is unstated is unreadable; a panel that mixes two bases in one frame is wrong, not merely unclear.
+4. **No panel restates its neighbour.** If a tooltip, card, or sub-chart shows only what the visual it sits beside already prints, it is a duplicate. This is the most common failure and the easiest to see on the spec.
+5. **The title points the same direction as its own measure.** A title claiming growth over a measure that falls is a defect that survives every schema validation, because nothing in the JSON knows what the words mean.
+
+A title that is true is not yet the right title. A chart supports several true readings, and the one that ships is the one that answers the decision question the page serves (the brief's `decision_questions`). If two readings both need asserting, that is two visuals, and if they answer different questions it is two pages (core rule 12).
+
+Test 1 produces a claim, and in Power BI a claim goes stale the moment the reader moves a slicer. What pins it is how the claim is written, not only which page it sits on:
+
+- **Measure-driven:** the title recomputes with the filters, so it cannot go stale, and it is valid on any shape. Bind it through title conditional formatting, clearing the literal title first, with the `SELECTEDVALUE` fallback mandatory; the **`create-pbi-report`** skill carries the pattern
+- **Literal:** the words are fixed, so they survive only where the filters cannot move them, which is a `narrative` page with the filter cards that could move it locked (`references/page-shapes.md`, `references/filter-pane.md`)
+
+On the other four shapes a literal title names the subject and the finding moves into a callout, which the closing review then checks against the model (`references/tooltips-and-annotations.md`, `references/page-titles.md`).
+
+**When a chart fails:** simplify it to a single comparison, or cut it. Do not repair it in place through successive renders; that is how one bad panel consumes an evening. Record which you chose, and why, in the plan's fog list (see the **`pbi-plan`** skill) so the decision is not rediscovered next session.
+
+The test is deliberately blind to how good the chart could be. It discriminates on whether the chart says something, which a render cannot tell you any better than the spec can.
+
+Two habits that catch what the five tests miss. A panel that explains the **method** behind a number (how a ranking is computed, when its basis changed) fails test 1 even when every word is true; state what the method does to the thing the reader is looking at, then prove it. And judge a generated artboard or page by **rendering it and looking**, cropping a region to read it closely: extracting its text and positions is for editing, never for judging, because it shows a neighbour's title but not that the neighbour already draws the chart you are about to add.
+
+## Page Layout Guidelines
+
+### Check Page Size Before Modifying
+
+**Always query the actual page dimensions before adding or repositioning visuals.** Do not assume a page is 1280x720 or 1920x1080 -- templates and existing reports vary. The object model validates that visuals fit within page bounds, so setting position or size without knowing the page dimensions will cause errors. Check the page's `page.json` file for `width` and `height` properties, or use the object model (`page.width`, `page.height`) to confirm dimensions first. When resizing visuals via the object model, set `width`/`height` before `x`/`y` to avoid intermediate states that exceed bounds.
+
+### Standard Page Size
+
+- **Width:** 1280px (default)
+- **Height:** 720px (16:9 aspect ratio)
+- Alternative: 1920x1080 for high-resolution displays
+
+### Detail Gradient
+
+Arrange content following the "detail gradient":
+
+```
++------------------+------------------+
+|   KPIs/Cards     |   KPIs/Cards     |  <- Top: High-level, important
+|   (Summary)      |   (Summary)      |
++------------------+------------------+
+|                                     |
+|   Charts/Trends                     |  <- Middle: Context, trends
+|   (Analysis)                        |
+|                                     |
++------------------+------------------+
+|                                     |
+|   Tables/Details                    |  <- Bottom: Detailed data
+|   (Drill-down)                      |
+|                                     |
++------------------+------------------+
+```
+
+### Visual Count Guidelines
+
+- **Maximum visuals per page:** 12-15 (performance impact)
+- **Maximum KPIs/Cards:** 4-6 at top
+- **Maximum slicers:** 3 per page (use filter pane instead)
+
+## Page Titles
+
+Every page should have a title. Create it through `pbir`:
+
+```bash
+pbir add title "Report.Report/Page.Page" "Page Title" --width 500
+```
+
+**Title positioning:**
+
+- Top-left corner, inside the page margin
+- Enough height for the chosen font without clipping
+- Width: 400-600px (or page width minus margins)
+
+A page title names the subject; the `narrative` shape is the one documented exception, per the insight test above. Title implementation, the visual container's own title and subtitle slots, and accessible title wording are in **`references/page-titles.md`**.
+
+## Theme Guidelines
+
+### Always Check Theme First
+
+Before modifying visual formatting:
+
+1. Check theme wildcards: `visualStyles["*"]["*"]`
+2. Check visual-type overrides: `visualStyles.lineChart["*"]`
+3. Only override in visual.json if truly one-off
+
+### When to Modify Theme vs Visual
+
+- All visuals of a type need change -> theme
+- Establishing design standards -> theme
+- Single visual exception to a theme rule -> visual
+- Content-specific highlight (one callout, one reference line) -> visual
+
+### Theme Color Usage
+
+**Prefer theme colors over hex codes:**
+
+```json
+// Good - uses theme color: ColorId is the dataColors index + 2 (0 is the background, 1 the foreground)
+"expr": {"ThemeDataColor": {"ColorId": 2, "Percent": 0}}
+
+// Avoid in visuals - use only in extension measures
+"expr": {"Literal": {"Value": "'#118DFF'"}}
+```
+
+**Semantic colors (return from extension measures):**
+
+- `"good"` - Positive values
+- `"bad"` - Negative values
+- `"neutral"` - Neutral/unchanged
+- `"minColor"` - Gradient minimum
+- `"maxColor"` - Gradient maximum
+
+## Alt Text
+
+All visuals should include descriptive alt text:
+
+```json
+"visualContainerObjects": {
+  "general": [{
+    "properties": {
+      "altText": {
+        "expr": {"Literal": {"Value": "'Line chart showing monthly sales trend from January to December 2024'"}}
+      }
+    }
+  }]
+}
+```
+
+## Visual Best Practices
+
+### Cards and KPIs
+
+A bare number lacks meaning. Every KPI must answer "Is this good or bad?" (target + gap) and "Is it getting better or worse?" (trend). Key rules:
+
+- Position at top or left of page, maximum 5 per page
+- **Prefer `kpi` visual type over `card`** when a target exists -- it has built-in indicator, goal, and trend line data roles
+- Always include a **target** and **gap** (absolute + percentage). If no target measure exists, discuss with the user: propose adding a prior-year measure to the semantic model (use Tabular Editor CLI or the `tmdl` skill), or creating an extension measure as a fallback. Common targets: prior year (`CALCULATE([Measure], DATEADD('Date'[Date], -1, YEAR))`), budget, or rolling average
+- **If no clear target exists, ask the user** -- do not leave KPIs bare. Discuss whether prior period, budget, or a custom threshold makes sense
+- Apply conditional formatting to the **gap**, not the primary value
+- Pair color with a secondary cue (arrow/icon) for accessibility
+- Round aggressively at summary level ("518M" not "517,893,412")
+- Choose **actionable metrics** that drive decisions over vanity metrics (apply the "20% change test": if this number changed 20%, should someone act differently?)
+- Hide redundant auto-generated subtitles
+- Use SVG extension measures for inline icons (see the `svg-visuals` skill in the **custom-visuals** plugin)
+
+For complete guidance on KPI design, targets, trends, formatting hierarchy, icon implementation, accessible palettes, and anti-patterns, consult **`references/cards-and-kpis.md`**.
+
+### Charts
+
+- Sort by value descending (unless time-based)
+- Minimize gridlines and axes clutter
+- Use muted colors for non-essential elements
+- Highlight key data points sparingly: the neutral is the base and the accent is the exception, one per visual. The selectors and commands are in `references/visual-colors.md`
+
+For chart-type selection (encoding hierarchy, Cleveland-McGill ranking), data-label discipline, and small-multiples guidance, consult **`references/chart-selection.md`**.
+
+**Refuse common LLM defaults.** Gauge-as-KPI, monochrome categorical bars, missing sort, card walls, raw field names as titles, inline hex, off-grid drift, dual y-axis, 3D, oversized pies, two hues for one quantity, and an exotic build path for a form a core visual already draws are plausible-looking attractors that defeat the reader. When a request reaches for one, push back with the better option; see **`references/anti-patterns.md`**.
+
+### Tables and Matrices
+
+Tables require deliberate design -- "easy to create" differs from "easy to read." Key rules:
+
+- Position at bottom for detail drill-down (3-30-300 rule)
+- **Decision-making first**: define the question, audience, and action before building
+- Use `matrix` over `tableEx` when 2+ categorical columns form a hierarchy (Key Account > Account > Product)
+- **Subtract, don't add**: remove gridlines and heavy banding; let whitespace separate rows
+- Sort by the most important measure (often variance), not alphabetically
+- Apply **data bars** to the primary measure column for magnitude scanning
+- Apply **color scales** to variance columns only -- formatting everything means formatting nothing
+- Add sparklines where temporal context ("improving or declining?") matters
+- Show full precision (no display units) -- tables are where readers go for detail
+- Indent hierarchy row labels with **U+00A0**; leading ASCII spaces are trimmed on render, and filters on the label then stop matching
+
+For complete guidance on table vs matrix selection, formatting philosophy, conditional formatting techniques, sparklines, hierarchy design, row-label indentation, and anti-patterns, consult **`references/tables-and-matrices.md`**.
+
+### Slicers
+
+- Maximum 3 per page
+- Position consistently (top or left)
+- Use filter pane for additional filters
+- Consider sync slicers across pages
+- Slicers always filter each other, so a list never offers a value with no data under the other picks (see `create-pbi-report` `references/interactivity.md`, *Slicers filter each other*)
+
+### Filter Pane
+
+The filter pane has its own information architecture beyond color and chrome. Key decisions: lock vs hide per filter card, how to name cards without renaming model fields, and report-level settings (Apply button, search, allow-change-filter-type). See **`references/filter-pane.md`**.
+
+### Mobile
+
+Power BI does not reflow a desktop page for portrait; the phone layout is a hand-picked subset re-placed on a narrow grid. Nothing renders on a phone until explicitly opted in with a `mobile.json`. See **`references/mobile.md`** for the subset-selection model and file mechanics.
+
+## Report Evaluation Criteria
+
+When asked to evaluate or audit a report, focus on objective criteria. Subjective evaluation is difficult for AI -- the report cannot be "seen" directly, and there is no intuitive sense of aesthetics, cognitive load, or effectiveness. Emphasize this limitation to users.
+
+### Objective Checklist
+
+1. **Page count:** More than 5-8 pages is typically excessive
+2. **Visuals per page:** Count is a proxy; query cost per visual is the driver (see `references/layout-guidelines.md` performance section). Textboxes, images, shapes, and buttons do not emit queries.
+3. **Theme usage:** Reports should use a custom theme for consistent formatting
+4. **Layout consistency:**
+   - Page has a title?
+   - Follows detail gradient (important top-left, detailed bottom-right)?
+   - Cards/KPIs at top or left, fewer than 4-6?
+   - Fewer than 3 slicers (use filter pane instead)?
+   - Helpful elements (refresh date, links, context)?
+5. **Conditional formatting:** Used sparingly, on the secondary signal (not causing overload)?
+6. **Information:ink ratio:** Non-essential elements reduced (lighter gridlines, disabled unnecessary axes/labels)?
+7. **Sorting:** Visuals sorted descending unless there's a reason otherwise (time-based, etc.)?
+
+Accessibility, color, type and spacing are judged against the design system in use (*Standards this skill does not set*).
+
+### Evaluation Output
+
+When evaluating, provide:
+
+- Issues found with specific locations
+- Level: Blocker, Major, Minor or Polish (the levels `review-report` uses)
+- Recommended fixes with commands or patterns
+
+### Before declaring a design done
+
+The closing review of a finished design is set by the design system in use, not here. Whichever review runs, render the pages and look (the screenshot-review loop in the **`pbir-cli`** skill): an agent cannot see the canvas, so a check passed on JSON alone is provisional until the screenshots agree.
+
+## Implementing an approved design
+
+Once a design is agreed, the failure mode changes. It stops being "is this good" and becomes "did we
+build the thing we agreed, without breaking what was already there". The rules for that phase are in
+**`references/implementing-a-design.md`**: apply the delta only and never replace existing chrome,
+check what else consumes a shared object before editing it, validate and then actually look before
+claiming done, defer cleanup rather than fighting a file lock, and write a reverse brief from the
+report's current state when another design round is needed. They are technique-agnostic and apply to
+any design source.
+
+## Common Design Issues
+
+### Issue: Cognitive Overload
+
+**Symptoms:** Too many colors, visuals, or data points
+
+**Fix:**
+
+- Reduce visual count
+- Apply detail gradient
+- Hide non-essential elements
+- Then spend what the hiding freed: one accent, one reference line with its label on, or one endpoint label per visual. A page that has only had things taken away is empty, not finished
+
+## References
+
+- **`references/design-identity.md`** -- Commit-first identity: tone budgets (restrained/corporate/editorial/technical), the signature catalog, and serializing identity into the theme
+- **`references/page-shapes.md`** -- Routing each page to one shape by intent (summary/monitoring/exploration/comparison/narrative): what belongs, what stays off, layout lean, and the narrative shape's headline and next step
+- **`references/anti-patterns.md`** -- Cross-cutting defaults to refuse (gauge-as-KPI, monochrome bars, missing sort, card walls, raw titles, inline hex, off-grid, dual-axis, 3D, oversized pie, two hues for one quantity, an exotic build path for a core form) with the repair
+- **`references/cards-and-kpis.md`** -- KPI card design: binding the measure the audience acts on, targets, gaps, trends, formatting hierarchy, icons, accessible palettes, anti-patterns, review checklist
+- **`references/tables-and-matrices.md`** -- Table and matrix design: decision-making framework, subtract-don't-add philosophy, conditional formatting, sorting, sparklines, matrix hierarchies, row-label indentation (U+00A0), anti-patterns
+- **`references/layout-guidelines.md`** -- Canvas dimensions, zones and sample layouts, the arithmetic for placing a row and aligning columns, z-order, performance cost model
+- **`references/visual-colors.md`** -- How Power BI applies color: theme color expressions and semantic tokens, the neutral-base-plus-one-accent emphasis moves and which selector picks the focal series, contrast channels beyond hue, CF basis decision (gradient vs rules vs field-value vs icons)
+- **`references/page-titles.md`** -- Title implementation, a visual's own title and subtitle slots (never a textbox above it) and moving an existing title textbox into them, the narrative-page exception to the subject-title rule, accessible title wording, hidden-title/alt-text rule
+- **`references/chart-selection.md`** -- Encoding hierarchy (Cleveland-McGill ranking), chart type routing, the gate for leaving the default vocabulary, repair before retyping, the axis and data-label pairing, legend versus direct labelling, small multiples
+- **`references/tooltips-and-annotations.md`** -- Report-page tooltip design, when not to use one, annotation primitives for guided analytics, recommendation callouts and the page shapes that allow them
+- **`references/filter-pane.md`** -- Lock vs hide, card naming, card order, Applied/Available styling, report-level settings
+- **`references/mobile.md`** -- Phone layout as a curated subset, `mobile.json` mechanics, what to include/exclude
+- **`references/custom-visuals.md`** -- Build-vs-buy ranking, justifying the chart form separately from the build tier, AppSource/org-store tradeoffs, licensing gaps
+- **`references/implementing-a-design.md`** -- Turning an approved design into a report: delta-only application, preserving existing chrome, shared-object scope discipline, validate-then-look verification, deferred cleanup, and the reverse design brief with its template
+- **`scripts/find_title_textboxes.py`** -- Read-only check that lists every textbox standing in for one visual's title (`references/page-titles.md`, "Checking a finished page")
+
+## Related Skills
+
+### Report Structure and Format
+
+- **`pbir-format`** (pbip plugin) -- PBIR JSON format reference for visual.json, page.json, report.json structure
+- **`pbip`** (pbip plugin) -- PBIP project structure, table/measure renames, project forking
+
+### Custom Visuals
+
+Reports often need visuals beyond what Power BI provides natively. Always consider in-repo code paths before reaching for a packaged third-party visual. See **`references/custom-visuals.md`** for the build-vs-buy decision and AppSource/org-store tradeoffs.
+
+Skill routing for in-repo code visuals (all in the **custom-visuals** plugin; add with `claude plugin install custom-visuals@power-bi-agentic-dev`):
+- **`deneb-visuals`** -- Vega/Vega-Lite declarative visuals; preferred for advanced custom interactive charts (cross-filtering, tooltips, hover)
+- **`svg-visuals`** -- SVG via DAX measures; preferred for inline table/matrix/card graphics with no row cap issues
+- **`python-visuals`** -- matplotlib/seaborn scripts (static PNG); for statistical visualizations that must compute at render time
+- **`r-visuals`** -- ggplot2 scripts (static PNG); where R's statistical ecosystem has no Python peer (forecast, pheatmap, corrplot)
+
+### Semantic Model
+
+Reports are highly dependent on the underlying semantic model for their functionality. Most report capabilities -- measures, calculated columns, relationships, hierarchies, row-level security -- are defined in the semantic model, not the report. When designing or modifying reports, you will frequently need to understand or modify the model. Key skills:
+
+- **`tmdl`** (pbip plugin) -- Direct TMDL file editing for measures, columns, relationships
+- **`te-docs`** (tabular-editor plugin) -- Tabular Editor CLI for model operations
+- **`c-sharp-scripting`** (tabular-editor plugin) -- C# scripts for bulk model changes
+- **`bpa-rules`** (tabular-editor plugin) -- Best Practice Analyzer rules for model quality
+- **`connect-pbid`** (pbi-desktop plugin) -- Connect to Power BI Desktop's local Analysis Services instance for live model queries and modifications

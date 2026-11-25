@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hidorakai002/ai-workspace-archive (path: ai_agent_frameworks/specialized_agent_frameworks/pydantic-ai/.claude/skills/pre-push-review/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Review the current branch against main, simulating the automated CI review from the bots workflow

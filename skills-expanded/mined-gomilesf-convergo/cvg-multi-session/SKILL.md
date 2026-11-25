@@ -1,0 +1,350 @@
+---
+name: cvg-multi-session
+description: Orchestrate real specialist sessions as one monitored multi-agent workflow. Use when the user asks to coordinate or supervise multiple agent sessions, planning or implementation loops, or worker/reviewer handoffs, on Codex threads or Claude Code background agents.
+argument-hint: "[goal, plan path, worktree, or workflow description]"
+---
+
+# Multi-Session Workflow
+
+Use this skill when the current session should act as an **orchestrator** over other real specialist sessions.
+
+The workflow is repo-independent. Specialist prompts should carry only the
+coordination data the specialist cannot infer from the selected role skill and
+source artifact. Do not paste broad repo rules, likely-file lists, old phase
+state, or role-skill procedures unless they are task-specific authority.
+
+## Non-Negotiable Protocol Gates
+
+Apply these gates before any planner, worker, reviewer, QA runner, or quality reviewer is launched.
+
+### Gate 0: Transport Binding
+
+Tool contracts and existing user authorization govern task creation, delegation
+and external actions; a skill invocation does not grant additional permissions.
+
+Bind the specialist operations to the current platform before applying any other gate:
+
+| Operation | Codex | Claude Code |
+|---|---|---|
+| Spawn specialist | `create_thread` | `Agent` tool with `run_in_background: true` |
+| Continue specialist | `send_message_to_thread` on the same thread id | `SendMessage` to the agent id |
+| Verify identity | `read_thread` on the returned thread id | agent id in the `Agent` tool result |
+| Inspect output | `wait_threads` and `read_thread` | `TaskOutput` or the completion notification |
+| Wait | one bounded `wait_threads` call, then heartbeat handoff if still active | end the turn; the harness re-invokes the orchestrator on `<task-notification>` |
+
+The authoritative specialist identity is always the id returned by the platform
+tool — never an id the specialist writes in prose. Do not accept placeholder
+specialist identity in callback templates.
+
+<!-- codex -->
+On Codex, search for `list_projects`, `create_thread`,
+`send_message_to_thread`, `wait_threads`, and `read_thread`. Use the native
+Desktop task lifecycle for both creation and continuation; do not start a
+standalone `codex app-server` process or any other second writer.
+
+For repository work, resolve the saved project with `list_projects`. Use a
+native project worktree for a git repository and a local project only when the
+user explicitly requested the saved checkout. Use `projectless` only for work
+without a repository. Omit model and reasoning overrides unless the user
+explicitly selected them.
+
+`create_thread` may return either a ready `threadId` or a temporary
+`clientThreadId` while worktree setup finishes. Never pass a `clientThreadId`
+to thread tools. Give each specialist a unique title and use `list_threads` to
+resolve the ready task before verification.
+
+Full Access is a prerequisite for a Codex implementation loop. If a native
+specialist unexpectedly requests approval or reports a restricted effective
+profile, stop with a permission blocker. Do not switch transports or replace
+the specialist task. The release smoke test validates native project-worktree
+creation and same-task continuation against the current Codex runtime.
+<!-- /codex -->
+
+<!-- claude -->
+On Claude Code, background specialists can spawn their own subagents (auxiliary
+reviewers, researchers), and a completed specialist is resumed from its
+persisted transcript when continued with `SendMessage`. Both loop requirements
+are natively supported; do not flatten a specialist's internal delegation into
+the orchestrator.
+<!-- /claude -->
+
+If the transport tools are not available after searching for them, report a
+tool-layer blocker. Do not fall back to inline simulation of a specialist.
+
+### Gate 1: Real Specialist Session
+
+Specialists must run as real, individually addressable platform sessions:
+Codex threads or Claude Code background agents.
+
+- Spawn a new specialist with the spawn operation unless the user explicitly named an existing specialist session.
+- Continue an existing specialist with the continue operation.
+- Verify every specialist id immediately after creation or selection with the Gate 0 verify operation.
+- Do not use local shell jobs, detached processes, or inline role-play in the orchestrator turn as substitutes for a real specialist session.
+- Do not treat a process id, shell job id, or model-generated id as a specialist id.
+- If the id returned by the spawn operation cannot be verified, stop the workflow and retry with the platform specialist tools or report a tool-layer blocker.
+- If the platform specialist tools are not loaded, search for them first. If they still cannot be loaded, report a tool-layer blocker.
+
+<!-- codex -->
+(Codex) After `read_thread` verifies a newly created task, send a short identity
+note with `send_message_to_thread`:
+`Your verified thread id is <specialist-thread-id>. Use this exact id in callbacks.`
+The task id returned by Desktop is authoritative; the setup client id, worktree
+path, process id, and any model-generated id are not specialist identities.
+<!-- /codex -->
+<!-- claude -->
+(Claude Code) The specialist tools to search for are `Agent`, `SendMessage`,
+and `TaskOutput`. The `Agent` tool result already carries the authoritative
+agent id; no separate read or identity note is needed.
+<!-- /claude -->
+
+### Gate 2: Orchestrator Callback Transport
+
+Every specialist prompt must include:
+
+- the callback destination,
+- exact callback template,
+- instruction to include `Audit artifact: <absolute path>` when the specialist
+  creates or receives an audit artifact.
+<!-- codex -->
+- (Codex) fallback instruction if callback transport is unavailable.
+<!-- /codex -->
+
+<!-- codex -->
+On Codex, the callback destination is the orchestrator task id. The specialist
+must send its callback to that task with `send_message_to_thread`. It must also
+make the same callback its final answer so `wait_threads` and `read_thread` can
+recover it if cross-task delivery is unavailable or delayed.
+<!-- /codex -->
+<!-- claude -->
+On Claude Code, the specialist's final message is the callback: the harness
+delivers it to the orchestrator as the completion notification, so the
+specialist must format that final message per the callback template.
+<!-- /claude -->
+
+If the specialist creates or receives an audit artifact, the callback must include `Audit artifact: <absolute path>`.
+
+The specialist must use the verified id supplied by the orchestrator in its
+callback body.
+
+<!-- codex -->
+(Codex) If `send_message_to_thread` is unavailable inside the specialist task,
+the specialist must say `callback transport failed` before the exact callback
+text in its final answer. The orchestrator may recover that final text with
+`wait_threads` or `read_thread` but records the transport failure.
+<!-- /codex -->
+
+The orchestrator treats the phase as pending until the callback is visible.
+
+### Gate 3: Waiting Handoff
+
+Waiting is handled by the platform, not by manual polling.
+
+Handoff sequence:
+
+1. Send the specialist work with the spawn or continue operation.
+2. Verify the specialist id per Gate 1.
+3. Tell the user the specialist id.
+4. End the active turn and let the platform deliver the callback.
+
+<!-- codex -->
+(Codex) After a spawn or continuation, use one bounded `wait_threads` call. If
+the task completes, validate the callback immediately. If it remains active at
+the timeout, create or update one heartbeat automation for the current
+orchestrator task, include its id when telling the user, and end the turn. A
+heartbeat turn performs one compact `wait_threads` snapshot or one
+`read_thread` check, then either advances the loop or ends again. Do not poll in
+a shell, start a background App Server, or create a replacement task.
+<!-- /codex -->
+<!-- claude -->
+(Claude Code) The harness re-invokes the orchestrator with a
+`<task-notification>` when the specialist completes; no heartbeat exists or is
+needed.
+<!-- /claude -->
+
+Do not emulate waiting with `sleep`, repeated reads, shell loops, timers, or repeated status checks in the same assistant turn — on either platform.
+
+This gate forbids in-turn waiting, not background watchers: a background
+watcher command that exits when its condition holds (the hybrid loops'
+codex-completion watcher) is the platform's single-completion shape and
+ends the turn properly — arming one is not a violation of this gate.
+
+<!-- codex -->
+(Codex) If heartbeat automation tools are not loaded, search for `automation_update` first. If no heartbeat tool is available, tell the user the fallback is unavailable and end the turn after one verified handoff; do not replace the missing heartbeat with manual polling.
+<!-- /codex -->
+
+A wake-up turn (heartbeat on Codex, task notification on Claude Code) may do one status check. If the specialist is still active, report one short status and stop. Do not sleep and check again.
+
+Continue immediately only when an explicit callback is already present or the specialist is already shown as completed.
+
+### Gate 4: Role-Specific Review Feedback
+
+Reviewer feedback returns to the same planner or worker session that produced the reviewed artifact, via the continue operation.
+
+The orchestrator adjudicates scope and severity against the original user
+outcome, authorized changes and concrete evidence before routing repairs.
+Preserve each original finding and the reason for accepting, rejecting or
+reclassifying it in the existing loop ledger. Prefer removing a failure's cause
+when that preserves required behavior; do not turn suggestions into new scope.
+The worker/planner chooses the implementation within its role. Never report the
+orchestrator's judgment as an independent reviewer's signature.
+
+Plan-review blockers return to the planner with the `cvg-plan-review-feedback` skill. The prompt must contain the exact reviewer blocker findings under a `Plan Review Feedback Input` section.
+
+Code-review blockers return to the worker with the `cvg-code-review-feedback` skill. The prompt must contain the exact reviewer blocker findings under a `Code Review Feedback Input` section.
+
+Role boundaries still apply: workers repair implementation-owned findings;
+planners revise plans/contracts. Pause dependent work for material unresolved
+behavior decisions, while independent authorized work continues. Source-backed
+technical omissions can be resolved by the planner/orchestrator. Ask the user
+only for a missing product choice, expanded scope/authorization or new risk
+acceptance; reuse existing authorization for the same target and operation.
+
+The orchestrator continues only after the actor callback reports a role-valid result: implementation repair from a worker, plan or contract revision from a planner, or a blocker that needs planner, reviewer, user, or escalation handling.
+
+### Gate 5: Independent Review and Bounded Exit
+
+Start with one independent complete review. If it passes, proceed to required
+acceptance checks. If blockers remain, adjudicate them, route a repair batch to
+the same actor, and have the same reviewer verify the findings, repair diff and
+newly affected risks. A focused pass can satisfy the review exit condition.
+
+Start another full independent review only for a material design/contract change,
+a substantially expanded risk surface, new evidence, or an explicit user
+requirement. A mechanical plan correction does not restart full review. Honor
+user-selected hybrid/dual signatures; inline checks cannot impersonate them.
+
+A fresh reviewer is a newly spawned specialist without prior review context.
+Focused re-review continues the original reviewer. Optional auxiliary checks are
+risk-selected by the role skill; missing required independent coverage must be
+reported as an incomplete review, not repaired with new product code.
+
+Exit when the original outcome and applicable constraints are met, required
+review and acceptance evidence are complete, and no blocking findings remain.
+A "ready with fixes" verdict carries non-blocking P2 notes to the completion
+summary; it does not require another round or permission to end the loop.
+
+**Round cap.** One round is one substantive repair batch plus its re-review,
+including repeated repairs by the same reviewer. The default cap is 3 unless
+the user set another limit. The initial review and status checks are not repair
+rounds. Log each round before dispatching its repair; changing reviewer, model,
+role or plan artifact does not reset the count. At the cap, complete the pending
+re-review, then exit if clean or report unfinished work with the exact remaining
+blockers, evidence and smallest next step. Further repair rounds require an
+explicit cap increase recorded in the ledger; reaching the cap is not success.
+
+**Loop ledger.** In-context round counting drifts over long loops, so the cap
+and the ratchet are enforced from a file, not from memory. When the loop
+starts, create `/tmp/convergo/<loop-slug>/ledger.md` — the slug is
+`<UTC-timestamp>-<base-short-sha>` (timestamp alone when there is no repo),
+so every loop gets a fresh directory. Never append to or read another loop's
+ledger: a stale ledger's non-blocking adjudications would suppress a new
+loop's legitimate blockers. Append one line per
+event: `round <N> opened | reviewer <id> | <K> blockers` when feedback is
+sent, `round <N> closed | <verdict>` when the focused re-review returns,
+`cap raised to <N> | user` on authorization, and
+`adjudication | <finding key> | <verdict> | by <role>` for every validity or
+severity adjudication. The cap check and the adjudication ratchet read the
+ledger; the completion summary quotes it.
+
+**Adjudication ratchet.** A finding already adjudicated invalid, out of scope
+or non-blocking cannot re-block without new evidence. Match the underlying
+failure and requirement, not merely a line number or reworded title. This applies
+to all reviewers, including `Review mode: final-fresh-exit`; a new reviewer alone
+is not new evidence. The orchestrator supplies the relevant prior adjudication
+when a duplicate arises. A changed call path, failing test or proof that the old
+evidence was wrong can reopen it. Record the evidence and decision; never
+suppress a real defect merely to satisfy the cap.
+
+Audit artifact identity fields are self-reported by the reviewer. Treat them as
+an audit trail, not proof of dispatch. A missing required artifact, a callback
+that contradicts it, or missing verified identity for a reviewer required to
+sign independently leaves the exit gate unmet. An optional auxiliary recorded
+as inline or skipped may have a null identity; that record does not substitute
+for a required independent signature and does not itself block exit.
+
+## Specialist Prompt Checklist
+
+Every specialist prompt must include:
+
+- role and scope,
+- original user outcome, explicit non-goals, authorized changes and applicable
+  product/safety constraints, stated briefly or linked from the source artifact,
+- callback destination per Gate 2,
+- worktree or repo path,
+- base/head refs when relevant,
+- dirty-state warning and unrelated files when present,
+- one source artifact or exact user input: plan path, requirements path, review
+  callback, or implementation goal,
+- required role skill,
+- task-specific external side-effect boundary, especially whether push, deploy,
+  remote smoke checks, secrets, or external environment/data changes are allowed,
+- audit artifact callback line when the specialist creates or receives one,
+- exact callback transport block,
+- exact callback template.
+
+Do not include:
+
+- execution rules already owned by the required role skill,
+- duplicated authority lists when the plan or source artifact links them,
+- likely files or exhaustive surface checklists copied from the orchestrator,
+- old heartbeat payloads or previous phase instructions,
+- reviewer concerns unless this is a role-specific feedback prompt.
+
+<!-- codex -->
+Callback transport block (Codex):
+
+```text
+Destination orchestrator Codex task id: <orchestrator-thread-id>
+
+When complete or blocked, send the exact callback text below to that task with send_message_to_thread, then use the same callback as your final answer.
+If you create or receive an audit artifact, include this line in the callback:
+Audit artifact: <absolute path>
+If send_message_to_thread is unavailable, write "callback transport failed" before the exact callback text in your final answer.
+```
+<!-- /codex -->
+
+<!-- claude -->
+Callback transport block (Claude Code):
+
+```text
+You are a background specialist agent. Your final message is your callback to
+the orchestrator: format it exactly per the callback template below.
+Do not end your turn before the work is complete or blocked: an early stop
+without a formatted callback orphans the loop until someone nudges you.
+If you create or receive an audit artifact, include this line in the callback:
+Audit artifact: <absolute path>
+```
+<!-- /claude -->
+
+<!-- codex -->
+## Heartbeat Prompt Checklist (Codex only)
+
+Heartbeat prompts should say:
+
+- which specialist thread to check,
+- what callback shape to detect,
+- whether the actor completed the role-specific feedback intake,
+- if still active, report one short status and continue waiting,
+- do not busy-wait,
+- delete or update the heartbeat when the phase is complete or stale.
+
+When updating a heartbeat for a new phase, replace the old instructions. Do not
+wrap or nest previous heartbeat payloads inside the new heartbeat prompt.
+<!-- /codex -->
+
+## Completion Summary
+
+When the workflow completes, summarize:
+
+- base and final refs or final plan path,
+- specialist ids verified per Gate 1,
+- callback transport status,
+- audit artifact paths received from specialists,
+- review loop results,
+- role-specific feedback results,
+- verification gates,
+- remaining known gaps,
+<!-- codex -->
+- heartbeat cleanup (Codex),
+<!-- /codex -->
+- whether independent review and required acceptance were completed.

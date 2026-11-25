@@ -1,0 +1,89 @@
+---
+name: abaqus-script-control-fatigue
+description: >-
+  Abaqus fatigue analysis: high-cycle fatigue (S-N curve, mean-stress correction,
+  Miner's rule) and low-cycle fatigue (Coffin-Manson strain-life, cyclic
+  elasto-plastic analysis, fe-safe workflow). Use when the task mentions: fatigue
+  analysis, fatigue life, S-N curve, cyclic loading, high-cycle fatigue, low-cycle
+  fatigue, damage accumulation, 疲劳分析, 疲劳寿命. Requires
+  abaqus-script-control-general as foundation.
+version: "1.1"
+capabilities:
+  - high_cycle_fatigue
+  - low_cycle_fatigue
+  - sn_curve_life_prediction
+  - damage_accumulation
+triggers:
+  - "fatigue analysis"
+  - "fatigue life"
+  - "S-N curve"
+  - "cyclic loading"
+  - "high-cycle fatigue"
+  - "low-cycle fatigue"
+  - "疲劳分析"
+  - "疲劳寿命"
+constraints:
+  - "Requires general/SKILL.md and static/SKILL.md as foundation"
+  - "Reference docs: high_cycle.md + low_cycle.md (S-N and strain-life)"
+  - "Fatigue analysis requires material S-N curve data"
+---
+
+# Abaqus Fatigue Analysis Skills
+
+## Overview
+
+This skill module provides specialized skills for Abaqus fatigue analysis, including high-cycle fatigue and low-cycle fatigue analysis. Fatigue analysis is used to predict the fatigue life of structures under cyclic loading.
+
+## Skills List
+
+### 1. High-Cycle Fatigue Analysis (`skill_fatigue_high_cycle`)
+
+High-cycle fatigue life prediction based on S-N curves, applicable for cyclic loads with stress levels below yield strength.
+
+**Applicable Scenarios:**
+- Stress level σ_max < σ_y (yield strength)
+- Number of cycles N > 10^4 ~ 10^6
+- Fatigue problems dominated by elastic deformation
+
+**Code Snippet:**
+
+```python
+# S-N curve parameters
+Sf_prime = 1000.0    # Fatigue strength coefficient (MPa)
+b = -0.085          # Fatigue strength exponent
+Se = 200.0          # Fatigue limit (MPa)
+
+# Basquin's equation for life calculation
+# S = Sf * (2N)^b
+log_2N = (log_S - log_Sf) / b
+cycles_to_failure = int(10**log_2N / 2)
+```
+
+---
+
+## Quick Reference
+
+### S-N Curve Parameters (Typical Values)
+
+| Material | Sf' (MPa) | b | Se (MPa) |
+|----------|-----------|---|----------|
+| Steel | 1000 | -0.085 | 200 |
+| Aluminum Alloy | 500 | -0.110 | 150 |
+
+### Influencing Factors
+
+| Factor | Effect |
+|--------|--------|
+| Surface Roughness | Reduces fatigue strength |
+| Size Effect | Larger sizes reduce strength |
+| Load Type | Bending > Tension/Compression > Torsion |
+
+## Detailed Reference
+
+- [High-Cycle Fatigue Analysis](reference/high_cycle.md) — S-N curve, mean stress correction, Miner's damage accumulation
+- [Low-Cycle Fatigue & Strain-Life](reference/low_cycle.md) — Coffin-Manson, cyclic elasto-plastic analysis, fe-safe workflow
+
+## Related Skills
+
+- [General Skills](../general/SKILL.md)
+- [Static Analysis](../static/SKILL.md)

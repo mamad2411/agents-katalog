@@ -1,0 +1,992 @@
+---
+name: security-audit
+description: "Application security audit covering OWASP Top 10, injection, XSS, SSRF, auth/authz, multi-tenant isolation, secrets, headers, dependencies, business logic, infrastructure, and AI/LLM + MCP tool-invocation security (S15, incl. tool poisoning and confused-deputy). Uses Sentry 3-tier confidence model. Supports Next.js, NestJS, Express, FastAPI, Django, Flask. Dual scoring: static posture + runtime exploitability. Flags: zuvo:security-audit [path] | full | --live-url <url> | --static | --quick | --persist-backlog"
+category: Code/Test audits
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - scan_secrets             # KEY — S5 hardcoded secrets, leaked keys
+    - search_patterns          # SQL injection, eval, XSS, SSRF, unsafe-pickle
+    - audit_scan               # COMPOUND security checks
+    - get_file_tree
+    - get_file_outline
+    - search_text              # unsafe headers, missing CSRF, etc.
+    - search_symbols           # auth/authz handlers
+    - get_symbol
+    - get_symbols
+    - find_references          # auth-bypass tracing
+    - trace_call_chain         # auth flow source-to-sink
+    - trace_route              # which endpoints lack auth
+  by_stack:
+    typescript: [get_type_info, resolve_constant_value]
+    javascript: []
+    python: [python_audit, analyze_async_correctness, resolve_constant_value]
+    php: [php_project_audit, php_security_scan, resolve_php_namespace]
+    kotlin: [analyze_sealed_hierarchy, find_extension_functions, trace_flow_chain, trace_suspend_chain, trace_compose_tree, analyze_compose_recomposition, trace_hilt_graph, trace_room_schema, analyze_kmp_declarations, extract_kotlin_serialization_contract]
+    nestjs: [nest_audit]
+    nextjs: [framework_audit, nextjs_route_map]
+    astro: [astro_audit, astro_actions_audit, astro_hydration_audit, astro_middleware, astro_sessions]
+    hono: [analyze_hono_app, audit_hono_security]
+    express: []
+    fastify: []
+    react: [react_quickstart, analyze_hooks, analyze_renders]
+    django: [analyze_django_settings, effective_django_view_security, taint_trace]
+    fastapi: [trace_fastapi_depends, get_pydantic_models]
+    flask: [find_framework_wiring]
+    jest: []
+    yii: [resolve_php_service, trace_php_event, find_php_views]
+    prisma: [analyze_prisma_schema]
+    drizzle: []
+    sql: [sql_audit]
+    postgres: [migration_lint]
+---
+
+# zuvo:security-audit — Application Security Audit
+
+Comprehensive security assessment across 15 dimensions (S1-S15) covering OWASP Top 10 2021, OWASP LLM Top 10, application security, AI/LLM integration security, and infrastructure hardening. Every finding is filtered through a Sentry-inspired 3-tier confidence model: HIGH confidence findings in the main report, MEDIUM in a "Needs Verification" section, LOW excluded entirely.
+
+**When to use:** Before releases, after adding auth or payment flows, after security incidents, periodic quarterly health check, when onboarding a new codebase.
+**Out of scope:** Single-file code review (use `zuvo:review`), API contract audit (use `zuvo:api-audit`), performance issues (use `zuvo:performance-audit`), penetration testing with exploit verification (use `zuvo:pentest`).
+
+## Argument Parsing
+
+| Argument | Effect |
+|----------|--------|
+| `[path]` | Audit a specific directory or module |
+| `full` | Audit the entire project |
+| `--live-url <url>` | Enable Phase 8 (live probing) against the specified URL |
+| `--static` | Static analysis only -- skip Phase 8 even if `--live-url` present |
+| `--quick` | Quick mode: secrets + auth coverage + critical gates only |
+| `--persist-backlog` | Emit backlog entries for CRITICAL/HIGH findings |
+| `--strict-v2` | Count the new v2 vulnerability classes toward the HIGH/CRITICAL gate total. Default: warning-only grace (see below) |
+
+### v2 class grace (CI-safety) — shared by security-audit AND pentest
+
+The **14** v2 vulnerability `finding_type`s — `xxe`, `prototype_pollution`, `redos`,
+`graphql_introspection`, `graphql_depth_unbounded`, `ldap_injection`, `insecure_deserialization`,
+`mass_assignment`, `ssji`, `jwt_weak`, `xss_dom`, `header_injection`, `token_compare_bypass`,
+`weak_credential_storage` (the GraphQL pair is TWO distinct classes) — ship
+**warning-only through the grace window: the minor that introduces them up to but excluding the next
+minor** (introduced in the `1.4.x` line; they graduate to full gate weight in `1.5.0`). During the
+window they are reported in the findings list AND persisted to backlog (`--persist-backlog`
+unaffected; with it on, a v2 finding is recorded through `backlog-add` when it is CRITICAL or HIGH, like any other finding: see "Backlog Persistence" under Phase 10), but do NOT count toward the HIGH/CRITICAL gate total / pentest score caps that a CI
+"zero-HIGH" policy keys on — so updating the plugin never breaks an existing pipeline.
+
+- `--strict-v2` opts in to full gate weight immediately — each skill applies it to its own gate
+  mechanism (security-audit: HIGH/CRITICAL totals; pentest: score caps + critical-gate totals).
+  In `1.5.0` full weight becomes the default and the flag is a no-op (kept for back-compat).
+- `--quick` still reports v2 findings if its dimensions surface them; grace only changes gate
+  weighting, never whether a finding is shown.
+- When any v2-class finding is present without `--strict-v2`, both skills print the identical line:
+  `v2-grace: warning-only (N v2 findings reported, excluded from gate; --strict-v2 to enforce)`
+  where N counts v2-class findings.
+
+| Mode | Scope | Phases | Live Probes |
+|------|-------|--------|-------------|
+| `[path]` | Directory | 1-7, 9-10 | No |
+| `full` | Entire project | All | No |
+| `--live-url` | Project + URL | All incl. Phase 8 | Yes |
+| `--quick` | Project | 3 critical gates | No |
+| `--static` | Project | 1-7, 9-10 | No |
+
+## Mandatory File Loading
+
+Read in two stages to reduce upfront cost.
+
+**Stage 1 -- Before Phase 0 (STOP if any missing):**
+
+```
+CORE FILES LOADED:
+  1. ../../rules/cq-checklist.md            -- READ/MISSING
+  2. ../../rules/security.md                -- READ/MISSING
+  3. ../../shared/includes/env-compat.md    -- READ/MISSING
+  4. ../../shared/includes/codesift-setup.md -- READ/MISSING
+  5. ../../shared/includes/no-pause-protocol.md -- READ/MISSING (HARD: no mid-loop pauses)
+```
+
+**Stage 1b -- Shared vuln registries (DEGRADABLE — load if present; do NOT STOP if missing,
+fall back to built-in patterns per Phase 3):**
+```
+  6. ../../shared/includes/pentest-finding-registry.md      -- READ/MISSING (finding_type→CWE)
+  7. ../../shared/includes/pentest-source-sink-registry.md  -- READ/MISSING (sink seeds for registry-seeded trace)
+  8. ../../shared/includes/pentest-safe-pattern-registry.md -- READ/MISSING (safe-pattern downgrades)
+```
+
+**Stage 2 -- Before Phase 10 (report writing):**
+```
+   9. ../../shared/includes/backlog-protocol.md -- READ/MISSING
+  10. ../../shared/includes/run-logger.md       -- READ/MISSING
+  11. ../../shared/includes/retrospective.md    -- READ/MISSING
+```
+
+Stage 2 deferred to save ~300 lines of upfront context.
+
+## Environment Compatibility
+
+Read `../../shared/includes/env-compat.md` for agent dispatch, path resolution, and progress tracking.
+
+## MANDATORY TOOL CALLS — Audit Validity Gate
+
+**This audit is INVALID if any tool below is skipped when its trigger condition holds.** "DEFERRED", "N/A", "scope too narrow", "--quick" are NOT valid reasons.
+
+| Tool | Trigger | Reason | Skip allowed? |
+|------|---------|--------|---------------|
+| `scan_secrets` | Always | S5/CAP5 hardcoded secrets | **NO** |
+| `search_patterns(sql-injection\|eval-exec\|unsafe-pickle\|shell-true)` | Always | S1/S2/S3 injection vectors — TOOL-VERIFIED gates | **NO** |
+| `audit_scan` | Always | Compound security + CQ pattern check | **NO** |
+| `trace_call_chain` | Any HIGH/CRITICAL finding cites auth flow OR sink | S4/S6 source-to-sink verification | **NO** when condition holds |
+| `trace_route` | Backend framework detected | S4/S6 endpoint inventory — knows which routes lack auth | **NO** when backend exists |
+| `taint_trace` | Django detected | S2/S3 taint propagation through Django views | **NO** when Django |
+| `find_references` | Any finding cites a function/method | S6 auth-bypass tracing | **NO** when condition holds |
+| Stack-specific (nest_audit/php_security_scan/python_audit) | Framework/language detected | Stack-specific security gates | **NO** when matches |
+
+### Forbidden escape hatches: `scan_secrets: skipped`, `search_patterns: not_run`, `trace_route: N/A` (when backend exists), `codesift: unavailable` (when deferred), `retrospective: skipped` — all REJECTED with required value instead.
+
+### Required POSTAMBLE: report on disk → retro appended → `~/.zuvo/append-runlog` called and exit 0. Wrapper gates retro-presence AND verify-audit (every HIGH/CRITICAL/MEDIUM finding needs `path/to/file.ext:LINE` citation resolving in current tree). Stop without `append-runlog` → audit INVALID, VERDICT = INCOMPLETE.
+
+### Mandatory acknowledgment (REQUIRED — print verbatim before Phase 0)
+
+```
+Mandatory-tools-acknowledgment: I will run scan_secrets + search_patterns(injection patterns) + audit_scan + trace_call_chain (on cited auth/sink) + trace_route (when backend detected) + taint_trace (when Django) + stack-specific tools for this security audit. Every HIGH/CRITICAL/MEDIUM finding will cite a `path/to/file.ext:LINE` resolving in the current tree.
+```
+
+---
+
+## CodeSift Integration
+
+**Use the deterministic preload helper FIRST.** Run `~/.zuvo/compute-preload security-audit "$PWD"` before any ToolSearch. Copy the printed `[CodeSift matching trace]` block verbatim and issue the printed `ToolSearch(query="select:...")` line without modification. Math gate: `[CodeSift loaded] tools=N` must equal expected — else `[PRELOAD MATH MISMATCH]` and abort.
+
+Read `../../shared/includes/codesift-setup.md` for the full initialization sequence.
+
+**Summary:** Run the CodeSift setup from `codesift-setup.md` at skill start. Use CodeSift for all code analysis when available. If unavailable, fall back to grep/find.
+
+### CodeSift Optimizations
+
+| Task | CodeSift | Fallback |
+|------|----------|----------|
+| Auth coverage scan | `search_symbols(repo, "UseGuards\|requireAuth\|withAuth", include_source=true)` | `Grep` for auth decorators |
+| Injection sink discovery | `search_text(repo, "queryRawUnsafe\|eval\\(\|exec\\(", regex=true)` | `Grep` for dangerous sinks |
+| Handler deep inspection | `find_and_show(repo, query, include_refs=true)` | Sequential Read + Grep |
+| Defense in depth | `trace_call_chain(repo, symbol_name, direction="callers", depth=2)` | Single-level grep |
+| Blast radius for auth gaps | `impact_analysis(repo, since="HEAD~10")` | `Grep` for imports |
+
+### Degraded Mode (CodeSift unavailable)
+
+| CodeSift tool | Fallback | Lost capability |
+|---------------|----------|-----------------|
+| `search_symbols` (auth) | `Grep` for decorator patterns | Less precise matches |
+| `search_text` (sinks) | `Grep` with regex | Same coverage, more tokens |
+| `trace_call_chain` | `Grep` for imports | No transitive caller analysis |
+| `impact_analysis` | `Grep` for import paths | No automatic affected test detection |
+| `find_and_show` | Sequential `Read` + `Grep` | 3x more calls |
+
+---
+
+## Safety Gates (NON-NEGOTIABLE)
+
+### GATE 1 -- No Production Scanning
+
+| Environment | Static Analysis | Live Tests (--live-url) |
+|-------------|----------------|------------------------|
+| Production | Proceed (code read only) | REFUSE -- ask for staging/localhost |
+| Staging | Proceed | Present plan, get approval, proceed |
+| Localhost | Proceed | Proceed freely (read-only GET probing) |
+
+Default: static analysis proceeds, live tests REFUSE until user clarifies.
+
+Mutation requests (POST/PUT/DELETE) in live tests: REFUSE unless user explicitly approves per-endpoint. Security audits observe, they do not modify state.
+
+### GATE 2 -- PII and Credential Censorship
+
+All output scrubbed: Bearer tokens, API keys, emails, passwords, AWS signatures, session tokens, cookies, connection strings replaced with `***`.
+
+### GATE 3 -- Script Execution
+
+Discovery scripts >20 lines: save to file, `chmod +x`, execute. No long inline scripts.
+
+### GATE 4 -- Tool Scope
+
+This audit is read-only against production code. The only write targets are `zuvo/audits/` and, through `backlog-add`, `memory/backlog.md` and `memory/findings/`. Forbidden: modifying source files, sending requests to production, installing packages, running DB mutations.
+
+---
+
+## CQ Integration
+
+| CQ | Security Dimension | Depth |
+|----|-------------------|-------|
+| CQ3 | S9 (Input Validation) -- schema completeness at all entry points | Extended |
+| CQ4 | S5 (Authorization) -- defense in depth: guard + query filter | Extended |
+| CQ5 | S7+S12 (Secrets + Logging) -- no secrets in logs/responses | Extended |
+
+If `zuvo:review` or `zuvo:code-audit` already scored these CQs, focus on what they miss: cross-endpoint auth gaps, multi-tenant isolation, infrastructure, and attack paths.
+
+---
+
+## Phase 0: Detection and Scope
+
+### 0.1 Stack Detection
+
+Run a detection script covering backend frameworks (NestJS, Express, Next.js, FastAPI, Django, Flask), auth patterns (JWT, sessions), infrastructure (Docker, CI/CD, K8s, Terraform), existing security tooling (Helmet, rate limiters, validation), and multi-tenant signals.
+
+### 0.2 Load Stack-Specific Rules
+
+Based on detection, load the applicable conditional rules from `../../rules/`:
+
+| Stack | Load |
+|-------|------|
+| Next.js | `../../rules/react-nextjs.md` |
+| NestJS | `../../rules/nestjs.md` |
+| Python (FastAPI/Django/Flask) | `../../rules/python.md` |
+| PHP (composer.json) | `../../rules/php.md` (its SSRF/upload/multi-tenant/CSRF section exists for this skill) |
+| Yii2 (yiisoft/yii2 in composer.json) | `../../rules/yii2.md` (in addition to php.md) |
+| Express (express in package.json, no Next/Nest) | `../../rules/express.md` |
+| Astro (astro.config.*) | `../../rules/astro.md` (Astro security checklist) |
+| Go | `../../rules/go.md` |
+| Rust | `../../rules/rust.md` |
+| .NET | `../../rules/dotnet.md` |
+| Ruby | `../../rules/ruby.md` |
+
+Load ALL that match. Most projects have 2-3 applicable stacks. (Until 2026-08-01 this table
+listed only three stacks — a PHP/Go/Rust/.NET/Ruby project got ZERO stack rules in a security
+audit; do not shrink it back.)
+
+### 0.2b Entry-Point Inventory (authoritative snapshot for the IC-2 surface gate)
+
+Enumerate EVERY attack-surface entry point in scope ONCE here — routes, HTTP/RPC/GraphQL handlers,
+server actions, webhook receivers, message/queue consumers, and CLI/cron entrypoints — and record
+the count as the immutable `entry_points_in_scope` (N) the Validity Gate's `surface_gate` checks
+against. This snapshot is fixed at discovery: later phases may leave an entry point un-audited (it
+must then carry a reason code) but may NEVER drop it from N to inflate coverage. If the project has
+no backend entry points (static frontend), N=0 and the surface gate is `N/A`.
+
+### 0.3 Tool Detection
+
+```bash
+which semgrep 2>/dev/null && echo "SEMGREP: available" || echo "SEMGREP: not installed"
+which gitleaks 2>/dev/null && echo "GITLEAKS: available" || echo "GITLEAKS: not installed"
+npm --version 2>/dev/null && echo "NPM: available"
+which pip-audit 2>/dev/null && echo "PIP-AUDIT: available"
+```
+
+Semgrep available: run in Phase 2. Not available: grep-based analysis sufficient. Note in report as `Status: STANDARD (grep-based)`. No score penalty.
+
+### 0.4 Client-Side Scope Adjustment
+
+If scope is limited to client-side files only:
+
+| Dimension | Applies? | Reason |
+|-----------|---------|--------|
+| S1 (Injection) | Limited | Only raw string concat in URLs or innerHTML |
+| S2 (XSS) | Yes | Check dangerouslySetInnerHTML, document.write, eval |
+| S3 (SSRF) | No | Client fetch goes through browser |
+| S4-S6 (Auth/AuthZ/Tenant) | No | Server responsibility |
+| S7 (Secrets) | Check | Hardcoded API keys in client bundle |
+| S8 (Headers) | No | Server-side |
+| S9 (Validation) | Yes | API response validation |
+| S10-S14 | No | Server-side concerns |
+
+All client-side: cap tier at LIGHT, skip server-focused phases.
+
+### 0.5 Tier Selection
+
+| Tier | When | Phases |
+|------|------|--------|
+| QUICK | `--quick` flag | 0, 1, critical gates only |
+| LIGHT | Single module, <5 endpoints | 0-4, 9-10 |
+| STANDARD | Full service, 5-30 endpoints | 0-7, 9-10 |
+| DEEP | Pre-release, >30 endpoints, payments/auth | All 0-10 |
+
+**Risk signals forcing DEEP:** payment/financial endpoints, auth/identity service, multi-tenant isolation, file uploads, external API integrations.
+
+### 0.6 Endpoint Inventory
+
+Build complete endpoint list per stack using grep discovery patterns. Cross-check with OpenAPI spec if present.
+
+---
+
+## Phase 1: Dependency and Secrets Scan
+
+### 1.1 Dependency Vulnerabilities (S11)
+
+```bash
+npm audit --json 2>/dev/null || pnpm audit --json 2>/dev/null
+pip-audit --format json 2>/dev/null
+```
+
+For each CRITICAL/HIGH CVE: check reachability (directly imported?), check exploit path (usage matches vulnerability?), assign confidence.
+
+### 1.1b Supply Chain Analysis (S11 enhancement)
+
+Check for behavioral supply chain risks: install scripts, native addons, recently published packages, no lockfile.
+
+### 1.2 Secret Scanning (S7)
+
+If gitleaks available — scan the **full git history**, not just the working tree (a secret
+committed then deleted is still exposed in history and must be found + rotated):
+```bash
+# default `gitleaks detect` walks all commits; --redact keeps the secret value out of the report.
+# Cap scan size on very large repos to bound runtime.
+gitleaks detect --source . --report-format json --redact --max-target-megabytes 50 2>/dev/null
+```
+Report each historical hit with its commit SHA so the secret can be rotated and history-scrubbed.
+For a working-tree-only pass (faster, pre-commit style), `--no-git` is the explicit opt-out — but
+the default audit MUST scan history.
+
+If unavailable, grep-based:
+```bash
+rg "(api[_-]?key|secret[_-]?key|password|token)\s*[:=]\s*['\"][^'\"{}\$]" --type ts --type py -n -i
+```
+
+Filter false positives: exclude test files, `.env.example`, type definitions, comments.
+
+### 1.3 Client-Side Secret Exposure (S7)
+
+```bash
+rg "NEXT_PUBLIC_.*KEY|NEXT_PUBLIC_.*SECRET|VITE_.*KEY|VITE_.*SECRET" --type ts -n
+```
+
+---
+
+## Phase 2: Static Analysis and Server Controls (S8, S10, S12)
+
+### 2.1 Semgrep (if available)
+
+```bash
+semgrep --config auto --json --output zuvo/audits/artifacts/security/semgrep.json . 2>/dev/null
+```
+
+Parse results, cross-reference with confidence model, deduplicate against grep findings.
+
+### 2.2 Headers and Transport (S8)
+
+Check framework header config: Helmet, CSP, X-Frame-Options, HSTS. Score from code/config if no live URL. Phase 8 upgrades with runtime confirmation.
+
+### 2.3 File Upload and Path Traversal (S10)
+
+Check for multer/formidable/busboy usage, filename validation, path traversal defenses. No upload handling detected: S10=N/A.
+
+### 2.4 Logging and Monitoring (S12)
+
+Check for secrets in logs, error disclosure to clients, auth failure logging.
+
+---
+
+## Phase 3: Code Pattern Audit (S1, S2, S3, S9)
+
+#### Dispatch-Failure Fallback (breadth is non-negotiable)
+
+Ported verbatim-in-spirit from `pentest` (which had it and this skill did not, so a rate-limited
+Phase 3 could silently become a spot-check while `entry_points_enumerated` still marked the surface
+covered — a false-clean on injection/XSS/SSRF/validation, the most expensive failure this audit has).
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+If agent dispatch is throttled, errors out, or returns partial output (API rate-limit, token
+exhaustion, a workflow that dies with 0 usable output), you MUST NOT silently fall back to "inline,
+go deep on a few high-signal entry points and call it done." Do exactly one of:
+
+1. **Complete breadth inline.** Re-run the remaining dimensions yourself sequentially (reduce
+   parallelism, add backoff/retries) until every entry point in `entry_points_in_scope` has been
+   examined for every in-scope dimension. Slower is fine; partial is not.
+2. **Declare it incomplete.** Set `VERDICT = INCOMPLETE`, label the run **DEGRADED**, and list every
+   unexamined entry point. Do not emit a passing or partial grade.
+
+A coverage shortfall caused by infrastructure failure is still a coverage shortfall. "The dispatch
+rate-limited so I checked the obvious sinks inline" is an IC-2 surface-gate FAIL, never a PASS with
+a footnote.
+
+Run discovery patterns for Injection (S1), XSS (S2), SSRF (S3), and Input Validation (S9).
+
+**Parallel** (Claude Code with Task tool): one agent per dimension, max 4 concurrent.
+**Sequential** (Cursor, Codex): one dimension at a time inline.
+
+```
+Agent 1: Injection Auditor (S1)
+  model: "sonnet"
+  type: "general-purpose"  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  instructions: audit codebase for injection vulnerabilities (see Per-Dimension Agent Instructions below)
+  input: target path/scope, exclusion list, framework stack, CODESIFT_AVAILABLE
+
+Agent 2: XSS Auditor (S2)
+  model: "sonnet"
+  type: "general-purpose"  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  instructions: audit codebase for XSS vulnerabilities (see Per-Dimension Agent Instructions below)
+  input: target path/scope, exclusion list, framework stack, CODESIFT_AVAILABLE
+
+Agent 3: SSRF Auditor (S3)
+  model: "sonnet"
+  type: "general-purpose"  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  instructions: audit codebase for SSRF vulnerabilities (see Per-Dimension Agent Instructions below)
+  input: target path/scope, exclusion list, framework stack, CODESIFT_AVAILABLE
+
+Agent 4: Input Validation Auditor (S9)
+  model: "sonnet"
+  type: "general-purpose"  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  instructions: audit codebase for input validation gaps (see Per-Dimension Agent Instructions below)
+  input: target path/scope, exclusion list, framework stack, CODESIFT_AVAILABLE
+```
+
+### Per-Dimension Agent Instructions
+
+Each agent must:
+1. Check the exclusion list before reporting any finding
+2. Check framework mitigations (Prisma parameterizes, React auto-escapes, etc.)
+3. Verify input is attacker-controlled (not server-controlled)
+4. Evaluate rationalizations to reject -- do not dismiss valid findings
+5. Assign confidence: HIGH/MEDIUM/LOW using the 3-tier model
+6. Only HIGH in main findings. MEDIUM in "Needs Verification". LOW excluded entirely.
+
+**Registry-seeded source-to-sink (not grep-and-read).** Seed discovery from the shared
+`pentest-source-sink-registry.md` sink families for the detected stack, and classify every
+finding by its `pentest-finding-registry.md` `finding_type` (+ CWE). **If those registries are
+MISSING (Stage-1 load failed — partial install), fall back to the built-in `search_patterns`
+grep families and emit `DEGRADED: shared vuln registry unavailable — using built-in patterns,
+no finding_type/CWE classification`; do NOT block the audit.** For each candidate sink,
+**invoke CodeSift `trace_call_chain` / `find_references`** (the same index-backed tools pentest
+uses) to establish whether the sink is **reachable** from an attacker-controlled source along the
+call path — do NOT stop at reading the surrounding function. These tools prove call-path
+*reachability*, NOT formal taint: a reference/caller match raises confidence above grep-adjacency,
+but you must still reason explicitly about whether the tainted *value* flows to the sink (vs. a
+reachable-but-unrelated reference). Confidence rule: a **locally-visible direct flow** (untrusted
+input concatenated into the sink within the same function) is HIGH on its own — no trace needed.
+Only a **non-local** flow (source and sink in different functions/files) whose connection you could
+NOT establish is capped at MEDIUM. A `pentest-safe-pattern-registry.md` match on the traced path
+downgrades the candidate (it is evidence, not auto-exclusion — the trace must still show the
+defense covers the live path). When CodeSift is unavailable, fall back to Grep+read and **emit an
+explicit `DEGRADED: CodeSift unavailable — cross-function flows not traced (capped at MEDIUM);
+locally-visible flows still rated HIGH`** line; never claim a trace you did not perform, and never
+bury an obvious local injection in Needs-Verification just because the tracer was down.
+
+For each candidate sink:
+1. Confirm the sink (via the registry sink family if loaded, else built-in patterns); record its `finding_type` if available
+2. Trace the source with `trace_call_chain`/`find_references` -- attacker-controlled and reaching this sink?
+3. Check for framework mitigation / safe-pattern on the traced path
+4. Check for explicit validation/sanitization
+5. Assign confidence (local direct flow ⇒ HIGH; untraced cross-function flow ⇒ cap at MEDIUM)
+6. HIGH/MEDIUM -> create finding with `finding_type` + CWE when the registry loaded; in degraded mode (registry MISSING) classify by dimension (S1/S2/S3) only. LOW -> skip silently.
+
+Fix completeness: for findings involving data flow, the fix must cover BOTH source side (validation) and sink side (escaping/parameterization).
+
+---
+
+## Phase 4: Authentication and Authorization Audit (S4, S5)
+
+Always manual (not parallelized) -- requires cross-endpoint reasoning.
+
+### 4.1 Auth Architecture Assessment
+
+Determine: auth type (JWT/session/API key/OAuth), where authN is enforced, where authZ is enforced, defense in depth (CQ4), session storage location.
+
+### 4.2 Auth Coverage Matrix
+
+Every endpoint must be classified:
+
+```
+| Endpoint | Method | Public? | Auth? | How? | Tenant? | Notes |
+```
+
+For each endpoint: check auth decorator, verify it checks the right thing (not just "logged in" but "can access THIS resource"), check query-level filter (CQ4 defense in depth).
+
+Missing auth on mutation (POST/PUT/DELETE) -> CRITICAL finding (S4).
+Guard exists but query does not filter by tenant/user -> HIGH finding (S5).
+
+---
+
+## Phase 5: Multi-Tenant Isolation (S6)
+
+**Skip if:** No multi-tenant signals detected.
+
+Check:
+1. Tenant ID source: from auth token (SAFE) vs from request params (DANGEROUS)
+2. Query-level isolation: every write operation includes tenant filter from session
+3. Cross-tenant vectors: cache keys, queue messages, file storage, background jobs
+
+---
+
+## Phase 6: Business Logic (S13)
+
+**Skip if:** LIGHT tier.
+
+Check:
+1. Race conditions: check-then-act patterns without atomicity
+2. Price/amount server authority: client-submitted price used without re-fetch from DB
+3. State machine bypass: can user skip steps by calling later-stage endpoint?
+
+---
+
+## Phase 7: Infrastructure (S14)
+
+**Skip if:** No Docker/CI/K8s/Terraform detected.
+
+Manual checklist (always):
+- Docker: USER directive, secrets in layers, base image pinning, .dockerignore
+- CI/CD: script injection, action pinning, permissions, secret handling
+- K8s: pod security, network policies, secrets management
+- Terraform: state file, provider credentials, insecure defaults
+
+### S14 Scanners (run when present — don't eyeball what a scanner can prove)
+
+Follow `../../shared/includes/scanner-invocation.md` — scanners exit non-zero WHEN they find issues (success, not failure); key DEGRADED on JSON output, never exit code.
+
+Prefer real IaC/container scanners over manual inspection. Detect availability, run the
+matching scanner for the detected files, and parse JSON findings. **A scanner exits non-zero
+when it FINDS issues — that is a successful scan, not a failure; key on JSON output, not exit
+code (same trap as SCA).**
+
+```bash
+# A scanner exits NON-ZERO when it finds issues — success, not failure. Key the
+# degraded decision on VALID JSON output, never the exit code. Validate the output
+# parses as JSON (a tool error printed to stdout is NOT a result).
+scan() { OUT="$("$@" 2>/dev/null)"; if [ -n "$OUT" ] && printf '%s' "$OUT" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then printf '%s\n' "$OUT"; return 0; fi; return 1; }
+HAS_TF=$(find . -name '*.tf' -not -path '*/.terraform/*' 2>/dev/null | head -1)
+if command -v checkov >/dev/null 2>&1 && { [ -n "$HAS_TF" ] || [ -d k8s ]; }; then
+  scan checkov -d . -o json || echo "DEGRADED: checkov produced no valid output (IC-5 only)"
+else echo "DEGRADED: checkov not installed or no Terraform/K8s — misconfig not scanned (IC-5 only)"; fi
+if command -v tfsec >/dev/null 2>&1 && [ -n "$HAS_TF" ]; then
+  scan tfsec . --format json || echo "DEGRADED: tfsec produced no valid output (IC-5 only)"
+else echo "DEGRADED: tfsec absent or no .tf (IC-5 only)"; fi
+if command -v trivy >/dev/null 2>&1; then
+  scan trivy fs --format json --quiet . || echo "DEGRADED: trivy produced no output (IC-5 only)"
+else echo "DEGRADED: trivy not installed — image/fs CVE scan skipped (IC-5 only)"; fi
+if command -v dockle >/dev/null 2>&1 && ls Dockerfile >/dev/null 2>&1; then
+  scan dockle -f json . || echo "DEGRADED: dockle produced no output (IC-5 only)"
+else echo "DEGRADED: dockle absent or no Dockerfile (IC-5 only)"; fi
+```
+
+**Per IC-4/IC-5:** each missing scanner emits an explicit `DEGRADED: <tool> not installed` line
+and lowers IC-5 `class_coverage` — it **never** fails the IC-2 surface gate, so a fresh
+environment without these tools still produces a valid (non-INCOMPLETE) audit. Scanner findings
+merge into S14 with their rule id + severity; the manual checklist remains the floor.
+
+---
+
+## Phase 7b: AI/LLM Integration Security (S15)
+
+**Skip if:** No AI/LLM integration detected (no OpenAI, Anthropic, Google AI, Hugging Face, LangChain, LlamaIndex, MCP imports or API calls).
+
+**Detection:**
+```bash
+rg "openai|anthropic|@google/generative|langchain|llamaindex|ai/sdk|@ai-sdk|mcp|claude|gpt|gemini" --type ts --type py --type js -l
+```
+
+If matches found, audit these 9 check areas (S15.9 applies only when an MCP server or agentic tool loop is present):
+
+### S15.1 Prompt Injection (OWASP LLM01)
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| User input in prompts | Parameterized templates, input sanitized before inclusion | Raw user input concatenated into system/user prompts | CRITICAL |
+| System prompt protection | System prompt separated from user content, instruction hierarchy enforced | System prompt injectable via user content | CRITICAL |
+| Indirect injection via RAG | Retrieved content sanitized, marked as untrusted data | RAG results inserted directly into prompt without sanitization | HIGH |
+| MCP tool input validation | Tool parameters validated with schema before execution | Tool parameters passed directly from LLM output without validation | CRITICAL |
+
+### S15.2 Sensitive Data Exposure (OWASP LLM06)
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| PII in prompts | PII stripped/masked before sending to LLM API | User PII (email, name, SSN, credentials) sent to external LLM | HIGH |
+| Secrets in context | API keys, tokens, connection strings excluded from LLM context | Secrets appear in prompt context, system prompts, or tool outputs | CRITICAL |
+| Response filtering | LLM output checked for sensitive data before returning to user | Raw LLM response returned without output validation | HIGH |
+| Logging of prompts | Prompts redacted in logs, no PII in telemetry | Full prompts with user data logged to external observability | HIGH |
+
+### S15.3 AI Supply Chain (OWASP LLM05)
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| Model pinning | Model version pinned (e.g., `gpt-4o-2024-08-06`, `claude-sonnet-4-20250514`) | Using `latest` or unpinned model identifiers | MEDIUM |
+| MCP server trust | MCP servers from known sources, tool descriptions reviewed | Third-party MCP servers with unreviewed tool descriptions | HIGH |
+| AI SDK versions | AI SDKs pinned and audited like any other dependency | AI SDKs unpinned or using pre-release versions in production | MEDIUM |
+| Embedding/vector store integrity | Vector DB content sourced from trusted origins | Embeddings from user-uploaded or scraped content without provenance | HIGH |
+
+### S15.4 Output Handling (OWASP LLM02)
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| Rendered LLM output | LLM text sanitized before HTML rendering (DOMPurify, escape) | LLM output rendered via dangerouslySetInnerHTML or similar | HIGH |
+| Code execution from LLM | LLM-generated code sandboxed, reviewed before execution | `eval()` or `exec()` on raw LLM output | CRITICAL |
+| Structured output validation | LLM JSON/structured output validated with Zod/JSON Schema | LLM output parsed with `JSON.parse` and used directly without schema | MEDIUM |
+| Tool call validation | LLM tool calls validated against allowed tool set | LLM can invoke any tool without allowlist filtering | HIGH |
+
+### S15.5 Rate Limiting and Cost Control (OWASP LLM04)
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| Per-user rate limiting | AI endpoints rate-limited per user/org/IP | No rate limit on AI endpoints — single user can exhaust budget | HIGH |
+| Cost budget enforcement | Hard budget cap with circuit breaker (Redis counter, middleware) | Budget tracked but not enforced, or no budget at all | HIGH |
+| Token/request limits | Max input tokens and max output tokens configured per request | No token limits — user can send 100K token prompts | MEDIUM |
+| Concurrent request limiting | Max concurrent AI requests per user | Unbounded concurrent AI requests possible | MEDIUM |
+
+### S15.6 Agent and Memory Security
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| Agent action scope | Agent actions bounded by allowlist, destructive ops require confirmation | Agent can perform any action including writes, deletes, network calls | HIGH |
+| Memory/context poisoning | Agent memory validated, untrusted content marked | Conversation history or memory injectable by third-party content | HIGH |
+| Multi-step chain safety | Chain-of-thought actions validated at each step | Multi-step agent chains with no intermediate validation | MEDIUM |
+| Credential delegation | Agent uses scoped tokens with minimal permissions | Agent inherits full user session/admin credentials | CRITICAL |
+
+### S15.7 Data Poisoning and RAG Safety
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| RAG source validation | Document sources verified, metadata preserved | Any user can upload documents to the RAG index | HIGH |
+| Embedding integrity | Embedding pipeline isolated, re-indexing requires admin | Users can trigger re-indexing or inject documents | HIGH |
+| Retrieval filtering | Retrieved chunks filtered by user permissions/tenant | RAG returns cross-tenant or unauthorized content | CRITICAL |
+| Content freshness | Stale/outdated content flagged or excluded from retrieval | No staleness check on retrieved content | MEDIUM |
+
+### S15.8 AI-Specific Infrastructure
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| API key management | AI API keys in secrets manager, rotated, scoped per environment | AI API keys hardcoded or in .env committed to git | CRITICAL |
+| Fallback handling | Graceful degradation when AI service is unavailable | App crashes or hangs on AI provider timeout/error | HIGH |
+| AI proxy isolation | AI calls routed through a dedicated proxy/gateway service | Direct AI API calls from frontend/client code | HIGH |
+| Audit trail | AI interactions logged (input hash, model, tokens, cost, latency) | No audit trail for AI API calls | MEDIUM |
+
+### S15.9 MCP and Tool-Invocation Security (OWASP LLM01/LLM06/LLM08)
+
+For a repo that **implements or consumes an MCP server** (`@modelcontextprotocol` SDK, tool/handler
+registrations, an MCP manifest) or any **agentic tool loop** (anthropic/openai tool definitions).
+Complements S15.6 (which scopes the AGENT's action bounds) by auditing the **tool-definition and
+MCP-transport layer**. If no MCP server / tool loop is present, this sub-dimension is N/A.
+
+**Consolidation (avoid double-counting):** S15.9 is the SINGLE home for MCP/tool-invocation findings.
+The earlier scattered MCP rows — S15.1's "MCP tool input validation" and S15.3's "MCP server trust /
+unreviewed tool descriptions" — are subsumed here; score an MCP finding ONCE under S15.9, and keep
+S15.1/S15.3 for their non-MCP scope (generic prompt-injection / supply-chain). **Severity split for
+tool descriptions:** an *injected/instruction-shaped* description from an untrusted server is CRITICAL
+(active hijack), whereas a merely *unreviewed* third-party description is HIGH (matches S15.3) — an
+instruction-shaped string is a flag-for-review, not an automatic CRITICAL unless it is a real payload.
+
+| Check | Good | Bad | Severity |
+|-------|------|-----|----------|
+| Tool-description poisoning | Tool `description`/schema fields are static, reviewed, free of instruction-shaped text | Tool metadata carries hidden/injected instructions, zero-width chars, or "ignore previous"-style payloads a calling agent will read | CRITICAL |
+| Tool-arg validation | Every tool input validated/sanitized before use (path allowlist, URL scheme allowlist, no shell interpolation) | Tool passes raw args to `fs`, `exec`, or an HTTP client — path traversal / command / SSRF via the tool | CRITICAL |
+| Confused-deputy / SSRF via tool | Fetch/file tools deny internal ranges + metadata endpoints (169.254.169.254, localhost, RFC-1918), **re-validate after DNS resolution and on every redirect hop** (denylists alone miss DNS-rebinding + open-redirect bypass), and enforce the caller's tenant scope | A fetch tool reachable to cloud metadata / internal services on behalf of untrusted prompt input; denylist that resolves once then follows a rebinding/redirect | CRITICAL |
+| Untrusted tool output → context | Tool results (web/file/DB) marked as untrusted data, not concatenated into the system/instruction channel | Retrieved tool output injected into the prompt as if trusted — indirect prompt injection | HIGH |
+| Tool-response secret/PII leakage | Tool responses redact secrets/credentials/PII before returning to the model | A tool returns raw `.env`, tokens, or PII rows into the model context | HIGH |
+| Destructive-tool gating | Destructive/high-privilege MCP tools require allowlist + confirmation (see also S15.6) | MCP server exposes delete/write/network tools ungated | HIGH |
+| Tool-loop / step budget | Agent tool-call loops bounded by a max-step / cost guard | Unbounded tool-call recursion — runaway agency / cost DoS | MEDIUM |
+
+Detection signals — MCP: `@modelcontextprotocol/sdk`, `server.tool(`/`registerTool`/`setRequestHandler`,
+MCP manifests. Non-MCP agentic loops (S15.9 covers these too): `tools: [...]` / `tool_choice` in
+anthropic/openai calls, LangChain/LlamaIndex agents/`AgentExecutor`, a while-loop that re-invokes the
+model on tool results, function-calling dispatch tables. Findings cite `file:line`
+and route through the Sentry 3-tier confidence model like S15.1-S15.8.
+
+### S15 Scoring
+
+```
+S15=[0-10]
+```
+
+**Weight: 10** (same as S4/S5 — AI integrations are a primary attack surface in 2025+). S15's 0-10
+score aggregates all sub-checks S15.1-S15.9; S15.9 (MCP/tool-invocation) contributes only when an MCP
+server or agentic tool loop is present (else that sub-part is N/A and does not lower the score).
+
+**Critical gate:** S15<3 when AI integration is present (and S15 != N/A) -> auto-fail to **CRITICAL**, exactly like S1/S4/S5/S7. (This line said AT RISK and the scoring block said CRITICAL — both shipped in the same commit, so identical input produced different verdicts depending on which line the agent read. CRITICAL wins: S15 is a peer of the other critical gates.)
+
+**S15 N/A:** If no AI/LLM integration detected, S15=N/A (excluded from score).
+
+---
+
+## Phase 8: Live Tests (OPTIONAL -- requires --live-url)
+
+**Prerequisites (HARD GATE):**
+1. `--live-url` provided
+2. URL is NOT production (Gate 1)
+3. User confirms environment
+
+### 8.1 Security Headers (S8)
+
+```bash
+curl -sI "$LIVE_URL" | grep -iE "content-security|strict-transport|x-frame|x-content-type|permissions-policy"
+```
+
+### 8.2 Auth Endpoint Probing
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" "$LIVE_URL/api/protected"
+# Expected 401. If 200 -> CRITICAL auth bypass
+curl -sI -H "Origin: https://evil.com" "$LIVE_URL/api/endpoint" | grep -i "access-control"
+```
+
+### 8.3 Error Information Disclosure
+
+Trigger errors, check if stack traces or internal paths leak to clients.
+
+Rate limiting: max 2 req/s. 3 consecutive 429s -> pause 30s. 3 consecutive 5xx -> STOP.
+Scrub all responses (Gate 2).
+
+---
+
+## Phase 9: Cross-Cutting Analysis and Attack Paths
+
+### 9.1 Reconciliation (MANDATORY before report)
+
+1. Review ALL findings from Phases 1-8
+2. Re-check each against: exclusion list, framework mitigations, attacker-controlled verification, rationalizations to reject
+3. Check for contradictions between findings
+4. Remove invalidated findings completely (not just marked)
+5. Record what was removed and why (1 line per removal)
+
+This prevents self-contradicting report sections.
+
+### 9.2 Cross-References
+
+After reconciliation, link related findings (same module, same root cause, same trust boundary gap). Add `Related: SEC-NNN` annotations.
+
+### 9.3 Attack Path Construction
+
+Construct top 3 attack paths combining findings:
+1. **Entry point:** where attacker enters
+2. **Steps:** exploitation sequence (2-5 steps)
+3. **Impact:** what attacker achieves
+4. **Mitigations present:** what partially blocks
+5. **Mitigations missing:** what would prevent
+
+Natural language descriptions, NOT proof-of-concept exploit code.
+
+### 9.4 Defense Gap Analysis
+
+Build summary table: input validation coverage, auth coverage, authZ depth (CQ4), tenant isolation, rate limiting, security headers, dependency scanning, secret scanning.
+
+---
+
+## Phase 9b: Adversarial Security Review (MANDATORY — do NOT skip)
+
+Security audits benefit the most from cross-model review. Runs on ALL security audits.
+
+**Build the file list from the audit's own findings — do NOT run the literal placeholder.** Collect
+the DISTINCT source files cited by this run's HIGH/CRITICAL findings (auth handlers, middleware,
+guards, env/config the report flagged) into a shell array, and pass each path SEPARATELY (an
+unquoted expansion or one space-joined string matches nothing). A security audit is read-only, so
+there is no diff to build — the file list IS the reviewed surface.
+
+```bash
+# FILES = the real paths this audit's findings cite (fill from the report, do not paste the example)
+FILES=(src/auth/session.ts src/middleware/authGuard.ts src/config/env.ts)
+[ ${#FILES[@]} -eq 0 ] && echo "adversarial: skipped (no HIGH/CRITICAL findings to re-review)" \
+  || ~/.zuvo/adversarial-review --mode security --files "${FILES[@]}"
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Then:
+- **CRITICAL** (auth bypass, injection, SSRF) → add to attack path analysis, fix in report before delivery
+- **WARNING** → append to findings with `[CROSS]` tag
+- **INFO** → ignore
+
+---
+
+## Phase 10: Report and Backlog
+
+### 10.1 Score Calculation
+
+Per dimension using standard rubrics:
+
+```
+S1=[0-10]  S2=[0-8]   S3=[0-8]   S4=[0-10]
+S5=[0-10]  S6=[0-8]   S7=[0-8]   S8=[0-5]
+S9=[0-8]   S10=[0-5]  S11=[0-5]  S12=[0-5]
+S13=[0-5]  S14=[0-5]  S15=[0-10]
+```
+
+**N/A handling:** S6=N/A if not multi-tenant. S10=N/A if no file upload. S13=N/A if LIGHT. S14=N/A if no infra. S15=N/A if no AI/LLM integration. N/A excluded from both score and max.
+
+**Score = sum of dimension scores / sum of max for non-N/A dimensions x 100**
+
+**Score caps:**
+- Any CRITICAL finding (confirmed, HIGH confidence) -> cap at 40
+- Any HIGH finding (confirmed) -> cap at 60
+- >5 MEDIUM findings -> cap at 70
+
+**Critical gates:** S1=0 OR S4<3 OR S5<3 OR S7=0 OR (S15<3 AND S15!=N/A) -> auto-fail to CRITICAL.
+
+**Health grades:** >= 80% HEALTHY, >= 60% and < 80% NEEDS ATTENTION, >= 40% and < 60% AT RISK,
+< 40% CRITICAL. Inequalities, not hyphenated bands — the score is fractional.
+
+### Dual Score Computation
+
+- **Static Posture Score:** S1-S14 from code analysis (Phases 1-7, 9). Weighted: CRITICAL=-15, HIGH=-8, MEDIUM=-3. Base=100.
+- **Runtime Exploitability Score:** Verified exploits from Phase 8. VERIFIED=-20, PLAUSIBLE=-10, BLOCKED=0. Base=100. If no `--live-url`, print "NOT ASSESSED."
+
+Always show both scores in Executive Summary.
+
+### 10.2 Write Report
+
+Save to: `zuvo/audits/security-audit-[date].md` — at the **project root** (`zuvo/` resolves via `git rev-parse --show-toplevel`; override `$ZUVO_OUTPUT_DIR`. See `../../shared/includes/report-output-location.md`).
+Artifacts to: `zuvo/audits/artifacts/security/`
+
+Report includes: metadata, threat model, executive summary, dimension scores (S1-S15 — S15 is scored and weighted, so it must appear in the printed table, not only in its own section), auth matrix, top 3 attack paths, all findings (grouped CRITICAL -> HIGH -> MEDIUM -> Needs Verification), dependency vulnerabilities, infrastructure findings, defense gap analysis, remediation roadmap (immediate / short-term / medium-term / long-term).
+
+### Finding Format
+
+```
+### SEC-{NNN}: {Title}
+Dimension: S{N} -- {name}
+Severity: CRITICAL / HIGH / MEDIUM
+Confidence: HIGH / MEDIUM
+CWE: CWE-{NNN}
+OWASP: A{N}:2021
+File: {path}:{line}
+Evidence: {code snippet, scrubbed, max 15 lines}
+Impact: {what an attacker can achieve}
+Fix: {remediation with code example}
+Related: {SEC-NNN if same root cause}
+```
+
+### 10.3 Report Validation (MANDATORY)
+
+Before finishing, re-read the report and verify:
+
+1. **Text integrity:** No truncated sentences, broken markdown, missing sections
+2. **Count consistency:** Executive summary counts match actual findings per section
+3. **Score math:** Dimension scores sum to total. Max = sum of non-N/A maxes. Percentage correct.
+4. **Sequential numbering:** SEC-001, SEC-002, SEC-003 with no gaps
+
+Fix any issues in-place before proceeding.
+
+### 10.4 Backlog Persistence
+
+**Default: off.** Activate with `--persist-backlog` or explicit user request.
+
+When active, every CRITICAL and HIGH finding goes through `backlog-add`, one call per finding (`backlog-protocol.md` "Filing from a skill"; the bars and the dedupe are the protocol's, so compute no fingerprint and restate nothing).
+
+A **Generic write** per finding: `~/.zuvo/backlog-add --repo "$R" --class SEC --conf <N> --source security-audit --file "$F" --line <n> --anchor "$A" --severity <level> --title "$T"`. `<level>` is `critical` or `high`. SEC takes `--anchor "$A"`, copied from the line that shows the defect or, for something absent (no auth check, no header), from the line of the code that lacks it ("The location rule"); there is no line-1 filing for SEC. A hardcoded-secret finding (S7) anchors on the key or variable name on that line (`API_KEY=`), never on the value, and a secret or user data is never copied into `"$T"`, `"$E"`, `"$A"` or `"$U"`, which has no query string (`backlog-protocol.md` "Filing from a skill", "The location rule", the secrets sentence). A v2-class finding follows the same rule (the grace window changes gate weighting, not what is recorded). A Phase 8 finding on a live host with no repository file causing it takes `--target "$U" --evidence "$E"` in place of `--file`, `--line` and `--anchor`: `~/.zuvo/backlog-add --repo "$R" --class SEC --conf <N> --source security-audit --target "$U" --evidence "$E" --severity <level> --title "$T"`. Assign "$R" and "$T" before each call, "$F" and "$A" only for a file finding, "$U" and "$E" only for a target finding, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and backlog-add refuses a missing required field (`REFUSED missing-field:<f>`). Report the B- or F-id each call prints and `Recorded: N (backlog: a, ledger: b)` ("The report line" in `backlog-protocol.md`), plus each `NOT PERSISTED (<reason>)` by name; on a non-zero exit act on the protocol's exit table, and never append by hand.
+
+**Resolved entries** (**Closing, not removing**): a finding this run fixed gets no call (this audit is read-only, so it fixes none). An open entry from an earlier audit that this run re-read and found fixed is closed, never removed: in one edit tick its box (`- [x]`) and append its resolution marker (`[FIXED <sha7>]`), as `backlog-protocol.md` "How to Persist Findings" step 3 says. That tick is the one hand edit the protocol sanctions (no helper ticks), and it is not a `wrote=` path: this audit does not stage it and names each ticked entry in its report. Moving a closed entry to the archive is the helper's job (`~/.zuvo/backlog-archive.py archive`, which `append-runlog` runs at the end of the run), never done by hand.
+
+This audit does not commit: it stages nothing. It lists the `wrote=` paths backlog-add printed as `Backlog writes: <path>, ...` (`Backlog writes: none` when there are none), in its report for the user when it runs standalone, and in its report for the calling skill's closing commit to carry when another skill runs it (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**).
+
+Full protocol: `../../shared/includes/backlog-protocol.md`.
+
+### 10.5 Next-Action Routing
+
+| Condition | Suggested Action |
+|-----------|-----------------|
+| CRITICAL injection (S1) | `zuvo:pentest --dimensions PT1` -- verify exploitability |
+| Auth gaps on mutations (S4<3) | `zuvo:code-audit [controllers]` -- audit CQ4/CQ5 across endpoints |
+| Secrets found (S7=0) | Rotate secrets immediately, add pre-commit gitleaks hook |
+| Multi-tenant gaps (S6<5) | `zuvo:code-audit [services]` -- audit query-level isolation |
+| Header/transport gaps (S8) | Quick config fix -- add Helmet/CSP/HSTS |
+| AI integration gaps (S15<5) | No deep-dive skill exists yet (`zuvo:ai-security-audit` is not available, and `zuvo:pentest` carries no LLM probes) -- S15 in THIS report is the coverage. Work the S15 findings manually: prompt injection, RAG poisoning, tool poisoning, confused-deputy on MCP tool invocation |
+| All dimensions >= 8 | No urgent action. Schedule next audit in 90 days. |
+
+## Completion Gate Check
+
+Before printing the final output block, verify every item. Unfinished items = pipeline incomplete.
+
+```
+COMPLETION GATE CHECK
+[ ] Auth coverage matrix built: every endpoint classified
+[ ] Top 3 attack paths constructed with full detail
+[ ] Reconciliation ran: findings re-verified against exclusions and framework mitigations
+[ ] Adversarial security review ran (--mode security)
+[ ] Report validation ran: count consistency and score math verified
+[ ] S15 AI/LLM section present or explicitly N/A with evidence
+[ ] Report saved to zuvo/audits/
+[ ] Run: line printed and appended to log
+```
+
+## SECURITY AUDIT COMPLETE
+
+### Validity Gate (REQUIRED — print BEFORE Run line, AFTER retro append + append-runlog)
+
+```
+VALIDITY GATE
+  triggers_held: language=<X> framework=<X> backend=<yes|no> django=<yes|no>
+  required_tool_calls:
+    scan_secrets: [<N> hits | NOT_CALLED — VIOLATES_TRIGGER]
+    search_patterns(injection): [<N> hits per pattern | NOT_CALLED — VIOLATES_TRIGGER]
+    audit_scan: [<N> findings | NOT_CALLED — VIOLATES_TRIGGER]
+    trace_call_chain: [<N> chains | not_required (no auth/sink cited) | NOT_CALLED — VIOLATES_TRIGGER]
+    trace_route: [<N> routes | not_required (no backend) | NOT_CALLED — VIOLATES_TRIGGER]
+    taint_trace: [<N> taints | not_required (no Django) | NOT_CALLED — VIOLATES_TRIGGER]
+    stack_specific: [<result> | not_required | NOT_CALLED — VIOLATES_TRIGGER]
+  surface_coverage (IC-2 — STRUCTURAL gate):
+    entry_points_in_scope: <N>          # == the Phase-0 entry-point inventory (recorded ONCE at
+                                        # discovery as the authoritative immutable snapshot, like
+                                        # pentest files_in_scope). N MUST equal that snapshot — it
+                                        # cannot be shrunk to inflate the ratio; an un-audited entry
+                                        # point stays in N and must be reason-coded, never dropped.
+    entry_points_enumerated: <M>        # of those, actually audited
+    surface_coverage_pct: <M/N | N/A when N=0>
+    uncovered_undocumented: [<count> — entry points in N neither audited nor reason-coded | 0]
+    surface_gate: [PASS (>=0.90 AND all uncovered reason-coded AND N == Phase-0 snapshot) | N/A (N=0, e.g. static frontend / no backend routes) | FAIL]
+  class_coverage (IC-5 — ADVISORY, never a gate):
+    classes_in_scope: <N>
+    classes_checked: <M>               # reduced by degraded scanners (IC-4) + stacks with no profile
+    class_coverage_pct: <M/N>
+    degraded: [<tool/profile list> | none]
+  postamble:
+    retros_log_appended: [yes(bytes_added=N) | NOT_APPENDED — VIOLATES_REQUIRED_POSTAMBLE]
+    retros_md_appended: [yes(entry_count=N) | NOT_APPENDED — VIOLATES_REQUIRED_POSTAMBLE]
+    verify_audit_pass: [yes(<verified>/<total>) | NOT_RUN | REJECTED]
+  gate_status: [PASS (requires required_tool_calls satisfied AND surface_gate in {PASS, N/A}) | FAIL — <which gates missing>]
+```
+
+`gate_status = PASS` requires BOTH the required-tool-calls block satisfied AND `surface_gate` in {`PASS`, `N/A`}; only `surface_gate = FAIL` forces `gate_status = FAIL` (an `N/A` surface gate — a static frontend with no backend entry points — is a valid passing audit).
+
+**Coverage-gate parity (IC-2 / IC-5 — mirrors pentest `5814c2d`).** The audit cannot emit a passing
+grade over an **un-enumerated attack surface**: if `surface_gate = FAIL` (under 90% of entry points
+enumerated, or any uncovered entry point lacks a reason code), VERDICT overrides to `INCOMPLETE`.
+**Tool/profile gaps do NOT fail the surface gate** — a missing checkov/gitleaks/IaC scanner or an
+unprofiled stack lowers IC-5 `class_coverage` (advisory, surfaced in the report) only, so a fresh
+environment without optional tools still produces a valid audit. The denominator of IC-2 is entry
+points; the denominator of IC-5 is vulnerability classes — they are never mixed.
+
+Three clarifications (per adversarial review):
+- **Best-effort + additive snapshot.** The Phase-0 inventory is the best enumeration at discovery,
+  not a claim of omniscience. An entry point discovered later is ADDED to N (raising the bar),
+  never used to retroactively pass a prior run — immutability means "cannot be shrunk to game the
+  ratio," not "cannot grow when more surface is found."
+- **`surface_gate = N/A` means no SERVER-side request-handling surface** (static frontend / pure
+  library). Client-side surface (DOM-XSS, prototype pollution) is still audited by S2/S9 regardless
+  — N/A exempts only the route-enumeration gate, not the audit.
+- **The surface gate measures BREADTH (was every entry point examined), not DEPTH.** Audit depth
+  per entry point is governed by the per-dimension methodology (Phases 3–7); `entry_points_enumerated`
+  counts an entry point as audited only when its dimensions actually ran on it, not on a glance.
+
+If `gate_status = FAIL` OR `surface_gate = FAIL` (NOT `N/A`) → VERDICT overrides to `INCOMPLETE`, append
+`[VALIDITY GATE FAIL]` / `[COVERAGE GATE FAIL]` to NOTES, record the `incomplete` **Process item** (`backlog-protocol.md` "Filing from a skill"):
+`~/.zuvo/backlog-add --repo "$R" --class PROCESS --conf 90 --source security-audit --target subject:security-audit-incomplete --title "$T"`, with `T` the fixed title
+`security-audit run INCOMPLETE: validity or coverage gate failed`, the same words on every run and no date (this run's reason goes in the report, never in the title). Assign "$R" and "$T" before the call, as "Free text goes through a variable" in that section says; an empty value is a bug, and backlog-add refuses a missing required field (`REFUSED missing-field:<f>`). It is kept in the findings ledger, not ticketed. File it before the report's `Backlog writes:` line is printed, so its `wrote=` paths are on that line: decide `gate_status` from every field the report can already fill (all but `postamble`) before the report is written, and file the item then. Only a `postamble` field that fails after the report is saved files it at this gate (a repeat bumps the same record); the Validity Gate block then carries its F-id on a line `incomplete-item: <F-id>` and its paths on a line `Backlog writes (gate): <path>, … | none`. Print Validity Gate AFTER retro append + `~/.zuvo/append-runlog` so postamble fields can be `yes(verified)`.
+
+Append the Run line via the retro-gated wrapper (NOT direct `>> runs.log`):
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Run: <ISO-8601-Z>\tsecurity-audit\t<project>\t-\t-\t<VERDICT>\t-\t<N>-dimensions\t<NOTES>\t<BRANCH>\t<SHA7>\t<INCLUDES>\t<TIER>
+
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check → structured questions → TSV emit → markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed.
+
+After printing this block, append the `Run:` line value (without the `Run: ` prefix) to the log file path resolved per `run-logger.md`.
+
+VERDICT mapping: HEALTHY -> PASS, NEEDS ATTENTION -> WARN, AT RISK or CRITICAL -> FAIL.
+
+---
+
+## Execution Notes
+
+- Use **Sonnet** for QUICK/LIGHT/STANDARD tiers
+- Use **Opus** for DEEP tier
+- Phase 3 dimensions (S1/S2/S3/S9) can parallelize with up to 4 Task agents in Claude Code
+- Read the project's AGENTS.md or CLAUDE.md first for stack-specific conventions
+- QUICK mode skips full mandatory reads (inline output only)
+- Estimated durations: QUICK ~3 min, LIGHT ~10 min, STANDARD ~20 min, DEEP ~30 min

@@ -1,0 +1,171 @@
+---
+name: laravel-queues
+description: Use when implementing Laravel 13 background jobs — queue attributes, workers, batching, chaining, middleware, or Queue::route() routing.
+versions:
+  laravel: "13.0"
+  horizon: "5.50"
+  php: "8.3"
+user-invocable: false
+references: references/legacy-properties.md, references/jobs.md, references/dispatching.md, references/workers.md, references/batching.md, references/chaining.md, references/middleware.md, references/failed-jobs.md, references/horizon.md, references/testing.md, references/troubleshooting.md, references/templates/QueueableJob.php.md, references/templates/BatchJob.php.md, references/templates/ChainedJobs.php.md, references/templates/JobMiddleware.php.md, references/templates/JobTest.php.md
+related-skills: laravel-attributes, laravel-architecture, laravel-eloquent
+---
+
+<objective>
+Covers Laravel 13 queues with PHP Attributes as the primary configuration
+mechanism on Jobs, Listeners, Notifications, Mailables, and Broadcast Events
+(#[Connection], #[Queue], #[Tries], #[Timeout], #[Backoff],
+#[MaxExceptions], #[FailOnTimeout], #[UniqueFor], #[Delay], #[DebounceFor]) alongside
+legacy property equivalents. Includes job lifecycle, dispatching, workers,
+batching, chaining, custom middleware, failed-job handling, Horizon
+monitoring, testing, troubleshooting, and centralised queue routing via
+Queue::route() in AppServiceProvider::boot().
+</objective>
+
+# Laravel Queues (L13 — Attributes-first)
+
+## Agent Workflow (MANDATORY)
+
+Before ANY implementation, spawn 3 agents in parallel, one `Agent` call each with a `name`:
+
+1. **fuse-ai-pilot:explore-codebase** - Audit job classes, connections, queue routes
+2. **fuse-ai-pilot:research-expert** - Verify L13 Queue + Queue::route() via Context7
+3. **mcp__context7__query-docs** - Check queue attribute patterns
+
+After implementation, run **fuse-ai-pilot:sniper** for validation.
+
+---
+
+## Overview
+
+Laravel 13 introduces **PHP Attributes** on Queueables (Jobs, Listeners, Notifications, Mailables, Broadcast Events) as the primary configuration mechanism. Centralised routing is configured via `Queue::route()` in `AppServiceProvider::boot()`.
+
+| Attribute (L13 MAIN) | Legacy property |
+|----------------------|-----------------|
+| `#[Connection('redis')]` · `#[Queue('podcasts')]` | `public $connection` · `public $queue` |
+| `#[Tries(5)]` · `#[Timeout(120)]` · `#[MaxExceptions(3)]` | `public int $tries / $timeout / $maxExceptions` |
+| `#[Backoff([10, 30, 60])]` · `#[FailOnTimeout]` | `public $backoff` · `public bool $failOnTimeout` |
+| `#[UniqueFor(3600)]` · `#[DeleteWhenMissingModels]` · `#[Delay(60)]` | `public $uniqueFor / $deleteWhenMissingModels / $delay` |
+| `#[DebounceFor(30, maxWait: 120)]` (13.6+, with `debounceId()`) | — |
+| no attribute — `->afterCommit()` / `ShouldQueueAfterCommit` | `public $afterCommit` |
+
+> Applies to **Jobs, Listeners, Notifications, Mailables, and Broadcast Events**.
+
+---
+
+## Critical Rules
+
+1. **Declare queue metadata with Attributes** - `#[Queue]`, `#[Tries]`, `#[Backoff]`
+2. **Centralise routing with `Queue::route()`** in `AppServiceProvider::boot()`
+3. **Implement `failed(Throwable $e)`** for every production job
+4. **Use `->afterCommit()`** (or `after_commit` connection config) when dispatching inside DB transactions
+5. **Monitor Redis queues with Horizon** in production
+
+---
+
+## Architecture
+
+```
+app/
+├── Jobs/
+│   └── ProcessPodcast.php       # #[Connection, Queue, Tries, Backoff]
+├── Providers/
+│   └── AppServiceProvider.php   # Queue::route(ProcessPodcast::class, 'redis')
+└── Listeners/
+    └── SendShipmentNotification.php  # #[Queue('mail')]
+```
+
+→ See [templates/QueueableJob.php.md](references/templates/QueueableJob.php.md)
+
+---
+
+## Reference Guide
+
+### Concepts
+
+- **Migration L12→L13:** [legacy-properties.md](references/legacy-properties.md)
+- **Jobs lifecycle:** [jobs.md](references/jobs.md) · [dispatching.md](references/dispatching.md) · [workers.md](references/workers.md)
+- **Composition:** [batching.md](references/batching.md) · [chaining.md](references/chaining.md) · [middleware.md](references/middleware.md)
+- **Reliability:** [failed-jobs.md](references/failed-jobs.md) · [horizon.md](references/horizon.md) · [testing.md](references/testing.md) · [troubleshooting.md](references/troubleshooting.md)
+
+### Templates
+
+| Template | When to Use |
+|----------|-------------|
+| [QueueableJob.php.md](references/templates/QueueableJob.php.md) | Attribute-based job |
+| [BatchJob.php.md](references/templates/BatchJob.php.md) | Batchable job |
+| [ChainedJobs.php.md](references/templates/ChainedJobs.php.md) | Job chain |
+| [JobMiddleware.php.md](references/templates/JobMiddleware.php.md) | Custom middleware |
+| [JobTest.php.md](references/templates/JobTest.php.md) | Job test |
+
+---
+
+## Quick Reference
+
+### Attribute-based Job (L13 MAIN)
+
+```php
+use Illuminate\Queue\Attributes\{Connection, Queue, Tries, Timeout, Backoff, MaxExceptions, FailOnTimeout, UniqueFor};
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+
+#[Connection('redis')]
+#[Queue('podcasts')]
+#[Tries(5)]
+#[Timeout(120)]
+#[Backoff([10, 30, 60])]
+#[MaxExceptions(3)]
+#[FailOnTimeout]
+#[UniqueFor(3600)]
+final class ProcessPodcast implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(public readonly Podcast $podcast) {}
+
+    public function handle(PodcastService $service): void { $service->process($this->podcast); }
+
+    public function failed(\Throwable $e): void { Log::error('Podcast failed', ['id' => $this->podcast->id, 'e' => $e]); }
+}
+```
+
+### Queue Routing (centralised)
+
+```php
+// app/Providers/AppServiceProvider.php
+use Illuminate\Support\Facades\Queue;
+
+public function boot(): void
+{
+    // First argument = job class, or an interface / trait / parent class
+    Queue::route(ProcessPodcast::class, connection: 'redis', queue: 'media');
+    Queue::route(ShouldBroadcast::class, queue: 'events');
+    Queue::route([ProcessVideo::class => ['redis', 'videos']]);
+
+    // Forward a queue to another queue / connection (13.26+)
+    Queue::forward('reports', 'reports.fifo', 'sqs');
+}
+```
+
+### Other 13.x additions
+
+- `Bus::bulk($jobs)` (13.13+) — push many independent jobs grouped by connection/queue, no batch tracking
+- `PreparesForDispatch` interface (13.9+) — `prepareForDispatch()` returning `false` skips dispatch
+- `Illuminate\Queue\Middleware\Release` job middleware (13.18+) — `Release::when($condition, releaseAfter: 60)`
+
+→ Legacy `public int $tries = 5` style — see [legacy-properties.md](references/legacy-properties.md)
+
+---
+
+## Best Practices
+
+### DO
+- Use **Attributes** on Jobs, Listeners, Notifications, Mailables, Broadcast Events
+- Centralise routing via `Queue::route()` in `AppServiceProvider::boot()`
+- Use `->afterCommit()` when dispatching inside a transaction
+- `final` job classes, implement `failed()`, monitor Redis with Horizon
+
+### DON'T
+- Mix `#[Tries]` and `public int $tries` (single source of truth)
+- Dispatch in a transaction without `->afterCommit()` (or `after_commit => true`)
+- Store large objects/closures in job constructor properties
+- Use `sync` driver in production

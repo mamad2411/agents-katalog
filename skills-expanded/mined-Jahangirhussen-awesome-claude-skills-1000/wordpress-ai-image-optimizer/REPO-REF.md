@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Jahangirhussen/awesome-claude-skills-1000 (path: skills/wordpress-ai-image-optimizer/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when the user says 'optimize my wordpress images with ai', 'compress and optimize all images', 'audit my media library', or 'improve image performance'. Downloads images, compresses, converts to W

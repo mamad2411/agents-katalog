@@ -1,0 +1,35 @@
+---
+name: demo
+description: Demonstrate the evipedia MCP server end-to-end — confirms the build is loaded, shows the server-level instructions the model received on connect, walks through every read tool (get_version, search_reviews, list_reviews, list_updates, get_review, get_conclusion, get_metadata) against live evipedia.ai data, then explains the one write tool without invoking it. Use to smoke-test or show off the MCP.
+version: 0.1.30
+---
+
+# evipedia-mcp — Demo the MCP (`/demo`)
+
+Exercises the evipedia MCP server's tools live and narrates what each one does, so a viewer can see the server working against `https://evipedia.ai`. This is a demonstration/smoke-test that calls the real evipedia MCP tools connected in this session — whichever `evipedia` server is configured; use the tools as named (`get_version`, `search_reviews`, …), whatever their prefix.
+
+If no evipedia MCP tools are available in this session, stop and tell the user the evipedia MCP server isn't connected — nothing to demo. (Check `.mcp.json` and that the server was approved.)
+
+Otherwise, run these steps in order and show the actual tool output for each, with a one-line explanation before each call.
+
+1. **Which build is loaded** — call `get_version`. Report the package name and version it returns.
+
+2. **What the server told the model** — show the evipedia server's **server-level instructions**: the overview block the MCP sends at connect (its `instructions` field), which is what the model reads before using any tool. You already have it in context as this session's evipedia "MCP Server Instructions" — quote or tightly summarize it (what evipedia is, when to reach for it, and the discover → read → contribute workflow). If no evipedia instructions are present in context, say so plainly.
+
+3. **Search** — call `search_reviews` with `query: "rapamycin"`. Show the matching review(s) and their URLs. Then run one more search of the user's choice if they named a topic in the `/demo` args (e.g. `/demo creatine`); otherwise skip the second search.
+
+4. **Full catalogue** — call `list_reviews` (no arguments). It returns every review as a `{topic, slug}` pair. Don't dump all of it; report the total count and show the first 3 entries.
+
+5. **What's new** — call `list_updates` with `days: 7`. It returns the catalogue's change feed, newest first, as `{title, slug, status, date}` — `status` is `new` (first publication) or `updated` (an existing review revised). Report how many reviews changed in the last 7 days and show the first 3. Then call it with **no arguments** and point out that you get the *same* 7-day window plus a `Default window:` note — since 0.1.28 the bare call is bounded (last 7 days, at most 100 entries) rather than the entire feed. Finally call `days: 14` and report that the count grows, showing `days` widens the window as well as narrows it. Do **not** demo a very wide window: `days: 365` returns the whole 600+ entry catalogue (~15k tokens) and can exceed a client's tool-result limit — mention that instead of calling it.
+
+6. **Conclusion only** — take the top review's slug from step 3 (e.g. `rapamycin`) and call `get_conclusion` on it. Show the plain-text conclusion. Point out this is the quick-answer path versus the full review in step 7.
+
+7. **Full review** — call `get_review` on the same slug. Don't dump the whole Markdown; show the first ~15 lines and note the total length.
+
+8. **Structured metadata** — call `get_metadata` on the same slug. Show the returned JSON and point out the fields the Markdown lacks: the review dates (`datePublished`/`dateModified`/`lastReviewed`), the typed `about` entity with alternate names, and the ordered `citation` list with PubMed PMIDs.
+
+9. **Write path (describe, do NOT call)** — explain that `suggest_review(intervention, goal?, references?, email?)` submits a new intervention to evipedia's public suggestion form. Do **not** invoke it during the demo — it POSTs real data to the evipedia team.
+
+Close with a one-line summary: the server build from step 1, that the server-level instructions were present, and that search → list → updates → conclusion → review → metadata all returned live data.
+
+**Arguments:** an optional topic (e.g. `/demo creatine`) used as the extra search in step 3 and, if it resolves to a review, as the slug for steps 6–8 instead of rapamycin.

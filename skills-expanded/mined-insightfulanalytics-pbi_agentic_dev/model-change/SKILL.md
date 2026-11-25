@@ -1,0 +1,123 @@
+---
+name: model-change
+version: 26.40.3
+description: The end-to-end pipeline for changing a semantic model in a local PBIP, from confirming the field exists to proving the result against real data. Invoke on "change the model", "add a measure", "add a column", "the number is wrong", "add a relationship", "set up RLS", "add a calculation group", or any request that ends with a .tmdl file changing. Carries the Desktop-breaking gotchas.
+---
+
+# Model change pipeline
+
+Every model change follows the same five steps. Skipping step 1 is how you author a measure
+against a column that doesn't exist; skipping step 4 is how Desktop refuses to open the
+project afterwards.
+
+**"Change the model" means the local PBIP via direct TMDL edits** — not the live Fabric
+model — unless the user says otherwise. Confirm which model before touching anything if
+there is any doubt.
+
+## 0. Before anything
+
+- `pbir desktop list` — is Desktop holding this project open? If it is, **coordinate with
+  the user first.** Desktop keeps its own in-memory copy and re-serialises on save, so it
+  will clobber disk edits.
+- Tim nudges layout inside Desktop between turns. Re-read from disk at task start; never
+  reuse positions or definitions remembered from earlier in the conversation.
+
+## 1. Confirm the shape — don't author blind
+
+Load `pbi-desktop:connect-pbid` and query the live instance. The point is to prove the
+table, column or measure you are about to reference actually exists and holds what you think.
+
+- `pbir model -q` needs the Desktop Bridge setting (Options > Security in current builds, Preview
+  features in older ones). If it warns that the local API is not reachable, go straight to the
+  direct ADOMD path in that skill — DAX Studio's `Microsoft.AnalysisServices.AdomdClient.dll`
+  is the one that loads under PowerShell 5.1. Tabular Editor 3's is .NET 8 and throws.
+- If Desktop isn't open, read the TMDL under `<Model>.SemanticModel/definition/tables/`.
+
+## 2. Author
+
+Pick the skill that matches the change:
+
+| Change | Skill |
+|---|---|
+| Measure / calculation | `dax-standard` |
+| Partition M, folding, a new source | `semantic-models:power-query` |
+| Relationships, RLS, calc groups, star-schema fixes, model quality | `semantic-models:semantic-model` |
+| A date/calendar table | `semantic-models:date-table` — don't hand-copy from `Date Table Template` |
+| Renaming across the project | `pbip:pbip` (the rename cascades into PBIR) |
+
+DAX house style: expression starts on **line 2** after the `=`; short lines; the explanatory
+comment goes **after** the measure name, not above it; prefer `DATEADD` over
+`SAMEPERIODLASTYEAR`. Never leave a measure in an error state.
+
+## 3. Land it in TMDL
+
+Load `pbip:tmdl`. Prefer the Edit tool over script-patching — checkpoint/rewind only restores
+files changed via Write/Edit, so a python-patched `.tmdl` cannot be rolled back.
+
+Three ways to break Desktop's file-open, all of which pass a casual read:
+
+- **A calculation group requires `discourageImplicitMeasures`** on the model in `model.tmdl`.
+  Without it Desktop refuses to load the whole project. Check this **every** time a calc group
+  is added, then grep the report pages for bare column projections that relied on implicit
+  aggregation.
+- **Never leave a blank line after a `///` description.** A dangling description is
+  `Unexpected line type: Empty!` and breaks both Desktop and the modeling MCP. `///` lines sit
+  directly above the object they describe — never as standalone section banners.
+- Blank lines *between sibling objects* are fine and expected. The failures come only from the
+  two bad spots: after a `///`, or breaking a multi-line expression's indentation.
+
+Prefer `///` doc comments over explicit `description` properties — `///` is what Desktop
+serialises, so round-trip diffs stay stable.
+
+## 4. Validate offline, before Desktop
+
+Cheapest first, and it catches syntax errors in seconds rather than after a slow file-open:
+
+- `TmdlSerializer::DeserializeDatabaseFromFolder(<definition>)` via DAX Studio's
+  `Microsoft.AnalysisServices.Tabular.dll` parses the folder and lists tables, columns and
+  measures. TE3's DLL is .NET 8 and will not load under PS 5.1.
+- An offline `ConnectFolder` connection validates parse and bind only — **it cannot run DAX.**
+  Offline-clean is not query-correct.
+- None of these, `te validate` included, sees whether the engine loads a DAX user-defined
+  function. A `functions.tmdl` change is proven only in step 5.
+
+## 5. Prove it against real data
+
+Desktop holds its own in-memory copy, so a TMDL edit on disk is invisible to a query until it is
+applied. On Desktop 26.08+ that is the **Apply external changes** banner, which reloads the project
+in place and keeps the loaded data; close-and-reopen is only needed on older builds, when the edit
+changes a data source or adds a table that needs a real refresh, or when Desktop has already
+resolved a field as deleted (that binding stays broken until a full reload). The canonical account,
+including the UIAutomation snippet that clicks the banner, is the `pbi-desktop:connect-pbid` skill's
+`references/desktop-lifecycle.md`. Either way, don't reload just to test:
+
+> Redefine the measure in the query with `DEFINE MEASURE '<Table>'[X new] = …` and select the
+> old and new side by side in one `ROW()`. That proves the fix against real data with zero
+> risk to the model.
+
+Testing an `ALLSELECTED` measure? Don't sample rows with `FILTER(VALUES(...))` — the filter
+propagates into `ALLSELECTED` and changes the answer. Build the full axis with
+`ADDCOLUMNS(VALUES(...), ...)` first, then `FILTER` the result.
+
+PowerShell quoting: bracketed names and `{}` break PS string parsing. Pass DAX via
+single-quoted here-strings (`@'...'@`).
+
+**Changed `functions.tmdl`?** Once the edit is applied, run `EVALUATE INFO.USERDEFINEDFUNCTIONS()`.
+A non-empty `ErrorMessage` is a function that failed to load. Every measure built on it then fails
+with `Failed to resolve name '<function>'`, and the name is the caller, not the helper you just
+added. With no Desktop and no workspace to run it in, hand the query to the user and do not report
+the change as working. The trap and its workaround are in `pbip:tmdl`
+`references/authoring-gotchas.md`, "A function that calls a newly added function can fail to load".
+
+## Wrap-up
+
+- Slow measure? *Now* load `semantic-models:dax-optimisation` — it is for tuning, not authoring.
+- Model-wide audit? `tabular-editor:te-cli` / `bpa-rules`.
+- Needs a refresh? `semantic-models:refresh-semantic-model`. For a hand-authored PBIP whose
+  first open shows "incomplete or no data", refresh through TOM
+  (`$db.Model.RequestRefresh('Full')` + `SaveChanges()`) — where the Desktop Bridge setting is
+  off, `pbir desktop refresh` is unavailable.
+- Report visuals affected by the change? Hand over to `reports:pbir-cli`, and verify with
+  `reports:pbi-verify-loop`.
+- After fixing a nontrivial error, record the root cause in the project's own `LEARNINGS.md`,
+  beside its code.

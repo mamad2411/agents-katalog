@@ -1,0 +1,32 @@
+---
+name: handoff
+description: Write or update the handoff file so the next session (or another person/agent) can resume without re-discovering everything. Use when pausing or ending work, or when asked to produce a handoff.
+---
+
+# handoff
+
+Use only when H1/H2/H3 trigger fires.
+
+## Before writing handoff
+
+1. Run or read `/coderail:inspect` so the handoff reflects current state.
+2. Confirm the active Coordinate G/T/S/V/X/P.
+3. Confirm verification gaps are either resolved or explicitly marked blocked.
+4. Write a handoff trace event if this is H1/H2/H3.
+
+## Handoff content
+
+Keep it short:
+
+- Current North Star / current task
+- Coordinate Summary, including Full Rail or Light Rail
+- Recent completed slice
+- Next executable step
+- Stop conditions
+- Generated and ignored artifacts
+- Recovery commands
+- Auto-commit action
+
+Move long history to TRACE_INDEX, RUNLOG, DECISIONS, or archive. Do not paste full logs, full diffs, or TRACELOG contents.
+Handoff is agent-to-agent continuity, not the Owner Receipt. Keep product
+delivery facts in `docs/DELIVERIES.jsonl` and owner wording in `owner-summary`.

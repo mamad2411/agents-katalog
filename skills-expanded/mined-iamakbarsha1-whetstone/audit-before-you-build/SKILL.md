@@ -1,0 +1,100 @@
+---
+name: audit-before-you-build
+description: >
+  Use as the FIRST step of any implementation task handed to you from a
+  checklist, ticket, milestone, or spec — the first step is an existence
+  check, not a design. Trackers record conversations, not deliverables, so
+  grep for the item's key nouns and cross-check spec status before writing
+  code, then pivot "build X" to "verify X and close the gaps" when it already
+  exists. Triggers on "implement this ticket", "build feature X", "next
+  milestone item", "from the checklist", "start this task", "add X".
+---
+
+# Audit Before You Build
+
+**Type:** Open-source — client-agnostic methodology, no project-specific detail.
+
+**Created by akbarsha — https://github.com/iamakbarsha1**
+
+Distilled from cases where a checklist item was already ~90% shipped as a side
+effect, and where "all issues closed" hid whole unbuilt layers — building from
+the tracker text would have duplicated working code or missed real gaps.
+
+**Licence:** Released under CC BY 4.0 — share and adapt for any purpose with
+credit. Full text: `LICENSE` at the repository root.
+
+**Feedback & Support:** If a rule here proves wrong or needs sharpening,
+open an issue on the repository or contact the author at the profile link
+above. If the problem is the agent not following a rule below rather than
+the rule itself, that's an execution failure — acknowledge and correct it.
+
+## The core rule
+
+A ticket, checklist, or spec line records a conversation about intent — it is
+not a reliable record of what has or hasn't been built. Code drifts from the
+tracker in both directions: features ship as side effects of other work
+without their item being ticked, and closed items leave real layers unbuilt.
+So the first step of "build X" is never design — it's an existence check. Grep
+the codebase for the item's key nouns, cross-check the spec's own status
+markers, and only then decide whether the task is "build", "finish", or
+"verify and close".
+
+This is an existence check on the deliverable inside your own codebase; a
+viability check on an external tool that must run on a host failing one of its
+declared constraints is a different first step — use
+`third-party-tool-onboarding`.
+
+This also audits code against a task handed to you; auditing an existing whole
+configuration against an external write-up — a per-surface
+COVERED/PARTIAL/MISSING delta — is `harness-config-audit`.
+
+## When this fires
+
+**Where:** The first move on any implementation task handed over as a ticket,
+checklist line, milestone item, or spec row — before any design work, and
+before the first new file exists.
+
+**The case this came from.** A milestone item turned out to be roughly 90%
+implemented already, as a side effect of an earlier change. Grepping the
+feature's route name surfaced it immediately and turned "build" into a small
+gap-closing task — but only because the grep came before the design. The
+tracker still had the item open, and said nothing about the code.
+
+**Another shape it takes.** *(Illustrative: A sprint item reads "add
+pagination to the orders list". The endpoint already accepts `limit` and
+`cursor`, added months earlier for an internal tool and never documented, so
+the real work was wiring the UI — instead a second, incompatible page-number
+scheme lands in the same handler and both are maintained for a year.)*
+
+## Checks
+
+- **Grep for the item's key nouns before designing.** Take the concrete terms
+  from the task — paths, function names, table/column names, endpoint routes,
+  spec keywords — and grep for each. Existing hits mean the work is partly or
+  wholly done. *(A milestone item was ~90% already implemented as a side
+  effect of an earlier change; grepping the feature's route name surfaced it
+  immediately, turning a "build" into a small gap-closing task.)*
+- **Cross-check the tracker against code and spec status, both ways.** "Closed"
+  does not mean "built" and "open" does not mean "absent". Read the spec's own
+  Status headers and the code stubs together. *(Illustrative: An "all issues closed"
+  milestone hid two entire layers that were never implemented — the tracker
+  said done, the code said empty.)*
+- **Pivot the verb when reality disagrees.** If the audit shows the thing
+  exists, restate the task honestly — "verify the existing X and close gaps A
+  and B" instead of "build X" — and say so before writing code. Duplicating
+  working code is worse than a slow start. *(Illustrative: A ticket read "build the CSV
+  export endpoint"; the audit found a working export handler behind a feature
+  flag, so the task was restated as "flip the flag and add the missing
+  filename sanitization" before any code was written.)*
+
+## Pre-flight check — before you write implementation code from a task
+
+- [ ] You grepped the codebase for the task's key nouns (paths, names, spec
+      terms) and know what already exists.
+- [ ] You cross-checked tracker status against actual code AND spec status
+      markers, not just the ticket text.
+- [ ] If the thing partly exists, you restated the task as verify/finish and
+      said so before building.
+
+If any box is unchecked, you're building on the tracker's word — go audit the
+code first.

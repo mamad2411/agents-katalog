@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ibrdot/swe-re-expert (path: plugins/agentic-awesome-skills-claude/skills/extract-document-data/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Extract structured, grounded fields from documents — values cite their page, missing values abstain instead of hallucinating. Use for parsing invoices, payslips, statements, contracts.

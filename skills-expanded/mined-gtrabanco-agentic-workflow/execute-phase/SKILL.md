@@ -1,0 +1,413 @@
+---
+name: execute-phase
+user-invocable: true
+version: 4.10.0
+argument-hint: <NN-slug> [P<k>|step] [--max-attempts N] [--force]
+allowed-tools: [Bash, Read, Edit, Write, MultiEdit]
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Step executor for units whose triage (unit-lane) decided which steps the unit
+  needs. Implements one triaged step (or all remaining steps), with frozen
+  acceptance, step-local gates, commits, red-gate repair, and diff-size guard.
+  BREAKING: replaced PLAN.md/TASKS.md/progress.md/ACCEPTANCE.md with the unit
+  doc's Tasks section, Evidence rows, and Progress log; ACCEPTANCE.md is gone —
+  acceptance criteria live in the unit doc and Evidence rows are the receipts.
+---
+
+# Execute Phase
+> **Runner commands** below are `runner <subcommand> [args…]` — the launcher, its
+> order and the pin are owned by
+> [references/RUNNER.md](../runner-contract/references/RUNNER.md): read it before the
+> first command, then keep it for the whole unit — nowhere else spells either.
+
+Step executor for units. The unit doc (created by `unit-lane`) owns `Tasks` P1…Pn,
+`Evidence` rows, and a `Progress` log — these replace PLAN.md, TASKS.md,
+progress.md, and ACCEPTANCE.md. Each step runs as an atomic gate/commit.
+
+**Argument resolution (first match):**
+- `<NN-slug> P<k>` — exactly the step named by the triage order (P1, P2, …)
+- `<NN-slug>` (no step) — all remaining steps, one commit each
+- `P<k>` alone — the step by position in the current unit (last-known NN-slug)
+
+Never infer a step ID absent from the triage block in the unit doc.
+
+## Turn contract
+
+Load and verify the **canonical** [Turn contract](../orchestration-envelope/references/TURN_CONTRACT.md) (11 boxes) before ending every turn; the contract's Push policy supplement governs mid-phase commits when a PR is already open. Skill-specific additions (the `→ Next:` box is canonical-owned and not restated here):
+
+```
+✓ Required user inputs were answered concretely (not defaulted). Nothing here
+  is inferred: a gap runs `runner needs-input <unit-dir>` and the
+  `open-questions@1` block is pasted, then the run stops.
+✓ Tool choice re-made this turn — `bun` before `node` on manual invocation,
+  `rg` before `grep` on search; availability checked once with
+  `runner setup-env --check` (node and grep stay the documented fallback)
+✓ Triage verified — unit doc Evidence section header matches
+  `runner unit-route --triage <slug>` output block (PREFLIGHT.md)
+✓ Unit doc read and step selected (explicit P<k> or first unfinished)
+✓ Step executed and committed (one commit per step, conventional format)
+✓ Phase read set consumed — the phase read its `Relevant files:` targets
+  (`runner relevant-files <unit-doc> --phase P<k>`) instead of
+  surveying the repo, and discovered-file appends landed at phase close
+✓ Test impact derived — the phase's test set came from the hint's block
+  (TEST_IMPACT.md), and a prose-only phase recorded its `empty` verdict
+✓ Evidence rows updated (command → exit/digest → output → verified-by)
+  — each row carries the command, observed output (reproduced, not typed by
+  hand), and the verifying-by credit. (S5 — claim-evidence loop: mandatory
+  reproduction, loop-until-green inside the same turn)
+✓ Progress log updated with a dated `YYYY-MM-DD HH:MM` entry that names the
+  phase id (what, commit, next)
+✓ Memory boundary ran — the phase's outcome saved under `unit/<NN-slug>/doc`,
+  or the mirror marked pending when the layer is degraded
+✓ Diff guard passed (on implement steps) — see `diff-guard` in PREFLIGHT.md
+✓ Self-audit box (S9 d): every claim the persist introduces was re-derived
+  with pasted output before the commit lands.
+```
+
+## When to use
+
+- A triaged unit from `unit-lane`: steps include `implement`/`tests`/`evidence`
+  → invoke with `<NN-slug>` or `<NN-slug> P<k>`.
+- Docs-only units (triage returns only `[docs, evidence]`) do **not** load this
+  skill — they are executed in-place by the unit-lane conductor.
+- To execute all remaining steps: `<NN-slug>` with no step argument.
+- To repair a failed step: `<NN-slug> P<k>` (retry the same step).
+
+## Inputs — artifacts, never questions
+
+This skill **never interviews**. It reads its inputs — the unit doc's `Tasks`,
+`unit-route.mjs --triage`'s block, the route's tier — and a missing or ambiguous
+one is a **gap**, resolved in one fixed order and never by inference:
+**(0) provenance** (search the repo's own docs and record where) →
+**(1) research** (2–3 concrete options with trade-offs; asking for more research
+is a legitimate answer) → **(2) halt**: run `runner needs-input
+<unit-dir>`, paste the `open-questions@1` block verbatim, stop. Interactive the
+block is the pause point, unattended it is a hard fail. Grammar and exit codes:
+`orchestration-envelope`'s `references/TURN_CONTRACT.md` §Open questions.
+
+Bare `<NN-slug>` runs **all remaining steps** — the phase is not an input. File
+targets are the unit doc's nested `Relevant files:` metadata plus the
+path-protection checkpoint. `--max-attempts N` defaults to 3; `--force` skips the
+*stop* on the dependency and phase-lint gates (never the check — `PREFLIGHT.md`
+records the override in the Progress log) and has **no bypass** on the
+path-protection checkpoint.
+
+## Step 0 — Discover the project
+
+Per the agent guide's **Workflow conventions** + **documentation map**, read the
+unit doc at `docs/features/<NN-slug>/SPEC.md`. Verify it carries `## Tasks` (P1…Pn)
+**and the receipt sections of the shape it is written in** (#308 accepts both):
+the legacy shape carries `## Evidence` + `## Progress log`, a re-cut unit doc carries
+`## Specs`, `## Findings` + `## Log` (its evidence and gate runs are `E`/`G` log
+lines, its progress is `P` lines). If neither pair is present, the unit is not ready —
+stop and suggest `unit-lane` triage first. `agentic-workflow unit-route` resolves the
+shape; never judge a re-cut unit by the legacy headings and stop it.
+
+## Process
+
+### 1. Verify triage currency
+
+Run `runner unit-route --triage <slug>` and compare its block to the
+Evidence section header in the unit doc. **Mismatch → STOP and re-triage first.**
+This is the gate that ensures the executor and unit-lane agree on steps.
+
+### 2. Select the step
+
+If a step argument is given (e.g. `P2`), use that step. Otherwise, the **first
+unfinished step** — the first P<k> in `Tasks` whose checkbox is unticked.
+Never execute a step the triage skipped.
+
+**A ceremony-profile receipt is a recorded skip, not an error** (issue #436):
+when the triage block's `Skipped:` carries `ceremony-profile@1: <piece>
+discarded by project charter`, record the step in Evidence as
+`n/a — <the receipt verbatim>` and move on — never emit the step as a
+hand-off, never fail on its absence, and never read the profile to add
+anything back (the profile can only narrow ceremony; the catalog plus the
+computed risk tier remain the only expansion paths).
+
+**The ceremony belongs to the risk tier** ([risk-tiers.md](references/risk-tiers.md)
+owns that table). A phase never lowers its own tier.
+
+### 3. Pre-step gates
+
+Run gates in order; any fails → STOP (see [PREFLIGHT.md](references/PREFLIGHT.md)):
+
+1. **Path-protection checkpoint** — read the committed range against protected
+   paths (e.g. `tests/`, `fixtures/`). Exit 1 → STOP with the gate rejection
+   block. No `--force` bypass (no flag can override).
+2. **Phase-lint** — run `runner phase-lint <unit-doc>` **only** when the
+   step is `implement` and the unit has `Tasks` P1…Pn. Parse the `Tasks` section
+   (not PLAN.md/TASKS.md). Exit 1 → STOP. If the script is absent, apply the
+   eight `phase-contract` rules by hand, label weaker, and disclose.
+3. **Pre-write mapper** — for `implement` steps, settle the pre-write mapper
+   contract before branch creation, planning commit, or source/test edit
+   (`references/PRE_EXECUTION_GATE.md`): it closes the seven evidence questions
+   and routes `READY | REPLAN | NEEDS-DESIGN | BLOCKED`; only `READY`
+   authorizes the first write.
+4. **Dependency/invariant checks** — per unit-lane's triage catalog rules:
+   ensure required dependencies are merged; architectural invariants preserved
+   or backed by an explicit recorded decision (block `violates`/`introduces`/
+   `changes` before edits).
+
+### 4. Execute the step
+
+Follow the unit-lane reference for this step (`references/STEPS.md` catalog):
+one line — read the step's reference file, perform its checklist, commit the
+work. For `implement` steps: derive the test set first ([TEST_IMPACT.md](references/TEST_IMPACT.md)
+owns the block and the RED-evidence shape) and write tests-first where they pay
+(core/domain, orchestration). A new script+suite pair lands red-first — the
+obligation is the guide's (`AGENTS.md` § Working rules), the mechanism is
+`TEST_IMPACT.md`'s, and this paragraph cites both instead of carrying a third
+wording.
+
+**Context targeting (issue #269).** The phase's read set is the unit doc's
+nested `Relevant files:` metadata — resolve it with `runner
+relevant-files <unit-doc> --phase P<k>` and read those files plus
+the step's one-hop references before the first edit, instead of surveying the
+repository. A missing or empty list degrades to a scoped survey, recorded in
+the Progress entry — never a silent repo-wide read. The sub-section is metadata
+owned by `phase-contract`, so a file missing from it is never out of scope
+(never-authority); the discovers-more path is the post-step's forward
+propagation.
+
+**Orchestrate path** (only when the unit or the operator declares it, issue
+#260): the step dispatches instead of executing in-orchestrator — freeze the
+delegate brief (exact files, exact gate command, exact expected values,
+`expected_duration` + resource requirements, the model from
+`agentic-workflow resolve-passes`), pass `resources admit` before spawning,
+then verify by running the gate and reading the diff — never by trusting the
+subagent's summary. [Orchestrate](../../unit-lane/references/ORCHESTRATE.md)
+owns the contract; a refused admission or an unresolvable model degrades
+inline, stated in the report.
+
+### 5. Claim-evidence loop (S5 — before post-step)
+
+Before running post-step, verify every claim the step's repair introduces. This
+is the repairer-owned verification that prevents the unit 79 F50-class failure
+(closed gate-green with an unreproduced figure "170" without re-deriving via
+`git diff --numstat`).
+
+1. **Claim ledger.** Enumerate every claim: each new figure, cross-reference,
+   "X is now Y"; in code: each behavior the step declares.
+2. **Mandatory reproduction.** Re-derive the figure with the command, resolve
+   the reference with grep, reproduce the behavior. Paste command + observed
+   output into the claim table — never type the expected result by hand.
+3. **Loop until green.** red → repair → re-run, *inside the same turn*, until
+   every claim verifies.
+4. **Admission rule.** If no command can verify the sentence, it is not a
+   claim, it is an opinion, and it does not get written.
+
+Output:
+
+```
+| claim | command | output | status |
+|---|---|---|---|
+| <claim> | `<command>` | `<observed output>` | ✓ |
+```
+
+The row shape is published grammar (`evidence-row@1` in
+`@gtrabanco/agentic-workflow-schema`), so a row missing its command, its
+observed output or a ✓/✗ verdict is a shape violation rather than a style nit.
+
+**Bounded checkpoint (S13/S14).** The claim-evidence loop is only paid if it is
+cheap: `runner test-route --check <changed path>` names the minimal
+suite a path needs, so an intermediate verification costs seconds instead of the
+full gate. An unmatched path answers `route: full-suite` — never fewer tests —
+and the full gate stays what the merge gate and CI run.
+
+### 6. Post-step
+
+1. **Diff guard** (implement steps only): run `runner diff-guard --base
+   <last-step-commit> --unit <unit>` — paste the block verbatim. **BREACH → STOP**
+   (re-triage or record exception). Anti-gaming: **NEVER shrink a diff by deleting
+   comments, blank lines, docs or tests.**
+2. **Relevant-files discipline** (issue #269): run `runner
+   relevant-files <unit-doc> --base <last-step-commit>` and require
+   exit 0 — the one failure it reports is a changed file neither listed in any
+   phase's `Relevant files:` nor logged in the unit doc (exit 1 names it: add
+   the file to a phase's list, or log the discovery on the spot — an unlisted
+   file is never out of scope, `phase-contract` owns that rule). **Forward-propagation:**
+   when this phase discovered files later phases will touch,
+   append them to those phases' `Relevant files:` lines in `## Tasks` now — at
+   phase close — and note the append in the Progress entry.
+3. **Evidence rows**: one row per AC satisfied — `| AC | command | exit/digest |
+   output (≤2 lines, reproduced via command, not typed by hand) | verified-by |`
+   — append to the Evidence section. The evidence row is a *reproduced receipt*,
+   not an assertion (S5: mandatory reproduction extends to doc artifacts).
+4. **Progress log**: append a dated entry —
+   `YYYY-MM-DD HH:MM — <what was done> → <commit sha> — next: <what is next>`.
+5. **Memory boundary** — this step is a phase transition. Follow
+   [the memory protocol](../unit-lane/references/MEMORY.md): before the first
+   memory read run `agentic-workflow memory probe` once and record its verdict
+   in Evidence; after the step, save the phase id, what it changed, its Evidence
+   outcome and any discovery under `topic_key: "unit/<NN-slug>/doc"`, an explicit
+   `project` and explicit session attribution (§5). A `degraded` verdict is
+   recorded and the mirror marked pending — it never blocks the step.
+6. **Commit**: `git add <changed files>` then `git commit -m "<type>(<scope>):
+   <step-summary>"` — run it, paste the SHA.
+
+### 7. Red gate (repair loop)
+
+After each step: run the project's verification gate (type-check + tests + build).
+
+- **Gate green** → proceed.
+- **Gate red** → record exit code + failing test names in the Progress log, repair
+  the same step, retry. Default `--max-attempts 3` (user value overrides).
+- **Exhausted** → STOP with:
+
+  ```text
+  UNIT LOOP — <unit> BLOCKED at <P<k>>
+  Reason: <NO-PROGRESS|ATTEMPT-BUDGET> · Attempts: <n>
+  Last validator: <command> → <exit/status + compact failure>
+  Preserved: no red commit; acceptance blob <sha> unchanged
+
+  → Next: inspect the named blocker, then re-run /execute-phase <unit> <P<k>>
+    · architecture/product decision required → resolve it before resuming
+    · continue atomically → /execute-phase <unit> <P<k>>
+  ```
+
+### 8. Whole-unit mode
+
+When invoked as `<NN-slug>` with no step: loop all remaining steps, one commit
+each. This is an **explicit operator choice only** — the lane's hand-offs
+always name exactly one phase (`<NN-slug> P<k>`), so a bare `<NN-slug>` from a
+lane hand-off is a defect; re-read the hand-off before looping. After each
+step: gates, execute, diff guard (if implement), evidence/progress update,
+commit. Skip intermediate review checkpoints; the mandatory end review covers
+the full accumulated diff. On gate red at any step: repair that step (up to
+`--max-attempts`), then continue the loop. The close-out is part of the last
+step's completion: open the PR against the project's **default branch** with
+`Closes #N` (owner: `AGENTS.md` § Working rules — one PR per unit, never stacked,
+and the one owner-ordered inline exception), write `- PR: <url>` into
+References, and settle the index row with `agentic-workflow roadmap
+<index> rowUpsert '<json>'` (`docs/ROADMAP.md`; a fix unit writes its `## Fixes`
+row with `agentic-workflow roadmap <index> fixrow '<json>'` — keyed by the issue
+number in its `[#N](url)` cell, never a hand edit).
+`runner roadmap-settle` exits 0 (#316).
+Terminal:
+
+```text
+UNIT LOOP — <unit> COMPLETE
+Steps: <n> · Commits: <sha list> · Gate: PASS
+PR: <url>
+
+→ Next: /review-change on the changed HEAD — the mandatory end review
+  · findings (REVIEW-FAIL) → /fold-findings repairs them; a fresh /review-change follows the fold
+  · merge gate after REVIEW-PASS → /audit-pr
+```
+
+### 9. Descope guard
+
+Before creating **any** issue while executing: classify with the descope test.
+A descope (moving an acceptance criterion or task out of scope) requires
+**explicit user approval first**, then record in the unit doc's
+`## References` section (not a follow-up issue) as:
+`- <YYYY-MM-DD> — descoped: "<criterion>" — approved by user`.
+An issue may never be the first record of a descope.
+
+## Required references
+
+These files must be loaded when their topic is active:
+- [PREFLIGHT.md](references/PREFLIGHT.md) — all gate blocks (dependency, status, pre-exec, evidence, lint, path-protection)
+- [TEST_IMPACT.md](references/TEST_IMPACT.md) — the impact set, its block, the empty-impact verdict and the RED-evidence shape
+- [EXECUTION_CONTRACT.md](references/EXECUTION_CONTRACT.md) — step completion gate, architectural invariants
+- [PRE_EXECUTION_GATE.md](references/PRE_EXECUTION_GATE.md) — pre-execution review gate, normalizer order
+- [FOLDING.md](references/FOLDING.md) — review finding fold cycle
+- [DESCOPE.md](references/DESCOPE.md) — descope test and amendment rule
+- [FORGE_BODY.md](references/FORGE_BODY.md) — forge operations (gh body-file rule)
+
+## Guardrails
+
+- The all-stages no-assumption rule binds every step here — **ask-don't-infer**,
+  owner `skills/unit-lane/references/DESIGN.md` (`ask-dont-infer@1`): an
+  expectation the tree, the docs, or a prior owner decision does not evidence
+  is asked, never invented.
+
+**Allowed:**
+- Only the triaged steps listed by the unit doc's Evidence header
+- Changes scoped to the acceptance criteria and step tasks
+- Documentation updates in the unit doc (Evidence, Progress, References)
+- Conventional commit messages per the project's Workflow conventions
+- The step's own reference file (read one-hop from the unit doc catalog)
+
+**Forbidden:**
+- Never commit red (test failure) — fix within the step's scope, or record the
+  blocker and stop.
+- Never weaken a validator (loosen assertions, reduce coverage) — a repair must
+  keep assertions at least as strong.
+- Never execute a step the triage skipped — the catalog is authoritative.
+- Never edit the unit doc's Acceptance criteria (that is re-triage with user consent).
+- Never write to `docs/LOGS.md` (S9 4b): LOGS.md must be pure code output —
+  no model writes it. The journal is append-only: a wrong past line gets a
+  *new correcting line*, never an edit. Machine-authored git-facts entries
+  (the extension's `logSession: true`, #394/#427) also kill the
+  "hand-tallied figure" class.
+- Self-audit box (S9 d): before committing, re-derive every claim the step's
+  persist introduces with pasted output. The turn does not end with unreproduced
+  claims.
+- Never expand scope beyond what Non-goals define — findings discovered during
+  implementation never widen the unit.
+- Never invent an acceptance criterion — ask the user with concrete options.
+
+## Relationship to other skills
+
+`unit-lane` conducts (triage → judgment steps → close-out ladder) and hands
+execution off **one phase per turn** (`<NN-slug> P<k>` with the catalog tier);
+this executes the named phase — or, as an explicit operator choice only, all
+remaining steps. The closing hand-off names exactly one phase and the tier
+while phases remain, and resumes the lane after the last one. A phase run as a
+pi-web Relay leg is this same contract and nothing more (owner:
+[`unit-lane/references/RELAY.md`](../unit-lane/references/RELAY.md)): it runs
+one named phase, records the same evidence and progress lines, then hands the
+packet's baton to the next leg instead of resuming the lane.
+`fold-findings` handles review finding repairs. The review pack axes
+(`review-implementation`, `review-code`, `review-security`, `review-perf`,
+`review-a11y`, `review-debt`) compose the review step; `workflow-status` routes
+here. `triage-issue` feeds issues into the lane. This skill is the **step
+executor** a turn invokes to perform one triaged step of a unit under the full
+gate machinery.
+
+## Portability
+
+Preamble + no-slash-menu fallback: owned by
+[`PORTABILITY.md`](../orchestration-envelope/references/PORTABILITY.md) — this
+section keeps only this skill's own fallbacks:
+
+- **No model tiers** — resolve each step's model from the operator's table; a
+  reviewing pass never runs weaker than the author
+  ([`ORCHESTRATE.md`](../unit-lane/references/ORCHESTRATE.md) owns that rule).
+- **No `/loop`/subagents** — invoke `<NN-slug>` for all remaining steps (the
+  built-in loop), or `<NN-slug> P<k>` for individual steps.
+- **No fresh workers** — execute inline and reduce state to the unit doc after
+  each commit; never re-read prior files.
+
+## Done when
+
+- Requested scope is implemented (the named phase, or all remaining steps in an
+  explicit operator run), gate is green, unit doc Evidence/Progress are current
+  (the Progress entry names the phase id), and the work is committed.
+- **The closing `→ Next:` block is printed.**
+
+## Closing recommendation
+
+Exactly one end-state applies — pick by the unit's Tasks section, never print a
+phase id the Tasks section does not define:
+
+Phases remain:
+
+```
+→ Next: /execute-phase <NN-slug> P<k+1> (tier: <tier>) — one phase per turn; <tier> is the catalog's implement entry
+  · whole-unit operator run complete → /review-change (mandatory end review)
+  · findings (REVIEW-FAIL) → /fold-findings repairs them; a fresh /review-change follows the fold
+  · merge gate after REVIEW-PASS → /audit-pr — the merge gate
+```
+
+The last phase just closed (a lane-run unit):
+
+```
+→ Next: /unit-lane <NN-slug> — resume the conductor for the remaining judgment steps
+  · whole-unit operator run complete → /review-change (mandatory end review)
+  · findings (REVIEW-FAIL) → /fold-findings repairs them; a fresh /review-change follows the fold
+  · merge gate after REVIEW-PASS → /audit-pr — the merge gate
+```

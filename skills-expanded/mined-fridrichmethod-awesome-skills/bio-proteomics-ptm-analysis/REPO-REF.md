@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fridrichmethod/awesome-skills (path: skills/ptm-analysis/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Frames PTM/phosphoproteomics analysis as three stacked inference layers on a biased enrichment - chemistry selection, site localization (FLR), and protein-level-adjusted quantification with MSstatsPTM

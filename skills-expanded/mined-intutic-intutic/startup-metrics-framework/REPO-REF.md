@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/intutic/intutic (path: packages/shared-types/src/__tests__/corpus/skills/wshobson-agents/plugins/startup-business-analyst/skills/startup-metrics-framework/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Track, calculate, and optimize key performance metrics for SaaS, marketplace, consumer, and B2B startups from seed through Series A, including unit economics, growth efficiency, and cash management. U

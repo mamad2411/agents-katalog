@@ -1,0 +1,68 @@
+---
+name: skin-weights
+description: Generate, lint and verify 2D skinning weights for layered skeletal characters — alpha-covering meshes, bounded harmonic weights between declared rigid bone cores, static leak/seam/stale-binding lint, reference FK/IK/LBS traces for the spine-skeletal audit, fixed-camera review renders and rig-c/Spine export with round-trip verification.
+---
+
+# Skin weights
+
+Use this when a 2D character (layered parts, or one whole approved image for small motion) needs weighted meshes: auto-weighting a part, diagnosing a fold, leak or rubbery joint, or proving that weights survive the actual motion. It owns the weight field and its evidence. Hierarchy, pivots, art readiness, runtime integration and final acceptance stay with [spine-skeletal](../spine-skeletal/SKILL.md), which this skill feeds.
+
+Weights are a design decision, not a solver output. The solver interpolates *between* rigid regions you declare; it cannot know where a joint should bend, what is hidden under a sleeve, or that a beak must stay rigid.
+
+## From a one-line request
+
+A short request such as "a pelican riding a bicycle with a fish in its beak, with bone and skin-weight animation" is enough. Before drawing, derive and write down the missing decisions, then show them in the first reply so the user can correct them:
+
+- **Contacts from the action.** Whatever the body uses must stay on it: a rider's feet on the pedals and hands (or wing tips) on the handlebar, a held object in the hand or beak. Each becomes a two-bone IK chain or a pinned contact with fixed bone lengths.
+- **Rigid parts.** Head, face, beak, hands, feet and boots, hard props (rims, frames, weapons) are one bone each.
+- **Soft parts.** Necks, tails, held animals, cloth ends and tyres get weights. A held object is pinned where it is gripped and loose at its free ends.
+- **Rhythm.** Secondary motion follows the main loop: a rider's head and tail sway once per pedal stroke; bumps add lag.
+- **Mode.** Pick whole-figure or layered parts from the motion size (see the [spine-skeletal](../spine-skeletal/SKILL.md) mode table).
+- **Evidence by default.** Lint, fold audit and surface measures, a fixed-camera GIF and a `--bones --constraints` overlay. The worked case `examples/pelican-bicycle` is the reference for these defaults.
+
+Ask only when a choice changes the result and the request cannot settle it, for example which engine will play it.
+
+## Workflow
+
+1. **Freeze inputs first.** Approved layered art with painted joint overlap, setup bones on the drawn pivots, and a written rig (`ogs.skin-rig/1`, see [formats](references/formats.md)). Pick the review alpha threshold and any lint bounds now; never loosen them after seeing a result. One part = one attachment with one outline. A head, beak, fist or prop is a single-bone (rigid) part.
+2. **Mesh:** `python3 scripts/build_mesh.py rig.json --out mesh.json`. Covers every visible pixel, fills enclosed holes, writes the outline first (Spine/rig-c hull rule). Rigid backdrops with separate islands use `mesh.mode: "quad"`. Choose spacing so a joint's transition gap spans at least three to four cells.
+3. **Solve:** `python3 scripts/solve_weights.py rig.json mesh.json --out weights.json`. Per influence bone declare `handleRadius` (half the limb width at that bone) and `coreInset` (fraction of the bone kept free at each end). Transition width at a joint ≈ the gap between neighbouring cores. Read [method](references/method.md) before tuning.
+4. **Lint:** `python3 scripts/lint_weights.py rig.json mesh.json weights.json`. FAIL on stale hashes or bindings, normalization, foreign bones, influence count, detached influence islands (leakage) and rigid zones closer than `minTransition` (seam). PASS here is necessary, never sufficient.
+5. **Deform with the real motion:** `python3 scripts/pose_trace.py rig.json mesh.json weights.json motion.json --out trace.json --report pose.json`, then the spine-skeletal [audit](../spine-skeletal/scripts/audit_skin.py) and [surface measure](../spine-skeletal/scripts/measure_surface.py) on that trace. Include the extremes of every joint (contacts, IK reach, max flexion). Unreachable IK and follow-contact gaps are failures, not things to stretch away.
+6. **Look at it:** `python3 scripts/render_skin.py trace.json --sheet sheet.png --gif loop.gif --scale 4 [--wire] [--weights] [--rings] [--heat BONE] [--bones] [--constraints] [--view=x0,y0,x1,y1]`. One fixed camera for all frames (pass `--view` when a scrolling backdrop would stretch the fitted camera; use the `=` form for negative numbers), bilinear and supersampled; folded triangles are painted red (`--rings` circles them), `--weights` tints each part by bone like Spine's weights view, and `--bones --constraints [--fade 0.5]` draws the skeleton with its IK chains and targets over the art. Check the inner joint crease, outline continuity and rigid parts at full and game size.
+7. **Export when it holds:** `python3 scripts/export_rigc.py rig.json mesh.json weights.json --motion motion.json --out build/` writes rig-c specs (y-up). With `--verify-rigc <rig-c package> --bun <bun>` it compiles with that rig-c, poses with rig-c's own core and compares every vertex. The official Spine editor/parser round trip remains `not-run` unless you run it.
+
+## Whole-figure mode (small motion, no cut parts)
+
+For small-amplitude motion the figure does not have to be split. Declare **one part that is the whole approved image** (no hidden-cap art, no element inventory) and give its mesh the whole skeleton: head and torso as rigid cores, each limb segment a bone with its own `handleRadius`/`coreInset`, joints as the only transitions. Because nothing is cut, there is no seam at the elbow, knee or sleeve.
+
+- Set the amplitude budget per joint before solving (see [spine-skeletal](../spine-skeletal/SKILL.md) mode table) and run the bend sweep to those angles on the real mesh. Stay inside the budget; do not widen bands to rescue a larger action.
+- Keep head, face, hands, boots, hair and painted cuffs on one bone each (rigid cores with generous `handleRadius`). Small arm and leg swings use per-bone insets so the transition sits at the joint, not along the limb.
+- Lint's influence-island and `minTransition` checks are the leak guard. If a limb pixel region touches the torso or the other leg in the image, check it at full size: harmonic weights cannot separate overlapping paint, so that region limits the amplitude.
+- The pose report's `softLengthFraction`, the fold audit and the surface measures must be reported at the budget extremes. A failed extreme means the action belongs to layered parts or redrawn frames, not to bigger weights.
+
+For an idle (breathing, a slight lean, head follow-through) three scripts do the setup and the motion check:
+
+1. `python3 scripts/measure_anatomy.py figure.png --out anatomy.json --rig-out rig.json` measures the silhouette **once**: body axis, row half-widths, the neck bottleneck, torso half-width, appendages (wings, tails, arms reaching past 1.3x the torso) and the foot band. It proposes a rig with a planted ground bar, a spine that can lean, a zero-length chest for breathing and a head that is rigid from the neck line up. No bottleneck means no guess: it stops until you pass `--neck-row`. Never re-measure per frame; that is how generated idles jitter.
+2. `python3 scripts/idle_motion.py rig.json idle.json --out motion.json` turns a few channels into one seamless idle: every channel follows the same eased breath (rise over `inhale` of the breath, longer settle), a whole number of `breaths` per loop, and an optional `lag` so the head follows the chest. Phase 0 is the setup pose, so the loop seam is invisible. A fractional breath count, `inhale` outside 0.2..0.8 or a rotation above 15 degrees is refused, never rounded or clamped.
+3. After the usual mesh, solve, lint, trace and audit, `python3 scripts/motion_qa.py trace.json --out motion-qa.json` judges the result **as motion**: a hitch at the loop wrap, a one-frame pop, jitter (how often a moving vertex reverses direction) and parts declared `--still`. Declare intentional snap-backs with `--allow-reset` (a scrolling backdrop jumping one period, a spawned pebble) and intended shaking with `--allow-jitter`.
+
+The worked case is `examples/whole-figure-idle/run.py`: one painted duck, no cut parts, with a fractional-breath config that must be refused and a jittered head that must fail motion QA. The breath curve, the once-only anatomy and motion-as-motion review follow [sprite-gen](https://github.com/aldegad/sprite-gen) (Apache-2.0); this is an independent bone-and-weights implementation.
+
+## Fixing failures
+
+| Evidence | Likely cause | Change |
+|---|---|---|
+| Visible fold at the inner joint | Transition too narrow for the bend angle | Raise `coreInset` on the side the band is short; refine mesh; then corrective bone or alternate drawing for extreme angles |
+| Result flips between mesh spacings | Marginal transition | Keep widening until it passes at two spacings |
+| Lint seam (rigid zones too close) | `handleRadius` sweeps sideways into the neighbour, typical at short bones (foot, head) | Per-bone radius/inset; never cover it with a larger tolerance |
+| Detached influence island | A bone reaches a second region (other limb, across a gap) | Split the part, restrict `bones`, or fix the handle |
+| Area ratio near 0 or P95 stretch high without folds | LBS volume loss / rubbery band | Narrower band or corrective/alternate art; widening further trades folds for rubber |
+| Thin limb visibly curves (high `softLengthFraction` in the pose report) | Symmetric insets spread the bend into the thin segment | Asymmetric `coreInset: [head, tail]` so the bend sits in the soft/covered side; hinge joints that rotate far (ankle, wrist) become a separate rigid layer under a painted joint cap |
+| Stale bind drift | Setup pose edited after binding | Re-solve; do not hand-edit local coordinates |
+
+The narrow-vs-wide trade-off is real: a band that is too narrow folds, one that is too wide makes the limb rubbery. Report both the fold audit and the surface measures.
+
+## Acceptance
+
+Report separately: lint, pose report (IK/contacts), audit `technicalStatus`, surface measures, visual review, export verification and runtime integration. A reference-evaluator trace is tool evidence; the shipping runtime still owes its own exported trace. `characterAccepted` stays false here. Keep failed candidates and their reports. Soft bodies are ordinary weighted parts: a tyre is a ring skinned to zero-length bones that the motion pushes, a fish is a four-bone chain with wide transitions. Worked cases in the source repository (not installed with the pack): `examples/pelican-bicycle/run.py`, `examples/whole-figure-idle/run.py` and `examples/weighted-skinning/harmonic_case.py`. Report `motion_qa.py` next to the audit: a trace can pass every fold check and still hitch, pop or shake. Run `python3 scripts/test_skin_weights.py` after changing any script.

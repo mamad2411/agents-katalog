@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hidorakai002/ai-workspace-archive (path: ai_skills/sources/sickn33-awesome-skills/plugins/antigravity-awesome-skills-claude/skills/game-development/pc-games/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: PC and console game development principles. Engine selection, platform features, optimization strategies."

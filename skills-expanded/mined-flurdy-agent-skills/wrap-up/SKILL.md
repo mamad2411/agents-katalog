@@ -1,0 +1,655 @@
+---
+name: wrap-up
+description: Summarise session activity, artifact-hygiene coverage, and working-copy risks, then save a resume handoff. Reports tracker/settings drift without repairing it; new files auto-save, overwrites need confirmation. Run before leaving the client.
+allowed-tools: "Bash(~/.agents/skills/wrap-up/scripts/header.sh:*), Bash(~/.agents/skills/wrap-up/scripts/activity.sh:*), Bash(~/.agents/skills/wrap-up/scripts/multirepo.sh:*), Bash(~/.agents/skills/wrap-up/scripts/save-handoff.py:*), Bash(~/.agents/skills/landscape/scripts/working-copy.sh:*), Bash(~/.agents/skills/artifact-hygiene/scripts/artifact_hygiene.py:*), Read, AskUserQuestion, save_handoff, mcp__jira__jira_get"
+model-tier: standard
+model: sonnet
+effort: high
+version: "0.20.0"
+author: "flurdy"
+---
+
+# Wrap-up — End-of-session handoff
+
+Produce a tidy end-of-day snapshot so the next session can resume from a paste, even if this one was mostly admin/planning and the worktree is about to be discarded. Pair with `/landscape` (which orients at the *start* of a session) — `/wrap-up` is its bookend.
+
+## When to use
+
+- Before ending the current client session, especially in worktree sessions.
+- After a planning- or discussion-only session that produced no code but valuable context (Jira refinement, bead triage, design exchanges).
+- Before pruning a worktree where you might otherwise lose the thread.
+
+## What it does
+
+1. Activity roundup for today (commits, PRs created/merged, beads closed).
+2. Working-copy hygiene — flag uncommitted, unpushed, worktree-only state, and artifact-hygiene risks.
+3. Settings/tracker drift — report risks and name their separate review workflow; do not repair them.
+4. Paste-ready **Resume block** capturing topic, decisions, open threads, and where to pick up.
+5. Atomically save and read-back verify the resume block at `~/.agents/handoffs/YYYY-MM-DD-{slug}.md`; prompt only on collision/overwrite or when choosing a different name.
+6. Optionally point to `/handoffs-tidy` for a separately requested archive review; do not invoke it.
+7. Reminder to leave the client manually with its own command — the skill cannot exit for you.
+
+## Important — client-specific commands
+
+Follow `/name-session`'s client-selection convention. Read [name-session](../name-session/SKILL.md)
+for detection only; do not invoke its scope lookup during wrap-up.
+
+- **Pi:** use `/quit`. Never recommend `/exit` in Pi.
+- **Claude Code:** use `/exit`.
+- **Unknown client:** label both commands — Pi: `/quit`; Claude Code: `/exit` — rather than guessing.
+
+The skill cannot execute either client's built-in exit command. After the summary renders, the user exits manually.
+
+It also **cannot rename the session** for you. Only you typing the command triggers a rename. Step 4 prints `/name {slug}` for Pi or `/rename {slug}` for Claude Code, but the handoff file remains the durable artifact you grep for tomorrow.
+
+## Instructions
+
+> **MUST re-fetch on every invocation.** Each run executes the helper scripts from scratch. Never reuse output from a prior run; state has changed since.
+>
+> **MUST use the dedicated helper scripts.** Never construct ad-hoc `git`/`gh`/`bd` pipelines inline — those bypass the per-script permission allowlist and produce noisy permission prompts. Specifically: §0 must go through `~/.agents/skills/wrap-up/scripts/header.sh`, §1 must go through `~/.agents/skills/wrap-up/scripts/activity.sh`, §3 must go through `~/.agents/skills/landscape/scripts/working-copy.sh` (reused — landscape and wrap-up share the same hygiene probe), and §3b must go through `~/.agents/skills/wrap-up/scripts/multirepo.sh`.
+
+Render the sections below in order. The helper scripts in §0, §1, §3, §3b, and §3d can run in parallel.
+
+### 0. Header
+
+```bash
+~/.agents/skills/wrap-up/scripts/header.sh
+```
+
+It emits delimited sections:
+
+- `---DATE---` — `date '+%A %Y-%m-%d %H:%M'` output.
+- `---CWD---` — `pwd`.
+- `---BRANCH---` — current branch (empty if not in a git repo).
+- `---GIT-COMMON-DIR---` / `---GIT-DIR---` — used for worktree detection (see below).
+- `---REPO-ROOT---` — canonical repo root (parent of the realpath of `--git-common-dir`); empty if not in a git repo.
+- `---DEFAULT-BRANCH---` — short name of the repo's default branch (`main`/`master`), empty if undetermined.
+- `---WORKTREES---` — one `{path}|{branch}` line per worktree of this repo (branch `(detached)` when applicable). §4 uses it to map a feature branch back to the worktree that holds it.
+- `---SETTINGS-DRIFT---` — one `{worktree}|{file}|{count}` line per worktree settings file holding permission entries the canonical (main-worktree) copy lacks (`parse-error` instead of a count when the file isn't valid JSON). §3c renders these.
+
+If `---GIT-COMMON-DIR---` and `---GIT-DIR---` differ, the cwd is a **linked worktree** (not the main checkout). Note this — it affects the warnings in §3. (String inequality is sufficient: the main checkout returns the same value for both — typically `.git` — while a linked worktree returns `/path/to/main/.git` for common-dir vs `/path/to/main/.git/worktrees/{name}` for git-dir.)
+
+Capture `---REPO-ROOT---` as `{repo-root}` for the resume block in §4. It's the stable identity `/handoffs` uses to group sessions per project — independent of which worktree wrote the handoff, and resilient to the worktree being pruned later.
+
+Default to the current cwd/branch, including trunk-based repositories with retained worktrees.
+Other worktrees do not prove this session belongs elsewhere. §4 considers an alternative only when
+this conversation identifies unfinished work there; a completed temporary branch is not a resume target.
+
+Render:
+
+```markdown
+## Wrap-up — {Weekday} {YYYY-MM-DD} {HH:MM}
+
+**Where:** `{pwd}` on `{branch}`{worktree-suffix}
+```
+
+`{worktree-suffix}` is ` _(linked worktree)_` when applicable, else empty.
+
+### 1. 🧾 Today's activity
+
+Run the helper:
+
+```bash
+~/.agents/skills/wrap-up/scripts/activity.sh
+```
+
+It emits delimited sections:
+
+- `---STATUS---` — `OK` or `NO_GIT`. If `NO_GIT`, skip the Commits sub-section.
+- `---DATE---` — today's `YYYY-MM-DD` (the script's window).
+- `---WINDOW-START---` / `---WINDOW-END---` — the local, exclusive-end interval bounding activity.
+- `---AUTHOR---` — `git config user.email` for the commit filter.
+- `---COMMITS---` — one pipe-delimited line per commit: `{worktree_basename}|{branch}|{sha}|{subject}|{when}`. Empty if no commits today.
+- `---GH-STATUS---` — `OK`, `UNAVAILABLE` (gh missing or not authenticated), or `ERROR` (one or more searches failed).
+- `---GH-DIAGNOSTICS---` — bounded names of failed PR searches; empty for `OK` and `UNAVAILABLE`.
+- `---PRS-CREATED---` / `---PRS-MERGED---` / `---PRS-CLOSED-UNMERGED---` — JSON arrays (always `[]` when empty) from `gh search prs --author=@me`.
+- `---BEADS-STATUS---` — `OK` / `NO_BD` / `NO_BEADS_IN_REPO`.
+- `---BEADS-IN-PROGRESS---` — output of `bd list --status=in_progress` (state being left for tomorrow).
+- `---BEADS-STALE-DAYS---` — the idle grace period in days (`WRAP_UP_STALE_DAYS`, default 7). §3a names it in the prompt.
+- `---BEADS-STALE-CANDIDATES---` — aged tracker claims selected by the helper's update-time cutoff.
+  These are §3a's report-only candidates, not proof of inactivity; session activity is unverified.
+- `---BEADS-CREATED-TODAY---` — open Beads created inside the emitted local window; the helper queries with equivalent UTC bounds and excludes closed-same-day rows so they appear only in `BEADS-CLOSED`.
+- `---BEADS-CLOSED---` — closed Beads whose closure timestamp falls inside the same UTC-normalized window.
+
+`activity.sh --workspace` is the reusable, read-only catch-up contract used by `/today`. It
+preserves this default no-argument contract, resolves members through
+`multirepo.sh --members-only`, and repository-qualifies commits and JSON Beads lists. Workspace
+mode also emits the generic `BEADS-CREATED` marker with every issue created in the window,
+including issues now closed; the compatibility `BEADS-CREATED-TODAY` marker retains the existing
+open-only behavior. `--workspace --previous-workday` selects Friday on Monday and the preceding
+calendar day otherwise for `/yesterday`. Explicit `--workspace --date YYYY-MM-DD` or
+`--workspace --since YYYY-MM-DD [--until YYYY-MM-DD]` selects up to 31 inclusive local days;
+omitted `--until` means today. Future, inverted and conflicting selectors fail before collection.
+Workspace output adds `DATE-END`, weekday-labelled `DATE-LABEL`, and `COMMIT-DIAGNOSTICS`.
+Its `activity-commits.py` helper scans local branches, worktree HEADs and cached default refs,
+matching exact local/GitHub author emails, deduplicating SHAs and reporting absolute committer times.
+The no-argument wrap-up commit schema/selection is unchanged. See [today](../today/SKILL.md)
+for recap identity, cached-history and rendering rules. The helper converts the emitted local
+`WINDOW-START`/`WINDOW-END` interval to UTC for timestamp filtering and requires Python 3.10+
+(standard library only), Bash 4+ and, for workspace commit collection, Git 2.37+.
+Do not parse workspace configuration or reproduce date-window logic in consumers.
+
+#### Commits
+
+Render as a table only if `---COMMITS---` is non-empty:
+
+```markdown
+### 🧾 Commits today
+
+| Worktree | Branch | SHA | Subject | When |
+|----------|--------|-----|---------|------|
+```
+
+- Truncate Subject to ~50 chars.
+
+If empty: `_No commits today._` (Still useful — confirms admin-only session.)
+
+#### PRs created / merged / closed today
+
+If `---GH-STATUS---` is `UNAVAILABLE`, render `_GitHub CLI not authenticated — PR roundup skipped._` and skip the sub-section. If it is `ERROR`, retain rows from successful searches and render `_GitHub query failed — PR roundup may be incomplete._` plus the bounded `---GH-DIAGNOSTICS---` entries.
+
+For `OK` or `ERROR`, parse the three JSON arrays. De-duplicate (a PR may appear in created + merged on the same day — merged wins). Render a single table if anything remains:
+
+```markdown
+### 🔀 PRs today
+
+| Event | PR | Repo | Title |
+|-------|----|------|-------|
+```
+
+- **Event**: 🆕 created / 🚀 merged / 🚫 closed-unmerged / 📝 draft (created and still draft).
+- **PR**: markdown link `[#{number}]({url})`.
+
+Skip the section entirely if all three arrays are empty.
+
+#### Jira tickets you touched today
+
+Query for tickets the current user updated since midnight (status transitions, comments, edits):
+
+```
+mcp__jira__jira_get
+  path: /rest/api/3/search/jql
+  queryParams:
+    jql: updatedBy = currentUser() AND updated >= startOfDay() ORDER BY updated DESC
+    fields: summary,status,issuetype,updated
+    maxResults: 20
+  jq: issues[*].{key: key, summary: fields.summary, status: fields.status.name, type: fields.issuetype.name, updated: fields.updated}
+```
+
+Render as a table only if non-empty:
+
+```markdown
+### 📋 Jira touched today
+
+| Key | Type | Status | Summary |
+|-----|------|--------|---------|
+```
+
+- **Key**: markdown link to the issue (`[KEY](https://.../browse/KEY)`).
+- Truncate Summary to ~50 chars.
+
+Skip the section entirely if the result is empty. If the Jira MCP errors or isn't configured, render `_Jira unavailable — skipped._` and move on (do not fail the skill).
+
+Note: `updatedBy` catches the obvious cases (status changes, comments, field edits). It won't catch tickets you only *read* during the session — that's intentional. The conversation chat in §2 captures what you *thought about* but didn't change.
+
+#### Beads — in-progress, created today, closed today
+
+If `---BEADS-STATUS---` is `NO_BD` or `NO_BEADS_IN_REPO`, skip the whole sub-section silently.
+
+Render each of the three lists only when non-empty. Combine into compact tables (the same column shape works for all three):
+
+```markdown
+### 🎯 Beads
+
+**In progress ({count})**
+| ID | Type | Pri | Title |
+|----|------|-----|-------|
+
+**Created today ({count})**
+| ID | Type | Pri | Title |
+|----|------|-----|-------|
+
+**Closed today ({count})**
+| ID | Type | Pri | Title |
+|----|------|-----|-------|
+```
+
+Notes:
+- The default `bd list` output already filters out closed beads, so `BEADS-CREATED-TODAY` naturally excludes ones that were closed the same day. Those appear under "Closed today" instead — no de-duplication needed.
+- **In-progress** is the most load-bearing for resume — it's the answer to "what was I in the middle of?" Always render it first when non-empty.
+- **Epic context.** Include already-verified parent/dependency context from this session if useful;
+  do not start a new tracker investigation to complete the handoff. Mark unknown progress unknown.
+- If all three are empty, skip the whole `### 🎯 Beads` heading. If only some are non-empty, render just the populated tables and skip the empty ones (don't show `_No created today._` placeholders — silence is shorter).
+
+### 2. 🧠 Today's threads (model-summarised)
+
+This is the *qualitative* part — what `git log` cannot tell you. Looking at the current session's actual conversation history, summarise in 3–6 bullets:
+
+- **Topic(s)**: one-line description of what we were working on.
+- **Decisions made**: anything settled (approach picked, scope cut, deferral, ticket transition).
+- **Open threads**: unresolved questions, things parked for tomorrow, blockers.
+- **Surprises**: anything discovered that changes the plan or contradicts an earlier assumption.
+
+Keep each bullet to one sentence. If the session was purely mechanical (e.g. just ran `/landscape` and `/pr-status`), say so in one line and skip the bullets — there's nothing worth restating.
+
+### 3. 📍 Working copy hygiene
+
+Reuse landscape's helper (same probe — don't duplicate it here):
+
+```bash
+~/.agents/skills/landscape/scripts/working-copy.sh
+```
+
+Parse its `---BRANCH---`, `---STATUS---`, `---AHEAD-BEHIND---`, `---STASHES-ON-BRANCH---`, and `---OTHER-WORKTREES-UNSAFE---` sections.
+
+Render a small status block + appropriate warning:
+
+```markdown
+### 📍 Working copy
+
+- Branch: `{branch}`{worktree-suffix}
+- Uncommitted: {clean | N modified / M untracked}
+- Unpushed: {0 | N commits ahead of @{u} | no upstream}
+- Stashes on this branch: {0 | N}
+```
+
+Then exactly one of the warnings below (pick the first matching rule):
+
+1. **Uncommitted changes** → `⚠️ Uncommitted work — the resume block does not preserve file diffs. Review in a separate preservation task before removing this checkout.`
+2. **Unpushed commits** → `⚠️ {N} unpushed commit(s) remain local. A handoff does not publish them or authorize a push.`
+3. **Linked worktree, clean, no unpushed, no stashes** → `ℹ️ Linked worktree with no code to preserve. Conversation recovery still depends on a verified handoff save — check the save result below before leaving or pruning.`
+4. **Main checkout, clean** → no warning.
+
+Also surface **other worktrees with unsaved work** from `---OTHER-WORKTREES-UNSAFE---` as a footnote if any exist — easy to forget those after closing the session.
+
+**Unattributed changes.** Report changes not attributable to this session as ownership unknown,
+not automatically another session's work. Never commit, stash, discard, push, or repair any changes
+inside wrap-up. A commit author or tracker status does not establish session ownership.
+
+### 3b. 🗂️ Multi-repo roll-up
+
+The §3 probe only inspects the **cwd repo**. In a multi-repo workspace (mgit services, a `workspace.json` manifest, or git submodules) that silently misses unpushed/uncommitted state in sibling repos — the single most common wrap-up blind spot. Run the roll-up:
+
+```bash
+~/.agents/skills/wrap-up/scripts/multirepo.sh
+```
+
+It emits `---MARKER---` (`mgit` | `workspace` | `submodules` | `none`), `---ROOT---`, and `---REPOS---` lines:
+`{name}|{branch}|{ahead}|{behind}|{upstream}|{modified}|{untracked}` (ahead/behind are `-` with no upstream; the root repo appears as its own row).
+
+- **`---MARKER---` is `none`** → single repo; skip this whole section silently (§3 already covered it).
+- Otherwise render only the members with something to report (ahead>0, behind>0, or modified+untracked>0); a clean+pushed member is noise. Skip the table entirely if every member is clean.
+
+```markdown
+### 🗂️ Other repos in this workspace
+
+| Repo | Branch | Unpushed | Behind | Uncommitted |
+|------|--------|----------|--------|-------------|
+```
+
+- **Unpushed**: `{ahead}`, or `no upstream` when upstream=no (local-only, never pushed).
+- **Behind**: show only when >0. A member that's **diverged** (ahead>0 AND behind>0) needs a rebase/pull before it can push — flag it explicitly: `🔶 diverged — N ahead / M behind`.
+- **Uncommitted**: `{modified} modified / {untracked} untracked` (omit zero parts).
+
+Load-bearing for resume: a service repo left ahead-but-unpushed, or a deploy/config repo left diverged, is exactly what tomorrow forgets. Feed any unpushed/diverged members into the resume block's **Open threads** or **Blocked on you** field (§4).
+
+### 3c. ⚙️ Worktree settings drift
+
+Skip this section silently if §0's `---SETTINGS-DRIFT---` was empty (not a git repo, no linked worktrees, no drift — or no `python3`, in which case `/tidy-settings` remains the manual path).
+
+Each line is `{worktree}|{file}|{count}`: `{count}` permission entries that live **only** in that worktree's `.claude/{file}` and not in the canonical main-worktree copy. For `settings.local.json` (gitignored, per-worktree) those entries are deleted forever when the worktree is pruned — that's the high-stakes case, and exactly the loss this check exists to prevent. For `settings.json` (git-tracked) the drift is an uncommitted edit; committing it is the fix, and §3's hygiene warnings already cover uncommitted files.
+
+Render one line per drifting file:
+
+```markdown
+### ⚙️ Worktree settings drift
+
+⚙️ {count} permission(s) in `{worktree}/.claude/{file}` exist only in that worktree — pruning it loses them.
+```
+
+(For a `parse-error` count, render `` `{file}` does not parse — `/tidy-settings` will diagnose `` instead.)
+
+Add an Open-threads bullet: `{count} worktree-only permission(s) in {worktree} — separately run
+/tidy-settings before pruning`. This is report-only: do not invoke a repair skill or copy settings.
+
+### 3d. 🔐 Artifact hygiene
+
+From the current cwd repo/worktree, run the authoritative local-only, read-only helper
+(Python 3.10+, Git and Gitleaks required):
+
+```bash
+~/.agents/skills/artifact-hygiene/scripts/artifact_hygiene.py --pretty
+```
+
+Capture stdout and exit status, including nonzero exits. Render **coverage before findings**
+using [artifact-hygiene's Report contract](../artifact-hygiene/SKILL.md#report): exact status/verdict,
+each source's status and safe error codes, normalized redacted findings, and `suppressed` counts
+with clone-local allowances disclosed. Use only normalized evidence; partial is never clean.
+Never recover raw evidence from reported files, commits, scanner output, or configuration.
+Remediation is a separate explicitly approved task; do not edit artifacts, rewrite history, change
+allowances, install tooling, or copy detectors during wrap-up.
+
+Validate `artifact-hygiene/v2`. Exit `0` alone is not clearance: complete reports may have verdict
+`clean`, `advisory`, or `block`. Show advisory findings without describing them as harmless. Exit `2`
+is partial and exit `3` is failed; both grade `block`. Missing tools or malformed output are
+unavailable, not clean. Check the verdict against the findings' `policy.grade` values and coverage;
+inconsistent reports are unavailable rather than recorded as valid grades.
+Audit failure never blocks saving the handoff: render available coverage and continue to §§4–5.
+
+Add this separate line to the working-copy risks and the saved resume block, even when clean:
+`Artifact hygiene ({audited-cwd}): {status}/{verdict}; {summary counts including suppressed}`.
+Preserve helper status/verdict exactly; if no valid report exists, write `unavailable — no valid report`
+instead. Keep finding locations/evidence in the visible report, not the saved handoff. For findings or
+incomplete coverage, add an Open-threads bullet for a separately approved review before publication.
+
+The audit covers only this cwd repo, not the whole workspace or the handoff being written afterward.
+Other repositories in §3b remain unaudited unless the helper is separately run with their verified
+worktree path as its repository argument. Label every audited location; never inherit a root's clean
+verdict for members or switch to the main checkout when wrapping a linked worktree.
+
+### 3a. 🧹 Aged tracker claims (report-only)
+
+Use `---BEADS-STALE-CANDIDATES---` and `---BEADS-STALE-DAYS---`; skip when the tracker is absent
+or no candidates were returned. List the candidate IDs with their owning repository when known.
+Say: `Tracker claims not updated for {stale-days}+ days; session activity is unverified.`
+Absence from commits, branches or PRs is not proof of abandonment; private bead IDs need not appear
+in any of them. Keep current status in the handoff and name `/backlog-groom` as a separate review
+when relevant. Wrap-up does not change tracker status, close work, or claim a task.
+
+### 4. 🧷 Resume block
+
+A self-contained paste that, dropped into a fresh session tomorrow, lets the next instance pick up without re-discovering context. Fenced as markdown so it copies cleanly.
+
+**Before rendering the block, surface the topic slug and a paste-ready rename** so the user sees what this session is being filed under and can name the session to match before exiting:
+
+```markdown
+**Topic slug:** `{slug}` — used as the Resume title and the handoff filename.
+
+**Rename this session to match:**
+
+```
+/name {slug}
+```
+
+(Paste it into Pi's command input and press Enter. In Claude Code, use `/rename {slug}` instead. Optional; skip if the session is already named for this slug.)
+```
+
+This is the explicit "what should we call this session" cue — without it, the slug is buried inside the fenced block and easy to miss.
+
+#### Reconcile the branch when parked on the trunk
+
+> **Gate — skip this whole sub-section unless the repo has linked worktrees** (more than one `---WORKTREES---` entry from §0). With only the main checkout there is no other-worktree feature branch to recover, so just record the current branch as-is (even the trunk). The reconciliation below is worktree-specific machinery and pure noise for projects that don't use worktrees — don't run it for them.
+
+The resume block's `{branch}` and `{cwd}` default to §0's current cwd and branch. Preserve that
+location in trunk-based work. Only reconcile when this session has identified unfinished work in
+another checkout; worktree count, commit authorship and matching branch names do not prove ownership.
+
+For that identified unfinished work, locate a possible resume target in the existing evidence:
+
+1. **Today's commits on a feature branch** — a non-default branch in §1's Commits table with commits today. Map it to its worktree path via §0's `---WORKTREES---`.
+2. **A PR created/merged today** (§1 PRs) whose head branch is a feature branch.
+3. **The topic ticket** — a branch in `---WORKTREES---` whose name contains the topic slug's ticket (e.g. slug `ab-1505-…` → branch `fix/AB-1505-…`).
+
+Then:
+
+- **Exactly one confirmed session target stands out** → record that branch/cwd, with a linked-worktree
+  note when applicable. Never substitute an unrelated or already-integrated branch. Surface the change:
+
+  `> Wrapped from `{cwd-on-trunk}` (on `{default-branch}`), but today's work is on `{feature-branch}` in `{feature-worktree}` — recording that as the resume location.`
+
+- **Several feature branches are in play, or it's ambiguous** → ask with `AskUserQuestion` which branch/worktree the next session should resume in. Options: each candidate `{branch} — {worktree basename}`, plus `Stay on {default-branch}`.
+- **No feature branch at all** (the session committed directly to the trunk, or did no code) → keep the trunk. That's correct, not the bug — don't invent a branch.
+
+`{repo-root}` is unaffected — it's the same repo regardless of which worktree you record.
+
+```markdown
+### Resume block
+
+```markdown
+# Resume: {topic-slug} — {YYYY-MM-DD} {HH:MM}
+
+**Where to pick up:** `{cwd}` on branch `{branch}`{worktree-note}
+**Repo root:** `{repo-root}`
+**Session dir:** `{session-dir}`
+**Jira:** {jira-field}
+**Beads:** {beads-field}
+**Deliverable:** {deliverable-field}
+**PRs:** {prs-field}
+
+**Context:**
+- {one-line framing of what we're doing and why}
+
+**Decisions so far:**
+- {bullet}
+
+**Working-copy risks:**
+- Artifact hygiene ({audited-cwd}): {status}/{verdict}; {summary counts including suppressed}
+- {other preservation risks, if any}
+
+**Open threads:**
+- {bullet}
+
+**Blocked on you (manual ops):**
+- {human-only action the agent could not do — secret to seal, deploy/sync to run, push reserved by the permission classifier, access to grant — omit the whole section if none}
+
+**Suggested next step:**
+- {one concrete action — file to open, command to run, person to ask, ticket to read}
+
+**Pointers:**
+- {free-form ancillary refs: dashboards, commits worth re-reading, people to ask — or omit the section entirely if nothing to add}
+```
+```
+
+Guidance for the model when filling this in:
+
+- Keep it short. A resume block longer than ~30 lines is a signal to split the work into multiple beads instead.
+- `{YYYY-MM-DD}` and `{HH:MM}` both come from the header script's `---DATE---` field (`date '+%A %Y-%m-%d %H:%M'`). The time disambiguates several same-day handoffs in the `/handoffs` picker — `list.sh` reads it back from this header line (falling back to file mtime for older handoffs), so keep the `{YYYY-MM-DD} {HH:MM}` shape on the `# Resume:` line intact.
+- **Blocked on you (manual ops)** is for actions only the human can take — sealing secrets, running deploys / `make …-sync`, pushes the permission classifier reserved, granting access. Keep these out of "Suggested next step" (which is the *agent's* next move). Omit the field entirely when there are none — most sessions have none.
+- `{topic-slug}` is kebab-case, ≤4 words. Pick the most specific noun phrase — `ab-1107-cta-event` beats `cta-stuff`.
+- `{worktree-note}` is ` (worktree at {path})` for linked worktrees, else empty.
+- `{cwd}` should be an **absolute path** when possible — not a relative path like `packages/web/`. The `/handoffs` skill matches handoffs to repos via the recorded location, and relative paths can't be resolved later.
+- `{repo-root}` is the value captured in §0 (canonical repo root — parent dir of the realpath of `--git-common-dir`). Omit the line entirely (don't render an empty value) if the session wasn't in a git repo.
+- `{session-dir}` is §0's absolute `---CWD---`. Render the line **only** when the handoff records work in another repository or directory than the session ran in: §0's `---REPO-ROOT---` is empty or differs from the recorded `{repo-root}` (for example, a session launched in `~/Code` about `~/Code/client`). Same-repo worktree switches never add it. `/handoffs` then lists the handoff as current from either place and leads with a `cd` to `{cwd}`. It is optional to the save helper; older handoffs without it keep matching by repo.
+
+#### Header fields: Jira / Beads / PRs
+
+These are **structured top-level fields** (one per line, right under `Repo root:`) so future tooling can grep them cleanly. Multiple values per field are common — use comma-separated backtick-quoted tokens. Use `—` when there are none for that field. Never omit a field; if empty, render `—`.
+
+Auto-populate from the data already gathered in §§1–2; do not ask the user. Sources, in priority order:
+
+- **Jira**: tickets touched today (from §1's "Jira touched today" table) + any Jira keys extracted from the current branch name (e.g. `fix/AB-649-…` → `AB-649`) + any keys the chat referenced. De-duplicate. Format: `` `AB-649`, `AB-651` ``.
+- **Beads**: in-progress beads (load-bearing for "what was I doing") plus any beads closed or created during this session. Format: `` `bd-123`, `bd-124` ``. Don't list every closed bead from §1 if there were many — prefer the in-progress set as the primary signal. This is the **full context** list — own work *and* recurring "in-progress elsewhere" / parent-epic beads.
+- **Deliverable**: the subset of `Beads` that is **this session's own work** — the bead(s) whose closure means *this handoff is finished*. Derive it from the beads referenced in **today's commits in this repo** (§1's activity) and/or the bead the session actively worked, in_progress or just closed. **Exclude** context beads (recurring "in-progress elsewhere", another session's WIP) and parent epics — they appear in `Beads` only. Format: `` `bd-123` ``. This is what `/handoffs` and `/handoffs-tidy` key their "done" check on for trunk repos (where everything commits to `master`, so there's no branch/PR signal). **When unsure, include rather than omit** — an extra bead only delays the handoff being marked done (safe); omitting an own-work bead can make it look done while live work remains. Use `—` when the session delivered nothing of its own (pure context/triage/discussion) — then the handoff stays live until something else marks it done.
+- **PRs**: PRs created, updated, or referenced this session (from §1's PRs-today table). Format: `` `[#42](url)`, `[#43](url)` `` — keep the markdown link form so the next session can click through. Use just `` `#42` `` if no URL is available.
+
+If `Beads` or `PRs` has more than ~4 items, keep the most relevant 4 and add ` (+N more)` after the last item rather than wrapping to a second line. Never truncate `Jira` or `Deliverable`: keys are short, and `/handoffs` can verify ticket or bead closure only for a complete list; a truncated field cannot prove closure by itself.
+
+- Prefer **paths and IDs** over prose summaries — they're greppable next session.
+- If the session was admin-only (no code), the resume block is *more* valuable, not less. Capture the Jira/bead context exchanged in chat — those header fields stay populated even when no code changed.
+
+### 5. 💾 Save and verify the resume block (auto-save unless collision)
+
+Persisting the resume block is the point of `/wrap-up`: `/handoffs`, `/landscape`, and launchers such as `cl` and `pl` consume files under `~/.agents/handoffs/`. The deterministic helper owns path construction, no-clobber creation, writing, and read-back verification. Frontmatter is not a portable permission sandbox; each client's actual permission policy still applies.
+
+Pass only the exact unfenced resume summary already rendered in §4, never raw transcripts,
+credentials, `.env` contents, or unrelated session text. Content sanitization remains the model's
+responsibility; the save operation is not a secret scanner.
+
+#### Pi: use the dedicated tool
+
+Call `save_handoff` with `date`, `time`, `slug`, and `content` (the complete unfenced block).
+This fixed-destination operation is available in every session-mode guard state, including plan,
+conflict and lost, without `/implement` or `/grant-file`. It does not grant repository, native-file,
+or shell-write authority. It runs the reviewed helper without a shell and verifies its receipt.
+New saves need no prompt; the tool uses only a short-lived target-file lease, never a directory
+or session-long grant. Distinct filenames can save concurrently; a contended target remains blocked.
+
+If the tool is absent, disabled or fails, report the handoff unsaved and keep the recovery block.
+Do not fall back to Bash, native file tools, a different directory, or `/grant-file` in Pi.
+Activation/reload of a compatible pi-session-mode package is a separate owner-approved operation.
+A helper-digest mismatch needs a reviewed adapter update, not a bypass.
+
+#### Other clients: use the helper under their own permission policy
+
+The following shell invocation is not a Pi fallback. When a shell heredoc is the stdin mechanism,
+use a quoted delimiter absent from the block so backticks, `$()`, backslashes, and other content
+are not expanded:
+
+```bash
+~/.agents/skills/wrap-up/scripts/save-handoff.py {YYYY-MM-DD} {HH:MM} {slug} <<'WRAP_UP_HANDOFF_EOF'
+# Resume: {slug} — {YYYY-MM-DD} {HH:MM}
+...
+WRAP_UP_HANDOFF_EOF
+```
+
+The helper requires Python 3.10+, accepts at most 64 KiB of UTF-8, and returns one JSON object with `schemaVersion: "wrap-up-save/v1"`. It rejects malformed identity arguments, empty input, missing/out-of-order/empty required fields, NUL bytes, a mismatching first-line header, symlink/non-regular targets, and stale overwrite approval. Structure checks catch common truncation, not semantically incomplete prose; byte verification binds the submitted block, not the conversation transcript. It writes mode `0600` through a same-directory temporary file, installs a new target without clobbering, then reopens it without following symlinks and verifies the exact bytes and file identity. The target path is always `$HOME/.agents/handoffs/{date}-{slug}.md`; do not supply or substitute another path. The helper creates only that `handoffs` directory (mode `0700`) beneath an existing, non-symlinked `~/.agents`. While the retired `~/.claude/handoffs/` still exists it returns `failure` with reason `legacy-storage-present` and writes nothing: report that handoff storage must be migrated first (a separately approved whole-directory move), and never fall back to the legacy path or a shell write.
+
+#### Verified new save
+
+The normal no-collision call needs no user prompt. Treat it as saved only when that same Pi tool invocation succeeds (or the other-client helper exits `0`) and returns valid v1 JSON containing all of:
+
+- `"status": "saved"`
+- the exact expected absolute `path`
+- `mode: "new"`
+- a lowercase 64-character `sha256`
+- a positive `bytes` count
+
+Only after those postconditions pass may you print:
+
+```markdown
+Saved to `{path}` (verified `{sha256-prefix}`).
+```
+
+Never print `Saved to`, a `cat` command, or an equivalent persistence claim based on path selection, an earlier file, a malformed response, or intended tool use. If you omit the save call, report unsaved rather than infer success. This is an instruction to the model, not host-enforced output validation: the helper cannot prevent an uncalled or disobeyed workflow from inventing a success claim. Client-side output guards are outside this skill's scope.
+
+#### Collision — prompt before replacement
+
+A regular file already at the target returns `status: "collision"`, its `existingSha256`, and a first-free `suggestedSlug` (the standalone helper exits `3`); it never counts as saved, even if its contents look valid. Prompt:
+
+> `~/.agents/handoffs/{YYYY-MM-DD}-{slug}.md` already exists. Save this handoff how?
+
+Options:
+
+- **Save with different name** — use the suggested or user-selected replacement slug, update both the visible block's title and first-line header, then make a fresh normal save call.
+- **Overwrite** — in Pi, call `save_handoff` with the same complete block and `overwriteSha256: existingSha256`; the tool requires a fresh native TUI confirmation bound to the existing and replacement hashes. Headless/RPC overwrite is refused; a hash or chat approval cannot substitute for the dialog. Other clients require explicit approval before the helper's `--overwrite-sha256 {existingSha256}` call. Success still requires the verified-save response above with `mode: "overwrite"`; a changed, missing, symlinked, or non-regular target fails.
+- **Don't save** — leave no new file; keep the complete resume block visible.
+
+The `-N` collision suffix remains a first-class convention: `list.sh` uses header time for normal same-day ordering, then the suffix to order an established collision family.
+
+#### Unsaved or failed
+
+Any non-collision error, `status: "cancelled"`, invalid/missing response, unexpected path/mode, or failed postcondition means the save is **not verified**. Do not assume the file is absent: an I/O or concurrent-change failure may leave data needing recovery. Re-render the complete resume block, then report the attempted path plus only the helper's bounded reason/detail:
+
+```markdown
+⚠️ Failed to save handoff to `{attempted-path}`: {reason} — {bounded-detail}
+```
+
+Omit `Saved to` and every `cat` command. On overwrite verification or directory-sync failure, the helper attempts to restore the hash-approved prior file only when it is safe to replace the failed write. If rollback is unsafe or fails, `backupPath` identifies the retained recovery copy: show that path and stop rather than deleting it or retrying blindly. Temporary recovery copies are not launcher handoffs. Overwrite confirmation is still a user decision; a hash is not proof of consent. The helper targets a user-owned local directory, not transactional isolation against hostile concurrent writers.
+
+Missing Python, denied execution, or unsupported filesystem operations also mean unverified. Do not broaden permissions, change the user's handoff directory, or fall back to an unchecked write. The visible resume block remains the manual recovery path.
+
+### 5a. 🗂️ Tidy superseded handoffs → `/handoffs-tidy`
+
+Archiving belongs to a separately requested `/handoffs-tidy` run. After saving, mention that
+handoff if older context may need review; do not invoke it or inspect archive candidates here.
+Wrap-up does not touch `~/.agents/handoffs/archive/`.
+
+### 6. Footer
+
+Select exactly one footer using the client selection from **Important — client-specific commands**.
+
+**Pi footer:**
+
+````markdown
+---
+To close this Pi session:
+```text
+/quit
+```
+
+To resume later, paste the block above or read the verified saved handoff:
+```sh
+cat ~/.agents/handoffs/{file}.md
+```
+
+**Next:** Session closure is manual.
+````
+
+**Claude Code footer:**
+
+````markdown
+---
+To close this Claude Code session:
+```text
+/exit
+```
+
+To resume later, paste the block above or read the verified saved handoff:
+```sh
+cat ~/.agents/handoffs/{file}.md
+```
+
+**Next:** Session closure is manual.
+````
+
+**Unknown-client footer:**
+
+````markdown
+---
+To close this session, use the command for your client:
+- Pi: `/quit`
+- Claude Code: `/exit`
+
+To resume later, paste the block above or read the verified saved handoff:
+```sh
+cat ~/.agents/handoffs/{file}.md
+```
+
+**Next:** Session closure is manual.
+````
+
+Keep commands and user instructions separate from the general `Next` summary. The examples
+above use inner code blocks; use a longer outer fence if quoting a complete footer.
+Include the `cat` block and the verified-saved-handoff wording only for the exact path returned
+by a valid `status: "saved"` response in this wrap-up run. Otherwise drop both and keep just
+“To resume later, paste the block above.” Never imply automatic closure or resumption.
+
+## Failure modes
+
+Each section is independent — fail soft, don't block the rest.
+
+- **Not in a git repo**: skip §0 worktree detection, §1 commits, §3 hygiene. Still produce §2 threads and §4 resume block — they're the load-bearing parts.
+- **gh not authenticated**: skip the PRs sub-section, print `_GitHub CLI not authenticated — PR roundup skipped._`
+- **No Jira access**: retain known session Jira pointers and label fresh lookup unavailable; do not
+  discard established context or invent fetched evidence.
+- **No `bd` / no `.beads/`**: skip the beads sub-section and §3a silently.
+- **Multi-repo roll-up (§3b) errors or finds nothing**: skip the section silently — single-repo sessions hit this normally; it's additive, not load-bearing.
+- **Settings-drift probe (§3c) empty or `python3` missing**: skip the section silently. `/tidy-settings` run by hand covers the same ground.
+- **Artifact-hygiene audit (§3d) is partial, failed, missing, or malformed**: record the coverage gap
+  in working-copy risks and continue saving the handoff; never infer clean from missing findings.
+- **Handoff save fails (§5)**: re-render the complete resume block, print the attempted path and bounded helper reason/detail, omit every success claim and `cat` command, and continue to the footer. The generated block is still the recovery artifact even if durable verification failed.
+
+## Verification
+
+Run `make test-wrap-up test-session-boundaries` in the owning repository. The Pi adapter's
+cross-repository checks live in pi-session-mode: set `HANDOFF_SAVE_HELPER` to this skill's absolute
+`scripts/save-handoff.py` path when running its `npm run check` and `npm run verify:git-install`.
+Its reviewed helper digest must match; these checks do not activate the installed extension.
+To include both external
+launcher discovery paths without starting either client, explicitly select the shared ai-tools
+collector:
+
+```bash
+HANDOFF_CONTEXT_GATHER=/absolute/ai-tools/shared/launcher/context-gather make test-wrap-up
+```
+
+That integration test uses synthetic handoffs, an isolated HOME, and a stubbed GitHub CLI. Without
+the explicit path it is reported as skipped, not assumed covered. These tests do not establish
+client permission pre-approval or enforce model output.
+
+## Notes
+
+- This skill is intentionally *generative* in §2 and §4 — the model writes the threads and resume block from the current conversation history. The Bash fetches in §1 and §3 are mechanical guardrails so the qualitative parts are anchored in real activity rather than vibes.
+- **Tracker age window.** `WRAP_UP_STALE_DAYS` defaults to 7; a non-numeric value falls back to 7.
+  This changes report filtering only, never the meaning of a claim or permission to demote it.
+- Don't suggest `git stash` as a way to "preserve" work for tomorrow without committing — stashes evaporate from memory faster than commits, and worktree pruning takes them with it. Prefer a WIP commit on a throwaway branch if there's something to save.

@@ -1,0 +1,172 @@
+---
+name: unity-editor-tools
+description: >-
+  Use when building a custom Unity Editor window, inspector, or authoring tool
+  for project data (ability definitions, dialogue graphs, combo trees), a
+  polymorphic list with [SerializeReference], a node graph, or Editor icons,
+  or when the user mentions custom inspectors, IMGUI, or Odin.
+---
+
+# Editor tools: authoring UI for the gaps you fill yourself
+
+Load the [`unity-core`](../unity-core/SKILL.md) skill with this one: its default
+stack and review pass apply here.
+
+Some needs have no Unity tool, so the project builds one — animation notifies,
+ability definitions, combo trees, dialogue graphs. That tool needs an authoring
+UI, and the stack below is the one to build it on.
+
+Build on **UI Toolkit**, with no third-party inspector dependency. Unity ships
+everything this needs, and a tool other people install must not drag a paid or
+foreign license behind it.
+
+| Need | Reach for |
+| --- | --- |
+| Inspector for a component or asset | `Editor.CreateInspectorGUI` |
+| Inspector for one serialized type | `PropertyDrawer.CreatePropertyGUI` |
+| Layout and styling | UXML + USS, authored in UI Builder |
+| Heterogeneous items in one list | `[SerializeReference]` |
+| Reorderable list | `ListView` with `reorderable = true` |
+| Nested or hierarchical items | `TreeView` / `MultiColumnTreeView` |
+| Fields bound to serialized data | `PropertyField` |
+| Timeline strips, curves, custom graphics | `generateVisualContent` + `painter2D` |
+| A control reused across tools | `[UxmlElement]` / `[UxmlAttribute]` |
+| A control in the main Editor toolbar | `MainToolbarCustomElement` |
+| A context or overflow menu | `GenericDropdownMenu`, see [Dropdown menus](#dropdown-menus) |
+| Data that is genuinely a graph: dialogue, state machines | **Graph Toolkit**, see [Node graphs](#node-graphs) |
+| An API with no UI Toolkit equivalent yet | `IMGUIContainer` |
+
+## Master-detail
+
+The layout that scales past a flat inspector: items on the left, the selected
+item's properties on the right.
+
+- Split with `TwoPaneSplitView`.
+- Drive the left pane with a `ListView`, or a `TreeView` when items nest.
+- Rebuild the right pane on `selectionChanged`, binding `PropertyField`s to the selected element's `SerializedProperty`.
+- Render list rows with `makeItem` and `bindItem`, which is where row icons, badges, and state colouring go.
+
+This is what production authoring tools actually look like — a list, a detail
+pane, and a custom strip — rather than a node canvas.
+
+## Matching a mockup
+
+`MultiColumnTreeView`, `Toolbar`/`ToolbarToggle` and `Foldout` draw the
+Editor's own look: USS does not reshape their headers, arrows or row chrome.
+Keep them where that look is wanted. When a mockup sets the look, build those
+parts from plain `VisualElement`s, and re-add what the stock control handled:
+make the element focusable, give it a `:focus` style, and handle the arrow keys.
+
+For a monospaced font, set
+`-unity-font-definition: resource("Fonts/RobotoMono/RobotoMono-Regular.ttf")`.
+The Editor resolves this path only with its extension; without it, it logs
+"Font not found".
+
+Check the mockup's CSS against
+[From a CSS mockup to USS](../unity-ui/SKILL.md#from-a-css-mockup-to-uss) before matching it.
+
+## Dropdown menus
+
+`GenericDropdownMenu` opens a context or overflow menu. Size and style it as
+follows:
+
+- `DropDown(Rect, VisualElement, bool anchored)` and the other `bool` overloads are obsolete. Call the overload that takes a `DropdownMenuSizeMode`, with `Auto`: it sizes the menu to its items under the anchor. `Fixed` sizes it to the anchor, so a small ••• button gives a 16 px menu with unreadable text; `Content` spreads it across the whole panel at x = 0.
+- The menu attaches to the panel's root, outside the window's styled tree, so the window's stylesheets do not reach it. Before calling `DropDown`, walk up from `menu.contentContainer` to the root and add the stylesheets and a class there.
+- Unity computes the menu's width from its labels as measured, the label's own padding included. Pad the label: padding on the row cuts the text.
+- The menu's scroll viewport keeps `flex-grow: 0` and stays as wide as its rows, short of the menu card, so a highlighted row stops before the card's edge. A USS `flex-grow: 1` or `min-width: 100%` is measured first and stretches the menu across the whole panel. Instead, once Unity has sized the menu, set the viewport's `style.minWidth` to its parent's width in a `GeometryChangedEvent` callback.
+
+## Polymorphic lists
+
+`[SerializeReference]` is what lets one list hold different concrete types —
+the "Add Instruction…" pattern. Without it, a list holds one type.
+
+- Declare the field as a `List<TBase>` with `[SerializeReference]`, where `TBase` is an interface or abstract class.
+- Populate an `AdvancedDropdown` from the types deriving from `TBase`, and assign a new instance through `SerializedProperty.managedReferenceValue`.
+- Let each type carry its own `PropertyDrawer`, so the detail pane draws whatever the user picked.
+
+### Keep references alive
+
+`[SerializeReference]` stores the concrete type identity — assembly, namespace,
+class name — inside the asset. Renaming a type, changing its namespace, or
+moving it between assemblies breaks every asset referencing it.
+
+- Apply `[MovedFrom]` **before** the refactor that renames or moves a type. Applied afterwards, the assets are already broken.
+- The attribute is an obligation on the author who renames, not a state every type maintains. A type that never lived at another address has nothing to redirect: absence of `[MovedFrom]` is the normal case, and adding one that names an address the type never had is a false claim in the asset format.
+- Reviewing it means checking a condition, not a presence. Ask whether *this change* renames or moves the type, and whether the declared former address really existed — `git log` on the type and its asmdef answers both. A count of how many neighbouring types carry the attribute answers neither; copy-paste spreads it just as fast as intent.
+- Audit with `SerializationUtility.HasManagedReferencesWithMissingTypes`.
+- Leave a missing reference in place while diagnosing: `ClearManagedReferenceWithMissingType` discards the serialized payload Unity was holding for recovery.
+- Fix compile errors before opening affected assets, since a type that fails to compile reads as a missing type.
+
+## Custom graphics
+
+`generateVisualContent` with `MeshGenerationContext.painter2D` draws timeline
+strips, keyframe markers, and curves as a first-class UI Toolkit path — paths,
+strokes, fills, and Bézier curves, no IMGUI needed.
+
+- Call `MarkDirtyRepaint()` when the data changes; the callback runs only when the element is dirty.
+- Read layout and data inside the callback and draw from it. The element is read-only there, so resolve geometry before drawing.
+
+## Icons
+
+Reach for icons in this order, so a redistributable tool carries no binary
+assets it does not need:
+
+| Icon | Reach for |
+| --- | --- |
+| Generic UI — play, warning, settings, folder | Built-in Editor icons |
+| Domain state — hitbox open, i-frame, cancel window | `painter2D` |
+| Artwork a path cannot express | An imported PNG sprite |
+
+Built-in icons come from `EditorGUIUtility.IconContent("name")` in C#, or a
+USS `background-image`. They already follow the Light and Dark skins through
+the `d_` prefix convention, so they stay legible in both without a second asset.
+
+`painter2D` draws domain markers — a diamond, a ring, a bar — from
+`MoveTo`/`LineTo`/`Arc`/`BezierCurveTo` inside `generateVisualContent`. It
+**produces no file**: the paths are tessellated into UI Toolkit's render command
+stream and the generated geometry is not exposed, so nothing is stored or
+retrievable. That is what makes it resolution-independent and free of DPI
+variants, and it puts colour under code control — tint by state and call
+`MarkDirtyRepaint()`.
+
+Separate the icon's shape from its colour, so one drawn shape covers many
+states through tinting rather than shipping a file per variant.
+
+For an imported PNG: Sprite (2D and UI), Single mode, Alpha Is Transparency on,
+Full Rect, mipmaps off, square at 64, 128, or 256. SVG is a core module, so vector files are an option without adding a package dependency.
+
+`[Icon("path")]` on a `MonoBehaviour` or `ScriptableObject` sets the script's
+icon in the Project window and Inspector, which is what gives authored assets a
+recognisable badge in a list.
+
+## Node graphs
+
+Author on lists, trees, and timelines by default. Reach for **Graph Toolkit**
+only when the data is genuinely a graph, such as dialogue trees and state
+machines, where a list would hide the connections the author edits.
+
+Graph Toolkit is the authoring front end: it compiles graphs to runtime models
+but ships no execution backend, so the project writes the runtime that walks
+them. Budget that runtime as part of the tool.
+
+- Use the built-in Editor module namespace (`Unity.GraphToolkit.Editor`); no package is needed.
+- Build state machines on its state-machine authoring API: `StateMachine`, `State`, transitions, conditions, and variables, defined from Editor scripts as serialized graph assets.
+- Model a port without data as `typeof(Untyped)`, set its capacity with `IPortBuilder.WithCapacity`, and define valid connections in `Graph.IsConnectionAllowed`. A port accepting several data types declares them with `WithDataTypes`.
+- Show the project runtime's execution flow inside the graph through the `GraphVisualization` API.
+
+Keep the data model independent of the authoring UI: serialized types that know
+nothing about `VisualElement` or Graph Toolkit, compiled from the graph by the
+project's own step. The runtime then depends on the model alone, and the
+authoring view can change without a data migration.
+
+## Editor code placement
+
+Editor code lives under `Editor/` folders or Editor asmdefs, and the runtime
+types it edits stay in runtime assemblies — see
+[project-structure.md](../unity-core/project-structure.md). A tool meant to be reused ships
+as a UPM package with that split already in place.
+
+Register Editor callbacks, such as `EditorApplication.update` subscriptions, in
+an `[OnCodeLoaded]` method and remove them in the matching `[OnCodeUnloading]`
+method, so each code reload leaves exactly one subscription; see
+[runtime.md](../unity-core/runtime.md#static-state).

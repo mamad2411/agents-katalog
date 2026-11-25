@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/frank666199/frank-presales-skills (path: 维度8-Presentation-Competition/090-Frank-项目短板规避包装工具/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Skill: Frank-项目短板规避包装工具

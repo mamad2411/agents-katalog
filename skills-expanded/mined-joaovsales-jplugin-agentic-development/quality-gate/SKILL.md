@@ -1,0 +1,405 @@
+---
+name: quality-gate
+description: "The post-build review gate: run when all tasks in tasks/todo.md are done, before wrap-up or commit. Sequential phases — structural quality and reuse (simplify), AI anti-pattern cleanup (deslop), the security checklist, and APOSD design audit — emitting four-axis findings (severity, confidence, autofix_class, owner), then the affected tests and a quality receipt bound to the diff. Triggers on: 'review before I call it done', 'thorough review of what I just built', 'I finished the tasks, check the code', 'run the quality gate', 'post-build review'."
+argument-hint: "[--scope <path> ...] [--parent <fingerprint>]"
+---
+
+# /quality-gate — Post-Build Quality Review
+
+> **Dispatching sub-agents?** Apply `.agents/references/subagent-resilience.md` § *Dispatch checklist* first.
+
+Six sequential phases run after all build tasks are complete: four review
+phases, each with a unique mandate, then the tests and the receipt. Phase 0's
+mechanical gate-integrity check runs before them. This is the
+one review pass a diff gets — `/wrap-up-session` reuses its receipt instead of
+reviewing again (`specs/quality-receipt-closure.md`).
+
+## Scope
+
+Determine files to review — **the gate's own file list**, which every phase uses:
+1. If `--scope <path> ...` provided: review only those paths. `/wrap-up-session`
+   passes the delta `receipt.py check` printed, with `--parent <fingerprint>`.
+2. Otherwise: every file that differs between the merge-base and the working
+   tree — committed, staged, unstaged and untracked, `tasks/**` excluded. The
+   merge-base is the first field `receipt.py fingerprint` prints; call it with
+   no `--base`, so the gate and wrap-up agree on one base:
+
+   ```bash
+   python3 .agents/skills/quality-gate/scripts/receipt.py fingerprint
+   # <merge-base> <tree> <fingerprint>
+   git diff --name-only <merge-base> -- . ':(exclude)tasks/**'
+   git ls-files --others --exclude-standard -- . ':(exclude)tasks/**'
+   ```
+
+Skip: generated files, lock files, migration files, test fixtures.
+
+---
+
+## Finding Model
+
+Every finding this gate produces or consumes carries the four axes of
+`.agents/references/finding-model.md` § *Four axes*, written in its
+§ *Emission format*, anchored by its § *Confidence anchors* and gated by its
+§ *Gates*. That file is the one home of the anchors and the gates. Read it
+before Phase 1, on every harness, in the lookup order *Claude Code Enhancements*
+gives for the Phase 4 dispatch. When it resolves nowhere, the gate stops before
+Phase 1 with the refusal that paragraph gives.
+
+### Apply Gate
+
+Apply a finding in-phase, then run tests, only when § *Gates* clears it — at
+the least `gated_auto` **and** `confidence >= 75`; the home holds every rule.
+Every other finding is reported with its `owner`, never dropped.
+
+A `MUST-FIX` at `confidence` `50` is worth one verification attempt before you
+report it: read the path it depends on. Evidence found → it is `75`+ and the gate
+clears it. Refuted → say so, and drop it. Reporting an unverified `MUST-FIX`
+onward makes the next gate solve a problem you were holding the context to solve.
+
+A `MUST-FIX` that the gate will not auto-apply is still a `MUST-FIX`. Report it
+under `owner` and let the caller's gate decide — do not downgrade it to make
+this phase come out clean.
+
+---
+
+## Phase 0 — Gate Integrity
+
+**Mandate**: "Did this change edit the checks that judge it?" — mechanical, no reviewer.
+
+```bash
+python3 .agents/skills/quality-gate/scripts/gate-integrity.py --base <merge-base> [--spec <spec>]
+```
+
+`<merge-base>` is the one from *Scope*; pass the spec when the change has one,
+so every slice's Surface may declare a protected file. The script compares each
+protected file — the runners, the expected-failures list, CI and lint configs,
+plus the `Protected paths:` globs below the `AGENTS.md` end marker, at the base
+and now — with its blob at the base by content hash (`specs/gate-integrity.md`).
+Each line it prints is a finding for `Reported, not applied`:
+
+- `GATE_TAMPERED` is `[MUST-FIX | confidence: 100 | autofix_class: manual | owner: human]`,
+  including an `AGENTS.md` line: a protection declared at the base was removed or retargeted.
+- `EXPECTED_FAILURE_ADDED` is `[SHOULD-FIX | confidence: 100 | autofix_class: manual | owner: human]`.
+- `SKIP_ADDED` and `ASSERTION_DELETED` are pattern matches, so each starts at
+  `[SHOULD-FIX | confidence: 50 | autofix_class: manual | owner: human]`: read
+  its hunk once — a real skip or deletion rises to 75, and a marker that is test
+  data inside a string is refuted and dropped with a word.
+- `GATE_CHANGED` is `[NITPICK | confidence: 100 | autofix_class: advisory | owner: human]`:
+  the Surface named the file.
+
+Exit 3 means the check could not run in full: name it in `Not checked:`, never
+report the phase clean.
+
+---
+
+## Phase 1 — Structural Quality (simplify)
+
+**Mandate**: "Is this code structurally sound?" — function size, naming, reuse, SOLID.
+
+For each file in scope:
+
+### 1.1 Code Reuse
+- **Duplicated logic** across files → extract shared function/module
+- **Existing utilities** that already do what new code does → replace
+
+### 1.2 Clean Code
+- A function doing **several unrelated jobs** → split by job; never by line count, and never into helpers that exist only to make it shorter
+- A long parameter list signals a shallow interface → fix the interface (hide what callers need not pass), not the call site
+- **Poor naming**: generic names (`data`, `info`, `tmp`, `result`) → rename to reveal intent
+- **Dead code**: unreachable branches, unused imports → remove
+
+### 1.3 SOLID
+- **Single Responsibility**: class/function does more than one thing → split
+- **Open/Closed**: new behavior via `if/else` chains → strategy/registry
+- **Dependency Inversion**: hard-coded dependencies → inject
+
+### 1.4 Unnecessary Complexity
+- **Over-abstraction**: wrappers adding no value → inline
+- **Premature generalization**: configurable with only one config → simplify
+- **Defensive code for impossible cases** (internal values already guaranteed) → remove
+
+**Process**: Read → list issues as four-axis findings → apply those the **Apply Gate** clears → run tests after all fixes. Revert any fix that breaks tests.
+
+---
+
+## Phase 2 — AI Anti-Patterns (deslop)
+
+**Mandate**: "Does this code contain AI behavioral artifacts?" — hedge words, filler, over-engineering.
+
+**Iron law: deletion over rewriting.**
+
+**Keep these comments, whatever their length or shape:** an interface comment (what a function, class or field promises its callers), and a comment stating a decision or a hidden assumption (why this way, what the code silently relies on). A comment that **contradicts the code beside it** is flagged as a finding, never silently deleted or reworded: one of the two is wrong, and only the author knows which.
+
+**Never delete `TODO`, `FIXME`, or `TODO(shortcut):` markers.** They record a known
+limitation and its upgrade path, so they must survive this phase even when the
+surrounding comment is reworded. A deliberate shortcut is not slop.
+
+For each file in scope:
+
+### 2.1 Hedge Words in Comments
+Comments with: "should", "might", "probably", "seems to", "basically", "essentially"
+→ Delete or rewrite as single declarative statement.
+
+### 2.2 Restating-the-Code Comments
+```
+// Set the user name
+user.name = name;
+```
+→ Delete. Code is documentation.
+
+### 2.3 Over-Documented Simple Functions
+Docstring longer than function body for trivial functions (getters, setters, one-liners)
+→ Delete the docstring.
+
+### 2.4 Obvious Type Annotations
+```typescript
+const name: string = "hello";  // type is self-evident
+```
+→ Remove annotation, let inference work.
+
+### 2.5 Impossible-Case Error Handling
+Guards on internal values already validated by the caller → Delete.
+Keep validation ONLY at system boundaries (user input, API responses, file I/O).
+
+### 2.6 Filler Abstractions
+- Wrapper functions that just call another with same args
+- Manager/Handler/Helper classes with one method
+→ Inline and delete.
+
+### 2.7 Verbose Logging
+Entry/exit logging for short functions → Remove.
+Keep only: surprising states, errors, branch decisions.
+
+### 2.8 Passthrough Catch Blocks
+```javascript
+try { doThing(); } catch (e) { throw e; }  // passthrough
+```
+→ Remove entirely.
+
+**Process**: Scan → list findings as four-axis findings → apply the deletions the **Apply Gate** clears → run tests per file. Revert if tests fail.
+
+---
+
+## Phase 3 — Security and Load
+
+**Mandate**: "What breaks in production?" — a vulnerability (injection, auth,
+secrets, unsafe input handling), or a pattern that fails under the load this code
+actually runs at.
+
+Run the `/security-scan` checklist inline over **the gate's own file list**
+(untracked files included, `--scope` honoured) — not the `git diff --name-only`
+list the skill builds when it is invoked on its own. Emit its findings in the
+four-axis format and apply its fixes under the **Apply Gate**; a `MUST-FIX` it
+will not apply stays unresolved and reaches the receipt.
+
+Then state the load, `Load assumed: <who and how many run this> (source: <path | none found>)`,
+looked up as `.agents/references/finding-model.md` § *Expected load* says, and check
+the same file list for its scale patterns. A scale finding goes through the
+**Apply Gate** like any other. Record the phase as
+`{"phase": 3, "lens": "security-scan+load", "dispatch": "inline"}`.
+
+Security runs before Phase 4 so the dispatched design reviewer sees the
+security fixes too.
+
+---
+
+## Phase 4 — Design Quality (APOSD)
+
+**Mandate**: "Are modules well-designed?" — deep/shallow, info leakage, complexity flow.
+
+### Inline checks (all harnesses):
+
+Read all changed files together. For each module, check:
+
+1. **Deep vs shallow**: Is the interface simpler than the implementation? Shallow = interface as complex as implementation → flag
+2. **Information leakage**: Does a design decision appear in >1 file? → flag
+3. **Pull complexity down**: Does the caller need internal knowledge to use this? → flag
+4. **Temporal decomposition**: Is the module split by execution order, not responsibility? → flag
+5. **Pass-through methods**: Any method that just forwards to another with same signature? → flag
+6. **Vague names**: Any public name that requires reading the body to understand? → flag
+7. **Conjoined methods**: Methods so coupled you can't use one without the other? → flag
+
+Report findings in the canonical four-axis format from *Finding Model*. Apply per
+the **Apply Gate** — `MUST-FIX` and `SHOULD-FIX` are not self-applying licences.
+Run tests after fixes.
+
+### Dispatch Disclosure
+
+Phase 4 runs either as a dispatched `software-design-expert-review` agent or
+inline in the main context. The two are not equivalent, and the output must say
+which happened:
+
+| How it ran | Disclosure | Promotion |
+|-----------|-----------|-----------|
+| Dispatched agent | `dispatched` | Its agreement with a Phase 1, 2 or 3 finding is independent corroboration: promote `confidence` by exactly one anchor. |
+| Inline in the main context | `inline` | **No promotion.** Phase 4 shares this context's priors with Phases 1–3, so agreement is one perspective repeated. Name the corroboration lost. |
+
+Per `.agents/references/finding-model.md` § *Independence Accounting*, agreement inside one context is not
+two witnesses. An inline run is a complete run — it reports and applies under the
+Apply Gate — but it may never report a promoted confidence.
+
+A third value, `lost`, is for a review that was required but could not be
+dispatched (Phase 5's `test-engineer` only; `receipt.py` refuses it elsewhere): it is recorded, not omitted, and carries
+no findings and no promotion.
+
+**No phase after 4 edits the tree.** Phase 4's applied fixes are the last edit;
+Phases 5 and 6 only observe, so the receipt describes exactly the tree that was
+reviewed.
+
+## Claude Code Enhancements
+
+Dispatch the `software-design-expert-review` skill (invokes the `software-design-expert-review` agent at Ceiling tier — pass no `model`, so it inherits the session model) instead of running inline Phase 4. The agent is read-only — it reports findings only. Apply findings in the main context after the agent returns per the Apply Gate. Run tests after applying fixes. Because this path is a separate dispatch, record it as `dispatched`.
+
+The dispatch carries the full payload in `.agents/references/review-dispatch-contract.md` —
+diff, every relevant spec's path plus its acceptance criteria verbatim (or `no spec — <reason>`), the closed
+`tasks/todo.md` entries, the `[AMBIGUITY]` batch (the plan block's `> [AMBIGUITY]` lines
+in `tasks/todo.md` when a build persisted them, else this run's lines) and `TODO(shortcut):` markers (or
+`deferrals: none`), the introduced-only boundary, and the four-axis format. A design
+reviewer told only *what* changed reports structural debt the spec deliberately
+accepted; the deferral list is what makes an accepted trade-off distinguishable from
+an oversight. Withhold the findings of Phases 1–3 — passing them makes Phase 4 an
+echo rather than a witness.
+
+**Item 7 is read, not remembered.** Before dispatching, resolve `finding-model.md` in
+order — the project's `.agents/references/`, then `${CLAUDE_PLUGIN_ROOT}/.agents/references/`
+on Claude Code (the skill body and the reference then come from the same plugin version),
+then `~/.agents/references/` on Pi and Codex — and paste its § *Emission format* into the
+prompt verbatim. When all three are missing, stop before dispatch:
+`review dispatch refused: finding-model.md not found in .agents/references/, ${CLAUDE_PLUGIN_ROOT}/.agents/references/, ~/.agents/references/ — run /sync`. Never dispatch a reviewer with no output format.
+
+---
+
+## Phase 5 — Tests
+
+**Mandate**: "Is the reviewed tree green, and do its tests test the right
+things?" — evidence for the receipt, run once after every fix has landed.
+
+Run the project's `Affected tests:` command (below the `AGENTS.md` end marker,
+`{base}` replaced by the merge-base from *Scope*) through the cache:
+`.agents/skills/build/scripts/cached-suite.sh -- <affected-test command>`. With
+no declaration, run the test files that cover the gate's file list. Record
+`{"command": "<command>", "exit": <status>, "tree": "<tree>"}`, where `"tree"`
+is the second field `receipt.py fingerprint` prints immediately before the run.
+
+A failure here is a red `tests` record that the receipt turns into STOP —
+never a silent fix. Fixing it is a new edit, and a new edit means a new gate
+run on the new tree. This phase never runs the full suite: `/wrap-up-session`
+§ *Full suite* owns that, through the same cache.
+
+### 5.1 Test adequacy review
+
+Dispatch the `test-engineer` Review job after the affected tests pass (Reviewer
+tier: on Claude Code pass model `sonnet`). The dispatch follows
+`.agents/references/review-dispatch-contract.md` § *The seven items* and carries:
+
+- the diff and the test files;
+- the spec's path with its acceptance criteria verbatim, or
+  `no spec — <reason>`: with no spec it reviews against the interfaces in the diff;
+- the deferral list (`[AMBIGUITY]` batch from the same source as Phase 4's, `TODO(shortcut):` markers) or `deferrals: none`;
+- the introduced-only boundary, and `.agents/references/finding-model.md` § *Emission format* pasted verbatim
+  (resolved as *Claude Code Enhancements* describes).
+
+Withhold the findings of Phases 1–4. Share intent, never conclusions.
+
+Its findings are report-only: it never edits the tree, and Phase
+5 applies nothing. Each unresolved SHOULD-FIX goes in `unresolved`: an unresolved SHOULD-FIX counts toward
+HOLD under the receipt's rule; a MUST-FIX makes the receipt STOP. Record a phase 5
+reviewer entry (`lens: test-engineer`, `dispatch: dispatched`) — always written, dispatched
+or lost; `receipt.py` refuses `lost` on any other entry. When no dispatch is
+possible, record `{"phase": 5, "lens": "test-engineer", "dispatch": "lost", "reason": "<why>"}`
+and name the lost review in `Not checked:` — a lost review and a clean one never leave the same
+receipt. `receipt.py write` refuses `lost` without a `reason`, and `write` and `check` print
+`receipt: not checked phase 5 test-engineer — <reason>` for it — and, on a delta receipt, for each
+ancestor's lost review, ending `(inherited from <fp8>)`. `lost` is disclosed, not weighed: it does not change the derived verdict.
+
+## Phase 6 — Receipt
+
+**Mandate**: "What exactly was reviewed, and what was left?" — a receipt bound
+to the diff, which `/wrap-up-session` checks instead of reviewing again.
+
+Write the outcome JSON under the git common dir, never in the worktree (a file
+there would change the fingerprint it describes), then mint the receipt:
+
+```bash
+outcome="$(git rev-parse --path-format=absolute --git-common-dir)/quality-receipts/outcome.json"
+python3 .agents/skills/quality-gate/scripts/receipt.py write --outcome "$outcome" [--parent <fingerprint>]
+```
+
+| Outcome field | Value |
+|---------------|-------|
+| `reviewers` | one `{phase, lens, dispatch, verdict?}` per Phase 1–4, `dispatch` as *Dispatch Disclosure* recorded it, plus the phase 5 `test-engineer` entry — `dispatched`, or `lost` with a non-empty `reason` when the review could not be dispatched (disclosed, verdict unchanged) |
+| `unresolved` | every finding in `Reported, not applied`, four-axis, with `location` (`file:line`) and `summary` |
+| `design_verdict` | Phase 4's GO / HOLD / STOP |
+| `tests` | Phase 5's record |
+| `scope` | `"full"`, or the `--scope` path list — which requires `--parent <fingerprint>` |
+
+The gate never supplies a verdict: `receipt.py` derives it from `unresolved`,
+`design_verdict` and `tests`, and ignores a `verdict` key. On exit 2 the
+receipt was refused and nothing was written — report `Receipt: none —` with
+its stderr. The caller treats that as a stale receipt, never as GO.
+
+---
+
+## Task Reporting
+
+Findings that outlive this run belong on the task, not in the transcript. When
+the project tracks tasks externally, report them through `/task-registry`
+(comment on the task) rather than calling a provider directly. Findings that were
+auto-applied need no report; the ones that matter here are `owner: human` and
+`owner: release`.
+
+## Output
+
+```
+══════════════════════════════════════════
+  QUALITY GATE — [N] files reviewed
+══════════════════════════════════════════
+
+What this change does: [two or three sentences]
+Load assumed: [who and how many run this] (source: [path | none found])
+
+Phase 0 — Gate Integrity: [clean / N findings / not checked — <reason>]
+
+Phase 1 — Structural Quality
+  Applied: [N changes — list with file:line]
+  Tests: [PASS / FAIL — N reverted]
+
+Phase 2 — AI Anti-Patterns
+  Removed: [N lines — list with file:line and category]
+  Tests: [PASS / FAIL — N reverted]
+
+Phase 3 — Security and Load (/security-scan checklist + scale patterns, inline)
+  Applied: [N fixes — list with file:line]
+  Tests: [PASS / FAIL — N reverted]
+
+Phase 4 — APOSD Design (/software-design-expert-review)
+  Verdict: 🟢 GO / 🟡 HOLD (N refactors applied) / 🔴 STOP
+  Tests: [PASS / FAIL]
+
+Phase 5 — Tests: [<affected-test command> exit N on tree <tree8>]
+
+Review independence: [Phase 4 dispatched / Phase 4 inline — no promotion; lost corroboration: <what>]
+Reported, not applied: [N findings, numbered]
+  1. [SEVERITY | confidence | autofix_class | owner] file:line — description. If skipped, [consequence].
+     failure: [the input or situation, and the wrong result]
+
+Receipt: <GO|HOLD|STOP> <fp8> policy <qg1-xxxxxxxx> [parent <fp8>]
+   or:   Receipt: none — <receipt.py stderr>
+Verdict: <GO|HOLD|STOP> — the receipt verdict, restated
+Lean: -<N> lines possible [only when Phase 1.4 or Phase 2 held back a removal]
+Not checked: [what mattered but could not be read or run | none]
+
+══════════════════════════════════════════
+```
+
+The human layer — the opener, the numbering, `Lean:` and `Not checked:` — is
+presentation only. Each `Not checked:` item reads `not checked: <check> — <reason>`: a check
+that did not run is never reported as clean, and never omitted. `Lean:` sums the lines that the Phase 1.4 and Phase 2 findings
+in `Reported, not applied` would remove; applied removals are already in the
+diff. `Verdict:` restates what `receipt.py` derived and never makes
+a new decision; with no receipt it reads `Verdict: none — no receipt`. Nothing
+here waits for an answer.
+
+The `Reported, not applied` line is not optional. A finding the Apply Gate held
+back is the one most likely to be lost, and an output that lists only what was
+fixed reads as though nothing else was found.

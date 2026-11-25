@@ -1,0 +1,68 @@
+---
+name: tauri
+description: >-
+  Tauri 2 development and validation. Use for src-tauri, Rust/frontend IPC,
+  capabilities and plugins, windows, mobile entry points, packaging,
+  or inspecting a running Tauri app with tauri-agent-kit.
+---
+
+# Tauri
+
+Work at the boundary between the web frontend, Rust, and the native application.
+Use the project's architecture and commands; load only the references needed
+for the task.
+
+## 1. Identify the project
+
+Inspect the Tauri configuration, Cargo manifest and lockfile, builder entry
+point, and frontend scripts. Account for workspace paths and platform-specific
+configuration instead of assuming every app has the default layout.
+
+Identify the Tauri version, target platforms, IPC bindings, their generation
+process, and the project's validation commands. Distinguish the host OS from
+the platforms the application ships on.
+
+For any Rust/TypeScript IPC work, apply the mandatory Tauri Specta contract in
+[Commands and IPC](best-practices.md#commands-and-ipc). Before changing an
+exposed operation, its permissions, a remote origin, or the CSP, read
+[Permissions](permissions.md).
+
+[Detect whether the project integrates tauri-agent-kit](agent-kit.md#detect-the-integration).
+When it is missing or incomplete and the project can use it, propose the
+integration once per session as described in
+[Propose the integration](agent-kit.md#propose-the-integration), then continue
+the requested work while awaiting the answer.
+
+Done when the affected boundary, target platform, existing commands, and
+agent-kit integration status are known, or their absence is explicit.
+
+## 2. Choose the work
+
+| Task | Read before acting | Completion criterion |
+| --- | --- | --- |
+| Commands, state, events, windows, or mobile structure | [Development](best-practices.md) | Changed IPC contracts agree on both sides; platform-specific code remains scoped. |
+| Plugin integration or permission failures | [Permissions](permissions.md) | Registration, effective capability, target, and operation scope are accounted for. |
+| Inspecting or reproducing behavior in the application | [Diagnosis](debugging.md) | The intended instance is identified and evidence distinguishes observations from hypotheses. |
+| Installing, configuring, or troubleshooting the MCP connection | [Agent kit integration](agent-kit.md) | Compatibility and connection are verified, or the missing prerequisite is reported. |
+| Validating a change, including bundles | [Testing](testing.md) | Relevant layers have results; skipped layers have reasons. |
+
+Tasks may cross boundaries: a plugin fix needs both permissions and validation.
+For an authorized v1 migration, consult the
+[official migration guide](https://v2.tauri.app/start/migrate/from-tauri-1/)
+and the development and permissions references. Account for changed imports,
+window APIs, and plugin permissions within the requested migration scope.
+
+Prefer tauri-agent-kit for supported Windows development sessions. Its
+availability is separate from Tauri's desktop/mobile support. Until an
+integration is approved and connected, continue with existing evidence;
+installing the kit or upgrading Tauri happens only after the user approves
+the proposal.
+
+## 3. Verify and report
+
+For implementation work, apply [Testing](testing.md) to the changed boundary.
+For runtime sessions, complete [Diagnosis cleanup](debugging.md#cleanup).
+
+Report the change or finding, checks performed, evidence source and target,
+and remaining uncertainty. A browser-only result, successful compilation, or
+dispatched UI action alone is not proof that the native application works.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/huytran1120/vietnam-agentic-skills (path: skills/scarf-single-cell/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Analyze single-cell RNA-seq at million-cell scale with Scarf: out-of-core Zarr stores on disk or object storage, provenance-tracked artifacts, audited QC, clustering, markers and donor comparisons."

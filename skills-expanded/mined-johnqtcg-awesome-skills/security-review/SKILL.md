@@ -1,0 +1,459 @@
+---
+name: security-review
+description: Exploitability-first standalone security review of code changes, diffs, PRs, or services. Use when asked for a security review, security audit, vulnerability assessment, or pre-merge security check (安全审查/安全评审/漏洞排查) — covers auth, input, secrets, API, data, concurrency, container, third-party, and dependency risk across Go, Node.js/TypeScript, Java, and Python, with mandatory evidence, false-positive suppression, scope-based depth (Lite/Standard/Deep), and CWE/OWASP-mapped machine-readable output. NOT for general-purpose Go code review — use go-review-lead for that (it dispatches go-security-review as its security dimension); this skill is the deeper security-only process with mandatory gates and audit-grade output.
+allowed-tools: Read, Grep, Glob
+---
+
+# Security Review
+
+Find exploitable risks early, provide concrete fixes, and keep recommendations practical for engineering delivery.
+
+## Quick Reference
+
+| If you need to… | Go to |
+|---|---|
+| Choose review depth (Lite / Standard / Deep) | §Review Depth Selection |
+| Run a fast scan (skip Gate B/C/E) | Lite depth → Load `references/scenario-checklists.md` only |
+| Run a full review with all gates (Go) | Standard/Deep → Load `references/go-secure-coding.md` + `references/scenario-checklists.md` |
+| Review Node.js / TypeScript code | Load `references/lang-nodejs.md` + `references/scenario-checklists.md` |
+| Review Java / Spring code | Load `references/lang-java.md` + `references/scenario-checklists.md` |
+| Review Python / FastAPI / Django code | Load `references/lang-python.md` + `references/scenario-checklists.md` |
+| Calibrate severity (P0–P3) or confidence | Load `references/severity-calibration.md` |
+| Suppress a false positive correctly | §False-Positive Suppression Rules |
+| Send any request / run a scanner against a live target | §Active Verification Authorization Gate (**default deny**) |
+
+## Review Principles
+
+- Prioritize exploitable risk over style issues.
+- Ground every claim in code/config/runtime evidence.
+- Distinguish confirmed vulnerabilities from hypotheses.
+- Provide reproducible proof for high-risk findings.
+- Map findings to standards for auditability.
+- If evidence is missing, state `Not found in repo`.
+- Fail closed: if a mandatory gate cannot be executed, state it explicitly and do not claim full coverage.
+- **Authorization before action**: static review always; touching a running system only under
+  §Active Verification Authorization Gate. Default deny.
+- **Execution integrity**: never present a command you did not run as if you had. Label
+  unexecuted reproducers explicitly.
+
+## Evidence Confidence (Mandatory)
+
+Each finding must include one confidence label:
+
+- `confirmed`: vulnerable path proven by code and/or reproducible execution.
+- `likely`: strong evidence with one missing runtime assumption.
+- `suspected`: weak evidence requiring additional data.
+
+Do not report `P0/P1` without `confirmed` or explicit justification.
+
+**The confidence label covers the vulnerable path, not the maximum impact.** These are two
+claims and they carry evidence separately:
+
+- **Path** — `confirmed` means untrusted input reaches the sink, proven from code. Static
+  proof is sufficient (see § Active Verification Authorization Gate).
+- **Impact** — the consequence *if* exploited. When the worst-case impact depends on a fact
+  you did **not** verify (a gadget library on the classpath, a feature flag, a deployment
+  topology, a peer service's behaviour), write it as **assessed**, name the unverified
+  condition, and list the check that would settle it. Never state an unverified maximum
+  impact in the indicative ("achieves RCE"); state what *is* established and what the
+  impact becomes if the condition holds.
+
+**Three things must not be collapsed into one number.** Keeping them apart is what makes the
+rule below non-contradictory:
+
+| Axis | What it records | Moved by |
+|---|---|---|
+| **Severity** | the disposition this org owes the finding (`P0` = fix now) | the finding's class and its **reachability** |
+| **Evidence** (`confirmed`/`likely`/`suspected`) | how well the vulnerable **path** is established | what the code shows |
+| **Impact basis** (`demonstrated`/`assessed`) | how well the **maximum consequence** is established | whether the aggravating conditions were checked |
+
+So uncertainty moves a different axis depending on *what* is uncertain:
+
+- Uncertain **reachability, or whether an upstream control blocks the path** → this may lower
+  the **severity**, per § Confidence Downgrade Rules in `references/severity-calibration.md`.
+  Say which of the four calibration questions moved it.
+- Uncertain **aggravating** condition — a gadget on the classpath, a flag being on, a peer
+  service's behaviour → severity does **not** move, in either direction. Absence of a known
+  exploit today is not a control; nor is it evidence for a higher rating. What moves is the
+  **impact basis**: record the consequence as `assessed`, name the condition, list the check.
+
+Do not reinterpret `confirmed` to keep a conclusion. If the path is proven and the worst-case
+impact is not, that is `confirmed` + `assessed` — not a downgraded confidence, and not a
+downgraded severity. A report that quietly upgrades an assessed impact into a demonstrated one
+is the same defect as AE-4 (`confirmed` without a reproducer), one field over.
+
+## False-Positive Suppression Rules
+
+Before publishing a finding, check suppression conditions:
+
+1. Existing upstream guard already blocks the path.
+2. Input is not attacker-controlled at trust boundary.
+3. Sink is parameterized/safely encoded by framework guarantees.
+4. Environment-only theoretical risk without reachable path.
+
+If suppressed:
+
+- keep a short note under `Open questions / assumptions`
+- mark as `suppressed` (not a finding)
+- explain blocking control and residual risk
+
+## Severity Model
+
+- `P0 Critical`: immediate compromise (RCE, auth bypass, key exfiltration, payment tampering).
+- `P1 High`: strong exploit path (injection, IDOR, sensitive data leak, broken authz).
+- `P2 Medium`: meaningful defense gap likely to become exploitable.
+- `P3 Low`: hardening improvement.
+
+## Remediation SLA (Default)
+
+Use this unless the team provides stricter policy:
+
+- `P0`: mitigation immediately, full fix within 24h.
+- `P1`: fix within 3 business days.
+- `P2`: fix within 14 calendar days.
+- `P3`: backlog with planned milestone.
+
+If SLA differs, state the project policy explicitly.
+
+## Baseline Diff Mode (Mandatory When Baseline Exists)
+
+When previous review artifacts exist, compare current findings with baseline and output:
+
+- `new`: not present in baseline
+- `regressed`: existed before and severity/confidence worsened
+- `unchanged`: still present without material change
+- `resolved`: removed since baseline
+
+If no baseline exists, state `Baseline not found`.
+
+## Review Depth Selection (Mandatory First Step)
+
+Before starting, classify review depth based on change scope:
+
+| Signal | Depth | Process |
+|--------|-------|---------|
+| Changed files ≤ 3 AND no trust-boundary / auth / crypto / payment paths touched | **Lite** | Steps 1-4, Gate A, Gate D (triage only), suppression filter, findings, Gate F |
+| Changed files 4-15 OR any security-sensitive path touched | **Standard** | Full 15-step process |
+| Changed files > 15 OR new service / new external integration / auth redesign | **Deep** | Full 15-step process + extended call-graph tracing beyond immediate callers |
+
+Trigger signals that **force Standard or Deep** regardless of file count:
+
+- Auth/authz middleware or handler changes
+- Crypto, TLS, or secret-management code changes
+- Payment/financial transaction paths
+- New HTTP/gRPC endpoints exposed
+- Dockerfile, K8s manifest, or CI pipeline security config changes
+- `go.mod` / `go.sum` dependency changes
+- Any file under `internal/auth/`, `internal/crypto/`, `pkg/security/`, or equivalent
+
+When Lite is selected, record: `Review depth: Lite (N files changed, no security-sensitive paths). Gates B/C/E skipped per scope policy.`
+
+### Fast Pass (Lite Only)
+
+If Lite triage finds **all** of: 10 Gate D domains `N/A`, 11 scenario checklists `N/A`, clean
+secret sweep, and no constructor/acquisition calls in Gate A — output a condensed report
+instead of the full Output Contract: review depth + rationale, the line
+`Fast Pass: all domains N/A, all scenarios N/A, no findings.`, a JSON summary with
+`pass: true` and zero counts, and the Gate F list (may be empty). All four are mandatory.
+
+This avoids verbose N/A tables for benign changes while preserving audit traceability.
+
+## Fixed Process + Mandatory Gates
+
+The following process is mandatory for Standard and Deep reviews. Lite reviews follow the subset noted above.
+
+1. Scope the change and select review depth.
+2. Map trust boundaries.
+3. Run scenario checks.
+4. Run focused automation checks.
+5. `Gate A`: constructor-release pairing audit.
+6. `Gate B`: resource inventory scan (acquire/release pairs at trust boundaries, any stack).
+7. `Gate C`: third-party lifecycle contract verification.
+8. `Gate D`: 10-domain coverage against the detected stack.
+9. Verify exploitability.
+10. `Gate E`: second-pass falsification review.
+11. Apply suppression filter.
+12. Compare with baseline (if available).
+13. Report findings first.
+14. Provide remediation plan and risk acceptance entries.
+15. `Gate F`: uncovered risk list.
+
+If any mandatory gate cannot be executed, record it under `Uncovered Risk List` and downgrade confidence where applicable.
+
+### Applicability-First Execution (Mandatory)
+
+To control review cost and avoid unnecessary depth, execute in two phases:
+
+- `Phase 1 (triage)`: classify each of the 10 domains as `Applicable` or `N/A` from changed files + adjacent call paths.
+- `Phase 2 (deep review)`: run detailed checks and domain-specific tooling only for `Applicable` domains.
+
+Rules:
+
+- `N/A` is allowed only with a one-line reason tied to code evidence.
+- Do not mark `N/A` if there is any trigger signal (relevant imports, touched config, related middleware, DB/crypto/TLS paths, dependency changes).
+- Domain-specific reproducer/tests are required only for `Applicable` domains with findings.
+
+**Anti-pattern**: marking a domain `N/A` when imports or adjacent call paths contain trigger signals (e.g., `database/sql` imported → Domain 2 must be `Applicable`).
+
+→ Worked `N/A` judgments with rationales: `references/authorization-and-policy.md` §6.
+
+## Mandatory Gate Definitions
+
+Gates A and B are **one question at two scopes**, not two scans: A runs on the diff at every
+depth, B widens it to the full resource taxonomy at Standard/Deep. Scan once, report once.
+
+### Gate A: Constructor-Release Pairing (Mandatory, every depth)
+
+Scope: changed code and immediately related call paths.
+
+- Constructors/acquisition: `New*`, `Open*`, `Acquire*`, `Begin*`, `Dial*`, `Listen*`, `Create*`, `WithCancel/WithTimeout/WithDeadline`.
+- Required pairings: `Close`, `Release`, `Rollback/Commit`, `Stop`, `Cancel`, or explicit ownership transfer documented in code.
+- Output: a short pairing table in analysis notes.
+- Severity: a missing or ambiguous pairing is `P2` when an attacker can drive the leak repeatedly, `P3` behind an authenticated/rate-limited path, and reliability-only on a bounded one-shot path. Never grade it on the missing `Close()` alone — see `severity-calibration.md` §Governing Rule.
+
+### Gate B: Resource Inventory (Mandatory at Standard/Deep, every stack)
+
+Extends Gate A's pairing table across Domain 2's full lifecycle half: DB
+rows/statements/transactions/sessions, connections, files, HTTP response bodies, listeners,
+background tasks/goroutines, timers, cancel functions, pipes. Only the release idiom differs by
+stack — Go `defer x.Close()`/`defer cancel()`, Node `finally`/stream cleanup and
+`client.release()`, Java try-with-resources, Python `with`.
+
+Adds the four path-shape checks a call-site scan cannot see: released on **both** success and
+error paths; no deferred release inside a loop; background tasks have a bounded lifecycle; every
+timeout paired with its cancel.
+
+> **Reference**: `references/go-secure-coding.md` § Gate B has the full Go inventory table and
+> anti-patterns; the matching `lang-*.md` Domain 2 row carries the per-stack equivalents.
+
+### Gate C: Third-Party Lifecycle Contract Verification (Mandatory)
+
+When code uses driver/framework objects with non-obvious lifecycle rules (for example `godror`, `sql` extensions, SDK clients):
+
+- Verify lifecycle requirements from primary sources (library source code and/or official docs).
+- Cite exactly what contract was used for the decision.
+- If no contract can be verified, mark confidence at most `suspected` and list under `Uncovered Risk List`.
+
+### Gate D: 10-Domain Coverage (Mandatory, every stack)
+
+These names and numbers are **stack-independent** — "Domain 7" means the same thing in Go, Node,
+Java, and Python. Score all ten for every review:
+
+1. **Randomness Safety** · 2. **Injection & Data-Access Safety** · 3. **Sensitive Data Handling**
+· 4. **Secret / Config Management** · 5. **Transport Security** · 6. **Crypto Primitive
+Correctness** · 7. **Concurrency & Shared-State Safety** · 8. **Language-Specific Injection
+Sinks** · 9. **Static Scanner Posture** · 10. **Dependency Vulnerability Posture**
+
+Execution: D1 triage (`Applicable/N/A`) → D2 deep review on applicable domains only.
+Output: each domain `PASS/FAIL/N/A` with one-line evidence. Any `FAIL` with an exploitable path
+becomes a finding. A domain with no idiom in your stack is still judged against its canonical
+question — never omitted.
+
+> **References**: canonical definitions and the per-stack rules in
+> `references/authorization-and-policy.md` §2; per-stack evidence in `go-secure-coding.md` or the
+> matching `lang-*.md`. Auth/authz and input validation are Scenario Checklists 1-2, not domains.
+
+### Gate E: Second-Pass Falsification Review (Mandatory)
+
+After first-pass findings, run a dedicated second pass to disprove your own conclusion:
+
+- Ask: "What critical issue would I have missed if first pass over-focused on exploitability class X?"
+- Focus on availability, consistency, lifecycle, and partial-failure paths.
+- Specifically re-check: transaction boundaries, rollback guarantees, cleanup on error/panic, idempotency race windows.
+
+Output requirement:
+
+- Add a one-line summary in report: `Second-pass falsification completed: yes/no`.
+
+### Gate F: Uncovered Risk List (Mandatory)
+
+Always output unresolved coverage gaps to avoid false completeness.
+
+Each item must include:
+
+- Area not covered
+- Why not covered (tool/env/access/time)
+- Security impact if the gap hides a defect
+- Recommended follow-up action and owner suggestion
+
+## Change Origin Classification
+
+Classify each finding's origin relative to the current code change:
+
+- **`introduced`**: defect resides in code added or modified by this change. **Must fix before merge.**
+- **`pre-existing`**: defect found in unchanged code that came into scope via call paths.
+  Default: **file a follow-up issue and do not block merge** — a change should not be held
+  hostage to unrelated debt. This default is a *recommendation to the owning team*, not a
+  security clearance, and it is **void** (recommend blocking + escalate) when the finding is
+  `P0` or an actively-exploited `P1`, when this change widens the attack surface on it, when
+  this merge is the release vehicle that ships it, or when the defect sits in the same
+  file/function being modified. Never present "pre-existing" as a reason the risk is
+  acceptable. → `references/authorization-and-policy.md` §5.
+- **`uncertain`**: diff boundaries are ambiguous. Use `git blame` to resolve; treat as `introduced` if unresolvable.
+
+Add `**Origin:**` to each finding's output. Use diff hunks as primary classification signal.
+
+## Anti-Examples (Common Review Mistakes)
+
+These are structured examples of review mistakes this skill is designed to prevent. Each shows a wrong approach and the correct alternative.
+
+### AE-1: Style Finding Reported as Security Issue
+
+**Wrong**: Reporting `P3 — function has 200 lines, hard to review for security` as a security finding.
+**Correct**: Code complexity is a code quality issue. Only report security findings when there is an exploitable or defense-gap path. If complexity obscures a real vulnerability, report the vulnerability itself with evidence.
+
+### AE-3: Over-Reporting False Positives
+
+**Wrong**: `P1 — math/rand used in pkg/display/shuffle.go:12 for randomizing quiz question order` without checking if the output is security-relevant.
+**Correct**: Suppressed — `math/rand` usage is for display ordering of quiz questions; output is not attacker-exploitable and does not protect a security boundary (Suppression Rule 2).
+
+### AE-5: Missing Gate Reported as Full Coverage
+
+**Wrong**: Report says "all gates passed" but `go test -race` was not run because test suite was unavailable.
+**Correct**: Record under `Uncovered Risk List`: "Gate D7 (Concurrency safety) — `go test -race` not executed because test suite has build errors. Impact: data races may exist undetected in changed packages. Recommended: fix test build and re-run."
+
+> For additional anti-examples (N/A without evidence, confirmed without reproducer, P0 acceptance without escalation, ignoring transitive call paths), see `references/anti-examples.md`.
+
+## Scenario Checklists
+
+Classify all 11 as `Applicable` or `N/A`, then run the applicable ones:
+
+1. Authentication / Authorization · 2. Input Validation / Injection / Uploads ·
+3. Session / JWT / Cookie / CSRF · 4. New Endpoints and Error Surface ·
+5. Secrets / Crypto / Key Management · 6. Payment / Financial Transitions ·
+7. Sensitive Data Storage / Transmission · 8. Third-Party Integrations ·
+9. Supply Chain / Dependency / Build Path · 10. Container / Deployment Security ·
+11. Concurrency Safety as Security Risk
+
+> **Reference**: `references/scenario-checklists.md` has the per-item details and the
+> stack-specific subsections. Load it for every Standard/Deep review.
+
+## Active Verification Authorization Gate (Mandatory Before Any Request)
+
+This skill can issue network requests (`curl`) and run scanners. **A tool grant is not an
+authorization.** Everything below is *static* analysis by default; sending a single request to
+a target you were not authorized to test is unauthorized activity, regardless of intent.
+
+Before any command that touches a running system, record this three-line block:
+
+```
+Active verification: permitted | NOT permitted
+Target: <host/URL or "none">
+Basis: <who authorized it, or which local/test environment it is>
+```
+
+**Default deny.** If you cannot fill in `Basis` from what the user actually told you,
+`Active verification` is `NOT permitted`. Do not infer authorization from the presence of a
+hostname in the code, a `.env` file, a README, or a CI config.
+
+Always allowed: reading code/config/diffs, static scanners on local source, and requests to
+`127.0.0.1`/`localhost` or a container you started.
+
+**Executing the code under review is its own gate.** A PR is untrusted input: its tests, its
+`init()` functions, its install scripts and its build plugins are code the author controls.
+Running `go test`, `go generate`, `npm install` / `npm audit fix`, `pip install`, or a Maven /
+Gradle build executes that code on the reviewer's machine. Ask the user before the first such
+command, prefer a throwaway container with no credentials and no network, and treat an external
+or fork PR as static-only until they say otherwise. If it does not run, record the skipped check
+(e.g. Gate D7's race run) under `Uncovered Risk List` — never report it as passed.
+
+**No command is pre-approved** (`allowed-tools` is `Read, Grep, Glob`): a prefix rule cannot
+exclude flags, and the old grants reached far past their names — `go test -race*` ran a PR's
+`init()` unprompted, `curl*` covers `curl -o <file>` and `curl -d @<file> <host>`, `npm audit*`
+covers `npm audit fix`. The permission prompt is where the user applies this gate.
+
+Never without explicit authorization: any request to a host you did not stand up (including
+read-only `GET` to staging/production), authenticating with credentials found in the repo, or
+scanning a third party. Ambiguous targets — `.test`/`.local` domains, a shared dev cluster, a
+hostname in a compose file you did not launch — count as **not permitted**; ask first.
+
+When authorized: non-destructive read-only probes only; production is static-only unless
+explicitly authorized with a change window; demonstrate rather than enumerate; use only
+test accounts the user provided; log every request in `Automation Evidence`; stop on any
+unexpected impact.
+
+A `confirmed` P0/P1 does **not** require executing anything — static proof of the path is
+sufficient. Provide the reproducer as **unexecuted instructions** labelled
+`Reproducer (NOT executed — no authorization to test)`, against a non-routable placeholder
+target. Never describe a command you did not run as if you had.
+
+→ Full rules (destructive payloads, credentials, rate limits, production policy):
+`references/authorization-and-policy.md` §1.
+
+## Focused Automation Gate
+
+Run when tools are available; never claim results without running commands.
+**Prerequisite: the Active Verification Authorization Gate above** — everything here except the
+local static commands requires `Active verification: permitted`.
+
+Policy: always run the low-cost secret sweep; run expensive scanners per `Gate D` applicability
+(dependency graph changed or third-party risk `Applicable` → the stack's vulnerability scanner;
+security-sensitive code changed → the stack's static scanner on the affected scope, or the whole
+repo when scope is unclear). A scanner skipped because its domain is `N/A` must be recorded in
+`Automation Evidence`.
+
+→ Exact commands per stack: `references/authorization-and-policy.md` §7.
+
+### Tool Interpretation Rules (Mandatory)
+
+- `go test -race`: a detected race is always a **defect to fix**, but its *security* severity depends on what races. Races on auth/permission/balance/quota state are `P1` (CWE-367). Races on request-scoped state an attacker can drive concurrently are `P2`. A race confined to test scaffolding, metrics counters, or log buffers is `P3` or reliability-only — say which, and why. Report goroutine stacks from race output.
+- `gosec`: report rule ID, location, and whether finding is exploitable on reachable paths.
+- `govulncheck` source mode: call-trace reachable vulns are high confidence (`confirmed/likely`).
+- `govulncheck -mode=binary <path-to-binary>`: exposure signal only; do not mark `confirmed` without source reachability or equivalent proof. Binary mode has no call-graph, so it over-reports. It also accepts only a built artifact — passing a package pattern is an error, not a scan.
+- Any suppressed `nolint:gosec` requires rationale review. Judge the **suppressed rule**, not the missing comment: if the underlying gosec finding is exploitable, report it at its own severity. If it is a genuine false positive, an absent rationale is a process/hygiene note, not a security finding — record it under `Hardening suggestions`, not as `P3`. Only treat it as `P3` when the suppression hides a real defense gap you cannot fully assess.
+
+## Language/Framework Extension Hooks
+
+Detect the stack from manifests (`go.mod`, `package.json`, `pom.xml`/`build.gradle`,
+`pyproject.toml`/`requirements.txt`), load the matching reference plus
+`scenario-checklists.md`, and evaluate the **same 10 domains** (see §Gate D). Record `stack` in
+the JSON and the coverage header. Multi-stack repos emit one coverage section per stack; a domain
+is `FAIL` for the repo if it fails in any stack.
+
+→ Detection table, Domain 2 generalisation, multi-stack JSON shape: `authorization-and-policy.md` §2.
+
+## Standards Mapping (Mandatory)
+
+Map each finding to `CWE-xxx` and OWASP ASVS. Use `Mapping: TBD` if unclear.
+
+**Pin the ASVS version in every mapping.** ASVS 5.0.0 reorganised and renumbered the chapters
+4.x used, so a bare `V4` or `V4.1.2` does not identify a requirement — it does not say which
+standard it belongs to. Write IDs fully qualified (`ASVS 4.0.3 V4.1.2`), declare
+`"asvs_version"` once in the JSON block, and use exactly one version per report.
+
+The lookup table in `references/security-review.md` is **4.0.3 chapter numbers**. If the
+project audits against 5.0.0, resolve IDs from the 5.0.0 document — never renumber by guessing;
+`Mapping: TBD` beats a plausible-but-wrong requirement ID.
+
+→ Version-pinning rules: `references/authorization-and-policy.md` §3.
+
+## Output Contract
+
+Return outputs in this order. Fields are graded MUST / SHOULD / MAY per review depth:
+
+| # | Section | Lite | Standard | Deep |
+|---|---------|------|----------|------|
+| 1 | **Findings** (P0 → P3) | MUST | MUST | MUST |
+| 2 | **Security Domain Coverage** (10 domains, per detected stack) | MUST (triage only) | MUST (full) | MUST (full) |
+| 3 | **Automation Evidence** | MUST (secret sweep only) | MUST | MUST |
+| 4 | **Open questions / assumptions** | MAY | MUST | MUST |
+| 5 | **Risk Acceptance Register** | MAY | MUST | MUST |
+| 6 | **Remediation Plan** | MAY | MUST | MUST |
+| 7 | **Machine-Readable Summary (JSON)** | MUST | MUST | MUST |
+| 8 | **Hardening suggestions** | MAY | SHOULD | MUST |
+| 9 | **Uncovered Risk List** | MUST | MUST | MUST |
+
+Section-by-section field detail: `references/output-contract.md`. Load it when writing the
+report. Two rules are restated here because getting them wrong invalidates the report rather
+than merely trimming it:
+
+- **§1 caps detail, never disclosure.** P0/P1 findings are never dropped or folded into another
+  section; the P2/P3 soft cap limits how much is written about each, not whether it is reported.
+- **§7 `summary.pass` is computed, not judged**: `false` when `counts.p0 > 0` or
+  `counts.p1 > 0` or `security_domains.fail > 0`. A §5 Risk Acceptance Register entry does not
+  flip it back to `true`. Validate the block against `references/report-schema.json`; emit no
+  key the schema does not define.
+
+## Load References Selectively / Bundled Assets
+→ See `references/reference-index.md` for the loading guide by depth and stack, and the full
+asset inventory.

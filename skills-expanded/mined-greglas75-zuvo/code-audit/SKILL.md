@@ -1,0 +1,786 @@
+---
+name: code-audit
+description: "Batch audit of production files against CQ1-CQ40 quality gates and CAP1-CAP29 anti-patterns. Tiered output (A/B/C/D), critical gate enforcement, evidence-backed scoring, cross-file pattern analysis, and prioritized execution plan. Flags: zuvo:code-audit all | [path] | [file] | --deep | --quick | --services | --controllers"
+category: Code/Test audits
+codesift_tools:
+  always:
+    - analyze_project       # stack detection (used by codesift-setup orchestrator)
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - get_file_tree         # Phase 0.1 file discovery
+    - search_text           # batch agents, fallback
+    - search_symbols        # batch agents
+    - get_symbol            # punktowy lookup
+    - get_symbols           # batch lookup (2+ symbols)
+    - get_file_outline      # file-level scan
+    - audit_scan            # COMPOUND: replaces find_dead_code + search_patterns + find_clones + analyze_complexity + analyze_hotspots
+    - find_dead_code        # CQ13 fallback if audit_scan unavailable
+    - search_patterns       # CQ8 empty-catch (TOOL_VERIFIED)
+    - find_clones           # CQ14 duplication (TOOL_VERIFIED)
+    - trace_call_chain      # CQ4 ownership trace (--deep mode)
+    - scan_secrets          # CAP5 hardcoded secret pre-scan
+  # Each key = a technology label. Orchestrator (codesift-setup.md) matches keys
+  # against analyze_project.stack.{language,framework,test_runner} and dep manifests
+  # (package.json / composer.json / pyproject.toml). Union all matched groups.
+  by_stack:
+    # Languages
+    typescript:
+      - get_type_info              # TS-only: inferred return types, generics, `as` assertion checks (CQ1/CQ2 type safety)
+      - resolve_constant_value      # TS+Python: resolve constants and function defaults through alias/import chains
+    # No JS-only CodeSift tools as of 2026-05. Listed here for symmetry with python/php
+    # so the orchestrator can match the key for completeness; future JS-specific tools
+    # (e.g. eslint-driven analyses) would land here.
+    javascript: []
+    python:
+      - python_audit               # compound: circular + django + anti-patterns + ...
+      - analyze_async_correctness  # CQ15/CQ17 for async Python
+      - resolve_constant_value      # TS+Python: resolve constants and function defaults through alias/import chains
+    php:
+      - php_project_audit          # security + ActiveRecord + N+1 + god model
+      - php_security_scan          # CAP6/CAP7/CAP8
+      - resolve_php_namespace      # PSR-4 FQCN → file path (CQ4 navigation)
+    kotlin:
+      - analyze_sealed_hierarchy            # exhaustiveness checks for sealed types
+      - find_extension_functions            # Kotlin extension fn discovery
+      - trace_flow_chain                    # kotlinx.coroutines Flow propagation
+      - trace_suspend_chain                 # suspend fn call graph
+      - trace_compose_tree                  # Jetpack Compose component tree
+      - analyze_compose_recomposition       # Compose re-render hot spots
+      - trace_hilt_graph                    # Hilt DI graph
+      - trace_room_schema                   # Room DB ORM schema
+      - analyze_kmp_declarations            # Kotlin Multiplatform expect/actual
+      - extract_kotlin_serialization_contract  # kotlinx.serialization data contracts
+    # JS/TS frameworks
+    nestjs:
+      - nest_audit                 # CQ1-29 + NestJS-specific (DI, guards, modules)
+    nextjs:
+      - framework_audit            # 9 sub-audits (security, api_contract, boundary, ...)
+      - nextjs_route_map           # rendering strategy per route
+    astro:
+      - astro_audit                # one-call composite
+      - astro_actions_audit        # AA01-AA06 anti-patterns
+      - astro_hydration_audit
+      - astro_middleware           # MW00-MW03: src/middleware.ts, sequence(), guards
+      - astro_sessions             # SE01-SE04: Astro 5 Sessions API + adapter compat
+      - astro_image_audit          # IM01-IM04: <Image>, getImage(), astro:assets
+      - astro_svg_components       # SV01-SV03: *.svg?component imports, native vs legacy
+    hono:
+      - analyze_hono_app           # routes + middleware overview
+      - audit_hono_security        # secure-headers, rate-limit, auth-ordering
+    # express / fastify — no dedicated CodeSift tools as of 2026-05.
+    # Generic CodeSift (search_text, search_patterns, find_dead_code, etc.) covers them.
+    # Listed here only to acknowledge they're recognized stacks (orchestrator can match them).
+    express: []
+    fastify: []
+    react:
+      - react_quickstart           # component/hook inventory + critical patterns
+      - analyze_hooks              # Rule of Hooks violations
+      - analyze_renders            # CAP13-related re-render risk
+      - analyze_context_graph      # CAP13 unstable Provider value re-render investigation
+      - audit_compiler_readiness   # React Compiler v1.0 bailout patterns
+      - trace_component_tree       # CQ4 ownership trace for components
+    # Python sub-frameworks
+    django:
+      - analyze_django_settings    # CQ5/CQ6 Django security
+      - effective_django_view_security
+      - taint_trace                # CAP6/CAP8 (currently Django-only)
+    fastapi:
+      - trace_fastapi_depends      # CQ19 dependency injection
+      - get_pydantic_models        # CQ19 schema validation
+    flask:
+      - find_framework_wiring      # Flask init_app, blueprints, signals
+    # jest test_runner — no jest-specific CodeSift tools as of 2026-05.
+    # Generic CodeSift covers; orchestrator can match the key for completeness.
+    jest: []
+    # PHP sub-frameworks
+    yii:
+      - resolve_php_service        # Yii::$app-> resolution for CQ4
+      - trace_php_event            # event → listener chain (CQ4 ownership)
+      - find_php_views             # controller render() → view file (CAP6 sink trace)
+    # ORMs / databases
+    prisma:
+      - analyze_prisma_schema      # CQ7/CQ20 (FK index, dual fields)
+    sql:
+      - sql_audit                  # 5 SQL gates
+    postgres:
+      - migration_lint             # squawk PG-only migration safety
+---
+
+# zuvo:code-audit — Production Code Quality Triage
+
+Systematic evaluation of production source files through the CQ1-CQ40 binary checklist and CAP anti-pattern catalog. Every file receives a tier classification based on its score, critical gate status, and detected anti-patterns. The output is a prioritized report with actionable fix plans.
+
+**When to use:** Periodic health checks, before major releases, after adding many production files, when onboarding a new codebase, when code quality feels inconsistent.
+**Out of scope:** Single-file code review (use `zuvo:review`), refactoring (use `zuvo:refactor`), test quality assessment (use `zuvo:test-audit`), feature development (use `zuvo:build`).
+
+## Argument Parsing
+
+| Argument | Effect |
+|----------|--------|
+| `all` | Audit every production file in the project |
+| `[path]` | Audit production files under a specific directory |
+| `[file]` | Audit a single file with full evidence (forces deep mode) |
+| `--deep` | Collect per-gate evidence and fix recommendations for every file |
+| `--quick` | Binary pass/fail only, skip evidence gathering |
+| `--services` (filter Phase 0.1 discovery to files classified SERVICE in 0.3; without that filter this flag is a no-op) | Restrict scope to service and business logic files |
+| `--controllers` (same: filter Phase 0.1 to CONTROLLER-classified files) | Restrict scope to controller, handler, and route files |
+
+Default behavior: `all --quick`
+
+| Mode | Scope | Depth | Batch Size | Notes |
+|------|-------|-------|------------|-------|
+| `all` | Entire project | Standard | 6 files/batch | Default |
+| `[path]` | Directory tree | Standard | 6 files/batch | Scoped |
+| `[file]` | One file | Deep (full evidence) | 1 | Single-file deep dive |
+| `--deep` | Any scope | Full evidence | 6 files/batch | Slower, thorough |
+| `--quick` | Any scope | Binary only | 10 files/batch | Fast triage |
+| `--services` | Service files | Standard | 6 | Filter by file type |
+| `--controllers` | Controller files | Standard | 6 | Filter by file type |
+
+## Mandatory File Loading
+
+### PHASE 0 — Bootstrap (always, before reading any input)
+
+```
+  1. ../../shared/includes/codesift-setup.md      -- [READ | MISSING -> STOP]
+  2. ../../shared/includes/no-pause-protocol.md   -- [READ | MISSING -> WARN] (HARD: no mid-loop pauses across files)
+```
+
+These files are loaded before reading the audit target files. The no-pause protocol is mandatory for any multi-file audit run.
+
+### PHASE 0.5 — Classify (read target files, determine domain)
+
+After CodeSift setup, read the target file(s). Classify the primary domain:
+- **data:** touches DB queries, transactions, ORMs, migrations
+- **async:** touches promises, streams, workers, event emitters
+- **security:** touches auth, input validation, secrets, crypto
+- **general:** none of the above (or mixed)
+
+Print: `[CLASSIFIED] Domain: {data|async|security|general}`
+
+### PHASE 1 — Conditional Load (based on domain)
+
+| Include | data | async | security | general |
+|---------|------|-------|----------|---------|
+| `../../rules/cq-checklist.md` | Full | Full | Full | Full |
+| `../../shared/includes/env-compat.md` | Full | Full | Full | Full |
+| `../../rules/cq-patterns.md` | CQ6,7,9,16,17 focus | CQ15,17 focus | CQ4,5 focus | Full |
+| `../../rules/security.md` | **SKIP** | **SKIP** | Full | **SKIP** |
+| `../../rules/file-limits.md` | **SKIP** | **SKIP** | **SKIP** | Full |
+
+Print loaded files:
+```
+PHASE 1 — LOADED:
+  [list with READ/SKIP status per file]
+```
+
+### DEFERRED — Load at completion
+
+```
+  ../../shared/includes/run-logger.md        -- [READ at final step]
+  ../../shared/includes/retrospective.md        -- [READ at final step]
+```
+
+**If PHASE 0 file missing:** STOP. The plugin installation is incomplete.
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+## Environment Compatibility
+
+Read `../../shared/includes/env-compat.md` for agent dispatch patterns, path resolution, and progress tracking across all supported platforms.
+
+## MANDATORY TOOL CALLS — Audit Validity Gate
+
+**This audit is INVALID if any tool below is skipped when its trigger condition holds.** "DEFERRED", "N/A", "no diff vs prior audit", "--quick mode" are NOT valid reasons. The presence of trigger artifacts (a code file list, language detection, dep manifest) is what dictates the call — never delta or risk.
+
+### Required tool list
+
+| Tool | Trigger | Reason | Skip allowed? |
+|------|---------|--------|---------------|
+| `audit_scan` | Always (any project with code files) | COMPOUND replacement for find_dead_code+search_patterns+find_clones+analyze_complexity+analyze_hotspots — primary CQ engine | **NO** |
+| `find_dead_code` | Always | CQ13 unused exports across symbol graph (kept as fallback if audit_scan unavailable) | **NO** when audit_scan also unavailable |
+| `search_patterns(empty-catch)` | Always | CQ8 empty-catch detection — TOOL-VERIFIED gate, only authoritative source | **NO** |
+| `find_clones` | Always | CQ14 duplication ≥0.7 similarity — TOOL-VERIFIED gate | **NO** |
+| `scan_secrets` | Always | CAP5 hardcoded secret pre-scan — every audit, every project | **NO** |
+| `trace_call_chain` | --deep mode OR finding cites a function with cross-file impact | CQ4 ownership trace; required to verify "this is internal" claims | **NO** when --deep |
+| Stack-specific (nest_audit/framework_audit/python_audit/php_project_audit/etc.) | Framework/language detected | Stack-specific CQ patterns no generic scan reproduces | **NO** when language/framework matches |
+
+### Forbidden escape hatches
+
+| Value | Forbidden when | Required value instead |
+|-------|----------------|------------------------|
+| `audit_scan: DEFERRED` | EVER | `audit_scan: <findings_count>` |
+| `scan_secrets: skipped (CAP5 covered manually)` | EVER | `scan_secrets: <count>` |
+| `find_clones: N/A (--quick mode)` | EVER | `find_clones: <cluster_count>` |
+| `codesift: unavailable` | `mcp__codesift__*` was in deferred-tools session-start banner | `codesift: deferred-not-preloaded (FAILURE: skill required preload)` |
+| `retrospective: skipped` | EVER | `retrospective: appended (retros.log + retros.md)` |
+
+### Required POSTAMBLE — retrospective + verify-audit gates
+
+After the audit report is written, the audit is **NOT complete** until:
+
+1. `zuvo/audits/code-quality-audit-<date>.md` (or `zuvo/audits/code-audit-<date>.md`) is on disk — at the **project root** (`zuvo/` resolves via `git rev-parse --show-toplevel`; override `$ZUVO_OUTPUT_DIR`. See `../../shared/includes/report-output-location.md`).
+2. `~/.zuvo/append-runlog` is called with the Run line — this triggers BOTH:
+   - **retro-gate**: requires a matching `RETRO:` entry in `~/.zuvo/retros.log` for `skill=code-audit project=<this>`. If missing → exit 2, runs.log NOT appended.
+   - **audit-content gate**: runs `~/.zuvo/verify-audit` on the report. Every Tier D/C finding (and every Tier B critical-gate-near-miss) must contain at least one `path/to/file.ext:LINE` citation that resolves in the current tree. Findings without citations get rejected. If rejected → fix the report (add file:line per finding), re-run `append-runlog`.
+3. Print `RETRO_APPENDED: retros.log=YES retros.md=YES (verified)` and confirm exit 0 from `append-runlog`.
+
+If you reach the Run line and stop without calling `append-runlog`: the audit is INVALID regardless of finding count. The Validity Gate's `gate_status` flips to `FAIL — postamble incomplete` and the verdict overrides to `INCOMPLETE`.
+
+### Mandatory acknowledgment (REQUIRED — print verbatim before Phase 0)
+
+```
+Mandatory-tools-acknowledgment: I will run audit_scan + scan_secrets + search_patterns(empty-catch) + find_clones + find_dead_code + trace_call_chain (in --deep mode or for cross-file impact verification) + stack-specific tools (nest_audit/framework_audit/python_audit/etc. when detected) in this audit. Each finding will cite a `path/to/file.ext:LINE` resolving in the current tree.
+```
+
+---
+
+## CodeSift Integration
+
+**Use the deterministic preload helper FIRST.** Before issuing any ToolSearch, run:
+```
+~/.zuvo/compute-preload code-audit "$PWD"
+```
+Copy the printed `[CodeSift matching trace]` block verbatim and issue the printed `ToolSearch(query="select:...")` line without modification. Math gate: `[CodeSift loaded] tools=N` must equal `[Expected after load] tools=N` from the helper. If they differ → `[PRELOAD MATH MISMATCH]` and abort before Phase 1.
+
+CodeSift setup completed in PHASE 0. Use CodeSift tools for all discovery and analysis when available. If not found, fall back to Grep/Read/Glob and inform the user once.
+
+After editing any file: `index_file(path="/absolute/path/to/file")`
+
+### CodeSift-Accelerated Discovery
+
+When CodeSift is available, run these checks before the manual CQ evaluation to pre-populate deterministic findings:
+
+1. `find_dead_code(repo, file_pattern=SCOPE)` -- Pre-populate CQ13 (unused exports). Mark as TOOL_VERIFIED.
+2. `search_patterns(repo, "empty-catch")` -- Pre-populate CQ8 (swallowed errors). Mark as TOOL_VERIFIED.
+3. `find_clones(repo, min_similarity=0.8)` -- Pre-populate CQ14 (duplicated logic blocks >10 lines). Mark as TOOL_VERIFIED.
+
+TOOL_VERIFIED findings have deterministic HIGH confidence and bypass the confidence gate. They go directly to the report.
+
+Manual CQ1-CQ40 evaluation still runs for all 40 gates. CodeSift pre-scan accelerates 3 of 29 checks.
+
+### Degraded Mode (CodeSift unavailable)
+
+| CodeSift tool | Fallback | Lost capability |
+|---------------|----------|-----------------|
+| `find_dead_code` | Skip CQ13 pre-scan | No automated dead code detection |
+| `search_patterns("empty-catch")` | `Grep` for `catch\s*\(` with empty body | Less precise pattern matching |
+| `find_clones` | Skip CQ14 pre-scan | No automated clone detection |
+| `get_file_tree` | `find` command | Slower, no symbol counts |
+| `get_file_outline` | `Read` each file | More tokens consumed |
+| `trace_call_chain` | `Grep` for imports | No transitive caller analysis |
+| `search_symbols` | `Grep` for function names | Less precise results |
+
+---
+
+## Phase 0: Discovery and Classification
+
+### 0.1 Locate Production Files
+
+When CodeSift is available: `get_file_tree(repo, name_pattern="*.ts")` (adjust extension per stack) with path filters excluding `node_modules`, `.next`, `dist`, `__tests__`.
+
+When unavailable:
+
+```bash
+find . \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.py" \) \
+  ! -name "*.test.*" ! -name "*.spec.*" ! -name "test_*" ! -name "*_test.*" \
+  ! -path "*/node_modules/*" ! -path "*/.next/*" ! -path "*/dist/*" ! -path "*/build/*" \
+  ! -path "*/__pycache__/*" ! -path "*/migrations/*" | sort
+```
+
+If the file count exceeds 80 and `--deep` was not explicitly requested, auto-switch to `--quick` mode. An explicit `--deep` flag always takes precedence.
+
+### 0.2 Prioritize by Risk
+
+When file count is large, process in this order:
+
+1. **CRITICAL:** Guards, middleware, auth files + controllers, handlers, routes (public attack surface)
+2. **HIGH:** Services, repositories, orchestrators, external API callers (business logic and data)
+3. **MEDIUM:** ORM entities, models, components with logic >100 lines (data handling and UI)
+4. **LOW:** Utilities, helpers, pure functions (least risk)
+
+### 0.3 Classify Each File
+
+Assign a **code type** to each file. This determines which CQ gates are high-risk and which conditional gates activate.
+
+| Signal | Code Type | High-Risk CQs | Conditional Gates |
+|--------|-----------|---------------|-------------------|
+| `*.service.*`, `*.repository.*` | SERVICE | CQ1,3,4,8,14,16,17,18,20 | CQ16 if money fields, CQ19 if external calls |
+| `*.controller.*`, `*.handler.*`, `route.*` | CONTROLLER | CQ3,4,5,12,13,19 | CQ19 always (API boundary) |
+| `*.guard.*`, `*.middleware.*`, auth in name | GUARD/AUTH | CQ4,5 | -- |
+| `*.tsx`, `*.jsx` (>50 lines) | REACT | CQ6,10,11,13,15 | -- |
+| `*.entity.*`, `*.model.*`, schema in name | ORM/DB | CQ6,7,9,10,17,20 | CQ20 if dual fields |
+| orchestrat, workflow, pipeline in name | ORCHESTRATOR | CQ6,8,9,14,15,17,18 | CQ18 if multi-store |
+| `use*.ts`/`use*.tsx`, useState/useEffect + hook export | HOOK | CQ6,8,10,11,15,22 | CQ22 always, CQ19 if fetches data |
+| `*.utils.*`, `*.helpers.*`, lib/ | PURE | CQ1,2,10,12,16 | CQ16 if money functions |
+| Calls external API (fetch, axios, http) | API-CALL | CQ3,5,8,15,17,19 | CQ19 always |
+
+When a file matches multiple types, use the most specific one.
+
+### 0.4 Detect Global Error Handling Infrastructure
+
+Before batch evaluation, search for project-wide error handling. This prevents systematic overcounting of CQ8 failures.
+
+- **NestJS:** `@Catch()` decorator, `AllExceptionsFilter`, `APP_FILTER` provider
+- **Express:** `app.use((err, req, res, next)` error middleware
+- **Next.js:** `error.tsx` / `global-error.tsx` boundary
+- **Fastify:** `setErrorHandler`
+- **Python:** `@app.exception_handler`, middleware with try/except
+
+If found, note in the report header and pass as PROJECT_CONTEXT to every batch agent. Services that let errors propagate to the global handler = CQ8 PASS. Only CQ8=0 when errors are swallowed (empty catch, catch-and-return-null, catch-without-rethrow).
+
+### 0.5 Semgrep Pre-Scan (optional)
+
+If `semgrep` is installed and the project has `.semgrep/` config:
+
+```bash
+npx semgrep --config .semgrep/ --json --quiet 2>/dev/null
+```
+
+Semgrep findings auto-score the matching CQ as 0 for affected files (deterministic = HIGH confidence). Exception: CQ4 findings from semgrep need dataflow verification before auto-scoring. LLM evaluation still runs full CQ1-CQ40 but skips deep analysis on CQs already flagged.
+
+If semgrep unavailable: skip silently. This enhances the audit but does not gate it.
+
+---
+
+## Phase 1: Batch Evaluation
+
+Split files into batches of 6-8 (10 in `--quick` mode). For each batch, spawn a Task agent or process inline depending on environment (see `env-compat.md`).
+
+Each Task agent dispatch:
+```
+Agent: Code Quality Auditor (per batch)
+  model: "sonnet"
+  type: "general-purpose"  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  instructions: evaluate files against CQ1-CQ40 checklist (see Agent Prompt below)
+  input: batch file list, PROJECT_CONTEXT, CODESIFT_AVAILABLE
+```
+
+### Agent Prompt (provided to each batch agent)
+
+```
+You are a production code quality auditor. Evaluate each file below against the CQ1-CQ40 binary checklist.
+
+PROJECT_CONTEXT:
+[INSERT: global error handler info, or "No global error handler detected"]
+
+RED FLAG PRE-SCAN (do this FIRST, before full checklist):
+Scan for these. If any found, use TIER-D SHORT FORMAT and skip full CQ1-CQ40:
+- Hardcoded secret (API key, password, token in source) -> AUTO TIER-D
+- SQL string concatenation with user input -> AUTO TIER-D
+- eval() / new Function() with non-literal input -> AUTO TIER-D
+- dangerouslySetInnerHTML without DOMPurify -> AUTO TIER-D
+
+TIER-D SHORT FORMAT:
+### [filename]
+Code type: [TYPE]
+Lines: [count]
+Red flags: [CAP5/CAP6/CAP7/CAP8/CAP25/CAP26] -> AUTO TIER-D
+Details: [what was found, line number]
+Tier: D
+
+QUICK HEURISTICS (not Tier-D triggers, but predict score):
+- 5+ `as any` casts -> likely score <= 10
+- File > 400 lines -> likely CQ11=0
+- 0 try/catch with DB/API calls -> likely CQ8=0
+- parseFloat on money field -> likely CQ16=0
+- await inside for/forEach loop -> likely CQ17=0
+
+CLASSIFY the file first (SERVICE / CONTROLLER / GUARD / HOOK / REACT / ORM / ORCHESTRATOR / PURE / API-CALL).
+
+CHECKLIST (score 1=YES, 0=NO, N/A=not applicable with justification):
+<!-- GATES:BEGIN kind=cq-prompt -->
+CQ1:  No string/number where union/enum/branded type appropriate?
+CQ2:  All public function return types explicit? No implicit any?
+CQ3:  CRITICAL -- Boundary validation complete? Required fields, format/range, runtime schema?
+CQ4:  CRITICAL -- Guards reinforced by query-level filtering? Guard NOT sole defense?
+CQ5:  CRITICAL -- No sensitive data in logs/errors/responses?
+CQ6:  CRITICAL -- No unbounded memory from external data? Pagination/streaming?
+CQ7:  DB queries bounded? LIMIT/cursor present? Slim payloads?
+CQ8:  CRITICAL -- Infra failures handled? Timeouts on outbound? No empty catch?
+CQ9:  Multi-table mutations in transactions? FK order correct?
+CQ10: Nullable values handled? No silent null propagation? No unsafe array[0]/.find()?
+CQ11: File within its type limit? Functions within limits (public 50L, private 30L)? Nesting <=4? Params <=5? (2x any limit = automatic FAIL)
+CQ12: No magic strings/numbers? No index-based mapping (row[0])? Named constants in use?
+CQ13: No dead code (unreachable branches, unused exports)? No TODO without a ticket? No mixed logging?
+CQ14: CRITICAL -- No duplicated logic? (a) >10-line block repeated, (b) same pattern 5+ times, (c) >=3-line block 4+ times cross-file, (d) same mock 10+ times
+CQ15: Every async awaited or fire-and-forget with .catch()? No dropped promises?
+CQ16: CONDITIONAL -- Money uses exact arithmetic (Decimal/integer-cents)? No float for money?
+CQ17: No sequential await in loops where batch/parallel works?
+CQ18: Multi-store writes use outbox/saga/compensation or documented reconciliation? Partial-failure path tested?
+CQ19: CONDITIONAL -- API request AND response validated by runtime schema?
+CQ20: CONDITIONAL -- Each data point ONE canonical source? No dual fields?
+CQ21: CONDITIONAL -- No TOCTOU? State machine transitions use CAS? Mutations idempotent?
+CQ22: CONDITIONAL -- All listeners/timers/subscriptions cleaned up on unmount?
+CQ23: CONDITIONAL -- Cache has TTL or explicit invalidation? No stale-forever entries?
+CQ24: CONDITIONAL -- API changes additive only? Breaking changes have deprecation path?
+CQ25: New code follows existing project patterns? No special snowflakes?
+CQ26: Structured logger with context (requestId, userId), not plain console.log?
+CQ27: Log levels correct? `error` for infra failures only, not validation?
+CQ28: CONDITIONAL -- Timeout hierarchy correct? DB < server < client (innermost shortest)?
+CQ29: Workspace path alias (@/, ~/, #/) used for imports >=3 hops deep when alias is configured? N/A if no alias in workspace.
+CQ30: CONDITIONAL -- CSRF defence on cookie-authed mutations? SameSite + (token / origin verification / bearer transport)?
+CQ31: CONDITIONAL -- User input reaching path/shell/deserializer/outbound URL — allowlisted and validated?
+CQ32: CONDITIONAL -- Lockfile committed, new deps pinned and CVE-checked?
+CQ33: CONDITIONAL -- CSPRNG for tokens? Credential hashing argon2/bcrypt, not SHA? No bespoke crypto?
+CQ34: CONDITIONAL -- Role checked for THIS operation (not just authenticated)? Write payload field-allowlisted?
+CQ35: CONDITIONAL -- Cancellation handle accepted + forwarded downstream, not re-created? Derived handles released?
+CQ36: CONDITIONAL -- Every spawn has an owner that joins/aborts it? Fan-out bounded?  [stack: go,rust,jvm,dotnet,python]
+CQ37: CONDITIONAL -- Race-free by construction AND proven by -race/TSan? No lock held across await?  [stack: go,rust,jvm,dotnet,python]
+CQ38: CONDITIONAL -- Deterministic release on every exit path? No defer inside an unbounded loop?  [stack: go,rust,jvm,dotnet,python]
+CQ39: CONDITIONAL -- Queues/channels/fan-out bounded? Backpressure honoured on streams?
+CQ40: CONDITIONAL -- Language meta-linter configured, pinned and clean in CI? No config = 0
+<!-- GATES:END kind=cq-prompt -->
+
+ANTI-PATTERNS (each found = noted, severity attached):
+<!-- GATES:BEGIN kind=cap-list -->
+CAP1: Empty catch block -- HIGH
+CAP2: Plain `console.log` in production. `console.warn`/`console.error` allowed ONLY when paired with Sentry.captureMessage/captureException on the same code path; otherwise MEDIUM. -- MEDIUM
+CAP3: `as any` / `as unknown as X` without validation (x5+ = HIGH). `as unknown as <DomainType>` after Prisma/ORM queries = HIGH (silent contract bypass). -- MEDIUM
+CAP4: @ts-ignore without justification -- MEDIUM
+CAP5: Hardcoded secret -- AUTO TIER-D
+CAP6: Unsanitized HTML reaching DOM or persistence. Covers `dangerouslySetInnerHTML` without DOMPurify, `editor.commands.setContent(rawHtml)`/raw-HTML mode without pre-save sanitization, paste-as-HTML, programmatic raw HTML writes. Display-time sanitization alone is INSUFFICIENT if persistence path is unsanitized. -- AUTO TIER-D
+CAP7: eval() / new Function() with dynamic input -- AUTO TIER-D
+CAP8: SQL string concatenation OR `$queryRaw`/`$executeRawUnsafe` against tenant tables without organizationId in WHERE -- AUTO TIER-D
+CAP9: File exceeds type limit (service <=450, controller <=300, hook <=250, component <=200 single-responsibility / <=300 page-container, helper <=100) OR inline sub-component >=50 LOC nested in a parent component file (2x file limit = AUTO TIER-D) -- HIGH
+CAP10: Function > 100 lines (2x the 50L limit) -- HIGH
+CAP11: parseFloat/Number() on money field -- HIGH
+CAP12: await inside for/while without batch alternative -- MEDIUM
+CAP13: 7+ useState in one component, OR >=3 mutually-exclusive dialog/modal boolean flags (collapse to discriminated union `dialog: { kind: '...' } | null`), OR state mirroring URL params managed via local useState (use router query API) -- MEDIUM
+CAP14: Business logic >10 lines in component body that has no DOM dependency -- MEDIUM
+CAP15: API URL built without `encodeURIComponent` on dynamic path segments, OR hardcoded base URL string-concat (`` `${BASE}/api/foo/${id}` ``), OR unencoded user-controlled token in URL path/query. MUST use a single `buildApiUrl(path, pathParams)` helper and validate enum-typed segments against an allowlist before interpolation. -- HIGH
+CAP16: Client auth-token plumbing race (deferred-promise wait for provider, token injected mid-flight, no readiness gate before first request), OR missing 401-> refresh-> retry-once on REST clients while tRPC has it (or vice versa), OR unsigned/dev-only tokens accepted as auth credentials in any environment -- HIGH
+CAP17: `error.message` rendered directly to UI/DOM without a curated `userMessageFor(error)` mapping. Leaks server stack/PII; map known error types to safe messages and fall back to a generic "Something went wrong". -- HIGH
+CAP18: `throw new Error(...)` from a service/injectable/handler. Use a typed exception class instead (BadRequestException, NotFoundException, custom DomainError); bare Error loses HTTP status mapping and can leak the original message into 5xx response bodies. -- MEDIUM
+CAP19: Mutating endpoint, AI/expensive operation (LLM call, export, generation), webhook receiver, public token-lookup/validation endpoint (CQ4 requires rate-limiting these even read-only), or tRPC procedure without a rate limiter (ThrottlerGuard, custom limiter, queue with concurrency cap). tRPC bypassing the project-wide ThrottlerGuard = always violation. -- HIGH
+CAP20: Mutable default argument (`def f(x=[])`), shared mutable class-attribute default, or attrs/pydantic-v1 mutable field default without a factory (attrs: `field(factory=list)`; pydantic v1: `default_factory=list`) — stdlib dataclasses already reject `field: list = []` at class definition; the smell survives in the other forms -- HIGH  [stack: python]
+CAP21: `except Exception: pass`, bare `except:`, or catch-and-return-None with no log and no re-raise -- HIGH  [stack: python]
+CAP22: `assert` used as a runtime precondition in production code — stripped under `python -O`, silently deleting the check (CWE-703) -- HIGH  [stack: python]
+CAP23: `asyncio.create_task`/`ensure_future` whose result is not retained — the loop keeps only a weak reference, so the task can vanish mid-flight -- HIGH  [stack: python]
+CAP24: Blocking call inside `async def` — `requests`, `time.sleep`, bare `open`, a sync DB driver, `boto3` -- HIGH  [stack: python]
+CAP25: `pickle`/`marshal`/`dill` load, or `yaml.load` without `SafeLoader`, on non-first-party bytes -- AUTO TIER-D  [stack: python]
+CAP26: `subprocess`/`os.system` with `shell=True` or a non-literal command string (CWE-78) -- AUTO TIER-D  [stack: python]
+CAP27: Naive `datetime.now()`/`utcnow()` stored, compared, or serialized (`utcnow` is deprecated in 3.12) -- MEDIUM  [stack: python]
+CAP28: Module-import-time side effect — DB engine, HTTP client, network call, or `os.environ[k]` at import -- MEDIUM  [stack: python]
+CAP29: `__del__` used for resource release, or `.close()` without `with`/`try-finally` — GC timing is unguaranteed and `__del__` exceptions are swallowed -- MEDIUM  [stack: python]
+<!-- GATES:END kind=cap-list -->
+
+N/A HANDLING: Exclude verified inactive features from numerator and denominator. `count(N/A) > floor(in_scope / 3)` triggers documented independent applicability review by the existing CQ auditor, distinct from the original scoring author (record both identities and the review artifact/run; no self-certification); pending review is INCOMPLETE, but the verified count alone does not bar a tier. Record each precondition, reason and source/search evidence. Unknown or missing evidence is 0/unproven, not N/A. Code type alone does not activate a feature. All active critical gates remain mandatory. Score = passed / applicable; zero applicable = INCOMPLETE. Print counts and review status. Follow `cq-checklist.md` for the full protocol.
+
+STATIC CRITICAL GATE: CQ3, CQ4, CQ5, CQ6, CQ8, CQ14 -- any active gate = 0 -> quality verdict FAIL, regardless of score. Tier C is the minimum remediation priority, not a passing verdict.
+CONDITIONAL CRITICAL GATE:
+- CQ16 -> critical if file handles money (prices, costs, discounts, invoices)
+- CQ19 -> critical if CONTROLLER or API-CALL type. Thin controller exception: if only returns typed service data, gate does not activate.
+- CQ20 -> critical if file defines entities with dual fields
+- CQ21 -> critical if concurrent mutations on same resource
+- CQ22 -> critical if creates subscriptions, timers, observers
+- CQ23 -> critical if uses Redis, Memcached, or in-memory cache
+- CQ24 -> critical if modifies existing API endpoint signatures
+- CQ28 -> critical if defines timeouts at 2+ architectural layers
+- CQ30 -> critical if the endpoint mutates state AND authenticates via cookie/session
+- CQ31 -> critical if user input reaches a filesystem path, shell argv, deserializer, or outbound URL
+- CQ32 -> critical if the change adds/updates a dependency, or the repo has a manifest
+- CQ33 -> critical if code generates a token/ID/nonce, hashes/encrypts, or reads a secret
+- CQ34 -> critical if the handler has roles, or a payload is written into persistence
+- CQ35 -> critical if the code performs cancellable I/O or long-running work
+- CQ36/CQ37/CQ38 -> critical on go/rust/jvm/dotnet/python (spawn ownership, races, handle release)
+- CQ39 -> critical if a queue/channel/fan-out is sized by external input
+- CQ40 -> critical if the project's language has a standard meta-linter (i.e. always)
+  (This list froze at CQ28 until 2026-08-02, so the whole security wave was invisible here and a
+  CQ30=0 or CQ34=0 file still reached Tier A/B. Canonical source is gate-registry.md's
+  Criticality column — re-derive rather than extending this copy by hand.)
+
+CQ8 NOTE: Check PROJECT_CONTEXT and trace every entry point to its actual error handler. An HTTP exception filter does not cover queue/cron/CLI or detached promises. Verify outbound timeouts, response.ok and async rejection handling independently. Missing or unproven protection scores CQ8=0; a global handler alone is not a pass. A missing per-method catch is acceptable only when the cited handler covers that failure path.
+CQ15 NOTE: `return somePromise` inside async function is NOT a missing await -- async auto-flattens. Only flag when promise is neither returned nor awaited.
+CQ19 NOTE: Thin controllers that only return typed service data get gate cap = B, not C.
+
+OUTPUT FORMAT per file:
+### [filename]
+Code type: [TYPE]
+Lines: [count]
+Red flags: [CAP5/6/7/8 = auto Tier-D; or "none"]
+Score: CQ1=[0/1] CQ2=[0/1] ... CQ40=[0/1/N/A]   (ALL 40 — a line stopping at CQ29 silently drops 11 gates)
+Anti-patterns: [CAP IDs found, or "none"]
+Total: [passed]/[applicable] ([%]) -- N/A excluded
+Static gate: CQ3=... CQ4=... CQ5=... CQ6=... CQ8=... CQ14=... -> [PASS/FAIL]
+Conditional gate: [which activated] -> [PASS/FAIL/none]
+Evidence (critical gates scored 1): [CQ=evidence pairs, file:line]
+Tier: [A/B/C/D]
+Top 3 issues: [brief]
+
+TIER CLASSIFICATION (percentages of APPLICABLE — never raw counts over a fixed denominator,
+because the gate set grows and ">=25/29" silently becomes a different bar at 40 gates):
+  applicable = (gates in scope) - count(N/A)      # out-of-scope excluded before N/A
+  A (>= 86% of applicable, all active gates PASS): Production-ready
+  B (>= 79% and < 86% of applicable, all active gates PASS): Conditional pass
+  C (< 79%, OR any critical gate = 0):             Significant rework
+  D (AUTO TIER-D red flag: CAP5/6/7/8/25/26):      Critical -- immediate fix
+
+  A critical gate at 0 sets quality verdict FAIL. Tier C is a remediation-priority floor, not a passing or warning quality verdict.
+  86% / 79% are the same bars as 25/29 and 23/29 under the old fixed denominator.
+
+IMPORTANT:
+- Read the FULL file before scoring
+- Do red flag pre-scan first
+- For CQ3: check for DTO/schema at entry point. "Validation exists somewhere" = 0.
+- For CQ4: look for ownership check followed by query WITHOUT that owner in WHERE. In --deep mode for SERVICE files, read the associated controller to verify.
+- For CQ11: count lines per function. Limits vary by type (see file-limits.md).
+- For CQ14: list methods >20 lines. Compare pairs for structural similarity.
+- For CQ16: search for parseFloat/Number() on price/cost/amount fields.
+- For CQ17: search for await inside loops. Check if batch alternative exists.
+- For CQ19: check both request DTO AND response shape validation.
+- For CQ20: search for field_id + field_name pairs.
+- Evidence REQUIRED for --deep mode (all CQs). For --quick: evidence required only for critical gates scored 1.
+- GATE N/A REPORTING: N/A gates are skipped, not converted to 1.
+
+Files to audit:
+[BATCH FILE LIST]
+```
+
+---
+
+## Phase 2: Aggregate Results
+
+Collect all agent outputs and build the summary report.
+
+### Summary Table
+
+```markdown
+# Code Quality Audit Report
+
+Date: [date]
+Project: [name]
+Files audited: [N]
+Mode: [quick/deep]
+
+## Summary by Tier
+
+| Tier | Count | % | Action |
+|------|-------|---|--------|
+| A (ratio >= 0.86, active critical gates PASS) | [N] | [%] | Production-ready |
+| B (>= 0.79 and < 0.86, active critical gates PASS) | [N] | [%] | Targeted fixes before merge |
+| C (< 0.79 OR any active critical gate = 0) | [N] | [%] | Significant rework |
+| D (auto Tier-D red flag) | [N] | [%] | Critical -- immediate fix |
+
+Compare the raw ratio, never a rounded integer percentage: written as `79-85` / `86+`, a score of
+85.5% belonged to no tier at all.
+
+## Summary by Code Type
+
+| Type | Files | Avg Score | Worst CQ | Notes |
+|------|-------|-----------|----------|-------|
+| SERVICE | [N] | [avg] | [most failed CQ] | |
+| CONTROLLER | [N] | [avg] | | |
+
+## Critical Gate Failures
+
+| File | Score | Failed CQs | Impact |
+|------|-------|------------|--------|
+
+## Conditional Gate Failures
+
+| File | Score | Failed CQs | Why Activated | Impact |
+|------|-------|------------|---------------|--------|
+
+## Red Flag Summary (Auto Tier-D)
+
+| File | Red Flag | Details |
+|------|----------|---------|
+
+## Top Failed CQs (across all files)
+
+| CQ | Category | Fail count | % of files | Pattern |
+|----|----------|-----------|------------|---------|
+
+## Anti-pattern Hot Spots
+
+| Anti-pattern | Severity | Files affected | Instances |
+|-------------|----------|---------------|-----------|
+
+## Tier D -- Critical Fix Queue (worst first)
+## Tier C -- Rework Queue
+## Tier B -- Targeted Fix Queue
+## Tier A -- Production Ready
+```
+
+## Phase 3: Cross-File Analysis
+
+After per-file scoring, run these cross-cutting checks:
+
+1. **Cross-file duplication** -- If CQ14=0 in multiple files in the same module, check for shared duplicated logic between those files
+2. **Inconsistent patterns** -- If some services use transactions (CQ9=1) and structurally similar ones do not (CQ9=0), flag the inconsistency
+3. **Validation chain gaps** -- If a controller has CQ3=1 but the service it calls has CQ3=N/A ("internal"), verify the service is truly never called from another entry point
+4. **Money handling inconsistency** -- If some files use Decimal (CQ16=1) and others use float for the same domain, flag project-wide drift
+
+Add findings under a `## Cross-File Issues` section.
+
+## Phase 3b: Adversarial Review on Audit Report (MANDATORY — do NOT skip)
+
+After the audit report is generated, run cross-model validation to catch score inflation and gate inconsistency. Runs on ALL audits (not just --deep).
+
+Point `--files` at the report you just wrote — a literal `[date]` placeholder matches nothing and burns the pass.
+
+```bash
+# The report auto-increments (-2.md, -3.md) on same-day reruns — take the newest match.
+REPORT=$(ls -t zuvo/audits/code-quality-audit-$(date +%F)*.md 2>/dev/null | head -1)
+[ -n "$REPORT" ] && ~/.zuvo/adversarial-review --mode audit --files "$REPORT" \
+  || echo "adversarial: report not found — write it first"
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Then:
+- **CRITICAL** (FAIL gate not in verdict, severity mismatch) → fix in report before delivery
+- **WARNING** (N/A abuse, skipped check) → append to Known Gaps section
+- **INFO** → ignore
+
+## Phase 4: Report and Execution Plan
+
+Save the report to: `zuvo/audits/code-quality-audit-[date].md`
+If `--deep` mode: also save per-file detail to `zuvo/audits/code-audit-details/[filename].md`
+
+### Execution Plan (appended to report)
+
+```markdown
+## Recommended Execution Plan
+
+### Goal
+- Raise score from [current avg]% to min [target]% of applicable
+- Close all critical gate FAILs
+- Add regression tests for every P0/P1 change
+
+### Priority Order
+1. P0 (production blockers): [Tier D red flags + critical gate FAILs]
+2. P1 (high risk / stability): [remaining Tier C issues]
+3. P2 (maintenance / readability): [Tier B gaps]
+
+### Fix Plan (per issue)
+
+| Priority | CQ/CAP | Where (file:line) | What to change | Tests needed | Est. |
+|----------|--------|-------------------|----------------|-------------|------|
+
+### Project-Wide Patterns
+- [N] files missing input validation (CQ3) -- consider global validation pipe
+- [N] files using float for money (CQ16) -- adopt Decimal project-wide
+
+### Re-audit Expected Deltas
+
+| CQ/CAP | Before | After | Files affected |
+|--------|--------|-------|----------------|
+```
+
+## Completion Gate Check
+
+Before printing the final output block, verify every item. Unfinished items = pipeline incomplete.
+
+```
+COMPLETION GATE CHECK
+[ ] Domain classified and printed: [data/async/security/general]
+[ ] Red flag pre-scan ran on every batch
+[ ] Global error handler detection ran
+[ ] Adversarial review ran on audit report (--mode audit)
+[ ] Cross-file analysis section present
+[ ] Report saved to zuvo/audits/
+[ ] Findings recorded through backlog-add (Phase 5), each B- or F-id reported or named under NOT PERSISTED (<reason>); `Backlog writes:` line printed
+[ ] Run: line printed and appended to log
+```
+
+## CODE AUDIT COMPLETE
+
+### Validity Gate (REQUIRED — print BEFORE Run line, AFTER retro append + append-runlog)
+
+```
+VALIDITY GATE
+  triggers_held:
+    code_files: yes(<count>)
+    language: <typescript|python|php|kotlin|javascript|...>
+    framework: <nextjs|nestjs|astro|hono|react|django|flask|...|none>
+    mode: <quick|standard|deep>
+  required_tool_calls:
+    audit_scan: [<N> compound findings | NOT_CALLED — VIOLATES_TRIGGER]
+    scan_secrets: [<N> hits | NOT_CALLED — VIOLATES_TRIGGER]
+    search_patterns(empty-catch): [<N> CQ8 hits | NOT_CALLED — VIOLATES_TRIGGER]
+    find_clones: [<N> clone clusters | NOT_CALLED — VIOLATES_TRIGGER]
+    find_dead_code: [<N> unused exports | NOT_CALLED — VIOLATES_TRIGGER]
+    trace_call_chain: [<N> chains traced | not_required (non-deep) | NOT_CALLED — VIOLATES_TRIGGER]
+    stack_specific (nest_audit/framework_audit/python_audit/etc.): [<result> | not_required | NOT_CALLED — VIOLATES_TRIGGER]
+  postamble:
+    retros_log_appended: [yes(bytes_added=N) | NOT_APPENDED — VIOLATES_REQUIRED_POSTAMBLE]
+    retros_md_appended: [yes(entry_count=N) | NOT_APPENDED — VIOLATES_REQUIRED_POSTAMBLE]
+    verify_audit_pass: [yes(<verified>/<total> findings) | NOT_RUN | REJECTED]
+  gate_status: [PASS | FAIL — <which gates missing>]
+```
+
+If `gate_status = FAIL`, override the VERDICT below to `INCOMPLETE` regardless of finding count, append `[VALIDITY GATE FAIL]` to the Run line NOTES column, and record the `incomplete` **Process item** (`backlog-protocol.md` "Filing from a skill"): `~/.zuvo/backlog-add --repo "$R" --class PROCESS --conf 90 --source code-audit --target subject:code-audit-incomplete --title "$T"`, with `T` the fixed title `code-audit run INCOMPLETE: validity gate failed`, the same words on every run and no date; this run's reason goes in the report, never in the title. Assign "$R" and "$T" before the call, as "Free text goes through a variable" in that section says; an empty value is a bug, and backlog-add refuses a missing required field (`REFUSED missing-field:<f>`). It is kept in the findings ledger, not ticketed. File it before the report's `Backlog writes:` line is printed, so its `wrote=` paths are on that line: decide `gate_status` from every field the report can already fill (all but `postamble`) before the report is written, and file the item then. Only a `postamble` field that fails after the report is saved files it at this gate (a repeat bumps the same record); the Validity Gate block then carries its F-id on a line `incomplete-item: <F-id>` and its paths on a line `Backlog writes (gate): <path>, … | none`.
+
+The Validity Gate must be printed **AFTER** the retro append and `~/.zuvo/append-runlog` call (so postamble fields can be filled with `yes(verified)`). Printing it before guarantees `NOT_APPENDED`.
+
+Run: <ISO-8601-Z>\tcode-audit\t<project>\t<N-critical>\t<N-total>\t<VERDICT>\t-\t<N>-dimensions\t<NOTES>\t<BRANCH>\t<SHA7>\t<INCLUDES>\t<TIER>
+
+
+### Retrospective (REQUIRED — load + fill BEFORE the Run line append)
+
+Load `../../shared/includes/retrospective.md` if not already loaded. Follow the retrospective protocol: gate check → 9 structured questions → TSV emit → markdown append to `~/.zuvo/retros.md` AND `~/.zuvo/retros.log`.
+
+Then append the Run line via the retro-gated wrapper:
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+The wrapper:
+- Verifies the matching `RETRO:` entry in `retros.log` (skill+project). Missing → exit 2, runs.log NOT appended.
+- Runs `~/.zuvo/verify-audit` on the audit report. Findings without `path/to/file.ext:LINE` citations → exit 2, audit REJECTED.
+- On both pass: appends to `runs.log` and prints confirmation.
+
+If the wrapper exits non-zero: do NOT manually append to runs.log. Fix the cause (add retro, add file:line citations to findings, etc.) and re-run.
+
+VERDICT: INCOMPLETE when required validation/applicability review is unfinished; otherwise FAIL for any active critical gate = 0 or 4+ critical findings, WARN for 1-3 other critical findings, PASS for 0 critical findings with all active critical gates = 1. Remediation tiers never override these failure rules.
+
+## Phase 5: Backlog Persistence
+
+Every finding the tier list below selects goes through `backlog-add`, one call per finding (`../../shared/includes/backlog-protocol.md` "Filing from a skill"; the bars, the dedupe and the confidence routing are the protocol's and are not restated here).
+
+**How:** a **Generic write** per finding: `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source code-audit --file "$F" --line <n> [--anchor "$A"] --severity <level> --title "$T"`. `<level>` is `critical`, `high` or `medium` as the tier list below says. `<N>` is your confidence that the finding is real. `<C>` is `CQ` for a failed CQ gate and for every CAP failure except CAP6, `SEC` for a CQ4, CQ5 or CAP6 failure, and `BUG` only when the finding names the input and the wrong output; BUG and SEC take `--anchor "$A"`, copied from the line that shows the defect or, for something absent (CQ4: no auth check), from the line of the code that lacks it ("The location rule"). A gate failure with no line of its own (a file-wide CQ violation) is a whole-file finding: `--line 1`, a "Whole file: ..." title, no `--anchor`. Assign "$R", "$F" and "$T" before each call, "$A" only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and backlog-add refuses a missing required field (`REFUSED missing-field:<f>`). Report the B- or F-id each call prints and `Recorded: N (backlog: a, ledger: b)` ("The report line" in `backlog-protocol.md`), plus each `NOT PERSISTED (<reason>)` by name; on a non-zero exit act on the protocol's exit table, and never append by hand.
+
+This audit does not commit: it stages nothing. It lists the `wrote=` paths backlog-add printed as `Backlog writes: <path>, ...` (`Backlog writes: none` when there are none), in its report for the user when it runs standalone, and in its report for the calling skill's closing commit to carry when another skill runs it (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**).
+
+**Which findings to record:**
+Tier boundaries are the ONES DEFINED IN "Summary by Tier" above — percentages of applicable, never
+raw counts. (These four lines read `<16` / `16-20` / `21-23` until 2026-08-02: absolute counts over
+the old 29-gate set, sitting one section below the percentage table they contradict.)
+
+- **Tier D** (auto Tier-D red flag): ALL findings, each at its own severity (the red-flag finding is critical; the tier decides which findings are recorded, not how severe they are)
+- **Tier C** (critical gate FAIL, or ratio < 0.79): ALL critical gate failures -- HIGH severity
+- **Tier B** (ratio >= 0.79 and < 0.86, active critical gates PASS): only critical gate near-misses -- MEDIUM severity. A near-miss is a pass, so it is not a failed-gate finding: record it as a `CQ` with `--severity medium`. Every other Tier B finding is reported, not recorded (never a candidate, so no `NOT PERSISTED` line)
+- **Tier A** (ratio >= 0.86, active critical gates PASS): do NOT record. A Tier A score does not prove any one defect is gone: close only an entry whose cited code this run re-read and found fixed, as the **Closing, not removing** paragraph below says.
+
+**Resolved entries** (**Closing, not removing**): a finding this run fixed gets no call. An open entry from an earlier audit that this run re-read and found fixed is closed, never removed: in one edit tick its box (`- [x]`) and append its resolution marker (`[FIXED <sha7>]`), as `backlog-protocol.md` "How to Persist Findings" step 3 says. That tick is the one hand edit the protocol sanctions (no helper ticks), and it is not a `wrote=` path: this audit does not stage it and names each ticked entry in its report. Moving a closed entry to the archive is the helper's job (`~/.zuvo/backlog-archive.py archive`, which `append-runlog` runs at the end of the run), never done by hand.
+
+## Phase 6: Next-Action Routing
+
+After the report, propose what to do next:
+
+| Audit Result | Suggested Action | Reason |
+|--------------|-----------------|--------|
+| Tier D files exist | "Fix Tier D files" | Security/critical issues first |
+| CQ14=0 in 2+ files (shared duplication) | `zuvo:refactor` on shared module | Duplication across files = structural problem |
+| Same CQ fails in 3+ files | "Fix [CQ] across all affected files" | Pattern fix |
+| CQ18=0 (multi-store sync) | `zuvo:build` to add sync mechanism | New infrastructure needed |
+| Structural issues (wrong layers, circular deps) | `zuvo:architecture review [path]` | Needs architectural view first |
+| Only Tier B/C with varied issues | "Fix top 3 critical gate failures" | Highest ROI |
+| All Tier A | No action needed | Everything is production-ready |
+
+## Execution Notes
+
+- Use **Sonnet** for all batch agents in QUICK and STANDARD modes
+- Use **Opus** for DEEP mode batch agents
+- Process batches sequentially in Cursor/Codex. Claude Code may parallelize with up to 6 Task agents.
+- Read the project's AGENTS.md or CLAUDE.md first for stack-specific conventions
+- Estimated durations: QUICK ~2 min for 50 files, DEEP ~15 min for 50 files

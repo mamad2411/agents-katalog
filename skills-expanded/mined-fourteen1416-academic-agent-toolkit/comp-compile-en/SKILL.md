@@ -1,0 +1,580 @@
+---
+
+name: comp-compile-en
+
+description: "Compile English competition paper (MCM/ICM/APMCM) and run compliance checks. Use when user says ”compile MCM paper”。只负责编译既有 .tex，不做内容创作；要从零写英文竞赛论文改用 comp-paper-en。"
+argument-hint: [paper-directory]
+
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob
+
+---
+
+# Competition Paper Compile & Compliance (English)
+
+Compile and validate: **$ARGUMENTS**
+
+## Constants
+
+- **ENGINE = `pdflatex`**
+
+- **MAX_COMPILE_ATTEMPTS = 3**
+
+- **PAPER_DIR = `paper/`**
+
+- **PAGE_CAP / PAGE_SCOPE / PAGE_CAP_STATUS** — This step consumes the **same bound contest snapshot** as the writing and packaging steps: `gate_page_cap` (this task's operative cap) with `gate_page_scope` (`body` / `total` — two distinct counting bases, never folded into one number) and `page_cap_status` (its provenance). Transcribed verbatim from the dispatched `contest_profile`; no default, no floor; do **not** read raw archive page fields directly and do not guess the effective value or its counting scope.
+
+- **CONTEST_ID** — Transcribed verbatim from `contest_profile.contest_id` (canonical `comp_*` key; never guessed from free text or filenames).
+
+## Workflow
+
+## Phase ownership (authoritative final gate)
+
+The preceding `comp-paper-en` step only writes the complete manuscript source. This step owns the
+single authoritative closeout on one stable source snapshot: data reconciliation, source fixes,
+formal compilation, Summary Sheet physical-page/layout checks, TOC, fonts and overflow, figure
+references and sizing, modeling completeness, and the final PDF snapshot report. Batch all source
+fixes before compiling; never compile separately for each small finding.
+
+### Step 1: Verify environment
+
+Check pdflatex and bibtex are installed.
+
+### Step 2: Pre-compile cleanup
+
+```bash
+
+if [ -f "_utils/compile_utils.sh" ]; then
+
+    bash _utils/compile_utils.sh paper/
+
+elif [ -f "skills/shared-scripts/compile_utils.sh" ]; then
+
+    bash skills/shared-scripts/compile_utils.sh paper/
+
+else
+
+    echo "compile_utils.sh not found, manual cleanup needed"
+
+fi
+
+```
+
+The script auto-handles: special chars, table fixes, path correction, hidelinks, wide table resizebox, light-color text fixes, TikZ library injection.
+
+**Pre-compile data reconciliation (upstream closeout)**: before compiling, if `PAPER_DATA_CHECKLIST.md` exists, reconcile every result, comparison, error, and optimum in the Summary Sheet/body/conclusion against the real JSON/TABLE sources. Fix only the manuscript; never alter result data to fit the prose. Once reconciled, append `% DATA_CHECK_PASSED` to a `.tex` source actually included by `main.tex`, then record the current data-and-source fingerprint with `paper_data_check.py --mode pdf --workspace .` (under `_utils/` or `skills/shared-scripts/`, if provided) after the real review. If unavailable, retain an unverified status rather than inventing a receipt; then compile this exact source snapshot.
+
+Also check ref/label matching and embed missing figures:
+
+```bash
+
+mkdir -p _tmp
+
+grep -oh '\\ref{[^}]*}' paper/sections/*.tex paper/main.tex 2>/dev/null | sort -u > _tmp/_refs.txt
+
+grep -oh '\\label{[^}]*}' paper/sections/*.tex paper/main.tex 2>/dev/null | sort -u > _tmp/_labels.txt
+
+comm -23 <(sed 's/\\ref/\\label/g' _tmp/_refs.txt) _tmp/_labels.txt > _tmp/_missing_labels.txt
+
+cat _tmp/_missing_labels.txt
+
+```
+
+If labels are missing, find corresponding figure/table code in `figures/*.tex` and embed into the correct section file.
+
+Also check compile_utils.sh output for "UNEMBEDDED" warnings — each one means a figure or table from `figures/` is not in any section.
+
+**⛔ Auto-fix Unicode quotes (避免 PDF 出现 ''乱码):**
+
+LaTeX doesn't render Unicode quotes (U+201C `"`, U+201D `"`, U+2018 `'`, U+2019 `'`) correctly — they output as `''`.
+
+ASCII straight quotes `"..."` also render as `''...''` instead of paired curly quotes.
+
+```bash
+
+for f in paper/sections/*.tex; do
+
+    [ -f "$f" ] || continue
+
+    python3 -c "
+
+import re
+
+content = open('$f', 'r', encoding='utf-8').read()
+
+placeholders = []
+
+def stash(m):
+
+    placeholders.append(m.group(0)); return f'\\x00M{len(placeholders)-1}\\x00'
+
+content = re.sub(r'\\\$[^\\\$]*\\\$', stash, content)
+
+content = re.sub(r'\\\\\\[.*?\\\\\\]', stash, content, flags=re.DOTALL)
+
+content = content.replace('\u201c', '\`\`').replace('\u201d', \"''\")
+
+content = content.replace('\u2018', '\`').replace('\u2019', \"'\")
+
+parts = content.split('\"')
+
+if len(parts) > 2:
+
+    result = parts[0]
+
+    for i, p in enumerate(parts[1:], 1):
+
+        result += ('\`\`' if i % 2 == 1 else \"''\") + p
+
+    content = result
+
+for i, ph in enumerate(placeholders):
+
+    content = content.replace(f'\\x00M{i}\\x00', ph)
+
+open('$f', 'w', encoding='utf-8').write(content)
+
+" 2>/dev/null
+
+done
+
+```
+
+**MANDATORY FIX LOOP — do NOT proceed to compilation until all figures AND tables are embedded:**
+
+```bash
+
+UNEMBED=0
+
+for pdf in figures/*.pdf; do
+
+    [ -f "$pdf" ] || continue
+
+    bn=$(basename "$pdf")
+
+    grep -rq "$bn" paper/sections/*.tex paper/main.tex 2>/dev/null || { echo "UNEMBEDDED PDF: $bn"; UNEMBED=$((UNEMBED+1)); }
+
+done
+
+for tbl in figures/TABLE_*.tex; do
+
+    [ -f "$tbl" ] || continue
+
+    for lbl in $(grep -oh '\\label{[^}]*}' "$tbl" 2>/dev/null); do
+
+        grep -rq "$lbl" paper/sections/*.tex paper/main.tex 2>/dev/null || { echo "UNEMBEDDED TABLE: $lbl"; UNEMBED=$((UNEMBED+1)); }
+
+    done
+
+done
+
+echo "Total unembedded: $UNEMBED"
+
+```
+
+If UNEMBED > 0, fix ALL before compiling. For each unembedded item, copy the figure/table block into the appropriate section with lead-in text + analysis. Re-run until UNEMBED = 0.
+
+```bash
+
+# Check all figures/*.pdf are referenced in body
+
+for pdf in figures/*.pdf; do
+
+    [ -f "$pdf" ] || continue
+
+    bn=$(basename "$pdf")
+
+    grep -rq "$bn" paper/sections/*.tex paper/main.tex 2>/dev/null || echo "⚠ $bn not referenced"
+
+done
+
+```
+
+### Step 3: Compile (manual steps, no latexmk)
+
+```bash
+
+cd paper/
+
+pdflatex -interaction=nonstopmode main.tex
+
+bibtex main
+
+pdflatex -interaction=nonstopmode main.tex
+
+pdflatex -interaction=nonstopmode main.tex
+
+```
+
+### Step 4: Error fix loop (MANDATORY)
+
+After each compilation, check `main.log` for CRITICAL errors. **You MUST fix ALL errors before declaring compilation complete.**
+
+```bash
+
+MATH_ERR=$(grep -c 'Bad math environment delimiter\|Missing \$ inserted\|begin{document} ended by' paper/main.log 2>/dev/null)
+
+LR_ERR=$(grep -c 'Not allowed in LR mode' paper/main.log 2>/dev/null)
+
+echo "Math errors: $MATH_ERR, LR mode errors: $LR_ERR"
+
+[ $((MATH_ERR + LR_ERR)) -gt 0 ] && grep -B2 'Bad math\|Missing \$ inserted\|Not allowed in LR mode' paper/main.log | grep -E '^\./|^l\.' | head -20
+
+```
+
+Iterate up to 5 times. For each error:
+
+- **Math errors**: read the error location from main.log, open the file, fix broken `$...$` delimiters individually. Do NOT use broad sed patterns.
+
+- **LR mode errors**: add `\par` or blank line before float environments.
+
+- **Undefined control sequence**: add missing `\usepackage` or fix typo.
+
+- **BibTeX failures**: fix LaTeX errors first (BibTeX fails when LaTeX errors exist upstream), then recompile.
+
+After each fix, recompile (xelatex → bibtex → xelatex → xelatex) and recheck. **⛔ Do NOT proceed until MATH_ERR = 0 and LR_ERR = 0.**
+
+When fixing errors in main.tex, only fix the specific error. Do not rewrite or restructure main.tex — the template's preamble, page margins, and formatting settings must remain unchanged.
+
+### Step 5: Post-compile checks
+
+```bash
+
+bash _utils/compile_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/compile_check.sh paper/
+
+```
+
+The script checks: PDF existence/size, undefined references, overfull hbox, TOC, bibliography entries, citation count, unused figures, figure stacking, TikZ diagram presence.
+
+### Step 6: Competition compliance
+
+Check items:
+
+1. **Page count**: the binding cap and its **counting scope** come from the same bound contest snapshot the writing step consumed — `gate_page_cap` with `gate_page_scope` (`body` = Summary Sheet through Conclusions excluding References/Appendix; `total` = whole PDF). The two scopes are never folded into one number, and this step never reads raw archive fields or guesses the effective value. Pages **must not exceed the cap when its status is `official_verified` or an explicit task authorization**; an `unverified` cap does not create a default hard limit — report cap, scope, and status as dispatched, and if nothing is dispatched report the gap instead of inventing one. **There is no page floor and no padding to reach a target.**
+
+2. **Summary Sheet exists** (MCM/ICM critical)
+
+3. **Team Control Number** placeholder present
+
+4. **Anonymous** (no school names)
+
+5. **APMCM**: commitment letter not in PDF
+
+6. **Code appendix exists**
+
+7. **No undefined cross-references or citations**
+
+<page_diagnosis>
+
+#### Page count principles
+
+**There is no page floor: a low page count is not a compliance failure, and no content is padded to reach a target.** Section completeness is owned by the writing steps' own contracts; this step only slims down when pages exceed the competition-archive ceiling (see page_overflow).
+
+</page_diagnosis>
+
+<page_overflow>
+
+#### ⛔⛔ Hard rule when pages OVERFLOW (root cause of "figures too small")
+
+**Background**: the compiler once distorted figures for a page target — shrinking widths to `0.46~0.48\textwidth` and injecting a global `\small` on the body — producing tiny, unreadable figures. The real rule: the page ceiling comes from the competition archive, and figures are never distorted for any page target (whether padding up to a floor or squeezing under a ceiling). This block is a hard constraint.
+
+**⚠ The page ceiling and its counting scope are dispatched with the same bound contest snapshot this step already consumes** (`gate_page_cap` + `gate_page_scope` + `page_cap_status` — see Constants). Never invent a ceiling like "≤30 pages" that the dispatch does not state, and never ignore the one it does.
+
+**Figure size is decided solely by the writing rules + `compile_utils.sh` fallback: a single figure is always `width=0.85\textwidth` (side-by-side uses `0.48`), height fallback is `height=0.9\textheight` (to stop a single figure owning a whole page). The compiler must NEVER change figure width OR shrink figure height to save space.**
+
+**⛔ Special warning — shrinking `height` is the most insidious page-fitting hack:** adding `height=0.20\textheight` under `keepaspectratio` binds before width, crushing near-square/tall figures into a tiny block (small AND stacked). This is as bad as width-shrinking and equally forbidden. `compile_utils.sh` auto-strips any `<0.5\textheight` cap and restores `0.9\textheight`; the compiler must not re-impose it.
+
+When pages overflow (and the competition truly has a hard limit), trim only in this priority order — **figures and body font size are never touched**:
+
+1. Trim appendix code (keep core snippets, drop redundant comments);
+
+2. Merge/remove thin repetitive transition paragraphs; tighten verbose enumerate into compact prose;
+
+3. Tighten float spacing (`\setlength{\intextsep}` etc.), without changing figure size;
+
+4. Remove non-essential duplicate figures/tables.
+
+**⛔ Absolutely forbidden page-fitting hacks (any occurrence = fail, must revert):**
+
+- ❌ Reducing `\includegraphics` width from `0.85` to something smaller (`0.6/0.5/0.48/0.46\textwidth`) to save space;
+
+- ❌ Adding a small `height=0.NN\textheight` cap (`0.20/0.22/0.3\textheight`) to shrink figures for space;
+
+- ❌ Injecting a global `\small` / `\footnotesize` on the body after `\begin{document}`;
+
+- ❌ Any global font-shrinking command on body (non-table) text.
+
+**Upstream refinement (modex-3 same-source absorption, 2026-09-22) — adaptive figure size, anti-page-fitting works both ways**: the `0.85\textwidth` above is this repo's default consistency tier, not proof of correctness. The real criterion is **final printed legibility**: diagnose actual clipping, sub-8pt rendered text, overlap and abnormal whitespace, and reflow dense information when needed. The inverse is equally forbidden — do not enlarge everything to `0.85\textwidth` just to satisfy the rule. A readable compact diagram and a well-designed multi-panel figure are both valid; widths such as `0.48\textwidth`, absolute dimensions, and deliberate height caps are **not** proof of a defect. Font size and figure dimensions are never driven by a page-count target (neither shrinking nor inflation).
+
+**Self-check (run before Step 7 quality gate):**
+
+```bash
+
+echo "=== Figure-width compliance (no page-fitting shrink) ==="
+
+# Only inspect includegraphics width coefficients; <0.80 = shrunk to fit pages (2026-11-16 threshold unified with the Chinese side comp-compile-zh at 0.80; regex tolerant of one/two decimal forms written by fig_include_size.py %g). Genuine side-by-side panels use 0.48 with subfigure/minipage; this check flags them for manual confirm.
+
+BAD_W=$(grep -rhoE 'includegraphics\[[^]]*width=0\.[0-9]+' paper/sections/*.tex paper/main.tex 2>/dev/null | grep -oE 'width=0\.[0-9]+' | grep -vE 'width=0\.(8|9)[0-9]*' | wc -l)
+
+[ "$BAD_W" -eq 0 ] && echo "OK no undersized figures" || echo "FAIL $BAD_W figures width<0.80 (page-fitting shrink; restore 0.85 unless genuine side-by-side)"
+
+echo "=== Figure-height compliance (no page-fitting shrink) ==="
+
+# <0.5\textheight cap = page-fitting shrink; compile_utils.sh should have stripped it. Residual = preprocessing skipped or re-imposed.
+
+BAD_H=$(grep -rhoE 'includegraphics\[[^]]*height=0?\.[0-9]+' paper/sections/*.tex paper/main.tex 2>/dev/null | grep -oE 'height=0?\.[0-9]+' | grep -vE 'height=0?\.([5-9][0-9]*)' | wc -l)
+
+[ "$BAD_H" -eq 0 ] && echo "OK no undersized heights" || echo "FAIL $BAD_H figures height<0.5\\textheight (page-fitting shrink; drop the cap so compile_utils.sh restores 0.9)"
+
+echo "=== Global small check (no body font shrink) ==="
+
+AFTER_DOC=$(awk '/begin\{document\}/,/maketitle/' paper/main.tex 2>/dev/null | grep -cE '^[[:space:]]*[\](small|footnotesize|scriptsize)([[:space:]]|$)')
+
+[ "$AFTER_DOC" -eq 0 ] && echo "OK no global body font shrink" || echo "FAIL global small/footnotesize after document (page-fitting, must remove)"
+
+```
+
+All three must be OK; any FAIL must be fixed (restore width to 0.85, drop small height caps, remove global small) and recompiled.
+
+</page_overflow>
+
+### Step 7: ⛔ FINAL QUALITY GATE (must ALL pass before finishing)
+
+Read `_utils/quality_gate_contract.md`. Select the available checker once; a failed check is not a reason to fall back to a second copy of the same checker.
+
+```bash
+
+echo "=== Running check scripts ==="
+
+bash _utils/compile_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/compile_check.sh paper/ 2>/dev/null
+
+bash _utils/writing_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/writing_check.sh paper/ 2>/dev/null
+
+WC_EXIT=$?
+
+echo ""
+
+echo "=========================================="
+
+echo "  FINAL QUALITY GATE"
+
+echo "=========================================="
+
+GATE_FAIL=0
+
+# writing_check.sh result must be counted AFTER GATE_FAIL is reset, or it would be wiped
+
+[ "$WC_EXIT" -eq 0 ] && echo "✅ Writing checks passed" || { echo "❌ Writing checks failed (exit=$WC_EXIT) — includes figure stacking / adjacent figure-number openers / caption-too-long"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+# --- CRITICAL ---
+
+[ -f paper/main.pdf ] && [ $(wc -c < paper/main.pdf) -gt 100000 ] && echo "✅ PDF exists" || { echo "❌ PDF missing/small"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+MATH_ERR=$(grep -c 'Bad math.*delimiter\|Missing \$ inserted' paper/main.log 2>/dev/null)
+
+LR_ERR=$(grep -c 'Not allowed in LR mode' paper/main.log 2>/dev/null)
+
+[ "$((MATH_ERR+LR_ERR))" -eq 0 ] && echo "✅ No LaTeX errors" || { echo "❌ $MATH_ERR math + $LR_ERR LR errors"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+BBL=$(grep -c '\\bibitem' paper/main.bbl 2>/dev/null)
+
+[ "$BBL" -gt 0 ] && echo "✅ Bib: $BBL entries" || { echo "❌ Bib empty"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+CITE=$(grep -roh '\\cite{' paper/sections/*.tex paper/main.tex 2>/dev/null | wc -l)
+
+[ "$CITE" -gt 0 ] && echo "✅ Citations: $CITE" || { echo "❌ No citations"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+UNEMBED=0; for pdf in figures/*.pdf; do [ -f "$pdf" ] || continue; bn=$(basename "$pdf"); grep -rq "$bn" paper/sections/*.tex paper/main.tex 2>/dev/null || UNEMBED=$((UNEMBED+1)); done
+
+[ "$UNEMBED" -eq 0 ] && echo "✅ All figures embedded" || { echo "❌ $UNEMBED unembedded"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+PLACEHOLDERS=$(grep -rl 'PLACEHOLDER\|待补充\|TODO\|\[论文标题\]' paper/sections/*.tex paper/main.tex 2>/dev/null | wc -l)
+
+[ "$PLACEHOLDERS" -eq 0 ] && echo "✅ No placeholders" || { echo "❌ $PLACEHOLDERS files have placeholders"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+# --- WARNING ---
+
+VBOX=$(grep -c 'Overfull.*vbox' paper/main.log 2>/dev/null); [ "$VBOX" -eq 0 ] && echo "✅ No overflow" || { echo "❌ $VBOX overfull vbox"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+HBOX=$(grep -c 'Overfull.*hbox' paper/main.log 2>/dev/null); [ "$HBOX" -lt 5 ] && echo "✅ Hbox: $HBOX" || { echo "❌ $HBOX overfull hbox"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+AI=0; for f in paper/sections/*.tex; do [ -f "$f" ] || continue; echo "$(basename $f)" | grep -qi 'appendix' && continue; c=$(grep -c '\\begin{itemize}' "$f" 2>/dev/null); AI=$((AI+c)); done
+
+[ "$AI" -eq 0 ] && echo "✅ No bullet lists" || { echo "❌ $AI itemize — convert to prose"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+UNDEF_REFS=$(grep -c 'LaTeX Warning.*Reference.*undefined' paper/main.log 2>/dev/null)
+
+[ "$UNDEF_REFS" -eq 0 ] && echo "✅ No undefined refs" || { echo "❌ $UNDEF_REFS undefined refs"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+STACKING=0; for f in paper/sections/*.tex; do [ -f "$f" ] || continue; s=$(awk '/\\end\{(figure|table)\}/{a=1;t=0;next} a&&/\\begin\{(figure|table)\}/{if(t<3)c++;a=0;next} a&&/[a-zA-Z\x80-\xff]{3,}/{t++} a&&t>=3{a=0} END{print c+0}' "$f" 2>/dev/null); STACKING=$((STACKING+s)); done
+
+[ "$STACKING" -eq 0 ] && echo "✅ No figure stacking" || { echo "❌ $STACKING figure stacking"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+if grep -q 'tableofcontents' paper/main.tex 2>/dev/null; then
+
+    [ -s paper/main.toc ] && echo "✅ TOC generated" || { echo "❌ TOC empty"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+fi
+
+TIKZ=$(grep -rl 'tikzpicture\|tikz_diagrams\|tikz_' paper/sections/*.tex paper/main.tex 2>/dev/null | wc -l)
+
+# Template integrity
+
+TMPL=""
+
+for t in _templates/mcm_main.tex _templates/stats_main.tex _templates/cumcm_main.tex; do [ -f "$t" ] && TMPL="$t" && break; done
+
+if [ -n "$TMPL" ] && [ -f paper/main.tex ]; then
+
+    TMPL_PRE=$(sed -n '1,/\\begin{document}/p' "$TMPL" | grep '\\usepackage\|\\documentclass\|\\pagestyle\|\\bibliography' | sort)
+
+    MAIN_PRE=$(sed -n '1,/\\begin{document}/p' paper/main.tex | grep '\\usepackage\|\\documentclass\|\\pagestyle\|\\bibliography' | sort)
+
+    MISSING=$(comm -23 <(echo "$TMPL_PRE") <(echo "$MAIN_PRE") 2>/dev/null | head -5)
+
+    [ -z "$MISSING" ] && echo "✅ Template intact" || { echo "❌ Template preamble modified"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+    if grep -q 'PLACEHOLDER\|TODO\|\[Team Control Number\]' paper/main.tex 2>/dev/null; then
+
+        echo "❌ Unreplaced placeholders"; GATE_FAIL=$((GATE_FAIL+1))
+
+    else
+
+        echo "✅ Placeholders replaced"
+
+    fi
+
+fi
+
+if ls figures/tikz_*.pdf >/dev/null 2>&1; then
+
+    TIKZ_PDF_MISSING=0
+
+    for tpdf in figures/tikz_diagrams.pdf figures/tikz_diagrams_*.pdf figures/tikz_*.pdf; do
+
+        [ -f "$tpdf" ] || continue
+
+        grep -rq "$(basename "$tpdf")" paper/sections/*.tex paper/main.tex 2>/dev/null || TIKZ_PDF_MISSING=$((TIKZ_PDF_MISSING+1))
+
+    done
+
+    if [ "$TIKZ_PDF_MISSING" -gt 0 ]; then
+
+        echo "❌ $TIKZ_PDF_MISSING TikZ PDF(s) not embedded in any section"; GATE_FAIL=$((GATE_FAIL+1))
+
+    else
+
+        echo "✅ TikZ embedded"
+
+    fi
+
+elif grep -qi 'tikz\|architecture\|roadmap' PAPER_PLAN.md PROBLEM_ANALYSIS.md 2>/dev/null; then
+
+    [ "$TIKZ" -gt 0 ] && echo "✅ TikZ embedded" || echo "  ⚠ Plan mentions TikZ but no tikz_*.pdf found (may be replaced by DrawIO, non-blocking)"
+
+else
+
+    [ "$TIKZ" -gt 0 ] && echo "✅ TikZ: $TIKZ" || echo "  (no TikZ planned)"
+
+fi
+
+PLAN_FIGS=0; ACTUAL=$(ls figures/*.pdf 2>/dev/null | wc -l)
+
+for plan in PAPER_PLAN.md PROBLEM_ANALYSIS.md TOPIC_PLAN.md; do [ -f "$plan" ] || continue; pf=$(grep -ci 'fig_\|figure.*:' "$plan" 2>/dev/null || echo 0); [ "$pf" -gt "$PLAN_FIGS" ] && PLAN_FIGS=$pf; done
+
+if [ "$PLAN_FIGS" -gt 0 ]; then
+
+    [ "$ACTUAL" -ge "$PLAN_FIGS" ] && echo "✅ Figures: $ACTUAL (plan: ~$PLAN_FIGS)" || { echo "❌ Only $ACTUAL figures (plan: ~$PLAN_FIGS)"; GATE_FAIL=$((GATE_FAIL+1)); }
+
+else
+
+    echo "  Figures: $ACTUAL PDFs"
+
+fi
+
+# Caption-too-long check has moved into writing_check.sh (its EXIT_CODE feeds WC_EXIT -> GATE_FAIL below); not duplicated here.
+
+echo ""
+
+[ "$GATE_FAIL" -eq 0 ] && echo "✅ ALL CRITICAL PASSED" || echo "❌ $GATE_FAIL FAILURES — fix and recompile"
+
+```
+
+**⛔ If GATE_FAIL > 0, fix every ❌, recompile, re-run gate. Do NOT finish with any ❌.**
+
+**Supplemental gate (upstream: bibliography authenticity, claims, content-failure vs unavailable tally):**
+
+```bash
+CHECK_DIR=_utils
+[ -f "$CHECK_DIR/compile_check.sh" ] || CHECK_DIR=skills/shared-scripts
+GATE_FAIL=0
+GATE_UNAVAILABLE=0
+bash "$CHECK_DIR/compile_check.sh" paper/
+CC_EXIT=$?
+# Supplemental checks: bibliography authenticity and caption/style advisories.
+# Compiled typography, abstract, model structure and narrative were already checked.
+bash "$CHECK_DIR/writing_check.sh" paper/ --supplemental
+WC_EXIT=$?
+for status in "$CC_EXIT" "$WC_EXIT"; do
+    if [ "$status" -eq 1 ]; then GATE_FAIL=$((GATE_FAIL+1))
+    elif [ "$status" -ne 0 ]; then GATE_UNAVAILABLE=$((GATE_UNAVAILABLE+1)); fi
+done
+if [ -f "$CHECK_DIR/facts_audit.py" ]; then
+    python "$CHECK_DIR/facts_audit.py" --stage paper
+    FACTS_EXIT=$?
+    [ "$FACTS_EXIT" -eq 1 ] && GATE_FAIL=$((GATE_FAIL+1))
+    [ "$FACTS_EXIT" -gt 2 ] && GATE_UNAVAILABLE=$((GATE_UNAVAILABLE+1))
+fi
+if [ -f "$CHECK_DIR/paper_claim_check.py" ]; then
+    FAST_MODE=0
+    grep -q 'FAST_MODE=1' AGENTS.md 2>/dev/null && FAST_MODE=1
+    python "$CHECK_DIR/paper_claim_check.py" --audit CAPABILITY_AUDIT.md --checklist CAPABILITY_CHECKLIST.json --sections paper/sections --fast "$FAST_MODE"
+    CLAIM_EXIT=$?
+    [ "$CLAIM_EXIT" -eq 1 ] && GATE_FAIL=$((GATE_FAIL+1))
+    [ "$CLAIM_EXIT" -gt 2 ] && GATE_UNAVAILABLE=$((GATE_UNAVAILABLE+1))
+fi
+echo "Content failures: $GATE_FAIL; unavailable checks: $GATE_UNAVAILABLE"
+```
+
+**Upstream evidence-before-repair rules (modex-3 same-source absorption, 2026-09-22; same doctrine as `_utils/quality_gate_contract.md`):**
+
+- Repair only concrete failures, in a batch, then compile once and recheck the changed final snapshot. Never suppress a true failure to make a step pass.
+- Tool failures/timeouts/missing dependencies are **not** defective paper content. Stop with a recoverable diagnostic; do not spend model calls rewriting unrelated text. Fix the checker first when the checker is what broke.
+- Advisory warnings are not passed evidence either. Resolve provenance and applicability during the already-required semantic review; retain unresolved limitations honestly.
+- Do not reimplement these checkers with broad `grep` over every file in `sections/`. Only sources included by `main.tex` and the final manuscript's actual figures count.
+- Do not use PDF byte count, fixed display-equation count, number of table rows, planned figure-name mentions, missing literal algorithm keywords, or a caption's length alone as hard failure criteria. `fig_size_consistency_check.py` compares draft plans only.
+- Distinguish two exit classes in the gate tally: `GATE_FAIL` (content failure, must fix) and `GATE_UNAVAILABLE` (check could not run — report it; do not fake a pass and do not blame the manuscript).
+
+### Step 8: Output report
+
+Status, PDF path, page count, compliance pass/fail.
+
+Generate the report only after the final successful compile and all checks, and bind it to the exact final PDF bytes:
+
+```bash
+python _utils/pdf_snapshot_report.py sync paper/main.pdf --report COMPILE_REPORT.md
+python _utils/pdf_snapshot_report.py check paper/main.pdf --report COMPILE_REPORT.md
+```
+
+Never copy a page count from an earlier round. Any later change to `paper/main.pdf` invalidates the report and requires a fresh snapshot.
+
+
+## 执行与产出
+
+使用当前执行会话完成本步工作；产物路径按当前步骤合同。程序采集真实操作、输入输出、版本与运行清单，模型只负责实质成果和领域质量。
+
+建议额外记录：LaTeX 引擎版本、页数、编译警告数。
+
+## Key Rules
+
+- No latexmk — manual step-by-step compilation
+
+- Do not delete .bbl file after compilation
+
+- Summary Sheet is critical for MCM/ICM
+
+- APMCM: commitment letter must not be in PDF
+
+- Body pages within the engine-dispatched competition page ceiling (comp_rules archive; no floor)
+
+- Primary output: `paper/main.pdf`, temp files: `_tmp/`
+

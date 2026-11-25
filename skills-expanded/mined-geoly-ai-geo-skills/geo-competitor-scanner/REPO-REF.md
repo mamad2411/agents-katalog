@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/geoly-ai/geo-skills (path: geo-competitor-scanner/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Analyze competitor GEO (Generative Engine Optimization) strategies by examining their content structure, Schema markup, llms.txt, and AI citation signals. Benchmark your brand against competitors and 

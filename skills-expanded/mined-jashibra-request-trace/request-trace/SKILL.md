@@ -1,0 +1,728 @@
+---
+name: request-trace
+description: Request trace — a numbered walk of one user action through the code, from the tap in the client to the response and what happens afterwards, with the mechanics of each call spelled out underneath. Use when someone asks for the path of a request, the call chain, "what calls what", "walk me through it", or is about to review an unfamiliar feature.
+---
+
+# Request trace
+
+The reader wants to **walk the code in the same order the request does**, and to understand what
+happens at each stop. Their editor is already open. Give them a route with a breakdown, not a
+retelling.
+
+They read it while reviewing a change. So the job of the sub-bullets is to **answer, in advance,
+the questions a new name will raise**: what is this function, where did this variable come from,
+why is this field here. Every such question left open comes back as a separate message.
+
+That splits two things it is easy to conflate: **order** comes from the request's path, **selection**
+of what to explain comes from the branch's diff. A step is not the same as a changed file — one
+method can produce five consecutive steps, and a file with no edits at all still belongs in the
+list if the request passes through it.
+
+## Write in the reader's language
+
+This file is in English so it can be shared. The trace is not. **Produce it in whatever language
+the person wrote to you in** — asked in Russian, answered in Russian.
+
+What is never translated: symbol names, file paths, HTTP verbs, status codes, library calls.
+`RuleFor`, `encodeDefaults`, `POST /api/...`, `409` stay exactly as the code spells them, whatever
+the surrounding prose is.
+
+**Call each thing what speakers of the reader's language actually call it.** Not shop-talk bent out
+of English, and not a description invented on the spot either — both are ways of using a word nobody
+else uses. In Russian «ручка» for an endpoint is what a door has, and the sentence turns comic while
+claiming to be exact; but replacing it with «адрес, к которому обращается приложение» is no better,
+because that names the string, not the thing, and the reader has to work out which was meant.
+
+So the order is: look up what the thing is called in that language as it is spoken today, and use
+that. A borrowed word is fine when it is the established one — in Russian «эндпоинт» and «деплой»
+are words developers there genuinely use, while «ручка» and «залить» are chat between two people who
+already know what the other means. Where a plain native word exists and carries the whole meaning,
+it wins: what I meant above was simply «запрос».
+
+The third way to get this wrong is a word-for-word translation that is an ordinary word in the
+reader's language already meaning something else. A database `row` written in Russian as «строка» is
+that: «строка» there means a line of text, or a `String`, so «строка живёт дольше файла» reads as
+nonsense about text, and the reader stops to ask what was meant. The thing is called «запись в
+таблице». The trap is that such a word passes every slang test — it is real, it is plain, it is not
+invented — and still points at the wrong object.
+
+Check before the sentence goes out, not after. Strike the unusual word and ask what someone outside
+development would picture: if they picture a door handle, it is the wrong word, and if you cannot
+say where you got the word from, you invented it. For a translated term ask the other question too —
+what that word means on its own in that language — and if it already means something else in the
+same text, it is the wrong word however faithful the translation is.
+
+## Write it to an HTML page
+
+The trace is long and is read beside the editor, a step at a time — so it goes into an `.html` file,
+not into the chat. The chat gets one line: the file's path.
+
+- **Where:** inside the repository the links start from, in a folder git ignores, so the file never
+  shows up in the diff. Check with `git check-ignore`; `.claude/traces/` when `.claude/` is ignored.
+  If nothing suitable is ignored, ask where to put it.
+- **Name:** after the branch or the action — `global-repetition-scheduled-time.html`. Tracing the
+  same thing again overwrites the file; that is the point, the old numbers are stale.
+- **Links point at the code host, at the pushed commit.** The page is read as a published Artifact, and
+  there a relative `../../path` or a `file://` path resolves against the artifact's own site and
+  answers "not found". So every link is the repository's web URL for the file at the commit the trace
+  was written against, with the line anchor — on GitHub
+  `https://github.com/<owner>/<repo>/blob/<full-sha>/<path>#L<line>`, opening in a new tab. A full
+  commit hash, never a branch name: a branch moves, and the line numbers in the trace stop matching.
+  Take the owner and repository from `git remote get-url`, and check that the commit is on the remote
+  first (`git branch -r --contains <sha>`); if it is not, push it, or say that the links will not open
+  until it is.
+- **The page opens on a phone as a phone page.** Its first lines are `<meta charset="utf-8">` and
+  `<meta name="viewport" content="width=device-width, initial-scale=1">`. The Artifact adds both when it
+  publishes, but a copy opened as a file — from the Desktop, from a messenger — has only what the file
+  says, and without the viewport line a phone draws it as a shrunken desktop page.
+- **One file, nothing beside it.** Styles and script are inline; the notes live in the page. Nothing
+  is fetched at load except a webfont, and the page has to be readable without one.
+
+Everything about *content* in this file is unchanged by the format: the same steps, the same dashed
+bullets, the same state labels. Drafting the text first and generating the page from it keeps the
+wording honest — the page is a rendering, not a rewrite. **Generate it from the trace text every
+time, never from a copy made earlier in the session:** a page rebuilt from a stale intermediate
+quietly restores line numbers that were corrected hours before, and the reader has no way to tell.
+What the format buys is below.
+
+**How the page reaches the reader: publish it as an Artifact and open it.** Publish the file, then
+open it by its URL — it unfolds as a panel inside the app, beside the conversation, fully rendered
+and with its script running. Handing over the same file as a file card instead sends it to the app's
+browser pane, with an address bar and tabs, which is not where someone reads a document; and a local
+file outside the project folder is drawn there as a static snapshot, with no script at all, so half
+the page is dead. Give the path in the chat as well, for the reader who wants the file itself.
+
+## What the page shows that prose cannot
+
+**No strip of screens at the top.** It was tried and it does not work: the reader scrolls past it
+and never comes back, because a picture with no step beside it asks to be admired rather than read.
+A mockup earns its place only where it explains something, and that is next to the step it explains.
+
+**A fragment beside every step that touches the screen.** A reviewer who has not opened the feature
+does not know what a "card" or a "row" is here, and the answer belongs where the question arises, not
+in a gallery before the first step. Build the fragments out of the app's real strings and the real
+order of the fields — read them out of the resource files, never invent copy. So a step that decides
+something visible carries its own small picture next to its bullets — the one row, the one tag, the
+one control — and where the step is about a choice, the picture shows both outcomes side by side:
+the tag with a number and without it, the field closed and open, the card that opens and the card
+that answers that it no longer keeps a page. That pair is the whole explanation; the bullets under
+it only say why. Six or so such fragments in a trace, one per step that draws something — a step
+that touches no pixel gets none.
+
+**The one object the reader will stare at most, taken apart.** Usually the card or row the request
+ends up drawing: the same mockup again, with callouts naming which step decides each line of it.
+
+**Every mockup is checked against what the code actually draws, not against memory of the design.**
+Open the composable and read the colour token, the order of the lines, the shape. Where the two
+disagree, that disagreement is a finding worth more than the picture: drawing a tag as a neutral
+chip because the design says so, while the code paints it with the brand accent, puts a lie in the
+trace and hides a bug. Say which one is wrong, fix the code if it is the code, and only then draw.
+
+**A diagram only where a mechanism needs a number held in the head.** "The page came back with 19
+rows instead of 20, so paging stops" and "the twentieth row arrives on both pages" are the kind of
+thing a reader re-reads three times in prose and grasps at once as two rows of cells. Two or three
+such diagrams in a trace is plenty; past that they are decoration, and the ban on drawing the whole
+route still stands.
+
+**The state labels as chips, not words in a sentence.** New, unchanged, changed, refactored,
+meaning-moved, removed — a colour and a short word at the head of each bullet, so the reviewer can scan a step and
+see at a glance how much of it is new.
+
+Keep the page plain: the step number in a circle, `File.kt:146` in monospace, steps grouped under a
+few headings that name the stage of the journey rather than the layer of the stack. It has to read
+at phone width and in a dark theme.
+
+## What to trace when you are not told
+
+The subject is one human action, followed through to the end. Take it in this order:
+
+1. **Named in the request** — "scheduling a post", "sending a chat message". Use that.
+2. **Not named — read the current branch.** `git log <base>..HEAD` plus the diff: a branch is
+   cut for one feature, and that feature is almost always what they want traced. Name what you
+   picked on the first line, before the list: "Path of the request when a task is sent." One line,
+   not a paragraph.
+3. **The branch says nothing** — you are on the base branch itself, or the diff holds several
+   unrelated edits.
+   Ask which action to walk. Do not guess: a trace of the wrong request is useless entirely, not
+   partly.
+
+If the action spans two requests in a row (create, then confirm), trace the first and say in one
+line that the second is its own path.
+
+## The unit is a step, not a file
+
+One entry is one place where something happens to the request. Not one file, not one class.
+
+A list of files, even ordered by importance, is not a trace. It does not answer the question the
+reader actually has, which is what runs after what.
+
+When several distinct things happen inside one method, that is several entries, each opening with
+**"Same method:"**. That is how the reader sees you have not moved to another file.
+
+## Format
+
+The entry heading carries the number, the layer and the symbol. Underneath, dashed bullets, one
+fact per line. That is the shape of the writing, whatever the page then makes of it — the number
+becomes a circle, the bullets a list with a coloured chip at the head of each:
+
+```text
+## N. Layer, `Class.Method()`
+
+- first fact about what happens here
+- second fact
+```
+
+- Layer: Client, Validator, Controller, Service, Repository, Background job. Entries opening with
+  "Same method:" do not repeat it — it has not changed.
+- The symbol goes in backticks, **with the method**. A class name alone does not say where to look.
+- Write the network call as it is: `POST /api/posts`.
+- **File and line are required** — as a link to the code host at the trace's commit (see "Links point
+  at the code host" above), `[File.cs:124](https://github.com/<owner>/<repo>/blob/<sha>/path/File.cs#L124)`: the line in
+  the text, the `#L124` anchor in the target. A viewer that knows the anchor opens the file at that
+  line, which is the whole point — the reader compares against the code instead of scrolling for
+  it; one that does not still opens the file. Never `File.cs:124` as the target: outside a terminal
+  that names a file that does not exist.
+- Two to six bullets for a step with new or changed code; seven means it is two. A step that is
+  on the route but unchanged gets one.
+- No paragraphs inside an entry. A wall of prose under a number reads as mush; that is what the
+  bullets are for.
+
+## What belongs in the sub-bullets
+
+A bullet explains **mechanics**. It does not restate the method's name in other words.
+"`PublishMomentUtc` computes the publish moment" is an empty line — it repeats the identifier.
+Write what the name does not already say.
+
+Always break down:
+
+1. **Library calls.** `RuleFor`, `Must`, `WithMessage`, `encodeDefaults`, `[Flags]`,
+   `expectSuccess` — the reader is not obliged to remember what each one does. One line per call:
+   what it does and what follows from it.
+2. **Language constructs the logic rests on.** Pattern matching, a lambda passed as an expression
+   tree rather than a function, a property's default value. If the behaviour depends on it being
+   *that* construct, say so.
+3. **A choice between two obvious options.** Where the code could have gone the simpler way and
+   did not — name both and the reason. `ToUniversalTime` rather than `SpecifyKind`. The undo
+   record written before the move, not after.
+4. **What breaks without this line — at the level of the line.** The number, the construct, the
+   edge case it handles: "a read taken at once would come before the revocation it looks for, hence
+   the 2 000 ms pause". The purpose of the change as a whole, what the user gets, what the old
+   behaviour was — none of that is in a state-labelled bullet; it is the "Why" bullet's.
+
+Do not break down: a plain assignment, a getter call, the order of arguments.
+
+**Say what happens there, first, the way one person tells another.** The first words of a bullet
+are the event — what the code checks, decides, sends, waits for — in words a colleague would use
+across the desk: "Checks whether the device has a name; until it does, the activate button stays
+grey." Not where the thing sits ("the row stands last among the checks"), not what it looks like
+("the row is red"), not which symbol holds it. Position, colour and the exact copy come after the
+event, and only if the reader needs them. Test each bullet: read its first clause aloud to someone
+who has never seen the screen — if they cannot repeat what the code does, rewrite the bullet.
+
+**Explain a name where it first appears, not later.** The first time a function, field, constant,
+step or term of the trace — "the gate", a `pollJob`, a `GRANT_PERMISSIONS` step — is mentioned, the
+same sentence or the next one says what it is in plain words. A name that is explained only in the
+next bullet or the next step makes the reader stop and ask. Before handing the file over, walk the
+trace top to bottom and check every name at its first mention.
+
+**Write the picture, not the code in the reader's language.** Renaming the identifiers and declining
+them into a grammatical sentence teaches nothing — the reader can already read the line. Say what
+happens in words that would survive the code being rewritten: what is counted, what is compared with
+what, what the machine does instead of the obvious thing, and what the reader would see if it were
+wrong. Two marks that a bullet has slipped into translation: strike every identifier out of it and
+nothing is left, or it leans on "many", "a lot of", "expensive", "efficiently" — each of those is a
+place where a number belongs.
+
+**Put the numbers in.** Every count, limit, timeout and size the code knows goes into the text. A
+number is something the reader can check against what they see; a category is something they have to
+take on trust. Not "arms far fewer timers than there are posts" but "40 000 posts, some 900 distinct
+minutes between them, so 900 timers". Where a mechanism has a case that shows it, name the case — the
+query someone typed, the value that arrived, the day it lands on — rather than describing the shape of
+such cases.
+
+Not this:
+
+> `ArmReminders` walks the scheduled posts, groups them by `PublishAtUtc` truncated to the minute, and
+> arms one timer per group, so the timer count is the number of distinct minutes rather than of posts.
+
+This:
+
+> Two posts aimed at 20:00 do not need two alarms. Some 40 000 posts are scheduled at any time, and
+> they fall on about 900 different minutes of the coming week, so 900 alarms are set; when one goes
+> off, everything aimed at that minute is sent together. One alarm per post instead, and a writer who
+> queued a hundred posts would be holding a hundred alarms of their own.
+
+The symbols themselves stay — the reader needs them to find the line, and the heading and links are
+where they belong. What must not stay is a sentence whose whole content is those symbols.
+
+**No vague verbs.** "Specifies the property", "handles the request", "is responsible for", "takes
+care of" — each of these leaves the reader asking *meaning what?*. Say what concretely happens and
+where it shows up: not "`RuleFor` specifies the property" but "the checks after it apply to the
+`PublishAt` field; the library reads that field's name out of the lambda and names it in the 400
+body, so the client sees which field is wrong". If a term of art is unavoidable —
+an expression tree — explain it in the same line, in plain words.
+
+**Name the thing. Never point at it.** This is absolute, with no case where pointing is allowed.
+"The same request", "that field", "this value", "such a screen", "it" — every one of them is the
+writer gesturing at something they can see and the reader cannot. The reader then stops reading and
+starts searching: what was the same as what? The answer may be three steps up, in another file, or
+only in the writer's head, and by the time they find it the sentence has been read twice and trusted
+once.
+
+So write the name, in full, every time it is meant — `assign-list`, `publish_at`, `PostDraft`,
+"the page's own request" — even when the name was written a line above, even when the repetition
+reads as clumsy. Clumsy costs a word. Pointing costs the paragraph. Not "the rows come from the same
+request the other tab uses" but "the rows come from `GET /api/task-students/assign-list`, the
+request the «Задать новое» tab also uses".
+
+The rule has no exceptions by position: **step headings, captions under the screen fragments, the
+lines at the top of the page and the notes obey it too.** A heading such as "When the button is
+enabled" points at a button the reader has to guess; write "When the «Включить режим киоска» button
+is enabled". A screen element is always named by the label the screen shows — the button's text, the
+row's title, the screen's heading — never by its kind alone ("the button", "the row", "the sheet").
+
+The test, applied to every sentence before it is kept: **can this word be resolved without looking
+anywhere else?** If resolving it needs the previous bullet, the heading, another step, or knowing
+the code, it is the wrong word, and the fix is always the same — put the name there. Each bullet is
+read on its own; the reader often arrives at one from a link, with nothing above it on screen.
+
+## Footnotes for everything the project did not write
+
+The reader knows their own code. What they may not know is the platform under it: a validation
+library's `RuleFor`, a coroutine operator, a serializer setting, a database column type. Every such
+name gets a footnote.
+
+**What gets one:** any name or construct whose definition is not in the project — the language
+itself, its standard library, a framework, a third-party library, a database, a format standard.
+The test is simple: if searching the project will not find where it is defined, it gets a note.
+The project's own names never do; the states below cover them.
+
+**The marker** is a Unicode superscript number directly after the name, at its first mention, and
+it opens that note as a screen of its own: the trace is hidden, and the one note the reader asked
+for fills the page — not the whole glossary, which is a list to get lost in rather than an answer.
+Above it sits a back button naming where they came from ("Назад к шагу 15"), and `Esc` does the
+same. Returning restores the exact scroll position, captured when the marker was clicked; anything
+that recomputes the position from an anchor lands the reader somewhere near, which is worse than
+not moving at all. Notes are not put under each step instead — a block of definitions after every
+entry buries the route it explains.
+
+**No list of notes at the bottom of the page.** With the script running, the notes section is hidden
+while the reader is on the trace, and a note appears only on its own screen, opened from its marker:
+the reader reaches every note from the step that cites it, so a glossary after the last step only
+repeats them. Hiding is the script's job, never the markup's: with no script the notes are an
+ordinary section at the end of the page and the markers are plain anchors to it, so the page degrades
+to something still readable. Number in order of first appearance. A later mention far from the first may carry the same
+number again, so the reader does not have to scroll back to find it.
+
+**Each note** — under a heading with its number and the name, in the reader's language — answers two
+questions, in this order:
+
+1. **What it is.** Its kind — method, class, attribute, setting, type, operator, language feature,
+   column type, standard — and where it comes from, with that source's purpose in a few words: "a
+   method of FluentValidation, a library for validating objects against rules written as code"; "an attribute from ASP.NET
+   Core, Microsoft's web framework"; "a function from the Kotlin standard library". The kind tells
+   the reader what sort of thing they are looking at; the source and its purpose tell them where it
+   lives and why it exists.
+2. **What it does** — one plain sentence, in general terms.
+
+**The purpose is the source's own, not this project's.** "FluentValidation, a library for checking
+incoming request data" describes how one backend happens to wire it, not what it is — the library
+validates any object, wherever it came from. Write the general purpose in the note; what this
+project does with it belongs in the bullet. A reader who meets the library again elsewhere must not
+come away with a wrong idea of it.
+
+**Every note stands on its own.** The reader arrives at one note from one marker and will not go
+hunting for a second, so the source's purpose is repeated in every note that cites it — a few words,
+not a paragraph. Explaining a library once, inside the note for some other name, hides it from
+everyone who lands elsewhere.
+
+**Name the library in the body, too.** At the step built on it, say so — "a FluentValidation
+validator class", "the `DropIndex` of Entity Framework Core migrations" — and give the library its
+own note there. A reader searching the text for a library they keep seeing in the notes should find
+it.
+
+A note says what the thing **is**; the bullet says **how this code uses it**. Do not repeat the
+bullet in the note, and do not make the bullet define the thing — with the note in place, the bullet
+can stay on the mechanics of this request.
+
+## New in this branch comes first
+
+Every name this branch introduced gets its own line: function, variable, field, constant,
+parameter. Those are exactly the questions the trace exists to answer.
+
+**Every bullet opens with its state, in bold — no bullet without one.** Without the mark the reader
+goes hunting in the diff for something that is not there, or walks past a line whose meaning moved.
+A bullet that only explains a consequence of the one above takes the state of the code it talks
+about. The labels are translated with the rest of the trace.
+
+- **New in this branch.** Break it down fully: what it does, why this way, what would happen without
+  it. **Never a bare pointer.** "Declared at :412", "The request itself" say only where to look,
+  and this label has already promised a breakdown. Strike every identifier, path and link out of
+  the bullet: if nothing is left, say what that line does to the request instead, or fold it into
+  the bullet beside it.
+- **Was there, unchanged.** One short bullet that **opens with why it is in the trace** — what in
+  the new behaviour depends on it, which refusal happens there, or that the route starts here — and
+  then only as much mechanism as backs that up: "Mentioned because the reminder at the chosen time
+  depends on it: its list has no upper bound, so a post a month out is in it too, and the server
+  needs nothing new." That is the answer to "why are we even in this file", and the reader should
+  not have to work it out.
+- **Was there, changed.** Say what the diff did to it — a parameter added, a return type narrowed,
+  a body rewritten — **and why**, in the same bullet: "non-nullable now, because the only path that
+  returned null was the unique-violation catch, and the index it caught is gone". **The first words
+  after the label are the change itself, with the thing that changed named** — the command, the
+  constant, the field: "`AUTO_REVOKE_PERMISSIONS_IF_UNUSED` is no longer sent at the end of the step".
+  Never open with what the area is ("the extra grants are the permissions the kiosk may need later…")
+  and reach the change in the last clause, or hide it behind "the second one", "that command": a
+  reader who finishes the bullet without being able to say what changed sends it back. **And it is
+  one sentence**: the change, the symbol that carries it with its line, and at most one clause on
+  how — "`AUTO_REVOKE_PERMISSIONS_IF_UNUSED` is no longer sent at the end of the step: added to
+  `EARLY_SPECIAL_ACCESSES` (:945), which the end of the step skips (:807)". Not how the list used to
+  look, not what else reads it, not what would happen without the change — the "Why" bullet below it
+  carries that, and a reviewer who wants the mechanism opens the line.
+- **Was there, refactored — behaves the same.** The diff touched it and the behaviour did not move:
+  a block pulled into its own function, a result built one level up or down, a rename. Say in one
+  sentence what moved where, and nothing about why the feature needed it, because the feature did
+  not. The label exists so the reviewer does not read a reshuffle as a fix and go looking for the
+  bug it fixed; a reshuffle labelled "changed" sends them exactly there. Never use it for a change
+  that alters what the code does under any input — that is "changed", however small the diff.
+- **Was there, now means something else.** The dangerous one, and the strongest candidate for a
+  line. The diff is tiny or absent while the meaning has moved, and that is what review misses most
+  often. Say it plainly: what it meant before, what it means now, and what changed for everyone
+  reading that name.
+- **Removed in this branch.** What went, and why nothing needs it any more — the mechanism, in the
+  same bullet: "the import served only the catch", not "went with the catch".
+
+Examples of the fifth kind: a column that kept its name but now records the day work is *placed*
+on rather than the day it was handed out; a guard call that is byte-identical but now asks about a
+different day; a wire field that survives but always answers zero, kept only for app versions
+already in people's hands.
+
+**Every bullet names the thing and says what it is for, in one sentence.** The thing first — the
+function, the list, the command, with its line — then a dash and the problem it exists to solve, in
+the reader's terms: "Added `regrantPermissionsTakenBack()` (:773) — the panel re-reads what the
+tablet actually holds and grants again what it took back after `pm grant`". A reviewer who finishes
+the bullet knowing what the line does but not why it was written sends it back; so does one who
+gets the motive without the named thing. There is no separate "why" bullet: a purpose stated apart
+from its line reads as belonging to nothing. When several bullets of one step serve one purpose,
+the first carries it and the rest say only what they add. History ("it used to…") is one clause,
+and only where the old behaviour is what the reviewer must compare against. A refactored bullet
+says what moved and has no purpose to give. Never "along with", "went with it", "together with" —
+they name a relation and hide it.
+
+**A step about a new function opens with the problem the function was written for**, before any
+line of it: "`pm grant` answers success even when the tablet has already taken the permission back,
+and nothing else tells the panel the truth — so `parseGrantedPermissions()` reads `dumpsys package`
+into a table of permission → held". A function's branches and edge cases are not one bullet each:
+only the ones a reviewer must check get a bullet, and each says what it protects against ("not read
+as taken back, so the panel does not re-grant in vain"), not what the condition tests. Three bullets
+that walk a seven-line function branch by branch are the trace repeating the code.
+
+**One decision, one bullet.** When several edits in the diff follow from one decision — an index
+dropped, so the catch that guarded it goes, so the method can no longer return null, so its import
+and the caller's null check go too — they are one bullet, under the label of the edit that started
+it, with the others named inside it as its consequences. Do not cut one decision into a bullet per
+artefact because each piece could carry a label of its own: the reason then repeats in every piece,
+and what changed in behaviour is said in none of them. Inside that bullet, lead with what changed in
+behaviour — "`CreateAsync` now always returns the saved row" — then the mechanism. Edits with
+separate reasons stay separate bullets.
+
+**Unchanged code earns its place, or it goes.** Keep an unchanged place only when the new behaviour
+depends on it (the client turns the new 400 into an error, the push service arms a reminder for the
+new instant), when a refusal happens there, or when the route would break without it — and then in
+one bullet, not a breakdown. Code that merely sits on the path and does not bear on the feature is
+cut, and so are the unchanged details of a step you keep: how a sheet of unrelated warnings works, how
+a range of pages is filled in, which flags an enum can carry. A reviewer reads every line you leave in
+looking for what changed.
+
+**`<base>` is the branch this one will be merged into, not `main`.** Many projects cut every branch
+from `develop` or a release branch; take the base from the project's own convention, confirm it with
+`git merge-base <base> HEAD`, and ask when more than one candidate fits. Get it wrong and everything
+that merely arrived from the base branch reads as new: the trace then labels untouched code "new in
+this branch" and sends the reader hunting through the diff for something that was never there —
+which is the one failure the labels exist to prevent.
+
+**Decide every state from git, never from memory** — not even for code you wrote an hour ago:
+`git diff <base>...HEAD -- <file>` says whether the branch touched it, `git show <base>:<file>` shows
+what was there. A file created in the branch and edited again in a later commit of the same branch is
+still new. Before handing the file over, go through every bullet: it starts with a bold label, and
+if the label is changed, removed or now meaning something else, the same bullet says why; and no
+single decision is spread over several bullets.
+
+## Start with the human's action, not the endpoint
+
+The first entry is what the person tapped and which component caught it. Then the client: where
+the request body is assembled and what ends up in it. Only then the network call.
+
+The client half is half the route. Without it there is no telling where a field in the body came
+from, or why it is absent in the other case.
+
+**That first entry is the earliest step, not the earliest fact.** Provenance does not stop at the
+tap. When the action starts on something the screen was given — a row, a card, an item of a list —
+name in one line the request that put it there and the endpoint that answered, before step 1. The
+reader's first question about a tap is where the tapped thing came from: an id travels out of a row,
+and the row travelled from somewhere. That line is not a step and does not open a second route; it
+also is not a "file off the path" and does not fall under cutting unchanged code — those rules are
+about what the request touches, and this is about what the reader is standing on. The same holds in
+reverse of the two-requests rule above: a request that ran *before* the one being traced is named in
+a line, not traced.
+
+If the client is not yours, or there is none, start at the endpoint and say so in one line.
+
+## Always flag
+
+**Every refusal point and its status code.** Where the request can fail to complete and what the
+caller gets: `→ 400`, `→ 409`. It is the first thing the reader looks for.
+
+**Whatever runs before the controller.** Validators, filters and middleware execute before the
+controller's first line, and they are easy to miss precisely because nothing in the project's code
+calls them. Say it outright, and **name who does run it**: "no code in the project calls it — the
+framework runs it when the request arrives, before the controller". Never a figure of speech such
+as "not called by hand" — in translation that reads as slang and still does not say who calls it.
+
+**Side effects.** Signals, pushes, log lines, cache invalidations. They do not shape the response,
+but they are what people go looking for later when something "did not refresh".
+
+## Second part — life after the response
+
+Many features do half their work after the request has finished: deferred visibility, a reminder,
+a recalculation triggered by an event, a display on another screen.
+
+Those go in a separate block after the line "After the request:", and **the numbering continues**
+unbroken. The order there is not chronological but by place — the reader needs to know which other
+files touch this entity.
+
+## Line numbers
+
+Put the line on **the thing the entry is about**, not on the top of the file: the method
+declaration, the assignment, the guard call. If one entry covers several places, the links belong
+in the bullets they describe, not piled into the heading.
+
+Take the numbers from `grep -n` against the live file, never from the diff — a diff has its own
+numbering and it will not match what the reader sees in the editor.
+
+**Always put the symbol's name next to the line.** Numbers drift with the first edit made higher
+up the file; names do not. The pair "name plus line" still works once the number has gone stale:
+the name finds it, the number lands on it directly.
+
+Two repositories in one trace: each link uses its own repository's host URL and its own pushed
+commit. Before handing the file over, check every link against the commit it names (`git show
+<sha>:<path>`) and confirm the target exists and the line lands on the named
+symbol — **and that the line is not blank.** A number one or two past the declaration still points
+inside the file and still passes a file check, so proofreading by eye lets it through; the reader
+clicks and arrives at an empty line. Otherwise half the links will not open.
+
+## Verify against the code, not from memory
+
+Open every method and read it. The order of checks inside a method is part of the answer — it is
+how the reader learns what is validated before what.
+
+This applies to code you wrote yourself an hour ago. Reconstructing a method's order from the
+memory of writing it is how traces end up wrong.
+
+Before handing it over, walk your own list and confirm that every named method exists and is
+called from where you said.
+
+## What not to do
+
+**Do not draw the route.** A sequence diagram of the whole trace holds less than the list and takes
+longer to read; draw one only if asked separately. This is not a ban on drawing: the mockups of the
+screens and the two or three diagrams of a counted mechanism are part of the page. What must not
+happen is the list being replaced by a picture of itself.
+
+**No preamble, no summary** — in the file or in the chat. Not "let us walk through this step by step", not "so the request
+crosses N layers". First entry, list, done. **A page tempts you to break this**, because a web page
+is built with a big opening line and it feels unfinished without one; write it and you have written
+the banned sentence in a larger font. The page's head carries the name of the action, the branch, and
+the facts a reviewer will actually use — the request, the page size, the window something is kept
+for. Nothing that describes the document to its reader: how many steps it has, and what each of them
+will tell them, they can see for themselves.
+
+**Do not pull in files that are not on the path.** Neighbouring edits, documentation, tests are
+not steps.
+
+## Length
+
+As many entries as there are places on the path. Usually ten to twenty. More than thirty means
+things that are not on the path have crept in.
+
+**When a shorter wording says the same, the shorter one stays.** Before handing the file over, read
+each bullet once more and ask whether a sentence can go without the reader losing a fact they would
+act on; if it can, it goes. A reviewer measures a bullet by what it told them, not by how much of
+the function it covered — "reads `dumpsys package` into permission → held, because `pm grant`
+answers success even after a revocation" beats three sentences on the regular expression. Detail
+is kept only where the shorter version would be wrong or unverifiable, never because the code has
+it.
+
+## Going deeper into one entry
+
+The companion skill `explain-line` picks up where the trace stops: `/explain-line 7` drills into
+step 7, `/explain-line 7.4` into the fourth bullet of step 7, one question at a time. That only works
+if the numbers mean what the reader sees — keep entries numbered without gaps and bullets dashed, one
+fact each, so a count of bullets lands on the one they mean.
+
+---
+
+# Worked example
+
+A constructed example, not a real repository: a writer schedules a post and picks when it goes
+live. The client is Kotlin Multiplatform, the backend ASP.NET. The paths and line numbers are
+invented — the shape is what to copy, not the coordinates. The links are shortened to
+`../../path` here to keep the example readable; on the page each is the code host's URL at the
+trace's commit. A footnote marker points into the page itself, at the note it opens. The example is written as text because what it teaches is the
+writing; the page is how that text is rendered, and the section above says what the page adds. The
+stack is incidental too: the skill works with any language, and on another stack the notes explain
+that stack's libraries instead.
+
+Match its **density and register**: one fact per line, no preamble, no hedging. The library calls
+explained in it are real, and those explanations transfer as they are.
+
+Two caveats.
+
+**The set of layers is not a template.** This one has sixteen entries with a validator, a quota
+check and a migration because that is how this request is built. Another may have no validator at
+all, and no second part. Copying the shape means inventing steps.
+
+**The example is in English because this file is.** A real trace follows the reader's language, notes included.
+
+---
+
+Path of the request when a post is published with a scheduled time.
+
+## 1. Client, `ComposeScreenComponent.onPublishClicked()` → `performPublish()`
+
+- **Was there, unchanged.** Where the route starts: the tap reaches `onPublishClicked()` at [ComposeScreenComponent.kt:214](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L214), which hands the draft to `performPublish()` at [:266](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L266) for the send.
+- **Was there, unchanged.** Mentioned because the new "when" field is outside `performPublish()`'s check: the publish button never depends on it.
+
+## 2. Same component, the clock and the timer
+
+- **New in this branch.** `clock: Clock = Clock.System`[¹](#n1), [:88](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L88). A constructor parameter with a default, so existing call sites still compile and a test can hand in its own clock.
+- **New in this branch.** `scheduledMoments`, [:95](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L95) — the chosen instants mirrored into a kotlinx.coroutines[²](#n2) `Flow`[³](#n3), a value the timer below can watch. The draft the screen holds is a plain field: moving the time from 20:00 to 21:00 changes it silently, and nothing downstream would learn of it.
+- **New in this branch.** `expireScheduleWhenItArrives()`, [:130](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L130): one sleep armed at the chosen instant, re-armed through `flatMapLatest`[⁴](#n4) whenever the writer picks a different one. A fixed ticker would be late by up to its own interval.
+- **New in this branch.** `dropMomentsAlreadyGoneBy()`, [:151](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L151). Called from the timer and from the lifecycle's resume callback — a timer does not run while the app is backgrounded.
+
+## 3. Same component, handling `PublishAtChanged`
+
+- **New in this branch.** The `PublishAtChanged` event, [ComposeScreenEvent.kt:34](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenEvent.kt#L34).
+- **New in this branch.** Handler at [ComposeScreenComponent.kt:198](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L198): `takeIf { it != null && it > clock.now() }`[⁵](#n5) — a past instant is never stored at all, or the field would show a time in the past for a frame.
+- **New in this branch.** `PostDraft.publishAt`, [PostDraft.kt:22](../../app/src/commonMain/kotlin/com/example/posts/PostDraft.kt#L22); `null` means "as soon as it is sent".
+- **New in this branch.** `SavedDraft.publishAtEpochMillis`, [:402](../../app/src/commonMain/kotlin/com/example/compose/ComposeScreenComponent.kt#L402) — the choice survives process death, and a stale one is corrected on the next resume.
+
+## 4. Client, `PostsRepositoryImpl.submitDraft()`
+
+- **Was there, changed.** One argument added, `publishAt`, so the writer's chosen time reaches the request body: [PostsRepositoryImpl.kt:141](../../app/src/commonMain/kotlin/com/example/posts/data/PostsRepositoryImpl.kt#L141).
+- **New in this branch.** `draft.publishAt?.toString()` — `kotlin.time.Instant.toString()`[⁶](#n6) is ISO-8601[⁷](#n7) in UTC with a trailing `Z`, exactly the shape the server demands.
+- **New in this branch.** The field `publishAt: String? = null`, [CreatePostRequest.kt:18](../../app/src/commonMain/kotlin/com/example/posts/data/dto/CreatePostRequest.kt#L18). The default is load-bearing: with `encodeDefaults = false`[⁸](#n8) in kotlinx.serialization[⁹](#n9), a property equal to its default is never handed to the serializer, so the key is absent rather than null.
+- **New in this branch.** Without `= null` the body would carry `"publish_at": null`, which is a different message even where a server happens to tolerate it.
+
+## 5. `POST /api/posts`
+
+- **Was there, unchanged.** Mentioned because this is how the new 400 reaches the writer: Ktor[¹⁰](#n10) sends the request at [PostsApiService.kt:44](../../app/src/commonMain/kotlin/com/example/posts/data/PostsApiService.kt#L44), and `expectSuccess = true`[¹¹](#n11) turns any non-2xx answer, the new 400 included, into an exception the app shows as an error.
+
+## 6. Validator `CreatePostRequestValidator` → 400
+
+- **New in this branch.** The file, a FluentValidation[¹²](#n12) validator class; the rule sits at [CreatePostRequestValidator.cs:14](../../Application/Validators/CreatePostRequestValidator.cs#L14).
+- **Was there, unchanged.** No code in the project calls it — ASP.NET Core[¹³](#n13) does: `AddValidatorsFromAssemblyContaining`[¹⁴](#n14) registers it by scanning the assembly at startup, and `AddFluentValidationAutoValidation`[¹⁵](#n15) makes the framework run it on each request, before the controller's first line.
+- **New in this branch.** `RuleFor(x => x.PublishAt)`[¹⁶](#n16) — the checks chained after it apply to the `PublishAt` field. The compiler hands the library not the lambda's code but a description of it ("take `PublishAt` from `x`") — an expression tree[¹⁷](#n17) — so the library reads the field's name without running anything and names it in the 400 body, telling the client which field is wrong.
+- **New in this branch.** `.Must(...)`[¹⁸](#n18) is the predicate itself, `true` meaning valid. `is not { Kind: DateTimeKind.Unspecified }`[¹⁹](#n19) is a property pattern; it does not match on `null`, `is not` yields `true`, so a request without `publish_at` — the writer left the time on "now" — passes.
+- **New in this branch.** `.WithMessage(...)`[²⁰](#n20) states both the mistake and the accepted form instead of a generic "invalid request".
+- **Was there, unchanged.** On failure ModelState[²¹](#n21) is invalid and `[ApiController]`[²²](#n22) returns the 400 with `ValidationProblemDetails`[²³](#n23) on its own.
+
+## 7. Controller `PostsController.Create`
+
+- **Removed in this branch.** `PublishOutcome` and its result wrapper, so `Create` now simply returns the post: [PostsController.cs:52](../../Presentation/Controllers/PostsController.cs#L52). The outcome told the controller which answer to give — 409 "already posted today" for the daily cap, 500 "not configured" for a missing `PublishDelayHours` setting. The branch drops both the cap and the setting, which would leave a single outcome, "created"; so the wrapper and both error arms go, and the action shrinks to a single expression.
+- **Was there, now means something else.** `GetPostingAllowance` at [:31](../../Presentation/Controllers/PostsController.cs#L31): synchronous, calls no service, always answers "allowed" — kept only for app versions already shipped.
+
+## 8. Service `PostService.CreateAsync`, opening lines
+
+- **Was there, changed.** Return type changed to the response DTO, because the result wrapper only existed to carry an outcome for the controller, and the outcomes are gone: [PostService.cs:58](../../Application/Services/PostService.cs#L58).
+- **Was there, unchanged.** Mentioned because the new day is read in this zone: the author lookup and the timezone resolution take it from the profile, else the account's country, else the platform default.
+- **Removed in this branch.** Reading the `PublishDelayHours` setting and the settings dependency — the writer now picks the moment, so there is no fixed "goes live in N hours" delay left to read.
+
+## 9. Same method, `PublishMomentUtc`
+
+- **New in this branch.** The method, [:121](../../Application/Services/PostService.cs#L121); the constant `PastInstantWorthReporting` at [:33](../../Application/Services/PostService.cs#L33).
+- **New in this branch.** `request.PublishAt is not { } requestedAt`[¹⁹](#n19) — a null check and a capture in one expression; no field, return "now".
+- **New in this branch.** `ToUniversalTime()`[²⁴](#n24) rather than `SpecifyKind`[²⁵](#n25) — an offset such as `+05:00` arrives as `Kind = Local`[²⁶](#n26) and names a different instant than its digits read; the column is a PostgreSQL[²⁷](#n27) `timestamptz`[²⁸](#n28) and rejects a non-UTC kind outright.
+- **New in this branch.** A past instant is replaced by "now": the writer meant "as early as possible", and refusing would only cost them the post. `Log.Warning`[²⁹](#n29) from Serilog[³⁰](#n30) fires only past a five-minute drift, because a clock a little behind is ordinary and a clock an hour behind is a client bug.
+
+## 10. Same method, the quota check → 409
+
+- **Was there, unchanged.** The calls themselves, [:71–74](../../Application/Services/PostService.cs#L71).
+- **Was there, now means something else.** The second check: it used to ask about the day a few hours of delay landed on, and now asks about the day the writer named, which may be weeks out.
+- **Was there, unchanged.** The quota window is loaded once with no upper bound, so a post aimed far into the future is still measured against the right day.
+- **Was there, unchanged.** Both throw; an exception filter turns them into a 409 carrying a code and the day that is already full.
+
+## 11. Same method, building the row
+
+- **Was there, now means something else.** `PublishOnDay`, [:88](../../Application/Services/PostService.cs#L88) — it used to be the day the post was written, and is now the day it goes live, read in the author's zone.
+- **Removed in this branch.** The test-mode branch that nulled it — the null existed only to dodge a unique index that this branch drops.
+- **Was there, now means something else.** `CreatedAt` and `PublishAt` can now be weeks apart, which was impossible before.
+
+## 12. Repository `PostRepository.CreateAsync`
+
+- **Removed in this branch.** The unique-violation catch from Npgsql[³¹](#n31), so `CreateAsync` now always returns the saved row. Before, a second post for the same day hit the daily unique index, and the catch turned that into a null. The branch drops the index, and the only uniqueness left is the primary key on a freshly generated id, which cannot collide. Three more edits follow from this one: the return type narrows from nullable to non-nullable ([PostRepository.cs:19](../../Infrastructure/Repositories/PostRepository.cs#L19)), the service's null check goes, and so does the Npgsql import, which served only the exception types in the catch.
+
+## 13. Service `PostService.CreateAsync`, the change notification, then the 201
+
+- **Was there, unchanged.** The notification, [PostService.cs:103](../../Application/Services/PostService.cs#L103); it matters more now — the instant can be far off and subscribers' devices must learn about it in advance.
+
+After the request:
+
+## 14. `PostRepository.GetVisibleForFeedAsync`
+
+- **Was there, unchanged.** Mentioned because it alone hides a post scheduled for the day after tomorrow: [PostRepository.cs:28](../../Infrastructure/Repositories/PostRepository.cs#L28).
+
+## 15. `QuietHoursRescheduler` and `SetPublishAtAsync`
+
+- **Was there, changed.** `SetPublishAtAsync` gained a third parameter and now writes three columns: [PostRepository.cs:96](../../Infrastructure/Repositories/PostRepository.cs#L96) — the instant, the day it lands on, and a reset of the "already announced" flag. The day is the new parameter: when quiet hours push the instant, `PublishOnDay` — now the day the post goes live — has to move with it, or the author's list would keep showing the old day.
+- **New in this branch.** The parameter is required rather than defaulted, so the compiler points at the one call site; a default would let the instant and the day drift apart in silence.
+- **Was there, changed.** The author's zone is threaded down to the write, because only the caller knows whose calendar the day is read in.
+
+## 16. Migration `DropDailyPostUniqueIndex`
+
+- **New in this branch.** [DropDailyPostUniqueIndex.cs:24](../../Infrastructure/Migrations/DropDailyPostUniqueIndex.cs#L24).
+- **New in this branch.** `DROP INDEX IF EXISTS`[³²](#n32) as raw SQL rather than the `DropIndex`[³³](#n33) of Entity Framework Core[³⁴](#n34) migrations — this database was adopted at a squashed baseline, so the migration chain does not prove the index is there.
+- **New in this branch.** `Down()`[³⁵](#n35) recreates a unique index and will fail once an author has two posts on one day; the comment says so outright rather than letting a rollback discover it.
+
+---
+
+The trace ends there. Below are its notes, each of which the page opens on a screen of its own when
+its marker is clicked; they are gathered in one list here only to show them.
+
+## Notes
+
+1. `Clock` — an interface from the Kotlin standard library (`kotlin.time`). Its one method, `now()`, returns the current instant; `Clock.System` reads the real clock, and code that takes a `Clock` as a parameter can be handed a fake one in a test.
+2. kotlinx.coroutines — a JetBrains library for asynchronous code in Kotlin: coroutines, and the `Flow` streams built on them.
+3. `Flow` — a type from kotlinx.coroutines, the library for asynchronous code in Kotlin. A stream of values delivered over time to whoever collects it.
+4. `flatMapLatest` — an operator from kotlinx.coroutines, the library for asynchronous code in Kotlin. For each new value of a flow, starts new work and cancels the work started for the previous value.
+5. `takeIf` — a function from the Kotlin standard library. Returns the value itself when the condition holds, otherwise `null`.
+6. `kotlin.time.Instant` — a type from the Kotlin standard library. A point on the global timeline with no time zone; `toString()` writes it as an ISO-8601 string in UTC.
+7. ISO-8601 — an international standard for writing dates and times as text, e.g. `2026-09-17T20:00:00Z`; the trailing `Z` means UTC.
+8. `encodeDefaults` — a setting of kotlinx.serialization, the library that turns Kotlin objects into JSON and back. When `false`, a property whose value equals its default is left out of the JSON.
+9. kotlinx.serialization — a JetBrains library that turns Kotlin objects into JSON and back.
+10. Ktor — a JetBrains library for HTTP in Kotlin; on the client it is what sends the request.
+11. `expectSuccess` — a setting of the Ktor HTTP client. When `true`, a response with a non-2xx status throws an exception instead of being returned as an ordinary response.
+12. FluentValidation — a third-party .NET library for validating objects: the rules are written as code in a validator class rather than as attributes on the properties, and the object can come from anywhere.
+13. ASP.NET Core — Microsoft's web framework for .NET: it receives HTTP requests, turns their bodies into objects and calls controller methods.
+14. `AddValidatorsFromAssemblyContaining` — a method of FluentValidation, the library for validating objects against rules written as code. Finds every validator class in the assembly that holds the given type and registers them in the dependency-injection container.
+15. `AddFluentValidationAutoValidation` — a method of FluentValidation's integration with ASP.NET Core, the web framework. Makes the framework run the matching validator on each incoming request body, before the controller method.
+16. `RuleFor` — a method of FluentValidation, the library for validating objects against rules written as code. Starts a rule for one property; every check chained after it applies to that property.
+17. Expression tree — a C# language feature. When a lambda goes to a parameter of type `Expression<...>`, the compiler passes a description of its code instead of compiled code, so the receiver can read, for instance, which property it touches.
+18. `Must` — a method of FluentValidation, the library for validating objects against rules written as code. Adds a custom check to a rule: a function that returns `true` when the value is valid.
+19. Property pattern (`is { ... }`, `is not { ... }`) — a C# language feature, part of pattern matching. Tests that a value is non-null and that its listed properties match; the empty form `is { } x` only checks for non-null and puts the value in `x`.
+20. `WithMessage` — a method of FluentValidation, the library for validating objects against rules written as code. Sets the error text returned when the preceding check fails.
+21. ModelState — an object from ASP.NET Core, Microsoft's web framework. Records whether the current request's data was read and validated successfully, with the errors if not.
+22. `[ApiController]` — an attribute from ASP.NET Core, Microsoft's web framework. Among other things, makes the framework answer 400 itself when ModelState has errors, without calling the controller method.
+23. `ValidationProblemDetails` — a class from ASP.NET Core, Microsoft's web framework. The standard JSON shape of a validation error: a title, a status, and an `errors` object keyed by field name.
+24. `ToUniversalTime` — a method from the .NET standard library. Converts a `DateTime` to UTC according to its `Kind`: a `Local` value is shifted by its offset, a `Utc` value is returned as is.
+25. `SpecifyKind` — a method from the .NET standard library. Returns the same date and clock digits under a different `Kind` label, shifting nothing.
+26. `DateTimeKind` — an enum from the .NET standard library. Says whether a `DateTime` is in UTC (`Utc`), in the machine's zone (`Local`), or has no zone at all (`Unspecified`).
+27. PostgreSQL — the relational database the backend stores its data in.
+28. `timestamptz` — a column type in PostgreSQL, the database. Holds an absolute instant ("timestamp with time zone"); the .NET driver accepts only UTC `DateTime` values for it.
+29. `Log.Warning` — a method of Serilog, a logging library for .NET. Writes a warning-level entry through the application-wide logger.
+30. Serilog — a logging library for .NET.
+31. Npgsql — the .NET driver for PostgreSQL, the library through which .NET code talks to the database; `PostgresErrorCodes.UniqueViolation` is its code for an insert that breaks a unique index.
+32. `DROP INDEX IF EXISTS` — an SQL command in PostgreSQL, the database. Removes an index, and does nothing instead of failing when the index is not there.
+33. `DropIndex` — a method of Entity Framework Core migrations; Entity Framework Core is .NET's library for working with a database through C# objects. Emits a plain `DROP INDEX`, which fails when the index is missing.
+34. Entity Framework Core — .NET's library for working with a database through C# objects; its migrations describe each schema change as code.
+35. `Down()` — a method of Entity Framework Core migrations, .NET's library for working with a database. Undoes the migration when the database is rolled back to an earlier version.

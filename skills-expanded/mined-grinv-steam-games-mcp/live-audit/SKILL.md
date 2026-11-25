@@ -1,0 +1,568 @@
+---
+name: live-audit
+description: Audit steam-games-mcp — build/test/lint gate, live MCP tool edge-case sweep (input validation, SteamID64/vanity/appid edge cases, key-gating), and source-level code review. Use when asked to test/audit the published or just-fixed steam-games-mcp package, hunt for bugs/edge cases, or repeat "the same kind of testing as before."
+---
+
+# live-audit — steam-games-mcp health check + edge-case hunt
+
+Repo-specific playbook, for any agent/model working on this repo (not tied to
+a particular harness — see `AGENTS.md`'s own agent-agnostic framing). Use it
+when asked to test/audit the published or just-fixed steam-games-mcp package,
+hunt for bugs/edge cases, or repeat "the same kind of testing as before."
+Sibling repos (`tmdb-mcp`, `mal-mcp`, `anilist-mcp-server`) keep their own
+`live-audit/SKILL.md` — when either this file or a sibling's improves, sync
+the useful parts both ways rather than letting them drift.
+
+Goal: find real bugs/inaccuracies in the live tool behavior (against the real
+Steam Storefront + Web APIs) and in the source, then fix what's found. Read
+`AGENTS.md` first if it's not already in context — every fix must follow its
+conventions (`guard()`/never-throw, schema-first `format/*.schemas.ts`,
+keyless-vs-keyed tool gating, commit author/no-Co-Authored-By, etc.).
+
+This assumes the server is already reachable as an MCP connection in your
+current session (e.g. as `mcp__steam__*` tools in Claude Code). If it isn't
+connected, connect it first rather than skipping straight to step 1.
+
+**Unlike the anilist/mal siblings, this server has no OAuth login and no
+mutation tools** — every tool is a read against public Steam data. The
+per-call risk here isn't "did I just modify a real account," it's "did I just
+call a key-gated tool without a key," "did I treat a private profile's
+default response as a bug," or "did I burn a real person's SteamID64 in a
+committed test fixture." Read `## 2` before live-calling anything.
+
+## Contents
+
+- 0. Confirm "published"/"fixed" actually means what you think it means
+- 1. Static pass first (cheap, catches regressions before you burn API calls)
+- 2. Safety rules for live testing (read before calling anything)
+- 3. Live edge-case sweep
+- 4. Source-level code review
+- 5. Docs/metadata consistency
+- 6. Report, then fix only what's confirmed
+- 7. Commit + changelog, if asked
+
+## 0. Confirm "published"/"fixed" actually means what you think it means
+
+```sh
+node -p "require('./package.json').version"; npm view steam-games-mcp version; git log --oneline -5
+```
+
+If `package.json`'s version matches the npm-published version, live-testing
+the running tools _is_ testing the published package. If you've since made
+local fixes, remember the running MCP server is a **separate process** from
+your edits — stdio servers don't hot-reload. Ask for a restart before
+trusting a live call against fixed code, and state plainly whether findings
+apply to the published package or to fixed-but-unreleased/unrestarted code.
+
+## 1. Static pass first (cheap, catches regressions before you burn API calls)
+
+```sh
+npm run build && npm test && npm run lint && npm run format:check
+```
+
+Optionally `npm run check:api` too — it's a live upstream health-check
+(Storefront + keyless Web API always run; key-gated Web API checks only run
+if `STEAM_API_KEY` is exported in your shell). A failure there means an
+upstream shape has drifted, which is exactly the kind of thing this audit is
+hunting for — treat it as a finding, not noise to route around.
+
+All green is a **baseline, not proof of correctness** — it only confirms
+nothing already-covered regressed. It says nothing about whether the
+interesting logic (error/exception branches especially) is covered at all.
+`npm run test:coverage` (~80% gate) measures lines executed, not whether the
+assertions on those lines are meaningful. When reviewing or writing tests as
+part of this audit, ask: does a test exist that deliberately triggers this
+error path (a private profile, a malformed SteamID64, a delisted appid), and
+does it assert on the _specific_ resulting message/shape (not just
+"isError: true")?
+
+Also ask the same question about **protocol era**, not just error paths:
+`src/__tests__/e2e.test.ts`'s default connections (`helpers.ts`'s
+`connectServer()`, and the plain `new Client(...)` in e2e's first test) all
+negotiate the legacy (2025) era — `versionNegotiation` defaults to `'legacy'`.
+Only the tests that explicitly pass `{ versionNegotiation: { mode: 'auto' } }`
+ever exercise the modern (2026-07-28) era, so any wire-level behavior that
+differs by era (`serverInfo` stamping, `cacheHints`, a future
+elicitation/sampling `input_required` path) needs its own modern-era test —
+the legacy-era suite passing green proves nothing about it. Confirmed
+concretely: `cacheHints` (added for `tools/list`/`prompts/list`/
+`server/discover`) had to be verified with a dedicated modern-era connection
+and a spy `ResponseCacheStore`, since the legacy-era suite would stay green
+whether or not it worked at all.
+
+Don't try to run the whole unit suite (the `helpers.ts`-based tests)
+under both eras — confirmed by direct test: a bare `McpServer.connect()` over
+`InMemoryTransport` (what every one of those tests uses) doesn't negotiate
+the modern era at all (`'auto'` silently falls back to legacy; `{pin:
+'2026-07-28'}` fails outright with `EraNegotiationFailed`) — era negotiation
+is `serveStdio`'s own hosting behavior, not something a bare `McpServer`
+instance implements. Real dual-era coverage only works through a spawned
+process (`e2e.test.ts`'s `StdioClientTransport` setup), which is too slow to
+duplicate per-tool. Instead, extend `e2e.test.ts`'s
+`assertRepresentativeSlice()` — one call per kind of protocol-level logic
+(tool registration, a key-gated short-circuit, a schema-validation
+rejection, a prompt call), not per tool — and keep every call inside it
+network-free (short-circuits before any fetch, or touches no client at all)
+since a live Storefront/Web API call has no place in the default `npm test`
+gate.
+
+Anything red here is the actual finding — stop and report it before moving to
+live testing.
+
+## 2. Safety rules for live testing (read before calling anything)
+
+- **No account is authenticated and no tool mutates state** — every
+  `mcp__steam__*` tool is a read. There is nothing to revert. The actual risks
+  here are different from the anilist/mal siblings:
+  - **Key gating.** Player-data tools (`get_player_summary`, `get_owned_games`,
+    `get_recently_played`, `get_player_achievements`, `get_friend_list`,
+    `find_friends_who_own`, `compare_players`, `get_player_bans`,
+    `resolve_vanity_url`, `get_recommended_games`, and a few more in
+    `src/tools/webPlayer.ts`) require `STEAM_API_KEY`. Confirm whether the
+    session actually has one configured (`env | grep STEAM_API_KEY`, or just
+    call one and read the error; an unfilled `${VAR}`/`$VAR`/`%VAR%` must count
+    as unset, not as a key) before assuming a "set STEAM_API_KEY" error
+    is a bug rather than the intended keyless-session message — but also
+    confirm the message itself is accurate and actionable per AGENTS.md.
+    Store/catalog tools (`search_games`, `get_game`, `get_specials`,
+    `get_featured`, `discover_games`, `get_items`, `get_game_news`,
+    `get_global_achievements`, `get_current_players`, `get_wishlist`,
+    `get_followed_games`, `get_prices`, `get_review_histogram`,
+    `get_game_reviews`) need no key at all — see AGENTS.md's "Keyless
+    caveat" for exactly which Web API methods are keyless by design.
+  - **Real people's data.** SteamID64-taking tools resolve to real Steam
+    accounts. Prefer well-known/public test accounts or your own profile over
+    guessing a random person's id; a target profile must be public for most
+    fields to return anything meaningful — a private profile returning a
+    trimmed/limited shape (not an error) is Steam's documented behavior, not
+    automatically a bug. Never paste a real private individual's SteamID64,
+    friend list contents, or owned-games list into a committed test fixture
+    or a findings report beyond what's needed to describe the bug — use a
+    public figure's/your own id, or a well-formed-but-fake one for pure
+    validation-boundary tests.
+  - **Rate limits.** Both the Storefront and Web API are shared, rate-limited
+    upstreams (`src/lib/rateLimit.ts` backs off client-side). Batch
+    independent lookups where possible, but don't hammer the same endpoint in
+    a tight loop just to test caching — one confirming call is enough.
+- **Read-only tools are always safe to call freely** — no special permission
+  needed, since nothing is written or shared.
+
+## 3. Live edge-case sweep
+
+Batch independent tool calls together where your harness supports it — this
+is slow one-at-a-time. Adapt ids/appids/tools to whatever's currently
+registered (`grep -n 'registerTool(' src/tools/*.ts`), don't just replay last
+run's exact calls verbatim. Split into independent workstreams if your
+environment supports concurrent subagents/background tasks.
+
+- **Input validation boundaries**: empty string where `.min(1)` is expected,
+  negative/zero/decimal/way-past-int32 appids, a SteamID64 with the wrong
+  digit count or out of the valid 64-bit range (e.g. accountid 0 — this has
+  previously leaked raw upstream HTML instead of a clean `found:false`, see
+  `CHANGELOG.md`'s 0.10.2 entry), batch `appids`/`ids` at their `.min()`/cap
+  boundary and one past it, an unknown/misspelled param name. Include
+  **shape-valid but impossible** values, not just malformed ones, and assert
+  the result was actually filtered rather than that the call returned at all:
+  `discover_games`' `released_after` passed its `^\d{4}-\d{2}-\d{2}$` regex on
+  `2026-13-45`, and the resulting `Date.parse` NaN made the date filter match
+  everything (`2026-02-31` silently rolled over to another date).
+- **SteamID64 / vanity edge cases**: a syntactically valid but nonexistent
+  SteamID64, a vanity name that doesn't resolve, a vanity name containing
+  URL-unsafe characters, a private profile (fields should degrade gracefully,
+  not error), a profile with zero games/zero friends/zero achievements (empty
+  array, not a crash), a VAC-banned or community-banned account via
+  `get_player_bans`.
+- **Appid edge cases**: a delisted/removed appid, a DLC or soundtrack appid
+  (not a base game — does the tool's shaping assume "game" fields that don't
+  exist?), a free-to-play appid (price fields), an appid with a region lock
+  (`cc` param) that changes availability/price, a non-English `l`/`language`
+  param that changes field content, an appid that exists on the store but has
+  no reviews yet, an appid past `get_current_players`'/`get_game_achievements`'
+  documented not-found behavior.
+- **Cross-field pairing rules**: filters `discover_games`/`get_items` silently
+  no-op on when a required partner is missing, `check_appids` in
+  `get_owned_games` against a private profile (should this degrade to
+  "unknown" rather than a false `owned:false`? see the 0.10.1 CHANGELOG
+  entry for a real prior instance of exactly this bug), a `cc`/`l` pair that
+  Steam silently ignores for one endpoint but not another.
+- **The same fact from two tools must agree.** A per-tool sweep passes happily
+  while two tools answer one question differently — nothing in a single call
+  looks wrong. Prices are the live instance: `get_game`/`get_prices` come
+  from the Storefront (`price_overview`), while `search_games`/`get_items`/
+  `discover_games`/the detailed wishlist come from the store services'
+  purchase options, and the two disagreed by **10x** on appid 3717330 (Yakuza
+  Kiwami: Rp 20 000 vs Rp 120 000) through several audits. So call BOTH
+  families on the same appid and diff the numbers — then settle the tie against
+  what the store page and Steam's own search results actually **render**, not
+  against another JSON field: the search HTML displays `-40% Rp 200 000 Rp
+120 000` while its own `data-price-final` attribute carries the wrong
+  `2000000`, so a side channel agreeing with your code proves nothing. Choose
+  appids that hit each known trap instead of a random popular game: an
+  upgrade-SKU title whose default package group opens with an "Upgrade" sub
+  (3717330; 518790 theHunter: Call of the Wild, which also arrives
+  `is_free: true` on a $19.99 game — check the free/paid flag against the
+  purchase options, not just the amount), one whose best purchase option is a
+  **bundle with another game** (2186680 Warhammer 40,000: Rogue Trader, $48.36
+  for two games vs its own $49.99), a multi-SKU hardware app (1675200 Steam
+  Deck), a 100%-off title (2019300) and a genuinely free one (570). The check
+  generalizes past prices: review %, release date and compat are each reported
+  by more than one tool from more than one upstream (release dates: Valve
+  stamps Pacific time, so a UTC day is a day late for evening releases).
+- **Not-found / empty-result paths**: a search returning zero results, a
+  batch (`get_items`, `get_owned_games`'s `check_appids`) mixing valid +
+  invalid + duplicate ids (assert a duplicate doesn't double counts —
+  `find_friends_who_own` listed every owner twice), `find_friends_who_own` when one friend's own
+  lookup errors transiently (should degrade into `unavailable_friends`, not
+  sink the whole call — see the just-shipped fix in `git log`), an appid
+  queried that's actually a non-game "app" (soundtrack/tool/demo) so a
+  game-shaped assumption downstream breaks.
+- **Payload-size risk**: anything that aggregates a variable-size collection
+  — a very large game library (`get_owned_games`), a big friend list
+  (`get_friend_list`, `find_friends_who_own`), a long achievement list
+  (`get_player_achievements`, `get_global_achievements`), a large wishlist
+  (`get_wishlist`), `discover_games`/`get_items` with a wide batch of appids.
+  Check the actual response size/token count for the largest realistic case
+  (e.g. a Steam account with 1000+ games, a game with 200+ achievements) **and
+  at the tool's own advertised maximum**, not just that it returns _something_
+  (AGENTS.md requires these responses be capped/trimmed) — a documented cap the
+  MCP client then refuses is a total failure, not a trim: `get_items` at its
+  stated 100 appids and `get_prices` at 500 each
+  produced ~56 KB and were rejected outright for exceeding the client's
+  per-result token limit, so the caller got nothing at all.
+  **A parameter that RAISES a cap is the same check, and it is the one that
+  gets skipped** — the cap constant is reviewed, its override's ceiling isn't.
+  `get_owned_games`' `limit` shipped accepting 1000 (~95 KB on a 4652-game
+  library, nearly double the threshold that had already forced two other caps
+  down) two releases after that lesson, with its own comment claiming the bound
+  existed so "a typo can't ask for an unbounded response". So: for every
+  `limit`/`count`/`max` in an input schema, call it AT its maximum against the
+  biggest real account and measure, and treat the number as a byte budget —
+  divide the target (~28 KB here; 34 KB was measured accepted and 56 KB
+  rejected, so 28-34 KB is margin, not failure) by one measured row, don't pick a round one.
+- **Documented vs. actual shape**: for anything that looks surprising live,
+  grep the field back to its `.describe()` text in `src/tools/*.ts` and its
+  `format/*.schemas.ts` — does the tool's own description/outputSchema
+  promise what you just saw (or promise something you didn't)?
+- **Unicode / locale / injection-shaped input**: emoji-only search terms,
+  non-Latin scripts in `search_games`, whitespace-only terms, a malformed
+  `cc` (country code) or `l` (language) value that's shaped like a real one
+  but isn't, SQL/HTML-injection-shaped strings in any free-text param — check
+  text fields don't come back still HTML-escaped (`&quot;`), and that
+  the error message doesn't leak raw upstream HTML/markup (a real prior bug
+  class in this repo, see `CHANGELOG.md` 0.10.2) or misattribute a transport
+  error to "not found"/"private profile" when it's actually a 5xx/network
+  blip. A plausible-but-wrong locale can also corrupt results with no error at
+  all: an ISO `language` (`ru`, not Steam's `russian`) emptied the `GetTagList`
+  tag dictionary, so every `tags` filter matched nothing — indistinguishable
+  live from "no games matched". `language`/`review_language`/`STEAM_LANGUAGE`
+  now take only Steam's names (`STEAM_LANGUAGES`); check that `ru`/`korean`
+  are refused before any call.
+- **Systematic input-schema fuzzing** across every tool: wrong JS types,
+  invalid enums, missing required fields, malformed nested objects, extremely
+  long strings. Only flag a genuine problem — an unhandled exception/stack
+  trace, a confusing validation message, or (worse) malformed input silently
+  accepted and producing a wrong result. A clean, expected Zod validation
+  error is correct behavior, not a finding.
+- **Live prompt testing**: run the `prompt-check` skill against every prompt
+  in `src/tools/prompts.ts` — a static read comparing prompt text against
+  tool names/params misses argument-handling bugs that only show up when
+  actually rendered through the real MCP protocol (this skill also covers a
+  SteamID64-specific inspector-CLI number-precision quirk worth knowing
+  about here).
+
+For anything that looks like a bug, **don't stop at the symptom** — grep the
+source for the actual mechanism (the fetch call/regex/cap that produced it)
+before calling it a finding. A live response that merely _looks_ odd but ties
+back to correct, intentional code (e.g. Steam's own documented behavior for
+private profiles, or `discover_games`'s deliberate/tested precedence of an
+explicit `released_after` over `released_within_days` when both are given —
+check `src/__tests__/steamCatalog.test.ts` before flagging a cross-field
+interaction, it may already be intentional and covered) isn't a finding.
+
+The same caution runs the other way: a finding produced by reading source
+_without_ calling any live tool (e.g. a background/sub-agent doing a
+static-only pass) is a hypothesis, not a confirmed bug — and so is a cheaper
+sub-agent's all-clear (one reported `server.json`'s nonexistent tools array as
+matching and missed a stale host list), so spot-check its concrete claims. Steam's actual
+upstream behavior sometimes contradicts what the code's shape implies (e.g.
+whether a malformed id 400s cleanly vs. leaks raw HTML is something you have
+to observe, not infer). Before reporting any source-only finding, spend one
+live call confirming the actual response shape it depends on.
+
+## 4. Source-level code review
+
+**This step is not optional polish on top of live testing — some bug classes
+are only reachable here.** Live-calling the real Steam API can't reliably
+make one specific sub-request in a batch fail on cue, so partial-failure
+resilience (`Promise.allSettled`/try-catch added to stop one item's failure
+from sinking a batch) and where a caught error's message actually ends up
+require reading the control flow, not another live call. Concretely: a
+`/code-review` pass over the same diff caught two bugs in this exact category
+that a thorough live pass had missed — a per-friend error message leaking
+raw upstream content past the sanitizer, and a "fixed" resilience path still
+wrapped in an outer `Promise.all` that silently defeated it. Don't skip this
+step or treat live-testing's silence on a code path as evidence it's fine.
+
+Sweep every file under `src/tools/`, `src/format/`, `src/clients/`, and
+`src/lib/` (lighter pass on the last group unless something specific points
+there) for:
+
+- A tool whose field name for a concept diverges from every sibling tool
+  handling the same concept (e.g. one player-data tool naming its
+  SteamID64/vanity-name parameter differently from another). Grep every call
+  site of a shared concept and diff the field names — don't just check each
+  in isolation. Every input schema in this codebase is a `z.strictObject()`
+  (since the July 2026 zod-modernization pass), so a plausible-but-wrong name
+  is rejected outright here with a clear "Unrecognized key" error rather than
+  silently dropped — verify live before flagging a naming mismatch as a
+  silent-fallback bug in THIS repo specifically. The risk this check still
+  guards against: a non-strict sibling project. Confirmed live on
+  anilist-mcp-server (which did not have strict schemas at the time): a
+  search tool's user-filter parameter was named differently from every other
+  user-scoped tool, so passing the sibling-consistent (but wrong) name
+  silently returned the unfiltered global feed instead of erroring or
+  filtering — keep checking naming consistency here too, since a
+  differently-but-plausibly-named field can still be a genuinely distinct,
+  valid optional param rather than the one you meant.
+- A shaper in `src/format/*.ts` that dereferences a raw Steam field unguarded
+  instead of going through its co-located `*.schemas.ts`'s `schema.parse()` —
+  AGENTS.md requires every summarizer build its return value that way so the
+  shaper and its `outputSchema` can't drift.
+- A raw upstream HTML/error page leaking through instead of a clean
+  `found:false`/`isError` result — this exact bug class has recurred (0.10.2's
+  malformed-SteamID64 fix, 0.10.1's `get_current_players`/`get_game` fixes).
+  Check every call site that takes a user-controlled id/appid for the same
+  "does a 400/404/5xx get normalized, or does raw upstream body leak through."
+- **An inference drawn from an upstream payload that cannot actually carry it.**
+  Not "the code mishandles a field" but "the field isn't there and the code
+  guessed." Confirmed: `get_prices` reported `is_free: true` for any appid
+  `appdetails?filters=price_overview` answered without a price block — but that
+  endpoint sends an identical `"data": []` for a genuinely free game AND for an
+  unreleased paid one, so freeness was never knowable from it. The result was a
+  confident wrong answer (unreleased paid titles reported as free) that
+  contradicted `get_items`, called on the same appid in the same second.
+  For every boolean or category a summarizer DERIVES rather than copies, ask
+  what the raw payload looks like in the other case it could be — and check by
+  curling the upstream for both, not by reading the shaper. Two tells that this
+  bug class is present: a sibling tool built on a different endpoint disagrees,
+  and the test fixture's own comment asserts the guess (here, `// free game: no
+price_overview`), so the suite agrees with the bug instead of catching it.
+  Same family as 0.13.0's `get_featured` "0.00 USD" fix — which is exactly why
+  it needs the whole-codebase sweep §6 asks for, not a one-site patch.
+- **A decision taken from a stand-in for the fact** (AGENTS.md: "Decide from
+  the fact"). For every `if`/regex/`Set`/cache key in the diff, ask what fact
+  it decides on and whether it reads that fact or something derived from it:
+  `err.message` (truncated log text), a rendered note, a flag that guesses
+  ("was a key sent"), a falsy number standing for "absent", the extent of a
+  `try`. Each of these shipped and was caught only by review.
+- **A bug relabelled as an upstream failure.** Only `HttpClient#once` may turn
+  a non-`ApiError` into an `ApiError` (fetch's own rejection). Grep for
+  `toNetworkError(` and any `instanceof ApiError ? … : <wrap>` — a second
+  site, or a `try` widened around new code (a `validate` hook once ran
+  inside the retry loop's catch and turned summarizer bugs into retried,
+  stale-masked "network errors"), is this bug.
+- **A gap the model can't see.** An optional part of an answer (enrichment,
+  one chunk of a batch) that Steam failed to provide must go through
+  `optional()`/`noteDegraded()` (`lib/call.ts`) so it lands in the result's
+  `notes`; a hand-written `catch` that degrades, a `logger.warn` as the only
+  trace, or a formatter turning "unknown" into a negative fact (`available:
+false`, an uncorrected price shown as checked) is this bug. Run
+  `degradation.test.ts` after adding a tool or a request — it covers both
+  automatically — and add a targeted test for a partial-batch path it can't
+  reach (one chunk of several failing).
+- **A cache that stores a meaning instead of a response.** The cache is
+  per request (`HttpClient`, `cache: true`): one entry is one Steam body,
+  and shaping, validation and combining requests run after it. Check that no
+  client caches a shaped or combined result of its own (that is how a
+  degraded answer — an uncorrected price, "no achievements" from one 403 —
+  used to get cached for the whole TTL over a good entry), that `cache: true`
+  is only on answers that aren't live or per-requester.
+- **A fact about Steam without a probe.** Every `answers`/
+  `validate` entry in `clients/endpoints.ts` needs a probe that passes against
+  live Steam (`npm run check:api`). A fixture written from memory agrees with
+  the code, not with Steam: the bad-key page is a 401 on IPlayerService, and
+  a test asserting `invalid_key` on a 403 fixture passed while that 401 went
+  unclassified live.
+  This class is invisible to live testing: you cannot make the upstream 403 on
+  cue, and one call in isolation returns the right answer — it is the SECOND
+  call that is wrong.
+- A price read that never establishes it prices **this app alone**. Steam
+  offers several answers to "the price" and none of them means that:
+  `appdetails`/`storesearch` fill `price_overview` from the FIRST sub of the
+  default package group (an upgrade SKU sitting there wins), and `GetItems`'
+  `best_purchase_option` is whatever Valve deems best value — routinely a
+  bundle containing this app _and another game_ — and every package of a
+  free-to-play app is a paid add-on (CS2's Prime). Every read must go through
+  `isOwnPackage()`/`ownPurchaseOption()` in `format/storeCard.ts` (a
+  `packageid`, never a `bundleid`), so grep any new `best_purchase_option` /
+  `price_overview` dereference for one that skips them — **including inside
+  filters**, where it's silent: `discover_games`' `min_discount` measured
+  against a bundle's discount surfaces full-price games as deals.
+- A shape-only validator (a regex, a bare `z.string()`) whose value then feeds
+  a computation that **degrades silently instead of erroring** — `Date.parse`
+  → `NaN` makes every `<`/`>` comparison false (filter matches everything), an
+  empty lookup table makes every membership test false (matches nothing), and
+  both ship a confidently wrong answer as a normal-looking result. Validate the
+  _parsed_ value, and treat empty-but-non-null as failure: an upstream that
+  signals errors as **200 + an empty body** (`GetTagList` on an unrecognized
+  `language`) slips past every `catch`- and null-based guard.
+- **A code comment saying an upstream "can't" or "silently ignores" a
+  parameter is a claim to re-test, not a fact.** `discover_games` fetched the
+  top-`count` popular games and filtered tags/compat/reviews/release date
+  locally for several releases because its comments said Query ignored those
+  filters — it applies all of them catalog-wide under their real
+  `CStoreQueryFilters` names (`tagids_must_match`, `compatibility_filter`,
+  `review_score_filter`, `release_date_filter`), so niche queries went from 0
+  matches to dozens. For every client-side cap or filter over an upstream
+  response, look the request message up in SteamDatabase/Protobufs
+  (`webui/service_*.proto`, `webui/common.proto`) and probe the real field
+  names live before accepting "no server-side support": the same pass found
+  inline chart names (`data_request`) and `GetOwnedGames`' `appids_filter`.
+  Conversely, confirm a parameter is really honored — six plausible count
+  fields on the player charts are silently ignored.
+- A tool that assumes a private profile 404s instead of returning a
+  restricted-but-200 shape (or vice versa) — Steam's actual behavior differs
+  by endpoint, don't assume one implies the other for a sibling endpoint.
+- **A bad key read as "private".** Steam answers a bad/revoked key with the
+  same 403 a private profile gets, on every key-gated endpoint — told apart
+  only by the body (an HTML "verify your `<pre>key=</pre>`" page vs. JSON like
+  `"Profile is not public"`; a private friends list is a 401 with `{}`). It is
+  classified once, in `SteamWebClient`'s `classify`, as its own `invalid_key` code, so
+  no `catch` mapping `forbidden`/`unauthorized` to a privacy or "no data"
+  verdict can see it — check that a new key-gated call goes through `#call`
+  (a direct `#http` call would bypass it). History: `get_player_achievements`
+  and `get_friend_list` shipped telling the agent to change privacy settings
+  when the key was the problem, while `get_player_summary` correctly blamed the
+  key. Re-check by running the key-gated tools with a fake 32-hex key against a
+  known-private profile, not just with no key (no key short-circuits before any
+  fetch, so it never reaches these branches). Keyless endpoints ignore a bad
+  key and answer 200, so they can't hit this.
+- A raw-response TS interface or a private/empty-detection helper (e.g.
+  `isPrivate()`) reused across two upstream endpoints that merely _look_
+  alike (same steamid-in/games-list-out shape) — confirmed recurring:
+  `getRecentlyPlayed` reused `GetOwnedGames`' `OwnedGamesResponse`/`isPrivate`
+  (keyed on `game_count`), but `GetRecentlyPlayedGames` actually answers with
+  its own `total_count` field, so a public profile with zero recent playtime
+  (`{total_count:0}`, no `games` key) was misreported as private for every
+  release through v0.10.5. Grep every reused response type/helper across
+  `src/clients/web.ts` and diff the real field name each endpoint returns —
+  don't assume a sibling call shares the same upstream field names just
+  because the TS type does.
+- Missing bounds/caps on a collection-shaped response (owned games,
+  achievements, friend list, wishlist) that AGENTS.md says must be trimmed —
+  check the actual cap constant still matches what's documented in the tool's
+  `.describe()` text.
+- A key-gated tool in `src/tools/webPlayer.ts` that doesn't short-circuit
+  cleanly through the shared key-check helper when `STEAM_API_KEY` is unset,
+  or a keyless-capable tool in `src/tools/webStore.ts`/`storefront.ts` that
+  accidentally requires the key when it shouldn't (re-check against AGENTS.md's
+  "Keyless caveat" list (the endpoint's `keyless` in `clients/endpoints.ts`).
+  Also check the _error-message_ side: a 401/403 must never blame the key —
+  Steam's bad-key page is classified as `invalid_key` at the source, so any
+  other 401/403 is not the key, whether or not one was sent. History: this
+  advice used to be picked by whether the call carried a key, a guess that
+  had to be overridden per call site (one method of five fixed, four missed)
+  and that turned false once the bad key got its own code.
+- Tool failures that don't go through the `tool()` registrar (`toolRegistrar`
+  in `tools/guard.ts`, over `toolOutput`'s `guard()`/`reply()`) and
+  `toProblem()` — AGENTS.md requires every tool failure return
+  `{ isError: true }` with the Problem in `_meta`, never a raw throw.
+- An `ApiError` whose `code` doesn't say what happened, or agent-facing text
+  put in `message` instead of `detail` (`message` is log-only and never read
+  by `toProblem`), or a bare `catch {}` that swallows a bug along with the
+  upstream failure it meant to absorb.
+- `.clients/` files doing any response-shaping themselves instead of leaving
+  it entirely to `src/format/` — AGENTS.md says clients are fetch+cache only.
+- Logger/credential leakage: the Web API key travels as a `key` query param —
+  confirm the logger (`src/lib/logger.ts`) still redacts it in whatever log
+  line covers the newest client call, and that nothing writes to stdout
+  (reserved for the MCP protocol channel).
+- **A `Promise.allSettled`/try-catch newly added so one item's failure doesn't
+  sink an entire batch call (e.g. `find_friends_who_own`'s per-friend
+  lookup)** — this bug class needs a source-level trace, not a live call (you
+  can't make one specific sub-request fail on cue). Check two things: (1) the
+  rejection must route through `toProblem(...).detail`, never embedded as
+  `r.reason.message` directly — an
+  `ApiError.message` can carry up to 500 raw chars of an upstream body per
+  `lib/http.ts`'s `toHttpError` (e.g. an HTML error page); (2) the `allSettled`
+  must not sit inside an _outer_ `Promise.all` alongside another call that can
+  reject (e.g. `#playerSummaries`), which silently defeats the whole fix the
+  moment that call fails; (3) a blanket `.catch(() => undefined)` must not turn
+  a 429/5xx/timeout into a definitive answer (a vanity `STEAM_ID` read "check
+  the spelling"). Grep every sibling batching/chunking function in the
+  same file for the identical un-fixed twin.
+
+## 5. Docs/metadata consistency
+
+Run the `docs-consistency-check` skill.
+
+## 6. Report, then fix only what's confirmed
+
+Rank findings by severity. For each: what's wrong, concrete repro (exact tool
+call + params), the file/line causing it, and the fix shape. Silence on a
+category you didn't get to (rather than implying full coverage) beats a false
+"all clear." Then run the `self-learning` skill against each confirmed
+finding.
+
+If asked to fix: implement the smallest correct change, add/extend a test in
+the matching `src/__tests__/*.test.ts` (mirror the existing test's style in
+that file — `steamFixtures.ts` centralizes shared fixture shapes, reuse it
+rather than inlining a new one), then re-run the full
+`build && test && lint && format:check` gate before calling it done. Re-verify
+live only after the running MCP server process has been restarted (it won't
+pick up source changes on its own) — build/test passing is necessary but
+re-confirming actual live behavior changed is stronger evidence than trusting
+the diff alone. **A fix about an upstream payload's shape must be re-verified
+against the real API, never only against a fixture you wrote** — that fixture
+encodes the same assumption as the fix: `get_featured`'s unpriced-title fix
+tested `original_price === undefined` and went green, but Steam sends an
+explicit `null`, so live output still read `0.00 USD`. Correct the raw
+response interface from the observed payload too (it declared `number |
+undefined`, a shape Steam never sends).
+
+**When the bug is "we read the wrong upstream field", measure how often the
+wrong one is actually wrong before switching sources — and check what the
+replacement gets wrong.** Generalizing from the one example that exposed the bug
+produces a worse bug: over Steam's top 500 US sellers (421 priced), the
+Storefront price is wrong for 2 apps while `GetItems`' "best" option is a
+multi-game bundle for 5, so the obvious "use the modern API" fix broke more
+prices than it fixed. Sample a few hundred ids, diff the two sources, and read
+the disagreements one by one — they are usually several distinct causes wearing
+one symptom, needing a rule (here: prefer an option naming a `packageid`)
+rather than a swap.
+
+**Measure the cost you cite to justify a design, in the unit that matters.** A
+narrow follow-up request was justified here on payload size (~2.2 KB → ~10.2 KB
+per item) without anyone timing it; measured interleaved, asking up front cost
+~+40 ms on a 50-item batch — inside run-to-run noise — against ~+300 ms for the
+extra round-trip, so the "optimization" was a pessimization plus an extra
+failure path. Interleave the A/B runs (5 each, compare medians AND minimums):
+sequential blocks drift enough on this API to invent a difference that isn't
+there, and a 300-item page showed no difference at all.
+
+**Fixing one site doesn't close the class — sweep every sibling for the same
+pattern.** A confirmed finding is a description of a mistake the codebase is
+prone to, so grep for it everywhere before calling the fix done, and re-check
+the tools you did _not_ touch. `get_items`' and `get_prices`' caps were halved
+for producing responses MCP clients reject, and `discover_games` shipped in the
+same release still uncapped at ~104 KB — its own description even tells callers
+to raise `count`. Then re-run the checklist item that class belongs to (here,
+§3's payload-size bullet) against the whole tool list, line by line: a sweep
+built from your own diff only covers what you already knew was broken.
+
+**Diff every description against the behavior it describes, as its own pass.**
+When the same commit writes both the code and its `.describe()`, a mismatch
+reads as correct to its author — `get_recently_played` shipped claiming
+most-recently-played ordering while sorting by two-week playtime, which is also
+what its new cap uses to decide what to discard.
+
+## 7. Commit + changelog, if asked
+
+One `fix:`/`feat:` commit per logically distinct change (don't bundle two
+unrelated fixes into one commit), then a separate `docs:` commit adding to
+`CHANGELOG.md`'s `[Unreleased]` section (style: the `changelog-style` skill)
+with one bullet per fix, each linking that fix commit's short sha
+(`https://github.com/Grinv/steam-games-mcp/commit/<7-char-sha>`).
+Author/committer `Konstantin Ostrovskii <4070730+Grinv@users.noreply.github.com>`, **no**
+`Co-Authored-By` trailer (AGENTS.md's commit convention). Don't push unless
+explicitly asked.

@@ -1,0 +1,131 @@
+---
+name: video-plan
+description: 前期规划与分镜交接。把完整视频文稿按语义场景转成分镜表、storyboard.json、素材请求、音乐 cue 和动效候选；粗剪后也可根据实际时间码生成 motion_request_list。触发词：规划分镜、文稿转分镜、列素材、制作拍摄计划。 已安装 Huanyu-Skills-Pro（付费完整版）时，同类请求交给 Pro 版处理，本 skill 让位。
+argument-hint: "[manuscript-path] [--mode pre-production|rough-cut-finalization]"
+allowed-tools: Bash(*), Read, Write, Edit, Glob, Grep
+---
+<!-- huanyu-lite-v1 由 Huanyu-Skills-Pro 的 build_lite.py 生成，请勿手改 -->
+
+# /video-plan
+
+## 两种模式
+
+| 模式 | 输入 | 输出 | 用途 |
+|---|---|---|---|
+| `pre-production` | 完整视频文稿 | 分镜表、`storyboard.json`、素材建议、音乐 cue、动效候选 | 指导拍摄、OBS 录制和前期素材准备 |
+| `rough-cut-finalization` | `Rough/rough_cut_manifest.md`、`missing_materials.md`、实际时间码 | `motion_request_list.md`、B-roll/动效执行请求 | 根据粗剪后的真实时间线确定真正要做的素材 |
+
+## 前期分镜表
+
+至少输出以下字段：
+
+```markdown
+| 镜号 | 时间 | 画面 | 旁白要点 | 字幕/屏幕文字 | 剪辑/声音 | 拍摄形式 | 覆盖模式 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 01 | 0:00-0:08 | 人物特写，直接看镜头 | 核心问题 | 关键词 | 硬切开场，无铺垫 | 实拍 | A-only |
+```
+
+`拍摄形式`是路由字段，可使用：`实拍`、`OBS 录像`、`Remotion 动效`、`HyperFrames`、`B-roll 动画设计`、`AI 图`、`AI 视频`、`Stock`、`实拍 + Remotion 动效`、`OBS 录像 + Remotion 动效`。
+
+`覆盖模式`声明该时间段的人物/素材同屏关系：`A-only` / `B-only` / `AB-live`（含布局：`B-base-A-PiP`、`A-base-B-overlay`、`B-base-A-cutout`、`AB-split`），规则见 [shared-references/motion-brief-standards.md](../../shared-references/motion-brief-standards.md) 第 6 节。
+
+## 动效条目：导演简报（必做）
+
+凡 `拍摄形式` 含 Remotion / HyperFrames / B-roll 动画设计的条目，规划时**必须**按 [shared-references/motion-brief-standards.md](../../shared-references/motion-brief-standards.md) 输出导演简报，写入 `remotion_candidate_list.md`：
+
+1. 先做**输入分类**：目标帧重构 / 概念文案 / 流程数据 / 稿转场景；
+2. 再按固定结构写简报（画面理解 / 核心视觉 / 推荐动作 / 趣味钩子 / 时间轴 / 图层拆分 / 微动与音效 / 负面约束 / 制作判断 / 时长规格 / 推荐引擎）；
+3. 时长按默认假设给初值（标题 4s、概念 4-6s、流程 5-8s），短动效按五相位（Establish/主动作/主内容/次级细节/Hold）交叠规划；
+4. 用户的"有冲击力""科技感""有梗"等说法按标准的**自然语言翻译表**转成动作因果描述；
+5. 同风格首批条目在简报中标注"待出三帧静图 + 3s 短样片确认风格"，确认前不批量实现；
+6. 同时在简报中给出素材组织约定（`MOTION-XXX` 编号、composition 命名、props 化内容、透明通道需求），对齐 `templates/storyboard.template.md` 的「Remotion / HyperFrames 素材组织」区。
+
+规划阶段只写简报，不写生产代码、不渲染媒体；简报结尾声明"当前不执行制作"。
+
+## 规划规则
+
+- 按语义场景分段，不按 `//` 机械切段；
+- 一镜一功能，避免一句话塞入多个互不相关的视觉命题；
+- **每镜一句话意图**：画面描述以"这镜让观众明白什么"开头；动效/素材条目的每个动作答得出"在配合谁"，答不上就删；
+- **枢轴句归下一镜**："但这次不是 X"式转折/设问句是下一镜的第一拍，切镜点提前到该句起点，旧镜先清场；
+- **主体接力线**：动效条目简报声明"本镜主角是谁、谁让位给谁"，相邻镜的接力线连续——出现无主角节拍或双主角即设计缺陷；
+- 保留用户的 `【画面建议】`，但区分用户意图和最终执行；
+- 主要观点、情绪和可信度优先分配给 A-roll；
+- 真实工具操作、界面和流程优先规划 OBS；
+- 抽象解释、架构、流程、数据再进入 Remotion 或 HyperFrames 候选；
+- Stock 和 AI B-roll 用于环境、视觉桥接和不可拍摄概念，不为了"每句有画面"而添加；
+- 动效时长先按内容推导给初值（缺省假设：标题 4s、概念 4-6s、流程 5-8s），不要一句口播塞多个主动作；
+- **词锚卫生**：文稿里的数字建议用汉字书写（"2026"写"二〇二六"）——词级时间戳按文本逐字锚定，阿拉伯数字串无法与读音对位，会显著拉低自动校对的逐字匹配率；
+- 每个连续覆盖段内布局稳定，不为单条变化重设布局；不规划小于 2s 的无意义 A-only 回切碎片。
+
+## 风格档（G0，先定皮再选动作）
+
+写分镜**之前**先按全稿判定领域（讲什么 / 对谁讲 / 什么口吻），产出 `video scripts/style-profile.md`（结构见 [templates/storyboard.template.md](../../templates/storyboard.template.md) 风格档节）：
+
+1. **领域 → 风格档**：底色策略、唯一强调色、字体气质与字重档、材质卡型、图表语言、素材气质、能量档、"不做的事"——多来源生成素材（AI 拼贴 / 模板动效 / Stock）最容易各带各的默认配色，风格档是装配前统一蒙皮的依据；
+2. **系列级复用**：系列视频从上一期复制 style-profile 再按集扩展（同一强调色 / 字体 / 底色策略 / 常驻件方位 / 片头片尾语法），跨集一致性靠外置配置而不是记忆；
+3. **深底主导必须用户确认**：浅底是默认模式，偏离需写明依据；
+4. 章节卡"同族不同章"：同一套字体版式，每章轮换底色 / 强调色 / 线稿 motif——四张同色同纹样的章节卡读作"又来了"，不是"翻页"；
+5. **三拨盘量化承诺**：风格档写明运动强度 / 视觉差异 / 信息密度三个 1-10 拨盘 + 反默认清单 3-5 条；偏离预算 ≤20% 场景、每处写 per-scene 理由——装配 QA 按此核"计划允许多大动静 vs 成片实际多大胆"。
+
+## 幻灯片风险闸（分镜确认前必跑）
+
+分镜表写完、进入结束状态（用户审批）**之前**，运行 [../../scripts/video-plan/slideshow_risk.py](../../scripts/video-plan/slideshow_risk.py) 给主表打"PPT 感"分数：
+
+- 检查维度：意图缺失（画面列没想清楚）/ 文字卡过载（生成类条目里文字卡 >40% 重罚）/ 节奏盲区（剪辑/声音列空白）/ 同类连排（连续 ≥3 镜同形式同覆盖）/ 泛化词（震撼、惊艳、未来感…没法翻译成动作）/ B-roll 极端（全无 = 干讲，过半 = 堆积）；
+- 判定：`pass` 进入审批；`warn` 带 findings 整改后可进；`reject` **打回重排，不得进入审批闸**；
+- 报告落 `video scripts/slideshow_risk_report.json`，作为分镜审批材料一部分。
+
+## 交付承诺
+
+分镜确认时在 `storyboard.json` 顶层写入 `delivery_promise`（`mode` + `min_motion_ratio`，字段见 [templates/storyboard.template.md](../../templates/storyboard.template.md) 交付承诺节）。口播 + 剪映管线默认 `hybrid / 0.2`。装配前由 `/video-polish` 机械核对——这是"这条片承诺了多少画面量"的显式契约，防止 B-roll 生成失败后静默降级成文字卡出片。
+
+## 决策日志
+
+分镜确认时创建项目根 `decision_log.json`（从 [templates/decision-log.template.json](../../templates/decision-log.template.json) 复制），先写入第一条 `promise_change` 条目（交付承诺的 mode/ratio 与依据）。规则见 [shared-references/decision-log.md](../../shared-references/decision-log.md)：append-only、每条 ≥2 个被考虑选项、改决策只追加不覆写。
+
+## 失败模式与恢复
+
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---|---|---|
+| 终稿文件缺失或为空 | 询问用户提供路径；不猜测、不拿旧期文稿顶替 | 🔴 用户给不出终稿就停在本阶段，不产出空分镜 |
+| 文稿没有 `//` 停顿标记 | 正常情况：本就按语义分段，不依赖 `//` | 无需兜底；禁止退化为按行机械切 |
+| 文稿与实际拍摄/录制严重不符（口播大幅偏离） | 走 `rough-cut-finalization` 模式按实际转录重规划 | 分镜标记 `superseded` 并保留旧版，不覆盖 |
+| `storyboard.json` 与 `storyboard.md` 内容冲突 | 以 json 为真相源修正 md | 记录冲突原因，🔴 请用户确认哪版有效 |
+| 用户要求跳过分镜直接要素材/B-roll | 拒绝并展示分镜缺失的具体风险（素材无路由依据、B-roll 无对账种子） | 坚持要求时只给 `material_suggestion_doc.md` 草稿，不进入 asset_request_list |
+
+## 必须生成的交接
+
+1. `video scripts/storyboard.md`；
+2. `video scripts/storyboard.json`，作为派生文件真相源；**必须包含 `broll_candidates` 数组**（分镜表中所有 B-roll 条目的结构化版本：镜号、旁白原句、视觉命题草稿、路由建议、覆盖模式、输入分类、简报引用、状态）**和顶层 `delivery_promise`**（交付承诺），供 `/b-roll-finder` 强制对账与 `/video-polish` 承诺核对——见 [templates/storyboard.template.md](../../templates/storyboard.template.md) 的字段定义；
+3. `video scripts/style-profile.md`（G0 风格档；系列视频可复用上期版本按集扩展）；
+4. `video scripts/slideshow_risk_report.json`（幻灯片风险闸报告，warn 以上附整改说明）；
+5. `video scripts/material_suggestion_doc.md`；
+6. `video scripts/remotion_candidate_list.md`；
+7. `video scripts/music_cue_sheet.json`；
+8. `assets/requests/asset_request_list.md`；
+9. `decision_log.json`（项目根，决策日志建档 + 首条交付承诺条目）；
+10. `video scripts/feishu_storyboard_records.json`（如项目需要 n8n 同步）。
+
+分镜表文末必须有「未完成 / 未采集清单」节：任何"本片不做 X / 素材还没到位"二选一归档——写进风格档当设计决定（附依据），或写进清单（附阻塞原因和试过的兜底源）。内容允许为"无"，**节不允许缺**；下游 Gate 与 QA 查节在册。
+
+## 执行说明
+
+本阶段没有独立的“自动写稿脚本”：分镜拆解和 B-roll 路由需要模型读取终稿后生成，输出格式由 `templates/storyboard.template.md` 和 `references/video-plan/output-template.md` 约束。文件落盘由当前 Agent 的写入能力完成；这不是缺少实现，而是该阶段的执行方式。
+
+粗剪后执行第二次规划时，必须丢弃已被实拍、OBS、Stock 或 Filmora 解决的候选，只保留实际缺失且值得制作的请求。
+
+## 禁止
+
+- 不按 `//` 或换行机械切段，只按语义场景分；
+- 不把用户的【画面建议】当作最终执行决定，区分意图与执行；
+- 不给每句话都分配画面或动效；
+- 不在分镜确认前生成 `asset_request_list.md` 触发下载；
+- 不覆盖已有 `storyboard.json`——修订走版本递增或 `superseded` 标记；
+- 不把抽象关键词直接落成「通用文字卡」类动效候选；
+- 动效条目不写导演简报（或简报只罗列动画预设、没有动作因果）不得进入交接文件；
+- 规划阶段不写生产代码、不渲染媒体——三帧静图与短样片属于风格确认闸门，确认前不批量实现。
+
+## 结束状态
+
+写入 `approval_pending`，等待用户确认分镜和素材路由；未确认前不启动大批量素材下载。

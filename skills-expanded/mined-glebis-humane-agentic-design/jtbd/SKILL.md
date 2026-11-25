@@ -1,0 +1,343 @@
+---
+name: jtbd
+description: Terminal-first JTBD engine for founders and product people. Interview fast, kill jargon, capture real switching forces (Push/Pull/Habit/Anxiety), score opportunities, and export structured artifacts (JSON + one-pager + messaging angles + GTM brief). Use when the user says "help me figure out what to build", "analyze these customer reviews", "what are people actually hiring this for", "I need messaging for my product", "turn this interview into insights", "what should I prioritize", or any variation of articulating what a project does, why it matters, who it's for, or converting interview/review/transcript signal into a decision-grade brief. Triggers on "describe my project", "JTBD", "jobs to be done", "switching forces", or "mine these reviews".
+handoffs:
+  - to: ux-writing
+    when: the corpus is captured and product strings need grounding in it
+  - to: before-after
+    when: the job and its forces are captured and the felt transformation needs stating
+  - to: walkthrough
+    when: a job from the corpus needs attempting on something operable
+  - to: type-specimen
+    when: the specimen must be set in the words of the people who read this interface
+  - to: prototype
+    when: the job is captured and a structure for it needs to be seen or clicked before a system exists
+accepts:
+  - from: before-after
+  - from: setup
+---
+
+# JTBD Project Describer
+
+**Announce at start:** "I'm using the humane:jtbd skill to capture the job and its switching forces."
+
+## Purpose
+
+Conduct a focused Jobs-to-Be-Done interview for one project and emit a decision-grade artifact bundle. The bundle contains a machine-readable `jtbd.json`, a shareable `one-pager.md`, and a `messaging-angles.md` derived from Switch forces. Ingest voice transcripts or review exports when available.
+
+## When to invoke
+
+- "Describe my project in JTBD."
+- "Turn this interview transcript into a JTBD brief."
+- "Mine these reviews for jobs."
+- "I need messaging from this product idea."
+- "Help me articulate what I'm actually building."
+- "Update my JTBD brief with new data."
+- "Decompose this job into outcomes."
+- "Generate a GTM brief from this JTBD."
+
+If the user wants a full design spec (what to build, scope, components), prefer `skill-studio` — it's the heavier tool. `jtbd` is the quick, rigorous record.
+
+## Mode selection
+
+Pick one at the start. Ask the user only if ambiguous.
+
+| Mode | Input | Output |
+|---|---|---|
+| **Interview** (default) | live conversation | full artifact bundle |
+| **Transcript ingest** | path to a voice interview transcript | full artifact bundle + confidence flags |
+| **Review mining** | path to reviews (CSV/JSON) | `review-brief.md` pre-seed → then Interview |
+| **Update** | path to existing `<corpus_root>/<slug>/jtbd.json` | updated artifact bundle |
+
+## Scope discipline
+
+One project per session. If the user starts describing a second project, stop them: "That sounds like a separate project — let's finish this one first, then run `humane:jtbd` again for the next."
+
+If the user drifts into implementation details, features, or tech stack: "Interesting, but let's stay at the job level — what is the person trying to accomplish?"
+
+---
+
+## Interview flow
+
+### Pass 1 — Core (3–5 adaptive questions, one at a time)
+
+1. **What is this?** — One-sentence description. Push for clarity if vague.
+2. **Who struggles and when?** — The triggering situation. "Walk me through the last time this happened."
+3. **What's painful today?** — Current workaround and why it's not working.
+4. **What does success look like?** — The outcome, not the feature list.
+5. **How should it feel?** — Emotional payoff (optional, ask if natural).
+
+Stop when the core schema is confidently fillable.
+
+### Pass 2 — Switch forces (required, one short burst)
+
+The four forces are the single highest-leverage JTBD artifact. Do not skip this pass. See `references/switch_forces.md` for the question bank.
+
+Before diving into individual forces, reconstruct the Switch Timeline (see `references/switch_forces.md`): "Walk me through the decision — when did it start?" Map the 6 moments (first thought → passive looking → active looking → deciding → consuming → ongoing use).
+
+Probe briefly for each:
+- **Push** — frustration with current situation.
+- **Pull** — attraction to the new solution.
+- **Habit** — inertia keeping them with the old.
+- **Anxiety** — fear of switching / trying the new.
+
+Do not fabricate. If the user genuinely doesn't know a force, mark it `"unknown"` and note the follow-up question in `open_questions[]`.
+
+### Pass 3 — Job Map decomposition (optional)
+
+Trigger when the user asks "what should I build?" or when ODI scoring is active and you need candidate outcomes.
+
+1. Walk through the 8 universal job steps (see `references/job_map.md`).
+2. For each step, ask: "Where does the pain live here?"
+3. Focus on the 3-5 steps with highest pain.
+4. Generate 3-5 ODI outcome statements per step using the strict format from `references/odi.md`.
+5. Feed outcomes into ODI Scoring Mode if active.
+
+Skip this pass for quick interviews. Use it when the user needs prioritization or roadmap input.
+
+---
+
+## Granularity Gate (pre-save validator)
+
+Before drafting the JSON, score the interview output 0–2 on five dimensions. Any score <1 blocks save. Use `references/granularity_fixes.md` for rewrite prompts.
+
+| Dimension | 0 (fail) | 1 (ok) | 2 (strong) |
+|---|---|---|---|
+| **Actor specificity** | "users" / "people" | a role | a named actor with context |
+| **Context / trigger** | "always" / none | a situation | a specific moment |
+| **Current workaround** | "nothing" / "various" | named alternative | described attempt + why it fails |
+| **Measurable outcome** | "better" / "improved" | directional metric | quantified target |
+| **Evidence quote** | none | paraphrase | verbatim quote |
+
+If any dimension scores 0, ask one targeted follow-up question and re-score. Don't interrogate — one rewrite pass, then accept what you have and flag the weak dimensions in `evidence.weaknesses[]`.
+
+For deterministic scoring on ingest paths, call `scripts/validate_granularity.py` with the draft JSON.
+
+---
+
+## Jargon Kill Switch
+
+Every major claim must tie to one of:
+- A verbatim or paraphrased quote.
+- An observable behavior.
+- A specific current workaround.
+
+See `references/jargon_blacklist.md` for banned phrases and replacements. When the user or transcript says a banned phrase, reply with an evidence-demand: "What does that look like in practice?" / "Show me the last time that happened."
+
+Do not put banned phrases in the output. If one slips through, replace with the concrete substitute from the blacklist.
+
+---
+
+## Output schema
+
+Use `references/output-schema.md` for the full output contract (core and optional
+extended blocks). Include ODI by following `references/odi.md`.
+
+| Need | Read |
+| --- | --- |
+| Output schema (core and extended) | `references/output-schema.md` |
+
+---
+
+## Transcript Ingest Mode
+
+When the user provides a transcript path:
+
+1. Read the transcript.
+2. Run `scripts/ingest_transcript.py <path>` — it proposes schema field mappings with confidence flags.
+3. Review the proposal with the user. Fill gaps by asking targeted follow-ups (not the full interview).
+4. Run Switch forces pass on the transcript content.
+5. Apply Granularity Gate + Jargon Kill Switch as normal.
+6. Set `evidence.source = "voice_transcript"` and preserve verbatim quotes in `evidence.quotes`.
+
+---
+
+## Review-Mining Intake
+
+When the user provides a reviews export:
+
+1. Run `scripts/mine_reviews.py <path>` — clusters reviews by pain, outcome, and workaround.
+2. The script emits `review-brief.md` in the output folder using `templates/review-brief.md` as a pre-seed.
+3. Present the brief to the user. Ask: "Does this match your sense? Any missing patterns?"
+4. Use the brief as Pass 0 before the regular interview — skip Pass 1 questions that the reviews already answered.
+5. Set `evidence.source = "reviews"`.
+
+See `references/review_taxonomy.md` for the clustering taxonomy.
+
+---
+
+## Update Mode
+
+When the user provides a path to an existing `jtbd.json`:
+
+1. Read the existing JSON.
+2. Show the user the current state: hook, job statement, switch forces.
+3. Ask: "What changed? New interview data? Pivot? New insight?"
+4. Run only the passes that need updating — don't re-interview from scratch.
+5. Apply Granularity Gate + Jargon Kill Switch as normal.
+6. Save updated JSON (increment a `version` field if present).
+7. Regenerate one-pager.md, messaging-angles.md, and gtm-brief.md from the updated JSON.
+
+---
+
+## ODI Scoring Mode (optional)
+
+Trigger when the user asks for prioritization, "what to build next," or roadmap input. Add the `odi` extended block.
+
+1. Derive candidate outcome statements from the interview.
+2. Ask the user to rate each outcome on importance (1–10) and current-solution satisfaction (1–10).
+3. Run `scripts/odi_score.py` to compute opportunity scores.
+4. Sort descending. Top 3 go into `odi.outcomes[]`.
+
+Only add ODI when the user has 3+ candidate outcomes — below that, skip it.
+
+---
+
+## Graph Mode (visual review)
+
+Trigger on "show me the graph", "visualise this", "open the JTBD graph", "compare my projects",
+"where are the opportunities", or after writing a bundle when the user wants to look at it.
+
+```bash
+python3 scripts/graph.py                    # every project under the corpus root
+python3 scripts/graph.py <corpus_root>/<slug>   # one project
+python3 scripts/graph.py --lang ru          # open in Russian
+python3 scripts/graph.py --no-serve         # write .graph/ and stop
+python3 scripts/graph.py --port 8811
+```
+
+**Language.** `--lang {auto,en,ru}` sets the language the viewer opens with; `auto` (default)
+follows the browser. There is an EN/RU toggle in the header that overrides it and is remembered
+per browser, so precedence runs: what you last picked in the UI → `--lang` → browser locale.
+Ask the user which they want if the corpus language and their working language differ.
+
+Only the interface is translated. The record — statements, quotes, forces — always shows as
+captured, because translating a verbatim quote destroys the thing that makes it evidence.
+
+Reads the `jtbd.json` files the skill already writes, shapes them into `.graph/data.json`
+next to them, copies `templates/graph.html` alongside it, and serves the pair on localhost.
+Stdlib only, no build step, no network. Five views over the same record:
+
+Eleven views over the same record (`VIEW_IDS` in `templates/graph.html`):
+
+| View | Answers | Needs |
+|---|---|---|
+| **overview** | What is in this corpus at a glance? | core schema |
+| **jobs** | What is being hired, across projects? | core schema, `macro` |
+| **icicle** | How does the job decompose? | `odi.outcomes[]` with `stage` |
+| **landscape** | Which outcomes are worth building for? | `odi.outcomes[]` with importance + satisfaction |
+| **table** | What is the shortlist, sortable? | `odi.outcomes[]` (unscored ones still list) |
+| **heatmap** | Where is pain concentrated by stage and touchpoint? | `odi.outcomes[]` with `stage` + `touch` |
+| **jobmap** | Where in the eight process steps does it hurt? | `odi.outcomes[]` with `stage` |
+| **graph** | What depends on what? | `depends_on` at project and outcome level |
+| **forces** | Will they actually switch? | `switch_forces` |
+| **record** | What did we actually learn? | core schema |
+| **evidence** | What do we know versus assert? | `evidence.quotes[]`, `evidence.weaknesses[]` |
+
+Tiers on the landscape are the skill's own: ≥12 prioritize, ≤8 skip, between them marginal.
+The `imp = sat` diagonal is drawn — distance above it is the opportunity, continuously, which
+is more honest than a hard quadrant boundary.
+
+**It reports gaps rather than hiding them.** A project with no ODI pass gets an empty landscape
+that says so; a project with no quotes is called out in Evidence as assertion rather than
+finding; missing switch forces are counted. Use it as a review step before handing the bundle
+downstream — if a view is empty, that is the pass to run next.
+
+With several projects under the corpus root, the Project rail switches between them or shows all at
+once, so outcomes from different projects sit on one landscape for portfolio comparison.
+
+### Corpus level
+
+An optional `corpus.json` at the corpus root (read from `<target>/corpus.json`, else that root)
+ties the bundles into a portfolio. All fields are optional; a missing file yields empty lists
+and the viewer still works.
+
+```json
+{
+  "business_outcomes": [{"id": "bo-...", "name": "...", "macros": ["m-..."]}],
+  "macros": [{"id": "m-...", "name": "..."}],
+  "touchpoints": ["Terminal", "Browser", "Voice", "..."]
+}
+```
+
+Per-bundle fields the graph now reads (all backward-compatible — old bundles still shape):
+
+- `macro` — one macro id from `corpus.json`. Validated; an unknown id is nulled with a warning.
+  Every project maps to exactly one macro.
+- `context` — short variant qualifier (e.g. `"RU-market"`), `""` when not applicable.
+- `actor` — free-text role string, passed through as `""` when absent.
+- `depends_on` (project level) — list of other project slugs.
+
+Per ODI outcome:
+
+- `stage` — one of `define|locate|prepare|confirm|execute|monitor|modify|conclude`.
+- `touch` — the touchpoint (surface) where that outcome lives; a free string, not hard-validated
+  against `touchpoints`.
+- `evidence` — list of this bundle's own `evidence.ledger` ids that support the outcome; ids not
+  in the ledger are dropped with a stderr warning. Empty when no quote genuinely maps.
+- `depends_on` — cross-references to other outcomes as `"other-slug:oN"` (N = 0-based index in
+  that project's `odi.outcomes`) or a bare `"other-slug"`.
+
+---
+
+## Reports (executive summary)
+
+Trigger on "give me the exec summary", "one-pager for a stakeholder", "summarize this for
+someone with three minutes", or after a bundle is written and the reader needs prose, not a graph.
+Where **Graph Mode** is for interactive review, this writes a static one-page Markdown read.
+
+```bash
+python3 scripts/report.py exec-summary <slug>          # one project → <root>/<slug>/exec-summary.md
+python3 scripts/report.py exec-summary --all           # whole corpus → <root>/exec-summary.md
+python3 scripts/report.py exec-summary <slug> --lang ru # Russian headings
+python3 scripts/report.py exec-summary <slug> --out PATH   # --root overrides corpus_root
+```
+
+Single-project output: title + hook, the job triple as one paragraph, top 3 opportunities
+(imp/sat/opp, tier, evidence ids, one-line "why it matters"), switch forces in two sentences,
+evidence health, the single most load-bearing quote, open-questions count with the top two, and
+a mechanically-derived next move (worst-served outcome + its stage). Corpus mode: one line per
+macro ranked worst-served first, a corpus-wide top-5 outcomes table, evidence-thin projects, and
+the same next move across the portfolio.
+
+Same honesty discipline as the graph: a `creator-estimate` ODI note prints a visible caveat line;
+partial/unknown forces are shown as such; no adjectives that are not in the data. `--lang` sets
+only the report's headings — statements and quotes stay as captured.
+
+---
+
+## After the interview — Output Bundle
+
+1. Apply Granularity Gate + Jargon Kill Switch.
+2. Draft `jtbd.json` and show it to the user for review.
+3. Ask: "Anything to adjust? Want to add extended fields (before/after, scenarios, guardrails, ODI)?"
+4. Apply edits.
+5. Create output folder: `<corpus_root>/<project-slug>/` — the `setup` setting, default
+   `~/jtbd`. If it exists, ask overwrite or rename.
+6. Write three files using templates:
+   - `jtbd.json` — source of truth.
+   - `one-pager.md` — stakeholder-shareable summary (from `templates/one-pager.md`).
+   - `messaging-angles.md` — copy angles derived from Switch forces (from `templates/messaging-angles.md`).
+   - `gtm-brief.md` — positioning, channels, experiments (from `templates/gtm-brief.md`). Only generated when switch forces are fully captured (no `"unknown"` values).
+7. Report all paths.
+8. Offer the visual review: "Want to see it? `python3 scripts/graph.py <corpus_root>/<slug>` opens the graph — it also shows what's still thin." Add `--lang ru` when the session is in Russian. See **Graph Mode**.
+
+## Downstream pipeline (superpowers integration)
+
+The `jtbd.json` is a contract between `humane:jtbd` and downstream agents. See `references/superpowers_handoff.md` for the full field mapping.
+
+**Short version:** when brainstorming starts and a `jtbd.json` exists, it should skip the questions the JSON already answers (who, what, why, constraints) and focus on the questions it doesn't (how, architecture, scope, technical choices). Switch forces inform approach selection. Open questions become brainstorming priorities.
+
+**Chain:** `humane:jtbd` → `jtbd.json` → brainstorm → writing-plans → implementation
+
+After the interview, suggest: "Want to brainstorm approaches? I can feed this into superpowers with your job, forces, and needs as context."
+
+## Naming convention
+
+`project-slug` = lowercase, hyphens, no spaces. Derive from the project name. Max 40 chars.
+
+## Tone
+
+Direct, curious, slightly challenging. You are a product thinker helping someone sharpen their thinking — not a form to fill out. Push back on fuzzy language: "What do you mean by 'better'?" / "Better for whom?" / "Show me the last time this happened."
+
+Never let jargon ("seamless," "delightful," "drive engagement," "empower users") into the output. Every claim must have an evidence hook.

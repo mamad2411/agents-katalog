@@ -1,0 +1,224 @@
+---
+name: cafleet-model-list-refresh
+description: >-
+  Refresh the CAFleet model list at assets/skills/cafleet/reference/coding-agents.md
+  from the approved official pricing and capability sources. Use when a
+  maintainer asks to refresh, update, or re-verify the model list, its token
+  prices, its context windows, or its freshness, or when a Director reports
+  the list was last refreshed more than 30 days ago. Maintainer-invoked only —
+  never run automatically during a member spawn.
+---
+
+# CAFleet Model List Refresh
+
+Refresh the repository's model catalogs and canonical Role defaults in
+`assets/skills/cafleet/reference/coding-agents.md` — from the approved official
+sources, under explicit maintainer review. The repository file is the release
+source: a running Director reads only its deployed skill replica, so a refresh
+reaches Directors exclusively through the release/deployment transaction below.
+
+This skill maintains each backend's Model catalog, its provenance/context notes, its canonical Role defaults table, and the shared freshness metadata. A backend whose Model catalog states "No maintained catalog" is outside the refresh scope: leave its Model catalog and its `—` Role defaults unchanged. Preserve Runtime bindings, bound runtime notes and Role eligibility as runtime documentation, and preserve the Director's worked model selections under its [model-selection policy](../../../assets/skills/cafleet/roles/director.md#model-selection). The [Coding-agent overlay rule](../../rules/documentation-maintenance.md#coding-agent-overlay) owns maintenance responsibilities and backend scaffolding in its [Template](../../rules/documentation-maintenance.md#template). Keep the catalog preamble's last-refreshed date for model data, standard provider USD per MTok as planning estimates, and reviewed capability ordering.
+
+## Approved sources (exhaustive allowlist)
+
+Fetch **only** the official sources listed in this table. Each source is
+authority for exactly what its row feeds: the provider pricing pages and the
+OpenCode Go models endpoint are pricing and availability authority, and the
+OpenCode Go usage-limits page feeds only the Go table's usage-limit notes.
+Claude Code model configuration is capability authority for the `claude`
+backend's context windows and `[1m]` applicability; use the pricing sources
+to price models, never the capability page. Search results, third-party price
+sites, and social posts are never model-list authority.
+
+| Source | What it feeds | URL |
+|---|---|---|
+| Anthropic pricing | `claude` prices | `https://platform.claude.com/docs/en/about-claude/pricing.md` |
+| OpenAI pricing | `codex` prices | `https://developers.openai.com/api/docs/pricing.md` |
+| Codex model availability | `codex` availability | `https://learn.chatgpt.com/docs/models.md` |
+| OpenCode Console models and pricing | `opencode` prices and availability | `https://opencode.ai/v2/docs/console/models/` |
+| OpenCode Go models endpoint (JSON) | `opencode-go` prices and availability | `https://opencode.ai/inference/go/v1/models` |
+| OpenCode Go usage limits | `opencode-go` usage-limit and Extra Usage notes | `https://opencode.ai/v2/docs/console/go` |
+| Claude Code model configuration | `claude` context windows and `[1m]` applicability | `https://code.claude.com/docs/en/model-config.md` |
+
+## Refresh procedure
+
+1. **Fetch every approved source.** If any source cannot be fetched or
+   parsed, **stop**: leave the model list unchanged, report the error, and
+   let it become stale rather than fabricating values.
+2. **Extract pricing facts only**: the currently effective standard input and
+   output prices (USD per MTok) and availability/deprecation qualifiers. Do
+   not copy long provider text into the repository, and do not present the
+   pricing pages as benchmark evidence — they are pricing/availability
+   sources only.
+3. **Refresh the `claude` and `codex` tables** from their provider pricing
+   pages, **refresh the `opencode` table** with the OpenCode Console procedure,
+   and **refresh the `opencode-go` table** with the OpenCode Go procedure below.
+   Follow each dedicated procedure for its catalog. For `codex`, pricing and
+   availability come from different pages: price each model from the OpenAI
+   pricing page, but take Codex availability from the Codex models page
+   (`https://learn.chatgpt.com/docs/models.md`) — the table carries only the
+   models Codex currently offers in its model picker. A model absent there
+   or demoted to a **legacy model** (reachable only via `codex -m` /
+   `config.toml`) is removed from the table even when the pricing page
+   still prices it; legacy models remain manual pass-through `--model`
+   values.
+4. **Ask the maintainer for role defaults.** Show the current and available
+   catalog tokens for reviewer and other members on each backend.
+   Ask which model each role should use and, for Claude and Codex, which
+   supported effort level should accompany it. Record the maintainer's
+   choices in the proposed diff. OpenCode omits effort because its backend
+   does not support it. A refresh keeps the existing role defaults only when
+   the maintainer explicitly chooses to keep them.
+5. **Reapply the capability classes explicitly.** The `Class` descriptions
+   and the most-to-least-capable row ordering are reviewed maintainer
+   judgment, not provider benchmark claims; changing a class or the ordering
+   requires reviewed policy approval in the same pull request. Every row
+   carries both prices from its approved source. Set the six Role defaults
+   from the maintainer's choices, using local catalog entries or aliases and
+   effort levels accepted by the selected backend.
+6. **Re-verify every `claude` row's context window on every refresh**, even
+   when the prices are unchanged. Take each window from the Claude Code model
+   configuration page's *Extended context* section and record it in the
+   `claude` table's `Context` column. That page is also the authority for
+   whether a row's `--model` value carries the `[1m]` suffix, which is a
+   Claude Code model-string suffix stripped before the request reaches the
+   provider — it is meaningless for the `codex` and `opencode` tables, whose
+   values never carry it. Apply the suffix only where it changes the window a
+   member actually gets:
+   - A model the page lists as always running at 1M on the Anthropic API
+     carries **no** suffix — the window is already 1M and the suffix is inert.
+   - A model the page gives no 1M variant carries **no** suffix.
+   - A model without 1M support carries **no** suffix; appending it there is a
+     malformed value.
+   - Where the page shows the window is opt-in for the reader's plan, the
+     suffix belongs in the page's note rather than the row, so the Director
+     applies it per spawn against the operator's plan instead of every
+     spawn inheriting a credit-billed window.
+
+   A suffixed value must be single-quoted everywhere it appears in a command,
+   because `[1m]` is a glob pattern that fails an unquoted zsh invocation.
+7. **Propose, then apply atomically.** Generate a concise proposed diff and
+   require explicit maintainer approval before applying the model-data changes in
+   `assets/skills/cafleet/reference/coding-agents.md`. Preserve the common catalog
+   preamble contract described above. Apply catalogs, provenance/context notes,
+   Role defaults, and the *last refreshed* date together after approval and
+   successful validation. The Director's staleness check reads that date, so
+   every successful refresh keeps it present and current. A failed refresh
+   makes **no** edit.
+
+## OpenCode Console procedure (the `opencode` table)
+
+The `opencode` catalog mirrors every model listed by the OpenCode Console,
+excluding models past their published deprecation date, and uses the Console's
+prices. Model IDs differ from display names, and free/preview models appear
+and disappear. On **every** refresh, even when the claude/codex prices are
+unchanged:
+
+1. **Price from the Console page only.** Console's own USD-per-MTok rates are
+   the billing rates for the `opencode` backend. Never price a Console model
+   from the upstream vendor's page (Anthropic, OpenAI, DeepSeek, …) — the
+   Console rate is the one cafleet members are billed at.
+2. **Copy the Console model ID exactly.** Use the *Endpoints* table under
+   `## Endpoints`, whose header is `Model | Model ID | Endpoint | AI SDK Package`,
+   to map each display name ("GLM 5.2", "Kimi K2.7 Code") to its `Model ID`
+   (`glm-5.2`, `kimi-k2.7-code`). The *Pricing* table keys prices by the same
+   display name. Set the row's `--model` value to `opencode/<console-model-id>`:
+   the literal `opencode/` prefix followed by the ID copied verbatim from the
+   *Endpoints* table.
+3. **Mirror the Console catalog.** Add every missing listed model ID, remove
+   every delisted model ID or model past its published deprecation date, and
+   re-verify every remaining row's price. Bind each *Deprecated models* entry
+   to its model ID through the *Endpoints* display-name mapping; a passed date
+   excludes the row even while it appears in active pricing. A deprecated
+   display name with no listed ID is already delisted and needs no action.
+   A deprecated display name mapping to more than one ID is a parse failure:
+   stop the refresh under Refresh procedure step 1.
+4. **Apply the row rules and maintain their notes.** Keep one row per model
+   ID, using the base (shortest-prompt) tier for tiered prices and the currently
+   billed Console rate for promotional discounts. Record each published free
+   rate as `0.00` in its own column,
+   including models with only one free rate. A model free for a limited time
+   has `0.00` in both columns; update its rates when the offer ends or remove
+   it if delisted. Keep a model with a future deprecation date and record that
+   date beneath the table.
+5. **Order and classify every row.** Keep a single table ordered most → least
+   capable across the whole catalog, with a short `Class` on every row and the
+   same relative order for models shared with the `claude` / `codex` catalogs.
+   Place unverified stealth/preview models at the bottom and state that their
+   capability is unverified in their Class. A new row's Class and position,
+   and changes to existing classes or positions, are reviewed policy changes
+   approved in the same pull request.
+
+## OpenCode Go procedure (the `opencode-go` table)
+
+Run this procedure on every refresh. Maintain a separate `#### OpenCode Go`
+section after the Console table and its notes, within the `opencode` backend's
+`### Model catalog`. Point to it from the Console preamble; the shared
+last-refreshed date covers both tables.
+
+1. **Price from the Go models endpoint only.** The endpoint returns JSON whose
+   `data` array holds one entry per Go model. Each `type` `chat` entry is a
+   catalog model; price it from `cost.text.input.price` and
+   `cost.text.output.price`, which are USD per MTok counted against
+   subscription usage limits. Never price a Go row from the Console page or a
+   vendor page.
+2. **Copy the Go model ID exactly.** Write `opencode-go/<id>`, with the entry's
+   `id` copied verbatim.
+3. **Mirror the Go catalog.** Add every missing `chat` entry ID, remove every
+   row whose ID the endpoint no longer returns, and re-verify every remaining
+   row's price.
+4. **Apply the row rules and maintain the notes.** Use the Console table's
+   columns: `Model | Class | Input $/MTok | Output $/MTok`, with one row per
+   `chat` entry ID. A duplicated `id`, or a `chat` entry without both a numeric
+   input and output price, is a parse failure: stop under Refresh procedure
+   step 1.
+
+   Record the listed base price for each row; `cost.multipliers` scale it under
+   the stated `when` conditions, and each multiplier gets one note beneath the
+   table naming its model IDs, factor and condition. Record a free model with
+   `0.00` in both columns.
+
+   The preamble states that this table lists every model the OpenCode Go
+   models endpoint returns and that `opencode-go/` is part of the `--model`
+   value. Explain that these tokens
+   require configured providers that include an OpenCode Go subscription and
+   that the Director checks availability per spawn under
+   [Director model selection](../../../assets/skills/cafleet/roles/director.md#model-selection).
+
+   Explain beneath the table that prices are USD per MTok counted against
+   subscription usage limits, and, from the usage-limits page, that Extra
+   Usage bills usage beyond the limits to the pay-as-you-go balance.
+   End with `Sources: [OpenCode Go models endpoint](https://opencode.ai/inference/go/v1/models) and [OpenCode Go usage limits](https://opencode.ai/v2/docs/console/go).`
+
+5. **Order and classify every row.** Keep one table ordered most → least
+   capable, with a Class on every row. Reuse the Console Class for each shared
+   ID, and preserve the relative order of IDs shared with the Console,
+   `claude` or `codex` tables. Place unverified preview models at the bottom
+   and state that their capability is unverified in their Class. A new row's
+   Class and position, and changes to existing ones, are reviewed policy
+   changes approved in the same pull request.
+
+## Cadence and staleness
+
+Refresh the model list at least every 30 days and whenever the user asks for
+a refresh. A stale list disables cost efficiency mode — the Director relays
+an operator choice for those spawns — until a maintainer refreshes the model
+list, commits the repository source, and completes the release/deployment
+transaction.
+
+## Release-coupled deployment
+
+There is no model-list-only sync path: a committed source file alone does not
+refresh a running Director's asset copy. To deploy a refreshed model list, the
+maintainer:
+
+1. Bumps the CAFleet release version.
+2. Builds the release binary with the repository `assets/skills/` tree embedded,
+   including `assets/skills/cafleet/reference/coding-agents.md`, and publishes the
+   per-target release archives.
+3. Upgrades the installed CLI to that release and runs `cafleet setup`, which
+   installs its embedded skill payload for the selected backends, including
+   the unified reference. The binary upgrade and setup complete the deployment.
+
+Installing skills directly from a checkout is a separate contributor operation;
+it does not replace the embedded-binary build/release → upgrade → setup path.

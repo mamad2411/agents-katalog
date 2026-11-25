@@ -1,0 +1,24 @@
+---
+name: metrecept-receipt
+description: >
+  Mint a public Metrecept savings receipt via MCP metrecept_publish_savings_receipt (shareable /r/…
+  URL, estimate_only). Use when proving cache savings publicly — receipt,
+  bounty, share, Metrecept.
+---
+
+# Metrecept receipt
+
+Call the Metrecept MCP tool `metrecept_publish_savings_receipt` to mint a public savings receipt from
+the tenant's dual savings ledger.
+
+## Call
+
+```text
+metrecept_publish_savings_receipt(display_name="")
+```
+
+Optional `display_name` labels the public page. Returns a `/r/…` URL (and
+badge markdown). Receipts are `estimate_only` — aggregates only, never prompts.
+
+Pair with `/metrecept-savings` first if you need the numbers before minting.
+Requires Metrecept MCP attached (`METRECEPT_BASE_URL`, `METRECEPT_API_KEY`). See `docs/CURSOR.md`.

@@ -1,0 +1,124 @@
+---
+name: crapkit
+description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the complexity ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
+---
+
+# Working a crapkit item
+
+One item at a time. The packet carries the file so you never open it, `gate_rule.ceiling` is
+the number the edit is judged against, and `crapkit verify` is the only authoritative
+verdict. Every link below points at the crapkit repo on GitHub, because the repo this
+session works in does not hold those pages.
+
+## What answers each moment
+
+| Moment | What answers it |
+|---|---|
+| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered |
+| Which house rules bind here | `notes.repo` and `notes.scope` in the packet |
+| An advisory fired on the edit you just made | Decompose that function now, not at the commit wall. The edit landed and nothing was blocked, but the gate refuses the same function later |
+| An advisory says a file could not be read | No function in it was judged, and the commit gate refuses the file once staged. Change what the `UNREAD` line's reason names, or list the file under `[exclude]` |
+| An advisory fired after a Bash command, not an edit | The same verdict, read off the working tree. See [After a shell write](#after-a-shell-write) |
+| Before committing | `crapkit rescore FILE --gate` |
+| The gate says a staged function carries a ratchet mark | Nothing. The repo signed for that function, so the commit gate skips it. `crapkit verify` still fails a mark that rises |
+| Where does new code go | `crapkit worklist --top N`, `crapkit coupling`, `crapkit duplication` |
+| Which branches need tests | `uncovered_lines` and `est_uncovered_paths` in the packet |
+| Running the owning scope's tests | `commands.scoped_tests`, run verbatim, never retyped |
+| Before a PR | `crapkit verify --reuse-artifacts`, or `crapkit verify --base REF` |
+| Did the last refactor hold | `crapkit explain PATH NAME`, and the packet's `regrowth` |
+| What this session changed | `crapkit digest` |
+| Handing the state to a human who will not run a command | `crapkit report`, which writes `.crapkit/report.html` and prints the path |
+| Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
+| A lane command crapkit refuses on Windows | Write the value in double quotes. cmd.exe does not treat `'` as a quote, so a single-quoted value reaches the runner one word per space and the guard reads a positional |
+| `crapkit doctor` WARNs that a lane declares no `results_artifact` | Coverage is measured either way. Two checks go dark for that lane's scopes until it names a junit file: the crashed-worker trust check, and exit 8, the no-new-failures check |
+| `trend` or `report` writing in a checkout you meant to keep read-only | Both fill a per-run rollup cache in the store. `commands.refresh_writes_run` marks a new coverage run; it does not promise that the other packet commands leave the filesystem unchanged |
+| `mutate` left worktrees behind | Every worker uses a kept worktree, including the default of one. `crapkit mutate --drop-pool` reclaims them. See [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees) for preparation, concurrent runs and cleanup |
+
+Field semantics live in [docs: the brief payload](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#brief);
+the five-step loop lives in [AGENTS: the packet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#1-the-packet).
+
+## After a shell write
+
+A `Bash` PostToolUse event carries the command and never a file path, so source written
+through a heredoc or a `python - <<PY` block names no file for the hook to judge. It falls
+back to the working tree: the `*.py` files git reports dirty or untracked whose mtime
+lands inside a 12-second window, at most 25 of them, each through the same per-file ladder
+an Edit takes. Scope, sequencing, ratchet marks and the untracked rule mean what they
+already meant, and exit 2 means what it always meant: an advisory block naming the functions the write
+pushed over their ceiling, with nothing blocked. A Bash event judges each fresh file on
+its own, so one event can print one block per file.
+
+Only Python. Every other language stays the commit gate's business.
+
+This fires only where the consumer registered a `Bash` matcher of their own; the shipped
+plugin registers `Edit|Write`. A clean tree, a file older than the window, or a shell call
+outside any repo all stay silent, so what an advisory names here is source written seconds
+ago, never the tree's standing debt.
+
+The hook remembers, per session, the bytes each advisory judged, so a touch, a same-bytes
+rewrite or a test run after your edit does not repeat an advisory you already heard. New
+bytes are judged again. Source that lands with an old mtime (a command that ran longer than
+the window, `cp -p`, `mv`, an unpacked archive) is never judged here; the commit gate
+catches it.
+
+An advisory that says `<file> could not be read` or `git could not report what changed in
+<file>` judged nothing in that file. It is not a pass: fix what its second line quotes, the
+reader's reason or git's error, before you trust silence from the hook on that file.
+
+## Two fields decide whether a number is worth reading
+
+Read `scored_changes` and `uncovered_lines_note` first. `scored_changes` counts the files
+the run scored whose content changed since, your own uncommitted edits included. Anything
+but `0`, `null` included, means run `commands.refresh` before anything else. `stale: true`
+says only that HEAD moved past the run's commit, which an amend does with no byte moved.
+The loop is done when `crapkit next-item` says `empty: true` with `scored_changes: 0`,
+`skipped_claimed` absent and `reasons.no_lane_over_target` 0. `uncovered_lines: null`
+means no artifact named lines for this file, and `flag` says which case you are in:
+
+- `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
+- `measured`: the file's bytes changed since a lane measured it. Rerun `crapkit coverage`; committing changes nothing.
+- `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Most languages land here, because only Python and JS/TS have coverage parsers.
+- `no-lane`: no lane measures this scope, so no test run can name lines. Declare a `[[lane]]` for it, or set `coverage_optional` when no test can reach it. `next-item` never hands one out; `brief` can.
+
+An `uncovered_lines` of `[]` means the artifact answered and nothing is dark. An `excluded`
+function also reads `[]`: its artifact was told to leave it out, so `crap` is `ccn` and
+only decompose moves it.
+
+## Decompose: subtract first
+
+A dead branch deleted drops ccn for free and needs no new name. Then extract private
+helpers, picking names `file_functions` shows the file does not hold yet. Over the ceiling
+and unsure where the cut goes: read [cuts.md](cuts.md).
+
+One function that is a whole command handler rather than one decision is a redesign, not a
+split. Say so and stop.
+
+## With tdd
+
+The packet supplies what `tdd` otherwise asks a user for. `params`, `file_functions` and the
+module's exports are the pre-agreed seam. `gate_rule.ceiling` is the pre-agreed scope.
+Everything else about writing the test first comes from `tdd`.
+
+## One packet per function you actually edit
+
+A packet is large and mostly source text. Trajectory questions (did this fall and come back,
+when did it get worse, which commits touched it) go to `crapkit explain PATH NAME`, which
+answers them far cheaper.
+
+## Where a repo trap goes
+
+A trap you learn about the repo goes into its `crapkit.toml` `notes`, repo-wide or under the
+owning scope, where every future packet carries it. Keys are documented in
+[docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md).
+This file stays repo-free.
+
+## Naming an anonymous function
+
+The packet's `handle` field is the stable form: `(anonymous)#N` names the Nth anonymous
+function in the file, counted by start line. `crapkit brief` and `crapkit claims` both take
+it. The function's start line is the fallback handle.
+
+## Routing
+
+- A command refused (exit 3 to 9, a lane with no artifact, a ratchet conflict), or printed a line that reads like a refusal and is not: the `crapkit-recover` skill.
+- An unattended or multi-phase run: `show-me-your-work`, with `verify`'s `run_id` in the evidence cell.

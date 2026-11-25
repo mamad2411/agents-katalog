@@ -1,0 +1,176 @@
+---
+name: possible
+description: Discover Outcomes and their disclosed recipes, then prepare a complete starting brief for a fresh agent. Also author and validate source-owned Outcomes for Possible.
+---
+
+# Possible
+
+Possible connects the user’s intended result with existing **Outcomes** and their
+disclosed **recipes**: prompts, models, agents, pinned skills, references, tools
+and ordered steps. Simple Outcomes may contain only a prompt.
+
+An Outcome is precedent to inspect and remix, not a rigid workflow. Preserve useful creative freedom while giving a fresh agent the context, current methods, and concrete inputs it needs.
+
+## Install the CLI
+
+When the Possible MCP is unavailable, install the standalone CLI once:
+
+```sh
+curl -fsSL https://possible.sh/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+# Or: brew install fraylabs/tap/possible
+possible --version
+```
+
+No Node or npm is required. The script verifies SHA256 and uses `~/.local/bin`
+without sudo. Set `POSSIBLE_VERSION=0.6.2` to pin this release, or
+`POSSIBLE_INSTALL_DIR` for another writable directory. npm 0.3.1 is legacy.
+
+## Discover before writing
+
+Preserve the user's original prompt verbatim. Determine whether they want to browse possibilities, prepare a prompt, execute work, or publish completed work.
+
+For browsing or execution, use `search_outcomes` when the Possible MCP is available. Otherwise run `possible search "<ordinary-language request>"`. Show up to five relevant Outcomes when the user is browsing. When preparing work, read the strongest candidates' recipes with `fetch_outcome` or `possible fetch <outcome-id>`, which prints the recipe text kit when one exists and the exact prompt otherwise. Use `--json` for the full record or `--prompt` for the prompt alone. Search scores indicate text similarity, not quality.
+
+Use Outcomes as concrete precedent. If none fit, use current primary sources rather than forcing an unrelated example. Prefer official documentation, current source repositories and registries, then reproducible community examples. Check volatile information at run time. Popularity is a discovery signal, not proof that an Outcome is good.
+
+## Resolve consequential unknowns
+
+Collect only what can materially improve execution:
+
+- the intended result, audience, use, and strong preferences;
+- supplied files, measurements, references, credentials, and constraints;
+- required inputs that the executor cannot safely invent;
+- relevant prior Outcomes and what they actually produced;
+- current Products, Skills, tools, environment, permissions, and limits;
+- what the user will inspect to decide that the result is finished.
+
+Ask the fewest questions necessary. Discover safe facts yourself. Infer harmless aesthetic details when a restrained default is sufficient. Do not turn the conversation into a form.
+
+## Prepare a complete starting brief
+
+Write one readable, self-contained starting prompt for a fresh agent. When a prior
+Outcome has a recipe, build from the recipe rather than its prompt alone: carry over
+the relevant models, agent, pinned skills, references, tools and ordered steps, and
+treat the published prompt as one ingredient. Fall back to the prompt only for
+prompt-only Outcomes. It should naturally state:
+
+- the exact result and who it is for;
+- relevant user context and supplied materials;
+- concrete requirements and preferences;
+- current Products, Skills, or tools that matter, including those named in the recipe;
+- the ordered steps from the recipe that still apply, adapted to this request;
+- deliverables and where to place them;
+- constraints, permissions, and separately authorized external actions;
+- what the user will inspect to judge the result;
+- unknowns the executor must preserve rather than invent.
+
+Adapt prior prompts to the current request, date, model, environment, and evidence. Never substitute a summary for a strong full prompt. Never claim an old method is current without checking. Keep the published prompt distinct from the new prompt you prepare.
+
+Before handoff, confirm that a fresh agent can start without hidden conversation history, missing essential files, consequential unresolved choices, unsupported current claims, or unclear success conditions. Research further or ask one focused question if it cannot.
+
+Show the proposed execution prompt and name the prior Outcomes and current official sources that materially shaped it.
+
+## Hand off once
+
+After approval, send the execution prompt unchanged to a fresh subagent when that capability is available. Include explicit paths or attachments for every supplied file. One-shot means complete starting context; it does not forbid the executor from inspecting, testing, or repairing its work.
+
+If fresh subagents are unavailable, return the execution prompt in a copyable block. Do not pretend a handoff occurred.
+
+Products and Skills describe capabilities. They do not grant permission to spend money, purchase, publish, deploy, contact people, fabricate, operate hardware, or perform another external action.
+
+## Author a completed Outcome
+
+When the user wants to publish completed work, inspect the real result and preserve the exact prompt and provenance. `possible create` scaffolds placeholder recipe steps and `possible validate` fails until they are replaced with what was actually done or the optional recipe is removed. Record only evidenced ingredients in the optional `recipe` field: agent/harness, exact-commit skill references, reference URLs, tools with purposes, and ordered steps. Preserve disclosed prompts and follow-ups verbatim; label reconstructed steps and leave unknowns absent. For a manually reconstructed recipe, set `recipe.provenance` to `{ "method": "reconstructed" }`. Kit installation is not supported. Create one folder:
+
+```text
+outcomes.json
+outcomes/<slug>/
+  outcome.json
+  outcome.md
+  prompt.md
+  media/        optional
+  artifacts/    optional
+  inputs/       optional
+```
+
+`outcomes.json` is the repository-root publisher index and is created or updated by the CLI. `outcome.md` is the canonical human page: one H1 title, one clear opening summary, and useful formatted explanation. `prompt.md` is the exact reusable execution prompt. `outcome.json` contains machine metadata only: author, authored timestamp, models and agents, required inputs, one primary Product or Skill, optional secondary credits, optional recipe ingredients and ordered steps, and media or artifact references. A Skill credit retains its repository, directory and last-reviewed commit.
+
+Do not reconstruct absent provenance as fact. Mark unknown values honestly. The primary attribution is the Product or Skill people should understand first; do not duplicate it under `secondary`. Attributions and models belong in `outcome.json`; deliverables and detailed work instructions belong in `prompt.md`; result explanation belongs in `outcome.md`.
+
+Use the CLI to scaffold and validate:
+
+```text
+possible create <slug> --product <owner/product>
+possible create <slug> --skill <owner/repository> <directory> <commit>
+possible validate [directory]
+```
+
+## Publish from the owner's source
+
+Possible does not host publisher accounts or own the canonical files. A publisher exposes Outcomes from either:
+
+- a public GitHub repository; or
+- `https://publisher.example/.well-known/possible/outcomes.json`.
+
+The publisher index is a thin list of manifest locations. Possible snapshots the public source revision and displays it; changing the source creates a new revision rather than rewriting history.
+
+```text
+possible publish [owner/repository | https://publisher.example]
+possible add <owner/repository | https://publisher.example>
+possible use <source>@<slug>            # recipe text kit, or prompt if none
+possible use <source>@<slug> --prompt   # exact prompt only
+```
+
+GitHub publishing requires a clean committed revision so the snapshot is reproducible. No Possible login is required. A publisher-domain source is Official for that domain; other sources are Community unless their ownership follows directly from the public source.
+
+## Local bookmarks
+
+Use bookmarks only when the user asks:
+
+```text
+possible bookmark add <outcome-slug>
+possible bookmark list
+possible bookmark remove <outcome-slug>
+```
+
+Bookmarks are stored locally in `.possible` and do not require an account.
+
+
+## Capture a finished session
+
+When the user asks to capture their completed work, use the standalone CLI 0.6.2 or later.
+Ask for the specific local session file if it is not known; never crawl their
+history or read unrelated threads. Supported sources: Claude Code JSONL and Codex JSONL.
+
+```sh
+possible capture claude-code <session.jsonl> --out <private-draft>
+# Codex: capture codex <rollout.jsonl> --out <private-draft>
+```
+
+Capture runs locally and omits tool outputs, file contents and assistant text.
+Help edit draft.json with the actual result and public author/primary attribution.
+Use ingredientsToReview only as sanitized hints; restore references only when the
+creator confirms they can be shared. Never invent missing skill pins or models.
+Explain removed/unknown details. Do not claim that automated redaction guarantees
+privacy. The creator must inspect private context, names and unusual secrets.
+
+Optionally add public `media/` and `artifacts/` folders to the private draft and
+reference their relative paths in draft.json. Export copies them into the Outcome.
+Limits: 16 MiB per file, 64 MiB combined, 256 files, 512 entries and 16 directory
+levels; no symlinks, special files or paths outside the folder. Inspect every file
+and embedded metadata; binary files are not automatically redacted. The digest
+binds paths, sizes and SHA-256 hashes; any file change needs a new review.
+Run `possible capture check <private-draft>` to report blockers and privacy
+findings without interaction or writes. A passing check grants no approval.
+
+The creator runs `possible capture review <private-draft>` in their own terminal
+and types the displayed approval code. Never enter approval on their behalf,
+fabricate a receipt, use a pseudo-terminal to bypass review, or upload a transcript
+or draft. After explicit creator review, `possible capture export <private-draft>
+--out <new-local-publisher>` writes an unpublished Outcome. Changes invalidate
+approval. Publishing that export requires a separate explicit user instruction.
+
+Captured recipes are labeled recorded from session; privacy edits are disclosed.
+The receipt detects changes, not the reviewer's identity. Terminal approval is creator-attested and unauthenticated; automation can type the phrase, so this prevents accidents rather than proving a human was present. Keep private session
+paths, draft folders and receipts out of public source. No automatic kit install.

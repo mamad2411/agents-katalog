@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jahidulislamseo/antigravity-ai-skills (path: skills/ai-local-search/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: When the user wants to optimize for AI-powered local search results including Google AI Overviews, AI Mode, ChatGPT, Gemini, Perplexity, or Grok. Also use when the user mentions "AI Overviews," "AI se

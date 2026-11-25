@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ibrdot/swe-re-expert (path: plugins/agentic-awesome-skills-claude/skills/helm-charts/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Create, manage, and deploy Helm charts for Kubernetes package management.

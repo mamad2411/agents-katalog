@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/genusarvicolabathos238/triflux (path: skills/tfx-interview/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 요구사항이 모호하거나 구현 전 명확화가 필요할 때 사용한다. 'interview', '인터뷰', '요구사항 정리', '뭘 만들어야 하는지 모르겠어', '명확하게 해줘' 같은 요청에 반드시 사용. 구현 시작 전 스펙을 확정하고 싶을 때 적극 활용."

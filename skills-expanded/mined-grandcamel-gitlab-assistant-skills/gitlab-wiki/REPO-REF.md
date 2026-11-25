@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/grandcamel/gitlab-assistant-skills (path: skills/gitlab-wiki/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: GitLab wiki operations via API. ALWAYS use this skill when user wants to: (1) list wiki pages, (2) read wiki content, (3) create/update/delete wiki pages, (4) upload wiki attachments."

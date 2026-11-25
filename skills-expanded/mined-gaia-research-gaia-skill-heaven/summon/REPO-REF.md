@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/gaia-research/gaia-skill-heaven (path: plugins/skill-heaven/skills/summon/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Explicitly request the best-matching skill for a concrete capability gap into this session without installing it.

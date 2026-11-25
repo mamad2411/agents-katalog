@@ -1,0 +1,56 @@
+---
+name: land
+description: Land a ready branch - push, PR, pinned CI watch, squash-merge, issue verification, cleanup. Use for every PR landing; encodes the run-ID pinning and cleanup discipline.
+argument-hint: "<branch> [worktree-path]"
+---
+
+# Land a Branch
+
+Take a committed branch through push → PR → CI → merge → cleanup. One invocation per branch; serialize when branches share files.
+
+## Arguments
+
+- `$ARGUMENTS` — branch name; optionally the worktree path holding it (default: search `git worktree list`).
+
+## Pre-flight
+
+1. `pwd` + `git branch --show-current` in the branch's checkout — **CWD drift is real**: finished background agents move the orchestrator's shell CWD. Anchor every command with explicit `cd`.
+2. Branch is committed and clean (`git status --short` empty).
+3. Merge current main in: `git fetch origin main && git merge origin/main`. On conflict in triage tables → union-of-flips; in tests → usually keep both.
+4. Re-gate after the merge: targeted tests for touched modules (`cargo test --features cuda-index --lib <filter>` with a private `CARGO_TARGET_DIR`), and the provenance lint:
+   ```bash
+   git diff origin/main...HEAD -- '*.rs' | python3 scripts/check_comment_provenance.py
+   ```
+   CI diffs the merge ref, so MOVED comment lines count as added — a local pass on the pre-merge diff can be a false negative.
+
+Before the push, read the lane's report, when the branch came from a lane:
+- `STATUS:` is `done`, or you have decided what to do with a `partial`. A check graded `NOT RUN` is a check nobody ran: run it now, or name it in the PR body.
+- Re-run each search under `ABSENCE CLAIMS:` and compare the result with what the lane quoted.
+- A risky lane (live scoring path, schema migration, cross-surface signature change) has a code-reviewer verdict that names the range from the branch base to the lane's last commit; the merge of step 3, when it had no conflict, brings in main only and needs no new verdict.
+
+## Push and PR
+
+5. Push: `git push origin <branch>` (direct WSL usually works; on "could not read Username" fall back to `powershell.exe -Command "cd C:\Projects\cqs; git push origin <branch>"`).
+6. Body to `/mnt/c/Projects/cqs/pr_body.md` (NEVER inline; must live on C: for Windows gh). Include `closes #N` for every issue the branch resolves, the `Retrieval:` line and tagged figures as `.claude/skills/pr/SKILL.md` step 3 gives them, and for a risky lane the reviewer's verdict with the range it read. Delete the file after.
+7. `powershell.exe -Command 'cd C:\Projects\cqs; gh pr create --head <branch> --title "..." --body-file pr_body.md'`
+
+## CI — pin the run ID
+
+`gh pr checks --watch` latches onto the PREVIOUS commit's completed run. Always:
+
+```bash
+sleep 50   # new run needs ~45s to register
+powershell.exe -Command 'gh run watch $(gh run list -R jamie8johnson/cqs --branch <branch> --workflow CI --limit 1 --json databaseId --jq ".[0].databaseId") -R jamie8johnson/cqs --exit-status'
+```
+
+Background this (run_in_background) and do other work; the notification carries the exit code.
+
+## Merge and verify
+
+8. On green: `powershell.exe -Command 'gh pr merge <N> -R jamie8johnson/cqs --squash --delete-branch'`, then confirm `gh pr view <N> --json state` == MERGED.
+9. **Verify every linked issue actually closed** (`gh issue view <N> --json state`); close manually with a PR pointer if GitHub missed it. "Partially addresses" PRs: comment the remaining scope on the issue instead.
+10. Cleanup, once step 8 showed MERGED: `cd /mnt/c/Projects/cqs && git pull origin main --ff-only`, `git worktree remove <path> --force`, `git branch -D <branch>`, `rm -rf /home/user001/.cargo-target/<branch-dir>` (the lane's build folder, by its full path typed out: `<branch-dir>` is the branch name with each `/` replaced by `-`; no shell variable and no command substitution in this path; a path that ends in `/` is wrong; the folder is outside the worktree, so `git worktree remove` leaves it; never `/home/user001/.cargo-target/cqs`, the main checkout's build folder), `cqs index` (inotify misses bulk git ops on /mnt/c).
+
+## On CI failure
+
+Read the failing job log before touching anything (`gh run view <id> --log-failed`). Provenance-lint failures → scrub audit IDs from comments (state the invariant instead). Don't retry CI blind.

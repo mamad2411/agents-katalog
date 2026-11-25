@@ -1,0 +1,922 @@
+---
+name: build
+description: "Scoped feature development for changes spanning 1-5 production files. Auto-tiers to LIGHT/STANDARD/DEEP based on risk signals. Flags: --auto (skip plan approval), --auto-commit (commit without confirmation), --tag (create rollback tag)."
+category: Core
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - search_symbols           # find similar implementations to mirror
+    - get_symbol
+    - get_symbols
+    - get_file_outline
+    - find_references          # who would I break by adding this
+    - get_context_bundle       # symbol + neighbors in one call
+    - search_text              # convention discovery
+    - search_patterns          # follow project conventions
+  by_stack:
+    typescript: [get_type_info, resolve_constant_value]
+    javascript: []
+    python: [python_audit, analyze_async_correctness, resolve_constant_value]
+    php: [php_project_audit, php_security_scan, resolve_php_namespace]
+    kotlin: [analyze_sealed_hierarchy, find_extension_functions, trace_flow_chain, trace_suspend_chain, trace_compose_tree, analyze_compose_recomposition, trace_hilt_graph, trace_room_schema, analyze_kmp_declarations, extract_kotlin_serialization_contract]
+    nestjs: [nest_audit]
+    nextjs: [framework_audit, nextjs_route_map]
+    astro: [astro_audit, astro_actions_audit, astro_hydration_audit, astro_middleware, astro_sessions, astro_image_audit, astro_svg_components]
+    hono: [analyze_hono_app, audit_hono_security]
+    express: []
+    fastify: []
+    react: [react_quickstart, analyze_hooks, analyze_renders, audit_compiler_readiness]
+    django: [analyze_django_settings, effective_django_view_security, taint_trace]
+    fastapi: [trace_fastapi_depends, get_pydantic_models]
+    flask: [find_framework_wiring]
+    jest: []
+    yii: [resolve_php_service]
+    prisma: [analyze_prisma_schema]
+    drizzle: []
+    sql: [sql_audit]
+    postgres: [migration_lint]
+---
+
+# zuvo:build — Scoped Feature Development
+
+A tiered workflow for implementing new features with bounded scope. Ceremony scales with risk: a 2-file utility addition runs LIGHT (no agents, no auditors), while a service touching auth runs DEEP (parallel analysis agents + independent auditors).
+
+**Scope:** Features affecting 1-5 production files. Test files, backlog entries, and run-log do not count toward the file limit.
+**Out of scope:** Bug investigation (`zuvo:debug`), structural reorganization (`zuvo:refactor`), code review (`zuvo:review`), multi-file features with unclear scope (`zuvo:brainstorm` pipeline).
+
+**Scope expansion:** If implementation reveals that the feature requires >5 production files, STOP. Ask the user: continue as build (with justification) or escalate to `zuvo:brainstorm`? Structural splits (extracting helpers to respect file-limits.md thresholds) may auto-expand up to +2 production files without asking. Beyond +2, ask the user.
+
+## Argument Parsing
+
+Parse `$ARGUMENTS` for these flags:
+
+| Flag | Effect |
+|------|--------|
+| `--auto` | Auto-approve the implementation plan (skip Phase 2 user confirmation) |
+| `--auto-commit` | Commit staged changes without asking (skip Phase 4 confirmation) |
+| `--tag` | Create a `build-YYYY-MM-DD-slug` rollback tag after commit |
+| `--deep` | Force DEEP tier regardless of file count or risk signals |
+| _(remaining text)_ | The feature description |
+
+Flags can be combined: `zuvo:build add CSV export --auto --auto-commit --tag`
+
+## Environment Compatibility
+
+Read `../../shared/includes/env-compat.md` for agent dispatch patterns, path resolution, and progress tracking across all supported platforms.
+
+**Interaction behavior is governed entirely by env-compat.md.** This skill does not override env-compat defaults. Specifically:
+- Plan approval and commit confirmation follow env-compat rules for the detected environment.
+- `--auto` and `--auto-commit` flags are additive overrides on top of env-compat defaults (they loosen, never tighten).
+
+**Agent dispatch model:** This skill uses **inline prompt dispatch** (see env-compat.md). Agent instructions are embedded in Phase 1b and Phase 4.1 — there are no separate `agents/*.md` files for build — so on Codex/Cursor single-agent mode, where `env-compat.md` says "read the agent's instruction file (e.g. `agents/blast-radius.md`)", use the EMBEDDED prompt block for that stage (Phase 1b blast-radius, Phase 4.1 auditors) instead; there is no file to read and looking for one is the bug.
+
+## CodeSift Integration
+
+CodeSift setup completed in PHASE 0. Use CodeSift tools for all discovery and analysis when available.
+
+## Mandatory File Loading
+
+### PHASE 0 — Bootstrap (always, before reading any input)
+
+```
+  1. ../../shared/includes/codesift-setup.md              -- [READ | MISSING -> STOP]
+  2. ../../shared/includes/no-pause-protocol.md           -- [READ | MISSING -> WARN] (HARD: no mid-loop pauses)
+  3. ../../shared/includes/acceptance-proof-protocol.md   -- [READ | MISSING -> STOP] (HARD: per-step proof gates)
+  4. ../../shared/includes/test-quality-gate.md           -- [READ | MISSING -> WARN] (carries the dispatch-authorization rule)
+```
+
+These files are loaded before reading the task spec and target files.
+
+### PHASE 0.5 — Classify (after reading task context, determine tier)
+
+After CodeSift setup, read the task spec and target files. Classify the build into a tier using the Risk Signals and Tiering Model below.
+
+Print: `[CLASSIFIED] Tier: {TIER}`
+
+### PHASE 1 — Conditional Load (based on tier)
+
+| Include | LIGHT | STANDARD | DEEP |
+|---------|-------|----------|------|
+| `../../rules/cq-patterns.md` | Full | Full | Full |
+| `../../rules/file-limits.md` | Full | Full | Full |
+| `../../shared/includes/code-contract.md` | **SKIP** | Full | Full |
+| `../../rules/testing.md` | Full | Full | Full |
+| `../../rules/cq-checklist.md` | **SKIP** | **SKIP** | Full |
+| `../../shared/includes/test-contract.md` | **SKIP** | Full | Full |
+| `../../shared/includes/quality-gates.md` | **SKIP** | **SKIP** | Q1-Q25 section only |
+
+Print loaded files:
+```
+PHASE 1 — LOADED:
+  [list with READ/SKIP status per file]
+```
+
+### DEFERRED — Load at completion
+
+```
+  ../../shared/includes/run-logger.md        -- [READ at final step]
+  ../../shared/includes/retrospective.md     -- [READ at final step]
+  ../../shared/includes/documentation-mandate.md -- [READ at final step]
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+  ../../shared/includes/test-quality-gate.md -- [READ at Phase 4.6b, STANDARD+] (zuvo:test-audit gate → tier A)
+  ../../shared/includes/comment-pass.md      -- [READ at Phase 4.2c]
+  ../../shared/includes/knowledge-prime.md   -- [READ at start if available | MISSING -> degraded]
+  ../../shared/includes/knowledge-curate.md  -- [READ at final step if available | MISSING -> degraded]
+```
+
+**If any PHASE 0 file missing:** STOP. The plugin installation is incomplete.
+
+---
+
+## Tiering Model
+
+After Phase 0 context gathering, classify the build into a tier. The tier determines how much ceremony runs.
+
+### Risk Signals
+
+Check for these in the feature description and target files:
+
+```
+[ ] Touches auth, authorization, or access control
+[ ] Touches payment, billing, or money calculations
+[ ] Touches database schema or migrations
+[ ] Touches a shared utility imported by 5+ files
+[ ] Touches API contracts (request/response shapes)
+[ ] Target file is a git churn hotspot (top 10 in last 90 days)
+[ ] Feature involves concurrency or race conditions
+[ ] Touches UI / user-interactive surface (.tsx / .vue / .svelte / .astro / *.css in components/ or app/)
+```
+
+### Tier Assignment
+
+| Condition | Tier |
+|-----------|------|
+| 1-2 production files, 0 risk signals | **LIGHT** |
+| 3-5 production files, OR 1 risk signal | **STANDARD** |
+| 2+ risk signals (any file count) | **DEEP** |
+
+**Forced DEEP** (regardless of file count or other signals):
+- `--deep` flag
+- Touches auth/authorization AND any other risk signal
+- Touches payment/money AND any other risk signal
+- Touches database schema or migrations
+- Feature involves concurrency or race conditions
+
+**Cap at LIGHT:**
+- Config-only changes (env vars, CI, Dockerfile) with no production code
+
+### Tier Capabilities
+
+| Capability | LIGHT | STANDARD | DEEP |
+|-----------|-------|----------|------|
+| Discovery pass (Phase 1a) | Yes | Yes | Yes |
+| Analysis agents (Phase 1b) | No | Blast Radius agent + inline duplication check | Blast Radius + Duplication Scanner agents |
+| Implementation plan | Inline, brief | Full plan with all sections | Full plan with all sections |
+| CQ self-eval (CQ1-CQ40) | Critical gates only | Full CQ1-CQ40 | Full CQ1-CQ40 |
+| Test quality self-eval (Q1-Q25) | Inline check | Full Q1-Q25 | Full Q1-Q25 |
+| Pre-write code contract | No | Yes | Yes |
+| Pre-write test contract | No | Yes | Yes |
+| Independent CQ Auditor agent | No | No | Yes |
+| Independent Test Auditor agent | No | Yes (when dispatch available) | Yes |
+| Test Quality Gate (zuvo:test-audit → tier A, Phase 4.6b) | No | Yes | Yes |
+| Verification commands | Tests + types (if checker exists) | Tests + types | Tests + types + lint |
+
+Print the tier after assignment:
+
+```
+BUILD TIER: STANDARD (3 files, 1 risk signal: shared utility)
+```
+
+---
+
+## Phase 0: Project Context
+
+1. Read the project's `CLAUDE.md` and any rules directory for conventions
+2. Detect the tech stack from config files (`package.json`, `tsconfig.json`, `pyproject.toml`, etc.)
+3. If the stack triggers a conditional rule file (TypeScript, React, NestJS, Python), read it from `../../rules/`
+4. Read `memory/backlog.md` if it exists — check for open items related to the feature area.
+   Before any `backlog-add` call, once, at the run's original start, take the snapshot `R='<absolute repo root>'; git -C "$R" status --porcelain -uall -- memory/` (`R` assigned in the same shell call) and keep its output; Phase 2 writes it into the plan block as `backlog-snapshot:`, and every `wrote=` path a later call prints is appended there at once under `backlog-writes:`. The same two fields go to this run's own sidecar, `$ZUVO_DIR/context/build-backlog-<run>.md` (`ZUVO_DIR` per `report-output-location.md`, `zuvo/` under `R` unless `ZUVO_OUTPUT_DIR` is set), `<run>` the UTC start time `YYYYMMDDTHHMMSSZ` taken with the snapshot plus `-` and 6 random hex digits (`od -An -N3 -tx1 /dev/urandom | tr -d ' \n'`), so two runs started in the same second never share one: create `$ZUVO_DIR/context/` if it is missing, create the file with `status: open`, a `branch:` line and the snapshot as a fenced block under `backlog-snapshot:`, print `backlog-sidecar: <absolute path>` into the transcript and the plan block, and append every `wrote=` path under `backlog-writes:` as it is printed. A new run always creates its own sidecar, so it never inherits another run's snapshot or writes. A run whose plan block has left its context (a compaction, a resume) reads the sidecar its printed `backlog-sidecar:` line names, or, with that line lost too, the `status: open` sidecar whose `branch:` is the current branch with the latest `<run>` in its name; it reuses that snapshot and never takes it again. The record is the union of the `backlog-writes:` paths in the sidecar and in the plan block (each copy may miss an append the other holds), whichever of the two still exists; with neither, the closing commit stages nothing and BUILD COMPLETE says `Backlog writes: unknown (sidecar and plan block lost)`, so the person committing checks `git status -- memory/` by hand (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**).
+5. **Knowledge Prime:** Run the knowledge prime protocol from `knowledge-prime.md`:
+   ```
+   WORK_TYPE = "implementation"
+   WORK_KEYWORDS = <3-5 keywords from the user's request>
+   WORK_FILES = <files that will be touched, if known from step 1-4>
+   ```
+
+Output:
+```
+STACK: [language/framework] | RUNNER: [test runner]
+BACKLOG: [N related open items | "none"]
+```
+
+Assign the build tier (see Tiering Model above).
+
+---
+
+## Phase 1: Analysis
+
+Analysis runs in two steps. Step 1a always runs. Step 1b runs only for STANDARD and DEEP.
+
+### Phase 1a: Discovery Pass (all tiers)
+
+Before any agent dispatch, establish the scope manually:
+
+1. **Identify candidate files.** From the feature description, list the production files that will be created or modified. Be specific — file paths, not vague areas.
+2. **Quick dependency check.** For each candidate file that already exists, run one of:
+   - CodeSift: `find_references(repo, symbol_name)` for key exports
+   - Fallback: `grep` for import statements referencing the file
+3. **Hotspot detection.** Check if candidate files are churn hotspots (top 10 most-changed files in the project over the last 90 days):
+   - CodeSift: `analyze_hotspots(repo, since_days=90)` — flag any candidate in the top 10
+   - Fallback: run `git log --name-only --format="" --since="90 days ago" | sort | uniq -c | sort -rn | head -20` to get the project-wide top 20 by commit count, then check if any candidate file appears in that list
+3b. **Hub check.** For every candidate file that already exists, run `find_references` on its main
+   export (fallback: grep for imports of the path). **A file with 5+ importers is a HUB — editing
+   it is not a "1-file change"**, whatever the diff size says, because every importer inherits the
+   behaviour change. Take one of two routes and record which, with the importer count, in the plan:
+   extract into a new file and leave the hub alone, or escalate the tier so the blast radius gets
+   the review it needs. Silently treating a hub as a small edit is how a STANDARD-tier change
+   breaks five call sites.
+4. **Risk signal scan.** Check the candidate files against the risk signals list (including hotspot results from step 3). Update the tier if signals change.
+
+Output:
+```
+DISCOVERY
+  Candidate files: [list with paths]
+  Surface(s): [backend-logic | api | db | db-data | ui | integration | config | docs — one per file or "mixed"]
+  Key dependencies: [files that import/call candidates]
+  Risk signals: [updated list]
+  Tier: [confirmed or adjusted]
+```
+
+The Surface(s) line drives proof shape selection in Phase 2 — see `acceptance-proof-protocol.md`. UI surface activates browser-tool requirement at Phase 4 verification. Backend / api / db surfaces require deterministic proofs (real call, real query) not just unit tests.
+
+This output feeds Phase 1b agents with concrete scope. No guessing.
+
+### Phase 1b: Targeted Analysis (STANDARD and DEEP only)
+
+Dispatch agents with the concrete scope from Phase 1a. In environments without parallel dispatch, run sequentially.
+
+#### Blast Radius Mapper (STANDARD + DEEP)
+
+```
+Dispatch with:
+  type: general-purpose  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  model: Sonnet
+  run_in_background: true (if supported)
+
+  prompt:
+  "Analyze the blast radius for changes to these specific files.
+
+  FEATURE: {description}
+  TARGET FILES: {candidate files from Phase 1a}
+  KNOWN DEPENDENTS: {dependencies from Phase 1a}
+  PROJECT ROOT: {working directory}
+
+  Tasks:
+  1. For each target file, trace all importers and callers (use impact_analysis if CodeSift available, otherwise grep imports).
+  2. Flag any widely-imported module (5+ importers) as high-risk.
+  3. Check if any target is a shared utility, type definition, or config.
+  4. List test files that exercise the target files.
+
+  Output:
+  BLAST RADIUS REPORT
+  Files analyzed: [N]
+  Direct dependents: [file:symbol list]
+  Test coverage: [which targets have tests, which don't]
+  High-risk: [widely-imported or shared files]
+  Recommendation: [what to test extra carefully]"
+```
+
+#### Inline Duplication Check (STANDARD only)
+
+No agent dispatch. The lead performs a quick overlap search during Phase 1b:
+
+1. For each new function/component/service planned, run:
+   - CodeSift: `search_symbols(repo, "{name}", include_source=true, detail_level="compact")` + `codebase_retrieval(repo, queries=[{type:"semantic", query:"{what this function does}"}])`
+   - Fallback: `grep -rn "{name}\|{synonym}"` with `--include` matching the detected stack extensions (e.g., `*.ts *.tsx` for TypeScript, `*.py` for Python, `*.go` for Go, `*.java` for Java — use the extensions from Phase 0 stack detection)
+2. If any match has >70% name or purpose overlap, flag it as a reuse candidate.
+3. Include results in Phase 2 plan section "4. Duplication Check" (not "N/A").
+
+This is lighter than the DEEP agent but catches the most common case: AI rewriting an existing helper.
+
+#### Existing Code Scanner (DEEP only)
+
+```
+Dispatch with:
+  type: general-purpose  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  model: Haiku
+  run_in_background: true (if supported)
+
+  prompt:
+  "Search for existing code that overlaps with the planned feature.
+
+  FEATURE: {description}
+  CANDIDATE FILES: {from Phase 1a}
+  PLANNED NEW EXPORTS: {functions/components/services to create — from discovery}
+  PROJECT ROOT: {working directory}
+
+  Tasks:
+  1. For each planned export, search for existing implementations with similar names or purposes.
+  2. Check utility files, shared helpers, and library wrappers for reusable logic.
+  3. Search for similar patterns in other modules.
+
+  Output:
+  DUPLICATION SCAN REPORT
+  Items checked: [N]
+  Overlaps: [file:symbol with similarity description]
+  Reuse candidates: [existing code to extend]
+  Recommendation: [reuse X, extend Y, build Z from scratch]"
+```
+
+### Incorporating Agent Results
+
+If agents run in background, proceed to Phase 2 and merge their findings when they complete. If running inline, wait before planning.
+
+---
+
+## Phase 2: Implementation Plan
+
+### LIGHT tier
+
+No formal plan document. Print a brief inline summary:
+
+```
+PLAN (LIGHT)
+  Files: [list]
+  Changes: [1-2 sentences per file]
+  Tests: [which test files to create/modify]
+  backlog-snapshot: [the Phase 0 snapshot output, verbatim, as a fenced block under this line; an empty snapshot is an empty block]
+  backlog-writes: [every wrote= path printed so far, appended as each call prints it]
+  backlog-sidecar: [the absolute sidecar path Phase 0 printed, never the template]
+```
+
+Proceed unless the user objects (or `--auto` is set).
+
+### STANDARD and DEEP tiers
+
+If `EnterPlanMode` is available, use it. Otherwise, present the plan as a markdown block and wait for user confirmation (unless `--auto` was passed or env-compat auto-approves).
+
+Required sections:
+
+```
+## 1. Feature Summary
+[1-2 sentences: what and why]
+
+## 2. Scope Fence
+PRODUCTION FILES: [exact list — these count toward the 1-5 limit]
+TEST FILES: [list — excluded from limit]
+FORBIDDEN: files outside these lists, unrelated improvements, opportunistic refactoring
+
+## 3. Blast Radius
+[From Blast Radius Mapper, or Phase 1a discovery if STANDARD without agent yet]
+
+## 4. Duplication Check
+[From inline check (STANDARD) or Existing Code Scanner agent (DEEP)]
+
+## 5. Implementation Steps
+[Ordered list with file paths and what changes in each]
+
+## 6. Test Strategy
+- Code types: [function / component / endpoint / hook / service]
+- Test files: [paths]
+- Critical scenarios: [error paths, edge cases, boundaries]
+
+## 7. Acceptance Proofs
+[For each user-observable behavior this build delivers, one entry. See ../../shared/includes/acceptance-proof-protocol.md for surface taxonomy and proof shapes.]
+- AP1 — [single declarative sentence describing the behavior]
+  - Surface: [backend-logic | api | db | db-data | ui | integration | config | docs]
+  - Proof: [exact procedure — command, HTTP call, DB query, browser interaction]
+  - Expected: [exit code, response shape, DOM state, screenshot match]
+  - Artifact: `zuvo/proofs/build-<short-slug>-AP1.<ext>`
+- AP2 — ...
+
+[For configuration-only or pure-refactor builds with no user-observable behavior change, write "Not applicable — pure refactor / config; behavior unchanged" with one-line justification.]
+
+## 8. Whole-feature Smoke
+[If this build contributes to a multi-step user flow that other builds also touch, name the smoke proof here. For self-contained 1-5 file builds, usually skipped — note "Not applicable — self-contained scope". For UI builds touching the same screen as backend builds, mandatory.]
+
+## 9. File Size Check
+[Current line count + estimated post-change count for each file to modify]
+[Flag any that will exceed limits from file-limits.md]
+
+## 10. Open Questions
+[Genuine uncertainties. Empty if none.]
+
+backlog-snapshot: [the Phase 0 snapshot output, verbatim, as a fenced block under this line; an empty snapshot is an empty block]
+backlog-writes: [every wrote= path printed so far, appended as each call prints it]
+backlog-sidecar: [the absolute sidecar path Phase 0 printed, never the template]
+```
+
+If section 10 is non-empty — **interactive:** ask the user (max 4 questions), wait for answers, update plan. **Non-interactive/batch (Codex, Cursor, --auto):** do NOT stall the pipeline on questions nobody can answer — apply the Autonomous Disposition from `no-pause-protocol.md` per question: derive the safest defensible answer from the spec + codebase evidence, log it as `[AUTO-DECISION] <question> → <choice> — <why>`, update the plan, proceed. A genuinely undecidable product question → implement the smallest reversible interpretation, log it FIRST as `[AUTO-DECISION] [slug: <slug>] <question> → <choice> — <why>`, then record the question as a process item: `~/.zuvo/backlog-add --repo "$R" --class PROCESS --conf 90 --source build --target subject:build-decision-<slug> --title "$T" --evidence "$E"` (`backlog-protocol.md` "Filing from a skill", **Process item**; `T` is the question, `E` holds both interpretations; `<slug>` is the decision slug (`backlog-protocol.md` "Filing from a skill", **The decision slug**), printed in that `[AUTO-DECISION]` line before the call; assign `"$R"`, `"$T"` and `"$E"` before the call, as "Free text goes through a variable" in that section says; an empty value is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`)). Name its F-id in the BUILD COMPLETE block, since the findings ledger that keeps it is not where a human triages yet; never hang, never guess silently.
+
+---
+
+## Phase 3: Implement
+
+### 3.1 Pre-Flight
+
+Before writing code, verify:
+- Analysis results incorporated (if agents still running, note "pending" sections)
+- Scope fence defined
+- No file will exceed size limits (plan splits if needed)
+- Printed `BUILD_BASE=<sha>` into the transcript — resolved by `git rev-parse -q --verify HEAD || git hash-object -t tree /dev/null` (the empty tree in an unborn repo) — and the `git status --porcelain --untracked-files=all` snapshot. 4.2c, 4.6 and 4.6b use that printed literal: a shell variable does not survive between calls or a resume
+
+### 3.2 Write Code
+
+Implement per the plan.
+
+**STANDARD and DEEP tiers — Pre-Write Code Contract (MANDATORY):**
+
+Before writing each production file, read `../../shared/includes/code-contract.md` and fill the complete contract:
+
+1. **INPUTS AND VALIDATION** — every input with validation strategy
+2. **ERROR PATHS** — every failure mode with handling strategy and business impact
+3. **NULL AND OPTIONAL HANDLING** — every nullable value with explicit guard
+4. **RESOURCE MANAGEMENT** — every resource with cleanup and bounding
+5. **SECURITY CHECKLIST** — auth, authZ, PII, injection
+6. **PATTERN COMPLIANCE** — existing project patterns identified
+7. **FUNCTION SIGNATURES** — public API drafted with error conditions
+
+The contract prevents the most common CQ failures (CQ3, CQ8, CQ10, CQ22, CQ25) by catching them BEFORE code is written, not after.
+
+**LIGHT tier:** Skip the formal contract. Critical CQ gates still apply at self-eval time.
+
+Rules:
+- Touch only files in the scope fence. If a dependency forces a change outside, log the expansion with justification. Structural splits (file-limits.md thresholds) may auto-expand up to +2 production files; beyond +2 — **interactive:** ask the user; **non-interactive/batch:** do NOT expand and do NOT hang: complete the in-fence portion, print `[SCOPE] expansion needed [slug: <slug>]: <files> — <reason>`, then record the blocked dependency as a process item, and cap the run verdict at WARN. The item is `~/.zuvo/backlog-add --repo "$R" --class PROCESS --conf 90 --source build --target subject:build-decision-<slug> --title "$T" --evidence "$E"` (`backlog-protocol.md` "Filing from a skill", **Process item**: follow-up work the run will not do; `T` asks whether to expand the fence to the blocked files, `E` holds the reason and both options, expanding in a follow-up run or leaving the dependency as it is; `<slug>` is the decision slug (`backlog-protocol.md` "Filing from a skill", **The decision slug**) (naming the dependency), printed in the `[SCOPE]` line before the call; assign `"$R"`, `"$T"` and `"$E"` before the call, as "Free text goes through a variable" in that section says; an empty value is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`)). Name its F-id in the BUILD COMPLETE block. Any non-structural expansion follows the same split: interactive asks, batch declines-loudly-and-continues, with the same `[SCOPE]` line and the same process item for the dependency it leaves blocked. Silent expansion is never an option in either mode.
+- Follow project conventions from CLAUDE.md and rules directory.
+- After each file, check line count against limits. Split immediately if approaching threshold.
+
+### 3.3 Code Quality Self-Evaluation
+
+**LIGHT tier:** Check critical gates only (CQ3, CQ4, CQ5, CQ6, CQ8, CQ14) + any conditional gates activated by context (CQ16/CQ19/CQ20/CQ21/CQ22). Provide evidence for each. Fix any gate = 0.
+
+**STANDARD and DEEP tiers:** Read `../../rules/cq-checklist.md`. Run full CQ1-CQ40 on every production file written or modified. Condensed reference: `../../shared/includes/quality-gates.md`.
+
+- Score each gate (1 = satisfied, 0 = violated, N/A = not applicable)
+- Static critical gates: CQ3, CQ4, CQ5, CQ6, CQ8, CQ14 — any = 0 means FIX before tests
+- Conditional critical gates: CQ16, CQ19, CQ20, CQ21, CQ22 — activated by code context
+- Provide file:function:line evidence for every critical gate scored as 1
+- If >60% gates are N/A, justify each N/A individually
+
+Fix all critical gate violations before writing tests.
+
+### 3.4 Write Tests
+
+Read `../../rules/testing.md` before writing tests (its Self-Eval sections absorbed the retired test-quality-rules.md). For STANDARD+, also read `../../shared/includes/test-edge-cases.md`.
+
+**STANDARD and DEEP tiers — Pre-Write Test Contract (MANDATORY):**
+
+Before writing tests for each production file, read `../../shared/includes/test-contract.md` and fill the complete contract:
+
+1. **BRANCHES** — exhaustive list from production code (every if/else, switch, try/catch, early return)
+2. **ERROR PATHS** — every throw/reject/error return with specific type and message
+3. **EXPECTED VALUES** — source of every planned assertion (reject implementation-derived values)
+4. **MOCK INVENTORY** — every mock with justification
+5. **MUTATION TARGETS** — M1-M5 mapped to specific catching tests
+6. **TEST OUTLINE** — describe/it structure traced to branches and error paths
+
+The contract prevents weak tests at the source: missing branches, tautological oracles, unnecessary mocks, and shallow error testing.
+
+**LIGHT tier:** Skip the formal contract. Critical Q gates (Q7, Q11, Q13, Q15, Q17) still apply at self-eval time.
+
+Requirements:
+- New functions, components, endpoints, and hooks need tests.
+- Mock only external boundaries (HTTP, database, email, time, randomness).
+- Run the mental mutation check: simulate 5 mutations (negate condition, remove guard, swap operator, change return value, change error type). If no test catches any mutation, add a targeted test.
+- Run tests and confirm they pass.
+
+**Test exception policy:** Not every piece of code warrants its own test file. The following are exempt from dedicated tests IF already covered by an integration or higher-level test:
+- Thin wrappers that delegate entirely to another function
+- Glue code (wiring, configuration, re-exports)
+- Type definitions and interfaces (no runtime behavior)
+- Simple constants and enums
+
+When claiming an exemption, cite the covering test: `[exempt: covered by integration test in api.test.ts:45]`.
+
+### 3.5 Test Quality Self-Evaluation
+
+**LIGHT tier:** Inline check — verify Q7 (error path — every error-throwing path with specific type+message), Q11 (branches), Q13 (real imports), Q15 (value assertions), Q17 (oracle independence). Fix any = 0.
+
+**STANDARD and DEEP tiers:** Run full Q1-Q25 on every test file. Score threshold (PERCENT of applicable, per `quality-gates.md` — never an absolute count). Compare the raw ratio, do not round first, so no score falls between two bands: `>= 82%` = PASS, `>= 53% and < 82%` = FIX worst gaps, `< 53%` = REWRITE. (Written as "53-81%" a score of 18/22 = 81.8% belonged to neither band and three agents could label the same file three ways.) Provide evidence for critical gates (Q7, Q11, Q13, Q15, Q17).
+
+**Anti-Tautology Check (STANDARD+):** After self-eval, run the anti-tautology automation from `rules/testing.md`:
+1. Grep for echo patterns (mock-return-echoed-in-assertion)
+2. Verify expected value sources (spec-derived, not implementation-derived)
+3. Run with `--coverage` if runner supports it — check branch coverage >= 70%
+
+**Independent Test Auditor (STANDARD+ when sub-agent dispatch available):**
+
+Spawn a Test Quality Auditor (Sonnet, Explore) to independently verify Q1-Q25 scores. The auditor receives: production file, test file, and the test contract. Auditor's score wins ties — self-evaluation is biased toward the author.
+
+In single-agent mode: perform the audit as a separate pass with checkpoint: `[CHECKPOINT: switching to independent test auditor role]`.
+
+Proceed to Phase 4 when self-evaluations pass.
+
+---
+
+## Phase 4: Verify
+
+### 4.1 Independent Auditors (DEEP only)
+
+Dispatch two read-only agents in parallel:
+
+#### Test Quality Auditor
+
+```
+Dispatch with:
+  type: general-purpose  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  model: Sonnet
+
+  prompt:
+  "Audit the quality of these test files. Do not trust the lead agent's self-evaluation — read the files yourself.
+
+  TEST FILES: {list}
+  CODE TYPE: {function / component / endpoint / hook}
+
+  Tasks:
+  1. Read each test file completely.
+  2. Run Q1-Q25 evaluation with evidence.
+  3. Check for auto-fail patterns: empty bodies, assertions on mock inputs, tests passing with implementation deleted, toBeTruthy on objects.
+  4. Report PASS (>= 82% of applicable, all critical gates), FIX (gaps identified), or BLOCK (< 53%).
+
+  Read ../../rules/testing.md and ../../shared/includes/test-edge-cases.md."
+```
+
+#### CQ Auditor
+
+```
+Dispatch with:
+  type: general-purpose  # read-only: Read + CodeSift only, no Edit/Write (Explore lacks mcp__codesift__*)
+  model: Sonnet
+
+  prompt:
+  "Audit code quality on these production files (entire files, not diffs).
+
+  FILES: {list}
+  FEATURE: {description}
+
+  Tasks:
+  1. Read each file completely.
+  2. Run CQ1-CQ40 with file:function:line evidence.
+  3. Classify: FIX-NOW (< 5 min), CRITICAL-BLOCKED (critical gate failure), DEFER (returned).
+  4. Check file sizes against limits.
+
+  Read ../../rules/cq-patterns.md and ../../rules/cq-checklist.md."
+```
+
+Handle auditor results:
+- **FIX-NOW:** Apply immediately.
+- **CRITICAL-BLOCKED:** Fix before commit.
+- **DEFER:** Recorded in Phase 4.5 through `backlog-add` (**Generic write**).
+
+### 4.2 Verification Commands
+
+Run stack-appropriate checks:
+
+| Tier | Required checks |
+|------|----------------|
+| LIGHT | Tests + types if a type checker exists (`tsc --noEmit` / `mypy` / `pyright`) |
+| STANDARD | Tests + types |
+| DEEP | Tests + types + lint |
+
+All must pass. If any fails, fix and re-run.
+
+**Duplication gate (all tiers, when the `codesift` CLI has `dup-check`):** run `codesift dup-check` from the
+checkout root. It compares every function this branch adds or changes with the repo index. Exit 1 → replace
+the copy with the existing symbol (or extend that one) and re-run; keep a copy only with a
+`// codesift-dup-ok: <reason>` comment above it and say why in the report. Record `dup-check: <N>`.
+
+Read `../../shared/includes/verification-protocol.md` — no completion claims without fresh evidence.
+
+**Verification commands check implementation health (compiles, types, tests). They do NOT check that user-observable behavior matches the AP entries. That is Phase 4.2b.**
+
+### 4.2b Acceptance Proofs (MANDATORY — the behavior gate)
+
+For each AP entry from the Phase 2 plan section 7 (Acceptance Proofs):
+
+1. Set up the AP's preconditions (fixtures, env vars, seeded data, dev server).
+2. Run the AP's proof exactly as written:
+   - `backend-logic` / `api` / `integration` / `config` — execute shell command or HTTP call. Capture stdout/stderr + exit code to artifact path.
+   - `db` / `db-data` — run migration / sample query, capture schema dump or query results to artifact.
+   - `ui` — drive Playwright or chrome-devtools MCP through the interaction script. Save screenshot + DOM snapshot to artifact.
+   - `docs` — run linter / link checker, capture report.
+3. Compare against the AP's `Expected:` field.
+4. Verdict per AP: VERIFIED or BROKEN.
+
+**LLM-judge fallback for UI subjective dimensions:** if an AP includes a subjective visual quality the proof cannot deterministically express, after capturing the screenshot dispatch a Sonnet judge with `(AP description, screenshot, DOM)` requiring binary `VERIFIED` / `BROKEN` plus one-sentence justification. Default deterministic.
+
+**When the approved browser tool returns a POLICY BLOCK** (the host refuses the automation, not a
+page error): record `AP=BLOCKED_INFRA` for that proof. Do **not** route around it with an alternate
+automation path — an unapproved driver is not the approved one, and "I got a screenshot somehow" is
+not the proof the AP specified. Continue the deterministic verification that can still run, and
+**a run carrying BLOCKED_INFRA may NOT write a successful content-keyed review artifact** — its UI
+behaviour is unverified, and an artifact would claim coverage the run does not have.
+
+**Verdict handling:**
+- All APs VERIFIED → proceed to 4.2c.
+- Any AP BROKEN → fix the implementation, re-run from 4.1 (or from 3.2 if the fix is non-trivial). Maximum 3 AP iterations. After 3, abort with `BLOCKED_ACCEPTANCE_PROOF_FAILURE` and surface to user.
+- AP marked "Not applicable" in plan → skip with a note. Reason must already be in plan section 7.
+
+**Aggregate scoring forbidden.** Telemetry must report per-file CQ/Q scores (e.g. `cq=34/37@codec.ts,35/37@parser.ts`), never `cq=27/29 aggregate`. The 2026-04-22 codec session shipped Q7=0 and Q11=0 hidden under `q_gates: 19/19 aggregate` — per-file enforcement prevents recurrence.
+
+### 4.2c Comment Pass (MANDATORY — before the cross-model review)
+
+Read `../../shared/includes/comment-pass.md` and run its whole sequence — mechanical scope, `CHECK` lines, ledger check, exit valve — with:
+
+- `COMMENT_SCOPE` = every file this build created or modified, production and test: the plan's file list, the tests from 3.4 and every file a fix creates or edits — checked against `git status --porcelain --untracked-files=all` and the 3.1 snapshot, which never add paths.
+- `COMMENT_BASE` = the `BUILD_BASE=<sha>` printed in 3.1 — the commit before this build's first write. If it is missing (a resume, a skipped 3.1): the same resolver (`git rev-parse -q --verify HEAD || git hash-object -t tree /dev/null`) only when this build has committed nothing, otherwise print `[GATE: comment-pass] BLOCKED rc=2 base unknown`.
+
+```bash
+# Quote each path separately, as in 4.4; run from the repository root.
+BUILD_BASE=<sha printed in 3.1>
+rc=0; ~/.zuvo/comment-audit --base "$BUILD_BASE" --files "<written-file-1>" "<written-file-2>" --skill build || rc=$?
+```
+
+- **rc 1** → fix every finding in-run (MOVE history into the 4.6 commit message) and re-run until rc 0 — no cap, no backlog. The one exception is the exit valve: findings that cannot be fixed without harming the code and exceed the justification cap → print `[GATE: comment-pass] BLOCKED rc=1 ids=<id,…> <reason>` and stop for a human.
+- **rc 0** → settle each `CHECK` claim once by TEST-OR-GO and list it in the report as `CHECK settled: <file:line> test|removed|softened`. A settling edit (a test added, a number removed) means one more helper run, and the marker takes that last clean run's id. Confirm the ledger with the include's `awk` lookup: a row for every path in scope (no row → `[GATE: comment-pass] BLOCKED rc=0 no ledger row for run=<id>`; a scoped path without a row → re-run over the full scope), then print `[GATE: comment-pass] PASS run=<id> files=<n> justified=<k>[ ids=<id,…>][ env=<NAMES>]` or `N/A (run=<id> no audited source)`; `N/A (no files written)` is printed only when the scope is empty (include step 1), with no run, and proceed to 4.3. If the pass added a test or changed code, re-run the 4.2 verification for those files first.
+- **any other rc** → fix the invocation; if it cannot be fixed, print `[GATE: comment-pass] BLOCKED rc=<n> <reason>` and do not report this build complete.
+
+Running the pass before 4.4 means the cross-model review sees the comments as they will ship.
+
+### 4.3 Execution Checklist
+
+Print before committing. Required items depend on tier.
+
+```
+EXECUTION VERIFICATION
+----------------------------------------------------
+[ALL] [ ] SCOPE: All files match the plan
+[ALL] [ ] SCOPE: No unplanned features or refactoring
+[ALL] [ ] TESTS: Test suite green
+[ALL] [ ] CQ CRITICAL: All critical gates pass (with evidence)
+[ALL] [ ] TYPES: Type checker passes (if checker exists; skip with note if none)
+[ALL] [ ] AP: Every Acceptance Proof from plan section 7 ran and returned VERIFIED (artifact paths recorded) — or "Not applicable" with reason
+[ALL] [ ] COMMENTS: [GATE: comment-pass] PASS run=<id> (ledger-verified), N/A (no files written) or N/A (run=<id> no audited source), printed by 4.2c
+[STD+] [ ] CQ FULL: CQ1-CQ40 self-eval, PER-FILE scores + evidence (aggregate forbidden)
+[STD+] [ ] Q FULL: Q1-Q25 self-eval on each test file, PER-FILE scores
+[STD+] [ ] ANTI-TAUTOLOGY: Automated echo pattern check passed
+[STD+] [ ] TEST AUDITOR: Independent auditor score matches self-eval (±1)
+[DEEP] [ ] LINT: Linter passes
+[DEEP] [ ] CQ AUDITOR: Agent returned, FIX-NOW items applied
+[DEEP] [ ] TEST AUDITOR: Agent returned with PASS
+----------------------------------------------------
+```
+
+### 4.4 Adversarial Review (MANDATORY — do NOT skip)
+
+> **Capture the script's OWN status, not just the patch helper's exit code.** `adversarial-review`
+> distinguishes ok / partial / **truncated(4)** / timeout(124) / suspended(125) / single_provider_only(3) / error. A
+> suspended-host or all-timeout run produces NO findings — which is indistinguishable from a clean
+> pass unless you read the status. Treat 124/125 as NOT RUN (re-invoke once for 125 per
+> `adversarial-loop.md`), and never let "no findings" from an unrun pass satisfy this gate.
+>
+> **Exit 4 needs its own handling, and it is the one this warning does not cover.** 124/125 are
+> easy because they produce nothing; 4 produces REAL FINDINGS over PART of the patch, so "I read
+> the status and there were findings" is exactly the wrong test. Treat 4 as **PARTIAL COVERAGE**:
+> the findings stand, the silence does not. Re-run over the files the artifact lists as omitted,
+> merge the verdicts, and only then let this gate pass. Listing 4 in the enumeration above without
+> saying that is what an adversarial pass on this very change flagged as CRITICAL — naming a status
+> is not gating it.
+
+```bash
+# Scoped review patch on stdout — the git index is NEVER touched (no staging).
+# PATH args = the files THIS build wrote (the plan task's "Files:" list).
+# Quote each SEPARATELY — never one space-joined string or a bare $FILES: zsh does
+# not word-split an unquoted expansion, so the helper gets the whole list as ONE
+# path, matches nothing and exits 2. Use "${FILES[@]}" for an array.
+# With NO PATH args the helper reviews the WHOLE dirty tree, untracked files
+# included, and that content is sent to the external providers — always scope it.
+# `|| _prc=$?` (never `; _prc=$?`): under `set -e` the plain form aborts the shell
+# at the assignment, so exit 3 and the BLOCKED branch would never be reached.
+# The BLOCKED branch ends in `false`, so the block's own exit status is non-zero:
+# printing alone lets a `set -e` / `if ! …` caller sail past a review that never
+# ran. `false`, not `exit`, so an inlining caller's shell is not killed.
+if [ -x "$HOME/.zuvo/build-review-patch" ]; then
+  _prc=0; _patch=$("$HOME/.zuvo/build-review-patch" "<written-file-1>" "<written-file-2>") || _prc=$?
+  if [ "$_prc" -eq 3 ]; then echo "adversarial review: skipped (no changes)"
+  elif [ "$_prc" -ne 0 ]; then echo "BLOCKED: build-review-patch failed (rc=$_prc). Adversarial review did NOT run; do NOT proceed to commit and do NOT report this skill complete" >&2; false
+  else printf '%s\n' "$_patch" | ~/.zuvo/adversarial-review --mode code --artifact "zuvo/proofs/build-<slug>-adversarial.txt"; fi
+else
+  ~/.zuvo/adversarial-review --mode code --artifact "zuvo/proofs/build-<slug>-adversarial.txt" --files "<changed files>"
+fi
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+If diff touches auth, payment, crypto, PII, or migration files, use `--mode security` instead. If diff touches migrations/schema, use `--mode migrate`.
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Handle findings by severity:
+- **CRITICAL** — confirm it first: two or more lanes in its `.agreement` group, or your own check (a failing test, a reproduced input, the cited code read and the defect traced). Confirmed → fix immediately. A single-lane CRITICAL you cannot confirm is triaged as a WARNING and reported as `[CRITICAL→WARNING single-lane]` (`adversarial-loop.md` Step 4).
+- **WARNING** — fix if localized (< 10 lines). Otherwise record it with `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source build --file "$F" --line <n> [--anchor "$A"] --title "$T"` (`backlog-protocol.md` "Filing from a skill", **Adversarial review**; pass `--anchor "$A"` only when the class requires one, BUG, SEC or DATA, or the finding carries one, never an invented one; assign `"$R"`, `"$F"` and `"$T"` before the call, and `"$A"` only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`)). Report the B- or F-id it prints; a finding still not persisted is listed under `NOT PERSISTED (<reason>)`, never appended by hand.
+- **INFO** — known concerns (max 3, one line each).
+
+Do NOT discard findings based on confidence alone. Confidence measures how sure the reviewer is, not how important the issue is. A CRITICAL with low confidence means "verify this — if true, it's serious."
+
+"Pre-existing" is NOT a reason to skip a finding. If the issue is in a file you are already editing, fix it now. If not, call `backlog-add` for each pre-existing finding: `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source drive-by:build --file "$F" --line <n> [--anchor "$A"] --title "$T"` (`drive-by-findings.md`; `backlog-protocol.md` "Filing from a skill", **Adversarial review**; `<C>` is the drive-by tag the finding qualifies for; the anchor as for the WARNING command above; assign `"$R"`, `"$F"` and `"$T"` before the call, and `"$A"` only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`)). The helper's bars may keep it in the backlog, keep it in the ledger only, or discard it, so report what it printed. Each one it kept counts, under its tag, in the `Drive-by: N recorded (…)` line and the `~/.zuvo/log-drive-by` receipt of the drive-by step below. The adversarial review found a real problem — don't dismiss it just because it existed before your changes.
+
+### 4.5 Backlog Persistence
+
+Collect the findings this run defers from all sources (self-eval, the auditors' DEFER items, verification warnings); 4.4 records the adversarial ones itself, so they get no second call here. A finding this run fixed gets no call (`backlog-protocol.md` "Filing from a skill", **Closing, not removing**); if fixing an existing open `B-<id>` on an unmerged PR branch, keep it `- [ ]` (`OPEN`) with an `IN-PR` stamp (never `- [x]`, `- [~]`, closure words, or archiving) until merged (`backlog-protocol.md` "Filing from a skill", **Closing, not removing**).
+
+Record each with `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source build --file "$F" --line <n> [--anchor "$A"] --title "$T"` (one call per finding; `backlog-protocol.md` "Filing from a skill", **Generic write**; `<C>` is `CQ`, or `BUG` only when it names the input and the wrong output, or the class the finding is; pass `--anchor "$A"` only when the class requires one, BUG, SEC or DATA, or the finding carries one, never an invented one; a finding about the whole file cites `--line 1` with a "Whole file: …" title, "The location rule"; assign `"$R"`, `"$F"` and `"$T"` before the call, and `"$A"` only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`)). Which findings are passed is the protocol's "Confidence-Based Routing"; the helper applies the bars and the dedupe, and decides whether it reaches `memory/backlog.md` or only the findings ledger. Report the B- or F-id it prints. On a non-zero exit act on the protocol's exit table; a finding still not persisted is listed under `NOT PERSISTED (<reason>)`, never appended by hand.
+
+### 4.6 Stage and Commit
+
+**Comment recheck.** If any file was changed or created since the last clean 4.2c run (4.4 fixes, a new test, anything), re-run 4.2c over the grown scope with the `BUILD_BASE` printed in 3.1 before `git add`, fix to rc 0, and print the marker with the new run id. The same holds before the 4.6b `test:` commit.
+
+Stage exactly the files created or modified:
+
+```
+git add [explicit file list — never -A or .]
+```
+
+The `wrote=` paths `backlog-add` printed are not staged here: they go into the run's one closing commit after the drive-by step (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**).
+
+**Commit:** Follow env-compat interaction rules. `--auto-commit` skips confirmation.
+
+```
+git commit -m "build: [feature description]"
+```
+
+**Tagging (opt-in):** Only with `--tag` flag:
+```
+git tag build-[YYYY-MM-DD]-[short-slug]
+```
+
+Do not push. Pushing is a separate user decision.
+
+### 4.6b Test Quality Gate (zuvo:test-audit → tier A) — STANDARD and DEEP
+
+The 3.5/4.1 Q1-Q25 evals are in-run self-scoring (the auditor shares the run's context), and
+field runs still shipped weak tests. After the 4.6 commit — behavior is proven, verified, and
+committed — run the gate from `../../shared/includes/test-quality-gate.md` with:
+
+- `TEST_SCOPE` = every test file this build **created or modified** PLUS every **pre-existing**
+  test file covering a production file in the scope fence (co-located `.test.*`/`.spec.*`/
+  `__tests__/*`, or grep for imports of the touched production files).
+- `FIX_COMMIT_PREFIX` = `test(build):`
+
+The include dispatches the REAL `Skill(zuvo:test-audit …)` on that scope, fixes every file below
+tier A in-run (strengthening only, separate `test:` commit after the 4.6 feature commit, suites
+re-run green), re-audits (max 2 iterations), and prints `[GATE: test-quality] PASS|WARN|N/A` with
+the on-disk `zuvo/audits/` report path as proof of dispatch — an inline Q-rescoring pass reported
+as this gate is a substituted gate = INVALID. Below-A after the cap → WARN, each
+below-A file recorded once through `backlog-add` with `--source build` as the include's step 5
+prints it (whole-file), never silence. **LIGHT tier:** skip and print `[GATE: test-quality] SKIPPED (LIGHT tier — inline
+Q check per 3.5)` — the tier table is the authority; do not silently omit the line.
+Test fixes made here are writes too: before their `test:` commit, re-run 4.2c with the
+`BUILD_BASE` printed in 3.1 over its scope plus the fixed test files (the 4.6 recheck rule).
+
+### Drive-by findings (REQUIRED — record only, leaves a receipt)
+
+Follow `../../shared/includes/drive-by-findings.md` with `<skill> = build`: backlog the
+security, bug, size, duplication, complexity, performance, dead-code and readability problems
+noticed OUTSIDE this run's fence in files it already read (never fix them here), list every
+`SEC` one in the BUILD COMPLETE block, then ALWAYS record the receipt
+`~/.zuvo/log-drive-by --skill build --sec <a> --bug <b> …` (all zeros is an honest outcome).
+The counts include the pre-existing adversarial findings 4.4 filed with `--source drive-by:build`.
+
+### Closing commit for backlog-add's writes
+
+This comes after the drive-by step, the run's last `backlog-add` call. If 4.6 committed, make the one closing commit `chore(backlog): record findings of build run` with exactly the `wrote=` paths the run printed (the union of the `backlog-writes:` paths in this run's sidecar and in its plan block, Phase 0 step 4), as `backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote** says (its snapshot from Phase 0, kept in the plan block and the sidecar). With no path left there is no commit: BUILD COMPLETE reads `none: nothing to stage`. If 4.6 did not commit, stage nothing and list the paths in BUILD COMPLETE. Whatever the outcome (committed, nothing to stage, or not committed), the run then sets its sidecar's `status:` to `closed`, so a later run never adopts it.
+
+### Follow-up ideas (optional — ZERO ceremony, leaves a receipt)
+
+Follow `../../shared/includes/followup-ideas.md` with `<skill> = build`: append genuine new
+ideas to `memory/ideas.md` at the MAIN checkout root if any surfaced, then ALWAYS record the
+receipt `~/.zuvo/log-ideas --skill build --count <N>` (N=0 is the normal, honest outcome — do
+not invent ideas to inflate it). The receipt makes the un-gated step's silence auditable in
+`~/.zuvo/ideas.log` without forcing ideation.
+
+### 4.7 Knowledge Curation
+
+After all work is done (code written, tests passing, CQ/Q scored), run the knowledge curation protocol from `knowledge-curate.md`:
+
+```
+WORK_TYPE = "implementation"
+CALLER = "zuvo:build"
+REFERENCE = <git SHA of the commit>
+```
+
+### 4.8 Documentation (REQUIRED — no silent skip)
+
+Follow `documentation-mandate.md`. The feature you just built MUST land with docs:
+pick the target by what changed (new capability → README/`docs/<feature>.md` + CHANGELOG;
+new/changed API or contract → API reference + CHANGELOG; behavior/flag/env → runbook +
+`.env.example`; bugfix-only → CHANGELOG line). Small builds edit the doc inline; a
+substantial one dispatches `Skill(skill="zuvo:docs", args="update <target>")`. The only
+no-docs path is an explicit `[DOC: N/A — internal-only, no behavior/API/contract change]`.
+Record the doc paths for the `### Documentation` line in the BUILD COMPLETE block.
+
+### 4.8b Content-keyed review artifact (REQUIRED — on success only)
+
+After verify + acceptance proofs pass (and ONLY then), write the content-keyed review
+artifact `memory/reviews/<base7>..<head7>-<slug>.md` (in a linked worktree with no `memory/`, the main
+checkout's — `review-artifact.md` → Path; never create `memory/` there) carrying the machine-readable
+`range:` / `files:` / **`adversarial:`** header per `../../shared/includes/review-artifact.md`.
+Compute the range worktree-safe (`git -C "$repo_root" merge-base HEAD <default-branch>..HEAD`)
+and list the production files this build touched in `files:` (or `*`). Set `adversarial:` to the
+`zuvo/proofs/build-<slug>-adversarial.txt` you saved with `--artifact` in Phase 4.4 — the
+pipeline-entry gate now REQUIRES a real proof (`pg_artifact_proven`: the file must hold ≥2
+`REVIEW BY:` provider lines), so an artifact without it does not grant coverage. This is the
+signal the pipeline-entry gates read (`pg_range_reviewed`) so the just-built, reviewed change
+can be pushed without re-blocking. Write it **only on success** — if any verification or
+acceptance proof FAILED/BLOCKED, write nothing, so a failed build never grants itself coverage.
+
+### 4.9 Retrospective (REQUIRED — no opt-out)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check -> structured questions -> TSV emit -> markdown append.
+
+**The "trivial session" opt-out is removed.** Every build produces a retro entry. If the build truly was uneventful, the entry is brief (one Friction line of `none observed`) but must still exist. The 92% retro skip rate observed in 2026-Q1 left the pipeline blind to its own failure modes.
+
+## Completion Gate Check
+
+Before printing the final output block, verify every item. Unfinished items = pipeline incomplete.
+
+```
+COMPLETION GATE CHECK
+[ ] Tier classified and printed: BUILD TIER: [LIGHT/STANDARD/DEEP]
+[ ] Surface(s) recorded in DISCOVERY output
+[ ] Code contract filled (STANDARD+) before production code written
+[ ] Test contract filled (STANDARD+) before tests written
+[ ] CQ self-eval printed with PER-FILE scores and evidence for critical gates (aggregate forbidden)
+[ ] Q self-eval printed PER-FILE (>=82% of applicable = PASS) with evidence
+[ ] Comment pass (4.2c): [GATE: comment-pass] PASS run=<id> (ledger-verified), N/A (no files written) or N/A (run=<id> no audited source); every CHECK claim listed as CHECK settled:; re-run before every git add that follows a later write (4.4 fixes, 4.6b test fixes); its comment_pass: line pasted into the retro Telemetry block
+[ ] Adversarial review ran and findings handled
+[ ] Test Quality Gate (4.6b, STANDARD+): [GATE: test-quality] PASS|WARN|N/A printed with a REAL zuvo/audits test-audit report path (inline Q-rescoring is a substituted gate = INVALID); below-A files fixed in-run as a test: commit or WARN with each one recorded through backlog-add; LIGHT prints the explicit SKIPPED line
+[ ] Acceptance Proofs (Phase 4.2b) — every AP ran and VERIFIED, artifact paths recorded
+[ ] All verification commands ran and exited 0
+[ ] Documentation created/updated (per documentation-mandate.md) or explicit [DOC: N/A — <reason>]
+[ ] Content-keyed artifact memory/reviews/<base7>..<head7>-<slug>.md written with range:/files:/adversarial: header — the adversarial: field points at the saved `--artifact` output (≥2 providers); an artifact without a real proof no longer grants coverage (on success only)
+[ ] Retrospective ran (no "trivial session" opt-out)
+[ ] Deferred findings recorded through backlog-add (4.4, 4.5), each B- or F-id reported or named under NOT PERSISTED (reason), or "none"; their wrote= paths in the closing commit, or listed, or none: nothing to stage
+[ ] Drive-by findings recorded per drive-by-findings.md: the `Drive-by: N recorded (…)` line and every SEC in the final summary, and the `~/.zuvo/log-drive-by` receipt written — zeros allowed
+[ ] Run: line printed and appended to log
+```
+
+### 4.10 Output
+
+```
+BUILD COMPLETE
+----------------------------------------------------
+Feature: [description]
+Tier: [LIGHT / STANDARD / DEEP]
+Files created: [N] | Files modified: [N]
+Tests: [N files], all passing
+Verification: tests PASS [| types PASS] [| lint PASS]
+CQ: [critical gates PASS | score/applicable on N files]
+Q: [critical gates PASS | score/applicable on N test files]
+Recorded: [N (backlog: a, ledger: b) | "none"] [plus each NOT PERSISTED (<reason>) by name]
+Backlog commit: [<sha7> | none: nothing to stage | not committed: <path>, …] [left out: <path> (<reason>)]
+[Process items: <F-id> <question or blocked dependency> — one line each]
+Drive-by: [N recorded (SEC:a BUG:b SIZE:c DUP:d CPLX:e PERF:f DEAD:g READ:h) | 0 recorded]
+[⚠ SECURITY (drive-by) <path>:<line> — <defect> [<severity>]   — one line per SEC finding]
+Commit: [hash] — [message]
+[Tag: [tag name]]
+
+Run: <ISO-8601-Z>\tbuild\t<project>\t<CQ>\t<Q>\t<VERDICT>\t<TASKS>\t<DURATION>\t<NOTES>\t<BRANCH>\t<SHA7>\t<INCLUDES>\t<TIER>
+
+Next steps:
+  zuvo:review [files]      — independent review
+  git push origin [branch] — push when ready
+----------------------------------------------------
+```
+
+**Append via wrapper (REQUIRED).** Never `>>` directly to `~/.zuvo/runs.log` — the wrapper is the gate that verifies a retro entry exists for this run. Order: retro bash executed → wrapper invoked → completion claimed.
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+
+Expected stdout: `OK: appended to runs.log (retro verified for <skill> on <project>)`. If exit 2 with `RETRO_REQUIRED` — go execute the retro bash from `retrospective.md` first; never bypass with `ZUVO_SKIP_RETRO_GATE=1`. After the wrapper succeeds, print a `Logs:` evidence line (`tail -1 ~/.zuvo/retros.log`, `grep -c "^<!-- RETRO -->" ~/.zuvo/retros.md`, `tail -1 ~/.zuvo/runs.log`) before claiming completion. Printing the markdown retro section without executing the bash leaves all three log files empty.
+
+VERDICT: PASS / WARN / FAIL / BLOCKED / ABORTED only.
+CQ: LIGHT → `critical-only`, STANDARD+ → `N/<applicable>` (40-gate set).
+Q: LIGHT → `critical-only`, STANDARD+ → `N/<applicable>` (25-gate set).
+TASKS: number of production files created + modified.
+DURATION: `light` / `standard` / `deep` (tier label).
+NOTES: `[TIER] feature description` (max 80 chars).
+
+
+---
+
+## Flag Reference
+
+| Flag | Effect |
+|------|--------|
+| `--auto` | Skip user approval at Phase 2 |
+| `--auto-commit` | Skip commit confirmation at Phase 4.6 |
+| `--tag` | Create a rollback tag after commit |
+| `--deep` | Force DEEP tier regardless of signals |
+
+Flags are additive. All quality gates run regardless of flags.

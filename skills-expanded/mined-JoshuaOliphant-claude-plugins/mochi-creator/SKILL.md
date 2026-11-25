@@ -1,0 +1,228 @@
+---
+name: mochi-creator
+description: >
+  MUST use when the user mentions flashcards, Mochi, spaced repetition, memorization, studying, or
+  wanting to remember something. Trigger proactively when the user says "I want to remember this",
+  "make flashcards", "create Mochi cards", "help me study", "turn this into flashcards", "SRS",
+  "Anki", or "I need to memorize this". Creates evidence-based cards using cognitive science
+  principles (Andy Matuschak's 5 properties of effective prompts) via the Mochi API.
+---
+
+# Mochi Creator
+
+## Goal
+
+Transform content into evidence-based Mochi.cards flashcards that produce lasting retention. Every card created must satisfy the 5 properties of effective prompts: focused, precise, consistent, tractable, and effortful.
+
+**Core Philosophy**: Writing prompts for spaced repetition is task design. You're creating recurring retrieval tasks for your future self. Bad prompts waste time and fail to build lasting memory. Great prompts compound learning over years.
+
+## Dependencies
+
+### Tools
+
+- **`scripts/mochi_api.py`** — Python client for the Mochi API. Both importable (`from scripts.mochi_api import MochiAPI`) and CLI-executable (`python scripts/mochi_api.py list-decks`). Handles auth, field naming conventions (snake_case → kebab-case), and pagination.
+
+### Connectors
+
+- **Mochi API** — Requires `MOCHI_API_KEY` environment variable (obtain from Mochi.cards → Account Settings → API Keys). Uses HTTP Basic Auth.
+
+### Setup
+
+```bash
+export MOCHI_API_KEY="your_api_key_here"
+```
+
+## Context
+
+### The Five Properties of Effective Prompts
+
+Every prompt must satisfy all five (from Andy Matuschak's research):
+
+1. **Focused** — One detail at a time. Write 3-5 cards instead of 1 comprehensive card.
+2. **Precise** — Specific questions demand specific answers. Avoid "interesting", "important", "tell me about".
+3. **Consistent** — Should produce the same answer each time. Avoid "give an example of X".
+4. **Tractable** — ~90% success rate. Break down if struggling, add cues. Remove scaffolding if too easy.
+5. **Effortful** — Must require actual memory retrieval, not trivial inference or pattern matching.
+
+### Quality Validation Checklist
+
+Before creating each card, verify:
+
+- [ ] **Focused**: Tests exactly one detail?
+- [ ] **Precise**: Question is specific, answer is unambiguous?
+- [ ] **Consistent**: Will produce the same answer each time?
+- [ ] **Tractable**: Learner can answer correctly ~90% of the time?
+- [ ] **Effortful**: Requires actual memory retrieval?
+- [ ] **Emotional**: Learner genuinely cares about remembering this?
+
+If any checkbox fails, revise before creating the card.
+
+### Anti-Patterns
+
+Reject these on sight:
+
+| Anti-Pattern | Example | Fix |
+|---|---|---|
+| Binary (yes/no) | "Is encapsulation important?" | "What benefit does encapsulation provide?" |
+| Pattern-matching | Long verbose question → obvious answer | Keep question short and direct |
+| Unfocused | "Features, benefits, and drawbacks of X?" | Separate card per detail |
+| Vague | "Tell me about async/await" | "What problem does async/await solve?" |
+| Trivial | "What does URL stand for?" | "Why do URLs encode spaces as %20?" |
+
+### Deep Reference
+
+For full cognitive science background, knowledge-type strategies (factual, conceptual, procedural, salience), the five conceptual lenses, and research citations, consult:
+
+→ **`references/prompt_design_principles.md`**
+
+## Process
+
+### Step 1: Establish Context
+
+Determine the scope and emotional connection before drafting any cards.
+
+**Ask the user:**
+- What content to transform into cards (notes, conversation, topic)
+- Which deck to target (list existing with `api.list_decks()` or create new)
+- What type of knowledge: factual, conceptual, procedural, or salience
+- "Do you actually care about remembering this in six months? Why?"
+
+If the user seems unmotivated or creating cards "because they should," push back gently. Emotional connection is primary — boredom leads to abandonment of the entire system.
+
+**Identify card format:**
+- **Simple cards** — markdown with `---` separator between sides
+- **Template-based cards** — structured fields for repeatable formats (vocabulary, definitions)
+
+```python
+from scripts.mochi_api import MochiAPI, MochiAPIError
+
+api = MochiAPI()
+
+# List existing decks
+decks = api.list_decks()
+
+# Or create a new deck
+deck = api.create_deck(name="Python Programming")
+deck_id = deck["id"]
+```
+
+### Step 2: Draft Cards Using Prompt Design Principles
+
+Apply knowledge-type appropriate strategies. Always follow the "More Than You Think" rule: write 3-5 focused prompts instead of 1 comprehensive prompt.
+
+Apply the strategy for the knowledge type (one example each; full Python helpers live in the reference below):
+
+| Type | Strategy | Example prompt → answer |
+|---|---|---|
+| **Factual** | Break into atomic units | "What fat is used in chocolate chip cookies?" → "Butter" |
+| **Conceptual** | Probe multiple lenses (attribute, contrast, cause, significance) | "What problem does dependency injection solve?" → "Lets mock dependencies be injected, making code testable" |
+| **Procedural** | Target rationale and timing, not rote steps | "Why autolyse before adding salt?" → "Salt inhibits gluten development; autolyse lets gluten form first" |
+| **Salience** | Context-based application (answers may vary; experimental) | "Where this week could you apply first-principles thinking?" → "(answer specific to your work)" |
+
+For detailed cognitive science strategies per knowledge type, consult:
+
+→ **`references/prompt_design_principles.md`**
+
+For ready-to-use Python helper functions per knowledge type (`create_concept_cards_five_lenses()`, `create_procedure_cards()`, etc.), consult:
+
+→ **`references/knowledge_type_templates.md`**
+
+### Human Checkpoint: Review Drafted Cards
+
+**Present all drafted cards to the user before creating them.** For each card, show:
+
+- The question and answer
+- Which quality property it primarily exercises
+- Any flags (e.g., "this might be unfocused — should we split?")
+
+Flag quality issues proactively:
+- "I notice this prompt asks about features AND drawbacks. Let me split it."
+- "This question is binary (yes/no). Let me rephrase as open-ended."
+- "This might be too trivial. Let me make it more effortful."
+
+**Wait for user approval before proceeding to Step 3.**
+
+### Step 3: Create Cards via Mochi API
+
+Create approved cards with error handling. Use tags for organization.
+
+**Simple cards:**
+```python
+card = api.create_card(
+    content="# What problem does dependency injection solve?\n---\nMakes code testable by allowing mock dependencies to be injected",
+    deck_id=deck_id,
+    manual_tags=["design-patterns", "dependency-injection"]
+)
+```
+
+**Template-based cards:**
+```python
+# Create or retrieve a template
+template = api.create_template(
+    name="Vocabulary Card",
+    content="# << Word >>\n\n**Definition:** << Definition >>\n\n**Example:** << Example >>",
+    fields={
+        "word": {"id": "word", "name": "Word", "type": "text", "pos": "a"},
+        "definition": {"id": "definition", "name": "Definition", "type": "text", "pos": "b",
+                       "options": {"multi-line?": True}},
+        "example": {"id": "example", "name": "Example", "type": "text", "pos": "c",
+                    "options": {"multi-line?": True}}
+    }
+)
+
+# Create cards using the template
+card = api.create_card(
+    content="",
+    deck_id=deck_id,
+    template_id=template["id"],
+    fields={
+        "word": {"id": "word", "value": "ephemeral"},
+        "definition": {"id": "definition", "value": "Lasting for a very short time; temporary"},
+        "example": {"id": "example", "value": "The beauty of cherry blossoms is ephemeral."}
+    }
+)
+```
+
+**Batch creation with error handling:**
+```python
+results = {"success": [], "failed": []}
+
+for question, answer in cards:
+    try:
+        card = api.create_card(
+            content=f"# {question}\n---\n{answer}",
+            deck_id=deck_id,
+            manual_tags=tags
+        )
+        results["success"].append(card["id"])
+    except MochiAPIError as e:
+        results["failed"].append({"question": question, "error": str(e)})
+```
+
+### Step 4: Report Results
+
+Report to the user:
+- Number of cards created successfully
+- Any failures with specific error details
+- Deck and tag organization summary
+
+### Human Checkpoint: Offer Iteration
+
+After reporting results, offer refinement:
+
+- "I've created N cards covering [lenses/types]. Would you like me to add more?"
+- "Any of these feel too difficult? I can add mnemonic cues."
+- "Should I create salience prompts to help you apply this in your work?"
+- "Want to review the cards in Mochi before we continue?"
+
+## Output
+
+Cards are created directly in the user's Mochi.cards account via the API. The deliverable is:
+
+- **Flashcards** in the specified deck, tagged and organized
+- **Decks/subdecks** created as needed (hierarchical: Subject → Topic → Subtopic via `parent_id`)
+- **Templates** created if structured card formats were used
+
+For the card markdown format, hierarchical decks, soft delete (preferred over hard delete), pagination, field types, and edge cases, consult:
+
+→ **`references/mochi_api_reference.md`**

@@ -1,0 +1,176 @@
+---
+name: review
+description: Diff-scoped multi-agent code review with adversarial verification. Fans out parallel reviewers across correctness, security, performance and interaction, then spawns skeptics whose only job is to refute each finding — so what survives is what a skeptic could not break. Use when the user says "review this", "review my changes", "code review", "review this PR", "diy-review", or asks whether a change is safe to merge. EXPENSIVE — spawns many subagents; see the cost section before running.
+license: PolyForm-Shield-1.0.0
+---
+
+# Review
+
+A diff-scoped review that produces the signal of a careful senior reviewer with
+false positives aggressively suppressed. It is deliberately expensive; the cost
+buys the verification pass, which is the part that makes the output trustworthy.
+
+Companion skills: **build** produces the app, **harden**
+audits the whole project before launch. This one reviews a single change.
+
+> Invocation differs by host: Claude Code uses `/gauntlet:<skill>`, Codex uses
+> `$<skill>`. Skill names below are given host-neutral.
+
+## When to use this rather than the host's own review
+
+Some hosts now ship a built-in diff review. Claude Code's `/code-review`, for
+example, has effort levels and a cloud multi-agent mode. Where one exists, it is
+a reasonable default for routine changes. Reach for this skill when:
+
+- **The host has no built-in review** (Codex, for one), or it is not enabled.
+- **The code must not leave your session.** This runs entirely in your own
+  session; a cloud review mode uploads the change.
+- **You want the shape under your control**: which reviewer dimensions run, how
+  many skeptics vote on a HIGH, and the cost table below.
+- **You want a second read that is not anchored on the first.** Two independent
+  reviews that agree are worth more than one run twice.
+
+Whichever you run, the limit is the same and it is the one to keep in view: **a
+clean diff review means this change is sound. It does not mean the app is ready
+to launch.** Neither review sees what is outside the diff (see Limits). That
+question belongs to the **harden** skill.
+
+## Read this before running: cost
+
+**This spawns many subagents and burns real tokens.** A measured run over
+~1,470 lines of new code used **roughly 390,000 subagent tokens** across four
+reviewers and three skeptic batches, and took about 20 minutes of wall clock.
+
+That is not a bug — the parallel fan-out and the per-finding refutation are
+where the quality comes from. But you are paying for it out of your own plan, so
+decide deliberately:
+
+| Diff size | Reviewers | Skeptics | Rough cost |
+|---|---|---|---|
+| < 100 lines | 1–2 | single vote | ~40–80k |
+| 100–500 lines | 2–3 | single vote, 2 on HIGH+ | ~120–200k |
+| > 500 lines, or touching auth/payments/data | all 4 | 2–3 on CRITICAL/HIGH | ~300–500k |
+
+**Scale down by default.** If the user has not signalled that they want the full
+treatment, ask before running the large configuration, or run the smaller one
+and say what you scaled back.
+
+Requires the `Agent` tool. Without it, this skill cannot run — say so rather
+than silently doing a single-pass review and presenting it as verified.
+
+## Method
+
+Four phases. The third is the one that matters.
+
+### 1. Resolve scope
+
+Work out the diff from the argument:
+
+- **blank** → current branch vs its merge-base with the default branch:
+  `git merge-base HEAD origin/main` (fall back to `origin/master`, then local
+  `main`/`master`), then `git diff <base>...HEAD`. If not a git repo, or that
+  diff is empty, review the working tree: `git diff HEAD`.
+- **`staged`** → `git diff --cached`
+- **a number** → GitHub PR: `gh pr diff <n>`
+- **anything else** → treat as a base ref and diff `HEAD` against it
+
+Run `git diff --stat` for the file list. **State the resolved scope in one line**
+before continuing. If the diff is empty, say so and stop.
+
+If the argument is not a valid ref and there is no diff, do not invent a scope
+silently — say what you fell back to and why.
+
+### 2. Fan out reviewers (parallel, one message, multiple Agent calls)
+
+Each is scoped to the changed hunks and the files they touch. They may read
+surrounding context but must not review unrelated code.
+
+- **correctness** — logic errors, off-by-one, null/undefined, races, error
+  handling, wrong API usage, broken invariants, edge cases the change misses
+- **security** — authz/authn gaps, injection, secrets exposure, unsafe input,
+  XSS/CSRF/SSRF, tenant isolation, unsafe defaults — only where the diff
+  introduces or touches them
+- **perf** — N+1s, unbounded queries or loops, indexes implied by new query
+  shapes, needless re-renders or allocations, blocking calls on hot paths
+- **interaction** — how the change ripples: callers of changed signatures,
+  assumptions it breaks elsewhere, migration and rollout ordering, backward
+  compatibility, code it leaves unreachable
+
+Findings come back as: severity (CRITICAL/HIGH/MEDIUM/LOW), `file:line`, a
+one-line claim, a **concrete failure scenario** (specific inputs or state →
+specific wrong output or crash), and a suggested fix.
+
+Instruct every reviewer to prefer **fewer, higher-confidence** findings, anchor
+each to a real failure scenario, and skip style or taste unless it causes an
+actual defect.
+
+### 3. Adversarially verify every candidate
+
+**Do not skip this. It is the whole point.** For each candidate, spawn an
+independent skeptic whose only job is to refute it:
+
+> "Here is a claimed defect: `<finding>`. Prove it is NOT a real bug — show why
+> the code is correct, why the triggering input cannot occur, or why the
+> framework or caller already handles it. Default to 'not a real bug' unless you
+> can construct a concrete failing case."
+
+Drop anything the skeptic refutes. For CRITICAL/HIGH use 2–3 skeptics and keep
+the finding only on a majority.
+
+**A finding nobody tried to break is not a finding.** In practice skeptics do
+three useful things beyond deleting noise: they correct severity in both
+directions, they refute a claim's *mechanism* while confirming the underlying
+defect (which changes the fix), and they surface adjacent findings the original
+reviewers missed. Report all three.
+
+Where you can verify a claim yourself with a command — read the file, run the
+regex, check the deployed header — **do that instead of spending a skeptic.**
+Direct evidence beats a second opinion.
+
+### 4. Dedup, rank, report
+
+Merge duplicates by root cause. Report only survivors, most severe first:
+
+**[SEVERITY] `file:line` — claim.** Failure scenario. → Suggested fix.
+
+Then list what was refuted and why — that section is evidence the verification
+actually happened, and it is often the most informative part for the reader.
+
+End with: `N candidates → M confirmed (K refuted and dropped)`.
+
+**Do not pad with speculative or unverified items.** A short trustworthy list
+beats a long noisy one. If nothing survives, say the diff is clean and list what
+you checked.
+
+## Flags
+
+- `--fix` — after reporting, apply the **confirmed** fixes, then run the
+  project's typecheck and tests and report the results. Otherwise this is
+  read-only; do not modify code.
+
+## Limits
+
+- **Reviews a diff, not a codebase.** For whole-project hardening use the
+  **harden** skill.
+
+  This is a hard structural limit, not a matter of effort, and it is worth
+  stating to the user rather than letting a clean review imply more than it
+  means. Unless these are literally in the changed lines, this skill will never
+  look at them:
+
+  - whole-app row-level-security posture — on all 40 tables, or 38
+  - tenant isolation across every route, not the ones touched
+  - indexes implied by query shapes elsewhere in the schema
+  - environment and documentation drift
+  - whether a first-time user can complete signup and reach value
+  - whether CI has ever actually run
+  - headers on the deployed origin, which appear in no source file
+
+  **A clean review means this change is sound. It does not mean the app is
+  ready.** If the user seems to be asking the second question, say so and point
+  them at the harden skill.
+- **No deterministic gates.** Unlike the **harden** skill, every judgment here comes
+  from a model. The refutation pass is the only quality control, which is
+  precisely why it is not optional.
+- **Cost scales with diff size**, not with how much is wrong. A clean 2,000-line
+  diff costs about the same as a broken one.

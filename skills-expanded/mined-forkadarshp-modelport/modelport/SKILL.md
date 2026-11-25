@@ -1,0 +1,284 @@
+---
+name: modelport-skill
+description: Use when the user asks to migrate, upgrade, or port prompts, agents, tools, or code to a newer LLM or a different provider, including Claude Opus 5.5 / Sonnet 5.5 / Haiku 5.5 / Fable 5.1, GPT-6, and Gemini 3.8, or replace a deprecated or retired model. Also use when a model swap returns 400s (thinking disabled, budget_tokens, forced tool_choice, temperature/top_p, prefill, computer_20251124), truncates replies, or breaks parsers and tool calls, and when auditing migration work another agent started. Fixes API calls, prompts, tool definitions, tests, and configs, then proves it with tests, a live smoke check, and an optional old-vs-new benchmark.
+---
+
+# ModelPort Skill
+
+Production-grade LLM migrations. Swap models safely across agents, prompts,
+and code.
+
+## Default Output Mode
+
+Every response from this skill is hyper-concise. No exceptions unless the user
+explicitly requests verbose output.
+
+- No conversational filler, no pleasantries, no intro/outro.
+- Dense bullet points. Omit verbs where possible.
+- `->` for state transitions (e.g. `GPT-4 -> Claude-3`).
+- Code diffs only — never reprint entire files.
+- State only: what changed, why, what was validated.
+- Every token must earn its place.
+
+## Operating Principles
+
+Adapted from the Karpathy guidelines for AI coding agents, applied to
+migration work.
+
+### Think before editing
+
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+- State assumptions explicitly. If uncertain, ask.
+- Multiple interpretations exist → present them, don't pick silently.
+- Scope ambiguous → ask one scope-selection question, wait.
+- Check existing work: branch/PR context, issue notes, handoff files,
+  another agent's partial implementation. Understand before editing.
+
+### Simplicity first
+
+Minimum change that solves the migration. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use paths.
+- No "flexibility" that wasn't requested.
+- If you wrote 50 lines and it could be 10 diffs, rewrite.
+
+### Surgical changes
+
+Touch only what must change. Clean up only your own mess.
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- Required fixes ≠ optional tuning — never mix, always label.
+- Preserve backward-compatible paths unless user says remove them.
+
+### Goal-driven execution
+
+Define success criteria before writing code. Loop until verified.
+
+- Transform vague tasks into verifiable goals.
+- "Migrate X" → tests pass + smoke request succeeds + contract holds.
+- Run validation after each meaningful change.
+- If a check fails: diagnose → patch narrowly → retry the failed check.
+- Don't claim completion without proof evidence.
+
+### Iterative & targeted
+
+Plan thoroughly, execute in phases.
+
+- Research the codebase fully before implementation starts.
+- Pick a targeted section (e.g., one component, one workflow) — no whole-repo big bangs.
+- Implement and validate phase-by-phase.
+
+## Inputs
+
+Collect before editing:
+
+- Source model/provider/version → destination model/provider/version
+- Scope: exact files, directories, or whole repo
+- Migration mode:
+  - In-place replacement
+  - Side-by-side dual-model support
+  - Phased rollout with feature flags
+- Constraints: latency, cost, output format, safety/compliance
+- Success criteria: quality, speed, token/cost, compatibility
+- Evidence requirements: unit tests, evals, live smoke checks, rollout metrics
+- Benchmark report: does the user want pre/post benchmark stats in the final
+  report (baseline old/old vs new/enhanced, plus the raw-swap control)? Opt-in.
+  Ask once, up front — capturing the baseline later is impossible.
+
+Look up source and target in `references/models/INDEX.md`. If either has a
+dedicated guide, read it before proceeding, and follow the upgrade path in the
+index (older guides are layered under newer ones). Model guides contain
+changelogs, breaking changes, migration steps, and version-specific quirks.
+
+Freshness check, before trusting any guide:
+
+- `Last verified:` older than 30 days, or the target is not in the index →
+  fetch the provider's official migration page first. Never guess model IDs,
+  parameters, prices, or limits.
+- Record the source and date used in the migration report.
+- Facts marked as secondary-source in a guide → confirm on the provider page.
+
+If benchmarking is requested, read `references/benchmarking.md` and capture the
+baseline (Arm A) in Phase 0 before any edit — it cannot be reconstructed later.
+
+Scope not explicit → ask once, wait.
+
+## Workflow
+
+### Phase 0: Scope lock
+
+Define exactly what will be migrated. Narrow down to a targeted section. Establish current state.
+
+- Inspect VCS status, branch/PR context, issue notes, migration plans,
+  handoff files.
+- Separate: done vs. needs-validation vs. in-progress vs. not-started.
+- Identify work that appears unrelated, incomplete, or owned by another agent.
+- Do not edit until scope is confirmed, targeted, and current state is understood.
+- Benchmarking opted in → capture **Arm A** (baseline: old model + old prompts)
+  on the eval set now, before any edit. See `references/benchmarking.md`.
+
+### Phase 1: Discovery scan
+
+Map the migration surface:
+
+- API call sites: SDK/client usage, model IDs, request params
+- Prompt assets: system prompts, templates, chains
+- Agent configs: tool policy, autonomy/delegation behavior
+- Tool definitions: schemas, descriptions, guardrails
+- Registries/config/tests/docs referencing model names
+
+Read:
+
+- `references/migration-playbook.md`
+- `references/provider-checklists.md`
+- `references/models/INDEX.md` — registry, upgrade paths, freshness rules
+- `references/breaking-changes.md` — error/symptom → cause → fix lookup across
+  providers; read first when a swap returns 400s or behaves differently
+- `references/models/<model>.md` — when source or target matches a model with
+  a dedicated guide (Claude Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5,
+  GPT-6, Gemini 3.8 Flash, plus legacy Claude and GPT-5.5 guides)
+- `references/prompt-template-research.md` — when creating or improving a
+  migration prompt or reusable migration request
+- `references/migration-patterns.md` — when choosing rollout strategy,
+  adapters, feature flags, or side-by-side support
+- `references/validation-proof.md` — when planning proof gates, evals,
+  smoke tests, or diagnose-patch-retry loops
+- `references/benchmarking.md` — when the user opted into a pre/post benchmark
+  (three-arm methodology, metrics, composite scoring, leaderboard format)
+
+### Phase 2: Classify before editing
+
+Classify each hit:
+
+- **Runtime caller** — code that sends model requests
+- **Definer/registry** — model catalogs, routing, capability maps
+- **Prompt/behavior layer** — prompt templates, safety policy
+- **Agent/tool layer** — tool specs, usage policy, orchestration hints
+- **Reference/test/docs** — assertions, docs, examples, fixtures
+
+Choose action per category:
+
+- Replace
+- Add alongside
+- Keep and annotate
+- Regenerate (generated files only)
+
+### Phase 3: Migration design
+
+Thoroughly plan and research before implementation starts. Compact migration spec:
+
+- What is already implemented (by whom, if known)
+- What remains
+- Which pattern: direct swap, branch-by-abstraction, strangler routing,
+  expand-contract, shadow mode, canary rollout
+- Breakdown of iterative phases for implementation
+- Required to prevent breakage
+- Optional tuning for better performance
+- Validation plan: tests + runtime checks + regression checks + proof
+- Rollback strategy
+
+Provider-specific unknowns → flag and ask before risky edits.
+Do not start Phase 4 until this design is complete and phase boundaries are clear.
+
+### Phase 4: Implementation
+
+Apply in order:
+
+1. Runtime/API compatibility edits
+2. Prompt and behavior tuning
+3. Agent and tool behavior updates
+4. Config, registry, tests, docs synchronization
+
+Precise edits only. No repo-wide blind search-and-replace.
+
+Benchmarking opted in → after step 1 (runtime edits) and before step 2 (prompt
+tuning), capture **Arm B** (naive swap: new model + old prompts). This is the
+honest control for the raw model delta.
+
+### Phase 5: Validation
+
+Run:
+
+- Unit/integration tests for modified files
+- Lint/type-check where applicable
+- At least one real smoke test on destination model
+- Output-contract or prompt-eval checks when prompts/parsers changed
+
+Verify:
+
+- Request success (no parameter/model errors)
+- Expected stop/finish behavior
+- Tool invocation still aligned
+- Output shape/format still satisfied
+- Observability signals defined for staged rollout when production risk exists
+
+Benchmarking opted in → capture **Arm C** (new model + enhanced system) on the
+same eval set, then compile the three-arm leaderboard and attribution (model
+delta B−A, skill delta C−B, net C−A) per `references/benchmarking.md`.
+
+Failure → diagnose root cause → patch smallest responsible surface → retry
+failed check before claiming completion.
+
+### Phase 6: Report
+
+Hyper-concise report. These sections, nothing else:
+
+1. Migration Summary
+2. Scope and Files Changed
+3. Existing Work and Remaining Work
+4. Required Compatibility Fixes
+5. Prompt/Agent Behavior Tuning
+6. Validation Results
+7. Proof Evidence
+8. Risks and Follow-up Recommendations
+9. Rollback Notes
+10. Benchmark Results — only if benchmarking was requested. Three-arm
+    leaderboard + attribution. Mark sample/illustrative numbers as such.
+
+Format per `examples/example-output.md`.
+
+## Anti-Patterns
+
+- Blind global model-ID replacement
+- Guessing model IDs, parameters, pricing, limits, or deprecation dates
+- Editing generated files manually instead of regenerating
+- Treating registry/definer files like runtime callers
+- Overwriting another agent's partial implementation without checking intent
+- Mixing required fixes with optional tuning without labeling
+- Skipping validation and claiming complete
+- Treating a synthetic test as proof without a real smoke check, eval, trace,
+  or before/after comparison
+- Benchmarking arms on different eval sets, settings, or cache states
+- Presenting illustrative/sample benchmark numbers as measured results
+- Skipping the Arm A baseline capture, then editing — it cannot be recovered
+
+## References
+
+- Migration strategy: `references/migration-playbook.md`
+- Provider checklists: `references/provider-checklists.md`
+- Model-specific guides: `references/models/` (per-version changelogs, quirks,
+  migration steps). Start at `references/models/INDEX.md`.
+- Prompt design research: `references/prompt-template-research.md`
+- Migration patterns: `references/migration-patterns.md`
+- Validation proof gates: `references/validation-proof.md`
+- Migration benchmarking: `references/benchmarking.md` (optional pre/post stats)
+- Starter prompt: `templates/migration-starter-prompt.md`
+- Example prompts: `examples/example-prompts.md`
+- Example report: `examples/example-output.md`
+
+## Validation Checklist
+
+- [ ] Scope explicitly confirmed
+- [ ] Existing/parallel agent work checked and summarized
+- [ ] Discovery scan covered API, prompts, agents, tools, tests, docs
+- [ ] Files classified before edits
+- [ ] Required compatibility fixes applied
+- [ ] Optional tuning clearly marked as optional
+- [ ] Tests and smoke checks executed
+- [ ] Proof evidence captured or gap stated
+- [ ] Benchmark opt-in asked; if yes, three arms captured and reported
+- [ ] Report returned in concise format

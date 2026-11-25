@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/frabcd/codex-ai-game-studio (path: plugins/ai-game-studio/skills/day-one-patch/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Prepare a day-one patch for a game launch. Scopes, prioritises, implements, and QA-gates a focused patch addressing known issues discovered after gold master but before or immediately after public lau

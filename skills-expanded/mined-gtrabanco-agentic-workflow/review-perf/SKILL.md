@@ -1,0 +1,95 @@
+---
+name: review-perf
+user-invocable: false
+version: 4.10.0
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Internal performance review pass of the agentic-workflow review pack — composed
+  in-turn by review-change and product-audit; not a menu entry. Checks the
+  changed paths for algorithmic and resource regressions: N+1s, hot-path
+  allocations, asset weight, and leaks. Findings only; never edits code.
+---
+
+# Review Performance (internal)
+
+Review-pack pass: follow this file inline as the routed step — findings only,
+never edits, never refactors (identity and guardrails owned by
+`skills/review-implementation/references/FINDER_CONTRACT.md` §Pass identity).
+
+## Scope
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md` (§Scope):
+read it before the checklist and apply it as written, stating the scope at the
+top of the returned table. Missing reference → STOP.
+
+## Checklist
+
+The tally is `skills/review-implementation/references/FINDER_CONTRACT.md`
+§Checklist discipline's contract: `evaluated` equals this list's item count, and
+`pass + findings + n/a` equals it — a count above the item count is fabricated.
+
+- ✓ No N+1 query/IO pattern on changed data-access paths (loop bodies issuing
+  queries/requests — cite)
+- ✓ Algorithmic complexity of new code paths stated where input can grow (an
+  unbounded O(n²) on user data is a `WARNING` finding)
+- ✓ No blocking IO/sync work added on hot/request paths where the platform is
+  async
+- ✓ Resources opened by the change are closed/released on ALL paths including
+  errors (files, connections, subscriptions, timers)
+- ✓ No unbounded growth introduced (caches without eviction, arrays that only
+  append, listeners never removed)
+- ✓ Web only: bundle/asset impact of the change stated (new dep size, image
+  weight, lazy-loading where the project uses it) — n/a otherwise
+- ✓ Repeated computation hoisted where a loop recomputes an invariant (cite)
+- ✓ Pagination/limits on any new listing that reads user-scaled data
+- ✓ No premature optimization either: complexity added for speed without a
+  cited measurement is a finding (the repo forbids overengineering)
+- ✓ **Measured evidence when declared** — the project's agent guide declares a
+  `Performance commands` block with a `bench` command AND the diff touches
+  paths its benchmarks cover: RUN the benchmark on the base branch and on the
+  change, and cite both numbers in Evidence as
+  `<cmd> → base <x> / change <y> (<±z%>)`. A regression beyond the noise band
+  (the project's declared band, else ±5%) is a `WARNING` finding; a delta
+  inside the band is no finding. The declared command failing (non-zero exit)
+  is itself a finding (the gate can't measure) — never silently skipped.
+- ✓ **No declared perf commands** → state exactly
+  `n/a — no declared perf commands` for the item above (never skip it
+  silently), and if the diff adds algorithmic code on input that can grow,
+  add a `SUGGESTION` recommending the project adopt the tooling via
+  `init-workspace`'s Performance tooling round.
+
+## Materiality bar
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md`
+(§Materiality bar): read it before the checklist and apply it as written — cite the rule it violates beside the evidence; never pad the table.
+Missing reference → STOP.
+
+## Return exactly
+
+`Sev` and `Impact` are the two published closed sets (`BLOCKER | CRITICAL |
+WARNING | SUGGESTION` and `blocking | docs-only | report-only`); their meanings
+are owned by `review-implementation` (`CLASSIFY.md` §Severity ladder) — assign a
+token, never a prose grade.
+
+```
+REVIEW PERF — scope: <scope>
+
+| # | Finding | Sev | Impact | Evidence | Suggested fix |
+|---|---------|-----|--------|----------|---------------|
+| 1 | <what>  | BLOCKER|CRITICAL|WARNING|SUGGESTION | blocking|docs-only|report-only | <file:line — or, for measured findings, `<cmd> → base <x> / change <y> (<±z%>)`> | <smallest action> |
+
+Checklist: <n> evaluated, <n> pass, <n> findings, <n> n/a (<which + why>)
+Summary: <1-2 sentences>
+Decision: PASS | FAIL
+```
+
+FAIL if any `BLOCKER`, `CRITICAL` or `WARNING` finding is open; PASS otherwise.
+`SUGGESTION` findings never block — they route to the caller's triage step.
+
+## Done when
+
+- Every checklist item was evaluated with evidence (file:line or command output)
+  or explicitly marked n/a with the reason.
+- The fixed-format block above is returned — nothing more, nothing less — and
+  no code was changed.

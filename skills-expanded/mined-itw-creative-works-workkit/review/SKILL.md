@@ -1,0 +1,93 @@
+---
+name: review
+description: Multi-lens code review (parallel lenses, a separate scorer, only findings ≥80 confidence reach the report). - Use when the user asks to "review this", "review the diff", "code review", "check my changes", "review the PR", "simplify this", or before shipping substantial work.
+user-invocable: true
+---
+
+# Review: parallel lenses, separate scorer, one report
+
+- Finder lenses read the diff in parallel, a separate scorer rates every finding, and one report carries what clears the bar.
+
+## 1. Scope
+
+- Default: uncommitted changes, else the last commit. The user may name a range, PR, or files.
+- Collect the diff and the task context: what was ASKED, from the conversation, the issue, or its `## Spec`. Spec-faithfulness is judged against it.
+
+## 1b. Tier: full by default, light by criteria
+
+- **Default is FULL.** An explicit invocation arg wins both ways: `/workkit:review light` forces light, `/workkit:review full` forces full.
+- **Full tier**: every applicable lens in §2, in parallel, plus the §3 scorer.
+- **Light tier**: ONE `workkit:verifier` agent carrying the combined finder mandate, plus the §3 scorer:
+  - bugs, compliance, spec-faithfulness, and simplification;
+  - one line of the Parity mandate (§2): name each changed file's siblings and report where the new code differs;
+  - the same brief discipline, and it still execution-verifies its claims.
+- Both tiers run the §3 scorer: it is never skipped.
+
+- Downgrade to light ONLY when ALL of these hold (any miss = stay full):
+
+1. Kind of change: the diff is a fix to an existing rule or behaviour, with no new behaviour and no new source file.
+2. No guard surface touched: nothing under `hooks/`, `skills/`, `.claude/` or a repo's `setup/`. Those are the surfaces where a one-liner is catastrophic.
+3. The manager judges it a fix.
+
+- The light reviewer may return `NEEDS_FULL`, with one line of why, instead of a report. The skill then upgrades to the full panel immediately.
+- A wrong downgrade costs one escalation, so never argue with the escape hatch.
+
+## 2. Lenses: parallel subagents
+
+- Dispatch per the file-handoff convention: the brief goes to a file in the session scratchpad, and each lens returns its full findings INLINE.
+  - Each brief starts from its template in `briefs/`: `compliance-reviewer`, `bugs-scout`, `simplification-scout`, `history-scout`, `firestore-scout`, `parity-scout`; the light tier's `light-reviewer`; the scorer's `review-scorer`.
+- Launch every lens in ONE message:
+  - **Compliance + spec**: `workkit:reviewer`. It derives its checklist from live docs and judges Spec-faithfulness against the task context.
+  - **Bugs**: `workkit:scout` agent. Trace the diff for defects: logic, edge states, silent fallbacks. Read the surrounding code, not just the diff.
+  - **Simplification**: `workkit:scout` agent. Run the deletion test over the diff's ADDITIONS (`js:patterns` `resources/code-design.md`): wrappers that add nothing, options with one caller, defensive branches for impossible states, needless indirection.
+    - Clarity over brevity. Clearer sometimes means more lines, and an abstraction serving a NAMED second consumer is not clutter (global §3).
+    - Findings name the collapse, never apply it.
+  - **History**: `workkit:scout` agent. `git log`/`blame` on touched files: does the diff fight a past fix, revert intent, or repeat a reverted approach?
+  - **Firestore rules**: `workkit:scout` agent, ONLY when the diff touches BEM/Firestore work. Check reads against rules coverage, both ways.
+  - **Parity**: `workkit:scout` agent, full tier only. This entry is the kit's one home of the mandate's wording; the light tier and the per-group drift question in `agents/verifier.md` both quote it.
+    - For every file the diff adds or changes, name its siblings from the repo's docs and directory shape: the same kind of thing on another surface, target, command, or package.
+    - Report where the new code's shape, naming, entry point, logging, or call form differs from them.
+    - The principle is the global AGENTS.md parity rule (like things use like systems). The lens quotes it, never owns it.
+    - Findings name the sibling and the mismatch, never apply a fix.
+- Never tell a lens what NOT to flag, and never pre-rate severity in the brief. That manufactures false negatives.
+- The `manager/resolver` hook supplies each class agent's model per spawn, so never pass a `model` param.
+
+## 3. Scorer: separate pass
+
+- The `workkit:verifier` agent scores every collected finding 0–100: "how certain is this a real issue a maintainer would fix?"
+- It is never a finder in the same pass. Finder-never-scores is the integrity core of both tiers.
+- It gets the finding and the relevant code, and re-checks the claim against the actual file before scoring.
+- The false-positive list in `agents/reviewer.md` scores 0. The score measures how real a problem is; what happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue).
+- Where a lens attached its own confidence, the scorer's number wins.
+- The final ship/fix/rework verdict stays with the dispatching session: frontier-or-session judgment by construction.
+
+## 4. Report
+
+- One consolidated report:
+  - findings **≥80**: actionable items (file:line, issue, fix);
+  - 40–79: compressed into a "lower confidence" note. In a ship's review, what the ship does not fix goes where `workkit:ship` step 3.2b sends it; in a batch's review, the fix-or-file rule routes it (`docs/project-state.md` § How big is one issue);
+  - below 40: dropped silently.
+- End with a verdict: ship / fix-then-ship / rework.
+- Every item in the report, and every issue one names, reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
+- Done-criteria: every ≥80 finding names its file:line and a concrete fix; no lens output pasted raw into chat.
+- Every finding ≥80 is built in the batch, said or filed per the fix-or-file rule (`docs/project-state.md` § How big is one issue: filed only when `findings.file` is on or the owner says file), and the report lists each said one under **🧭 Findings** and names each filed one with the issue it landed on.
+
+## 5. Marker (feeds the commit gate)
+
+- After the report, record that review ran, from inside the repo under review.
+- The `safety:commit-gate` hook checks this marker before it allows a code commit. The script names the marker by the functions the hook reads it with (`reviewMarkerPath` and `reviewFullMarkerPath` of `hooks/mods/markers.js`), so the two cannot drift.
+- The light tier runs it plain. The full tier passes `full`, and so does the retouch that closes a full panel's fix round (`workkit:feature` § 5); `full` also writes the full-panel marker beside the plain one; `workkit review covers` reads only that one.
+
+```sh
+workkit review mark        # light tier
+workkit review mark full   # full tier
+```
+
+
+## Gotchas
+
+- The inline return IS the convention. The reviewer, `workkit:scout`, and `workkit:verifier` toolsets have no Write anyway.
+- A report FILE is the explicit-ask exception. Name its path in the brief only for a large artifact meant to be read selectively, and never ask a lens without Write for one.
+- Do not re-run a full panel over edits that merely implement findings the scorer already judged this session: that reviews the review's own output.
+  - The honest check is a light verification pass: "does each edit implement its finding without contradictions?"
+  - The `workkit:ship` panel (its step 3.2b) runs light when `workkit review covers` says the full-panel marker covers the ship diff, and full otherwise.

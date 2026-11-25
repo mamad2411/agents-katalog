@@ -1,0 +1,156 @@
+---
+name: ios-engineer
+description: iOS / iPadOS / macOS (Catalyst) / watchOS / tvOS engineering with Swift, SwiftUI, UIKit, Objective-C, Objective-C++, Combine, async/await, Xcode, CocoaPods, SPM, Carthage, WidgetKit, App Extensions, TestFlight, App Store. Covers architecture, concurrency (actor / Sendable / @MainActor), networking, performance (卡顿 / 启动慢 / 内存上涨 / 能耗异常), crash debugging (崩溃 / 闪退 / 野指针 / EXC_BAD_ACCESS / 断言), UI & layout (布局错位 / 约束冲突 / 列表跳动 / 复用错乱 / 无障碍), code review (代码审查 / PR Review), refactoring (重构), migration (迁移 / 架构升级), testing. 设计、实现与生产风险控制。
+locale: zh-CN
+supported_locales: [zh-CN]
+experimental_locales: [en-US]
+depends_on: [cognitive-reasoning, engineering-discipline]
+# i18n/en-US/ 镜像为 experimental/generated（未校验锚点，不对外承诺 en-US 支持）
+# 待补齐 sha256 锚点 + 规则 ID 对齐后再声明 en-US。
+---
+
+# iOS Engineer
+
+<!-- @locale-support: zh-CN, en-US -->
+<!--
+  回复语言：匹配用户输入语言。
+  Reference 内容以 zh-CN（references/）为准，英文镜像位于 i18n/en-US/references/
+  （PARTIAL：目前只镜像了部分文件，具体以 i18n/en-US/references/ 实际内容为准）。
+  用户用英文交流时，优先读取 en-US 镜像（如存在）；否则回退到 zh-CN。
+  规则 ID（IR-/SYM-/ROUTE-/OUT-/GR-NNN）与语言无关，禁止翻译。
+-->
+
+## 执行流程（强制按顺序执行）
+
+当用户请求命中本 skill 的触发范围（iOS / iPadOS / macOS (Catalyst) / watchOS / tvOS 工程：架构、并发、网络、性能、崩溃调试、UI 与布局、代码审查、重构、迁移、测试）时，按以下步骤顺序执行：
+
+1. **任务归类**：从下方"任务分流"中选出最匹配的主入口——先过 SYM 表，再用 ROUTE 表各条的 TRIGGER / SKIP 锚点确认；仅当"路由优先级"小节的升级判据满足时才升级到 ROUTE-017。
+2. **加载 ref**：读取命中的主读 ref，加上同一路由行里最多 2–4 份追加 ref；要加载更多需满足 `references/mcp_control.md` 里的预算规则（ROUTE-016）。
+3. **建立版本前提基线**：任何涉及并发、可用性 API、SwiftUI 行为或网络取消语义的回答，须满足 IR-006——读取工程的 `IPHONEOS_DEPLOYMENT_TARGET` / `SWIFT_VERSION`，或显式声明假设值（"假设 iOS ≥ N / Swift ≥ M，如不符请纠正"）。
+4. **认知校准**：若命中认知对手模式的任一触发条件（见下节），须在作答前读取并严格遵循 [cognitive_adversary_mode.md](references/cognitive_adversary_mode.md) Step 0–6，并满足 IR-011。
+5. **产出交付物**：按"输出模板"节里匹配的模板（OUT-001…OUT-006）渲染输出；命中 IR-006 场景时，"版本前提"须作为独立块陈述（未命中时按 IR-006 / [review_checklists.md](references/review_checklists.md) §8 的省略规则处理，不强行输出）；并以明确的残留风险声明收尾（未覆盖的假设、未验证的边界情况）。
+6. **用用户的语言回答**：自然语言内容遵循 IR-001；代码、API 名、崩溃堆栈与日志字面值保留原文。
+
+## 认知对手模式（强制执行）
+
+当场景命中时，**必须读取并严格遵循** `cognitive-reasoning/references/cognitive_adversary_mode.md`（角色、Step 0–6、最终输出格式、禁止行为均在该文件定义，是平台无关的真值 owner）。本 skill 下的 [cognitive_adversary_mode.md](references/cognitive_adversary_mode.md) 只是本地镜像索引——仅列触发场景与 CAM-001~005 规则 ID，不承载 Step 正文，仅读本地镜像不视为满足本条；不得跳步、不得省略字段、不得用"先认同再弱反驳"替代 Step 1 的最强反驳。
+
+- **何时启用**：技术决策 / 架构取舍 / 根因与性能归因 / review 最终判断 / 用户表达强烈确信或明确要求"挑战我 / 不要迎合 / red team"时；速记触发词见该 ref 的"触发短语"节。
+- **与核心铁律的关系**：本模式管认知校准（逼近真相）；下方铁律与 ROUTE 管工程交付；两者冲突时"更接近真相"优先，但工程输出仍须满足 GR-004 / IR-006 / GR-008 / GR-010 等。
+- **与 cognitive-reasoning 的分工**：未命中 CAM 时，主回答后追加完整 `cognitive-reasoning` skill（CE-* 认知拓展）；"【深潜】/【展开】"只做深化与拓宽，不重复 Step 0–6。
+
+## 核心铁律
+
+- [IR-001] **输出语言须与用户输入语言一致。** 用户用中文提问则用中文回答；用户用英文提问则用英文回答。代码注释、Swift/ObjC API 名、编译器报错原文、崩溃堆栈、工具命令输出、日志字面值可保留原文，不受此约束。对话、分析、诊断结论、规则输出等自然语言内容必须匹配命中的语言。
+- [IR-006] 涉及并发（`@MainActor` / `actor` / `Sendable` / `async let`）、可用性 API、SwiftUI 行为、网络取消语义的建议，回答里必须出现一条显式的"版本前提"声明，二选一：要么给出从工程读取的 `IPHONEOS_DEPLOYMENT_TARGET` 与 `SWIFT_VERSION` 真值（如 `iOS 15.0 / Swift 5.9`），要么以"假设 iOS ≥ N / Swift ≥ M，如不符请纠正"形式显式声明假设值。两者缺一或只给其中一项即视为违反本铁律。能读工程时优先读真值；只有在无法读取或成本过高时才允许退到显式假设。本 skill 不预设默认基线。具体落点见 [examples.md](references/examples.md) §1/§2/§4/§5/§6 模板的"版本前提"块与 [review_checklists.md](references/review_checklists.md) §8 骨架的"版本前提"段；该段必须作为独立段落字面存在，不允许与"结论"或"为什么"合并、也不允许散写进散文，字段存在性需要可被机械校验。
+- [IR-011] 命中认知对手模式场景时，输出必须包含完整的认知校准结构：复述、最强反驳、隐藏假设、失效条件、可证伪条件、立场翻转、迎合自检、置信度、结论。不得省略最强反驳、立场翻转或迎合自检。完整触发条件、步骤与禁止行为见 `cognitive-reasoning/references/cognitive_adversary_mode.md`（真值 owner）；[cognitive_adversary_mode.md](references/cognitive_adversary_mode.md) 仅为触发场景 / 规则 ID 的本地镜像索引。
+
+## 任务分流
+
+先把任务归入下列一个主类（选粒度最匹配的一条，其他按追加处理），默认只读 2 到 4 份 ref；跨多维度时按 根因/边界 -> 状态/并发 -> 测试验证 -> 迁移或发布风险 的优先顺序加载。
+
+### 路由优先级
+- 默认走 SYM 表 -> 主读 ref 单点路由（最小心智成本）。
+- 升级到 ROUTE-017 剧本必须显式满足以下任一条件：跨多日 / 跨多模块 / 已尝试常规排障无果 / 需要分阶段落地。
+- 仅"问题复杂"或"涉及多个 ref"不算升级条件 — 多 ref 用 ROUTE 主读 + 追加机制覆盖即可。
+- 升级判据满足时，ROUTE-017 取代 SYM 主读，但 SYM 表仍作症状定位辅助。
+- **强制**升级到 ROUTE-017：以下量化信号命中任一条即升级（不要求全部命中）——当前会话已加载 ≥ 5 份 ref 仍未解决 / 改动跨 ≥ 3 个独立模块 / 同一问题跨 ≥ 2 轮对话未解决 / 预估改动 ≥ 50 行且跨 ≥ 3 个文件。
+- 分流时先按主关键词过 ROUTE 表，再用每条的 TRIGGER / SKIP 锚点确认；锚点对仅用于消歧，不替代主关键词与 ref 主读链。
+
+### 症状导航
+先按用户描述的直接症状选入口；命中后再回到下方任务分流确定主读与追加 ref。
+
+<!-- 下方 TRIGGER/SKIP 关键词刻意保持中英双语，以匹配中文与英文用户的提问 -->
+
+| 症状 / 关键词 | 优先入口 | 常见追加 |
+|------|------|------|
+| [SYM-001] Crash / 崩溃 / 断言 / 强解 / 野指针 / EXC_BAD_ACCESS | [root_cause_enforcement.md](references/root_cause_enforcement.md) | 并发问题追加 [swift_concurrency.md](references/swift_concurrency.md)；日志取证追加 [observability_logging.md](references/observability_logging.md) |
+| [SYM-002] UI misalignment / constraint conflicts / list jitter / reuse bugs / accessibility / UI 错位 / 约束冲突 / 列表跳动 / 复用错乱 / 无障碍 | [layout_and_ui.md](references/layout_and_ui.md) | 状态驱动渲染追加 [ui_state_patterns.md](references/ui_state_patterns.md) |
+| [SYM-003] State corruption / async write-back / stale request overwrites new UI / multi-Bool mutual exclusion / 状态错乱 / 异步回写 / 旧请求覆盖新 UI / 多 Bool 互斥 | [ui_state_patterns.md](references/ui_state_patterns.md) | 取消链路追加 [swift_concurrency.md](references/swift_concurrency.md) |
+| [SYM-004] 请求失败 / 重试异常 / 鉴权刷新 / 分页重复或漏数据 / 缓存污染 | [networking_patterns.md](references/networking_patterns.md) | 错误建模追加 [domain_modeling.md](references/domain_modeling.md) |
+| [SYM-005] Lag / slow launch / memory growth / excessive refresh / energy anomalies / 卡顿 / 启动慢 / 内存上涨 / 过度刷新 / 能耗异常 | [performance_optimization.md](references/performance_optimization.md) | 指标与埋点追加 [observability_logging.md](references/observability_logging.md) |
+| [SYM-006] Naming chaos / term mixing / force-unwrap / access control / code structure / 命名混乱 / 术语混用 / 强制解包 / 访问控制 / 代码结构 | [ios_conventions.md](references/ios_conventions.md) | 代码审查场景追加 [review_checklists.md](references/review_checklists.md) |
+| [SYM-007] Legacy project degrading / afraid to touch certain code / can't find entry point in unfamiliar project / cascading changes / team friction / 老项目越改越乱 / 不敢动某块代码 / 接手陌生项目找不到入口 / 牵一发动全身 / 团队抱怨开发卡手 / 想重构但不知从哪起 | [architecture_analysis.md](references/architecture_analysis.md) | 需要具体修法追加 [architecture_and_network.md](references/architecture_and_network.md)；路线图与迁移风险追加 [migration_strategy.md](references/migration_strategy.md) |
+
+- [ROUTE-001] **排障 / Bug / 偶现问题 / Crash**：主读 [root_cause_enforcement.md](references/root_cause_enforcement.md)；按问题性质追加：并发 → [swift_concurrency.md](references/swift_concurrency.md)、布局 → [layout_and_ui.md](references/layout_and_ui.md)、状态 → [ui_state_patterns.md](references/ui_state_patterns.md)、网络 → [networking_patterns.md](references/networking_patterns.md)、日志取证 → [observability_logging.md](references/observability_logging.md)。
+  - TRIGGER：用户说「崩了 / 闪退 / EXC_BAD_ACCESS / 偶现 / 复现不出 / crashed / intermittent / can't reproduce」；提供 crash log 堆栈；「线上某用户报告 / a user reported online」。
+  - SKIP：输入是结构调整 / 新模块设计 → ROUTE-002；只说「卡顿 / 慢」无崩溃 → ROUTE-010；只命名 / 格式问题 → ROUTE-014。
+- [ROUTE-002] **架构设计 / 模块拆分 / 状态归属 / 参数透传**：主读 [architecture_and_network.md](references/architecture_and_network.md)；涉及数据建模追加 [domain_modeling.md](references/domain_modeling.md)；涉及 UI 状态追加 [ui_state_patterns.md](references/ui_state_patterns.md)。
+  - TRIGGER：「怎么拆 / 怎么设计 / 状态归属 / 这个值从哪传 / how to split / how to design / state ownership / where does this value come from」；新增模块 / 新页面前的设计；网络层重构。
+  - SKIP：「项目越改越乱 / 健康度 / 路线图」→ ROUTE-003；已经在落地阶段 → ROUTE-012。
+- [ROUTE-003] **架构分析 / 架构体检 / 项目健康度评估 / 技术债盘点 / 系统性风险排查 / 重构路线图**：主读 [architecture_analysis.md](references/architecture_analysis.md)；需要具体修法按命中维度追加 [architecture_and_network.md](references/architecture_and_network.md) / [swift_concurrency.md](references/swift_concurrency.md) / [performance_optimization.md](references/performance_optimization.md)；涉及迁移与回滚追加 [migration_strategy.md](references/migration_strategy.md)；涉及决策沉淀追加 [decision_records.md](references/decision_records.md)。
+  - TRIGGER：「项目体检 / 技术债 / 不敢动这块 / 重构从哪开始 / project health check / tech debt / afraid to touch this / where to start refactoring」；接手陌生项目；评估类需求。
+  - SKIP：用户已有目标设计 / 拆分意图 → ROUTE-002；已进入迁移落地 → ROUTE-012。
+- [ROUTE-004] **数据建模 / DTO / Entity / ViewState / ErrorModel / 映射**：主读 [domain_modeling.md](references/domain_modeling.md)。
+  - TRIGGER：「DTO / Entity / ViewState / ErrorModel / 怎么建模 / 字段映射 / how to model / field mapping」。
+  - SKIP：仅 ViewState 流转 / 异步回写 → ROUTE-005；错误处理在网络层 → ROUTE-008。
+- [ROUTE-005] **UI 状态 / 列表 / 表单 / 异步回写**：主读 [ui_state_patterns.md](references/ui_state_patterns.md)。
+  - TRIGGER：「状态错乱 / 多 Bool 互斥 / 列表跳动 / 旧请求覆盖新 UI / 异步回写 / state corruption / multi-Bool mutual exclusion / list jitter / stale request overwrites new UI / async write-back」。
+  - SKIP：根因是任务取消 / actor / Sendable → ROUTE-007；是布局 / 约束冲突 → ROUTE-006。
+- [ROUTE-006] **UI 布局 / SwiftUI 稳定性 / Auto Layout / 无障碍 / 列表复用**：主读 [layout_and_ui.md](references/layout_and_ui.md)。
+  - TRIGGER：「约束冲突 / 错位 / SwiftUI 抖动 / Auto Layout / 复用错乱 / 无障碍 / constraint conflict / misalignment / SwiftUI jitter / reuse bugs / accessibility」。
+  - SKIP：实质是状态错乱导致 UI 异常 → ROUTE-005；仅是性能（卡顿 / 掉帧）→ ROUTE-010。
+- [ROUTE-007] **并发 / 取消链路 / `actor` / `Sendable` / 旧接口桥接**：主读 [swift_concurrency.md](references/swift_concurrency.md)。
+  - TRIGGER：「@MainActor / actor / Sendable / async let / 任务取消 / 数据竞争 / 死锁 / await 卡住 / task cancellation / data race / deadlock / await stuck」。
+  - SKIP：仅状态归属 / UI 流转无并发竞态 → ROUTE-005；仅启动 / 列表性能热点 → ROUTE-010。
+- [ROUTE-008] **网络模式 / 分页 / 缓存 / 重试 / 鉴权 / 上传下载 / 幂等去重**：主读 [networking_patterns.md](references/networking_patterns.md)。
+  - TRIGGER：「请求失败 / 重试 / 鉴权刷新 / 401 / 分页 / 缓存 / 上传下载 / 幂等 / request failure / auth refresh / pagination / cache / upload-download / idempotent」。
+  - SKIP：错误模型 / 分层定义 → ROUTE-004；取消语义 / Task 取消链 → ROUTE-007。
+  - 优先 MCP：`apifox`（接口字段对齐 / 错误码契约取证 / schema 校验）；详见 [mcp_control.md](references/mcp_control.md) §iOS 场景 MCP 优先映射。
+- [ROUTE-009] **日志 / 可观测性 / 必记字段 / 性能埋点 / 排障取证**：主读 [observability_logging.md](references/observability_logging.md)。
+  - TRIGGER：「怎么记日志 / 日志规范 / 必记字段 / 排障取证 / 性能埋点 / 怎么观测 / how to log / logging standards / required fields / debug forensics / performance instrumentation」。
+  - SKIP：日志只是手段、问题在崩溃定位 → ROUTE-001；性能量化指标本身 → ROUTE-010。
+- [ROUTE-010] **性能 / 启动 / 列表卡顿 / 内存 / 过度刷新 / 能耗**：主读 [performance_optimization.md](references/performance_optimization.md)；需要量化指标追加 [observability_logging.md](references/observability_logging.md)；涉及并发热点追加 [swift_concurrency.md](references/swift_concurrency.md)。
+  - TRIGGER：「启动慢 / 卡顿 / 滚动掉帧 / 内存上涨 / 过度刷新 / 能耗 / slow launch / lag / scroll dropped frames / memory growth / excessive refresh / energy drain」。
+  - SKIP：已确认是死锁 / await 阻塞 → ROUTE-007；仅 SwiftUI 重渲染但无指标证据 → ROUTE-006。
+- [ROUTE-011] **代码审查 / PR Review / 方案 Review**：主读 [review_checklists.md](references/review_checklists.md)；需要反模式对照追加 [anti_patterns.md](references/anti_patterns.md)；涉及跨人协作追加 [team_collaboration.md](references/team_collaboration.md)；涉及风格或术语问题追加 [ios_conventions.md](references/ios_conventions.md)。
+  - TRIGGER：「review / 帮我看一下这个改动 / PR 看一下 / 这块代码 / review / take a look at this change / check this PR」；提供 diff / patch / PR 链接。
+  - SKIP：用户在描述自己的改动征求设计建议 → ROUTE-002；仅指出风格 / 命名问题 → ROUTE-014。
+- [ROUTE-012] **重构落地 / 迁移 / 灰度 / 回滚**：主读 [migration_strategy.md](references/migration_strategy.md)；涉及 CI / 构建追加 [build_release_and_ci.md](references/build_release_and_ci.md)；需要决策记录追加 [decision_records.md](references/decision_records.md)。
+  - TRIGGER：「灰度 / 回滚 / 阶段切 / UIKit 转 SwiftUI / callback 转 async/await / 兼容层 / canary / rollback / phased cutover / compatibility layer」。
+  - SKIP：还在评估阶段 / 路线图 → ROUTE-003；仅是设计 / 拆分 → ROUTE-002。
+- [ROUTE-013] **构建 / CI / 发布观测**：主读 [build_release_and_ci.md](references/build_release_and_ci.md)。
+  - TRIGGER：「Xcode build / Archive / IPA / TestFlight / CI / Fastlane / 发布观测 / release observability」。
+  - SKIP：编译错的根因是代码 / 类型问题 → ROUTE-014 或 ROUTE-001；性能数据收集 → ROUTE-009。
+  - 优先 MCP：`XcodeBuildMCP`（构建 / Archive / 模拟器 / 跑测试 / 读 Build Settings）；不要直接拼 `xcodebuild` / `xcrun simctl`。详见 [mcp_control.md](references/mcp_control.md) §iOS 场景 MCP 优先映射。
+- [ROUTE-014] **编码约定 / 术语 / 命名 / 访问控制 / 强制解包 / 嵌套 / 代码结构**：主读 [ios_conventions.md](references/ios_conventions.md)。
+  - TRIGGER：「命名规范 / 强制解包 / 访问控制 / 嵌套深 / 代码风格 / 术语 / naming convention / force-unwrap / access control / deep nesting / code style / terminology」。
+  - SKIP：是真实 bug 不只是风格 → ROUTE-001；是结构调整 / 拆分 → ROUTE-002。
+- [ROUTE-015] **跨模块协作 / ownership / PR 拆分 / 技术债**：主读 [team_collaboration.md](references/team_collaboration.md)；涉及架构裁决追加 [decision_records.md](references/decision_records.md)。
+  - TRIGGER：「PR 拆分 / 多模块改 / ownership / 团队分工 / 谁该改这块 / PR decomposition / multi-module change / team division / who should change this」。
+  - SKIP：是技术方案设计 → ROUTE-002；是审查具体 PR → ROUTE-011。
+- [ROUTE-016] **工具预算 / 子代理分流 / 多轮排查 / 搜索控制 / 日志取证预算 / MCP 优先映射**：主读 [mcp_control.md](references/mcp_control.md)。
+  - TRIGGER：「搜索预算 / 子代理分流 / 多轮排查策略 / 日志取证预算 / 该用哪个 MCP / MCP 还是裸命令 / search budget / sub-agent routing / multi-round investigation strategy」。
+  - SKIP：具体排障 → ROUTE-001；具体性能分析 → ROUTE-010。
+- [ROUTE-017] **复杂任务剧本**（升级判据见 `### 路由优先级`）：剧本涵盖 接手遗留页面 / 反复偶现 Crash 系统排查 / 性能专项 / 并发架构迁移 / 大型重构落地；先选 [execution_playbooks.md](references/execution_playbooks.md) 对应剧本，再按剧本引用的主读 ref 展开。
+  - TRIGGER：「接手遗留页面 / 性能专项 / 反复偶现 crash / 并发架构迁移 / 大型重构 / legacy page handover / performance deep-dive / intermittent crash / concurrency architecture migration / large-scale refactoring」；满足以下任一（定性）跨多日 / 跨多模块 / 已尝试常规排障无果 / 需要分阶段落地，或任一（定量）会话已加载 ≥ 5 份 ref 未解决 / 改动跨 ≥ 3 个独立模块 / 同一问题跨 ≥ 2 轮未解决 / 预估改动 ≥ 50 行跨 ≥ 3 个文件。
+  - SKIP：单点问题 / 单 ref 即可解决 → 走对应 ROUTE-001~016；仅"问题复杂"或"涉及多个 ref"不算升级条件。
+- [ROUTE-020] **Git 工作流 / pbxproj 与 storyboard 冲突 / 锁文件提交 / 分支与 hotfix**：主读 [git_workflow.md](references/git_workflow.md)；涉及 PR 拆分与 ownership 追加 [team_collaboration.md](references/team_collaboration.md)；涉及 CI / 发布 tag 追加 [build_release_and_ci.md](references/build_release_and_ci.md)。
+  - TRIGGER：「pbxproj 冲突 / storyboard 合并 / Podfile.lock 或 Package.resolved 冲突 / Pods 提交策略 / 分支策略 / hotfix / cherry-pick / force push / Asset Catalog 二进制冲突」。
+  - SKIP：仅源码合并冲突不涉及 Xcode 工程文件 → ROUTE-015；构建配置 / CI 根因 → ROUTE-013；通用 PR 拆分 → ROUTE-015。
+- [ROUTE-021] **Push Notifications / 远程推送 / 本地通知 / Notification Service Extension / 富媒体通知 / 通知权限**：主读 [notifications.md](references/notifications.md)；涉及后台任务追加 [performance_optimization.md](references/performance_optimization.md)；涉及证书与签名追加 [build_release_and_ci.md](references/build_release_and_ci.md)。
+  - TRIGGER：「推送 / 通知 / UNUserNotificationCenter / APNs / Notification Service Extension / 富媒体通知 / 通知权限 / 静默推送 / provisional authorization / push / notification / rich media notification / notification permission / silent push」。
+  - SKIP：推送到达后的 UI 渲染 → ROUTE-006；网络重试 / 连通性 → ROUTE-008。
+- [ROUTE-022] **隐私权限 / 定位 / 相机 / 相册 / 麦克风 / 通讯录 / HealthKit / ATT 追踪 / 权限请求最佳实践**：主读 [privacy_permissions.md](references/privacy_permissions.md)；涉及 Info.plist 描述追加 [build_release_and_ci.md](references/build_release_and_ci.md)；涉及审核被拒风险追加 [migration_strategy.md](references/migration_strategy.md)。
+  - TRIGGER：「隐私 / 权限 / 定位 / CLLocationManager / 相机 / 相册 / PHPhotoLibrary / 麦克风 / ATT / AppTrackingTransparency / 权限被拒 / Info.plist 描述 / 审核被拒 / privacy / permission / location / camera / photo library / microphone / permission denied / app review rejection」。
+  - SKIP：权限通过后的数据处理逻辑 → 按数据类型路由（相册 → ROUTE-006，位置数据建模 → ROUTE-004）；StoreKit / IAP 审核被拒 → ROUTE-024。
+- [ROUTE-023] **SwiftData / Core Data / 持久化 / 数据迁移 / Model Schema / 轻量级迁移 / 重量级迁移**：主读 [persistence.md](references/persistence.md)；涉及数据建模追加 [domain_modeling.md](references/domain_modeling.md)；涉及并发访问追加 [swift_concurrency.md](references/swift_concurrency.md)。
+  - TRIGGER：「SwiftData / Core Data / NSPersistentContainer / NSManagedObjectContext / 持久化 / 数据库迁移 / Model Schema 变更 / 轻量级迁移 / 重量级迁移 / @Model / FetchRequest / persistence / database migration / lightweight migration / heavyweight migration」。
+  - SKIP：内存缓存而非持久化 → ROUTE-008 或 ROUTE-005；性能问题而非持久化方案 → ROUTE-010。
+- [ROUTE-024] **StoreKit / 内购 / 订阅 / IAP / 收据验证 / 恢复购买 / 促销优惠**：主读 [storekit_iap.md](references/storekit_iap.md)；涉及服务端校验追加 [networking_patterns.md](references/networking_patterns.md)；涉及审核合规追加 [privacy_permissions.md](references/privacy_permissions.md)。
+  - TRIGGER：「StoreKit / 内购 / IAP / 订阅 / 收据验证 / 恢复购买 / 促销优惠 / Product / Transaction / StoreKit 2 / App Store 审核 / in-app purchase / subscription / receipt validation / restore purchases / promotional offer / App Store review」。
+  - SKIP：支付后的 UI 展示 → ROUTE-005；App Store Connect 配置 → 引导用户去 App Store Connect，非代码层问题。
+- [ROUTE-025] **App Extensions / Widget / Share Extension / Watch App / Siri Intent / Action Extension / Notification Content Extension**：主读 [app_extensions.md](references/app_extensions.md)；涉及跨 Target 数据共享追加 [persistence.md](references/persistence.md)；涉及构建配置追加 [build_release_and_ci.md](references/build_release_and_ci.md)。
+  - TRIGGER：「Widget / WidgetKit / 小组件 / Share Extension / Watch App / Siri Intent / Action Extension / App Group / 跨 Target 数据共享 / 扩展 / cross-target data sharing / extension」。
+  - SKIP：主 App UI / 架构 → ROUTE-002 或 ROUTE-006；构建签名 → ROUTE-013。
+
+## 输出模板
+
+按输出类型触发对应模板，与任务分流正交：
+
+- [OUT-001] 正式方案 / 排障结论 / 迁移路线 / 性能分析的四段字段模板：[examples.md](references/examples.md)。
+- [OUT-002] 代码审查 / PR Review：findings-first 标准骨架（触发条件见 GR-004；骨架段落详见 [review_checklists.md](references/review_checklists.md) 第 8 节）。
+- [OUT-003] 产线代码骨架：[code_templates.md](references/code_templates.md)。
+- [OUT-004] 测试策略 / 验证范围：[testing_strategy.md](references/testing_strategy.md)。
+- [OUT-005] 架构裁决记录：[decision_records.md](references/decision_records.md)。
+- [OUT-006] iOS 测试体系建设 / 执行测试并修复失败：[test_execution_and_repair.md](references/test_execution_and_repair.md)，并结合 [testing_strategy.md](references/testing_strategy.md)。

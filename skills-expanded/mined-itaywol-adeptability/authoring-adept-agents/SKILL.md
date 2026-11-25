@@ -1,0 +1,1 @@
+../../../.adeptability/staging/.claude/skills/authoring-adept-agents/SKILL.md

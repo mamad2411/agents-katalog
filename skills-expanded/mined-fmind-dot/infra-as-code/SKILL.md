@@ -1,0 +1,54 @@
+---
+name: infra-as-code
+description: "Manage OpenTofu/Terraform modules, providers, state, plans."
+license: MIT
+metadata:
+  kind: task
+  author: Médéric HURIER (Fmind)
+  source: github.com/fmind/dot/tree/main/skills/infra-as-code
+  created: "2026-09-16"
+  updated: "2026-11-22"
+---
+
+# Infrastructure as Code
+
+Manage infrastructure with OpenTofu (`tofu`); pin HashiCorp `terraform` in `mise.toml` only when a BSL-only feature or client mandate requires it, documenting why.
+
+## Defaults
+
+- **Pin project tools in `mise.toml`**: declare `opentofu`, `tflint`, and `terraform-docs` via `mise use --pin <tool>` ([mise.toml](templates/mise.toml); check compatibility before migrating from Terraform).
+- **Align tasks, hooks, and docs**: [mise.toml](templates/mise.toml) and [lefthook.yml](templates/lefthook.yml) wire format, validate, `tflint`, `trivy`, and `betterleaks` ([mise](../mise/SKILL.md), [lefthook](../github/references/lefthook.md)); `mise run build` injects `TF_DOCS` tables into `README.md` offline via [terraform-docs.yml](templates/terraform-docs.yml).
+- **Use keyless auth**: ADC locally and Workload Identity Federation in CI ([cloud-run bootstrap](../gcloud/references/cloud-run/references/bootstrap.md)).
+
+## Workflow
+
+1. **Confirm target and initialize**: verify root module, backend, `tofu workspace show`, cloud project, credentials, and scope; run `mise run install` on fresh clones (`tofu init` + `tflint --init`).
+1. **Isolate state per concern**: edit the smallest owning root module with a distinct GCS `prefix` per module ([in-app layout](references/scaffold.md#opentofu-inside-an-application-repository) for `infra/` inside an app repo).
+1. **Gate offline first**: run `mise run check` and `mise run test` (`tests/*.tftest.hcl` use `command = plan` with `mock_provider` as in [main.tftest.hcl](templates/main.tftest.hcl); unmocked plan tests hit cloud APIs/state). Encode invariants as `check:scan` Trivy checks or plan assertions.
+1. **Plan on demand**: run `mise run plan` (`tmp/plan.tfplan`), keeping `plan` and `apply` out of hooks/CI gates.
+1. **Apply reviewed plans only when authorized**: highlight replacements, destroys, IAM, and cost in `tofu show tmp/plan.tfplan`, run `tofu apply tmp/plan.tfplan`, delete `tmp/plan.tfplan`, and verify `tofu plan -input=false -detailed-exitcode` exits 0.
+
+## State and secrets
+
+- **Versioned remote state**: never commit `.tfstate`; store shared state in versioned GCS (add OpenTofu client-side KMS encryption per [state-encryption](references/state-encryption.md) only when compliance or threat model requires it beyond GCS default encryption).
+- **Keep secrets out of tfvars and `.tfplan`**: gitignore `*.tfvars` (commit only `*.example.tfvars`), inject `TF_VAR_<name>` via scoped secret launchers into `tofu` only, and declare secret variables `ephemeral = true` bound solely to write-only attributes (e.g. `secret_data_wo` + `secret_data_wo_version`), re-supplying them at `tofu apply tmp/plan.tfplan`.
+
+## Gotchas
+
+- **Pass `GITHUB_TOKEN` in CI for `tflint --init`** ([tflint.hcl](templates/tflint.hcl)) and run `tofu init -backend=false` + `tflint --init` before `mise run all` in [ci.yml](../github/references/ci-cd/templates/ci.yml).
+- **Review provider major upgrades**: [versions.tf](templates/versions.tf) constrains Google to `~> 8.0`; read provider upgrade guides when bumping majors via [upgrade-tools](../mise/references/upgrade-tools/GUIDE.md).
+
+## Task guides
+
+<!-- guides:start -->
+
+- [scaffold](references/scaffold.md): Scaffold an OpenTofu root module, validate offline, lock providers, and migrate state to GCS.
+- [state-encryption](references/state-encryption.md): Configure OpenTofu client-side state and plan encryption with GCP KMS and migrate plaintext state.
+
+<!-- guides:end -->
+
+## Documentation
+
+- [OpenTofu](https://opentofu.org/docs/) · [tflint](https://github.com/terraform-linters/tflint) · [trivy config](https://trivy.dev/docs/latest/scanner/misconfiguration/) · [terraform-docs](https://terraform-docs.io) · [State encryption](https://opentofu.org/docs/language/state/encryption/) · [releases](https://github.com/opentofu/opentofu/releases)
+- Upstream: `hashicorp/agent-skills` via [vendor-skill policy](../agent-harnesses/references/vendor-skills.md).
+- Companion skills: [mise](../mise/SKILL.md), [github/ci-cd](../github/references/ci-cd/GUIDE.md), [code-security](../code-security/references/code-review/GUIDE.md), [gcloud](../gcloud/SKILL.md).

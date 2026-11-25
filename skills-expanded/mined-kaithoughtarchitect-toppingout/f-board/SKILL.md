@@ -1,0 +1,150 @@
+---
+name: f-board
+description: >
+  Build and maintain a project's board: the Ishikawa page the owner follows
+  after every PR close. Runs the board tool (render_board.py) to record a lifecycle
+  event (work starts on a job, a job closes, a job halts, a decision is
+  made, a job is added, the board tops out at its head), which derives ready/blocked, bumps the version once,
+  regenerates the page; then republishes it to the same link. Use when the user runs
+  /f-board, at a job's "go" (start), at close (close), when a job halts or a
+  decision job is decided, or when the user asks "what's next?" / "show me the
+  board". Not for cutting a plan into jobs (f-schedule).
+---
+
+# Topping Out: Board
+
+**The board is data plus a generated page. The tool changes the data; the page follows.**
+
+`BOARD.json` holds the head, every job, its stored state and its record. `render_board.py` (in this skill's folder) validates it, applies **one** lifecycle event, derives which open jobs are *ready* (every need merged) or *blocked*, bumps `version` once, and writes `board.html`. **Never edit `board.html`**, and never change a job's state by hand: in one product a hand edit left the previous job's stats on the page.
+
+## The page
+
+`board.html` is drawn entirely from `BOARD.json`, as one page that answers five questions top to bottom: where is this going, what needs the owner, what's happening now, how far along, and what's next or stuck. **Nothing on it is cut short** except a rib's name on the drawing (two lines at most), whose full name is on the job's card and in the job list. Nothing is revealed only on hover.
+
+- **Header:** `project.title`, the date, a gauge (the done count over one segment per job, coloured by state) and counts for in progress, ready, blocked and to decide. The kicker reads "project board", or "iteration board" for one started with `--iteration`, and adds "topped out <date>" once it has.
+- **The head:** a hi-vis sign with the full `project.head.outcome`, "Judged by" (`project.head.test`) and the project's rule (`project.lesson`) if there is one.
+- **Needs you:** every `project.alerts` item, each job waiting on a decision with its question (a row opens its card), and each `project.owed` item. "Nothing waits on you" when empty.
+- **Now:** the job in progress (number, name, run, PR); with none, "No job running" and the next job (or "next: not chosen", or the topping out). `project.standfirst` under it.
+- **Fishbone:** the spine runs left to right into an arrow, solid up to the last merged job and faint after it. One rib per job, alternating above and below, each with its number and its name always shown, styled by state: merged or decided solid, in progress blue, ready dashed, blocked dotted, to decide amber, **next** hi-vis. With no `next`, a dashed "next: not chosen" slot. A job's `twigs` show as small ticks on its rib (their text is on the card). On a narrow screen the drawing keeps a readable size and scrolls sideways inside its own box. Under it, a tape of job numbers, a state colour along the bottom of each.
+- **Job card:** the selected job as a work docket: a state stripe, Key / Run / Needs (each by number and name) / Builder / Difficulty (the rating and its check) / Estimate (and the work orders it took) / Dates (start to close, in days) / Footprint check / PR / Merge, the dev report's path, the summary, its parts (`twigs`), figures, lesson, the ticket path, and notes with its decision. Earlier / later step through the jobs. The page opens on the job in progress, else the next job, else the latest one done; `#<job id>` in the link opens that job.
+- **All jobs:** every job in board order: number, name, state, and what stands in its way (a blocked job names the jobs it waits on, by name; a decision job its question; a merged job its PR, merge commit and builder; a job in progress its run and builder). A row opens its card.
+- **Footer:** the board version, `project.eyebrow`, `project.project_file`, superseded (split) jobs, the builder tally (jobs per builder, swaps, and how the difficulty checks came out), `project.facts` as standing facts.
+
+Every card is in the page, so without JavaScript the page reads in full (the cards as a list); the script draws the spine to fit and shows one card at a time. On a phone the blocks stack and nothing scrolls sideways but the spine's own box. Light and dark themes both follow the viewer's setting.
+
+**The design lives in `render_board.py`, not in any per-project file.** Every project's `board.html` is regenerated from its `BOARD.json` on each event or `render`, so a change to the renderer reaches every board at its next render. To bring an existing board up to date, run `render_board.py <path>/BOARD.json render`.
+
+**Optional fields** (all validated; each written by the step that knows it):
+
+| Field | Shown | Written by |
+|---|---|---|
+| `jobs[].twigs` (≤3 short lines) | ticks on the rib; the text on the job card | `/f-signoff`, from the job's key discoveries |
+| `jobs[].figures` (≤6 `{n, label, tone: good\|warn}`) | the job card, as figures | `/f-signoff`, the job's few numbers that matter |
+| `jobs[].lesson` (one paragraph) | the job card | `/f-signoff`, the job's lesson (the same one its Logbook card carries) |
+| `project.owed` (list) | Needs you, as owed | the foreman at each close: the debts the project still carries (loose ends left by merged work, not yet jobs) |
+| `project.lesson` (`{title, rule}`) | the head sign, as the project's rule | the foreman, when a lesson holds across jobs |
+| `project.alerts` (list) | Needs you, as alerts | the foreman: anything the owner must not miss (e.g. the tracker disagreeing with the repository) |
+| `project.facts` (list) | the footer, as standing facts | the foreman: standing facts about the project |
+| `project.schedule: 2`, `project.cut` (`{noise, hot, reproof, max_work_orders}`) | not shown; turns on the v2 rules below | `/f-schedule` v2, copied from the repo profile at the cut and each re-cut |
+| `jobs[].uses` (`{need id: what it uses}`) | not shown | `/f-schedule`: one entry per need; required on a v2 board |
+| `jobs[].gates` (job ids) | the job card, as "Lands after"; a blocked row names the gate | `/f-schedule`: order-only rules (a release step, a go-live, a privacy order) |
+| `jobs[].footprint`, `barriers`, `consumes`, `requires` (lists), `est_work_orders` (n) | the card shows the footprint, barriers and estimate | `/f-schedule`, from the ticket's Scope; `requires` from the list in `skills/f-schedule` |
+| `jobs[].builders` (`standard`/`strong` per start), `difficulty` (1-5), `started` | the job card and the job list; the footer's tally | `start --builder --difficulty` at the go |
+| `jobs[].work_orders`, `report`, `difficulty_check` (`held`/`off`/`not-valid`), `closed` | the job card; the footer's tally | `close --work-orders --report --difficulty`, from the dev report |
+| `jobs[].footprint_check` (`{missed, unused}`) | the job card, as "missed n: …" or "clean"; summed by `accuracy` | `/f-signoff` Step 3.2b, through `footprint-check` |
+
+Hand-editing these text fields in `BOARD.json` is allowed; the next render picks them up. Write them without em dashes (, ): a comma, a colon or a full stop reads better on the page.
+
+## Where things are
+
+- **The tool:** `render_board.py` next to this file. Installed in a repo that's `.claude/skills/f-board/render_board.py`; in the method folder it's `skills/f-board/render_board.py`. Call it by that path.
+- **The project folder:** `foreman/projects/<project-slug>/` **in the records repo** (where jobs, work orders and reviews live), not in the product repo. Board updates are the foreman's own records: no PR, no owner word to edit them. In a single-repo setup it's the same path.
+- **Jobs have a kind.** `build` (delivered by work orders and a PR): stored `open`, `in-progress`, `merged`, or `decision` (halted for an owner question). `decision` (delivered by the owner's decision): `decision` → `resolved`. `placeholder` (an area not yet detailed): stored `open`, always shown blocked, never offered by `next`, turned into a build job by `promote`. `ready`/`blocked` are **derived**, never stored: a need is satisfied by a `merged` or `resolved` job. **One job in progress at a time.**
+- **Gates** hold a job's landing: `close` (and `check --land`) refuse while a gate is not merged or resolved, and `decided` refuses a decision job whose gate is open. With one lane a gate also holds the start when it is an unbuilt build job, or a decision that can't be decided yet (its own needs unfinished): the job shows as blocked everywhere (`next`, `close --next`, `set-next`, `start`, the page).
+- **A v2 board** (`project.schedule: 2`, cut by `/f-schedule` v2) also requires `uses` for every need, and `ticket`, `footprint` and `est_work_orders` on every open or in-progress build job; merged, decision and placeholder jobs are exempt. Older boards keep working unchanged; `check` warns once about needs with no `uses`.
+- **Tests:** `test_render_board.py` next to the tool; run it after installing.
+
+## The events (one command each, one version each)
+
+| When | Command | What it records |
+|---|---|---|
+| The owner says "go" on a job | `render_board.py BOARD.json start <job> --run J7 --builder standard\|strong --difficulty <1-5>` (`J7` stands for the job's run label, whatever the repo numbers its jobs; `--builder` is the owner's pick at the go, or the profile's default, and is left out with no "Builders" row; `--difficulty` is passed either way, since every ticket is rated) | the job is `in-progress` and becomes `next`, with its builder, its rating and the start date. Only a *ready* job can start. `--builder` takes only the labels, never a model or vendor name. A restart after a HALT on the other label records the swap as a note |
+| **Close** (after the merge is verified) | `render_board.py BOARD.json close <job> --pr "#22" --merge <merge sha> --next <job> --work-orders <n> --report <dev report path> --difficulty held\|off\|not-valid [--note "<lesson>"] [--standfirst "<where the project stands>"]` (the three are the dev report's own figures; a job whose builder was swapped closes `not-valid`, and the tool refuses any other check) (decided facts only: never a plan the next job's survey hasn't settled) | the job merged, the next job chosen, **in one version**. The tool refuses to close without `--next` when a job becomes eligible, unless `--no-next --reason "…"`. It warns when `--standfirst` is left out, and `check` warns when the standfirst still names a merged job as next |
+| A job HALTs or stops | `render_board.py BOARD.json halt <job> --reason "<why>" --to open` (retry later) or `--to decision --decision "<what must be decided, by whom>"` | work on the job stops; the HALT is noted on it |
+| The owner decides | `render_board.py BOARD.json decided <job> --note "<the decision, quoted>"` | a **decision job** becomes `resolved` (and its dependents can go ready), but only once its own needs are merged or resolved (deciding early is a re-plan: change its `needs` and record why); a halted **build job** goes back to `open` |
+| Work on a job turns up a new one | `render_board.py BOARD.json add <id> --title "<title>" --summary "<what it builds>" [--needs a,b] [--decision "<question>"]` (v2 fields: `--ticket`, `--footprint`, `--barriers`, `--consumes`, `--gates`, `--requires` as comma lists, `--uses "03=what it uses; 04=…"`, `--est n`, `--placeholder`; a v2 board refuses an open build job without its ticket, footprint, estimate and uses) | a new job, open or decision. **Ids are never reused**, including the id of a job that was split |
+| A job's summary is unclear | `render_board.py BOARD.json summary <job> --text "<what it builds, in plain words>"` | the summary on the job card, the line the owner reads to know what the job does without opening its ticket. One sentence, under about 20 words, plan references after it in brackets: *"Loads the catalogue as a runtime block, so later jobs can use it. (T2, VP-6)"*. `check` warns on a summary that is only references (*"Plan task T2; carries VP-6."*) |
+| Scoping finds the job too big | `render_board.py BOARD.json split <job> --into "a=Title A,b=Title B" [--chain] [--active a] [--rewire "05=a,06=b"] [--est "a=4,b=5"] [--ticket "a=<path>,b=<path>"]` (`--rewire`: the child each dependent actually uses; `--chain` only when b uses a's code; on a v2 board every dependent is named and every child has `--est` and `--ticket`) | the children replace the job, dependents are rewired, work continues on the `--active` child, one version, a supersession record |
+| **The board's head is reached** (top out without a quote only when every job is merged or resolved; with any job unfinished, only on the owner's own words with `--quote`, never a goal's. No eligible next job alone is not a topping out) | `render_board.py BOARD.json topout --report <path to the topping out report> [--quote "<the owner's words>"] [--head yes\|partly\|no]`, then `render_board.py BOARD.json report` prints the report's mechanical part | the board is frozen as the project's record (no event after it); unfinished jobs are recorded as carried over; jobs still ready need the owner's words (`METHOD.md` §11b) |
+| **An iteration board** (work found as you go, no blueprint) | `render_board.py BOARD.json init --title "…" --head "<the outcome>" --job <id> --job-title "…" --iteration` | small jobs are added as they are found (`add`) |
+| An open job turns out to be covered by another (the owner says so) | `render_board.py BOARD.json covered <job> --by <job> --quote "<the owner's words>"` | the job leaves the board for the superseded list with the owner's words; any job that needed it now needs the covering job |
+| A placeholder is ready to be detailed (a re-cut point) | `render_board.py BOARD.json promote <job> --ticket <path> --footprint "src/x/,tests/x/" --est <n> [--title …] [--summary …] [--barriers …] [--requires …] [--uses …]` | the placeholder becomes an open build job |
+| The landed diff against the footprint (`/f-signoff` Step 3.2b) | `render_board.py BOARD.json footprint-check <job> --missed "<files>" --unused "<folders>"` | the job's `footprint_check`; `accuracy` sums them |
+| May this job land? (before asking for "merge", `METHOD.md` §10 step 2c) | `render_board.py BOARD.json check --land <job>` | nothing; exit 2 while a gate is open |
+| How wide is the cut? | `render_board.py BOARD.json width` | nothing; prints waves, the longest chain, a two-lane estimate (one pass of list scheduling, longest remaining chain first, re-proof allowance on each job started beside another) and its exact ceiling (work over the longest chain, at most 2), the pairs that could run now, and warnings |
+| How good were the footprints? | `render_board.py BOARD.json accuracy` | nothing; prints jobs held to their footprint, folders over-claimed, files missed |
+| "What's next?" | `render_board.py BOARD.json next` (now) or `next --after-close <job>` (what closing the current job would unlock) | lists eligible jobs; changes nothing |
+| Just refresh the page | `render_board.py BOARD.json` (add `--standalone` for a page to open from disk) | validate + render; no version bump. Set `publish.standalone: true` in BOARD.json to make every event render standalone |
+
+**The board opens in your browser by itself** on its first page (a new board, from `init` or `/f-schedule`'s first render) and at every topping out; routine updates never open a tab. A page that isn't standalone opens from a standalone copy in the temp folder. Set `FOREMAN_BOARD_NO_OPEN=1` on a machine with no browser.
+
+Exit codes: 0 ok · 1 invalid data, including a BOARD.json that isn't valid JSON (fix the data, never force) · 2 wrong usage or an impossible event (e.g. starting a blocked job) · 3 crash · **4 RENDER PENDING**.
+
+**Write order.** `BOARD.json` is authoritative and is written first; `board.html` is derived and written second. On exits 1–3 `BOARD.json` is unchanged. On **exit 4** the event **was recorded** (the new version is in `BOARD.json`) but the page wasn't written: fix the cause (a locked or missing path), then run `render_board.py BOARD.json` to bring the page up to date. **Never replay the event**: that would record it twice.
+
+## Lane mode (two jobs at once, on two machines)
+
+A board with `project.lanes: ["A", "B"]` (the owner chose two lanes at `/f-schedule`; the repo profile's "Lanes" row) has one job in progress **per lane**, and `next` is `{"A": <job or null>, "B": <job or null>}`. Its one true copy is the `foreman-lanes` branch: read it with `snippets/board_pull.sh <remote> <board path>`, and record **every** event through `snippets/board_push.sh <remote> <board path> -- <event…>` (it runs the event against the branch tip and pushes without force; a refused push replays, at most 3 times). Never run an event on the local copy in lane mode.
+
+| When | Command | What it records |
+|---|---|---|
+| Start | `start <job> --run J<n> --lane <X> [--overlap-ok --quote "<the owner's words>"]` | refuses when the lane is busy, the job is reserved by the other lane, its footprint or barriers overlap the other lane's job in progress or reserved (only the owner's quoted words get past), or the lane's machine lacks what it `requires`; a reserved job starts with its reserved number |
+| What may this lane take? | `next --lane <X> [--after-close <job>]` | ready jobs the other lane doesn't hold or overlap, that this lane's machine can run |
+| The end game picks the next job | `reserve <job> --run J<next> --lane <X>`, **before** the next-ticket decision; `unreserve <job> --lane <X> --reason "…"` drops it (only the lane that holds it; the number is retired) | the job and its J-number held for this lane (one per lane); J-numbers are never reused, across lanes |
+| Close | `close <job> … --next <this lane's reservation>` (or `--no-next --reason`) | the lane's next is its reservation |
+| A need found at scoping | `requires <job> --set "screen,owner"`, then `halt <job> --to open` | the job's machine needs; it waits for a lane that has them |
+| Gate 1 widens the footprint | `footprint <job> --set "<folders>"` | refuses to drop a folder, or to reach into the other lane's job |
+
+Also: a build gate doesn't hold a start in lane mode (the other lane can build it), only the landing; `set-next` is replaced by `reserve`; `validate` refuses two jobs in progress on one lane, a J-number used twice, a lane's `next` that isn't its reservation or its job in progress, and warns on a job no lane's machine can run (`unrunnable`); `width` adds a "one lane only" line; the page's "Now" has one row per lane.
+
+## Every update, in this order
+
+1. **Check reality before recording it.**
+   - `close`: the merge is verified as in `METHOD.md` §10 step 3 (the actual merge commit M is in `<remote>/<main>`, and **M's tree equals the reviewed head's tree, or the tested merge-preview tree** when the target moved); `--merge` records **M**. **Never close a job on a report's word.** **In lane mode** the merge is verified with `snippets/land_tested.sh verify <remote> <main> <proven head>` (M^2 is the proven head, trees equal outside the records folders), and `--merge` records that M.
+   - `start`: the owner said "go" on this job.
+   - `decided`: quote the owner's own words.
+2. **Choose `--next` for a close** (a topping out takes `--no-next`, then `topout`, `METHOD.md` §11b): run `next --after-close <job>`; among the jobs it lists, pick the one that unblocks the most jobs, then the one with the most partial work on disk, then the project's order. The reason goes into the next-ticket decision (`templates/NEXT-TICKET-DECISION.md`), which cites the board version read before the close.
+3. **Run the one command.** If it refuses, read the message: it's telling you the data or the event is wrong.
+4. **Update the ticket file's Record section** (`tickets/TICKET-<nn>-*.md`: job, PR, merge). State lives only in `BOARD.json`.
+5. **Republish** (publish mode `artifact` in the repo profile; mode `local` stops at the rendered file).
+   - `publish.url` set and `publish.granted` true: read the live page by its URL first (the artifact tool's `read`), then publish `board.html` to that URL.
+   - `publish.url` empty: **don't publish.** Render locally and ask the owner for the first publish (it uploads ticket and implementation details, even as a private page). On their word, publish a new private page (icon `diagram`), set `publish.url` and `publish.granted: true` (their standing permission to republish to that one link), and render once more.
+6. **Report:** the event, the new version, the next job (or the topping-out status), the link.
+
+## Where it sits in a job
+
+- At the owner's **"go"**: `start` (`METHOD.md` §4).
+- At **close** (`METHOD.md` §10): merge → verify → `/f-signoff` → dev report → the next-ticket decision (it names the board version it read, from `next --after-close <job>`) → the owner confirms → **`close … --next …`** (one new version) → shift handover (it measures and cites the new version). At the board's head: `close … --no-next` → `topout` → the topping out report and the next heads (`METHOD.md` §11b).
+- On a **HALT**: `halt`, and the job records why.
+
+## Starting a board for a project that wasn't cut (init and backfill)
+
+Tickets written one at a time still need a board (`METHOD.md` §11):
+
+```bash
+render_board.py foreman/projects/<slug>/BOARD.json init --title "<project>" --head "<outcome>" --test "<how you'd know>" --job <first id> --job-title "<title>"
+render_board.py foreman/projects/<slug>/BOARD.json add <id> --title "<title>" --needs <ids>                 # planned work, with its real needs
+render_board.py foreman/projects/<slug>/BOARD.json add <id> --title "<title>" --merged --pr "#5" --merge <sha> --run J5   # a job merged before the board existed
+```
+
+`init` refuses to overwrite a board. Every project has one: the end-game's board step ticks only the project's `BOARD.json`, and the old free-text "n/a" is retired.
+
+## Rules
+
+- **Only the foreman updates the board.** The builder never touches it.
+- **Never close without the merge check** (`METHOD.md` §10 step 3). Never choose a `next` the tool calls ineligible: wanting a blocked job is a re-plan (`/f-schedule --split`, or change `needs` and record why).
+- **Decision jobs stay visible** until decided; don't reword them to look buildable.
+- **Never name the builder** on the board.
+- The page is published **private**; sharing is the owner's call from its Share menu.
+
+End with the 5-line status block (`templates/J-STATUS.md`).

@@ -1,0 +1,1 @@
+../../.adeptability/staging/skills/using-adept/SKILL.md

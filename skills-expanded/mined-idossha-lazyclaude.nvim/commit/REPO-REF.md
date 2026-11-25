@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/idossha/lazyclaude.nvim (path: demo/claude-home/skills/commit/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Create well-formatted git commits with conventional commit messages

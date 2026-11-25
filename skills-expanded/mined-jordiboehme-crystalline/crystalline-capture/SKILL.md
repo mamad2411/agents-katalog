@@ -1,0 +1,190 @@
+---
+name: crystalline-capture
+description: Use when durable knowledge is learned while working, when the user asks to update a Crystalline domain, or before writing or editing an engram so it is deduplicated, well-formed and linked correctly.
+---
+
+# Crystalline Capture
+
+Capturing what you learn while you work, as engrams, is the core of Crystalline: experience the next session builds on instead of starting over. Treat it as a normal byproduct of the task, not a separate chore to remember at the end. A session-end reminder may ask you to review the conversation for uncaptured learnings - handle it with this skill and finish quietly when nothing qualifies. That reminder sometimes carries a maintenance ask alongside it, and when it names focus domains, pass exactly those to `evolve_engrams` instead of sweeping everything. It can also carry a sharing ask counting work a team domain has not sent to the team: that one belongs to `crystalline-collaboration` - propose `share_changes` for the domain it names, or ask which domain first when it counts several, and wait for a yes, because sharing publishes somebody's work for review. It can also name a domain's Reflection with open items: call `reflect` for that domain and work the queue, what people changed first. Present what you write with the `crystalline-presentation` skill (read it with the `skills` tool, name `crystalline-presentation`, if it is not installed): the PACT's `## Presentation` first, an element only where it serves the reader.
+
+Some deployments are read-only: if the server instructions or an injected prompt say this deployment's knowledge is read-only and curated externally, stand down on capture. The write tools are not exposed there and this whole skill does not apply; search and read instead.
+
+A domain whose routing line says (read-only), or whose row carries `read_only: true` (a domain row's `read_only`), is not a place for you to write. It is locked, your role only reads it, or it is not on your account's write list. Search and read it, and write where the routing block allows.
+
+## What to capture
+
+Capture what saves a later session from reinventing the wheel or stepping into the same trap: decisions with their reason, confirmed facts, repeatable patterns, gotchas, conventions, lessons learned the hard way, known risks and explicitly speculative ideas or proposals. Do not capture transient debugging steps, one-off scratch state, what any model knows anyway, what the files already say (unless you are ingesting them) or knowledge so narrow it only ever matters to the current session.
+
+If the user did not explicitly ask for this, ask first:
+
+> I noticed `<one-sentence insight>`. Should I capture this in `<domain>` as `[<category>]`?
+
+Two boundaries keep this quiet and useful. An obviously transient aside - a tool complaint, a scratch note, a work-in-progress caveat - does not deserve the ask-first prompt; let it pass without comment. And a terse imperative ("store X", "capture this: Y") is a complete capture request, not a fragment to clarify: the clause after the verb is the content and an engram named in it ("link it to the retry queue engram") is a relation target to find by title. When one message mixes throwaway scratch with a real question, skipping capture for the scratch half never excuses skipping the search before answering the question half.
+
+## Always name the domain
+
+Every write requires an explicit `domain` - there is no default domain for writes, by design, so knowledge never lands in the wrong place by accident. If it is not obvious which domain owns a new piece of knowledge, ask the user rather than guessing; do not silently pick the domain that happens to already be open. Use the `crystalline-routing` skill if you need help identifying the right domain first.
+
+The domain of the surrounding story is not automatically the domain of the knowledge: a rotation detail learned during a payments incident is people knowledge, not payments knowledge. When the topic category (who owns it, what process it is) differs from the context it surfaced in, sweep with `domains` omitted and let the hits name the true owner.
+
+## Search before you write
+
+Before creating anything, search for it - the same `search_engrams` call `crystalline-routing` already shows, scoped or broad. A hit can be a whole engram or a single observation inside one (`search_engrams` returns both kinds in the same result set, an observation hit carries its source line) - check both before deciding there is nothing to update. Every hit also carries its engram's tags, so each search shows the vocabulary already in use. When the knowledge could plausibly live in another domain too, run one more sweep with `domains` omitted.
+
+Treat this as a hard gate: a `search_engrams` call comes before the first `write_engram` or `edit_engram` on a topic, no exceptions, and loading a tool schema does not count as searching. When a hit looks like the owner, `read_engram` it before editing - a snippet is not enough to judge fit or write a correct edit - and pass the returned checksum as `expected_checksum` on the edit so a concurrent change is rejected instead of overwritten. The same goes for a `write_engram` with `overwrite: true` that rewrites the whole engram: pass the checksum from your read, and on a conflict read again and retry. Both tools take the permalink as `identifier`; the title resolves too. A file path is not an identifier: a miss names the permalink it probably meant, so retry with that. This rule covers tool arguments only: keep the identifier bare, because an identifier without the `crystalline://` scheme is always domain-relative, so a domain-prefixed identifier never resolves. Wikilinks inside an engram body follow their own rule, under "Observation categories" below.
+
+The write is also a search. Every `write_engram` and every content `edit_engram` receipt may carry a `similar` list - up to three existing engrams closest in meaning to what you just wrote, with a `guidance` line - and it is a search you did not have to run, scoped to what you may see. Act on it or say why not, never ignore it silently: read the one that fits, then merge into it and retire or delete yours if it owns the topic, supersede it if yours makes it false, add a relation if they are related but distinct, and say "unrelated" when they are. A receipt without the list means nothing was near.
+
+## Edit over create
+
+Prefer refining an existing engram over starting a new one for the same topic, as long as the new knowledge shares the same validity state as what is already there:
+
+```json
+{
+  "tool": "edit_engram",
+  "arguments": {
+    "identifier": "retry-queue-gotcha",
+    "domain": "payments",
+    "operation": "append",
+    "content": "- [lesson] Doubling the backoff window did not help; the fix was raising the dead-letter TTL #payments"
+  }
+}
+```
+
+`operation` is one of `append`, `prepend`, `find_replace`, `replace_section`, `insert_before_section`, `insert_after_section`, `set_frontmatter`. The first six edit the body; `set_frontmatter` assigns one frontmatter field by `key` instead of matching text. To add or remove a tag, read the engram, check `vocabulary` for the tag and pass the whole new list as `key: "tags"`, `values: [...]`. `sources` works the same way: to add or drop one location, read the engram and pass the whole new list as `key: "sources"`, `values: [...]`. A location is kept exactly as you spell it. When the new list is the same as the old one, make no call: the server writes nothing for an unchanged value and answers `unchanged: true`, but a call still costs a round trip, and a run over an unchanged source should write nothing. The other settable keys take one `value`: `status`, `valid_from`, `valid_to`, `stale_after`, `source_date`, `resource`, `source_version`, `salience` and `verified`. An omitted `value` removes the field (`status` cannot be removed), the four date keys take a plain ISO date (YYYY-MM-DD), `resource` and `source_version` take plain text, `salience` takes a number from 0 to 10 and `verified` never removes - it stamps `{ by, at }` with the current instant, taking `value` as the verifying actor or else your own identity. Address sections by heading path, for example `## API > ### Auth`; `replace_section` needs a real, non-empty `section` heading (use `find_replace` when there is no clean heading to target) and keeps deeper subsections in place unless `include_subsections` is set, so a targeted rewrite never silently drops content nested under the heading you replaced. The heading line stays: for `replace_section` and `insert_after_section`, `content` is the section body only, so never start it with the heading (a repeat is dropped and the receipt says `heading_stripped`). When the receipt of a MANIFEST edit lists `manifest_findings`, fix them before you move on - an empty `## When to Use` routes nothing.
+
+Create a new engram only when no existing one owns the topic, or the existing owner is in a different validity state (see below). Keep one topic per engram - do not fold an unrelated second topic into an engram just because it is convenient. Scope by lifecycle as well as by topic: validity is set per engram, not per bullet, so a fact that will stop holding on its own schedule (a price, a version, a deadline, an owner) belongs in its own engram, not beside facts that will outlive it. Anything that would have to be copied forward when a neighbouring fact expires was mis-scoped the day it was written.
+
+The test for edit versus supersede: does the new information make a fact in the owner engram false going forward ("changed", "replaced", "no longer", "instead of")? Then it is a supersession however small the diff looks, even a one-word value swap - follow the recipe below instead of rewriting the old engram's content in place. A pure addition or clarification that contradicts nothing is a normal edit. An open `V302` finding on an engram you are editing is the first thing to settle.
+
+Reading is also checking. When an engram you read states something the session now knows is false, or two hits disagree with each other, surface the conflict and propose the fix - reconcile in place or supersede per the test above - rather than appending the new fact beside the old. On a `find_replace` reconciliation, pass `expected_replacements` so a value appearing more times than you counted fails the edit instead of rewriting the wrong occurrence.
+
+A wrong engram you cannot fix yourself still gets fixed: when the domain is read-only for you, the engram records a person's own words or decisions, or the right value is a call only a person can make, tell the person you are working with. Name the engram and give its `web_url` where the receipt carries one, say what it claims, what is true instead and the source that shows it, and propose the edit. Never leave a wrong engram unmentioned because you cannot change it. Still capture the correct fact where you may write: add a relation from the new engram to the wrong one (`- corrects [[domain:Target]]`) so a reader of either finds the other, and tell the person about both.
+
+## Reconcile in place, not as an append log
+
+An engram is what is true now, including what is now known to be outdated - it is never a change log. When re-ingesting a source or updating a topic, edit the body until it reads as a current-state description again: replace changed facts where they stand, insert new facts into the sections they belong in and delete what the source no longer supports. Never add a dated update section - `## Update - <date>`, `## Re-verification - <date>`, `## Refresh`, `## Change History`, `## Delta since <date>` or any sibling of these - and never append `- [fact] As of <date> X is Y` when the body already states X is Y: either the body needs updating or the observation is redundant. The version layer (git, a team domain's origin history) carries how knowledge changed; a body that reads as running commentary is wrong even when every entry was true as written.
+
+"Checked the source, nothing changed" is one frontmatter field, not a heading: record it with `set_frontmatter` and `key: "verified"`, leaving `value` out so it stamps `verified: { by: <you>, at: <now> }` for you, plus a second call with `key: "source_date"` when the source is versioned. Your entry replaces your own previous one and leaves other actors' entries standing, so the trust record stays a history instead of growing a line per check; an older engram's legacy `last_verified: <date>` is still read as a verification, so a new `verified` entry beside it is enough. Neither touches `valid_from`/`valid_to` - verification does not bound validity. When the knowledge has a shelf life, `stale_after: <date>` (legacy spelling `review_after`) says when to check again.
+
+Outdated knowledge earns its place only when the outdatedness is the point: a deprecated approach kept so it is not recommended again, a rejected alternative kept so it is not re-litigated, a documented anti-pattern. Mark it so it cannot read as current - `status: deprecated` or `superseded` on a whole engram, a `[lesson]` or `[gotcha]` bullet naming why something was retired inside a live one. The recognized retirement set is `deprecated`, `superseded`, `archived` or `legacy` - any of the four softly fades the engram in search ranking, while a free-form status like "obsolete" keeps it ranking at full strength.
+
+Engrams whose topic is inherently historical carry history as structured current content, still not as an append log: a registry row holds its current status and one last-checked value, not a per-check trail; a decision engram tracks its current lifecycle status and is superseded when replaced; a meeting note records one meeting on one date - a new meeting gets a new engram, not an update block on the old one.
+
+## Ingesting a source
+
+A source read into the knowledge earns one record engram per source address (its `resource`) in a `sources/` folder with `type: ingestion`, titled after the source and carrying `resource`, `source_date` where the source has one, `verified`, and a `source_version` key holding a commit, a version, a revision or a content hash - distinct from `type: source`, which holds the source's own verbatim material. The record also lists the source's stable addresses in `sources`, so one `$contains` search finds the record and the engrams it fed. The record is updated on each run, never added as a new one per run. Its body says what was extracted, which engrams it landed in as `[[links]]`, and what was deliberately left out and why. Before ingesting, search `type: ingestion` for the source's `resource`. If a record already exists, fetch only what changed since its `source_version`, fold each change into the linked engrams per "Reconcile in place, not as an append log", then update `source_version` with `set_frontmatter` and stamp `verified`. If none exists, ingest the source and write the record afterward. The record is never a change log - its body is always the current state of the relationship between the source and the knowledge it fed.
+
+Each engram created or reconciled from a source points back at the exact place it came from. Set `resource` to the most specific location it was distilled from - the page, the section or the file, never just the space or the repository - and for a git source pin it to the ingested commit, the record's `source_version`: `https://github.com/{org}/{repo}/blob/{sha}/{path}` for a file, `https://github.com/{org}/{repo}/tree/{sha}/{dir}` for a summary of a whole directory. Set `source_date` too where the source has one. Every location an engram was distilled from goes into its `sources` list, the main one included. `resource` stays the main one, pinned. A `- [source] <url>` bullet may stay for readers, but a filter does not see it: only `sources` is found. In `sources`, write an address that does not change with the next version: for a git file `https://github.com/{org}/{repo}/blob/main/{path}` (the default branch, not the commit). Use one spelling for every location: no trailing slash, the same host and the same case, no anchor unless anchors are the unit you ingest (a notebook ingested block by block, with addresses such as `notes://<notebook>/<page>#b12`: keep those anchors in `sources`), and no tracking parameters in a URL. Link every derived engram to its record with `- ingested_from [[<ingestion record>]]` - not `derived_from`, which `split_engram` writes. A re-ingest updates `resource` and `source_date` on every engram it reconciles, not only the record's `source_version`; `edit_engram` `set_frontmatter` takes all three, and it takes `sources` as the whole new list in `values`. `evolve_engrams` reports an engram an ingestion record fed that carries no `resource` as V111.
+
+A re-ingest finds its engrams by filter, not by meaning. Map each changed or deleted location of the source (for a git source, the paths a diff since the record's `source_version` names) to the engrams that cite it: `search_engrams` with `metadata_filters` `{"sources": {"$contains_any": [...]}}`, up to 100 locations per call, or `$contains` for one. The hits include the `type: ingestion` record, since it lists the same addresses: keep it current through its `source_version` and its own `sources`, not as a derived engram. A renamed path is found by its old address. Read the engram, then pass `set_frontmatter` the whole `sources` list with the old address replaced by the new one, and point `resource` at the new path. A location that is gone from the source leaves the engram's `sources` list: read the engram and pass the list without it. That alone is not a reason to retire it. Retire an engram only when no source is left and the knowledge is found nowhere else; when you are not sure, keep it and ask.
+
+Search these filters with `limit: 100`, and ask for the next `page` until you hold `total` hits. A hit's snippet is not the engram: read it before you change it. An empty `$contains` result is reliable: no engram cites that location. An older server answers `unknown operator '$contains'` (JSON-RPC -32602); there, search by `resource` and compare the lists by hand. An older server also refuses `set_frontmatter` with `key: "sources"` (`set_frontmatter cannot set 'sources'`); there, keep `resource` current and leave the further locations as `- [source]` bullets. A value whose JSON text is longer than 1024 bytes (quotes and escapes count) is not indexed (verify warns with E011), so a filter never finds it, and `set_frontmatter` refuses such a location by its position. A key you filter on is plain ASCII letters, digits, `_` and `-`, without dots.
+
+A source too large to hold in one context - a whole repository, a wiki space, an archive of documents - is split by topic, not by file order: list the source first and group its parts into topic clusters, then hand each cluster to its own subagent, where your harness offers them, to read its part and fold it into the knowledge. Each subagent follows this section: it searches before it writes, reconciles in place and sets `resource` and `ingested_from` on every engram it touches. Give every subagent the target domain, its folder for the cluster, the vocabulary to reuse and the name of the ingestion record, and give each cluster to exactly one subagent, so two of them never write the same engram. Write the ingestion record yourself at the end, from what the subagents report. Ingesting is knowledge work - reading, judging what holds and merging it with what is already there - so run the subagents on a model built for that, such as Claude Opus or one of similar capability, not on a small fast model. A small source needs none of this; ingest it yourself.
+
+## Reuse the vocabulary
+
+Before coining a new tag, observation category or relation type, call `vocabulary` (scoped with `domain`) and reuse an existing term rather than a near-synonym. A `clusters` entry flags near-duplicate tags that drifted apart - surface it to the user rather than acting; `crystalline tags rename` and `tags merge` are CLI cleanups they can run.
+
+A domain MANIFEST may carry a `## Tag Aliases` section of `- old-name -> canonical-name` bullets; searches fold an aliased tag to its canonical form both directions, and `tags merge` records the alias. When the same concept appears under two tags, you MAY propose recording an alias - edit that section with `edit_engram` only after the user agrees, never as silent hygiene.
+
+## Writing a new engram
+
+```json
+{
+  "tool": "write_engram",
+  "arguments": {
+    "domain": "payments",
+    "folder": "retry-queue",
+    "title": "Retry queue gotcha",
+    "type": "engram",
+    "tags": ["gotcha", "payments"],
+    "content": "- [gotcha] The retry queue drops jobs older than 24h #payments\n- [fact] Confirmed during the March incident postmortem #payments\n- depends_on [[Retry Queue Architecture]]"
+  }
+}
+```
+
+An engram needs at least 3 non-blank content lines to pass verification - a lone bullet is rejected as too thin. When the user hands you a single sentence, pad honestly rather than asking for more or refusing to write: one bullet for the fact in the user's own words, one for provenance (how and when it was learned) and one for scope or implication. An inferred consequence is fine; an invented specific is not.
+
+**Before every write or edit, check the exact `content` value you are about to send**: count its non-blank lines (fewer than 3 on a new engram fails) and confirm the bullets are separated by real newline characters. The most common failure is the two printable characters backslash and n between bullets - the string looks multi-line in your draft but lands as one long line and is rejected as thin. If you cannot tell by eye, rebuild the string bullet by bullet.
+
+`permalink`, `status` (defaults to `stable`), `recorded_at` and `generated` (who wrote it, with which model, and when) are filled in for you - except the model, which only you can name: pass `model` with your own model id, the one you were told you are (for example `claude-opus-5`), on every write and every edit, because who wrote a page and with which model is what a later reader weighs it by; leave it out only if you do not know it; `valid_from`/`valid_to` are never auto-set. Recommended `type` values: `engram`, `guide`, `decision`, `architecture`, `runbook`, `reference`. Recommended `status` values: `stable` (the OKF word for knowledge that holds now; `current` is the older spelling of the same state and a filter on either matches both), `implemented`, `draft`, `proposed`, `idea`, `poc`, `deprecated`, `superseded`, `archived`, `legacy` - this is guidance so you can tell an idea or draft apart from current fact, not a fixed enum a write is rejected for.
+
+The optional `folder` files the engram where its topic's neighbours already live, so check the domain's layout first and `browse_domain` it when the domain is unfamiliar. Start a subfolder once a topic cluster is forming; a singleton stays fine at the root. A `write_engram` receipt may carry `close_folders` when the write started a new folder next to an existing folder with a close name (`planview` beside `planview-work`, `note` beside `notes`): if it is the same topic, move the engram into that folder with `move_engram` and keep one folder; if the topics differ, leave it. `evolve_engrams` reports two such sibling folders as V112. `index.md` and `log.md` are reserved names Crystalline maintains itself, so never write an engram that would take one. The folder becomes the permalink prefix `build_context` globs as `crystalline://domain/folder/*`.
+
+When the body shows an attachment image, the target may carry a comma-separated formatting fragment - `left`, `right`, `center`, `full` and `w=NN` or `w=NN%`, as in `![Chart](assets/chart.png#right,w=50%)` - which Fluid honors and plain markdown viewers simply ignore.
+
+To add or change an attachment yourself, use `write_engram` with `path` under `assets/` and exactly one of `content` (text, SVG included) or `base64`, and `overwrite: true` to replace a file; read a file back with `read_engram` on its `assets/` path, so editing a picture is read it, change it, write it back. A picture comes back as an image to look at; pass `include_images: false` to get its base64 instead, which is what you write back or copy into a Reflection with `write_asset`.
+
+Exceptionally valuable knowledge - a hard-won debugging insight, the decision that keeps paying off - can carry a numeric `salience` key (0 to 10) in `metadata`. Hybrid search adds a small bounded lift for it, so a salient engram ranks above equally relevant unmarked ones while relevance still dominates and nothing is ever filtered out by it. Most engrams need none; reserve it for knowledge that clearly outranks its neighbours, and when an engram later proves to be the key to a task, raise its salience with `set_frontmatter`, `key: "salience"` and the new number as `value`.
+
+## Splitting a large capture
+
+A transcript, a research document or a long specification splits by granularity, not by topic - the one sanctioned exception to one topic per engram. Write the distilled summary as a normal engram in the topic's usual folder, carrying the tags and any `salience`, and keep the full text as a `type: source` engram in a `sources/` subfolder. Link the pair both ways: `- summarizes [[Full Document]]` on the summary, `- summarized_by [[Summary]]` on the source. A `type: source` engram is held to four times the ordinary verify token budget (10000 tokens by default), since verbatim capture is what it is for; a full text still over that splits into sequential part engrams in the same folder, each linked back the same way. Verbatim retention is legitimate only alongside a distilled summary, never instead of one: the summary is what most recalls read, and the full text is pulled into context only when the summary falls short.
+
+## Observation categories
+
+Pick the most precise bullet category for `- [category] content #tag`:
+
+- `[decision]` - a choice that was made
+- `[fact]` - verified current state; date it only when the date is part of the fact ("accepted 2026-07-02"), never as as-of hedging
+- `[pattern]` - a repeatable approach
+- `[gotcha]` - a non-obvious pitfall
+- `[convention]` - a team agreement
+- `[lesson]` - learned from experience, often the hard way
+- `[risk]` - a known concern
+- `[insight]` - a realization that changes understanding
+- `[idea]`, `[proposal]`, `[poc]` - speculative or draft content; never mark speculation as `[fact]` or `[decision]`
+- `[source]` - a further location an engram was distilled from, one URL per bullet, for readers; `resource` holds the main one, and every location also goes into the `sources` list, which is what a filter finds
+
+Relations connect engrams to each other: `- depends_on [[Other Engram]]`, or a quoted multi-word type like `- "relates to" [[Other Engram]]`. A bare `[[Title]]` or `[[permalink]]` resolves only inside the engram's own domain. To reach an engram in another domain, put that domain's name in front: `[[<domain>:<Title or permalink>]]`, as in `- depends_on [[payments:Retry Queue Architecture]]`, and the same form works for a prose link. `[[target|text]]` links to target and shows text, as in `[[payments:Retry Queue Architecture|the retry queue]]`. To point at a section, add the heading after a `#`: `[[permalink#Heading]]`. `crystalline verify` reports a bare link that does not resolve in its own domain as L001. It names the domain that holds the target and the prefixed link to write only when both domains are verified together (`crystalline verify <this domain> <other domain>`); verifying one domain alone gives the plain broken-link message, which does not mean the target exists nowhere.
+
+## Temporal fields
+
+`valid_from`/`valid_to` are optional. Absence is the normal case and it means unbounded: no `valid_from` means the engram has always been valid, no `valid_to` means it is valid forever. Set them only when validity is genuinely bounded - a policy that changes on a known date, a temporary workaround with a known expiry or a superseded fact whose end date is known (the supersede recipe below closes that window). Never write a sentinel far-future date to mean "forever"; just omit the field.
+
+Set them through the `metadata` argument as an object; a bound stated only in the content prose does not bound anything for search or supersede logic:
+
+```json
+{
+  "tool": "write_engram",
+  "arguments": {
+    "domain": "payments",
+    "title": "Manual chargeback review workaround",
+    "tags": ["workaround", "payments"],
+    "metadata": { "valid_to": "2026-11-30" },
+    "content": "A temporary process until automation lands.\n\n- [fact] Chargebacks are reviewed manually until 2026-11-30 #payments\n- [risk] Manual review adds a day of latency #payments"
+  }
+}
+```
+
+Bounds are not top-level write arguments and go inside metadata; the write enforces the format - a value that is not a plain ISO date (YYYY-MM-DD) fails with an error naming the field, and a sentinel far-future valid_to or an explicit null is dropped since absence already means valid forever, so a successful bounded write needs no read-back confirmation.
+
+## Superseding instead of contradicting
+
+Do not let an engram hold both current and outdated guidance at once. When new knowledge replaces old knowledge:
+
+1. Write the replacement as its own new engram with `status: stable` - do not rewrite the old engram's factual content in place, which skips step 2 and leaves the outdated fact searchable as current.
+2. Edit the old engram: `edit_engram` with `operation: "set_frontmatter"`, `key: "status"` and `value: "superseded"` (or `"deprecated"`). It assigns the field by name, so it lands whether the old engram spells its current state `stable` or the legacy `current`, and there is nothing to match and nothing to guess.
+3. Add a `- superseded_by [[New Engram]]` relation on the old engram (and, optionally, `- supersedes [[Old Engram]]` on the new one).
+
+A `set_frontmatter` status flip either lands or errors, so there is no read-back to do; what still needs checking is step 3, since a `[[Target]]` whose text does not match a real title stays unresolved even though the edit succeeded.
+
+When the date the old fact stopped holding is known, close its validity window right after the status flip: a second `set_frontmatter` call with `key: "valid_to"` and the date as `value`. Use the real-world transition date, not the date you happened to notice - and when that date is unknown, leave the window open and let `status` alone mark the retirement. A closed window is what makes the past addressable later: a search with `metadata_filters` on `valid_from`/`valid_to` can then answer "what applied last June" with the engram that was true then, the way a person recalls how things worked at a past job without mistaking it for the present.
+
+When one fact inside an engram stops holding while the rest still does, split before you retire, and `split_engram` is the verb that does it in one step: name the source, a title for the new engram and what moves - `observations`, the line numbers `read_engram` reports for the bullets, or `sections`, the heading paths - and the call writes the new engram with the moved content, the source's tags and type, a `stable` status and no validity window, then links the pair with `- derived_from [[Old Engram]]` on the new one and `- split_into [[New Engram]]` on the old. Pass `expected_checksum` from your read so a source somebody changed meanwhile refuses the split rather than dropping their edit; a refusal before the source is rewritten takes the new engram back out, and a failure after it keeps both engrams and tells you so rather than deleting the one that now holds the moved facts. A selection that would leave the source under three content lines is refused, because that is the engram to retire whole rather than split. Only then flip the old engram's status and close its window. The retired engram then carries exactly what expired, the still-valid facts keep their unbounded validity without being re-copied into every successor, and the split marks the scoping mistake so it is not repeated. Never retire a bundle whole and re-type its surviving facts into the successor - that loses their history and their links.
+
+Retiring knowledge is also the moment to learn from it. The superseded engram keeps the full experience; any insight that outlives it - why the old approach failed, what to watch for next time - is unbounded knowledge that belongs as a `[lesson]` or `[pattern]` bullet on the new engram or its own engram, linked back to the retired one. The experience stays time-scoped; what it taught carries forward without bounds.
+
+Not every retirement has a replacement. When nothing takes the old fact's place - a practice abandoned, a tool dropped, a caveat that stopped applying - skip step 1 and retire in place: flip `status` to a retirement value, close `valid_to` when the end date is known and carry any surviving insight forward as a `[lesson]`. Staleness you notice while reading earns the same treatment, proposed to the user first rather than done silently. The status words each mean one thing: `deprecated` says do not do this again, `superseded` says a newer engram replaced this one, `archived` says retired but kept for the record and `legacy` says still deployed and true of old installations but not to be built on.
+
+## Working a maintenance queue
+
+When the user asks what the archive itself needs - what has gone stale, what is half-finished, what looks duplicated - `evolve_engrams` sweeps a domain or every domain read-only and returns a ranked queue where each finding carries its evidence and its next action: work the items marked `mechanical` directly and summarize once, propose each `judgment` item and wait for a yes one at a time, and a `V301` semantic twin means two current engrams say the same thing in different words, not that one of them is wrong: read both, merge and supersede or link and acknowledge the pair with `edit_engram` `set_frontmatter` key `evolve_ack` (a frontmatter key, not a verb of its own). `V302` is the one finding that names a possible contradiction; read it as the model's question, never as proof, and settle it with "The test for edit versus supersede" above or acknowledge the pair of lines. A tag drift finding is the one fix you never apply yourself: hand the user the `crystalline tags merge` command it names and let them run it.
+
+## Confirm before destroying
+
+Always confirm with the user before calling `delete_engram`, `move_engram` or `remove_domain` - describe what will be removed or relocated and wait for a yes. Prefer setting `status` to `deprecated` or `superseded` over deleting when the history is still worth keeping; A reorganisation is always `move_engram`, never `write_engram` plus `delete_engram`, which loses `recorded_at` and the provenance: the move rewrites every link, relation and `crystalline://` URL that pointed at the old address unless `update_links` is `false`. A destination inside the same domain is an ordinary move too: it is how a topic cluster gets its subfolder after the fact, and a permalink in step with its path follows it there. When a permalink has drifted off its folder (`evolve_engrams` V109), move the engram onto its own path with `permalink: "path"`.
+
+Ending a whole domain is `remove_domain`, the counterpart to `add_domain` and the verb to reach for when someone says a domain is finished, obsolete or should be unregistered, dropped or disconnected - never leave the asymmetry standing by telling them it can only be done from the CLI. It unregisters the domain and clears its search index rows; a folder domain's markdown stays on disk, so nothing is lost and pointing `add_domain` at that folder again re-adopts it, and a team domain's GitHub repository is untouched - reconnect that one by pointing `add_domain` at the repository, never at the folder, which would register a plain local domain and drop the team connection. A virtual domain is the one destructive case, because its engrams live only in the database: it refuses until you pass `purge: true`, so propose exporting or sharing that knowledge first and get an explicit yes to losing it. A refusal naming an admin or an owner is an access answer to relay, not a call to retry. To rename a domain, point the person to Rename domain on its domain page in Fluid or to `crystalline domain rename <domain> <new>`, never to `remove_domain` plus `add_domain`: a rename keeps the old name working as an alias and rewrites the links that use it, a remove and re-add loses both.

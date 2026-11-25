@@ -1,0 +1,259 @@
+---
+name: tenet
+description: >
+  Long-running autonomous development orchestration for 12+ hour runs.
+  Trigger when user asks to: build/refactor/fix software end-to-end, run autonomously,
+  execute a dependency graph, continue work without constant interaction, use
+  full/standard/quick Tenet execution modes, or steer an ongoing autonomous run.
+  Also triggers on: 'tenet', 'autonomous loop', 'long run', 'keep going',
+  'run overnight', 'execute the plan', 'start building'.
+allowed-tools:
+  # Tenet MCP tools (the engine)
+  - tenet_init
+  - tenet_continue
+  - tenet_compile_context
+  - tenet_start_job
+  - tenet_register_jobs
+  - tenet_job_wait
+  - tenet_job_result
+  - tenet_cancel_job
+  - tenet_start_eval
+  - tenet_ask_adviser
+  - tenet_validate_clarity
+  - tenet_validate_readiness
+  - tenet_update_knowledge
+  - tenet_add_steer
+  - tenet_process_steer
+  - tenet_update_steer
+  - tenet_health_check
+  - tenet_get_status
+  - tenet_retry_job
+  - tenet_report_blocking_finding
+  # tenet_set_agent is CLI-only, not exposed via MCP
+  # Host agent tools (used during crystallization phase)
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  # Research tools (used during interview and pre-spec research)
+  - WebSearch
+  - WebFetch
+  # Playwright MCP tools (used during Stage 5 e2e eval, may not be available)
+  - browser_navigate
+  - browser_take_screenshot
+  - browser_click
+  - browser_type
+  - browser_fill_form
+  - browser_snapshot
+  - browser_evaluate
+---
+
+# Tenet Skill
+
+Execute Tenet as a checkpoint-driven autonomous development loop. This file is the router and invariant layer. Phase files contain the detailed procedures.
+
+## Index Contract
+
+This `SKILL.md` is an index, not the full procedure. Before doing work for any phase, you MUST:
+
+1. Read the exact phase file named in the Phase Map.
+2. Follow that file's procedure, paths, formats, and gates.
+3. Keep the phase file open as the source of truth while executing the phase.
+
+Do not execute a phase from memory or from this file's summary. Do not write phase artifacts until the corresponding phase file has been read in the current session. If the phase file cannot be read, stop and report which file is missing.
+
+## Authority Order
+
+When instructions conflict, prefer them in this order:
+
+1. MCP tool schema and tool return values.
+2. The phase file for the phase being executed.
+3. This top-level skill file.
+
+Do not invent tool calls or runtime state. If a named Tenet MCP tool is missing, stop and report the MCP configuration problem.
+
+## Core Invariants
+
+1. Every implementation job runs through Tenet MCP: `tenet_continue` -> `tenet_compile_context` -> `tenet_start_job` -> `tenet_job_wait` -> `tenet_job_result`.
+2. Context is compiled per job with `tenet_compile_context` for the **orchestrator's** working context; do not substitute raw file dumps. This context is not forwarded to workers — the dispatch path builds each worker's own run context (spec/decomposition/harness inlined) automatically.
+3. Generation and validation are separate contexts.
+4. Eval is a hard blocking gate. A failed eval must be retried, remediated, or blocked before dependent work proceeds.
+5. Harness enforcement applies in all modes.
+6. Human-readable project memory lives under `.tenet/`; live runtime state lives in MCP SQLite under `.tenet/.state/`.
+7. Status files are generated from MCP state. Do not manually edit `.tenet/status/status.md` or `.tenet/status/job-queue.md` to advance runtime.
+8. Use server-side continuation; do not reconstruct job IDs or dependency state manually.
+9. Wrong turns and failed attempts must remain visible to the active retry context.
+10. Purpose alignment outranks narrow checkbox compliance.
+11. Knowledge writes need confidence tags.
+12. Never assume yolo mode. It only activates when the user explicitly says "yolo", "skip questions", "decide everything", "don't ask me questions", or equivalent.
+13. Never commit live `.tenet/.state/tenet.db`, `.tenet/.state/tenet.db-wal`, or `.tenet/.state/tenet.db-shm`. If portable Tenet state should be tracked, run `tenet db snapshot` and commit `.tenet/state-snapshot/tenet.db` instead.
+14. Durable project doctrine lives in `.tenet/project/**`; normal implementation jobs must not edit it.
+15. New feature/run artifacts live under `.tenet/runs/<run-slug>/`. Legacy top-level artifact directories are compatibility lanes only.
+
+## Boot Sequence
+
+Run this before mode selection or execution:
+
+1. Call `tenet_continue()`.
+2. If no active Tenet state exists, call `tenet_init(project_path=".")`.
+3. Call `tenet_health_check()`.
+4. If health fails because the MCP server is unreachable, tell the user: "Tenet MCP server is not running. Run `npx tenet init` in the project root, then restart your agent." Do not self-start the server; host config manages MCP lifecycle.
+5. Call `tenet_get_status()`.
+6. If either call returns `update_available`, tell the user the current version, latest version, and `update_command`. Do not auto-update during an active run; instruct the user to close the agent, install the update, run `tenet init --upgrade`, then restart.
+7. Run the context bootstrap gate before mode selection:
+   - Required docs: `.tenet/project/overview.md`, `.tenet/project/architecture.md`, `.tenet/project/product.md`, `.tenet/project/testing.md`, `.tenet/project/design.md`.
+   - Pass when all required docs exist and are real (not empty placeholders or obvious templates). Do not judge "thin", "stale", or "needs improvement"; the gate is pass/fail only.
+   - If any required doc is a placeholder, classify the project:
+     - **Brownfield** (real implementation exists in the repo — non-trivial source outside `.tenet/`, agent config, and scaffolding): the gate fails. Read and execute `phases/00-context-bootstrap.md` to live-scan and synthesize doctrine. Stop normal work until the gate passes.
+     - **Greenfield** (no real implementation to scan yet): defer. Do NOT run the bootstrap synthesis and do NOT write status-style "greenfield/TBD" doctrine into `project/`. Leave the placeholders in place — initial project doctrine is authored from the interview output in `phases/01-interview.md` once the interview is done.
+8. In the greenfield deferred state, proceed to mode selection and the interview. The bootstrap gate is satisfied post-interview once `phases/01-interview.md` § 11 has written real `project/**` doctrine from interview decisions.
+9. Detect whether `.git/` exists. Git behavior is defined in `phases/05-execution-loop.md`.
+10. Probe Playwright MCP availability if possible. If unavailable, warn once. This is only non-blocking when the run-local harness/spec marks browser exploration optional, skipped with reason, or not applicable; required browser/visual Layer 2 cannot pass without it.
+11. **Mode-selection checkpoint.** Once boot is otherwise complete, run the mode checkpoint (see *Mode Selection* below): recommend Full/Standard/Quick with a one-line rationale, have the user confirm or override, and record the selected mode + basis. This checkpoint opens the interview phase — it creates the run/transcript scaffold (`phases/01-interview.md` § 1) and records the decision in the transcript's `## Mode Selection` block — so read `phases/01-interview.md` before running it. This is the gate between boot and phase work: until the mode is selected and recorded, do not begin phase work (no task diagnosis, no spec/decomposition, no questions beyond the mode checkpoint itself). The context-bootstrap code scan in step 7 is the only sanctioned source reading during boot.
+
+Do not enter execution while health is bad.
+
+## Mode Selection
+
+Mode selection (Full / Standard / Quick) is a **required, user-facing checkpoint** that runs once the boot sequence passes (including the context bootstrap gate). Do not infer the mode silently from the task's surface form, and never assert a mode retroactively to justify skipping ceremony — surface your recommendation and let the user confirm or override it.
+
+Recommend a mode with a one-line rationale, then ask the user to confirm or change it (prefer an interactive prompt, per `phases/01-interview.md` § 6). Record the selected mode and a selection basis in the transcript's `## Mode Selection` block before any phase work. Re-evaluate only at major scope changes.
+
+- **Full**: new feature, greenfield work, unclear edges, major refactor, broad multi-module change. Full crystallization: full interview → spec/harness/readiness → decomposition.
+- **Standard**: medium complexity, known architecture, moderate unknowns. Compact interview (3–5 questions), then spec/harness/readiness → decomposition.
+- **Quick**: small isolated bug/config/content tweak with low ambiguity. A **minimum** interview — confirm scope and acceptance criteria; never zero questions (see `phases/01-interview.md` § 9 anti-skip) — then a compact spec/harness update or a trivial single-job DAG.
+
+Every mode, Quick included, still: completes the boot sequence first, reads the phase file before entering any phase, writes the interview transcript, and runs the clarity + readiness gates. Quick is a shallower interview, **not** a license to skip the phase structure, the phase-file read, or the gates. If a task looks obvious enough to "just fix," that is exactly when the procedure must still govern — apparent clarity is not a skip signal.
+
+In YOLO mode (`phases/01-interview.md` § 7), the agent selects and records the mode autonomously with `Selection basis: yolo_agent_decision` and no interactive prompt; it still records the `## Mode Selection` block.
+
+At the end of the interview, two mode-like decisions are captured (see `phases/01-interview.md` § 3 for the full procedure):
+
+- **delivery_mode** (`autonomous` | `agile`) — Full mode only. Copied to spec front matter.
+- **model_tier** (`frontier` | `local`) — all modes (Full, Standard, Quick). Advisory; stays in the transcript, consumed once by decomposition. Default `frontier`.
+
+## Phase Map
+
+Read the relevant phase file before executing that phase. The phrase "read" means opening the file contents in the current session, not assuming prior knowledge.
+
+1. Context bootstrap: `phases/00-context-bootstrap.md`
+2. Interview and clarity gate: `phases/01-interview.md`
+3. Pre-spec research, spec, harness, readiness gate: `phases/02-spec-and-harness.md`
+4. Visual artifacts and prototypes: `phases/03-visuals.md`
+5. DAG decomposition and job registration: `phases/04-decomposition.md`
+6. Autonomous execution loop, run-completion doctrine drift review, report-only blocking findings, finding dispatch, and git behavior: `phases/05-execution-loop.md`
+7. Evaluation pipeline and failure handling: `phases/06-evaluation.md`
+8. Agile checkpoints and redirects: `phases/07-agile-checkpoints.md`
+
+Autonomous Full mode normally follows interview -> visuals -> scenarios -> research/spec/harness/readiness -> decomposition -> execution.
+
+Agile Full mode follows interview -> research/spec/harness -> visuals -> initial plan-checkpoint -> readiness -> per-slice decomposition/execution/use-checkpoint. `phases/07-agile-checkpoints.md` owns checkpoint and redirect behavior.
+
+## Phase Entry Rule
+
+At every phase boundary:
+
+1. Identify the next phase by name.
+2. Read its phase file from the Phase Map.
+3. Execute only that phase's documented steps.
+4. When moving to a new phase, read the new phase file first.
+
+Examples:
+
+- Before asking interview questions, read `phases/01-interview.md`.
+- Before writing spec, harness, or scenarios, read `phases/02-spec-and-harness.md`.
+- Before generating visuals, read `phases/03-visuals.md`.
+- Before registering jobs, read `phases/04-decomposition.md`.
+- Before dispatching jobs, read `phases/05-execution-loop.md`.
+- Before acting on eval results, read `phases/06-evaluation.md`.
+- Before agile plan/use checkpoints or redirects, read `phases/07-agile-checkpoints.md`.
+
+## Gates
+
+- Clarity gate: after interview, call `tenet_validate_clarity()` and wait for the validation job result. Do not self-score.
+- Readiness gate: after spec/harness/scenarios and required visuals, call `tenet_validate_readiness` with exact `artifact_paths` and resolve blockers before decomposition.
+- Plan/use checkpoints: in agile mode, block until the user responds with `approve`, `redirect: ...`, `cancel`, or `done` as defined in `phases/07-agile-checkpoints.md`.
+- Pre-execution gate: before dispatching a DAG or slice DAG, summarize mode, job count, key spec decisions, and harness constraints. Ask for confirmation unless the user explicitly asked to start without oversight.
+- Eval gate: after every completed job, call `tenet_start_eval(...)` and wait according to the returned `execution_mode`. The critic set comes from `.tenet/critics.json` (3 built-in by default; the project may disable any and add custom critics — **global** at `.tenet/critics/*.md` and **run-scoped** at `.tenet/runs/<run-slug>/critics/*.md` from the Critic Tailoring step). All returned eval jobs must pass.
+- To add a repo-specific critic (security, a11y, API contract, etc.) by hand, follow `critics.md` (the critic designer) — it produces the roster entry + prompt file so you don't hand-write prompts. To tailor critics to a feature's risks automatically during a run, the spec phase runs Critic Tailoring (`phases/02-spec-and-harness.md` § 4.5); the run-end lifecycle prunes or promotes them (same section, *Run-end critic lifecycle*).
+
+## Execution Rules
+
+Read `phases/05-execution-loop.md` before starting execution.
+
+- Use Tenet MCP tools only. Do not manually implement job code during the execution loop. Delegate the wait→eval→wait→gather span to a tracked sub-agent by default; every operation the sub-agent performs must be a tenet MCP tool call (see `phases/05-execution-loop.md` § Tracked Sub-Agent Delegation). Run that span inline only when delegation is provably impossible — single `dev` job with no eval, a spawn attempt returned an error, or your host exposes no sub-agent spawning mechanism.
+- Dispatch `tenet_job_wait` as background/non-blocking status checks with backoff. Stay responsive to user steering between checks.
+- Pass the original job ID to `tenet_start_eval`; pass `feature` when known.
+- `tenet_start_eval` dispatches the configured critics and returns them as a variable-length `jobs[]` list (plus `execution_mode`). Wait on every job in that list; do not assume a fixed count or that all critics are already running.
+- Treat all eval failures as blocking for the current job or report-only parent.
+- Prefer `tenet_retry_job(job_id, enhanced_prompt)` for failed implementation jobs — it dispatches the retry immediately (retry = run-now, status `running`), so apply any backoff BEFORE calling it, then wait with `tenet_job_wait`; the retried job will not be returned by `tenet_continue()` as `next_job`.
+- Before halting to ask the user at a real decision point, escalate the question to the configured adviser first (see `phases/05-execution-loop.md` → *Escalation to adviser*).
+- Use `tenet_report_blocking_finding` only for report-only jobs that discover blocking findings they must not fix directly.
+- If a finite retry budget is exhausted, mark/report the job as blocked and continue only to independent jobs. If retries are unlimited, continue only while each retry uses new evidence or a changed approach.
+- In agile mode, the normal execution loop is scoped to the current slice; the outer slice/checkpoint loop is defined in `phases/07-agile-checkpoints.md`.
+
+## Steering
+
+The steer inbox is a live to-do list, not a log — it must be maintained, or it swells with agent self-notes and stops being useful.
+
+When the user sends input during execution:
+
+1. Classify it as `context` (one-time info), `directive` (a rule/scope change that holds until lifted), or `emergency` (immediate halt).
+2. Persist it with `tenet_add_steer(...)`; use `affected_job_ids` when known. **Agent self-notes go in as `context`, never `directive`**, so they stay sweepable.
+3. Process steering at every loop checkpoint with `tenet_process_steer()`. Read `user_messages` first, always — user steers are returned in full and can never be crowded out by agent noise. `agent_messages` is capped to a recent window; `truncated: true` and `total_unresolved` tell you there is more to drain.
+4. **Retire steers you have handled** with `tenet_update_steer`:
+   - A `context` steer once consumed — or sweep all agent-context at a run/slice boundary: `tenet_update_steer(sweep="agent_context", status="resolved")`.
+   - A `directive` once the work it governed is done or clearly superseded. If you are unsure whether a directive still applies, **keep it** — never discard user input on a guess. A directive that must hold across jobs stays until you explicitly retire it by id.
+   - The sweep only ever touches agent-context steers — user steers and directives of any source retire only by explicit id.
+
+User steers outrank agent steers. Emergency steer cancels active jobs via `tenet_cancel_job` and stops dispatch until resolved.
+
+## Knowledge And Journal
+
+Use `tenet_update_knowledge` for both reusable knowledge and session journal entries:
+
+- `type="knowledge"` for facts future jobs or future features can reuse.
+- `type="journal"` for job/session history and failure attempts. Journals route to `.tenet/runs/<run-slug>/journal/`.
+
+Use confidence tags such as `[implemented-and-tested]`, `[implemented-not-tested]`, `[decision-only]`, or `[scanned-not-verified]`. (For research notes, prefer `[scanned-not-verified]` when a claim is unproven and `[decision-only]` once it has been adopted.)
+
+## Doctrine Maintenance
+
+`.tenet/project/**` is read by every run but never re-scanned, so it can drift stale silently. The lifecycle is prompt-driven — there is no dedicated tool:
+
+- During a run, a job that finds doctrine missing/stale/wrong writes a **doctrine-drift note** to the run journal (see `phases/05-execution-loop.md` → *Project Doctrine Write Boundary*).
+- At run completion (`tenet_continue()` → `all_done`), the orchestrator consolidates drift notes into per-document proposals appended to `.tenet/runs/<run-slug>/doctrine-proposals.md`. That file is append-only and survives compaction / a lost session. The loop **never blocks** on it.
+- To apply an accepted proposal, dispatch a `dev` doctrine-maintenance job via the existing `tenet_start_job` with `allow_project_doctrine_edits: true`, then re-run the bootstrap gate (`phases/00-context-bootstrap.md`).
+
+Normal jobs never edit `.tenet/project/**` directly — only an authorized doctrine-maintenance job does.
+
+## Safety
+
+- Detect stagnation: repeated identical failures, edit/revert cycles, repeated rereads without new decisions, or repeated tool-call loops.
+- Rotate approach before retrying repeatedly. A finite retry budget is a hard stop; unlimited retry mode still stops on stagnation, emergency steer, or user intervention.
+- Respect harness danger zones. If breached, cancel active jobs and process emergency steer.
+- Do not self-steer to bypass a hard gate.
+
+## Recovery
+
+If Tenet MCP tools stop responding or are unavailable:
+
+1. Do not bypass the pipeline.
+2. Run `tenet_health_check()` if available.
+3. If MCP is unreachable, tell the user to run `npx tenet init` in the project root and restart the agent.
+4. If diagnosis is needed, use the `tenet:diagnose` skill when available.
+5. If recovery is not clear, halt and report the error. Do not continue manually.
+
+## Termination
+
+Stop only when one is true:
+
+1. All jobs are complete or explicitly deferred.
+2. Remaining jobs are blocked and no independent work exists.
+3. Emergency steer is active.
+4. Safety gates require user intervention.
+5. Agile mode receives `done` or `cancel` at the relevant checkpoint.
+
+On stop, call `tenet_get_status()` and report completed jobs, blocked jobs with reasons, remaining work, and notable lessons.

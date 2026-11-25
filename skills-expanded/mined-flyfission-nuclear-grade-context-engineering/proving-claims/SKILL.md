@@ -1,0 +1,119 @@
+---
+name: proving-claims
+description: Builds claim-to-evidence trace rows with statuses, gaps, tests, evals, reviews, and narrower non-claims. Use when a packet asserts something a reviewer must trust. Do not use to make the final ship decision, judge public legal wording, or invent evidence that does not exist.
+---
+
+# Proving Claims
+
+## Overview
+
+Evidence should answer named claims. It should not just create a vague sense that the change is fine. This skill turns each claim into a proof you can trace. It keeps six things apart: a fact, an assumption, an unknown, a source claim (something a source says), local proof (something you checked yourself), and decision authority (who gets to decide).
+
+Boundary: this skill builds the claim-to-evidence trace that feeds other decisions. It does not decide whether to ship (`checking-release-readiness`), determine whether public legal/safety wording overpromises (`checking-legal-and-safety-wording`), validate source lineage (`checking-source-claims`), or create packet files (`creating-change-records`).
+
+## Decision contract
+
+- **Claim checked:** every material claim is tied to evidence, a stated gap, or a deliberate deferral, no claim reaches past its evidence, and the load-bearing claim's evidence is reproducible by an independent party or independently authored — not the actor's own narration.
+- **Artifact observed:** `basis.md`, test, and review evidence -> claim-to-evidence rows with a status (`pass`/`fail`/`gap`/`deferred`/`not applicable`/`planned`) in `trace.md`/`verification.md`.
+- **Decision affected:** warn -- the evidence posture that later `ship.md` release-readiness weighs.
+- **Failure class:** overreaching-claim (a claim stated past its evidence, or a `fail`/unowned `gap` carried as shippable).
+- **Next action:** record the gap as residual risk for `ship.md`; a `fail` or unowned `gap` escalates to block.
+
+## When to Use
+
+- A change record makes claims about the code, says something about safety or security, claims release readiness, or claims a dependency can be trusted.
+- Tests pass, but reviewers cannot see which claim each test backs up.
+- Evidence gaps have to be accepted, put off, or treated as blockers.
+- The proof needs the right kind of check. The kinds are self-check, peer-check, concurrent verification (a second person checks as you go), independent verification (a separate person checks afterward), peer review, a test, or an eval.
+
+## When Not to Use
+
+- The request is to make the final ship/defer/block decision; use `checking-release-readiness` after the trace is built.
+- The request is to judge public legal, safety, security, certification, or compliance wording; use `checking-legal-and-safety-wording`.
+- The request is to validate citation lineage or source authority; use `checking-source-claims`.
+- The claim is an assertion about the outside world (a number, quote, version, or API behavior) rather than about this change; use `checking-facts`.
+
+## Inputs
+
+- `basis.md`, `trace.md`, `verification.md`, and `ship.md`.
+- Test commands, CI runs, reviews, logs, diffs, screenshots, and source links.
+- Known gaps and leftover risks. For expensive runs, apply "Scope expensive proof to the actual boundary" below.
+
+## Process
+
+1. Pull out each important claim.
+2. Pick the kind of check each claim needs, and match its depth to the mode: Quick shows the path ran; Standard exercises the branches that matter; Nuclear shows that the conditions which carry consequence independently change the outcome. A green bar at statement level is not condition-level evidence.
+3. Sort the support behind each claim into one of these: fact, assumption, unknown, source claim, local proof, or decision authority.
+4. Link each claim to its basis, the control or design feature, the code, the evidence, and the release posture.
+5. Give each claim an evidence status: `pass`, `fail`, `gap`, `deferred`, `not applicable`, or `planned`.
+6. Trim any claim that reaches too far, until the evidence truly backs it.
+7. Record the gaps and how they affect the release.
+8. For each load-bearing claim, record evidence custody: who generated, selected, transformed or summarized, executed or captured, retained, and presented it.
+9. Record the actor–evidence coupling profile on the actor, context, mechanism, authority, and resource axes. Do not collapse the profile into a score or rung. If the profile is too coupled for the consequence, add independent reproduction or diverse verification, or carry the gap as residual risk — do not count the actor's self-check as independent. See `docs/02-operating-system/actor-evidence-independence.md`.
+
+## Scope expensive proof to the actual boundary
+
+- Before a long static replay, freeze and record exact source, tool/helper, configuration, and runtime hashes. Check them again at completion; concurrent changes invalidate the affected proof. Schedule edits before the freeze rather than repeatedly rerunning an unstable target.
+- Reuse a pinned core proof only while its dependencies remain unchanged. A hash-only output inventory update may derive metadata from that proof when the dependency check and derivation are explicit; label it metadata-derived, retain the original evidence, and never report a fresh semantic replay. Audit the actual delivered inventory separately.
+- Test the actual native client ingress separately from its canonical downstream envelope. Wrapper bytes can exceed a local bound even when the provider body fits. Use a bounded no-forward native probe before paid generation, then a regression through the real bridge and independent overflow rejection at each guard. A local ingress repair does not authorize higher provider, source, output, reservation, or default limits.
+- Measure the specific bottleneck before expanding tooling. Prefer a small optimization with exact serialized-output parity and unchanged rejection behavior, including ordering, gaps, and overlaps, over a replacement engine. Keep packet sizing separate from full-plan construction; reuse frozen phase proof instead of repeating costly diagnostic compiles. A single timing or memory observation does not establish a speed multiplier or root cause.
+
+## Outputs
+
+- Claim-to-evidence rows in `trace.md` or `verification.md`.
+- A clear split between fact, source, and proof for each important claim.
+- Evidence commands anyone can rerun, or links to the artifacts.
+- The kind of check used for each important claim.
+- An updated release posture when the evidence changes.
+
+## Verification
+
+- `python tools/ng.py validate .nuclear/changes/<slug>` passes for Quick or Standard records.
+- Every important claim has evidence, a stated gap, or a deliberate deferral.
+- No test result is used to imply unrelated safety, security, compliance, or approval.
+
+## Escalation
+
+- Stop when the evidence is missing but the record still wants to ship.
+- Escalate when claims affect public trust, regulated use, procurement, security, or safety.
+
+## Common Rationalizations
+
+- "CI passed, so all claims pass." CI only proves what it checks.
+- "A reviewer can read the code." Review counts as evidence only when its scope and result are written down.
+- "The same agent checked itself." That can be a self-check, but it is not an independent check — the actor that made the change also wrote the proof, so the gate is downstream of the same mistake.
+- "The write-up says it passed." A confident narrative the actor authored is a claim, not evidence. Verify it; do not read it as the verification.
+- "The code that renders the figure is correct, so the figure is correct." When a load-bearing claim is about a *produced* artifact (a figure, PDF, screenshot, build, or deployed response), the evidence is a fresh observation of that artifact, not a reading of its generator — the generator is not the output. Route it to `verifying-final-artifacts`.
+- "We should not mention gaps." Hidden gaps lead to worse release decisions.
+
+## Red Flags
+
+- The evidence status is missing.
+- A claim says "safe", "secure", "compliant", or "approved" with no scope around it.
+- A claim about a rendered or produced artifact is backed only by a reading of its generator, with no fresh observation of the output itself (route to `verifying-final-artifacts`).
+- The release decision ignores failed or deferred evidence.
+- The only evidence for the load-bearing claim is the actor's own narration, or the custody/profile disclosure is missing, internally inconsistent, or below the consequence-specific minimum.
+
+## Prompt
+
+```text
+Prove the important Nuclear-grade claims in this packet.
+
+Inputs:
+- packet: .nuclear/changes/<slug>/
+- claims: <list or source file>
+- evidence available: <commands/links/reviews/logs>
+- known gaps: <list>
+
+Return:
+- claim -> basis -> control/design feature -> support type -> verification type -> evidence -> status -> ship posture
+- for each load-bearing claim: evidence custody (generated, selected, transformed/summarized, executed/captured, retained, presented)
+- the five-axis actor–evidence coupling profile (actor, context, mechanism, authority, resource), the consequence-specific minimum, and any residual coupling or blocker
+- narrower wording for any claim that is too broad
+- the gaps, deferrals, or blockers, stated plainly
+- the validator command to run
+```
+
+## Source-lineage note
+
+This skill is an authored claim-evidence workflow influenced by public professional self-review, software assurance, verification, provenance, and secure-development sources mapped in `docs/00-standards-foundation/source-map.md`. It is not formal verification and does not establish evidence independence.

@@ -1,0 +1,230 @@
+---
+name: grim-usage
+description: Drive the grim CLI — the OCI package manager for AI skills, rules, agents, MCP servers, hooks, settings packages, bundles, and mods. Use when installing, updating, searching, rating, or publishing AI-config artifacts with grim; when composing grim init, config, add, lock, install, update, status, context, fetch, describe, export, search, rate, tui, mcp, hook, build, release, publish, login, logout, or completions commands; when adding, pinning, or exporting a plugin marketplace (marketplace.toml); when enabling opt-in telemetry; when configuring settings, multiple registries, or qualified alias/repo references; or when resolving registries, project vs global scope, client targets, or offline mode.
+license: Apache-2.0
+compatibility: grim>=0.16
+metadata:
+  summary: How to use the grim CLI end to end
+  keywords: grim,grimoire,cli,oci,registry,install,update,publish,skills,rules,agents,bundles,mcp,hooks,settings,multi-registry
+  repository: https://github.com/grimoire-rs/grimoire
+---
+
+# Grim Usage
+
+Grimoire (binary: `grim`) is a package manager for AI-agent configuration.
+It distributes eight artifact kinds — **skills**, **rules**, **agents**,
+**MCP servers**, **hooks**, **settings**, **bundles**, and **mods** — through any standard OCI
+registry (GHCR, Docker Hub, a private Distribution), with lockfile-pinned
+installs into a growing fleet of AI clients plus a vendor-neutral `agents`
+target. The current names are listed in
+[references/registries.md](references/registries.md#client-targets); the
+set grows every minor release, so read it there rather than assuming. An
+MCP server artifact installs by registering an entry in each client's
+native MCP config file (never as a file of its own); uninstall removes
+only that entry, never the file.
+
+Not every client can host every kind: a **skill** is the one kind every
+client hosts, but a rule needs a per-file scoping surface, an agent needs a
+shipped file format, and an MCP server needs a config file grim can splice —
+and many clients lack one or more of those. Where a client cannot faithfully
+host a kind, grim warns and skips it, writing zero files. Most of the fleet
+declines rules, but agents are hosted by a majority of clients (12 of the 18
+supported clients), and a few clients (Goose, Kilo, OpenClaw, the generic
+`agents` target) write no MCP config at all. The authoritative per-client support matrix is the [Client
+Compatibility][clients] docs page — trust it over this summary, and check it
+rather than assuming.
+
+> **Hooks are experimental and off by default.** The kind publishes,
+> resolves, locks, installs, and reports today; **arming is gated twice**:
+> `options.experimental.hooks` must be true (`false` unless you set it,
+> config-only — no environment variable overrides it) **and** the workspace
+> must have consented (`grim hook allow`, `grim add`, or an accepted prompt;
+> global scope is always consented). `grim install` and `grim update` never
+> grant consent. So adding a hook gives you a declaration, a lock pin, and a
+> materialized payload tree, and nothing fires until both gates clear.
+> `grim hook list` is the surface for inspecting what you have. Full picture:
+> [references/consume.md](references/consume.md#hooks); a hook that stays
+> silent:
+> [references/troubleshooting.md](references/troubleshooting.md#a-hook-that-never-fires).
+
+> **Settings are experimental too, and off by default.** A settings package
+> writes values into each harness's own settings file (Claude, Codex,
+> Copilot, Cursor, OpenCode, Qoder, Antigravity, Amp, Droid, Gemini, Kilo,
+> Kiro, Warp; at project scope only Claude, into
+> `.claude/settings.local.json`). It applies only past
+> `options.experimental.settings` (config-only, no environment variable) and,
+> at project scope, the same workspace consent hooks use. The flag is not
+> consent. Full picture: [references/consume.md](references/consume.md#settings).
+
+Three consequences of that shape are worth knowing before your first
+install. In a project with no `--client` and no project list, the global
+`options.clients` joins the detected clients. When **nothing** is detected
+and no global list is set, grim targets the generic `agents`
+client — one copy into the shared `.agents/skills` pool — rather than
+writing a directory for every client it knows about; a lock holding only
+rules, agents, or MCP servers then has nowhere to go and exits **78**. And
+a client that reads that shared pool joins it on its own when another
+selected client writes there, so a skill lands once rather than twice;
+`options.vendors.<name>.shared_skills` pins the answer (`true` always pool,
+`false` always native). Both in
+[references/registries.md](references/registries.md#client-targets).
+
+## Verify Before Acting
+
+Before composing any non-trivial grim command:
+
+1. Run `grim --version`. This guide tracks the release it ships beside; on
+   a different minor, treat every flag mentioned here as a hypothesis.
+2. Run `grim <command> --help` before using flags you have not verified
+   this session — it is the authoritative, always-current flag list.
+3. On any conflict between this skill and live `--help` output, **trust
+   `--help`**. It ships with the binary; this guide can lag.
+
+These pages teach workflows and semantics, never exhaustive flags. The
+full reference is `--help` plus the docs site linked below.
+
+To verify a pre-built grim release archive's build provenance:
+`gh attestation verify <archive> --repo grimoire-rs/grimoire`
+([Installation][install]).
+
+## Command Map
+
+| Command | Purpose | Details |
+|---|---|---|
+| `grim init` | Create a fresh `grimoire.toml` | [consume](references/consume.md) |
+| `grim config` | Read/write `grimoire.toml` settings and registries | [registries](references/registries.md) |
+| `grim add` | Declare an artifact and pin it in the lock (an existing pin is kept; `grim update <name>` moves it); a major downgrade needs `--allow-downgrade` | [consume](references/consume.md) |
+| `grim lock` | Pin what the declaration added or changed; keeps every existing pin; a major downgrade needs `--allow-downgrade` | [consume](references/consume.md) |
+| `grim install` | Materialize the lock into AI clients; `grim install <path>` dev-installs a local skill, rule or agent without declaring it | [consume](references/consume.md) |
+| `grim update` | The command that moves a pin whose reference you did not change: re-resolve, re-materialize, prune; `--marketplace <path>` instead rolls a declared plugin's own lock forward and installs nothing; `--allow-downgrade` permits a claim-forced lower major | [consume](references/consume.md) |
+| `grim status` | Report each declared artifact's state | [consume](references/consume.md) |
+| `grim context` | Report the resolved scope, paths, clients, registries | [consume](references/consume.md) |
+| `grim fetch` | Print an artifact's content without installing | [consume](references/consume.md) |
+| `grim describe` | Report an artifact's metadata (kind, annotations, tags) without downloading content | [consume](references/consume.md) |
+| `grim remove` / `uninstall` | Undeclare vs full inverse of install; both also drop dependencies only the target needed and relock in the same run (`--no-relock` skips it) | [consume](references/consume.md) |
+| `grim why` | Explain why an artifact is installed: direct, or required by which others (offline, lock only) | [consume](references/consume.md#dependencies) |
+| `grim export plugin` | Render already-locked artifacts as a Claude-family (Claude Code, Qoder) or Agent Plugins plugin (directory or `--zip`), for a client with no grim install | [publish](references/publish.md#export) |
+| `grim export marketplace` | Regenerate a git marketplace repository from a `marketplace.toml`'s `[marketplace]` table: one marketplace file and one plugin tree per client, plus a root README with the add commands, for consumers with no grim install | [marketplaces](references/marketplaces.md) |
+| `grim search` / `tui` | Browse your declared registries' catalogs | [registries](references/registries.md) |
+| `grim rate` | Vote on an artifact through the index's rating forge | [registries](references/registries.md) |
+| `grim mcp` | Run a local STDIO MCP server for AI agent integration | [registries](references/registries.md) |
+| `grim hook list` | Report every declared hook with its tier, events, and per-client arming state | [consume](references/consume.md#hooks) |
+| `grim hook allow` / `grim hook revoke` (alias `deny`) | Record or remove this workspace's consent to arm its hooks and apply its settings packages; `grim consent` is an alias of `grim hook` | [consume](references/consume.md#hooks) |
+| `grim build` | Validate and pack locally, no push | [publish](references/publish.md) |
+| `grim release` | Validate, pack, push with cascade tags | [publish](references/publish.md) |
+| `grim publish` | Batch-release packages from a `publish.toml` manifest | [publish](references/publish.md) |
+| `grim login` / `logout` | Manage registry credentials | [publish](references/publish.md) |
+| `grim schema` | Emit the JSON Schema for `grimoire.toml` / `publish.toml` / `grimoire.lock` / the MCP descriptor / `hook.toml` / a settings document (`settings/<name>.toml`) / `mod.toml` | [publish](references/publish.md) |
+| `grim completions <shell>` | Print a shell completion script (bash, elvish, fish, powershell, zsh) to stdout; redirect it into your shell's completion dir | `grim completions --help` |
+
+> **Deprecation:** a publisher can retire a package without
+> unpublishing it; `add` and `status` flag it as deprecated (an `add` of a
+> deprecated reference still succeeds). `search` and `tui` **hide**
+> deprecated artifacts by default unless they are installed — reveal them
+> with `grim search --show-deprecated`, the TUI `h` key, or by setting
+> `options.show_deprecated = true` (`grim config set options.show_deprecated
+> true`). A `replaced-by` successor reference, when the publisher named
+> one, surfaces in `grim search` / `grim describe`. See [Publishing][publishing].
+>
+> **Build provenance:** `build`, `release`, and `publish` embed the
+> publishing commit and its date as OCI annotations **by default** (never a
+> wall-clock time, so re-release stays idempotent). `--git` additionally
+> requires them and discloses the `origin` remote and commit author;
+> `--no-git` suppresses every derived annotation. Confirm with
+> `grim release --help`.
+>
+> **`grim hook` has three subcommands:** `list`, `allow` and `revoke` (alias
+> `deny`). Hooks fire through a separate native `grim-hook` launcher that
+> `grim install` writes to `$GRIM_HOME/hooks/`; clients run it, a person does
+> not. After upgrading grim, re-run `grim install` in each workspace that uses
+> hooks, or that workspace's hooks stay quiet.
+>
+> **Global flags** apply to every subcommand — `--format`, `--global` (`-g`),
+> `--config`, `--registry`, `--offline`, `--locked` (or `GRIM_LOCKED=1`: a
+command that writes a lock refuses, exit 65, when the lock is out of sync with
+its manifest), `--log-level`, and `--color
+> <auto|always|never>` (default `auto` colorizes clap's help/error output
+> and `--format json` only when stdout is a terminal; `--color always`
+> colorizes unconditionally, so never pass it into a pipeline that parses
+> the document. The JSON error document is never colorized in any mode).
+> Confirm the set with `grim --help`.
+
+## Reference Syntax
+
+An artifact is named `registry/repository:tag` (a floating tag — `:1`
+follows the newest `1.x` release) or `registry/repository@sha256:…` (an
+immutable digest). A bare reference defaults to `:latest`.
+
+A third form skips the registry: a **local path** — `./skills/x`,
+`../shared/rule.md`, or an absolute path — names a directory or file on
+disk directly. A value starting with `./` or `../`, or an absolute path, is
+a local path source; anything else is an OCI reference. Path values are
+accepted in `[skills]`, `[rules]`, `[agents]` and `[bundles]`, and as the
+argument of `grim add`, `grim install` and `grim export plugin`. A path
+given to `grim install` is a dev-install: it renders a local skill, rule or
+agent into your clients without declaring it, and that positional takes no
+registry reference (exit 64). `[mcp]`, `[hooks]`, `[settings]` and `[mods]` take registry
+references only — a path value there is refused with exit 65, so an MCP
+server, a hook, a settings package or a mod always comes from a registry. See
+[references/consume.md](references/consume.md#declaring) for how a path is
+declared and installed.
+
+A `grimoire.toml` value must be fully qualified (`registry/repository`,
+with an optional tag or digest). The short and qualified forms below are for
+command arguments such as `grim add` and `grim describe`, which expand them
+before anything is written.
+
+A short reference with no registry resolves against the default registry —
+`--registry` flag, then `GRIM_DEFAULT_REGISTRY`, then config, then the
+built-in fallback registry `ghcr.io/grimoire-rs`; full
+precedence in [references/registries.md](references/registries.md). Browsing
+with nothing configured (`grim search`, `grim tui`, `grim mcp`) falls back
+to the public package index at `https://index.grimoire.rs` instead — see
+[references/registries.md](references/registries.md#multiple-registries).
+
+When a config declares `[[registries]]` with aliases, a **qualified
+reference** `alias/repo[:tag]` expands the alias to its configured URL —
+for example `acme/code-review:1` becomes `ghcr.io/acme/code-review:1`
+when `acme` is aliased to `ghcr.io/acme`. This only works for an
+`oci`-type alias. An index-type alias fails with exit 65. Full details
+and the multi-registry browse behavior in
+[references/registries.md](references/registries.md#qualified-references).
+
+## Routing Table
+
+| Read... | ...when |
+|---|---|
+| [references/consume.md](references/consume.md) | Installing, updating, or removing artifacts in a project |
+| [references/publish.md](references/publish.md) | Building, releasing, tagging, or logging in to publish |
+| [references/registries.md](references/registries.md) | Resolving registries, scopes, client targets, offline mode, searching, or rating |
+| [references/marketplaces.md](references/marketplaces.md) | Running `grim export marketplace`, or adding, pinning, rolling out or troubleshooting a grim-generated plugin marketplace in Claude Code, Copilot, Codex, Qoder or Cursor (consumers need no grim) |
+| [references/telemetry.md](references/telemetry.md) | Turning opt-in telemetry on, proving it is off, or auditing what it sends |
+| [references/troubleshooting.md](references/troubleshooting.md) | A grim command failed — exit codes, integrity gates, common causes |
+| [references/updating.md](references/updating.md) | Maintaining this skill itself against newer grim releases |
+
+## Further Reading
+
+- [Command reference][commands] — every command with current flags.
+- [Concepts][concepts] — kinds, references, the lock, bundles, scopes,
+  clients.
+- [Configuration][config] — `grimoire.toml`, `grimoire.lock`, environment
+  variables.
+- [Publishing][publishing] — the author-to-release workflow.
+- [Authentication][auth] — credential store, login/logout, CI recipes.
+- [Use a marketplace][use-a-marketplace] and [Host a marketplace][hosting-a-marketplace]
+  — consumer and curator guides. To *create* one (layout, deploy repository,
+  scheduled regenerate), use the `grim-authoring` skill's marketplace reference.
+
+[commands]: https://grimoire.rs/commands.html
+[concepts]: https://grimoire.rs/concepts.html
+[config]: https://grimoire.rs/configuration.html
+[publishing]: https://grimoire.rs/publishing.html
+[auth]: https://grimoire.rs/authentication.html
+[clients]: https://grimoire.rs/clients.html
+[install]: https://grimoire.rs/installation.html#pre-built-binaries
+[use-a-marketplace]: https://grimoire.rs/guides/use-a-marketplace.html
+[hosting-a-marketplace]: https://grimoire.rs/guides/hosting-a-marketplace.html
+
+---
+
+Verified against the grim release this package ships beside.

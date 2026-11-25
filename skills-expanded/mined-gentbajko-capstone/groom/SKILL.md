@@ -1,0 +1,11 @@
+---
+name: groom
+description: Use when starting work on a feature or change for a project that already has capstone docs - "new feature", "add a feature", "implement X", "build X", "design a feature", "spec it out", "flesh out", "refine this idea", "let's work on X" - a doc-grounded one-question-at-a-time interview producing a traceable feature spec in docs/capstone/features/, the first stage of the feature chain before plan and implement. Not whole-product discovery (mockup), not the greenfield pipeline (start); to carry one feature from idea to working code in a single run use feature.
+---
+
+# Capstone: groom
+
+From this skill's base directory, read `../core/references/core.md`
+and `../core/references/core-authoring.md`, then execute
+`../core/references/protocols/groom.md`
+exactly.

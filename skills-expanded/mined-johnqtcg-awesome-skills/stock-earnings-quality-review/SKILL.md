@@ -1,0 +1,204 @@
+---
+name: stock-earnings-quality-review
+description: Review a US-listed company's earnings quality, cash-flow integrity, and operating leverage for an equity-research workup. Covers operating cash flow vs net income drift, free cash flow trajectory, capex character (maintenance vs expansion), equity issuance / shareholder-return yield, revenue-quality signals (receivables vs revenue growth, channel stuffing), gross-margin level and trend, operating leverage, and three-cost-rate hygiene (S&M, R&D, G&A). SaaS-specific metrics — ARR/NRR/GRR/CAC payback/Magic Number. Trigger when analyzing financial statements at L1+L2+L3 of the seven-layer X-ray framework. Dispatched by stock-analysis-lead.
+allowed-tools: Read, Grep, Glob, WebSearch, WebFetch, Bash
+---
+
+# Stock Earnings Quality Review
+
+## Purpose
+
+Read the income statement, cash-flow statement, and selected MD&A passages with the eye of an analyst who trusts cash over accruals. Surface the most common quality red flags: net income that doesn't convert to cash, capex understated as "maintenance" while it's really expansion, receivables ballooning faster than revenue, gross margins eroding under cover of revenue growth, operating leverage that runs in reverse. Output a structured Findings set; do NOT draw the verdict — orchestrator does that.
+
+## When To Use
+
+- Orchestrator dispatches earnings-quality review (always-on in Standard / Strict depth).
+- User asks about "earnings quality", "is the profit real", "cash conversion", "operating leverage", "margin trend".
+- A pre-cursor to valuation — you cannot trust forward earnings until you've tested the quality of trailing earnings.
+
+## When NOT To Use
+
+- Balance sheet leverage / liquidity / goodwill → `stock-balance-sheet-review`
+- Business model / customer concentration → `stock-business-review`
+- Management capital allocation → `stock-management-review`
+- Competitive moat / market share → `stock-industry-review`
+- DCF, multiples, target price → orchestrator's synthesis step
+
+## Mandatory Gates
+
+### 1) Execution Integrity Gate
+You must read the cash flow statement from the most recent 10-K and the latest 10-Q. If neither is in the manifest, return `SKIPPED (no cash flow data)`.
+
+### 2) Multi-Period Gate
+A single quarter or single year is noise. Compare ≥3 years of annual data (10-K plus historicals from manifest's `financial-history.json` if present). Trend matters more than level.
+
+### 3) Sector-Aware Gate
+A 20% gross margin is normal for retail and catastrophic for software. Identify the sector from the business-review's classification (or from 10-K SIC code in the manifest) before scoring margin levels.
+
+### 4) Non-GAAP Discipline Gate
+Where the company reports both GAAP and non-GAAP, always check the reconciliation. If SBC, restructuring, or amortization is excluded from "Adjusted EBITDA", surface it — these are real costs.
+
+### 5) First-Hand Data + Bridge Gate (mandatory)
+Every reported financial figure you cite MUST come from the manifest's first-hand `financials.json` (SEC EDGAR XBRL, produced by `scripts/finlib/edgar.py`) or directly from the filing — **never** from a search snippet or an aggregator summary. If a figure is only available second-hand, tag it `second-hand` and lower the confidence of any conclusion resting on it.
+- **Segment → consolidated bridge required.** An operating-leverage / margin conclusion is not credible without showing the bridge: segment operating income → consolidated operating income → EBIT → FCF, reconciled to the filing. If `financials.json["gaps"]` lists `segment_operating_income` (EDGAR exposes it dimensionally, not flatly), read the 10-K **segment footnote** directly to build the bridge — do not infer segment economics from consolidated totals.
+
+### 6) Single-Period Gate (mandatory)
+A single quarter's YoY is polluted by one-off items, SBC vesting cadence, and depreciation-recognition timing. **Any operating-leverage or trend conclusion requires ≥4 quarters or a TTM basis** — a single-quarter "OpInc grew faster than revenue, so leverage is positive" claim will be FAILed by the orchestrator's 口径 lint gate (`scripts/finlib/lint.py`, `period_count >= 4`). Strengthens Gate 2.
+
+## Workflow
+
+1. Load first-hand `financials.json` (EDGAR XBRL) + cash flow statement (10-K Item 8), income statement, and **segment footnote**.
+2. Run filing-pattern-gated scan over the checklist; semantic-confirm hits.
+3. Compute trends from ≥4 quarters / multi-year series: OCF/Net Income ratio, FCF (and the GAAP-vs-adjusted gap), gross margin, opex rates, capex/D&A. Build the segment→consolidated bridge.
+4. If business model = SaaS / subscription, run the SaaS sub-checklist (items EQ-06 + EQ-07).
+5. Emit Findings with severity + numerical evidence (don't say "margin declining" without a number), each citing its `financials.json` source tag.
+
+## Filing-Pattern-Gated Execution Protocol
+
+### Execution Order
+
+1. Identify the target sections in the manifest: cash flow statement, income statement, Note "Disaggregation of revenue", Item 7 MD&A.
+2. For each checklist item with a documented filing-section pattern, locate the section and extract the numerical series.
+3. **HIT** → quantitative analysis (compute ratio, trend, YoY change) + semantic check.
+4. **MISS** → mark NOT FOUND; do not infer from analyst summaries.
+5. For semantic items (e.g., management's explanation in MD&A): full reasoning on the passage.
+6. Report only items where the numbers actually violate the rubric.
+7. Include `Filing pre-scan: X/Y items hit, Z confirmed as findings`.
+
+## Earnings Quality Checklist (15 Items)
+
+| ID | Item | Filing Section | Threshold / Trigger |
+|---|---|---|---|
+| EQ-01 | OCF vs Net Income drift | Cash flow statement vs Income statement | Flag if OCF / Net Income < 0.7 for 2+ years |
+| EQ-02 | FCF trajectory (FCF = OCF − Capex) | Cash flow statement | Flag if FCF negative AND not improving YoY |
+| EQ-03 | Capex character (maintenance ≈ depreciation, expansion >> depreciation) | Cash flow "Capex" vs Income "D&A" | Flag if Capex / D&A > 2× without explicit expansion narrative |
+| EQ-04 | Equity issuance pattern (dilution) | Cash flow "Issuance of common stock" + share-count history | Flag if shares outstanding grew > 5% YoY without M&A |
+| EQ-05 | Shareholder return yield = (buybacks + dividends) / market cap | Cash flow "Repurchase of common stock" + "Dividends paid" | Informational — context for capital allocation worker |
+| EQ-06 | SaaS metric: NRR (Net Revenue Retention) | Earnings releases, investor presentations | Flag if NRR < 110% for a "growth" SaaS; < 100% = customer flight |
+| EQ-07 | SaaS metric: CAC payback / Magic Number | Investor presentations | Flag if Magic Number < 0.75 (deteriorating unit economics) |
+| EQ-08 | Deferred-revenue growth vs revenue growth | Balance sheet "Contract liabilities" YoY | Flag if deferred growth < revenue growth by > 5pp (future slowdown signal) |
+| EQ-09 | Receivables growth vs revenue growth (channel stuffing) | Balance sheet "AR" YoY vs Income revenue YoY | Flag if AR growth > revenue growth by > 10pp |
+| EQ-10 | Gross-margin level vs sector + trend | Income statement; sector benchmark | Sector-aware threshold; flag declining margin > 2pp YoY |
+| EQ-11 | Operating leverage check | OpInc growth vs Revenue growth | Flag if OpInc growth < Revenue growth in 2+ recent quarters (negative leverage) |
+| EQ-12 | Sales & Marketing rate trend | Income segment | Flag if S&M / Revenue rising while revenue growth slowing (CAC inflation) |
+| EQ-13 | R&D rate + SBC treatment in non-GAAP | Income + non-GAAP reconciliation | Flag if SBC > 15% of revenue AND excluded from Adjusted EBITDA |
+| EQ-14 | One-time-item frequency (restructuring, write-downs) | Income statement "Special items" 5-year count | Flag if "one-time" items appear in 3+ of last 5 years (i.e., they're recurring) |
+| EQ-15 | Segment margin & mix-shift | Segment footnote: operating income + revenue BY segment | Flag if a segment growing >5pp faster/slower than core carries a structurally different margin AND the blended-margin trend is mix-driven, not efficiency-driven |
+
+### Severity Rubric
+
+- **High**: A Finding that would flip a Good-Company score item to FAIL — e.g., OCF / NI persistently below 0.7; FCF negative and worsening; NRR < 100%.
+- **Medium**: A Finding that warrants reducing Bull-scenario probability — e.g., gross margin trending down 2pp/yr; S&M rate rising while growth slowing.
+- **Low**: Useful context — e.g., shareholder return yield is 4%, providing a floor.
+
+## Evidence Rules
+
+- Findings must include the numerical value AND the direction/trend. "Margin declining" without numbers is rejected.
+- Cite the filing line ("Cash flow statement line 'Purchases of property and equipment'") plus the year(s) compared.
+- For SaaS metrics not in the 10-K, cite the earnings release or investor presentation explicitly.
+
+## Output Format
+
+### Findings
+
+#### [High|Medium|Low] Short Title
+
+- **ID**: `EQ-NN`
+- **Citation**: filing section + period
+- **Evidence**: numerical value(s) + trend
+- **Implication**: what this changes about the investment thesis
+
+### Suppressed Items
+
+Items checked but not confirmed — list with one-line reason.
+
+### Execution Status
+
+```
+Filings reviewed: 10-K (FY2024), 10-Q (Q3 2025), 10-year history (stockanalysis.com)
+Filing pre-scan: 13/14 items hit, 5 confirmed as findings
+Skipped items: EQ-06, EQ-07 (non-SaaS business model — SaaS metrics N/A)
+Sector: <e.g., enterprise software>
+```
+
+### Summary
+
+One line: `N High / M Medium / K Low — most material: <EQ-NN short title>`.
+
+### Machine-Readable Findings Block (mandatory)
+
+End the reply with **exactly one** fenced block tagged `findings-json`, carrying
+**Worker Findings Contract v1** (full schema and error codes:
+`stock-analysis-lead/references/worker-contract.md`). The orchestrator synthesizes
+the verdict **from this block only** — anything stated in the Markdown above but
+omitted here does not reach the report. Everything above the fence is for the
+human reader.
+
+```findings-json
+{
+  "contract_version": "1",
+  "worker": "stock-earnings-quality-reviewer",
+  "prefix": "EQ",
+  "status": "OK",
+  "depth_mode": "<echo the dispatched depth>",
+  "archetype_applied": "<echo the dispatched archetype>",
+  "archetype_challenge": null,
+  "findings": [
+    {
+      "id": "EQ-NN",
+      "severity": "High|Medium|Low",
+      "title": "<= 80 chars",
+      "citation": {"source": "10-K", "locator": "<item/page/note>", "fiscal_period": "FY2025"},
+      "evidence": "direct quote <= 60 words, or a computed figure with its inputs",
+      "implication": "one sentence on what this means for the thesis",
+      "confidence": "first-hand|second-hand"
+    }
+  ],
+  "positives": [],
+  "data_gaps": [],
+  "checklist_coverage": {"items_total": 15, "items_checked": 0, "items_not_found": 0, "ids_not_checked": []},
+  "mandatory_checks_run": []
+}
+```
+
+Contract rules that fail validation if broken:
+
+- `status` is one of `OK` / `DEGRADED` / `SKIPPED` / `REFUSED`; any value other
+  than `OK` **requires** a `status_reason`. The gate returns `SKIPPED (...)` in
+  prose *and* `"status": "SKIPPED"` here.
+- Every finding ID must start with `EQ` — the prefix is the whole segment
+  before the first hyphen.
+- `citation` is an **object**, never a bare string; `locator` and `fiscal_period`
+  must be non-empty. A finding with no real citation is suppressed, not emitted.
+- `source: "aggregator"` forces `confidence: "second-hand"` — this is what makes
+  the first-hand data rule checkable rather than aspirational.
+- `checklist_coverage`: `items_checked + items_not_found` must reach
+  `items_total` (15), so "the checklist ran to completion" is verifiable.
+- `archetype_challenge`: `null` when the dispatched archetype fits. When the
+  evidence says it does not, file `{"proposed", "reason", "evidence"}` instead of
+  silently analyzing against thresholds you believe are wrong — this is the only
+  sanctioned way to disagree with the orchestrator's classification.
+- `mandatory_checks_run`: list the archetype-specific check IDs the dispatch
+  marked REQUIRED. Omitting one that was required fails validation.
+
+Self-check before replying:
+
+```bash
+python3 <path-to>/stock-analysis-lead/scripts/finlib/worker_contract.py \
+  validate --reply <this-reply>.md --expect-worker stock-earnings-quality-reviewer
+```
+
+## No-Finding Case
+
+```
+No earnings-quality findings — cash conversion clean, margins stable, leverage positive.
+Notable positives: OCF/NI = 1.05 (3-year avg); FCF margin 28% and stable.
+```
+
+## Load References Selectively
+
+- `references/earnings-quality-patterns.md` — load when interpreting OCF/NI gaps, capex classification, SaaS-specific metrics, or segment-margin mix-shift (EQ-15); contains worked examples, sector-specific margin benchmarks, the Magic Number / CAC-payback formulae, and the blended-margin mix-shift decomposition.
+
+## Review Discipline
+
+You are the most-loaded worker (15 checks). Discipline: numbers in every Finding; suppress items you cannot quantify. Orchestrator weights High-severity items heavily — false High findings damage the verdict more than missed Medium findings.

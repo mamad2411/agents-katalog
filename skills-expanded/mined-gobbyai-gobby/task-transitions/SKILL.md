@@ -1,0 +1,219 @@
+---
+name: task-transitions
+description: "Pre-transition checklist for closing or reviewing tasks. Covers fresh verification evidence, commits, and memory gates."
+category: core
+metadata:
+  gobby:
+    audience: all
+    format_overrides:
+      autonomous: full
+---
+
+# Task Transition Checklist
+
+Before closing or changing task status, complete ALL gates below. They fire in order — handle them all at once to avoid bouncing.
+
+---
+
+## Gate Summary
+
+| # | Gate | Variable | Skipped by |
+|---|------|----------|------------|
+| 1 | Fresh verification evidence ready | `verification_evidence` | — |
+| 2 | Clean working tree | — | Non-work closes |
+| 3 | Commit SHA passed to close_task | — | Non-work closes |
+| 4 | Memory review completed | `memory_review_completed` | — |
+
+**Non-work close reasons** (skip commit gates 2-3): `duplicate`, `already_implemented`, `wont_fix`, `obsolete`, `out_of_repo`
+
+Fresh evidence and memory review still apply for non-work closures.
+
+---
+
+## Gate 1: Fresh Verification Evidence
+
+Run verification after the final file edit. Later file edits clear readiness
+evidence. Git commits preserve evidence, so the normal sequence is:
+
+1. Finish editing files.
+2. Run focused validation.
+3. Commit.
+4. Review memory.
+5. Close or submit for review.
+
+Run the verification commands defined in `.gobby/project.json` on the files you
+touched. The `verification` key contains named commands — run the ones relevant
+to your changes:
+
+```bash
+# Read the project's verification config
+cat .gobby/project.json | jq '.verification'
+
+# Run relevant checks (examples — use the actual commands from project.json)
+# verification.lint → linting
+# verification.format → format checking
+# verification.type_check → type checking
+# verification.unit_tests → tests (scope to relevant files, not the full suite)
+# verification.custom.* → project-specific checks (frontend, etc.)
+```
+
+Scope test runs to relevant files — do NOT run the full test suite unless
+explicitly asked.
+
+Successful validation commands such as `uv run pytest ...`,
+`uv run ruff check ...`, `uv run mypy ...`, and `npm test` are recorded
+automatically as `validation_command` evidence. A failed validation command
+blocks readiness until a later validation command succeeds. Manual evidence can
+satisfy readiness when no failed validation command is pending, but it cannot
+clear a failed validation command.
+
+For manual review, PR state, or another non-command artifact, record evidence
+explicitly:
+
+```python
+call_tool("gobby-sessions", "record_verification_evidence", {
+    "summary": "Read the diff and verified the touched lifecycle gates match the task",
+    "evidence_type": "manual_diff_review",
+    "supports": "completion readiness for #N"
+}, session_id="#2333")
+```
+
+## Gate 2: Clean Working Tree
+
+All changes must be committed before status transitions.
+
+```bash
+git add <specific-files>
+git commit -m "[<project_name>-#<task_number>] <type>: <description>"
+```
+
+Prefer staging specific files over `git add -A`. Include the task reference in the
+commit message. `project_name` is a placeholder for the real project name, never
+a literal prefix. In this repo, use `[gobby-#N] type: description`.
+
+## Gate 3: Close with Commit SHA
+
+Pass `commit_sha` to `close_task` — this links the commit and closes in one call:
+
+```python
+call_tool("gobby-tasks", "close_task", {
+    "task_id": "#N",
+    "commit_sha": "abc1234",
+    "changes_summary": "What changed and why"
+}, session_id="#2333")
+```
+
+`session_id` is a parameter of `call_tool`, not the inner tool — pass your Gobby session ref.
+
+Do NOT call `link_commit` separately — `close_task` handles linking internally when you pass `commit_sha`. The `link_commit` tool exists only for associating commits to tasks still in progress (multi-commit work).
+
+## Gate 4: Memory Review
+
+Review your session for memories worth preserving:
+- New insights about the codebase, user preferences, or design decisions
+- Stale memories that need updating or deleting
+
+If nothing new was learned and no stale memories remain, clear the gate:
+
+```python
+set_variable(name="memory_review_completed", value=true, session_id="#2333")
+```
+
+Do NOT create memories for bugs or errors — create tasks instead.
+
+---
+
+## Complete Close Sequence (interactive sessions)
+
+```
+1. Run verification commands from .gobby/project.json after the final file edit
+2. Fix every error, warning, and failure you encounter
+3. git add + git commit (with [<project_name>-#<task_number>] in the message, e.g. [gobby-#N])
+4. Review memories → save/delete/clear gate
+5. set_variable(memory_review_completed=true)
+6. close_task(task_id, commit_sha, changes_summary)  ← one call links + closes
+```
+
+## Review Flow (autonomous/pipeline agents)
+
+Autonomous agents **must** use the review flow — they cannot close tasks directly. The same gates apply.
+Review tools live on `gobby-tasks-ops` and require the explicit `stage_name`
+being reviewed, such as `planning`, `expansion`, `development`, or `holistic_qa`.
+
+### submit_for_review — submit work for review
+
+```python
+call_tool("gobby-tasks-ops", "submit_for_review", {
+    "task_id": "#N",
+    "stage_name": "development",
+    "review_notes": "What was done and what to verify"
+}, session_id="#2333")
+```
+
+Commits are auto-linked from your session. All four gates still apply before this call succeeds.
+
+### approve_review — approve after review
+
+```python
+call_tool("gobby-tasks-ops", "approve_review", {
+    "task_id": "#N",
+    "stage_name": "development",
+    "approval_notes": "Verified: tests pass, changes match spec"
+}, session_id="#2333")
+```
+
+Used by QA agents after reviewing work. Same gates apply — if the reviewer made fixes and committed, those commits are auto-linked.
+
+### reject_review — send reviewed stage work back to ready
+
+```python
+call_tool("gobby-tasks-ops", "reject_review", {
+    "task_id": "#N",
+    "stage_name": "development",
+    "rejection_notes": "Blocking findings that must be addressed before the next review",
+    "round_number": 2
+}, session_id="#2333")
+```
+
+Used by structured review loops such as plan adversary rounds. The current
+stage row returns to `ready`; `round_number` is optional and scopes the
+rejection notes for numbered review loops.
+
+### Interactive vs Autonomous
+
+| Context | Use | Why |
+|---------|-----|-----|
+| Interactive (user present) | `close_task` | User is the reviewer — no separate review step needed |
+| Autonomous (pipeline/agent) | `submit_for_review` | **Required** — autonomous agents cannot close tasks directly |
+| QA review agent | `approve_review` | Moves reviewed stage work to `review_approved` |
+
+`submit_for_review`, `approve_review`, and `reject_review`
+are blocked in interactive sessions — use `close_task` directly. Conversely,
+autonomous agents must use the review flow.
+
+## Closing Without Commits
+
+For tasks that don't require code changes:
+
+```python
+call_tool("gobby-tasks", "close_task", {
+    "task_id": "#N",
+    "reason": "duplicate",  # or obsolete, wont_fix, already_implemented, out_of_repo
+    "changes_summary": "Why no changes were needed"
+}, session_id="#2333")
+```
+
+Fresh evidence and memory review still apply. `changes_summary` is still required — explain why no changes were needed.
+
+## Common Mistakes
+
+| Mistake | Why it fails | Fix |
+|---------|-------------|-----|
+| Close without `commit_sha` | Gate 2 blocks — no commit to validate | Commit first, pass `commit_sha` to `close_task` |
+| Separate `link_commit` then `close_task` | Unnecessary extra call | Pass `commit_sha` directly to `close_task` |
+| `git add -A` | May stage secrets or binaries | Stage specific files |
+| Skip memory review | Gate 4 blocks — `memory_review_completed` not set | Review or explicitly clear |
+| Record evidence before final edits | Gate 1 blocks after later file edits clear evidence | Run validation after the final edit |
+| Run validation that fails, then record manual evidence | Gate 1 blocks because failed validation is unresolved | Run a later successful validation command |
+| Omit `changes_summary` | close_task rejects — required for leaf tasks | Describe what changed and why |
+| Use review tools in interactive session | Blocked by rule | Use `close_task` — user is the reviewer |

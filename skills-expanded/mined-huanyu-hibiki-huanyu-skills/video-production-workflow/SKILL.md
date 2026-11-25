@@ -1,0 +1,257 @@
+---
+name: video-production-workflow
+description: 视频制作全流程工作流合集。把终稿文稿、原始拍摄、字幕、剪映草稿、外部素材和 B-roll 生成串成一条可追踪的制作管线，并从真实任务、失败和用户纠正中验证式优化 Skills。触发词：制作视频、视频制作管线、规划分镜、粗剪、字幕校对、生成 B-roll、合成成片、视频状态、优化视频 skill、skillopt。 已安装 Huanyu-Skills-Pro（付费完整版）时，同类请求交给 Pro 版处理，本 skill 让位。
+allowed-tools: Bash(*), Read, Write, Edit, Glob, Grep, Skill
+metadata:
+  version: 0.8.7
+---
+<!-- huanyu-lite-v1 由 Huanyu-Skills-Pro 的 build_lite.py 生成，请勿手改 -->
+
+# 视频制作管线 / Video Production Workflow
+
+本 Skill 是一组围绕单期视频项目运行的 workflow skill 集合。它不是另一个剪辑软件，也不是把所有工具混在一个黑箱里，而是负责：
+
+- 规定阶段顺序、输入、输出和交接文件；
+- 判断当前请求应该进入哪个阶段；
+- 维护单期视频的状态和目录；
+- 区分 A-roll、B-roll、素材下载和动效生成的责任边界；
+- 在剪映、FFmpeg、AI 视频、Remotion 和 HyperFrames 之间做路由；
+- 让每个阶段可以暂停、审核、重跑和继续，不因换会话而丢失上下文。
+
+## Python 执行约定
+
+本 Skill 根目录的 `.venv` 是唯一 Python 环境。运行 Python 脚本必须使用 `uv run --project <Skill根目录> python ...`；不得调用系统 Python、Anaconda 或其他虚拟环境。初始化和依赖说明见 [DEPENDENCIES.md](DEPENDENCIES.md)。默认安装不包含 PyTorch（默认引擎 faster-whisper 走 ctranslate2，`.venv` 约 0.7GB）；备选引擎 openai-whisper 才需要 `uv sync --extra whisper`（CUDA 12.6 wheel）。
+
+### 动效逆向分析 CLI
+
+`scripts/motion_analyzer/cli.py` 提供统一的 `analyze` 和 `synthesize` 子命令：
+
+```powershell
+uv run python scripts/motion_analyzer/cli.py analyze `
+  --input "<短视频>" --start 00:01 --end 00:04 --output-dir "<分析目录>"
+uv run python scripts/motion_analyzer/cli.py synthesize `
+  --input "<分析目录>/motion_ir.json" --engine remotion --output-dir "<合成目录>"
+```
+
+两个子命令都支持 `--input`、`--start`、`--end`、`--engine` 和 `--output-dir`。分析命令
+首先运行 FFmpeg 抽帧与音频卡点提取，再调用离线 Agent；如果没有
+`GEMINI_API_KEY`、`OPENAI_API_KEY` 或注入式适配器，会输出 `motion_analysis_prompt.json`
+并将状态标为 `awaiting_agent`，不会伪造分析结果。合成命令消费经过验证的 Motion IR，
+输出模板路径、探针状态和注册回执 JSON；Remotion 模板必须通过 30 帧真实探针后才会
+标记为 `approved`。
+
+## 模型调用约定
+
+对话、分析、规划和校对统一使用当前 Agent 提供的模型，不在 Skill 中配置固定对话模型或供应商级对话密钥。faster-whisper / Whisper 是本地转录工具（默认 faster-whisper，Windows 友好；备选 openai-whisper）；Gemini/Veo 的模型参数只服务于明确的专用图像或视频生成 API，不代表对话模型选择。
+
+## 部署边界
+
+内容校准由 `oracle-bone` 负责，通常运行在 AI Agent 或内容管理环境；本 Skill 负责工作站上的视频制作。两者的衔接物是已经确认的终稿，通常放在：
+
+```text
+<视频项目根>\{第X期：视频标题}\video scripts\
+```
+
+本 Skill 不修改上游内容校准的预测、发布和复盘文件。成片完成后，只把 `Final\` 中的成片和必要的制作状态交还上游。
+
+## 核心定义：A-roll 与 B-roll
+
+| 类型 | 定义 | 常见来源 | 主要处理工具 |
+|---|---|---|---|
+| A-roll | 承担主要叙事、人物表达和连续口播的主体画面 | 实拍口播、采访、主要 OBS 操作 | `video-rough-cut`、剪映、Filmora |
+| B-roll | 覆盖、解释、证明或强化 A-roll 的辅助视觉；不要求是“拍摄出来的” | OBS 证据录屏、Stock、网页截图、AI 图/视频、Remotion、HyperFrames、拼贴动画 | `b-roll-finder`、`video-assets`、`b-roll-generate` |
+
+OBS 不是固定的 A-roll 或 B-roll：人物边操作边讲解时是 A-roll；只截取界面、流程和产品证据覆盖口播时是 B-roll。分镜表中的“拍摄形式”是路由字段，不是对素材属性的唯一判断。
+
+## 🔴 不可妥协原则（违反任一条 = 拒绝执行并说明原因）
+
+1. **单项目单目录**：每期视频的派生文件只写入该视频目录，不写入 Skill 目录、仓库根目录或 `Raw\`。
+2. **Raw 只读**：用户原始实拍和 OBS 文件不可覆盖、重命名、就地转码或写入派生文件。
+3. **交接文件是真相源**：下游只消费上游明确产出的契约文件；不凭聊天上下文猜测时间码和状态。
+4. **先计划再执行**：破坏性剪辑、付费 AI 视频生成和大规模下载前，先给出策略或计划；用户确认后再执行。
+5. **初始转录不等于最终字幕**：粗剪阶段使用词级 ASR 做决策；剪映内部精剪后才生成最终输出时间轴 SRT。
+6. **B-roll 表达观点，不机械匹配关键词**：先读完整字幕和上下文，再决定是证据、实体、概念、情绪还是用户提供的文化梗。
+7. **生成工具只做 B-roll**：Remotion、HyperFrames 和拼贴 AI 默认输出独立 B-roll，不直接接管整条主视频。
+8. **最终交付前必须自检**：检查时间轴、字幕可读性、B-roll 对词、音频边界、画面比例、许可证和已确认素材是否被遗漏。
+
+## 端到端流程
+
+```text
+内容校准终稿
+  ↓
+01 /video-init —— 建项目目录、状态文件和工作流速查
+  ↓
+02 /video-plan —— 文稿 → 分镜表、素材需求、动效候选
+  ↓
+用户拍摄 / OBS 录制 —— 素材进入 Raw\
+  ↓
+03 /video-rough-cut & 智能口播粗剪 (auto_edit.py)
+     └ 内含多 Take 择优与完整性硬闸（select-takes）
+     └ 内含气口自适应压减（tighten）与清辅音尾音边界保护（boundary-check）
+     └ 内含电路熔断机制（circuit-breaker）评估
+  ↓
+04 /b-roll-finder & 生成装配（默认并行分析，无需等待人工精剪）
+     └ 屏幕录制锚定上轨（Screen Demo，独立静音轨）
+     └ 6 大风格程序化动效包装（B-roll Packaging: Remotion / HyperFrames）
+     └ 概念隐喻生成上轨（B-roll AI Visual: Veo/Imagen，幂等凭据脱敏）
+  ↓
+05 /video-jianying-draft —— 一键导出原生剪映草稿（含 A-roll、三路 B-roll、恢复材料与字幕轨）
+  ↓（可选）用户剪映内人工微调
+     └ auto_edit.py reconcile —— 草稿回读调和，B-roll 自动重定位，脱靶入复核，字幕版本强绑定
+  ↓
+06 /video-polish —— 成片合成、卡点装配、QA 验收
+  ↓
+Final\video_final.mp4
+```
+
+## 阶段路由表
+
+| 用户意图 / 触发词 | 子 Skill / 命令 | 前置条件 | 主要结果 |
+|---|---|---|---|
+| 初始化、创建视频项目、首次使用 | `/video-init` | 无 | 项目目录、状态文件、`WORKFLOW.md`、`STATUS.md` |
+| 看状态、现在做到哪一步、下一步做什么 | `/video-status` | 可选项目目录 | 只读状态看板和下一步建议 |
+| 规划分镜、文稿转分镜、列素材 | `/video-plan` | 终稿文稿 | `storyboard.md`、`storyboard.json`（含交付承诺）、素材和动效候选、风格档、幻灯片风险闸报告 |
+| 转录、粗剪、智能口播裁切、多 Take 择优、气口收紧 | `/video-rough-cut` / `auto_edit.py` | `Raw\` 原片 + 终稿文稿 | `edit-plan.v1.json`、词级转录、边界保护报告、气口压减报告、电路熔断判定 |
+| B-roll 机会分析、录屏锚定、三路 B-roll 上轨 | `/b-roll-finder` / `/b-roll-generate` | `edit-plan.v1.json` + 文稿/素材 | `broll-manifest.v1.json`、三路 B-roll 样片、多风格镜头组装（默认步骤） |
+| 创建剪映草稿、导入视频、三路 B-roll 与字幕 | `/video-jianying-draft` | 剪辑决策 + B-roll manifest + 字幕 | 剪映原生草稿（多轨静音保护）、恢复轨（不出画不出声）与素材副本 |
+| 剪映微调后时间线调和、B-roll 重定位、重建字幕 | `auto_edit.py reconcile` | 微调后的剪映 `draft_content.json` | 调和后 plan、自动重定位的 B-roll、脱靶复核队列、版本绑定字幕 |
+| 调整 B-roll 位置、合成音效、输出成片 | `/video-polish` | 精剪视频 + B-roll + SRT | `Polished\`、`Final\video_final.mp4`、QA 记录 |
+| 把成片导出为可编辑剪映工程（改字幕/变速/换音频） | `/video-jianying-draft`（成片导出模式） | 成片 + manifest + 字幕/SFX 钉帧表 | 可编辑剪映草稿（底片切段 + 原生字幕/音频轨） |
+| 迁移旧状态、升级 schema、修复项目结构 | `/video-migrate` | 旧版 state 或目录 | 备份、迁移报告、更新后的 state |
+| 记录任务教训、复盘协作、优化管线 Skill | `/video-skill-optimize` | 真实任务/对话证据或验证案例 | 本地证据、候选、Gate 结果、经确认的 Skill 更新 |
+
+## 阶段状态
+
+状态统一写入项目根的 `.video-workflow-state.json`。阶段状态只允许使用：
+
+```text
+not_started -> in_progress -> awaiting_approval -> completed
+                               \-> blocked
+```
+
+需要用户选择、审美确认或成本确认时，🛑 必须进入 `awaiting_approval` 并停下等用户确认，不能假装阶段已经完成。详细读写规则见 [shared-references/state-management.md](shared-references/state-management.md)。
+
+## B-roll 路由
+
+`/b-roll-finder` 先决定“是否值得插入 B-roll”和“应该看什么”，`/b-roll-generate` 再决定“用什么引擎做”。默认决策：
+
+| B-roll 需求 | 首选路由 | 备选路由 |
+|---|---|---|
+| 真实人物、产品、事件、地点 | 官方/权威视频或用户素材 | `video-assets` + 合规归档 |
+| 新闻、引用、数据、网页证据 | 原始页面截图、真实 UI、OBS 录屏 | HyperFrames 复刻展示，但不得伪造证据 |
+| 流程、架构、数据、决策树 | Remotion | HyperFrames |
+| 标题卡、关键词、字幕强调、UI 浮层、转场 | HyperFrames | Remotion |
+| 抽象概念、历史隐喻、不可拍摄场景 | `b-roll-generate` 拼贴路线或 AI 图/视频 | Remotion / HyperFrames |
+| 用户明确要求纸拼贴、半调、物件组装 | `b-roll-generate` 拼贴路线 | HyperFrames 分层重做 |
+| 需要跨视频复用、props 参数化的模板 | `b-roll-generate` Remotion 路线 | HyperFrames 模板 |
+| 用户提供的梗、反应、文化片段 | 用户素材库 | 不由 Agent 擅自搜索和替换 |
+
+## 实现资源与来源映射
+
+可执行实现已经按当前子 Skill 体系统一放入根目录 `scripts/`；旧 Skill 仅作为来源记录，运行时不依赖备份目录：
+
+| 集成阶段 | 来源 Skill |
+|---|---|
+| 文稿、分镜和交接文档 | `skills/video-plan/SKILL.md` + `templates/`（该阶段为模型生成型，`scripts/video-plan/` 仅存说明） |
+| 转录、文稿自动校对、粗剪、FFmpeg、精剪合成 | `scripts/video-rough-cut/`（`transcribe.py --lexicon` + `align_to_manuscript.py` 自动校对） |
+| 字幕人工复核、审核页、口癖裁决与词典沉淀 | `scripts/video-caption-correct/`（legacy 独立转录入口 `run_transcribe.ps1` 仅离线场景保留） |
+| 剪映原生 Draft 与成片导出 | `scripts/video-jianying-draft/`；成片→剪映草稿导出见 `references/video-jianying-draft/remotion-export.md` |
+| 下载、许可证、转码和归档 | `scripts/video-assets/` |
+| B-roll 机会分析和素材处理 | `scripts/b-roll-finder/` + `skills/b-roll-finder/SKILL.md`（素材落位匹配见 `scripts/b-roll-finder/match_footage.py`） |
+| 半调纸拼贴 AI B-roll、HyperFrames 检查 | `scripts/b-roll-generate/` |
+| Remotion / HyperFrames 技术规则 | `references/b-roll-generate/remotion-best-practices/`、`references/b-roll-generate/hyperframes/` |
+| BGM 卡点装配 | `references/video-polish/music-beat-sync.md`（`video-polish` 装配时读取） |
+| 动效逆向分析与模板合成 | `scripts/motion_analyzer/cli.py`（`analyze` / `synthesize`）+ `scripts/motion_analyzer/` |
+| 任务证据、候选 Skill 和验证闸门 | `scripts/video-skill-optimize/` + `skills/video-skill-optimize/SKILL.md` |
+| 风险闸与机检（幻灯片风险评分 / 交付承诺核对 / cue 对齐断言 / 成片探针 / 素材技术准入） | `scripts/video-plan/slideshow_risk.py`、`scripts/video-polish/check_delivery_promise.py`、`check_cue_alignment.py`、`final_probe.py`、`scripts/video-assets/probe_source.py` |
+| 跨阶段决策审计 | `shared-references/decision-log.md` + `templates/decision-log.template.json`（项目根 `decision_log.json`） |
+| 外部参考项目与许可证 | `shared-references/external-references.md` |
+
+注：`video-fine-cut` 的执行主体是用户在剪映/Filmora 内的人工精剪，`scripts/video-fine-cut/` 仅存说明文档；其合成与 QA 脚本位于 `scripts/video-polish/`。
+
+## 目录清单（合集根 = 本 SKILL.md 所在目录）
+
+```text
+video-production-workflow/          # 合集根（部署时位于 01-制作管线/ 下）
+├── SKILL.md                        # 本文件：路由、原则、阶段顺序
+├── README.md / CHANGELOG.md / DEPENDENCIES.md
+├── pyproject.toml / uv.lock        # 唯一 Python 环境
+├── models/                         # 本地 AI 模型（download_models.py 管理，不入库）
+├── scripts/                        # 全部可执行实现（按子 skill 分目录）
+│   ├── lib/
+│   ├── setup/                      # 一键安装 install.ps1/install.sh + download_models.py
+│   ├── b-roll-finder/
+│   ├── b-roll-generate/
+│   ├── video-assets/
+│   ├── video-caption-correct/
+│   ├── video-fine-cut/
+│   ├── video-init/
+│   ├── video-jianying-draft/       # jianying.py + subtitle_split.py + vendor/
+│   ├── video-migrate/
+│   ├── video-plan/
+│   ├── video-polish/
+│   ├── video-rough-cut/            # transcribe/select_takes/tighten_pauses/render 等
+│   ├── video-status/
+│   └── video-skill-optimize/
+├── skills/                         # 各子 skill 的 SKILL.md（路由与规则）
+│   ├── video-init/ ├── video-status/ ├── video-plan/
+│   ├── video-rough-cut/ ├── video-caption-correct/ ├── video-jianying-draft/
+│   ├── video-assets/ ├── video-fine-cut/ ├── b-roll-finder/
+│   ├── b-roll-generate/ ├── video-polish/ ├── video-migrate/
+│   └── video-skill-optimize/
+├── shared-references/              # 跨阶段契约与参考
+│   ├── video-folder-schema.md / state-management.md / handoff-contracts.md
+│   ├── a-roll-b-roll-routing.md / b-roll-style-catalog.md
+│   ├── b-roll-timing-and-qa.md / motion-engine-decision.md
+│   ├── layout-geometry.md          # 排版几何（栅格/间距/对齐/字阶/碰撞/九项机检）
+│   ├── motion-brief-standards.md   # 动效导演简报（输入分类/时长/五相位/覆盖模式/风格闸门）
+│   ├── external-references.md      # 外部参考项目登记与许可证边界
+│   ├── b-roll-taste-profile.md / approval-gates.md / skill-optimization.md
+│   ├── decision-log.md             # 跨阶段决策审计（append-only，项目根 decision_log.json）
+├── references/                     # 深度参考资料（按消费者分目录）
+│   ├── video-caption-correct/ ├── video-assets/ ├── video-plan/
+│   ├── video-jianying-draft/       # 含 remotion-export.md（成片→剪映草稿导出）
+│   ├── video-polish/               # 含 music-beat-sync.md（BGM 卡点装配）
+│   └── b-roll-generate/（hyperframes/ remotion-material/ remotion-best-practices/ …）
+├── templates/                      # 交接文件模板（workflow/status/storyboard/broll 系列/motion-request-list 等）
+└── migrations/                     # schema 迁移登记
+    └── registry.md
+```
+
+单期视频项目目录（`<视频项目根>\{第X期：标题}\`）的结构见 [shared-references/video-folder-schema.md](shared-references/video-folder-schema.md)，与本合集根分开维护。
+
+## 常见拒绝与降级
+
+动效逆向 CLI 在分析阶段未配置 LLM 时保留协作提示并返回
+`awaiting_agent`；真实 Agent/API、FFmpeg、模板合成或探针错误则返回结构化错误和非零退出码。
+生产探针固定使用受信任的合成根和绝对依赖路径；测试 runner 仅存在于私有测试 seam，
+不作为 CLI 参数暴露。
+
+- 用户要求跳过文稿/分镜直接批量生成大量 B-roll：先拒绝批量生成，要求先完成 B-roll 机会表和风格确认。
+- 用户要求覆盖 `Raw\` 原片：拒绝，写处理副本到 `Rough\` 或 `assets\raw\`。
+- 用户要求把未经授权的电影、电视剧、付费或 DRM 素材直接放入成片：拒绝并给出合规替代路线。
+- 用户要求用网站截图伪造真实证据：拒绝；可以做明确标注为“示意”的视觉解释。
+- 用户要求在看到实际数据后修改先前的制作决策：允许追加修订记录，但不覆盖已确认的阶段产物，除非用户明确创建新版本。
+- 某个生成引擎失败：只切换该 B-roll 条目的备用路由，不重跑已经通过 QA 的条目。
+
+## 失败分支（fallback）
+
+| 触发条件 | 一线处理 | 仍失败兜底 |
+|---|---|---|
+| Python 环境损坏（`uv run` 报错 / `.venv` 缺失） | 按 [DEPENDENCIES.md](DEPENDENCIES.md) 重建环境 | 列出不可用阶段 + 指出可继续的人工步骤（如剪映内精剪不依赖脚本），**不换系统 Python 硬跑** |
+| 转录失败（faster-whisper / Whisper 不可用或 CUDA 异常） | 切换备选转录引擎（faster-whisper ↔ Whisper，`--engine`） | 降级为用户提供现成 SRT/字幕进入人工对齐，**不硬编时间轴** |
+| 剪映 Draft 生成失败（vendor 模板损坏 / 剪映版本不兼容） | 按 `scripts/video-jianying-draft/` 说明检查模板与版本 | 输出 EDL/剪辑决策清单，由用户在剪映内手工建草稿 |
+| 素材下载失败（源失效 / 登录墙） | 按 B-roll 路由表换备选源 | 登记进 missing-materials 清单并在分镜处留占位说明，**不伪造素材** |
+
+## 扩展规则
+
+- 新增阶段：在 `skills/` 增加子 Skill，并在本文件路由表、目录清单和交接表登记。
+- 新增交接文件：先更新 `shared-references/handoff-contracts.md`，再增加模板。
+- 新增 B-roll 引擎：更新 `motion-engine-decision.md`，明确输入、输出、透明通道、时长和 QA 方式。
+- 修改项目目录：更新 `video-folder-schema.md` 和 `templates/workflow.template.md`，不要只改某个子 Skill。
+
+## 任务后学习协议
+
+- 用户明确纠正、出现失败/返工、高风险边界误判，或发现可复用成功模式时，路由到 `/video-skill-optimize record`，只保存脱敏后的最小证据。
+- 普通单次表现不直接修改生产 Skill；重复信号、用户明确固化要求或高风险单次问题才允许形成候选。
+- 所有候选必须经过留出案例严格增益 Gate，并由用户明确确认后才能采纳；不得自动改写 `SKILL.md`。

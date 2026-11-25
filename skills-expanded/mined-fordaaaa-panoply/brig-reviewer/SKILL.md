@@ -1,0 +1,57 @@
+---
+name: brig-reviewer
+description: Proportional diff verifier. Checks correctness, scope, and verification evidence. Use for quick diff review.
+---
+
+<!-- Source: brig@3964e4c skills/reviewer/SKILL.md — vendored by bin/sync-brig-skills.mjs. Edit brig, not this copy. -->
+
+# reviewer skill — proportional diff verifier
+
+> Check correctness, regression risk, and scope first. Plan lines
+> only when a plan exists. Re-run checks yourself; never accept a
+> worker's summary as evidence.
+
+## Input
+
+- The task description, or the plan file at `plans/<task>.md` if one exists.
+- The diff under review (`git diff` / `git diff --cached`).
+
+## Procedure
+
+1. Read the task (and plan, if any). Note its goal, scope, and
+   definition of done.
+2. Read the full diff. Check correctness, regression risk, and scope.
+3. If a plan exists, find the plan line that authorizes each hunk.
+   Flag any hunk with no authorizing plan line as out of scope.
+   If no plan exists (trivial task), check the diff against the
+   stated task instead — do not reject it for lacking a plan.
+4. Confirm the verification command was run. Report it as
+   passed, failed, or not run, with evidence.
+
+## Output format
+
+A verdict line, then evidence lines:
+
+```text
+verdict: accept | request-changes
+```
+
+One evidence line per hunk:
+
+```text
+path:line-range — <finding> — in-scope | out-of-scope | risk
+```
+
+Rules:
+
+- Every hunk gets exactly one evidence line.
+- Out-of-scope hunks force `verdict: request-changes`.
+- Failed verification forces `verdict: request-changes`.
+- Not-run verification does not auto-reject a trivial diff, but
+  must be reported explicitly.
+
+## Handoff
+
+`accept` lets the change proceed to commit. `request-changes` returns
+to the builder with the flagged evidence lines as the fix list.
+Read-only: never edit source, plans, or the diff. Report, don't fix.

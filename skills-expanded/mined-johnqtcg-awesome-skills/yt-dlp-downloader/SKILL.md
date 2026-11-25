@@ -1,0 +1,275 @@
+---
+name: yt-dlp-downloader
+description: |
+  Generate and run yt-dlp download commands with probe-driven format selection, safe output naming, retry defaults, and structured execution reports.
+  Use when users want to download videos, extract audio, fetch playlists, grab subtitles, handle authenticated/age-gated content, or download live streams.
+  Covers single videos, playlists, audio extraction, subtitle-inclusive downloads, format-ID / resolution-capped downloads, SponsorBlock integration, live streams, and browser-cookie authentication.
+disable-model-invocation: false
+allowed-tools: Read, Bash(yt-dlp*), Bash(ffmpeg*)
+---
+
+# yt-dlp Downloader
+
+Probe-driven download workflow with explicit format selection and safe retry defaults.
+
+## Quick Reference
+
+| If you need to… | Go to |
+|---|---|
+| Choose scenario (single video / audio / playlist / subtitles / live / SponsorBlock) | §1 Scope Classification |
+| Handle specific resolution, codec, HDR, or AV1 | Load `references/format-selection-guide.md` |
+| Handle private / age-gated / login-required content | §5 Auth Safety Gate + Load `references/safety-and-recovery.md` |
+| Fix extraction errors, throttling, or YouTube failures | Load `references/safety-and-recovery.md` |
+| Check the output contract fields (Scenario / Probe / Command…) | §Output Contract |
+
+## Mandatory Gates
+
+Gates execute in strict serial order. Any gate failure blocks all subsequent steps.
+
+```
+1) Scope         2) Dependency    3) Ambiguity     4) Probe
+   Classification → Check       → Resolution    → Before Download
+   │                │              │               │
+   scenario type    yt-dlp+ffmpeg  unclear?        -F / --list-subs
+   → classify       → verify      → STOP+ASK      → inspect first
+        │                │              │               │
+        5) Auth Safety   6) Execution   7) Execution
+           Gate        →    Mode      →    Integrity
+           │                │              │
+           cookies/DRM      full/degraded  actually ran?
+           → enforce        → auto-select  → report honestly
+```
+
+### 1) Scope Classification Gate
+
+Map every request into exactly one scenario before proceeding:
+
+| Scenario | Trigger |
+|----------|---------|
+| Single video | One URL, default quality or specific format |
+| Fixed resolution | User mentions 720p, 1080p, 4K, or specific codec |
+| Playlist | Playlist URL, "all videos", "course", "channel" |
+| Audio extraction | "mp3", "audio only", "podcast", "music" |
+| Subtitles | "subtitles", "captions", "srt", specific language |
+| Authenticated | "private", "members-only", "age-gated", login required |
+| Live stream | "live", "stream", "premiere", "currently streaming" |
+| SponsorBlock | "skip sponsors", "remove intros", "no ads" |
+
+**Goal**: Determine which scenario template to use from `references/scenario-templates.md`.
+
+**Composite requests**: When multiple scenarios apply (e.g., playlist + resolution cap + subtitles), choose the primary scenario as the template base (typically the delivery mechanism — single video, playlist, or audio extraction), then overlay flags from secondary scenarios. Document the composition in the Output Contract's Scenario field.
+
+### 2) Dependency Gate
+
+Before execution, verify:
+
+```bash
+yt-dlp --version
+ffmpeg -version
+```
+
+**ffmpeg is required** when: merging video+audio (`-f bv*+ba`), embedding subtitles (`--embed-subs`), extracting audio (`-x`), embedding thumbnails (`--embed-thumbnail`), or using `--merge-output-format`.
+
+**yt-dlp-ejs + JS runtime**: Full YouTube support requires `yt-dlp-ejs` and a
+JavaScript runtime. Runtimes are tried in priority order **deno > node > quickjs >
+bun**, and only `deno` is enabled by default — to use a lower-priority one, pass
+`--no-js-runtimes` before `--js-runtimes <name>`.
+
+Minimum versions, from the yt-dlp/ejs "Runtime requirements" table (not the
+"Development requirements" table below it, which is stricter and applies to
+developing ejs itself):
+
+| Runtime | Required | Note |
+|---------|----------|------|
+| deno | `>=2.3` | recommended |
+| node | `>=22` | |
+| bun | `>=1.2.11, <=1.3.14` | **deprecated** |
+| quickjs | see the ejs README | supported, lowest priority |
+
+```bash
+pip install yt-dlp-ejs
+# deno >= 2.3 recommended; node >= 22 also works
+```
+
+Version floors move with ejs releases — confirm against
+<https://github.com/yt-dlp/ejs> rather than trusting this table if a runtime is
+rejected.
+
+If a dependency is missing: state `Not available in this environment`, name the exact missing dependency, and provide the install command.
+
+### 3) Ambiguity Resolution Gate
+
+**STOP and ASK** if:
+- URL is not provided
+- Output directory is unspecified and matters (batch/playlist)
+- A stated constraint cannot be satisfied without a number (a storage cap, a
+  target device, "must fit on X") — ask for the number
+- Playlist scope is ambiguous (full playlist vs single video from playlist URL)
+- Subtitle language is needed but not specified
+- Multiple URLs given without clear batch vs individual intent
+
+**Do not stop for vague quality wording.** "Good quality", "high quality" and
+"best" all resolve to the default best-practical selector. Apply it, and state
+the assumption in the Output Contract's Inputs field: the user can correct one
+line of a delivered command far more cheaply than answering a question they did
+not think they had to answer. Ask only when a constraint makes the number
+load-bearing (see above).
+
+### 4) Probe Gate
+
+Do not guess format availability. Run a probe first when any of these apply:
+
+| Condition | Probe Command |
+|-----------|--------------|
+| Specific resolution/codec/format requested | `yt-dlp -F "<url>"` |
+| Subtitle language availability unknown | `yt-dlp --list-subs "<url>"` |
+| Playlist scope unclear or very large | `yt-dlp --flat-playlist --print "%(playlist_index)s %(title)s" "<url>"` |
+| URL may require auth or redirect | `yt-dlp --simulate --skip-download "<url>"` |
+| Site often changes formats | `yt-dlp -F "<url>"` |
+
+**Skip** the probe only for simple, public, single-video downloads where default best quality is acceptable.
+
+### 5) Auth Safety Gate
+
+- Use cookies **only** for content the user is authorized to access
+- Prefer `--cookies-from-browser <browser>` over raw cookie files
+- **Never** ask the user to paste cookie contents into chat
+- **Never** describe cookies as a way to bypass paywalls or DRM
+- **Never** help circumvent geographic restrictions on copyrighted content
+- If auth is required but unavailable, stop at the command recommendation
+
+### 6) Execution Mode Gate
+
+Auto-select mode based on environment:
+
+| Signal | → Mode |
+|--------|--------|
+| Shell access available, yt-dlp installed | **Full** |
+| Shell available but yt-dlp missing | **Blocked** (install first) |
+| No shell access / sandbox environment | **Degraded** |
+
+### 7) Execution Integrity Gate
+
+Never claim a download succeeded unless the command actually ran.
+
+**If executed**: report final command, destination path, success/failure, key stderr/stdout summary.
+**If not executed**: report `Not run in this environment`, reason, exact command to run.
+
+## Defaults
+
+Apply these unless the user requests otherwise:
+
+```bash
+--download-archive "<dir>/.yt-dlp-archive.txt"
+--continue
+--no-overwrites
+--retries 10 --fragment-retries 10
+-o "<dir>/%(title).200s [%(id)s].%(ext)s"
+```
+
+When logging is useful (batch, troubleshooting, unstable network), tee the output —
+but set `pipefail` first, or the shell reports **tee's** exit status and a failed
+download looks like a success, which contradicts the Execution Integrity Gate:
+
+```bash
+set -o pipefail
+yt-dlp ... 2>&1 | tee "<dir>/yt-dlp.log"
+```
+
+If `pipefail` is unavailable (plain `sh`, some CI runners), use yt-dlp's own
+sink instead of a pipe: `--print-to-file "%(filepath)s" "<dir>/yt-dlp.log"` for
+paths, or simply redirect with `> "<dir>/yt-dlp.log" 2>&1`, which preserves the
+exit status.
+
+## Anti-Examples (Core Mistakes)
+
+For the full set of 9 anti-examples, read `references/anti-examples.md`. The four most critical are inlined here (numbering is shared with the full catalog):
+
+1. **Guessing format availability without probing** — formats change per site and per video. Probe first.
+   ```
+   BAD:  yt-dlp -f 137+140 "<url>"  (assuming format IDs exist)
+   GOOD: yt-dlp -F "<url>"  →  then pick from actual list
+   ```
+
+3. **Omitting `--no-playlist` for single-video watch URLs** — YouTube watch URLs can trigger full playlist download.
+   ```
+   BAD:  yt-dlp -f "bv*+ba/b" "https://youtube.com/watch?v=xxx&list=yyy"
+   GOOD: yt-dlp --no-playlist -f "bv*+ba/b" "https://youtube.com/watch?v=xxx&list=yyy"
+   ```
+
+5. **Claiming download success without running the command** — if you did not execute it, say so.
+
+9. **Re-starting from scratch when YouTube throttles mid-download** — the `.part` file is preserved; re-run with `--continue --limit-rate 2M --concurrent-fragments 1` to resume, not restart. See `references/safety-and-recovery.md § YouTube throttling mid-download`.
+
+## Honest Degradation
+
+| Level | Condition | Action |
+|-------|-----------|--------|
+| **Full** | yt-dlp + ffmpeg available, shell access, command executed | Complete execution report with all 7 output fields |
+| **Degraded** | No shell access or sandbox environment | Provide recommended command + state assumptions + suggest probe command if confidence is low |
+| **Blocked** | yt-dlp not installed, or request involves DRM/unauthorized access | State the blocker + provide install command or explain why the request cannot proceed |
+
+Never report download success, file size, or format availability in Degraded or Blocked mode.
+
+## Safety Rules
+
+1. Never help download content the user is not authorized to access
+2. Never describe cookies as a DRM/paywall bypass method
+3. Never ask the user to paste cookie contents into chat
+4. Never claim a download ran unless it actually executed
+5. Never hardcode format IDs without probing the specific video
+6. Always include `--no-playlist` for single-video watch URLs with playlist parameters
+7. Always verify ffmpeg before merge/extract/embed operations
+8. Always pair `--embed-subs` with `--write-subs` (or `--write-auto-subs`) — `--embed-subs` alone does not download subtitles
+
+## Output Contract
+
+Every response must include these 7 fields:
+
+1. **Scenario** — which template was selected
+2. **Inputs** — URL, output dir, format preference, subtitle needs, auth method
+3. **Probe** — probe command + results summary, or "skipped" with reason
+4. **Final command** — one complete, copy-pasteable command
+5. **Execution status** — ran successfully / failed (with key error) / not run (with reason)
+6. **Output location** — expected file path pattern
+7. **Next step** — corrective action if failed, or confirmation if succeeded
+
+## Load References Selectively
+
+**A simple public single-video request needs no reference file.** The template
+below plus §Defaults is the whole command; loading more costs context and buys
+nothing:
+
+```bash
+yt-dlp --no-playlist -f "bv*+ba/b" --merge-output-format mp4 \
+  --download-archive "<dir>/.yt-dlp-archive.txt" --continue --no-overwrites \
+  --retries 10 --fragment-retries 10 \
+  -o "<dir>/%(title).200s [%(id)s].%(ext)s" "<url>"
+```
+
+For any other scenario — playlist, audio, subtitles, auth, live, SponsorBlock,
+resolution or codec constraints:
+→ Load `references/scenario-templates.md` for the complete templates (including
+   1b for a guaranteed-H.264/AAC MP4) to use as the base command.
+
+When the output contract's shape is unclear, or the scenario is composite:
+→ Load `references/golden-examples.md` for fully worked examples showing correct
+   Scenario / Command / Defaults / Execution / Output fields per scenario type.
+
+When choosing between format selectors, playlist modes, or subtitle strategies:
+→ Load `references/decision-rules.md` for decision trees covering format selector priority (`bv*+ba` vs `-f best`), playlist scope flags, subtitle embedding vs external file, and archive file usage.
+
+When the request specifies quality, codec, HDR, AV1, or specific resolution:
+→ Load `references/format-selection-guide.md` for probe output interpretation, codec ranking tables, and HDR/AV1 selection flags.
+
+When the user reports auth errors, extraction failures, or throttling, or when cookies or private content are involved:
+→ Load `references/safety-and-recovery.md` for browser cookie extraction steps, retry flags, yt-dlp-ejs install guide, and throttling recovery patterns.
+
+When reviewing or self-checking a generated command for common mistakes:
+→ Load `references/anti-examples.md` for the remaining 5 of the 9 anti-examples (2, 4, 6, 7, 8) with corrected alternatives.
+
+## Bundled Assets
+
+- Contract tests: `scripts/tests/test_skill_contract.py`
+- Golden scenario tests: `scripts/tests/test_golden_scenarios.py`
+- Regression runner: `scripts/run_regression.sh`

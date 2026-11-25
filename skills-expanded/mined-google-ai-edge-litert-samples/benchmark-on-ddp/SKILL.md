@@ -1,0 +1,95 @@
+---
+name: benchmark-on-ddp
+description: Measure a LiteRT .tflite model with `benchmark_model` on Developer Device Platform (DDP) lab phones through `litert benchmark --ddp`, or on the Mac you run it from, and turn the session into rows of the performance leaderboard under benchmark/leaderboard - one matrix entry per model, one session per accelerator, collect results.pb and runtime_info.pb, rebuild board.json, check the page, commit the data. Use when a model needs latency and memory numbers per platform, device and accelerator, or when a new benchmark_model release means re-measuring the board.
+---
+
+# Benchmark on DDP
+
+A board row is done when three things hold:
+
+1. it comes from the `results.pb` of one benchmark job, with the delegate and the nodes it replaced (`N/M`) from that job's `runtime_info.pb`, or from the log's `Replacing N out of M` line where a session has no such file,
+2. it names the model file, the platform, the device id, the accelerator and the `benchmark_model` release,
+3. `data/board.json` was rebuilt from `data/measurements.jsonl` and the page shows it.
+
+A number without those is not a row. This skill covers `.tflite` models on [LiteRT](https://github.com/google-ai-edge/litert); a [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
+bundle is one `litert benchmark <bundle>.litertlm --ddp` session per backend, collected by `collect_lm.py` (the board README, step 5). Every DDP session consumes device time billed to the Google Cloud project; the dry run prints every command it would run, so read it first. A run on the Mac you are on bills nothing.
+
+## Before you start
+
+- `python3` with PyYAML, and `protoc` on PATH (`brew install protobuf`, or `apt install protobuf-compiler`).
+- For new DDP sessions: `gcloud auth application-default login`, a project with the Device Run API enabled (`run_matrix.py --gcp-project` or `LITERT_GCP_PROJECT`),
+  and the `litert` CLI of [LiteRT-CLI](https://github.com/google-ai-edge/LiteRT-CLI) with the `--ddp` target (release 0.2.1 or newer; `litert-cli-nightly` has it too). Its DDP runs default to the LiteRT 2.2.0 `benchmark_model` (0.2.1); a row carries the version the job ran:
+
+```bash
+pip install litert-cli
+```
+
+- For rows from a macOS host (Apple silicon; `run_local.py` exits on any other machine): nothing more; it fetches the macOS binary of the pinned release.
+
+## Loop
+
+Work from the board folder, `cd benchmark/leaderboard`; every command below is relative to it, and the driver sits in `../driver/`.
+
+**1. One model, one matrix entry.** In `../driver/matrix.yaml` add `repo` (the Hugging Face repo), `file` (one `.tflite`; a repo with several variants gets one entry per
+variant you want on the board), `task` (the repo's pipeline tag) and `accelerators`. Platforms and DDP devices are listed once under `platforms`.
+
+**2. Print the plan, then run it.** On DDP:
+
+```bash
+python3 ../driver/run_matrix.py --dry-run --only litert-community/MobileNet-v2
+LITERT_GCP_PROJECT=your-project-id python3 ../driver/run_matrix.py --only litert-community/MobileNet-v2
+```
+
+The dry run prints one `litert benchmark … --ddp` line per accelerator, each followed by the `collect.py` call that turns its session into rows. The second
+line submits each session, waits for it, pulls the job outputs to `~/.cache/litert-cli/ddp/<session>/<job>/`, collects them and rebuilds the board; `--only <repo>`
+limits it to one model. On a macOS host, the same two steps with `run_local.py` (same `--only`): the dry run names the machine and the session; the run writes `~/.cache/litert-samples-benchmark/local/<session>/<job>/`, collects it and rebuilds the board:
+
+```bash
+python3 ../driver/run_local.py --dry-run --only litert-community/MobileNet-v2
+python3 ../driver/run_local.py --only litert-community/MobileNet-v2
+```
+
+**3. Or collect a session you already have** (step 2's drivers collect their own).
+
+```bash
+python3 ../driver/collect.py ~/.cache/litert-cli/ddp/session-fff9643f --model litert-community/MobileNet-v2
+```
+
+One row per job; a row with the same id replaces the earlier one, so a re-run is safe. A job with no results is printed on stderr and skipped: read the
+tail of its log before submitting it again. A DDP session is Android, named from the matrix; a session from `run_local.py` or from `../ios/run_ios.sh` (an
+iPhone) carries its platform, device and OS in `session.json`. The row's runtime version is `collect.py --runtime-version` (the CLI's pin) if given, else the session's, else `runtime.version` from the matrix.
+
+**4. Rebuild the board (after step 3; step 2 did it) and look at the row.**
+
+```bash
+python3 ../driver/build_board.py
+python3 -m http.server 8000
+```
+
+Open http://localhost:8000/ (any free port) and click the new row. Nodes delegated reads `N/M` with `N = M` for a graph that ran fully on the
+accelerator; a low `N` on a GPU row means most of the graph ran on the CPU, and a session without `runtime_info.pb` reads n/a. A GPU row with Init far above Median is the delegate initializing the graph, not a defect. `Numbers from: log`
+means `results.pb` could not be decoded, usually a missing `protoc`: install it and collect again.
+
+**5. Commit the data.** `../driver/matrix.yaml`, `data/measurements.jsonl` and `data/board.json` in one commit; the page is static.
+
+## Watch for
+
+- **A new `benchmark_model` release is a new row, not an edit.** The row id carries the runtime version; the board shows the newest per model,
+  platform, device and accelerator, and earlier rows stay in `measurements.jsonl`.
+- **DDP device names come from the matrix.** An id it does not list renders as the id; add it under `platforms.android.devices.measured` first. A Mac names itself from `system_profiler`.
+- **A session's jobs run at once, each on its own lab unit.** Two jobs of one session are two phones (the session report names only the device id;
+  `getprop ro.serialno` in the job tells the units apart): compare runs inside one job, and read a row from another job as another phone's.
+- **Some lab units start with lowered CPU clock ceilings.** All 8 m1q-36 units of a 2026-10-15 session sat below their hardware maximum before the first run
+  (policy0 3187 of 3629 MHz, policy6 3398 of 4742 MHz, `scaling_max_freq` against `cpuinfo_max_freq`), so a CPU number from such a unit is the lowered clock's.
+- **Job arguments are split at spaces.** 13 arguments, the last a command line with five spaces, reached the binary as 18 (`argc: 18`); a wrapper of your own
+  takes such a command line last and joins it, or passes no spaces.
+- **Pulled logcats carry the lab network's identifiers** (Wi-Fi network names and their hashes, access-point and device MAC addresses, private IPv4 and IPv6
+  addresses): keep `logcat.txt` out of a public commit, or replace those strings first.
+- **A LiteRT-LM run with a real prompt file** (chat template, text check) is outside this CLI's DDP target (fixed benchmark flags, no prompt push);
+  [edge-llm-bench](https://github.com/john-rocky/edge-llm-bench)'s `bench matrix <cells> --ddp <id>` runs those with its own LiteRT-LM build.
+- **Never edit a row by hand.** Re-collect the session; the drivers are the only writers.
+
+## Tested on
+
+macOS host (Mac Studio, M4 Max, macOS 27.0), Python 3.14, protoc 34.1. 2026-09-18: the Android rows in the repo (21 model files) came from `run_matrix.py` end to end, 42
+sessions on caiman-35 (Pixel 9 Pro) and pa3q-35 (Galaxy S25 Ultra), CPU and GPU, binary 2.2.0; the macOS rows (the same files) from `run_local.py` end to end on that Mac; every row was then re-collected from the cached outputs and the board rebuilt. 2026-10-07: the install line above was run in a fresh venv (litert-cli 0.2.1; `litert benchmark --help` lists `--ddp` and the `.litertlm` bundle options, as does litert-cli-nightly 0.3.0.dev20261006), and the dry runs, `collect.py` and `build_board.py` were re-run on the same host.

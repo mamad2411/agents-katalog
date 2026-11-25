@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/kael-odin/codex-plugins-zh (path: plugins/codex-security/skills/fix-finding/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Use only when the user explicitly asks to fix and verify a validated or plausible security vulnerability. Do not use for ordinary bug fixes, correctness or design review findings, general validation, 

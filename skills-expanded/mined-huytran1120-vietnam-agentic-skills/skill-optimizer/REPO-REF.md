@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/huytran1120/vietnam-agentic-skills (path: skills/skill-optimizer/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Diagnose and optimize Agent Skills (SKILL.md) with real session data and research-backed static analysis. Works with Claude Code, Codex, and any Agent Skills-compatible agent."

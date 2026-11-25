@@ -1,0 +1,257 @@
+---
+name: review-change
+user-invocable: true
+version: 4.10.0
+argument-hint: <path-or-glob> [--adversarial N] [--synthesize]
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Review a change with only applicable internal axes, classify every finding,
+  persist fix-now work, and return one evidence-backed decision. Findings only;
+  --adversarial N uses isolated reviewers; --synthesize fuses supplied reviewer
+  tables. Triggers: "review-change", "review this change", "adversarial review".
+---
+
+# Review Change
+> **Runner commands** below are `runner <subcommand> [args…]` — the launcher, its
+> order and the pin are owned by
+> [references/RUNNER.md](../runner-contract/references/RUNNER.md): read it before the
+> first command, then keep it for the whole unit — nowhere else spells either.
+
+Quality gate: run every applicable review and skip the rest, then synthesize and
+classify one report. **Findings only; never edit or refactor.**
+
+## Turn contract
+
+Load and verify the **canonical** [Turn contract](../orchestration-envelope/references/TURN_CONTRACT.md) (11 boxes) before ending every turn. Skill-specific additions (receipt closeout, isolation rule, applicability) live here and in [REVIEW_PROCESS.md](references/REVIEW_PROCESS.md). Missing reference → STOP.
+
+For a final PR review, the turn is incomplete until this additional box passes:
+
+```text
+✓ Decision: REVIEW-PASS + PR exists →
+  `runner review-receipt emit --pr <N> --head "$(git rev-parse HEAD)" …`
+  RUN and exited 0 — the script posts the SHA-bound comment, re-reads the PR
+  comments, and exits non-zero unless the newest exact-HEAD
+  `review-change:pass` marker is confirmed, so its exit code IS this box
+```
+
+When the receipt emitter runs, it also records the affecting-path scope
+manifest (fix/286) so a foreign-only commit after the review (a session-log or
+toolstate commit on a shared checkout) does not void the receipt at the merge
+gate — pass `--scope-base main` (the unit's base ref) and the runtime derives
+the manifest itself; never hand-assemble a digest. A receipt without a scope
+manifest stays head-bound (legacy semantics).
+
+The receipt closeout is a precondition of the report, not a follow-up: do not
+print the fixed report block on a non-zero exit. A clean report without a
+current receipt must not recommend `/audit-pr`.
+
+For `REVIEW-FAIL` or `NEEDS-DECISION`, list every open finding ID in the closing
+recommendation, joined with ` + `; the review must never hand off only the first
+finding.
+
+## Review-end turn boundary
+
+On `REVIEW-FAIL` or `NEEDS-DECISION`, this skill **ends at the report**: it
+never invokes `/fold-findings`, `/execute-phase`, `/unit-lane` or
+`/triage-issue` — those are separate user-initiated invocations,
+run in a fresh turn (a programmatic outer driver may compose the same
+sequence in-turn, per `REVIEW_PROCESS.md`). The review's only mutations are the
+ledger commit (persist step 11) and, on `REVIEW-PASS` with a PR, the
+receipt comment (persist step 12); it never folds a finding, executes a phase,
+or edits code. A `REVIEW-FAIL`/`NEEDS-DECISION` turn closes when the report
+block is printed (report step 13).
+
+Consume the internal [verification contract](<../verification-contract/SKILL.md>);
+the reviewer checks the same frozen acceptance artifact (legacy (pre-feature 61) `ACCEPTANCE.md`
+or post-feature-61 unit doc `## Acceptance criteria`) as the executor before
+mapping candidate evidence.
+
+## When to use
+
+- **Mandatory before every merge.** Review in a context that did not implement
+  the change; if it did, stop and hand off to a fresh one. `execute-phase` may
+  also recommend optional checkpoints at layer boundary, accumulation or
+  sensitivity (`#77`).
+- Use when you need applicable reviews without irrelevant passes.
+
+## Scope
+
+Default target is the **current change** (branch diff vs the default branch);
+accept a path/glob to widen or narrow. State the scope at the top of the report.
+
+When the reviewed change belongs to a unit document, its per-phase
+`Relevant files:` lists are the review's read set **around the diff**: resolve
+the union with `runner relevant-files <unit-doc> --phase all` and read
+those files, bounded, instead of surveying the repository. Git still owns the
+review scope — the diff decides what is in it, the lists decide what is read to
+judge it, and the sub-section is metadata owned by `phase-contract` (a file
+missing from the lists is never out of scope).
+
+## Review charter — dismantle the claim
+
+The workflow's job is to demonstrate that what works, works — **and works
+well**: programmatically, engineering-wise, decision-wise, and against user
+expectation. This review exists to **try to dismantle that claim**; if it
+survives the attempt, that survival *is* the review outcome. So:
+
+- **In-scope defects are this review's job — never “out of scope”.** A bug, a
+  security issue, or a guard skip inside the current feature's scope is a
+  `review-change` finding: a feature is not complete while it has one. The
+  reward is not delivery, it is meeting the acceptance criteria, adequate
+  engineering without over-engineering, meeting **other features' requirements**
+  (a page that needs auth verifies the session *and* the permission; a change to
+  another table that a requirement depends on stays in scope even if it “looks”
+  out of scope), and above all the user's expectation.
+- **Ask, don't infer — the whole expectation surface.** Where the plan, the diff
+  or the requirement leaves the user's expectation unclear, surface it as a
+  question in non-technical terms (a technical user asks for an app; a
+  non-technical user asks for “an app to measure my heart rate”) — never as an
+  assumed intent. This review applies the all-stages no-assumption rule —
+  **ask-don't-infer**, owner `skills/unit-lane/references/DESIGN.md`
+  (`ask-dont-infer@1`) — to every expectation the change is judged against;
+  the rule is owned there, never restated here.
+- **Repo-wide hunting is not this review.** Open-ended bug hunting, security
+  research and broken-version investigation *across the repository* belong to
+  `product-audit`, where the sweep is scoped and budgeted; this review stays on
+  the change at hand.
+
+## Step 0 — Discover the project & the change (always first)
+
+Per Workflow conventions + documentation map, decide axes from:
+
+1. **Project nature:** UI (`docs/frontend/`), web/mobile/CLI/library/backend,
+   and optional recorded platform skills (extras only).
+2. **Footprint:** what the diff touches (UI, API, infra, domain). An axis applies
+   only when both project and footprint support it.
+3. **Prior findings (optional retrieval aid, never authoritative):** when the
+   index entry point exists, `agentic-workflow doc --query "<change topic>"
+   --json-only` may surface earlier findings, decisions and session-log entries
+   on the same surface before the passes run. A missing index, an absent entry
+   point, or an empty answer changes nothing — grep stays the exhaustive
+   fallback, and the index is never a decision authority.
+
+## Applicability matrix (default; the project's docs refine it)
+
+Every axis maps to a skill of the workflow's **own internal review pack**
+(`skills/review-*` — installed with the workflow, so none can be missing):
+
+| Axis — internal pack skill | Web | Mobile | Console/CLI | Lib/SDK | Backend/Infra |
+|---|---|---|---|---|---|
+| `review-code` (correctness, simplification, dead code, duplication, arch) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `review-security` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `review-verify` (run it, confirm real behavior, tests) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `review-design` (UI/UX) | ✓ | ✓ | TUI only | ✗ | ✗ |
+| `review-a11y` | ✓ | ✓ | rare | ✗ | ✗ |
+| `review-brand` (voice/copy) | ✓ | ✓ | output text | ✗ | ✗ |
+| `review-perf` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `review-seo` | ✓ | ✗ | ✗ | ✗ | ✗ |
+| API ergonomics / usage docs (inline pass) | if API | if API | flags/help | ✓✓ | ✓ |
+
+> `review-implementation` (the single classifier over the synthesized table —
+> process step 8) and `review-debt` (the debt transform over the classified
+> table — process step 9) are not axis finders: they run once per review, not
+> per axis.
+
+## Isolation rule (default — every pass, not only adversarial)
+
+Each applicable pass, the verification pass (step 6), the classifier (step 8), and debt transform (step 9) runs
+**isolated/context-clean** and returns only its fixed findings table plus
+`PASS | FAIL`—never diff or prose. Spawn one fresh subagent/headless run per
+pass; without those, use a fresh conversation. Pass only scope, its checklist,
+and Step 0 docs; cap full non-diff reads at 10 (targeted ≤50-line reads/greps
+excluded). The orchestrator retains tables, not sources, and fuses them in step
+7. Inline fallback is sequential table reduction. A pass never runs weaker than
+the author — the review-authority rule is
+[`ORCHESTRATE.md`](../unit-lane/references/ORCHESTRATE.md)'s and this section
+cites it.
+
+**Pass model routing (issue #201).** Resolve every pass's model **before**
+spawning from the operator's approved table, not the session model:
+`agentic-workflow resolve-passes` (the `resolve-passes@1` receipt) → launch
+each pass with its row's pinned `model` and record the row's `source` in the
+pass record. `spawn: "auto"` = the operator delegated the choice (record the
+tier justification in the report); `spawn: "inline"` — or a pinned model
+unresolvable at spawn time — runs inline at the orchestrator's model. That
+degrade is the orchestrator contract's (owner:
+[`ORCHESTRATE.md`](../unit-lane/references/ORCHESTRATE.md) § Degrade inline,
+stated), cited here with the reviewer-pass note that a review pass records it
+**in its own report**, never silently.
+
+
+## Progressive loading — choose one review route
+
+After applicability and isolation are established:
+
+The reference allowlist is exactly the seven linked paths below. Never invent or
+read another `references/` path.
+
+| Invocation route | LOAD in this order | SKIP |
+|---|---|---|
+| Default review | [review process](references/REVIEW_PROCESS.md) → [adversarial recommendation](references/ADVERSARIAL_RECOMMENDATION.md) → [persist and decide](references/PERSIST_AND_DECIDE.md) → [output and guardrails](references/OUTPUT_AND_GUARDRAILS.md) | synthesis, portability, adversarial setup |
+| `--adversarial N` | review process → [adversarial setup](references/ADVERSARIAL_SETUP.md) before reviewers → [adversarial synthesis](references/ADVERSARIAL_SYNTHESIS.md) before fusion → persist/decide → output/guardrails | portability |
+| `--synthesize` | review process → [adversarial synthesis](references/ADVERSARIAL_SYNTHESIS.md) plus the supplied reviewer tables → persist/decide → output/guardrails | adversarial setup, portability |
+| legacy `--merge` | print the fixed migration refusal below and stop — zero git/forge mutation | everything |
+
+**Legacy `--merge` is removed — not an alias.** Calling `/review-change --merge` prints this fixed **migration refusal** and stops **before any git or forge mutation command runs**:
+
+```
+migration: --merge is removed. Table fusion is --synthesize: pass the fixed
+reviewer tables the same way and the synthesis contract fuses them. No
+repository merge is performed by this skill.
+```
+
+Active review paths use only `--synthesize`/fusion language. Add
+[portability](references/PORTABILITY.md) only when contexts, parallelism, slash
+commands or tier controls are unavailable. `docs/workflow/REPOSITORY_STATE.md`
+is evidence for output/guardrails, not a skill reference; that route owns NRS and
+Architectural invariants rules.
+
+Resources are one hop from this file. Fixed reviewer/synthesis/output contracts are
+literal. Missing required resource → stop; never approximate a review contract.
+
+## Reviewer anti-invention rule (S10, from #205)
+
+After cycle 1, a *new* finding is admissible only when grounded in:
+1. **Provably-changed bytes** (git-computed diff between the reviewed state
+   and the base), or
+2. A **mis-run cited check** (the cited validator's own output contradicts it).
+
+A finding without changed-bytes grounding is a report-note, never fix-now.
+This is narrower and stronger than the delta-mode "genuinely new" admission:
+it bounds what a reviewer may invent at all, not only where it may re-report.
+The classifier routes `fix-now (delete)` for genuine findings; report-notes
+route to `SUGGESTION` severity with impact `report-only` and do not block.
+
+## Portability
+
+Keep reviewer contexts isolated. Use [portability](references/PORTABILITY.md) for
+sequential/headless fallbacks; never collapse independent adversarial passes.
+
+## Relationship to other skills
+
+Orchestrates internal finders (`review-code`, `review-security`, `review-verify`,
+`review-design`, `review-a11y`, `review-brand`, `review-perf`, `review-seo`), then
+one `review-implementation` classifier and `review-debt` transform, isolated by
+default; installed platform packs are optional. `triage-issue` is user-invoked,
+never auto-run (D3), for independent proposals, audit findings, and
+`--prioritize-now` runs. It is Stage 4: checkpoint reviews are
+optional, the end review is mandatory and fresh. `fix-now` is routed to the
+unit's fold cycle — a separate `/fold-findings` invocation, never run by this review;
+`replan-in-unit` adds user-confirmed phases, and independent work becomes
+proposals. `audit-pr` consumes
+only the verified PR-comment receipt, never the
+chat report; `product-audit` is the measured-trigger sweep. On `REVIEW-FAIL` the manual
+correction path is `/fold-findings`, then re-run `/review-change` on the changed
+HEAD (bounded at two cycles — a third cycle never starts without an explicit
+user instruction, per `REVIEW_PROCESS.md`); a programmatic outer driver may run
+the same review→fold sequence.
+
+## Done when
+
+- One synthesized/classified table covers every applicable axis, lists skipped
+  axes with reasons, and includes manual checks. Every finding has a destination:
+  fold, confirmed replan phase, surfaced decision, or user-routed proposal; none
+  is silently lost and review creates no backlog (D3). Print the closing
+  `→ Next:` block (clean → `/audit-pr`; recurring drift → `/product-audit`) and
+  change no code.

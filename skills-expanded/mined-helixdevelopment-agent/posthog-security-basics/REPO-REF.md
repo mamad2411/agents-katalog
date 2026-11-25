@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/helixdevelopment/agent (path: skills/plugins/saas-packs/posthog-pack/posthog-security-basics/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: PostHog Security Basics

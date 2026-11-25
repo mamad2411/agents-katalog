@@ -1,0 +1,645 @@
+---
+name: visual-crawl
+description: >
+  Crawls the running app at random breakpoints, screenshots visual issues, checks design token
+  consistency, and tests interactive elements. Each run covers different ground. Trigger on:
+  "visual QA", "crawl the site for issues", "responsive check", "look for visual bugs".
+---
+
+# Visual Crawl
+
+Randomized visual QA using `bdg` (browser-debugger-cli). Opens the project, crawls pages at varied breakpoints, screenshots issues, and produces a findings report. No two runs cover the same ground.
+
+## Prerequisites
+
+- `bdg` installed globally (`npm install -g browser-debugger-cli@alpha`)
+- Project dev server running (know the URL and port)
+- macOS tiling WM users (AeroSpace, yabai, etc.): after `--no-headless`, float the browser window to free its viewport
+
+## Invocation
+
+User says `/visual-crawl` or asks for a visual QA pass. Before starting, confirm:
+1. **Project URL** (e.g., `http://localhost:4173`)
+2. **Route list** — discover from router config or ask the user
+3. **Dynamic/parameterized routes** (`/items/[id]`, `/users/:id`, etc.) — do any exist, and do they need seeded data to render real content instead of a 404 or empty state? See "Seeding data for dynamic routes" in Phase 0 below.
+
+For keyboard-navigated apps (sections accessed via key bindings rather than URL routing), ask the user for the key-to-section mapping and use `bdg dom pressKey` to navigate.
+
+## The Crawl
+
+### Phase 0: Setup
+
+```bash
+# Check for existing session first
+bdg status 2>&1 || true
+
+# Start bdg session (headless only when there is no display; on a Mac it opens a window)
+bdg <project-url>
+
+# Create screenshot output directory
+OUTDIR="/tmp/visual-crawl-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUTDIR"
+```
+
+Store `$OUTDIR` path — all screenshots go here.
+
+**Target-identity guard.** `bdg` attaches to a Chrome instance, and its active target can silently drift to another open tab between commands — you reload and suddenly you're screenshotting a different app on a different port. A URL check isn't enough (two apps can share a path). Before the crawl and **before every screenshot**, confirm the page is the app you mean by a stable marker — `document.title`, an app-specific selector, or both — and abort on mismatch rather than capturing the wrong app:
+
+```bash
+# Set EXPECT to a substring unique to this app's title (or use an app-only selector)
+EXPECT="MyApp"
+guard() {
+  t=$(bdg dom eval "document.title" 2>&1 | tail -1)
+  echo "$t" | grep -q "$EXPECT" || { echo "WRONG TARGET ($t) — bdg drifted; stop, restart on the right URL, re-pin"; return 1; }
+}
+guard || exit 1
+```
+
+If `guard` fails: `bdg stop && bdg <correct-url>`, wait, re-pin with `bdg cdp Page.navigate`, and re-verify before continuing.
+
+### Phase 0.5: Seeding data for dynamic routes (if needed)
+
+Many apps store state client-side (localStorage, IndexedDB, a Redux/Zustand `persist` layer) rather than a server database, so a dynamic route like `/worlds/[id]` or `/items/:id` 404s or renders empty on a fresh crawl unless something exists to view. Skipping these routes loses real coverage — detail, edit, and nested views are exactly where layout bugs hide.
+
+**Check for an existing seeding convention first.** Most projects with any E2E/visual-regression testing already have one — a Playwright `seedTestData`/`addInitScript` helper, a Cypress fixture loader, a storybook decorator. Search for it (`git grep --untracked -lE 'addInitScript|seedTestData|seed.*fixture'`) before improvising; reusing the project's own seed data keeps the crawl's dynamic-route content realistic instead of inventing placeholder data that doesn't match the app's actual shapes.
+
+**Port it to `bdg` if it's Playwright-only.** `bdg cdp Page.addScriptToEvaluateOnNewDocument --params '{"source": "..."}'` runs before any page script on the *next* navigation — the same timing as Playwright's `page.addInitScript`. Take the project's existing seed logic (usually: write records into `localStorage`/IndexedDB, set a `window.__TEST__`-style flag some apps check to expose their store on `window` or skip auth) and inline it as a standalone script with the actual fixture data embedded, since the injected script runs outside the project's own module system and can't `import` anything:
+
+```bash
+# 1. If fixtures are TypeScript-only (used only by Playwright), dump them to JSON
+#    without hand-transcribing — Node 20.6+/22+ can run .ts directly:
+node --experimental-strip-types -e "
+import('./tests/fixtures/whatever.fixture.ts').then(function(m) {
+  require('fs').writeFileSync('/tmp/fixture.json', JSON.stringify(m.SAMPLE_DATA));
+});
+"
+# Type-only imports in that file must use `import type`, or stripping fails.
+
+# 2. Build the seed script with the fixture data inlined, then wrap it as CDP params
+#    with a proper JSON encoder (python json.dumps / node JSON.stringify) rather than
+#    hand-escaping quotes — these scripts get long and quoting by hand WILL break.
+python3 -c "
+import json
+source = open('/tmp/seed-init-script.js').read()
+print(json.dumps({'source': source}))
+" > /tmp/seed-params.json
+
+bdg cdp Page.addScriptToEvaluateOnNewDocument --params "$(cat /tmp/seed-params.json)"
+bdg cdp Page.navigate --params '{"url":"http://localhost:PORT/"}'
+sleep 2
+```
+
+**Verify seeding actually worked before trusting any dynamic route.** Have the seed script set a flag (`window.__TEST_SEEDED__ = true`) and check it, then navigate to one seeded dynamic URL and confirm real content rendered — not a 404 or empty state:
+
+```bash
+bdg dom eval "window.__TEST_SEEDED__"   # expect true
+bdg cdp Page.navigate --params '{"url":"http://localhost:PORT/items/seeded-id-123"}'
+sleep 2
+bdg dom eval "document.body.innerText.slice(0,200)"   # sanity-check it's real content
+```
+
+If seeding fails or is flaky, don't burn the whole run on it — drop the dynamic routes from this pass and note the coverage gap in the findings report rather than crawling 404 pages.
+
+### Phase 1: Randomize the Run
+
+Each invocation MUST vary. Build the run plan by randomizing THREE axes:
+
+**A) Page order** — shuffle all routes, then pick a random subset (minimum 4 pages, maximum all):
+```bash
+# macOS doesn't have shuf — use perl instead
+# Replace the route list with your project's actual routes
+echo "home dashboard settings profile reports help" \
+  | tr ' ' '\n' | perl -MList::Util=shuffle -e 'print shuffle(<>)' | head -5
+```
+
+**B) Breakpoints per page** — for each page, pick 2-3 breakpoints from this pool (never the same set twice):
+
+| Name | Width | Height | Mobile | Notes |
+|------|-------|--------|--------|-------|
+| iPhone SE | 375 | 667 | true | Smallest common phone |
+| iPhone 14 | 390 | 844 | true | Standard modern phone |
+| Pixel 7 | 412 | 915 | true | Android standard |
+| iPad Mini | 768 | 1024 | false | Small tablet |
+| iPad Pro | 1024 | 1366 | false | Large tablet |
+| Laptop | 1280 | 800 | false | Common laptop |
+| Desktop | 1440 | 900 | false | Standard desktop |
+| Ultrawide | 1920 | 1080 | false | Large monitor |
+| Wildcard | RANDOM 500-1600 | RANDOM 600-1000 | false | Catches edge cases |
+
+Always include at least one mobile, one tablet, and one desktop. Always include one Wildcard with truly random dimensions.
+
+**C) Audit focus** — pick 2-3 focus areas per page from this rotating list:
+- **Layout integrity** — overflow, clipping, overlap, whitespace collapse
+- **Typography** — font-family matches tokens, sizes consistent, no orphan lines
+- **Color tokens** — hardcoded colors vs CSS variables (inline styles, stylesheet rules, and arbitrary-value utility classes), contrast issues
+- **Empty states** — what happens with no data / null values
+- **Interactive elements** — buttons clickable, form inputs work
+- **Interactive states** — hover/focus/active legibility, not just clickability (see the dedicated check below — this is easy to skip and catches real bugs)
+- **Spacing consistency** — padding/margin matches design token scale
+- **Responsive behavior** — does layout actually adapt or just shrink
+- **Accessibility** — a11y tree makes sense, roles correct, labels present
+- **Component consistency** — same component looks same across pages
+- **Data display** — numbers formatted, dates localized, no "undefined" or "NaN"
+- **Design system alignment** — do visible components map to entries in the project's component catalog or showcase (Storybook stories, specimen pages), if it has one? Flag orphan patterns (custom one-off UI that should use a canonical component or be promoted to one)
+
+### Phase 2: Execute the Crawl
+
+For each page in the shuffled order:
+
+#### 2a. Navigate to the page
+```bash
+# For keyboard-navigated apps
+bdg dom pressKey "body" "3"  # e.g., key 3 navigates to a specific section
+
+# For URL-routed apps
+bdg cdp Page.navigate --params '{"url":"http://localhost:PORT/route"}'
+```
+
+Wait for page to settle (check network idle or use a short delay).
+
+#### 2b. For each breakpoint assigned to this page:
+
+**Resize viewport:**
+```bash
+bdg cdp Emulation.setDeviceMetricsOverride --params '{
+  "width": 375, "height": 667, "deviceScaleFactor": 2, "mobile": true
+}'
+# IMPORTANT: sleep 1 after resize — content needs time to reflow
+sleep 1
+```
+
+**Take screenshots — mix full-page and component-level:**
+
+For each page+breakpoint combo, randomly decide the screenshot strategy (vary across the run):
+
+```bash
+# Re-run the target-identity guard FIRST — bdg may have drifted to another tab
+guard || exit 1
+# ALWAYS take the full-page screenshot first
+bdg dom screenshot $OUTDIR/PAGE-WIDTHxHEIGHT-full.png
+```
+
+Then, for ~50% of page+breakpoint combos, ALSO take 2-4 component-level screenshots. Query for visible components, pick randomly:
+
+```bash
+# Discover components on the page — adapt selectors per project
+cat > /tmp/find-components.js << 'JSEOF'
+Array.from(document.querySelectorAll(
+  "section, .card, .collapsible, [class*='panel'], [class*='widget'], " +
+  "nav, header, footer, table, form, [role='region'], [role='navigation'], " +
+  "[class*='chart'], [class*='stat'], [class*='badge'], [class*='metric']"
+)).filter(function(el) {
+  var r = el.getBoundingClientRect();
+  return r.height > 20 && r.width > 50 && r.top < window.innerHeight * 2;
+}).map(function(el, i) {
+  var cls = (el.className || "").toString().split(" ").filter(function(c){return c;}).slice(0,3).join(".");
+  var r = el.getBoundingClientRect();
+  return i + ": " + el.tagName + "." + cls + " (" + Math.round(r.width) + "x" + Math.round(r.height) + ")";
+}).slice(0, 20)
+JSEOF
+bdg dom eval "$(cat /tmp/find-components.js)"
+
+# Pick 2-4 random indices from the results, then screenshot each
+# Use bdg dom screenshot with a CSS selector to capture just that component:
+bdg dom screenshot --selector ".collapsible:nth-of-type(2)" $OUTDIR/PAGE-WIDTHxHEIGHT-component-NAME.png
+# Or by query index:
+bdg dom query "section, .card, .collapsible"
+bdg dom screenshot --index 3 $OUTDIR/PAGE-WIDTHxHEIGHT-component-3.png
+```
+
+**Component screenshot priorities** (pick from these when choosing which to capture):
+- **Smallest component on page** — most likely to break at narrow viewports
+- **Component with most text content** — typography/overflow issues
+- **Interactive component** (button group, form, nav) — functional checks
+- **Data display component** (table, chart, stat card) — formatting issues
+- **Randomly selected component** — catches unexpected issues
+
+**Review ALL screenshots** (full-page AND component) with the `Read` tool to visually inspect them. Component screenshots reveal issues invisible in full-page shots: truncated text, misaligned icons, broken borders, padding collapse inside cards.
+
+**Run audit checks based on assigned focus areas.**
+
+**CRITICAL: Shell quoting with `bdg dom eval`** — zsh mangles complex JS expressions containing single quotes, `getComputedStyle()`, `!`, and nested function calls. Write JS to a temp file and use `$(cat /tmp/file.js)` to avoid quoting hell:
+
+```bash
+cat > /tmp/check.js << 'JSEOF'
+Array.from(document.querySelectorAll("button")).filter(function(el) {
+  return !el.textContent.trim();
+}).map(function(el) { return el.className; }).slice(0, 10)
+JSEOF
+bdg dom eval "$(cat /tmp/check.js)"
+```
+
+Simple expressions with only double quotes work inline: `bdg dom eval "document.title"`
+
+##### Layout integrity
+```bash
+# Horizontal overflow (inline — simple enough)
+bdg dom eval "document.documentElement.scrollWidth > document.documentElement.clientWidth"
+
+# Elements beyond viewport (use temp file)
+cat > /tmp/overflow.js << 'JSEOF'
+Array.from(document.querySelectorAll("*")).filter(function(el) {
+  var r = el.getBoundingClientRect();
+  return r.right > window.innerWidth + 5 || r.left < -5;
+}).map(function(el) {
+  return el.tagName + "." + (el.className || "").toString().split(" ").slice(0,2).join(".");
+}).slice(0, 15)
+JSEOF
+bdg dom eval "$(cat /tmp/overflow.js)"
+```
+
+##### Typography check
+```bash
+# Find elements not using design token fonts — adapt the font name list to your project
+cat > /tmp/font-check.js << 'JSEOF'
+var PROJECT_FONTS = ["Inter", "Roboto"]; // replace with your project's font families
+Array.from(document.querySelectorAll("h1,h2,h3,h4,p,span,div")).filter(function(el) {
+  var f = getComputedStyle(el).fontFamily;
+  return el.textContent.trim().length > 0
+    && !PROJECT_FONTS.some(function(font) { return f.includes(font); });
+}).map(function(el) {
+  return el.tagName + ": " + getComputedStyle(el).fontFamily.substring(0, 50);
+}).slice(0, 10)
+JSEOF
+bdg dom eval "$(cat /tmp/font-check.js)"
+```
+
+##### Color token check
+```bash
+# Find hardcoded colors in inline styles, stylesheet rules, and arbitrary utility classes
+cat > /tmp/color-check.js << 'JSEOF'
+(function() {
+  var skip = /^(inherit|initial|unset|revert|currentcolor|transparent|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|selecteditem|selecteditemtext|mark|marktext|graytext|accentcolor|accentcolortext|window|windowtext|windowframe|menu|menutext|background|buttonhighlight|buttonshadow|threedface|threedhighlight|threedshadow|threeddarkshadow|threedlightshadow|infotext|infobackground|scrollbar|appworkspace|activecaption|inactivecaption|captiontext|inactivecaptiontext|inactiveborder|activeborder|highlighttext|graytext)$/i;
+  var fnRe = /#[0-9a-f]{3,8}\b|\b(rgb|hsl|hwb|lab|lch|oklab|oklch|color)a?\(/i;
+  var a0 = "(?:0?\\.0*|0)%?";
+  var clear = new RegExp("#(?:[0-9a-f]{3}0|[0-9a-f]{6}00)\\b|\\b(?:rgb|hsl)a?\\((?:[^()\\/]*\\/\\s*" + a0 + "|(?:[^(),]*,){3}\\s*" + a0 + ")\\s*\\)", "gi");
+  var inner = "(?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*";
+  var tokFn = new RegExp("\\b(?:rgb|hsl|hwb|lab|lch|oklab|oklch|color)a?\\((?=" + inner + "?" + "\\bvar\\()" + inner + "\\)", "gi");
+  function strip(v) {
+    return v.replace(tokFn, " ").replace(/\b(var|url)\((?:[^()]|\([^()]*\))*\)/gi, " ").replace(clear, " ");
+  }
+  function lit(v) {
+    if (!v) return false;
+    v = strip(v);
+    if (fnRe.test(v)) return true;
+    return v.split(/[\s,()]+/).some(function(t) { return /^[a-z]+$/i.test(t) && !skip.test(t) && CSS.supports("color", t); });
+  }
+  function bad(st) {
+    var out = [];
+    for (var i = 0; i < st.length; i++) {
+      var n = st[i];
+      if (typeof n !== "string") continue;
+      if (n.indexOf("--") !== 0 && /color|background|fill|stroke|shadow|border|outline/.test(n) && lit(st.getPropertyValue(n))) out.push(n + ": " + st.getPropertyValue(n));
+    }
+    return out.join("; ");
+  }
+  var r = { inline: [], stylesheet: [], utility: [], scanned: { elements: 0, sheets: 0, skippedSheets: 0, rules: 0, shadowRoots: 0 } };
+  var seen = [];
+  function walk(sheet) {
+    if (seen.indexOf(sheet) >= 0) return;
+    seen.push(sheet);
+    var rules;
+    try { rules = sheet.cssRules; } catch (e) { r.scanned.skippedSheets++; return; }
+    r.scanned.sheets++;
+    (function each(list) {
+      Array.from(list).forEach(function(rule) {
+        r.scanned.rules++;
+        if (rule.styleSheet) walk(rule.styleSheet);
+        if (rule.style && r.stylesheet.length < 20) {
+          var b = bad(rule.style);
+          if (b) r.stylesheet.push((rule.selectorText || rule.keyText) + " { " + b + " }");
+        }
+        if (rule.cssRules) each(rule.cssRules);
+      });
+    })(rules);
+  }
+  Array.from(document.styleSheets).concat(Array.from(document.adoptedStyleSheets || [])).forEach(walk);
+  var utilRe = /\[([^\]]*)\]/g;
+  function util(c) {
+    var m, re = new RegExp(utilRe.source, "g");
+    while ((m = re.exec(c))) if (fnRe.test(strip(m[1]))) return true;
+    return false;
+  }
+  Array.from(document.querySelectorAll("*")).forEach(function(el) {
+    r.scanned.elements++;
+    if (el.shadowRoot) r.scanned.shadowRoots++;
+    var tag = el.tagName + "." + (el.getAttribute("class") || "").split(/\s+/).slice(0, 2).join(".");
+    var b = el.style && bad(el.style);
+    if (b && r.inline.length < 20) r.inline.push(tag + " -> " + b.substring(0, 80));
+    (el.getAttribute("class") || "").split(/\s+/).forEach(function(c) {
+      if (util(c) && r.utility.length < 20) r.utility.push(el.tagName + "." + c);
+    });
+  });
+  return r;
+})()
+JSEOF
+bdg dom eval "$(cat /tmp/color-check.js)"
+```
+
+An empty result never means the page is clean; it means this snippet found nothing in what it could read. Carry the `scanned` counts into the report's Coverage line (see the template) so the reader can see how much was read. The snippet can't see:
+- Cross-origin stylesheets (counted in `skippedSheets`)
+- Shadow DOM contents (counted in `shadowRoots`, not scanned)
+- CSS-in-JS injected after the check runs
+- Non-arbitrary utility classes like `text-red-500`, which map to a palette rather than a literal
+- Colors set by script or in `<canvas>`, and inline `<svg>` color attributes (`fill="#f00"`)
+- Each list stops at 20 entries in stylesheet order, so a list of exactly 20 is truncated, and vendor rules loaded first can push out the app's own
+- Hover, focus, and active states are read only as literal values in their stylesheet rules (the selector appears in the report). Computed colors in those states are not checked here; the Interactive states check below does that.
+
+Cases the snippet is meant to get right, for anyone editing it. Flagged: `#000000`, `rgb(255,255,0)`, `#ffff00`, `rgba(0,0,0,.5)`, `1px solid red`, `linear-gradient(red,blue)`, `background: var(--bg) url(x.png) #fff`, `bg-[#fff]`. Not flagged: `transparent`, any color with zero alpha (`rgba(0,0,0,0)`, `rgba(255,255,255,0)`, `hsla(210,50%,50%,0)`, `rgb(1 2 3 / 0)`, `#0000`, `#fff0`, `#ffffff00`), `var(--c,#fff)`, `hsl(var(--x))`, `rgb(var(--rgb) / 0.5)`, `bg-[hsl(var(--x))]`, `url(#id)`, `Canvas`, `Window`, `bg-[var(--x,#fff)]`. To check an edit, copy the filter functions into node with a stubbed `CSS.supports` and run these.
+
+##### Empty states
+```bash
+# Check for "undefined", "NaN", "null" rendered as text (inline — simple)
+bdg dom eval "document.body.innerText.match(/(undefined|NaN|\\[object Object\\])/g)"
+
+# Visually empty containers
+cat > /tmp/empty-check.js << 'JSEOF'
+Array.from(document.querySelectorAll("div, section, article")).filter(function(el) {
+  var r = el.getBoundingClientRect();
+  return r.height < 10 && r.width > 50 && el.children.length > 0;
+}).map(function(el) {
+  return el.tagName + "." + (el.className || "").toString().split(" ").slice(0,2).join(".");
+}).slice(0, 10)
+JSEOF
+bdg dom eval "$(cat /tmp/empty-check.js)"
+```
+
+##### Interactive elements
+```bash
+# Find all clickable elements
+bdg dom query "button, a[href], [role=button]"
+
+# Click by CSS selector (NOT --index flag — use selector or positional index)
+bdg dom click ".some-button-class"
+# Or by index from previous query result:
+bdg dom click 5
+
+# Screenshot after interaction
+bdg dom screenshot $OUTDIR/PAGE-interaction-WIDTHxHEIGHT.png
+```
+
+##### Interactive states (hover/focus/active)
+
+Every check above only looks at the resting state. Contrast and legibility bugs on `:hover`/`:focus`/`:active` are invisible to a resting-state screenshot and to every DOM check above — you have to actually trigger the state. This catches real bugs: a button whose hover `color` collides with its own hover `background` (text goes invisible), or a focus outline that matches the surface it sits on.
+
+**Fast path — force the pseudo-class via CDP and diff computed style.** This is cheap, doesn't need real mouse coordinates, and is what actually reflects in `getComputedStyle()` (see gotcha below for why this is NOT what a screenshot will show):
+
+```bash
+bdg cdp DOM.enable >/dev/null 2>&1
+bdg cdp CSS.enable >/dev/null 2>&1
+ROOT=$(bdg cdp DOM.getDocument --params '{"depth":0}' | grep -o '"nodeId":[0-9]*' | head -1 | grep -o '[0-9]*')
+NODE=$(bdg cdp DOM.querySelector --params "{\"nodeId\":$ROOT,\"selector\":\".your-button-class\"}" | grep -o '"nodeId":[0-9]*' | tail -1 | grep -o '[0-9]*')
+
+cat > /tmp/style-check.js << 'JSEOF'
+var el = document.querySelector(".your-button-class");
+var s = getComputedStyle(el);
+JSON.stringify({color: s.color, bg: s.backgroundColor, borderColor: s.borderColor, outlineColor: s.outlineColor});
+JSEOF
+bdg dom eval "$(cat /tmp/style-check.js)"   # resting state
+
+bdg cdp CSS.forcePseudoState --params "{\"nodeId\":$NODE,\"forcedPseudoClasses\":[\"hover\"]}"
+bdg dom eval "$(cat /tmp/style-check.js)"   # forced :hover — compare
+# Repeat with ["focus-visible"] and ["active"]
+```
+
+Flag it whenever a hovered/focused/active value collides with an adjacent property in a way that erases contrast — most commonly `color` resolving to the same value already used for `background` on the same state.
+
+**If you need an actual screenshot for a finding**, `forcePseudoState` won't show up in one (see gotcha) — trigger a REAL hover instead. A single `mouseMoved` dispatch at the target coordinates is not reliably enough; move through 2-3 intermediate points first, then confirm the state actually landed before shooting:
+
+```bash
+bdg cdp Input.dispatchMouseEvent --params '{"type":"mouseMoved","x":50,"y":50}'
+sleep 0.3
+bdg cdp Input.dispatchMouseEvent --params '{"type":"mouseMoved","x":<mid-x>,"y":<mid-y>}'
+sleep 0.3
+bdg cdp Input.dispatchMouseEvent --params '{"type":"mouseMoved","x":<target-x>,"y":<target-y>}'
+sleep 1
+bdg dom eval "document.querySelector('.your-button-class').matches(':hover')"   # must be true
+bdg dom screenshot --selector ".your-button-class" $OUTDIR/PAGE-hover-WIDTHxHEIGHT.png
+```
+
+##### Accessibility
+```bash
+# Check for icon buttons missing aria-label
+# NOTE: title attribute is NOT a reliable accessible name — prefer aria-label
+cat > /tmp/a11y-check.js << 'JSEOF'
+Array.from(document.querySelectorAll("button, a, input, select, textarea, [role]")).filter(function(el) {
+  return !el.getAttribute("aria-label") && !el.textContent.trim() && !el.getAttribute("aria-labelledby");
+}).map(function(el) {
+  var cls = (el.className || "").toString().split(" ").slice(0,2).join(".");
+  var hasTitle = el.getAttribute("title") ? " (has title only)" : " (NO accessible name)";
+  return el.tagName + "." + cls + hasTitle;
+}).slice(0, 15)
+JSEOF
+bdg dom eval "$(cat /tmp/a11y-check.js)"
+```
+
+##### Spacing consistency
+```bash
+# Adapt the selector list to your project's layout components
+cat > /tmp/spacing-check.js << 'JSEOF'
+Array.from(document.querySelectorAll("section, article, [class*='card'], [class*='panel']")).slice(0, 12).map(function(el) {
+  var s = getComputedStyle(el);
+  var cls = (el.className || "").toString().split(" ").filter(function(c){return c;}).slice(0,2).join(".");
+  return cls + ": p=" + s.padding + " m=" + s.margin + " gap=" + s.gap;
+})
+JSEOF
+bdg dom eval "$(cat /tmp/spacing-check.js)"
+```
+
+##### Cross-page component consistency
+```bash
+# Compare computed styles of shared components across pages
+# Navigate to page A, capture styles, navigate to page B, compare
+# Adapt the selector to a component that appears on multiple pages in your project
+cat > /tmp/comp-check.js << 'JSEOF'
+Array.from(document.querySelectorAll("[class*='card-header'], [class*='panel-header'], header")).slice(0, 3).map(function(el) {
+  var s = getComputedStyle(el);
+  return { text: el.textContent.trim().substring(0, 30), font: s.fontFamily.substring(0, 30), size: s.fontSize, color: s.color, bg: s.backgroundColor, padding: s.padding };
+})
+JSEOF
+bdg dom eval "$(cat /tmp/comp-check.js)"
+```
+
+#### 2c. Reset viewport before next page
+```bash
+bdg cdp Emulation.clearDeviceMetricsOverride
+```
+
+### Phase 2.5: Design System Alignment Check
+
+After crawling each page's breakpoints, inventory the visible UI patterns and cross-reference against the project's component library. This catches orphan patterns — bespoke UI that should either use an existing canonical component or be promoted into one.
+
+**Find the project's canon first, once per run.** Read its docs (`CLAUDE.md`, `AGENTS.md`, `README`, `DESIGN.md`) for where components and any showcase live, and check the manifest for a component library dependency. Then search the tree:
+
+```bash
+# Component folders, biggest first. Extend for the project's layout.
+git ls-files -co --exclude-standard | grep -iE '(^|/)(components?|ui|widgets)/' | cut -d/ -f1-3 | sort | uniq -c | sort -rn | head -20
+
+# Component catalog or showcase
+git ls-files -co --exclude-standard | grep -iE '\.stories\.|(^|/)\.storybook/|design-?system|style-?guide|showcase|pattern-?library' | cut -d/ -f1-3 | sort | uniq -c | sort -rn | head -20
+```
+
+Finding nothing is a real result. Say so in the report, skip the "Should use existing" bucket, and flag only patterns that repeat across pages as new patterns.
+
+**How to inventory:** Query the DOM for interactive/structural elements and classify them. These selectors match on class names, so utility classes (Tailwind) and hashed CSS modules return little. Read a few canon components for what they actually render (a shared class, `data-slot`, a test ID), adapt the selectors to match, and trust the screenshots over this list:
+
+```bash
+cat > /tmp/ds-alignment.js << 'JSEOF'
+var patterns = [];
+var counts = [];
+var cap = 6;
+
+function record(type, selector, formatFn) {
+  var els = document.querySelectorAll(selector);
+  if (!els.length) return;
+  for (var i = 0; i < els.length && i < cap; i++) {
+    patterns.push(formatFn ? formatFn(els[i]) : type + ": " + (els[i].className || "").toString().substring(0, 80));
+  }
+  counts.push(type + " " + els.length + (els.length > cap ? " (showing " + cap + ")" : ""));
+}
+
+record("BUTTON", "button, [role=button], a.button", function(el) {
+  var cls = (el.className || "").toString();
+  return "BUTTON: " + cls.substring(0, 80) + " | text: " + el.textContent.trim().substring(0, 30);
+});
+record("CARD", "[class*=card], [class*=Card]");
+record("EMPTY", "[class*=empty], [class*=Empty], [class*=not-found]");
+record("FORM", "form, [class*=form], [class*=Form]");
+record("BADGE", "[class*=badge], [class*=Badge], [class*=tag]");
+record("TABLE", "table, [class*=table], [class*=Table]");
+record("NAV", "nav, [class*=nav], [class*=Nav], [role=navigation]");
+
+if (counts.length) patterns.push("COUNTS: " + counts.join(", "));
+patterns
+JSEOF
+bdg dom eval "$(cat /tmp/ds-alignment.js)"
+```
+
+The inventory caps each pattern type at 6 entries so every category present on the page shows up; a `COUNTS:` entry with `(showing 6)` means more exist.
+
+**Cross-reference against the canon you found.** A project may have only some of these, and the paths and names are examples:
+- Primitives — the folder or package the app gets its buttons and inputs from (e.g., `src/components/ui/` with shadcn/Radix, or a dependency like MUI)
+- Composites — shared components built from those (e.g., `src/components/shared/` with `EmptyState`, `PageLayout`)
+- Component catalog stories (Storybook or similar), if the project has one
+- Dev showcase pages (e.g., `/dev/design-system`), if the project has them
+
+**Classify each element into three buckets:**
+- **Should use existing** — bespoke UI where a canon component already exists (e.g., inline empty state div instead of `EmptyState` component, unstyled `<button>` instead of `Button`)
+- **New pattern to canonize** — useful pattern not yet in the component library; recommend adding it to the project's component catalog or showcase, if it has one
+- **Aligned** — correctly uses the canonical version (positive confirmation)
+
+### Phase 3: Cross-Page Checks
+
+After crawling individual pages, do a few cross-page consistency checks:
+
+1. **Pick 2 pages at random** that both use the same component type (e.g., cards, badges, task items)
+2. **Screenshot the same component** on both pages at the same breakpoint
+3. **Compare visually** — flag differences in padding, font, color, border-radius
+
+### Phase 4: Dark Mode Spot-Check (if applicable)
+
+First, check if the app actually responds to `prefers-color-scheme`. If it's a dark-only or light-only theme, skip this phase.
+
+```bash
+# Test: does toggling scheme change the background color?
+bdg dom eval "getComputedStyle(document.body).backgroundColor"
+bdg cdp Emulation.setEmulatedMedia --params '{"features":[{"name":"prefers-color-scheme","value":"dark"}]}'
+sleep 1
+bdg dom eval "getComputedStyle(document.body).backgroundColor"
+# If same color both times → app doesn't respond to color scheme → skip
+```
+
+If it does respond, pick ONE random page and breakpoint:
+```bash
+bdg dom screenshot $OUTDIR/PAGE-dark-WIDTHxHEIGHT.png
+bdg cdp Emulation.setEmulatedMedia --params '{"features":[{"name":"prefers-color-scheme","value":"light"}]}'
+```
+
+### Phase 5: Teardown
+
+```bash
+bdg stop
+```
+
+## Findings Report
+
+After the crawl, produce a structured findings report. Group by severity:
+
+### Report Format
+
+```markdown
+# Browser QA Report — [Project] — [Date]
+
+**Run ID:** [timestamp]
+**Pages crawled:** [list]
+**Breakpoints tested:** [list per page]
+**Focus areas:** [list per page]
+**Color check coverage:** [per page: sheets read / skipped, rules, shadowRoots, from the color check's `scanned` counts; empty findings do not mean no hardcoded colors]
+
+## Critical (broken functionality / data errors)
+- [page] @ [breakpoint]: [description] — screenshot: [filename]
+
+## Major (layout breaks / design system violations)
+- [page] @ [breakpoint]: [description] — screenshot: [filename]
+
+## Minor (cosmetic / polish)
+- [page] @ [breakpoint]: [description] — screenshot: [filename]
+
+## Component-Level Findings
+- [page] @ [breakpoint] > [component]: [description] — screenshot: [filename]
+
+## Design System Alignment
+- [page] > [component]: Should use existing `ComponentName` from [component library path] — currently bespoke
+- [page] > [pattern]: New pattern, recommend adding to the component catalog as `Name`
+- [page] > [component]: Aligned with `ComponentName`
+
+## Observations (not bugs, just notes)
+- [page]: [observation]
+
+## Screenshots
+Full-page: [list with context]
+Component: [list with component name + context]
+```
+
+**Severity guide:**
+- **Critical**: Functionality broken, data errors (NaN/undefined displayed), interactive elements non-functional
+- **Major**: Layout breaks at specific breakpoints, design token violations (hardcoded colors/fonts), empty containers where content expected, accessibility failures, interactive-state contrast failures (e.g. hover/focus text becoming unreadable against its own background)
+- **Minor**: Spacing inconsistencies, minor alignment issues, cosmetic polish items
+- **Observation**: Not a bug — patterns worth noting, areas that could use attention
+
+## Randomization Contract
+
+Every invocation MUST differ from the last. Specifically:
+- Page visit order is shuffled
+- Breakpoint assignments are randomized (with the mobile/tablet/desktop/wildcard minimums)
+- Audit focus areas rotate so different things are checked each time
+- At least one interaction test uses a randomly selected element
+- The Wildcard breakpoint uses truly random dimensions each time
+
+Run it 5 times and the whole app gets covered across many viewport combinations.
+
+## Gotchas Learned From Testing
+
+- **Shell quoting is the #1 friction point.** Any `bdg dom eval` with `getComputedStyle()`, `!`, or single quotes WILL break in zsh. Always use the temp file pattern (see audit checks section). Simple double-quote-only expressions work inline.
+- **`bdg` drifts to the wrong tab.** Its active target can silently switch to another open Chrome tab (e.g. a different app on a different port) between commands — especially after a `Page.reload`. Run the target-identity guard before every screenshot (see Phase 0). A wrong-app screenshot that looks plausible is worse than a crash.
+- **macOS has no `shuf`** — use `perl -MList::Util=shuffle` for randomization.
+- **`bdg dom click` syntax**: use `bdg dom click ".selector"` or `bdg dom click 5` (positional index from previous query). NOT `--index N`.
+- **Sleep after viewport resize** — `sleep 1` is needed after `setDeviceMetricsOverride` for content to reflow before screenshotting.
+- **Screenshots are viewport-only when page exceeds viewport height** — this is normal bdg behavior, not a bug. For full-page, use `bdg dom scroll --bottom` and take multiple screenshots.
+- **Component screenshots via `--selector`** — `bdg dom screenshot --selector ".card"` captures just that element's bounding box. If the selector matches multiple elements, it captures the first. Use `--index N` after a `bdg dom query` to target a specific match.
+- **Check if dark mode applies before testing it** — compare `document.body` background color before and after toggling `prefers-color-scheme`. Skip if identical.
+- **`title` vs `aria-label` on icon buttons** — both technically provide accessible names, but `aria-label` is reliably read by all screen readers while `title` is not. Flag `title`-only buttons as a finding.
+- **`CSS.forcePseudoState` doesn't affect `bdg dom screenshot`.** It changes what `getComputedStyle()` reports (reliable for diffing resting vs. forced state) but the screenshot pipeline renders the actual resting state regardless — a screenshot taken right after forcing `:hover` will look identical to the unforced one even when the computed style genuinely changed. Use the computed-style diff to detect the bug, and a REAL mouse hover (multi-step `mouseMoved`, not a single dispatch) if you need a screenshot as evidence.
+- **`bdg dom screenshot --selector` can use a stale bounding box after a scroll.** If you `scrollIntoView()` or the page auto-scrolls (e.g. a tour) and then screenshot by selector without re-measuring, you can get a crop of the wrong region entirely — not a rendering bug, a tooling artifact. Re-query `getBoundingClientRect()` immediately before shooting, or fall back to a full-page screenshot to sanity-check the region.
+- **A single `mouseMoved` dispatch usually doesn't trigger `:hover`.** Move through 2-3 intermediate points before the target coordinates, then confirm with `el.matches(':hover')` before trusting the result.
+- **Seeded data without a matching "onboarding complete" flag can auto-launch a first-run guided tour** (react-joyride, driver.js, Shepherd, etc.) mid-crawl, painting a full-viewport dark backdrop that looks exactly like a rendering bug (a big solid-color region with no visible content) but isn't. Before filing a suspiciously large empty/dark area as a layout bug, check for tour markers (`[class*='joyride']`, `[class*='tour']`, `[class*='shepherd']`, `[class*='driver']`) and compare against a wider breakpoint of the same page — a real layout bug won't disappear when you also see the tour's tooltip clearly. If the project's seed data controls onboarding/tutorial-completion state, seed it complete to avoid the contamination outright.
+
+## Tips
+
+- Run this after any major UI change or before a release
+- Screenshots accumulate in `/tmp/visual-crawl-*` — clean up periodically
+- If bdg session is already running, use `bdg status` to check before starting a new one
+- For sidebar-based apps: test both expanded and collapsed sidebar states at narrow widths
+- Some pages may load data async — wait for content before screenshotting
+- Read screenshots with the `Read` tool to visually inspect them — don't just trust the programmatic checks
+- For cross-page consistency: use `getComputedStyle()` comparisons (via temp file) — very effective for catching drift

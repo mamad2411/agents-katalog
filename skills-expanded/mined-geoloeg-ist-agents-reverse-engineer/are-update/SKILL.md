@@ -1,0 +1,41 @@
+---
+name: are-update
+description: Incrementally update documentation for changed files
+disable-model-invocation: true
+---
+
+Update documentation for files that changed since last run.
+
+<execution>
+Run the update command in the background and monitor progress in real time.
+
+## Steps
+
+1. **Read version**: Read `.claude/ARE-VERSION` → store as `$VERSION`. Show the user: `agents-reverse-engineer v$VERSION`
+
+2. **Run the update command in the background** using `run_in_background: true`:
+   ```bash
+   npx agents-reverse-engineer@$VERSION update --backend claude $ARGUMENTS
+   ```
+
+3. **Monitor progress** by polling the latest progress log:
+   - Wait ~15 seconds (use `sleep 15` in Bash), then use **Glob** to find the latest `.agents-reverse-engineer/progress-*.log` file, and **Read** it (use the `offset` parameter to read only the last ~20 lines for long files)
+   - Show the user a brief progress update (e.g. "12/30 files updated, ~5m remaining")
+   - Check whether the background task has completed using `TaskOutput` with `block: false`
+   - Repeat until the background task finishes
+   - **Important**: Keep polling even if no progress log exists yet (the command takes a few seconds to start writing)
+
+4. **On completion**, read the full background task output and summarize:
+   - Files updated
+   - Files unchanged
+   - Any orphaned docs cleaned up
+
+**Options:**
+- `--uncommitted`: Include staged but uncommitted changes
+- `--dry-run`: Show what would be updated without writing
+- `--eval`: Namespace output by backend.model for side-by-side comparison
+- `--concurrency N`: Control number of parallel AI calls (default: auto)
+- `--fail-fast`: Stop on first file analysis failure
+- `--debug`: Show AI prompts and backend details
+- `--trace`: Enable concurrency tracing to `.agents-reverse-engineer/traces/`
+</execution>

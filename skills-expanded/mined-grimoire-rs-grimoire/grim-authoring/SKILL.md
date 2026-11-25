@@ -1,0 +1,438 @@
+---
+name: grim-authoring
+description: Author, validate, and package grim-publishable artifacts — skill directories, rule files, agent definitions, MCP server descriptors, hook manifests, settings documents, bundle TOMLs, and mod directories. Use when creating or editing an artifact for grim build or grim release; when choosing frontmatter or catalog metadata fields; when writing a hook.toml with its events, tiers, matchers, and handlers; when creating or maintaining a plugin marketplace git repository (marketplace.toml, grim export marketplace, regenerate CI) or hosting a package index; when adding a vendor-namespaced metadata key for any client grim supports (claude, opencode, copilot, codex, cursor, kiro, junie, gemini, zed, amp, antigravity, cline, droid, goose, warp, openclaw, kilo, qoder — one namespace per client name); or when grim build fails validation with exit code 65.
+license: Apache-2.0
+compatibility: grim>=0.16
+metadata:
+  summary: Deep authoring guide for grim skill, rule, agent, mcp, hook, settings, bundle, and mod artifacts
+  keywords: grim,grimoire,authoring,frontmatter,validation,vendor-metadata,skill,rule,agent,mcp,hook,settings,bundle,mod,packaging
+  repository: https://github.com/grimoire-rs/grimoire
+---
+
+# Grim Artifact Authoring
+
+Grim publishes eight artifact kinds to OCI registries. Each has its own
+source shape, frontmatter schema, and validation gates. This root file
+holds the invariants that apply to every kind; per-kind depth lives in
+`references/`, loaded via the routing table below.
+
+## The Eight Kinds
+
+`grim build` and `grim release` infer the kind from the path — except
+agents (always `--kind agent`, or they silently pack as rules), MCP
+servers (always `--kind mcp`, or the `.toml` is treated as a bundle) and
+settings documents (always `--kind settings`, or the `.toml` is read as a
+bundle and the build exits 78).
+
+| Kind | Source shape | Inference | Installs as |
+|---|---|---|---|
+| Skill | Directory with a `SKILL.md` index | directory → skill | Directory tree under the client's `skills/` dir |
+| Rule | Single `.md` file; a sibling `<name>/` may hold only `README.md`, `logo.png`, `logo.svg`, none packed | `.md` → rule | `rules/<name>.md`, per-client transform |
+| Agent | Single `.md`, frontmatter required | **never — `--kind agent` mandatory** | One agent file per client, per-client render |
+| MCP server | `.toml` descriptor with a `[server]` table | **never — `--kind mcp` mandatory** | Entry in each client's MCP config file, per-client render |
+| Hook | Directory with a `hook.toml` manifest + its payload files | directory with `hook.toml` → hook | Payload tree materialized once per scope, one recorded output per client. **Arming is gated and off by default** — see [hook-spec.md](references/hook-spec.md) |
+| Settings (experimental) | `settings/<name>.toml`: top-level catalog keys plus one table per harness (`claude`, `codex`, `copilot`, `cursor`, `opencode`, `qoder`, `antigravity`, `amp`, `droid`, `gemini`, `kilo`, `kiro`, `warp`) | **never — `--kind settings` mandatory** | Values merged into each harness's own settings file, never a file of its own. **Applies only past its flag and workspace consent** — see [Settings Ship Gated](#settings-ship-gated) |
+| Mod (experimental) | Directory with a `mod.toml` descriptor plus `claude/` and/or `opencode/` code directories | directory with `mod.toml` (after `SKILL.md` and `hook.toml`) | Client-loaded code written per client (`.claude/mods/<binding>/`, `.opencode/plugins/<binding>/`). **Gated like settings and hooks** — see [references/mod-spec.md](references/mod-spec.md) |
+| Bundle | `.toml` member list | `.toml` → bundle | Never materializes — expands to its members |
+
+A skill or hook directory can drop a `.grimignore`
+at its root (gitignore syntax) to keep runtime junk — `__pycache__/`,
+`.venv/`, `.DS_Store` — out of the pack and out of drift detection; a
+built-in default list already covers the common cases and `.grimignore`
+lines extend it; a `!pattern` line re-includes a default. `SKILL.md`, a rule's index, a hook's `hook.toml`, and `.grimignore`
+itself are never ignorable. A hook handler naming an ignored file fails
+`grim build` (65) — it would never be packed; its runtime byproducts
+beyond the defaults belong in `.grimignore`, or they read as drift. Rules and agents get no `.grimignore`: the package is the single `.md`, and a `.grimignore` beside it in `<name>/` is itself a stray file. Full default list and semantics:
+[Artifact Reference § .grimignore][grimignore].
+
+Two directory kinds share one inference arm, and the order is
+load-bearing: `detect_kind` checks `SKILL.md` **first**, so a directory
+carrying both `SKILL.md` and `hook.toml` is a **skill** — a shipped skill
+that later gains a stray `hook.toml` keeps building as a skill on every
+release, with no flag needed to hold that (Principle 9). The mistake to
+watch for runs the other way: a hook author with a stray `SKILL.md` in
+their hook tree must pass `--kind hook` explicitly, or the build silently
+re-kinds the payload as a skill. `--kind hook` is accepted on `build` and
+`release` but is never *required* when no `SKILL.md` is present —
+`grim build ./hooks/shell-guard` already reports `hook`. Pass it anyway
+in scripted loops, the way the other kinds are passed, so a manifest
+rename cannot silently reclassify the artifact.
+
+## Declaring Dependencies
+
+Any kind except a bundle can declare the artifacts it needs, and installing it
+installs them too. The grammar is one table per target kind (`skills`,
+`rules`, `agents`, `mcp`, `hooks`, `bundles`, `settings`, `mods`) mapping a binding
+name to a reference, relative (`./shared:1`) or fully qualified:
+
+| Kind | Where it lives |
+|---|---|
+| Skill, rule, agent | `grim.requires.<table>.<name>` keys in frontmatter `metadata` |
+| MCP server, hook, settings, mod | `[requires.<table>]` tables in the descriptor / `hook.toml` / settings document / `mod.toml` (kept out of the settings layer) |
+| Bundle | a `[bundles]` table: nested bundles |
+
+A tag on a `requires` reference is a version claim: `:2` means "any 2.x" and
+the consumer gets the release the tag `2` names, which `grim release` keeps on
+the highest 2.x release. A tag that is not a
+version, or a digest, keeps the literal meaning. See
+[what the tag claims][claims].
+
+`grim build` checks the declarations offline (65 for a bad table, name,
+reference, duplicate or self-reference). Publishing packs them as a second
+layer, so **author, build and release with grim 0.16.0 or later**: an older grim
+drops them silently. Never add them to a version tag consumers already float
+on; start a new major tag. A rule that needs lookup data does not
+ship a support directory (grim 0.16.0 refuses to pack one): it puts the depth
+files in a skill and requires it, `grim.requires.skills.<name>: "<ref>"` in
+its frontmatter `metadata`, and names the skill in its body. See
+[rule-spec.md](references/rule-spec.md#support-directory). Details and the cycle and size limits:
+[Artifact Reference § Declaring dependencies][requires],
+[publishing § Publishing dependencies][pub-requires].
+
+## Which Clients Host Which Kind
+
+Grim installs into a growing set of clients, and not every client can
+host every kind — decide this **before** you author, because it changes
+what you write. Treat the [enforced matrix][clients] as authoritative;
+the summary below is a planning aid that the next client can age:
+
+- **Skills** are the universal kind — no client declines them, which is why
+  a skill is the portable choice. One scope caveat: OpenClaw is
+  global-scope-only, so a *project* install for it writes nothing.
+- **Rules** are native for Claude Code, Copilot, Cursor, Kiro, and
+  Antigravity;
+  degraded for OpenCode and Junie (the file installs and grim restates the
+  scope as prose in the body, but nothing enforces it); and **declined**
+  by everyone else — grim warns, skips, and
+  writes no file. Most of the fleet cannot scope instructions: when the
+  audience is broad, a skill reaches clients a rule never will.
+- **Agents** install for Claude Code, OpenCode, Copilot, Codex, Cursor,
+  Gemini, Antigravity, Junie, Droid, Goose, Kilo, and Qoder. Every other
+  client declines them.
+- **MCP servers** register for the clients that ship a config file grim
+  can splice — Claude, OpenCode, Copilot, Codex, Cursor, Kiro, Junie,
+  Gemini, Zed, Amp, Antigravity, Cline (global scope only), Droid, Warp,
+  and Qoder. Only Claude accepts the `ws`
+  transport. The `[server.oauth]` block reaches OpenCode (no
+  `auth_server_metadata_url`, no `callback_port = 0`), Zed, Copilot, and
+  Droid (a literal `client_id`, a `${VAR}` id skips; Copilot also takes
+  `scopes`, Droid also takes `authorization_server_issuer`); every other
+  client, or a field it cannot carry, skips the descriptor with a warning.
+- **Hooks** are the narrowest kind by far. Only four clients name a hook
+  registration surface at all — Claude, Codex, Copilot, and Qoder — and of
+  those only **Claude** hosts a hook at *project* scope; Codex, Copilot, and
+  Qoder are global-scope-only, Codex's and Copilot's because their
+  registration files are tracked repository files, Qoder's by policy (A1).
+  Qoder additionally declines the `mutator` tier outright, at every scope —
+  its own hook schema carries no rewrite field, so a `PreToolUse` mutator
+  reports declined there whatever the scope. Every other client declines
+  hooks outright. On top of that, arming is gated (see below), so authoring
+  a hook means accepting that most of the fleet will report it and never
+  fire it.
+- **Settings** take a harness table only for Claude, Codex, Copilot,
+  Cursor, OpenCode, Qoder, Antigravity, Amp, Droid, Gemini, Kilo, Kiro,
+  and Warp; a table for any other name fails
+  `grim build` (65). At project scope only **Claude** takes settings,
+  written to `.claude/settings.local.json`. Each harness accepts only the
+  fields its row in the [field table][settings-fields] names. A key that
+  holds a dot is one quoted key: Kiro's `/chat.disableWrap` is
+  `"chat.disableWrap" = true` under `[kiro]`, and a bare dotted key is a
+  nested table that fails the build with a hint to quote it. An OpenCode or Kilo key or value holding
+  `{env:` or `{file:`, or a Gemini value holding `$NAME` or `${NAME}`, fails
+  it too (65), since the harness would expand it.
+
+A declined kind is an honest refusal, not a silent failure — but it is
+still zero files. The enforced matrix and the upstream reason behind
+every degrade and decline: [Client Compatibility][clients]. A
+`compatibility:` frontmatter field is a human-facing hint only and never
+overrides it.
+
+## Hooks Ship Disarmed
+
+Publishing a hook is not shipping something that runs. Hooks are behind an
+experimental flag that is **off by default**:
+
+```sh
+grim config get options.experimental.hooks    # prints nothing, exit 1, unless someone set it true
+```
+
+The flag is config-only — no environment variable overrides it — and it is
+only the **first of two gates** grim keeps deliberately
+separate:
+
+1. **Is the feature on?** `options.experimental.hooks`, off by default.
+2. **Has this workspace consented?** A machine-local consent record under
+   `$GRIM_HOME/consent/`, one file per workspace, naming the checkout
+   by absolute path and listing the hooks it covers as
+   `<binding>@<registry>/<repository>`. Global scope is always consented and
+   carries no record.
+
+Gate 2 has three satisfiers, and they are the *only* three things that write
+a record: `grim hook allow`, `grim add` (typing a reference is the
+declaration gesture, and an Install in `grim tui` that declares a row is the
+same gesture for a hook), or an accepted prompt (asked once per workspace, TTY
+only). `grim install`, `update`, `lock`, `status`, `context`, `hook list`, a
+TUI Update or an Install that declares nothing, and the MCP server never write
+one — a consumer who clones a repository declaring your hook gets a
+declaration and a lock pin, and nothing armed.
+
+`--trust-workspace` on `grim install` / `update` / `add` arms a single
+invocation, and its `--no-trust-workspace` counterpart refuses one.
+`--trust-workspace` writes nothing itself. `grim add` still records its
+gesture, at project scope and with gate 1 open, unless `--no-trust-workspace`
+is set. Since grim 0.16.0 `--trust-hooks` / `--no-trust-hooks` are their
+aliases, and each answer covers hooks and settings
+together. Neither turns the feature on — gate 1 must already be open — and the
+pair beats the record in **both** directions.
+
+They are **flags only: there is no `GRIM_ALLOW_HOOKS`, no
+`GRIM_HOOK_CONSENT`, and no environment form of the record's path**, and
+that absence is what makes the pair safe to rank above the record. The
+environment is repo-carried — `.envrc`, `.mise.toml` and a devcontainer's
+`containerEnv` are ordinary files in a repository — so an environment form
+would let a cloned repository consent on its cloner's behalf. A file cannot
+type a flag.
+
+One condition sits outside both gates and answers to no file at all: a hook
+whose pinned registry host is not loopback and is reached over plain HTTP
+never arms, because the first resolution that produces the digest pin is
+itself attacker-influenceable on the wire.
+
+Enabling the feature is not consent to run any particular hook.
+
+What this means for you as a publisher: a consumer who runs `grim add` on
+your hook gets a real declaration, a real lock pin, and a materialized
+payload tree — and by default nothing armed. Write the hook's
+`description` so it reads honestly under those terms, and do not document
+your hook to consumers as something that fires on install. Consumers
+inspect what they have with `grim hook list`.
+
+## Mods Ship Gated
+
+A mod is the third experimental kind, gated the same two ways:
+`options.experimental.mods` (off by default, config-only) and workspace
+consent through the one shared record. Consent decides what grim writes,
+never what a client loads. A skill whose root carries a `.claude-plugin`
+directory is refused at build and publish (exit 65, `skill-plugin-manifest`);
+ship client-loaded code as a mod. Depth: `references/mod-spec.md`.
+
+## Settings Ship Gated
+
+A settings package is the second experimental kind, and it is gated the
+same two ways. `options.experimental.settings` is off by default and
+config-only. At project scope the workspace must also have consented: the
+workspace consent record carries the settings bindings as unprefixed
+`<binding>@<registry>/<repository>` entries beside the hook entries, so `grim hook allow` (alias `grim consent
+allow`) and the `--trust-workspace` pair answer for every gated kind. Global scope
+is always consented. A consumer who adds your package with the flag off gets
+a declaration and a lock pin, and nothing written.
+
+What this means for you as a publisher:
+
+- **Validate offline.** `grim build settings/<name>.toml --kind settings`
+  checks every value against its harness field; `grim schema --kind
+  settings` prints the document's JSON Schema. The published layer is JSON
+  (`application/vnd.grimoire.settings.v1+json`), at most 64 KiB.
+- **A version bump re-asks nothing.** Consent carries no tag, so a new
+  version can change what an agent may do without a new prompt; the
+  consumer's evidence is the lock diff and the change list each run
+  reports. Treat a permissive change as a major version.
+- **grim refuses rather than overwrites.** A consumer's own edit to a value
+  you set is refused (65) until they pass `--force`, and a conflict with
+  another package exits 78 with no override. Keep packages a consumer may
+  combine off each other's keys.
+
+Format, merge rules and every field: [Settings][settings].
+
+## Universal Invariants
+
+- Names are `[a-z0-9]` runs joined by single hyphens or periods
+  (`[a-z0-9]+([.-][a-z0-9]+)*`) — non-empty, ≤ 64 chars, no leading or
+  trailing separator, no adjacent separators (`a--b` and `a..b` are
+  invalid). Periods are a grim superset of the Agent Skills standard
+  (`[a-z0-9-]`) — prefer hyphens when portability to strict-standard
+  tooling matters.
+- A skill's `name` must equal its directory name; an agent's `name` must
+  equal its file stem. Rule names come from the file stem and obey the
+  same character rules. Bundle and MCP names also come from the file stem
+  but are not charset-validated at build; bundle *member* names are
+  validated against the same rules at resolve time.
+- Any violation of the validated names fails `grim build`/`grim release`
+  with exit code 65.
+- Unknown top-level frontmatter keys are *preserved* round-trip (forward
+  compatibility) — never rejected, so a typo'd optional key is silent.
+
+## The Metadata-Location Asymmetry
+
+Where catalog metadata (`summary`, `keywords`, `repository`, `deprecated`,
+`replaced-by`, `authors`, `vendor`, `homepage`, `documentation`) is authored
+differs by kind. This is the #1 authoring confusion — misplaced keys are not
+errors, they just silently never reach the catalog:
+
+| Kind | Catalog metadata keys live… |
+|---|---|
+| Skill | inside the `metadata:` map of `SKILL.md` frontmatter |
+| Agent | inside the `metadata:` map of the agent frontmatter |
+| Rule | at the **top level** of the rule frontmatter (not in `metadata`) |
+| MCP server | as **top-level TOML keys**, above the `[server]` table (`replaced-by` not read for MCP) |
+| Hook | **nowhere — a hook has no catalog metadata surface.** `hook.toml` is strict (`deny_unknown_fields`): its only top-level keys are `schema`, `name`, `description`, and `[[hooks]]`, so `summary`, `keywords`, `repository`, `deprecated`, and `replaced-by` are each a hard parse error (exit 65), not silent loss. `description` is the one catalog-facing field. Write it to carry the whole blurb — `grim search` has nothing else to show |
+| Settings | as **top-level TOML keys**, above the harness tables; `description` is **required** |
+| Bundle | as **top-level TOML keys**, above the member tables |
+
+In every kind, `keywords` is one comma-separated string and `repository`
+must be an `https://` URL (anything else fails the release with 65). The
+`deprecated` notice obeys the same per-kind location; an
+empty or whitespace-only value means *not* deprecated and emits no
+annotation. `replaced-by` names the successor artifact, authored
+independently of `deprecated`; its value must parse as a reference or the
+release fails with 65 — detail in [Publishing][publishing].
+
+`vendor` / `homepage` / `documentation` are derived when omitted — vendor
+from the release repository's namespace, homepage from `repository`,
+documentation from `<repository>#readme`. `authors` is **not**: the only
+automatic source is the commit author under `--git`, which publishes a
+person's name, so author a team name or alias instead — a manifest is
+readable by anyone who can pull the artifact. Optional in the schema does
+not mean optional in practice: the set to write on every artifact is
+[the default six](references/release-checklist.md#metadata-defaults). A
+skill's top-level `compatibility` is published too, as
+`com.grimoire.compatibility`.
+
+Repository-level support channels (`issues` / `chat` / `contact` /
+`security`) are **not** artifact metadata — they are authored as
+a manifest-level `[support]` table in `publish.toml` and ride the mutable
+description companion, so changing a link needs no re-release. The table fans
+out to every companion the run pushes; there is no per-entry override and no
+`grim release` flag.
+
+## Companion: Content Craft
+
+This skill covers grim **packaging and validation** only — including build
+provenance, which is embedded by default at build/release time (`--git`
+additionally discloses the `origin` remote and commit author; `--no-git`
+suppresses everything derived); confirm flags with `grim release --help`. For the craft of
+the content itself — progressive disclosure, context budgets, description
+triggering, choosing skill vs rule vs agent — read the companion skill
+`ai-config-authoring` at
+[`../ai-config-authoring/SKILL.md`](../ai-config-authoring/SKILL.md);
+both ship together in the `grim-essentials` bundle. When creating a new
+artifact from scratch, read it FIRST — write good content, then package
+it here. If that file is missing, install it by identifier:
+
+```sh
+grim add ghcr.io/grimoire-rs/skills/ai-config-authoring:0   # installs by default
+# fresh project (no grimoire.toml yet): run `grim init` first
+```
+
+## The Local Dev Loop
+
+Iterate on an artifact **before** its first release with local path
+sources — no registry round-trip:
+
+- `grim install <path>` — **dev-install**: renders the working tree into
+  the clients without declaring anything (`grimoire.toml` and
+  `grimoire.lock` stay untouched). The record is marked `dev` in
+  `grim status`, refreshed by `grim update`, removed by `grim uninstall`.
+- `grim add <path>` — declares the local path in the config and pins it
+  by content hash, like any other source. Re-adding over an output you
+  hand-edited in a client is refused as modified; `grim add <path>
+  --force` is the sanctioned overwrite.
+
+A path is anything starting `./` or `../`, or absolute. Both commands
+cover **skills, rules, and agents** only; kind is inferred from the
+path's shape exactly as `grim build` infers it (directory → skill, bare
+`.md` → rule, `--kind agent` for agents). A local *bundle* is declared
+directly in the config's `[bundles]` table instead (`grim add --kind
+bundle <path>` refuses with a hint); its members must be registry
+references — a local bundle has no registry identity to resolve a
+relative member against. Typical loop: edit → `grim build <path>`
+(validation) → `grim install <path>` (see it in a real client) →
+repeat → release. Confirm flags with `grim install --help`.
+
+**A hook has no local-path loop at all**, and this is deliberate rather
+than unfinished: the config parser rejects a path value under `[hooks]`,
+and there is no dev-install for the kind. A dev-install's source is a
+working-tree path, so the natural "edit the hook in the repo, re-install"
+loop would put something armable inside a repository — exactly what grim
+refuses to do. The hook loop is therefore `grim build` to validate, then
+`grim release` (a local registry works fine for iterating), then
+`grim add` from that reference. A **settings package** has no local-path
+loop either: the config parser rejects a path value under `[settings]`, so
+iterate with `grim build --kind settings`, a release to a local registry,
+and `grim add --kind settings` from that reference.
+
+## Offering What You Author
+
+Packaging is half the job; the other half is where people get the result.
+Four surfaces, and the choice can change what you author:
+
+- **OCI registry**: `grim release` / `grim publish`, for people who run grim.
+- **Package index**: `grim publish --announce` makes it discoverable; to run
+  your own index see [hosting-an-index.md](references/hosting-an-index.md).
+- **Plugin marketplace repository**: `grim export marketplace` serves
+  Claude Code, Copilot, Codex, Qoder and Cursor users who have no grim; see
+  [hosting-a-marketplace.md](references/hosting-a-marketplace.md) (needs
+  grim 0.15.0 or later). **File handoff**: `grim export plugin`.
+- Inside a plugin, skills reach every client. MCP servers reach every
+  client unless the descriptor uses `oauth`, `ws`, or a `${...}` reference
+  in `command`, `url`, an env key or a header (see
+  [references/mcp-spec.md](references/mcp-spec.md)). Agents go only to the
+  Claude family (`claude`, `qoder`), and rules, hooks and settings packages
+  never. Bundle accordingly.
+
+## Routing Table
+
+| Read… | …when |
+|---|---|
+| [references/skill-spec.md](references/skill-spec.md) | Authoring a skill directory or its `SKILL.md` frontmatter |
+| [references/rule-spec.md](references/rule-spec.md) | Authoring a rule file, its globs, or replacing a rule's support directory with a support skill |
+| [references/agent-spec.md](references/agent-spec.md) | Authoring an agent definition or its vendor overrides |
+| [references/mcp-spec.md](references/mcp-spec.md) | Authoring an MCP server descriptor or its env references |
+| [references/mod-spec.md](references/mod-spec.md) | Authoring a `mod.toml` and its `claude/` or `opencode/` code, entries, served clients, publishing and testing against a local registry |
+| [references/hook-spec.md](references/hook-spec.md) | Authoring a `hook.toml`, choosing an event and tier, writing a matcher, or fixing the payload-not-executable refusal |
+| [references/bundle-spec.md](references/bundle-spec.md) | Authoring a bundle TOML or choosing pinning strategy |
+| [Settings][settings] (docs site) | Authoring a settings document: harness tables, merge classes, the field table, limits |
+| [references/vendor-metadata.md](references/vendor-metadata.md) | Adding a key in a reserved `<vendor>.*` namespace — one per client name (`claude.*`, `opencode.*`, `copilot.*`, `codex.*`, `cursor.*`, `kiro.*`, `junie.*`, `gemini.*`, `zed.*`, `amp.*`, `antigravity.*`, `cline.*`, `droid.*`, `goose.*`, `warp.*`, `openclaw.*`, `kilo.*`, `qoder.*`) |
+| [references/release-checklist.md](references/release-checklist.md) | Before `grim release`/`grim publish`, the metadata every package should set, repository-path layout, batch manifests, description companions, or triaging an exit-65 failure |
+| [references/bootstrap-existing-repo.md](references/bootstrap-existing-repo.md) | Turning an existing skill repo (agentskills.io `skills/<name>/SKILL.md` or `.claude/skills/`) into a grim publisher — inventorying artifacts, fixing names, backfilling catalog metadata, wiring publish CI |
+| [references/hosting-a-marketplace.md](references/hosting-a-marketplace.md) | Creating or maintaining a plugin marketplace git repository: layout, `[marketplace]` table, regenerate CI, required check, tokens, department and sibling deploy |
+| [references/hosting-an-index.md](references/hosting-an-index.md) | Standing up or operating a package index: indexer scaffold, contribution gate, sync layout, ratings, private options |
+| [references/updating.md](references/updating.md) | Maintaining this skill package itself |
+
+## Schema Authority
+
+This skill teaches the craft and the pitfalls; the authoritative schema
+reference is the Grimoire docs site. When a field table here feels
+incomplete, the docs page is the source of truth:
+[Artifact Reference][artifacts] · [Vendor-Specific Metadata][vendor] ·
+[Publishing][publishing] · [Agent Artifacts][agents] ·
+[Client Compatibility][clients]. For the TOML
+surfaces, `grim schema --kind <config|publish|lock|mcp|hook|settings|mod>` prints the
+JSON Schema generated from grim's own parsers — bind it in your editor to
+catch manifest typos before any command runs. `--kind hook` is the fastest
+way to read the authoritative `hook.toml` shape, because the schema
+carries grim's own doc comments for every event, tier, and field;
+`--kind settings` does the same for a settings document.
+
+## Verify Before Acting
+
+`grim build <path>` validates without pushing — run it after every edit;
+its output is ground truth for the grim version actually installed. On
+any conflict between this skill and `grim build` output or `grim --help`,
+trust the tool. Treat this skill as the map, not the territory.
+
+---
+
+Verified against the grim release this package ships beside.
+
+[artifacts]: https://grimoire.rs/artifacts.html
+[grimignore]: https://grimoire.rs/artifacts.html#grimignore
+[requires]: https://grimoire.rs/artifacts.html#requires
+[claims]: https://grimoire.rs/artifacts.html#what-the-tag-claims
+[pub-requires]: https://grimoire.rs/publishing.html#requires
+[vendor]: https://grimoire.rs/vendor-metadata.html
+[publishing]: https://grimoire.rs/publishing.html
+[agents]: https://grimoire.rs/agents.html
+[clients]: https://grimoire.rs/clients.html
+[settings]: https://grimoire.rs/settings.html
+[settings-fields]: https://grimoire.rs/settings.html#fields

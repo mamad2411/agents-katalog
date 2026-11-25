@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fourteen1416/academic-agent-toolkit (path: vendor/forks/claude-code-templates/cli-tool/components/skills/development/javascript-pro/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Master modern JavaScript with ES6+, async patterns, and Node.js APIs. Handles promises, event loops, and browser/Node compatibility.

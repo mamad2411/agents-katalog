@@ -1,0 +1,370 @@
+---
+name: go-safe-move-refactor
+description: 'Safely move Go source files between packages with zero compilation downtime. Handles package declarations, import updates, symbol exports, type renames, test migration, and forwarding stubs. Validates compilation after every atomic step.'
+---
+
+# Go Safe Move Refactor
+
+## Primary Directive
+
+Move one or more Go source files from one package to another while maintaining compilation at every intermediate step. This skill implements the **"bridge pattern"** — keep old code working via forwarding stubs while new code is established, then remove bridges after verification.
+
+## When to Use
+
+- Moving a `.go` file from one package to another
+- Extracting a set of functions/types into a new package
+- Consolidating multiple files into a single sub-package
+- Splitting a large package into smaller ones
+
+## Core Principle: Never Break Compilation
+
+Every change must be an atomic step that leaves `go build ./...` passing. The sequence is:
+
+```text
+1. Create destination → 2. Copy & transform → 3. Add forwarding stubs → 4. Verify → 5. Update consumers → 6. Remove stubs → 7. Verify
+```
+
+## Process
+
+### Step 1: Pre-Flight Check
+
+```bash
+go build ./...    # Must pass
+golangci-lint run --build-tags e2e ./... # Must pass
+go test ./...     # Record baseline (should pass)
+```
+
+Record:
+
+- Source file path: `${srcFile}` (e.g., `internal/tools/branches.go`)
+- Source package: `${srcPkg}` (e.g., `tools`)
+- Destination directory: `${dstDir}` (e.g., `internal/tools/branches/`)
+- Destination package: `${dstPkg}` (e.g., `branches`)
+
+**Discovery check** (before any move): The **client-go API** defines the canonical domain structure. Verify you have the complete picture:
+
+1. **Inspect client-go types**: Run `go doc gitlab.com/gitlab-org/api/client-go/v3.{Type}` for the domain's key types to understand the canonical fields and API contract
+2. List all non-test handler files in the source package to find everything that exists
+3. Check `action_specs.go` and catalog aggregation for the domain's canonical runtime exposure
+4. Look for related files (e.g., a domain might span `{domain}.go` + `{domain}_extra.go`)
+5. If the domain's catalog group has a generated tool reference page (`site/src/content/docs/reference/tools/<group>.mdx`, written by `make gen-tool-reference`; `<group>` is the group's tool name without `gitlab_` and with hyphens, so `gitlab_merge_request` is `merge-request.mdx`), read it for supplementary user-facing context, but do NOT skip the move if there is none. A move never edits that page: it changes only if the move changes what the catalog serves (a tool name, an action ID, a description, a tier or a schema), and then `make gen-tool-reference` rewrites it
+
+### Step 2: Analyze Dependencies
+
+Before moving, catalog ALL symbols in the source file:
+
+| Symbol | Type | Visibility | Used By |
+|--------|------|-----------|---------|
+| `BranchCreateInput` | struct | exported | action_specs.go, branches_test.go |
+| `BranchOutput` | struct | exported | action_specs.go, branches_test.go, markdown.go |
+| `branchCreate` | func | unexported | action_specs.go |
+| `branchList` | func | unexported | action_specs.go |
+
+Use `grep` and `go doc` to find all references:
+
+```bash
+grep -rn "BranchCreateInput\|BranchOutput\|branchCreate\|branchList" internal/
+```
+
+### Step 3: Create Destination Package
+
+```bash
+mkdir -p ${dstDir}
+```
+
+Create minimal `doc.go` if this is a new package:
+
+```go
+// Copyright (c) 2026 José M. Requena Plens
+// SPDX-License-Identifier: MIT
+
+// Package branches implements MCP tool handlers for GitLab branch operations.
+package branches
+```
+
+Verify: `go build ./...` (empty package is fine)
+
+### Step 4: Copy and Transform Source File
+
+1. **Copy** (don't move yet) `${srcFile}` → `${dstDir}/${filename}`
+2. **Change package declaration**: `package ${srcPkg}` → `package ${dstPkg}`
+3. **Update imports**:
+   - Remove self-package imports (they're now local)
+   - Add imports for shared utilities: `"module/path/internal/toolutil"`
+   - Add imports for GitLab client, MCP SDK as needed
+4. **Export functions** that need to be called externally:
+   - `branchCreate` → `Create` (exported, package provides namespace)
+   - `branchList` → `List`
+5. **Rename types** to remove domain prefix:
+   - `BranchCreateInput` → `CreateInput`
+   - `BranchOutput` → `Output`
+6. **Update internal references** to use `toolutil.` prefix for shared utilities
+
+### Step 5: Create Forwarding Stubs (Bridge)
+
+In the **original** package, replace the moved code with forwarding stubs, which are temporary and go once every consumer is updated. The file keeps the header it opens with, and no comment sits directly above its `package` clause, where Go would read it as the package comment that belongs in `doc.go` alone. `branches.go` becomes:
+
+```go
+// Copyright (c) 2026 José M. Requena Plens
+// SPDX-License-Identifier: MIT
+
+package tools
+
+import "module/path/internal/tools/branches"
+
+// Type aliases for backward compatibility during migration.
+type BranchCreateInput = branches.CreateInput
+type BranchOutput = branches.Output
+type BranchListOutput = branches.ListOutput
+
+// Function forwarding for backward compatibility during migration.
+var branchCreate = branches.Create
+var branchList = branches.List
+var branchGet = branches.Get
+```
+
+**CRITICAL**: This step ensures all existing code that references `tools.BranchCreateInput` or calls `branchCreate()` still compiles.
+
+Verify: `go build ./...` — MUST pass before continuing.
+
+### Step 6: Update Direct Consumers
+
+Find all files that reference the moved symbols:
+
+```bash
+rg -n "branchCreate|BranchCreateInput|BranchOutput" internal/ --glob "*.go" --glob "!*_test.go" --glob "!internal/tools/branches/**"
+```
+
+Update each consumer to import from the new package:
+
+**Before**:
+
+```go
+package tools
+
+func registerBranchTools(server *mcp.Server, client *gitlabclient.Client) {
+    // ... uses branchCreate, BranchCreateInput directly
+}
+```
+
+**After**:
+
+```go
+package tools
+
+import "module/path/internal/tools/branches"
+
+func registerBranchTools(server *mcp.Server, client *gitlabclient.Client) {
+    // ... uses branches.Create, branches.CreateInput
+}
+```
+
+**Or better** — move registration into the sub-package itself (see Step 7).
+
+Verify after each consumer update: `go build ./...`
+
+### Step 7: Move Catalog Metadata
+
+Create or update `${dstDir}/action_specs.go` with canonical `ActionSpecs()` metadata:
+
+```go
+// Copyright (c) 2026 José M. Requena Plens
+// SPDX-License-Identifier: MIT
+
+package branches
+
+import (
+    gitlabclient "module/path/internal/gitlab"
+    "module/path/internal/toolutil"
+)
+
+func ActionSpecs(client *gitlabclient.Client) []toolutil.ActionSpec {
+  return []toolutil.ActionSpec{
+    toolutil.NewActionSpec("create", toolutil.RouteAction(client, Create), toolutil.ActionSpecOptions{
+      OwnerPackage:   "branches",
+      IndividualTool: toolutil.IndividualToolSpec{Name: "gitlab_branch_create", Title: toolutil.TitleFromName("gitlab_branch_create")},
+    }),
+  }
+}
+```
+
+Update the audited catalog aggregation/generation path if this is a new domain. Root runtime registration must remain catalog-backed; do not add new package-level `RegisterMeta` calls for ordinary GitLab actions.
+
+Verify: `go build ./...`
+
+### Step 8: Move Tests
+
+1. Copy `${srcFile}_test.go` → `${dstDir}/${filename}_test.go`
+2. Change package: `package tools` → `package branches`
+3. Update type references: `BranchOutput` → `Output`
+4. Update function references: `branchCreate(...)` → `Create(...)`
+5. Import the shared test helpers:
+
+   ```go
+   import "github.com/jmrplens/gitlab-mcp-server/v3/internal/testutil"
+   ```
+
+6. If the moved tests use a local `newTestClient`, replace it with
+   `testutil.NewTestClient(t, handler)` (and `respondJSON` with
+   `testutil.RespondJSON`) rather than copying the helper again
+
+Verify:
+
+```bash
+go test ./${dstDir}/ -count=1 -v
+```
+
+### Step 9: Remove Forwarding Stubs
+
+Once ALL consumers are updated and ALL tests pass:
+
+1. Delete the forwarding stub file from `${srcPkg}/`
+2. Delete the original test file from `${srcPkg}/`
+
+Verify:
+
+```bash
+go build ./...
+go test ./internal/... -count=1
+```
+
+### Step 10: Final Validation
+
+```bash
+go build ./...
+golangci-lint run --build-tags e2e ./...
+go test ./internal/... -count=1
+```
+
+## Handling Complex Cases
+
+### Circular Import Prevention
+
+If moving file A to package B would create a circular import:
+
+```text
+tools → branches → tools (CIRCULAR!)
+```
+
+Solution: Extract the shared dependency to `toolutil/`:
+
+```text
+tools → branches → toolutil (OK)
+tools → toolutil (OK)
+```
+
+### Shared Types Used Across Domains
+
+If `BranchOutput` is used in another domain (e.g., `merge_requests.go` references branches):
+
+1. Keep the type in the domain that owns it (`branches.Output`)
+2. Have the other domain import it: `import "module/path/internal/tools/branches"`
+3. OR if the type is truly cross-cutting, extract to `toolutil/`
+
+### Format Functions in markdown.go
+
+Markdown formatters belong to the domain package: each sub-package has its own
+`markdown.go` whose `init()` registers every formatter with
+`toolutil.RegisterMarkdown[T]` (or `RegisterMarkdownPair` / `RegisterMarkdownTriple`),
+and `toolutil.MarkdownForResult` dispatches by output type
+(`internal/toolutil/md_registry.go`). `toolutil/markdown.go` holds only the
+shared building blocks (`MarkdownTableSeparator`, `WriteHints`, the `FmtMd*`
+constants). When moving a domain, move its `Format*Markdown` functions with it
+and keep the `init()` registration; `TestAllMarkdownFormattersRegistered` in
+`internal/tools` fails if an output type is left without a formatter.
+
+### Test Helpers
+
+Shared test helpers already live in `internal/testutil` (exported, importable
+from any package). Do not recreate `helpers_test.go` in a moved package; import
+these instead:
+
+```go
+package testutil
+
+// NewTestClient creates a GitLab client pointed at a test HTTP server.
+func NewTestClient(tb testing.TB, handler http.Handler) *gitlabclient.Client { ... }
+
+// RespondJSON writes a JSON response with the given status code and body.
+func RespondJSON(w http.ResponseWriter, status int, body string) { ... }
+
+// RespondJSONWithPagination writes a JSON response with GitLab pagination headers.
+func RespondJSONWithPagination(w http.ResponseWriter, status int, body string, p PaginationHeaders) { ... }
+```
+
+## Batch Processing Template
+
+For moving multiple domains efficiently:
+
+```text
+Batch 1: Extract shared utilities → toolutil/
+  ├── Verify: go build && go test
+  └── Commit: "refactor: extract shared utilities to internal/toolutil"
+
+Batch 2: Move simple domains (health, users, tags, labels, milestones)
+  ├── For each domain: create, move, stub, verify
+  ├── Verify: go build && go test
+  └── Commit: "refactor: modularize health/users/tags/labels/milestones"
+
+Batch 3: Move medium domains (branches, commits, files, groups, pipelines)
+  ├── Same pattern
+  └── Commit: "refactor: modularize branches/commits/files/groups/pipelines"
+
+Batch 4: Move complex multi-file domains (mergerequests, packages)
+  ├── Consolidate files first, then move
+  └── Commit: "refactor: modularize mergerequests and packages"
+
+Batch 5: Clean up stubs, update docs
+  └── Commit: "refactor: remove forwarding stubs, update documentation"
+```
+
+## Rollback Strategy
+
+If a migration batch goes wrong:
+
+1. `git stash` or `git checkout -- .` to revert current changes
+2. Review what broke (usually import paths or missing exports)
+3. Fix the specific issue
+4. Re-attempt the migration
+
+Since each batch is committed separately, you can always `git revert` a single batch without affecting others.
+
+## GitLab client-go Awareness
+
+When moving tool handlers that call the GitLab API, preserve these patterns exactly:
+
+### client-go Service Access
+
+Every handler accesses the API via `client.GL().{Service}.{Method}()`. The `client` parameter is `*gitlabclient.Client` (alias for `internal/gitlab.Client`). This pattern does NOT change during migration — the client is passed as a parameter, not imported.
+
+### Import Requirements for Moved Files
+
+After moving a tool handler to a sub-package, ensure these imports:
+
+```go
+import (
+    gl "gitlab.com/gitlab-org/api/client-go/v3"                        // For gl.*Options, gl.Ptr(), gl.WithContext()
+    gitlabclient "github.com/jmrplens/gitlab-mcp-server/v3/internal/gitlab"  // For client type
+    "github.com/jmrplens/gitlab-mcp-server/v3/internal/toolutil"             // For shared utilities
+    "github.com/modelcontextprotocol/go-sdk/mcp"                          // Only when a handler builds an *mcp.CallToolResult itself
+)
+```
+
+### Files With Low-Level HTTP Access
+
+`internal/tools/packages/packages_stream.go` uses `client.GL().NewRequest()` and `client.GL().Do()` for a streamed download, and `internal/tools/uploads/uploads.go` uses `client.GL().BaseURL()` to build the full upload URL. Ensure these patterns still work after a move that touches them.
+
+### Naming Inconsistency Fix
+
+Historical example (the move is done): the monolith's `repositories.go` held **Projects** CRUD (`client.GL().Projects.*`, not `Repositories`) and became `projects/projects.go` in a **rename AND move**, with the package doc comment updated to say it is the Projects domain. Apply the same check whenever a file name and its `client.GL().{Service}` calls disagree.
+
+### Domain Reference Hierarchy
+
+The **client-go API library** (`gitlab.com/gitlab-org/api/client-go/v3`) is the source of truth for domain organization, type structures, and field definitions.
+
+Before moving any domain:
+
+1. **Inspect client-go types first**: Run `go doc gitlab.com/gitlab-org/api/client-go/v3.{Type}` for the domain's key types (e.g., `gl.Branch`, `gl.CreateBranchOptions`). This defines the canonical fields and API contract — use it to validate that type renames and field mappings are correct after the move.
+2. **Read the source file(s)** (`internal/tools/{domain}.go`) to understand our implementation: handler functions, `client.GL().{Service}.*` calls, and our Input/Output struct subset.
+3. **If the domain's catalog group has a generated tool reference page** (`site/src/content/docs/reference/tools/<group>.mdx`), read it for supplementary user-facing context. If there is none, `go doc` + source code provide everything needed.
+4. **Check catalog exposure**: verify the domain appears in `ActionSpecs` and catalog aggregation. Uncataloged files are in-progress features — still move them, but note the gap.

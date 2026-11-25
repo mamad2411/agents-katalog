@@ -1,0 +1,80 @@
+---
+name: run-coverage
+description: "Run .NET tests with code coverage and display a summary. USE FOR: generating a coverage report for a test project, getting baseline line/branch coverage per class and method, checking current coverage percentages. Calls run_tests_with_coverage then get_coverage_summary via dotnet-coverage-mcp MCP tools. Requires testProjectPath and a test filter string. DO NOT USE FOR: iterative improvement loops (use improve-test-coverage), finding specific uncovered branches (use analyze-coverage-gaps)."
+---
+
+# Run Tests with Coverage
+
+Run a .NET test project with code coverage enabled and display a structured summary of line and branch coverage per class and method.
+
+## When to Use
+- User wants to generate or refresh a coverage report
+- User asks "what is the current coverage?" or "run the tests with coverage"
+- Starting a new coverage improvement session to get a baseline
+- Verifying coverage after manually writing tests
+
+## When Not to Use
+- User wants to iteratively write tests to improve coverage — use `improve-test-coverage`
+- User wants to find specific uncovered branches in a method — use `analyze-coverage-gaps`
+- Project is not a .NET test project (no `.csproj`, no NUnit/xUnit/MSTest references)
+
+## Inputs
+
+| Input | Required | Description |
+|-------|----------|-------------|
+| `testProjectPath` | Yes | Full path to the `.csproj` test project file |
+| `filter` | No | Passed to `dotnet test --filter`. A plain name matches tests whose fully qualified name contains it (`OrderServiceTests`, `OrderServiceTests.PlacesOrder`); VSTest expressions like `A\|B` or `Category=Unit` also work. Omit to run every test. |
+| `workingDir` | No | Working directory; defaults to the project directory |
+| `includeClass` | No | Restrict coverage collection to a single class name (e.g. `OrderService`), applied via coverlet's `Include` filter. Use ONLY when you want coverage scoped to one class. Do NOT pass a namespace — namespace-qualified names are not supported. Omit for broad/multi-class coverage. |
+| `forceRestore` | No | Set to `true` after scaffolding a new test project or adding NuGet packages. |
+| `sessionId` | No | Isolate output directories when multiple agents run concurrently. |
+
+## Workflow
+
+### Step 1: Run tests with coverage
+Call `run_tests_with_coverage` with the provided `testProjectPath` and `filter`.
+
+Pass `includeClass` only when coverage should be scoped to a single class (e.g. the specific class under test). Leave it unset for broad filters that span multiple classes — otherwise coverage numbers will be artificially zeroed for classes outside the include pattern.
+
+The tool returns the path to `coverage.cobertura.xml`, the report every other coverage tool reads.
+
+### Step 2: Get coverage summary
+Call `get_coverage_summary` with the `coberturaXmlPath` returned from Step 1.
+
+Returns `totalClasses`, `classes` sorted by branch coverage (lowest first) and `moreClasses`, how many were left out (25 classes come back unless `topN` says otherwise). Each class has:
+- Class name
+- `lineCoverage` and `branchCoverage` (0.0–1.0)
+- `methods` array sorted by branch coverage ascending
+
+### Step 3: Check per-file coverage (optional)
+If a broad filter was used, call `get_file_coverage` for specific source files to check if they meet the 80% target.
+
+Returns `allMeetTarget: true/false` per file — useful for deciding which files need work.
+
+### Step 4: Present results
+Display coverage as a table. Highlight any class or method below 80% line or branch coverage.
+
+Example format:
+```
+Class: MyService
+  Line: 72%  Branch: 61%
+  Methods (lowest branch first):
+    ProcessOrder   Line: 50%  Branch: 40%
+    ValidateInput  Line: 85%  Branch: 75%
+```
+
+## Validation
+- [ ] `run_tests_with_coverage` completed without errors
+- [ ] The `coverage.cobertura.xml` path was returned and passed to `get_coverage_summary`
+- [ ] Coverage summary lists classes and methods with percentages
+- [ ] Methods below 80% are visually highlighted
+
+## Common Pitfalls
+
+| Pitfall | Solution |
+|---------|----------|
+| `missingExtension` error | The project runs on Microsoft.Testing.Platform and lacks the extension named in the message (usually `Microsoft.Testing.Extensions.CodeCoverage`); add that package and set `forceRestore: true` on the next run |
+| `noTestsMatched` error | The filter selected nothing: omit it to run every test, or use a shorter name |
+| `projectBusy` error | Another build, IDE or test host held the output files; run again, nothing in the tests needs fixing |
+| `testRunAborted` error | A test crashed or hung the test host. `crash` shows the message and frames; otherwise the cause is among `unfinishedTests`. Fix that test and run again; for a test that legitimately runs long, raise `COVERAGE_MCP_HANG_TIMEOUT_SECONDS` |
+| Cobertura XML not found | Check the `coverage.cobertura.xml` path returned by `run_tests_with_coverage`; ensure tests ran successfully |

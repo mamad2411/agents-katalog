@@ -1,0 +1,61 @@
+---
+name: mobile-store-upload-cli
+description: Manual CLI workflows for uploading iOS builds to TestFlight and Android builds to Google Play. Use when you need step-by-step terminal commands to build, archive, validate, and upload IPA/AAB artifacts, configure App Store Connect or Play Console credentials, or handle release metadata without CI/CD or GUI-only flows.
+---
+
+# Mobile Store Upload CLI
+
+## Overview
+
+Provide terminal-first, manual release workflows for iOS TestFlight and Google Play Console uploads. Keep commands concrete, minimize assumptions, and call out required credentials and prerequisites.
+
+## Workflow
+
+1. Confirm target platform(s) and artifact format (IPA for iOS, AAB for Android).
+2. Verify credentials and access are ready.
+   - iOS: App Store Connect API key or Apple ID + app-specific password.
+   - Android: Play Developer API enabled + service account JSON with Play Console access.
+3. Build and package the release artifact.
+4. Upload and validate the artifact from CLI.
+5. Confirm processing status in store consoles and share next steps.
+
+## iOS TestFlight (CLI)
+
+Follow the iOS reference for commands and required inputs.
+- Read `references/ios.md` for archive/export and upload commands.
+
+## Android Play Store (CLI)
+
+Follow the Android reference for commands and required inputs.
+- Read `references/android.md` for AAB build and upload commands.
+
+## Guardrails
+
+- Never commit secrets (API keys, app-specific passwords, service account JSON).
+- Prefer placeholders and environment variables in commands.
+- If a required tool is missing, suggest the minimal install step for that tool.
+
+## Related skills
+
+- **`release-app`** — higher-level skill for submission. Use release-app for automated submission; use mobile-store-upload-cli for manual CLI-first workflows.
+- **`release-preflight`** — verify the build before upload. Preflight catches signing and version issues before upload.
+- **`store-console-playbooks`** — review store listing metadata while waiting for upload processing to complete.
+
+## When to use
+Manual CLI uploads of iOS builds to TestFlight and Android builds to Google Play.
+
+## When NOT to use
+- CI/CD fully automated with fastlane or Expo EAS.
+- Store listing metadata and review submission.
+
+## Edge cases and failure handling
+- Signing/provisioning errors -> verify certificates and profiles before upload.
+- Upload rejected -> read the validation message and fix.
+
+## Output requirements
+Uploaded build identifiers and processing status.
+
+## Example
+```text
+Archive Release scheme, validate IPA, upload to TestFlight; build AAB, upload to internal track.
+```

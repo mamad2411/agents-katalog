@@ -1,0 +1,1 @@
+../../../.adeptability/staging/.claude/skills/adept-self-improve/SKILL.md

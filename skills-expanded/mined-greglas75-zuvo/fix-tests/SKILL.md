@@ -1,0 +1,436 @@
+---
+name: fix-tests
+description: >
+  Batch repair of systematic test quality issues. Detects anti-patterns
+  across the test suite, then fixes one pattern at a time with production
+  context. Modes: --triage (scan all patterns, report counts), --pattern
+  [ID] [path] (fix specific pattern), --dry-run (preview changes),
+  --bundle-gates (fix pattern plus adjacent quality gaps).
+category: Testing
+codesift_tools:
+  always:
+    - analyze_project
+    - index_status
+    - index_folder
+    - index_file
+    - plan_turn
+    - search_patterns          # KEY — anti-pattern triage across suite
+    - search_text
+    - search_symbols
+    - get_symbol
+    - get_symbols
+    - get_file_outline
+    - find_references          # link test back to production callers
+    - audit_scan
+    - find_clones              # AP19 copy-paste tests batch-fix
+  by_stack:
+    typescript: [get_type_info]
+    javascript: []
+    python: [python_audit, analyze_async_correctness]
+    php: [php_project_audit, php_security_scan, resolve_php_namespace]
+    kotlin: [analyze_sealed_hierarchy, find_extension_functions, trace_flow_chain, trace_suspend_chain, trace_compose_tree, analyze_compose_recomposition, trace_hilt_graph, trace_room_schema, analyze_kmp_declarations, extract_kotlin_serialization_contract]
+    nestjs: [nest_audit]
+    nextjs: [framework_audit, nextjs_route_map]
+    astro: [astro_audit, astro_actions_audit, astro_hydration_audit]
+    hono: [analyze_hono_app, audit_hono_security]
+    express: []
+    fastify: []
+    react: [react_quickstart, analyze_hooks, analyze_renders]
+    django: [analyze_django_settings, effective_django_view_security, taint_trace]
+    fastapi: [trace_fastapi_depends, get_pydantic_models]
+    flask: [find_framework_wiring]
+    jest: []
+    yii: [resolve_php_service]
+    prisma: [analyze_prisma_schema]
+    drizzle: []
+    sql: [sql_audit]
+    postgres: [migration_lint]
+---
+
+# zuvo:fix-tests — Batch Test Repair
+
+Fixes systematic test quality problems in batches. Targets one anti-pattern at a time, reads production context for each affected file, rewrites the broken assertions, and verifies the fixes pass.
+
+**Scope:** Post-generation test suites where the same anti-pattern appears across many files. One pattern per run, applied surgically to every matching file.
+**Out of scope:** Writing tests from scratch (use `zuvo:write-tests`), auditing test quality without fixing (use `zuvo:test-audit`), general code review (use `zuvo:review`).
+
+## Argument Parsing
+
+Parse `$ARGUMENTS` for mode, pattern ID, and scope:
+
+| Argument | Behavior |
+|----------|----------|
+| _(empty)_ or `--triage` | Scan all known anti-patterns, report counts, then fix every pattern with a non-zero count (no menu — see Step 1) |
+| `--pattern [ID]` | Fix the specified pattern across all matching test files |
+| `--pattern [ID] [path]` | Fix the pattern, scoped to the given directory |
+| `--dry-run` | Show triage counts and affected files, do not modify anything |
+| `--bundle-gates` | When fixing a pattern, also apply adjacent quality gates (Q7 error tests, Q12 symmetry) |
+
+Default with no arguments: `--triage`.
+
+### Supported Patterns
+
+Dispatch follows `../../shared/includes/execution-policy.md` through env-compat. Reuse existing
+authorization within that policy; session restrictions take precedence. Run each required gate
+and report its actual independence or an unmet requirement.
+
+| ID | Name | What it fixes |
+|----|------|---------------|
+| P-41 | Loading-only assertions | Tests that only check `state.loading` instead of verifying payload and state fields |
+| P-40 | Wrong initial state | Tests using incorrect initialState shape, missing fields or wrong defaults |
+| P-43 | getByTestId overuse | Brittle testId selectors where semantic queries (getByRole, getByLabelText) are available |
+| P-44 | Missing rejected state | Async thunks with no rejection test -- adds mockRejectedValue paths |
+| P-45 | Shallow empty state | Empty-state tests that only assert absence (not.toBeInTheDocument) without verifying placeholder content |
+| P-46 | No validation recovery | Form tests that show validation errors but never test clearing them |
+| P-62 | Over-mocking | Files with more than 15 mock declarations -- consolidate or replace with real implementations |
+| P-63 | Silent E2E conditionals | E2E tests with `if (isVisible())` guards that silently skip assertions |
+| P-64 | Hardcoded credentials | Passwords and secrets as string literals in test files |
+| P-65 | Under-tested API routes | Route handler tests with fewer than 6 test cases |
+| P-68 | Mocking own code | Mocks of internal services/utils that could use real implementations. (Same smell as the canonical **AP30**; keep the P-68 ID here since the fix recipes are keyed to it.) |
+| P-70 | Tautological oracle | Expected values computed from the same formula as the production code |
+| G-43 | Opaque dispatch | Tests asserting `typeof dispatch === 'function'` instead of verifying dispatch arguments |
+| AP2 | Conditional assertions | `if (x) { expect(...) }` patterns that silently skip when the condition is false |
+| AP5 | as-any mock casts | `as any` or `as never` casts on mock objects instead of typed factories |
+| AP10 | Tautological mock | Test exercises only the mock — calls it, then asserts it was called; no production code runs. (The weaker "`toHaveBeenCalled()` with no `CalledWith`" case is the `Q3-CalledWith` row below — it used to sit here under AP10, which collided with the canonical meaning.) |
+| AP14 | toBeDefined sole assertion | `toBeDefined()` or `toBeTruthy()` as the only assertion in a test |
+| AP21 | Raw mock.calls index | Direct `.mock.calls[0][1]` access instead of `toHaveBeenNthCalledWith` |
+| NestJS-P3 | Self-mock | `spyOn(service, method)` mocking the service under test instead of its dependencies |
+| Q3-CalledWith | Bare toHaveBeenCalled | Files with toHaveBeenCalled() but zero CalledWith assertions |
+| Q7-API | No error tests | API wrapper test files with zero mockRejectedValue / error path tests |
+| Q17-passthrough | No arg verification | NestJS controller tests with return-value assertions but no CalledWith on the service |
+
+---
+
+## Environment Compatibility
+
+Read `../../shared/includes/env-compat.md` for agent dispatch, path resolution, and progress tracking.
+
+## CodeSift Integration
+
+Read `../../shared/includes/codesift-setup.md` for initialization.
+
+**Key tools for this skill:**
+
+| Step | Task | CodeSift tool | Fallback |
+|------|------|--------------|----------|
+| 1 | Pattern scanning | `search_text(repo, query=<regex>, regex=true, file_pattern="*.test.*")` | Grep |
+| 2 | Find production counterpart | `find_references(repo, symbol_name=<import>)` | Directory convention matching |
+| 3 | Read production context | `get_file_outline(repo, file_path)` + `get_symbols(repo, symbol_ids=[...])` | Read full file |
+| 3 | State shape for Redux | `get_symbol(repo, "initialState")` | Read the slice file |
+| 3 | Component elements | `get_symbol(repo, <component_jsx_return>)` | Read the component |
+| 3 | Batch function reads | `get_symbols(repo, symbol_ids=[...])` | Multiple Read calls |
+
+---
+
+## Mandatory File Loading
+
+Before starting, read the applicable files:
+
+**Core (always required):**
+
+```
+CORE FILES LOADED:
+  1. ../../rules/testing.md                    -- [READ | MISSING -> STOP]
+  2. ../../shared/includes/quality-gates.md    -- [READ | MISSING -> STOP]
+  3. ../../shared/includes/run-logger.md       -- [READ | MISSING -> STOP]
+  4. ../../shared/includes/knowledge-prime.md  -- READ/MISSING
+  5. ../../shared/includes/knowledge-curate.md -- READ/MISSING
+  6. ../../shared/includes/retrospective.md    -- RETRO PROTOCOL
+  7. ../../shared/includes/no-pause-protocol.md -- READ/MISSING (HARD: no mid-batch pauses)
+  8. ../../shared/includes/test-bugfix-protocol.md -- READ/MISSING (in-run fix of surfaced production bugs)
+  9. ../../shared/includes/backlog-protocol.md -- READ/MISSING (out-of-scope items only)
+```
+
+**Conditional (loaded when the pattern requires domain knowledge):**
+
+| File | Load when |
+|------|-----------|
+| Domain test patterns (Redux) | Pattern is P-40, P-41, P-44, G-43 |
+| Domain test patterns (NestJS) | Pattern is NestJS-P3, Q17-passthrough |
+
+---
+
+## Artifact Contract
+
+Session progress persists to `memory/fix-tests-progress.md`:
+
+```
+# Fix-Tests Progress
+| Pattern | Files Found | Fixed | Skipped | Needs Review | Last Run |
+|---------|------------|-------|---------|-------------|----------|
+```
+
+Triage populates Files Found. The report step updates Fixed/Skipped/Needs Review and Last Run.
+
+---
+
+## Multi-Pattern Loop
+
+**Loop ownership by environment:**
+
+| Environment | Who owns the loop | Agent behavior |
+|-------------|------------------|----------------|
+| Claude Code | Agent (after Step 6) | Complete pattern, check remaining, start next if needed |
+| Codex | External loop | Complete one pattern, stop. Loop restarts if patterns remain |
+| Cursor | External hook | Complete one pattern, stop. Hook restarts if patterns remain |
+
+---
+
+## Knowledge Prime
+
+Run the knowledge prime protocol from `knowledge-prime.md`:
+```
+WORK_TYPE = "implementation"
+WORK_KEYWORDS = <keywords from user request>
+WORK_FILES = <files being touched>
+```
+
+---
+
+## Backlog Snapshot
+
+Once, at the run's original start, before any `backlog-add` call: `R='<absolute repo root>'; git -C "$R" status --porcelain -uall -- memory/`, `R` being the root of the checkout being fixed (a linked worktree's own root), assigned in the same shell call. Print the output under a `backlog-snapshot:` heading and save it the same way, verbatim, as a fenced block under that heading below the table in `memory/fix-tests-progress.md`, the resume state (an empty snapshot is an empty block; never collapse it onto one line or a table row). A resumed run (or a Codex/Cursor restart per pattern) reads that block and never takes a new snapshot (`backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**); if the block is missing or the snapshot command fails, the run stages nothing at the end and lists its `wrote=` paths, as the protocol's failed-snapshot rule says.
+
+---
+
+## Step 1: Triage
+
+Scan for all supported patterns using grep (or CodeSift search_text). Report counts per pattern before doing any fixing.
+
+For each pattern, run the detection command and count matches. Report format:
+
+```
+TRIAGE RESULTS
+-----
+  AP10 (delegation-only):    [N] files -> [Fix | Skip]
+  AP14 (toBeDefined sole):   [N] files -> [Fix | Skip]
+  P-41 (loading-only):       [N] hits in [M] files -> [Fix | Skip]
+  Q7-API (no rejection):     [N] api wrapper files -> [Fix | Skip]
+  ...
+-----
+```
+
+**Triage mode:** Show the full report, then **fix every pattern with a non-zero count**, highest count first, without
+asking. `no-pause-protocol.md` is loaded as a HARD include and names this skill in scope: presenting an
+`(all / list IDs)` menu is precisely the approval-gate it forbids, and on Codex/Cursor — which run non-interactively —
+the question is answered by nobody and the run stalls having fixed nothing. A user who wants a subset asks for it up
+front with `--pattern [ID]`; a user who wants counts only asks with `--dry-run`.
+**Pattern mode:** Report only the count for the specified pattern, proceed to Step 2.
+**Dry-run mode:** Show triage report and affected file list, then STOP.
+
+---
+
+## Step 2: Identify Affected Files
+
+For the chosen pattern, collect the specific file paths (not just counts).
+
+For each affected test file, find its production counterpart:
+- Convention matching: `profileSlice.test.ts` maps to `profileSlice.ts`
+- `__tests__/` convention: `__tests__/MyComponent.test.tsx` maps to `MyComponent.tsx`
+- If production file not found:
+  - Patterns needing production context (P-41, G-43, P-40, P-43, P-44, P-45, P-46, AP10, NestJS-P3, AP14, Q7-API, AP5, Q3-CalledWith, P-65, Q17-passthrough, P-68): mark as ORPHAN, skip
+  - Mechanical patterns (AP2, AP21, P-62, P-63, P-64): proceed without production file
+
+---
+
+## Step 3: Read Production Context
+
+For each (test file, production file) pair, extract the information needed for the fix. What to read depends on the pattern:
+
+| Pattern | Production context needed |
+|---------|--------------------------|
+| P-41 | State interface -- all fields and their types |
+| G-43 | Component -- which thunks are dispatched and with what arguments |
+| P-40 | Slice initialState -- exact shape and default values |
+| P-43 | Component JSX -- roles and labels on interactive elements |
+| P-44 | Thunk definitions -- what each createAsyncThunk returns and rejects with |
+| P-45 | Component -- what renders in the empty state (text, placeholders) |
+| P-46 | Form component -- validation errors and their clear conditions |
+| AP10 | Service method signatures -- parameter types and return types |
+| NestJS-P3 | Service -- which methods are dependencies vs owned logic |
+| Q7-API | API wrapper -- which methods make external calls and what errors they can throw |
+| Q3-CalledWith | Production method -- what arguments it passes to its dependencies |
+| P-65 | Route handler -- auth, validation, and error paths |
+| Q17-passthrough | Controller + service -- what arguments flow from controller to service |
+| AP5 | Type definitions of mocked dependencies |
+| P-68 | Service implementation -- determine if the mocked code can run without infrastructure |
+| P-70 | Spec or domain knowledge -- determine correct expected values independent of implementation |
+
+---
+
+## Step 4: Batch Fix
+
+Group affected files into batches of 5. Process each batch:
+
+1. Read the test file
+2. Identify every instance of the target pattern
+3. Rewrite each instance using the production context from Step 3
+4. Preserve surrounding test structure -- do not reorganize unrelated code
+
+### Fix Principles
+
+- Replace, do not append. A fixed assertion replaces the broken one -- do not leave the old assertion alongside the new one.
+- Use production-derived values. Every rewritten assertion must reference real fields, real types, and real behaviors from the production code.
+- Preserve test names if the intent was correct. Only rename tests when the original name described the wrong behavior.
+- When `--bundle-gates` is active: after fixing the target pattern, scan each modified file for Q7 (missing error path) and Q12 (missing symmetry) violations. Fix those too.
+
+---
+
+## Step 5: Verify
+
+Run the modified test files:
+
+```bash
+[test runner] [modified test files]
+```
+
+All tests must pass. If a fix introduces a failure:
+
+1. Read the error message
+2. Determine if the failure is from the fix (incorrect assertion) or from a real production bug discovered by the stronger assertion
+3. If incorrect assertion: revise the fix
+4. If production bug discovered: **fix it in-run** per `../../shared/includes/test-bugfix-protocol.md`
+
+#### Step 5a: Production bugs surfaced by a strengthened assertion
+
+Strengthening assertions is exactly how this skill finds real bugs — a weak test that passed and a strong test that
+fails means the production code was wrong all along. That discovery is the skill working, and parking it in the
+backlog throws away the run's most valuable output while leaving the repo with a test that now documents a defect
+nobody is fixing.
+
+Follow `test-bugfix-protocol.md` verbatim; its disposition table is **fix-scope, not severity**. The fix-tests
+mapping of its terms:
+
+- **Trigger** — Step 5 (a strengthened assertion goes red) or Step 5b (adversarial), instead of write-tests' Steps 1.5/2/4.
+- **In-scope** = the production file that is this test file's counterpart (Step 2), or a clearly-owned helper → **fix now, any size**, then flip the assertion to the corrected contract.
+- **Out-of-scope** (cross-module, shared guard, schema/migration) → escalate loudly to `zuvo:build` with file:line + repro, fix any in-scope portion, record the escalation. Never a silent backlog row.
+- **Behavior DECISION rather than a bug** → batch mode picks the safe default, logs it, continues (this skill runs under `no-pause-protocol.md`).
+- **Stacked commits** — commit 1: the strengthened test as written against current behavior; commit 2: the production fix + the assertion flipped. Never one hidden edit.
+- **After the fix** — re-run the modified test files (the write-tests manifest re-freeze has no analogue here) and count the file under `Needs review` only if something genuinely remains out of scope.
+
+Only what is genuinely out-of-scope or user-declined is recorded through `backlog-add` (Backlog Persistence below).
+
+### Step 5b: Adversarial Review (MANDATORY — do NOT skip)
+
+```bash
+# Scoped review patch on stdout — the git index is NEVER touched (no staging).
+# PATH args = the test files this run modified (the Step 5 runner list).
+# Quote each SEPARATELY — never one space-joined string or a bare $FILES: zsh does
+# not word-split an unquoted expansion, so the helper gets the whole list as ONE
+# path, matches nothing and exits 2. Use "${FILES[@]}" for an array.
+# With NO PATH args the helper reviews the WHOLE dirty tree, untracked files
+# included, and that content is sent to the external providers — always scope it.
+# `|| _prc=$?` (never `; _prc=$?`): under `set -e` the plain form aborts the shell
+# at the assignment, so exit 3 and the BLOCKED branch would never be reached.
+# The BLOCKED branch ends in `false`, so the block's own exit status is non-zero:
+# printing alone lets a `set -e` / `if ! …` caller sail past a review that never
+# ran. `false`, not `exit`, so an inlining caller's shell is not killed.
+if [ -x "$HOME/.zuvo/build-review-patch" ]; then
+  _prc=0; _patch=$("$HOME/.zuvo/build-review-patch" "<modified-test-file-1>" "<modified-test-file-2>") || _prc=$?
+  if [ "$_prc" -eq 3 ]; then echo "adversarial review: skipped (no changes)"
+  elif [ "$_prc" -ne 0 ]; then echo "BLOCKED: build-review-patch failed (rc=$_prc). Adversarial review did NOT run; do NOT proceed to commit and do NOT report this skill complete" >&2; false
+  else printf '%s\n' "$_patch" | ~/.zuvo/adversarial-review --mode test; fi
+else
+  ~/.zuvo/adversarial-review --mode test --files "<changed files>"
+fi
+```
+
+**Record the verdicts** after triage: every finding is fixed, rejected (a false positive) or deferred — record each by its `ID:` in ONE call, `~/.zuvo/adversarial-review --record-disposition ID-1 fixed --record-disposition ID-2 rejected …`, per `../../shared/includes/adversarial-loop.md` Step 4.9 (the review lists its IDs on stderr).
+
+If `adversarial-review` is not in PATH: `~/.zuvo/adversarial-review` (stable; the versioned cache path breaks after any release)
+
+Wait for complete output. Handle findings by severity:
+- **CRITICAL** — confirm it first: two or more lanes in its `.agreement` group, or your own check (a failing test, a reproduced input, the cited code read and the defect traced). Confirmed → fix immediately. A single-lane CRITICAL you cannot confirm is triaged as a WARNING and reported as `[CRITICAL→WARNING single-lane]` (`adversarial-loop.md` Step 4).
+- **WARNING** — fix if localized (< 10 lines). Otherwise record it with `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source fix-tests --file "$F" --line <n> [--anchor "$A"] --title "$T"` (**Adversarial review**, `backlog-protocol.md` "Filing from a skill").
+- **INFO** — known concerns (max 3, one line each).
+
+Do NOT discard findings based on confidence alone. Confidence measures how sure the reviewer is, not how important the issue is. A CRITICAL with low confidence means "verify this — if true, it's serious."
+
+"Pre-existing" is NOT a reason to skip a finding. If the issue is in a file you are already editing, fix it now. If not, record it with `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source drive-by:fix-tests --file "$F" --line <n> [--anchor "$A"] --title "$T"` (`drive-by-findings.md`). The adversarial review found a real problem — don't dismiss it just because it existed before your changes. Assign `"$R"`, `"$F"` and `"$T"` in the same shell call as each command (a later call starts with none of them), and `"$A"` only when you pass `--anchor` (required for BUG, SEC or DATA), as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`).
+
+---
+
+## Step 6: Report
+
+Print the summary for this pattern:
+
+```
+FIX-TESTS: [PATTERN ID] COMPLETE
+-----
+Files fixed:     [N]
+Files skipped:   [N] (orphan: [N], already-clean: [N])
+Prod bugs:       [N] surfaced -> [F] fixed in-run, [E] escalated out-of-scope
+Needs review:    [N] (escalated or user-declined only)
+Tests passing:   [N]/[N]
+-----
+```
+
+Update `memory/fix-tests-progress.md` with the results.
+
+### Backlog Persistence
+
+Read `../../shared/includes/backlog-protocol.md`.
+
+Record through `backlog-add`, one call per finding, when it arises (`backlog-protocol.md` "Filing from a skill"; the bars, the dedupe and the confidence routing are the protocol's and are not restated here): a production bug discovered during fixing that was not fixed in-run (an out-of-scope escalation, a user-declined fix), and a file that could not be fixed automatically. That is a **Generic write**: `~/.zuvo/backlog-add --repo "$R" --class <C> --conf <N> --source fix-tests --file "$F" --line <n> [--anchor "$A"] --title "$T"`. `<C>` is `BUG` only when it names the input and the wrong output (it needs `--anchor "$A"`), else `CQ`. A file that could not be fixed has no line of its own: `--line 1`, a "Whole file: …" title, no `--anchor` ("The location rule"). Assign `"$R"`, `"$F"` and `"$T"` in the same shell call as each command, and `"$A"` only when you pass `--anchor`, as "Free text goes through a variable" in that section says; an empty value you pass is a bug, and `backlog-add` refuses a missing required field (`REFUSED missing-field:<f>`). Report the B- or F-id each call prints. On a non-zero exit act on the protocol's exit table; a finding still not persisted is listed under `NOT PERSISTED (<reason>)`, never appended by hand. A bug fixed in-run gets no call (**Closing, not removing**).
+
+**Drive-by findings:** follow `../../shared/includes/drive-by-findings.md` with `<skill> = fix-tests` — backlog the problems noticed OUTSIDE the fixed pattern in code the run read (record only), list every `SEC` one in the report, then ALWAYS run `~/.zuvo/log-drive-by --skill fix-tests --sec <a> --bug <b> …` (all zeros is an honest outcome).
+
+**Closing commit.** After the run's last `backlog-add` call (this section's and the drive-by step's, for the last pattern), the run makes the one closing commit, as `backlog-protocol.md` "Filing from a skill", **Committing what backlog-add wrote**, says, against the `backlog-snapshot:` taken before Step 1. The stacked commits of Step 5a never stage a `wrote=` path. Run by another skill, it makes no commit and prints one line in the report, `Backlog writes: <path>, …` (or `Backlog writes: none`).
+
+### Knowledge Curation
+
+After work is complete, run the knowledge curation protocol from `knowledge-curate.md`:
+```
+WORK_TYPE = "implementation"
+CALLER = "zuvo:fix-tests"
+REFERENCE = <git SHA or relevant identifier>
+```
+
+### Multi-Pattern Continuation
+
+If fixing all patterns: check which patterns remain in the triage list. If any are left, proceed to Step 2 for the next pattern. If none remain, print the full session summary:
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check -> structured questions -> TSV emit -> markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed to session complete.
+
+## Completion Gate Check
+
+Before printing the final output block, verify every item. Unfinished items = pipeline incomplete.
+
+```
+COMPLETION GATE CHECK
+[ ] Triage results printed: every pattern with file/hit count
+[ ] Production context read for each affected test file
+[ ] All modified test files ran and pass
+[ ] Adversarial review ran (--mode test)
+[ ] Every production bug surfaced by a strengthened assertion was FIXED in-run (test-bugfix-protocol.md) or escalated loudly with file:line — a backlog row for an in-scope bug is an incomplete run
+[ ] fix-tests-progress.md updated
+[ ] Only genuinely out-of-scope or user-declined items were recorded through backlog-add, each B- or F-id reported or named under NOT PERSISTED (<reason>); the closing commit made, or none: nothing to stage, or the `Backlog writes:` line printed (run by another skill)
+[ ] Drive-by findings recorded per drive-by-findings.md: the `Drive-by: N recorded (…)` line and every SEC in the final summary, and the `~/.zuvo/log-drive-by` receipt written — zeros allowed
+[ ] Run: line printed and appended to log
+```
+
+```
+FIX-TESTS SESSION COMPLETE
+-----
+Patterns fixed:  [list]
+Total files:     [N] fixed, [N] skipped
+Bugs discovered: [N] ([K] findings that got a B- or F-id, listed in the report; NOT PERSISTED named separately)
+Run: <ISO-8601-Z>	fix-tests	<project>	-	<Q>	<VERDICT>	<TASKS>	<DURATION>	<NOTES>	<BRANCH>	<SHA7>	<INCLUDES>	<TIER>
+-----
+```
+
+**Append via wrapper (REQUIRED).** Never `>>` directly to `~/.zuvo/runs.log` — the wrapper is the gate that verifies a retro entry exists for this run. Order: retro bash executed → wrapper invoked → completion claimed.
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Expected stdout: `OK: appended to runs.log (retro verified for <skill> on <project>)`. If exit 2 with `RETRO_REQUIRED` — go execute the retro bash from `retrospective.md` first; never bypass with `ZUVO_SKIP_RETRO_GATE=1`. After the wrapper succeeds, print a `Logs:` evidence line (`tail -1 ~/.zuvo/retros.log`, `grep -c "^<!-- RETRO -->" ~/.zuvo/retros.md`, `tail -1 ~/.zuvo/runs.log`) before claiming completion. Printing the markdown retro section without executing the bash leaves all three log files empty.
+
+`<DURATION>`: use `N-patterns` (number of patterns fixed) or `triage` (triage-only run).
+`<Q>`: Q score if Q gates were evaluated, otherwise `-`.
+`<TASKS>`: number of files fixed.

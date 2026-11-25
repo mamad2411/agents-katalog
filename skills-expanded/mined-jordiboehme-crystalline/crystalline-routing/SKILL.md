@@ -1,0 +1,159 @@
+---
+name: crystalline-routing
+description: Use when deciding which Crystalline domain(s) to search or read for a task, especially at session start, before reading a MANIFEST directly, when answering a broad question across domains, or when a "what is true now" question needs temporal filtering.
+---
+
+# Crystalline Routing
+
+Crystalline organizes what you have been taught into Domains, each with a `MANIFEST.md` describing its scope. Before you act on a task, know which domain(s) it lives in and search rather than guessing from memory or pre-trained knowledge.
+
+## Start from the routing block
+
+At session start you are handed a routing block - injected as a session prompt in some harnesses, served as the MCP server's own instructions in others - with one routing line per registered domain summarizing when to use it, built from its `MANIFEST.md` `## When to Use` bullets, plus the crystalline MCP tool names (`search_engrams`, `write_engram` and the rest) those domains route through. Treat each routing line as a targeting aid, not a complete catalog - a domain that looks unrelated at a glance may still hold the answer.
+
+Either way, `list_domains` with `include_routing: true` re-fetches the same index mid-session. In a harness with the per-prompt hook, a prompt may arrive with a short "Knowledge that may apply" block naming engrams by `crystalline://` address: read the ones that fit with `read_engram` (the address is the identifier), and treat the block as a head start, not as the search you would otherwise run - a topic it does not name is still searched.
+
+A line naming a domain that "ships artifacts to provision" with no decision yet is a pending provisioning decision, not routine routing information: summarize in one sentence what the domain would ship, ask the user whether to allow it and only then apply their answer with the `provision` tool or `crystalline provision allow <domain>` / `deny <domain>` - never decide on the user's behalf.
+
+## Decide scope first
+
+1. **Narrow** - the task clearly belongs to one product, service or team, and a domain obviously owns it. Search that domain directly. A topic match without a named domain is still narrow: if the question's own words match what a routing line describes, scope to that domain rather than sweeping.
+2. **Broad or unclear** - cross-cutting questions ("how do we generally handle X"), unclear ownership, or comparisons across domains. Sweep everything first, then narrow.
+
+An ambiguous term is not grounds to ask the user for clarification before searching - a search is cheap and usually resolves the ambiguity by returning (or failing to return) relevant hits. Ask only after a search came back empty or clearly unrelated.
+
+### Narrow: target a domain
+
+```json
+{
+  "tool": "search_engrams",
+  "arguments": { "query": "retry queue backoff", "domains": ["payments"] }
+}
+```
+
+When the question is also about the present-day state, put `domains` and `status: "stable"` in the same call - one round trip instead of a search plus a filtered retry:
+
+```json
+{
+  "tool": "search_engrams",
+  "arguments": { "query": "standard plan price", "domains": ["policies"], "status": "stable" }
+}
+```
+
+A hit's `snippet` is a window of roughly 200 characters around the match, often `...`-truncated - a targeting aid, never the engram. Answering straight from it is acceptable only for a single atomic fact that is completely visible in the snippet ("the retry limit is 5"). Anything that summarizes, characterizes, compares or quotes an engram's content requires `read_engram` first - pass the hit's permalink as `identifier` (bare or as a `crystalline://domain/permalink` URL); there is no `permalink` argument on `read_engram`. Where this instance serves the web UI the read also carries `web_url`, the page a person opens in the browser; hand that over rather than the `crystalline://` address when somebody wants to look at the engram, with `#` and the heading's slug when they want one section.
+
+### Broad: sweep, then narrow
+
+Omit `domains` entirely - `search_engrams` defaults to every registered domain, and each hit is labelled with the domain it came from:
+
+```json
+{
+  "tool": "search_engrams",
+  "arguments": { "query": "incident postmortem process" }
+}
+```
+
+Do not pre-filter to the domains you recognize from the routing block; a domain returning no hits for one phrasing does not mean the knowledge is not captured there under different words. If hits span several domains and the guidance conflicts, say so explicitly and name which domain each answer came from rather than picking one silently.
+
+Zero hits is not the only signal to broaden. A scoped search can return plausible hits that do not actually answer the question - common when the question's subject belongs to one domain but the question itself is about ownership, escalation or roles, which another domain owns (who gets paged about refunds is a people question, not a payments one). When the obvious subject-matter domain keeps surfacing near-misses after a rephrasing or two, stop rephrasing inside it and run one unscoped sweep. Each hit also carries its engram's tags (alphabetical, lowercase); use the tags on the strongest hits to sharpen a follow-up scoped search.
+
+## Read before you answer
+
+For an overview or synthesis question - "what is X about", "summarize the strategy", "give me the full picture" - decide coverage by what a full answer requires, not by what is already in context. List the strong hits, then read each one with `read_engram` before drafting; a snippet that looks sufficient is exactly how the authoritative source goes unread. An unread hit whose title names the primary document for the question (a narrative, a strategy, a decision record), whose `type` or `status` marks it authoritative, or that another engram cites as its source must be read, not skimmed from its snippet.
+
+An engram distilled from a source carries that source's location in `resource`, often with a `source_date` and `[source]` bullets for further locations. When you answer from one, cite the location with the answer, so the person can check the source or read on. `read_engram` returns it in the frontmatter; a snippet never shows it.
+
+Content read earlier in the session for a different task is not coverage for the current question. Re-ask what this question needs, search again when the earlier reads served another purpose and read what is missing - anchoring on the engram that happens to be in context produces answers that are accurate but thin. When something relevant stays unread, say so in the answer rather than presenting partial coverage as complete.
+
+A hit whose `type` is `source` is the full text of a captured document, not a distilled answer, and it often out-ranks its own summary in the hit list. Follow its `summarized_by` relation and read the summary first; pull the full text only when the summary does not answer the question. Preferring the summary that way is complete coverage, not an unread source to caveat.
+
+## Temporal filtering: "what is true now"
+
+`status: stable` is the primary, reliable signal for currency - filter on it directly:
+
+```json
+{
+  "tool": "search_engrams",
+  "arguments": { "query": "deployment process", "status": "stable" }
+}
+```
+
+Absence of `valid_from`/`valid_to` means unbounded validity (the write-side rule lives in `crystalline-capture`), so a `metadata_filters` range check on those fields excludes engrams that never set them: a comparison like `{"valid_to": {"$gt": "2026-07-02"}}` is a strict SQL predicate that skips null rows, the opposite of what "absence means unbounded" implies. Use such a filter only for an explicit, bounded validity window. For "what was true on or in <past date>" questions that window filter belongs on the first search, not in a retry:
+
+```json
+{
+  "tool": "search_engrams",
+  "arguments": {
+    "query": "pricing",
+    "metadata_filters": { "valid_from": { "$lte": "2026-01-01" }, "valid_to": { "$gt": "2026-01-01" } }
+  }
+}
+```
+
+For an ordinary present-day question, `status: stable` alone is both correct and sufficient. `current` is the older word for the same state and a filter on either returns both, so an older domain needs no special handling. When history matters - how something changed, why a decision was replaced - include `deprecated`, `superseded`, `draft`, `idea` and `poc` engrams too and narrate each one's status rather than presenting it as current fact.
+
+Classify the question shape before dropping the currency filter:
+
+- **Binary adoption questions** - "are we running on X", "did we adopt Y", "is Z live". The yes/no itself is in doubt, so search without a status filter and read each hit's own `status`; a currency filter would hide the draft or superseded engram that answers "no". Name the status in the answer ("proposed but never marked stable").
+- **Attribute questions** - "how long does X live", "how much does Y cost", "how many stages". The thing exists; only its present value is unknown. Keep `status: "stable"` even when the subject sounds operational.
+
+When a window filter is not getting traction, the `supersedes`/`superseded_by` relations plus each hit's `status` tell the same temporal story: search by keyword (topic or year) and read which engram covers the period asked about.
+
+## Read a MANIFEST only when needed
+
+Read a domain's `MANIFEST.md` (via `read_engram` or `browse_domain`) only when:
+
+- the routing line for that domain is too ambiguous to act on,
+- the task is about the domain's own structure or conventions, or
+- you are about to write or reorganize engrams inside it.
+
+Structure questions ("what does domain X cover", "what is domain X for", "which domain owns Y and what else does it hold") are the second case: they ask for the MANIFEST's own content, so the MANIFEST read is your first tool call, made before drafting any answer text. The routing line is a compressed derivative of the MANIFEST, not the source - answering from it and treating the read as optional confirmation is exactly the failure this rule prevents, however complete the routing line looks.
+
+Address the MANIFEST by its permalink, usually `manifest` - `{"identifier": "manifest", "domain": "x"}` or the `crystalline://x/manifest` URL. The filename `MANIFEST.md` is not an identifier, and a miss names the permalink it probably meant; when unsure, `browse_domain` lists the real permalink.
+
+Otherwise, search first. Reading every MANIFEST up front burns context for no benefit once the routing block already exists.
+
+## A domain can ship its own tools
+
+A MANIFEST can carry an optional `## Provisioning` section: bullets shaped `type: path`, one of four kinds - `skills`, `commands`, `agents` and `mcps` - naming a folder relative to the MANIFEST itself (a `../` path is allowed, pointing at a folder that lives beside the domain root). This is how a domain ships the working tools its knowledge depends on, not just the knowledge itself - authored once and provisioned into every harness whose format allows it. The scaffolded starter MANIFEST never includes this section; it is added by hand once a domain has something to ship. Nothing ships until a person decides to - see the note above on the routing block for what to do when a domain is still awaiting that decision. To set up or change what a domain ships, switch to the `crystalline-provisioning` skill.
+
+## Knowledge questions are not codebase questions
+
+Operational and status questions ("are we on X", "do we use Y", "how long is Z kept") are knowledge-base questions: reach for `search_engrams` first, not for file listings, code search or unrelated skills. A tool erroring as unavailable, or a working directory that is not a repository, is a signal that the fact lives in a Crystalline domain - stop hopping tools and search.
+
+## Explore the neighbourhood with build_context
+
+Once you have an anchor engram, follow its relations and links (including across domains) instead of re-searching piecemeal:
+
+```json
+{
+  "tool": "build_context",
+  "arguments": { "anchor": "crystalline://payments/retry-queue-gotcha", "depth": 2 }
+}
+```
+
+A `/*` suffix on the anchor globs a permalink prefix, useful for pulling in an entire topic's engrams at once, for example `crystalline://payments/retry-queue/*`. The result carries node titles, typed relations and untyped prose links (the latter surfaced as `rel_type` `links_to`), still no content, ranked by how strongly each node connects to the anchor - follow it with `read_engram` on the nodes that matter.
+
+`read_engram` feeds this loop: it marks each relation and link `resolved` or not, summarizes `inbound` edges (capped at 5 refs) and, when inbound or resolved outbound edges exist, emits a `related` hint naming the `build_context` anchor to run - follow it when the neighbourhood would help. A `resolved: false` edge means the target is not written yet or sits in an unregistered domain, a signal not an error to chase.
+
+## Folders are topic prefixes
+
+Folders are not a navigation tree - search and the routing lines stay primary. A `folder` passed at write time becomes the engram's permalink prefix, which is what makes the `/*` glob above work and what `browse_domain` maps. So before writing or reorganizing inside a domain, `browse_domain` it and reuse the layout you find: start a subfolder once a topic clusters, leave singletons at the root.
+
+## Quick reference
+
+- One domain obviously owns it (even if unnamed) -> `search_engrams` with `domains: ["that-domain"]`.
+- Broad, unclear or cross-domain -> `search_engrams` with `domains` omitted (an all-domain sweep).
+- Overview or synthesis question ("what is X about") -> read every strong hit with `read_engram` before drafting; a snippet is never a source.
+- Hit with `type: source` -> read its summary first (follow `summarized_by`); pull the full text only when the summary falls short.
+- Scoped hits keep missing the point -> one unscoped sweep; the question's owner may not be the subject's owner.
+- "What is true now" -> `status: "stable"`; add `valid_from`/`valid_to` filters only for a specific bounded-in-time question.
+- "Did we adopt X" -> search without a status filter and narrate each hit's status.
+- Need the shape of a domain, not its content -> `browse_domain` or its `MANIFEST.md`.
+- About to write or re-file -> `browse_domain` for the layout, then the `crystalline-capture` skill.
+- Need what surrounds a known engram -> `build_context`.
+- `read_engram` reports an `inbound` summary or a `related` hint -> more linked knowledge; follow the named `build_context` anchor.
+- Before writing anything, switch to the `crystalline-capture` skill.
+- Domain has a team origin (`origin_status` says so) -> switch to the `crystalline-collaboration` skill for status, sharing and conflicts.
+- Set up or change what a domain ships -> the `crystalline-provisioning` skill.
+- Write or update a reflection -> the `crystalline-presentation` skill (read it with the `skills` tool if it is not installed).

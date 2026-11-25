@@ -1,0 +1,257 @@
+---
+name: image-generation
+description: Generates and edits images using Google Gemini, OpenAI GPT Image, xAI Grok Image, and OpenRouter APIs via shell scripts. This skill should be used when the user asks to "generate an image", "create an image", "edit an image", "modify an image", "make a picture", "draw me a", "text to image", "generate with gemini", "generate with openai", "generate with xai", "generate with grok", "generate with openrouter", "gpt image", "gemini image", "grok image", or "openrouter image".
+version: 2026.11.1
+---
+
+# Image Generation with Gemini, OpenAI, xAI, and OpenRouter
+
+Generate and edit images using Google Gemini, OpenAI GPT Image 2, xAI Grok Image, and OpenRouter APIs via shell scripts.
+
+## Available Providers
+
+### Google Gemini
+- **Model**: `gemini-3-pro-image` (default, "Nano Banana Pro"). Alt: `gemini-3.1-flash-image` (Flash, 14 ratios), `gemini-3.1-flash-lite-image` (cheapest). The `-preview` IDs are past their shutdown date.
+- **Strengths**: Premium quality, up to 4K output, thinking mode, Google Search grounding, multi-turn editing with up to 14 reference images
+- **Aspect ratios**: 10 on Pro (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 4:5, 5:4, 21:9); Flash adds 4 extreme ratios (1:4, 4:1, 1:8, 8:1)
+- **Resolution**: `--image-size` takes `1K`, `2K`, `4K` on both Pro and Flash; Flash additionally supports `512` (UPPERCASE required)
+- **Env var**: `GEMINI_API_KEY`
+
+### OpenAI GPT Image 2
+- **Model**: `gpt-image-2.6-sunburst` (default); `gpt-image-2.6-flare` (faster), `gpt-image-2.5-sunburst`, `gpt-image-2` (snapshot `gpt-image-2-2026-04-21`) and `gpt-image-1.5` (previous flagship) available via `--model`
+- **Strengths**: Superior text rendering, transparent backgrounds, up to 16 input images for editing, quality tiers
+- **Sizes**: on `gpt-image-2` and the `gpt-image-2.5` models, any `WxH` with both edges multiples of 16, longest edge up to 3840 and ratio at most 3:1 (such as `2048x1152`, `3840x2160`). OpenAI states no size rules for `gpt-image-2.6-sunburst`; it drew `1536x864` in a 2026-11-05 test. Older models take `1024x1024`, `1536x1024` (landscape), `1024x1536` (portrait)
+- **Quality**: low (fast/cheap), medium, high; xhigh and max on the `gpt-image-2.5` and `2.6` models
+- **Env var**: `OPENAI_API_KEY`
+
+### xAI Grok Image
+- **Model**: `grok-imagine-image-2.0` (default, flagship since 2026-08-07), `grok-imagine-image-quality` (May 2026 quality mode; `grok-imagine-image-pro` redirects here), `grok-imagine-image` (standard, 300 RPM)
+- **Strengths**: Prompt revision by chat model, flat per-image pricing, diverse style range, many aspect ratios
+- **Aspect ratios**: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 19.5:9, 9:19.5, 20:9, 9:20, 21:9, 5:2, auto
+- **Resolution**: `--resolution` takes `1k`, `2k` (LOWERCASE required, opposite of Gemini)
+- **Quality**: `--quality` takes `low`, `medium`, `auto` on `grok-imagine-image-2.0`; unset means auto (low for generation, medium for edits), billed as served
+- **Editing**: Dedicated `/v1/images/edits` endpoint; up to 5 input images passed as data URIs in an `images` array
+- **Env var**: `XAI_API_KEY` or `GROK_API_KEY`
+
+### OpenRouter (gateway)
+- **Model**: any OpenRouter model slug that supports image output; default `google/gemini-nano-banana-2.1`. Others: `google/gemini-3.1-flash-image`, `google/gemini-3-pro-image`, `x-ai/grok-imagine-image-2.0`, `openai/gpt-image-2`, and more at [openrouter.ai/models](https://openrouter.ai/models?fmt=cards&output_modalities=image)
+- **Strengths**: One key reaches many providers' image models; useful for access, fallback, and comparison without separate accounts
+- **API shape**: Uses the chat-completions endpoint (`/api/v1/chat/completions`) with `modalities: ["image","text"]`, not a dedicated images endpoint. Images come back as base64 data URLs in `message.images[]`
+- **Editing**: Input images are attached as `image_url` content parts (base64 data URLs) in the user message
+- **Controls**: Aspect ratio, resolution, and quality are prompt-driven and model-dependent — describe them in the prompt rather than via flags
+- **Env var**: `OPENROUTER_API_KEY` (optional `OPENROUTER_SITE_URL` / `OPENROUTER_SITE_NAME` for attribution)
+
+## Usage
+
+### Generate Tool
+
+When `mcp__claude-image-generation__generate` is available (Claude Code builds with function
+hooks), prefer it over the scripts below. It takes `prompt`, and optionally `providers`,
+`outputBase` (a path without extension), `inputImages` (switches to edit mode) and
+`aspectRatio` (whole-number `W:H`, gemini and xai only). Leave `providers` and `outputBase` out unless the request
+gives them: the tool uses the person's `/config` defaults. It runs `run-all.sh`, so the pane
+and the retry offer behave as described under Parallel Generation, and it answers with each
+expected file marked `saved` or `missing`. It never overwrites: when any
+`<outputBase>-<provider>.png` already exists it refuses the call and names each path, so pick
+an unused `outputBase` (add `-2`, `-3`) rather than deleting the old files. Use the scripts instead when the request needs an
+option the tool does not take, such as `--image-size`, `--quality`, `--background`, `--model`.
+
+### Text-to-Image Generation
+
+Use the scripts at `${CLAUDE_PLUGIN_ROOT}/scripts/`:
+
+```bash
+# Gemini
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini.sh" \
+  --mode generate \
+  --prompt "a serene mountain landscape at sunset" \
+  --output ./generated.png
+
+# OpenAI
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/openai.sh" \
+  --mode generate \
+  --prompt "a serene mountain landscape at sunset" \
+  --output ./generated.png
+
+# xAI
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/xai.sh" \
+  --mode generate \
+  --prompt "a serene mountain landscape at sunset" \
+  --output ./generated.png
+
+# OpenRouter (any image model via --model; default google/gemini-nano-banana-2.1)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/openrouter.sh" \
+  --mode generate \
+  --prompt "a serene mountain landscape at sunset" \
+  --output ./generated.png
+```
+
+### Image Editing
+
+```bash
+# Gemini
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini.sh" \
+  --mode edit \
+  --prompt "change the sky to a starry night" \
+  --input-image ./original.png \
+  --output ./edited.png
+
+# OpenAI
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/openai.sh" \
+  --mode edit \
+  --prompt "change the sky to a starry night" \
+  --input-image ./original.png \
+  --output ./edited.png
+
+# xAI
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/xai.sh" \
+  --mode edit \
+  --prompt "change the sky to a starry night" \
+  --input-image ./original.png \
+  --output ./edited.png
+
+# OpenRouter
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/openrouter.sh" \
+  --mode edit \
+  --prompt "change the sky to a starry night" \
+  --input-image ./original.png \
+  --output ./edited.png
+```
+
+### Parallel Generation
+
+Use `scripts/run-all.sh` — a single Bash call that forks all providers in parallel into one
+shared streaming pane. The watcher renders per-provider colored banners (gemini
+blue / openai gray / xai red / openrouter indigo) with model + timing, plus a bottom `waiting on`
+line naming the pending providers. It animates until the first image renders; after that it is
+written once under each new block and never rewritten, so the inline images accumulate (a
+repeated redraw would erase them in tmux control mode).
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-all.sh" \
+  --mode generate \
+  --prompt "<prompt>" \
+  --output-base "<base>"
+```
+
+Each provider produces `<base>-<provider>.png` (e.g. `<base>-gemini.png`, `<base>-openai.png`,
+`<base>-xai.png`). The default set is `gemini,openai,xai`; OpenRouter is opt-in. No script
+overwrites a file: a provider whose output path already exists, as a file or a symlink, exits 1
+before calling its API while the others run, so choose a base whose files do not exist yet.
+
+Optional flags:
+- `--input-image <path>` — required for `--mode edit`; repeatable, every image is forwarded to each provider. Forwarding happens in edit mode only — for Gemini's generate-mode reference images, call gemini.sh directly. Each path must be a PNG, JPEG, WebP or GIF file; the type is read from its bytes, and anything else is refused before any API call
+- `--providers gemini,openai` — comma-separated subset; add `openrouter` to include it (e.g. `--providers gemini,openai,xai,openrouter`)
+- `--gemini-extra "--image-size 4K --aspect-ratio 16:9"` — pass-through args to gemini.sh
+- `--openai-extra "--quality high"` — pass-through args to openai.sh
+- `--xai-extra "--resolution 2k"` — pass-through args to xai.sh
+- `--openrouter-extra "--model openai/gpt-image-2"` — pass-through args to openrouter.sh
+
+Providers share a pane only while they overlap in time: each finds this tmux window's pane
+through a registry entry and joins it, and the pane closes once the last provider sharing it
+has finished. Running the provider scripts as separate sequential Bash calls therefore gives a
+pane per call, which is why `run-all.sh` is the way to reach more than one provider at once.
+
+Per-provider stderr/stdout is captured under `$DISPLAY_PANE_DIR/logs/<provider>.{out,err}`
+while the pane is open. Errors render as a red error banner inline. After all providers
+finish, run-all.sh closes the pane and exits with status 0 if every provider succeeded, 1
+otherwise.
+
+If any provider failed, the pane offers a retry (`[r] retry failed (xai) · [esc/ctrl-d] close 45s`)
+before run-all.sh exits; pressing `r` re-runs just the failed providers in the same call, and
+letting the offer expire or pressing Esc closes the pane and returns the run's existing result.
+The offer counts down until the first image is on the pane; after that it shows the time budget
+once (`close (up to 45s)`), because a rewritten line erases the pane's images.
+
+## Prompting Tips
+
+### General
+- Be specific and descriptive: "a golden retriever puppy playing in autumn leaves, soft afternoon light" beats "dog in park"
+- Specify style explicitly: "watercolor painting", "photorealistic", "flat vector illustration"
+- Include composition details: "close-up", "aerial view", "centered", "rule of thirds"
+
+### Text in Images
+- OpenAI GPT Image 2 is significantly better at rendering text
+- Put text in quotes or ALL CAPS in the prompt: `a sign that reads "OPEN 24 HOURS"`
+- Specify typography details: font style, size, color, placement
+
+### Editing
+- Describe what to change, not the whole image
+- Be specific about which elements to preserve vs modify
+- `--input-image` is repeatable on all providers, but the modes differ: Gemini accepts up to 14 images in both `--mode generate` (references for a fresh composition) and `--mode edit`; OpenAI (up to 16) and xAI (up to 5) accept input images in `--mode edit` only — their generation endpoints take no images
+- For Gemini: supports iterative multi-turn refinement; compose the flat 14-image budget as up to 6 object + 5 character-consistency + 3 style-reference images. There is no API field to tag an image's role — the model infers it from the prompt, so state which images are objects, characters, or style references
+- For xAI: prompts are revised by a chat model before generation
+
+## Error Handling
+
+- Scripts exit with code 1 on failure and print error details to stderr
+- If an API key is missing, the script exits immediately with a clear message
+- `Error: --output already exists, refusing to overwrite it: <path>` means a file or a symlink holds the path, and the script sent no request. Rerun with a new path rather than deleting the file
+- `Could not save the image to <path>: <reason>` means the API answered but the script did not write the image: `File exists` when something appeared at the path during the request, the system's error (`Operation not supported` on macOS) when the folder's filesystem has no hard links (FAT, for one), or the decoder's error when the image data did not decode. The script leaves no partial file behind and touches nothing at the path
+- HTTP errors include the status code and API error message
+- If multiple providers are used in parallel and one fails, report the error and present the successful results
+- Rate limit errors (HTTP 429) mean the provider's quota is exhausted. The script retries a 429 up to three times first; if it still fails, try again later or use another provider
+- The script automatically retries a 429 or 5xx status, or a network failure, up to three times with a doubling delay before giving up
+- When the default model is unavailable to the key (HTTP 404, a 403 outside OpenRouter, or a 400 saying the model does not exist), the script sends the request once more with the provider's fallback and says so on stderr: gemini `gemini-nano-banana-2.1`, openai `gpt-image-2.5-sunburst`, xai `grok-imagine-image`, openrouter `google/gemini-3.1-flash-image`. Report which model drew the image. A model named with `--model` or `*_IMAGE_MODEL` never falls back. Once the fallback answers HTTP 200, even with no image in it, the script records the verdict and later runs send the fallback first until it expires: the default's own unavailable answer is the evidence, and the fallback's 200 shows the account and endpoint work
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `IMAGE_MAX_RETRIES` | 3 | Retry attempts for a transient API failure before the script gives up |
+| `IMAGE_RETRY_DELAY` | 1 | Starting retry delay in seconds; doubles on each attempt |
+| `IMAGE_AVAILABILITY_TTL` | 86400 | Seconds a remembered "default model unavailable" verdict holds; 0 tries the default every run |
+| `DISPLAY_PANE_RETRY_WAIT` | 45 | Seconds the pane's retry offer stays open after a run-all.sh failure; 0 disables the offer |
+
+## Script Options Reference
+
+### gemini.sh
+| Flag | Values | Default |
+|------|--------|---------|
+| `--mode` | generate, edit | (required) |
+| `--prompt` | text | (required) |
+| `--output` | file path | (required) |
+| `--input-image` | file path, repeatable (max 14) | (required for edit; optional refs in generate) |
+| `--aspect-ratio` | 14 ratios (1:1, 16:9, 21:9, 1:4, 4:1, 1:8, 8:1, etc.) | 1:1 |
+| `--image-size` | 512, 1K, 2K, 4K (UPPERCASE) | (API default 1K) |
+| `--thinking-level` | minimal, High | unset (API `minimal`) |
+| `--image-only` | (flag) | off |
+| `--search-grounding` | (flag) | off |
+| `--model` | gemini model name | gemini-3-pro-image |
+
+### openai.sh
+| Flag | Values | Default |
+|------|--------|---------|
+| `--mode` | generate, edit | (required) |
+| `--prompt` | text | (required) |
+| `--output` | file path | (required) |
+| `--input-image` | file path, repeatable (max 16) | (edit only) |
+| `--size` | auto or WxH (gpt-image-2 and the 2.5 models: edges multiples of 16, max edge 3840, ratio up to 3:1; gpt-image-2.6-sunburst drew `1536x864` in a 2026-11-05 test); older models: `1024x1024`, `1536x1024`, `1024x1536` | `1024x1024` |
+| `--quality` | auto, low, medium, high; xhigh and max on the 2.5 and 2.6 models | high |
+| `--background` | auto, transparent, opaque; transparent needs png or webp output | auto |
+| `--output-format` | png, jpeg, webp | png |
+| `--output-compression` | 0-100 (jpeg/webp only) | -- |
+| `--moderation` | auto, low | auto |
+| `--input-fidelity` | low, high (edit only); not accepted with gpt-image-2 (that model always uses high fidelity) or gpt-image-2.6-sunburst, and openai.sh refuses the flag for both | unset (API `low`) |
+| `--model` | OpenAI model name | gpt-image-2.6-sunburst |
+
+### xai.sh
+| Flag | Values | Default |
+|------|--------|---------|
+| `--mode` | generate, edit | (required) |
+| `--prompt` | text | (required) |
+| `--output` | file path | (required) |
+| `--input-image` | file path, repeatable (max 5) | (edit only) |
+| `--aspect-ratio` | 16 ratios (1:1, 16:9, 21:9, 5:2, 20:9, auto, etc.) | (none) |
+| `--resolution` | 1k, 2k (LOWERCASE) | (API default) |
+| `--quality` | low, medium, auto (grok-imagine-image-2.0 only) | unset (API `auto`) |
+| `--model` | xAI model name | grok-imagine-image-2.0 |
+
+### openrouter.sh
+| Flag | Values | Default |
+|------|--------|---------|
+| `--mode` | generate, edit | (required) |
+| `--prompt` | text | (required) |
+| `--output` | file path | (required) |
+| `--input-image` | file path, repeatable | (edit only) |
+| `--model` | any OpenRouter image model slug | google/gemini-nano-banana-2.1 |
+| `--site-url` | URL (sent as `HTTP-Referer`) | (from `OPENROUTER_SITE_URL`) |
+| `--site-name` | text (sent as `X-Title`) | (from `OPENROUTER_SITE_NAME`) |

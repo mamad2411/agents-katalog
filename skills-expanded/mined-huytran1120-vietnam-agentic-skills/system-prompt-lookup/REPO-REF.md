@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/huytran1120/vietnam-agentic-skills (path: skills/system-prompt-lookup/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Checks what a shipped AI product's system prompt and tool schema actually say, by reading a dated archive of captured prompts instead of recalling them. Use before asserting or accepting any claim abo

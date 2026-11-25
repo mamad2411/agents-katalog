@@ -1,0 +1,817 @@
+---
+name: pdlc-feature
+description: 全自动 PDLC 新功能开发（串联 PRD→设计→TDD→实现→评审→发布）
+argument-hint: "<功能描述 | 已有 PRD 路径> [--lite] [--autonomous]"
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Agent
+layer: 1
+stage: feature
+# 串联的阶段：逐阶段写状态机（adapters/sync_skills.py 据此生成正文里的 pdlc:meta）
+phases: requirements design tdd impl review
+produces:
+  - docs/01_requirements/prd/<feature-id>-<feature-name>-prd.md
+  - docs/02_design/**
+  # 跟随项目既有布局，不限定固定目录
+  - <实现与测试代码 · 项目既有布局>
+requires: []
+next_step: pdlc-ship
+terminal_state: feature_done
+---
+
+# 全自动 PDLC 新功能开发
+
+<!-- @include templates/prompts/iron-law.md（已内联于下方，无需另读） -->
+⛔ **IRON LAW · 不可违反的硬门禁**
+
+以下规则为**不可协商**的执行约束：
+
+1. **文件必须落盘**：所有带编号（功能ID / 缺陷ID）的文档，必须作为实际文件写入磁盘，不可仅在对话中输出。
+2. **阶段必须落章**：每个阶段完成后必须在状态机 `docs/.pdlc-state/<feature-id>.json` 追加 history，不可跳过。
+3. **测试必须存在**：进入 `/pdlc-implement` 前，对应测试必须存在且处于红灯状态。违反则中止。
+4. **自检必须执行**：段二自检为强制步骤，不得以"已经很好了"为由跳过。
+5. **防循环**：段三修复为单次，不递归。无法自动修复的问题记录到报告，继续往下走。
+6. **状态必推进**：成功执行某 phase 后 `current_stage` 必须变更。收尾时若发现 `current_stage` 未推进，视为失败并报错，**不得静默返回**（防止外层循环拿滞后的状态空转烧额度）。唯一例外：命中人工点主动 block 时，`current_stage` 保持不变但必须写 `last_phase_result.ok=false` + `blocked_reason`。
+
+**违反任一条 = 立即中止当前命令，输出违规详情，等待人工介入。**
+<!-- @include-end templates/prompts/iron-law.md -->
+
+接收功能描述或已有需求文档，全自动走完 PDLC 所有阶段，直到产出可上线状态。唯一的提问点在开工前：文字描述太单薄时问一轮澄清（带 `--autonomous` 则一个都不问）；开工后中途不暂停、不询问用户。
+
+## 输入解析（阶段一之前执行）
+
+从本命令的参数中判断输入类型：
+
+1. **检测是否为文件路径**：如果输入匹配以下模式之一，视为文件输入：
+   - 以 `/`、`./`、`../`、`~` 开头的路径
+   - 以 `.md`、`.txt`、`.docx`、`.pdf`、`.doc` 结尾
+   - 包含 `docs/` 或 `requirements/` 路径片段
+   - 是一个实际存在的文件路径
+
+2. **文件输入**：读取文件内容，从中提取功能描述、用户故事、验收标准。阶段一基于文件内容结构化生成 PRD（保留原始意图，补充缺失部分），而非从零推断。在 PRD 中标注：`<!-- 来源文档: <原始文件路径> -->`
+
+3. **文本输入**：先按下文「需求澄清」对照清单，描述太单薄时问一轮（`--autonomous` 下不问），再从描述自动推断
+
+4. **已有 PRD 路径**：如果输入指向 `docs/01_requirements/prd/` 下已有的 PRD 文件，则**跳过阶段一**，直接从阶段一-B（任务拆解）或阶段二（技术设计）开始；带 `--lite` 时直接从阶段三开始。
+   功能ID **沿用该 PRD 追溯头里的 `功能ID`**，不另分配（PRD 没有追溯头时才按下文分配新 ID）
+
+5. **按已有功能ID续跑**：输入是功能ID（`F<日期>-<时分秒>`）且 `docs/.pdlc-state/<功能ID>.json` 存在 → 读它的 `current_stage` / `next_step`，
+   **从下一个未完成的阶段继续**（`requirements` 完成 → 阶段二，但 `next_step` 是 `pdlc-tdd`（轻量模式）→ 阶段三；`design` → 阶段三；`tdd` → 阶段四；`impl` → 阶段五；`review` 且 `next_step=pdlc-ship` → 已走完，只出最终报告）。
+   上次停在阻塞（`last_phase_result.ok=false`）时，先读 `blocked_reason`：原因已消除才继续，否则报告原因后停止
+
+<!-- @include templates/prompts/clarify.md（已内联于下方，无需另读） -->
+## 需求澄清（文字输入时，写 PRD 之前执行）
+
+只对**文字输入**生效。输入是文件、已有 PRD 或功能ID 时跳过本节——已有文档按原文结构化，不再追问。
+
+参数里的 `--autonomous` 是开关，不是需求的一部分：先把它剥掉，剩下的才是需求描述。
+
+### 1. 对照清单打勾
+
+逐项判断用户的描述里**有没有明说**——看的是「写了没有」，不是「能不能猜出来」：
+
+| 项 | 算「明说」的样子 |
+|---|---|
+| 给谁用 | 点出了用户角色或使用场景 |
+| 要做什么 | 点出了具体行为，不只是一个名词（「登录」不算，「用手机号收验证码登录」算） |
+| 明确不做什么 | 划了边界 |
+| 怎样算做完 | 给了可观察的结果或验收口径 |
+| 有什么限制 | 技术栈、兼容、性能、时间等约束 |
+
+**缺 3 项及以上 = 描述太单薄**，按下面第 2 或第 3 步处理；缺得更少就不问，直接写 PRD（缺的项按推断补，照常写进 PRD）。
+
+### 2. 交互模式：问一轮
+
+- 只问缺的项，**一次最多 3 个**，按「要做什么 → 怎样算做完 → 给谁用 → 明确不做什么 → 有什么限制」的先后挑
+- 每个问题后面附上你推断的默认答案，用户回「按默认」或不答，就采纳默认
+- **只问这一轮**：拿到回答就开始写，不追问第二轮
+- 用户说「别问了 / 直接写」→ 全部按默认
+- 问完仍是靠默认补上的项，写进 PRD「待确认问题」一节，状态标「待确认」
+
+### 3. `--autonomous`：不问，把默认摆出来
+
+- 不提问。缺的项按推断的默认写进 PRD
+- PRD「待确认问题」一节逐条列出：缺的是哪一项、这次采用的默认、状态「待确认」
+- 状态机本次 history 条目的 `auto_decisions[]` 每项追加一条：`{ "point": "需求澄清：<项>", "chose": "<采用的默认>", "at": "<ISO 8601>" }`
+  ——推进时给状态推进脚本传 `--decision "需求澄清：<项>=<采用的默认>"`，每项一个
+- 交接时把这几条列给人看
+- **连「要做什么」都没有**（只有一个名词或一句口号）→ 这不是能安全默认的缺口：不分配功能ID、不写任何文件，
+  末行输出哨兵 `<<<PDLC blocked reason="需求描述没有说要做什么">>>` 后结束，交还人类
+<!-- @include-end templates/prompts/clarify.md -->
+
+## 执行规则
+
+- **全程自动**：开工前的需求澄清之后，不在任何阶段暂停等待确认，遇到歧义自行做合理假设并在最终报告中说明
+- **严格顺序**：必须按阶段一→二→三→四→五→六顺序执行，不得跳过（`--lite` 按下文「轻量模式」跳过的阶段除外）
+- **文档先行**：每阶段先产出文档，再进入下一阶段
+- **TDD 强制**：代码实现前测试必须已存在且处于失败状态
+- **自查通过才结束**：所有测试通过、评审记录完成后才输出最终报告
+- **自检只做一轮**：各阶段的质量关卡与评审都受下面的防循环规则约束
+- **功能ID贯穿全程**：阶段一分配功能ID后，所有后续文档和产出物统一使用该ID
+- **逐阶段写状态机**（中途失败也能续跑，`/pdlc-retro` 也看得到每个阶段）：每个阶段收尾各写一次，规则见文末「状态机更新」。
+
+  每个阶段收尾运行一次 `bash scripts/pdlc-advance.sh <功能ID> --stage <下表短名> --next <下表下一跳> --produced <本阶段产物> <项目根>`
+  （阶段一新建状态文件时加 `--name <功能名>`；`--autonomous` 照传）。检查由脚本按阶段自己跑，不手写 `checks`：
+
+  | 阶段 | `--stage` | `--next` | 脚本跑的检查 |
+  |---|---|---|---|
+  | 一（PRD + 任务拆解 + PRD 评审）完成时**创建**状态文件 | `requirements` | `pdlc-design` | 不跑（`{}`） |
+  | 二（技术设计） | `design` | `pdlc-tdd` | 不跑（`{}`） |
+  | 三（TDD 红灯） | `tdd` | `pdlc-implement` | 红灯验证；`--produced` 要列出写的测试文件，脚本记下指纹 |
+  | 四（编码实现） | `impl` | `pdlc-review` | unit、coverage、lint；tdd 写的测试被改过就不推进 |
+  | 五（自查评审） | `review` | `pdlc-ship` | unit、coverage、lint、e2e |
+
+  脚本退出码 `3` = 没推进（检查没过 / 主动 block）：停在这里，不往下一阶段走。
+  某阶段失败或卡在需人判断的点（后者传 `--blocked "<原因>"`）→ 状态停在上一阶段，最终报告说明可用 `/pdlc-feature <功能ID>` 续跑。
+  旧版本只在最后写一条 `stage: feature`，读侧仍认这个短名，但本版起不再写它
+
+## 阶段派发：每个阶段一个全新子代理
+
+有子代理工具（Claude Code 的 Task / Agent）时，**阶段二～五各交给一个全新的子代理执行**，主会话只做编排与核对。
+为什么：子代理只看得到磁盘上的文档和代码，看不到前一阶段的推理过程——写实现的子代理只能对着测试和设计干活，
+不会顺着「写测试时怎么想的」去迁就；主会话的上下文也不会随阶段一路膨胀。
+
+- **主会话自己做**：输入解析、需求澄清（要问人）、功能ID分配、阶段一（PRD + 任务拆解 + PRD 评审，并创建状态文件）、阶段六最终报告
+- **派给子代理**：阶段二、三、四、五，**一个接一个**（不并行，后一阶段要读前一阶段的产物）；`--lite` 跳过的阶段照样不派
+- **每次都是全新的子代理**（general-purpose），不复用上一个阶段的那个
+- **没有子代理工具**（其它平台，或工具被禁用）→ 主会话按下文各阶段依次执行；最终报告标题下的「阶段执行方式」一行写「各阶段未隔离执行（没有子代理工具）」
+
+派发时把下面的提示词填好交给子代理（尖括号都换成实际值；路径一律写绝对路径）：
+
+```
+你在执行 PDLC /pdlc-feature 的「阶段<N>：<阶段名>」。功能ID <功能ID>，项目根 <项目根绝对路径>，轻量模式：<是 | 否>。
+产出语言：<主会话判定的语言>（你看不到用户的对话，按这里写）。
+1. 读 <本 skill 基础目录>/SKILL.md：通读「执行规则」「防循环规则」「测试代码在哪」「状态机更新」，
+   然后只执行「阶段<N>」一节及其质量关卡，不做别的阶段。
+2. 需求和上游产物只从磁盘读：状态文件 <项目根>/docs/.pdlc-state/<功能ID>.json，以及其中 history[].produced 列出的文件。
+3. 收尾运行 bash <本 skill 基础目录>/scripts/pdlc-advance.sh <功能ID> --stage <短名> --next <下一跳> --produced <本阶段产物> <项目根>
+   <主会话带了 --autonomous 就加上 --autonomous>。脚本退出码 3 = 没推进：停下，不要自己补救到下一阶段。
+4. 你不能和用户对话：遇到必须由人判断的点，带 --blocked "<原因>" 运行上面的脚本后结束。
+5. 结束时用不超过 15 行回报：产物路径、脚本最后输出的那行 JSON、自行做出的假设。
+```
+
+**子代理回来后，主会话自己读状态文件核对，不信子代理的文字**：`last_phase_result.stage` 是本阶段短名、`last_phase_result.ok` 为 `true`、
+`current_stage` 等于本阶段短名，三条都满足才派下一个阶段。
+
+- **不满足** → 停在这里：最终报告写明停在哪个阶段、`blocked_reason` 是什么，提示用 `/pdlc-feature <功能ID>` 续跑（续跑同样按本节派发）
+- **子代理本身出错**（工具报错、没有回报、状态文件没被写）→ 重派一次全新的子代理；还不行就按上一条停下。
+  **不要在主会话里替它把这一阶段做完**——那样隔离就没了，还会让主会话带着半截上下文往下走
+- 子代理回报里的「自行做出的假设」收集起来，写进最终报告「假设与决策说明」
+
+## 轻量模式（`--lite`）
+
+给小功能用：保留 PDLC 的核心约束，砍掉文档开销。参数里的 `--lite` 是开关，和 `--autonomous` 一样先剥掉，剩下的才是需求。
+
+| | 完整模式 | 轻量模式 |
+|---|---|---|
+| 阶段一 PRD | 模板全部章节 | 只写「背景与目标」「功能需求」（功能列表含验收标准、用户故事）「待确认问题」三章，其余章节删掉，不留空壳 |
+| 阶段一-B 任务拆解 | 做 | 跳过 |
+| 阶段一-C PRD 评审 | 做 | 跳过 |
+| 阶段二 技术设计 + 设计评审 | 做 | 跳过 |
+| 阶段三 ~ 五 | 照常 | **照常**：先有红灯测试才写实现，`checks` 由脚本按退出码生成，做代码评审 |
+
+- **状态机**：阶段一收尾用 `--stage requirements --next pdlc-tdd`（完整模式是 `pdlc-design`），脚本据此写 `advanced_to: tdd`；之后各阶段与上表一致。下一跳直接是 `pdlc-tdd`，所以 PRD 写完后也可以交给 `/pdlc-loop-run` 接着推。
+- **PRD 自审**（阶段一质量关卡）：用户故事 ≥ 1 条即可，非功能需求、目标用户、UI/UX 不查；「验收标准可度量」照查——后面的测试就是照它写的。
+- **落盘位置**：只写 `docs/01_requirements/prd/`、`docs/.pdlc-state/`、`docs/04_testing/unit-tests/`、`docs/07_reviews/code/` 四处（外加测试代码与实现代码），不创建其它 `docs/` 子目录。
+- **不适合轻量模式的功能**：新增或改动对外接口、数据库表结构、跨服务调用——这些地方设计文档有价值。轻量模式下遇到它们照样做完，但在最终报告「上线前待办」里建议补一份 `/pdlc-design <功能ID>`。
+
+
+<!-- @include templates/prompts/loop-prevention.md（已内联于下方，无需另读） -->
+## 防循环规则
+
+本命令所有的自检-修复循环均受以下约束：
+
+1. **单次检查**：同一个自检清单在本次命令执行中只跑一次（起始 + 修复后验证共两次读）
+2. **单次修复**：发现的问题只尝试修复一轮
+3. **不递归**：修复后不再重新触发自检的全量重跑
+4. **失败降级**：无法自动修复的问题 → 记录到自审报告 → 流程继续 → 最终报告标注待人工处理
+
+这是为了防止 agent 在"修完再查、查完再修"的往返中陷入死循环。
+<!-- @include-end templates/prompts/loop-prevention.md -->
+
+---
+
+## 功能ID分配（阶段一开始前执行）
+
+1. 获取当前日期与时分秒：`date +%Y%m%d`、`date +%H%M%S`
+2. 生成功能ID：`F<YYYYMMDD>-<HHMMSS>`（示例形如 `F20260717-122801`；用执行时的真实值）
+3. **本地防撞**：若该 ID 已被占用（`docs/` 或 `docs/.pdlc-state/` 下已有同名前缀），重新读取 `date +%H%M%S` 重取（生成本身有耗时、通常已跨秒；若仍同秒则 `sleep 1` 后再读一次，**不手算时分秒**，天然处理跨天边界）
+4. 从用户描述中提取功能名关键词（英文小写+连字符，如 `user-auth`）
+
+> 用时分秒而非当日序号，是为了多人 / 多 AI 并行时零协调也不撞号、合并零冲突。旧 `F<日期>-<NN>` ID 仍可解析。
+
+### 关系建议（RFC#6）
+
+分配 ID 后，扫描 `docs/.pdlc-state/*.json` 列出已有 feature 名，结合用户描述判断本功能与既有 feature 的关系：
+
+- 描述含「基于 / 扩展 / 增强 X」→ 建议 `extends X`
+- 描述含「需要 / 依赖 X」→ 建议 `depends_on X`
+- 描述含「替代 / 重做 X」→ 建议 `supersedes X`
+- 命中后填入 PRD §6.1 关系表，并在阶段一结束时创建的状态机 `relations` 块写入。类型语义与方向性见本命令正文里的「Feature 关系链（6 种类型）」一节
+- 无明显关系则跳过
+
+---
+
+## 阶段一：需求分析（PRD）
+
+1. 根据功能描述，自动推断：功能范围、目标用户、核心用户故事（至少 3 条）、验收标准
+2. 在 `docs/01_requirements/prd/` 下创建文件，命名格式：`<功能ID>-<功能名>-prd.md`
+3. 使用 本 skill 目录下的 `assets/prd-template.md` 作为模板
+4. **文档顶部必须包含 PDLC 追溯头**：
+   ```
+   <!-- PDLC-TRACE -->
+   <!-- 功能ID: F20260326-090000 -->
+   <!-- 功能名称: user-auth -->
+   <!-- 阶段: 需求 -->
+   <!-- 前置文档: 无 -->
+   <!-- 创建时间: 2026-03-26T10:30:00 -->
+   ```
+5. 文档须包含：背景、目标、用户故事、功能清单、验收标准、非功能要求、不在范围内的事项（轻量模式按「轻量模式」一节只写三章）
+
+### 🔍 阶段一质量关卡（PRD 自审，必须执行）
+
+
+PRD 创建后、任务拆解前，立即执行自审（轻量模式按「轻量模式」一节放宽）：
+- **完整性**：检查背景、目标用户、用户故事（≥3条）、功能清单（有优先级）、验收标准（可度量）、非功能需求、不在范围内 — 缺失的章节自动补充
+- **澄清留痕**：文字输入时已对照澄清清单；靠默认补上的项都列进「待确认问题」，状态为「待确认」
+- **一致性**：用户故事与功能清单一一对应，验收标准覆盖所有 P0 功能
+- **可操作性**：验收标准无模糊表述，均可转化为测试用例 — 模糊的自动改写为量化指标
+- 修复后在 PRD 末尾追加「自审记录」（含审查时间、问题数、修复明细）
+- **自审通过才进入阶段一-B**
+
+## 阶段一-B：任务拆解（紧接 PRD 之后自动执行）
+
+1. 扫描 `docs/06_tasks/` 目录，查找是否已存在该功能的任务文件
+2. **若不存在**，立即按 `pdlc-task plan` 的逻辑自动执行任务拆解：
+   - 读取刚创建的 PRD，提取功能清单与验收标准
+   - 为每条功能清单项生成任务条目，分配任务ID（格式：`T<功能ID的日期-时分秒>-<NN>-<type>`，前缀嵌入本功能ID的时分秒段，`NN` 为**本功能内**递增序号）
+   - 创建任务文件：`docs/06_tasks/<功能ID>-<功能名>-tasks.md`
+   - 格式参考 `pdlc-task plan` 的输出规范（每条任务含 ID、标题、类型、状态 `⬜`、前置依赖）
+3. 在阶段报告中输出任务文件路径和任务总数
+
+## 阶段一-C：PRD 文档评审（紧接任务拆解后自动执行）
+
+
+1. 按 `/pdlc-review` 的文档评审段落逻辑，对 PRD 执行正式文档评审（聚焦**格式规范性、模板符合度、交叉引用**）
+2. 对照 本 skill 目录下的 `assets/prd-template.md` 检查格式规范性
+3. 发现问题直接修复原 PRD 文档，修复后仅复查一次，不递归
+4. 在 `docs/07_reviews/doc/` 下创建评审记录：`<功能ID>-<功能名>-prd-doc-review.md`
+5. 评审通过后进入阶段二
+
+---
+
+## 阶段二：技术设计
+
+<!-- @include templates/prompts/design-options.md（已内联于下方，无需另读） -->
+## 方案比较（写设计文档之前）
+
+先判断这次设计有没有**值得比较的技术取舍**——存储怎么选、同步还是异步、新建服务还是扩展现有模块、接口怎么切、数据模型拆不拆等。
+
+- **没有**（沿用项目里已有的做法、PRD 也没留可争的点）→ 不比较，在设计文档开头写一句「沿用 <既有做法>，没有值得比较的取舍」，直接写设计。**不要为了凑数编出几个明显不会选的方案**
+- **有** → 列 2～3 个候选，用一张表比较，然后给出推荐：
+
+  | 方案 | 做法（一句话） | 改动面 | 主要风险 | 对 PRD 验收标准 / 非功能需求 | 与现有代码和规范的契合 |
+  |---|---|---|---|---|---|
+
+  推荐写明理由，理由要落到 PRD 条目或项目规范上，不写「更优雅」「更灵活」这类说不出依据的话。
+
+**谁来选**：
+
+- **交互模式**：把表和推荐给人看，问一次选哪个（只问这一轮），人选定后再写设计
+- **问不了人**（参数带 `--autonomous`，或在 `/pdlc-feature` 里——开工后不再提问，阶段二还可能跑在子代理里）→ 选推荐的方案，推进状态时传
+  `--decision "设计方案=<方案名>（<一句理由>）"`；候选之间的差别取决于 PRD 没交代的业务取舍（比如成本和一致性二选一）时，也照推荐选，
+  但把这个假设写进设计文档的「方案比较」节，让人在评审时看得到
+
+**落盘**：设计文档开头加「方案比较」一节——比较表、选定的方案、怎么选的（人选 / 按推荐自动选）；没比较的就是上面那一句。
+后面的接口、表结构、架构都按选定的方案写，不要在正文里又混进落选方案的做法。
+<!-- @include-end templates/prompts/design-options.md -->
+
+根据 PRD 和上面选定的方案，自动判断需要哪些设计文档，按需创建（不需要的跳过）：
+
+**API 设计**（如涉及接口变更）：
+- 路径：`docs/02_design/api/<功能ID>-<功能名>-api.md`
+- 模板：本 skill 目录下的 `assets/api-design-template.md`
+- 必须包含：接口列表、请求/响应结构、错误码
+
+**数据库设计**（如涉及数据存储）：
+- 路径：`docs/02_design/database/<功能ID>-<功能名>-db.md`
+- 模板：本 skill 目录下的 `assets/db-design-template.md`
+- 必须包含：ER 图、表结构、索引设计、迁移 DDL
+
+**架构设计**（如涉及新服务或重大架构变更）：
+- 路径：`docs/02_design/architecture/<功能ID>-<功能名>-arch.md`
+- 模板：本 skill 目录下的 `assets/arch-design-template.md`
+
+**所有设计文档顶部必须包含 PDLC 追溯头**：
+```
+<!-- PDLC-TRACE -->
+<!-- 功能ID: F20260326-090000 -->
+<!-- 功能名称: user-auth -->
+<!-- 阶段: 设计 -->
+<!-- 前置文档: docs/01_requirements/prd/F20260326-090000-user-auth-prd.md -->
+```
+
+### 🔍 阶段二质量关卡（设计文档自审，必须执行）
+
+每份设计文档创建后立即执行自审：
+- **方案比较**：文档开头有「方案比较」节（或一句「沿用既有做法」），正文没有混进落选方案 — 缺的补上
+- **PRD 一致性**：PRD 中每条 P0/P1 功能是否有对应设计覆盖 — 遗漏的自动补充
+- **API 检查**：URL 规范、请求/响应完整、统一响应格式、分页参数、鉴权说明
+- **DB 检查**：主键、索引、审计字段（created_at/updated_at）、迁移 DDL
+- **跨文档一致性**：API 响应字段与 DB 字段对应，查询参数有索引支撑
+- 修复后在设计文档末尾追加「自审记录」
+- 在 `docs/07_reviews/doc/` 下创建设计评审记录：`<功能ID>-<功能名>-design-doc-review.md`
+- 修复后仅复查一次，不递归；复查仍有问题则记录到评审报告
+- **自审通过才进入阶段三**
+
+---
+
+## 阶段三：测试先行（TDD 红灯）
+
+1. 在 `docs/04_testing/unit-tests/` 下创建测试计划：`<功能ID>-<功能名>-test-plan.md`
+   - **文档顶部包含 PDLC 追溯头**（阶段: 测试，前置文档指向设计文档）
+2. 写到项目**既有的**测试布局里（定位规则见下），不新造平行目录：
+
+<!-- @include templates/prompts/test-location.md（已内联于下方，无需另读） -->
+## 测试代码在哪（布局无关的定位规则）
+
+> ⚠️ **这条规则的要害**：红灯守卫必须区分「**项目没有测试**」和「**测试不在我预期的位置**」。
+> 前者才该拦；后者拦了就是误伤——真实项目的测试布局千差万别（单体 `backend/tests/`、
+> 根级 `tests/`、Go 同包 `*_test.go`、Node 与源码同目录的 `*.test.tsx`…），
+> 按一份写死的路径清单去找、找不到就拦，会让 pdlc 在大量正常项目上直接卡死。
+
+**核心原则：优先问 runner，其次翻文件。** 测试框架自己最清楚有哪些测试——
+让它报比我们去猜文件位置准得多，也和 pdlc「信退出码、不信目视检查」的哲学一致。
+尤其**测试写在源文件里**的语言（见下），翻文件根本找不到。
+
+按下列顺序定位，**命中即停**：
+
+### 1. 项目自己的声明 + 向 runner 查询（最高优先级）
+
+若存在 `docs/00_standards/test-commands.yml`，它的 `unit` / `e2e` 命令**就是权威**——
+项目已经明确告诉你测试怎么跑。**用它去问 runner**，而不是去翻目录：
+
+| runner | 列出全部测试 | 只查某功能相关 |
+|---|---|---|
+| cargo (Rust) | `cargo test -- --list` | `cargo test <关键词> -- --list` |
+| pytest | `pytest --collect-only -q` | `pytest --collect-only -q -k <关键词>` |
+| go test | `go test -list '.*' ./...` | `go test -list '<关键词>' ./...` |
+| vitest / jest | `npx vitest list` / `--listTests` | `npx vitest list -t <关键词>` |
+| gradle / maven | `--tests '*'` 干跑 | `--tests '*<关键词>*'` |
+
+**查询结果为空 = 该功能没有测试**（这是行为证据，比"我没找到文件"可靠得多）。
+
+### 2. 测试写在源文件里的语言（**必须靠内容匹配，文件名扫描无效**）⭐
+
+这类语言没有独立测试文件，只能按**代码内标记**搜：
+
+| 语言 / 框架 | in-source 测试标记 |
+|---|---|
+| **Rust** | `#[cfg(test)]`、`#[test]`、`mod tests` |
+| **Vitest**（in-source testing） | `import.meta.vitest` |
+| **Python** doctest | docstring 里的 `>>> ` |
+| **Elixir** doctest | `@doc` 里的 `iex>` |
+| **Go**（同包但独立文件） | `*_test.go` + `func Test` |
+
+> ⚠️ **Rust 尤其要注意**：单元测试几乎总在源文件的 `#[cfg(test)] mod tests` 里，
+> `tests/` 目录按 Cargo 约定只放**集成测试**。所以「`tests/` 目录不存在」在 Rust 项目里
+> **完全不能推出「没有单元测试」**——照文件清单判红会稳定误伤所有 Rust 项目。
+
+### 3. 常见布局约定（按项目实际技术栈挑，不要全试）
+
+| 生态 | 常见测试位置 |
+|---|---|
+| Python | `tests/`、`backend/tests/`、`test/`、与源码同目录的 `test_*.py` |
+| Node / TS | `tests/`、`__tests__/`、`src/**/__tests__/`、与源码同目录的 `*.test.ts(x)` / `*.spec.ts(x)` |
+| Rust | 源文件内 `#[cfg(test)]`（单测）+ `tests/`（集成测试） |
+| Go | 与源码同包的 `*_test.go` |
+| JVM | `src/test/java/`、`src/test/kotlin/` |
+| Ruby | `spec/`、`test/` |
+| 微服务 / 单体仓 | 上述任一可能出现在 `backend/`、`backend/services/<名>/`、`frontend/<应用>/` 之下 |
+
+### 4. 文件名兜底扫描
+
+前三步都没命中时，按文件名模式全仓搜（`*test*` / `*spec*`，排除 `node_modules`、
+`.venv`、`vendor`、`dist`、`build`、`target`、`.git`），再按功能关键词筛。
+
+### 5. 判定
+
+- **任一步找到相关测试** → 通过，进入下一步（`pdlc-implement` 还需确认红灯）
+- **四步走完确实找不到任何测试** → 这才是真红灯，按各命令的守卫规则中止
+- **找到测试但与本功能无关** → 按「本功能无测试」处理（同样是真红灯），但报告里要说明
+  「项目有测试，只是没覆盖本功能」，别让用户以为项目裸奔
+- **无法判定**（如 runner 装不上、语言不认识）→ **不要默认放行，也不要假装找到了**：
+  如实报「无法确认本功能是否有测试」并交还人类。**「我判断不了」绝不等于「没问题」。**
+
+> 写测试时（`pdlc-tdd`）同样按本规则决定**写到哪**：跟随项目既有布局与惯例——
+> Rust 单测就写进源文件的 `#[cfg(test)] mod tests`，**不要**为了迎合某种预设结构
+> 新造一套平行的测试目录。
+<!-- @include-end templates/prompts/test-location.md -->
+
+3. 测试必须覆盖：正常流程、边界条件、异常场景
+4. 单元测试覆盖率：覆盖率达标线**以项目配置为准**：优先取 `docs/00_standards/test-commands.yml` 的 coverage 命令阈值参数（那才是强制点，退出码即判定），其次 `quality-targets.yml`；两者都没有时按 >= 80% 兜底。
+5. 运行测试，**确认测试处于失败状态（红灯）**，记录失败输出
+6. 同步编写 E2E 测试骨架（可暂时 skip，实现阶段补全）：
+   - 路径：`docs/04_testing/e2e-tests/<功能ID>-<功能名>-e2e.md`
+
+### 🔍 阶段三质量关卡（测试计划自审，必须执行）
+
+测试代码编写完成、运行前执行自审：
+- **验收标准覆盖度**：PRD 每条验收标准至少有一个对应测试用例 — 缺失的自动补充
+- **场景完备性**：边界条件（空值/最大值/零值）、异常场景（401/403/404/409）、幂等性
+- **测试质量**：方法命名是否描述场景、是否单一断言、测试数据是否有意义
+- 修复后在测试计划末尾追加「自审记录」（含验收标准覆盖数、API 接口覆盖数）
+- **自审通过才运行测试确认红灯**
+
+---
+
+## 阶段四：编码实现（绿灯）
+
+<!-- @include templates/prompts/batch-review.md（已内联于下方，无需另读） -->
+## 大功能：按任务分批实现，每批做一次小评审
+
+**什么时候分批**：本功能的任务清单（`docs/06_tasks/<功能ID>-*-tasks.md`）里有 **4 个及以上** `feat` 任务。
+少于 4 个、或没有任务清单 → 不分批，照下面的步骤一次做完，不写分批评审记录。
+
+**怎么分**：按任务清单的顺序，每 2～3 个 `feat` 任务一批，同一模块 / 同一接口的放在同一批。每批做完下面四步再开始下一批：
+
+1. **实现这一批**，跑单测。只要这一批对应的测试转绿；后面批次的测试还是红的，正常
+2. **小评审这一批的改动**（只看这一批碰过的代码）：对照设计文档有没有漏掉或做偏；命名、错误处理、日志；
+   安全快查（拼接 SQL、未转义输出、敏感字段进日志）。能直接修的当场修一轮并重跑单测，修不了的记下来留给最终评审。
+   **不改 tdd 写的测试**——测试和设计对不上时，按状态推进规则交给人
+3. **记一笔**：追加到 `docs/07_reviews/code/<功能ID>-<功能名>-batch-review.md`，每批一节：
+
+   ```markdown
+   ## 第 <N> 批：<任务ID>、<任务ID>
+   - 单测：<通过数> / <总数>（本批对应的测试全部为绿）
+   - 发现 <X> 项，当场修复 <Y> 项
+   - [已修复] <问题> — <改了哪里>
+   - [待最终评审] <问题> — <为什么这一步修不了>
+   ```
+4. **把这一批的任务标成 ✅**（追加完成时间），再开始下一批
+
+所有批次做完，再按下面的自检清单把整个功能过一遍。`/pdlc-review` 会读这份分批评审记录：已修过的不重复报，「待最终评审」的每一项都必须在最终结论里处理掉。
+<!-- @include-end templates/prompts/batch-review.md -->
+
+1. 阅读 `docs/00_standards/coding/` 目录确认编码规范
+2. 编写最少量的实现代码使所有单元测试通过
+3. 实现过程中不偏离设计文档；若发现设计遗漏，自行补充设计文档后继续
+4. 运行测试，**确认全部通过（绿灯）**
+5. 在测试通过前提下，重构优化代码结构（不改变行为）
+6. 补全 E2E 测试代码并运行验证
+
+### 🔍 阶段四质量关卡（实现自检，必须执行）
+
+代码实现完成、测试全部通过后，执行快速自检：
+- **设计偏离检查**：对照设计文档，确认没有遗漏的接口或功能点
+- **测试覆盖验证**：按上述口径确认覆盖率达标，不达标则补充测试
+- **编码规范快检**：快速运行 lint check，有问题立即 lint fix
+- 自检通过才进入阶段五正式评审
+
+---
+
+## 阶段五：自查评审（代码评审 + 自动修复）
+
+
+按 `/pdlc-review` 增强版逻辑执行全面评审，**发现问题直接修复**：
+
+1. **设计一致性检查**：对照设计文档逐项确认实现完整性（轻量模式没有设计文档，跳过本条，由第 2 条对照 PRD 验收）
+   - API URL/方法/参数是否与设计一致
+   - DB 表结构/字段是否与设计一致
+   - 响应格式是否统一 — 不一致的直接修复代码
+2. **验收标准验证**：对照 PRD 逐条确认验收标准是否满足，未满足的补充实现
+3. **代码质量检查与修复**：
+   - 按 `pdlc-lint check` 运行 lint 工具，存在问题则 `pdlc-lint fix` 自动修复
+   - 检查命名规范 — 不规范的直接重命名
+   - 检查错误处理 — 缺失的直接补充
+   - 检查日志 — 关键操作缺日志的直接添加
+4. **安全检查与修复**：
+   - SQL 注入：字符串拼接 SQL → 自动改写为参数化查询
+   - XSS：未转义输出 → 自动添加转义
+   - 权限控制：缺鉴权的接口 → 标记为需人工处理
+   - 敏感数据：日志中打印敏感字段 → 自动脱敏
+5. **性能检查**：N+1 查询、缺失分页、缺失索引 — 能修的直接修复
+6. **修复后验证**：重新运行全部测试，确认修复未引入新问题
+   - 测试失败 → 回滚修复，标记为需人工处理
+7. **生成评审报告**：在 `docs/07_reviews/code/` 下创建评审记录：`<功能ID>-<功能名>-review.md`
+   - 包含 PDLC 追溯头（阶段: 评审，含创建时间）
+   - 包含：评审总结（问题总数/自动修复数/需人工处理数）、自动修复记录表、需人工处理表、检查项结论
+8. 更新对应服务的 `CHANGELOG.md`，在 `[未发布]` 下新增 feat 条目。条目格式 `- <简要描述>（<功能ID 或缺陷ID>）`；`[未发布]` 里已有同一 ID 的条目就不再追加（`/pdlc-ship` 按 ID 去重）
+
+## 阶段六：最终报告
+
+> ⚠️ **文件落盘验证**：输出最终报告前，必须逐一确认以下文件均已作为实际文件创建到磁盘（不可仅在对话中显示）：
+
+| 产出物 | 路径 | 验证方式 |
+|--------|------|---------|
+| PRD 文档 | `docs/01_requirements/prd/<功能ID>-*-prd.md` | 确认文件存在 |
+| 任务清单 | `docs/06_tasks/<功能ID>-*-tasks.md` | 确认文件存在 |
+| PRD 评审记录 | `docs/07_reviews/doc/<功能ID>-*-prd-doc-review.md` | 确认文件存在 |
+| 设计文档 | `docs/02_design/` 下对应目录 | 确认文件存在 |
+| 设计评审记录 | `docs/07_reviews/doc/<功能ID>-*-design-doc-review.md` | 确认文件存在 |
+| 测试计划 | `docs/04_testing/unit-tests/<功能ID>-*-test-plan.md` | 确认文件存在 |
+| 测试代码 | 对应服务测试目录 | 确认文件存在 |
+| 代码评审记录 | `docs/07_reviews/code/<功能ID>-*-review.md` | 确认文件存在 |
+
+轻量模式只验 PRD、测试计划、测试代码、代码评审记录四行，其余几行本来就不产出。
+
+**如有文件缺失，立即补创建，不可跳过。**
+
+所有文件确认到位后，输出一份结构化的完成报告，格式如下。**最终回复就是这份报告**：各节都要有（没有内容的节写「无」），不要缩写成几行总结：
+
+```
+## PDLC 完成报告：<功能名>（<功能ID>）
+
+**阶段执行方式**：<各阶段由全新子代理执行 | 各阶段未隔离执行（没有子代理工具）>（必填，二选一照实写，不要删这一行）
+
+### 产出物清单
+| 类型 | 文件路径 |
+|------|----------|
+| PRD | docs/01_requirements/prd/<功能ID>-... |
+| API 设计 | docs/02_design/api/<功能ID>-... |
+| 数据库设计 | docs/02_design/database/<功能ID>-... |
+| 测试计划 | docs/04_testing/unit-tests/<功能ID>-... |
+| 评审记录 | docs/07_reviews/code/<功能ID>-... |
+
+### 测试结果
+- 单元测试：X 个通过 / 0 个失败
+- E2E 测试：X 个通过 / 0 个失败
+- 覆盖率：XX%
+
+### 任务完成情况
+- 任务文件：`docs/06_tasks/<功能ID>-<功能名>-tasks.md`
+- 总任务数：X  完成：X  进行中：X  未开始：X
+
+### 验收标准确认
+- [x] 验收标准 1
+- [x] 验收标准 2
+
+### 假设与决策说明
+（记录执行过程中自行做出的关键假设，含各子代理回报的假设；轻量模式写明「轻量模式：跳过了任务拆解、PRD 评审、技术设计」）
+
+### 上线前待办
+（如有需要人工处理的事项，如数据库迁移、环境变量配置等）
+```
+
+---
+
+## 要求
+
+<!-- @include templates/prompts/output-language.md（已内联于下方，无需另读） -->
+🌐 **Output language for generated artifacts**
+
+All generated artifacts (PRDs, design docs, code comments, review reports,
+test plans, deployment manuals, changelog entries, etc.) follow this policy:
+
+1. **Default — match the conversation language exactly**:
+   - 用户用中文与 Claude 对话 → 产中文文档、中文代码注释、中文报告
+   - User talks to Claude in English → produce English artifacts
+   - User talks in another language → produce artifacts in that language
+   - **Never silently default to a fixed language regardless of the user's input.**
+
+2. **Explicit override always wins**: when the user specifies a language for
+   an artifact (e.g. "write the PRD in English", "用英文写 API 设计文档",
+   "output the deploy doc in Japanese"), use that language for that artifact,
+   regardless of conversation language.
+
+3. **Mixed-language requirements**: if the user wants some artifacts in one
+   language and others in a different language (common: Chinese PRD + English
+   API docs for partners), honour each per-artifact instruction.
+
+4. **Uncertain**: if you cannot reliably detect the conversation language,
+   ask once before producing the first artifact.
+
+This policy applies to **content** (prose, comments, headings). It does
+**not** override technical conventions like English variable names, English
+git commit subjects, or English error codes when the project's conventions
+require them.
+<!-- @include-end templates/prompts/output-language.md -->
+- 文件名中的功能名使用英文小写+连字符，如 `user-login`
+- 日期使用执行当天的实际日期，格式 YYYYMMDD
+- 不引入不必要的依赖
+- 不过度设计，实现够用即可
+
+功能描述: $ARGUMENTS
+
+<!-- @include templates/prompts/relations.md（已内联于下方，无需另读） -->
+## Feature 关系链（6 种类型）
+
+PDLC 用扁平 feature ID 空间。关系链在 5 个位置冗余表达，本文件是类型与语法的**单一真相源**。
+
+### 6 种关系类型
+
+| 类型 | 语义 | 方向性 | 示例 |
+|---|---|---|---|
+| `extends` | A 是 B 的增量增强 | 有向（A→B） | `user-auth-otp` extends `user-auth-phone` |
+| `depends_on` | A 需要 B 存在 | 有向（A→B） | `user-profile` depends_on `user-base` |
+| `supersedes` | A 替代 B（B 进入废弃/待机） | 有向（A→B） | `auth-v2` supersedes `auth-v1` |
+| `resolves` | A 修复缺陷 B | 有向（A→B） | `F20260603-090000` resolves `B20260520-110000` |
+| `conflicts_with` | A 与 B 互斥 | 对称 | `payment-stripe` conflicts_with `payment-paypal` |
+| `relates_to` | 弱耦合，应一起考虑 | 对称 | `password-policy` relates_to `otp-policy` |
+
+**有向 vs 对称**：
+- 有向类型（extends / depends_on / supersedes / resolves）只在源 feature 的关系块里存一条出边。
+- 对称类型（conflicts_with / relates_to）写入时**两端都要镜像**（A.conflicts_with 含 B 时，B.conflicts_with 也必须含 A）。
+
+### 表达位置 1：文档追溯头（pdlc-trace）
+
+在 PDLC-TRACE 头加一行（无关系时整行省略）：
+
+```
+<!-- 关系: extends=F20260510-100000; depends_on=F20260501-090000,F20260415-110000; resolves=B20260520-110000 -->
+```
+
+语法：`type=id` 对，多 id 用 `,` 分隔，多对用 `; ` 分隔。
+
+### 表达位置 2：状态机关系块（state JSON）
+
+即状态机文件里的 `relations` 块（六键对象，每键一个 ID 数组）。存**出边**；入边由 `/pdlc-relate rebuild` 派生到 `_relations.json`。**只写本功能自己的状态文件**——不要为了「双向」去改对方功能的 `relations`，那是别的功能的状态，改了会让它看起来又被动过。
+
+### 表达位置 3：反向索引 `_relations.json`（自动生成）
+
+`/pdlc-relate rebuild` 扫描所有 `<id>.json` 关系块 + 文档头，生成正向 edges + 预计算 inbound/outbound index。
+
+### 表达位置 4：全局图 `_graph.md`（自动生成）
+
+mermaid 可视化。边样式按类型区分：`supersedes` 虚线、`conflicts_with` 粗线、其余实线。
+
+### 表达位置 5：PRD §6.1 关系表
+
+见 PRD 文档的 §6.1「关系」一节。
+
+### 校验规则（`/pdlc-relate validate`）
+
+- 悬空引用：关系指向的 ID 不存在
+- 自引用：feature 关系到自己
+- 循环：`extends` / `depends_on` 链不允许成环
+- 矛盾对：同一目标同时 `supersedes` + `depends_on`
+- 对称一致性：`conflicts_with` / `relates_to` 两端必须互含
+<!-- @include-end templates/prompts/relations.md -->
+
+<!-- pdlc:meta 由 frontmatter 生成（adapters/sync_skills.py），勿手改 -->
+> **本命令的状态机取值**：串联多个阶段，阶段短名依次为 `requirements` → `design` → `tdd` → `impl` → `review`——每个阶段收尾各写一次 `history[]` 与 `last_phase_result`（`current_stage` 随之推进，`next_step` 写下一阶段的命令）；不写 `feature`。全部走完时下一跳 `pdlc-ship`（写进 `next_step`，交接时提示）。
+<!-- pdlc:meta-end -->
+<!-- @include templates/prompts/state-update.md（已内联于下方，无需另读） -->
+## 状态机更新（段四必须执行）
+
+本命令完成主产出后，必须推进状态机文件 `docs/.pdlc-state/<feature-id>.json`。
+
+### 用脚本推进，不要手写状态 JSON
+
+```bash
+bash scripts/pdlc-advance.sh <功能ID> --stage <本阶段短名> --next <下一跳命令名|null> \
+  [--produced <产物路径，逗号分隔>] [--autonomous] [--decision "<确认点>=<所选默认>"]... \
+  [--name <kebab-case>（状态文件还不存在时）] <项目根>
+```
+
+- 脚本是本 skill 自带的 `scripts/pdlc-advance.sh`。阶段短名与下一跳就是本命令正文里「本命令的状态机取值」那两个值；带了 `--autonomous` 就照传
+- **检查由脚本自己跑**：它按阶段调用同目录的 `scripts/pdlc-checks.sh`（tdd 验红灯；impl / fix / refactor 跑 unit、coverage、lint；
+  review 再加 e2e；e2e 只跑 e2e；文档类阶段不跑），据此判 `ok`、整段写入 history 与 `last_phase_result`，
+  写完调用 `scripts/pdlc-state-lint.sh` 体检。**不要**自己先写 `checks`，也不要挑检查项
+- tdd 阶段的 `--produced` 必须列出写的测试文件：脚本记下它们的指纹，之后 impl / refactor / review 推进时比对
+- 主动交还人类（命中人工点、评审有阻塞项、测试本身有矛盾等）→ 加 `--blocked "<原因>"`：脚本照跑检查、如实记录，但不推进，原因写进 `blocked_reason`
+- `/pdlc-ship` 写 `ship_done`、`/pdlc-deploy` 写 `deploy_done` → 加 `--done`（只有这两个命令能用）
+
+脚本的退出码决定怎么收尾：
+
+| 退出码 | 含义 | 你要做的 |
+|---|---|---|
+| `0` | 已推进 | 交接里引用 stdout 那行 JSON（`checks`、`current_stage`、`next_step`） |
+| `3` | 未推进：检查没过 / 红灯没验证 / 主动 block / tdd 写的测试被改 | 把 stdout 里的 `blocked_reason` 原样写进报告，按阻塞收尾。**不要为了让它推进去改测试或改检查命令** |
+| `2` | 脚本跑不了（参数错、缺 jq、状态文件损坏） | 参数错就改正重跑；缺 jq 才按下面的格式手写，并在报告里写明「状态机未经脚本写入」 |
+
+> 退出码 `3` 且原因是「tdd 阶段写的测试被改动」：实现阶段不改测试。测试是否真的写错了（与设计 / PRD 矛盾），**只有人能判断**：
+> - 交互模式：先把矛盾讲清楚、问人；人同意后再带 `--tests-changed "<理由>"` 重跑，理由记进 `auto_decisions`
+> - `--autonomous`：没有人可问，**不要改测试**，带 `--blocked "<矛盾在哪>"` 收尾。自主模式下带 `--tests-changed` 脚本也不推进
+>
+> 项目开了 PDLC 护栏（`docs/00_standards/pdlc-hooks.yml`）时，用 Write / Edit 直接写状态文件会被拦下。
+
+### 状态文件格式（读状态时参考；只有脚本跑不了时才照它手写）
+
+```json
+{
+  "feature_id": "<F/B ID>",
+  "feature_name": "<kebab-case>",
+  "created_at": "<首次创建时间 ISO 8601>",
+  "current_stage": "<当前阶段名>",
+  "run_mode": "interactive | autonomous",
+  "history": [
+    {
+      "stage": "<阶段名>",
+      "done_at": "<ISO 8601>",
+      "produced": ["<相对路径 1>", "<相对路径 2>"],
+      "self_audit": { "passed": <N>, "failed": <N>, "manual": <N> },
+      "auto_decisions": [
+        { "point": "<autonomous 下自动前进的确认点>", "chose": "<所选默认>", "at": "<ISO 8601>" }
+      ]
+    }
+  ],
+  "last_phase_result": {
+    "stage": "<本次阶段名>",
+    "ok": true,
+    "advanced_to": "<推进到的下一阶段 | null>",
+    "checks": {},
+    "self_audit": { "failed": 0 },
+    "blocked_reason": null,
+    "run_mode": "interactive | autonomous",
+    "at": "<ISO 8601>"
+  },
+  "relations": {
+    "extends": [],
+    "depends_on": [],
+    "supersedes": [],
+    "resolves": [],
+    "conflicts_with": [],
+    "relates_to": [],
+    "_updated_at": "<ISO 8601 | 省略>"
+  },
+  "next_step": "<下一跳命令名，如 pdlc-design；若流程结束则为 null>"
+}
+```
+
+> ⛔ 示例里的 `"checks": {}` 是「本阶段没有命令可跑」的样子，**不是键名示范**——键名与取值见下方 §1。
+
+> **`relations` 块（RFC#6，Phase 1 可选，Phase 2 推荐）**：6 个 key 对应 6 种关系类型，各为 ID 数组，存**出边**。其中 `conflicts_with` / `relates_to` 是对称类型，两端都要写；其余四种有向，只写在源 feature 上。拿不准时用 `/pdlc-relate set` 写入，它会按规则校验。旧状态文件无此块时视为全空，向后兼容。入边由 `/pdlc-relate rebuild` 派生到 `_relations.json`，不在此块手维护。
+
+> ⛔ **写状态机的四条硬约束**——读侧（`/pdlc-status`、`/pdlc-retro`、`/pdlc-relate`）会逐条体检，
+> 违反的每一处都会出现在它们输出的最前面：
+>
+> 1. **实例里不写 `terminal_state`**。skill frontmatter 的 `terminal_state:` 是「这个命令走完后应到达的终态名」，
+>    不是状态字段。判终态只看 `current_stage` 是否以 `_done` 结尾。
+> 2. **`history[].stage` 写本命令的阶段短名**（见本命令正文里「本命令的状态机取值」）——`pdlc-implement` 写 `impl`，
+>    不写 `implement` / `implementation`；`pdlc-prd` 写 `requirements`，不写 `prd`。
+> 3. **时间戳必须带时刻**：`created_at` / `done_at` / `at` 一律写完整 ISO 8601（如 `2026-07-28T10:40:00+08:00`）。
+>    只写日期，同一天内的阶段耗时就全部算成 0——读侧只能记「不可测」。
+> 4. **`next_step` 只写命令名或 `null`**，不附说明文字（如「pdlc-ship（等评审通过）」）。
+>    要说明原因，阻塞时写进 `last_phase_result.blocked_reason`。
+
+> ⛔ **`_done` 的含义是「已发布」，只由 `/pdlc-ship`（写 `ship_done`）与 `/pdlc-deploy`（写 `deploy_done`）写入。**
+> 其它命令的 `current_stage` 一律写本命令的阶段短名，走完整条链路的编排命令（`/pdlc-feature`）也一样——
+> 它收尾时 `current_stage` 是最后一个阶段的短名，`next_step` 是 `pdlc-ship`。
+>
+> - 「评审通过、等待发布」就是 `current_stage` 为 `review` 且 `next_step` 为 `pdlc-ship`（`/pdlc-e2e` 在评审之前，它的下一跳是 `pdlc-review`）。
+>   循环相关文档里说的 `review_done` 指的就是这个状态，**不是**要写进 `current_stage` 的值。
+> - 为什么：读侧判「已抵达终态」只看 `current_stage` 是否以 `_done` 结尾。评审通过就写 `_done`，
+>   `/pdlc-ship` 就分不清哪些功能已经发布过，发布说明会重复或漏收。
+> - 旧版本写入的 `feature_done` / `fix_done` / `review_done` 分不清是否已发布，`/pdlc-ship` 会列出来请人确认。
+
+### 手写回退（仅脚本退出码 2 且无法修正时）
+
+1. **文件不存在** → 创建文件，写入初始结构（`history` 为含当前阶段的数组）
+2. **文件存在** → 读取 JSON，追加当前阶段到 `history`，更新 `current_stage` 和 `next_step`
+3. **写回文件**：用 `jq` 或等效工具保持格式化
+4. **写完体检**：运行 `bash scripts/pdlc-state-lint.sh <项目根>`，属于本功能状态文件的偏差当场改正。退出码 `2`（缺 jq 等）= 没体检，报告里写明「未体检」，不得当作通过。
+
+⚠️ 若更新失败（文件损坏/权限问题），必须中止命令并在最终报告中报错。状态机不可跳过。
+
+### `last_phase_result`（机器可读阶段结果；脚本按下面的规则写，手写回退时照做）
+
+顶层 `last_phase_result` 是循环判停的**唯一真源**，外层只需 `jq '.last_phase_result.ok'` 即可决定 继续 / 停止 / 交还人类。规则：
+
+1. **`checks` 只放真跑命令的退出码结果**（`scripts/pdlc-checks.sh` 的 stdout 原样），键名只能是 `tests_pass` / `coverage_pass` /
+   `lint_clean` / `e2e_pass`（tdd 段 `red_verified`），值只能是布尔或 `null`（无法判定）。不照抄 `test-commands.yml` 的 `unit` / `lint`，
+   不写 `"4 passed, 1 failed"` 这类摘要。没有检查可跑的阶段（文档类阶段、项目无 `test-commands.yml`）→ `checks: {}`，
+   绝不因为「本阶段成功」就填 `true`——schema 示例里 `checks` 是空的，正是这个意思。
+2. **`self_audit` 单列**：只放自检未通过数，**仅供参考，不作循环判停依据**。
+3. **`ok` 的定义**：没有命中 `blocked_reason`，且 tdd 段 `red_verified` 为 `true`、其它阶段没有任何检查为 `false`（`null` 不拦）→ `true`；否则 `false`。
+4. **命名空间**：`advanced_to` = **下一阶段的短名**，**不是命令名、也不是本阶段的 `current_stage`**。三者关系：`stage`=本阶段短名、`current_stage`=本阶段完成后的当前短名、`advanced_to`=下一阶段短名、`next_step`=下一跳命令名。
+
+   ⛔ **短名不是「命令名去掉 `pdlc-` 前缀」**——`pdlc-implement` 的短名是 **`impl`**，不是 `implement`。别推导，查下表：
+
+<!-- stage-map:start -->
+   | `next_step`（下一跳命令名） | `advanced_to`（下一阶段短名） |
+   |---|---|
+   | `pdlc-tdd` | `tdd` |
+   | `pdlc-implement` | `impl` |
+   | `pdlc-review` | `review` |
+   | `pdlc-design` | `design` |
+   | `pdlc-ship` | `ship` |
+   | `pdlc-deploy` | `deploy` |
+<!-- stage-map:end -->
+
+   `next_step` 为 `null`（终态或无后续）时 `advanced_to` 也是 `null`。
+
+   > 📌 **本表是唯一真源，且是被断言钉住的**：每行的短名必须等于该 skill 自己 frontmatter
+   > 里声明的 `stage:`，且任何 skill 的非 `null` `next_step` 都必须在表里有行——两个方向
+   > 都由 `tests/frontmatter-check.sh` 检查，所以表不会和实现各自漂移。
+   >
+   > 写错短名的后果与键名写错同类：消费方按契约名匹配，认不出就当没这个阶段。
+5. **推进一致**：`ok=true` 时本阶段必须真的推进了 `current_stage`（与第 6 条 IRON LAW 呼应）；到达终态或无后续时 `advanced_to=null`。`ok=false`（含 blocked）时 `current_stage` 不变、`advanced_to=null`、`blocked_reason` 写明原因。
+6. **`run_mode`**：镜像本次调用是否带 `--autonomous`（带了写 `autonomous`，没带写 `interactive`）。
+<!-- @include-end templates/prompts/state-update.md -->
+<!-- @include templates/prompts/handoff.md（已内联于下方，无需另读） -->
+## 段四：交接（Handoff）
+
+命令完成后必须输出以下格式的最终消息：
+
+```
+✅ <阶段名> 完成：<主要产出物路径>
+📊 自检：<通过数>/<总数> 通过（若有未通过，附要点）
+📦 状态快照：docs/.pdlc-state/<feature-id>.json
+👉 下一步：/pdlc-<next_step>
+   （如果有分叉）或 /pdlc-<alt>（条件：<选择依据>）
+```
+
+**规则：**
+- 主流程命令（写状态机的命令；下一跳见正文里「本命令的状态机取值」）必须显式输出"下一步"，不可省略
+- 工具型命令（Layer 3）可以没有 `next_step`，此时输出 `👉 下一步：（本次流程结束，无后续）`
+- 分叉场景必须说明**选择条件**，例如"若需补充测试用例 → `/pdlc-tdd`；若测试已齐 → `/pdlc-review`"
+<!-- @include-end templates/prompts/handoff.md -->

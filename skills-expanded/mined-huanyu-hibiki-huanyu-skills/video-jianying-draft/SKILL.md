@@ -1,0 +1,227 @@
+---
+name: video-jianying-draft
+description: 剪映原生 Draft 生成器。根据 EDL、校对字幕、音频和图片素材创建或更新剪映专业版草稿，直接输出 native draft_content.json 和 assets。触发词：创建剪映草稿、导入剪映、剪映 draft、生成剪映工程。 已安装 Huanyu-Skills-Pro（付费完整版）时，同类请求交给 Pro 版处理，本 skill 让位。
+argument-hint: "[project-path] [--draft-root path]"
+allowed-tools: Bash(*), Read, Write, Edit, Glob
+---
+<!-- huanyu-lite-v1 由 Huanyu-Skills-Pro 的 build_lite.py 生成，请勿手改 -->
+
+# /video-jianying-draft
+
+## 输入
+
+- `Rough/edl.json` 或已确认的 segment list；
+- `Sub/caption_corrected.srt`；
+- 用户确认的音乐、音效、图片和基础视频；
+- 剪映真实草稿根路径。
+
+## 标准命令序列
+
+使用 `<合集根>/scripts/video-jianying-draft/jianying.py`，所有命令使用同一个 cache：
+
+```text
+create_draft
+  → add_video × N
+  → add_subtitle
+  → add_audio
+  → add_text / add_image / add_effect / add_sticker（按需）
+  → add_transition / add_animation / add_filter / add_keyframe（按需，先 list_segments + list_enums）
+  → save_draft
+```
+
+## 规则
+
+- `Rough/.jianying_cache/` 是当前草稿状态唯一载体，命令间不能更换；
+- `--output` 用剪映「全局设置→草稿位置」的真实路径；缺省只接受含真草稿子目录的候选探测，探不到报错等显式路径（首次展示结果请用户确认）；
+- **音频混音约定**：BGM 与旁白共存时 BGM 默认 `--volume 0.6` 且带 `--fade-in 1 --fade-out 1`（可覆盖，不传不设）；SFX 不加 fade；
+- **字幕断行**：`add_subtitle` 默认把超长字幕条拆成 ≤18 显示单位（汉字 1、ASCII 0.5）的短条——拆分点优先标点、时间轴连续无缝隙，落盘为 `<原名>.split.srt` 供核对；需要原样导入时加 `--no-split`，需要其他长度用 `--max-chars`；
+- **同名素材防错链**：不同目录的同名文件（含大小写）自动 `-2` 后缀；同一文件共享素材；
+- **重叠音频分道**：同轨音频不可重叠，`add_audio` 默认贪心溢出 `BGM-2` 等新轨（输出 `track` 即实际）；严格模式 `--no-lane-split`；
+- **草稿自包含**：`save_draft` 媒体拷进 `assets/` 并改写路径，原素材移动不影响；缺失进 `missing_media`，补齐重存；
+- 剪映运行中 `save_draft` 直接拒绝（tasklist 检测），须完全退出；
+- 优先在用户第一次打开剪映前完成全量写入；
+- 剪映打开后 JSON 可能被加密，禁止直接用 JSON 修改已打开草稿；
+- 已有草稿追加字幕优先输出 SRT 让用户在 GUI 导入（先 `subtitle_split.py` 拆条）；
+- 不遇到错误就反复 `create_draft` 生成新草稿；
+- 每次保存写入 `Rough/jianying_draft_manifest.md`，记录 draft id、cache、输出根和媒体清单。
+
+## 成片导出模式（成片 → 可编辑剪映草稿）
+
+除「EDL → 草稿」正向流程外，还支持把 `video-polish` 交付的成片反导出为**可编辑剪映草稿**：用户可在剪映里改字幕内容/字号/颜色、逐镜头变速/重排、调整或替换 SFX/BGM。
+
+- 分层原则：镜头内动效烘焙进底片；镜头边界切段可变速重排；字幕/音频走原生轨道全开；
+- Remotion 来源先渲 plate 底片（`--props='{"plate":true,"bgm":false}'` 网关剥离字幕/SFX/BGM）；
+- 时间线三表（镜头/字幕/SFX）从 manifest 提取，浮点秒记账，禁止手抄约数帧号；
+- 复用本 skill 标准命令序列：`add_video` 同一 plate 按镜头区间切段 → `add_subtitle` → `add_audio`（贪心分道）→ `save_draft`。
+
+完整流程见 [references/video-jianying-draft/remotion-export.md](../../references/video-jianying-draft/remotion-export.md)（方法论改编自 video-shotcraft，Apache-2.0）。成片交付后默认询问用户一次是否需要剪映工程；剪映打开保存后草稿加密，单向转换，重导出即重装覆盖。
+
+## B-roll 装配草稿（load_beats：B-roll 批量进同一剪映工程）
+
+用户选择"剪映路线"调 B-roll 时，`load_beats` 把 `broll-compose.json` 的落点表**批量灌进草稿的 B-roll 视频轨**（重叠自动分道 `B-roll-2`…，素材短于落点区间给 warning，文件缺失跳过并上报，可选 `--fade-in` 逐条 alpha 淡入）：
+
+```bash
+# 装配草稿标准序列（时间轴基准 = 精剪时间轴，B-roll 落点逐帧对齐）：
+create_draft → add_video（fine_cut.mp4 整条铺 main 主轨）→ add_subtitle（master.srt）
+  → load_beats --draft-id <id> --cache-dir "%CACHE%" --compose broll-compose.json --track B-roll [--fade-in 0.3]
+  → save_draft
+```
+
+**时间轴基准规则（必须遵守）**：`broll-compose.json` 的落点是**精剪时间轴**（master.srt/fine_cut.mp4 的秒）。05 生成的草稿是粗剪时间轴，且剪映打开保存后已加密不可再写——所以 **B-roll 装配草稿是精剪后新建的**（fine_cut 底片整条铺主轨），不是往 05 老草稿里追加。它仍是本 skill 同一管线、同一 cache 体系产出的剪映工程；用户在剪映里微调 B-roll（拖位置/转场/关键帧）后由剪映导出成片。FFmpeg 路线（`/video-polish` compose_broll.py 自动合成 + QA 机检）与本路线按用户需求二选一或并行——FFmpeg 出验收版，剪映出微调工程。
+
+## 失败模式与恢复
+
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---|---|---|
+| `add_subtitle` 后静帧仍是超长文本框 | 确认没传 `--no-split`；检查 `.split.srt` 是否生成、cue 数是否增加 | 仍不对时用 `subtitle_split.py` 单独跑并人工核对再导入 |
+| `save_draft` 输出目录找不到草稿 | `--output` 不是剪映实际草稿根——从「全局设置→草稿位置」复制真实路径 | 🔴 不猜路径；探测只认含真草稿子目录的候选 |
+| `save_draft` 报「剪映正在运行」 | 检测拦截——退出剪映后重跑同一命令（cache 还在） | 重启机器再试 |
+| 剪映打开草稿报「文件损坏」 | vendor 模板版本与剪映版本不匹配——换 `vendor/template_jianying/.backup/` 里的旧模板重存 | 降级路线：不建 Draft，改交付 SRT + 素材清单，让用户在 GUI 手动导入 |
+| 剪映打开后 JSON 被加密 | 预期内行为——禁止改已打开草稿 | 追加内容走「导出 SRT → GUI 导入」路线（先 `subtitle_split.py` 拆条） |
+| cache 丢失（`.jianying_cache/` 被删） | 从 `jianying_draft_manifest.md` 找回 draft id 和媒体清单 | 🔴 已打开过的草稿无法增量恢复——重建 Draft 并告知用户已精剪内容会丢，等用户决策 |
+| `import_srt` 时间戳解析失败 | SRT 编码不是 UTF-8——转码后重试（脚本已按 `utf-8-sig` 读） | 用 `align_to_manuscript.py` 重新生成干净 SRT |
+| 媒体文件被移走 | 草稿自包含不受影响；`missing_media` 项补回后重存 | manifest 记断链，路由回用户补素材 |
+| `import pyJianYingDraft` 失败 | env `CAPCUT_MCP_DIR` 失效——已自动回退内置 vendor，修正 `.env` | 确认 `vendor/pyJianYingDraft/` 完整 |
+| 新机器/新剪映版本 | 先跑「冒烟测试」再正片 | 冒烟不过按上表排查，仍不过走 SRT 降级 |
+| Mac 报「未找到可抄设备指纹的明文老草稿」 | 全新机器正常现象——造 donor（剪映新建草稿立即退出）后 `--donor-draft` 传入 | `--allow-missing-fingerprint` 实验安装，剪映可能拒载 |
+
+🔴 **CHECKPOINT：`save_draft` 前确认草稿根（探测结果首跑也确认）+ 剪映已完全退出（脚本再拦一道）；保存后展示 manifest 与输出 JSON（media_copied/missing_media/字幕条数），确认才算完成。**
+
+## 禁止
+
+- 不在剪映开着草稿时改写它的 JSON（写入即损坏；`save_draft` 进程检测会拦）；
+- 不把草稿根猜在未验证目录上（探测只认含真草稿子目录的候选，探不到等用户给路径）；
+- 不跳过 `subtitle_split` 直接导入句子级长条 SRT；
+- 不在同一 cache 上反复 `create_draft` 生成多个空草稿；
+- 不把 `Rough/.jianying_cache/` 删除或移出项目（它是草稿状态的唯一载体）；
+- 替换已存在草稿前不问用户——旧草稿进 `.jianying-trash/`、失败自动回滚，仍需确认可弃；
+- 不把自包含草稿目录直接分发他人（JSON 含本机绝对路径）——对外只交付成片。
+
+## 输出
+
+```text
+<草稿根>/<draft-id>/
+├── draft_content.json      # 素材路径已指向 assets/，自包含
+└── assets/                 # 媒体副本（同名自动后缀）
+Rough/
+├── .jianying_cache/<draft-id>.pkl
+└── jianying_draft_manifest.md
+```
+
+完成后用户可以在剪映中进行内部精剪；精剪完成必须导出 `Sub/master.srt`，再进入 B-roll 规划。
+
+## 实测标定与经验常数
+
+来源：video-shotcraft（Mac 11.2 实测）+ pyJianYingDraft 上游（Win 5.9/10.8）；Win 或有偏差，先冒烟再调参。
+
+- **字号单位**：`Text_style(size=…)` ≈ 画布高度百分比——size 15 ≈150px @1080p；CSS px ÷ 10.8 ≈ size（64px→6.0）；
+- **垂直定位**：`transform_y=t` 半高归一，`屏幕 y = 540 × (1 − t)`；底部 t ≈ −0.70 / −0.825（y≈915/985）；
+- **颜色**：0–1 浮点三元组（`#2C2C2C`→`(0.173,)*3`）；`--font-color` 传 `#RRGGBB` 自动换算；
+- **微秒边界铁律**：相邻段起点/终点各自取整再相减——起点与时长分别取整产生 1µs 缝隙即 `SegmentOverlap`；自行算帧→微秒时遵守（脚本按秒已规避）；
+- **双语拆两轨**：一段文本一字号，中文大英文小分 `字幕ZH`/`字幕EN`；
+- **字体**：不指定用默认；导出后可在剪映换字体微调。
+
+## 冒烟测试（新机器/新版本首跑）
+
+临时 cache 建最小三轨草稿走完整链路，验证后再正片：
+
+```bash
+# ffmpeg lavfi: testsrc2 6s + sine 5s 到 <tmp>\
+# 再 create_draft → add_video → add_audio → add_text → save_draft（cache=<tmp>\）
+```
+
+三查：① 不报「内容已损坏/媒体丢失」；② 三轨都在；③ 文字可改内容/字号。不过按失败表排查；验证完删草稿。
+
+## macOS 支持
+
+同一 CLI，`save_draft` 检测到 darwin 自动走 Mac 链路（移植自 video-shotcraft mac_draft.py，Mac 剪映 11.2 实测）。Mac 三坑已内置：入口 `draft_info.json`、`platform` 机器指纹、`draft_materials(type 0)` 媒体登记；草稿根默认 `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft`，注册进 `root_meta_info.json`（先备份、失败回滚）。
+
+- **指纹**：自动扫草稿库明文老草稿抄本机 `device_id`；全新机器扫不到即中止——`--donor-draft` 指定明文草稿，或 `--allow-missing-fingerprint` 实验安装（未经实测）；
+- 新 Mac 机器首次先冒烟；无明文老草稿时教用户造 donor：剪映新建草稿立即退出，仍明文即可用；
+- Mac 草稿 platform 含本机设备标识——自包含草稿目录不分发他人。
+
+## 交付验收
+
+1. 脚本自检：`save_draft` 输出的 `media_copied`/`missing_media` 符合预期，无 `.tmp` 残留；
+2. 用户三查：播放连贯（含分道混音）；改字幕；试变速；
+3. `.jianying-trash/` 无残留（有则提示手动删）。
+
+## 运行前依赖
+
+剪映适配库和 Draft 模板已经随本 Skill 放在：
+
+```text
+<合集根>/scripts/video-jianying-draft/vendor/
+├── pyJianYingDraft/
+└── template_jianying/
+```
+
+如需使用其他 `pyJianYingDraft` 或剪映模板，可设置 `CAPCUT_MCP_DIR` 覆盖默认 vendor（失效路径自动回退内置）。
+
+## vendor 深层能力与扩展模式
+
+CLI 已直接暴露转场/动画/滤镜/关键帧（v0.8.5）；vendor（`scripts/video-jianying-draft/vendor/pyJianYingDraft/`）还有更多底层能力，需要时**优先扩展 `jianying.py` 子命令**而不是绕过 CLI 直接改草稿 JSON：
+
+| 能力 | CLI | vendor API | 典型用途 |
+|---|---|---|---|
+| 转场 | `add_transition --track T --index N --type 叠化 [--duration 0.8]` | `Video_segment.add_transition(Transition_type, duration_us)` | 两段之间硬切改软转场（挂在目标片段头部，与上一段重叠） |
+| 段动画 | `add_animation --kind intro/outro/group --type 渐显` | `add_animation(Intro_type/Outro_type/Group_animation_type)` | 片头/片尾/组合动画 |
+| 滤镜 | `add_filter --type 自然 [--intensity 70]` | `add_filter(Filter_type, intensity)` | 调色滤镜（落盘在 draft 的 materials.effects） |
+| 关键帧 | `add_keyframe --property alpha --time 0 --value 0`（片段相对秒） | `add_keyframe(Keyframe_property, t_us, value)`；属性含 position_x/y、rotation、scale_x/y、uniform_scale、alpha、brightness/contrast/saturation、volume | Ken Burns 微动、画中画运镜、进度式动画 |
+| 视频淡入淡出 | `add_video --fade-in 0.5 [--fade-out 0.5]` | alpha 关键帧封装 | 与 `add_audio --fade-in/out` 对称 |
+| 蒙版 | （CLI 未暴露，需扩展） | `add_mask(Mask_type, center/size/rotation/feather)` | 形状遮罩 |
+
+**辅助命令**（先查后用，绝不猜 ID）：
+
+- `list_enums --kind transition|filter|intro|outro|group|mask [--search 关键词]`：列出有效名称（转场 362 / 滤镜 468 / 动画 290 个，中英文即枚举名）；
+- `list_segments [--track T]`：列出各轨片段的 index/start/end/时长/material_id——**转场/滤镜/关键帧的目标片段都靠这个 index 寻址**。
+
+三条纪律：① 枚举名只从 `list_enums` 查表，猜错会得到结构化错误 + `close_matches` 相近建议（stdout JSON、退出码 1）；② keyframe 的 `--time` 是**片段相对秒**，`volume` 属性只能挂音频段、其余只能挂视频段；③ 转场/滤镜/动画/淡入淡出属于**对已有片段的增量修改**，vendor 的材质收集只在 add_segment 时发生——`save_draft` 落盘前已内置 `_collect_materials` 统一重收集（幂等），任何绕过 CLI 的扩展都必须保持这个不变量。
+
+**save-time JSON patch 模式**（适配剪映新版本未知字段的通用逃生通道）：vendor 写不动的字段（如 `enable_adjust` 亮度调节 bundle、云端素材 `music_id` 回写），统一走「`save_draft` 落盘后 → 重读 `draft_info.json`/`draft_content.json` → 打补丁 → 原子写回」；补丁必须在剪映未运行时执行，且每次补丁在 `jianying_draft_manifest.md` 记录补丁字段清单。
+
+**机器可读验收**（每次 `save_draft` 后自检，结果写入 manifest）：视频轨非空且段数 = EDL 段数；音频轨有 BGM（如计划含 BGM）；字幕轨条数 = `caption_corrected.srt`（split 后）条数；同一素材同起点重复出现 >5 次告警（防错链）；`media_copied`/`missing_media` 与 manifest 一致。CLI 输出统一为 JSON（`success`/`draft_id`/`track` 等字段），失败非零退出，供 Agent 结构化读取自纠。
+
+## CLI 示例
+
+```bash
+set CACHE=<项目>/Rough/.jianying_cache
+for /f "delims=" %i in ('uv run --project "<合集根>" python "<合集根>/scripts/video-jianying-draft/jianying.py" create_draft --width 1920 --height 1080 --cache-dir "%CACHE%"') do set RESULT=%i
+```
+
+实际项目按 `create_draft -> add_video -> add_subtitle -> add_audio -> save_draft` 顺序执行，`--cache-dir` 全程一致；`--output` 可省略（自动探测，首跑展示结果）；`add_audio` 默认贪心分道。常用参数：
+
+```bash
+# BGM 与重叠 SFX 各带 --track-name；同轨装不下自动溢出 BGM-2
+... add_audio --draft-id <id> --cache-dir "%CACHE%" --file <bgm> --track-name BGM
+... add_audio --file <sfx> --track-name SFX --target-start 12.5 --volume 0.6
+
+# 字幕：默认拆 ≤18 显示单位短条（另存 .split.srt 核对）
+... add_subtitle --draft-id <id> --cache-dir "%CACHE%" --srt "<项目>/Sub/caption_corrected.srt"
+
+# BGM：与旁白共存默认音量 0.6 + 淡入淡出 1s
+... add_audio --draft-id <id> --cache-dir "%CACHE%" --file <bgm> --track-name BGM --volume 0.6 --fade-in 1 --fade-out 1
+
+# 视频淡入（alpha 关键帧封装）
+... add_video --draft-id <id> --cache-dir "%CACHE%" --file <clip.mp4> --fade-in 0.5
+
+# 转场/动画/滤镜/关键帧：先查表，再对片段操作
+... list_enums --kind transition --search 叠       # 362 个转场，中文名即枚举名
+... list_segments --draft-id <id> --cache-dir "%CACHE%"   # 各轨片段 index/时间
+... add_transition --draft-id <id> --cache-dir "%CACHE%" --track main --index 1 --type 叠化 --duration 0.8
+... add_animation --draft-id <id> --cache-dir "%CACHE%" --track main --index 0 --kind intro --type 渐显
+... add_filter --draft-id <id> --cache-dir "%CACHE%" --track main --index 0 --type 自然 --intensity 70
+... add_keyframe --draft-id <id> --cache-dir "%CACHE%" --track main --index 0 --property uniform_scale --time 0 --value 1.0
+... add_keyframe --draft-id <id> --cache-dir "%CACHE%" --track main --index 0 --property uniform_scale --time 4.5 --value 1.05   # Ken Burns 缓推
+
+# 调整单条长度 / 原样导入
+... add_subtitle --srt <srt> --max-chars 15      # 更短更碎
+... add_subtitle --srt <srt> --no-split          # 不拆分
+```
+
+单独预演拆分（不建草稿）：
+
+```bash
+uv run --project "<合集根>" python "<合集根>/scripts/video-jianying-draft/subtitle_split.py" \
+  "<项目>/Sub/caption_corrected.srt" -o "<项目>/Sub/caption_split.srt" --max-chars 18
+```

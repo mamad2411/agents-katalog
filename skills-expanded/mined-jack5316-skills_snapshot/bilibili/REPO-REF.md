@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jack5316/skills_snapshot (path: bilibili/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Summarize a Bilibili video into an Obsidian note. Use when user asks for Bilibili summary or /bilibili.

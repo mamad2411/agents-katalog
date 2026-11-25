@@ -1,0 +1,100 @@
+---
+name: changelog-style
+description: Turn a commit range into CHANGELOG.md entries following common-changelog style. Use when finishing a PR (adding to the [Unreleased] section) or cutting a release (moving [Unreleased] under a new version heading).
+---
+
+# Changelog entries: style & workflow
+
+Entries in `CHANGELOG.md` should be short and self-describing. Style reference:
+[common-changelog](https://github.com/vweevers/common-changelog). The workflow
+below (how to actually produce those entries from commit history) is
+synthesized from three changelog-generation agent skills:
+[GoogleChromeLabs/changelog-generation-skill](https://github.com/GoogleChromeLabs/changelog-generation-skill),
+[ComposioHQ/awesome-claude-skills/changelog-generator](https://github.com/ComposioHQ/awesome-claude-skills/tree/master/changelog-generator),
+and glincker/changelog-generator.
+
+## Style
+
+- **One line** per entry — two only if it genuinely needs a "why". Common-changelog
+  is stricter here ("a change should be brief and to the point, no more than
+  one line long"); we allow a second line for a real rationale. Skip
+  mechanism/implementation detail; that belongs in the commit message or PR
+  description, not the changelog. Concrete gut-check: after writing an entry,
+  measure the prose (excluding the trailing link) — past ~150 chars you're
+  burying the fact, not stating it; reread it and cut, don't just eyeball
+  "does this look like one line" (a long single physical line with no
+  embedded newline still fails this rule even though it dodges the separate
+  "no dangling link" issue below) — e.g. generalize the affected set instead
+  of enumerating every affected tool/field by name.
+- **Imperative, present tense**: "Add X", "Fix Y" — not "Added X" / "Fixed Y".
+- **Self-describing**: a reader skimming just the bullet — without its
+  `### Added` / `### Fixed` category heading for context — should still
+  understand the change and its effect.
+- **Exclude dev-only/maintenance changes**: dotfile tweaks, dev-dependency
+  bumps, test-only changes, pure code-style edits — these are not interesting
+  to someone consuming the released package, so they don't get an entry; put
+  them in the commit message instead. Exception: a refactor that could have
+  user-visible side effects (behavior change, perf, a fixed edge case) still
+  gets an entry describing that effect, not the refactor itself.
+- **Link commits/PRs/issues**: reference the commit that made the change, and
+  the PR or issue too when one exists. Exception: a version whose entire
+  content is one single commit — don't repeat the identical link after every
+  bullet; put one link at the section level instead (e.g. "Everything below
+  is one commit: `[<sha>](...)`." right under the version heading).
+- **No dangling link line**: keep an entry and its link(s) on one physical
+  source line, even if long. GitHub renders a single soft-wrapped newline
+  inside a list item as a real line break, so a wrapped entry shows its link
+  stranded alone on the next line instead of reading as one continuous bullet.
+
+**Example** (same change, two ways):
+
+- ❌ "Runtime floor raised to Node ≥ 20 (was ≥ 18) — the upcoming SDK requires
+  Node 20+. `engines`, build targets and the CI matrix are updated
+  accordingly; `tsconfig.json` now targets ES2023."
+- ✅ "Raise runtime floor to Node ≥ 20 (was ≥ 18)."
+
+The first buries the one fact a reader needs under implementation detail; the
+second states it and stops.
+
+## Workflow (turning commits into a changelog section)
+
+1. **Gather**: `git log --oneline <prev-tag>..<new-tag>` (or `<prev-tag>..HEAD`
+   for `[Unreleased]`) for the full commit list in range. Read each commit's
+   full message, not just the title — titles are often misleading or too
+   technical to classify from alone.
+2. **Classify** each commit:
+   - _User-facing_ → gets an entry: changes behavior, a tool's inputs/outputs,
+     config, fixes a real bug, adds/removes a capability.
+   - _Internal, excluded_ → no entry, stays in the commit message only:
+     dev-dependency bumps, test-only changes, pure renames/refactors with no
+     behavior change, CI/tooling changes with no shipped effect, docs-about-docs.
+   - _Borderline_: a refactor or internal fix that changes real behavior (e.g.
+     a rate-limiter edge case, a cache-dedup bug) still gets an entry — describe
+     the user-visible effect, not the refactor.
+3. **Group, but also split**: commits belonging to the same logical change
+   collapse into one bullet — don't enumerate every commit separately. The
+   opposite mistake is just as common and easier to miss: **one commit can
+   still contain two distinct user-facing facts** (e.g. "relax title/body to
+   required-only-on-create" _and_ "disclose mediaCategories is a full
+   replace" in the same commit). Summarizing "what this commit did" as a
+   single sentence joined with "also"/";" is exactly how the ~150-char gut-check
+   below gets blown past — it feels natural because it mirrors the commit
+   message, not because it's one fact. Give each distinct fact its own bullet,
+   linking the same commit from both. Confirmed live: an entry built this way
+   measured 262 chars against the ~150 target.
+4. **Rewrite**: don't copy the commit title verbatim; restate the surviving
+   change as one imperative, self-describing sentence per the Style rules above.
+5. **Link**: append each backing commit as a short-hash link
+   (`[<7-char-sha>](https://github.com/<owner>/<repo>/commit/<sha>)`); if a PR
+   or issue exists, link that instead/in addition. A bullet backed by several
+   commits links all of them.
+6. **Sort**: within a category, most impactful/complex change first.
+7. **Categorize** under the Keep a Changelog headings already in use (`Added`,
+   `Changed`, `Fixed`, `Removed`, `Deprecated`, `Security`) — drop a heading
+   entirely if nothing survives filtering for it (no more `### Internal`).
+
+## Syncing GitHub Releases
+
+After editing a past version's section in `CHANGELOG.md`, sync the matching
+GitHub Release so it doesn't drift:
+`gh release edit <tag> --notes-file <file-with-just-that-version's-body>`.

@@ -1,0 +1,136 @@
+---
+name: review-code
+user-invocable: false
+version: 4.10.0
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Internal correctness + simplification review pass of the agentic-workflow
+  review pack — composed in-turn by review-change and product-audit; not a menu
+  entry. Checks correctness, error handling, duplication, dead code, and
+  simplification opportunities against the project's own conventions. Findings
+  only; never edits code.
+---
+
+# Review Code (internal)
+
+Review-pack pass: follow this file inline as the routed step — findings only,
+never edits, never refactors (identity and guardrails owned by
+`skills/review-implementation/references/FINDER_CONTRACT.md` §Pass identity).
+
+Questions an unclear expectation raises obey the all-stages
+no-assumption rule — **ask-don't-infer**, owner
+`skills/unit-lane/references/DESIGN.md` (`ask-dont-infer@1`).
+
+## Scope
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md` (§Scope):
+read it before the checklist and apply it as written, stating the scope at the
+top of the returned table. Missing reference → STOP.
+
+## Checklist
+
+The tally is `skills/review-implementation/references/FINDER_CONTRACT.md`
+§Checklist discipline's contract: `evaluated` equals this list's item count, and
+`pass + findings + n/a` equals it — a count above the item count is fabricated.
+
+✓ No logic errors on the changed paths (trace each modified function's inputs →
+  outputs, including boundary values)
+✓ Every error path is handled — no swallowed exceptions, no empty catch, no
+  silently-ignored return codes
+✓ No duplicated logic (a changed block does not re-implement an existing
+  helper — cite the existing one if it does), **including a shadow copy**: a
+  file, schema, helper or prose block whose original lives outside the reviewed
+  tree, in a pinned dependency or a published package, is a duplicate of that
+  artifact — cite the artifact and its pin, or the recorded reason the copy must
+  exist; the vendoring rule demands provenance, never a second implementation
+✓ No dead code introduced (unused functions, params, imports, unreachable
+  branches)
+✓ No leftover TODO/FIXME/HACK markers in the diff
+✓ Naming and file conventions match the project's docs (read them first; cite
+  the convention violated)
+✓ No new abstraction beyond what the SPEC requires (an interface/base class
+  with one implementation is a finding)
+✓ No new dependency not justified in the SPEC
+✓ Simplification: any changed block that can lose lines without losing
+  behavior (cite before/after)
+✓ Reference trace: every changed symbol/API got a reference search —
+  un-updated callers are findings
+✓ Sweep declaration present: a changed token- or claim-shaped surface (a
+  published vocabulary token, a claim kind, a phrase a surface asserted, a
+  reader/echo pattern) carries its `swept: /<pattern>/<flags> → expected <n> in
+  <glob>` line on the fold's `## Log` entry — class `workflow`, the project's
+  own survivors rule, and `runner promise-coherence` re-runs it as
+  `sweep-mismatch`
+✓ Edge cases the SPEC's dev scenarios name are actually handled in code, not
+  just in tests
+✓ **Is deleting the surface the complete fix? (S8)** — before any edit is
+  proposed, check: does removing the surface entirely achieve the goal more
+  reliably than repairing it? If yes → route `fix-now (delete)`, not
+  `fix-now (repair)`. This is the deletion mandate: design and plan produce
+  retirements as first-class deliverables.
+✓ **Unused code routes two ways (#340)** — every unconsumed symbol (or
+  unreferenced prose block) is a deletion candidate routed through the
+  classifier's two-way rule (`review-implementation`, `CLASSIFY.md`):
+  delivered-feature-without-consumer → bug finding; orphaned by a requested
+  replacement/removal → `fix-now (delete)`. The row cites what requested the
+  feature and what replaced it — the two classes are never conflated
+✓ **Duplication is a deletion candidate (#340)** — a duplicated block,
+  checklist or contract (code or prose) proposes its own deletion, or carries
+  the recorded reason the copy must exist; a silent duplicate is a finding
+✓ **Obsolete by an available mechanism is a deletion, code and docs (#353)** —
+  a changed or neighbouring surface the project already supersedes (a helper a
+  pinned dependency owns, a doc describing a replaced flow, a local script the
+  runner provides) is `fix-now (delete)`; the deciding rule is the project's
+  **compatibility policy**, read from its `AGENTS.md` before classifying — when
+  nothing in it requires keeping the old surface, keeping it is the finding and
+  deleting it is the fix
+✓ **A citation is not a consumer (#353)** — prose (`AGENTS.md`, a skill, a
+  comment, a docs page) naming a symbol, file or block never makes it used; the
+  consumer test is executable or explicitly declared, and every citation is part
+  of what the deletion removes
+✓ **Features-preserved-without-it (#340)** — after any proposed deletion
+  (code or skill prose; "code" includes prose), verify every requested
+  feature still works without the removed part before merge; a deletion that
+  breaks a requested feature is a finding, not a cleanup
+✓ **Removal-feature cascade (#340)** — a change whose purpose is to remove a
+  feature deletes the code **and** its documentation **and** every sibling
+  mention the context makes necessary, with one sweep declaration per deleted
+  truth (`swept: /<pattern>/<flags> → expected <n> in <glob>`); when the
+  cascade's extent is unclear, the reviewer researches, understands and
+  contrasts — it does not guess the cascade's extent
+
+## Materiality bar
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md`
+(§Materiality bar): read it before the checklist and apply it as written — cite the rule it violates beside the evidence; never pad the table.
+Missing reference → STOP.
+
+## Return exactly
+
+`Sev` and `Impact` are the two published closed sets (`BLOCKER | CRITICAL |
+WARNING | SUGGESTION` and `blocking | docs-only | report-only`); their meanings
+are owned by `review-implementation` (`CLASSIFY.md` §Severity ladder) — assign a
+token, never a prose grade.
+
+```
+REVIEW CODE — scope: <scope>
+
+| # | Finding | Sev | Impact | Evidence | Suggested fix |
+|---|---------|-----|--------|----------|---------------|
+| 1 | <what>  | BLOCKER|CRITICAL|WARNING|SUGGESTION | blocking|docs-only|report-only | <file:line> | <smallest action> |
+
+Checklist: <n> evaluated, <n> pass, <n> findings, <n> n/a (<which + why>)
+Summary: <1-2 sentences>
+Decision: PASS | FAIL
+```
+
+FAIL if any `BLOCKER`, `CRITICAL` or `WARNING` finding is open; PASS otherwise.
+`SUGGESTION` findings never block — they route to the caller's triage step.
+
+## Done when
+
+- Every checklist item was evaluated with evidence (file:line or command output)
+  or explicitly marked n/a with the reason.
+- The fixed-format block above is returned — nothing more, nothing less — and
+  no code was changed.

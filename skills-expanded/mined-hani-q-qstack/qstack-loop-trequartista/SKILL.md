@@ -1,0 +1,578 @@
+---
+name: qstack-loop-trequartista
+description: >
+  Execute an approved implementation plan with documented adaptations, QStack
+  execution evidence, and a user-selected adversarial review depth.
+disable-model-invocation: true
+---
+
+# /qstack-loop-trequartista
+
+Treat the plan as the shape of play, not a cage. Preserve its intent while
+making careful, visible adaptations when reality offers a better route.
+
+## Resolve the plan
+
+1. Use the supplied plan path when present.
+2. Otherwise use a plan clearly referenced in the conversation.
+3. Otherwise inspect `qstack/compound_engineering/plans/*/plan.html`, plus
+   legacy `compound-engineering/plans/*/plan.html` and `plan.md` files. Use the
+   only plausible candidate; ask if more than one is plausible or none exists.
+   Never select `.template/`.
+
+Resolve the repository root, read its instruction files, then read the whole
+plan. Do not edit the plan: it is frozen once execution begins.
+
+Verify approval before implementation. An explicit request to execute this
+specific plan counts as approval to start only when the plan itself is not
+marked `draft`, `proposed`, or otherwise unapproved and has no unresolved
+blocking gate. If approval is absent or contradictory, stop and ask.
+
+## Choose the review mode
+
+Review depth is the user's cost and quality choice. Resolve the plan, detect
+whether it has a board, inspect any existing `execution.md`, and read plan and
+repository review requirements without writing anything. Then settle the mode
+before creating or updating execution files, migrating or claiming a board,
+launching an agent, or editing implementation files.
+
+`--review full|final|none` supplies the choice for automation. Reject any other
+value. Always validate an existing `execution.md` first, with or without the
+flag:
+
+- if `Review mode` is present, it appears exactly once and must be `full`,
+  `final`, or `none`;
+- no such field means a legacy `full` run and is not rewritten merely to
+  backfill the field;
+- a duplicated, malformed, or unknown value stops preflight without mutation.
+
+Without the flag, reuse that recorded or legacy mode without asking. With the
+flag, it must match that mode as described below. For a new execution without
+the flag, ask one startup question, using the host's structured question tool
+when available and plain text when it is not. Ask it in the shape the protocol's
+Park and continue sets for every question a loop asks a human: the
+product-manager version, the ELI10 version, then the options with the
+recommended one first and its one-sentence reason. This question is parked on no
+card, so it carries no card line and no technical-detail line, and one or two
+sentences per part is the whole of it. With a board, the options are:
+
+  > How much independent adversarial review should this run use?
+  >
+  > For a product manager: this decides how much independent checking the work
+  > gets before it is called done. More checking catches more mistakes and costs
+  > more time and tokens.
+  >
+  > ELI10: after we build something, someone else can read it over to spot
+  > mistakes. They can read every piece, read the finished thing once, or skip
+  > the reading.
+  >
+  > - Final review only (recommended): one fresh reviewer after all work, balancing coverage and token cost.
+  > - Full review: review every card and the combined result; highest coverage and token use.
+  > - No adversarial review: fastest and lowest token use; rely on validation only.
+
+Without a board, `full` and `final` both launch one whole-plan reviewer, so do
+not present them as different costs. Keep the same shape and offer two options:
+
+  > How much independent adversarial review should this run use?
+  >
+  > For a product manager: this decides whether the finished work gets an
+  > independent check before it is called done. The check catches more mistakes
+  > and costs more time and tokens.
+  >
+  > ELI10: after we build something, someone else can read the finished thing to
+  > spot mistakes. They can read it once, or skip the reading.
+  >
+  > - One whole-plan review (recommended, recorded as `final`): balance quality and token cost.
+  > - No adversarial review: fastest and lowest token use; rely on validation only.
+
+Review mode is fixed once execution starts. On a resume, a `--review` value that
+differs from the recorded or legacy mode is a conflict: stop and name the mode
+already in force. Completed cards cannot be retroactively returned to their
+original isolated per-card review state, and changing fingerprinted execution
+content would invalidate earlier reviews. Do not ask again on a resume.
+An invalid or conflicting review flag is a preflight failure. This invocation
+never claimed the board, so it appends no `stood-down` and does not alter any
+coordinator left by an earlier run.
+
+The modes are:
+
+- `full`: per-card review plus one final plan-level review;
+- `final`: no per-card reviewers, then one final plan-level review;
+- `none`: no reviewers and no review fingerprints.
+
+Without a board, `full` and `final` both mean the one whole-plan review that the
+loop can run; an explicit `--review full` remains valid and is recorded as
+`full`. Review mode controls only the reviews this loop adds. During the
+read-only preflight, derive the minimum permitted mode from plan and repository
+instructions. A required final independent review permits only `final` or
+`full`; required per-card independent review permits only `full` when a board
+exists. Without a board, a per-card mandate is unsatisfiable: stop preflight and
+name the requirement rather than pretending the whole-plan review meets it.
+Remove weaker modes from the startup question and reject a weaker `--review`,
+recorded, or legacy mode before any mutation. If only one behavior is permitted,
+explain the requirement and use its least expensive valid mode without asking a
+fake choice. The choice changes reviewer agents only; implementation subagents
+and `--parallel` are unchanged.
+
+## Resolve the board
+
+Look for `board-events.js` beside the plan. If only the retired `board.jsonl`
+exists, resolve the shared protocol below and follow its migration branch before
+deciding the plan has no board. Stop if both exist.
+
+With no board, run exactly as this skill does without one. The whole plan is the
+unit of work and `execution.md` keeps its `## Progress` checklist. Existing plans
+keep working and nothing else in this section applies.
+
+With a board, the board is the progress record and
+`qstack-plan-to-html/references/board-protocol.md` is how you work it: folding
+the board, claiming it, the ready set, the pick, the claim race, the wave,
+dispatch, what a card owns, the transitions, parking, resuming a blocked card,
+splitting, and standing down.
+Both execution loops read that one file, so the protocol cannot say two
+different things.
+
+Resolve it relative to this skill's installed directory, never a hardcoded path.
+This skill installs into any of ~70 agent directories and may be a symlink. The
+protocol lives beside `qstack-plan-to-html`, which is the skill that writes a
+board in the first place, so both loops read one copy and neither owns it.
+
+```bash
+# Resolve the skill's own directory, following a symlink if there is one.
+SKILL_DIR=$(dirname "$(readlink -f <path-of-this-SKILL.md>)")
+cat "$SKILL_DIR/../qstack-plan-to-html/references/board-protocol.md"
+```
+
+Read it in full before you fold the board, and follow it exactly. If it is
+unavailable, do not work the board from memory: report that the board protocol
+could not be read, that no card was claimed, and that the workflow is
+incomplete. Then stop.
+
+This skill's latitude does not reach the protocol. Board ownership in particular
+is not an adaptation the orchestrator may make, however small and reversible
+taking a board over looks.
+
+The board sections below are this skill's own rules. Where one sharpens
+something the protocol states, it names the rule it sharpens instead of
+restating it.
+
+Name every card in text a human reads under the protocol's Naming a card, and
+let `qstack/scripts/card-ref` do the lookup rather than typing a title from
+memory. That covers the holder of a board you could not claim and the cards it
+owns, progress lines, split reports, bad-write reports, the cards a narrowed or
+limited run leaves open, parked questions, the stand-down, and the final report.
+
+## Start the execution record
+
+Create or resume `execution.md` beside the plan before changing implementation
+files. Never overwrite prior notes. Resume only when its mode is `trequartista`.
+If another mode is recorded, stop and require explicit approval to transition;
+record the approved transition before continuing. If its status is `complete`,
+require explicit approval to reopen it. If it is `blocked`, resume only after
+every blocking item is resolved. Record either status transition. Use this shape:
+
+```markdown
+# Execution
+
+- Plan: <repo-relative path>
+- Mode: trequartista
+- Review mode: full | final | none
+- Status: in-progress | blocked | complete
+- Started: YYYY-MM-DD
+- Updated: YYYY-MM-DD
+
+## Progress  <!-- omit when board-events.js exists; the board is the progress record -->
+- [ ] <plan task or acceptance condition>
+
+## Design decisions
+- <choices made where the plan was silent or ambiguous>
+
+## Deviations
+- <what changed from the plan, why, impact, and whether approval was required>
+
+## Tradeoffs
+- <alternatives considered and why one was chosen>
+
+## Open questions
+- [blocking | non-blocking] <question>
+
+## Validation
+- <command or check>: <result>
+
+## Adversarial reviews
+- <round, reviewer findings, and resolution; or explicit skip for `none`>
+```
+
+Update it when a decision is made, not from memory at the end. Record facts the
+user should know, not routine narration or private reasoning. Mark replaced
+entries as superseded rather than deleting history.
+
+## Adapt without losing the plan
+
+You may make a deviation without interrupting the user only when it is:
+
+- small and reversible;
+- consistent with the plan's stated intent and acceptance criteria;
+- invisible to users or an obvious correction of an implementation detail;
+- no riskier than the planned approach; and
+- recorded in `execution.md` when the decision is made.
+
+Before making a material deviation, stop and ask one focused question. State
+what the plan says, what you learned, the recommended change, and the main
+alternative. Material deviations include changes to scope, user-visible
+behavior, acceptance criteria, architecture, public APIs, data formats,
+dependencies, security, privacy, cost, timeline, or irreversible work. If
+unsure whether a deviation is material, treat it as material.
+
+Record approved changes as approved deviations. Do not rewrite the frozen plan.
+
+## Select and claim cards
+
+### Arguments
+
+`/qstack-loop-trequartista [plan-path] [--tasks T-03 T-07] [--epic <epic-id>] [--limit N|Npt] [--parallel N] [--review full|final|none] [--orchestrator <model> --workers <model>[,<model>...] [--reasoning low|medium|high]] [--reviewer <model>]`
+
+`--orchestrator` and `--workers` route each card's subagent to a worker model
+under the protocol's [model routing](../qstack-plan-to-html/references/model-routing.md):
+a card's own `model` hint when it is in `--workers`, else the first worker, with
+the fallback recorded on the `claimed` event. Give both or neither; the
+orchestrator model may not appear in `--workers`, and no subagent ever runs on
+it. With neither, subagents inherit the session model as before and the report
+says so. `--reasoning` sets the default effort for cards with no hint,
+`medium` when absent; no question is asked. On the first run write `Workers`
+and `Worker effort` into `execution.md` beside `Review mode`, and on a resume
+read them back under the same rule as the review mode. The two slalom rules
+bind implementation subagents only; reviewer agents are unaffected. Before
+the first wave, resolve and probe every worker through `/qstack-choose-model`
+(its `resolve` and `probe-brief`); a name that cannot be launched stops the
+run before any claim and asks, offering the closest three. How a worker is
+launched is the harness's business, under that skill's "Launching a tier in
+each harness": from Codex spawn the `qstack_<tier>` custom agent, written by
+`codex-agents`; from Claude Code pass the alias whose `ANTHROPIC_DEFAULT_*`
+mapping the probe confirmed.
+
+`--reviewer <model>` names the model every adversarial reviewer this run
+launches runs on. It stands alone: it needs neither `--orchestrator` nor
+`--workers`. Resolve and probe it the same way. It may not be the orchestrator
+model, meaning `--orchestrator` when given and the session model otherwise,
+because a review by the model that coordinated the work is the self-review the
+review mode forbids; refuse the invocation if it is. With `--review none` no
+reviewer is launched, so `--reviewer` is refused too rather than ignored.
+Record `Reviewer` in `execution.md` beside `Review mode` and read it back on a
+resume under the same rule. Absent, reviewers inherit the session model as
+before, and the record says so. A `--reviewer` the harness cannot launch is
+a recorded fallback to the session model, never a silent one.
+
+`--review` applies with or without a board and supplies the startup review
+choice instead of asking. With a board present the default is the whole board,
+ordered by this orchestrator. `--tasks` narrows to the named cards. `--epic`
+narrows to one epic. `--limit N` stops after N cards close, `--limit Npt` after
+N points close. `--parallel N` sets how many cards this run holds at once, and
+`--parallel 1` runs the board serially; without it the wave is the width the
+protocol's The wave sets. Selection happens here and never on the board. The
+board renders a file and has no controls.
+
+A narrowed or limited run that leaves cards open cannot satisfy the completion
+gate. Leave the status `in-progress` and report which cards remain.
+
+### The pick
+
+Take cards from the ready set in the protocol and record why you took each one
+in the `claimed` event's `reason` field. Honest reasons read like these:
+
+- `unblocks four cards`
+- `T-04 is done and touched the same files, so the context is loaded`
+- `smallest card that proves the migration works before the rest commit to it`
+
+Feel is allowed. Unrecorded feel is not. The ready set itself is not one of this
+skill's adaptations: a card it excludes stays excluded, whatever route through
+the plan looks better from here.
+
+### The wave
+
+Fill a wave and dispatch it, under the protocol's The wave and Dispatch. Claim
+every card the ready set offers until one of the four listed stops applies. How
+many cards to hold is not one of this skill's adaptations, and neither is
+declining to hold one: the four stops are the whole list, and `--parallel`
+already set the width. A wave needs no recording as a deviation, because cards
+the breakdown left independent are independent.
+
+Where the wave meets this skill's own rule, the rule wins. A non-material
+adaptation on one card that would change what a sibling card in the same wave is
+building is material, because the sibling is already building against the
+unadapted version. Park it and ask, or hold the adaptation until that card
+closes. The wave is not a licence to adapt around a card you are running beside.
+
+## Park and continue
+
+Park under the protocol's Park and continue, with one thing settled here:
+material decisions park. When a card reaches one, move it to `blocked` with the
+question in its `note`, leave the rest of the wave running, and refill it from
+the ready set. The run does not stop.
+
+Ask the round in the protocol's question shape, under its Park and continue.
+Every question this loop puts to a human takes that shape, the startup
+review-mode question included.
+
+A permitted non-material adaptation is still made on the spot and recorded in
+`execution.md`. Parking is for material decisions only.
+
+## Resume a blocked card
+
+Follow the protocol's Resume a blocked card, and ask whatever it sends back to a
+human in the protocol's question shape. Record the answer in `execution.md`
+before the move, under the rule this skill already applies to an approved
+material deviation: what the plan says, what you learned, and what was approved.
+The plan stays frozen.
+
+## Splitting
+
+Follow the protocol's Splitting, including the rule that a card whose
+`depends_on` names a split parent waits on that split's children. Two loops that
+pick ids differently collide on one board, so the id convention there is not
+yours to adapt either.
+
+A split is a board change, not a plan deviation, and needs no approval, because
+points are an estimate and the plan never promised one. Children that would
+cover more or less than the parent covered are a material deviation, and Adapt
+without losing the plan applies. If the `note` on an `8` does not say what the
+card splits into, report that card and leave it alone: filling it in yourself is
+a material deviation dressed as a board change.
+
+## Execute and orchestrate
+
+Break the plan into trackable tasks and keep their status current. With a board,
+the cards are those tasks and `board-events.js` is where their status lives. Fill
+a wave from the ready set, dispatch one subagent per card, and move each card
+through the protocol's transitions as it gets there. Delegate
+bounded independent work when agent tools are available, but inspect and
+integrate every result yourself. Preserve unrelated user changes.
+
+Report the run in the protocol's Progress voice. Between board transitions the
+transcript carries one line per transition and nothing else, plus a wave summary
+when a wave folds. Everything a human needs later goes to `execution.md`: what
+was tried, what the plan says, which tools ran, and why a card went the way it
+did.
+
+Brief each card's subagent under the protocol's Dispatch, and add what this
+skill requires: it reports a material decision back rather than taking it,
+because Adapt without losing the plan is yours and not the subagent's. You park
+the card.
+
+Build what the plan prescribes. Where it leaves the implementation open, or a
+lighter build is a deviation you may make under Adapt without losing the plan,
+write the least code that meets the acceptance criteria of the card, or of the
+task when there is no board. Before writing anything new, take the highest of
+these that fully meets the requirement, edge cases included: a helper,
+component, or pattern already in this repository; the standard library; a
+native platform feature; a dependency already installed; then the minimum new
+code. Add no abstraction, configuration, wrapper, or file that neither
+implementing nor verifying it requires. Before editing a function, grep its
+callers and fix the shared path once. Never cut validation at a trust boundary,
+error handling that prevents data loss, security, accessibility, or anything
+the plan names. When you take a higher rung than the obvious build, record it
+as a design decision, or as a deviation when the plan prescribed the heavier
+build.
+
+Implement the full plan, update `execution.md` continuously, and validate in
+proportion to risk. Run the repository's relevant tests, linters, type checks,
+builds, and focused behavioral checks. Do not commit or push unless the user
+explicitly asks.
+
+## Run the selected adversarial reviews
+
+In `full` mode, run one review per card and one for the plan. A per-card review
+runs while the card is in `review`, before it moves to `done`, and is scoped
+under the protocol's What a card owns: that card's `files`, the paths the card
+actually wrote, and the plan clauses in its `refs`.
+
+In `final` mode, move validated cards directly from `in-progress` to `done`
+under the protocol and run only the plan-level review. In `none` mode, use the
+same direct card transition, record that adversarial review was skipped by the
+explicit review choice, and launch no reviewer.
+
+The plan-level review in `full` or `final` runs after every other card on the
+board is `done` or `split`, never merely after the last card selected by
+`--tasks`,
+`--epic`, or `--limit`. It catches integration and seams no single card's diff
+showed. Without a board, that is the one whole-plan review. For every enabled
+review, launch a **fresh independent agent**, pinned to `--reviewer` when one
+was given. A self-review does not satisfy the
+selected mode.
+
+Give the reviewer raw evidence rather than your conclusions:
+
+- repository root and plan path;
+- `execution.md` path;
+- the base reference and the diff. A `full` per-card review gets what What a
+  card owns specifies. A plan-level review gets the complete diff including
+  untracked files;
+- validation commands already run;
+- the `card-ref` lines for the cards under review, under the protocol's Naming
+  a card.
+
+Require every finding to name its card in that same form, `T-99 "title"`, so a
+reader placing a finding needs no board.
+
+Ask the reviewer to read the plan and inspect the actual implementation without
+editing files. It must look for missing requirements, material unapproved or
+undocumented deviations, incorrect behavior, regressions, unsafe assumptions,
+weak tests, unrequested code (an abstraction, configuration, dependency,
+wrapper, or file that no plan requirement or its verification calls for), and
+inaccurate or incomplete execution notes. Require findings to include severity,
+evidence, and a concrete remedy; require an explicit statement when no blocking
+findings remain.
+
+Before each review, record a content fingerprint for the reviewed state in
+`execution.md`. Include tracked changes, hashes of untracked files, and every
+substantive section of `execution.md`; exclude the append-only
+`Adversarial reviews` section, the `Status` and `Updated` fields, and the
+plan folder's own append-only bookkeeping: `board-events.js`, which the gate
+card's own transitions change during the review it is fingerprinting, and this
+`execution.md`, which enters through its substantive sections and would
+otherwise be hashed twice. A `full`
+per-card fingerprint covers that card's `files` and only the `execution.md`
+entries naming that card. A `full` or `final` plan-level fingerprint covers the
+whole change and all of `execution.md`. Scoping the per-card fingerprint this
+way is what lets a wave run: the orchestrator writes every card's decisions into
+one `execution.md`, so a fingerprint over the whole file would be changed by
+every sibling and no card review would ever stay valid. Triage
+every finding yourself. Fix valid findings, update `execution.md`, and rerun
+affected validation. If a fix requires a
+material deviation, ask first under Adapt without losing the plan.
+
+Launch another fresh reviewer after **any accepted finding changes code, tests,
+configuration, dependencies, migrations, generated artifacts, or any
+fingerprinted execution content**, regardless of why it changed. Merely appending that review's unchanged findings and
+resolution to `execution.md` does not invalidate it. The last review must match
+the final implementation fingerprint.
+
+What the wave changed together is what the plan-level review and its
+whole-change fingerprint are for.
+
+In `full` or `final`, changing only `Status` from `in-progress` to `complete`
+and refreshing `Updated` after review passes does not require another review.
+No other post-review change receives this exception. In `none`, any substantive
+change after validation requires the affected validation to run again.
+
+When `full` or `final` requires a reviewer and the host cannot launch an
+independent agent, report that limitation and do not mark the work complete. Do
+not silently substitute another review method. `none` requires no agent.
+
+## The gate card
+
+A board written by the current breakdown ends with a `review` epic holding one
+card: the plan-level review, made visible on the board. The protocol's
+ready-set condition 5 offers it only once every other card on the board is
+`done` or `split`, whenever those cards arrived. That card is where the
+plan-level review above
+runs in `full` and `final`, and it is the one card not closed before that
+review starts. Run no second plan-level review beside it, and no per-card
+review of the gate card itself. A board with no `review` epic was written
+before this rule, and the plan-level review above runs as it stands.
+
+Work this card yourself rather than dispatching a subagent for it: the two
+reviewers below are the only agents it launches, and a subagent cannot write
+the board events this card needs. Move it through the protocol's The
+transitions, which holds it in `review` for the whole round, and then:
+
+1. record the plan-level fingerprint defined above, over the whole change and
+   all of `execution.md`;
+2. launch both in one dispatch so they run concurrently, a fresh
+   plan-adherence agent and a fresh code-review agent, against
+   that one fingerprint. Both are fresh, and independent of each other and of
+   you.
+
+Give the code-review agent the change without the plan folder's own record:
+`execution.md`, `board-events.js`, and `outcome.md`. That record is the
+adherence agent's primary input, it grows every round, and `/qstack-review`
+requires a reviewer to read every file it is handed in full. Exclude those three
+by name rather than by folder, since the plan folder also holds real
+deliverables, and say in the brief that they were excluded so the omission is
+not read as a silent skip.
+
+Open no remediation card until both agents have reported: triaging the first
+while the second still runs spends rounds on findings the other may answer.
+Triage every finding yourself first: a reviewer agent can be wrong, and a
+finding you reject is recorded in `execution.md` with the evidence that refutes
+it rather than turned into work. Every P0 and P1 finding you accept becomes a
+remediation card in the same `review` epic: one `created` event you write
+yourself, under the protocol's Subagents never write, carrying the `§` clauses
+the finding traces to as its `refs`, `points` from the closed set, non-empty
+`files` naming the paths the fix will write, and a `depends_on` the protocol
+refuses a card without. Take the next free id under the protocol's Splitting,
+and name the new card in the summary that opens it under the protocol's Naming a
+card, from the title its own `created` event carries. Those `files` never
+include the gate card's own `execution.md`, which the gate card owns for as
+long as it is live. A finding whose only fix is in
+`execution.md` gets no card: fix it yourself under the gate card and record what
+changed in that card's own `note`, because a remediation card naming that path
+could never satisfy ready-set condition 3. Work each remediation card through
+the board like any
+other. P2 findings go in `execution.md` and block nothing.
+
+Remediation changes the fingerprint, so both agents run again on the new one.
+The gate card moves from `review` to `done` when both pass at one shared
+fingerprint, or on the human override below. Nothing else closes it, and the
+protocol's The transitions is where that is stated, including why it is never
+split.
+
+The gate is not one of this skill's adaptations. A P0 or P1 finding is answered
+by a fix or by that override, never by a note in `execution.md` explaining why
+the deviation was reasonable. Where the fix needs a material deviation, ask
+first under Adapt without losing the plan, and the finding stays open until the
+answer arrives.
+
+In `none` mode the gate card carries no review, because that mode launches no
+reviewer. Move it straight from `in-progress` to `done` with `gate review
+omitted: review mode none` in the move's `note`, and record the same skip in
+`execution.md`. That is the review mode the user chose rather than an override,
+and it accepts no finding unfixed, because none was raised.
+
+### The human override
+
+A gate card also closes on an explicit human override: one board `note` naming
+who overrode it, why, and every finding accepted unfixed, followed by the
+`moved` to `done` from whichever status the card is in, `review` if the round
+is still open and `blocked` if it was already parked. Record the same three
+facts in `execution.md`.
+
+Only a human instruction produces that note. A loop never writes an override
+for itself, and a stalled or repeatedly failing review is not permission to
+write one. What the loop does instead is park the card under the protocol's
+Park and continue, moving it from `review` to `blocked` with every finding that
+stands in its `note`, then ask and stand down. A reviewer the host cannot
+launch and a run that is out of budget end the same way. Parking rather than
+leaving it in `review` is what lets a later run resume it: standing down on a
+card still in `review` leaves it unclaimable, because the protocol's Standing
+down requires every claimed card to reach `done`, `split`, `blocked`, or
+`released` first, and only `blocked` has a documented way back.
+
+## Completion gate
+
+Set `execution.md` to `complete` and report completion only when:
+
+- every plan requirement and acceptance condition is satisfied as written,
+  covered by a recorded permitted non-material deviation, or covered by an
+  explicitly approved and recorded material deviation;
+- with a board, every card is `done` or `split`, every card you claimed is one
+  you closed, split, or released under your own slug, and your `stood-down` is
+  on the board under the protocol's Standing down;
+- relevant validation passes;
+- in `full` or `final`, the final independent review fingerprint matches the
+  current implementation; in `none`, `execution.md` explicitly records that
+  review was skipped by the selected mode;
+- no blocking finding or question remains; and
+- `execution.md` accurately reflects all decisions and deviations.
+
+Otherwise leave the status `in-progress` or `blocked`, append `stood-down`
+anyway, and state exactly what remains.
+
+Write the final response in the report shape the protocol gives: the counts
+line, the table under the protocol's Standing down, then the one-line rows.
+Those rows carry this skill's own facts too: the selected review mode and its
+outcome, the deviations, the waves, and the execution file. The
+waves row says which cards ran together and where the board held the run to one
+card, and a run that was serial because every card depended on the last says so.
+Without a board there is no counts line, no table and no waves row, and the
+one-line rows carry the whole report.

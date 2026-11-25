@@ -1,0 +1,58 @@
+---
+name: ado-mentions
+description: >
+  Internal helper. Load only when explicitly named by another skill or agent.
+user-invocable: true
+disable-model-invocation: false
+allowed-tools:
+  - Read
+---
+
+# Azure DevOps Mention & Reference Conventions
+
+This skill loads the ADO mention conventions so you use the correct syntax when
+writing to Azure DevOps.
+
+## Load the Reference
+
+Read the full conventions document:
+
+```
+references/ado-mention-conventions.md
+```
+
+Note: the path is relative to the ado plugin root (`ado/references/`).
+
+## Quick Summary
+
+| What | Syntax | Example |
+|------|--------|---------|
+| Work item | `#ID` | `#123` |
+| Pull request | `!ID` | `!456` |
+| User/group | `@alias` | `@johndoe` |
+| Cross-platform (GitHub → ADO) | `AB#ID` | `AB#123` |
+| State transition | keyword + `#ID` | `Fixes #123` |
+| Bot comment prefix | `[<dev>'s bot]` | `[Jane's bot] Fixed: ...` |
+
+## When to Use
+
+Use this skill before:
+- Composing PR descriptions (`ado-publish-pr`)
+- Posting review comments or replies (`ado-babysit-pr`, `ado-pr-tender`)
+- Creating or updating work items (`ado-work-items`, `ado-draft-work-item`)
+- Posting comments to work items (`ado-work-on`)
+- Writing wiki content that references ADO artifacts
+
+## Full URL Patterns (No Shorthand)
+
+For artifacts without shorthand syntax, use explicit URLs:
+
+| Artifact | URL Pattern |
+|----------|------------|
+| Build / pipeline run | `https://dev.azure.com/{org}/{project}/_build/results?buildId={id}` |
+| Release | `https://dev.azure.com/{org}/{project}/_release?releaseId={id}` |
+| Pipeline definition | `https://dev.azure.com/{org}/{project}/_build?definitionId={id}` |
+| Build artifacts | `https://dev.azure.com/{org}/{project}/_build/results?buildId={id}&view=artifacts` |
+| Wiki page | `/{project}/_wiki/wikis/{wikiName}?pagePath=/PageName` |
+| Repo file | `https://dev.azure.com/{org}/{project}/_git/{repo}?path=/file.cs` |
+| Specific commit | `https://dev.azure.com/{org}/{project}/_git/{repo}/commit/{sha}` |

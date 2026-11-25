@@ -1,0 +1,55 @@
+---
+name: harden
+effort: xhigh
+description: Harden code where untrusted input enters the system. Use when implementing auth, handling user input, storing sensitive data, integrating external APIs, adding file uploads or LLM features, or crossing any trust boundary. Don't use for secret scanning (/safe-repo) or dependency CVEs (/deps-audit).
+user-invocable: false
+---
+
+# Harden
+
+Security as a constraint on every line that touches user data, auth, or external systems. **Proactive**: applied during implementation, not after. Reactive scans belong to `safe-repo` (sensitive data) and `deps-audit` (CVEs).
+
+## Ask first — human approval required
+
+- New authentication flow or auth logic changes
+- Storing new categories of sensitive data (PII, payment)
+- New external service integrations
+- CORS configuration changes
+- File upload handlers
+- Rate-limit / throttling changes
+- Granting elevated permissions or roles
+
+## Validate at the boundary
+
+Validate at the **system boundary** (route handler, message consumer), not in business logic: a schema validator (Zod, Joi, pydantic, …) defines the contract; reject with 422 + structured error before business logic touches the data. Trust internal code; validate only at the edges.
+
+## Defaults that are easy to forget
+
+- Authorization per resource (ownership), not just authentication
+- Queries parameterized; shell commands take argument arrays, never strings built from input; output encoded for its context (HTML, URL, JS)
+- Passwords hashed with argon2, scrypt, or bcrypt; reset tokens single-use and short-lived
+- OAuth with PKCE and `state`; redirect targets from an allowlist, never a raw user-supplied URL
+- Third-party scripts pinned with Subresource Integrity hashes
+- Session cookies `httpOnly` + `secure` + `sameSite`; auth tokens never in `localStorage`
+- Strip sensitive fields from API responses by default
+- Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
+- Rate limit on auth endpoints
+- Logs and error responses free of secrets, tokens, PII, stack traces
+- File uploads: allowlist MIME types, enforce max size before processing, check magic bytes when the type matters, store outside the webroot
+- Outbound requests: allowlist destinations; never fetch a user-provided URL unvalidated (SSRF)
+- CORS: explicit origin allowlist from config; no wildcard on authenticated endpoints
+- External integrations: verify webhook signatures, time out every external call, validate third-party response shapes before use; never deserialize untrusted input with unsafe loaders
+- Log security events (auth failures, access denials, input rejections) — without the payloads
+- Raw HTML from users only through a sanitizer (DOMPurify or equivalent)
+
+## AI / LLM features
+
+- Model output is untrusted input: validate it before it reaches `eval`, SQL, a shell, `innerHTML`, or a file path
+- The prompt is not a security boundary; enforce permissions in code (prompt injection)
+- No secrets or other tenants' data in prompts or retrieved context
+- Agent tools scoped to the task; a human confirms destructive actions
+- Token, rate, and recursion limits on every model call
+
+## Verification
+
+After security-relevant code: `deps-audit` shows no critical/high CVEs (or each documented with review date); `safe-repo --diff` clean; headers present (`curl -I`); authz checked on every protected endpoint.

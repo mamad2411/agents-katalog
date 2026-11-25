@@ -1,0 +1,83 @@
+---
+name: orchestrate
+description: >-
+  Structured 4-phase orchestration workflow across 3 platforms (Google Antigravity agy, Anthropic Claude Code,
+  OpenAI Codex CLI) that keeps the primary agent on a frontier reasoning model (Gemini 4 Argon/Carbon/Neon/Hydrogen High+, agy Orchestrator, Claude Fable/Opus/Sonnet,
+  gpt-6.2-sol / gpt-6.2-astra, o3, Grok, DeepSeek, Qwen) as architect/coordinator and dispatches subagents pinned to
+  reconnaissance (flash_lite / haiku / gpt-6-luna) or execution (flash / sonnet / gpt-6.1-terra). Activate when the
+  user invokes /orchestrate or requests multi-agent task decomposition.
+---
+
+# Mitosis Orchestrator Workflow (`/orchestrate`, v2.7.8)
+
+Execute complex engineering tasks using a 4-phase hierarchical orchestration loop with **Mitosis Orchestrator** across **Google Antigravity (`agy`)**, **Anthropic Claude Code**, and **OpenAI Codex CLI**.
+
+## When not to use
+
+- Skip it for a one-sitting set of independent lookups, and for sequential operational work whose steps depend on each other. In a measured comparison on short tasks the skill added cost there, and five of the six runs dispatched nothing.
+- For a multi-file fix of that size it made no measurable difference.
+
+### Antigravity (`agy`) pacing
+
+- Do sequential web/docs research and tracing yourself (`search_web`, `read_file`); delegate only independent work that can run in parallel, and do not wait on a single subagent for something a few of your own calls would finish.
+- When the task asks for an output file, write it as soon as you have an evidence-backed answer, then refine; do not open new verification branches before the deliverable exists.
+
+---
+
+## 3-Platform Tier Mapping
+
+| Phase / Tier | Google Antigravity (`agy`) | Anthropic Claude Code | OpenAI Codex CLI |
+| :--- | :--- | :--- | :--- |
+| **Primary Master Nucleus** | `Gemini 4 Hydrogen (High)` (default), `Gemini 4 Neon`, `Gemini 4 Argon` or `Gemini 4 Carbon` (ADC sign-in only) / Frontier | `fable` / `opus` / `sonnet` | `gpt-6.2-sol` / `gpt-6.2-astra` / `gpt-6.1-sol` / `o3` |
+| **Phase 1: Reconnaissance** | `flash_lite` (`flash-lite-scout`) | `haiku` (`Agent` with `subagent_type: "mitosis-orchestrator:flash-lite-scout"`) | `gpt-6-luna` (`spawn_agent` role `explorer` (`flash-lite-scout` accepted as alias), or `codex exec --profile mitosis-scout`) |
+| **Phase 3: Scoped Execution** | `flash` (`flash-worker`) | `sonnet` (`Agent` with `subagent_type: "mitosis-orchestrator:flash-worker"`) | `gpt-6.1-terra` (`spawn_agent` role `worker` (`flash-worker` accepted as alias), or `codex exec --profile mitosis-worker`) |
+
+---
+
+## Phase 1: Reconnaissance (Scout / Explorer Fan-Out)
+
+When context must be gathered across the workspace before planning:
+1. Identify independent lookups (file discovery, symbol search, config inspection, git/log status).
+2. Fan out concurrent read-only subagents in one turn (on agy, one `invoke_subagent` call per subagent, all issued in the same turn, then end the turn):
+   - **Antigravity (`agy`)**: `invoke_subagent` with `TypeName: "flash-lite-scout"` and `"Model": "flash_lite"`. On agy 1.5+ a scout has only `read_file`: give it exact file paths and let it only read them; searches, directory listings and git checks go to a `flash-worker`.
+   - **Claude Code**: `Agent` with `subagent_type: "mitosis-orchestrator:flash-lite-scout"` (the hook pins `model: haiku`, `effort: low`). Untyped `Agent` calls with `model: inherit` are classified by prompt; built-in `Explore` is left as-is.
+   - **OpenAI Codex CLI**: `spawn_agent(agent_type="explorer")` (`flash-lite-scout` is accepted as an alias when scripts/setup-codex.py installed it) or `codex exec --profile mitosis-scout "<lookup>"` (`gpt-6-luna`, low effort, `read-only` sandbox).
+   - Keep each prompt narrowly scoped and do not ask it to look up `rules/AGENTS.md`: subagents answer with the four-header bounded REPORT FORMAT (STATUS / FILES_CHANGED / VERIFICATION / NOTES), and the hook appends it to prompts that lack it.
+   - Scouts are strictly read-only; mutation tasks or web searches are directed to Phase 3 workers.
+3. Dispatch, then keep going:
+   - **Antigravity (`agy`)**: end the turn right after dispatching; the platform wakes you when scouts report.
+   - **Claude Code**: subagents run in the background and you are notified as each one finishes. Keep working on the parts of Phase 2 that do not depend on their reports; never poll or redo their lookups yourself. For follow-ups, reuse a finished worker's context with `SendMessage` (`to:` its agent id) instead of spawning a new one; the hook still blocks edit or multi-step instructions sent to a scout.
+   - **OpenAI Codex CLI**: `spawn_agent` returns when the role finishes; batch independent lookups in one turn.
+
+---
+
+## Phase 2: Architecture & Decomposition (Primary Mitosis Orchestrator)
+
+Perform high-reasoning work directly on the primary Mitosis Orchestrator agent:
+1. Synthesize the reconnaissance results from scouts/explorers.
+2. Design the architecture, interfaces, invariants, and step-by-step execution plan.
+3. Partition the implementation and verification into independent work units:
+   - **Recon / Check**: Config/format validation, quick status checks, single-file read verification.
+   - **Execution Worker**: Multi-file research, test authoring & execution, localized code changes, module debugging.
+   - **Primary Orchestrator**: Cross-cutting core refactors, subtle concurrency/security logic, final integration.
+
+---
+
+## Phase 3: Scoped Execution & Testing (Workers)
+
+1. Dispatch independent implementation or test work units:
+   - **Antigravity (`agy`)**: `invoke_subagent` with `TypeName: "flash-worker"` and `"Model": "flash"`.
+   - **Claude Code**: `Agent` with `subagent_type: "mitosis-orchestrator:flash-worker"` (the hook pins `model: sonnet`, `effort: medium`); use `isolation: "worktree"` for parallel branch work.
+   - **OpenAI Codex CLI**: `spawn_agent(agent_type="worker")` (`flash-worker` is accepted as an alias when scripts/setup-codex.py installed it) or `codex exec --profile mitosis-worker "<task>"` (`gpt-6.1-terra`, medium effort, `workspace-write` sandbox).
+   - Give every worker an explicit file allowlist, a verification command and the four-header bounded REPORT FORMAT.
+   - Follow-up instructions go through `send_message` (agy) or `SendMessage` (Claude Code) to a worker that already holds the context; never send edit tasks to a scout.
+2. For large programmatic fan-out, workers operate in parallel across disjoint files or branch worktrees.
+
+---
+
+## Phase 4: Synthesis & Verification (Primary Mitosis Orchestrator)
+
+1. Inspect outputs, diffs, and test outputs produced by all workers.
+2. Resolve any cross-module integration issues directly on the primary Mitosis Orchestrator agent.
+3. Run final verification (or dispatch a worker verifier) and present a concise summary with clickable file and symbol links.
+4. Terminate branch workers and clean up temporary worktrees.

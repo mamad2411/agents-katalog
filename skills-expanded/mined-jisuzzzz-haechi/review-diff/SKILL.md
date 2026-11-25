@@ -1,0 +1,50 @@
+---
+name: review-diff
+description: Reviews a diff for defects with evidence — logic defects first, then quality, with three verdict buckets. Use for /haechi:review-diff, when the main session reviews its own or a subagent's change, or when the verifier runs.
+---
+
+# Review a diff
+
+Apply the [common work contract](../../principles/work-contract.md) within this task’s scope. It owns applicable pre-action evidence, product implementation obligations and completion requirements; this skill supplies the method. Current common guidance already delivered or read may be reused.
+
+The haechi tools folder is in the task's "[haechi] Repo facts" block, or two levels above this skill's folder. Run tools with `node`.
+
+## Establish expected behavior
+
+Before reading the changed code, changed tests, implementation explanation or verification results, read the original request, agreed amendments and established behavior contracts. Note the observable success and failure conditions and behavior that must stay unchanged, with their sources. Keep this brief in the existing review notes; no separate document or agent is required.
+
+For example, if the request says to export all matching products, check that matching products on later pages are included. A report saying that the visible page exports correctly does not narrow that requirement. After establishing the conditions, read the implementation and its evidence and check both against them. Add a missing condition when its source supports it; do not change an expectation just to match the code.
+
+An implementer's summary is a claim to check, not a substitute for the request. If a requirement source is unavailable or ambiguous, identify the gap and continue checks supported by known contracts; do not invent an expectation. If you already saw implementation details, disclose that prior exposure when reporting verification limits rather than claiming an independent first reading. This ordering is an instruction, not enforced information isolation.
+
+## Order
+
+1. **Mechanical results first.** Use the repo's verify output the orchestrator gave you; run the verify command once yourself only if none was given. Every failure it prints is a finding — quote it. Do not redo by hand what lint or the verifier already checks.
+2. **Consumers outside the diff.** Run `node <tools>/impact-map.mjs --base <base>` and read the consumers of every changed export or signature.
+3. **Logic defects (the main job).** For each changed behavior, find an input or state where it gives a wrong result. Look first at the defects agents actually produce: a rule on one path and not its sibling (`node <tools>/sibling-path-map.mjs --base <base>` lists candidates), a final-looking empty state while data is still loading, one field used as both lookup key and identity, null ids matching each other, out-of-order or failed responses, leftovers after a move or split, another area's internal file imported instead of shared state, the same fact held in two places.
+4. **Where grep stops.** When safety depends on code outside the repo or on timing — a library's behavior, the pinned version or a local patch, microtask or unmount order, a wire format another service reads — read that source or run it. Put the one fact the change is safe because of in your report, with how far you proved it.
+5. **Code quality.** Read the shared [code quality rubric](../review/references/code-quality.md). Apply it to the changed code and inspect surrounding dependencies and consumers as needed to judge its effects. Keep unrelated existing improvements separate from findings about this change.
+
+For UI changes, apply the rubric's component reuse check and inspect both behavior-test evidence and the final rendered comparison against the selected design reference. Keep those verification results separate; missing visual evidence leaves that outcome unverified even when tests pass.
+
+To raise a claim's evidence, write a repro script in a temporary folder **outside the repository** and run it. Never edit, create or delete files in the repository.
+
+## Three buckets
+
+- **Defect** — needs one of: a failing path traced step by step to a wrong result; a rule present on one path and missing on its sibling, both locations quoted; a contract and the code disagreeing, both sides quoted; execution output. Give `file:line` and the scenario (input or state → wrong result).
+- **Open question** — suspicious but without that evidence, or behavior the spec does not define.
+- **Report only** — taste and unrelated existing issues. A defect outside the diff or owned files still blocks a required outcome when it breaks the requested result; report the boundary without extending edit permission.
+
+"No defects" is a valid result.
+
+Keep findings separate from verification status. For each required outcome in the reviewed scope, return passed, failed, unverified or needs decision, with the evidence reference and checked version, or the reason evidence is insufficient or the expectation unresolved. Include required outcomes with no check; absence of a finding or omitted result never establishes a pass. Keep this in the existing report, without a mandatory table or separate document. State the inspected scope and limits; a completed review does not certify unchecked behavior. The main uses these results to decide overall completion.
+
+## Discipline
+
+- Verify before claiming: "unused" means you searched the consumers; "duplicate" means you quote both; "already exists" means you opened it.
+- Report each defect once, under the most specific heading. The same defect in several places: give the count and every location.
+- Before suggesting to move state or code, read its tests; if a test pins the current design, say so instead.
+
+## Report
+
+State the conclusion and put the most severe defects first. Each finding needs an example input or state, the wrong result, affected sibling locations and `file:line`. Distinguish open questions and report-only items, and explain the fact the change's safety depends on with its proof level. User-facing labels and tables are optional. For verifier-to-orchestrator reports, preserve the final log protocol: `verifier log · <task> · <logic lines> lines · contract: yes/no · defects: N · <tag: short description per defect, or "none">`, tags `logic` · `structure` · `excess` · `quality`.

@@ -1,0 +1,42 @@
+---
+name: orleans-review
+description: >
+  Internal helper. Load only when explicitly named by another skill or agent.
+user-invocable: true
+disable-model-invocation: false
+allowed-tools:
+  - Read
+  - Skill
+---
+
+# Orleans Review — Delegating Domain Loader
+
+**Primary objective:** Equip Orleans reviews with the domain rules needed to catch real actor-model defects.
+**Decision rule:** For relevant cases these steps do not cover, choose the next in-scope action that advances this objective; preserve explicit scope, safety, and output requirements.
+
+This skill loads Orleans domain knowledge from the `orleans-dev` plugin and adds
+review-specific context on top. It does NOT maintain its own copy of Orleans rules.
+
+## Step 1: Load Domain Knowledge
+
+Use the orleans-dev plugin's comprehensive Orleans patterns skill:
+
+```
+skill: "orleans-dev:orleans-patterns"
+```
+
+This provides all grain design, concurrency, cross-grain communication, streams, and
+serialization rules with code examples and anti-pattern tables.
+
+## Step 2: Load Review Bridge
+
+Read the review-specific additions that the dev skill does not cover:
+
+```
+reference/review-bridge.md
+```
+
+This provides edge case handling for review context, Orleans version detection guidance,
+severity mapping from dev-skill anti-patterns to review findings, and a pointer to the
+JSON finding contract at `../pr-review/reference/finding-schema.md` that findings are
+emitted in.

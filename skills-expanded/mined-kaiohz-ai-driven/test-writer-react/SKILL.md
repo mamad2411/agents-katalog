@@ -1,0 +1,73 @@
+---
+name: test-writer-react
+description: "Write component (behavioral) and e2e tests for React/TypeScript apps with Vitest, React Testing Library, MSW. Golden rule: ALL tests go through a REAL behavioral entry point — render the real component (RTL); test hooks via their consuming component. NEVER a direct unit test for unconsumed logic: leave it untested, never delete it, never invent an artificial consumer. Real implementations for internal components (stores, hooks, providers), mocks only for outbound external adapters (APIs, SDKs) at the MSW network boundary, testcontainers for real-backend e2e. Trigger on: vitest, RTL, \"write tests\", \"add tests\", \"test the component/hook/service\", or any testing task in a React/TypeScript app. Use when testing any React app."
+---
+
+# Test Writer — React
+
+Write clear, maintainable tests for a React/TypeScript app with Vitest, React Testing Library, and MSW.
+
+## Use this skill when
+- Testing a component, custom hook, or service/adapter layer
+- You need MSW handlers for the network boundary
+- You're unsure whether to mock or use the real implementation
+
+## Do not use this skill when
+- The task is project structure → use `hexagonal-react-patterns`
+- The task is async patterns design → use `async-react-patterns`
+- The task is Python or NestJS testing → use `test-writer-python` / `test-writer-nestjs`
+
+## 🎯 Golden Rule (non-negotiable)
+- **ALL tests go through a REAL behavioral entry point, in this strict order**:
+  1. **Component/page owns the behavior → render the real component** (RTL) with its real providers — assert what the USER observes (roles, text, callbacks), not internals.
+  2. **Logic lives in a hook/store reachable from a component → test through the component that uses it.** `renderHook` is allowed ONLY when the hook is generic/shared infrastructure not yet consumed by any component.
+  3. **Pure TypeScript utilities with no UI/hook consumer? Never delete the logic and never invent an artificial consumer just to test it.** Keep the logic as-is but do NOT write a direct unit test for it: coverage of such utilities comes from the components/hooks that (directly or transitively) use them. If today nothing uses them, simply leave them untested rather than bypassing the golden rule.
+- **Real implementations** for ALL internal components (hooks, context providers, stores, services, domain utilities)
+- **Mocks** ONLY for outbound adapters toward external systems (REST APIs, third-party SDKs, analytics, storage) — at the network boundary (MSW) or via `vi.mock` on the adapter module
+- **A hook/service/adapter is NEVER the direct test subject when a component consumes it** — the component IS the entry point
+- **Real infrastructure** via testcontainers for integration / E2E tests that need a real backend (Postgres, Redis, LocalStack) — see `references/testcontainers.md`
+
+A stub/fake that diverges silently from the real implementation produces tests that pass but don't detect real regressions. Mocking only the network boundary keeps cost low and confidence high.
+
+## 🎯 Workflow
+1. **Ask for context** — which component, hook, or service needs testing?
+2. **Read the source code** — understand props, state, side effects, external dependencies.
+3. **Classify dependencies** — internal → real impl; external → mock via `vi.mock` + fixtures in `tests/fixtures/external.ts` or MSW handlers.
+4. **Load templates** — `references/setup.md` (vitest config, custom render); `references/component-test.md`; `references/hook-test.md`; `references/msw.md` for API boundary; `references/testcontainers.md` for real-backend E2E.
+5. **Write tests** — AAA pattern, query by role, explicit names, one logical behavior per test.
+6. **Run** — `pnpm vitest` (see `references/commands.md`).
+
+## 🛡️ Edge cases (mandatory coverage)
+Every test suite MUST cover edge cases, not just the happy path. For each component / hook / service under test, include tests for:
+- **Null / undefined props** — pass `null` or `undefined` to optional props, assert graceful rendering (no crash, shows fallback/empty state)
+- **Empty / boundary values** — empty array `[]`, empty string `""`, `0`, single-item list, very long string (truncation/overflow), very large list (virtualization/pagination)
+- **Loading / error / empty states** — assert the component renders loading skeleton, error message, and empty state correctly (not just the success state)
+- **Async edge cases** — slow API response, network error, aborted request, race condition (fast response arrives after slow one), Suspense fallback
+- **User interaction edge cases** — double-click submit (debounce/throttle), disabled button click, keyboard navigation, form submission with invalid data
+- **MSW error handlers** — add MSW handlers returning 4xx / 5xx / network error / empty response, not just 200 happy path
+- **Accessibility edge cases** — missing aria-label, no children, RTL languages, very long content
+
+If the component/hook has validation logic or business rules, add at least one test per rule that violates it and asserts the correct error/fallback UI.
+
+## What you never do
+- Write a fake store, fake context, or fake hook to replace a real internal implementation
+- Mock a React component under test or any component in its subtree
+- Mock Zustand, React Query, or any other internal state manager
+- Mock an internal service/adapter module to make a hook or component testable — mock the NETWORK (MSW) it calls instead
+- Test a hook directly when a component consumes it and the behavior is UI-observable — test through the component
+- Assert on internal implementation details (spy on a private function, check component state directly)
+- Use `waitFor` polling as a workaround for missing `await` on user events
+- Forget `userEvent.setup()` — never use the legacy `userEvent` without it
+- Mock something just to make a test pass
+
+## Related skills
+- `hexagonal-react-patterns` — project structure, layer rules, CVA variants
+- `async-react-patterns` — async patterns (test the patterns you implement)
+
+## References
+- `references/setup.md` — vitest config, test structure, custom render with providers
+- `references/component-test.md` — component test with real store + MSW for API
+- `references/hook-test.md` — hook test with `renderHook`, `act`, `waitFor`
+- `references/msw.md` — MSW server setup and per-test handlers
+- `references/testcontainers.md` — real infrastructure for integration / E2E tests (Redis, Postgres, LocalStack)
+- `references/commands.md` — vitest commands (run, watch, coverage, single test)

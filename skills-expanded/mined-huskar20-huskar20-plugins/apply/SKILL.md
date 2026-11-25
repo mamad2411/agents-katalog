@@ -1,0 +1,261 @@
+---
+name: apply
+description: Hunt for roles matching the user's career profile and submit applications end to end — searches LinkedIn Jobs, Indeed, company ATS boards (Greenhouse/Lever/Ashby), and Handshake for internship/new-grad profiles, in Chrome, filters against career-profile.md, fills and submits forms, stages them for review, or prepares ready-to-paste answers without opening a form, per the user's configured submission mode, logs every application to the Google Sheets tracker, and sends a summary. Use when the user says "run the job hunt", "find me jobs", "apply to jobs", "run career hunter", or a scheduled apply task fires.
+---
+
+# Career Hunter — Apply
+
+Hunt for matching roles and submit applications in the user's name, end to end,
+within the guardrails below. When a form demands something outside the profile,
+the answer is always **skip-and-flag** — a skipped application costs a day; a
+wrong or invented answer costs the job.
+
+## Load configuration first
+
+Read from the working folder; if any is missing, stop and route the user to
+`career-hunter: setup`:
+
+- `career-profile.md` — single source of truth for every answer. Re-read every
+  run; the owner edits it by hand.
+- `career-hunter-state/config.json` — spreadsheet ID, resume path,
+  `resume_uploadable` (whether `file_upload` can actually reach the resume —
+  set by setup), daily cap, per-company cap, allowed days, SSO permission, and
+  **submission_mode**, one of:
+  - `auto` — fill and submit without per-form confirmation
+  - `review` — fill everything, then stop and let the user review and submit
+  - `prepare` — never open a form at all; find, score, and write ready-to-paste
+    answers to a queue file for the user to work through by hand. By far the
+    cheapest mode; see step 5b.
+- `career-hunter-state/seen_jobs.json` — dedupe memory. Schema:
+
+```json
+{
+  "last_run_utc": "...",
+  "jobs": {
+    "<normalized company|title>": {
+      "disposition": "applied | skipped | flagged | failed | queued-blocked-domain",
+      "date": "YYYY-MM-DD",
+      "reason": "short note"
+    }
+  }
+}
+```
+
+If today is not one of `apply_days` and this is a scheduled run, note that and
+stop (a manual "run the job hunt" always proceeds).
+
+## Guardrails (non-negotiable)
+
+1. **Answers come only from `career-profile.md` and the resume.** Never invent,
+   round up, or embellish experience, certifications, degrees, or eligibility.
+   Free-text answers ("why this company") are built strictly from resume facts +
+   the JD.
+2. **Honor the profile's "Never answer / always skip-and-flag" list** (SSN/DOB/IDs,
+   references, assessments, unusual legal attestations). Abandon the form without
+   submitting and list the role in the summary with the reason.
+3. **Work-auth/citizenship/clearance questions:** answer exactly as the profile
+   states. If a role hard-requires something the profile says the user lacks
+   (citizenship, active clearance), skip it entirely.
+4. **Logins:** prefer no-account flows. If a login wall appears and config says
+   `google_sso_allowed`, use **Continue with Google** — never type or store a
+   password. Password-only signup, captcha, or 2FA → skip and flag. Never attempt
+   to solve or bypass a captcha.
+5. **Stop-and-verify before submit:** on each review page, check
+   name/email/phone/resume-attached/screening answers. In `review` mode, stop
+   here and hand off to the user. Verify by text (see Cost discipline); take one
+   screenshot before submitting in `auto` mode — that is the audit record for an
+   action taken in the user's name.
+6. **No assessments, no interviews:** never start a coding test, recorded video,
+   or scheduling flow. Flag them.
+7. **Hidden-requirement check:** application forms sometimes reveal requirements
+   the listing hid (mandatory onsite days in another city, citizenship, unusual
+   consents). If a form contradicts the profile's location/level/auth filters,
+   do NOT submit — flag with what you found.
+8. Anything ambiguous about *whether the user would want the job at all* (weird
+   comp structure, heavy on-call, relocation-coded "hybrid") → don't apply; flag.
+
+## Cost discipline
+
+A browser run is expensive, and almost all of the cost is avoidable. Follow
+these — they change what a run costs by an order of magnitude, not a few percent.
+
+**Verify with text, not pictures.** A screenshot costs roughly an order of
+magnitude more than reading the page. Use `get_page_text` or `find` to confirm
+state: a confirmation page is verified by finding "Application submitted", a
+filled field by reading its value, a tracker row by re-reading the cell.
+
+Take a screenshot only when:
+
+- a custom widget's state genuinely cannot be read as text (toggle, consent
+  checkbox, react-select chip), **or**
+- immediately before submitting in `auto` mode — one image, as the audit record.
+
+Never screenshot to "check where we are". Read the page.
+
+**`find` before `read_page`.** `find` returns a handful of refs for a targeted
+query; `read_page` can return a 50,000-character tree. Reach for `read_page`
+only when `find` has failed to locate something and the page structure is
+genuinely unknown.
+
+**Batch.** Put a whole fill sequence into one `browser_batch` — type, type,
+select, click — instead of one call per field. Exception: `navigate` to a new
+domain must stay standalone so the permission prompt can surface.
+
+**Budget each application.** Roughly 25 tool calls from opening the form to
+submitting. Past that, the form is fighting back: mark it `failed`, record why,
+and move on. Never retry the same widget more than twice — react-select and
+typeahead components either work on the second attempt or are not going to.
+
+**Triage before opening.** Score from what the listing already shows (title,
+company, location/mode, posted comp). Open the full JD only for roles that
+survive that filter. Opening twenty JDs to apply to five is most of the search
+cost for none of the benefit.
+
+**Prefer the cheap path.** Greenhouse with MyGreenhouse autofill and LinkedIn
+Easy Apply with a stored resume are dramatically cheaper than a cold Ashby form.
+When a role is posted on several systems, take the cheapest one.
+
+Quality over volume is a cost strategy as well as a quality one: five good
+applications cost less and land more than twenty scattered ones.
+
+## Workflow
+
+### 1. Domain preflight
+
+Browser site access is granted per domain and varies by session. Probe each
+source family with a **standalone** `navigate` call (denials inside
+`browser_batch` never prompt the user): `linkedin.com`, `indeed.com`, one ATS
+domain (e.g. `job-boards.greenhouse.io`), `app.joinhandshake.com` if the
+profile's level is intern/new-grad, and `docs.google.com` for the tracker.
+A flat denial = that source is unavailable this run; don't retry it. If nothing
+is reachable, mark strong candidates `queued-blocked-domain` and tell the user
+the fix: site access lives in the Claude app / Chrome extension "Allowed sites"
+settings. Retry `queued-blocked-domain` items FIRST on the next run that can
+reach them.
+
+### 2. Read the tracker for dedupe
+
+Read the sheet with the Drive connector using `spreadsheet_id` from config.
+Build the set of existing `(Company, Role)` pairs and note the highest entry # /
+last filled row (data starts at row 3; entry N = row N+2). **Never apply to a
+(Company, Role) already in the tracker or in `seen_jobs.json`.** Count this
+week's per-company applications for the per-company cap.
+
+### 3. Hunt
+
+Ensure a browser is connected (`list_connected_browsers`; if none, `switch_browser`
+and ask the user to click Connect — never fall back to unauthenticated scraping).
+
+Build search queries from the profile's **Titles** list (quote multi-word titles,
+OR them together). Search all three source families, newest-first, posted within
+the last ~3 days (first run: 14 days):
+
+- **LinkedIn Jobs** — the title query; filters: Remote (user's country) and
+  separately the profile's metro area; Experience level matching the profile;
+  Date posted: past week.
+- **Indeed** — same queries; remote + metro radius; last 3 days.
+- **ATS x-ray** — Google/Bing: `site:job-boards.greenhouse.io OR
+  site:jobs.lever.co OR site:jobs.ashbyhq.com "<top title>" <2-3 profile
+  keywords>` with a recency filter.
+- **Handshake** (`app.joinhandshake.com`) — **only when the profile's level is
+  intern or new-grad**: it is the primary campus-recruiting board and lists
+  roles the other sources never carry. Requires the user's school-linked
+  Handshake session in Chrome (no session → skip the source and note it).
+  Search the title query with the Internship (or Full-time for new-grad) job
+  type filter. Handshake postings apply via the employer's own ATS or
+  Handshake's Quick Apply; treat Quick Apply like LinkedIn Easy Apply —
+  resume must already be uploaded to the user's Handshake profile.
+
+Collect candidates as (company, title, location/mode, comp if posted, JD URL,
+source). Normalize URLs (strip tracking params) before using as state keys.
+
+**Score from the listing first.** Title, company, location/mode, and posted comp
+are enough to drop most candidates against the profile's hard filters. Open the
+full JD only for roles that survive — that is where the search-phase cost is.
+
+### 4. Score and select
+
+Score against the profile's target-roles/filters section: title/level match,
+skill overlap with the resume, location rule, comp floor, employment type.
+Drop hard-filter failures (record as `skipped` with reason). Take the top
+matches up to the daily cap. **Quality over volume** — a 6/10 fit does not get
+submitted just because the cap has room.
+
+### 5a. Apply (`auto` and `review` modes)
+
+For each selected role, follow `references/ats-playbook.md` (per-ATS mechanics,
+resume upload limitations, email verification codes, iframe gotchas). In brief:
+
+1. Prefer the company's own ATS posting over LinkedIn/Indeed quick-apply, and
+   prefer whichever system already has the resume cached.
+2. **Attach the resume first, before filling anything.** Most ATSs parse it and
+   autofill name, email, and work history — every field it fills is a field you
+   don't pay to fill. Doing this last wastes that.
+3. Fill whatever the parse left empty from the profile; answer screening
+   questions per profile.
+4. Cover letter: text field → write 3–4 tailored sentences from resume facts +
+   the JD; file-upload-only → flag for manual apply.
+5. Guardrail 5 verification, then submit (`auto`) or hand off (`review`).
+6. A form that errors repeatedly, dead-ends, or blows the ~25-call budget →
+   mark `failed`, move on. Never brute-force a live form.
+
+**When the resume cannot be attached** (no cached copy and `resume_uploadable`
+is false — see the playbook): fill every other field, then stop and hand the
+role to the user with the exact URL and what remains. Leave the tab open. Record
+`flagged` with reason `resume-upload-blocked`. Do not submit an application
+without the resume attached.
+
+### 5b. Prepare (`prepare` mode)
+
+No form is opened and no browser filling happens. For each selected role, write
+an entry to `career-hunter-state/prepared/<YYYY-MM-DD>.md`:
+
+- Company, role, location/mode, posted comp
+- The apply URL
+- One-line fit rationale
+- **Every answer the user will need, ready to paste** — screening answers drawn
+  from the profile, and the 3–4 sentence cover-letter paragraph tailored from
+  resume facts + the JD
+- Anything in the JD that contradicts the profile's filters, called out
+
+Then report the queue location and stop. Nothing is written to the tracker:
+the Applications tab means "I applied", and the Dashboard funnel counts depend
+on that staying true. The user logs rows themselves as they work the queue, or
+runs `sync` afterward to pick up the confirmation emails.
+
+This mode costs a small fraction of a browser run and is the right default for
+anyone cost-conscious or applying to roles worth a personal touch.
+
+### 6. Log to the tracker
+
+Append one row per submitted application using the Name Box method in
+`../sync/references/sheet-writing.md`. Re-read the header row (row 2) and map
+by column NAME (the owner may have edited the schema). Values per the schema in
+`../setup/references/tracker-schema.md`: Source `LinkedIn`/`Indeed`/`Direct`,
+Applied Date + Last Activity = today (`Jul 1, 2026` format), Stage `Applied`,
+Status `Applied`, Notes `Auto-applied by Claude <date> — <one-line fit rationale>`.
+Verify each row by re-reading the written cells as text; if the write fails, still record the
+application in `seen_jobs.json` (it WAS submitted) and lead the summary with the
+unlogged rows.
+
+### 7. State, notify, report
+
+1. Update `seen_jobs.json` with every candidate touched (applied/skipped/
+   flagged/failed) and `last_run_utc`. Include a short `run_notes` field with
+   anything the next run should know (blocked domains, ATS quirks discovered).
+2. If config `push_on_apply` is true and anything was applied or flagged, send
+   one push: `Job hunt: applied to N roles (…). M flagged for manual finish.`
+   (Config missing the key → treat as false; `push_on_interview` belongs to the
+   sync skill and does not govern this.)
+3. Report a summary table: applied (company, role, source), skipped + why,
+   flagged + why, sources unavailable. In `prepare` mode, report the queue file
+   path and the count of prepared roles instead of applications.
+
+## Robustness notes
+
+- LinkedIn and Indeed rate-limit and A/B their UIs; if a page looks unfamiliar,
+  re-read it (text, not a screenshot) rather than clicking from memory.
+- The tracker dedupe is the last line of defense against double-applying;
+  `seen_jobs.json` is the first. Rely on both.
+- Titles like "Engineer II" or requirements far below the profile's level are a
+  level mismatch — skip, don't stretch.

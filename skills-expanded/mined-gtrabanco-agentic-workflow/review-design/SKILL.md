@@ -1,0 +1,76 @@
+---
+name: review-design
+user-invocable: false
+version: 4.10.0
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Internal UI/UX design review pass of the agentic-workflow review pack —
+  composed in-turn by review-change and product-audit; not a menu entry.
+  Checks the changed UI against the project's design doc: consistency, states,
+  responsiveness, and reuse — applies only when the project has a UI and the
+  change touches it. Findings only; never edits code.
+---
+
+# Review Design (internal)
+
+Review-pack pass: follow this file inline as the routed step — findings only,
+never edits, never refactors (identity and guardrails owned by
+`skills/review-implementation/references/FINDER_CONTRACT.md` §Pass identity).
+
+## Scope
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md` (§Scope):
+read it before the checklist and apply it as written, stating the scope at the
+top of the returned table. Missing reference → STOP.
+
+## Checklist
+
+The tally is `skills/review-implementation/references/FINDER_CONTRACT.md`
+§Checklist discipline's contract: `evaluated` equals this list's item count, and
+`pass + findings + n/a` equals it — a count above the item count is fabricated.
+
+✓ Read the project's design doc first (e.g. docs/frontend/DESIGN.md) — cite the rule for every finding
+✓ Changed components reuse the design system (no one-off styles/colors/spacing duplicating existing tokens or components)
+✓ Every new/changed view handles ALL states: loading, empty, error, success (cite each)
+✓ Responsive behavior stated and honored at the project's breakpoints (n/a if the platform has none)
+✓ No hardcoded user-facing strings where the project declares i18n (cite the i18n doc)
+✓ Visual hierarchy: primary action distinguishable, one primary action per view
+✓ Consistency with sibling screens (same patterns for the same interactions — cite the diverging sibling)
+✓ Destructive actions require confirmation and are visually distinct
+✓ Feedback on every user action (submit, save, fail) — no silent operations
+
+## Materiality bar
+
+Owned by `skills/review-implementation/references/FINDER_CONTRACT.md`
+(§Materiality bar): read it before the checklist and apply it as written — cite the rule it violates beside the evidence; never pad the table.
+Missing reference → STOP.
+
+## Return exactly
+
+`Sev` and `Impact` are the two published closed sets (`BLOCKER | CRITICAL |
+WARNING | SUGGESTION` and `blocking | docs-only | report-only`); their meanings
+are owned by `review-implementation` (`CLASSIFY.md` §Severity ladder) — assign a
+token, never a prose grade.
+
+```
+REVIEW DESIGN — scope: <scope>
+
+| # | Finding | Sev | Impact | Evidence | Suggested fix |
+|---|---------|-----|--------|----------|---------------|
+| 1 | <what>  | BLOCKER|CRITICAL|WARNING|SUGGESTION | blocking|docs-only|report-only | <file:line> | <smallest action> |
+
+Checklist: <n> evaluated, <n> pass, <n> findings, <n> n/a (<which + why>)
+Summary: <1-2 sentences>
+Decision: PASS | FAIL
+```
+
+FAIL if any `BLOCKER`, `CRITICAL` or `WARNING` finding is open; PASS otherwise.
+`SUGGESTION` findings never block — they route to the caller's triage step.
+
+## Done when
+
+- Every checklist item was evaluated with evidence (file:line or command output)
+  or explicitly marked n/a with the reason.
+- The fixed-format block above is returned — nothing more, nothing less — and
+  no code was changed.

@@ -1,0 +1,149 @@
+---
+name: memory-graph
+description: "长文记忆图谱（Memory Graph）。写小说/连载/剧本/系列教程等长内容时使用——自动提取实体/事件/关系/因果，建立四维图谱（实体网+时间线+因果链+概念库），支持查询、多跳关系展开、伏笔追踪、一致性检查、旧设定弃用/恢复（改稿用）。基于MAGMA论文四图思想（小说版novel-magma-memory的通用化）。Memory graph for long-form writing: entity network, timeline, causality chain, concept base — with multi-hop queries, plot-thread tracking, consistency checks, and retire/revive for revised canon."
+version: 1.1.0
+author: 涛哥
+license: MIT
+metadata:
+  hermes:
+    tags: [memory, graph, writing, longform, novel, plot-tracking, consistency]
+    category: utilities
+    homepage: https://github.com/jiawood2006/hermes-skills
+---
+
+# Memory Graph 长文记忆图谱
+
+写长内容（小说/连载/剧本/系列教程/世界观设定）最大的痛点是**记不住前面写了什么**——人物关系、事件顺序、埋的伏笔、前后矛盾。本技能用**四维图谱**帮你记住一切。
+
+> 📁 **安装**：`hermes skills install jiawood2006/hermes-skills/skills/memory-graph` 或按 README 方式二复制 → 默认在 `~/.hermes/skills/utilities/memory-graph/`。
+
+## 触发条件
+
+- 写小说/连载/剧本/系列内容，需要管理人物、时间线、伏笔
+- "帮我记住前面写了什么""查一下XX在第几章出现过""检查前后有没有矛盾"
+- 系列内容更新前查询已有设定（人物关系/地名/事件）
+
+## 四维图谱
+
+| 图谱 | 内容 | 对应能力 |
+|:---|:---|:---|
+| 实体图谱 | 人物/地点/物品/组织 + 关系网 | 查询"XX 和 XX 什么关系" |
+| 时间图谱 | 事件按时间排序 | 时间线回顾 |
+| 因果图谱 | 事件因果链 | **伏笔追踪**（线索未回收检测）|
+| 语义图谱 | 概念/设定/主题 | 世界观一致性 |
+
+## 使用步骤
+
+### 1. 初始化项目
+
+```bash
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py init --name "默书斋" --dir ./data
+```
+
+### 2. 每写一章/一集就摄入
+
+```bash
+# LLM 提取（推荐，需 LLM key）
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py ingest 第3章.txt --dir ./data --ch 3
+
+# 无 LLM key：手动指定实体 + 规则提取
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py ingest 第3章.txt --dir ./data --ch 3 --entities "陈默,周晓芸,赵全发" --no-llm
+```
+
+自动提取：实体（人物/地点/物品/组织）+ 关系 + 事件 + 因果 + 概念。
+
+### 3. 写作前查询（支持多跳展开）
+
+```bash
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py query 陈默 --dir ./data
+# 输出：属性/别名/关系网（含反向关系）/相关事件
+
+# 多跳：看"朋友的朋友"——查一个人物时把两跳内的关系网全展开
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py query 陈默 --hops 2 --dir ./data
+```
+
+`--hops 2` 输出示例（逐跳展开，含反向边，已弃用实体标注）：
+
+```
+   ── 多跳展开（2 跳）──
+   🔗 第 1 跳（3 条）:
+   陈骏 --对手--> 贺军生 — 拆迁利益冲突
+   陈骏 --恋人--> 周雅
+   🔗 第 2 跳（1 条）:
+   贺军生 --控制--> 老城区改造办
+```
+
+> 用途：写到后期，人物关系已经绕起来——两跳展开能快速看清"这个人牵扯到哪些势力"，避免漏掉已经建立的联系。
+
+### 4. 弃用旧设定（`retire` / `revive`）——**改稿必用**
+
+改稿时旧设定**不能直接删**（历史章节引用过、读者已经看过），应标记失效：
+
+```bash
+# 弃用（务必写原因）
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py \
+        retire 军人父亲 --reason "改稿：父亲身份改为商人" --ch 5 --dir ./data
+
+# 恢复
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py revive 军人父亲 --dir ./data
+```
+
+弃用后的行为：
+- `status` 单独列出已弃用实体
+- `query` 在关系上标 `⛔`，并显示弃用原因
+- `check` **跳过**已弃用实体做冲突判定，但会提醒「已弃用实体仍被引用」（提示你要不要一并改稿）
+- 历史关系与事件**完整保留**（不是删除）
+
+### 5. 时间线回顾
+
+```bash
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py timeline --dir ./data
+```
+
+### 6. 一致性检查 + 伏笔追踪（每阶段必跑）
+
+```bash
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py check --dir ./data
+# 输出：时间倒挂 / 线索未回收 / 别名冲突 / 已弃用实体仍被引用
+```
+
+### 7. 统计 + 导出
+
+```bash
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py status --dir ./data
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py export --dir ./data -o 全量.json
+```
+
+## 配置（LLM 提取）
+
+```bash
+export LLM_API_KEY="你的key"
+export LLM_BASE_URL="https://api.deepseek.com/v1"
+export LLM_MODEL="deepseek-chat"
+# 或写 ~/.deai_writer.conf [llm] 段
+```
+
+## 存储
+
+- 每个项目一个目录：`<dir>/memory_graph.json`（单文件，可备份/版本管理）
+- 结构：entities / timeline / causal / semantic / meta
+
+## 已知陷阱
+
+- **LLM 提取是异步的**：摄入时 LLM 可能偶尔失败（重试即可）；`--no-llm` 是降级方案
+- **实体合并**：同一实体不同写法会合并（别名自动补充），但**强烈建议统一称呼**（"陈默" vs "陈先生"）
+- **时间标注**：文本里写清故事内时间（"第3天""当晚""2024年5月"）能让时间线更有用
+- **只提取明确信息**：LLM 不会编造（prompt 已限制），但过度模糊的文本提取质量会下降
+- **小说专用进阶版**：长篇小说推荐用 novel-magma-memory（POV/伏笔账本/情感图更细），本技能是通用轻量版
+- **弃用 ≠ 删除**：`retire` 只标记失效、保留历史。**不要**手改 JSON 删实体——历史章节引用过的设定删掉后，`check` 就查不出"旧设定还在正文里"这类问题了。
+- **多跳别设太大**：`--hops 3+` 在实体多时输出会爆炸（关系网密集）。看图谱规模，通常 2 跳够用；要全量看用 `export`。
+- **弃用后记得改稿**：`check` 会提示「已弃用实体仍被引用」——这是提醒不是报错，确认正文里是否也要一并改。
+
+## 快速验证 / Smoke Test
+
+```bash
+# 真实自测：初始化一个 5 秒完成的临时图谱
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py init --name "自测" --dir /tmp/mg_selftest
+python3 ~/.hermes/skills/utilities/memory-graph/scripts/memory_graph.py status --dir /tmp/mg_selftest
+# 期望：status 显示图谱已初始化、实体/关系计数为 0
+```

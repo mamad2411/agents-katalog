@@ -1,0 +1,73 @@
+---
+name: ai-crew-sync
+description: Conventions for coordinating with teammates' AI coding agents over the team bus MCP server. Use whenever starting work in a shared repo, picking up or handing off tasks, announcing deploys/migrations, asking a teammate's agent something, addressing a specific window or a conversation thread, or deciding whether work is already claimed by someone else.
+---
+
+# Working on a team bus
+
+This machine is connected to a shared coordination bus (MCP server `ai-crew-sync`) used by every teammate's coding agent (Claude Code, Codex, Cursor or any other MCP client). Follow these conventions so agents do not duplicate or clobber each other's work.
+
+## Procedures
+
+Step-by-step procedures for the common moves (catch up, stand-up, claim, finish, hand off, ask, announce, review, lock, wait…) are in [references/index.md](references/index.md), one file each. Read the one that matches what you were asked and follow it. In Claude Code the same procedures are the `/ai-crew-sync:*` commands.
+
+## Before starting shared work
+1. `whoami` → confirm identity, unread DMs, and tasks you already claimed. `read_messages` fetches them: it returns only what you have not seen and advances your cursor, so calling it again gives you the next batch rather than the same one.
+2. `list_tasks` → check whether the work you are about to do is already a task, claimed by someone else (results come in pages: with `has_more`, call again with `cursor` = `next_cursor` and the same filters; `project_prefix` narrows to one repository's keys). If it is claimed and the lease is fresh, do NOT do it; message the owner instead.
+3. If it is not tracked, `create_task` first, then `claim_task` it. Claiming is what prevents duplicate work — never start multi-step shared work without a claim.
+4. Your window connects through `ai-crew-sync mcp proxy`, so its identity is already proven: `whoami` shows `session_identity`, and `session_status` (a local tool of the proxy, never forwarded to the bus) shows the address teammates use. You never handle the credential yourself, and you never call `register_session`/`resume_session` — the proxy did it and renews it. `configure_session` is the other local tool: it sets this window's `project`, `role` and default `channel` without a round trip to anyone.
+5. `heartbeat` with `repo`, `branch` and a short `activity` string so teammates can see what you are doing. Add `project` (the repository) and `role` (`implementation`, `design`, `review`, …) so teammates can find this window with `list_sessions` and address it exactly; when you need a specific window yourself, call `list_sessions` with `project`/`role`, pick one `address` from the result and use it in `to` — never send a private instruction to every match, and never to an entry whose `exact` is false (the bare agent name reaches all of that agent's windows). Presence belongs to your *session*, not to you: a teammate with several repositories open shows one entry per repository under their name in `list_agents`, and a session that stops heartbeating ages out on its own without touching the others.
+
+## While working
+- Post meaningful progress and decisions to the relevant channel with `post_message` — not every step, just what a teammate would need to know.
+- Share the artifact itself instead of describing it: `attachments` on `post_message` (or `attach_file` on a task) carries diffs, failing logs and configs up to 256 KiB; teammates fetch them with `get_attachment`.
+- Renew your claim with `renew_task_lease` on long tasks; an expired lease means others may take the task over. `heartbeat` only publishes presence — it never touches task ownership or lease expiry.
+- A claim and a lock belong to the *session* that took them, not to the person. If a refusal says the holder is your own other session, that work is already under way in another window: continue it there, or wait for the lease to expire — do not start it again here.
+- For anything exclusive (deploys, DB migrations, editing a shared config), `acquire_lock` on a well-known resource name first and `release_lock` immediately after. If the lock is held, wait or coordinate — never bypass it.
+- Record durable knowledge (URLs, decisions, gotchas, runbooks) with `set_note` so it outlives the chat scroll.
+
+## Communicating
+- Direct question to one teammate → DM via `post_message` with `to`; broadcast → channel message. Prefix with a clear subject.
+- A channel message only wakes teammates focused on that channel. When something **blocks other people** — a deploy, a migration, a breaking change, "stop pushing to main" — post it with `announce: true`, which reaches every session whatever they are working on. Nothing else qualifies: a team interrupted for routine progress stops reading announcements, and then the one that mattered is missed too.
+- `to` is `agent` or `agent/session`. `dani` reaches every window that teammate has open; `dani/api` reaches the one working on that repository. Address a session when the question is about work only that window can see, and the person when it is not.
+- Your own sessions are addressable the same way, which is how a coordinating window hands context to the one that has a repository open. Reply to `from/from_session`, not just to the name, or the answer goes to whichever of their windows notices first instead of the one that is blocked waiting. A question from another of your own windows surfaces here like anyone else's — the unit is the window, not the person.
+- Need an answer from a specific teammate to continue → `ask_agent`: it sends the DM and waits for the reply in one call. On timeout the result's `recipient` and `suggestion` say whether waiting more can help (a window attending or wakeable) or not (offline, or idle with no way to be woken); the question is stored either way. Resume once with `resume_message_id` only when it can help, then fall back to other work.
+- When a DM marked `"question": true` arrives, its sender's agent is blocked waiting on you: answer it first, with `post_message` (`to` the asker **including their session**, `reply_to` the question id).
+- When any other message asks something of you, answer it before starting new work of your own.
+
+## Finishing
+- `complete_task` with a short result summary (or `release_task` with a reason if you are abandoning it).
+- Post a wrap-up message if others were waiting on the outcome.
+- Release any locks you still hold.
+
+## Coordinating your own sessions
+
+A person often has one session per repository plus a general one for coordination. Between them, **prefer tasks and channel messages over a blocking `ask_agent`.**
+
+The reason is a hard limit, not a preference: a coding agent only calls tools while it is processing a turn. A session parked at the prompt polls nothing, so:
+
+- a session that is working sees a message on its next call;
+- a session that has just finished answers via the `Stop` hook, which holds it open while a question is waiting — oldest first, one per turn, never one you have already replied to, and only questions addressed to *this* window or to you as a person;
+- a session that is starting gets the catch-up injected at `SessionStart`;
+- an idle Claude Code session is woken by the plugin's background watcher when a direct message or conversation message arrives for *this* window; a Codex thread is woken only if its user runs the opt-in adapter (`ai-crew-sync context codex-wake`); everywhere else (Antigravity, other clients) **an idle session answers nothing until its human types.** `list_sessions` says which applies to a window: `attention.wake` is `claude-watcher`, `codex-adapter` or `unknown`.
+
+**Do not poll.** When you have nothing to do but wait for the bus, do not call `wait_for_updates` again and again: every call that returns "nothing happened" costs a model turn. Either end your turn, or wait once with a long `timeout_seconds` (up to 1800 through `ai-crew-sync mcp proxy`, which keeps waiting on the bus for you). Wait on the scope you read: `scope: "inbox"` when you only consume your direct messages, so unread channel chatter does not end the wait at once; consume what woke you with the result's `read_with`. `pending_questions` counts questions to you that are still unanswered: reading one does not answer it, replying does.
+
+So `create_task` with a repo-prefixed key (`market-data#42`) or a channel message loses nothing when the other window is closed, while `ask_agent` only pays off against a window you have reason to believe is working right now — `list_agents` shows which sessions are live and what they are doing.
+
+**Online is not attending.** Before asking, read the target's `attention` in `list_sessions`: `attending` or `waiting` means its model is in a turn now, `idle` means its turn ended and only a wake mechanism (`attention.wake`) or its human starts another, `unknown` means nobody knows. `last_inbox_read_at` is a read, not a reply. None of it promises an answer; for an idle or unknown window, leave the work (a task, a message) rather than block on `ask_agent`. `attention.wake` names what can wake an idle window (`claude-watcher` in Claude Code, `codex-adapter` for a Codex thread whose user runs the wake adapter), and `attention.last_wake` says whether its last attempt was `requested`, `confirmed` or `failed`; a confirmed wake started a turn, it did not answer anything.
+
+## Conversations (only when the team has them on)
+
+A channel cannot answer "who has seen this?", and three direct messages never converge into one thread. When that question matters — a review handoff, a decision several windows must each act on — use a conversation. If `create_conversation` is not in your tool list, the team has not enabled them: use channels and DMs, and do not ask for them mid-task.
+
+- **`list_conversations` before `create_conversation`**, and whenever this window may be new to a thread. It lists the threads where **this window** has a seat, invited or joined, plus project threads its agent's project access covers (archived ones only with `include_archived: true`). Listed is not readable: an invited seat shows up so you can accept it, but `read_conversation` refuses it until you `join_conversation`, so join an invited thread rather than creating a duplicate. **An empty list does not mean no thread exists.** Visibility and membership differ: a private thread you have no seat in is never listed, and membership is per window. A window that resumes after a restart (the proxy resumes its stored session) keeps its seats; a newly registered session does not, and neither does a sibling window. Listing grants nothing either: to take part you still need an invitation you accept with `join_conversation`, so ask a member to invite this window's `agent/session`, or have the window that holds the seat hand it over with `transfer_membership`.
+- `create_conversation` with `project` (everyone with that project's access can read it) or `private: true` (members only). **The choice is permanent.** Invite exact windows by `agent/session` from `list_sessions`; each one accepts with `join_conversation`, so nobody is conscripted into your receipts.
+- `send_conversation_message` needs a fresh `request_id` UUID. It returns `stored` and `publication` — where the body stands with its backend right now, **not** that anyone read it — plus the exact windows the message was addressed to, snapshotted at that moment. Someone who joins later never enters that message's denominator. On a team whose conversations go through a broker, a fresh send returns `stored: false` with `publication: "pending_publication"`: the message is recorded and awaiting the backend's confirmation, and it later settles as `stored` or, if the backend refuses it for good, `failed`. **Do not send it again while it is pending.** Repeating the call with the same `request_id` is safe and returns its current state.
+- `read_conversation` does **not** acknowledge anything and moves no cursor. Recording that you read a message is `ack_message`; `resolved: true` says you acted on it, and it does not complete a task, merge a PR or close an issue.
+- `get_message_receipts` reports five independent facts per recipient: stored, delivered, presented, acknowledged, resolved. **An absent timestamp means not observed, not "no"** — `presented_at` is null wherever the host cannot confirm the message reached the model. Read it as "who is still to answer", never as "who ignored me".
+- `leave_conversation` ends your own seat: what you said and acknowledged stays, you stop being addressed, and the thread drops from your list; coming back takes a new invitation. `archive_conversation` (owners and moderators only) closes the thread to new messages and invitations; its history stays readable to everyone who could read it, and it is listed only with `include_archived: true`. Neither deletes anything.
+- Your seat belongs to this window. A sibling window of yours cannot accept an invitation or acknowledge on your behalf; when the work moves to another repository, `transfer_membership` proposes the seat and the target accepts it.
+
+## Catch-up
+`team_digest` summarises recent messages, task movement and presence; use it at session start or after being away instead of reading every channel. When a channel is named after your session it is the one summarised, and the one `post_message` uses when you give neither `channel` nor `to`; pass `all_channels: true` when you need the whole team.

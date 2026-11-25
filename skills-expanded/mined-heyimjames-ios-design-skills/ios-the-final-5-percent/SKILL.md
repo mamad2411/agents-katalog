@@ -1,0 +1,2978 @@
+---
+name: ios-the-final-5-percent
+description: "The final 5% of detail that separates a competent iOS app from a beloved one. Use this skill whenever the user is building, reviewing, or polishing a native Swift/SwiftUI iOS app and wants it to feel custom, considered, and crafted — like Halide, Things 3, Linear, Granola, or Apple's own apps. Triggers on: polish, premium feel, details, micro-interactions, craft, attention to detail, taste, feels generic, make it premium, animation polish, transitions, hero animation, matchedGeometryEffect, spring animations, easing curves, .smooth, .snappy, .bouncy, content transitions, numeric text, symbol effects, SF Symbols, SF Pro typography, dynamic type, tracking, kerning, color hierarchy, semantic colors, true black, OLED, Liquid Glass, iOS 26 design, glassEffect, sensoryFeedback, haptic feedback, sound design, empty states, loading states, skeleton screens, confetti, onboarding polish, paywall polish, microcopy, Reduce Motion, VoiceOver, tap target, interruptible animations, sheet detents."
+metadata:
+  short-description: The final 5% of polish that separates a competent native iOS app from a beloved one.
+---
+
+# The Final 5% — iOS Design Engineering Skill
+
+> "Whoever made this actually gives a shit."
+
+That's the only goal. Everything in this file is in service of someone using your app and feeling, in their bones, that a human cared. This is the skill you load when the app *works* but doesn't *feel right*. When everything compiles and ships but the spark is missing.
+
+This skill assumes a native Swift/SwiftUI iOS app, targeting iOS 17 minimum and ideally iOS 26 (Liquid Glass). It pairs with [camera-and-photos](../camera-and-photos/SKILL.md), [chat-and-messaging](../chat-and-messaging/SKILL.md), and [interaction-primitives](../interaction-primitives/SKILL.md) — but the patterns here apply to every app.
+
+---
+
+## Output format — required
+
+When this skill is invoked to review code, audit a design, or recommend changes, **always output recommendations as a markdown table** with three columns:
+
+| Before | After | What this changes |
+| --- | --- | --- |
+| The current code, value, or approach (quote the user's actual code when possible) | The recommended replacement — **specific**, with exact values | One sentence on what the user will *see, feel, or experience* differently |
+
+Three rules:
+1. **Before** quotes the user's actual code where possible. If you're warning against a pattern they haven't written yet, write what they *would* have written.
+2. **After** is specific. Exact spring values, exact corner radii, exact haptic styles. "Use a spring" isn't an After; `.spring(duration: 0.32, bounce: 0.18)` is.
+3. **What this changes** is *experiential or visual*, not abstract. Not "improves the animation" — say what the user sees. "Spring settles in 0.32s with subtle overshoot — feels intentional, not floaty."
+
+For multi-recommendation reviews, output ONE table with multiple rows — NOT one table per row. The whole point is side-by-side comparability; splitting defeats it.
+
+If a recommendation has no clear "before" (the user hasn't done that thing yet), keep the table format but mark Before as `—` or `(not yet implemented)`. Don't drop the table.
+
+**Examples drawn from this skill:**
+
+| Before | After | What this changes |
+| --- | --- | --- |
+| `Color(red: 1.0, green: 0.2, blue: 0.4)` | `Color(.displayP3, red: 1.0, green: 0.2, blue: 0.4)` | The pink renders with ~30% more chroma on every Apple device since 2017 — more vivid without changing any other code |
+| `.animation(.snappy)` (blanket modifier) | `.animation(.snappy, value: isExpanded)` | Animation fires only on the intended state change, not on every unrelated re-render — no more "why is this animating?" debug sessions |
+| `Image("heart")` (static) on a like button | `Image(systemName: liked ? "heart.fill" : "heart").contentTransition(.symbolEffect(.replace))` + `.sensoryFeedback(.impact(weight: .light), trigger: liked)` | The heart morphs smoothly with a soft haptic on tap instead of popping — feels like the icon "heard" you |
+
+This format is required for every recommendation output by this skill. Bullet lists hide the trade-offs; tables make them comparable side-by-side.
+
+---
+
+## Philosophy
+
+The principle these apps share — Halide, Kino, Things 3, Linear, Family, Granola, Apple's first-party apps:
+
+> **They didn't make an app. They made the thing.**
+
+Halide's team said it explicitly: *"We didn't make an app — we made a camera."* They commissioned a custom typeface (Halide Router) inspired by Leica lens engravings. Things 3 makes to-dos look like plain text until you touch them, when boundaries materialize. Linear started with quality and *then* learned that people noticed. Granola talks about "invisible design" — polish so deep it disappears.
+
+These products share three properties:
+1. **Conviction.** Every detail is opinionated. There is one right way to do this, and the team picked it.
+2. **Restraint.** The polish doesn't shout. A heart icon that pulses on tap with a 0.18s spring + a soft haptic is not a feature to brag about in the changelog — it's just *what a like button should be*.
+3. **Coherence.** Every surface feels related — the loading state, the empty state, the settings, the paywall, the celebration. The error screen has the same care as the hero. The "dirty bathroom" rule: one neglected corner cheapens the whole.
+
+Three pillars that govern everything below (adapted from Family's [design-with-taste](https://family.co) philosophy for native iOS):
+
+### 1. Gradual revelation
+Show only what matters *right now*. Each touch unfolds the next layer. The interface is rooms, not a menu. Apple Photos doesn't show every album the moment you open it — it shows Library. iMessage doesn't show every reaction on screen — long-press to reveal. Tap → reveal → repeat.
+
+### 2. Spatial fluidity
+Treat the app as a place with physical rules. Every element has a *from* and a *to*. Nothing teleports. A card that opens to a detail view doesn't unmount and remount — it morphs via `matchedGeometryEffect`. A chevron flips when you tap to reveal. The composer pill grows into a bubble that flies to its slot. The app is one continuous space, not a slideshow.
+
+### 3. Selective delight
+The Delight-Impact Curve: rare interactions deserve theatrical moments; frequent ones deserve subtle ones. A like button gets a haptic + a soft scale. A first-time milestone gets confetti. Both are correct. What's *wrong* is the inversion: confetti on every save, silence on a milestone.
+
+---
+
+## Section index
+
+| Section | Topic |
+| --- | --- |
+| [§1](#1-motion) | Motion — springs, easing, timing |
+| [§2](#2-hero-transitions--matchedgeometryeffect) | Hero transitions & matchedGeometryEffect |
+| [§3](#3-content-transitions) | Content transitions (numericText, symbolEffect, interpolate) |
+| [§4](#4-typography) | Typography — SF Pro family, optical sizes, tracking, Dynamic Type |
+| [§5](#5-color--material) | Color & material — OLED black, semantic hierarchy, Liquid Glass |
+| [§6](#6-spacing-rhythm--optical-alignment) | Spacing, rhythm & optical alignment |
+| [§7](#7-sf-symbols--symbol-effects) | SF Symbols & Symbol Effects |
+| [§8](#8-haptics--sensoryfeedback) | Haptics — `.sensoryFeedback` and CoreHaptics combos |
+| [§9](#9-sound-design) | Sound design — when, what, how loud |
+| [§10](#10-touch--gesture-polish) | Touch & gesture polish |
+| — | **Buttons & CTAs** — sizing system, variants, states, copy, sticky/floating/scroll-react, fully-tappable rows |
+| — | **Sheets, detents, popovers, share sheets** — sheet anatomy, when to use which, multiple sheets, ShareLink |
+| [§11](#11-image--media-polish) | Image & media polish — fade-in, blurhash, vignettes |
+| [§12](#12-loading-states) | Loading states — skeletons, shimmers, optimistic UI |
+| [§13](#13-empty-states) | Empty states — first impressions |
+| [§14](#14-celebrating-completions) | Celebrating completions — confetti theory |
+| — | **Shareable image generation** — `ImageRenderer`, MeshGradient share cards, curiosity-gap framing, K-factor virality |
+| [§15](#15-onboarding-polish) | Onboarding polish — 3-second rule, "keep what you made," distracted-usage design |
+| [§16](#16-paywall-polish) | Paywall polish |
+| [§17](#17-settings-polish) | Settings polish |
+| [§18](#18-microcopy--voice) | Microcopy & voice |
+| [§19](#19-accessibility-is-polish) | Accessibility is polish — Reduce Motion, Dynamic Type, VoiceOver storytelling |
+| [§20](#20-liquid-glass-ios-26) | Liquid Glass — iOS 26 |
+| [§21](#21-the-final-5-checklist) | The Final 5% checklist |
+| [§22](#22-anti-patterns) | Anti-patterns |
+
+---
+
+## 1. Motion
+
+Motion is the personality of your app. It's the difference between "this works" and "this feels alive."
+
+### The two spring APIs to know
+
+**iOS 17+ duration/bounce springs (preferred):**
+```swift
+.animation(.spring(duration: 0.42, bounce: 0.22), value: state)
+```
+- `duration`: perceived time to settle. 0.18–0.5s for most UI.
+- `bounce`: 0 = critically damped (no overshoot), 0.3+ = noticeably bouncy. Most UI: 0.15–0.25.
+
+**Three named presets** (iOS 17+):
+- `.smooth` — critically damped, no overshoot. Use for serious/important transitions (push nav, sheet present).
+- `.snappy` — slight overshoot, fast settle. Use for tap responses, toggles, filter chips.
+- `.bouncy` — pronounced overshoot. Use for playful moments: confetti, sticker drops, celebration.
+
+```swift
+withAnimation(.smooth(duration: 0.4)) { showDetail = true }       // serious
+withAnimation(.snappy(duration: 0.28, extraBounce: 0.1)) { ... } // tap response
+withAnimation(.bouncy(duration: 0.5, extraBounce: 0.2)) { ... }  // playful
+```
+
+### The motion cheat sheet for iOS
+
+| Surface | Spring | Notes |
+| --- | --- | --- |
+| Button press (scale down on touch) | `.spring(duration: 0.16, bounce: 0)` | Fast. Match by scaling to 0.97 |
+| Button release | `.spring(duration: 0.3, bounce: 0.25)` | Bouncier than press — feels satisfying |
+| Tab selection indicator | `.snappy(duration: 0.28, extraBounce: 0.12)` | Crisp |
+| Filter chip select | `.snappy(duration: 0.24)` | |
+| Modal sheet present | `.spring(duration: 0.42, bounce: 0.18)` | Standard iOS feel |
+| Sheet dismiss | `.spring(duration: 0.32, bounce: 0)` | Faster than present, no bounce |
+| Hero transition (`matchedGeometryEffect`) | `.spring(duration: 0.42, bounce: 0.16)` | iOS-native |
+| Push navigation | system default | Don't override |
+| Page indicator (paging) | `.spring(duration: 0.32, bounce: 0.15)` | |
+| Drawer open | `.spring(duration: 0.36, bounce: 0.18)` | |
+| Drawer close (drag-dismiss with velocity) | `.interpolatingSpring(stiffness: 350, damping: 32, initialVelocity: gestureVelocity)` | Velocity-aware |
+| Slider thumb | `.linear` ONLY | Springs fight the finger |
+| Crop dial | `.linear` | Same |
+| Toggle thumb | `.snappy(duration: 0.24, extraBounce: 0.2)` | Subtle bounce on flip |
+| Card lift (long-press) | `.spring(duration: 0.32, bounce: 0.18)` | |
+| Hover preview (haptic-touch) | `.spring(duration: 0.32, bounce: 0)` | No overshoot — feels precise |
+| Reaction picker emoji stagger | `.snappy(duration: 0.32, extraBounce: 0.25)` + 0.04s delay each | |
+| Confetti / celebration | `.bouncy(duration: 0.6, extraBounce: 0.3)` | |
+| Skeleton shimmer cycle | `.linear(duration: 1.2).repeatForever()` | Linear is correct here — perpetual motion |
+
+### Easing curves (for non-spring animations)
+
+Springs cover ~90% of cases. For the rest:
+
+| Curve | Swift | When |
+| --- | --- | --- |
+| `.easeOut` | `.easeOut(duration: 0.24)` | Entering elements, color changes, ambient transitions |
+| `.easeIn` | `.easeIn(duration: 0.18)` | Exiting elements |
+| `.easeInOut` | `.easeInOut(duration: 0.32)` | Continuous position changes (scroll, pan) |
+| `.linear` | `.linear(duration: 0.2)` | Indeterminate loaders, shimmer, follow-finger gestures |
+| Custom | `.timingCurve(0.16, 1, 0.3, 1, duration: 0.4)` | Family's golden curve — fast start, gentle settle |
+
+**Never use `.easeIn` on entering elements.** It looks like the app is reluctant.
+
+### Stagger — the most important polish trick
+
+> "Simultaneous motion reads as mechanical. Sequential motion reads as organic." — Rauno Freiberg
+
+When several elements animate at once, delay each by 30–80ms. This single trick is the difference between feeling like software and feeling like a thing.
+
+```swift
+// Bad — all dots animate together; looks mechanical
+ForEach(0..<5) { i in
+    Circle()
+        .scaleEffect(animating ? 1.0 : 0.0)
+        .animation(.spring(duration: 0.4), value: animating)
+}
+
+// Good — staggered, reads as a wave
+ForEach(0..<5) { i in
+    Circle()
+        .scaleEffect(animating ? 1.0 : 0.0)
+        .animation(.spring(duration: 0.4).delay(Double(i) * 0.05), value: animating)
+}
+```
+
+For lists, cells should fade/slide in with stagger when first appearing — but ONLY on first appearance, not on every scroll into view (that's exhausting).
+
+### Unified interpolation — the "one breathing unit" rule
+
+Stagger is for *independent* elements arriving together. **Unified interpolation** is for *dependent* elements representing one underlying value. They're different problems with different solutions, and getting them confused is a common amateur tell.
+
+When multiple visual elements are driven by the same data — a chart line, its value label, an axis tick, and a status badge all tied to the same number — they must share the SAME easing and duration. If the line uses `.spring(duration: 0.4, bounce: 0.18)` but the label uses `.linear(duration: 0.2)`, the eye picks up the disagreement and the interface reads as a collection of widgets instead of one thing breathing.
+
+```swift
+// Bad — line and label fight each other
+chartLine.animation(.spring(duration: 0.42, bounce: 0.18), value: value)
+valueLabel.animation(.linear(duration: 0.2), value: value)
+
+// Good — one source of truth
+let valueAnim: Animation = .spring(duration: 0.42, bounce: 0.18)
+chartLine.animation(valueAnim, value: value)
+valueLabel.animation(valueAnim, value: value)
+axisTick.animation(valueAnim, value: value)
+statusBadge.animation(valueAnim, value: value)
+```
+
+When a balance updates: the number rolls, the bar grows, the indicator dot moves — all on one breath. That's what "alive" feels like.
+
+### Interruptible animations
+
+The hallmark of professional motion: animations you can interrupt mid-flight by touching them again.
+
+In SwiftUI, this is mostly automatic — if you wrap your state change in `withAnimation`, a new state change mid-animation will smoothly re-target from the current position. Don't fight this with `.animation(value:)` modifiers in the wrong place.
+
+For gesture-driven animations, use `interpolatingSpring(initialVelocity:)` and pass the gesture's predicted velocity:
+
+```swift
+.gesture(
+    DragGesture()
+        .onEnded { value in
+            let velocity = value.predictedEndLocation.y - value.location.y
+            withAnimation(.interpolatingSpring(
+                stiffness: 320,
+                damping: 28,
+                initialVelocity: velocity / 100
+            )) {
+                offset = .zero
+            }
+        }
+)
+```
+
+The velocity carry-through is what makes physics-based UI feel real.
+
+### Don't animate everything
+
+A list scrolling 60fps doesn't need animations on cells. A status pill that updates with new server data doesn't need a spring — instant change is fine. **Animate user-initiated changes. Let data changes happen.** The exception: numeric values changing (see §3).
+
+### Always scope `.animation(_, value:)` to specific state
+
+The single most common SwiftUI motion bug: a blanket `.animation(.snappy)` modifier that animates EVERY state change — including ones you didn't intend. Always pair `.animation(...)` with `value:`:
+
+```swift
+// Bad — animates on EVERY state change, including unrelated re-renders
+view.animation(.snappy)
+
+// Good — animates only when isExpanded changes
+view.animation(.snappy, value: isExpanded)
+```
+
+This is the iOS equivalent of the web's "never use `transition: all`" rule. Specify exactly what triggers the animation. When you want different animations on different state changes, chain them:
+
+```swift
+view
+    .animation(.snappy(duration: 0.24), value: isExpanded)
+    .animation(.smooth(duration: 0.4), value: contentChanged)
+```
+
+Adopting this discipline early prevents 90% of "why is this animating?" debugging sessions later.
+
+---
+
+## 2. Hero transitions & matchedGeometryEffect
+
+The single most important polish technique in modern SwiftUI. A card that "flies" into its detail view is the iOS-native feel. Done right, the user's brain doesn't process it as a transition — it processes it as picking up an object.
+
+### The pattern
+
+```swift
+@Namespace private var heroNamespace
+@State private var expandedID: UUID?
+
+ScrollView {
+    LazyVStack {
+        ForEach(items) { item in
+            ItemCard(item: item)
+                .matchedGeometryEffect(id: item.id, in: heroNamespace)
+                .onTapGesture {
+                    withAnimation(.spring(duration: 0.42, bounce: 0.16)) {
+                        expandedID = item.id
+                    }
+                }
+        }
+    }
+}
+.overlay {
+    if let id = expandedID,
+       let item = items.first(where: { $0.id == id }) {
+        ItemDetail(item: item)
+            .matchedGeometryEffect(id: id, in: heroNamespace)
+            .onTapGesture {
+                withAnimation(.spring(duration: 0.42, bounce: 0.16)) {
+                    expandedID = nil
+                }
+            }
+    }
+}
+```
+
+### The details that separate amateur from amazing
+
+1. **The DESTINATION view must structurally resemble the source.** If your card has rounded corners (18pt), an image at the top, and text below — the detail view must START with that exact layout, then expand outward as the animation plays. Don't morph an 18pt corner directly into a sharp edge — animate corner radius from 18 → 0 over the same duration.
+
+2. **Match the corner radius transition.** Use `.containerRelativeShape()` or animate the corner radius explicitly. Sharp corners on a phone aspect-ratio detail view need `cornerRadius` going from 18 → 38 (iPhone bezel) → 0 over the animation.
+
+3. **The non-hero elements stagger in.** Once the hero element has landed (say at 0.3s into a 0.42s spring), other elements on the detail page (description, buttons, related items) fade/slide in with a stagger of 40–60ms each, starting at ~0.3s after the hero begins.
+
+```swift
+struct DetailView: View {
+    let item: Item
+    @State private var bodyVisible = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Hero — matched
+            ItemHero(item: item)
+                .matchedGeometryEffect(id: item.id, in: namespace)
+
+            // Body — staggered fade-in after hero lands
+            VStack(spacing: 16) {
+                Text(item.title)
+                Text(item.body)
+                ActionButton()
+            }
+            .opacity(bodyVisible ? 1 : 0)
+            .offset(y: bodyVisible ? 0 : 12)
+            .animation(.spring(duration: 0.5, bounce: 0.15).delay(0.18), value: bodyVisible)
+            .onAppear { bodyVisible = true }
+        }
+    }
+}
+```
+
+4. **Status bar handling.** When the hero expands to fill the screen, the status bar tint should transition from light/dark based on the new background. Use `.statusBarHidden()` or `.toolbarColorScheme(.dark, for: .navigationBar)` to coordinate.
+
+5. **Drag-to-dismiss.** Once expanded, dragging down should rubber-band the hero back to its source. Use `.gesture(DragGesture())` with progressively decreasing scale and corner radius as the drag grows. Release past 120pt OR with velocity > 600pt/s dismisses.
+
+6. **The reverse animation should be SHORTER than the open animation.** Open: 0.42s. Close: 0.32s. People want OUT faster than they want IN.
+
+### Persistent elements never animate out and back in
+
+If a nav title, status pill, or chrome element exists in BOTH the source and the destination of a transition, it must stay put. Don't fade it out with the source and re-fade it in with the destination — that's the most common amateur transition mistake. The element either morphs in place via `matchedGeometryEffect` (if its position changes) or simply remains rendered (if its position is fixed).
+
+```swift
+// Bad — title fades out with source, fades back in with destination
+ZStack {
+    if showingDetail {
+        DetailView() // mounts a fresh "Inbox" title that fades in
+    } else {
+        ListView()   // contains "Inbox" title that fades out
+    }
+}
+
+// Good — title persists in a parent that survives the transition
+VStack {
+    Text("Inbox").matchedGeometryEffect(id: "title", in: ns)
+    Group {
+        if showingDetail { DetailView() } else { ListView() }
+    }
+}
+```
+
+The rule: before designing any transition, ask which elements *should* survive. Render those in a parent that survives. Animate only what's actually changing. Anything redundantly animating in and out is noise.
+
+### Reference apps
+
+- **Apple App Store** — the gold standard. Tap any "Today" tile and watch.
+- **Apple Photos** — tap a photo, watch the hero. The thumb and full-size image are matched.
+- **Things 3** — to-dos expand into edit mode. Watch closely: the existing text stays put, the chrome (input field background, action buttons) materializes around it.
+
+### Mobbin references
+
+- [Shangri-La Circle — article detail](https://mobbin.com/flows/76798415-4dce-47b8-befc-659a5fea7ff6) — hero card → article with sticky chrome
+- [Skillshare — project details](https://mobbin.com/flows/155af18f-a4ba-4443-91f7-318c9238c052) — illustration hero with staggered metadata
+- [Moonlitt — tradition detail](https://mobbin.com/flows/78295e9d-f782-42e5-83d8-1c13c2991f5d) — dark theme, paginated detail
+
+---
+
+## 3. Content transitions
+
+When TEXT changes, it should not pop. iOS has dedicated APIs for this since iOS 16.
+
+### `.contentTransition(.numericText())`
+
+For changing numbers — counters, prices, scores, durations, timers. Digits *roll* like an odometer.
+
+```swift
+Text("\(score)")
+    .font(.system(size: 48, weight: .bold, design: .rounded))
+    .contentTransition(.numericText(value: Double(score)))
+    .animation(.snappy(duration: 0.3), value: score)
+```
+
+**Critical**: also apply `.monospacedDigit()` (or use SF Mono, or SF Pro Rounded with `.monospacedDigit()` modifier) for changing numbers, OR the layout will SHIFT as digit widths vary. Tabular numerals is a separate requirement — `.numericText()` doesn't fix the layout shift on its own.
+
+```swift
+Text(score, format: .number)
+    .font(.system(size: 48, weight: .bold, design: .rounded).monospacedDigit())
+    .contentTransition(.numericText(value: Double(score)))
+```
+
+For countdowns: use `.numericText(countsDown: true)` — the digits roll in the OTHER direction (visually descending).
+
+### `.contentTransition(.symbolEffect)`
+
+For changing SF Symbols — the heart that fills, the star that gains points, the bell that rings.
+
+```swift
+Image(systemName: liked ? "heart.fill" : "heart")
+    .foregroundStyle(liked ? .red : .gray)
+    .contentTransition(.symbolEffect(.replace))
+    .animation(.snappy, value: liked)
+```
+
+`.replace` morphs one symbol into another with a satisfying scale + opacity sequence. iOS 18+ also offers `.replace.upUp`, `.replace.downUp` etc. for directional morphs.
+
+### `.contentTransition(.interpolate)`
+
+For numbers, sizes, or AttributedString changes that *can* interpolate. Less common, but for cases like a fixed-position counter that just needs to crossfade with a soft hint of motion, this is the lightest option.
+
+### `.contentTransition(.identity)`
+
+Use when you EXPLICITLY want NO transition. Useful inside a `withAnimation` block where you want some children to skip the transition.
+
+### Text morphing across labels
+
+For button labels that change ("Continue" → "Confirm" → "Sending..."), SwiftUI has no built-in shared-letter morphing the way the web's `torph` does. Two iOS-native options:
+
+**Option A — crossfade with `.transition(.opacity)`:**
+```swift
+ZStack {
+    if state == .ready { Text("Continue") }
+    if state == .confirming { Text("Confirm") }
+    if state == .sending { Text("Sending...") }
+}
+.transition(.opacity.combined(with: .scale(scale: 0.92)))
+.animation(.snappy(duration: 0.28), value: state)
+```
+
+**Option B — animatable AttributedString (iOS 17+):**
+This is more involved but yields true character-level morphing. Wrap your label in a custom `AnimatableModifier` that interpolates AttributedString attributes. Worth it for hero buttons.
+
+**Option C — third-party.** Libraries like `swift-text-morph` exist. For a standard iOS app, Option A is the right call.
+
+### When text changes only partially
+
+If the visible text is "Available • 3 in stock" and changes to "Available • 1 in stock", DON'T animate the entire string. Split into multiple `Text` views and only animate the changing piece.
+
+```swift
+HStack(spacing: 4) {
+    Text("Available •").foregroundStyle(.green)
+    Text("\(count) in stock")
+        .contentTransition(.numericText(value: Double(count)))
+        .animation(.snappy, value: count)
+}
+```
+
+---
+
+## 4. Typography
+
+Typography is the single highest-leverage area for "premium feel". Get this right and everything else looks more considered.
+
+### SF Pro — know your family
+
+| Variant | Sizes | When |
+| --- | --- | --- |
+| `SF Pro Text` | < 20pt | Body text, captions, metadata. Tracking is opened up automatically; letters are wider. |
+| `SF Pro Display` | ≥ 20pt | Large titles, hero numbers. Tighter tracking; tighter letterforms. |
+| `SF Pro Rounded` | any | Friendly, organic. Great for numeric displays, kids/health/wellness apps, large hero numerals. |
+| `SF Mono` | any | Code, changing numbers (ticker, timer), monospace columns. |
+| `SF Compact` | any | iPhone-only (NOT Mac/iPad). Slightly narrower; saves horizontal space. |
+
+**iOS does the optical-size swap automatically.** When you use `.font(.system(size: 13))`, you get SF Pro Text. When you use `.font(.system(size: 34))`, you get SF Pro Display. **Don't fight this.**
+
+### The system Dynamic Type styles (always prefer these)
+
+Hard-coded sizes are a polish anti-pattern. Use semantic styles:
+
+| SwiftUI | Default size | Use case |
+| --- | --- | --- |
+| `.largeTitle` | 34pt | Large nav titles |
+| `.title` | 28pt | Section heroes |
+| `.title2` | 22pt | Subsection titles |
+| `.title3` | 20pt | Smaller hero |
+| `.headline` | 17pt semibold | Card titles, cell titles |
+| `.body` | 17pt | Body text. The default. |
+| `.callout` | 16pt | Slightly smaller body |
+| `.subheadline` | 15pt | Cell subtitles |
+| `.footnote` | 13pt | Small captions, hints |
+| `.caption` | 12pt | Smallest |
+| `.caption2` | 11pt | Smaller smallest |
+
+```swift
+Text("Welcome back")
+    .font(.title.weight(.semibold)) // gets Dynamic Type for free
+```
+
+**Apply weights via `.weight()` after `.font(...)`,** so Dynamic Type still works.
+
+### Tracking — let SF Pro do it
+
+SF Pro has a built-in tracking table — automatic letter-spacing per point size. **Don't override it.** Adding `.tracking()` to system text undoes Apple's careful work.
+
+**Exceptions** (when manual tracking is appropriate):
+- All-caps labels — Apple itself adds positive tracking (~1.2–2.0pt) for caps.
+- Numeric displays where you want monospace digit columns — use `.monospacedDigit()` modifier instead of tracking.
+- Display sizes 60pt+ where you want negative tracking for tighter visual: `-0.5` to `-1.5`.
+
+```swift
+Text("AE/AF LOCK")
+    .font(.system(size: 11, weight: .heavy))
+    .tracking(1.8)
+    .textCase(.uppercase)
+```
+
+### Line height
+
+For body text: 1.4× font size is the standard reading rhythm.
+For display text (28pt+): 1.1–1.2× — tighter, more impactful.
+For headlines: 1.15×.
+
+In SwiftUI, control with `.lineSpacing(...)` (which adds to the natural line height) or with `.font(.body.leading(.tight | .loose | .standard))`.
+
+### The five typography mistakes that signal "amateur"
+
+1. **Using `.regular` for everything.** Mix `.regular` and `.semibold`. Hierarchy.
+2. **Same size everywhere.** A 17pt body next to a 17pt headline = no hierarchy. Use 17pt + 22pt + 28pt as your spine.
+3. **Light weights under 20pt.** SF Pro Light at small sizes is illegible. Reserve light weights for large hero text only.
+4. **Center-aligning body text.** Looks like a marketing landing page. Body text should be left-aligned (or `.leading` for RTL support).
+5. **Custom fonts for body.** If you're going to use a custom font, use it for hero numerals or section titles — never for body. SF Pro is unmatched for legibility on iOS.
+
+### Custom fonts done right
+
+If you DO use a custom font (and you can — Halide's Router proves it's worth it), follow these rules:
+- **Pair it with SF Pro** for body. Custom for display, system for reading.
+- **Test on the smallest reading size** — at 13pt, most custom fonts are unreadable.
+- **Register via `UIFont.registerFont`** in `application(_:didFinishLaunchingWithOptions:)` so it's available app-wide.
+- **Match weights**. If your custom font has only Regular and Bold, but Apple's HIG calls for semibold, add a Medium or use `kCTFontWeightTrait` to interpolate.
+
+### Numbers — the secret weapon
+
+For any UI showing numbers that change:
+```swift
+.font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
+```
+
+`.monospacedDigit()` keeps digits the same width, so a number rolling from 99 → 100 doesn't shift the layout. Critical for: counters, scores, timers, prices, statistics, fitness data.
+
+For numbers that should feel friendly: `design: .rounded`. For numbers that should feel precise: `design: .default` (SF Pro).
+
+### Smart formatting
+
+Use Apple's formatters — don't hand-roll:
+```swift
+// Currency
+price.formatted(.currency(code: "USD"))
+
+// Compact numbers (1.2K instead of 1,234)
+count.formatted(.number.notation(.compactName))
+
+// Relative dates (2 minutes ago, yesterday)
+Text(date, style: .relative)
+Text(date.formatted(.relative(presentation: .named)))
+
+// Distance with locale-aware units
+distance.formatted(.measurement(width: .abbreviated, usage: .road))
+```
+
+Localization, accessibility, and visual polish all improve when you use these.
+
+---
+
+## 5. Color & material
+
+### The color rule, in one line
+
+> **Pick in OKLCH. Ship in Display P3. Fall back to sRGB automatically.**
+
+If you're typing `Color(red:, green:, blue:)` without `.displayP3`, you're picking color with one hand tied behind your back. sRGB renders fine on every device, but **every Apple device since 2017 supports Display P3** — a ~30% wider gamut especially in reds and greens. iOS auto-degrades to sRGB on older hardware, so there's no risk to defaulting to P3.
+
+OKLCH solves a different problem: it ensures your palette feels *balanced* (equal `L` looks equally bright across all hues — try the same with HSL and one color always wins).
+
+These are two rules, not one. You want both:
+- **OKLCH** for the picking step → perceptual consistency across the palette.
+- **Display P3** for the rendering step → wider gamut on capable hardware.
+- **sRGB** is the fallback iOS chooses for you → never the destination you author against.
+
+A hand-coded sRGB hex in your codebase is a code smell unless it's matching a third-party brand color that's officially specified in sRGB. Everything else should go through the OKLCH-→-P3 workflow detailed below in this section.
+
+### True black for OLED
+
+On OLED displays (every iPhone since X), `#000000` literally turns OFF the pixel. This means:
+- True black backgrounds have ZERO battery cost.
+- True black has perfect contrast — no light bleed between elements.
+- True black backgrounds make photos look 10× better (they appear self-illuminated).
+
+**Use true black for**:
+- Camera viewfinder chrome backgrounds
+- Photo viewer backgrounds
+- Cinematic media UIs (video player, podcast)
+- App backgrounds for media-first apps in dark mode
+
+**Don't use true black for**:
+- Reading/text-heavy interfaces — too high-contrast, causes eye strain. Use `Color(.systemBackground)` which is `#000` only in dark mode and adjusts.
+- Settings, lists, forms — `.systemGroupedBackground` is more appropriate.
+
+```swift
+// Camera viewfinder
+.background(Color.black) // true #000
+
+// Reading app
+.background(Color(.systemBackground)) // adaptive
+```
+
+### Semantic colors — always use them
+
+Hard-coded colors are a polish anti-pattern. Use Apple's semantic system colors so your app adapts to light/dark mode, increased contrast, and accent color overrides automatically.
+
+| Token | Light | Dark | Use |
+| --- | --- | --- | --- |
+| `.primary` | black | white | Body text |
+| `.secondary` | gray 60% | gray 60% | Secondary text |
+| `Color(.label)` | black | white | Same as `.primary` but UIKit-style |
+| `Color(.secondaryLabel)` | gray 60% | gray 60% | |
+| `Color(.tertiaryLabel)` | gray 30% | gray 30% | Less important info |
+| `Color(.quaternaryLabel)` | gray 18% | gray 18% | Placeholder, hints |
+| `Color(.systemBackground)` | white | black | Main background |
+| `Color(.secondarySystemBackground)` | gray 96% | gray 14% | Card surfaces |
+| `Color(.tertiarySystemBackground)` | white | gray 22% | Inset cards |
+| `Color(.systemGroupedBackground)` | gray 95% | true black | Settings list bg |
+| `Color(.separator)` | gray 80% / 30% opacity | gray 25% / 30% opacity | Hairlines |
+
+For accent: `.tint(...)` propagates an accent color to all interactive elements (`Button`, `Toggle`, etc.). Set it once at the root.
+
+### Color hierarchy — 4 levels
+
+Apple uses 4 levels of foreground opacity to express hierarchy:
+- **Primary** (100%) — body, titles
+- **Secondary** (60%) — subtitles, captions, less important
+- **Tertiary** (30%) — placeholders, hints
+- **Quaternary** (18%) — disabled, ghost
+
+```swift
+Text("Title").foregroundStyle(.primary)
+Text("Subtitle").foregroundStyle(.secondary)
+Text("Caption").foregroundStyle(.tertiary)
+```
+
+Use these instead of `.opacity(0.6)`. They adapt to Increased Contrast mode automatically.
+
+### The accent rule
+
+**Tint ONE THING per screen.** Linear's CEO Karri Saarinen says it directly: if you're an opinionated product, you commit to opinions. Tinting every interactive element makes the screen scream. Tint the PRIMARY action only.
+
+If your tint is blue, tinted buttons are blue, but secondary buttons are gray/neutral. Tertiary actions are text-only.
+
+### Shadows
+
+Native iOS doesn't shadow much — Material Design loves shadows, iOS loves blur and depth. When you do need a shadow:
+- **Subtle**: `.shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)`
+- **Card lift**: `.shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)`
+- **Floating element**: `.shadow(color: .black.opacity(0.18), radius: 24, x: 0, y: 12)`
+
+**Never use pure black shadows.** Use `.black.opacity(0.05–0.2)` or tint the shadow with the element's color (a blue button → `.blue.opacity(0.2)` shadow). Real-world shadows pick up the color of the object.
+
+In dark mode, shadows should be LIGHTER, not darker — you're already on a dark background. Often skip them entirely; use a 1pt stroke at `Color.white.opacity(0.06)` for separation instead.
+
+### Materials (blur backgrounds)
+
+For floating overlays, modals, sticky chrome: use SwiftUI's built-in materials:
+
+| Material | Use |
+| --- | --- |
+| `.ultraThinMaterial` | Very translucent — see-through blur |
+| `.thinMaterial` | Translucent |
+| `.regularMaterial` | Standard frosted glass |
+| `.thickMaterial` | Heavily blurred but still translucent |
+| `.ultraThickMaterial` | Almost opaque |
+
+```swift
+HStack { ... }
+    .padding()
+    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+```
+
+These adapt to light/dark automatically. On iOS 26, they coordinate with Liquid Glass (see §20).
+
+### Gradient discipline
+
+Gradients are a polish minefield. The wrong gradient screams "AI-generated app".
+
+**Rules:**
+- Use 2-stop gradients at most. 3+ stops = chaos unless you're showing a sunset.
+- Use HSL/HCT interpolation, NOT RGB. SwiftUI uses RGB by default; use `Gradient(colors:)` with carefully-chosen intermediate stops to fake HSL interpolation.
+- Avoid the AI gradient cliché: purple → blue → pink. If your app needs a hero gradient, use brand colors only or pick from premium palettes (warm earth tones, monochrome with a single accent).
+- For backgrounds, prefer SUBTLE gradients (5–10% saturation difference between stops).
+
+```swift
+// Subtle background gradient — works
+LinearGradient(
+    colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
+    startPoint: .top, endPoint: .bottom
+)
+
+// AI cliché — avoid
+LinearGradient(colors: [.purple, .blue, .pink], ...)
+```
+
+### Color in OKLCH — perceptually-uniform palettes
+
+The problem with hex / RGB / HSL: equal "lightness" values do **not** look equally bright. Pure yellow at HSL 50% L is wildly brighter than pure blue at HSL 50% L. That's why most hand-picked palettes feel uneven — one color always "wins" because the others are actually darker.
+
+**OKLCH** (Oklab Lightness/Chroma/Hue) is perceptually uniform — equal `L` looks equally bright across every hue:
+- `L`: 0–1.0 lightness (perceptually uniform)
+- `C`: 0+ chroma (saturation independent of hue)
+- `H`: 0–360° hue
+
+SwiftUI doesn't expose OKLCH natively yet (as of iOS 26), but the workflow is straightforward:
+
+**1. Design in OKLCH, ship as Display P3 hex.** Pick palettes at [oklch.com](https://oklch.com), convert to hex once, bake into `Color` extensions:
+
+```swift
+// All three designed at oklch(0.65 0.18 H) — same perceptual brightness
+extension Color {
+    static let brandBlue  = Color(.displayP3, red: 0.184, green: 0.490, blue: 0.871) // H=240
+    static let brandGreen = Color(.displayP3, red: 0.067, green: 0.561, blue: 0.349) // H=145
+    static let brandRed   = Color(.displayP3, red: 0.937, green: 0.349, blue: 0.337) // H=20
+}
+```
+
+All three feel like *siblings* — no color screams. Try the same with naive RGB picking and one will dominate.
+
+**2. Dark-mode pairs by lowering `L` only.** Keep `C` and `H` constant — the perceived hue stays identical, just darker. HSL-based dark-mode tools shift hue with brightness, producing muddy results.
+
+```
+Light: oklch(0.65 0.18 240)  → #2F7DDE
+Dark:  oklch(0.45 0.18 240)  → #1A52A8
+```
+
+**3. Multi-stop gradients with OKLCH intermediates.** SwiftUI's `LinearGradient(colors:)` interpolates in linear-RGB by default — so yellow→blue passes through **gray** in the middle. Fix: generate stops in OKLCH (where hue rotates smoothly through green→teal) and pass them as explicit `stops:`.
+
+```swift
+// Bad — RGB-lerp passes through gray
+LinearGradient(colors: [.yellow, .blue], startPoint: .top, endPoint: .bottom)
+
+// Good — OKLCH stops rotate through proper intermediate hues
+LinearGradient(
+    stops: [
+        .init(color: Color(hex: "#FFFF00"), location: 0.00),
+        .init(color: Color(hex: "#7BC569"), location: 0.33),  // OKLCH lerp midpoint
+        .init(color: Color(hex: "#3A87C0"), location: 0.66),  // OKLCH lerp midpoint
+        .init(color: Color(hex: "#0000FF"), location: 1.00),
+    ],
+    startPoint: .top, endPoint: .bottom
+)
+```
+
+Generate stops via [culori](https://culorijs.org/) (Node), [oklch.com](https://oklch.com)'s gradient tool, or any OKLCH library — bake the hex into Swift once.
+
+**4. Display P3 is the default — sRGB is a fallback you never type.** P3 is a ~30% wider gamut than sRGB; reds redder, greens greener, especially in vivid brand colors. Every Apple device since 2017 supports it natively, and iOS auto-degrades to sRGB on older hardware — zero risk. Most apps still ship sRGB hex everywhere because someone copy-pasted from a non-iOS tool. Don't.
+
+```swift
+Color(red: 1.0, green: 0.2, blue: 0.4)                  // ❌ sRGB — leaves color on the table
+Color(.displayP3, red: 1.0, green: 0.2, blue: 0.4)      // ✅ P3 — uses the full screen gamut
+```
+
+**Every hand-coded color in your app should specify `.displayP3` as the color space.** No exceptions for "convenience" — `Color(red:green:blue:)` without it gets you sRGB silently. The `Color(hex:)` helper below uses P3 by default; use it.
+
+**A `Color(hex:)` helper** (keep your codebase clean):
+
+```swift
+extension Color {
+    init(hex: String, opacity: Double = 1.0) {
+        var hex = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hex.hasPrefix("#") { hex.removeFirst() }
+        var rgb: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&rgb)
+        self.init(
+            .displayP3,
+            red:   Double((rgb & 0xFF0000) >> 16) / 255,
+            green: Double((rgb & 0x00FF00) >> 8)  / 255,
+            blue:  Double( rgb & 0x0000FF)        / 255,
+            opacity: opacity
+        )
+    }
+}
+```
+
+### Subtle background textures — beyond flat color
+
+A pure flat `Color(.systemBackground)` is fine for utility apps but reads as "generic" for products that want to feel crafted. Stripe, Linear, Mercury, Arc, Things 3, Granola all layer one or more of these techniques.
+
+**The hierarchy of background polish (compose as needed):**
+
+| Layer | Use | Performance |
+| --- | --- | --- |
+| Solid color | Utility apps, dense lists | Free |
+| Subtle gradient (5–10% saturation Δ) | Most product surfaces | Free |
+| MeshGradient (iOS 18+) | Onboarding, paywall, splash, hero | Cheap |
+| Noise overlay (3–6% PNG or Canvas) | Anti-banding on any gradient | Free (static) |
+| Tiled subtle pattern (dots, grain) | Brand-defining surfaces | Cheap (cached) |
+| Vignette / corner light | Atmospheric depth | Free |
+| Animated TimelineView gradient | Hero moments only | Heavy — cap fps |
+
+**1. MeshGradient — the new primitive (iOS 18+)**
+
+`MeshGradient` places colors at points on a 2D grid and blends organically. Looks hand-painted, not "computer gradient." New gold standard for hero backgrounds.
+
+```swift
+MeshGradient(
+    width: 3, height: 3,
+    points: [
+        [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
+        [0.0, 0.5], [0.5, 0.5], [1.0, 0.5],
+        [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
+    ],
+    colors: [
+        .pink.opacity(0.5),   .orange.opacity(0.4), .yellow.opacity(0.3),
+        .purple.opacity(0.4), .blue.opacity(0.3),   .mint.opacity(0.3),
+        .indigo.opacity(0.4), .teal.opacity(0.3),   .green.opacity(0.2)
+    ]
+)
+.ignoresSafeArea()
+```
+
+Animate via `TimelineView` for slow organic drift:
+
+```swift
+TimelineView(.animation) { ctx in
+    let t = ctx.date.timeIntervalSinceReferenceDate
+    MeshGradient(
+        width: 3, height: 3,
+        points: [
+            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
+            [0.0, 0.5],
+            [0.5 + 0.05 * sin(t * 0.4), 0.5 + 0.05 * cos(t * 0.4)],  // drifts
+            [1.0, 0.5],
+            [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
+        ],
+        colors: meshColors
+    )
+}
+```
+
+**2. Noise / film grain — eliminates banding**
+
+Solid gradients on OLED screens BAND visibly. A 3–6% opacity noise overlay breaks the gradient up at the pixel level and adds film-grain texture the eye reads as "rich" without consciously identifying it.
+
+```swift
+ZStack {
+    LinearGradient(colors: [.purple.opacity(0.2), .pink.opacity(0.1)],
+                   startPoint: .top, endPoint: .bottom)
+
+    Image("noise-256")              // 256×256 PNG of fine grain, tileable
+        .resizable(resizingMode: .tile)
+        .opacity(0.04)
+        .blendMode(.overlay)
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
+}
+```
+
+**Critical: < 6% opacity.** If you can SEE grain, it's too much. The point is for the eye to read depth without identifying the source. Generate a 256×256 noise PNG once in any image tool (or procedurally via `Canvas` for sharper dark/light adaptation).
+
+**3. Tiled subtle patterns — Linear's dots, Things 3's paper**
+
+Custom `Canvas` view drawn once, cached via `.drawingGroup()`. Adapts to color scheme via semantic colors.
+
+```swift
+struct DotGridBackground: View {
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 24
+            let dotSize: CGFloat = 1.5
+            let color = Color(.label).opacity(0.06)
+            for x in stride(from: spacing, to: size.width, by: spacing) {
+                for y in stride(from: spacing, to: size.height, by: spacing) {
+                    let rect = CGRect(x: x - dotSize/2, y: y - dotSize/2,
+                                      width: dotSize, height: dotSize)
+                    context.fill(Path(ellipseIn: rect), with: .color(color))
+                }
+            }
+        }
+        .drawingGroup()              // rasterize once for perf
+        .allowsHitTesting(false)
+    }
+}
+```
+
+Rules: opacity ≤ 8%; small repeats (high frequency); adapts to light/dark via `.label`.
+
+**4. Vignettes & corner lights — "lit from somewhere"**
+
+A `RadialGradient` with `.blendMode(.plusLighter)` adds depth without explicit decoration. Apple Music does this on dark UIs.
+
+```swift
+ZStack {
+    Color(.systemBackground)
+
+    RadialGradient(
+        colors: [Color.white.opacity(0.08), .clear],
+        center: .topLeading,
+        startRadius: 0, endRadius: 400
+    )
+    .blendMode(.plusLighter)
+    .allowsHitTesting(false)
+}
+```
+
+Reverse for vignettes (darken edges): `RadialGradient` from `.clear` center → `.black.opacity(0.3)` edges with default blend.
+
+**5. Animated TimelineView gradients — hero moments only**
+
+```swift
+TimelineView(.animation) { ctx in
+    let phase = ctx.date.timeIntervalSinceReferenceDate * 0.1
+    LinearGradient(
+        colors: [.purple, .pink, .orange],
+        startPoint: UnitPoint(x: 0.5 + 0.4 * cos(phase), y: 0.5 + 0.4 * sin(phase)),
+        endPoint:   UnitPoint(x: 0.5 - 0.4 * cos(phase), y: 0.5 - 0.4 * sin(phase))
+    )
+}
+```
+
+Use SPARINGLY — too heavy for every screen. On older devices, prefer `MeshGradient` with point animation (much cheaper) over animated `LinearGradient`.
+
+**The compose pattern:**
+
+A premium paywall background = `MeshGradient` base + noise overlay at 4% + corner light at upper-left with `.plusLighter`. Perceived complexity: low. Actual richness: high. Stack these like layers in Figma — that's the trick.
+
+### Trays adopt the environment
+
+When a sheet, popover, or context menu appears from a themed surface — a dark chat thread, a black-chrome camera UI, a brand-tinted onboarding flow — it must INHERIT that environment's color scheme and tint. A sticker picker over a dark chat should be dark. A confirmation in a camera UI should be black. A modal in branded onboarding should pick up the brand color.
+
+```swift
+.sheet(isPresented: $showing) {
+    Content()
+        .preferredColorScheme(parentScheme)   // inherit explicitly
+        .tint(parentTint)
+        .presentationBackground(parentSurface)
+}
+```
+
+The visual environment should follow the user across modal layers. Sudden theme switches are spatially disorienting — the user has to re-orient every time, and the app feels like a collection of pages instead of one place.
+
+---
+
+## 6. Spacing, rhythm & optical alignment
+
+### The 4pt grid
+
+iOS is built on a 4pt grid. Every spacing value should be a multiple of 4: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64.
+
+Common spacings:
+- **2pt**: hairline separators, bubble-to-bubble within a group
+- **4pt**: tight icon-text gaps
+- **8pt**: standard small gap, list-item internal padding
+- **12pt**: card internal padding (small)
+- **16pt**: card internal padding (standard), section padding
+- **20pt**: small section spacing
+- **24pt**: standard section spacing, card-to-card
+- **32pt**: large section spacing, "breathing" gaps
+- **48pt**: hero section spacing
+- **64pt+**: marketing pages, large breaks
+
+### Breathing room
+
+The single most common polish mistake: not enough padding around hero elements. **Hero numbers / large titles want 24pt of breathing room above and below.** Not 12pt. Not 16pt. 24pt or more.
+
+```swift
+VStack(spacing: 24) {
+    HeroNumber("$1,247")
+    Caption("Available balance")
+}
+.padding(.vertical, 32)
+```
+
+### Optical alignment
+
+Mathematical alignment ≠ visual alignment. When two shapes of different geometries sit beside each other, they need OPTICAL alignment, not pixel alignment.
+
+**Classic cases:**
+- A circle next to a square at the same height: the square LOOKS bigger. Render the square at 92% of the circle's diameter for visual equality.
+- Text next to an icon: the icon's optical center is rarely its geometric center. Nudge by 0.5–1pt.
+- A "play" triangle inside a circle: the triangle's geometric center is too far left. Nudge right by 1–2pt.
+
+SwiftUI tools:
+- `.offset(x: 1, y: 0)` for fine-tuning
+- Custom alignment guides for repeated patterns
+
+This is where the eye picks up "considered" vs "generic."
+
+### Asymmetric padding
+
+Cards often look better with MORE bottom padding than top. A card with `.padding(.top, 16).padding(.bottom, 20)` reads as more grounded than `.padding(16)`.
+
+Buttons want MORE horizontal padding than vertical:
+- `.padding(.horizontal, 20).padding(.vertical, 12)` for a standard button
+- Vertical padding ≈ 0.6× font size; horizontal padding ≈ 1.2× font size
+
+### Hierarchy via spacing
+
+Closer spacing = related. Farther spacing = unrelated. Use this to communicate structure WITHOUT visual chrome (lines, boxes).
+
+```swift
+VStack(alignment: .leading, spacing: 4) {
+    Text("Title").font(.headline)
+    Text("Subtitle").font(.subheadline).foregroundStyle(.secondary)
+}
+.padding(.bottom, 16) // Bigger gap before next section
+
+VStack(alignment: .leading, spacing: 4) {
+    Text("Next title")
+    Text("Next subtitle")
+}
+```
+
+Two `VStack`s with 4pt internal spacing + 16pt between them communicates "two groups" without any divider.
+
+### No layout shift — the polish foundation
+
+The single most jarring "amateur" tell: surrounding elements jumping when something changes inside them. Adapted from Emil Kowalski's web design engineering practice, the iOS-native offenders:
+
+- **Font weight changes that shift width.** A tab that goes from `.regular` (inactive) to `.semibold` (selected) makes the tab WIDER, shifting other tabs. Fix: use a consistent weight + opacity/color to indicate selection, OR explicitly fix the tab width.
+- **Adding a badge that bumps siblings.** When an unread count appears on an icon, it should OVERLAY the icon (via `.overlay(alignment: .topTrailing)` with negative offset), not push siblings.
+- **Dynamic content reflowing.** A subtitle growing from 1 line to 2 reflows the card height — every other card moves. Fix: reserve space with `.frame(minHeight:)`, or design a layout that gracefully accommodates variable content.
+- **Numbers changing widths.** Already covered in §4: always use `.monospacedDigit()` for changing numerics.
+- **Loading → loaded layout swap.** Skeleton screens that don't match the real layout cause a layout jump the moment data arrives. Match structurally (see §12).
+- **`.font(.body)` swapping to a custom font.** Each font has different metrics — swapping mid-app shifts everything. Pick a font per role and stick with it.
+
+The test: record your app's main flows on a real device. Play back at 0.5×. Anything that JUMPS (not animates — *jumps*) is a layout-shift bug. Fix every one.
+
+---
+
+## 7. SF Symbols & Symbol Effects
+
+SF Symbols is an underused superpower. 6000+ icons, all weight-matched to SF Pro, all animatable.
+
+### Rendering modes
+
+- `.symbolRenderingMode(.monochrome)` — single color (default)
+- `.symbolRenderingMode(.hierarchical)` — secondary/tertiary opacities within one symbol (great for cards)
+- `.symbolRenderingMode(.palette)` — multi-color with explicit colors
+- `.symbolRenderingMode(.multicolor)` — uses each symbol's designed colors
+
+```swift
+Image(systemName: "wifi")
+    .symbolRenderingMode(.hierarchical)
+    .foregroundStyle(.blue)
+// Renders with full-strength blue for the strong waves, faded blue for weaker
+```
+
+Hierarchical mode is the easiest polish win — your icons get depth for free.
+
+### Symbol Effects (iOS 17+)
+
+| Effect | Trigger | Use |
+| --- | --- | --- |
+| `.symbolEffect(.bounce, value: trigger)` | One-shot | Confirmation taps (like, save, send) |
+| `.symbolEffect(.pulse)` | Continuous, **active state only** | Recording, processing, "listening" — NOT decoration |
+| `.symbolEffect(.variableColor)` | Animation | Wi-Fi loading, signal acquiring |
+| `.symbolEffect(.scale.up, isActive: ...)` | State-based | Emphasis on important state |
+| `.symbolEffect(.appear / .disappear)` | View visibility | Polished on/off |
+| `.symbolEffect(.wiggle, value: trigger)` (iOS 18+) | One-shot | Playful "no" gesture |
+| `.symbolEffect(.rotate, value: trigger)` | One-shot | Refresh, reload |
+| `.contentTransition(.symbolEffect(.replace))` | Symbol change | Play ↔ Pause, Heart ↔ Heart Fill |
+
+**Note**: `.symbolEffect(.breathe)` exists (iOS 18+) but **avoid it** — see anti-pattern below.
+
+Examples:
+```swift
+// Heart like
+Image(systemName: liked ? "heart.fill" : "heart")
+    .foregroundStyle(liked ? .red : .gray)
+    .contentTransition(.symbolEffect(.replace))
+    .symbolEffect(.bounce, value: liked) // bounce on the change
+
+// Wi-Fi loading
+Image(systemName: "wifi")
+    .symbolRenderingMode(.hierarchical)
+    .symbolEffect(.variableColor.iterative, isActive: isConnecting)
+
+// Recording dot
+Image(systemName: "record.circle.fill")
+    .foregroundStyle(.red)
+    .symbolEffect(.pulse, isActive: isRecording)
+```
+
+### Icon motion: DO morph, DON'T breathe
+
+Modern SF Symbols are the most powerful animatable iconography on any mobile platform. But the failure mode is consistent across AI-generated apps and template builds: **ambient scale-pulsing and "breathing" animations on icons that aren't doing anything**. They always look bad. They scream "generic," they age poorly, and they pull the eye for no reason.
+
+**DO** — motion must be **triggered** by user action or **anchored** to a real state change:
+
+| Pattern | Use |
+| --- | --- |
+| `.contentTransition(.symbolEffect(.replace))` | The single most useful effect. Morph one symbol into another on state change: Play ↔ Pause, Heart ↔ Heart.Fill, Bookmark ↔ Bookmark.Fill, Eye ↔ Eye.Slash. Looks expensive, costs nothing. |
+| `.symbolEffect(.bounce, value: trigger)` | Single bounce on user action: tap to like, tap to save, send confirmation. Always paired with `.sensoryFeedback`. |
+| `.symbolEffect(.pulse, isActive: isRecording)` | ACTIVE-STATE indicator only — when something is genuinely happening (recording, AI processing, listening for voice input). Stops the moment the state ends. |
+| `.symbolEffect(.variableColor.iterative, isActive: isConnecting)` | Loading / acquiring (Wi-Fi connecting, signal searching). Communicates "in progress." |
+| `.symbolEffect(.wiggle, value: errorTrigger)` | Playful denial — "no, you can't drop that here." Use sparingly. |
+| `.symbolEffect(.rotate, value: refreshTrigger)` | One-shot rotation on refresh / reload action. |
+
+**DON'T** — never animate icons that aren't responding to a real event:
+
+- ❌ **`.symbolEffect(.breathe)` for ambient "calm presence"** — looks like a screensaver. The icon pulses for no reason. Every "AI meditation app" template uses this. Skip it.
+- ❌ **Continuous scale-pulse on a heart, star, or favorite icon when nothing is happening** — feels like the icon is begging for a tap. Trust the icon to communicate via its shape alone.
+- ❌ **`.symbolEffect(.pulse, options: .repeating)` on idle UI** — pulse means "active right now." Repeating it forever makes "active" meaningless.
+- ❌ **Bouncing the tab bar icon you're currently on** — drains attention from content. Apple's own tab bar doesn't do this.
+- ❌ **Animating ALL the icons in a row to draw attention to one** — the eye picks up the motion, not the meaning. If one icon is important, isolate it; don't animate the whole row.
+
+**The rule**: every icon animation must answer the question "what just happened?" If the answer is "nothing," remove it. Static icons are not boring — they're confident. Animated icons signal an event. When EVERYTHING signals, NOTHING signals.
+
+The Apple-native litmus test: open the system Messages, Photos, or Mail app. Watch how few icon animations they use. The polish is in restraint.
+
+### Variable symbols
+
+Many SF Symbols support a `variableValue` from 0.0 to 1.0:
+```swift
+Image(systemName: "speaker.wave.3.fill", variableValue: volume)
+// Renders 0, 1, 2, or 3 sound waves based on volume
+```
+
+Perfect for: signal strength, battery, volume, brightness, progress indicators that have a natural symbolic representation.
+
+### Custom symbols
+
+Make your brand's icons as SF Symbols (Asset Catalog → Add → Symbol Image, or use Apple's SF Symbols app to export a template). Your custom symbols get all the same effects, rendering modes, weight-matching, and Dynamic Type behavior.
+
+Critical: design your custom symbols at the variable optical sizes (S, M, L). Don't just import one PNG.
+
+### When NOT to use SF Symbols
+
+For your APP ICON, hero illustrations, and onboarding screens — use custom artwork. SF Symbols are functional. They are not your brand.
+
+---
+
+## 8. Haptics — `.sensoryFeedback`
+
+iOS 17 added `.sensoryFeedback` — the modern, SwiftUI-native haptic API. Use it.
+
+```swift
+.sensoryFeedback(.selection, trigger: selectedTab)
+.sensoryFeedback(.success, trigger: didSave)
+.sensoryFeedback(.impact(weight: .light), trigger: tapCount)
+```
+
+### Available styles
+
+| Style | Use |
+| --- | --- |
+| `.selection` | Selection changes — tabs, pickers, segmented controls |
+| `.success` | Successful completion (saved, sent, posted) |
+| `.warning` | About to be destructive |
+| `.error` | Failed action |
+| `.impact(weight: .light)` | Light tap |
+| `.impact(weight: .medium)` | Standard tap |
+| `.impact(weight: .heavy)` | Critical or "heavy" event |
+| `.impact(flexibility: .soft)` | Even softer |
+| `.impact(flexibility: .rigid)` | Sharp click (toggle, detent) |
+| `.start` | Beginning of a continuous interaction |
+| `.stop` | End of one |
+| `.alignment` | Snap to alignment / detent |
+| `.decrease` / `.increase` | Step-wise count changes |
+| `.levelChange` | Crossing a threshold (e.g., next stop on a slider) |
+| `.pathComplete` | Finished a path (lock pattern, signature) |
+
+### The full polish pattern: tap → animate → haptic → sound
+
+When the user taps a meaningful action:
+1. **Visual** fires immediately (scale to 0.97 on touch-down).
+2. **Haptic** fires on touch-down (light) AND touch-up (style depending on action).
+3. **Animation** plays the result (e.g., heart fills).
+4. **Sound** plays only if it adds meaning (rare). See §9.
+5. **Confirmation** appears (e.g., toast, badge) with its own subtle haptic.
+
+```swift
+Button {
+    liked.toggle()
+} label: {
+    Image(systemName: liked ? "heart.fill" : "heart")
+        .foregroundStyle(liked ? .red : .secondary)
+        .scaleEffect(pressed ? 0.92 : 1.0)
+        .contentTransition(.symbolEffect(.replace))
+        .symbolEffect(.bounce, value: liked)
+}
+.buttonStyle(.plain)
+.sensoryFeedback(.impact(weight: .light), trigger: liked)
+.animation(.snappy(duration: 0.2), value: liked)
+.pressAction { pressed = $0 } // custom modifier; see §10
+```
+
+### Combining haptics
+
+For complex moments, layer haptics:
+```swift
+.sensoryFeedback(trigger: messageStatus) { _, new in
+    switch new {
+    case .sent: return .impact(weight: .light)
+    case .delivered: return .impact(flexibility: .soft)
+    case .read: return .success
+    case .failed: return .error
+    default: return nil
+    }
+}
+```
+
+### CoreHaptics for the truly bespoke
+
+For multi-step patterns, audio-synced haptics, or > 1s continuous haptics, drop down to CoreHaptics (see [interaction-primitives](../interaction-primitives/SKILL.md)).
+
+Memorable moments worth a custom AHAP:
+- App's signature send/receive (Telegram has one)
+- First-launch celebration
+- Critical milestone (your 100th workout, first $1,000 saved)
+- A signature physical interaction (Halide's burst-mode "ratchet" feel)
+
+### When NOT to haptic
+
+- Cold app launch (engine is asleep; will lag).
+- Every cell scroll (vibrates the phone — annoying).
+- "New message" notifications when the app is foreground (the user is already looking).
+- Saved settings (the toggle change already haptics).
+
+The rule: **fire on user-initiated, meaningful changes only.**
+
+---
+
+## 9. Sound design
+
+iOS apps generally avoid in-app sound. The system handles ringtones, notifications, keyboard clicks. Adding your own sound is risky — the user has their volume up for a reason, and surprise audio breaks trust.
+
+**When sound IS appropriate:**
+- **Camera shutter** (if you have one — required for camera apps in some jurisdictions; Apple's Camera plays a click).
+- **Voice messages** — playback obviously needs sound, but the SEND haptic should be silent.
+- **Games / immersive experiences** — different rules.
+- **Confirmation moments that match a real-world sound** — e.g., a "ka-ching" for completed payment (Cash App does this).
+- **Sound design as core feature** — meditation apps (Calm, Oak), audio products (podcasts, Apple Music).
+
+**Rules when you DO use sound:**
+1. **Match haptic and sound** — they should fire together at < 10ms apart. The pairing creates the "physicality" Family talks about.
+2. **Respect silent mode** — observe `AVAudioSession.Category.ambient` so the user's silent switch works. NEVER play through `.playback` for incidental UI sounds.
+3. **Keep it under 200ms** — UI sounds should be a single discrete event, not a chord.
+4. **Provide a setting to disable them** — even if defaulted on, users should be able to turn them off.
+5. **Royalty-free or custom-composed** — never use stock sounds the user will recognize from another app.
+
+```swift
+import AudioToolbox
+
+// System sound IDs work for one-off effects
+AudioServicesPlaySystemSound(1057) // tink
+
+// Custom sounds via AVAudioPlayer
+let url = Bundle.main.url(forResource: "celebration", withExtension: "caf")!
+let player = try AVAudioPlayer(contentsOf: url)
+try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+player.play()
+```
+
+For the truly committed: pair sound with haptic via CoreHaptics' `audioResourceID` — they then play *perfectly* synced (sample-accurate).
+
+---
+
+## 10. Touch & gesture polish
+
+### Tap target minimum: 44 × 44pt
+
+Even if your icon is 24pt, give it a 44pt tap area:
+```swift
+Image(systemName: "xmark")
+    .frame(width: 44, height: 44)
+    .contentShape(Rectangle())
+    .onTapGesture { ... }
+```
+
+`.contentShape(Rectangle())` is the critical part — without it, the tap only registers on the actual icon glyph (24pt), not the padding around it.
+
+### Visible press states
+
+EVERY tappable element should respond to touch-down, not just touch-up.
+
+```swift
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.spring(duration: 0.16, bounce: 0), value: configuration.isPressed)
+    }
+}
+
+Button("Continue") { }
+    .buttonStyle(PressableButtonStyle())
+```
+
+For more granular control (e.g., haptic on touch-down):
+```swift
+struct PressGesture: ViewModifier {
+    @Binding var isPressed: Bool
+    func body(content: Content) -> some View {
+        content
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in isPressed = true }
+                    .onEnded { _ in isPressed = false }
+            )
+    }
+}
+```
+
+### Rubber-banding
+
+Native iOS scrolling rubber-bands at the edges. When you build custom horizontal carousels or drag-dismissible sheets, replicate this:
+
+```swift
+@GestureState private var dragOffset: CGFloat = 0
+
+DragGesture()
+    .updating($dragOffset) { value, state, _ in
+        let raw = value.translation.height
+        // Rubber-band: increasingly resist past 0
+        if raw < 0 {
+            state = raw / 3 // 1/3 the actual drag past the boundary
+        } else {
+            state = raw
+        }
+    }
+```
+
+The function `raw / (1 + abs(raw) / 200)` gives a smoother rubber-band asymptote.
+
+### Drag with momentum
+
+When releasing a drag, carry the gesture's velocity into the spring:
+```swift
+.onEnded { value in
+    let velocity = value.predictedEndLocation.y - value.location.y
+    withAnimation(.interpolatingSpring(stiffness: 320, damping: 28, initialVelocity: velocity / 100)) {
+        offset = .zero
+    }
+}
+```
+
+### Swipe-to-dismiss with progressive feedback
+
+As the user drags a sheet down to dismiss, the background should darken or fade with linear opacity tied to drag distance. Haptic at the dismiss threshold:
+
+```swift
+.gesture(
+    DragGesture()
+        .onChanged { value in
+            offset = max(0, value.translation.height)
+            backgroundOpacity = 1 - min(offset / 300, 1) * 0.8
+            // Haptic at dismiss threshold
+            if offset > 120 && !pastThreshold {
+                pastThreshold = true
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            }
+        }
+        .onEnded { value in
+            if offset > 120 || value.predictedEndLocation.y > 600 {
+                dismiss()
+            } else {
+                withAnimation(.spring(duration: 0.32, bounce: 0)) {
+                    offset = 0
+                    backgroundOpacity = 1
+                }
+            }
+        }
+)
+```
+
+### Pinch to zoom with rotation/translation
+
+For photo zoom, layer three simultaneous gestures:
+```swift
+let zoom = MagnificationGesture()
+    .onChanged { scale = $0 }
+let drag = DragGesture()
+    .onChanged { offset = $0.translation }
+
+photo.gesture(SimultaneousGesture(zoom, drag))
+```
+
+The polish detail: when scale drops below 1.0, snap back with rubber-band; when scale exceeds max, rubber-band again. Use `.interpolatingSpring`.
+
+### Keyboard return key — `.submitLabel`
+
+When a text input is part of a form, search bar, or composer, the keyboard's return key should show the right verb — not a generic Return arrow.
+
+```swift
+TextField("Email", text: $email)
+    .submitLabel(.next)
+    .onSubmit { focusedField = .password }
+
+TextField("Search", text: $query)
+    .submitLabel(.search)
+    .onSubmit { runSearch() }
+```
+
+Available labels: `.done`, `.go`, `.next`, `.return`, `.search`, `.send`, `.join`, `.route`, `.continue`. Match the verb to the action. This is the kind of micro-detail users don't consciously notice but which makes the keyboard feel native and the form feel finished.
+
+For multi-line text where Return should insert a newline, don't override — let the system handle it. Pair with a dedicated send button instead.
+
+---
+
+## Buttons & CTAs
+
+Buttons are the most-pressed surface in your app. A great button — clear hierarchy, precise press feel, satisfying haptic, label that morphs with state — separates a polished app from a generic one more than almost anything else.
+
+### Sizing system
+
+Five sizes, all multiples of the 4pt grid:
+
+| Size | Height | Horizontal pad | Font | Use |
+| --- | --- | --- | --- | --- |
+| `xs` (chip) | 28pt | 12pt | 13pt semibold | Filter chips, segmented controls |
+| `sm` | 32pt | 16pt | 14pt semibold | Toolbar actions, secondary inline |
+| `md` (default) | 44pt | 20pt | 15pt semibold | Standard buttons, form actions |
+| `lg` | 52pt | 24pt | 17pt semibold | Section CTAs, key actions |
+| `xl` (hero) | 60pt | 28pt | 17pt bold | Paywall CTA, primary onboarding |
+
+**Corner radius scales** with size: 8pt (xs/sm), 12pt (md), 14pt (lg), 16pt (xl). Use `RoundedRectangle(cornerRadius:, style: .continuous)` for the squircle shape.
+
+**Rule**: tap target ≥ 44pt ALWAYS. Visual size can be smaller (32pt chip with `.frame(minHeight: 44).contentShape(Rectangle())`).
+
+### Variants — the hierarchy
+
+| Variant | Fill | Border | Text | Use |
+| --- | --- | --- | --- | --- |
+| **Primary** | `tint` (accent) | none | white | ONE per screen — the main action |
+| **Secondary** | `tint.opacity(0.12)` | none | `tint` | Supporting alternatives |
+| **Tertiary** (ghost) | clear | none | `tint` | Quick actions, "Skip", "Maybe later" |
+| **Destructive (filled)** | `.red` | none | white | Confirmed destructive primary |
+| **Destructive (text)** | clear | none | `.red` | Destructive option in a list |
+| **Icon-only** | `tint.opacity(0.1)` or clear | none | `tint` | Square 44×44pt with `.accessibilityLabel` |
+
+**The Linear rule**: tint ONE thing per screen. When everything is tinted, nothing stands out. Secondary actions stay neutral.
+
+### States — six total
+
+```swift
+enum ButtonState {
+    case rest          // default
+    case pressed       // visual press feedback
+    case loading       // async action in progress
+    case disabled      // unavailable (with a reason)
+    case success       // momentary confirmation
+    case error         // momentary failure
+}
+```
+
+**Loading state pattern** — label morphs into spinner inline, button KEEPS its width (no layout shift):
+
+```swift
+@State private var stableWidth: CGFloat?
+
+ZStack {
+    if isLoading {
+        ProgressView()
+            .controlSize(.small)
+            .tint(.white)
+    } else {
+        Text(label)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { newWidth in
+                if stableWidth == nil { stableWidth = newWidth }
+            }
+    }
+}
+.frame(minWidth: stableWidth)  // locked once measured
+.contentTransition(.opacity)
+.animation(.snappy(duration: 0.22), value: isLoading)
+```
+
+**Success state** — verb past-tense + symbol replace, auto-revert after 1.5s:
+
+```swift
+HStack(spacing: 6) {
+    Image(systemName: showSuccess ? "checkmark" : "square.and.arrow.down")
+        .contentTransition(.symbolEffect(.replace))
+    Text(showSuccess ? "Saved" : "Save")
+}
+.sensoryFeedback(.success, trigger: showSuccess)
+.task(id: showSuccess) {
+    if showSuccess {
+        try? await Task.sleep(for: .seconds(1.5))
+        showSuccess = false
+    }
+}
+```
+
+**Disabled state**: ALWAYS pair with a reason. A grayed-out button with no explanation is hostile. Either show inline help text below ("Enter your email to continue") or a tooltip on tap.
+
+### Press states — the SwiftUI ButtonStyle pattern
+
+```swift
+struct ScaleButtonStyle: ButtonStyle {
+    var feedback: SensoryFeedback = .impact(weight: .light)
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(
+                .spring(duration: 0.16, bounce: 0),
+                value: configuration.isPressed
+            )
+            .sensoryFeedback(feedback, trigger: configuration.isPressed) { _, new in
+                new == true   // only fire on press-DOWN, not release
+            }
+    }
+}
+
+Button("Continue") { ... }
+    .buttonStyle(ScaleButtonStyle())
+```
+
+**Press-down haptic is non-negotiable for premium feel.** The haptic fires the instant the finger touches — before the user lifts. Apple's first-party buttons all do this. The user reads it subconsciously as "the button heard me."
+
+### CTA copywriting — verbs win
+
+| ❌ Bad | ✅ Good | Why |
+| --- | --- | --- |
+| Submit | Save Photo | Specific action, not generic |
+| Confirm | Delete Photo | Names what will happen, especially destructive |
+| Continue | Add to Cart, $24.99 | Continues TO what? State the destination |
+| OK | Got it / Done | "OK" is forms-speak |
+| Proceed | Next, Step 3 of 5 | Forms-speak |
+| Click here | (button label is enough) | Buttons don't need "click here" |
+| Send | Send to Sam | Personalize when possible |
+| Loading… | Saving… | Verb form of the action in progress |
+| Done | Saved | Past tense of the action just completed |
+| Error | Try Again | Reframe failure as recoverable |
+| Get Started | Take Your First Photo | What does "start" even mean? |
+| Learn More | See How It Works | "More" is empty calories |
+| Sign Up | Create Account | Specific outcome |
+| Buy | Buy for $9.99 | Always show the price |
+| Yes / No | Use specific verbs | "Delete Photo" / "Keep" |
+
+**State-aware label morphing** (the polish detail):
+
+| State | Label | Icon |
+| --- | --- | --- |
+| Rest | "Save Photo" | `square.and.arrow.down` |
+| Pressed | "Save Photo" (no text change, only scale) | same |
+| Loading | "Saving…" or hide label, show spinner | spinner |
+| Success | "Saved" | `checkmark` |
+| Error | "Try Again" | `exclamationmark.triangle` |
+
+Use `.contentTransition(.numericText())` (works for text crossfade too) and `.contentTransition(.symbolEffect(.replace))` for the icon morph.
+
+### Sticky / floating / fixed buttons
+
+**Sticky bottom CTA bar** (forms, checkout, paywall):
+
+```swift
+ScrollView { content }
+.safeAreaInset(edge: .bottom) {
+    Button(action: continueAction) {
+        Text("Continue")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(Color.accentColor, in: .rect(cornerRadius: 14, style: .continuous))
+    }
+    .buttonStyle(ScaleButtonStyle())
+    .padding(.horizontal, 16)
+    .padding(.bottom, 16)
+    .background(.bar)  // semantic blur — adapts to iOS 26 Liquid Glass
+}
+```
+
+**Floating action button (FAB)** — bottom-trailing:
+
+```swift
+.overlay(alignment: .bottomTrailing) {
+    Button(action: newItem) {
+        Image(systemName: "plus")
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 56, height: 56)
+            .background(Color.accentColor, in: Circle())
+            .shadow(color: .accentColor.opacity(0.35), radius: 12, x: 0, y: 6)
+    }
+    .padding(.trailing, 16)
+    .padding(.bottom, 88)  // above tab bar
+    .buttonStyle(ScaleButtonStyle(feedback: .impact(weight: .medium)))
+}
+```
+
+**Tinted shadow** (`.accentColor.opacity(0.35)`) — not pure black. Premium apps shadow with the element's color, not generic gray. See §5.
+
+### Scroll-react buttons — appear/disappear on scroll
+
+The pattern: button hides when scrolling DOWN (out of the way), shows when scrolling UP (likely to tap). Used in Instagram, X, Threads.
+
+```swift
+@State private var isVisible = true
+@State private var lastOffset: CGFloat = 0
+
+ScrollView { content }
+.onScrollGeometryChange(for: CGFloat.self) { geometry in
+    geometry.contentOffset.y
+} action: { _, newOffset in
+    let delta = newOffset - lastOffset
+    if abs(delta) > 8 {
+        withAnimation(.spring(duration: 0.32, bounce: 0)) {
+            isVisible = delta < 0  // scrolling up = visible
+        }
+        lastOffset = newOffset
+    }
+}
+.overlay(alignment: .bottom) {
+    if isVisible {
+        bottomCTABar
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+}
+```
+
+**"Back-to-top" button**: appears after scrolling > 800pt down. Tap scrolls smoothly to top with `withAnimation` + `ScrollViewReader.scrollTo`. Apple News and the App Store both have this.
+
+### Fully tappable cells & rows
+
+The `.contentShape(Rectangle())` trick is essential. Without it, taps register only on the visual content of a row — empty space within the cell does nothing. With it, the entire row is tappable, including padding.
+
+```swift
+HStack {
+    Image(systemName: "person.circle")
+    VStack(alignment: .leading) {
+        Text("Sam Chen")
+        Text("Engineer").foregroundStyle(.secondary)
+    }
+    Spacer()
+    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+}
+.padding()
+.contentShape(Rectangle())    // ← makes the WHOLE row tappable
+.onTapGesture { openProfile() }
+```
+
+**Row with primary tap + accessory tap** — outer tap opens detail, inner button fires its own action without bubbling. Use `Button` for the inner action — it natively captures the tap:
+
+```swift
+HStack {
+    profileInfo
+    Spacer()
+    Button("Follow") { follow() }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
+}
+.contentShape(Rectangle())
+.onTapGesture { openProfile() }
+```
+
+The `Button` claims its hit area; the outer `onTapGesture` only fires when the user taps outside the button. This pattern is iMessage/Instagram-standard for follower rows.
+
+### Liquid Glass buttons (iOS 26)
+
+For floating action controls — toolbar items, FABs, picker controls — Liquid Glass is the new default surface.
+
+```swift
+Button("New") { newItem() }
+    .padding(.horizontal, 20)
+    .padding(.vertical, 12)
+    .glassEffect(.regular.tint(.accentColor).interactive())
+```
+
+**Rules:**
+- **Only primary actions get `.tint(...)`.** Secondary glass buttons stay clear (`.glassEffect(.regular)`).
+- **`.interactive()` adds the bounce + shimmer on tap** — don't double up with your own `ButtonStyle` scale effect.
+- **Don't use glass for buttons on glass surfaces** (e.g., nav bar glass + button glass) — visual mush.
+- **Fall back gracefully** for iOS 25 and below:
+
+```swift
+@ViewBuilder
+func glassOrFilled(_ tint: Color) -> some View {
+    if #available(iOS 26.0, *) {
+        self.glassEffect(.regular.tint(tint).interactive())
+    } else {
+        self.background(tint, in: .capsule)
+    }
+}
+```
+
+### Button animation polish
+
+The three motions worth getting right:
+
+1. **Press feedback** (touch-down): scale 0.96, opacity 0.85, 0.16s spring with `bounce: 0`. Haptic `.impact(weight: .light)`.
+2. **Release** (touch-up): back to 1.0 with slight overshoot (`.spring(duration: 0.3, bounce: 0.25)`). NO additional haptic on release.
+3. **State transition** (rest → loading → success): `.contentTransition` with width locked, `.symbolEffect(.replace)` on the icon, optional `.sensoryFeedback(.success, trigger:)` on completion.
+
+### Button anti-patterns
+
+- **Multiple primary buttons on one screen.** Pick one.
+- **A "Submit" button.** What does it submit? Be specific.
+- **Buttons without press feedback.** Tap a button — does it react? If no, it feels broken.
+- **Loading states that resize the button.** Lock width before showing the spinner.
+- **Disabled state with NO indication of WHY.** Show a hint: "Enter your email to continue."
+- **Destructive buttons that look like primary.** Red, or red-text — visually distinct.
+- **FABs that obscure content.** Move out of the way on scroll.
+- **Custom spinner inside the button.** Use system `ProgressView()`.
+- **A keyboard shortcut on a button label.** That's for menu items. Buttons are tapped.
+- **`.sensoryFeedback` on release instead of press-down.** The feedback should match the moment of intent (touch-down), not the moment of release.
+
+---
+
+## Sheets, detents, popovers, share sheets
+
+Modal presentation is one of iOS's most expressive primitives. Used well, it preserves context and feels natural. Used badly, it disorients the user and feels like a series of pop-up boxes.
+
+### Sheet anatomy — `.sheet(isPresented:)`
+
+```swift
+.sheet(isPresented: $showing) {
+    SheetContent()
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(.thinMaterial)
+        .presentationCornerRadius(28)
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+}
+```
+
+| Modifier | What it does |
+| --- | --- |
+| `.presentationDetents([.medium, .large])` | Sheet snaps to specified heights; user can drag between |
+| `.presentationDetents([.fraction(0.3)])` | Custom — 30% of screen height |
+| `.presentationDetents([.height(280)])` | Custom — fixed point height |
+| `.presentationDragIndicator(.visible)` | Shows the small grab handle at top |
+| `.presentationBackground(...)` | `.regularMaterial`, `.thinMaterial`, or a color |
+| `.presentationCornerRadius(28)` | iOS 16.4+ — overrides system 10pt corner |
+| `.presentationBackgroundInteraction(.enabled(upThrough:))` | Allow taps on content BEHIND the sheet up to a detent |
+
+### When to use sheets vs push vs full modal
+
+| Pattern | Use for |
+| --- | --- |
+| **Sheet** | Transient actions: compose, confirm, pick, share. User returns to current context. |
+| **Push (NavigationStack)** | Drilling into a hierarchy: list → detail → sub-detail. Going BACK is the metaphor. |
+| **Full modal (`.fullScreenCover`)** | Wholly different mode: camera capture, video player, immersive media. NOT for navigation. |
+| **Popover (`.popover`)** | Anchored UI on iPad. On iPhone, popovers degrade to sheets automatically. |
+| **Menu (`.menu`)** | < 6 quick actions. NO custom UI. |
+| **Confirmation dialog** | 1–3 destructive/confirmation choices. NO additional content. |
+| **Alert** | Critical, blocking, single-message — almost never the right choice. |
+
+### Sheet sizing patterns
+
+| Sheet purpose | Detent | Rationale |
+| --- | --- | --- |
+| Quick confirm | `.fraction(0.25)` or `.height(220)` | Small — single decision |
+| Picker / selector | `.medium` | Half-screen — enough to scan options |
+| Filter / settings | `.medium` initially, allow drag to `.large` | Start compact, allow expansion |
+| Multi-step form | `.large` | Full real estate for inputs |
+| Share preview | `.medium` (system default for ShareLink) | Apple's convention |
+| Compose / write | `.large` | Writing benefits from screen space |
+
+**Critical rule** (from Family Values + design-with-taste, also referenced in §12): stacked sheets MUST have visibly different heights. A confirm-sheet over a settings-sheet needs 2 distinct sizes — otherwise the user loses spatial orientation.
+
+```swift
+.sheet(isPresented: $showSettings) {
+    SettingsView()
+        .presentationDetents([.fraction(0.7)])
+        .sheet(isPresented: $showConfirm) {
+            ConfirmView()
+                .presentationDetents([.fraction(0.3)])  // visibly smaller
+        }
+}
+```
+
+### Sheet polish details
+
+**The grab handle** (`.presentationDragIndicator(.visible)`): show it when the sheet is draggable or dismissable by gesture. Hide it for sheets with a custom close button or fixed height.
+
+**The corner radius**: iOS 16.4+ exposes `.presentationCornerRadius(...)`. System default is 10pt; brands often want 16–28pt. Match your card corner radius for consistency.
+
+**The background**: `.thinMaterial` (default) lets content behind show through subtly. `.regularMaterial` is more opaque. Solid color works too. For iOS 26 Liquid Glass apps, the sheet picks up Liquid Glass automatically — don't fight it.
+
+**Pass-through interaction**: `.presentationBackgroundInteraction(.enabled(upThrough: .medium))` lets the user keep tapping on the map / chart behind the sheet while it's open at medium detent. Essential for Maps, Music's mini-player, Apple Find My.
+
+### Multiple sheets — iOS 17+ native stacking
+
+iOS 17+ supports stacking sheets via nested `.sheet` modifiers. Pre-17, you had to chain or use a state machine. Now:
+
+```swift
+.sheet(isPresented: $showA) {
+    AView()
+        .sheet(isPresented: $showB) {   // stacks ON TOP of A
+            BView()
+        }
+}
+```
+
+Each layer animates in/out independently. Apply the visibly-different-heights rule (above).
+
+### Popovers — `.popover`
+
+```swift
+.popover(isPresented: $showing, arrowEdge: .bottom) {
+    PopoverContent()
+        .frame(idealWidth: 320, idealHeight: 240)
+        .presentationCompactAdaptation(.popover)  // iOS 16.4+ — stays a popover on iPhone
+}
+```
+
+**On iPhone, popovers default to sheets.** Force popover behavior with `.presentationCompactAdaptation(.popover)` — sparingly. The system default usually serves iPhone users better (sheets are more thumb-friendly).
+
+**Use popovers for**: small anchored controls (color picker, date picker, "more info" hover-style content). NOT for forms, NOT for navigation.
+
+### Share sheets — `ShareLink`
+
+The iOS 16+ way. `ShareLink` auto-detects share previews and integrates with the system share sheet.
+
+```swift
+ShareLink(item: photo.url) {
+    Label("Share Photo", systemImage: "square.and.arrow.up")
+}
+```
+
+**With a custom preview** (recommended for premium feel):
+
+```swift
+ShareLink(
+    item: shareImage,
+    preview: SharePreview(
+        "My run this morning",
+        image: shareImage,
+        icon: Image("AppIcon")
+    )
+)
+```
+
+The `SharePreview` shows in the share sheet header AND in Communication Notifications (Messages will show your custom title and image when forwarded).
+
+**For data needing `Transferable` conformance**:
+
+```swift
+struct WorkoutShare: Transferable {
+    let title: String
+    let image: UIImage
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { workout in
+            workout.image.pngData() ?? Data()
+        }
+        ProxyRepresentation(exporting: \.title)
+    }
+}
+```
+
+### `UIActivityViewController` for advanced cases
+
+When `ShareLink` isn't enough (custom activities, source items per activity type, exclusion lists):
+
+```swift
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    let excludedTypes: [UIActivity.ActivityType] = [.assignToContact]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        vc.excludedActivityTypes = excludedTypes
+        return vc
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+```
+
+Use `ShareLink` 95% of the time. `UIActivityViewController` for the 5%.
+
+### Confirmation dialogs — destructive actions
+
+```swift
+.confirmationDialog(
+    "Delete \"\(photo.title)\"?",
+    isPresented: $showDelete,
+    titleVisibility: .visible
+) {
+    Button("Delete Photo", role: .destructive) { delete() }
+    Button("Cancel", role: .cancel) { }
+} message: {
+    Text("This can't be undone.")
+}
+.sensoryFeedback(.warning, trigger: showDelete)
+```
+
+**Polish details**:
+- Title NAMES the action: `Delete "Sunset.jpg"?` not `Are you sure?`
+- Destructive button uses the VERB: `Delete Photo` not `Confirm`
+- Optional message gives context: `This can't be undone.`
+- Cancel is ALWAYS the last/safe option
+- `.role: .destructive` colors the button red automatically
+- Fires `.warning` sensory feedback when presented
+
+### Menus — `.menu`
+
+Lightweight, < 6 actions, no custom UI:
+
+```swift
+Menu {
+    Button("Save to Photos", action: save)
+    Button("Copy", action: copy)
+    Divider()
+    Button("Delete", role: .destructive, action: delete)
+} label: {
+    Label("More", systemImage: "ellipsis.circle")
+}
+```
+
+Compared to context menus (long-press, see §7), menus are EXPLICITLY triggered by tapping a control. Use for discoverable "..." or "more" actions visible on the screen.
+
+### Sheet anti-patterns
+
+- **Sheets used for primary navigation.** Navigation is push. Sheets are transient.
+- **Alerts as confirmation.** Use `.confirmationDialog` — better polish, more flexible.
+- **Multiple sheets at the same height.** Spatial confusion.
+- **Sheets with no drag indicator AND no close button.** User can't see how to dismiss.
+- **Custom dismiss button instead of native drag.** Both is fine; replacing native dismiss with custom is anti-pattern.
+- **Popovers on iPhone forced via `.popover` without testing.** Test sheet adaptation first.
+- **`UIActivityViewController` when `ShareLink` would do.** ShareLink is the modern primitive.
+- **Confirmation dialog with "Are you sure?" copy.** Name the action specifically.
+
+---
+
+## 11. Image & media polish
+
+### Fade-in on load
+
+Images appearing instantly look like a bug. Cross-fade them:
+
+```swift
+AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.32))) { phase in
+    switch phase {
+    case .empty:
+        placeholderView
+    case .success(let image):
+        image.resizable().scaledToFill()
+            .transition(.opacity)
+    case .failure:
+        errorView
+    @unknown default: EmptyView()
+    }
+}
+```
+
+Or use Kingfisher / Nuke for production-grade image loading with built-in fade and caching.
+
+### Blurhash / low-res progressive
+
+For premium feel: show a blurred low-resolution placeholder, then cross-fade to the high-res image.
+
+```swift
+ZStack {
+    BlurhashView(hash: post.blurhash) // small, fast — decoded from a tiny string
+    AsyncImage(url: post.imageURL)
+        .transition(.opacity.animation(.easeOut(duration: 0.4)))
+}
+```
+
+Blurhash is a tiny string (20–30 chars) encoded server-side, decoded client-side to a blurred preview. Instagram, Wolt, and many premium apps use this.
+
+### Subtle inset shadow on photo cells
+
+Photos floating in a grid often need an extremely subtle inner stroke at the edge so the photo doesn't blend into the background (especially when the photo edge is white).
+
+```swift
+Image(...)
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .inset(by: 0.5)
+            .stroke(Color.black.opacity(0.05), lineWidth: 0.5)
+    )
+```
+
+### Vignettes for hero images
+
+For hero photos with text overlaid, add a subtle radial vignette to keep the text readable without darkening the whole image:
+
+```swift
+Image(...)
+    .overlay(
+        LinearGradient(
+            colors: [.clear, .black.opacity(0.5)],
+            startPoint: .center,
+            endPoint: .bottom
+        )
+    )
+```
+
+The text reads, the image's hero remains visible.
+
+### Smooth zoom with `.scaledToFill()` + clipping
+
+When a user pinches an image, you want the IMAGE to zoom, not the container. Use `.scaledToFill()` + `.clipped()` + `.scaleEffect()`:
+
+```swift
+Image(...)
+    .resizable()
+    .scaledToFill()
+    .frame(width: containerWidth, height: containerHeight)
+    .clipped()
+    .scaleEffect(zoom)
+    .gesture(magnification)
+```
+
+### Image grid scroll performance
+
+For grids of 100+ images, use `LazyVGrid` or `LazyHGrid` and pre-fetch thumbnails. Use `PHCachingImageManager` for PhotoKit assets, or Kingfisher's prefetcher for remote URLs.
+
+---
+
+## 12. Loading states
+
+### Skeleton screens with shimmer
+
+Replace spinner with a skeleton that MATCHES the layout of the upcoming content.
+
+```swift
+struct SkeletonCell: View {
+    @State private var shimmer = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.systemGray5))
+                .frame(width: 160, height: 16)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(.systemGray5))
+                .frame(width: 120, height: 12)
+        }
+        .overlay(
+            LinearGradient(
+                colors: [.clear, Color.white.opacity(0.3), .clear],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .rotationEffect(.degrees(20))
+            .offset(x: shimmer ? 200 : -200)
+            .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: shimmer)
+        )
+        .mask(content) // mask the shimmer to the skeleton shape
+        .onAppear { shimmer = true }
+    }
+}
+```
+
+**Critical: skeletons must structurally match the real content.** A skeleton with 3 lines while the real content has 5 = broken illusion. If the real card has an avatar, a title, and a subtitle — the skeleton has a circle (avatar), a rect (title), and a smaller rect (subtitle), in the same positions.
+
+### Optimistic UI
+
+For ANY action initiated by the user, show the result IMMEDIATELY — before the server responds. If the server later fails, reconcile.
+
+Examples:
+- Like a post: heart fills instantly. Server call happens in background.
+- Send a message: bubble appears in conversation instantly. Network later.
+- Save a setting: toggle flips instantly. Persistence later.
+
+The principle: **the user's action causes the visible effect. Network is implementation detail.**
+
+```swift
+func like() {
+    let original = isLiked
+    isLiked = true // optimistic
+    Task {
+        do {
+            try await api.like(post.id)
+        } catch {
+            await MainActor.run {
+                isLiked = original // revert
+                showErrorBanner()
+            }
+        }
+    }
+}
+```
+
+### Progressive disclosure of long-running operations
+
+For operations > 1 second:
+- 0–500ms: silent. No spinner. Just appear done when done.
+- 500ms–2s: subtle inline indicator (a small progress dot, an `.symbolEffect(.pulse)` on the relevant icon).
+- 2s+: explicit progress indicator with progress bar IF you can compute progress, otherwise an indeterminate spinner.
+- 10s+: consider a Live Activity (see [interaction-primitives](../interaction-primitives/SKILL.md#4-live-activities)).
+
+### The spinner of last resort
+
+If you MUST use a spinner, use `ProgressView()` (system-styled) — not a custom one. System spinners adapt to color scheme, accent color, and Reduce Motion automatically.
+
+For full-screen loading, embed in a `VStack` with a subtle label below — "Loading…" is fine; "Hold on, we're crunching the numbers..." is not.
+
+### The spinner travels to where the result will appear
+
+One of the highest-leverage polish patterns, adapted from [Family's design philosophy](https://benji.org/family-values). When a user action initiates a load, the loading indicator should NOT sit at the location of the action — it should migrate to where the user will *look for* the result.
+
+- **Submit a transaction** → spinner migrates to the Activity tab icon (and stays as a subtle dot until complete).
+- **Save a photo** → spinner rides the thumb-flight to the gallery button.
+- **Send a message** → spinner appears inside the optimistically-rendered bubble, not on the send button.
+- **Export a video** → progress migrates to a Live Activity in the Dynamic Island, freeing the user to continue.
+- **Sync in the background** → progress shown as a subtle ring around the relevant tab icon.
+
+The user's eye follows one location. Anchor the loading state to the DESTINATION, not the TRIGGER. This pattern applies across the four skills in this folder — `camera-and-photos` uses it for save flights, `chat-and-messaging` for message status, `interaction-primitives` for Live Activity confirmation.
+
+### Vary heights of stacked layers
+
+When sheets stack (a confirm dialog over a settings sheet over the main view), each layer MUST be a visibly different height than the layer beneath. Two identical-height sheets read as "one layer that swapped" — the user loses spatial orientation entirely.
+
+```swift
+// Good — first sheet 70% height, confirmation 35% height
+.sheet(isPresented: $showSettings) {
+    SettingsView()
+        .presentationDetents([.fraction(0.7)])
+        .sheet(isPresented: $showConfirmation) {
+            ConfirmationView()
+                .presentationDetents([.fraction(0.35)])
+        }
+}
+```
+
+Apple's built-in `.medium` and `.large` detents handle this naturally. If you customize, ensure each subsequent layer is at least 25% smaller (or larger) than the parent. The size difference is what communicates "you went deeper" — without it, the user thinks the app glitched.
+
+---
+
+## 13. Empty states
+
+> "Empty states are first impressions." — Family design philosophy
+
+The empty state is what the user sees BEFORE they've done anything. It's the first impression. It's almost never given the care of the hero.
+
+### The three things every empty state needs
+
+1. **A friendly illustration or symbol** — NOT a generic ![empty box]. A small custom illustration (commissioned art, an SF Symbol with `.bounce`, or a simple line drawing) that matches your brand.
+2. **A clear, warm explanatory line** — "Nothing here yet" is the bare minimum. Better: "Your first note is one tap away." Best: a sentence in your brand voice that explains WHAT to do.
+3. **An invitation to act** — either a button (with a clear primary action) OR an animated arrow pointing at the action they should take (in a navigation bar etc).
+
+```swift
+struct EmptyNotesView: View {
+    @State private var bobbing = false
+    var body: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "note.text")
+                .font(.system(size: 64))
+                .foregroundStyle(.tertiary)
+                .offset(y: bobbing ? -4 : 4)
+                .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: bobbing)
+
+            VStack(spacing: 6) {
+                Text("Your first note is waiting")
+                    .font(.title3.weight(.semibold))
+                Text("Tap the + button to capture a thought.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 32)
+
+            Button {
+                createNote()
+            } label: {
+                Label("New Note", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { bobbing = true }
+    }
+}
+```
+
+### Variations
+
+- **Empty search results**: explain WHAT was searched. "No results for 'apricot'. Try a different word?"
+- **Empty inbox**: celebrate. "Inbox zero. Enjoy it." with a subtle illustration of a person at rest.
+- **Empty error state**: separate from empty success. "Something went wrong loading your data. Pull to retry."
+- **Empty paid feature**: explain what unlocks it. "Pro members can save up to 100. Upgrade for unlimited."
+
+### Animated arrows pointing to the right place
+
+For first-launch empty states, an animated arrow pointing toward the action button is high-impact. Use a subtle horizontal bob:
+
+```swift
+Image(systemName: "arrow.down")
+    .font(.title2)
+    .foregroundStyle(.secondary)
+    .offset(y: bobbing ? 4 : -4)
+    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: bobbing)
+```
+
+Position it pointing at the FAB / tab bar action / "+" button.
+
+---
+
+## 14. Celebrating completions
+
+Don't celebrate every save. Celebrate the moments worth a story.
+
+> **The 100× rule (from Emil Kowalski's design engineering practice):** if a user will see this interaction 100+ times a day, *don't animate it*. Daily-frequency actions should be near-silent — no spring, no haptic, just instant response. The animation and delight budget belongs to the rare, meaningful moments. Inverting this — adding micro-delight to every list scroll and every save — produces apps that feel exhausting after a week. The rarer the event, the bigger the celebration can be.
+
+### The Delight-Impact Curve
+
+Plot frequency vs. delight:
+- **Daily (likes, saves, sends, scrolls)**: subtle. Haptic + tiny scale. No confetti.
+- **Weekly (completed a workout, hit a streak day)**: memorable. A small custom animation. A satisfied phrase.
+- **Monthly (paid bill, finished course module)**: bigger moment. Full-screen success card. Custom illustration.
+- **Once or rare (first signup, completed onboarding, 100-day streak)**: THEATRICAL. Confetti, sound, custom animation. Worth a screenshot.
+
+### Confetti — when and how
+
+Use `SwiftUI` particle effects with `CAEmitterLayer` (UIKit-backed) or modern SwiftUI `KeyframeAnimator` choreography.
+
+For a quick win, use a confetti library (e.g., `ConfettiSwiftUI`):
+```swift
+@State private var confetti = 0
+
+ZStack {
+    successContent
+    ConfettiCannon(counter: $confetti, num: 80, colors: [.red, .blue, .yellow, .green, .pink])
+}
+.onAppear { confetti += 1 }
+```
+
+**Rules:**
+- Confetti is reserved for moments worth a screenshot.
+- Duration: 1.5–3s. Then it should be GONE.
+- Pair with `.success` sensory feedback + a sound if you have one.
+- Color palette: pick 4–6 colors from your brand or universal celebration colors.
+- Particle count: 60–120. More feels overwhelming.
+
+### Custom celebration animations
+
+For brand-defining moments, commission a custom animation. Things 3 has a satisfying "tick" animation when you complete a task. Apple Fitness has the ring closure animation. These are signature moments worth investing in.
+
+Use Lottie / Rive / pure SwiftUI keyframes:
+```swift
+KeyframeAnimator(initialValue: AnimationValues()) { values in
+    starShape
+        .scaleEffect(values.scale)
+        .rotationEffect(values.rotation)
+} keyframes: { _ in
+    KeyframeTrack(\.scale) {
+        SpringKeyframe(1.4, duration: 0.3, spring: .bouncy)
+        SpringKeyframe(1.0, duration: 0.6, spring: .smooth)
+    }
+    KeyframeTrack(\.rotation) {
+        LinearKeyframe(.degrees(360), duration: 0.9)
+    }
+}
+```
+
+### Mobbin references
+
+- [Headway daily mission complete](https://mobbin.com/flows/9763b98a-b096-4954-9a98-44602cef6d07) — confetti + checklist
+- [Hyundai Card story](https://mobbin.com/flows/53aabea6-05d9-4d1a-8fd8-e3d3cd87d420) — illustrated 3-month anniversary
+
+---
+
+## Shareable image generation — virality engineering
+
+The single most under-used iOS API for consumer apps: `ImageRenderer`. Strava activity cards, Spotify Wrapped slides, Apple Fitness ring closures, Duolingo streak shares, BeReal posts — they all use this. A user taps "share my run," your app instantly generates a beautifully-designed image branded with your app, the user posts it to Instagram Stories, their friends see it, ask "what app?", install. Free user acquisition, baked into the product.
+
+### The pattern
+
+1. User achieves something (streak, milestone, stat, photo, score).
+2. App auto-generates a beautifully-branded image.
+3. One-tap share to Stories / iMessage / WhatsApp via `ShareLink`.
+4. Image contains: the achievement (hero), the user's name, app logo (subtle), brand colors, a "join me on [App]" or similar footer.
+5. Friend sees the post → curiosity → downloads → loop continues.
+
+This is the **K-factor pattern** (see [nikita-bier-consumer-apps](../../README.md) for the strategy side): each share is a free impression to the user's network.
+
+### `ImageRenderer` — iOS 16+ native
+
+`ImageRenderer` renders any SwiftUI view to a `UIImage` or `CGImage` offscreen.
+
+```swift
+import SwiftUI
+
+@MainActor
+func generateShareImage(for run: Run) async -> UIImage? {
+    let view = RunShareCard(run: run, userName: user.name, userAvatar: user.avatar)
+        .frame(width: 1080, height: 1920)  // Instagram Story aspect
+
+    let renderer = ImageRenderer(content: view)
+    renderer.scale = UIScreen.main.scale     // crisp on Retina
+    renderer.proposedSize = .init(width: 1080, height: 1920)
+    return renderer.uiImage
+}
+```
+
+**Critical**: must run on `@MainActor` (SwiftUI rendering requires it). `renderer.scale` controls pixel density — `3.0` for iPhone Retina, or `UIScreen.main.scale` for adaptive.
+
+### Design rules for share cards
+
+| Rule | Why |
+| --- | --- |
+| **9:16 (1080×1920)** is the default | Instagram Stories, TikTok, Snapchat all share this format |
+| **1:1 (1080×1080)** as fallback | Twitter/X, Threads, general social. Generate both, let user pick |
+| **Hero = the achievement** | The stat, photo, or moment is the largest element. Not the app logo |
+| **Brand watermark is SUBTLE** | App icon + name in a corner at ~40% opacity. Never shouting |
+| **Personalization** | User's name, their data, their photo. Generic cards underperform 3–5× vs personalized |
+| **MeshGradient background** | See §5 — organic, branded, doesn't band when re-uploaded |
+| **Brand color, restrained** | One accent visible. Not a rainbow |
+| **"Join me on [App]" footer** | Small, optional. Drives K-factor without feeling spammy |
+| **NO QR codes by default** | They date the design and feel like marketing. Use a short link in the App Store URL instead |
+
+### A reference `RunShareCard`
+
+```swift
+struct RunShareCard: View {
+    let run: Run
+    let userName: String
+    let userAvatar: UIImage?
+
+    var body: some View {
+        ZStack {
+            // 1. Background — MeshGradient with brand colors
+            MeshGradient(
+                width: 2, height: 2,
+                points: [[0,0], [1,0], [0,1], [1,1]],
+                colors: [.brandBlue, .brandIndigo, .brandPurple, .brandPink]
+            )
+
+            // 2. Subtle noise overlay for richness
+            Image("noise-1024").resizable(resizingMode: .tile)
+                .opacity(0.05).blendMode(.overlay)
+
+            // 3. Content
+            VStack(spacing: 32) {
+                Spacer()
+
+                // Hero stat
+                Text(run.distance.formatted(.measurement(width: .abbreviated)))
+                    .font(.system(size: 140, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.6)
+
+                Text("morning run")
+                    .font(.system(size: 32, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
+
+                // Secondary stats
+                HStack(spacing: 40) {
+                    StatItem(value: run.pace, label: "PACE")
+                    StatItem(value: run.duration, label: "TIME")
+                    StatItem(value: run.elevation, label: "ELEV")
+                }
+
+                Spacer()
+
+                // User attribution + app footer
+                HStack(spacing: 12) {
+                    if let avatar = userAvatar {
+                        Image(uiImage: avatar)
+                            .resizable().frame(width: 56, height: 56)
+                            .clipShape(Circle())
+                    }
+                    VStack(alignment: .leading) {
+                        Text(userName).font(.system(size: 20, weight: .semibold))
+                        Text("Made with [AppName]")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    Spacer()
+                    Image("AppIconWhite")
+                        .resizable().frame(width: 40, height: 40)
+                        .opacity(0.6)
+                }
+                .foregroundStyle(.white)
+                .padding(.bottom, 40)
+            }
+            .padding(.horizontal, 60)
+        }
+        .frame(width: 1080, height: 1920)
+    }
+}
+```
+
+### Save + share flow
+
+```swift
+@MainActor
+func shareRun(_ run: Run) async {
+    guard let image = await generateShareImage(for: run) else { return }
+    self.shareImage = image
+    self.isShareSheetPresented = true
+}
+
+// In view body
+.sheet(isPresented: $isShareSheetPresented) {
+    if let image {
+        ShareLink(
+            item: Image(uiImage: image),
+            preview: SharePreview("My run today", image: Image(uiImage: image))
+        )
+    }
+}
+```
+
+### Curiosity-gap framing — the Bier pattern
+
+The shared image should **reveal enough to spark interest, hide enough to require the app**. Examples:
+
+- **tbh/Gas**: image shows "Someone said you're the best dressed" but you must install to see WHO.
+- **Strava**: image shows route + distance, but pace/heart-rate details are in-app only.
+- **Duolingo**: image shows the streak number but unlocking next milestone requires the app.
+
+**Don't** include everything in the image — it removes the install incentive.
+
+### Multiple aspect ratios — let users choose
+
+```swift
+enum ShareAspect: Hashable {
+    case story    // 9:16, 1080×1920
+    case square   // 1:1, 1080×1080
+    case feed     // 4:5, 1080×1350
+
+    var size: CGSize {
+        switch self {
+        case .story:  return CGSize(width: 1080, height: 1920)
+        case .square: return CGSize(width: 1080, height: 1080)
+        case .feed:   return CGSize(width: 1080, height: 1350)
+        }
+    }
+}
+```
+
+Show a horizontal preview strip; user taps to switch; renderer regenerates. Each generation takes < 100ms on a recent iPhone.
+
+### Anti-patterns
+
+- **"Spotify Wrapped syndrome"** — one big annual share event. Phantom validation that doesn't drive sustained K-factor. Make your share moments REGULAR — weekly recaps, daily achievements.
+- **Watermarks that dominate** — app logo bigger than the hero data = looks like an ad, not a personal share. Subtle.
+- **Generic share cards (same image for every user)** — dies on social. Always personalize.
+- **QR codes everywhere** — date the design. Use shortlinks in profile bio or App Store metadata.
+- **Forgetting Stories aspect** — 4:5 feed works for Instagram feed but FAILS in Stories (cropped). Default to 9:16.
+- **Static share cards on a live data product** — cards should ALWAYS show latest user data. Re-render on share, never cache.
+
+---
+
+## 15. Onboarding polish
+
+The onboarding is when the user decides if you're a Real App.
+
+> **The 3-Second Rule (Nikita Bier):** you have three seconds to prove value. If your app doesn't deliver value instantly, it's dead. This is "inverted time-to-value" — instead of waiting for users to discover worth, deliver the payoff immediately. No complex signup before the magic moment. Show value first, ask for investment second.
+
+> **The "Keep what you made" framing (Paul Graham, via Bier):** change the question from "Would you like to use our product?" to "Would you like to keep the thing you just made?" If onboarding produces something valuable to the user (a profile, a generated image, an analysis, a draft), completion rates soar. The user has skin in the game — they don't want to lose their progress.
+
+### Rules
+
+1. **One purpose per screen.** Each screen does ONE thing. Title + visual + (optional) input + (optional) button.
+2. **No more than 4–5 screens.** Anything longer = bail.
+3. **A spring transition between screens** — slide horizontal with a subtle parallax effect on the visual.
+4. **Show, don't tell.** Use visuals (hero images, illustrations, looped video clips) to demo what the app does — not bullet-point lists.
+5. **Permissions deferred.** Don't ask for camera/notifications/contacts during onboarding. Defer until the user is in a context where it makes sense.
+
+### Design for distracted, one-handed, < 2-minute sessions
+
+Most apps will be used in toilet stalls, on subways, between meetings — not in 30-minute focused sessions. Design accordingly:
+
+- **One-handed reachability** — primary actions in the bottom-half of the screen, within thumb reach.
+- **Sessions resumable in < 2 seconds** — when the user reopens after backgrounding, land them exactly where they left off. No "Welcome back" splash, no re-auth.
+- **Zero cognitive load to re-engage** — the home screen of your app must answer "what now?" within one glance. If the user has to think, they leave.
+- **The toilet test** — if your app can't be used while distracted, in poor lighting, with one hand, your retention will suffer.
+
+This is Nikita Bier's "design for distracted usage" rule, and it's a higher bar than most apps realize. Apple Music, Threads, BeReal pass it. Most productivity apps don't.
+
+### Premium onboarding patterns to study
+
+- **Apple Music** ([Mobbin](https://mobbin.com/flows/3afd5e80-566c-4c10-b466-ad3a24c4076f)) — minimal, brand-forward, drops you into the experience fast.
+- **Headway** ([Mobbin](https://mobbin.com/flows/69e7e5d7-fc79-4263-afbb-a4a2f67acd5a)) — illustrated journey, soft animations, progressive disclosure.
+- **bless.** ([Mobbin](https://mobbin.com/flows/e13dcdd7-ceb8-4577-8ed4-f89251fd47c3)) — dark theme, single hero illustration per screen, "go!" instead of "continue".
+- **Apple TV / Fitness onboarding** — sets a high bar with high-quality video previews.
+
+### Progress indicator
+
+For a 4-step onboarding, show 4 dots at the top — current step filled, others empty. NOT a progress bar (too utilitarian).
+
+```swift
+HStack(spacing: 8) {
+    ForEach(0..<totalSteps, id: \.self) { i in
+        Capsule()
+            .fill(i == currentStep ? Color.accentColor : Color(.systemGray4))
+            .frame(width: i == currentStep ? 24 : 8, height: 8)
+            .animation(.snappy(duration: 0.32), value: currentStep)
+    }
+}
+```
+
+The active dot is wider — visually communicates "you are here" without text.
+
+### First-launch celebration
+
+When the user completes onboarding, mark it. A small confetti, a "Welcome" hero, a personalized first-screen experience. This is the moment they decided to trust you.
+
+---
+
+## 16. Paywall polish
+
+A premium paywall converts. Polish matters here MORE than anywhere else.
+
+### Components of a premium paywall
+
+1. **Hero visual** — a screenshot/video of the feature they're missing, or a beautiful illustration evoking the benefit (peace, productivity, creativity).
+2. **Value props as bullet points** — 3–4 max. Each with a small icon. Use SF Symbols + brand colors.
+3. **Comparison table** (optional) — for highlighting Pro vs Free OR Pro vs alternatives (a competitor's pricing).
+4. **Price tiers** — 2–3 options. Pre-select the recommended one with a "POPULAR" or "BEST VALUE" badge.
+5. **Trial signal** — "7 days free, then $X/year" is more effective than "$X/year".
+6. **Trust signals** — "App of the Day", "App Store Editor's Choice", "4.9★ on the App Store" with star count.
+7. **CTA** — bold, full-width, descriptive. "Start my 7-day free trial" beats "Continue".
+8. **Restore purchases link** — small, subtle, always visible.
+9. **Terms link** — required by Apple. Footer, gray, small.
+10. **Single dismiss action** — × in the top-right OR a back arrow. NEVER make it hard to close (Apple will reject).
+
+### Polish details
+
+- **Animate the value props in with stagger** — each prop slides in 80ms after the previous.
+- **Animate the selected tier** — when the user taps a tier, the others dim slightly and the chosen one scales up + gets a subtle border glow.
+- **Confetti on subscribe success** — see §14.
+- **Spring transitions between paywall states** — never abrupt loading screens. If purchase processing, show inline spinner inside the CTA button.
+
+### Mobbin references
+
+- [Headway paywall](https://mobbin.com/flows/69e7e5d7-fc79-4263-afbb-a4a2f67acd5a) — illustrated, with discount badge
+- [Ahead paywall](https://mobbin.com/flows/4d5e054d-b7cc-4ad8-be54-adfb606d1986) — comparison vs Starbucks/Therapy as creative value framing
+- [bless. premium](https://mobbin.com/flows/e13dcdd7-ceb8-4577-8ed4-f89251fd47c3) — dark theme, contextual offer
+
+---
+
+## 17. Settings polish
+
+Settings is where most apps stop caring. Don't.
+
+### Native sectioned list
+
+Use `Form { Section { ... } }` — it's the native iOS look for settings. Don't reinvent.
+
+```swift
+Form {
+    Section {
+        Toggle("Notifications", isOn: $notificationsEnabled)
+        NavigationLink("Sounds & Haptics", destination: SoundSettings())
+    }
+
+    Section("Account") {
+        NavigationLink("Profile", destination: ProfileSettings())
+        NavigationLink("Privacy", destination: PrivacySettings())
+    }
+
+    Section {
+        Button("Send Feedback", action: sendFeedback)
+        Button("Rate \(appName)", action: rateApp)
+    } header: {
+        Text("Help")
+    } footer: {
+        Text("Made with care in [City].")
+            .font(.footnote)
+            .foregroundStyle(.tertiary)
+    }
+}
+.formStyle(.grouped) // iOS 16+
+```
+
+### Polish details
+
+- **Header illustrations** — for a premium feel, the top section of settings can have a header image (e.g., your app icon, large, centered). Adds personality.
+- **Status pills** — show current state inline: "Notifications: Allowed", "Pro: Active until June 2026".
+- **Section footers** — use them for context: "Your data is stored on-device only" beneath a privacy toggle.
+- **Destructive sections** — "Sign Out" and "Delete Account" should be in their OWN section at the bottom, in red.
+- **About section** — at the very bottom, include: app version, build, credits, social links, "Made with ♥ in [City]". This is the signature.
+
+### Subtle touches that signal craft
+
+- Tapping the app version 5 times reveals a hidden debug screen (developer easter egg).
+- Tap the app icon header → rotates 360° with bounce.
+- Pull-to-refresh on settings → resets a setting to default with a subtle haptic.
+
+### The "credits" page
+
+A great app has a credits page. A list of the people who made it, what they did. A photo of the team. A thank-you to the alpha testers. This is the page that converts a customer into an evangelist.
+
+---
+
+## 18. Microcopy & voice
+
+Words are part of the design. Bad copy ruins polished UI.
+
+### The principles
+
+1. **Say less.** Every word is a tax. If a label is 3 words, try 2. If 2, try 1.
+2. **Use the user's words.** Match their mental model. If you're a banking app, "Transfer" beats "Initiate Payment".
+3. **Be specific.** "Saved" is fine. "Saved to Inbox" is better. "Saved 2 minutes ago" is best.
+4. **Avoid bureaucracy.** "Submit", "Proceed", "Enable", "Configure" — these are words from forms, not apps. Use "Send", "Continue", "Turn on", "Set up".
+5. **Have a voice.** Anthropic-style precision. Apple-style warmth. Stripe-style competence. Pick one and commit.
+
+### Voice examples
+
+**Apple's voice** — warm, direct, lowercase-when-friendly:
+- "Welcome back."
+- "Looks like there's nothing here. Yet."
+- "Your photos are safe."
+
+**Stripe's voice** — precise, confident, builderly:
+- "Run your business in real time."
+- "Stripe handles the complicated stuff."
+- "Built for developers, used by 4 million businesses."
+
+**Linear's voice** — opinionated, concise:
+- "Built for software teams."
+- "Linear is fast. Other tools aren't."
+
+**Family's voice** — warm, simple, playful:
+- "Let's get you started."
+- "Done."
+- "Just one more thing."
+
+### Microcopy patterns worth memorizing
+
+| Bad | Good |
+| --- | --- |
+| "An error occurred." | "We couldn't load this. Tap to retry." |
+| "Are you sure you want to delete this?" | "Delete 'Project X'? This can't be undone." |
+| "No items." | "Your first item is one tap away." |
+| "Loading..." | (nothing under 500ms; "One sec." past that) |
+| "Please enter a valid email." | "That email looks off. Mind double-checking?" |
+| "Submit" | (depends on action — "Sign Up" / "Save" / "Send") |
+| "OK" | (depends — "Got it" / "Continue" / sometimes nothing, just dismiss) |
+| "An update is available." | "Things 3 has a new feature. Tap to read more." |
+| "Successfully saved." | "Saved." |
+
+### Capitalization
+
+- **Title Case** for nav titles, section headers, button labels: "New Note", "Account Settings".
+- **Sentence case** for body, hints, descriptions: "Tap to add a new note."
+- **lowercase** for an intentionally casual brand voice (Family, bless.).
+
+NEVER MIX. Pick one and apply consistently.
+
+### Punctuation
+
+- Buttons / nav titles: no terminal punctuation. "Continue" not "Continue."
+- Body text: standard punctuation. Always end full sentences with periods.
+- Errors: end with a period. Severity matters.
+- Toasts: usually no terminal punctuation. "Saved" not "Saved."
+
+---
+
+## 19. Accessibility is polish
+
+Accessibility is the ULTIMATE polish — it requires you to think about every interaction from multiple perspectives.
+
+### Reduce Motion
+
+Always provide an alternative path for animations:
+```swift
+@Environment(\.accessibilityReduceMotion) var reduceMotion
+
+withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.42, bounce: 0.18)) {
+    isExpanded.toggle()
+}
+```
+
+For hero animations: when Reduce Motion is on, replace `matchedGeometryEffect` with a fast crossfade (180ms `.easeInOut`).
+
+### Reduce Transparency
+
+When ON, the user wants opaque backgrounds (no `.thinMaterial`). Replace with solid fills:
+```swift
+@Environment(\.accessibilityReduceTransparency) var reduceTransparency
+
+.background(reduceTransparency ? Color(.systemBackground) : .thinMaterial)
+```
+
+### Increase Contrast
+
+iOS automatically adjusts semantic colors. If you've used `.primary`, `.secondary`, `Color(.label)` etc., your app already adapts. If you've hard-coded grays, you're broken.
+
+### Dynamic Type
+
+EVERY text label should use a semantic font style (`.body`, `.caption`, etc.) — not hardcoded sizes. Then test with the largest accessibility size:
+
+```swift
+ContentSizeCategory.accessibilityExtraExtraExtraLarge
+```
+
+Things that break at large Dynamic Type:
+- Fixed-height buttons (set min height, not fixed)
+- Horizontal layouts with text labels (consider vertical wrap)
+- Truncated text (allow multi-line or use `.minimumScaleFactor`)
+
+### VoiceOver — labels that tell a story
+
+Bad: `Image("heart-icon").accessibilityLabel("heart")`.
+Good: `.accessibilityLabel(isLiked ? "Unlike post" : "Like post")` + `.accessibilityHint("Double tap to \(isLiked ? "remove your like" : "add your like")")`.
+
+Better: group related elements so VoiceOver reads them as one:
+```swift
+HStack {
+    Image(systemName: "heart.fill")
+    Text("234")
+}
+.accessibilityElement(children: .combine)
+.accessibilityLabel("234 likes")
+```
+
+For cells: combine the entire cell into one VO element with a clear, descriptive label that includes context (status, timestamp).
+
+### Tap targets
+
+44×44pt minimum. Use `.contentShape(Rectangle())` to make tap targets bigger than visual icons.
+
+### Color contrast
+
+WCAG AA = 4.5:1 for normal text, 3:1 for large text. Test with Apple's Accessibility Inspector or with the system "Color Filters" simulation.
+
+Avoid information conveyed by color ALONE. A red error state should also have an icon, an exclamation, or text — so colorblind users get the signal.
+
+### The polish dividend
+
+Apps that nail accessibility ALSO feel better to non-disabled users. Larger touch targets = fewer mis-taps. Higher contrast = easier scanning. Reduce Motion alternatives = faster perceived performance. Accessibility = polish.
+
+---
+
+## 20. Liquid Glass (iOS 26)
+
+iOS 26 introduces Liquid Glass — a new translucent, refractive material that responds to motion and content. If you're targeting iOS 26+, this is your primary polish surface.
+
+### The basics
+
+```swift
+Button("Action") { }
+    .padding()
+    .glassEffect() // Default: .regular variant, .capsule shape
+```
+
+### Variants
+
+- `.regular` — standard frosted glass with subtle tint
+- `.clear` — minimal frosting, mostly transparent
+- `.identity` — the "no-op" variant, useful for animation states
+
+### Modifiers chained on `.glassEffect()`
+
+```swift
+.glassEffect(.regular.tint(.purple))                // tinted glass
+.glassEffect(.regular.tint(.purple.opacity(0.8)))  // see-through tint
+.glassEffect(.regular.interactive())                // scales/bounces on tap
+```
+
+### `GlassEffectContainer`
+
+When multiple glass surfaces overlap or sit nearby, group them in a `GlassEffectContainer`:
+```swift
+GlassEffectContainer {
+    Button(...) .glassEffect()
+    Button(...) .glassEffect()
+}
+```
+
+The container ensures consistent blur, lighting direction, and refraction across all glass elements within.
+
+### Rules for Liquid Glass
+
+1. **Glass for floating controls only.** Don't make backgrounds glass. The CONTENT shows through glass; if everything is glass, there's nothing to show.
+2. **Tint primary actions only.** When everything is tinted, nothing stands out. Pick the one primary action per screen and tint it; leave secondary/tertiary as clear glass.
+3. **Interactive variant for tappable elements.** Adds the right amount of bounce and shimmer on tap.
+4. **Don't over-apply.** A nav bar that's glass + a tab bar that's glass + a card that's glass = visual mush. Use glass for the ONE floating control layer.
+5. **iOS 26 only.** For older OS, fall back to `.thinMaterial` or solid backgrounds.
+
+```swift
+@ViewBuilder
+func adaptiveBackground() -> some View {
+    if #available(iOS 26, *) {
+        Color.clear.glassEffect(.regular.interactive())
+    } else {
+        Color.clear.background(.thinMaterial)
+    }
+}
+```
+
+### Custom shape glass
+
+```swift
+.glassEffect(.regular, in: .rect(cornerRadius: 18, style: .continuous))
+```
+
+For floating action buttons (FABs) — `in: .circle`. For floating bars — `in: .capsule`.
+
+### What Liquid Glass replaces
+
+- Old: `UIBlurEffect(style: .systemThinMaterial)`
+- Old: `.background(.thinMaterial)` (still works, but glass adds refraction + tint)
+- Old: hand-tuned shadows + blurs
+
+### Reference
+
+- [Apple — Applying Liquid Glass to custom views](https://developer.apple.com/documentation/SwiftUI/Applying-Liquid-Glass-to-custom-views)
+- [Donny Wals — Designing custom UI with Liquid Glass](https://www.donnywals.com/designing-custom-ui-with-liquid-glass-on-ios-26/)
+
+---
+
+## 21. The Final 5% checklist
+
+Run this before considering ANY screen done.
+
+### Motion
+- [ ] Every tap has a visible press state (scale ~0.97 on touch-down).
+- [ ] Every meaningful state change uses a spring (`.spring(duration:bounce:)`).
+- [ ] Concurrent animations are staggered by 30–80ms — nothing animates simultaneously unless intentional.
+- [ ] Hero transitions use `matchedGeometryEffect` with structural similarity between source and destination.
+- [ ] Gesture-driven animations carry velocity (`interpolatingSpring(initialVelocity:)`).
+- [ ] Sliders, dials, scrub bars use `.linear` — no springs fighting the finger.
+- [ ] Numeric changes use `.contentTransition(.numericText(value:))` + `.monospacedDigit()`.
+- [ ] SF Symbol changes use `.contentTransition(.symbolEffect(.replace))`.
+
+### Typography
+- [ ] All text uses semantic Dynamic Type styles (`.body`, `.title3`, etc.), not hardcoded sizes.
+- [ ] Numbers that change use `.monospacedDigit()`.
+- [ ] No `.tracking()` on system text (let SF Pro's automatic tracking do its job).
+- [ ] All-caps labels have positive tracking (1.2–2.0pt).
+- [ ] Display sizes (28pt+) use `design: .rounded` IF the brand calls for warmth; `.default` if precision.
+- [ ] Body text is `.leading`-aligned (never centered).
+
+### Color
+- [ ] Backgrounds use semantic system colors, not hardcoded.
+- [ ] Foreground hierarchy uses `.primary` / `.secondary` / `.tertiary` / `.quaternary`.
+- [ ] Single accent color tints ONE primary action per screen.
+- [ ] Shadows are colored (`.black.opacity(0.06–0.18)`), not pure black at full opacity.
+- [ ] OLED black (`#000000`) used only in camera/photo/video contexts.
+
+### Haptics
+- [ ] Every user-initiated state change has a `.sensoryFeedback` modifier.
+- [ ] Haptic intensity matches gesture weight (light for taps, medium for confirms, heavy rare).
+- [ ] No haptic spam — selection changes throttled to detents, not every pixel.
+
+### Touch
+- [ ] All tap targets ≥ 44 × 44pt via `.contentShape(Rectangle())`.
+- [ ] Drag gestures respect rubber-banding at edges.
+- [ ] Swipe-to-dismiss has progressive feedback (background darkens, haptic at threshold).
+
+### Loading & empty
+- [ ] No spinner under 500ms.
+- [ ] Skeletons structurally match the real content.
+- [ ] Optimistic UI for every user-initiated mutation.
+- [ ] Empty states have illustration + warm copy + clear action.
+
+### Imagery
+- [ ] Images cross-fade on load (no instant pop-in).
+- [ ] Photo cells have subtle 0.5pt edge stroke for definition.
+
+### Typography of moments
+- [ ] Microcopy is brand-voice consistent across every surface.
+- [ ] Buttons use action verbs, not bureaucratic words.
+- [ ] No "Submit" / "Proceed" / "OK" — replace with specific verbs.
+
+### Accessibility
+- [ ] Animations adapt for Reduce Motion.
+- [ ] Materials adapt for Reduce Transparency.
+- [ ] All interactive icons have descriptive VoiceOver labels (with hints).
+- [ ] Tested at largest Dynamic Type without breaking.
+
+### iOS 26 specifically
+- [ ] Floating controls use `.glassEffect()` with `.interactive` where appropriate.
+- [ ] Only PRIMARY actions are tinted; secondaries stay clear glass.
+- [ ] Overlapping glass surfaces grouped in `GlassEffectContainer`.
+
+### Coherence
+- [ ] Every screen (settings, paywall, empty state, error, hero) has the same polish level.
+- [ ] No "dirty bathroom" — no neglected corner.
+
+### The smile test
+- [ ] Someone using the app for 30 seconds visibly enjoys at least one moment.
+
+---
+
+## 22. Anti-patterns
+
+The list of things that signal "this wasn't considered":
+
+> **If you need a user tour, your app has failed (Nikita Bier).** A coach-marks tour or guided tooltip walk-through is the most common cope for unintuitive UI. The right fix is to rework navigation, hierarchy, empty states, and copywriting until it's abundantly obvious how the app works — even at the sacrifice of power-user efficiency. You need users before you can have power users. Every tour is a flag that the design lost.
+
+1. **`opacity: 0 → 1` modals appearing centered with no spring.** Slide from edge or grow from trigger.
+2. **Spinners under 500ms.** If it loads in 200ms, just show the result.
+3. **`Toast: "Saved!"`** for important actions. Show the result inline, in context.
+4. **"Inter" font.** Reads as web. Use SF Pro.
+5. **Purple → blue → pink gradients.** AI cliché. Pick brand colors only.
+6. **Hardcoded font sizes (`.font(.system(size: 17))`).** Use Dynamic Type styles.
+7. **`.shadow(color: .black, radius: 4)`** with full-opacity pure black. Use 0.06–0.18 opacity.
+8. **Custom spinners.** Use `ProgressView()`.
+9. **Modals that fade in instead of presenting as sheets.** Use `.sheet` with detents.
+10. **Tap targets smaller than 44pt.**
+11. **Buttons without press states.**
+12. **Bouncy spring on every interaction.** Use bouncy for celebrations only. Use snappy/smooth for the daily 99%.
+13. **Hero animations between dissimilar views.** Source and destination must share structure.
+14. **Numbers without `.monospacedDigit()`.** They jitter as digits change.
+15. **All-caps labels without tracking.** Looks compressed and amateur.
+16. **`Submit` as a button label.** What does it submit? Be specific.
+17. **Empty states with just text.** "Nothing here" is hostile. Add warmth.
+18. **First-launch with no celebration.** The user just installed your app. Acknowledge it.
+19. **Settings without sections.** A flat list of toggles is exhausting.
+20. **Sheet that doesn't snap to detents.** Set `.presentationDetents([.medium, .large])`.
+21. **Hero transitions without staggered body content.** The destination should reveal in waves, not all at once.
+22. **Reduce Motion ignored.** Every spring needs a non-spring fallback.
+23. **Microcopy that sounds like a system error.** Rewrite in your brand voice.
+24. **Identical heights for stacked sheets.** Each layer should be visibly different in size.
+25. **Animations that aren't interruptible.** Tapping mid-animation should re-target gracefully.
+26. **Haptics on every list scroll.** Vibrating phone = bad app.
+27. **`Color.gray.opacity(0.5)` everywhere.** Use `Color(.tertiaryLabel)` or `Color(.systemGray4)` — semantic.
+28. **Centered body text in any context.** Body = `.leading`-aligned. Center only display titles and CTAs.
+29. **Forgetting Liquid Glass on iOS 26+ apps.** Default `UIBlurEffect` is iOS 18 vintage.
+30. **App that works perfectly without showing personality once.** What's the point?
+
+---
+
+## Final principles
+
+Adapted from Family's design philosophy, the Halide team's manifesto, and Linear's craft principles:
+
+1. **You're not making an app. You're making a thing.** Talk about it in those terms. "The camera." "The notebook." "The to-do."
+2. **One opinion per decision.** "Should the corner radius be 16 or 18?" Pick one. Apply it everywhere. Defend it.
+3. **Polish everything equally.** The settings page = the hero page = the empty state = the paywall = the error screen.
+4. **Restraint over volume.** A soft haptic + a 0.2s spring + a perfectly-placed shadow > confetti everywhere.
+5. **The user shouldn't NOTICE polish — they should FEEL it.** Specifically: they shouldn't be able to articulate why your app feels different. They should just know.
+6. **Test at half-speed.** Record your screen. Play at 0.5×. Look for: things that teleport, animations that fight, simultaneous motions, mismatched curves. Fix them.
+7. **Look for "dirty bathrooms".** Walk through every screen of your app. Find the one you're least proud of. Polish it before adding any new features.
+
+The benchmark: A friend uses your app for 30 seconds. They say "this feels nice" without being able to explain why. They mention it to someone else as "that really polished app." They install it on their other devices because it's a *pleasure to use*, not because they need it.
+
+That's the final 5%. That's where products live forever.
+
+---
+
+## Reference reading
+
+The texts every iOS design engineer should have read:
+
+- [Rauno Freiberg — Invisible Details of Interaction Design](https://rauno.me/craft/interaction-design)
+- [Rauno Freiberg — interfaces (GitHub)](https://github.com/raunofreiberg/interfaces) — a non-exhaustive list of details
+- [Karri Saarinen — 10 Rules for Crafting Products That Stand Out](https://www.figma.com/blog/karri-saarinens-10-rules-for-crafting-products-that-stand-out/)
+- [The Linear Method](https://linear.app/method)
+- [How we redesigned the Linear UI](https://linear.app/now/how-we-redesigned-the-linear-ui)
+- [Behind the Design: Halide Mark II — Apple Developer](https://developer.apple.com/news/?id=x6bv1a36)
+- [The Road to Halide Mark III — Lux Camera](https://www.lux.camera/the-road-to-halide-mark-3/)
+- [Daring Fireball: Halide review](https://daringfireball.net/2017/05/halide)
+- [Family Values — Benji Taylor](https://benji.org/family-values) (the design-with-taste skill's source)
+- [Apple — Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/)
+- [Apple WWDC22 — Meet the expanded San Francisco font family](https://developer.apple.com/videos/play/wwdc2022/110381/)
+- [Apple WWDC20 — The details of UI typography](https://developer.apple.com/videos/play/wwdc2020/10175/)
+- [Devouring Details — Rauno Freiberg's interaction design course](https://devouringdetails.com/)
+- [Donny Wals — Designing custom UI with Liquid Glass](https://www.donnywals.com/designing-custom-ui-with-liquid-glass-on-ios-26/)
+- [SwiftUI Spring Animations — GetStream reference repo](https://github.com/GetStream/swiftui-spring-animations)
+- [Apple — Applying Liquid Glass to custom views](https://developer.apple.com/documentation/SwiftUI/Applying-Liquid-Glass-to-custom-views)
+
+And the apps to study (install them, observe everything):
+- **Halide / Kino** (Lux) — camera polish
+- **Things 3** (Cultured Code) — micro-interaction polish
+- **Granola** — invisible design + lock-screen integration
+- **Apple Music** — hero animations + onboarding
+- **Apple Photos** — pinch transitions + matched geometry
+- **Lapse** — wait-as-feature, brand polish
+- **Linear (iOS)** — craft + opinionated layouts
+- **Family** — fluid app feel (study video reviews if not on iOS)
+- **Mercury (iOS)** — banking polish
+- **Glass** — photography community polish
+- **Day One** — journaling polish + animations
+- **Slopes** — sports tracker with stunning visualization polish
+- **Mela** — recipe app, simple but every detail considered
+- **Tot** — Iconfactory's minimalist note tool, master class in restraint
+- **Bear** — note-taking, beautiful typography
+- **Lex** — writing tool, polish in the smallest details
+
+Read them. Steal from them. Make something better.

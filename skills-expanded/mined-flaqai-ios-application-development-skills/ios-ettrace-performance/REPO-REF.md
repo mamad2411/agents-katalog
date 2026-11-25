@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/flaqai/ios-application-development-skills (path: plugins/ios-application-development-skills/skills/ios-ettrace-performance/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Capture and interpret iOS Simulator ETTrace profiles. Use when profiling launch or runtime latency, comparing traces, or finding CPU-heavy stacks.

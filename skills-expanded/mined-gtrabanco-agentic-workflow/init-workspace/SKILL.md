@@ -1,0 +1,444 @@
+---
+name: init-workspace
+user-invocable: true
+version: 4.10.0
+argument-hint: <target-dir>
+author: "Gabriel Trabanco <1969593+gtrabanco@users.noreply.github.com>"
+license: MIT
+description: >
+  Adapt the workflow scaffold to a new repository or add only missing substrate
+  blocks to an existing install. Every install, hook, and overwrite needs
+  explicit consent. Triggers: "init-workspace", "set up agentic workflow",
+  "upgrade workflow scaffold".
+---
+
+# Init Workspace
+> **Runner commands** below are `runner <subcommand> [args…]` — the launcher, its
+> order and the pin are owned by
+> [references/RUNNER.md](../runner-contract/references/RUNNER.md): read it before the
+> first command, then keep it for the whole unit — nowhere else spells either.
+
+Turn an empty or existing repo into one that works with the agentic workflow:
+copy the generic scaffold, then **tailor it to this project** instead of leaving
+raw placeholders.
+
+## Turn contract — verify before ending the turn
+
+Load and verify the **canonical** [Turn contract](../orchestration-envelope/references/TURN_CONTRACT.md) (11 boxes) before ending every turn. Skill-specific additions (the docs-language and `→ Next:` boxes are canonical-owned and not restated here):
+
+```
+✓ Required user inputs were answered concretely (not defaulted). Consent for
+  every install, hook, and overwrite is explicit; a consent gap runs the
+  three-tier dispatch and stops with the dispatcher's `open-questions@1` block
+  — against a scratch unit folder when no unit exists yet (§Consent).
+✓ The project charter's identity layer was asked and answered before any
+  substrate byte was copied — never guessed; an unanswered identity question
+  halts through the same `open-questions@1` flow (§Charter).
+✓ The adapted scaffold and repository-state ledger are written (or the merge/abort decision was asked) and remaining placeholders are listed
+✓ Nothing was installed, registered (MCP) or overwritten — including the global
+  Serena config — without an explicit yes
+```
+
+About to end the turn with any box unchecked? The turn is NOT done — complete
+the missing box first (weak models drop end-of-document duties; this list is
+first on purpose).
+
+## When to use
+
+- Setting up a repo to use these skills and you want the documentation substrate
+  (`AGENTS.md` + `docs/` map + templates) adapted to the project, not just copied.
+- Prefer this over a static `npx degit gtrabanco/agentic-workflow/template` when you
+  want the gate commands, architecture, and doc domains filled in by interview.
+
+## Consent — mandatory, never defaulted
+
+Installing a tool, wiring a hook, or overwriting an existing file each need an
+explicit yes; context never supplies one, and an ambiguous repository state
+(partially scaffolding) is not a route to guess. A consent gap is an open
+question: **(0) provenance** (search the repo's own docs and record where) →
+**(1) research** (concrete options) → **(2) halt**: run `bun
+`runner needs-input <unit-dir>`, paste the `open-questions@1` block verbatim,
+stop with the questions carried in it. The dispatcher needs a unit folder, and
+consent gaps usually precede any unit — so the run first writes a scratch one
+(`SPEC.md` + `decisions.md` in a `mktemp` directory, deleted after the paste)
+and runs the dispatcher against that. Grammar and exit codes:
+`orchestration-envelope`'s `references/TURN_CONTRACT.md` §Open questions.
+`[target-dir]` is optional — absent means the current directory, recorded.
+
+Identity hardening (#514) — the pre-commit `git-identity-check.sh` hook and an
+empty `gitIdentity` block — is offered once; a no installs nothing.
+
+Document retention (#651) is offered the same way: a section whose shipped
+default is `keep-all` (detection only). Saying yes writes
+`"docRetention": { "mode": "archive" }`, which lets a merged unit's process
+artifacts settle into the gitignored archive; the offer also adds the archive
+directory to `.gitignore`, because `doc archive` refuses an archive git does not
+ignore. A no installs nothing and the sensor keeps reporting the debt
+([`docs/workflow/RETENTION.md`](../../docs/workflow/RETENTION.md)).
+
+## Step 0 — Discover the project (always first)
+
+Inspect the target dir (`[target-dir]`, default cwd) before touching anything:
+
+- An existing **agent guide** (`AGENTS.md`, or a legacy `CLAUDE.md`), `docs/`,
+  `.github/`? If so, **do not clobber** — check first whether it's an
+  **agentic-workflow scaffold** (marker: an agent guide present *and* either
+  `docs/ROADMAP.md` — or the pre-319 `docs/features/ROADMAP.md` — or a
+  `docs/workflow/` dir). If both markers are
+  present, offer **upgrade** as the default action, alongside merge /
+  adapt-in-place / abort — see **Upgrade mode** below. If an agent guide or
+  `docs/` exists but the markers are absent (a foreign scaffold), stay in
+  bootstrap and ask merge / adapt in place / abort as before.
+- Detect the stack from manifests (`package.json`, `pyproject.toml`, `go.mod`,
+  `Cargo.toml`, `Gemfile`, …) to *propose* gate commands and naming conventions.
+- Note the git state (is it a repo, what's the default branch, and the **remote
+  URL → forge**: github.com → GitHub/`gh`, gitlab → GitLab/`glab`, else ask).
+- Read the **tool evidence once**: `runner doctor --json` prints one row per documented tool with its real evidence and
+  a move — take the rows as the tool facts instead of re-deriving a path, a
+  version or a hook by hand. An `instruct-only` row is the exact command to
+  print, an `ask-consent-write` row is the project's own installer and still
+  needs this skill's consent, and a `residual` row names what another owner
+  decides. The row contract is the crate README's `tool-inventory@1` block.
+
+
+## Progressive loading — bootstrap or upgrade, never both
+
+The reference allowlist is exactly the nine linked paths below. Never invent or
+read another `references/` path. Step 0 selects exactly one route:
+
+**Hard rule for an existing Claude Code, Cursor, Copilot, or OpenCode
+scaffold:** LOAD exactly `references/UPGRADE.md`. A missing committed safety
+adapter is upgrade work, not a missing vendor primitive. Do not load bootstrap
+or portability unless the runtime platform has no named adapter at all.
+
+- Bare/foreign repository: read
+  [bootstrap discovery](references/BOOTSTRAP_DISCOVERY.md), complete its
+  interview — **the charter round first: the identity layer is blocking, the
+  domain layer and layer 3 are open-with-defaults (§Charter below)** — then read
+  [bootstrap write](references/BOOTSTRAP_WRITE.md).
+  When the round reaches the engineering interview, load
+  [the interview bank](references/ENGINEERING_INTERVIEW.md): it carries layer
+  3's questions, their bibliography sources and the landing contract.
+  The write step's materialization round loads
+  [materialization](references/MATERIALIZATION.md): declared boundaries become
+  recorded outcomes, the feature map is seeded, and the artifact-capture driver
+  is read — the three things a `prose-only` answer still owes.
+  Both the discovery and write routes load
+  [SERENA language servers](references/SERENA.md) for stack detection.
+- Existing agentic-workflow scaffold: read [upgrade](references/UPGRADE.md)
+  only. Its additive-only rule is absolute; do not replay bootstrap.
+  The upgrade route loads [SERENA language servers](references/SERENA.md)
+  for the additive provisioning step.
+- Provisioning Engram on a host with no pi package: read
+  [Engram provisioning](references/ENGRAM.md) — detect, ask, register or
+  instruct, report. Loaded by the bootstrap write route only (the pi package
+  provisions itself, feature 66).
+- Offering the permission layer, or a project's own guards: read
+  [the permission layer](references/PERMISSIONS.md) — one consented question for
+  the operator-level package, one for the project's policy file, the authoring
+  section a project declares its guards in, and the five observations to make on a
+  machine that has the package. Loaded by either route, on demand.
+- No named adapter exists for the detected runtime platform: add
+  [portability](references/PORTABILITY.md) only for that fallback. Claude Code,
+  Cursor, Copilot, and OpenCode are named supported adapters; a missing adapter
+  file is repaired by upgrade and does not trigger portability.
+
+All resources are one hop from this file. Existing files, hook consent,
+installation consent, and residual reporting are fixed contracts. Missing
+template/migration evidence is reported by the selected route, never filled by
+guessing. An existing OpenCode scaffold with only its safety adapter missing
+loads exactly upgrade and skips bootstrap plus portability.
+
+## Charter — what the project is, asked before the substrate
+
+The consent gates protect **bytes**; the charter captures **what the bytes are
+for**. Before the scaffold is adapted, run the two-layer owner interrogation
+owned by [bootstrap discovery](references/BOOTSTRAP_DISCOVERY.md) §Charter
+interview and written per [bootstrap write](references/BOOTSTRAP_WRITE.md)
+step 4:
+
+- **Identity layer — blocking, never guessed** (project kind, users,
+  deployment, license, ceremony-profile seed): an unanswered identity question
+  is not a default — it halts through the same `open-questions@1` flow §Consent
+  uses.
+- **Domain layer — open-with-defaults** (tests/gate, dependency, docs, tooling,
+  data/PII, i18n): unanswered items are recorded as **dated assumptions**,
+  surfaced by the first unit that needs them, never re-asked, never silent
+  defaults.
+- **Content rule + landing:** decisions, policies and commands — never
+  derivable-from-code description — in the agent guide's `## Project charter`
+  section plus the registered criteria catalogue; coverage computed by
+  `audit-docs` (check 16), never policed here.
+- **Layer 3 — objectives and engineering posture, open-with-defaults:** asked
+  immediately after the domain layer, from the bank
+  [engineering interview](references/ENGINEERING_INTERVIEW.md): what the repo is
+  for, who it serves, the team's shape, what it optimizes for and how much
+  automation it wants, plus the six technical areas (testing, boundaries,
+  dependencies, production verification, decision records, API posture). Every
+  question earns its place only with two answers that change workflow behaviour
+  and the condition that asks it. The answers land in the guide's layer-3 slots
+  through the deterministic writer — `runner charter state`
+  before asking, `charter land` to write (a slot the project already
+  filled is `kept`, never overwritten; an unanswered slot with a bank default
+  lands as `assumed <YYYY-MM-DD> — <value>`), and `charter check` validates the
+  bank, including that every declared boundary records `machine: <mechanism>`
+  or `prose-only`.
+- **Layer 3's answers materialize — never stay prose (unit 557, issue #564):**
+  every `prose-only` boundary the interview records is an item the write step
+  settles as a scaffolded rule, a filed target-forge issue, or a recorded
+  decline — one consent question each, and a `no` writes nothing and leaves a
+  residual. The feature map (`docs/workflow/FEATURE_MAP.md`) is seeded from the
+  discovery evidence, and the `Evidence driver` answer is what an artifact
+  criterion records its digest with. Owner of the round:
+  [materialization](references/MATERIALIZATION.md); the check that keeps it true
+  is `runner materialize check`, run by `audit-docs` check 17.
+
+## Substrate coverage gate — the answers must land
+
+Asking the interview is not the deliverable; the answer must exist as a written
+scaffold section. One deterministic gate says so:
+`runner substrate check --workspace <dir>` prints one row per substrate class —
+`architecture` (the architecture document), `decision-records` and `api-posture`
+(the charter's slots) and `documentation-map` (the guide's table) — each
+`present`, `declined` or `absent`, and exits 0 only when nothing is absent.
+
+**Bootstrap:** the gate runs before the closing `→ Next:` block. An `absent`
+class is a refused install: write the section, or record an explicit decline —
+ask first, one question per class, and a yes writes nothing but a dated row in
+the guide's `substrate-declines@1` block. A silent skip is the defect.
+
+**Upgrade:** the same gate names the classes a workspace lacks, and each one is
+offered additively (never written unasked) beside the other missing blocks —
+one offer per class, resolved as written, declined, or left as a residual.
+
+## Guardrails
+
+- **Seam hooks are consent-gated and opt-in per seam (issue #413).** The pi
+  extension runs project-declared commands at workflow seams only after two
+  gates, both explicit: init-workspace's consent marker, and the per-seam
+  `"enabled": true` flag in the project's own `.pi/hooks.json`. On an explicit
+  yes to "enable workflow seam hooks for this project?", write the consent
+  entry into the global store the extension reads —
+  `<agentDir>/seam-hooks-consent.json`, a `projects` map keyed by the
+  project's absolute path, `{ "consented": true, "consentedAt": <ISO date> }`
+  — and create nothing else. `<agentDir>` is pi's global agent directory:
+  `getAgentDir()` in the extension, `~/.pi/agent` on a default install (the
+  directory holding the unified config files — `agentic-workflow.json` and
+  `pi-agentic-workflow.json`; `~/.claude` is not it). Never write or edit `.pi/hooks.json` (the
+  developer's declarations, not this skill's), never add the consent entry
+  without the project's absolute path, and a no writes nothing. The
+  dispatcher's own contract — config form, seam vocabulary, refusal grammar —
+  is owned by `@gtrabanco/pi-agentic-workflow`'s README; this skill never
+  restates it.
+- **The session-log fragment carrier is opt-in, off by default (issue #405).**
+  The template ships the documentation (`template/.agentic-workflow/journal.md`)
+  and the CI example (`*.yml.example`) — never the carrier directory itself, so
+  a wholesale scaffold copy opts nobody in. Offer it as one consented question
+  (bootstrap or upgrade): a yes creates `.agentic-workflow/journal/` and
+  installs one merge wiring; a no writes nothing — no directory, no workflow,
+  no config — and the project keeps today's direct-append journal. The same
+  question names the headless half (issue #471): an opted-in project whose CI
+  agents land pull requests can add the distributable action's step
+  (`gtrabanco/agentic-workflow/journal@<tag>`) to its run, and the carrier
+  document it already received explains that step — installing it is editing
+  the project's own workflow, so it is offered as text, never written for it.
+  The naming grammar has one owner (`journal-fragment-grammar@1` in
+  `@gtrabanco/agentic-workflow`'s README); this skill never restates it.
+- **The permission layer is an operator-level package, offered with consent
+  (issue #654).** Bash and file-access gating is `@gotgenes/pi-permission-system`,
+  installed by the operator, never by this skill on its own initiative: a yes runs
+  the package's installer, a no writes nothing and records the residual, and the
+  project's policy file is created through `agentic-workflow provision permissions`
+  only when it does not exist (an existing one is the operator's). The offer, the
+  authoring section a project declares its own guards in, and the verification
+  checklist are
+  [the permission reference](references/PERMISSIONS.md); the enforcement contract
+  is that package's own documentation and this skill never restates it.
+- **The docs-site format is a declared choice.** The `Docs site` block's
+  `format` slot (`markdown`/`md`, `mdx`/`starlight`/`docusaurus`, `html`,
+  `latex`/`tex`) decides what `runner docs-generate` renders, so a new
+  project is asked for it and an existing one is offered it additively, with
+  consent, in upgrade mode. Declining writes nothing; no format means markdown
+  with the degradation reported, never a silent default.
+- **The guide it writes is minimal, and its laws state their enforcement (issue
+  #645 S3).** The scaffold follows the doctrine owned by
+  [`docs/workflow/SKILL_AUTHORING.md`](../../docs/workflow/SKILL_AUTHORING.md)
+  §"The target project's guide": essentials in the always-loaded guide,
+  everything else one hop away through a documentation map, and a
+  `## Inviolable rules` section where every rule ends with `enforced by:`,
+  `soft-by-design:` or `open:`. Offer that section as one consented question
+  (bootstrap or upgrade) — a project that answers no keeps the section as
+  declared placeholders rather than losing it, and a project whose guide already
+  carries its own laws keeps them: upgrade mode adds the missing state cells, it
+  never rewrites a rule the project wrote.
+- **Never overwrite an existing agent guide (`AGENTS.md`, or a legacy
+  `CLAUDE.md`) or `docs/` without explicit consent.**
+- **One guide, one name.** `AGENTS.md` is the guide; a legacy `CLAUDE.md` is
+  retired only in upgrade mode, only with an explicit yes, and only after any
+  content unique to it is folded into `AGENTS.md` first. A user whose Claude
+  Code release predates `AGENTS.md` support may keep it — that choice is
+  reported as a residual, never treated as drift to repair.
+- **Additive-only, never clobber (upgrade mode).** Upgrade mode only adds
+  blocks the project lacks and fills raw placeholders — it never rewrites or
+  deletes a block the project already tailored, even if the current template
+  changed that block too. A genuine re-tailor is a separate, explicitly
+  requested bootstrap adapt-in-place run, never something upgrade mode does
+  on its own. **The urgency label seeding is additive-only the same way:**
+  create a missing `urgent`/`fix-next` label, never touch one that already
+  exists (name, color, or description a project already customized).
+- **Serena convention — tool and config, one consent question.** `.serena/project.yml`
+  is committed; `project.local.yml` and `cache` stay local. Never write
+  `.serena/` config, install the tool, register an MCP server or touch the
+  global `serena_config.yml` (`trusted_project_path_patterns`) without an
+  explicit yes — [SERENA](references/SERENA.md) owns the single question and
+  the fixed provisioning report. LSP never verifies documents — false positives
+  happen when a file type's server is not listed (markdown/yaml/json are never
+  auto-detected), a listed server that fails to start must be removed (one
+  failure disables every server in the project), and LSP evidence stays
+  TypeScript/JavaScript-only. Document verification is a script's job.
+- **Engram provisioning is ask-first, never assumed (feature 66).** Detect the
+  `engram` binary, ask before writing any host MCP config, write the absolute
+  path with the exact `mcp --tools=agent` argv, and report exactly what was
+  written. An existing `engram` declaration is never overwritten, and an absent
+  binary is a recorded residual — the documented install route is
+  `pi install npm:gentle-engram@latest`, never the CLI's own setup subcommand,
+  which keeps serving whatever version ran it until it is re-run.
+- **Retrieval index scaffold and git hooks are consent-gated (AC22).** The
+  index surface — the committed `.agentic-workflow/index.json` config plus the
+  three freshness hooks (`post-merge`, `post-checkout`, `post-rewrite`, all
+  `index-sync.sh` installed into `.git/hooks/`) — is installed **only after an
+  explicit yes** to the question "install the doc retrieval index scaffold and
+  its git hooks?". Without consent: install nothing, record it as a residual
+  (the entry point still runs and builds its index on first query — the hooks
+  are only a freshness fast path), and never write `.git/hooks/` or the config
+  on a later visit without a fresh yes. The hooks are best-effort by contract
+  (`doc --sync --quiet`, always exit 0 — a fast path never breaks git).
+  **Never hand-write the config's `provider` block** (issue #541): when an
+  installed provider preset ships a doc-index embedding profile, the block is
+  materialized by `/agentic-workflow-settings` → `Doc index embedding profile`,
+  which shows each value's origin, asks before writing, and fills only the keys
+  the project leaves absent. That action is the only writer this skill may
+  name — its precedence rule (a value the project wrote always wins) is what
+  keeps a re-run safe, and the runner crate validates the block, so a value
+  invented here would be refused rather than applied.
+- **The push-range secret scan is consent-gated and never installs itself (issue
+  #552).** One question — "install the push-range secret scan as a `pre-push`
+  hook?" — joins the hook consents, and a yes chains
+  `.agentic-workflow/hooks/secret-scan.sh "$@"` into `.git/hooks/pre-push`
+  (additively, never over a customized hook) and runs
+  `bash .agentic-workflow/hooks/tests/test-secret-scan.sh`; a no installs
+  nothing and records the residual, with the hooks README's manual invocation as
+  the documented route. It needs only `bun` or `node` and refuses the push by
+  name without either — a scanner that cannot look never reports nothing to see.
+- **Unified config is offered, never hand-written (issue #427).** One consented
+  question offers the project config; a yes runs
+  `runner config init --scope project` (which refuses
+  to overwrite), a no writes nothing and records the residual. The two files,
+  their scopes, the resolution order and the new-feature policy are owned by
+  [CONFIG](references/CONFIG.md); this skill never restates a schema or edits a
+  package's extension file.
+- **Never redefine the urgency label vocabulary here.** `skills/triage-issue
+  /SKILL.md` is the sole owner of the `urgent`/`fix-next` names, colors, and
+  apply rules — this skill only seeds those two labels into the repo; it never
+  invents a third label or changes what the two mean.
+- Docs-only scaffolding; no app code, no dependencies installed unprompted.
+- Architecture-agnostic: record the project's pattern, don't impose one.
+- Honest placeholders over invented specifics; flag what's left to fill.
+- Honor the project's **Workflow conventions** once present; on an existing repo,
+  don't work on its default branch and never commit/push unless asked.
+
+## Unit document conventions (the adaptive lane)
+
+The adaptive lane replaces the fixed pipeline with a single-unit-document model.
+Every NEW unit produces one `SPEC.md` under `docs/features/<NN>-<slug>/`, cut in
+the **`spec-by-reference`** shape the template ships: `Specs` (numbered `S#`, each
+quoting the requester's words verbatim), Impact, Non-goals, Future cost,
+Applicable tests, Known pre-existing issues, `Tasks` (each bullet linked to the
+`S#` it delivers), `Findings` (OPEN rows only), `Log` (append-only; `L1` is the
+request verbatim), Next, References. A unit opened before this shape keeps the
+legacy 14-section shape — Objective, Why, User outcome, Acceptance criteria,
+Impact, Non-goals, Future cost, Applicable tests, Known pre-existing issues,
+Tasks, Evidence, Progress log, Next, References — and is never rewritten to
+migrate.
+
+Conventions written into the project's AGENTS.md:
+
+- **Triage**: the lane conductor (`/unit-lane` / `workflow-status`) returns a
+  deterministic ordered list of steps (research, design, plan, implement,
+  tests, evidence, review, docs, release).
+- **Guards**: `agentic-workflow diff-guard` measures `git diff --stat` at boundaries;
+  overflow → mandatory re-triage. Anti-gaming: "NEVER shrink a diff by deleting
+  comments, blank lines, docs or tests."
+- **Evidence rows**: one per AC — what was run, exit/digest, output (≤2 lines),
+  verified-by. Verified, not claimed.
+- **Progress log**: dated entries (`YYYY-MM-DD HH:MM`) per step taken.
+- **Commit format**: `type(scope): description` (conventional commits).
+- **Roadmap status**: `idea → defined → planned → in-progress → done`.
+
+These are written by bootstrap (fresh) and upgrade mode (additive-only for pre-
+lane installs). A pre-lane project gets only: the lane conventions section in
+AGENTS.md, the unit doc templates under `docs/features/_TEMPLATE/` and
+`docs/fix/_TEMPLATE/`, and the docs-map rows for them.
+
+## Normalized Repository State
+
+Seed `docs/workflow/REPOSITORY_STATE.md` from the template. Explain that
+discovery freezes evidence before planning and only the resolver updates facts.
+
+## Architectural invariants
+
+Offer `docs/architecture/ARCHITECTURAL_INVARIANTS.md` as an optional project
+contract for long-lived architectural rules. Its entries must name a stable ID,
+repository evidence, and the authority that can change the rule. Do not infer a
+rule from the implementation or a feature SPEC. A project without this document
+remains compatible; record `n/a: no project invariants declared` in later
+workflow artifacts rather than creating one silently.
+
+
+## Portability
+
+The scaffold is vendor-neutral; only hook activation differs. When the detected
+agent has no named adapter, follow [portability](references/PORTABILITY.md) and
+keep it as an explicit residual. A supported Claude Code, Cursor, Copilot, or
+OpenCode adapter does not load this fallback.
+
+## Relationship to other skills
+
+- `npx degit gtrabanco/agentic-workflow/template` — the static copy this skill
+  adapts. Use that when you want the raw scaffold and will fill it yourself.
+- `docs/workflow/PORTABLE_PROMPT.md` — regenerates the **skills** adapted to a
+  project (behavior). This skill adapts the **substrate** (docs). Complementary.
+- After init: `discover-repository-state` → `workflow-status` (to see what's
+  startable) → `/unit-lane` (the lane conductor); run `audit-docs` to confirm
+  the scaffold is coherent.
+
+## Done when
+
+- A tailored `AGENTS.md` + `docs/` scaffold + `.github/` templates exist in the
+  target, unused folders pruned, residual placeholders flagged, the platform's
+  companion review skills are recorded (and offered), the skill-discovery route
+  was offered after the charter round — and either every installed extra is
+  registered in the guide's `review-extras@1` note with its source, pin, install
+  date and axis, or nothing was installed and the tree is byte-identical — and
+  the `urgent`/`fix-next` labels are seeded (scaffold) or additively reconciled
+  (upgrade),
+  and every accepted safety adapter is active and fixture-tested — or explicitly
+  listed as a residual when its hook API/dependency was unavailable,
+  and `runner substrate check --workspace <dir>` reports `Verdict: complete` (or
+  every absent class carries a recorded decline).
+  The adaptive lane conventions (unit document, triage, catalog steps, guards,
+  evidence, commit formats) are written into AGENTS.md.
+- Serena is provisioned and reported: the one consent question was asked, the
+  project config written (or skipped with its reason), the tool installed and its
+  MCP server registered for the detected platform — or each refused/absent item
+  recorded as a residual with its reason — and the fixed provisioning report
+  states the health check per listed server and the index result. The run
+  completes either way.
+- **The closing `→ Next:` block is printed** (plus the offer to install the skills):
+
+  ```
+  → Next: /discover-repository-state — freeze repository evidence before planning
+    · raw idea → /workflow-status → /unit-lane (the lane conductor)
+    · next roadmap entry → /unit-lane (tridirection decides catalog steps)
+    · confirm the scaffold is coherent → /audit-docs
+  ```

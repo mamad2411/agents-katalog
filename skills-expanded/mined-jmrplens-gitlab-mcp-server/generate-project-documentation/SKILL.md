@@ -1,0 +1,286 @@
+---
+name: generate-project-documentation
+description: 'Generate comprehensive project documentation including architecture overview, package/component docs, MCP tools/resources/prompts reference, developer onboarding guide, and configuration/deployment guide: user pages on the Astro Starlight site in English and Spanish, contributor pages under docs/development. Uses Diátaxis framework and Mermaid diagrams.'
+---
+
+# Generate Project Documentation
+
+## Primary Directive
+
+Generate comprehensive, well-organized documentation for the project. Analyze the entire codebase and produce a complete documentation suite covering architecture, components, APIs, developer guides, and deployment configuration.
+
+The documentation must be:
+
+- Accurate (absolute parity with source code)
+- Organized (Diátaxis framework: Tutorials, How-to, Reference, Explanation)
+- Navigable (index with cross-references between documents)
+- Visual (Mermaid diagrams for architecture and data flow)
+- Self-contained (no external context required to understand)
+
+## Execution Context
+
+This skill is designed for the `Documentation Writer` agent or any agent tasked with producing project documentation. All output must be in English per the project language policy, with one exception the site requires: every user page also has a Spanish twin, written in the same change.
+
+The documentation has one home per audience (ADR-0025). **User documentation** lives only in the Astro Starlight site, `site/src/content/docs/` in English and `site/src/content/docs/es/` in Spanish, published at `https://docs.jmrp.io/gitlab-mcp-server/`; the `update-starlight-docs` skill carries its page map, its generated pages and its checks. **Contributor documentation** lives in `docs/development/`. The README is a short landing page that links the site, and `docs/` holds nothing beside `docs/development/` but a README pointing at the site.
+
+## Analysis Phase
+
+Before generating any documentation, complete a thorough analysis:
+
+### Step 1: Repository Structure Discovery
+
+1. Explore the complete project directory structure
+2. Identify all Go packages and their responsibilities
+3. Map the dependency graph between internal packages
+4. Locate existing documentation and assess gaps
+5. List all configuration files, build scripts, and CI/CD pipelines
+
+### Step 2: Architecture Understanding
+
+1. Read the entry point (`cmd/server/main.go`) to understand initialization flow
+2. Identify the configuration loading mechanism
+3. Map how the GitLab client is initialized and injected
+4. Understand the MCP server setup and tool registration pattern
+5. Trace a complete request flow from MCP client to GitLab API and back
+
+### Step 3: API Surface Inventory
+
+1. List all MCP tools with their input/output types
+2. List all MCP resources with their URI templates
+3. List all MCP prompts with their parameters
+4. Document pagination patterns and shared types
+5. Identify tool annotations (readOnlyHint, destructiveHint, etc.)
+
+### Step 4: Gap Analysis
+
+1. Compare current documentation against the coverage matrix below
+2. Identify missing, outdated, or incomplete documentation
+3. Prioritize generation of missing critical documentation first
+
+## Coverage Matrix
+
+The following documents must be generated or updated. A site page is named by its slug (`operations/http-server` is `site/src/content/docs/operations/http-server.mdx`, with its twin at `site/src/content/docs/es/operations/http-server.mdx`):
+
+| Document | Diátaxis Type | Path | Priority |
+|----------|---------------|------|----------|
+| Documentation Index | Navigation | For users, the site itself: its landing page `index.mdx` and the `sidebar` array of `site/astro.config.mjs`. For contributors, `docs/development/README.md` | Critical |
+| Architecture Overview | Explanation | Site page `architecture` for what a user meets (transports, surfaces, security model, design decisions); `docs/development/architecture.md` (packages, the path a call takes, handler patterns), `docs/development/development.md` and `docs/development/tool-surfaces-and-action-core.md` for how the code is put together | Critical |
+| Concept pages (meta-tools, dynamic tools, error handling, security) | Explanation | Site pages `tools/meta-tools`, `tools/dynamic-tools`, `operations/error-handling`, `operations/security`; for contributors, `docs/development/error-handling.md` (classification and the wrapping functions) and `docs/development/capabilities.md` (the progress, elicitation and completion APIs, icons) | High |
+| Package API reference | Reference | Godoc on the source (`docs/development/godoc.md` describes the conventions; `make check-godocs` gates it). There is no `docs/packages/` tree | High |
+| Command utilities reference | Reference | `docs/development/cmd-utilities.md` | Medium |
+| Tools Reference | Reference | `site/src/content/docs/reference/tools/` and its `es/` twin, one page per catalog group, generated by `make gen-tool-reference` from the catalog and `cmd/gen_tool_reference/domains.json`; never hand-edit the pages | Critical |
+| Resources and Prompts Reference | Reference | Site page `tools/resources-prompts` | High |
+| Getting Started | Tutorial | Site page `getting-started` | High |
+| Configuration Guide | Reference | Site pages `configuration`, `reference/environment`, `reference/cli` | High |
+| Installation and Deployment Guides | How-to | Site pages under `install/`, `operations/http-server`, `operations/remote-deployment` and the pages under `enterprise/`; for contributors, `docs/development/distribution.md` (how the bundles and the package channels are built and published) | Medium |
+| Development Guide | How-to | `docs/development/development.md` | High |
+| Testing Guide | How-to | `docs/development/testing/README.md` (hand-written overview); the managed block of `docs/development/testing/testing.md` is generated by `make gen-testing-docs` | Medium |
+| Contributing Guide | How-to | `CONTRIBUTING.md` at the repository root | Medium |
+
+## Document Templates
+
+### Documentation Index
+
+The user documentation needs no index file of its own: the site's sidebar is the table of contents, and a new page joins it through the `sidebar` array of `site/astro.config.mjs` and the `SECTIONS` table of `site/scripts/gen-llms.mjs` (see the `update-starlight-docs` skill). The contributor index is `docs/development/README.md`, one row per page:
+
+```markdown
+# Development
+
+**Contributor documentation**: everything you need to *change* gitlab-mcp-server.
+
+| Document | Purpose |
+|----------|---------|
+| [Development Guide](development.md) | Setup, building, testing, and adding new tools |
+| [Internal Architecture](architecture.md) | The packages, what each owns, the path a call takes, and the handler patterns |
+| [Tool Surfaces & Canonical Action Core](tool-surfaces-and-action-core.md) | How individual, meta, and dynamic surfaces project from the shared catalog |
+| [Error Handling](error-handling.md) | Classification, the wrapping functions, not-found results, and testing errors |
+| [GraphQL Integration](graphql.md) | When a domain uses GraphQL, the shared helpers, and the pinned schema it is held to |
+| [Capabilities and Icons](capabilities.md) | The progress, elicitation and completion APIs, and how the icons are built |
+| [Command-Line Utilities](cmd-utilities.md) | The `cmd/` developer tools (generators and auditors) |
+| [Distribution](distribution.md) | How the Claude Desktop bundles and the package channels are built and published |
+| [Testing](testing/README.md) | Unit, E2E, and AI model-evaluation documentation |
+| [Architecture Decision Records](adr/README.md) | The recorded architectural decisions (ADRs) |
+
+**Looking for something else?**
+[Architecture](https://docs.jmrp.io/gitlab-mcp-server/architecture/) for design rationale ·
+[Tool reference](https://docs.jmrp.io/gitlab-mcp-server/reference/tools/) for every action ·
+[../../CONTRIBUTING.md](../../CONTRIBUTING.md) for contribution mechanics.
+```
+
+### Architecture Overview (site page `architecture`)
+
+The page is MDX with the frontmatter the `update-starlight-docs` skill describes; Starlight renders the frontmatter `title` as the page's heading, so the body starts at its first `##` section. Its Spanish twin follows the same outline. The body:
+
+```markdown
+## System Context
+
+[Describe what gitlab-mcp-server does at the highest level]
+
+(mermaid) C4 Context diagram showing:
+- MCP Clients (VS Code, Cursor, Copilot CLI, OpenCode)
+- gitlab-mcp-server MCP Server
+- GitLab REST API v4 and GraphQL API
+- GitLab Instance
+
+## Container View
+
+(mermaid) Container diagram showing:
+- stdio/HTTP transport layer
+- MCP Server (go-sdk)
+- Tool handlers
+- GitLab client wrapper
+- Configuration loader
+
+## Component View
+
+(mermaid) Component diagram showing all internal packages:
+- cmd/server → config → gitlab client
+- config → environment loading
+- tools → tool handlers by domain (projects, MRs, branches, tags, releases)
+- tools → pagination, resources, prompts
+
+## Data Flow
+
+(mermaid) Sequence diagram for a typical tool invocation:
+MCP Client → MCP Server → Tool Handler → GitLab Client → GitLab API → response chain
+
+## Key Design Decisions
+
+[Reference ADRs from docs/development/adr, linked by their GitHub URL since the page is published outside the repository]
+[Explain: why go-sdk, why one package per domain, why pagination pattern, etc.]
+```
+
+### Package Documentation Template
+
+```markdown
+# Package: [name]
+
+**Import path**: `github.com/jmrplens/gitlab-mcp-server/v3/internal/[name]`
+**Responsibility**: [one-sentence description]
+
+## Overview
+
+[What this package does and its role in the system]
+
+## Architecture
+
+(mermaid) Class/component diagram showing exported types and their relationships
+
+## Exported Types
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `TypeName` | struct/interface | Purpose |
+
+## Exported Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `FuncName` | `func(ctx, params) (result, error)` | Purpose |
+
+## Configuration
+
+[If applicable: environment variables, flags, or initialization parameters]
+
+## Error Handling
+
+[How errors are created, wrapped, and propagated]
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `internal/gitlab` | GitLab API access |
+
+## Usage Example
+
+```go
+// Minimal working example
+```
+
+```text
+
+### Developer Onboarding Guide Template
+
+A contributor page, so it lives under `docs/development/` and its links are relative to that directory:
+
+```markdown
+# Developer Onboarding Guide
+
+## Welcome
+
+[Brief project description and your role as a contributor]
+
+## Prerequisites
+
+- Go 1.27+
+- GitLab instance with PAT
+- VS Code with Go extension (recommended)
+
+## Step 1: Clone and Build
+
+[Commands and expected output]
+
+## Step 2: Configure Environment
+
+[.env setup with explanations]
+
+## Step 3: Run the Server
+
+[How to start and verify it works]
+
+## Step 4: Test with an MCP Client
+
+[How to connect VS Code, Cursor, or CLI tools (Copilot CLI, OpenCode)]
+
+## Step 5: Understand the Codebase
+
+[Guided tour of key files and packages with cross-references to package docs]
+
+## Step 6: Make Your First Change
+
+[Walk through adding a simple tool or modifying an existing one]
+
+## Common Tasks
+
+| Task | Guide |
+|------|-------|
+| Add a new MCP tool | [Development Guide](development.md#adding-a-new-tool) |
+| Run tests | [Testing Guide](testing/README.md) |
+| Build for production | [Installation](https://docs.jmrp.io/gitlab-mcp-server/install/overview/) and [Remote Deployment](https://docs.jmrp.io/gitlab-mcp-server/operations/remote-deployment/) |
+
+## Getting Help
+
+[Where to find answers: docs, issues, team contacts]
+```
+
+## Generation Rules
+
+1. **Source code is truth**: Read every Go file before documenting it; never guess
+2. **Complete coverage**: Every exported type, function, and constant must appear in reference docs
+3. **Working examples**: All code examples must be syntactically valid Go
+4. **Mermaid diagrams**: Include at least one diagram per architecture/package document
+5. **Cross-references**: Link between repository files with relative paths; link a site page from outside the site as `https://docs.jmrp.io/gitlab-mcp-server/<slug>/`, and from another site page as `/gitlab-mcp-server/<slug>/` (`/gitlab-mcp-server/es/<slug>/` in a Spanish page). Read the target heading before writing an anchor
+6. **No placeholders**: Final output must have no TBD, TODO, or placeholder text
+7. **Consistent terminology**: Use the same names as the source code
+8. **Pagination**: Document pagination patterns once and reference from each list tool
+9. **Markdown tables**: When generated content creates or edits pipe tables in `README.md`, `docs/` or the site's pages, run `go run ./cmd/format_md_tables/` and verify with `go run ./cmd/format_md_tables/ --check` before markdownlint
+10. **Generator-owned content is never hand-written**: the README's token claim block, the managed block of `docs/development/testing/testing.md`, `docs/development/token-footprint.md`, the site's per-domain tool reference under `site/src/content/docs/reference/tools/` (its `index.mdx` included), its `reference/fine-grained-permissions.mdx`, the generated block of its `performance/resource-benchmark.mdx` with the charts under `site/public/benchmarks/`, `site/src/data/stats.json`, `token-footprint.json` and `resource-benchmark.json` (the landing data `site/src/data/home.ts` beside them is hand-written), the `llms*.txt` files at the repository root, and `lhm.plugin.json`'s capability arrays come from generators under `cmd/` (`make update-all` runs every one of them except the benchmark measurement: it redraws the benchmark with `make bench-resources-render`, and only `make bench-resources` re-measures and rewrites `resource-benchmark.json`; ADR-0025 lists which command writes which path). The versions in `server.json` and the other manifests are stamped by the release. Write around those blocks, never inside them
+11. **One language pair per user page**: every page written under `site/src/content/docs/` gets its Spanish twin at the same path under `site/src/content/docs/es/` in the same change; `pnpm run i18n:check` refuses a page without its twin, and a Spanish code block that differs from its English one anywhere but in its comments (only comments and prose are translated; a `text` or `markdown` block holding prose carries `translated` in both fences)
+12. **No user documentation outside the site**: never recreate `docs/guides/`, `docs/reference/`, `docs/concepts/` or a `docs/getting-started.md`. They were copies of site pages that drifted from them and were retired (ADR-0025)
+
+## Quality Checklist
+
+Before considering documentation complete, verify:
+
+- [ ] All items in coverage matrix are documented
+- [ ] Documentation matches current implementation (parity check)
+- [ ] All Mermaid diagrams render correctly
+- [ ] All cross-reference links are valid
+- [ ] No TBD/TODO placeholders remain
+- [ ] Code examples are syntactically valid
+- [ ] Tables in `README.md`, `docs/` and the site are normalized with `go run ./cmd/format_md_tables/ --check`
+- [ ] Every site page has its Spanish twin, and `cd site && pnpm run build && pnpm run lint` passes
+- [ ] `make check-doc-links` and `make check-doc-tool-names` pass
+- [ ] English language used throughout
+- [ ] Progressive disclosure: overview → details → advanced topics

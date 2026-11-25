@@ -1,0 +1,52 @@
+---
+name: coding-standards
+description: "Quality gates, prohibited patterns, verification discipline, and self-audit rules for all code generation and review sessions."
+---
+
+# Coding Standards
+
+Applied to all code generation and review sessions.
+
+## Quality Gates (enforce before merge/commit)
+
+- Lint errors: 0
+- Test coverage: >= 80% (critical paths >= 95%)
+- No commented-out code
+- No unused imports or dead code
+- No hard-coded secrets or credentials
+
+## Prohibited Patterns
+
+- No hard-coded structured data (JSON/XML literals) inside source — use config files or env vars. This includes default values on Python dataclasses/Pydantic models and equivalents in other languages — define only the schema in code; put actual defaults in `config/defaults.yaml` (or equivalent). A config loader reads the file and populates the schema; env vars or override files layer on top.
+- Configuration before constants: a schema default, fallback default, or operator-tunable value stays in configuration (the rule above), even when an in-code value would be shorter. A tiny in-code default is not the simpler choice when configuration policy applies. Named constants are for fixed internal values that genuinely cannot be configured at runtime.
+- No magic numbers or strings — use named constants. When a string key crosses a module boundary (config key, variable name, prompt template name), define it as a constant in the lowest common ancestor package and import it everywhere. A hardcoded string in two modules is a silent breakage waiting to happen.
+- No secrets in source — use env vars or a secrets manager.
+- No print() debugging in committed code — use structured logging.
+- No wildcard imports.
+- No bare except / catch without specific exception types.
+- No SQL string concatenation — use parameterized queries.
+
+## Verification Discipline
+
+- **Never suggest skipping a failing verification step.** When a test, build, lint check, Docker build, or script execution fails, diagnose and fix the issue. Do not suggest workarounds that bypass the deliverable.
+- **Execute your own test plan.** If you write test commands (curl, bash, docker, etc.) as part of a build summary, run every command yourself and report results before declaring done.
+- **Build it, run it.** Any executable artifact you create (Dockerfile, shell script, CI workflow, launcher flag) must be executed at least once before committing. Syntax validity alone is not sufficient.
+- **Check every command a page shows.** A command in documentation gets the cheapest real check that applies before it is committed (`pip install --dry-run` / `npm install --dry-run` for install lines, `--help` or `--dry-run` for CLI lines, a parse for config blocks); "not executed in CI" is a label, not an exemption. The table of checks is in `infra-verification`, "Shown Commands Are Checked".
+- **Re-review after fix.** After applying a fix for a bug flagged in code review or a reviewer note, run the review process again (e.g., `/team-review` or the equivalent specialist agent) before declaring done. Do not just apply the fix and move on — the re-review may catch secondary issues exposed by the fix itself.
+- **Confirm against origin before declaring done.** Run `scripts/check-origin-alignment.sh <feature-id>` before presenting any feature for review. Exit ≥ 2 means the working artifact has drifted from the user's origin and you must surface the three-resolution escalation (rescope / restart / document divergence) — do not proceed. See `shared/skills/origin-confirmation/SKILL.md` for the full protocol.
+
+## Self-Audit Before Presenting
+
+Before declaring a change ready for review, do the homework yourself — do not offload discovery work onto the reviewer.
+
+- **Trace every code path.** If you changed `execute()`, also change `execute_async()`. If you changed the child side, also change the parent side. If you changed one caller, grep every caller. Shotgun surgery is a bug, not a style choice — run a final grep for related occurrences before declaring done.
+- **Trace the execution, not just the line.** Read the code path from entry to return. Many bugs — wrong fallback, missing guard, incompatible defaults — are visible without running the code. "Execute your own test plan" is necessary but not sufficient; it won't catch what the tests don't cover.
+- **Apply corrections globally.** When the user corrects a pattern (magic strings, hardcoded defaults, etc.), fix every instance in the codebase, not just the one they pointed at. Being corrected more than once for the same rule is a sign you applied the fix too narrowly the first time.
+- **Check precedent claims against the source.** A claim about what an earlier release, tag, PR or commit did ("the CHANGELOG has always carried dates", "that pitch was never built", "the release was cut from this commit") is checked against git, the tag, the PR or the package index before it is written. Four such claims were retracted after review in one stretch (wiki-studio #60, #61, #63, #66) and an external reviewer made the same error three times: memory of a repository is not a source.
+- **Do not ask for information you can find.** Before asking the user for a log, a line number, a stack trace, or "which file?" — search the code yourself with grep and file reads. The user's time is more valuable than yours. Ask only for information that cannot be derived from the repo.
+
+## Never Fix Bugs by Regressing Features
+
+- **Never disable, suppress, or remove an existing feature to fix a bug in that feature.** If a feature shows wrong data, fix the data source — do not hide the feature. If a dropdown shows wrong items, fix the query — do not add `autoComplete="off"` or remove the dropdown.
+- **Understand the feature before changing it.** When encountering a bug in existing functionality, first investigate how the feature works: what data it uses, where it gets its state, how it was built. Fix the root cause, not the symptom.
+- **If unsure how a feature works, ask.** The user may have spent significant effort building it. Suppressing it is a regression bug, not a fix.

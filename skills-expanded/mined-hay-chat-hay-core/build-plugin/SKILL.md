@@ -1,0 +1,141 @@
+---
+name: build-plugin
+description: Build a new Hay plugin from scratch that connects an external platform (REST API, hosted MCP server, messaging channel, or document source). Use when the user wants to create/scaffold a Hay plugin, integrate a new service/SaaS into Hay, expose a platform's API to the agent as tools, add a messaging channel, or asks "how do I build a plugin". Covers the SDK contract, the four archetypes, copy-paste templates, and the anti-patterns to avoid.
+---
+
+# Build a Hay Plugin
+
+This skill is the authoritative, code-verified guide for building a new Hay plugin. The
+`generate-plugin` command is for the other case: generating a plugin from an existing MCP repo.
+Use **this** when building from scratch to connect a platform.
+
+> The existing `plugins/core/*` are a mix of good and rough. This skill distills what's actually
+> correct against the SDK and explicitly flags what NOT to copy. When in doubt, prefer the
+> patterns named here over whatever a given plugin happens to do.
+
+## The 30-second model
+
+A plugin = **a `package.json` with a `hay-plugin` block** + **`src/index.ts` whose default export
+is `defineHayPlugin(...)`**. The plugin ID is the npm package name. It runs as a **separate HTTP
+worker** that core spawns per org and talks to over HTTP. You declare config/auth/UI/routes in
+`onInitialize`, then wire up MCP or pollers in `onStart`. **There is no `manifest.json`.**
+
+Full contract (lifecycle, metadata fields, config/auth/MCP/UI APIs, build): **`reference/contract.md`**.
+
+## Workflow
+
+### 1. Scope the integration
+
+Answer these before writing code:
+
+- **What platform**, and how does it expose itself? (REST API? hosted MCP server? messaging webhooks? document source?)
+- **What should the agent be able to do?** Write the support playbooks first ("book a room",
+  "cancel my order", "what's the Wi‑Fi?"); each step that touches the platform becomes **one
+  tool**, however many endpoints it needs. Never mirror the API 1:1. Read
+  **`reference/tool-design.md`** before designing tools.
+- **Auth method?** API key / OAuth2 / basic. What credentials does the user supply?
+- **Plugin name** → npm name `hay-plugin-<name>` (channels: `hay-channel-<name>-<provider>`).
+
+### 2. Pick the archetype (full detail + reference plugins in `reference/archetypes.md`)
+
+| The platform…                 | Archetype                           | Reference to copy                                               | Avoid                                            |
+| ----------------------------- | ----------------------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| has a REST API, no hosted MCP | **A. Local bundled MCP**            | **spacebring** / **wix** / **shopify** (playbook tools + tests) | one tool per endpoint (see `tool-design.md`)     |
+| hosts its own MCP server      | **B. Remote connector**             | **hubspot** (OAuth), **stripe** (API key)                       | stripe's stale `.md` docs                        |
+| is two-way messaging          | **C. Channel**                      | **chatwoot** (verify), **email-imap** (semantics)               | whatsapp (no idempotency)                        |
+| is a document source          | **D. Document importer** (advanced) | **atlassian** ConfluenceClient + adf-to-markdown                | atlassian's manifest.json + `@server/*` coupling |
+
+**Payment provider** (Pix, card refunds: Mercado Pago, PagBank, Pagar.me…)? Archetype A plus the
+shared five-tool contract in `packages/plugin-sdk/payment-provider/README.md` (`@hay/plugin-sdk/payment-provider`).
+Copy **mercadopago**.
+
+### 3. Scaffold from templates (in `templates/`)
+
+- `package.json.tmpl`, `tsconfig.json.tmpl` — always.
+- `index.ts.tmpl` — entry for archetypes A & B.
+- `channel.ts.tmpl` — entry for archetype C.
+- `mcp-server.js.tmpl` — the `mcp/index.js` for archetype A.
+- `vite.config.ui.ts.tmpl` — only if you ship a settings UI (`capability "ui"`).
+- `i18n.en.json.tmpl` — **always.** Copy to `i18n/en.json` (drop the `.tmpl`) and add `i18n/pt-BR.json`.
+
+Replace every `<placeholder>`, strip the trailing NOTES comments, and delete templates for
+archetypes you're not using.
+
+### 4. Implement, following the named good patterns
+
+- `onValidateAuth`: do a **real API round-trip** and throw user-facing messages (klaviyo/zendesk).
+- `onStart`: **gate on credentials** — missing creds → log + return, never crash the worker.
+- MCP tools follow **`reference/tool-design.md`**: playbook-step tools that serialise the requests
+  they need, accept what customers say (emails, names, "tomorrow 2pm") and normalise it, enforce
+  rules before writing, and answer with a relayable `summary` / a `ToolError` that says what to do
+  next (spacebring, wix, shopify).
+- MCP server: native `fetch`, one shared `api()` request helper, `ok()`/`fail()` responses
+  (`@hay/plugin-sdk/tool-errors`), zod schemas with `.describe()`, split into `mcp/lib` + `mcp/tools`
+  with a `fetch`-stub test harness (wix, spacebring).
+- HTTP client (archetype D or any direct API calls): retry with `Retry-After` on 429 + exponential
+  backoff on 5xx (atlassian `ConfluenceClient`).
+- Channel inbound: verify signature over **raw bytes** with replay window + `timingSafeEqual`,
+  filter bot/echo/empty, **dedupe on provider message id**, always `200` on success (chatwoot).
+- Channel outbound: non-retryable provider errors → `200 { success:false }` (no retry storms).
+- **Tool risk**: give **every** tool a risk class, or Hay.chat holds each call for human approval
+  as an unknown write. Reads → `read`; writes → a category (`refund`/`cancel`/`discount` move money
+  and are held; `destructive` (deletes, account/helpdesk configuration, cancelled bookings, dispute evidence) is
+  always held; `note`, `customer_update`, `address_change`, `return`, `other_write` run). Local
+  `mcp/` server: `applyToolRisk(server, require("./tool-risk"))` from `@hay/plugin-sdk/tool-risk`
+  (wix, calcom). Hosted or in-process server: pass `toolRisk: { read, write }` to
+  `startExternal`/`startLocalStdio`/`startLocal` (stripe, atlassian); undeclared hosted tools keep
+  the server's own `readOnlyHint`. Add a test that every listed tool is classified.
+- **Translations (`i18n/`)**: ship `i18n/en.json` (+ `pt-BR.json`) with a `tools.<toolName>.label`/`description`
+  for **every** MCP tool and a `config.<field>` for every config field. Keys must be the exact tool
+  names. Without them the UI humanizes raw names (`list_event_types` → "List Event Types") and only
+  serves English — translated playbook chips, the tool picker, and plugin settings all read from here.
+  Every config field needs `config.<field>.label` (+ `options.<value>` for selects) in **both**
+  `en.json` and `pt-BR.json`; the SDK test `core-plugin-labels.test.ts` fails otherwise.
+- **Setup checklist**: if the default order (components, fields, Connect, Verify) doesn't fit, call
+  `ctx.register.setup({ steps, status? })` and add `setupSteps.<id>.title` in both locales. Mark
+  technical fields `advanced: true`. See `reference/contract.md` → "Setup checklist".
+
+### 5. Check against the anti-patterns
+
+Read **`reference/anti-patterns.md`** — every item is a real mistake in the current codebase.
+The high-frequency ones: no `manifest.json`; declare every imported dep; no committed secrets/TLS
+bypass/cruft; use the MCP SDK with real schemas; `onConfigUpdate`/`onDisable` actually
+re-init/tear down; `strict: true`.
+
+### 6. Build & verify
+
+```bash
+# from repo root (so the @hay/plugin-sdk file: link resolves):
+npm install --workspace=plugins/core/<name>
+npm run build  --workspace=plugins/core/<name>
+npm run typecheck:server   # plugin types compile against the SDK
+```
+
+- Confirm `dist/index.js` exists and (if UI) `dist/ui.js` + `dist/style.css`.
+- For archetype A, ensure the `mcp/` server **actually starts** — handle the dependency-install
+  gap (see `anti-patterns.md` → "The mcp/ dependency gap"); only klaviyo runs out of the box today.
+- Start the worker for your org and confirm `/metadata` and `/mcp/list-tools` return your tools.
+
+## Pre-ship checklist
+
+- [ ] `package.json` has `hay-plugin` (entry, displayName, canonical category, capabilities, env); **no `manifest.json`**.
+- [ ] `src/index.ts` default-exports `defineHayPlugin`; ESM (`"type":"module"`); `strict:true`.
+- [ ] Every secret config field is `encrypted:true`; nothing logs credentials.
+- [ ] `onValidateAuth` does a live round-trip; `onStart` gates on creds; `onDisable` tears down; no `onEnable`.
+- [ ] Every imported dependency is declared in the relevant `package.json`.
+- [ ] Tools pass the `reference/tool-design.md` checklist (playbook steps, lenient input, rules enforced in code, actionable errors).
+- [ ] (Archetype A) `mcp/` uses `@modelcontextprotocol/sdk`, real zod schemas, `console.error` logging, and a documented dependency-install approach.
+- [ ] (Channel) signature verified, inbound deduped, non-retryable errors return `200 {success:false}`.
+- [ ] No committed cruft: no `.git`/vendored repos, `node_modules` bloat, `test-results/`, design `.md` TODOs, or creds in fixtures.
+- [ ] Every MCP tool has a risk class (read, or a write category); a test keeps it complete.
+- [ ] `i18n/en.json` and `i18n/pt-BR.json` exist with a `label`/`description` for every MCP tool and config field (and `setupSteps.<id>.title` for declared setup steps); tool keys match the exact tool names.
+- [ ] Technical fields are `advanced: true`; a custom setup order is declared with `register.setup`.
+- [ ] `npm run build` + `typecheck` pass; tools appear in `/mcp/list-tools`.
+
+## Reference map
+
+- `reference/tool-design.md` — how to choose and shape MCP tools (playbook steps, not endpoints).
+- `reference/contract.md` — the enforced SDK contract (lifecycle, metadata, config/auth/MCP/UI, build).
+- `reference/archetypes.md` — the four archetypes, which reference plugin to copy, what to avoid.
+- `reference/anti-patterns.md` — real mistakes in `plugins/core/*`, with file pointers.
+- `templates/` — copy-paste scaffolding.

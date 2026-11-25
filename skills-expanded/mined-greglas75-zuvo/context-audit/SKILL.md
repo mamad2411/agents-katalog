@@ -1,0 +1,339 @@
+---
+name: context-audit
+description: "Context health monitoring. Analyzes include loading trends from context-metrics.log, audits CLAUDE.md/rules/settings for bloat, scores setup health. Modes: trend (default), full (with /context data), baseline (save snapshot)."
+category: Utility
+---
+
+# zuvo:context-audit — Context Health Monitor
+
+Tracks what fills your context window over time and flags waste. Two data sources:
+1. **Auto-collected** — `~/.zuvo/runs.log` field 12 (`name:bytes` pairs, populated by `track-includes.sh` hook on every Read)
+2. **Manual** — `/context` output (optional, for full system-level audit)
+
+## Argument Parsing
+
+| Flag | Effect |
+|------|--------|
+| `--full` | Full audit: requires `/context` data. Audits MCP, CLAUDE.md, settings, permissions |
+| `--baseline` | Save current state as baseline for future delta comparisons |
+| `--since N` | Show trend for last N days (default: 7) |
+| _(no flags)_ | Trend mode: analyze context-metrics.log, show include loading patterns |
+
+## Mandatory File Loading
+
+Read these files:
+
+```
+CORE FILES LOADED:
+  1. ../../shared/includes/run-logger.md       -- READ
+  2. ../../shared/includes/retrospective.md    -- READ
+```
+
+## Phase 0: Collect Data
+
+### Metrics data (from runs.log)
+
+Read `~/.zuvo/runs.log` — the single source of truth for all skill run data:
+
+```bash
+RUNS_LOG="$HOME/.zuvo/runs.log"
+```
+
+Filter entries that have INCLUDES data (field 12 contains `:`). These are v3+ entries with `name:bytes` format.
+
+```bash
+# Extract v3 entries (field 12 has name:bytes pairs)
+awk -F'\t' 'NF>=12 && $12 ~ /:/' "$RUNS_LOG"
+```
+
+If fewer than 3 entries with INCLUDES data: print "Not enough data yet. Run a few zuvo skills first — the `track-includes.sh` hook captures include sizes automatically." and exit.
+
+Parse field 12 as `name:bytes|name:bytes` pairs. Calculate per-include sizes and cumulative costs directly from this field. No separate metrics file needed.
+
+### /context data (--full mode only)
+
+Check conversation history for `/context` output. If not found:
+
+"Run `/context` in this session and let me know when you're done. I need the token breakdown to audit your full setup."
+
+**STOP HERE in --full mode.** Do not proceed until the user provides /context data.
+
+In default trend mode: skip this step entirely, proceed with metrics data.
+
+## Phase 1: Trend Analysis (default mode)
+
+Parse `context-metrics.log` for the `--since` period (default 7 days).
+
+### 1.1 Include Loading Frequency
+
+Count how many times each include was loaded across all skill runs:
+
+```
+TOP INCLUDES (last 7 days, N skill runs)
+
+  # INCLUDE              LOADS   AVG_SIZE   CUMULATIVE
+  1 env-compat.md        N/N     1.5K       NK
+  2 codesift-setup.md    N/N     1.5K       NK
+  3 run-logger.md        N/N     4.4K       NK
+  4 cq-patterns.md       N/N     27.0K      NK
+  ...
+```
+
+Flag includes with cumulative >100K as `⚠ HIGH CUMULATIVE COST`.
+
+### 1.2 Heaviest Runs
+
+Find the top 3 skill runs by `INCLUDES_BYTES`:
+
+```
+HEAVIEST RUNS
+
+  1. refactor @ project — 14 includes / 82K
+  2. review @ project — 10 includes / 58K
+  3. execute @ project — 12 includes / 71K
+```
+
+### 1.3 Tier Distribution
+
+Per-skill breakdown of tier usage (from TIER field):
+
+```
+TIER DISTRIBUTION
+
+  review:      tier-0: 5  tier-1: 3  tier-2: 8  tier-3: 2
+  write-tests: LIGHT: 4  STANDARD: 8  HEAVY: 2
+  build:       LIGHT: 3  STANDARD: 5  DEEP: 1
+```
+
+### 1.4 Week-over-Week Delta
+
+If enough data exists (>14 days), compare this week vs last week:
+
+```
+TREND (this week vs last)
+
+  Avg includes/run:  7.2 → 6.8  ↓ 6%
+  Avg bytes/run:     42K → 38K  ↓ 10%
+  Total skill runs:  23 → 19    ↓ 17%
+```
+
+### 1.5 Recommendations
+
+Based on the data, generate actionable recommendations:
+
+| Condition | Recommendation |
+|-----------|----------------|
+| Any include with cumulative >200K | "Consider splitting [file] — loaded N times at XK each" |
+| Any run with >100K includes bytes | "[skill] runs are heavy — check if all includes are necessary at its tier" |
+| Same include loaded by >80% of runs | "Consider inlining [file] essentials into env-compat or making it a hook" |
+| Include that grew >20% since baseline | "[file] grew from XK to YK — review recent additions" |
+
+## Phase 2: Full Audit (--full mode only)
+
+Only runs when `--full` flag is provided AND /context data is available.
+
+### 2.1 MCP Servers
+
+From `/context` output, count MCP servers and their tool counts. Flag:
+- Servers with >30 tools (high token cost per definition)
+- Servers with CLI alternatives (playwright → npx playwright, github → gh)
+
+### 2.2 Memory Files
+
+Read all files listed in `/context` Memory section. For each, apply 5 filters:
+
+| Filter | Flag when... |
+|--------|-------------|
+| Default | Claude already does this without being told |
+| Contradiction | Conflicts with another rule in same or different file |
+| Redundancy | Repeats something already covered elsewhere |
+| Bandaid | Added to fix one bad output, not improve outputs generally |
+| Vague | Interpreted differently every time ("be natural") |
+
+Count total lines. Flag if >200 lines combined.
+
+### 2.3 Skills
+
+From `/context` Skills section, for each skill >120 tokens:
+- Flag as "consider trimming description"
+- Check for restated goals or synonymous instructions
+
+### 2.4 Settings
+
+Check the global and project settings files (e.g., `settings.json`):
+
+| Setting | Flag if | Recommended |
+|---------|---------|-------------|
+| autocompact_percentage_override | Missing or >80 | 75 |
+
+### 2.5 File Permissions
+
+Check `settings.json` for `permissions.deny` rules. If missing, check whether bloat directories exist:
+
+| If exists... | Should deny... |
+|--------------|---------------|
+| package.json | node_modules, dist, build, .next, coverage |
+| Cargo.toml | target |
+| go.mod | vendor |
+| pyproject.toml | __pycache__, .venv |
+
+### 2.6 Retro-gate bypass check
+
+Surface every `ZUVO_SKIP_RETRO_GATE=1` use recorded by `append-runlog` to
+`$ZUVO_HOME/skip-retro-gate.log` (default `~/.zuvo/skip-retro-gate.log`).
+Schema: `# v1 SKIP\tDATE\tSKILL\tPROJECT\tNOTE`. Run this and fold the count
+into the report (each bypass skipped a durability gate = an unverified run):
+
+```bash
+# >>> zuvo:skip-audit  (plan Task 9 — surface retro-gate bypasses)
+_SL="${ZUVO_HOME:-$HOME/.zuvo}/skip-retro-gate.log"
+if [ -f "$_SL" ]; then
+  _n=$(grep -c '^SKIP:' "$_SL" 2>/dev/null) || true; _n=${_n:-0}
+  echo "Retro-gate bypasses (ZUVO_SKIP_RETRO_GATE): $_n"
+  if [ "$_n" -gt 0 ]; then
+    echo "  recent (skill / project / date):"
+    grep '^SKIP:' "$_SL" | tail -5 | awk -F'\t' '{printf "  - %s / %s / %s\n",$3,$4,$2}'
+  fi
+else
+  echo "Retro-gate bypasses: 0 (no skip-retro-gate.log)"
+fi
+# <<< zuvo:skip-audit
+```
+
+Cross-reference any nonzero skill/project against missing retros in retros.log.
+
+## Phase 3: Score and Report
+
+### Scoring (--full mode)
+
+Score starts at 100. Deduct per issue:
+
+| Issue | Points |
+|-------|--------|
+| Memory files >200 lines total | -10 |
+| Memory files >500 lines total | -20 |
+| Per 5 rules flagged by filters | -5 |
+| Contradictions between files | -10 |
+| Missing autocompact override | -10 |
+| Skill >120 tokens | -3 each |
+| Per MCP server | -3 each |
+| No deny rules + bloat dirs exist | -10 |
+
+Floor at 0. Labels: 90-100 `CLEAN`, 70-89 `NEEDS WORK`, 50-69 `BLOATED`, 0-49 `CRITICAL`.
+
+### Scoring (trend mode)
+
+Score based on metrics data:
+
+| Condition | Points |
+|-----------|--------|
+| Avg bytes/run <30K | +20 |
+| Avg bytes/run 30-60K | +10 |
+| Avg bytes/run >60K | 0 |
+| Week-over-week improving (↓) | +10 |
+| Week-over-week stable | +5 |
+| Week-over-week degrading (↑ >10%) | -10 |
+| No include >200K cumulative | +10 |
+| Any include >200K cumulative | -5 per file |
+
+Base 50 + adjustments. Same labels.
+
+### Output Format
+
+```
+# Context Audit
+
+Score: {N}/100 [{CLEAN|NEEDS WORK|BLOATED|CRITICAL}]
+Mode: {trend|full}
+Period: {last N days} ({M skill runs})
+
+## Include Loading
+
+{Phase 1.1 table}
+
+## Heaviest Runs
+
+{Phase 1.2 table}
+
+## Tier Distribution
+
+{Phase 1.3 table}
+
+## Trend
+
+{Phase 1.4 delta, or "Not enough data for trend"}
+
+## Issues Found
+
+### [{CRITICAL|WARNING|INFO}] {Category}
+{What's wrong}
+Fix: {One-line actionable fix}
+
+## Recommendations
+
+{Phase 1.5 or Phase 2 recommendations, ranked by impact}
+
+## Top 3 Fixes
+
+1. {Highest-impact fix}
+2. {Second}
+3. {Third}
+```
+
+## Phase 4: Baseline (--baseline mode)
+
+Save current metrics snapshot to `~/.zuvo/context-baseline.json`:
+
+```json
+{
+  "date": "2026-04-12",
+  "avg_includes_per_run": 7.2,
+  "avg_bytes_per_run": 38000,
+  "total_runs": 23,
+  "top_includes": {
+    "env-compat": {"loads": 23, "size": 1500},
+    "cq-patterns": {"loads": 8, "size": 27000}
+  },
+  "include_sizes": {
+    "env-compat.md": 1500,
+    "codesift-setup.md": 1500,
+    "cq-patterns.md": 27000
+  }
+}
+```
+
+Print: "Baseline saved. Run `zuvo:context-audit` again after your next changes to see the delta."
+
+## Phase 5: Offer to Fix (--full mode only)
+
+After the report:
+
+"Want me to fix any of these? I can:
+- Show you a cleaned-up CLAUDE.md with the flagged rules removed
+- Add the missing settings.json configs
+- Add permissions.deny rules for build artifacts"
+
+Auto-apply settings.json and permissions.deny (safe, reversible).
+Show diffs for CLAUDE.md — let the user confirm before modifying instruction files.
+
+### Retrospective (REQUIRED)
+
+Follow the retrospective protocol from `retrospective.md`.
+Gate check → structured questions → TSV emit → markdown append.
+If gate check skips: print "RETRO: skipped (trivial session)" and proceed.
+
+## Output
+
+```
+Run: <ISO-8601-Z>	context-audit	<project>	-	-	<VERDICT>	-	<mode>	<NOTES>	<BRANCH>	<SHA7>	<INCLUDES>	<TIER>
+```
+
+**Append via wrapper (REQUIRED).** Never `>>` directly to `~/.zuvo/runs.log` — the wrapper is the gate that verifies a retro entry exists for this run. Order: retro bash executed → wrapper invoked → completion claimed.
+
+```bash
+printf '%b\n' "$RUN_LINE" | ~/.zuvo/append-runlog
+```
+
+Expected stdout: `OK: appended to runs.log (retro verified for <skill> on <project>)`. If exit 2 with `RETRO_REQUIRED` — go execute the retro bash from `retrospective.md` first; never bypass with `ZUVO_SKIP_RETRO_GATE=1`. After the wrapper succeeds, print a `Logs:` evidence line (`tail -1 ~/.zuvo/retros.log`, `grep -c "^<!-- RETRO -->" ~/.zuvo/retros.md`, `tail -1 ~/.zuvo/runs.log`) before claiming completion. Printing the markdown retro section without executing the bash leaves all three log files empty.
+
+Include sizes are captured automatically by the `track-includes.sh` PostToolUse hook and written to runs.log field 12 as `name:bytes` pairs. No separate metrics file or manual collection needed.

@@ -1,0 +1,77 @@
+---
+name: brig-builder
+description: Proportional executor. Small verified diffs, plan only when warranted. Use for simple implementation tasks.
+---
+
+<!-- Source: brig@3964e4c skills/builder/SKILL.md — vendored by bin/sync-brig-skills.mjs. Edit brig, not this copy. -->
+
+# builder skill — proportional executor
+
+> Small verified diffs. Plan only when the task warrants one.
+> For test-first loop work, write the failing test before the
+> implementation inside this same loop (RED → GREEN → run).
+
+## Input
+
+Either a plan file at `plans/<task>.md` (see `plans/README.md` template)
+or a direct task description.
+
+- Nontrivial task (multi-file, architectural, risky, or needs review):
+  a plan file is required. Do not start without one.
+- Trivial task (1 file, obvious, low-risk, easily reversible):
+  proceed directly from the task description. No plan file required.
+
+The plan's "files in scope" is authoritative when a plan exists.
+
+## Procedure
+
+1. Read the plan (if any) or task description fully before touching code.
+2. Work in steps of **1–2 files max per step**. A multi-step task may
+   span several steps; each step stays small.
+3. After each step, run the plan's verification command
+   (default: `uv run pytest`) — it must be green before continuing.
+   For trivial tasks, run the narrowest relevant check.
+4. End every change with a receipt line:
+
+```text
+path:line-range — change
+```
+
+## Rules
+
+- Execute only what the plan or task authorizes. No drive-by refactors,
+  no out-of-scope files, no new backends or deps beyond
+  `tree-sitter` + stdlib `sqlite3` (v2 firewall).
+- TDD where the plan requires it or the logic is nontrivial:
+  failing test first, then minimal implementation. Skip TDD ceremony
+  for docs, config, and trivial edits.
+- Byte offsets from tree-sitter are authoritative; never guess spans.
+- Public-repo hygiene: no secrets, tokens, or personal paths in commits.
+
+## Terminal refusal lines
+
+Copy exactly. These end the step — do not work around them:
+
+```text
+too-big. split:
+```
+
+```text
+needs-confirm. op:
+```
+
+```text
+ambiguous. ask:
+```
+
+Use `too-big. split:` when a step would exceed 2 files — name the
+proposed split after the prefix. Use `needs-confirm. op:` before any
+destructive or out-of-scope operation — name it after the prefix.
+Use `ambiguous. ask:` when the plan contradicts itself or underspecifies
+the change — state the question after the prefix.
+
+## Handoff
+
+Output is the diff plus receipt lines. For nontrivial tasks, the
+reviewer verifies the diff against the plan. Trivial tasks are
+verified by the test run above — no separate review step required.

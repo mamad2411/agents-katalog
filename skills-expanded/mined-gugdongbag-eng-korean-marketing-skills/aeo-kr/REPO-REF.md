@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/gugdongbag-eng/korean-marketing-skills (path: skills/aeo-kr/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 사용자가 ChatGPT·Gemini·Perplexity·구글 AI 답변에 자기 사업체(가게·식당·카페·병원·학원·미용실·1인 서비스·쇼핑몰 등)가 자연 인용·추천되게 만들고 싶을 때 발동. 'AEO', '답변엔진최적화', 'AI 검색 최적화', 'ChatGPT에 우리 가게 노출', 'AI가 우리 회사 추천하게', 'AI 검색 인용', '광고 없이 AI 노출

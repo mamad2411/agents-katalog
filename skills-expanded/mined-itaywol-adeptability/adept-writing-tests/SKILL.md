@@ -1,0 +1,1 @@
+../../.adeptability/staging/skills/adept-writing-tests/SKILL.md

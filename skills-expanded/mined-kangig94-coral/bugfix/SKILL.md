@@ -1,0 +1,45 @@
+---
+name: bugfix
+description: 'Use when encountering a bug, error, or unexpected behavior that needs diagnosis and fix.'
+argument-hint: '[--delegate] <bug description or error message>'
+---
+
+# Bug Debugging
+
+Diagnose bugs, plan fixes, and execute - end-to-end.
+
+## Argument Routing
+
+| Argument              | Mode                                                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<prompt>`            | Self-execute on current host (default)                                                                                                        |
+| `--delegate`          | Delegate to the other host (Claude → Codex, Codex → Claude, Copilot → Codex; current host comes from SessionStart `Current host:`) |
+| `--delegate <prompt>` | Same with prompt                                                                                                                              |
+
+Strip the `--delegate` flag before passing the prompt to the execution path.
+
+## Execution
+
+1. **Diagnose**:
+   - **Self-execute (default)**: Spawn `Agent({ subagent_type: "coral:debugger", prompt: "--deep " + prompt })`.
+     Wait for the agent to return its diagnosis in `<Output_Format>` structure.
+   - **Delegate (`--delegate`)**: Run `coral-cli <other-host> debugger --work-dir "<work_dir>" -i - <<'CORAL_INPUT'` with the `<--deep prompt>` as the body of that quoted heredoc, closed by a `CORAL_INPUT` line (`<other-host>` = the delegation target for the current host: Claude → Codex, Codex → Claude, Copilot → Codex).
+     Capture `job` from `Provider job <jobId> execution #<n> <launchState>`, then run `cd "<work_dir>" && coral-cli jobs wait <job> --embed`. Use the job’s terminal header to identify its end, including when `provider_exit` propagates code `75`. Read the artifact at `Result path: <path>` when available. Run any usable wait continuation for that job exactly from the same cwd, including when the wait stops before the job ends or the terminal artifact is still pending. If the artifact is unavailable and there is no usable continuation, stop and report it. Account for the terminal outcome before moving on. If an error prints `remediation:`, follow it only when it contains a `coral-cli jobs wait` command, preserving all arguments and the same cwd; accept either backticked or plain-text commands, and exclude surrounding prose. Otherwise stop and surface the rendered error. `wait_build_mismatch` requires restarting the session. A non-zero `provider_exit` code is terminal and is passed through unchanged (0–255).
+     On error, stop with the error message.
+     Verify cited file:line references. Drop findings with incorrect references.
+
+2. **Record diagnosis**: Write the diagnosis to `CORAL_PROJECT/plans/debug-{short-bug-description}.md`
+   using the debugger's output format (Symptom, Reproduction Path, Hypothesis Log, Root Cause, Fix Specification).
+   Gate on hypothesis verdicts:
+   - **One confirmed root cause** → proceed to step 3.
+   - **Multiple hypotheses survived** → present to user, ask which to pursue before proceeding.
+   - **All refuted or inconclusive** → stop and report findings to user.
+
+3. **Plan fix**: Invoke `Skill({ skill: "coral:plan", args: (if --delegate: "--delegate ") + "round=3 --no-handoff fix-{short-bug-description}" })`.
+   The plan references `CORAL_PROJECT/plans/debug-{short-bug-description}.md` for diagnosis context.
+   Plan should include: what to change, why, and how to verify the fix.
+
+4. **Execute fix**: Invoke `Skill({ skill: "coral:ralph", args: (if --delegate: "--delegate ") + "implement the plan from step 3" })`.
+
+5. **Project validation**: If project instructions define workflow rules (e.g., review gates,
+   post-implementation steps), follow them.

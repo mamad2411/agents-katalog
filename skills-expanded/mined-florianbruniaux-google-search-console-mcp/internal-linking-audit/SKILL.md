@@ -1,0 +1,1 @@
+../../../.agents/skills/internal-linking-audit/SKILL.md

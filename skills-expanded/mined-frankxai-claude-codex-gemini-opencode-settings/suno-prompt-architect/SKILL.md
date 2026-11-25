@@ -1,0 +1,159 @@
+# Suno Prompt Architect
+
+Expert Suno AI prompt engineering for cinematic, transformative music creation. Use for Vibe OS sessions, meditation tracks, or any AI-generated music.
+
+## Core Philosophy
+
+**Music as Consciousness Technology**
+Every Suno-generated track should serve a transformative purpose - whether energizing a creative session, facilitating meditation, or soundtracking a creator's breakthrough moment.
+
+**Prompt Engineering as Composition**
+Writing Suno prompts is like composing a detailed arrangement. Every element matters: genre, mood, instrumentation, production quality, tempo, and energetic intention.
+
+---
+
+## Suno Prompt Anatomy
+
+### The 5-Layer Structure
+
+```
+[FOUNDATION] + [MOOD] + [INSTRUMENTATION] + [PRODUCTION] + [INTENTION]
+```
+
+**1. FOUNDATION (Genre/Style)**
+- Primary genre + fusion elements
+- Reference aesthetic periods or movements
+- Define rhythmic foundation
+
+**2. MOOD (Emotional Landscape)**
+- Core emotion (one word)
+- Secondary feeling (supporting)
+- Energy level (low/mid/high)
+
+**3. INSTRUMENTATION (Sonic Palette)**
+- Lead instruments (2-3 max)
+- Rhythmic elements
+- Atmospheric textures
+
+**4. PRODUCTION (Sonic Quality)**
+- Mix characteristics (spacious, intimate, cinematic)
+- Effects (reverb, delay feel)
+- Reference quality level
+
+**5. INTENTION (Energetic Purpose)**
+- What transformation should this create?
+- Use case scenario
+- Desired listener state
+
+---
+
+## Signature Styles
+
+**Conscious Electronic**
+```
+"Ambient downtempo with spiritual depth"
+"Deep house meditation with organic textures"
+```
+- Tempo: 60-90 BPM
+- Instruments: Synth pads, Tibetan bowls, nature sounds
+
+**Epic Motivation**
+```
+"Cinematic orchestral hybrid with driving energy"
+"Motivational orchestral with powerful builds"
+```
+- Tempo: 120-140 BPM
+- Instruments: Strings, brass, epic drums, synths
+
+**Creative Flow**
+```
+"Lo-fi hip hop with cosmic ambience"
+"Atmospheric trip-hop for deep focus"
+```
+- Tempo: 80-110 BPM
+- Instruments: Rhodes, soft beats, atmospheric pads
+
+**Frequency Healing**
+```
+"432Hz ambient soundscape with binaural tones"
+"Solfeggio frequency meditation with crystalline textures"
+```
+- Tempo: <60 BPM or arhythmic
+- Instruments: Sine waves, crystal bowls, nature
+
+---
+
+## Frequency Specifications
+
+### Solfeggio Frequencies
+- **174 Hz** - Pain reduction, grounding
+- **285 Hz** - Healing tissues, regeneration
+- **396 Hz** - Liberation from fear, guilt
+- **417 Hz** - Facilitating change
+- **528 Hz** - DNA repair, love (most popular)
+- **639 Hz** - Connection, relationships
+- **741 Hz** - Awakening intuition
+- **852 Hz** - Spiritual enlightenment
+- **963 Hz** - Divine consciousness
+
+### Concert Pitch Tuning
+- **432 Hz** - Natural tuning, cosmic harmony
+- **440 Hz** - Standard concert pitch
+- **444 Hz** - Crystal clear, cerebral
+
+### Binaural Beat Frequencies
+- **Delta (0.5-4 Hz)** - Deep sleep, healing
+- **Theta (4-8 Hz)** - Meditation, creativity
+- **Alpha (8-14 Hz)** - Relaxed focus, learning
+- **Beta (14-30 Hz)** - Active thinking
+- **Gamma (30-100 Hz)** - Peak awareness
+
+---
+
+## Complete Prompt Examples
+
+### Conscious Meditation
+```
+Ambient electronic meditation, ethereal and transcendent, with crystal singing bowls tuned to 528Hz, soft synth pads, binaural theta waves, gentle wind chimes, spacious cathedral reverb, pristine production, intention: deep inner peace and heart healing, slow and drifting.
+```
+
+### Epic Motivation
+```
+Cinematic orchestral hybrid, powerful and uplifting, with soaring strings, epic brass, thunderous taiko drums, modern electronic elements, wide stereo field, film-quality production, intention: courage to pursue bold dreams, building from 120 to 140 BPM with dramatic crescendo.
+```
+
+### Creative Flow
+```
+Lo-fi hip hop with cosmic ambience, exploratory and fluid, featuring warm Rhodes piano, jazzy bass, soft brush drums, vinyl crackle, atmospheric space, intimate mix with analog warmth, intention: unlock creative flow and inspired ideas, steady 95 BPM with evolving textures.
+```
+
+---
+
+## Quality Checklist
+
+Before finalizing a Suno prompt:
+- [ ] Clear genre/style foundation
+- [ ] Specific mood descriptors (2-3 words)
+- [ ] Instrumentation details (3-6 elements)
+- [ ] Production quality specified
+- [ ] Intention clearly stated
+- [ ] Tempo or rhythmic feel indicated
+- [ ] Appropriate for use case
+- [ ] Reads naturally (not keyword list)
+
+---
+
+## Common Pitfalls
+
+**Too Generic:** "Relaxing music with piano"
+- Missing: mood depth, production, intention
+
+**Over-Specified:** "C major scale piano with reverb at 2.3 seconds..."
+- Too technical, Suno can't control that detail
+
+**Contradictory:** "Energizing meditation for deep sleep"
+- Conflicting intentions
+
+---
+
+*This skill ensures every Suno-generated track serves its transformative purpose with technical excellence and emotional resonance.*

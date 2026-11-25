@@ -1,0 +1,44 @@
+---
+name: manage-reviews
+description: "Manage reviews: internal and client approvals, sign-offs, revisions and reminders. \"who hasn't approved yet\""
+argument-hint: "[--post <id>] [--approve] [--revise] [--client-send]"
+effort: medium
+user-invocable: true
+disable-model-invocation: true
+---
+
+# /socialforge:manage-reviews — Review & Approval Manager
+
+Manage the multi-tier approval workflow per brand's approval-chain.json. The user starts this skill; it is not model-invocable. `--client-send` and the reminders of `--check` message people, so they go through the Execution gate below.
+
+## Execution gate
+
+Sending is a side effect other people see. Before any Slack message, email or reminder goes out, show an Execution Summary: who receives it (each recipient or channel), through which connector, which posts, and the exact message text. Send only on an explicit `yes` typed by the user for exactly that summary; any other reply cancels with nothing sent and no status changed. A changed recipient, post list or message is a new summary and a new `yes`. Hosts that ignore `disable-model-invocation` (Codex, for one) still get this gate.
+
+## Approval Tiers
+- **HERO content**: Internal review → Client approval → CEO approval (if configured)
+- **HUB content**: Internal review → Client approval (optional)
+- **HYGIENE content**: Internal review only (auto-approvable if configured)
+
+## Actions
+- `/socialforge:manage-reviews --approve P04` — Approve post P04 at current tier
+- `/socialforge:manage-reviews --revise P04 "Make the background warmer"` — Request revision with feedback
+- `/socialforge:manage-reviews --client-send` — Send all internally-approved posts to client review
+- `/socialforge:manage-reviews --check` — Check pending approvals and send reminders
+
+## State Transitions
+QUEUED → ASSET_MATCHING → GENERATING → PENDING_REVIEW
+  PENDING_REVIEW → APPROVED_INTERNAL | REVISION_REQUESTED | REJECTED
+  REVISION_REQUESTED → GENERATING (re-enters production with feedback)
+  REJECTED → QUEUED (start over)
+  APPROVED_INTERNAL → PENDING_CLIENT (if client review required) | FINAL (if not)
+  PENDING_CLIENT → APPROVED_CLIENT | REVISION_REQ_CLIENT | REJECTED_CLIENT
+  APPROVED_CLIENT → PENDING_CEO (if CEO required) | FINAL (if not)
+  PENDING_CEO → APPROVED_CEO → FINAL
+  FINAL → (write-protected, no transitions)
+
+## Rules
+- FINAL status is write-protected — cannot be modified after finalization
+- Revision requests re-enter the generation pipeline with specific feedback
+- Max 3 revision cycles per HERO post before escalation
+- Reminders sent via Slack/email after N days (per escalation_rules)

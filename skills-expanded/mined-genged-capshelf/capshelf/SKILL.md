@@ -1,0 +1,614 @@
+---
+name: capshelf
+description: Use the capshelf CLI to manage shared skills, Claude Code plugins, Pi extensions, subagents, settings, and MCP configs across multiple projects from a user-owned data repo.
+---
+
+# capshelf
+
+This project uses **capshelf** to track shared coding-agent config (skills, Claude Code plugins, project-local Pi extensions, Claude/Codex subagents, settings fragments, MCP configs) pulled from a **data repo**. When the user asks to add, remove, discover, edit, or update shared config, use the `capshelf` CLI. **Do not hand-edit** `.capshelf/capshelf.json` or `.capshelf/capshelf.lock.json` — they are tool-managed.
+
+Run project commands from anywhere inside a capshelf project — the directory containing `.capshelf/capshelf.json`, or any subdirectory of it (capshelf walks upward to find the root, like git). `init` acts on the current directory, not a discovered parent.
+Use `init` only for a new project or a fresh clone without
+`.capshelf/local.json`; it refuses a project already initialized on this
+machine. Use `data bind`, `data upstream`, and `update` for later lifecycle
+changes.
+
+## The agent decision loop
+
+Work the shelf in this order instead of pattern-matching on bare item names:
+
+### 1. Survey the project
+
+Run `capshelf status` at session start to see drift and available updates before changing anything. `capshelf ls --here` lists what is already installed (with descriptions and `#tags` when the data repo declares them).
+
+### 2. Discover on the shelf
+
+Reach for `capshelf search <task words>` first — it matches names, tags, descriptions, and item content across the bound data repo plus bundled system items, ranked by relevance:
+
+```
+capshelf search "sql injection"
+capshelf search security --json
+```
+
+Zero matches exit 0 — an empty answer is a valid answer, not an error. To browse instead, use `capshelf ls --tag <tag>` (repeatable, AND) or `ls --kind <kind>`. Descriptions and tags are the selection signal.
+
+Results with a `bundles/` prefix are **bundles** — curated item sets. Prefer them when setting up a project: `capshelf show bundles/<name>` to preview members and install state, then `capshelf add bundles/<name>` to expand. Expansion is traceless (members become ordinary independent items); the `bundle` field in `add --json` is the only echo and is what belongs in a commit message.
+
+### 3. Evaluate before installing
+
+`capshelf show <item>` prints the full description, `requires`, `conflicts-with`, and whether each relation is already installed. Use it before committing to an `add`. For `pi-extensions/*`, read **all extension source** shown before adding: Pi executes it as arbitrary code with full user permissions after project trust. For `plugins/*`, read the hooks and MCP servers it runs before adding. See Plugins.
+
+### 4. Install
+
+`capshelf add <item>`. Always name the item. `capshelf add` with no argument
+opens an interactive picker for a human at a terminal, and it exits 3 in your
+session because there is none; `capshelf add --json` with no item is refused
+for the same reason. Use `search` and `ls` to choose, then add by ref. For
+`mcp/*` and `subagents/*`, read the `targets:` block add prints and tell the
+user which runtimes the item covers — see Target coverage. Repeating add for an installed item is a stable no-op; use the printed `status --diff`, `update`, and `apply` guidance instead of trying to make add reapply it. If the output lists missing required items, install them with the exact `capshelf add <ref>` commands it prints. If `add` refuses with exit 3 because of a `conflicts-with` declaration, that is a curated incompatibility — surface the decision to the user (remove the conflicting item, or fix a stale declaration in the data repo); never work around it. A bundle preflight refusal (exit 3) is the same kind of decision: nothing was installed and the per-member report says why — surface it, don't install members one by one to route around it.
+
+A **URL** in place of an item ref is a different install. `capshelf add <url>`
+pulls a skill from a repository outside your shelf. It uses the network, it
+asks for consent, and nobody on your team reviewed the content — see
+Remote skills.
+
+### 5. Verify
+
+`capshelf status --strict` — exit 0 means the project has converged on its locks.
+
+### 6. Edit / promote loop
+
+When the user asks you to improve a shared (data) item:
+
+1. `capshelf get-path <item>` for the absolute editable path (fragments return canonical data-repo source files; `--output` returns generated outputs for inspection only).
+2. Edit with your Edit/Write tools.
+3. `capshelf status <item>` — should report `drifted_local` (or `source_dirty` for fragments).
+4. Decide with the user:
+   - `capshelf promote <item> -m "why"` — push to the data repo. Other projects see `update available` next time they check; nothing auto-changes.
+   - `capshelf keep-local <item> --reason "why"` — intentional project-specific divergence for a copy item (skill or Pi extension).
+   - `capshelf revert <item>` — discard the edit, restore from the recorded `sourceCommit`; first show `capshelf status <item> --diff-view installed` and get permission before using `--yes` in a non-interactive run.
+
+For Pi extensions, inspect the changed source before promoting and tell the user to run `/reload` or restart Pi after materialization. Never imply that capshelf reviewed, trusted, sandboxed, or dependency-installed the extension.
+
+If `promote` fails with "changed in the data repo since this project last updated" (exit 3), run `capshelf status <item> --diff` to inspect both the installed and committed upstream branches. Use `--diff-view installed` to review local state that a command can replace. Use `--diff-view upstream` to review incoming committed content. For a skill, plugin, or Pi extension in either scope, offer `capshelf update <item> --merge`. It changes only the installed copy and selected lock. A normal `promote <item> -m "why"` is the separate publication step. Review a clean Git merge before publication; Git does not prove semantic correctness. A merge conflict lists paths and writes nothing. **Do not choose `--yes` or `--stale-ok` without user permission.** For a local-scope item, preserve `--local` on review, update, and promote commands.
+
+To change **metadata** (tags, description, `requires`/`conflicts-with`, or declared `needs`), edit the item's canonical data-repo sidecar (`skills/<name>/.capshelf.yml`, `pi/extensions/<name>/.capshelf.yml`, or the fragment path shown by `capshelf show`) and commit it in the data repo. Metadata is never hashed into item content. Tags, descriptions, and relations are live catalog data and need no project update; needs are lock-pinned, so consuming projects run `capshelf update <item>` to select a changed declaration without reinstalling unchanged content. **Commit the sidecar before returning to project work**: an uncommitted sidecar edit blocks `capshelf update` entirely (dirty data repo) and blocks `add` of that item.
+
+For a skill's **description**, prefer SKILL.md frontmatter — it doubles as the catalog fallback. Know the trade-off when choosing where to edit: a frontmatter edit is content drift (shipped to Claude, hashed — consuming projects see `update available`), while a sidecar edit is drift-free. Add a sidecar `description` only when the catalog blurb should differ from the frontmatter's invocation-trigger phrasing, or when tuning copy must not ship a content change; sidecar wins when both exist. Fragment items (settings/mcp/codex-config) have no frontmatter — the sidecar is their only description source.
+
+For system items (e.g. this `capshelf` skill), the edit loop doesn't apply — to change them, edit the CLI source under `src/bundled/` and rebuild.
+
+## How it works
+
+- **Data repo** (a Git repo at a path the user chooses) holds canonical versions of every shared item under `skills/`, `pi/extensions/`, `subagents/`, `settings/`, `mcp/`, and `codex/config/`. It must be a git repo. Resolution order: `--data <path>` flag > gitignored `.capshelf/local.json` > `$CAPSHELF_HOME`. There is no implicit default.
+- **This project** pins the exact content hash + source commit of each item in `.capshelf/capshelf.lock.json` (clone-local pins in gitignored `.capshelf/local.lock.json`). Data-repo updates do NOT propagate until this project runs `capshelf update`.
+- **Installed copies** live under `.agents/skills/<name>/` by default with `.claude/skills/<name>` symlinks (Claude-only projects install directly under `.claude/skills/<name>/`). Pi extensions live under `.pi/extensions/<name>/`. Claude custom commands are modeled as skills.
+- **Subagents** are project-scoped logical items. `subagents/<name>/claude.md` installs to `.claude/agents/<name>.md`; `subagents/<name>/codex.toml` installs to `.codex/agents/<name>.toml`. Either target or both may exist under one lock; capshelf reports which as target coverage.
+- **Item metadata** (optional `<item>/.capshelf.yml` in the data repo: `description`, `tags`, `requires`, `conflicts-with`, `needs`) feeds discovery and checks. It is never copied into projects. Needs are pinned separately from content so requirements freshness never changes content drift.
+
+## Three kinds of items
+
+- **system** (lock prefix `system/`): bundled into the CLI binary, installed by `init`, read-only from a project's perspective.
+- **data** (lock prefix `data/`): live in your data repo. Added via `add`, removed via `rm`, adopted via `share`, pushed back via `promote`.
+- **remote** (in neither capshelf lock. The record is the gitignored
+  `.capshelf/remotes.lock.json`): a skill or a whole plugin pulled from a
+  repository outside your shelf. Added via `add <url>`, removed via `rm`,
+  never promoted. `share <item> --adopt` is the one exit. See Remote skills.
+
+Mutating commands only touch files tracked in the lockfiles: `add` refuses to overwrite an existing untracked target, and `rm` deletes only locked data items. Copy-directory items can use committed project scope or clone-local scope; subagents are project-only. `share skills/<name>` defaults to local scope, or to project scope when project Git already tracks the skill's files; Pi extensions default to project scope, so pass `--to local` when adopting one as clone-local intent.
+
+## Command reference
+
+Always check the current surface with `capshelf --help` and `capshelf <verb> --help`. Most item arguments accept a bare unique name (`hello`) or a kind-qualified ref (`skills/hello`).
+
+| verb | purpose |
+|---|---|
+| `init` | initialize a new project or onboard a fresh clone without `.capshelf/local.json`; never use it to reinstall or rebind an initialized machine |
+| `data bind` / `data upstream` / `data path` | inspect or change the explicit data-repo binding (old `set-data`/`set-upstream`/`data-path` still work as aliases) |
+| `ls` / `show` / `search` / `status` | inspect and discover (all support `--json`; `ls` and `status` include user-level runtime skills by default, `--user` narrows to them only) |
+| `add` / `rm` / `apply` / `update` / `revert` | converge the project on its locks |
+| `lock migrate` | one-time conversion of this project's locks to version 5; required before any lock-writing command works on an older project |
+| `share` / `move` / `promote` / `keep-local` | flow content and intent between project and data repo |
+| `data sync [--json]` | explicitly fetch the bound data repo's origin and fast-forward when safe. Run it when the user asks to pick up teammates' changes, then `capshelf status` to see `update_available` |
+| `add <url>` / `status --check-upstream` | pull a skill or a whole plugin from a repository outside your shelf, and check tracked repositories for movement. See Remote skills |
+| `get-path` | print the editable path for an item; use `--target claude|codex` for multi-target subagents |
+| `self-update` | update the Homebrew-installed binary (not project pins) |
+| `marketplace ...` | author, validate, sync, and package data-repo Claude/Cowork or Codex plugin catalogs; never installs runtime plugins |
+
+Five surfaces touch the network and no others: the `init` bootstrap clone,
+`data sync`, `self-update`, `capshelf add <url>` (including `--list`), and
+`capshelf status --check-upstream`. A URL on the command line is the only thing
+that makes `add` networked. No project state can make any command networked.
+`apply`, `update`, `rm`, `promote`, and a bare `status` never open a connection,
+whatever the project holds.
+
+## Lock version migration
+
+The current lock version is 5, for every project. Version 5 is version 4
+plus the `plugins` kind. Locks written before version 4 identified an item
+by a hash of the data repo working tree. Version 4 identifies it by the
+item's committed Git tree. One lock file carries one version, so the
+conversion is an explicit command instead of a side effect of the next
+write.
+
+On a project whose lock is version 2, 3, or 4, **every command that writes a
+lock refuses with exit 3**. These are `add`, `rm`, `update`, `revert`,
+`promote`, `share`, `move`, `keep-local`, bundle installs, and `init`. The
+refusal reads:
+
+```text
+✗ this project's lock is version 4; capshelf add writes lock version 5
+  Convert the project and local locks first: capshelf lock migrate (preview it with --dry-run).
+```
+
+From version 4 the conversion changes only the version number. It copies
+every entry, needs no data repo, changes no installed file, and asks
+nothing. Run it, then commit the project lock. The rest of this section is
+about a version 2 or 3 lock.
+
+`status`, `ls`, `show`, `search`, `get-path`, and `apply` keep working against
+the old lock. Because `status` does not print the lock version, read the
+`version` field of `.capshelf/capshelf.lock.json` when you must know it before
+a write. Read it only; do not hand-edit it.
+
+Convert in two steps:
+
+```bash
+capshelf lock migrate --dry-run   # plan the complete migration, write nothing
+capshelf lock migrate             # convert both lock files in one transaction
+```
+
+The default conversion **selects no new content**. For each entry it re-derives
+the pin from the commit that entry already names and keeps `appliedAt`,
+`needs`, `label`, and the keep-local marker unchanged. A recorded hash that
+disagrees with its own commit is reported as `repaired legacy identity`. The
+project lock and the clone-local lock convert together or neither does. On a
+project that is already current the command prints `✓ already version 5` and
+exits 0, so it is safe to run when unsure.
+
+An entry whose source commit is unreachable, or whose committed content is
+missing or filter-refused, blocks the run. Every blocker is reported in one
+pass, the command exits 3, and no lock or installed file changes. Prefer the
+non-destructive fix: restore the commit (`capshelf data sync`, or push the
+clone that holds it), then retry. The repair flags are the user's decision, not
+yours:
+
+- `--repin <ref>` re-pins a copy item or subagent to its **current** committed
+  source and re-materializes it. That is an update, not a conversion — the
+  installed content changes.
+- `--remove-item <ref>` drops the entry. It is the only choice for a fragment
+  (`settings/`, `mcp/`, `codex-config/`): a fragment's former contribution
+  cannot be told apart from a project-local value in the merged output. Add the
+  item again after the migration.
+- `--yes` authorizes the installed-state loss a repair causes. Show
+  `capshelf status <item> --diff-view installed` and get permission before you pass it.
+
+Refs accept a bare kind ref (`skills/hello`) or a scope-qualified one
+(`local/skills/hello`, `project/skills/hello`).
+
+The upgrade is one-way: an older binary refuses a version 5 lock outright.
+Upgrade capshelf on every machine and in CI first, then commit the migrated
+project lock as a lock-only change.
+
+## Plugin marketplaces
+
+Use `capshelf marketplace` when the user wants to group canonical data-repo
+skills into a Claude/Cowork or Codex plugin. Claude and Codex are independent
+targets: always pass `--target` for mutations and do not mirror membership
+unless the user asks.
+
+Marketplace/plugin identities are kebab-case and `plugin create` requires at
+least one canonical skill. Codex installation policy values are
+`NOT_AVAILABLE`, `AVAILABLE`, and `INSTALLED_BY_DEFAULT`; authentication
+policy values are `ON_INSTALL` and `ON_USE`. Target-inapplicable options are
+errors. Validation JSON contains target-labeled configuration, projection,
+source-path and file/byte accounting, known Cowork limits, and structured issue
+objects. An explicit `--cowork-url` is a user assertion and produces a warning;
+strict validation therefore refuses it unless the support can be classified
+from the repository origin.
+
+Run `marketplace validate` before publication. After direct Codex definition
+or selected-skill edits, run `marketplace sync --target codex --dry-run
+--json`, review source and generated diffs together, then sync and commit them
+together. Sync never stages or commits. If it refuses because an affected
+projection path is dirty, surface every path and get permission before using
+`--yes`. Marketplace mutations do make one local data-repo commit but never push.
+
+For local handoff, `marketplace plugin pack <name> --target claude --output
+<outside-path>.plugin` builds a Cowork upload, while the data repo itself is
+the primary local Codex marketplace. Stop after printing the runtime handoff:
+do not register a marketplace, upload/install/refresh a plugin, restart an
+app, or edit a runtime cache unless the user separately asks for that runtime
+action.
+
+Canonical skills have no Capshelf data-repo rename/delete command. If the user
+renames one directly, update every Claude and Codex membership in the same Git
+change, sync Codex, and validate both targets. Remove every membership before
+deleting a skill; dangling refs intentionally block validation, sync,
+packaging, and further marketplace mutations.
+
+## Proposing changes upstream (review required, or no direct push access)
+
+Capshelf never pushes and never creates branches — branch in the data repo with ordinary git, let `promote` commit on the branch, then push and open a PR with `gh`:
+
+```bash
+DATA=$(capshelf data-path)            # fallback: jq -r .dataRepo .capshelf/local.json
+BRANCH=$(git -C "$DATA" symbolic-ref --short refs/remotes/origin/HEAD | sed 's|^origin/||')   # the repo's default branch
+capshelf sync-data
+git -C "$DATA" switch -c propose/<topic> "origin/$BRANCH"
+# edit the installed item in the project, then:
+capshelf promote <item> -m "why"
+git -C "$DATA" push -u origin propose/<topic>
+gh pr create --repo <owner/data-repo> --head propose/<topic> --title "..." --body "..."
+```
+
+After the PR merges, re-pin the lock to the merged history (until then the lock pins the proposal-branch commit, which squash/rebase merges orphan):
+
+```bash
+git -C "$DATA" switch "$BRANCH"
+capshelf sync-data
+capshelf update <item>
+```
+
+Fork variant (read-only consumers): `gh repo fork <owner/data-repo> --clone=false`, `git -C "$DATA" remote add fork <fork-url>`, branch and promote as above, then `git -C "$DATA" push -u fork propose/<topic>` and `gh pr create --repo <owner/data-repo> --head <user>:propose/<topic>`. Capshelf's upstream verification only checks `origin`, so the extra `fork` remote is safe and `sync-data` keeps pulling from `origin`.
+
+## Plugins
+
+`plugins/<name>` is a whole Claude Code plugin directory. It holds
+`.claude-plugin/plugin.json`, and it can hold skills, agents, hooks, MCP
+servers, and scripts. It installs into the same folder as a skill:
+`.agents/skills/<name>/` with the `.claude/skills/<name>` symlink. Claude
+Code loads it as `<name>@skills-dir` in a trusted workspace, and calls its
+skills `<name>:<skill>` and its agents `<name>:<agent>`. Codex sees the
+skills only. Plugins have the same lifecycle as skills, in project or local
+scope.
+
+**A plugin runs commands without your request.** Its hooks run on Claude
+Code events, and its MCP servers start with the session. Before a write puts
+those commands in reach of Claude Code, capshelf prints a `runs` block and
+asks:
+
+```text
+  runs      1 hook, with no request from the agent
+              SessionStart   bash hooks/setup.sh
+            These hooks run in every Claude Code session in this project.
+```
+
+It asks at three points: an install, an update that adds a hook or a server,
+and a write to project scope (`add plugins/<name>`, `move --to project`,
+`share --adopt --to project`). Project scope means the hooks run in every
+teammate's session after they trust the workspace. In your session there is
+no terminal, so each point refuses with exit 3 and prints the `runs` block.
+**Read the `runs` facts to the user, and get their permission, before you
+pass `--yes`.** An `unknown: <path> could not be read` line means capshelf
+could not read a declaration. It is not proof that the plugin runs nothing.
+Show it to the user too. To read the hook scripts, run `capshelf show
+plugins/<name>`.
+
+A shelf `update` asks only when an entry is new. A script can change behind
+an unchanged hook line, and then `update` does not ask. Before you update a
+plugin, show `capshelf status plugins/<name> --diff-view upstream`.
+
+`status` ends a plugin row with `hooks: <n>`, `MCP: <n>`, or `runs: unknown`.
+`status --json` adds `runs` and `claudeTrust` to a plugin row. With
+`claudeTrust: "untrusted"`, Claude Code does not load the plugin. Tell the
+user to open the project in Claude Code and trust it. Capshelf never writes
+Claude's trust setting.
+
+The shelf can hold `skills/<name>` and `plugins/<name>` together, but a
+project can install only one of them. A bare name that matches both is
+ambiguous, so write the kind. A refusal that names the folder owner prints
+the switch: `rm` the first, then `add` the second. That switch changes the
+name Claude Code uses, so tell the user.
+
+The item name is the `name` in `plugin.json`. Capshelf does not rename a
+plugin. `add <url> --as` refuses for a plugin, and an update, promote, or
+adopt whose new tree names the plugin differently refuses. The user removes
+the old item and adds the new one.
+
+A manifest with a plugin also holds a `shelves` key with a fixed string.
+This fence stops capshelf 0.13 from deleting the `plugins` array. Never edit
+or remove it by hand. Capshelf removes it when the last plugin goes.
+
+## Pi extensions
+
+`pi-extensions/<name>` maps `pi/extensions/<name>/index.ts` in the data repo to `.pi/extensions/<name>/index.ts` in the project. Extensions support the same project/clone-local lifecycle as skills, including `add --local`, `share --to local`, `move --to local`, and `keep-local`. Both Capshelf scopes materialize to Pi's project-local extension path; Capshelf does not manage user-global extensions.
+
+Pi loads project extensions only after project trust, but then they execute arbitrary TypeScript with full system permissions. Always inspect source before `add`, before `promote`, and before asking the user to `/reload` or restart Pi. Capshelf does not sandbox code, validate TypeScript, edit `.pi/settings.json`, manage Pi packages, invoke package managers, or install `package.json.dependencies`; dependency declarations produce an advisory warning only. Do not run install commands on the user's behalf as part of capshelf reconciliation.
+
+## Subagents
+
+`capshelf add subagents/<name>` installs every available Claude/Codex target
+under one lock. Use `show --target` or `get-path --target`; add never accepts a
+partial target. `share subagents/<name> --to project` adopts every matching
+unmanaged project runtime file, while `--from` requires `--target`.
+
+Subagents are project-scope only. Do not use `--local` or `keep-local`.
+The supported stale overwrite escape hatch is
+`promote --stale-ok` with explicit user direction. Review subagents like
+privileged runtime policy because they can combine instructions with tools,
+models, permissions, MCP servers, and sandbox controls.
+
+A subagent may carry a Claude source, a Codex source, or both — read the
+`targets:` block before reporting which runtimes can use it. See Target
+coverage.
+
+## Target coverage (mcp and subagents)
+
+`mcp/<name>` and `subagents/<name>` each have two candidate runtime targets, so
+an item covers Claude, Codex, or both. `add`, `show`, `share`, and `status`
+report which. Read that report before telling the user an MCP server or
+subagent is available: `.mcp.json` is Claude Code's project MCP file, so writing
+it says nothing about Codex.
+
+`add`, `show`, and `share` print the block whether or not there is a gap:
+
+```text
+  targets:
+    Claude  written  /abs/path/.claude/agents/claude-only.md
+    Codex   absent   no codex source in this item
+  Codex reads subagents/claude-only/codex.toml in your data repo.
+  Once it is committed there: capshelf update subagents/claude-only
+```
+
+`status` is a whole-project overview, so it stays silent on full coverage and
+prints one sub-line per item that has a gap:
+
+```text
+  ✓   data/mcp/github                         2b7041f66a52  up-to-date
+      targets: Claude ✓  Codex ✗ — no codex source at the locked commit
+        Codex reads mcp/github/codex.toml; once it is committed there: capshelf update mcp/github
+```
+
+- **A gap is a fact, not a fault.** capshelf does not know which harnesses the
+  project uses, so a one-target item is a valid install: exit stays 0, there is
+  no `⚠` glyph, and `--strict` is unaffected. Report the gap; never route around
+  it by editing a generated output or re-running `add`.
+- **Closing a gap is a data-repo change, then a per-project update.** Author the
+  canonical source the message names, commit it in the data repo, then run
+  `capshelf update <item>` in each project that wants it. `update` prints no
+  coverage block, so confirm with `capshelf status <item>`.
+- **`targets: unknown (<reason>)` is not a gap.** Coverage is read at the locked
+  commit, so an unbound data repo or an unreachable commit means capshelf can
+  say nothing about coverage. Resolve that first (see `missing_source_commit`),
+  then re-read; do not report an unknown as a missing target.
+- **`show --target <t>` for an absent target exits 3** and prints the same
+  guidance. That is the answer to "does this item support Codex?", not a failure
+  to work around.
+- `settings/<name>` and `codex-config/<name>` have one candidate target each and
+  print no block. `add bundles/<name>` reports no per-member coverage — its
+  members' gaps appear in `status`.
+- `rm` reports every output it reconciled, so a two-target item names both.
+- `--json` adds `targetCoverage` to `add`, `show`, `share`, and each `status`
+  row: one entry per candidate with `present: true | false | null`, plus
+  `coverageState: "unknown"` when null. Filter on `present` instead of reading
+  `sources`, which stays present-only.
+
+## Config fragments
+
+Shared fragments merge into project config outputs: `settings/<name>/settings.json` → `.claude/settings.json`; `mcp/<name>/claude.json` → `.mcp.json`; `mcp/<name>/codex.toml` and `codex/config/<name>/config.toml` → `.codex/config.toml`. Outputs preserve unmanaged project-local values; capshelf refuses unmanaged scalar/shape collisions, and also refuses two fragments that set the same key to conflicting scalar values (naming both) rather than silently letting manifest order decide. JSON outputs are read as JSONC (comments tolerated) but rewritten as plain JSON, and TOML is reserialized. Capshelf detects comment loss during preflight; review the named output and get permission before using `--yes`.
+
+Edit canonical source paths (from `get-path`), never the generated outputs, then `capshelf promote <fragment> -m "message"`. `share` for fragments always lands in project scope (`--to project` is the default). To share an existing MCP server, `capshelf share mcp/<server>` with no flags is the common case: the pick defaults to the item name and capshelf adopts the server from every output that contains it unmanaged (`.mcp.json` and/or `.codex/config.toml`), in one commit. Other cases use:
+
+- `--from <file>` — an explicit fragment source file (for mcp, requires `--target claude|codex`).
+- `--pick <path>` (repeatable) — extract unmanaged values straight from the generated output, no separate file needed. **Prefer this when the values already live in `.claude/settings.json`, `.mcp.json`, or `.codex/config.toml`.** Settings/codex-config picks are dot paths (`--pick permissions.allow`) and are always required for those kinds; mcp picks accept bare server names (`--pick github`, only needed when the item name differs from the server name). Picking a value managed by another fragment fails and names the owner; the output file is unchanged — picked values just become managed by the new fragment.
+- `--target claude|codex` — restrict an mcp share to one output instead of every matching one.
+
+```bash
+capshelf share mcp/github
+capshelf share settings/permissions --pick permissions.allow
+```
+
+An `mcp` item can carry a Claude source, a Codex source, or both, so `add`,
+`show`, `share`, and `status` report its target coverage — see Target coverage
+before reporting that a server is available.
+
+Codex only loads `.codex/config.toml` in trusted projects; `status` warns non-fatally when the project appears untrusted. For `mcp` items that warning follows locked coverage: it appears only when the locked commit has a Codex source, or when coverage is unknown.
+
+## Remote skills (`capshelf add <url>`)
+
+`capshelf add <url>` installs a skill from any Git repository, not only from
+your shelf. Nobody on your team reviewed that content. Treat a remote skill as
+third-party code. Treat the install like adding a dependency.
+
+```text
+  ┌────────────────────┐        ┌────────────────────┐      ┌────────────────────┐
+  │ owner/repo         │ ─────► │ clone cache        │ ───► │ .agents/skills/pdf │
+  │   skills/pdf/      │        │ one per repository │      │ + remotes.lock.json│
+  └────────────────────┘        └────────────────────┘      └────────────────────┘
+   outside repository            machine state               this project
+   nobody reviewed it            add <url> fetches here      local scope, gitignored
+                                                                      │
+                                                       share --adopt  │
+                                                                      ▼
+                                                             your shelf: skills/pdf
+```
+
+The record is `.capshelf/remotes.lock.json`. It is gitignored, and `add <url>`
+also writes the install path into `.git/info/exclude`. A teammate who clones
+the project gets neither the files nor the record. The project lock is
+untouched, so a remote skill never migrates a project.
+
+| command | effect |
+|---|---|
+| `add <url> [--as <name>] [--ref <ref>] [--path <subpath>]` | resolve, print the facts, ask once, install, record |
+| `add <url> --list` | print the repository's skills and exit 0; write nothing |
+| `status` | a `remote/` group, one row per remote skill, with the upstream, the ref, the pin, and the date of the last check |
+| `status --check-upstream` | fetch every tracked repository, record the check, and report which pins moved |
+| `update skills/<name>` | move the pin to what the cache already holds, then apply. No network |
+| `share skills/<name> --adopt` | transfer ownership into your shelf and release the remote row |
+| `rm skills/<name>` | remove the install and the record |
+
+Supported URL forms are `https://host/owner/repo`,
+`ssh://git@host/owner/repo`, `git@host:owner/repo`, and
+`file:///path/to/repo.git`. A browser URL with `/tree/<ref>/<path>` or
+`/blob/<ref>/<path>` also works — capshelf splits the ref from the subpath. A
+bare `owner/repo` shorthand is refused, and so is a URL that carries a
+credential: `git clone` would write it into the cache clone's config.
+
+**Consent covers a commit, not a row.** The prompt prints the repository, the
+commit, the subpath, the install path, the file list with sizes, the
+description, and the license finding. Then it asks once. Without a terminal —
+which includes every `--json` run — `add` refuses with exit 3, and `--yes` is
+the only thing that answers the question. **Read `add <url> --list` and the
+skill's own text to the user before you pass `--yes`.**
+
+**A named `capshelf update skills/<name>` asks again** before it accepts new
+upstream content. A bare `capshelf update` moves no remote pin at all. It
+lists the rows it left alone, because a routine sweep must not accept
+third-party content. `rm` of a remote skill goes through the same
+destructive-change consent as any other removal.
+
+Discovery reads at the resolved commit. Capshelf looks for `SKILL.md` at the
+repository root and under `skills/`, `.claude/skills/`, and `.agents/skills/`.
+A repository that holds a root `SKILL.md` **and** subdirectory skills is
+ambiguous. Capshelf prefers neither. It offers both. Without a terminal the
+command refuses and names `--list` and `--path`. Answer it with `--path
+<subpath>`, not with a guess. A catalog of plugins that each hold
+`.claude-plugin/plugin.json` offers whole plugins, so the refusal counts
+plugins, for example `3 plugins found`. Name a plugin directory with
+`--path` to install that plugin.
+
+A plugin repository groups skills under a plugin directory. `add <url>
+--list --json` reports `usesPluginParts` for each plugin skill: the parts
+outside the skill directory it reads or calls. Read this before you install.
+A skill-only install never copies those parts. The skill can fail, or run
+with less than it expects, without them. Tell the user which parts it
+leaves out before you pass `--yes`.
+
+To install the whole plugin instead, name the plugin directory:
+`capshelf add <url> --path plugins/<plugin>`. The directory must hold
+`.claude-plugin/plugin.json`. The prompt adds the `runs` block. See Plugins.
+`share plugins/<name> --adopt` moves it onto the shelf, in local scope by
+default. A license at the repository root stays behind, and the adopt
+warns about it.
+
+After any adopt, of a skill or a plugin, capshelf does not follow the
+upstream. `status --check-upstream` no longer lists the item. To take a newer
+upstream version, the user copies it into the installed item by hand and
+promotes it.
+
+Each repository is cloned once, to
+`$XDG_DATA_HOME/capshelf/remote/<host>/<owner>/<repo>`. A later `add <url>`
+against a repository the machine already holds fetches it first. The commit in
+the prompt is therefore the one the upstream has now. A fetch that fails warns
+and pins from the cache, which keeps `add` usable offline. `apply` and
+`update` refuse when the cache is absent and name `capshelf status
+--check-upstream`, which re-creates it. That re-created clone uses the
+normalized `https` identity, because that is the only form the record holds.
+Re-cache a repository that needs SSH by running `capshelf add <ssh-url>` again.
+
+**A remote skill cannot be promoted.** Its upstream is a repository nobody on
+your team can publish to. `promote`, `move`, `keep-local`, `revert`, and a
+`share` without `--adopt` each refuse it and name `capshelf share
+skills/<name> --adopt`. That flag copies the installed bytes into your shelf,
+records `upstream`, `upstreamCommit`, and `upstreamPath` in the item's
+`.capshelf.yml`, and releases the remote row last. After the adopt the item is
+an ordinary data item. The adopt lands in local scope, like every other skill
+share without `--to`. `--to project` commits the item to the project as well,
+so it drops the `.git/info/exclude` line that `add <url>` wrote.
+
+Capshelf does not review a remote skill. There is no registry, no signing, and
+no scanning. The prompt prints the facts and asks once. That is the whole
+control.
+
+## Coexistence
+
+- **skills.sh** (`skills-lock.json` present): capshelf refuses or skips those skill paths instead of co-managing them; `status` groups them under `external/`. `capshelf share skills/<name> --adopt` is the one transfer: it vendors the skill into your shelf and deletes the `skills-lock.json` row.
+- **Claude plugins** (`enabledPlugins` in Claude settings): read-only external state. `status` lists them as `claude-plugins/<id>` and never edits them. A `plugins/<name>` item is a different thing: capshelf owns it.
+- **Personal skills** (`~/.claude/skills/<name>`): shadow same-named project skills at runtime. Capshelf warns as `shadowed_by_personal_claude_skill` and `status --strict` fails until renamed or removed.
+- **User-level runtime skills**: `capshelf ls` and `capshelf status` include these by default; use `--user` to show only them. These scan `~/.claude/skills`, `~/.agents/skills`, and `$CODEX_HOME/skills`/`~/.codex/skills`, split Claude and Codex human output by runtime, report shadowing when run from a project root, and never adopt or mutate those skills.
+- Files or values in agent surfaces that are not locked contributions are project-local; capshelf preserves or ignores them.
+
+## Safety rules
+
+- **Never run `capshelf promote`** while the user has open PRs on other projects using that item, unless those projects are OK picking up the change on their next `update`.
+- **Treat `add` conflict refusals (exit 3) as decisions for the user**, not obstacles. There is no force flag by design.
+- **Do not work around an already-initialized `init` refusal.** Use the named
+  `data` or `update` command; install-mode changes need a dedicated migration.
+- **Ask the user where the data repo goes before you clone or create one.**
+  This covers `init --data <url>`, `--data-dir`, and a new data repo. Do not
+  copy a path from an example. The default clone path is under `$HOME`. In a
+  container or a sandbox, `$HOME` is often not visible to the user. Tell the
+  user the absolute path that `init` printed.
+- **Never pass `promote --stale-ok` without explicit user direction** — it intentionally overwrites a teammate's newer upstream version.
+- **Never pass `--yes` merely to route around a destructive-change refusal.** Show every affected path, use `capshelf status <item> --diff-view installed` for managed item drift (or marketplace sync dry-run for projections), explain what will be lost, and get the user's permission first. `--yes` does not bypass hard safety refusals.
+- **Never clear a `lock migrate` blocker with `--repin` or `--remove-item` on
+  your own.** One changes installed content, the other drops an item. Restore
+  the missing source commit first; take the repair flags to the user.
+- **Never treat a target-coverage gap as an error to repair locally.** An
+  absent target means the data repo has no source for that runtime. Author and
+  commit it there, then `capshelf update <item>`; do not hand-write the
+  generated output.
+- **Never pass `--yes` to a remote-skill consent prompt on your own.**
+  `capshelf add <url>` and a named `capshelf update skills/<name>` install
+  content nobody on your team reviewed, and the agent runs it with the user's
+  permissions. Show `capshelf add <url> --list` and the skill's text, then ask.
+- **Never pass `--yes` to a plugin consent question on your own.** Show the
+  user the `runs` block from the refusal, with every `unknown` line. Then
+  ask. For project scope, say that the hooks run for every teammate.
+- **Never route around a remote-skill refusal.** `promote`, `move`,
+  `keep-local`, and `revert` refuse a remote skill by design. The exit is
+  `capshelf share skills/<name> --adopt`, and taking ownership of outside
+  content is the user's decision.
+- **The lock is the source of truth** for what capshelf owns.
+- **Review Pi extension source before adding or promoting it.** The runtime warning is a trust boundary, not proof of safety; capshelf never installs extension dependencies or reloads Pi.
+- **Treat declared needs as metadata.** Capshelf records expected network,
+  environment, and command requirements but does not satisfy or enforce them.
+- **Use `capshelf self-update` only for Homebrew installs**; source installs update with `git pull && make install`. Set `CAPSHELF_NO_SELF_UPDATE=1` to suppress startup prompts.
+
+## Troubleshooting
+
+- `no data repo configured` — clone the declared `dataRepoUpstream` if one exists, then `capshelf set-data <path>`, or pass `--data <path>`, or set `$CAPSHELF_HOME`.
+- `capshelf is already initialized for this machine` — use `capshelf data bind
+  <path>`, `capshelf data upstream <url>`, or `capshelf update`; do not delete
+  `.capshelf/local.json` to route around the state boundary. The one exception
+  is a genuinely half-initialized project: `init` refuses while `apply` reports
+  `(no items tracked)`. `local.json` is init's last write, so a current
+  capshelf never leaves that state; if an older one did, delete
+  `.capshelf/local.json` and re-run `capshelf init`. The re-run adopts a
+  leftover system item only when its content matches the running binary
+  exactly; otherwise it refuses and names the path, and deleting that directory
+  is safe because `init` reinstalls system items from the binary.
+- `could not determine a portable data repo upstream` — configure the data repo's `origin` before `capshelf init`, or pass `--no-upstream` only for an intentionally non-portable local project.
+- `data repo at <path> is bound to the wrong upstream` — `capshelf set-data <correct-clone>` or intentionally change committed state with `capshelf set-upstream <url>`.
+- `data repo has uncommitted metadata changes: <item>/.capshelf.yml` — commit the sidecar in the data repo; no item content is at risk.
+- `missing_source_commit` in `status` — the locked `sourceCommit` is unreachable in the data repo (unpushed in another clone, or squash-orphaned after a merged proposal). Fix with `capshelf sync-data && capshelf update <item>`; if the commit only exists in another clone, push or fetch that clone first.
+- `this project's lock is version <n>; <verb> writes lock version 5`: the
+  project predates lock version 5. Run `capshelf lock migrate --dry-run`, then
+  `capshelf lock migrate`. Never hand-edit the lock's `version` field to route
+  around it.
+- `lock version 5 is newer than this capshelf supports`: the binary is older
+  than the project's lock. Upgrade it (`capshelf self-update`, or
+  `brew upgrade capshelf`). Never downgrade the lock.
+- `declares "shelves": this project uses multi-shelf federation`: an older
+  capshelf read a project that holds a plugin. Upgrade capshelf. Do not
+  remove the `shelves` key.
+- `not installing plugins/<name> without consent`, `not moving plugins/<name>
+  to project scope without consent`, or `not updating plugins/<name> without
+  consent`: a plugin consent point. Show the `runs` block to the user and ask
+  before you pass `--yes`.
+- `.agents/skills/<name> is already installed by <owner>`: a skill and a
+  plugin with one name cannot share a project. Show the printed switch to the
+  user. Do not delete the folder.
+- `not installing skills/<name> without consent` — the run has no terminal, or
+  it is `--json`. Do not add `--yes` yourself. Show the user
+  `capshelf add <url> --list` and the skill's text, then ask.
+- `not <verb> skills/<name> — it is a remote skill` — the verb owns shelf
+  items only. Offer `capshelf share skills/<name> --adopt` or
+  `capshelf rm skills/<name>`; there is no third answer.
+- `skills/<name> is already pulled from a different repository` — remove it
+  first, or install the new one under another name with `--as`.
+- `the URL carries a credential` — take the token out of the URL and let the
+  git credential helper supply it. Capshelf refuses rather than write it into
+  the cache clone's config.
+- `no clone cache on this machine` under a `remote/` row — the machine lost the
+  clone, so the installed files cannot be compared with the pin. Re-create it
+  with `capshelf status --check-upstream`.
+- `⚠ also tracked in your shelf as data/skills/<name>` — an adopt did not
+  finish and the skill has two owners. Complete it:
+  `capshelf share skills/<name> --adopt`.
+- `git is required but was not found on PATH` — install Git or fix `PATH`.
+- `not a git repository: <path>` — data repos must be git repos (`sourceCommit` provenance); `git init` it first.
+- `⚠ <item>: invalid .capshelf.yml … — metadata ignored` — the item still works; fix the sidecar in the data repo when convenient.
+- `capshelf: command not found` — the CLI isn't on `PATH` (common when a teammate cloned this project, which has the capshelf skill committed, but never installed the binary). Recover with `brew install genged/tap/capshelf`, or without Homebrew run `curl -fsSL https://raw.githubusercontent.com/genged/capshelf/main/scripts/install.sh | sh` (downloads the latest release, verifies its checksum, installs to `~/.local/bin`; ensure that dir is on `PATH`). Building from source (`make install`) is a fallback; point the user at the repo README for the current options.

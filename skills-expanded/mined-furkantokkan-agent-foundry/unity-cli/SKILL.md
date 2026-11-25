@@ -1,0 +1,877 @@
+---
+name: unity-cli
+model: inherit
+description: Unity CLI operating contract for every Unity task. Prove the exact project and Editor, choose CLI or built-in MCP transport, run Roslyn and focused test checks, apply ownership and risk gates, and install the official CLI safely. For idea-to-project setup use unity:new-unity-project.
+allowed-tools:
+  - Bash
+---
+
+# Unity CLI
+
+For every Unity task, first run the read-only [project readiness check](references/project-readiness.md). It owns repository/instruction discovery, exact identity, dirty work, path and serialized ownership, Editor state, and verification readiness. Report its READY / READY WITH WARNINGS / BLOCKED verdict before dependent work. This is part of unity-cli, not a separate skill.
+Reuse a fresh readiness snapshot across nested skill calls for the same task.
+Revalidate when the target, identity, ownership, instructions, dirty work, or
+relevant Editor state changes; do not repeat the check solely because another
+skill was loaded.
+
+## Agent Foundry operating contract
+
+The official `unity@unity-agent-plugin` also exposes `unity:unity-cli` for
+Unity's domain procedure. Pair it with this Agent Foundry operating contract;
+do not treat the duplicate short name as two independent transports or run a
+mutation twice.
+
+Use the installed `unity` CLI as the mandatory control plane for every Unity
+task. Always start by verifying `unity --version` and the relevant command help;
+for project work, read `ProjectSettings/ProjectVersion.txt` and apply the version
+gate below before choosing live identity evidence. Unity 6+ uses
+`unity status --json`; older supported Editors use the MCP identity gate.
+This requirement also applies when the final implementation is an ordinary
+source-file edit.
+
+If `unity` is missing, install the official Unity CLI before continuing. The
+user's standing instruction explicitly authorizes this one tool installation
+when absent. Download the official installer to a temporary file, inspect it,
+run it, and verify the installed binary; never pipe a remote response into a
+shell. Environment-level network or elevation approval may still be required.
+Do not bypass installation by switching to a legacy MCP transport.
+
+On Unity 6+, the Pipeline package (`com.unity.pipeline`) is the default Editor
+bridge for the CLI. When the project lacks it, install it with
+`unity pipeline install --project-path <root> --non-interactive` under the
+user's standing authorization for that one package addition
+(`Packages/manifest.json` and the lock file Unity resolves). Install it in the
+checkout that owns the Editor, never in a code lane, while no compile, test, or
+Play Mode runs, then let the Editor resolve it and report the installed
+version. It is Editor-only: never include it in runtime (see
+[Drive a running Unity Editor](#drive-a-running-unity-editor-if-one-is-open)).
+Upgrades, pins, removal, and commits keep their approval gates.
+
+Transport order (apply the pre-Unity-6 version gate before this sequence):
+
+1. **Unity CLI / Pipeline** — use direct CLI commands for discovery, Editor
+   control, project operations, tests, builds, and automation.
+2. **Built-in `unity mcp`** — when an AI client requires MCP, start or configure
+   the server through the installed CLI and pin it with `--project-path`.
+3. **Pinned source/file inspection** — only after the applicable live transport
+   has been checked and cannot safely expose the required state or operation.
+   It is not proof of live Editor identity. Manual Unity YAML editing remains
+   the last resort.
+
+Legacy standalone Unity MCP connections and UnitySkills REST are not automatic
+fallback transports. Use either only when the user explicitly requests it for
+the current task. The one exception is the version gate in
+[Editor older than Unity 6](#editor-older-than-unity-6-mcp-for-unity-fallback).
+Never perform the same mutation through two transports. When
+using CLI Editor commands, pass the full `--project-path` and independently
+match the returned canonical absolute project root and complete Unity version.
+CLI path filters may use substring matching; the flag alone is not identity
+proof. Never infer the target from a project name or the only returned row.
+The installed CLI's help and current official Unity
+documentation override this snapshot when flags or subcommands differ.
+
+### Editor older than Unity 6: MCP for Unity fallback
+
+The Pipeline package (`com.unity.pipeline`) needs Unity 6.0+. When
+`m_EditorVersion` in `ProjectSettings/ProjectVersion.txt` is below `6000.0`
+(for example `2022.3.x`), the CLI cannot reach the live Editor.
+`unity status` may report `STATUS_NO_INSTANCES`, and `unity pipeline list`
+may show `hasPipelinePackage: false`. These are diagnostics, not proof of the
+version gate, Editor absence, or target identity. Empty results can also reflect
+Safe Mode, sandbox restrictions, missing packages, or connection failure. Do not run
+`unity pipeline install` in that project. MCP for Unity (CoplayDev,
+`com.coplaydev.unity-mcp`, Unity 2021.3+) is then the approved live-Editor
+transport. The user does not need to request it for each task.
+
+1. Still verify `unity --version`. Record the requested repository's canonical
+   absolute root and complete `m_EditorVersion` from `ProjectVersion.txt`
+   (for example `2022.3.62f2`). Determine the gate from the numeric version,
+   not a lexical comparison or a CLI error. Use `unity pipeline list --json`
+   only as supporting diagnostics. A missing/unreadable version is unresolved,
+   not permission to select a transport. Editors below MCP for Unity's supported
+   minimum also need a compatible approved transport; do not infer support.
+2. Keep the CLI for work that does not need a live Editor: `doctor`,
+   `editors`, `logs`, `pipeline list`, `test`, `build`, and `run`. `test`,
+   `build`, and `run` need the Editor closed because Unity locks the project.
+3. Use MCP for Unity for live Editor control. Pin a release tag in
+   `Packages/manifest.json`:
+   `"com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v10.2.0"`.
+   Adding the package is still a package change and needs explicit target
+   authorization.
+4. Use server name `unityMCP` over HTTP at `http://127.0.0.1:<port>/mcp`. Take
+   the port from the project's `AGENTS.md`, `.mcp.json`, or
+   `.codex/config.toml`. Do not assume a default. Start the server from the
+   Unity MCP for Unity window. It runs through `uvx`, so `uv` must be
+   installed. Write it in project scope: `.mcp.json` for Claude and
+   `[mcp_servers.unityMCP]` in `.codex/config.toml` for Codex. Record the
+   exception and the port in the project `AGENTS.md` (and `CLAUDE.md`).
+   MCP for Unity stores the HTTP URL in machine-wide `EditorPrefs`
+   (`MCPForUnity.HttpUrl`), so another project can change it. If the server
+   does not answer, check that the port in the window matches the project
+   config.
+5. Complete [the exact MCP identity gate](#exact-mcp-identity-gate) before
+   selecting or using any Editor, even when only one instance is connected.
+   When MCP for Unity's `unity-mcp-skill` is installed, use it for tool
+   workflows only after this gate passes.
+6. Send each mutation through one transport only. When the project moves to
+   Unity 6+, return to the CLI transport order and install Pipeline under the
+   default above. Removing fallback packages/configuration still requires
+   explicit target approval.
+
+### Exact MCP identity gate
+
+1. **Discover without selecting.** Read `mcpforunity://instances`. Before
+   calling `set_active_instance`, require fresh evidence tying exactly one
+   listed full instance ID (and its session, when available) to both:
+   - the requested repository's canonical absolute project root;
+   - the complete Unity version from that repository's `ProjectVersion.txt`,
+     including patch and suffix, not merely `2022.3` or `6000`.
+   Resolve path separators, trailing separators, relative components, and
+   symlinks/junctions before comparison; respect filesystem case sensitivity.
+   Never use basename, substring, path-prefix, or worktree-parent matches.
+2. **Require all identity fields.** Use instance discovery fields when present,
+   or trusted read-only registration/process evidence explicitly bound to that
+   same full instance ID/session. A configured port, display name, hash/prefix,
+   remembered selection, or single connected Editor is not sufficient proof.
+   In MCP for Unity v10.2.0, HTTP discovery omits the full project path; do not
+   invent a `path` field. If no independent instance-bound path/version evidence
+   is available, return `BLOCKED: UNITY_TARGET_UNPROVEN` before selection.
+   Do not read the default active Editor's state or select candidates in turn
+   to discover which project they represent.
+3. **Pin only a unique proven match.** Missing, mismatched, ambiguous, or stale
+   identity means no selection, Editor query, test, or mutation. Report the
+   expected and observed identity and obtain fresh read-only evidence; never
+   choose the first/only candidate. For a proven match, explicitly call
+   `set_active_instance` with its full discovered `Name@hash`, including in
+   the single-instance case, and verify the response identifies that same ID.
+4. **Read back before work.** Now read `mcpforunity://project/info` through the
+   pinned session and compare `projectRoot` and `unityVersion` to the same
+   canonical root and complete version. Only then read
+   `mcpforunity://editor/state`, compilation/import/Play Mode state, or invoke
+   other Editor tools. A selection response alone is not a passing preflight.
+   If readback fails or disagrees, stop without Editor work.
+5. **Keep proof current.** Record the root, version, full instance ID, session
+   (when exposed), and evidence source in preflight. A reconnect, Editor
+   restart, changed instance list/selection, domain reload, or routing mismatch
+   invalidates the proof: repeat discovery, matching, pinning, and readback
+   before further Editor work. Preserve unsaved scenes and do not auto-switch.
+
+This gate also applies when another workflow invokes MCP indirectly. For
+pre-Unity-6, successful MCP proof is valid live evidence even if CLI status has
+no instances. Pinned source inspection can proceed without live proof only for
+work whose acceptance does not require the Editor; it never authorizes Editor
+operations on an unproven target. Unity 6+ does not gain automatic legacy-MCP
+permission from an empty CLI result.
+
+Source schema: [instance discovery](https://github.com/CoplayDev/unity-mcp/blob/v10.2.0/Server/src/services/resources/unity_instances.py),
+[project info](https://github.com/CoplayDev/unity-mcp/blob/v10.2.0/Server/src/services/resources/project_info.py),
+and [instance selection](https://github.com/CoplayDev/unity-mcp/blob/v10.2.0/Server/src/services/tools/set_active_instance.py).
+
+For non-interactive or parsed output, use:
+
+```bash
+unity <command> --json --non-interactive --no-banner
+```
+
+Apply the repository's approval policy before running commands:
+
+- Read-only discovery (`status`, `editors`, `projects`, `doctor`, `diagnose`,
+  `logs`, `env`, bare `command`, `test_status`, `recompile_status`,
+  and `--help`) may run without approval.
+- For a user-requested Unity implementation, repair, or verification task,
+  focused `unity test`, `unity command run_tests`, recompile checks,
+  [shared test batch](#final-stage-test-runs-shared-batch) submissions and
+  publishes, and their status/log/result queries are already authorized after
+  proving the exact project. Do not ask for a separate command approval or
+  accepted task plan. Use a focused filter when practical and preserve unsaved
+  Editor work. Run tests only in the final stage. During development, use the
+  [Roslyn compile check](#development-compile-check-roslyn), which writes no
+  tracked file and needs no approval.
+- Other Editor mutations, `run`, `open`, `config`, and arbitrary Pipeline
+  command execution follow the accepted task scope, declared paths, and risk
+  gates. Do not ask again for each low-risk command within that scope.
+- Editor/module/package installs or removals, builds, upgrades, auth changes,
+  cloud mutations, project creation, source-control creation/push, and Unity
+  serialized-asset changes require explicit target authorization. The default
+  Pipeline install above is the one standing exception.
+
+`build`, `run`, and `test` can write generated or imported project state. Treat
+their project and output paths as declared owned paths, and report the exit code
+plus log/report path on failure.
+
+## Editor instances and worktrees
+
+Each Unity Editor costs minutes of start-up and import plus several GB of
+memory, and nothing closes it on its own. Unity locks a project per folder, so
+worktrees of one repository never block each other. Keep the count low and
+give every Editor one owner:
+
+- **At most two Editors per repository.** Count every Editor open on any
+  checkout or worktree of the repository, whoever opened it. An orchestration
+  owns at most one, in its integration checkout; a single session owns at most
+  one. When the limit is reached, continue code-only work and queue the
+  Editor-bound step. Never open a second Editor on a checkout that already has
+  one. An Editor the user or another live session holds stays theirs.
+- **Open through the repository lock.** Checking and then opening is a race:
+  two sessions can both see one Editor and both open. Agents never call
+  `unity open` directly; they run:
+
+  ```bash
+  python "<unity-cli skill dir>/scripts/unity_editor_open.py" --project <project root> --owner <task ID or session>
+  ```
+
+  It takes an OS-held lock in the repository's Git common dir, which every
+  worktree shares, and holds it through the Editor count, the open, and the new
+  PID. The OS releases the lock when the script exits, so no lock is ever stale
+  or deleted. It counts Editors from the process table, so it also sees Editors
+  that `unity status` cannot reach (no Pipeline package, below Unity 6). It
+  prints one `EDITOR_OPEN:` line:
+  - `OPENED` (0): record the printed PID and checkout.
+  - `ALREADY_OPEN` (3): this checkout has an Editor. Use it when it is yours
+    or you take its task over; otherwise it stays its owner's, so queue.
+  - `LIMIT_REACHED` (4): continue code-only work and queue the Editor-bound
+    step.
+  - `LOCK_TIMEOUT` (5): another open is still running; retry later.
+  - `OPEN_FAILED` (6): nothing was opened, or the Editor is still starting.
+    Check `unity status` and the process list before trying again; never open
+    twice. The script also stops here, instead of guessing, when the process
+    table or `git` cannot be read.
+
+  `--dry-run` reports the count under the lock without opening. The running
+  Editors are the slots, so closing an Editor frees its slot. A launch whose
+  Editor has not appeared keeps its slot until the Editor appears; a later
+  open of that project reports `ALREADY_OPEN` while it starts. Reservations
+  never expire by age. After a launch that failed (no Editor for the project
+  and no `unity open` running), free its slot with `--clear-reservation`; the
+  script points this out once a reservation is older than 30 minutes.
+- **Own what you open.** Record the PID and checkout of every Editor you open
+  in the task handoff, or in the session report for untracked work. Close it
+  with `unity close <project>` when its Editor-bound work and final-stage tests
+  are done, or at handoff. `unity close` exits without saving, so save owned
+  assets first, and leave open (and report) an Editor holding unsaved work you
+  do not own. An owner that takes over a stopped task inherits its recorded
+  Editor: it keeps the integration checkout's Editor and closes any other.
+- **Never delete `Temp/UnityLockfile`.** It is Unity's guard against two
+  Editors on one project. If Unity reports the project open, find the process
+  that holds it.
+- **Code lanes stay Editor-free.** Never run `unity open`, `run`, `test`, or
+  `build` in a lane worktree. Give it what the
+  [Roslyn check](#development-compile-check-roslyn) needs instead:
+  1. Seed it from a compiled checkout of the same repository whose Editor is
+     closed and whose `HEAD` is the lane's base:
+     `unity vcs git worktree add <branch> <source project> --seed full --no-register`.
+     `--seed cache` is not enough, because generated projects reference
+     `Library/PackageCache` by relative path. The CLI skips seeding while the
+     source Editor runs (`skip: source-editor-running`), so seed all lanes in
+     one pass before the integration Editor opens, or close that Editor briefly
+     (after saving owned assets).
+  2. Copy the source project's generated `*.csproj` and `*.sln` into the lane's
+     project root. Seeding copies `Library` only.
+
+  A lane's `COMPILE_UNVERIFIED` (a new assembly, an `.asmdef` edit) goes to the
+  integration owner, who confirms it with Unity's compile in the integration
+  checkout after applying the lane's diff. Final-stage tests also run there.
+
+## Development compile check (Roslyn)
+
+During development, verify each Unity C# change with this check instead of a
+Unity Test Runner run. It compiles only the assemblies that contain the changed
+files with `dotnet build` (Roslyn), against the assemblies Unity already
+compiled into `Library/ScriptAssemblies`. It needs no running Editor, so it
+also works below Unity 6, and it takes seconds.
+
+```bash
+python "<unity-cli skill dir>/scripts/unity_compile_check.py" --project <project root> --files <changed and deleted files>
+```
+
+- Add `--dependents` after changing the public API of an assembly that others
+  reference. It then also compiles every assembly that depends on it.
+- New files are compiled into the assembly Unity would assign them to, and
+  deleted files are removed, even before Unity regenerates its project files.
+- If Unity's compiled copy of a dependency is older than its sources, the check
+  compiles that dependency from source first.
+- It ignores `.csproj` files left over from removed assemblies.
+- It writes only under the project's `Temp/` and one file in the system temp
+  folder.
+- It needs three things: the .NET SDK, the Unity Editor version the project
+  files target, and one earlier Unity compile of the project on this machine.
+  A code lane gets that compile by seeding, not by opening Unity (see
+  [Editor instances and worktrees](#editor-instances-and-worktrees)).
+
+Verdicts:
+- `COMPILE_OK` (exit 0): continue.
+- `COMPILE_ERRORS` (exit 1): lists the errors. Fix them before the next step.
+- `COMPILE_UNVERIFIED` (exit 2): explains why the check cannot decide, for
+  example a changed `.asmdef`, missing project files or Editor, or a project
+  Unity never compiled. Fall back to Unity's own compile: `recompile_status`
+  with a live Editor, or MCP for Unity below Unity 6. Or regenerate the project
+  files and run the check again. In a code lane, hand that compile to the
+  integration owner instead.
+
+Test timing:
+- Do not run Unity tests during development.
+- Write or update the focused EditMode/PlayMode tests, then run them once in
+  the final stage, through the [shared test batch](#final-stage-test-runs-shared-batch):
+  when the implementation is complete, before verifier handoff, commit, or
+  closure.
+- After that, re-run only failing tests.
+- Reproduce bugs from the supplied evidence (failing-test output, logs, a
+  concrete scenario) instead of re-running tests.
+- Run tests earlier only when the user asks.
+- Closure gates do not change.
+
+## Final-stage test runs (shared batch)
+
+Verification order for every Unity change:
+
+1. The Roslyn compile check after each edit. It is always the first check.
+2. Unity's own compile only when the Roslyn check returns `COMPILE_UNVERIFIED`.
+3. Unity tests once, in the final stage, through this shared batch.
+
+Several sessions or tasks often reach the final stage on the same project at
+about the same time. Each Unity launch costs one to three minutes of Editor
+start-up and domain reload, so they share one run:
+
+```bash
+python "<unity-cli skill dir>/scripts/unity_test_batch.py" submit --project <project root> --mode EditMode --filter "<full names or regexes, ';'-separated>" --files <changed files, tests included> [--task <ID>]
+```
+
+- Run it in the background and wait for its exit notification. It blocks until
+  this request's result exists.
+- A caller that holds a task lock or file ownership submits with `--no-wait`
+  instead, releases the lock and its paths so other agents can work on those
+  files, then waits with `wait --project <root> --id <request>` (see the task
+  lifecycle lock protocol). Every read of a result re-hashes the request's
+  files; if they changed since the run, the result reads as `STALE`.
+- The first caller becomes the leader. It waits for more requests until none
+  has arrived for 20 seconds, and never more than 90 seconds after the oldest
+  (`should_seal`). It then runs the Roslyn check once over every
+  requested and every dirty C# file, then runs one `unity test` per test
+  platform with the merged filter. Each caller receives only the tests its own
+  filter selects.
+- Submit EditMode and PlayMode as two requests. Omit `--filter` only when a
+  criterion needs the whole platform; it widens the shared run for everyone.
+  `!` exclusions are rejected because they would hide other sessions' tests.
+- Requests share a run only on the same project root. Separate worktrees are
+  separate projects and run separately, so code lanes submit nothing: the
+  integration owner submits each task's tests from the integration checkout
+  after applying its diff there.
+- Record the `TEST_BATCH:` line byte-for-byte as the automated verification
+  evidence, together with the result path it prints.
+
+Results and exit codes:
+- `PASS` (0): every matched test passed.
+- `FAIL` (8): lists the failed tests and messages. After the fix, resubmit only those.
+- `FOREIGN_FAIL` (9): every failure is one another owner declared by design
+  (see below). They are not your regressions; the tests that passed are
+  evidence. Tests among the declared failures prove nothing for you until a
+  rerun after that owner undeclares.
+- `NO_TESTS` (3): the filter matched no test that ran. Never a pass; fix the filter.
+- `COMPILE_ERRORS` (1): your files do not compile. Fix them and resubmit.
+- `BLOCKED_BY_OTHER_COMPILE` (7): another session's files break the build.
+  Resubmit after they change.
+- `STALE` (5): your files changed after you submitted or after the run.
+  Resubmit after the last edit.
+- `INFRA_ERROR` (6): Unity produced no report (license, crash, timeout, missing CLI). Read the printed log.
+- `WAIT_TIMEOUT` (4): resume with `wait --project <root> --id <request>`.
+- `LEADER_RUN_REQUIRED` (10): the project is open in an Editor, so batch mode
+  cannot open it, and this session is the leader. Run the printed merged filter
+  once through the live Editor (Unity 6+: `unity command run_tests`; below
+  Unity 6: MCP for Unity `run_tests`). When files were added, refresh the
+  Editor first so it imports them and writes their `.meta` files. Save the report as NUnit XML or as a
+  JSON list of `{fullname, result, message}`, then run the printed `publish`
+  command. The other sessions receive their results from that one run.
+
+A shadow runner project whose `Assets` links to this project's `Assets` and
+keeps its own `Library` lets batch mode run while the Editor stays open. Pass it
+with `--runner-project`. The script uses it only when `Assets` resolves to the
+same folder and `Packages/manifest.json`, `Packages/packages-lock.json`, and
+`ProjectSettings/ProjectVersion.txt` match byte-for-byte.
+
+When your in-progress change fails other tests by design until a later phase,
+declare them so the other sessions' results separate them from real
+regressions, and undeclare when you release the files:
+
+```bash
+python "<unity-cli skill dir>/scripts/unity_test_batch.py" declare --project <project root> --owner <your task ID> --tests "<full names, ';'-separated>" --reason "<why, and what fixes them>"
+python "<unity-cli skill dir>/scripts/unity_test_batch.py" undeclare --project <project root> --owner <your task ID>
+```
+
+A declaration expires after 12 hours (`--hours`). It never hides a failure from
+its own owner, and results still list every declared failure.
+
+Run `unity test` directly for task verification only when the batch script
+itself cannot run, and say so in the evidence. `status --project <root>` shows
+the queue, the leader, recent batches, and live declarations. Tests for the script:
+`python scripts/test_unity_test_batch.py`.
+
+## Drive a running Unity Editor (if one is open)
+
+**If a Unity Editor is open on this machine, this CLI can control it live** — create and modify GameObjects, edit scenes and assets, inspect the hierarchy, and run arbitrary C# — through the project's **Pipeline** package (`com.unity.pipeline`). This runs entirely on your local machine, in your own user account, against your own open Editor: it is not remote access and grants no privilege you don't already have at your own terminal. When an Editor is available, drive it instead of hand-editing scene or asset files.
+
+```bash
+unity status                    # confirm a connected Editor (look for state "ready")
+unity command                   # list the commands the Editor exposes
+unity command editor_play       # run one — e.g. enter Play mode
+# Run arbitrary C# — e.g. add a GameObject named "Joe" — when the Editor exposes eval:
+unity command eval 'new UnityEngine.GameObject("Joe");'
+```
+
+### More than one Editor open? Pass `--project-path`
+
+Every Editor-driving command takes `--project-path <path>`. **Pass it whenever more than one Editor may be running** — without it the CLI targets the Editor whose project contains the current directory, so the target follows the shell's cwd:
+
+```bash
+unity command editor_play --project-path /path/to/MyProject
+```
+
+A `unity status` instance's `project` field is what `--project-path` takes. For `unity command`/`list`/`job`/`mcp`, matching no running project fails with `AMBIGUOUS_EDITOR` and lists the candidates. [Details](references/integration-advanced.md#targeting-one-of-several-running-editors).
+
+Requires the project's `com.unity.pipeline` package (Unity 6.0+) — add it once with `unity pipeline install`. For an older Editor, use [the MCP for Unity fallback](#editor-older-than-unity-6-mcp-for-unity-fallback) instead. Full details — launching a headless Editor to drive, `unity list` tool discovery, and authoring custom `[CliCommand]` tools — are in [integration-advanced.md](references/integration-advanced.md).
+
+The Pipeline package is an Editor-only bridge. Its runtime assemblies (`Unity.Pipeline`, `Unity.Pipeline.IlInterpreter`) have no platform restriction and would otherwise ship, so exclude them from every player build, development builds included, with an `IFilterBuildAssemblies` filter, and confirm in the build output that none of their types remain. Keep its runtime server (`enableInBuilds`, Project Settings > Pipeline > Runtime) off. Do not use the runtime or device commands (`--runtime`, `reload_file_player_interpreter`) that need it.
+
+The package also ships a deeper `unity-pipeline` agent skill, invisible to clients inside `Library/PackageCache` — in a project with the package, run `unity skill install <client> --local` once to mirror it beside this skill.
+
+> **Can't connect / commands time out? Check for Safe Mode first.** When a project has C# compile errors, the Editor boots into **Safe Mode**, where the Pipeline package doesn't load — so `unity command`, `unity status`, and `unity list` can't connect at all. Don't fall back to blind file-editing: run `unity pipeline list` to confirm, then fix the compile errors and restart Unity. Full recovery loop in [integration-advanced.md → Recovering from Safe Mode](references/integration-advanced.md#recovering-from-safe-mode-connection-fails-because-of-compile-errors).
+
+> **Running as a sandboxed coding agent and `unity status` reports no instances?** A restrictive sandbox can hide an Editor that is genuinely running from this CLI's view of it — don't treat that alone as proof the Editor is down. Full detail in [integration-advanced.md → Sandboxed agent tooling can hide a running Editor](references/integration-advanced.md#sandboxed-agent-tooling-can-hide-a-running-editor).
+
+## Install the CLI (if not already installed)
+
+First check if the CLI is available:
+
+```bash
+which unity && unity --version
+```
+
+If it is not found, install it before continuing. The user's standing
+instruction is explicit target authorization for installing the official Unity
+CLI when absent, so do not ask whether to use MCP instead. Use the official
+Unity installer source, download the script to a temporary file, inspect it,
+and run that file. Do not pipe a remote response directly into a shell. Request
+environment approval only when the download, filesystem target, or elevation
+boundary requires it.
+
+**macOS / Linux**
+```bash
+curl -fsSLo /tmp/unity-cli-install.sh https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh
+less /tmp/unity-cli-install.sh
+UNITY_CLI_CHANNEL=beta bash /tmp/unity-cli-install.sh
+```
+
+**Windows (PowerShell)**
+```powershell
+$installer = Join-Path $env:TEMP 'unity-cli-install.ps1'
+Invoke-WebRequest https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.ps1 -OutFile $installer
+Get-Content $installer
+$env:UNITY_CLI_CHANNEL='beta'; & $installer
+```
+
+After installing, open a new shell so `unity` is on PATH, then verify with `unity --version`. If the install script fails or the binary is still not found, tell the user and stop; if the command itself fails with a permissions error or crash, the installation may be broken — suggest re-running the install script.
+
+---
+
+## Global flags
+
+These work on every command:
+
+| Flag | Description |
+|---|---|
+| `--format <fmt>` | Output format: `human` (default), `json`, `tsv`, `ndjson`, `github`. Also via `UNITY_FORMAT` env var. |
+| `--json` | Global shorthand for `--format json`, accepted on every command (e.g. `unity status --json`, `unity doctor --json`). `--format` takes precedence when both are supplied. |
+| `--no-banner` | Suppress the branded header — use in scripts |
+| `--no-pager` | Turn off paging. Governs both pagers: the external one over the long listings (`unity command`, `releases`, `editors`, `changelog`, `logs`) and the interactive one in `unity projects list`. Also via `UNITY_NO_PAGER` (presence-based — any value, including `0`, disables it). |
+| `--non-interactive` | Disable all interactive prompts — use in CI |
+| `--quiet` | Suppress non-essential output |
+| `--verbose` | Print full error details (stack trace + cause chain) on failure. Also via `UNITY_VERBOSE`. |
+| `--proxy <url>` | HTTP/HTTPS/SOCKS/PAC proxy URL for this invocation. Also via `UNITY_PROXY`. Takes precedence over standard `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` env vars and the persisted `proxy.json` setting. |
+| `--proxy-disable` | Disable proxy for this invocation, ignoring all sources (env vars, persisted config, system settings). |
+| `--log-proxy` | Log one redacted entry per outbound request to `proxy-request.json` — for reproducing proxy issues. Also via `UNITY_LOG_PROXY=1` or the `proxyRequestLogging` setting. |
+| `--no-log-proxy` | Opt a single invocation out of proxy request logging when it's enabled globally. |
+| `--color <auto\|always\|never>` | Control colored output for this invocation, overriding `NO_COLOR`/`FORCE_COLOR` and TTY auto-detection. Governs every ANSI-emitting surface (help, tables, spinners, errors), not just `human` output. |
+| `--no-color` | Shorthand for `--color never`. Whichever of `--color`/`--no-color` appears last on the line wins. |
+
+**Always use `--format json` when you need to parse output programmatically.**
+
+`--accelerator <host:port>` and `--no-accelerator` are **not** root globals — they are accepted only on `run`, `test` and `build`, and only after the command name. See [build-run-test.md](references/build-run-test.md).
+
+**`unity projects list` is the only command that pages IN-PROCESS.** It shows 10 projects per screen and waits for a keypress between screens, and only when stdout is a terminal. Paging is off for redirected stdout, under `--format json` and `--format ndjson`, and under `--all`, `--watch`, or `--no-pager` / `UNITY_NO_PAGER`.
+
+**Not every machine format bypasses that one.** Only `json` and `ndjson` get their own non-interactive rendering; on a terminal, `--format tsv` and `--format github` fall through to the human table and page like `human` does — so `--format tsv` on a TTY yields neither TSV nor unpaged output. Redirect stdout (the usual case for a machine format) or pass `--no-pager`. Note this is the **opposite** of the external pager below, which is `human`-only: the two mechanisms differ here, and `projects list` is the surprising one.
+
+**The long listings page through an external pager, like `git log`.** `unity command` (the bare listing), `unity releases`, `unity editors`, `unity changelog`, and `unity logs` pipe human output through `less -RFX` on a terminal — colors kept, no screen clear, and `-F` quits by itself when the output already fits one screen, so short listings show no pager UI. `$UNITY_PAGER` then `$PAGER` override the choice and run through a shell, so `PAGER="less -S"` works; a blank value is ignored rather than treated as an opt-out. Quitting with `q` exits cleanly with the command's own exit code. Unlike `projects list`'s pager this one is **`human`-only**, and it never engages for redirected stdout, any machine format (`json`, `tsv`, `ndjson`, `github`), `--quiet`, `TERM=dumb`, the streaming modes (`editors --watch`, `logs --follow`), a named `unity command <name>`, or inside `unity shell`. A broken pager costs the paging, not the output: a `$PAGER` naming something that is not there is resolved before anything spawns, and one that spawns and then dies has its output reprinted to the terminal, decided from the pager's exit status (a clean exit is a normal `q` and discards; a failure status reprints). The exception is a pager that exits *successfully* without reading — `PAGER=true`, or anything that lingers and then exits 0 — which nothing distinguishes from a `q`, and which `git` loses too. A pager that starts and merely *waits* is not treated as broken, so the CLI waits with it.
+
+A branded Unity header (logo, wordmark, CLI version) renders on the landing surfaces — bare `unity`, `unity --help` / `-h`, `unity help`, and above the first-run consent prompt. It's shown only on a TTY, prints at most once, and degrades to compact, uncolored text on narrow terminals, without Unicode, or under `NO_COLOR`. Piped output is unaffected. Use `--no-banner` to suppress it in scripts. Bare `unity` prints usage and exits 0.
+
+## Environment variables
+
+All CLI env vars use the `UNITY_` prefix. A CLI flag always overrides the corresponding env var.
+
+| Variable | Mirrors flag | Description |
+|---|---|---|
+| `UNITY_FORMAT` | `--format` | Output format (`human`, `json`, `tsv`, `ndjson`, `github`). `HUB_FORMAT` is a deprecated alias. |
+| `UNITY_EDITOR_VERSION` | `--editor-version` | Editor version (e.g. `2023.3.0f1`, `latest`, `lts`). |
+| `UNITY_ARCHITECTURE` | `--architecture` | Chip architecture (`x86_64`, `arm64`). |
+| `UNITY_PROJECT_PATH` | path argument | Project path — used by `open`, and also honored by `status` and the cloud commands. |
+| `UNITY_QUIET` | `--quiet` | Suppress non-essential output. |
+| `UNITY_VERBOSE` | `--verbose` | Show full error details on failure. |
+| `UNITY_NON_INTERACTIVE` | `--non-interactive` | Disable interactive prompts. |
+| `UNITY_NO_BANNER` | `--no-banner` | Suppress the branded banner. |
+| `UNITY_NO_PAGER` | `--no-pager` | Turn off paging — both the external pager over the long listings and `unity projects list`'s interactive one. Presence-based: any value counts, including `0`. |
+| `UNITY_PAGER` | — | The pager to use for the long listings, overriding `$PAGER` and the `less -RFX` default. Runs through a shell, so flags work (`less -S`). A blank value is ignored, not an opt-out. |
+| `PAGER` | — | Same as `UNITY_PAGER`, consulted only when that is unset or blank. |
+| `LESS` / `LV` / `LESSCHARSET` / `MORE` | — | Passed to the pager only when you have not set them, defaulting to `FRX`, `-c`, `utf-8`, and `FRX`. `LESSCHARSET` keeps multi-byte glyphs readable where the locale does not declare UTF-8; `MORE` exists because `more` on macOS/BSD is `less` under another name and reads `$MORE`, so without it `PAGER=more` waits for a keypress even for one line. |
+| `UNITY_RUN_TIMEOUT` | `--timeout` | Timeout for `unity run` in seconds. |
+| `UNITY_TEST_TIMEOUT` | `--timeout` | Timeout for `unity test` in seconds. |
+| `UNITY_CLOUD_ORG` | `--cloud-org` | Active Unity Cloud organization id or name for a single call. |
+| `UNITY_SERVICE_ACCOUNT_ID` | — | Service account client ID for non-interactive (CI) auth. |
+| `UNITY_SERVICE_ACCOUNT_SECRET` | — | Service account client secret for non-interactive (CI) auth. |
+| `UNITY_PROXY` | `--proxy` | HTTP/HTTPS/SOCKS/PAC proxy URL. Takes precedence over `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` and the persisted `proxy.json` setting. |
+| `UNITY_NO_UPDATE_CHECK` | — | Disable the background "update available" check (see `unity config update-check`). |
+| `UNITY_NO_CONSENT_PROMPT` | — | Suppress the one-time first-run analytics consent prompt *without* recording a choice — for wrapper scripts on an interactive terminal that must never absorb the prompt. Analytics stay off until you run `unity analytics opt-in`. Unlike `UNITY_NON_INTERACTIVE`, it changes nothing else about command behavior. |
+| `UNITY_NO_CRASH_REPORT` | — | Disable anonymous crash/error reporting (Sentry) entirely. |
+| `UNITY_LOG_PROXY` | `--log-proxy` | Log one redacted entry per outbound request to `proxy-request.json`. Truthy values: `1`, `true`. |
+| `UNITY_ACCELERATOR` | `--accelerator` | Unity Accelerator endpoint (`host:port`). Outranks the persisted `accelerator.json`; `--accelerator` outranks it. |
+| `UNITY_NO_ELEVATE` | `--no-elevate` | Windows: skip the elevated (UAC) install helper for `install` / `install-modules`, so the install service runs unelevated. The Editor's NSIS installer still asks for elevation on demand if Windows requires it for your account — an administrator token always does; a standard user never does. |
+| `UNITY_INSTALL_RETRIES` | `--retries` (`install-modules` only) | Number of times `install` and `install-modules` retry an editor or module download whose transfer or validation fails. `0` disables retries; `unity install` has no `--retries` flag, so set the variable there. |
+| `UNITY_NO_AUTH_BROKER` | — | Skip the resident auth broker and read credentials directly from the OS keyring. By default every command that needs a token goes through a broker that starts on demand and exits after two idle minutes (see [auth-license-cloud.md](references/auth-license-cloud.md)). |
+| `UNITY_PEER_AUTH_MODE` | — | How the auth broker and the Editor identity helper verify a connecting process’s code signature. `enforce` is the default on macOS and Windows: an unsigned or non-Unity-signed peer is refused. `identify-only` logs without refusing — use it for an Editor you built from source. Linux logs only unless set to `enforce` together with `UNITY_PEER_AUTH_LINUX_ALLOWED_HASHES` (comma-separated SHA-256 hashes of trusted executables). |
+| `UNITY_CLI_HOME` | — | Install root for the install script and `unity self-install`, on every platform including Windows: the binary lands in `<UNITY_CLI_HOME>/bin` instead of the default location. |
+| `UNITY_NO_EDITOR_IDENTITY_SERVER` | — | Disable the background identity helper that `unity open` starts to answer the Editor’s sign-in lookups when no Hub is running (see [projects-templates.md](references/projects-templates.md)). Presence-based. |
+
+**CI service account auth:** Set both `UNITY_SERVICE_ACCOUNT_ID` and `UNITY_SERVICE_ACCOUNT_SECRET` to skip the browser OAuth flow — this keeps the secret out of the process argument list and shell history. These map to the `--client-id` / `--secret-from-stdin` inputs of `unity auth login`, but reading the credentials from the environment isn't a full login: it doesn't run the interactive flow or persist credentials to the keyring.
+
+## Getting help
+
+Append `-h` or `--help` to any command or subcommand, at any level: `unity --help`, `unity projects create --help`.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | General error |
+| 2 | Bad arguments |
+| 3 | Authentication failure |
+| 4 | Precondition not met (e.g. no license active, floating server not configured) |
+| 6 | Command-specific failure |
+| 8 | `unity test` only — the tests ran and one or more **failed**. Every other way a test run fails (compile error, unavailable license, editor crash, `--timeout`) keeps `6`, so CI can retry an infrastructure failure and never retry a failing test. |
+| 130 | Interrupted — Ctrl+C / SIGINT (128 + 2) |
+| 143 | Terminated by SIGTERM (128 + 15) — e.g. `kill` or a CI/runner timeout. Emitted by long-running commands that install a signal handler to clean up first (currently `unity build`, which scrubs the temporary Android keystore). |
+
+The `cloud` and `auth` commands map an authentication failure (expired/missing session, rejected sign-in) to `3`, and any other operational failure (network, server error) to `6` — so scripts can reliably tell "sign in again" apart from a genuine command failure.
+
+---
+
+## Commands
+
+The full per-command reference — syntax, flags, and examples — lives in grouped files under
+[`references/`](references/). **Read the file for the command group you need**; all the global
+flags, environment variables, and exit codes above apply throughout. Every command also supports
+`-h` / `--help` (see [Getting help](#getting-help)).
+
+| Commands | Reference file |
+|---|---|
+| `auth` (login / logout / status / list / switch / default / consumers / revoke), `license` (activate / return / server), `cloud` (org / project) | [auth-license-cloud.md](references/auth-license-cloud.md) |
+| `editors` (list / running / add / default / path / install-path / info / upgrade / prune / verify / module), `install`, `uninstall`, `modules`, `install-modules` | [editors-install.md](references/editors-install.md) |
+| `projects` (list / create / new / clone / open / link / require / upgrade / export / import / pin / size / clean / exec), `releases`, `templates` (list / info / create / pack / delete), `assets` (`inspect`) | [projects-templates.md](references/projects-templates.md) |
+| `config` (proxy / update-check / accelerator / get / set / list / unset / resolve), `context` (save / use / list / current / delete), `hub install` | [config-hub.md](references/config-hub.md) |
+| `run`, `test`, `build` (+ `build run`), `watch` (`test`) | [build-run-test.md](references/build-run-test.md) |
+| `logs`, `doctor`, `env`, `version`, `cache`, `ci init`, `analytics`, `changelog`, `language`, `completion`, `bug`, `self-update`, `self-uninstall`, `diagnose proxy`, `diagnose accelerator` | [diagnostics-maintenance.md](references/diagnostics-maintenance.md) |
+| `mcp` (+ `configure`), `skill` (install / refresh / show), `plugin` (install / remove / upgrade / list / changelog), connected editors (`pipeline` / `command` / `commands` / `status` / `list`), `shell` | [integration-advanced.md](references/integration-advanced.md) |
+| `vcs` — `setup` / `status` / `sync` / `switch` / `doctor` / `providers` / `merge-setup` / `conflicts` / `explain` / `resolve` / `diff` / `blame` / `summarize` / `affected` / `hooks`, `vcs git` (`migrate-lfs` / `worktree`), `vcs uvcs` (`locks` / `changesets` / `review`) | [version-control.md](references/version-control.md) |
+| `collaboration` (alias `collab`) — `annotations` / `attachments` / `thumbnail` / `reactions` / `read` / `subscribe` / `jira` | [collaboration.md](references/collaboration.md) |
+
+## Common workflows
+
+### Edit a scene, GameObject, or asset — `unity status` first
+
+**Before editing any scene, GameObject, prefab, or asset, apply the version
+gate and prove the exact Editor identity.** For pre-Unity-6, complete the MCP
+identity gate above before considering file-only fallback. For Unity 6+, use
+`unity status` and the pinned CLI route below; a reachable unrelated Editor
+does not satisfy the gate. Preserve the target Editor's in-memory state.
+
+```bash
+unity status --project-path /absolute/path/to/project --json
+# Match the returned exact root/version; the path filter alone is not proof.
+unity command --project-path /absolute/path/to/project --json
+# then drive it with the commands it lists — for example, if your Editor exposes them:
+unity command create_gameobject --project-path /absolute/path/to/project
+unity command save_scene --project-path /absolute/path/to/project
+```
+
+Command names are defined by the Editor, so run `unity command` (or `unity list`) to see the exact set — don't assume a name.
+
+> **Never hand-edit `.unity`, `.prefab`, or `.asset` YAML while a live Editor is reachable.** Raw-file edits are:
+> - **error-prone** — fileIDs and GUIDs are assigned by hand and easy to get wrong;
+> - **invisible** to the running Editor until a reimport, so the change silently fails to take effect; and
+> - **prone to hitting the wrong file** — e.g. writing to `SampleScene.unity` while the Editor's active scene is actually `Demo2.unity`, producing valid-looking YAML that changes nothing the user sees.
+
+**Rule out two false negatives before concluding no Editor is reachable — both look identical to a genuinely closed Editor, and both are easy to get wrong under time pressure:**
+
+- **Safe Mode.** If an Editor *is* running for this project but `unity status` / `unity command` won't connect, it may be stuck in **Safe Mode** from a compile error rather than genuinely absent. Run `unity pipeline list` — if it reports Safe Mode, editing the C# source to fix the compile errors (and then restarting Unity) *is* the correct move, not a fallback. See [integration-advanced.md → Recovering from Safe Mode](references/integration-advanced.md#recovering-from-safe-mode-connection-fails-because-of-compile-errors).
+- **A sandboxed agent shell.** If your own shell commands run inside a restrictive sandbox — the normal case for a coding agent like this one — the sandbox can hide a genuinely running Editor from `unity status` the same way. This applies to **every** scene/GameObject/prefab/asset task that reaches this preflight, not only ones that obviously need a live Editor: a task you could otherwise finish without any CLI involvement (e.g. generating an asset through ordinary Editor APIs) can still get funneled into "no Editor" here and derailed. Don't treat "no instances" as proof the Editor is down, and don't quietly improvise a third path — like driving a separate headless Editor process to approximate what a live connection would have done — as a substitute for a disclosed file edit. Say plainly that your sandbox may be blocking your view of a real Editor, and ask whether one is actually open before falling back. Full detail: [integration-advanced.md → Sandboxed agent tooling can hide a running Editor](references/integration-advanced.md#sandboxed-agent-tooling-can-hide-a-running-editor).
+
+Only consider file-only work after applying the version/identity gate and
+checking those diagnostics. Report the evidence gap precisely; unavailable
+transport does not prove that the Editor is closed. Never bypass unproven
+identity or serialized-asset approval gates by switching to raw file edits.
+
+### Bootstrap a new project from scratch
+
+> For a **guided** end-to-end experience — concept questions, installing the Editor in the
+> background while you plan, package selection, and monetization handoff — use the
+> **`new-unity-project`** skill. This section is the raw CLI recipe that skill builds on; use it
+> directly when you just want the commands.
+
+Take an idea to a running, version-controlled project using only the CLI. Decide the **target
+platforms first** — they determine which Editor modules you install in step 2. You can add
+modules later (`unity install-modules`), but a project can't build for a platform until that
+platform's module is installed, so it's simplest to decide up front.
+
+```bash
+# 1. Confirm the CLI works and you're signed in and licensed (see references/auth-license-cloud.md).
+unity --version
+unity auth status --format json      # if signed out:      unity auth login
+unity license status --format json   # if none active:      unity license activate
+
+# 2. Pick and install an Editor with the modules your target platforms need.
+#    Default to the latest LTS (most stable, ~2 years of patches). Reach for a Tech-stream
+#    release (--stream tech) only for a feature not yet in LTS; treat --stream beta/alpha as
+#    evaluation-only, never for a project you intend to ship. A deadline argues for LTS.
+#    (lts / latest aliases work wherever a version is accepted.)
+unity releases --stream lts --limit 5 --format json
+unity install lts --module android --module ios --yes --accept-eula   # add --module webgl, etc.
+unity editors --installed --format json                               # confirm it landed
+
+# 3. List the real template ids this Editor offers — don't guess them.
+unity templates list --editor lts --format json
+#    Common ids: com.unity.template.3d, com.unity.template.2d, and a URP template (id varies by version).
+
+# 4. Create the project. The first positional arg is the NAME; --path sets the parent directory.
+#    All options supplied, so it won't prompt; add --non-interactive in CI.
+unity projects create "MyGame" --path ~/UnityProjects \
+  --editor-version lts --template com.unity.template.3d
+```
+
+**Source control — let the user choose.** The CLI publishes the new project to a fresh remote in
+one step for any provider. **Always pass tokens on stdin** (`--git-token-stdin`) so secrets never
+land in shell history or the process list. Pick based on the project — don't default to one:
+
+- **Git — GitHub / GitLab** (`--vcs github` / `--vcs gitlab`). Ubiquitous. For asset-heavy games
+  add **Git LFS** (`--git-lfs`) so large binaries don't bloat history.
+- **Unity Version Control — UVCS** (`--vcs uvcs`). Unity's own VCS, built for large binary game
+  assets: it handles them natively (**no LFS needed**) and supports file locking — often the
+  better fit for art-heavy projects or larger teams. Auth uses your Unity sign-in; `--vcs-region`
+  selects the region.
+
+```bash
+# Git (GitHub) — drop --git-lfs if the game isn't asset-heavy. Add --no-initial-commit if you
+# want to add packages/assets BEFORE the first commit (see the new-unity-project flow).
+unity projects create "MyGame" --path ~/UnityProjects \
+  --editor-version lts --template com.unity.template.3d \
+  --vcs github --git-namespace my-org --git-repo my-game \
+  --git-visibility private --git-default-branch main --git-token-stdin --git-lfs
+
+# Unity Version Control (UVCS) — handles binaries natively, so no LFS:
+unity projects create "MyGame" --path ~/UnityProjects \
+  --editor-version lts --template com.unity.template.3d \
+  --vcs uvcs --git-namespace my-org --git-repo my-game --vcs-region <region>
+```
+
+Feed the token to `--git-token-stdin` from a secret store, never a literal — e.g.
+`… --git-token-stdin <<<"$GIT_TOKEN"` where `$GIT_TOKEN` comes from your CI/secret manager
+(UVCS uses your Unity sign-in, so no token is needed).
+
+**Working with a UVCS workspace day to day: a few wrapped reads, everything else straight through
+to `cm`.** The split is deliberate and worth teaching, because guessing wrong wastes a user's time:
+
+- **`unity vcs uvcs <verb>`** wraps the reads that **join `cm`'s data to your project** —
+  `locks` (who holds a lock, *and which locks cover files you have already changed*),
+  `changesets`, and `review`. Those joins are the thing `cm` cannot do for you, and they come in a
+  stable envelope, so prefer them whenever something *parses* the output.
+- **`unity uvcs <args>`** forwards the whole command line to `cm` verbatim, `--help` and
+  `--format` included. That is the supported route, not a workaround: `cm` owns and versions this
+  vocabulary, so wrapping it would pin a paraphrase that goes stale. Reach for it for **partial
+  checkout**, **shelves**, and **taking or releasing a lock**, and when a human reads the output.
+
+```bash
+unity vcs uvcs locks                       # who holds what, and what collides with your changes
+unity uvcs lock list                       # the raw listing, cm's own flags and output
+unity uvcs partial update /Assets/Levels   # cm's own vocabulary, unchanged
+unity uvcs shelve -c "wip: lighting pass"
+```
+
+Every verb, flag and trap: [version-control.md](references/version-control.md).
+
+`unity cm <args>` is the same passthrough under cm's own name. Both need the `cm` client; install
+it with `unity plugin install plastic` if a command says it is missing.
+
+**Beyond setup, the `vcs` group covers the whole day-2 loop** — `status`, `sync`, `switch`,
+`merge-setup`, `conflicts` / `explain` / `resolve`, `diff`, `blame`, `summarize`, `affected`,
+`hooks`, `doctor`, `providers` — and the Unity semantics are the reason to reach for it over raw
+`git`. Full reference, with the flags and the traps:
+[version-control.md](references/version-control.md).
+
+**Git tokens belong to the user's credential manager, not the CLI.** When no token flag or env var
+is given, the CLI asks `git credential fill` and uses whatever the configured helper returns; it
+stores nothing it is passed or told. Don't suggest the CLI can save a Git token, and don't reach for
+a token flag when the user already has a working credential helper. If they want a different token
+per organization, that is `git config --global credential.useHttpPath true` plus a multi-account
+helper such as [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager).
+The CLI passes the full repo URL so the helper can discriminate, but it never installs or
+reconfigures a helper. `UNITY_GITHUB_TOKEN` / `UNITY_GITLAB_TOKEN` are one token per provider, so a
+CI job spanning several orgs should pass `--git-token-stdin` per invocation instead. See
+[references/projects-templates.md](references/projects-templates.md) for the full
+source-control flag set. For a purely local Git repository instead, initialize git with a
+Unity-appropriate ignore so the multi-GB `Library/` and other generated folders are never committed:
+
+```bash
+cd ~/UnityProjects/MyGame
+git init -b main
+# Download (do not pipe to a shell) a maintained Unity .gitignore:
+curl -fsSL https://raw.githubusercontent.com/github/gitignore/main/Unity.gitignore -o .gitignore
+
+# Asset-heavy game? Keep large binaries out of git history with Git LFS:
+git lfs install
+git lfs track "*.psd" "*.fbx" "*.wav" "*.mp3" "*.png"   # adjust to your asset types
+git add .gitattributes
+
+git add -A
+git status                             # sanity-check: Library/ Temp/ obj/ Build/ must NOT be staged
+git commit -m "Initial Unity project: MyGame"
+git ls-files | grep -c '^Library/'     # must print 0
+```
+
+**What the CLI does and doesn't cover.** The CLI handles editor, project, and source control.
+It does **not** manage UPM (Unity Package Manager) packages — to add packages beyond the
+template headlessly, use the **`unity-package-management`** skill (C# PackageManager Client
+API). For monetization, hand off to the dedicated skills: `implement-in-app-purchases`
+(IAP) or `levelplay-unity-integration` (ads). For accounts, cloud save, economy, remote
+config, or leaderboards, follow the project's existing backend: `firebase-game-backend` for
+Firebase projects, `build-live-game` only when the project already uses or the user chooses
+Unity Gaming Services. Open the project to start working:
+`unity open ~/UnityProjects/MyGame`.
+
+### Find and install a missing editor
+
+```bash
+# 1. Check what's installed
+unity editors --installed --format json
+
+# 2. Browse available LTS versions
+unity releases --lts --limit 5 --format json
+
+# 3. Install
+unity install 6000.0.47f1 --yes --accept-eula
+```
+
+### Open a project with the correct editor
+
+```bash
+# 1. Check the project's required editor version
+unity projects info /path/to/MyProject --format json
+# Look at "editorVersion" in the result
+
+# 2. Confirm that editor is installed
+unity editors --installed --format json
+
+# 3. Open (warns if the editor version is missing)
+unity open /path/to/MyProject
+```
+
+Agents run step 3 through `scripts/unity_editor_open.py` instead, so the
+repository's Editor limit holds (see
+[Editor instances and worktrees](#editor-instances-and-worktrees)).
+
+### CI: activate a license, then build
+
+```bash
+# 1. Sign in non-interactively with a service account
+unity auth login --client-id "$UNITY_SERVICE_ACCOUNT_ID" --secret-from-stdin <<<"$UNITY_SERVICE_ACCOUNT_SECRET"
+
+# 2. Activate the entitlement license (or use --serial / --floating)
+unity license activate
+
+# 3. Build
+unity build /path/to/MyProject \
+  --editor-version 6000.0.47f1 \
+  --target StandaloneLinux64 \
+  --execute-method Builder.PerformBuild \
+  --allow-install
+echo "Exit code: $?"
+
+# 4. Return the seat when done (floating/assigned)
+unity license return --yes
+```
+
+### CI: headless build
+
+Prefer the dedicated `unity build` command (handles batch mode, logging, and CI flags):
+
+```bash
+unity build /path/to/MyProject \
+  --editor-version 6000.0.47f1 \
+  --target StandaloneLinux64 \
+  --execute-method Builder.PerformBuild \
+  --allow-install
+echo "Exit code: $?"
+```
+
+Or use `unity run` (batch mode is automatic — never pass `-batchmode`/`-quit`):
+
+```bash
+unity run /path/to/MyProject \
+  --editor-version 6000.0.47f1 \
+  --allow-install \
+  -- -executeMethod Builder.PerformBuild -logFile build.log
+echo "Exit code: $?"
+```
+
+### CI: run tests and publish results
+
+```bash
+unity test /path/to/MyProject \
+  --editor-version 6000.0.47f1 \
+  --mode EditMode \
+  --report-format junit \
+  --output ./test-results.xml \
+  --allow-install \
+  --timeout 600
+case $? in
+  0) echo "All tests passed" ;;
+  8) echo "Tests failed — report to developers, do not retry" ;;
+  *) echo "Run did not complete — infrastructure failure, safe to retry" ;;
+esac
+```
+
+Exit `8` means the run finished and reported failing tests; any other non-zero code means it never produced a verdict. Under `--format json` the same split is `errors[0].code`: `TESTS_FAILED` versus `TEST_RUN_ERROR` / `TEST_TIMED_OUT`.
+
+`--report-format junit` makes `--output` a JUnit-schema report, which GitHub Actions and GitLab ingest as native test results with no converter step. It is written even when tests fail. Drop the flag for the NUnit3 default, or use `--report-format nunit,junit` to get both from one run. Add `--coverage` to collect coverage via the Unity Code Coverage package — it warns and carries on if the project doesn't have the package. See [build-run-test.md](references/build-run-test.md).
+
+### Debug the CLI
+
+```bash
+# Check auth + installed editors + recent errors in one command
+unity doctor --format json
+
+# Follow live logs during an install
+unity logs --follow --level info
+```
+
+---
+
+## Notes
+
+- `--non-interactive` and `--yes` together suppress all prompts — use both in CI.
+- `--format json` always produces machine-readable output; prefer it over parsing human text. Error envelopes are pretty-printed with the same 2-space indent as success envelopes.
+- **Read failures from stdout, not stderr.** A failed command still writes a complete document to stdout: under `--format json` an envelope with `success: false` and a populated `errors` array (`errors[0].code` is the stable token to branch on); under `--format ndjson` the usual terminal `{"type":"result","success":false,…}` frame. **Branch on `success`, never on `data`** — `data` is usually `null` on a failure, but not always: a partial `unity editors add` failure carries a row per path, and an ambiguous `unity auth switch` carries `data.candidates` for you to disambiguate with. Check `success` and the exit code — never treat empty stdout as a failure signal, and do not parse stderr, which carries only human diagnostics in these formats. A handful of commands have not migrated yet and still print `{"error": "…"}` to stderr with empty stdout; if stdout is empty on a non-zero exit, that is a known bug in that command rather than a shape you should code against.
+- `unity <version> [path]` is a shorthand for `unity open [path] --editor-version <version>`. Works with `lts`, `latest`, or a full version string like `6000.0.47f1`.
+- The CLI supports kubectl-style plugins: any `unity-<name>` binary on PATH is callable as `unity <name>`.
+- Terminal output is hardened against control-character / escape-sequence injection from server-provided values (project titles, editor versions, module names) — C0 controls and non-SGR escape sequences are stripped from table/list/tree output, and now also from Commander usage errors, the `unity bug` log-archive warning, and `unity projects add`/`remove` machine (tsv) output, while SGR color/style codes are preserved.
+- The CLI reports anonymous crashes and errors via Sentry to help fix bugs (no IP address or hostname; home-directory paths and token-like values scrubbed before send), aligned with the Unity Hub. Opting in to analytics additionally attaches an anonymized machine id; opted-out users stay fully anonymous. Set `UNITY_NO_CRASH_REPORT` to disable reporting entirely. Separately again, every run sends one anonymous `cli telemetry` usage ping regardless of analytics/consent state — see [diagnostics-maintenance.md](references/diagnostics-maintenance.md#analytics--usagetelemetry-consent).
+- The CLI is currently in **beta** (latest: `1.0.0-beta.10`). It moved to 1.0 versioning at `1.0.0-beta.1`; it's still a beta, so keep `UNITY_CLI_CHANNEL=beta` in the install command until GA ships, after which that part can be dropped.
+- As of `0.1.0-beta.8` the CLI checks in the background for a newer version and prints an unobtrusive "update available" notice (interactive sessions only; never delays a command). Turn it off with `unity config update-check off` or the `UNITY_NO_UPDATE_CHECK` env var.
+- Outbound HTTP from every CLI command honors the resolved proxy (see `unity config proxy`). An invalid `--proxy` value (malformed URL or unsupported scheme) fails with a usage error (exit 2) instead of being silently ignored. Inspect what the CLI actually resolved with `unity env --format json` or `unity doctor --format json` — both surface the active proxy URL, its source, and auth source.
