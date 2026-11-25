@@ -9,28 +9,28 @@ Satu tempat untuk katalog skill, indeks, dan utilitas lintas-agen.
 
 | Item | Isi | Status |
 |---|---|---|
-| `skills/` | **3.172 skill curated** (satu folder = satu skill, `SKILL.md` + `REPO-REF.md`) | ✅ sumber tunggal |
-| `skills-expanded/` | ±21,4k hasil scraping (tier `reference`) | arsip, jangan di-link |
-| `skills-index.db` | SQLite **FTS5** (kolom: name, description, tier, category, path, source) | ✅ generated |
-| `SKILLS-AVAILABLE.md` | **katalog "available"**: ~1.090 skill tier-1 per kategori (dibaca AI saat perlu) | ✅ generated |
-| `SKILLS-CATEGORIES.md` | peta 22 kategori + contoh skill | ✅ generated |
-| `skills-index.json` | versi mesin katalog (dipakai MCP + hook) | ✅ generated |
-| `skill-mcp.py` | **MCP server** `skill-catalog`: skill_for_task, skill_search, skill_load, skills_available, agent_context | ✅ aktif |
-| `skill-search.sh` | cari skill via CLI (FTS5 + bm25, bahasa natural) | ✅ |
-| `session-brief.sh` | brief 720 B disuntik ke tiap sesi (hook SessionStart) | ✅ aktif |
-| `context-guard.py/.sh` | hook penjaga konteks: 0 token di bawah ambang, 1 baris kalau sesi >10 MB | ✅ aktif |
-| `skill-load-lite.sh` | muat skill ringkas (≤80 baris/≤2 KB) — skill tetap dipakai, konteks tetap hemat | ✅ |
-| `usage-audit.py/.sh` | ukur token harian/7 hari + sesi terboros dari transcript lokal (read-only) | ✅ |
+| `skills-index.db` | SQLite **FTS5** — **634rb+ skill mentah → 482rb aktif** (151rb junk/template disisihkan), 176rb repo | ✅ generated |
+| `skills-store/` | **±5.600 skill curated** (satu folder = satu skill, `SKILL.md`) — termasuk skill Indonesia, knowledge-base, pointer tool komunitas | ✅ sumber tunggal |
+| `skills-expanded/` + `agent-assets/` | ±285rb hasil mining massal (tier `reference`/`junk`) | arsip, jangan di-link |
+| `datasets-index.db` | **957rb+ dataset** (HF/OpenML/Zenodo) — metadata saja, fetch on-demand | ✅ generated |
+| `data-hub.py` | `data-hub search|get|peek` — 23 curated + indeks 957rb, `peek` = EDA ≤40 baris | ✅ aktif |
+| `SKILL-CATALOG.md` | peta isi katalog (domain→jumlah, sumber) | ✅ |
+| `SYSTEM-MAP.md` | peta 10 subsistem (skill/repo/data/MCP/memori/tool/guard) | ✅ |
+| `TOOLS.md` | tool terinstall: media-forge, officecli, kinetograph, mmdr, dataproofer, abogen, financetoolkit | ✅ |
+| `skill-mcp.py` | **MCP `skill-catalog`** (8 tool): skill_for_task/search/load + agent_context + memory_recall/save + data_hub | ✅ |
+| `skillq.py` (`sk`) | cari skill 0-token: FTS5 + sinonim ID + language-aware + feedback `skusage` | ✅ |
+| `session-brief.sh` | brief disuntik ke tiap sesi (hook SessionStart) | ✅ aktif |
+| `context-guard.py/.sh` | hook penjaga konteks: peringatan ~3 MB, urgent ~8 MB transcript | ✅ aktif |
+| `skill-load-lite.sh` | muat skill ringkas (≤80 baris/≤2 KB) | ✅ |
+| `pow.py` (`pow`) | satu pintu: `find` skill+repo+tool+MCP+agent+dataset · `cost` · `mcp on/off` | ✅ |
+| `repo-refs/` + `repos.db` | clone repo + indeks 176rb (metadata) | arsip/indeks |
+| `repo-hub.py` | `get` shallow clone · `ingest` SKILL.md→index · `scan` keamanan · `trending` | ✅ |
+| `tool-install.py` | clone repo → deteksi cargo/go/uv/npm → install ke `~/.agents/tools` + PATH | ✅ |
+| `media-forge.py` | video/gif/enhance/upscale/bgremove/vectorize/svg/manim/lottie/audio/tts/music/3d-blender | ✅ |
+| `project-forge` · `security-forge` · `testing-forge` · `repo-map` | scaffold+gate · audit · test · peta repo | ✅ |
+| `memory-store.py` | memori lintas sesi (MEMORY.md + digest + mirror Obsidian) | ✅ |
 | `install-skill-first.py` | pasang MCP+hook ke semua agen (idempotent, backup) | ✅ |
-| `skills-router.py` | generator katalog (cap 60/kategori) | ✅ |
-| `link-skills-min.sh` | wiring skill via symlink (repo/user scope) | ✅ |
-| `skills-INDEX.md` | ringkasan manusiawi (agregat + contoh) | ✅ generated |
-| `skills-junk.txt` | daftar entri tier `docs` (bukan skill) | ✅ generated |
-| `repo-refs/` | 14.018 dump README/AGENTS repo rujukan (1,3 GB) | arsip |
-| `role-skill-map.json` | 20 peran × keyword → skill (coverage 89%) | data |
-| `.skill-lock.json` | provenance 2.454 skill (repo + hash) | 10% cakupan |
 | `mcp-hygiene-report.md` | hasil audit MCP terakhir | generated |
-| `_symlink-farm-archive/` | arsip farm lama (110 MB) | kandidat hapus (P1) |
 
 ## Skill-first: AI harus LIAT dulu, bukan mengarang
 
@@ -38,14 +38,14 @@ Alur wajib untuk agen (semua tool): **cari skill → cek MCP → cek repo ref �
 
 | Lapis | Cara akses |
 |---|---|
-| Katalog "available" | `SKILLS-AVAILABLE.md` (3.176 skill curated, per kategori) |
-| Peta kategori | `SKILLS-CATEGORIES.md` |
-| Rekomendasi per tugas | MCP `skill_for_task(task="...")` (bahasa natural) |
-| Cari kata kunci | MCP `skill_search(query="...")` atau `skill-search.sh "..."` |
-| Baca isi skill | MCP `skill_load(name="...")` |
-| Lihat semua dulu | MCP `agent_context()` (skill + MCP + repo + aturan) |
+| Katalog isi | `SKILL-CATALOG.md` (domain→jumlah) · `sk "<tugas>" -n 5` (0 token) |
+| Rekomendasi per tugas | `sk "<tugas>"` atau MCP `skill_for_task(task="...")` |
+| Cari kata kunci | `sk "<kata>"` / `skill-search.sh` / MCP `skill_search` |
+| Baca isi skill | `sk -l <nama>` / `skill-load-lite.sh` / MCP `skill_load` |
+| Lihat semua dulu | MCP `agent_context()` · `pow find "<kata>"` (skill+repo+tool+data) |
+| Data publik | `data-hub search\|get\|peek` (957rb indeks + 23 curated) |
 | Brief tiap sesi | hook `session-brief.sh` (Claude Code SessionStart) |
-| Data mesin | `skills-index.json` (dipakai MCP & hook) |
+| Penjaga konteks | hook `context-guard` (peringatan ~3 MB, urgent ~8 MB → `/compact`) |
 
 Instalasi ulang/agen baru: `python3 ~/.agents/install-skill-first.py --apply`
 → memasang MCP `skill-catalog` **+ blok Skill-First (angka auto-refresh)** ke **12 provider**:

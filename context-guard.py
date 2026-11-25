@@ -20,9 +20,9 @@ import json
 import os
 import sys
 
-WARN_MB = float(os.environ.get("CONTEXT_WARN_MB", "10"))
-URGENT_MB = float(os.environ.get("CONTEXT_URGENT_MB", "25"))
-STEP_MB = float(os.environ.get("CONTEXT_STEP_MB", "5"))  # jeda minimal antar-peringatan
+WARN_MB = float(os.environ.get("CONTEXT_WARN_MB", "3"))
+URGENT_MB = float(os.environ.get("CONTEXT_URGENT_MB", "8"))
+STEP_MB = float(os.environ.get("CONTEXT_STEP_MB", "1"))  # jeda minimal antar-peringatan
 STATE_DIR = os.environ.get("CONTEXT_GUARD_DIR", "/tmp/voralens-context-guard")
 
 
@@ -82,10 +82,10 @@ def check(transcript_path, key):
         return ""  # sudah diperingatkan di level ini, jangan ulang tiap prompt
     write_last(key, mb)
     if mb >= URGENT_MB:
-        return ("KONTEKS KITIS: %s (%s) — SELESAIKAN langkah ini lalu /clear; "
-                "jangan lanjut tugas baru di sesi ini." % (human(size), transcript_path))
-    return ("Konteks %s — pertimbangkan /clear di batas tugas berikutnya "
-            "(sesi >10 MB = tiap pesan baca ±0,5 jt token)." % human(size))
+        return ("KONTEKS PIDAHIT: %s (%s) — ingatkan user mengetik /compact SEKARANG; "
+                "jangan mulai tugas baru di sesi ini." % (human(size), transcript_path))
+    return ("Konteks %s — sebentar lagi penuh; ingatkan user /compact di batas tugas "
+            "berikutnya (jangan tunggu sampai macet)." % human(size))
 
 
 def report():

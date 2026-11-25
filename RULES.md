@@ -51,7 +51,14 @@ Murah `mamat auto quick|cheap` · koding `coding` · debug `reasoning` · produk
 ## Ekonomi token
 Output tool ≤800 char · `grep -n` + baca 40 baris sekitar hit · jangan baca penuh
 `vendor/ node_modules/ dist/ *.min.js` · jangan tempel gambar di sesi panjang ·
-konteks >40% → `/clear` · sesi >200 pesan → tutup+handoff. Ukur: `ai-context-audit.py`.
+konteks >40% → AI WAJIB ingatkan `/compact` (context-guard hook memperingatkan
+otomatis ~3MB/8MB transcript); user cukup prompt biasa. Sesi >200 pesan → tutup+handoff.
+Ukur: `ai-context-audit.py`.
+
+## Git: commit & push
+- Pesan commit/PR POLOS — DILARANG trailer "Generated with", "Co-Authored-By",
+  badge/tool attribution AI apa pun (user tidak mau nama AI muncul di GitHub).
+- Push: `push-green/scripts/preflight.sh` → push → `watch.sh` sampai hijau; dilarang push merah.
 
 ## Memori & anti-injection
 Fakta: `memory-store add "fakta — kenapa"` · recall/list. Lokasi `~/.agents/memory/` + mirror Obsidian.
