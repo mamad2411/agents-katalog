@@ -1,0 +1,72 @@
+---
+name: quantum-circuit-verification
+description: 使用 OpenQuantum 的固定版本 MQT QCEC 本地检查两份无测量的 OpenQASM 2 量子电路是否等价，并区分严格等价、相位等价、不等价、概率性结果和无信息结果。用于转译前后语义验证、电路重写审计和回归检查；不用于含测量/经典控制的动态电路、真实硬件、任意文件路径，或在缺少来源链时宣称最终科学验收通过。
+---
+
+# 量子电路等价性验证
+
+<!-- BEGIN NATIVE SDK ACCESS -->
+## 原生 SDK 路径
+
+本能力同时支持 **MQT QCEC 的原生公开 API**。用户需要 任意受支持电路、编译流程配置与等价性验证接口 时，由 Agent 在固定依赖环境中编写和运行任务代码，不限于下文便捷 Tool 的预设模型。
+
+使用 `node scripts/sdk-access.mjs inspect quantum-circuit-verification` 定位环境，按[完整 SDK 工作流](../quantum-sdk-workbench/references/workflow.md)执行。模块导航：`mqt.qcec`、`qiskit`；导航不是 API 白名单。
+
+下文关于模型、门集、输入与预算的限制描述便捷 Tool 的合同；原生 SDK 另受上游版本、可选依赖、宿主资源与用户授权约束。已禁用或被拒绝的动作不能借代码路径绕过。执行状态和科研验收分别报告。
+<!-- END NATIVE SDK ACCESS -->
+
+
+## 核心边界
+
+核心对象是“一对待比较的unitary OpenQASM 2 电路”。Qiskit 电路工作台负责加载、转换、门数与深度分析；本 Skill 使用 MQT QCEC 回答更窄但更关键的问题：两个电路是否实现等价的量子变换。
+
+- 提交两份量子位数相同的 OpenQASM 2 字符串；量子位、语句和文本长度由输入决定。
+- 两份电路必须声明相同的总量子位数。
+- 只允许标准 `qelib1.inc`；不接受任意 include 路径。
+- 不接受 `measure`、`reset`、`if`、`creg` 或 `opaque`。
+- QCEC 的 `timeoutSeconds=0` 表示后端不设固定超时；实际调用仍服从宿主的资源策略与取消信号。
+
+## 工作流
+
+1. 先确认比较目标：通常是原电路与转译/优化后的电路。
+2. 若输入是 OpenQASM 3 或 QPY，先用 `$qiskit-circuit-workbench` 做受控转换；不要自行猜测语义。
+3. 调用 `verify_circuit_equivalence`，传入两份 QASM 文本，不传文件路径。主动作加载固定环境并返回 `packageVersion`；依赖须显式准备；缺失或旧锁环境返回准备命令，不在 Tool 中安装。
+4. 按以下语义解释 `result.equivalence`：
+   - `equivalent`：QCEC 给出等价结论；
+   - `equivalent_up_to_phase` / `equivalent_up_to_global_phase`：只在用户目标允许相位等价时采用；
+   - `not_equivalent`：本次比较不等价；
+   - `probably_equivalent` / `probably_not_equivalent` / `no_information`：不确定，不能升级成确定结论。
+5. 同时报告实际包版本、输入 SHA-256、QCEC checker 记录、耗时和来源状态；环境不可用时报告工具错误，不编造结果。
+6. DSH 的可信 Host Plugin 可将输入与计算事实物化为 Result Package，独立复核后由 central Acceptance Builder 生成 Acceptance Report、Result Commit 和 `readable-report.md`。提供可读报告和结构化证据路径；模型没有生成最终说明也不影响已完成的文件交付。Codex 目前复用计算，不具备这条会话验收链。
+
+## 独立科学验收范围
+
+便捷 Tool 的计算规模仍由调用方选择。当前 `unitary-classification-audit-v1` 科学验收单独覆盖每份输入最多 16 量子位、65536 UTF-8 字节、512 条语句：
+
+- 所有输入先经固定 Qiskit 独立解析，检查有限酉门语义（包含自定义门体）；字节完全相同的合法输入再使用 source-identity 证明，无需构造大矩阵。其他输入在最多 8 量子位内构造完整酉矩阵复核，不调用 MQT。解析不支持或参考失败时保持 `conditional`。
+- 严格等价与全局相位等价分别检查，正例容差为 `1e-9`；否定结论须越过 `1e-8` margin。一般相位、概率性和无信息结果保持 `conditional`。
+- 9–16 量子位且非相同输入不自动进行稠密复核，保留 `conditional`；超出该 Profile 范围保留计算 observations，不生成最终 Acceptance。独立参考范围不限制主计算。
+- `passed` 表示 QCEC 的分类结论经复核成立；`not_equivalent` 的 `passed` 仍是电路不等价。失败、未复核和相位类型必须原样交付。
+- 物化使用会话当前有效沙箱权限。只读会话、取消、来源不符或证据写入失败时，不宣称最终验收。
+
+## 必须保持的规则
+
+- “门数更少”不等于语义等价，必须看 QCEC observation。
+- provider 超时或 `no_information` 不算电路语义失败，只算验证未交付。
+- `circuits.equivalent=fail` 是科学 observation，不是 MCP 运行错误。
+- 相位等价必须原样报告，不能静默写成严格等价。
+- 没有 Result Package 和 Session Event Log 来源链时，输出只能是 `observations_available`。
+
+## 输出格式
+
+1. 两份输入摘要与 SHA-256；
+2. QCEC 的完整 criterion；
+3. checker 与耗时摘要；
+4. conclusive / equivalent / provenance 三类 observations；
+5. 适用范围和未验证项。
+
+输入电路的量子位数和门数由调用方选择，适配器不额外设置人工规模上限。具体资源配置见[本地计算说明](../../../docs/integrations/SCALABLE_BRIDGES.md)。
+
+## 依赖准备
+
+运行前执行 `node scripts/setup-paper-tools.mjs quantum-circuit-verification`。缺失、旧锁和已安装环境的处理见[共同准备说明](../../../docs/integrations/LOCAL_ENVIRONMENTS.md)；Tool 不自动安装或升级依赖。

@@ -1,0 +1,177 @@
+---
+name: proofpress-governed-context
+description: Use Proofpress governed context when a task must rely on or hand off durable agent-produced knowledge, including evidence-backed decisions, experiment results, integration contracts, or incident learnings. Retrieve eligible context before relying on it; submit bounded proposals and receipts when a durable outcome is produced. Do not use for routine code edits, transient debugging, or unvalidated hypotheses.
+---
+
+# Proofpress governed context
+
+Use this skill to make downstream reliance explicit: what is approved to reuse,
+what evidence supports a new candidate, and whether admission came from the
+human owner or an explicitly configured owner policy. Proofpress is not a
+replacement for the agent runtime, its memory, or raw private traces.
+
+## Customer context policy
+
+For a hosted workspace, discover and call `proofpress_get_capture_policy` at
+run start, before deciding what to propose. Read its `schema_version`,
+`workspace_id`, `version`, `policy_digest`, `settings` and `limits`. The supported schema is
+`proofpress/capture-policy/v1alpha1`. Apply `purpose`, `capture` and `exclude`
+as proposal-selection guidance. Preserve the workspace, version and digest in the
+working record. Version 0 contains usable built-in defaults; no local policy
+file or first-run policy edit is required. An agent cannot change these rules.
+The owner manages them in Admin -> Knowledge rules.
+
+If the server does not expose this capability, use the core rules below and
+any existing local policy. If an advertised tool fails or returns an unknown
+schema, keep candidate work in `Draft only` and report the problem; do not
+silently substitute defaults for unread workspace rules.
+
+Optionally read `.proofpress/context-policy.yaml` in the current repository.
+A local file adds project-specific restrictions; it may narrow hosted capture
+rules but cannot broaden them. With no hosted capability, it supplies the
+repository-specific `propose_when`, `do_not_propose`, evidence and applicability
+guidance. Unknown local schema versions, malformed files or conflicting rules
+mean `Draft only`; report the conflict rather than guessing.
+
+Capture guidance is separate from authorization. Neither hosted nor local
+capture rules override evidence checks, credential boundaries, this skill's
+safety rules or owner admission controls. Even an owner-authored capture rule
+requesting approval does not grant an agent approval authority.
+
+For an offline or repository-specific policy, start from the maintained
+`assets/context-policy.yaml` template and version the customer copy instead
+of forking this core skill. Local initialization is optional.
+
+## Initialize a repository policy
+
+Initialize a policy only when the user explicitly asks to set up, initialize,
+or add a Proofpress policy for the current repository. A missing policy alone
+is never permission to write one.
+
+1. Resolve the current repository root and inspect
+   `.proofpress/context-policy.yaml` without modifying it.
+2. If the file is absent and the bundled helper is supported by the current
+   platform, resolve the directory containing this `SKILL.md` as `<skill-root>`,
+   then run `python3 <skill-root>/scripts/initialize_policy.py --workspace
+   <repository-root>` to show the proposed addition. After the explicit request
+   to initialize, run it again with `--apply` to create the template unchanged.
+   If the helper is not bundled or reports that its platform safeguards are
+   unavailable, use the same asset-based fallback: show the proposed addition
+   from `assets/context-policy.yaml`, then create that exact template only after
+   the same explicit request, refusing a symbolic-link target and never
+   replacing an existing file. State that the customer should review, narrow,
+   version, and commit the copy.
+3. If the file exists, make no change. If its `schema_version` is unknown or
+   malformed, report that policy initialization is blocked and keep the task in
+   `Draft only`; never replace, merge, or repair the file automatically.
+4. Do not create the policy during plugin installation, do not use lifecycle
+   hooks for it, and do not treat the file as authorization. Server invariants
+   and owner admission controls remain authoritative.
+
+Keep LM Judge configuration separate from this intake policy. When a workspace
+uses advisory evaluation, start from `assets/judge-criteria.md` and save the
+adapted criteria in Hosted Admin. The Judge evaluates evidence support; it does
+not decide what enters Proofpress or authorize reuse.
+
+## Preconditions
+
+Require a configured Proofpress MCP server or a supported Python, CLI, or HTTP
+client with an agent-scoped token. Use the configured review base URL when one
+is available. Do not request, copy, print, or store owner or recovery
+credentials.
+
+If the client cannot reach Proofpress or cannot authenticate, continue the
+primary task without claiming governed reuse or proposal submission. Report the
+missing integration as a blocker; do not silently substitute local memory as
+approved context.
+
+## Decide the action
+
+Choose exactly one mode for each knowledge-bearing outcome:
+
+- **Reference only** — retrieve eligible, in-scope governed context before
+  relying on it; state its scope and any limits in the task result.
+- **Draft only** — keep a working hypothesis or incomplete finding in the task
+  output; do not submit it as a reusable candidate.
+- **Propose** — submit a bounded candidate when the task produces a durable
+  decision, evidence-backed conclusion, reproducible experiment result,
+  integration contract, or incident learning that a later agent or person could
+  rely on.
+
+Do not propose routine code edits, an unverified debugging theory, duplicated
+context, broad raw traces, credentials, or a claim whose scope cannot be stated.
+When the user explicitly asks to propose, submit the candidate if the evidence
+and scope are sufficient; otherwise explain what is missing.
+
+## Reference governed context
+
+1. Discover the configured capability surface first. For MCP, inspect its tools
+   and use context or graph retrieval. For CLI, SDK, or HTTP, use the matching
+   context operation rather than inventing an endpoint.
+2. Query the narrowest useful scope. Treat only results explicitly marked
+   eligible for reuse as inherited knowledge.
+3. Preserve the result's identifier, scope, status, evidence limits, and
+   supersession or conflict state in the working record. A previous proposal,
+   rejected candidate, expired item, or unresolved conflict is not reusable
+   context.
+
+## Optional task tracking
+
+When the client exposes run operations and the task benefits from a durable
+usage trail, start a run before retrieval. Use `context.capture` to retrieve and
+freeze the exact governed claim versions returned for that run. Record
+`reliance.record` only for versions actually used; retrieval alone is not
+reliance. Record external outputs by reference and content digest, then append
+sourced observations when available. Observations preserve what a test, person,
+external evaluator, or later outcome reported; they do not approve claims,
+create a score, or authorize future reuse.
+
+Run tracking is optional and separate from the portable artifact ledger. Never
+include credentials, raw private traces, or full private artifacts in run
+metadata, summaries, output records, or observations.
+
+## Submit a bounded proposal
+
+Before the first evidence write, read `proofpress_get_capture_schema` and
+follow [capture input preparation](references/capture-input.md). Use the bundled
+`scripts/prepare_evidence.py` for selected text, PDF pages or slides so source,
+projection and extraction-config digests come from real inputs. Do not learn
+fields by repeated writes. Ordinary source-backed findings omit `profile`;
+experiment claims require recorded run identity and `qualifiers.experiment`.
+Never remove a required profile just to bypass validation.
+
+1. State one precise candidate conclusion or relation. Include its intended
+   reuse scope, not an open-ended generalization.
+2. Submit only the minimum evidence projection needed to support it: stable
+   artifact references, test or experiment receipts, observed outputs, and
+   relevant provenance. Exclude secrets, tokens, raw prompts, private source
+   material, and unnecessary traces.
+3. Use `claim.propose` or the matching discovered MCP proposal tool, and bind
+   the submitted evidence. Use an idempotency key when the client supports one.
+4. Read back the proposal and obtain its review summary or receipt. Report its
+   identifier, scope, evidence references, status, and review URL or receipt.
+
+An agent may run deterministic checks or an advisory evaluation when available,
+but neither is approval. Read `governed_context` as approved knowledge. If
+`staged_context` is returned, keep it separate: it is for exploration or drafts
+explicitly marked unapproved, never for approved reliance or a governed reliance
+record. A staged recommendation marked `needs_attention` requires owner review.
+Never call an owner approval action, never approve a proposal you created, and
+never describe a candidate as governed context. A policy-authorized system
+admission is valid only when the server records it with its policy version and
+current checks/advice; it is not human review.
+
+## Completion record
+
+End the task with one of these explicit records:
+
+- `Governed context used:` identifiers and reuse limits.
+- `Proofpress proposal:` identifier, candidate, scope, evidence references,
+  status, and receipt or review URL.
+- `Proofpress proposal: No proposal —` why the outcome was routine, incomplete,
+  out of scope, or blocked. Keep the `Proofpress proposal` prefix so readers
+  unfamiliar with the workflow understand what was not created.
+
+Do not say that downstream reuse is authorized unless read-back shows the claim
+in eligible governed context. Preserve whether its recorded authority was a
+human owner or an owner policy. A merely staged candidate never authorizes reuse.

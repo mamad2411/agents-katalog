@@ -1,0 +1,100 @@
+---
+name: pr-visual
+description: "Transform pull request diffs into Mermaid diagrams for visual code review and change understanding."
+allowed-tools: Bash(echo *), Bash(rp1 *)
+metadata:
+  category: review
+  is_workflow: true
+  workflow:
+    run_policy: fresh
+    identity_args: []
+  version: 3.2.0
+  tags:
+    - pr
+    - review
+    - analysis
+    - code
+  created: 2025-10-25
+  updated: 2026-04-12
+  author: cloud-on-prem/rp1
+  arguments:
+    - name: PR_BRANCH
+      type: string
+      required: false
+      description: "Branch or PR to visualize (default: current branch)"
+    - name: BASE_BRANCH
+      type: string
+      required: false
+      default: "main"
+      description: "Diff base branch"
+    - name: REVIEW_DEPTH
+      type: enum
+      required: false
+      default: "standard"
+      description: "Review depth level"
+      enum_values:
+        - "quick"
+        - "standard"
+        - "detailed"
+    - name: FOCUS_AREAS
+      type: string
+      required: false
+      default: "all"
+      description: "Optional focus filter"
+  sub_agents:
+    - "rp1-dev:pr-visualizer"
+---
+
+# Visual PR Analyzer
+
+§ROLE: Standalone PR visualization orchestrator. Dispatches pr-visualizer, registers artifact.
+
+## STATE-MACHINE
+
+```mermaid
+stateDiagram-v2
+    [*] --> visualize
+    visualize --> [*] : done
+```
+
+**On each phase transition**, report via:
+```
+rp1 agent-tools emit \
+  --workflow pr-visual \
+  --type status_change \
+  --run-id {RUN_ID} \
+  --name "PR Visual: {PR_BRANCH}" \
+  --step {STATE} \
+  --data '{"status": "{running|completed}", "branch": "{PR_BRANCH}"}'
+```
+
+- `RUN_ID` comes from the generated Workflow Bootstrap section
+- Use the pre-resolved `projectRoot`, `kbRoot`, and `workRoot` values from the generated Workflow Bootstrap section
+
+## §1 Visualize
+
+Emit `visualize` running. Spawn the pr-visualizer agent:
+
+{% dispatch_agent "rp1-dev:pr-visualizer" %}
+PR_BRANCH={PR_BRANCH}, BASE_BRANCH={BASE_BRANCH}, REVIEW_DEPTH={REVIEW_DEPTH},
+FOCUS_AREAS={FOCUS_AREAS}, STANDALONE=true, KB_ROOT={kbRoot}, WORK_ROOT={workRoot}
+{% enddispatch_agent %}
+
+Wait for completion. Extract the artifact path from agent output.
+
+Register the artifact:
+```bash
+rp1 agent-tools emit \
+  --workflow pr-visual \
+  --type artifact_registered \
+  --run-id {RUN_ID} \
+  --step visualize \
+  --data '{"path": "{ARTIFACT_PATH}", "type": "pr-visual", "feature": "pr-visual", "storageRoot": "project"}'
+```
+
+Emit `visualize` completed. Output the artifact path.
+
+{% include_shared "anti-loop.md" %}
+
+**File-specific constraints**:
+- Dispatch the visualizer agent exactly once, register exactly one artifact, then stop.

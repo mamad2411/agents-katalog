@@ -1,0 +1,84 @@
+---
+name: qpanda-qubo
+description: 使用 OpenQuantum 通过 Harness MCP Client 注册的 QPanda QUBO Tool，把命名二值目标和线性等式约束编译成 QUBO，或直接求解二次无约束二值优化问题，可选经典枚举复核编译和最优值。用于组合优化/金融建模中的 QUBO 建模、QAOA 变分近似与经典最优解比较；只在本地 CPU 模拟器运行，不连接本源量子云、不提交真实硬件任务，也不替代最终科学 Validator。
+---
+
+# QPanda QUBO Workbench
+
+<!-- BEGIN NATIVE SDK ACCESS -->
+## 原生 SDK 路径
+
+本能力同时支持 **QPanda Algorithm 的原生公开 API**。用户需要 QUBO 建模、约束、算法与上游优化模块 时，由 Agent 在固定依赖环境中编写和运行任务代码，不限于下文便捷 Tool 的预设模型。
+
+使用 `node scripts/sdk-access.mjs inspect qpanda-qubo` 定位环境，按[完整 SDK 工作流](../quantum-sdk-workbench/references/workflow.md)执行。模块导航：`pyqpanda_alg`；导航不是 API 白名单。
+
+macOS 的完整 SDK setup 需要 Git、CMake 和 C++ 编译器，以固定 fmt 11.2.0 源码构建隔离动态库；其余上游 wheel 的系统依赖仍按平台核验，不修改 Homebrew 或裁剪算法模块。
+
+原生程序导入库前，按环境定位器的 `bootstrap` 执行启动兼容处理：macOS 从独立目录加载固定 fmt 11 ABI，保留 pyqpanda_alg 顶层完整导入。这不限制公开 API，也不替换数值算法。
+
+下文关于模型、门集、输入与预算的限制描述便捷 Tool 的合同；原生 SDK 另受上游版本、可选依赖、宿主资源与用户授权约束。已禁用或被拒绝的动作不能借代码路径绕过。执行状态和科研验收分别报告。
+<!-- END NATIVE SDK ACCESS -->
+
+
+## 工作边界
+
+这个 Skill 负责组织 QUBO 求解工作流，真正的计算由 `qpanda_qubo` MCP Server 暴露并经 Harness MCP Client 注册的 Tool 完成，
+底层调用本源官方 `pyqpanda_alg` 的 QUBO 模块（`QuadraticBinary` / `QUBO_QAOA`）。当前只开放
+本地、无凭据的求解；调用前须显式准备固定 Python 环境（`pyqpanda3` 是原生 wheel）：
+
+- 二值变量数由模型决定；
+- 可以用变量名、minimize/maximize 目标和线性等式约束建模；每个约束必须显式给出 penalty；
+- QUBO 以数值系数给出：`quadratic`（方阵）、可选 `linear`、可选 `constant`；
+- `method=traversal` 始终返回经典暴力遍历的确定性最优解；
+- `method=qaoa` 运行本地 QAOA（`layer` 由用户选择），返回比特串概率分布。
+
+当前不开放不等式自动松弛、penalty 自动选择、本源量子云、Token、真机任务提交、任意 Python、
+sympy 表达式字符串、文件路径或数据集加载。
+
+## 工作流
+
+1. 按用户输入选择下述主动作；主动作会加载固定环境并随结果返回 `packageVersion`，不需要额外的运行时检查调用。
+2. 若 Tool 不存在，告诉用户在“设置中心 → 量子组件 → MCP Server 连接”把 **QPanda QUBO** 配置为启用，重启
+   OpenQuantum 后再试；不要改用 Bash 绕过设置。
+3. 用户给的是业务目标和等式约束时，优先调用 `model_and_solve_qpanda_qubo`。检查
+   `constraints.feasible` 和 `penalty.sufficient`；未检查时不得宣称可行性或 penalty 已验证；后者失败表示 penalty 太弱，不能把 QUBO 最优解写成
+   原约束问题的最优解。
+4. 用户已经给出 QUBO 数值时，调用 `solve_qpanda_qubo`：目标是 `x^T Q x + b·x + c`，
+   `quadratic` 是 `Q`，`linear` 是 `b`，`constant` 是 `c`。
+5. 按任务选择 traversal 或 qaoa；QAOA 不要求先遍历。两项 Tool 都接受 referenceMode；auto 仅在变量数不超过 12 时穷举，required 尝试所请求规模，skip 不做额外穷举。
+6. 比较 QAOA 概率分布的最高比特串与经典最优解时，注意比特序可能不同，按目标函数值判断而不是
+   直接按比特位比较。
+7. 输出时区分：用户模型、编译后的 QUBO、上游工具事实、枚举 observations、尚未完成的来源链验收。
+
+## 与其他能力的分工
+
+- 电路层面的构建、转译与文档查询用 `qiskit-circuit-workbench` 或 `tyxonq-workbench`。
+- 严格限定的二量子位基态 VQE 与独立验收用 `quantum-ground-state`。
+- 真机执行（悟空 QPU）使用默认关闭的 `qpanda_runtime` MCP Server 所暴露的 Tool；本地 QUBO 求解不提交任何云任务。
+
+## 解释规则
+
+- MCP-exposed Tool 成功只代表 `pyqpanda_alg` 本地计算完成，不代表优化结论通过科学验收。
+- `classical` 是经典暴力遍历的确定性参考；`checks.objectiveConsistencyError` 只是对目标函数取值
+  做的自洽检查，不是独立 Validator。
+- 建模工具会枚举全部二值赋值，核对“原目标 + penalty 残差平方”等于编译后 QUBO，并独立比较
+  pyqpanda_alg 的经典最小值；这些是 `observations_available`，不自动物化最终 Acceptance。
+- `penalty.sufficient=fail` 是模型事实，不是运行错误：提高 penalty 或重新建模后再比较。
+- QAOA 结果是变分采样近似，含随机性；不要把一次分布解释为确定性最优。
+- Harness MCP Client 连接不可用或 MCP-exposed Tool 返回错误时保留原始错误语义，不编造最优解、分布或版本。
+
+## 输出格式
+
+保持简洁并包含：
+
+1. 原模型、变量顺序与 QUBO 系数摘要；
+2. 可行解数量、原问题可行最优解、penalty 是否足够；
+3. pyqpanda_alg 经典最优值，以及与独立枚举参考的误差；
+4. 若运行 QAOA：`layer`、最高概率比特串与分布要点；
+5. `pyqpanda_alg` 版本和 `scientificValidation` 边界。
+
+变量数、模型项数和 QAOA 层数由调用方选择，适配器不额外设置人工规模上限。具体资源配置见[本地计算说明](../../../docs/integrations/SCALABLE_BRIDGES.md)。
+
+## 依赖准备
+
+运行前执行 `node scripts/setup-paper-tools.mjs qpanda-qubo`。缺失、旧锁和已安装环境的处理见[共同准备说明](../../../docs/integrations/LOCAL_ENVIRONMENTS.md)；Tool 不自动安装或升级依赖。

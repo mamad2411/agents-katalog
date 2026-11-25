@@ -1,0 +1,84 @@
+---
+name: satis-ayip-zapt
+description: "Satılan malın ayıplı çıkması veya üçüncü kişinin hak iddiasıyla zapt edilmesi halinde alıcının haklarını, ihbar sürelerini ve seçimlik hakları belirlemek gerektiğinde; satıcının sorumluluğunun denetimi için kullanılır."
+---
+
+# Satış Sözleşmesi — Ayıptan ve Zapttan Sorumluluk
+
+## Görev
+Satılanın maddi/hukuki/ekonomik ayıbı veya zaptı halinde alıcının seçimlik haklarını, gözden geçirme-ihbar yüklerini ve zamanaşımını TBK m.207 vd. çerçevesinde denetlemek; ticari satışta TTK m.23 sürelerini ayırmak.
+
+## Soğuk başlangıç (intake)
+- Satım konusu ne (taşınır/taşınmaz, ticari mal mı, tüketici işlemi mi)?
+- Ayıp mı, zapt mı (üçüncü kişinin üstün hakkı mı)?
+- Teslim tarihi ve ayıbın fark edildiği/bildirildiği tarih?
+- Açık mı gizli ayıp; satıcı ayıbı biliyor/ağır kusurlu mu?
+
+## Denetim şeması
+1. **Ayıbın varlığı (m.219).** Lüzumlu vasıfların yokluğu veya değeri/yararı azaltan eksiklik. Satıcı, ayıbı bilmese de sorumlu (m.219/2).
+2. **Gözden geçirme ve ihbar (m.223).** Alıcı, teslimden sonra imkân bulur bulmaz gözden geçirip ayıbı uygun sürede bildirmeli; aksi halde malı kabul etmiş sayılır. Gizli ayıpta ortaya çıkınca derhal ihbar. **Ticari satışta TTK m.23/c:** açık ayıp 2 gün, muayene gerektiren gizli ayıp 8 gün.
+3. **Seçimlik haklar (m.227).** Dönme (sözleşmeden), bedel indirimi, ücretsiz onarım, ayıpsız misli ile değişim; ayrıca genel hükümlere göre tazminat (m.229). Dönme aşırı ise hâkim bedel indirimine hükmedebilir (m.227/4).
+4. **Zapttan sorumluluk (m.214-218).** Üçüncü kişi üstün hakla malı alırsa tam/kısmi zapt; alıcının davayı satıcıya ihbarı (m.215) ispat ve rücu için kritik. Tam zaptta sözleşme kendiliğinden sona erer (m.217).
+5. **İspat yükü.** Ayıbın varlığını ve teslim anında mevcudiyetini alıcı; süresinde ihbar edildiğini de alıcı; ayıbın bilinmesine rağmen susulduğunu ileri sürense buna göre ispatlar.
+6. **Zamanaşımı (m.231).** Teslimden itibaren 2 yıl; taşınmaz yapı eserlerinde 5 yıl. Satıcının ağır kusuru/hile varsa süre işlemez (m.231/2). Ara sonuç: hak ve süre haritası çıkar.
+
+## Çıktı modülleri
+- Ayıp ihbar mektubu taslağı (tarih/içerik unsurlarıyla).
+- Seçimlik hak ve süre tablosu (adi/ticari ayrımı).
+- Dava dilekçesi iskeleti (talep sonucu + dayanak madde).
+
+## Plugin bağlamı
+
+Bu beceri `borclar-hukuku-ozel` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

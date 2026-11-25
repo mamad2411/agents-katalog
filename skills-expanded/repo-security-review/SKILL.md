@@ -1,0 +1,131 @@
+---
+name: repo-security-review
+description: |
+  Manual-only skill.
+
+  Use ONLY when the user explicitly invokes:
+  $repo-security-review (Codex) or /repo-security-review (Claude Code)
+
+  Never select this skill via semantic matching.
+---
+
+# Security Review
+
+## Activation guard
+
+If the user has not explicitly invoked this skill as `$repo-security-review`
+(Codex) or `/repo-security-review` (Claude Code):
+- Exit immediately
+- Do not analyze anything
+- Do not load references
+
+---
+
+## Token policy
+
+- Default: no reference files
+- Load at most ONE reference file
+- Only load references if strictly required
+- Prefer repo evidence over general guidance
+- Keep output concise and high-signal
+
+---
+
+## Modes
+
+### Light mode (default)
+
+Use for:
+- narrow code paths
+- quick checks
+- implementation guidance
+
+Rules:
+- no references unless absolutely necessary
+- only high-confidence findings
+- minimal output
+
+---
+
+### Full review mode
+
+Use ONLY if explicitly requested (e.g. “full security review”, “threat model”)
+
+Rules:
+- define scope first
+- inspect repo before references
+- load at most one reference for the task
+
+---
+
+## Workflow
+
+1. Identify scope (files, components, boundaries)
+2. Locate:
+   - entrypoints
+   - auth boundaries
+   - user input paths
+   - sensitive data handling
+3. Analyze only what is in scope
+4. Escalate only if risk justifies it
+
+---
+
+## Priority risks
+
+Focus on real, high-impact issues:
+
+- auth / authorization flaws
+- injection risks
+- SSRF / request forgery
+- unsafe parsing / deserialization
+- file upload / path traversal
+- secrets exposure
+- tenant isolation failures
+- insecure defaults
+
+Ignore:
+- style issues
+- speculative edge cases
+- generic checklists
+
+---
+
+## Output format
+
+For each issue:
+
+- Issue: what is wrong
+- Location: where it is
+- Impact: why it matters
+- Abuse path: how it could be exploited
+- Fix: smallest safe remediation
+
+If no issues: say so clearly.
+
+---
+
+## Reference usage
+
+Only if necessary, choose ONE:
+
+- Express / Node backend: [Express guidance](references/javascript-express-web-server-security.md)
+- Next.js: [Next.js guidance](references/javascript-typescript-nextjs-web-server-security.md)
+- React frontend: [React guidance](references/javascript-typescript-react-web-frontend-security.md)
+- Vue frontend: [Vue guidance](references/javascript-typescript-vue-web-frontend-security.md)
+- FastAPI: [FastAPI guidance](references/python-fastapi-web-server-security.md)
+- Django: [Django guidance](references/python-django-web-server-security.md)
+- Flask: [Flask guidance](references/python-flask-web-server-security.md)
+- Go backend: [Go guidance](references/golang-general-backend-security.md)
+
+If no strong match → use none
+
+---
+
+## Hard rules
+
+- Only run after explicit `$repo-security-review` or `/repo-security-review` invocation
+- Never trigger implicitly
+- Never scan entire repo unless explicitly asked
+- Never load more than one reference for the task
+- Never inflate output with generic advice

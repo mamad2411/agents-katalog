@@ -1,0 +1,483 @@
+---
+name: review-converge
+description: Autonomously review and fix the current branch or specified scope in iterative rounds until clean, leaving all changes in the working tree. Escalates only genuine design decisions. Ends with a transparent report of every round, every fix, and anything it couldn't resolve.
+argument-hint: '[branch name | PR number | file path | "current branch"]'
+effort: high
+model: opus
+---
+
+## Role
+
+Act as a coordinator. You spawn subagents to do analysis and implementation work; your job is to
+route their output, track state across rounds, emit progress, and decide when to stop.
+
+**Never commit.** All changes land in the working tree for the user to review and commit using
+their normal workflow.
+
+---
+
+## Phase 0: Clarify Scope
+
+Read the scope from `$ARGUMENTS`.
+
+If missing or ambiguous, ask:
+
+> "What should I review? (e.g. `current branch`, a branch name, a PR number, or a file path)"
+
+Wait for the user's response before continuing.
+
+Once scope is clear, emit:
+
+```
+Scope: [resolved scope]
+Starting review-converge (max 5 rounds)...
+```
+
+---
+
+## Phase 0.5: Confirm the branch is current
+
+Do this before reading any code. A review of a stale branch is wasted work, and the waste is
+invisible: every agent reads a diff against the wrong base, findings describe code the base
+branch has already changed, and the report reads exactly like a good one.
+
+`git merge-base` will not tell you. It returns a correct answer for a branch that is a hundred
+commits behind, so the staleness never surfaces as an error.
+
+```bash
+git fetch origin --quiet
+# BASE is the PR's baseRefName, or the repo's default branch for a plain branch scope
+git rev-list --count HEAD..origin/<BASE>                     # commits behind
+git merge-tree --write-tree --name-only origin/<BASE> HEAD   # conflicts, without touching the tree
+```
+
+**Stop and report, before Phase 1, if the branch is behind by one or more commits or if
+`merge-tree` reports a conflict.** Say how far behind it is, name the conflicting paths, and ask
+whether to update the branch first. Do not update it on your own initiative: this skill does not
+commit, and updating the branch is a commit.
+
+When the user asks you to update, **merge `origin/<BASE>` into the branch rather than rebasing**,
+unless they say otherwise. The branch may already be pushed and under review, and a merge keeps
+the existing commits and their review history intact.
+
+Then run a second, separate check: **are the files under review still the ones the project
+builds?** Both steps below are required, and you run the second one even when the first says the
+path is fine.
+
+1. Does the path still exist on the base ref?
+   `git ls-tree origin/<BASE> -- <each path in the diff>`
+
+2. Does the base ref still build it? Grep the build manifest on the base ref — `compose.yaml`,
+   `Dockerfile`, `package.json`, `justfile`, CI config — for the directory those paths sit in,
+   and read what it points at.
+   `git show origin/<BASE>:compose.yaml | grep -n '<dir>'`
+
+**Existence is not the check, and a path that exists tells you nothing on its own.** The failure
+this catches is a directory that was copied elsewhere and left behind: it still exists, it still
+diffs cleanly, the manifest points at the new copy, and every fix you land in the old one changes
+nothing. When a base ref holds two copies of a tree, `git rev-parse origin/<BASE>:<dir>` on each
+returns the same hash for identical copies, which is the fastest way to confirm what you are
+looking at.
+
+If the manifest points somewhere other than the paths under review, report it and stop, the same
+as for staleness.
+
+---
+
+## Phase 1: Load Context
+
+Before the first round, understand the intent of the changes:
+
+- If scope is a **branch**: run `git log origin/<BASE>..HEAD --oneline` (the `<BASE>` from Phase
+  0.5) and read the PR description if one
+  exists (`gh pr view` — skip if no PR yet)
+- If scope is a **PR number**: fetch the PR description with `gh pr view <number> -R <owner>/<repo>`
+- If scope is a **file path**: read the file and any related context files
+
+Also discover what quality checks this project has documented. Look for:
+
+- Commands mentioned in `CLAUDE.md` or project docs as the standard check/lint/test commands
+- Scripts in `Makefile`, `package.json` (`lint`, `typecheck`, `test`), `pyproject.toml`, etc.
+- Any CI configuration that reveals what checks run on every commit
+
+Record whatever you find as the **quality gate** for this project. If nothing is documented,
+note that and skip the quality gate step each round.
+
+From what you read, distill a short **problem statement**: in 1-2 sentences, what pain point
+or goal do these changes address, and what outcome should they achieve? If the git log and PR
+description don't make this clear, note it as "intent unclear" — do not invent one.
+
+Also read `~/.agents/standards/README.md` and load the standards files most relevant to the
+change scope. These standards are passed to every subagent alongside the problem statement and
+quality gate throughout the run.
+
+---
+
+## Phase 2: Converge Loop
+
+Maintain a **decided list** across all rounds: every finding that has been auto-fixed, escalated or
+noted with no action in a prior round. Before classifying findings each round, filter out anything
+already on the decided list. This keeps review agents fresh and unbiased (they see everything anew)
+while preventing the coordinator from re-presenting already-handled items.
+
+Run up to **5 rounds**. Before each round, emit:
+
+```
+Round N/5: reviewing...
+```
+
+### Step A — Review
+
+Invoke the `review-code` skill directly in the main conversation (via the Skill tool, not the Agent
+tool). Skip `review-code`'s Steps 1 and 2 — scope, diff command, and intent are already established
+in Phase 1 and do not change between rounds. Jump straight to Step 3, supplying:
+
+- The diff command from Phase 1
+- The reviewable file list from Phase 1
+- The problem statement from Phase 1 as the intent block
+
+Wait for `review-code` to return its findings in its Step 4 format: a verdict, then a findings
+table whose severities are `must`, `should`, `consider` and `?` (open design question).
+
+### Step B — Classify Findings
+
+Filter out any finding already on the decided list. Then partition the remaining findings.
+
+**Sort by provenance first.** Before deciding auto-fix versus escalate, establish for each finding
+whether this change introduced it or whether it is already true on the base ref. The review agents
+label each finding `[introduced]` / `[pre-existing]` / `[provenance unknown]`; spot-check the
+labels rather than trusting them, and resolve every `[provenance unknown]` yourself with
+`git show <base-ref>:<path>` or `git log -S`. A defect on a line the diff shows as unchanged
+context is pre-existing even when the change rewrote the function around it.
+
+**Pre-existing** — the defect is on the base ref. It does not enter the loop:
+
+- Never auto-fix it. The user asked for a review of a change, not a cleanup of the surrounding
+  code, and a fix they did not ask for costs them a larger diff to review.
+- Never write it up as a lettered escalation. It is not a decision blocking this change.
+- Record one line for the **Pre-existing issues noticed** report section and move on.
+- Cap the section at 8 entries. If you find more, list the 8 with the largest consequence and say
+  how many you dropped.
+
+The one exception: a pre-existing defect that the change makes *newly reachable or newly visible*
+is worth raising, because the change is what puts it in front of a user. Say so in its one line
+(`surfaced by this change: <how>`). It still does not get auto-fixed and still does not become a
+lettered escalation — the user decides whether to pull it in.
+
+Then partition what remains — the `[introduced]` findings only:
+
+**Auto-fix** — there is one clearly correct answer. This includes:
+
+- Obvious correctness fixes (bugs, missing error handling, unquoted variables, etc.)
+- Consistency fixes with no ambiguity (matching the pattern used everywhere else)
+- Conservative improvements on working code (defensive quoting, minor style alignment)
+- The mechanical part of a mixed finding — see splitting rule below
+
+The test is: _does applying this require the author to make a choice?_ If no, auto-fix it.
+
+**Escalate** — the right answer genuinely depends on a decision only the author can make:
+
+- Multiple valid approaches exist and the choice depends on requirements or preferences
+- The fix would change a public API, data model, or contract
+- Correctly fixing it requires intent or context only the author has
+
+Note: severity and escalation status are independent. A `must` finding with an obvious correct
+fix is **auto-fix**. A `consider` finding with two reasonable approaches is **escalate**.
+
+Note also: provenance outranks severity. A `must` pre-existing defect is still pre-existing — it
+goes in its one-line section, not into the loop. Severity decides how the user should feel about
+it, not whose change owns it.
+
+**Escalation discipline** — before writing an escalation:
+
+- Resolve all analytical sub-questions yourself by reading the code and tests, or by a read-only
+  query (`gh api` GETs, ticket reads, another repo's config) when the answer lives outside the
+  repo. These need no approval. Never escalate "is this a bug?", "is this intentional?", or "does
+  X occur in production?" — answer those yourself and state your conclusion. Only the _decision_
+  goes to the author.
+- Every escalated item must present ≥2 concrete lettered action options, each with a clear
+  outcome. If you find yourself writing an option like "(a) No action — just confirming
+  awareness", the item is not a genuine escalation. Give it one line under that round in the
+  report's **Changes made** section instead, starting `Noted, no action:`.
+- Mark your recommended option `(recommended)`.
+
+**Splitting rule:** If a finding contains both a mechanical sub-fix and a design sub-question,
+apply the mechanical sub-fix and escalate only the design question. Never hold a mechanical fix
+hostage to an unresolved design question.
+
+Add all classified findings to the decided list.
+
+### Step C — Check for Repetition
+
+Compare this round's auto-fix findings against prior rounds. A finding is **repeated** if the
+same issue at the same location appeared in a prior round after a fix was attempted.
+
+**One failed attempt = escalate.** Move it to the escalate bucket and add it to the decided list.
+
+### Step D — Decide Whether to Continue
+
+Emit one of:
+
+```
+Round N/5: [X] auto-fix, [Y] escalate, [Z] repeated, [W] noted
+```
+
+Then:
+
+- If there are **no auto-fix findings**: exit the loop
+- If the **round limit is reached**: exit the loop
+- Otherwise: continue to Step E
+
+### Step E — Fix (one subagent per round)
+
+Before spawning, verify any file paths referenced in the findings actually exist (`ls` or `fd`).
+Correct a wrong path before passing it; if the right path is ambiguous, escalate.
+
+**Spawn one fix subagent for the whole round**, carrying every auto-fix finding from this round.
+Run it on Opus: the next round reviews its fixes, but a fix that is subtly wrong can pass that
+review.
+
+One agent, not one per file. Fixes within a round depend on each other — a test has to be written
+against the source fix it guards — so splitting by file produces a serial chain of handoffs that
+looks like parallelism and isn't. One agent holds the whole round's context, and there is no
+window in which two agents restore the same file.
+
+Pass it:
+
+- Every auto-fix finding from this round, with suggested fixes
+- The relevant file paths and context
+- Instruction: implement every finding exactly as described; do not make additional changes; do
+  not commit anything
+- Instruction: write a test only to guard a defect you are fixing here, one per fix, and name
+  which fix it guards. Do not add tests for untested behaviour you did not change — report those
+  as coverage gaps instead. See **Tests: regression guards only** below.
+- Instruction: run only what proves your own changes. Do not run the full quality gate — the
+  coordinator runs it once after you return, and running it twice wastes a minute per round.
+- The verification rules below, where they apply to its fixes
+
+**Verification is proportional to what the fix changes.** A fix that alters runtime behaviour —
+control flow, an exit code, a condition, an error path — needs its guard test mutation-proved:
+revert the fix, confirm the test fails and fails *on the assertion that names the behaviour*, then
+restore. A fix that cannot change behaviour — formatting, a docstring, a comment, an import
+reorder — needs nothing beyond the coordinator's quality gate. Do not mutation-prove those.
+
+**When mutating a file to prove a test, defeat stale bytecode.** A restored file can still be
+imported from a cached compile of the mutated source: a same-second restore leaves the cached
+artefact looking current, so the source is provably correct by checksum while the running code is
+not. This has already produced one false test failure in a past run. Run every verification pass
+with compilation caching off (`PYTHONDONTWRITEBYTECODE=1` for Python, the equivalent elsewhere),
+and confirm the restore with both a checksum and a clean run, never the checksum alone.
+
+Wait for the fix subagent to complete.
+
+**Tests: regression guards only.** The loop writes a test only to guard a defect it fixed in this
+run. One test per fix, pinned to that defect, failing without the fix and passing with it. That is
+the entire licence.
+
+It does not write a test for behaviour that was already untested and that the loop did not change.
+That is a coverage gap, not a regression. Filling it is what stops the loop terminating: the new
+tests are new code, the next round reviews that code, finds hygiene problems in it, fixes those,
+and the round after reviews those fixes. Two rounds of a past run went entirely to tests the run
+had written itself. Record those gaps in the **Coverage gaps not filled** report section as named
+test cases the author can add, and write none of them.
+
+Apply this test at the moment of writing, and state the answer in the report entry: **which fix
+from this run does this test guard?** If you cannot name one, you are filling a coverage gap. List
+it instead.
+
+This narrows one standing instruction on purpose. The global workflow rule "does any behavior this
+change introduces lack test coverage? If so, add a test before moving on" assumes the change is
+yours. Here it is not — you are reviewing someone else's change, and coverage they chose not to add
+is theirs to decide on. Inside this skill, that rule applies only to behaviour *the loop itself*
+changed.
+
+**Run the quality gate, once, yourself.** If a quality gate was discovered in Phase 1, run it now.
+This is the coordinator's job and the fix subagent was told not to do it, so this is the only place
+it runs each round. Feed any new failures back into the next round as additional findings (do not
+auto-fix them here — let the review loop handle them cleanly).
+
+Emit:
+
+```
+Round N/5: applied [X] fixes[, quality gate: OK | N new issues]
+```
+
+Record what was changed (file, issue, fix applied, before/after snippet) for the report.
+
+Then return to the top of the loop for the next round.
+
+---
+
+## Phase 3: Report
+
+Once the loop exits, emit the full report in the conversation. **Never abbreviate it — the full
+report, including every escalation with its complete lettered option list, must appear in the
+conversation.** Do not produce a condensed summary. Do not write to disk.
+
+Report format:
+
+````markdown
+# review-converge report
+
+**Scope:** [resolved scope]
+**Rounds completed:** N of 5
+**Outcome:** [Clean | Escalations remaining | Repetitions unresolved | Round limit reached]
+
+---
+
+## Changes made
+
+Leave a blank line before and after every diff block so items don't run together.
+
+### Round 1
+
+- `file:line` — [issue] — [fix applied]
+
+  ```diff
+  - [before, max 3 lines]
+  + [after, max 3 lines]
+  ```
+
+- Noted, no action: `file:line`: [what the author may want to know, and your conclusion]
+````
+
+- `file:line` — [issue] — [fix applied]
+
+  ```diff
+  - [before]
+  + [after]
+  ```
+
+### Round 2
+
+...
+
+### Round N
+
+Clean — no auto-fixable findings.
+
+---
+
+## Repeated findings (could not resolve)
+
+These issues reappeared after a fix attempt. One attempt was made; escalating rather than
+speculating further.
+
+- `file:line` — [issue] — Attempted: [what was tried] — Why it didn't hold: [best guess]
+
+(None)
+
+---
+
+## Escalated items
+
+These require a decision from you. Each lists the options, with my recommendation marked
+`(recommended)`.
+
+Reply with your decisions (e.g. "1b, 2a") and I'll apply them and do one final pass.
+
+1. `file:line` — [issue] — Why escalated: [reason]
+   - (a) [option] (recommended)
+   - (b) [option]
+   - (c) [option if applicable]
+
+2. `file:line` — [issue] — Why escalated: [reason]
+   - (a) [option]
+   - (b) [option]
+
+(None)
+
+---
+
+## Pre-existing issues noticed
+
+Already true on [base ref] before this change. Nothing here was fixed and nothing here blocks the
+change. One line each, no options, no discussion. Say the word if you want any of them picked up,
+here or as a separate piece of work.
+
+- `file:line` — [what's wrong, one sentence] — [how it was confirmed pre-existing]
+- `file:line` — [what's wrong] — surfaced by this change: [how]
+
+[If more than 8 were found: "N more not listed."]
+
+(None)
+
+---
+
+## Coverage gaps not filled
+
+Behaviour that has no test and that this run did not change, so no test was written for it. These
+are named cases ready to add, not a suggestion to "improve coverage". Say the word if you want any
+of them written.
+
+- `file:line` — [behaviour with no test] — Suggested case: [the test, named and described
+  concretely enough to write, e.g. "`add` exits 1 when Feedbin returns NOT_FOUND"]
+
+(None)
+
+---
+
+## Documentation gaps
+
+Patterns seen during this run that suggest missing or incomplete project documentation. Addressing
+these would turn future escalations into auto-fixes and prevent the same issues from recurring.
+
+- **[Pattern name]** — [what kept coming up] — Suggested addition: [which file to update and
+  what to document, e.g. "add a note to standards/bash.md that all helper functions must use
+  the call-site failure pattern: `check_X ... || failures=$((failures + 1))`"]
+
+(None)
+
+---
+
+## Reviewer and standards gaps
+
+Only if a round needed an agent the standing agents do not provide. The question that agent was
+added to answer is evidence about your reviewer set, not just about this change, so say which it
+is.
+
+- **Added agent:** [the question] — Why the standing agents did not ask it: [reason] — What it
+  found: [finding, or "nothing"]
+
+**Generalisable?** [One of: specific to this change, nothing to close. | A category — [what
+recurs] — close it by [a standing agent for X / a standard in
+`~/.agents/standards/<file>.md` saying Y / both].]
+
+(None)
+
+---
+
+## Working tree
+
+All changes are uncommitted. Run `git diff` to review before committing.
+[N total files modified]
+
+---
+
+## Guardrails
+
+- **Max 5 rounds** — always. Never loop indefinitely.
+- **Current base first** — Phase 0.5 runs before any code is read. A branch behind its base, or
+  whose reviewed paths the base has moved or superseded, stops the run and asks. Merge to update,
+  never rebase, and only when the user says so.
+- **No commits** — ever. Working tree only.
+- **No scope creep** — only fix findings from the review. Do not refactor, clean up, or improve
+  things outside the reported findings.
+- **Pre-existing stays out** — a defect already on the base ref is listed in one line and left
+  alone. It is never auto-fixed and never becomes a lettered escalation, whatever its severity.
+- **Regression guards only** — a test is written only to guard a fix made in this run, one per
+  fix, and the report names which fix it guards. Coverage gaps are listed, never filled.
+- **One fix agent per round** — it holds the whole round's fixes. Never one per file.
+- **The coordinator owns the quality gate** — it runs once per round, after the fix agent returns.
+  The fix agent runs only what proves its own change.
+- **Proportional proof** — mutation-prove a guard test only for a fix that changes runtime
+  behaviour, and defeat compilation caching when you do.
+- **No silent changes** — every change made must appear in the report with a diff snippet. A
+  `Noted, no action:` line changes nothing, so it has no diff.
+- **One attempt per issue** — if a fix doesn't hold, escalate immediately rather than speculating.
+- **Split, don't bundle** — never hold a mechanical fix hostage to an unresolved design question.
+- **Decided list** — never re-present a finding the coordinator has already classified.
+
+```
+
+```

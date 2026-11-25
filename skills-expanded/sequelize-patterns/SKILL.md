@@ -1,0 +1,189 @@
+---
+name: sequelize-patterns
+description: Use when sequelize ORM patterns — models, associations, migrations, transactions,
+  hooks, TypeScript support. Use when working with sequelize patterns.
+domain: development
+author: oyi77
+license: Apache-2.0
+subdomain: software-development
+tags:
+- coding
+- patterns
+- sequelize
+- software-engineering
+- testing
+version: 1.0.0
+category: development
+---
+
+
+
+## Overview
+
+Sequelize is a promise-based Node.js ORM for PostgreSQL, MySQL, MariaDB, SQLite, and Microsoft SQL Server. It features solid transaction support, relations, eager/lazy loading, read replication, and more.
+
+## Capabilities
+
+- Model definition with TypeScript decorators or define()
+- Associations: hasOne, hasMany, belongsTo, belongsToMany
+- Migrations with sequelize-cli
+- Transactions (managed and unmanaged)
+- Hooks (beforeCreate, afterUpdate, etc.)
+- Scopes for reusable query fragments
+- Eager/lazy loading with include
+- Read replication and connection pooling
+
+## When to Use
+**Trigger phrases:**
+- "sequelize patterns"
+- "Sequelize ORM patterns — models, associations, migrations, transactions, hooks, "
+
+
+- Node.js applications needing a mature, well-documented ORM
+- Multi-database support (PostgreSQL, MySQL, SQLite, MSSQL)
+- Need complex associations and eager loading
+- Existing JavaScript codebase (Sequelize has strong JS support)
+
+## When NOT to Use
+
+- Task is about deployment, not development (use deploy skills)
+- Task is about code review, not writing (use review skills)
+- You need to understand existing code first (use research skills)
+- Task is about testing only (use test skills)
+- Requirements are unclear (clarify first)
+- Task is trivially simple (single line fix)
+
+
+## Pseudo Code
+
+The sequelize-patterns workflow follows a standard pipeline pattern.
+
+Core flow:
+```
+# sequelize-patterns primary flow
+input = prepare(raw_data)
+result = process(input, config={associations, hooks, migrations, models, patterns})
+validate(result)
+deliver(result)
+```
+
+Error handling:
+```
+on error:
+  log(error_details)
+  retry_with_backoff(max=3)
+  if still_failing: alert_and_escalate()
+```
+
+
+### Model Definition
+```typescript
+import { DataTypes, Model } from 'sequelize';
+import sequelize from './connection';
+
+class User extends Model {
+  declare id: number;
+  declare email: string;
+  declare name: string;
+}
+
+User.init({
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  email: { type: DataTypes.STRING, unique: true, allowNull: false },
+  name: { type: DataTypes.STRING },
+}, { sequelize, modelName: 'user' });
+```
+
+### Associations
+```typescript
+User.hasMany(Post, { foreignKey: 'authorId' });
+Post.belongsTo(User, { foreignKey: 'authorId' });
+User.belongsToMany(Role, { through: 'UserRoles' });
+Role.belongsToMany(User, { through: 'UserRoles' });
+```
+
+### Queries
+```typescript
+// Create
+const user = await User.create({ email: 'alice@example.com', name: 'Alice' });
+
+// Find with eager loading
+const users = await User.findAll({
+  where: { name: { [Op.like]: '%Alice%' } },
+  include: [{ model: Post, as: 'posts' }],
+  order: [['createdAt', 'DESC']],
+  limit: 10,
+});
+
+// Update
+await User.update({ name: 'Updated' }, { where: { id: 1 } });
+
+// Delete
+await User.destroy({ where: { id: 1 } });
+```
+
+### Transactions
+```typescript
+// Managed transaction
+await sequelize.transaction(async (t) => {
+  const user = await User.create({ email: 'bob@example.com' }, { transaction: t });
+  await Post.create({ title: 'Hello', authorId: user.id }, { transaction: t });
+});
+```
+
+### Hooks
+```typescript
+User.addHook('beforeCreate', async (user) => {
+  user.email = user.email.toLowerCase();
+});
+```
+
+### Scopes
+```typescript
+User.addScope('active', { where: { isActive: true } });
+User.addScope('withPosts', { include: [{ model: Post }] });
+
+const activeUsers = await User.scope('active').findAll();
+```
+
+## Common Patterns
+
+- **Migrations**: `npx sequelize-cli migration:generate --name create-users`
+- **Seeders**: `npx sequelize-cli seed:generate --name demo-users`
+- **TypeScript**: Use `declare` for model attributes, `init()` for schema
+- **Connection pooling**: Configure `pool` option in Sequelize constructor
+
+## How to Use
+
+1. Understand the requirement and existing codebase patterns
+2. Design the solution with error handling and testability in mind
+3. Implement incrementally with tests for each change
+4. Verify against expected outcomes (manual and automated)
+5. Document usage, edge cases, and integration points
+6. Review with team before merging to shared branches
+
+## Red Flags
+
+- **Skipping tests to ship faster**: Untested code breaks in production when you least expect it
+- **No error handling in production code**: Unhandled errors crash services and lose user data
+- **Hardcoded configuration values**: Hardcoded values prevent environment switching and leak secrets
+- **Ignoring security implications**: Missing input validation, auth bypasses, and injection vulnerabilities
+- **Over-engineering simple solutions**: Premature abstraction adds complexity without proportional benefit
+
+## Verification
+
+- [ ] Skill output matches expected behavior
+
+## Process
+
+1. Analyze the task requirements
+2. Apply domain expertise
+3. Verify output quality
+
+## Anti-Rationalization Table
+
+| Rationalization | Reality |
+|---|---|
+| "Tests slow me down" | Bugs slow you down 10x more. Tests are speed, not overhead. |
+| "I will refactor later" | Technical debt compounds. Refactor as you go. |
+| "It works on my machine" | If it is not in CI, it does not work. Ship proof, not claims. |

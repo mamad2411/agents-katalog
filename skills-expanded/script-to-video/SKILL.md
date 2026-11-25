@@ -1,0 +1,198 @@
+---
+name: script-to-video
+description: Use when a dw MCP server is connected and the user hands over a script or prose and wants it turned into a video end to end - decomposing it into a shot list, casting recurring characters once, picking each shot's template and family, validating cost before spending, running and diagnosing, and handing the finished shots to the cut-and-score pass. Does not cover model auto-tuning or writing new pipeline JSON.
+---
+
+# Script to video on a dw server
+
+Turning a script into shots is the one piece none of the other skills
+cover. Everything downstream of a shot list already exists: `dw:minimax-h3`
+and `dw:ltx-2.5` pick a template per shot's shape, `h3-prompt-writing`
+writes the structured prompt, `dw:series-episodes` keeps a cast consistent,
+and `templates/assemble-and-score` cuts and scores the result. This skill
+is the decision tree that connects them, in order. It does not add anything
+to the engine - see "Not in scope" below for what it deliberately declines.
+
+## 1. Read the script and the server
+
+`get_server_info` for device and workspace, the way every dw skill starts.
+Read the script as prose and dialogue, the way a person would - this skill
+does not parse screenplay formats.
+
+## 2. Decompose into a shot list, not a shot count
+
+The unit that matters is *shots*, not lines or scenes: one scene may be
+several shots, and a `dw:minimax-h3` shot runs 5.17 to 14.4 seconds (the
+`17*n+5` frame grid, 124 to 345 frames). For each shot, name it, note
+which character(s) appear, what happens, and roughly how long it runs.
+
+Fill in this shape before writing any prompt:
+
+- **Cast**: per character, a voice description, sex, and the reference
+  asset (`asset:cast/<name>`; step 3).
+- **Locations**: each place a shot happens, named once and reused.
+- **Per shot**: the above, plus `opening_state` (what is on screen, who
+  stands where, what is held, at frame one) and `ending_state` (the same at
+  the last frame). A shot's `opening_state` is the `ending_state` of its
+  **source**, so the cut between them is written down rather than hoped for.
+- **Per shot, `beat`** (one visible state a single frame can show) and
+  **`must_not`** (a short list of physically or story-impossible things to
+  rule out: extra limbs, text in frame, the reference portrait itself).
+  `references/beat-review.md` has the rules for writing one.
+- **Per shot, optional `join`**: `continue` (the default; its source is the
+  shot before), `cut` (opens fresh), `cutaway` (an insert: the shot after it
+  takes the shot before it as source) or `lead_in` (its last frame is the
+  next shot's first). Read `references/joins.md` before rendering a
+  `cutaway` or `lead_in`.
+
+- **Per shot, every time** `shot_size`, `move`, `lens` and `light` (ids from
+  `cinematography`, never invented) and `duration` (seconds); `null` leaves
+  an axis to the model.
+
+Save the list as `<project>/shots` in the prompt library, one compiled
+`<project>/shot-NN` per shot: `references/shot-document.md`.
+
+Whatever the user supplied is locked; copy it, don't improve it. A field
+they left blank stays blank - ask, or mark it unspecified - and you invent
+no character, place or line to fill it.
+
+## 3. Cast recurring characters once, before any shot generates
+
+Read `dw:series-episodes` step 0 before drawing anything: every character
+appearing in more than one shot gets a portrait (and voice clip, if they
+speak) drawn once and `keep_output`'d as `asset:cast/<name>`, referenced
+from every later shot with `from_file`, never `from_previous_result`. A
+script with one continuous scene and no recurring cast can skip this and
+let the family template draw its own portrait. This is the step that goes
+missing silently - nothing validates "the same character looks the same"
+across separately generated shots, so it has to be deliberate.
+
+Framing guidance, not a measured rule (story-forge's lesson 5, unprobed
+on dw: `docs/proposals/audits/2026-11-story-forge-lessons.md`): a face
+small in a wide shot drifts most, so frame a recurring character large,
+and if the piece needs wides, keep a wide master too.
+
+Large `run_workflow` arguments: `save_prompt(name, {"text": ...})` each shot prompt under a
+script-prefixed name (the library is shared across workspaces) and pass
+`prompt:<script>/<shot>` references in the list; they resolve in nested
+arguments.
+
+## 4. Per shot: pick the shape, write the prompt
+
+Silent action or establishing shots go through a `dw:ltx-2.5` template
+(`templates/ltx2/text-to-video`, `templates/ltx2/image-to-video`, or a
+chained one for a longer take). Anything with dialogue, a held voice, or a
+scored montage goes through `dw:minimax-h3`'s `templates/minimax/dialogue-short`
+or `templates/minimax/music-video`, prompted with `h3-prompt-writing`'s
+structure (`subject_definitions`, `retention_analysis`,
+`detailed_description`, `overall_soundscape`, `non_diegetic_music`) rather
+than the raw script line, checking `list_prompts` first for a working
+example from the library that already uses these structures rather than
+drafting one from nothing. A shot that calls for generating several
+candidates and keeping the sharpest one deterministically, with no agent
+judgment call at run time, goes through `templates/best-of-n-to-video`
+instead of a single draw. Read the chosen family's own skill before writing
+a single prompt - the hard rules (frame count, canvas, reference limits)
+live there, not here.
+
+## 5. Test-render, validate and quote cost before queuing
+
+Render two to four representative shots first (a dialogue shot, an action
+shot, the hardest cut) and judge them before the full batch.
+For H3 shots, `dw:minimax-h3`'s quality-and-speed reference (*Ramp*) has the draft and final tiers and what to approve at each.
+
+`validate_workflow` against the chosen template with the assembled `shots`
+argument, read `plan.estimate` and `plan.downloads_required`, and state the
+cost before calling `run_workflow`. Only pass `acknowledged_cost` once a
+human (or an explicit pre-authorization) has signed off - this is a real
+gate, not a formality, and skipping it here is the one thing this skill
+must not do even when running unattended.
+
+Render in source order, not story order: a `lead_in`'s target first, and a
+re-roll quotes every shot taken off it (`references/joins.md`).
+
+Pass `note` on each `run_workflow` naming the shot and what the run tests,
+and `set_note` the take you keep: the note shows on every file it made.
+
+## Run and judge
+
+Wait with `wait_for_job`, asking for the plan's estimate plus a margin as
+`timeout_seconds`; `timeout_capped` says the server's cap cut it short, and
+a `still_running` reply means call again. If the call dies client-side ("timed out") first, call again with `timeout_seconds` 60 and loop; a running job lists `finished_steps`. After the job completes, read `get_job_events` / `get_gallery_metadata` for
+the warnings the engine already emits (`audio_no_headroom`, `audio_clipped`,
+an elision diagnostic) and `rerun_job(new_seed=True)` a shot that reads
+wrong - not by inventing a new heuristic, by reading what is already
+surfaced. On an H3 shot with dialogue a new seed also redraws the voice: in
+a lem probe (#610) three seeds of one line gave a different speaker each
+time without an audio reference, and only a narrower spread with one
+(`voice` / `voice-timbre-reference`). So when the voice is right and the
+picture is wrong, change the prompt and keep the seed; reach for
+`new_seed` only when the voice is pinned by a reference or does not matter.
+After a chained take (`templates/ltx2/chained-segments` or
+`templates/minimax/chained-segments`), call
+`assess_output(name, probe="analyze_seams")`: seam *n* is the join into
+segment *n+1* (the chain names its shots `segment N`). A `seam_frame_jump`
+is severity `info` and also fires on deliberate cuts (#466), so look at
+`get_output_frames(name, seams=[n])` before spending anything. A chain
+re-rolls whole: `rerun_job(new_seed=True)` redraws every segment, so quote
+the full chain's cost and get the go-ahead. If re-rolls keep failing at one
+seam, shorten the chain, simplify that segment's prompt, or make the seam a
+cut between two shots (`templates/ltx2/image-to-video` from a kept still,
+joined by `templates/assemble-and-score`). Never splice a re-rolled segment
+in with `concat_videos`: that join is recorded `hard_cut`, so
+`seam_frame_jump` stops checking it. A seam re-roll counts against the
+shot's budget below.
+Before the keep, run the beat review in `references/beat-review.md` on
+the shot's `get_output_frames` frames.
+Fix a shot in the order and within the caps of `references/fix-ladder.md`: three failed attempts, then ask.
+Face drift (`templates/face-drift-check`): see `references/fix-ladder.md`.
+For H3, lint the prompt first: `minimax-h3/references/prompt-lint.md`.
+Each shot's files are organized by `subfolder` - typically `final`
+for the deliverable video or `intermediate` for test frames; read the
+manifest to determine what was written where.
+
+## 6. Cut, score, deliver
+
+Once every shot exists, hand off to `templates/assemble-and-score` (or the
+`dw:series-episodes` five-beat procedure, if this script is one episode of
+a series) for the recut/bed/match_levels/normalize/pair pass. That skill
+already owns this step - do not re-derive it here.
+
+The shots, narration, score or cues, stills and references are ingredients
+the assembly consumes: a workflow you write or copy for one sets
+`"role": "intermediate"` in its saving step's `result`, so it reads as
+intermediate in the gallery (which opens on finals) before the assembly
+runs. Only the assembly's cut is final. Once a later run reads a file
+through `output:` or an `asset:` kept from it, the gallery lists that file
+as intermediate on its own.
+
+A sung multi-shot piece is reviewed by its lip-sync target: run
+`get_guide("tasks", section="Checking the lip-sync target")` on the cut
+before delivering it.
+
+To take the project home, call `export_job` once per job of the project, then
+fetch each zip's `open_url` and unpack it into `exports/` under the working
+directory (per its `next`).
+
+## Not in scope
+
+- **Automatic model speed optimization.** If a model is slow, that is a
+  human-in-the-loop task informed by `observed_minutes`/`observed_runs` in a
+  workflow listing (or `plan.estimate` with `basis: "observed"`), not
+  something this skill attempts unsupervised - the search space is large and
+  a wrong choice can silently change output quality.
+- **Workflow authoring from scratch.** This skill picks among existing
+  catalog templates; a script whose shape no template covers is a
+  "propose a new template" conversation, not something to improvise at
+  run time.
+
+## Sources
+
+This skill adds no new mechanism of its own - it is the decision tree over
+what already exists: `dw:minimax-h3` and `dw:ltx-2.5` (the family template
+pickers), `h3-prompt-writing` and the family prompt-writing conventions
+(the structured-prompt skills), `dw:series-episodes` (cast consistency and
+the recut/bed/match_levels/normalize/pair pass), `plan.estimate` and
+`acknowledged_cost` (the cost gate), and the warning kinds `dw/result.py`
+and `dw/elision.py` already emit (`audio_no_headroom`, `audio_clipped`, an
+elision diagnostic).

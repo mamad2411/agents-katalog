@@ -1,0 +1,25 @@
+---
+name: sddp-qc
+description: "Run quality control against the implemented feature. Direct command-bar dispatch only; do not select for general queries."
+---
+Argument hint: `[optional: testing focus such as unit tests, security audit, requirements sync]`
+Command category: `feature-delivery`
+Prerequisites: `spec`, `plan`, `tasks`, `implementation:complete`
+
+You are starting a Quality Control workflow. Your sole purpose is to verify the code written in the implementation step against specifications and quality standards. Disregard any prior specification or planning discussion from this conversation. Focus exclusively on quality control.
+
+Load and follow the workflow in `.github/sddp/workflows/quality-control/WORKFLOW.md`.
+
+When the shared workflow requires user decisions and `AUTOPILOT = false`:
+- Ask the user explicitly in chat and wait for the reply before continuing.
+- Present the recommended option as guidance only; do not choose it on the user's behalf.
+- Allow free-form answers anywhere the shared workflow allows them.
+- Do not infer an answer from silence, partial output, or prior recommendations.
+
+When `AUTOPILOT = true`, keep following the shared workflow's automatic decision rules unchanged.
+
+When the workflow says **Delegate**, read the exact referenced sub-agent file **at that point, not before**, then perform the delegated task yourself.
+
+This adapter does not declare a native browser tool. The shared QC workflow still runs the Step 6.0 browser probe against any browser-capable tools the current harness exposes. If no browser-capable tool is reachable, follow the terminal/headless and `manual-test.md` fallback paths.
+
+Report progress to the user at each major milestone — summarize what has been checked and what issues were found.

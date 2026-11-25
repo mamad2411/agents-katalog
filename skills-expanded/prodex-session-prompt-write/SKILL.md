@@ -1,0 +1,68 @@
+---
+name: prodex-session-prompt-write
+description: Safely write a user prompt to and observe an already-running plain prodex s session through its default expose MCP bridge.
+---
+
+# Existing Prodex session bridge
+
+Use `prodex s expose` from the same canonical workspace as the one plain
+`prodex s` session. The default MCP tools are:
+
+- `prodex_session_prompt_write({"message":"..."})` for Prompt Write;
+- `prodex_session_preempt({"thread_id":"..."})` to interrupt one exact
+  session turn and drain its still-pending queue;
+- `prodex_session_output_read({"cursor":"...","wait_ms":5000})` to read
+  later sanitized visible user, assistant, tool, MCP/agent, and session/turn-status events.
+
+For development requests, resolve the existing session first. Use
+`prodex_session_prompt_write` exactly once when one compatible plain `prodex s`
+exists, then read output with the returned `prodex_pid`, `thread_id`, and
+`next_cursor`. The unmodified Codex TUI is not required to render an externally
+queued follow-up; use Output Read for the authoritative machine-readable result.
+A fresh idle session is valid before its first manual prompt;
+the bridge verifies its live app-server thread and delivers the requested message
+through Codex. Start one `prodex_super_start` fallback only after an authoritative
+`no_session` result. Never start the existing-session and fallback paths in
+parallel, and never treat addressability, ambiguity, stale identity, queue,
+source, or verification errors as `no_session`.
+
+Prompt Write may return an optional `output_cursor` anchor when the exact
+pre-write rollout source is known; fresh no-source sessions may return `null`.
+It may revalidate and retry once only when the control plane proves the first
+attempt was rejected before acceptance or failed during preflight. Inspect
+`recovery_generation`, `last_prompt_requeued`, and `requeue_reason` in the
+result. Accepted and ambiguous writes are never retried.
+`write_ambiguous` means delivery may have happened after a close, timeout, or
+malformed response. Never replay it automatically and make no exactly-once claim.
+
+The two tools share one target identity. Require the same live OS user,
+canonical cwd, plain-session command, Prodex process birth identity, actual
+Codex writer ancestry/birth identity, Codex home authority, source identity,
+and thread UUID. Ambiguity, restart, source rotation, or a changed writer is a
+fail-closed error; never guess from the newest rollout.
+
+Modern Codex thread authority is the writer's open
+`thread-writer-locks/<UUID>.lock`. Legacy authority is exactly one open
+`rollout-...-<UUID>.jsonl`. If both are present, their UUIDs must agree. A
+normal persisted session is required after writing. A fresh Codex 0.153.2
+session may be held in the writer's live app-server until its first written
+message; the bridge verifies that exact live thread before writing and then
+revalidates persistence.
+
+Output reads are bounded and cursor-based. Return only existing sanitized
+user-visible assistant/tool/status transcript events. Pages may contain bounded
+generic `gap` markers for malformed, invalid-UTF-8, or oversized records, and
+`[text_truncated]` when text is bounded. Impossible recovery returns
+`recovery_failed`. Never expose hidden reasoning, instructions, credentials,
+queue payloads, or raw rollout JSON.
+Never read a target PTY or `/dev/pts`, synthesize keystrokes, write SQLite
+queue rows, or start another solver/writer.
+
+Preempt uses exact resolved process/writer/thread identity. It proves thread
+addressability/status with `thread/read`, obtains the active turn ID with
+`thread/turns/list`, sends Codex `turn/interrupt` for that exact turn, then
+deletes pending queue submissions through Codex. An empty queue observation is the boundary: prompt
+writes serialized before it are cancelled, later accepted writes remain valid.
+Already-started submissions are not counted as cancelled. Ambiguous control
+responses fail closed; the returned generation is an in-process boundary and
+Codex remains the durable queue owner.

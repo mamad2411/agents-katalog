@@ -1,0 +1,265 @@
+---
+name: prawo-pl-eli
+version: 2.2.0
+description: >-
+  Odpytuje OFICJALNE API ELI Sejmu (api.sejm.gov.pl/eli) — źródło pierwotne prawa polskiego
+  (Dziennik Ustaw, Monitor Polski): wyszukiwanie aktów, TEKST JEDNOLITY, pojedyncze artykuły,
+  metadane, nowelizacje, podstawa prawna, sygnatury Dz.U./M.P. Używaj przy KAŻDYM pytaniu
+  z prawa polskiego — TAKŻE gdy przepis nie jest jeszcze znany (ustalenie podstawy prawnej:
+  właściwość sądu, wyłączenie sędziego, przekazanie sprawy, przesłanki wniosku lub pozwu,
+  terminy) — oraz ZAWSZE przy TWORZENIU lub ANALIZIE UMÓW i PISM PROCESOWYCH. Wywołuj PRZED
+  wyszukiwaniem w internecie: treść polskiego przepisu cytuj WYŁĄCZNIE z ELI, nigdy z pamięci
+  ani z portali (arslege, lexlege, infor, LEX); internet służy tylko do orzecznictwa i doktryny.
+  Wyzwalaj też przy: „co mówi ustawa o…", „art. X ustawy…", „Dz.U. {rok} poz. {nr}", „tekst
+  jednolity", „czy przepis obowiązuje", „czy był nowelizowany". Polish primary law (statutes,
+  codes, regulations) from the official Sejm ELI API — always use for Polish law questions
+  BEFORE web search.
+---
+
+# Prawo polskie z oficjalnego API ELI Sejmu
+
+Skill do pracy z prawem polskim — przy **każdym pytaniu prawnym** oraz przy **tworzeniu i analizie umów
+i pism procesowych**: wszędzie tam, gdzie trzeba przywołać przepis, zweryfikować podstawę prawną, termin
+lub procedurę. Cytowanie przepisów z pamięci albo z nieoficjalnych portali jest zawodne (zmiany,
+nowelizacje, błędne sygnatury) — ten skill sięga do **źródła pierwotnego**: oficjalnego API ELI Sejmu
+(`https://api.sejm.gov.pl/eli`), czyli Dziennika Ustaw (DU) i Monitora Polskiego (MP).
+Używaj go, zanim podasz brzmienie przepisu, sygnaturę albo stwierdzisz, że coś „obowiązuje".
+
+## Kolejność źródeł (przepis ≠ internet)
+
+1. **Treść przepisu — wyłącznie z ELI.** Nigdy nie cytuj brzmienia polskiego przepisu z pamięci ani
+   z portali (arslege.pl, lexlege.pl, infor.pl, LEX itp.). Jeśli wynik wyszukiwania internetowego
+   podał brzmienie przepisu — zweryfikuj je przez `eli.py`, zanim go użyjesz w odpowiedzi.
+2. **Internet — tylko do orzecznictwa, doktryny i identyfikacji aktów.** Komentarze, wyroki, nazwy
+   ustaw — tak; po identyfikacji wróć do ELI po tekst przepisu.
+3. **Pytanie bez wskazanego przepisu** („czy jest podstawa, by…", „czy mogę wnieść o…", „jaki mam
+   termin na…") to też zadanie dla tego skilla — nie zaczynaj od wyszukiwarki. Najpierw ustal
+   WŁAŚCIWĄ PROCEDURĘ z rodzaju sprawy (pozew/pozwany → k.p.c.; oskarżony/akt oskarżenia → k.p.k.;
+   decyzja organu → k.p.a.; podatki → Ordynacja podatkowa), pobierz kandydackie przepisy z ELI
+   (`struktura --filtr`, `tekst --fragment`), dopiero potem ewentualnie internet po orzecznictwo.
+   Pomylenie procedury (np. art. 37 k.p.k. w sprawie cywilnej zamiast art. 44¹ k.p.c.) to typowy
+   skutek zaczynania od wyszukiwarki — portale rankują pod hasła, nie pod rodzaj sprawy.
+4. **Delegując research subagentowi**, wpisz do jego promptu: „treść polskich przepisów pobieraj
+   wyłącznie przez `scripts/eli.py` (skill prawo-pl-eli); internet tylko do orzecznictwa i doktryny".
+
+## Narzędzie
+
+Wszystko robi helper `scripts/eli.py` (tylko biblioteka standardowa Pythona — bez instalacji; opcjonalnie
+program `pdftotext` z pakietu poppler w PATH — potrzebny TYLKO do aktów, dla których API nie ma HTML, np.
+Konstytucja i świeże teksty jednolite; bez niego działa `--pdf`).
+Skrypt leży **obok tego pliku SKILL.md** (`<katalog skilla>/scripts/eli.py`) — NIE zakładaj, że to
+`~/.claude/skills/prawo-pl-eli` (skill zainstalowany jako plugin leży w katalogu pluginów; w Claude
+Code: `${CLAUDE_PLUGIN_ROOT}/skills/prawo-pl-eli`). Uruchamiaj wyłącznie helper z bieżącego pakietu:
+
+```
+# 1) Claude Code: przy ładowaniu skilla podstawia ${CLAUDE_PLUGIN_ROOT} (pełna ścieżka poniżej).
+ELI="${CLAUDE_PLUGIN_ROOT}/skills/prawo-pl-eli/scripts/eli.py"
+# 2) Codex / Claude Desktop / instalacja ręczna: katalog TEGO pliku SKILL.md (Claude Code podaje go
+#    jako „Base directory for this skill”, Codex w liście skilli) — podstaw go zamiast <katalog skilla>.
+[ -f "$ELI" ] || ELI="<katalog skilla>/scripts/eli.py"
+# 3) Piaskownica (Cowork, czat z code execution): katalog pluginu bywa NIEWIDOCZNY dla powłoki — wtedy
+#    pobierz DOKŁADNIE tę wersję helpera (tag = wersja z nagłówka tego pliku). Suma SHA-256 jest
+#    sprawdzana w kodzie przed zapisem i przed każdym uruchomieniem; niezgodna = helper nie startuje.
+[ -f "$ELI" ] || ELI=$(python3 - <<'EOF'
+import hashlib, os, sys, urllib.request
+WERSJA, SHA256 = "2.2.0", "3baed6339913332ede66588c9624876cd4471d7d8cabb31097a9c9de5db3a949"
+URL = f"https://raw.githubusercontent.com/jamarpl21/prawo-pl-eli/v{WERSJA}/plugins/prawo-pl-eli/skills/prawo-pl-eli/scripts/eli.py"
+p = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"prawo-pl-eli-{WERSJA}", "eli.py")
+try:
+    dane = open(p, "rb").read() if os.path.exists(p) else urllib.request.urlopen(URL, timeout=30).read()
+except Exception as e:
+    sys.exit(f"BŁĄD: nie udało się pobrać helpera ({e}). Bez helpera NIE cytuj prawa z pamięci ani z portali — poinformuj użytkownika.")
+if hashlib.sha256(dane).hexdigest() != SHA256:
+    os.path.exists(p) and os.remove(p)
+    sys.exit("BŁĄD: suma SHA-256 helpera nie zgadza się z SKILL.md — helper NIE zostanie uruchomiony. Nie cytuj prawa z pamięci ani z portali — poinformuj użytkownika.")
+os.makedirs(os.path.dirname(p), exist_ok=True); open(p, "wb").write(dane); print(p)
+EOF
+) && [ -f "$ELI" ] || exit 1
+python3 "$ELI" <komenda> [...]
+```
+
+Nie szukaj helpera przez `find` po katalogach użytkownika ani systemu i nie pobieraj go z żadnego innego źródła niż przypięty tag z sumą wyżej (żadnego `main`, żadnej innej wersji z cache) — inna wersja helpera to inne wyniki.
+
+(W przykładach niżej `python3 scripts/eli.py` oznacza `python3 "$ELI"`, jeśli nie jesteś w katalogu skilla.)
+
+Sygnaturę można podać w wielu formach: `DU 2000 1037`, `DU/2024/18`, `"Dz.U. 2024 poz. 18"`,
+`"Dz.U. 1997 nr 78 poz. 483"`, `WDU20240000018`, albo `DU/2000/1037` (ELI).
+
+### Komendy
+
+- **szukaj** — znajdź akt po tytule/typie/roku/haśle:
+  `python3 scripts/eli.py szukaj "Kodeks spółek handlowych" --typ Ustawa --limit 5`
+  (opcje: `--typ`, `--rok`, `--wyd DU|MP`, `--haslo`, `--obowiazujace`, `--limit`, `--offset`)
+- **meta** — metadane aktu (tytuł, typ, status, daty, czy obowiązuje, hasła, ELI, pliki tekstu):
+  `python3 scripts/eli.py meta DU 2000 1037`
+  Daty są rozdzielone, bo API ma dwa różne pola: **„Data aktu"** (`announcementDate` = data wydania,
+  „z dnia …" w tytule) i **„Ogłoszono"** (`promulgation` = publikacja w Dz.U./M.P. — od niej liczy się
+  vacatio legis); dalej **„WEJŚCIE W ŻYCIE"**, **„Stan prawny na"** (`legalStatusDate`, tylko t.j.) i
+  **„Uwagi"** (`comments` — np. „art. 5 ust. 4 … wchodzą w życie z dniem 25 grudnia 2024 r.", czyli RÓŻNE
+  daty wejścia w życie dla różnych jednostek; czytaj je zawsze). Gdy wejście w życie jest PÓŹNIEJ niż dziś,
+  `meta` i `tekst` piszą „akt jeszcze NIE WSZEDŁ W ŻYCIE" (status API „obowiązujący" znaczy tylko „nie
+  uchylony"), a przyszłe daty z „Uwag" — „część przepisów wchodzi w życie PÓŹNIEJ". „Cytat:" to urzędowa
+  forma do pisma („Dz. U. z 2001 r. Nr 112, poz. 1198"); przy akcie uchylonym — „Uchylony przez: …".
+- **tj** — znajdź AKTUALNY TEKST JEDNOLITY dla aktu (posortowane, najnowszy oznaczony; na starym t.j. ostrzega o nowszym):
+  `python3 scripts/eli.py tj DU 2000 1037`
+- **tekst** — treść aktu (z `text.html` → czysty tekst; gdy API nie ma HTML dla aktu — `textHTML=false`,
+  np. Konstytucja, k.c. DU 2026 795 — z jego WŁASNEGO urzędowego PDF przez `pdftotext -layout`, z nagłówkiem
+  „tekst z urzędowego PDF przez pdftotext" i linią `ELI_TEXT_SOURCE_PDF=…`). **Do pojedynczego przepisu używaj `--fragment`**
+  (wycina tylko jednostki z frazą — pełny kodeks to setki tysięcy znaków):
+  `python3 scripts/eli.py tekst DU 2024 18 --fragment "art. 299"` (trafia w nagłówek artykułu, nie w odesłania)
+  `python3 scripts/eli.py tekst DU 2024 18 --fragment "przedawnienie"` (wyszukiwanie pełnotekstowe)
+  `python3 scripts/eli.py tekst DU 2017 1692 --fragment "§ 4"` (paragraf rozporządzenia — od nagłówka „§ 4." do
+  następnego paragrafu, artykułu albo jednostki wyższej; też `"§ 2(1)"`/`"§ 2¹"`). W akcie z artykułami „§ N"
+  bez artykułu jest NIEJEDNOZNACZNE — wynik pokazuje wszystkie trafienia (do 8) z artykułem, w którym leżą
+  („[§ 1 — w: Art. 25.]"); jeden przepis: `--fragment "art. 25 § 2"`. Paragrafy cytowane w akcie zmieniającym
+  („„§ 7. …”") nie są traktowane jak paragrafy tego aktu.
+  `--pdf ŚCIEŻKA` zapisuje urzędowy PDF (preferuje tekst jednolity). Indeks górny podawaj w nawiasie
+  albo unicodem: art. 299¹ → `--fragment "art. 299(1)"` lub `"art. 299¹"` (zapis z `struktura`, „Art. 7_1.”,
+  też działa: `"art. 7_1"`); sufiks literowy normalnie: `"art. 66c"`, a z indeksem: `"art. 6b(3)"`. Nagłówki przepisów niedawno dodanych lub zmienionych mają w tekście jednolitym
+  odsyłacz do przypisu („Art. 66c 6)Dodany przez…") — `--fragment` to obsługuje.
+  **„Nie znaleziono frazy" NIE znaczy, że przepisu nie ma w akcie** (zwłaszcza przy nietypowym
+  oznaczeniu jednostki): sprawdź jeszcze samym numerem (`--fragment "66c"`) albo słowem z treści,
+  zanim napiszesz, że przepis nie istnieje. Gdy nagłówka nie ma, narzędzie samo pokazuje trafienia
+  pełnotekstowe z ostrzeżeniem — mogą to być odesłania z innych przepisów, nie sam przepis.
+- **struktura** — spis jednostek redakcyjnych (tytuły/działy/rozdziały/artykuły):
+  `python3 scripts/eli.py struktura DU 2024 18 --filtr "Art. 299"` (opcje: `--filtr`, `--poziom N`);
+  indeks górny API zapisuje jako „Art. 7_1.” — obok stoi gotowa fraza `(--fragment "art. 7(1)")`
+- **odniesienia** — powiązania: nowelizacje, podstawa prawna, tekst jednolity, akty wykonawcze:
+  `python3 scripts/eli.py odniesienia DU 2024 18`
+- każda komenda przyjmuje `--json` oraz `--strict`; obie flagi działają przed komendą i po niej.
+  Zero trafień / nierozpoznana odpowiedź API kończą się komunikatem i kodem wyjścia ≠ 0 — także z `--json`
+  (nie dostaniesz pustego JSON-a, który wyglądałby jak „sprawdzone, nic nie ma”); `szukaj` pokazuje
+  `totalCount` z API („Znaleziono: 58 (pokazuję 10, offset 0)") i jak stronicować (`--offset`/`--limit`) —
+  akt bazowy bywa na KOŃCU listy, za nowelizacjami.
+
+**Co sprawdza `--strict`** (wszystko PRZED wypisaniem czegokolwiek; niepowodzenie = komunikat, kod ≠ 0,
+pusty stdout): (1) istnieje nowszy t.j. niż podany → blokada; (2) odniesień lub aktu bazowego nie dało się
+pobrać (awaria sieci/zapory) → blokada; (3) `text.html` puste i tekst pochodziłby ze STARSZEGO t.j. albo
+`pdftotext` zawiódł → blokada (tekst z własnego urzędowego PDF aktu PRZECHODZI); (4) listy nowelizacji
+nie dało się uzupełnić z aktu bazowego → blokada; (5) tekst z PDF byłby NIEKOMPLETNY, bo część stron nie ma
+warstwy tekstowej (skan nieodczytany przez OCR, np. z `--bez-ocr`) → blokada (wtedy: OCR bez `--strict` albo
+`--pdf`); (6) tekst pochodziłby z OCR → blokada. **Czego `--strict` NIE sprawdza:** czy przepis został
+zmieniony PO stanie prawnym t.j. — to wiesz tylko z sekcji „Nowelizacje po tekście jednolitym" (czytaj ją
+i sprawdzaj „wejście w życie zmiany" względem daty sprawy); nie sprawdza też obcięcia listy `szukaj`
+(to jest jawnie wypisane) ani opóźnień indeksacji API.
+
+Narzędzie samo ostrzega: `tekst` na akcie, który ma tekst jednolity, każe cytować z najnowszego t.j.;
+na tekście jednolitym wypisuje „Nowelizacje po tekście jednolitym" — własną listę t.j. UZUPEŁNIONĄ o
+„Akty zmieniające" aktu bazowego ogłoszone lub wchodzące w życie po `legalStatusDate` t.j. (Sejm nie
+synchronizuje obu list; każda pozycja ma osobno „data aktu", „ogłoszono", „wejście w życie zmiany") —
+a na STARSZYM t.j. (np. z pamięci) — „NIEAKTUALNY tekst jednolity, istnieje NOWSZY" (sprawdza to na akcie
+bazowym). Na tekście jednolitym narzędzie czyta też OBWIESZCZENIE Marszałka Sejmu z początku tekstu: pozycja
+listy wymieniona w jego pkt 1 („z uwzględnieniem zmian wprowadzonych: …" albo „przepisów ogłoszonych przed dniem
+…") dostaje „[UWZGLĘDNIONA w tym t.j. — … NIE nakładaj ponownie]" (gdy wchodzi w życie później — z datą: do niej
+obowiązuje dotychczasowe brzmienie, a t.j. podaje oba z przypisami), a pozycja z pkt 2 („nie obejmuje: zmian
+wprowadzonych …") — „[NIE objęta tym t.j. — … nałóż ją ręcznie]". Przy `--fragment` przypisy fragmentu, które
+odsyłają do innych przypisów („…ustawy, o której mowa w odnośniku 6"), są rozwijane: narzędzie dopisuje pod
+fragmentem przypisy spoza niego i ostrzega, które brzmienie obowiązuje dziś („brzmienie z przypisem 28)
+obowiązuje tylko DO wejścia w życie zmiany (2026-11-05…)", a drugie — „JESZCZE NIE OBOWIĄZUJĄ … od 2026-11-05").
+Gdy `text.html` jest puste w API (`textHTML=false`), narzędzie czyta WŁASNY urzędowy PDF aktu
+(`pdftotext`); tylko bez `pdftotext` sięga po najnowszy STARSZY t.j. z HTML — wtedy nagłówek mówi
+„NIEAKTUALNE BRZMIENIE MOŻLIWE", wymienia pominięte t.j. i wypisuje INLINE zmiany aktu bazowego po stanie
+prawnym tego starszego t.j., które trzeba nałożyć samemu. Nie ignoruj tych ostrzeżeń.
+
+**Tekst ujednolicony (PDF typu U) i brzmienie PRZYSZŁE.** Dla wielu kodeksów (k.p.c., k.k., u.k.s.c.,
+Konstytucja) urzędowy PDF to „tekst ujednolicony" Kancelarii Sejmu — t.j. z WPISANYMI późniejszymi zmianami,
+także tymi, które jeszcze nie weszły w życie. Nagłówek mówi wtedy „TEKST UJEDNOLICONY… Opracowano na
+podstawie: …", a pozycje listy nowelizacji są oznaczone „[UWZGLĘDNIONA w tym tekście…]" (NIE nakładaj ich
+drugi raz) albo „[poza listą „Opracowano na podstawie”…]". W samym tekście: `[ … ]` = brzmienie obecne,
+które zostanie zastąpione; `< … >` = brzmienie PRZYSZŁE; linia `[margines: … wejdzie w życie z dn. …]` podaje
+datę. Przed tekstem narzędzie wypisuje „UWAGA — PRZEPISY, KTÓRE JESZCZE NIE OBOWIĄZUJĄ" z datami (także dla
+przypisów t.j. „wejdzie w życie z dniem …", np. k.c. art. 860 § 3–4 od 2028-11-01); notka bez daty („z dniem
+określonym w komunikacie…") ma pozycję „termin wejścia w życie nieznany — określi komunikat" i też znaczy, że
+przepis JESZCZE NIE obowiązuje. Ostrzega też, gdy fragment leży wewnątrz bloku `<DZIAŁ …>` albo w rozdziale/dziale,
+przy którego nagłówku stoi przypis/notka o wejściu w życie (k.wyb. „Rozdział 11b” → art. 103d–103e od 2027-02-18). **Na dziś cytuj brzmienie z `[ … ]` (albo stwierdź brak przepisu, gdy jest
+tylko `< … >`); brzmienie z `< … >` cytuj wyłącznie jako przyszłe, z datą.** `--strict` tego nie blokuje
+(tekst jest oznaczony i sprawdzalny) — decyzja należy do Ciebie. Gdy część stron PDF nie ma warstwy
+tekstowej (skan), narzędzie pisze „N z M stron … nie ma warstwy tekstowej" — tej treści w wyniku nie ma.
+Gdy w systemie jest `tesseract` (z językiem `pol`) i `pdftoppm`, skany do 10 stron są odczytywane OCR
+samodzielnie, dłuższe — z `tekst … --ocr` (ok. 7 s/stronę; wynik zapamiętywany w `~/.cache/prawo-pl-eli/ocr`);
+`--bez-ocr` wyłącza OCR. Tekst z OCR ma nagłówek „UWAGA — OCR … NIEPEWNY" — liczby, daty i kwoty sprawdź w PDF
+przed cytatem; **`--strict` blokuje tekst z OCR i tekst ze stronami bez warstwy tekstowej (niekompletny).**
+Ogłoszenia wydawcy z końca zeszytu (strona „CENTRUM OBSŁUGI KANCELARII… proponuje… Pełna oferta") i stopka
+zeszytu nie są treścią aktu — narzędzie je usuwa, także gdy strona-reklama jest skanem odczytanym przez OCR
+(taka strona nie liczy się wtedy jako tekst z OCR).
+Ogłoszony PDF Dz.U./M.P. z lat 1990–1999 ma warstwę tekstową z OCR skanu (nagłówek wyniku to mówi): litery
+i cyfry bywają przekłamane, a wyrazy rozbite spacją — **liczby, daty, kwoty i dosłowny cytat sprawdź w `--pdf`**.
+
+### Akty bazowe głównych kodeksów (pomiń `szukaj`)
+
+Sygnatury aktów bazowych są niezmienne — dla poniższych zaczynaj od razu od `tj <sygnatura>`,
+potem `tekst <t.j.> --fragment "art. N"` (dwie komendy zamiast trzech):
+
+| Akt | Sygnatura bazowa |
+|---|---|
+| Konstytucja RP (tekst wprost, bez `tj`; API nie ma HTML — `tekst … --fragment "Art. 45"` czyta urzędowy PDF przez `pdftotext`, bez niego tylko `--pdf`) | `DU 1997 483` |
+| Kodeks cywilny (k.c.) | `DU 1964 93` |
+| Kodeks postępowania cywilnego (k.p.c.) | `DU 1964 296` |
+| Kodeks rodzinny i opiekuńczy (k.r.o.) | `DU 1964 59` |
+| Kodeks karny (k.k.) | `DU 1997 553` |
+| Kodeks postępowania karnego (k.p.k.) | `DU 1997 555` |
+| Kodeks wykroczeń (k.w.) | `DU 1971 114` |
+| Kodeks postępowania administracyjnego (k.p.a.) | `DU 1960 168` |
+| Kodeks pracy (k.p.) | `DU 1974 141` |
+| Kodeks spółek handlowych (k.s.h.) | `DU 2000 1037` |
+| Ordynacja podatkowa | `DU 1997 926` |
+
+## Zasady (ważne — dlaczego)
+
+1. **Najpierw znajdź właściwy akt, potem cytuj.** Typowy przepływ: `szukaj` → ustal sygnaturę → `tj`
+   (aktualny tekst jednolity) → `tekst <t.j.> --fragment "art. N"`. Dla kodeksów z tabeli wyżej pomiń
+   `szukaj` i zacznij od `tj`. Cytowanie starej wersji to częsty błąd.
+2. **Sprawdź NOWELIZACJE i ich WEJŚCIE W ŻYCIE** (najczęstsze źródło błędu). `meta` pokazuje „Ogłoszono"
+   (publikacja w Dz.U. — od niej liczy się vacatio legis; NIE myl z „Data aktu"), „WEJŚCIE W ŻYCIE" i
+   „Uwagi" (różne daty dla różnych jednostek); `odniesienia` — zmiany; „Nowelizacje po tekście jednolitym"
+   oznacza, że nawet t.j. bywa już nieaktualny. Zanim powiesz „przepis brzmi…":
+   - **Akt OGŁOSZONY ≠ OBOWIĄZUJĄCY.** W nowelizacji sprawdź artykuł „wchodzi w życie" — możliwe vacatio
+     legis oraz RÓŻNE daty dla różnych jednostek redakcyjnych — i odnieś do **DATY zdarzenia/sprawy**
+     (przepis sprzed/po zmianie). Tekst jednolity oddaje stan na `legalStatusDate`; pozycje z listy
+     „Nowelizacje po tekście jednolitym" z „wejście w życie zmiany" po tej dacie trzeba nałożyć ręcznie
+     i sprawdzić, czy już obowiązują — `--strict` tego NIE robi za Ciebie.
+   - **Baza może NIE mieć najświeższej zmiany.** Brak nowelizacji w API ≠ pewność, że jej nie ma
+     (indeksacja bywa opóźniona). Przy sprawie na konkretną datę zweryfikuj dodatkowo (np. najnowsze
+     pozycje `dziennikustaw.gov.pl`, proces legislacyjny), a w odpowiedzi zaznacz:
+     „stan prawny na dzień X wg ELI — do potwierdzenia".
+3. **NIGDY nie twierdź, że przepisu nie ma, na podstawie pustego `--fragment`.** Pusty wynik to brak
+   dopasowania frazy, nie dowód nieistnienia przepisu — a najczęściej zawodzi przy przepisach ŚWIEŻO
+   dodanych lub zmienionych (nietypowe oznaczenie jednostki, odsyłacz do przypisu, indeks górny).
+   Zanim postawisz twierdzenie negatywne o prawie, przeszukaj pełny tekst aktu liniowo:
+   `python3 scripts/eli.py tekst <akt> | grep -n -i "<fraza>"` — i dopiero zero trafień tam jest
+   podstawą do „brak takiego przepisu w tym akcie". Sprawdź też, czy pytasz o WŁAŚCIWY akt: sankcja
+   za naruszenie obowiązku zwykle stoi w k.w./k.k., a nie w ustawie, która ten obowiązek nakłada.
+4. **Do DOSŁOWNEGO cytatu w umowie/piśmie/sądzie** używaj urzędowego PDF (`tekst … --pdf`), bo
+   `text.html` po konwersji bywa zlepiony, a tekst z PDF ma automatycznie sklejone wiersze i dzielone
+   wyrazy; `--fragment` jest świetny do szybkiego odczytu i analizy.
+   Linia zaczynająca się od `[przypis N)]` to **komentarz redakcyjny tekstu jednolitego** (kiedy przepis
+   dodano lub zmieniono, z jaką datą wejścia w życie), a NIE treść normy — nigdy jej nie cytuj jako
+   przepisu; sam numer odsyłacza nie wchodzi już w numer jednostki („§ 1.", „pkt 2)").
+5. **Zawsze podawaj sygnaturę Dz.U./M.P. i ELI** przy cytacie (np. „art. 299 § 1 k.s.h., Dz.U. 2024
+   poz. 18"). To pozwala odbiorcy zweryfikować źródło.
+6. Pełna lista endpointów i parametrów: `references/api.md` (czytaj przy zapytaniach spoza powyższych
+   komend — np. słowniki typów/haseł, listowanie roczników, akty zmieniające w okresie).
+
+## Czego ten skill NIE obejmuje
+
+- **prawa UE** (rozporządzenia, dyrektywy — użyj skilla **prawo-eu-eurlex**, EUR-Lex/CELLAR),
+  **prawa MIEJSCOWEGO** (uchwały gmin/powiatów, dzienniki wojewódzkie → skill
+  **prawo-pl-edzienniki**) i **dzienników resortowych**,
+- **orzecznictwa sądów** (SN/TK/sądy powszechne/KIO → skill **prawo-pl-saos**; sądy
+  administracyjne NSA/WSA → skill **prawo-pl-cbosa**; decyzje UODO → **prawo-pl-uodo**;
+  TSUE → **prawo-eu-eurlex**; w Dz.U. są tylko wyroki TK i to jako pozycje dziennika),
+- **projektów ustaw** w toku procesu legislacyjnego (to inne API Sejmu),
+- treści umów stron, KRS, ksiąg wieczystych.
+Jeśli zagadnienie wymaga tych źródeł — powiedz to wprost, nie udawaj, że ELI je pokryje.
+
+## Przykładowy przepływ
+
+Pytanie (np. przy analizie pozwu przeciwko członkowi zarządu sp. z o.o.): „co dokładnie mówi art. 299 § 1
+Kodeksu spółek handlowych i czy to aktualne?" (przykład — stan na czerwiec 2026):
+1. `szukaj "Kodeks spółek handlowych" --typ Ustawa` → akt bazowy ELI `DU/2000/1037`.
+2. `tj DU 2000 1037` → najnowszy tekst jednolity `DU/2024/18` (Dz.U. 2024 poz. 18), oznaczony „AKTUALNY".
+3. `tekst DU 2024 18 --fragment "art. 299"` → treść artykułu + automatyczne ostrzeżenie o nowelizacjach
+   po t.j. (tu 4: Dz.U. 2024 poz. 96 — wyrok TK K 29/23, oraz z aktu bazowego Dz.U. 2026 poz. 176, 187,
+   644 z „wejście w życie zmiany" 2027–2030). Odnieś każdą do daty sprawy; indeksacja API bywa opóźniona,
+   więc przy sprawie na konkretną datę dopytaj jeszcze `szukaj`iem.
+4. W odpowiedzi: zacytuj przepis, podaj sygnaturę i datę stanu prawnego.

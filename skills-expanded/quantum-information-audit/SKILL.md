@@ -1,0 +1,60 @@
+---
+name: quantum-information-audit
+description: 使用固定版本 toqito 对用户提供的多体密度矩阵做本地审计，并由 OpenQuantum 独立重算关键不变量。用于密度矩阵合法性、纯度、部分转置谱和 negativity 的可追溯检查；不用于任意量子信道、态层析、物理硬件、云任务或在缺少来源链时宣称最终科学验收通过。
+---
+
+# 量子信息审计
+
+<!-- BEGIN NATIVE SDK ACCESS -->
+## 原生 SDK 路径
+
+本能力同时支持 **toqito 的原生公开 API**。用户需要 态、信道、矩阵、熵、纠缠、态区分与优化接口 时，由 Agent 在固定依赖环境中编写和运行任务代码，不限于下文便捷 Tool 的预设模型。
+
+使用 `node scripts/sdk-access.mjs inspect quantum-information-audit` 定位环境，按[完整 SDK 工作流](../quantum-sdk-workbench/references/workflow.md)执行。模块导航：`toqito`；导航不是 API 白名单。
+
+下文关于模型、门集、输入与预算的限制描述便捷 Tool 的合同；原生 SDK 另受上游版本、可选依赖、宿主资源与用户授权约束。已禁用或被拒绝的动作不能借代码路径绕过。执行状态和科研验收分别报告。
+<!-- END NATIVE SDK ACCESS -->
+
+
+## 核心边界
+
+本能力只审计用户已经给出的密度矩阵。核心对象是版本化的审计请求：复矩阵的实部/虚部、子系统维数，以及需要做部分转置的子系统索引。
+
+- `toqito` MCP-exposed Tool 产生数值事实。
+- OpenQuantum Validator 用独立 JavaScript 实现重算迹、Hermiticity、正半定性、纯度、部分转置谱和 negativity。
+- MCP-exposed Tool 的结果标记 `observations_available`，不等于最终科学验收。只有物化 Result Package
+  并核对 Session Event Log 来源链后，才可能形成最终 Acceptance。
+
+## 工作流
+
+1. 确认矩阵总维数等于 `subsystemDimensions` 的乘积。
+2. 明确 `transposeSubsystems` 采用从 0 开始的子系统索引，并且是非空真子集。
+3. 调用 `audit_density_matrix`。复矩阵用 `matrixReal` 和可选的 `matrixImag` 表示；未给虚部时按全零处理。主动作加载固定环境并返回 `packageVersion`，依赖须显式准备；缺失或旧锁环境返回准备命令，不在 Tool 中安装。
+4. 分栏报告实际包版本及：
+   - toqito 事实；
+   - 独立 Validator observations；
+   - 失败、不检查项和适用范围。
+5. 确认 `tool/result` 是否包含 `acceptance_available` 与 Result Commit；只有可信 Host Plugin 通过
+   内部 Scientific Result Adapter 进入 Materializer，并完成物化、重读和校验时，才能按 central
+   Acceptance Builder 推导的状态报告最终验收。
+6. DSH 物化成功时交付 `readable-report.md`、Acceptance Report 和 Result Commit 的路径。可读报告由重读后的证据生成，不依赖模型最终说明；只读会话不能写报告，也不能因此宣称验收完成。
+7. 不把 negativity 写成普适的纠缠分类结论；它只对应本次指定的二分和部分转置判据。
+
+## 必须保持的规则
+
+- 不提交云任务或真实量子硬件任务。
+- 不接受调用方自定义容差；容差由版本化 Acceptance Profile 固定。
+- `provenance.complete=not_checked` 时不得宣称科学验收通过。
+- 不凭 MCP-exposed Tool 的文本内容自行推断 `passed`；最终状态必须来自 Harness 物化后的 Acceptance Report。
+- 工具失败、科学 observation 失败、来源链未检查是三种不同状态。
+- 不从分子结构、实验层析数据或任意量子信道自动推导密度矩阵。
+
+## 示例
+
+Bell 态 `|Phi+><Phi+|` 使用 `subsystemDimensions=[2,2]`、`transposeSubsystems=[0]`。预期纯度为 1、部分转置最小本征值为 -0.5、negativity 为 0.5；仍需以实际工具事实和 Validator observations 为准。
+
+密度矩阵维数、子系统分解与待转置子区由调用方选择，适配器不额外设置人工规模上限。具体资源配置见[本地计算说明](../../../docs/integrations/SCALABLE_BRIDGES.md)。
+
+## 依赖准备
+
+运行前执行 `node scripts/setup-paper-tools.mjs quantum-information-audit`。缺失、旧锁和已安装环境的处理见[共同准备说明](../../../docs/integrations/LOCAL_ENVIRONMENTS.md)；Tool 不自动安装或升级依赖。

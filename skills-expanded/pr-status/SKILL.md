@@ -1,0 +1,347 @@
+---
+name: pr-status
+description: Show enriched status of your open PRs — CI checks, approvals, unresolved review threads, and linked Jira discussion, with transition-driven suggested next actions.
+allowed-tools: "Bash(~/.agents/skills/pr-status/scripts/gh-pr-list-open.sh:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-list-closed.sh:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-details.sh:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-feedback.py:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-checks.sh:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-reviews.sh:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-threads.sh:*), Bash(~/.agents/skills/pr-status/scripts/gh-pr-merge-state.sh:*), Bash(~/.agents/skills/pr-status/scripts/format-pr-tables.py:*), Bash(gh pr list:*), Bash(gh pr checks:*), Bash(gh pr view:*), Bash(gh search:*), Bash(date:*), mcp__jira__jira_get"
+model-tier: standard
+model: sonnet
+effort: high
+version: "1.20.0"
+author: "flurdy"
+---
+
+# PR Status
+
+Show enriched status for all open PRs created by you across your GitHub org: CI checks, approvals, unresolved review threads, and linked Jira discussion. Also shows recently closed PRs.
+
+The GitHub org is auto-detected from the current repo's `origin` remote, falling back to the most common org across a multi-repo workspace's member repos when the cwd repo has no GitHub remote of its own (a workspace root is often deliberately local-only). Override via the `PR_STATUS_ORG` env var or a first positional argument. When nothing resolves the scripts exit non-zero with an explanatory message rather than returning an empty list. Open PRs come from the org-wide search index unioned with a direct `gh pr list` sweep of the cwd repo and workspace members, so a PR opened seconds ago is listed even before the index catches up.
+
+**The output of this skill is the rendered dashboard** (steps 3–6). Fetching without rendering is not a valid run.
+
+## Usage
+
+```
+/pr-status
+```
+
+## Checkout helper
+
+`gh-pr-checkout.py` and the review-pr snapshot collector share
+[`scripts/github_remote.py`](scripts/github_remote.py) for remote identity parsing. Both accept
+single-label `*.github.com` aliases only for SSH, not HTTP(S); they do not resolve arbitrary SSH
+configuration aliases. Repository, exact-head, and clean-tree checks still govern local reads.
+
+## Shared inline-comment reader
+
+[`scripts/gh-pr-inline-comments.sh`](scripts/gh-pr-inline-comments.sh) owns the legacy REST
+inline-comment projection used by `review-comments` and `reply-comments`. It takes
+`<owner> <repo> <number>` and requires Bash plus authenticated `gh`. Missing tools and API failures
+return nonzero; stdout, stderr and the API exit status pass through without retries. This preserves
+the old single-page response, not a complete or normalized feedback inventory. The consumers retain
+forwarding `gh-pr-comments.sh` entry points for existing permission rules. The distinct composite
+report in `review-pr/scripts/gh-pr-comments.sh` is unchanged.
+
+## Instructions
+
+Re-run the fetch scripts and `date` on every invocation, even seconds after the last one — never reuse earlier output or extrapolate the timestamp.
+
+### 1. Fetch
+
+Open PRs (org-wide), one JSON object per line `{number, title, owner, repo}`:
+
+```bash
+~/.agents/skills/pr-status/scripts/gh-pr-list-open.sh
+```
+
+Recently closed PRs (3-day lookback, 4 on Tuesdays; optional second arg overrides), one JSON object per line `{number, title, owner, repo, closedAt}`:
+
+```bash
+~/.agents/skills/pr-status/scripts/gh-pr-list-closed.sh
+```
+
+### 2. Fetch PR details
+
+Group the PRs (open and closed) by `owner/repo`; one batch GraphQL call per group:
+
+```bash
+~/.agents/skills/pr-status/scripts/gh-pr-details.sh {owner} {repo} {number1} {number2} ...
+```
+
+Output is a JSON array, one object per PR:
+
+```json
+[
+  {
+    "number": 123,
+    "base": "main",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "mergeState": "CLEAN",
+    "behindBy": 0,
+    "reviewDecision": "APPROVED",
+    "approvers": ["alice"],
+    "reviewRequestCount": 0,
+    "unresolvedThreads": 2,
+    "checksState": "SUCCESS",
+    "lastPush": "2026-04-15T09:30:00Z",
+    "mergeCommitSha": "abc123...",
+    "mergeCommitAt": "2026-04-15T10:00:00Z",
+    "mainChecksState": "SUCCESS",
+    "readyAt": "2026-04-14T15:32:11Z"
+  }
+]
+```
+
+Map `checksState` values: `SUCCESS` → ✅ / `FAILURE` or `ERROR` → ❌ / `PENDING` or `EXPECTED` → ⏳ / null → `—`
+
+`reviewRequestCount` is the exact number of outstanding review requests, from the request
+connection's `totalCount` rather than a capped page: each requested user or team counts once, with
+no team expansion. It excludes submitted reviews, approvals or withdrawn requests. `null` means
+unknown (missing field or unavailable data) — never treat it as zero.
+
+`mergeable` is GitHub's `MERGEABLE`/`CONFLICTING`/`UNKNOWN` verdict, reported independently of
+review gates. `behindBy` counts commits on the PR's actual base branch that its head lacks, from a
+second batched compare query (branch names travel as GraphQL variables). It is `null` for closed and
+cross-repository (fork) PRs and whenever the count is unavailable — unknown, never zero. A failed
+compare query only warns on stderr and leaves those counts `null`; the other details stay valid.
+The collector requires Bash, authenticated `gh` and `jq`.
+
+If the batch script is unavailable, the per-PR scripts in the same directory (`gh-pr-checks.sh`,
+`gh-pr-reviews.sh`, `gh-pr-threads.sh`, `gh-pr-merge-state.sh`) or plain `gh pr view/checks` cover
+the other fields but not an exact request count: treat `reviewRequestCount` as unknown. Do not
+derive it from the length of a capped `gh pr view` reviewer list, historical reviews, request
+timeline events, or the viewer-specific inbound review-request queue (`gh-pr-review-requests.py`).
+The fallbacks also lack `behindBy`; treat it as unknown.
+
+### 2b. Fetch the normalized feedback inventory
+
+For each `owner/repo` group of open PRs, make one bounded read-only inventory call:
+
+```bash
+~/.agents/skills/pr-status/scripts/gh-pr-feedback.py {owner} {repo} {number1} {number2} ...
+```
+
+The schema-v1 JSON envelope contains `records`, `partial`, `errors`, and explicit caps. Records
+cover inline review roots and replies, submitted review summaries/states, top-level conversation,
+and changed-file CI annotations. A record carries stable `identity` plus `updatedAt`, `updateKey`,
+`stateKey`, author kind, lifecycle, semantic type, actionability candidate status, bounded body/gist, and the
+GitHub IDs needed by the correct response surface. Pending draft review comments are not observable
+through normal APIs and are never represented as fetched feedback.
+
+Treat `actionability: candidate` as a triage hint, not a validated claim or permission to act. Human
+and bot feedback still needs agent judgment against the code and requirements. Suppress
+self-authored, resolved, outdated, dismissed, approval, and automated-status records from suggested
+actions while retaining them in the factual inventory. Inline records also carry `needsClosure`:
+true for an outdated, unresolved thread with no self-authored comment, which stays open on GitHub
+until someone answers or resolves it. It does not change `actionability`; only the review-comments
+and reply-comments closure flow acts on it. When `partial` is true, render the available
+data, name each failed source, and do not mark absent feedback as handled.
+
+The helper requires Python 3.10+ and authenticated `gh`. Argument errors exit nonzero; API failures
+return a machine-readable partial envelope, so consumers must inspect `partial` and `errors`.
+
+For body-free polling, `--compact` adds `recordFormat: compact` and projects each record to
+`identity`, `updateKey`, `stateKey`, `pr`, `source`, `lifecycle`, `selfAuthored`, `hasLaterSelfReply`
+when present, `authorKind`, `reviewState`, `semanticType`, and `actionability`. The envelope retains
+repository scope, PRs, caps, and all partial/error evidence. It reduces output/context, not API traffic;
+bodies, gists, locations, author names, and response targets are absent, not empty. Classification
+hints must not justify semantic suppression without reading new/edited bodies. The normal inventory
+above is unchanged and remains this dashboard's source of gists.
+
+Complete compact polls also return `fingerprint`, `recordCount`, and `unchanged: false`. A caller
+with an intact, fully processed session-local snapshot may pass `--if-fingerprint SHA256` with
+`--compact`. If a fresh complete inventory matches, the response has `unchanged: true`, the same
+fingerprint/count, and omits `records` entirely (not an empty list). The digest covers the full
+bounded inventory including content, scope, lifecycle, self-replies, and caps, before projection.
+A changed snapshot returns compact rows. Partial responses always return available rows/errors and
+never a reusable fingerprint. No state is written to disk. Never use conditional omission for a
+baseline, explicit recheck, lost/pruned ledger, or pending unprocessed work; the feedback watcher
+owns the exact eligibility rules. Default full inventory and focused selection remain unchanged.
+
+The feedback watcher uses compact polls, then hydrates selected new/edited records with:
+
+```bash
+~/.agents/skills/pr-status/scripts/gh-pr-feedback.py OWNER REPO PR_NUMBER \
+  --identity IDENTITY --expected-update-key UPDATE_KEY
+```
+
+Focused selection is incompatible with `--compact`, requires one PR, and returns a full record with
+a body cap of 65,536 characters only when its update key matches. Inspect `partial`, require
+`selection.status: matched` and `bodyTruncated: false`, and recheck fresh lifecycle/self-reply facts
+before using its body. Missing/edited identities return no selected record; never validate old text.
+
+The existing `unresolvedThreads` detail remains a compatibility fallback for other status consumers;
+this skill uses inventory identities and update times—not count changes—to detect feedback events.
+If the inventory helper is unavailable, fall back to the old count-only behavior and label feedback
+identity as unavailable rather than issuing overlapping ad-hoc comment fetches.
+
+### 3. Fetch linked Jira discussion
+
+For every distinct Jira key found while rendering (open PRs: branch first, then title; recently closed PRs: title; using `/[A-Z]+-\d+/`), fetch its newest Jira comment. Include both open and recently closed PRs when they carry a ticket key; fetch each key once, even if multiple PRs use it. Calls may run in parallel:
+
+```
+mcp__jira__jira_get
+  path: /rest/api/3/issue/{key}/comment
+  queryParams:
+    orderBy: -created
+    maxResults: 1
+  jq: '{total: .total, latest: (.comments[0] // null | if . == null then null else {author: .author.displayName, accountId: .author.accountId, created: .created} end)}'
+```
+
+For a key with comments, render `💬 {total} · {latest author first name or @accountId} · {relative age}`. Render `—` for zero comments and `?` if its lookup fails. Do not show comment bodies in this status dashboard. Jira comment failures are non-fatal: render all PR data and add `_Some linked Jira discussion could not be fetched._` beneath the affected table(s).
+
+### 4. Render as tables
+
+Before the tables, output a timestamp line: `_Checked at HH:MM:SS_` in **local** time, 24h (`date '+%H:%M:%S'`, not `date -u`).
+
+The tables are produced by the formatter, not composed by hand, so Pi and Claude Code receive the
+same markdown. Merge the list rows, the details rows and the Jira summaries into one JSON document
+and pipe it in (a heredoc is fine):
+
+```bash
+~/.agents/skills/pr-status/scripts/format-pr-tables.py <<'JSON'
+{"now": "2026-04-15T10:00:00Z",
+ "closed": [{"number": 120, "owner": "acme", "repo": "widgets", "title": "...", "closedAt": "...",
+             "readyAt": "...", "mergeCommitSha": "...", "mergeCommitAt": "...", "mainChecksState": "SUCCESS",
+             "jira": {"total": 3, "author": "Jane Doe", "created": "..."}}],
+ "open": [{"number": 123, "owner": "acme", "repo": "widgets", "title": "...", "branch": "...", "base": "main",
+           "isDraft": false, "mergeable": "MERGEABLE", "mergeState": "CLEAN", "behindBy": 0,
+           "reviewDecision": "APPROVED", "approvers": ["alice"], "reviewRequestCount": 0,
+           "unresolvedThreads": 0, "checksState": "SUCCESS", "lastPush": "...", "readyAt": "...",
+           "jira": null}]}
+JSON
+```
+
+`now` is the UTC instant from `date -u +%Y-%m-%dT%H:%M:%SZ`; relative times are computed from it.
+Each row is the `gh-pr-details.sh` object plus `owner`, `repo` and `title` from the list scripts
+(`closedAt` for closed rows) and a `jira` summary: `{total, author, created}` from step 3, `null`
+when the PR has no ticket or zero comments, `{"error": true}` when the lookup failed. Keep rows in
+list order. The formatter needs Python 3.10+ only; invalid JSON exits nonzero with a message, so
+fix the input rather than hand-writing a table.
+
+Reproduce the formatter output verbatim: never rewrite or paraphrase a title, reflow columns, add
+links inside cells, or drop the `Links:` / `Full names:` lines. The formatter enforces the layout
+contract below, which is also the reason the output is portable across harnesses:
+
+- PR cells are plain `#123`; the `Links:` line after each table carries the markdown links, so
+  terminals without hyperlink support print URLs there instead of inside the table.
+- Open titles are capped at 25 characters, closed titles at 50, Branch at 30, and Target is capped
+  at 30 (after the 📌 marker) with `…`. Every truncated Target/Branch is listed in full on the
+  `Full names:` line. Truncation keeps the factual prefix; `|`, backticks and other markdown
+  characters are escaped.
+- Narrow widths: every cell contains no unbroken token longer than 30 characters, so a renderer
+  wraps within columns rather than tearing rows; no column is ever dropped. Pi renders the table
+  down to ~53 columns and shows raw markdown below that; Claude Code wraps cells natively.
+
+**Recently closed** — render first, one table with a **Repo** column. Skip the section if the closed list is empty.
+
+#### Recently closed
+
+| PR | Repo | Ticket | Jira 💬 | Title | Status | CI | Ready | Wait | Closed |
+|----|------|--------|---------|-------|--------|----|-------|------|--------|
+
+- **PR**: plain `#123`; the link `[#123](https://github.com/{owner}/{repo}/pull/123)` goes on the `Links:` line
+- **Repo**: repository name
+- **Ticket**: Jira ID matched by `/[A-Z]+-\d+/` against the PR title, or `—`
+- **Status**: 🔀 merged / 🚫 closed unmerged — emoji only
+- **CI**: post-merge checks on the merge commit (`mainChecksState`), only if merged and `mergeCommitAt` is within the last 2 days — otherwise `—`
+- **Ready**: relative time since `readyAt` (short units: `Nm`, `Nh`, `Nd`)
+- **Wait**: `closedAt - readyAt` — how long the PR waited for review/merge
+- **Closed**: relative time since close
+
+**Open PRs** — render after closed, grouped by repo: heading `#### Open — {repo}` then a table per repo that has open PRs.
+
+| PR | Ticket | Jira 💬 | Title | Branch | Target | Ready | Push | Sync | CI | Approved | Threads | LGTM |
+|----|--------|---------|-------|--------|--------|-------|------|------|----|----------|---------|------|
+
+- **PR**: plain `#123` as above
+- **Ticket**: Jira ID matched against branch name first, then title, or `—`
+- **Branch**: head branch minus conventional-commit prefix and ticket prefix (`feat/AB-1107-cta-clicked-event` → `cta-clicked-event`); truncate past ~30 chars with `…`
+- **Target**: base branch. `main`/`master` are default branches — plain text. Anything else is a stacked PR: prefix with 📌, capped at 30 characters with `…` and listed in full under `Full names:`
+- **Sync**: against the PR's actual base (📌 stacked PRs included), regardless of `mergeState` or review state; first match wins: `mergeable` `CONFLICTING` (or `mergeState` `DIRTY`) → 💥 conflict; `behindBy` > 0 → ⏪; `behindBy` null with `mergeState` `BEHIND` → ⏪; `mergeable` `MERGEABLE` with `behindBy` 0 → ✅; anything else → `?`. Behind is exactly ⏪ — no count or text, so the cell never wraps; `behindBy` stays in the collected data for the change summary. Sync is never `—`: `BLOCKED` only means a merge gate such as approval is unmet
+- **CI**: ✅ / ❌ / ⏳ — emoji only
+- **Ready**: 🚧 if `isDraft`, else relative time since `readyAt`
+- **Push**: relative time since `lastPush`
+- **Approved**: from the table below
+- **Threads**: `💬 N` if N > 0, else `—`
+- **LGTM**: 🚀 if not draft, base `main`/`master` (stacked PRs merge via their parent), `APPROVED`, CI `SUCCESS`, zero threads, and `mergeState` `CLEAN`; else 🚧. `CLEAN` already excludes conflicts and, where branch protection requires it, a stale branch, so Sync does not gate LGTM
+
+**Approved cell** — first matching row wins:
+
+| Evidence | Cell |
+|---|---|
+| `reviewDecision` `APPROVED` | one ✅ per approver |
+| `REVIEW_REQUIRED` with approvers | one 🔄 per approver (stale approvals) |
+| `CHANGES_REQUESTED` | 👎 |
+| Draft with no approvers | `—` |
+| Awaiting review, `reviewRequestCount` 0 | 🔕 0 |
+| Awaiting review, `reviewRequestCount` N > 0 | 🔔 N (e.g. 🔔 2) |
+| Awaiting review, `reviewRequestCount` null or missing | 🔔 |
+
+Awaiting review means not draft, no approvers and no changes requested. Render one bell with the
+count — never a bell per reviewer — and no question mark: unknown stays a bare 🔔, distinct from
+🔕 0 in session state. The column keeps its width; the count never changes the ✅, 🔄, 👎 or
+LGTM rules.
+
+Table glyphs are natively wide emoji only, never a narrow symbol made wide by U+FE0F (such as
+⚠️, ☑️ or 🗑️): Pi pads those to two columns while xterm.js Unicode 11 terminals such as Orca
+draw them in one, which shifts every later border in the row.
+
+Title truncation (50 characters closed, 25 open) is applied by the formatter; the open table has 13 columns and wide rows break Claude Code's table renderer.
+
+### 5. Summarise changes
+
+After the tables, list deltas since the last check in this session as bullets (e.g. `#6142 CI: ❌ → ✅`, `#6150 requests: 🔔 2 → 🔕 0`). Treat an increase in a linked ticket's comment total as a delta, e.g. `AB-649 Jira discussion: 2 → 3 (Jane, 40m)`. Do not report a count decrease as a discussion update.
+
+For PR feedback, compare the inventory by `identity`; the same identity with a later `updatedAt` is
+an edit, not a second comment. Use `stateKey` to detect lifecycle-only changes such as resolution or
+outdating; they may be shown as deltas but are not new actionable candidates. Report each new or
+materially edited candidate once with PR, source, author, lifecycle, semantic type, and bounded
+gist. Never infer identity from a
+thread count. If a partial fetch prevents comparison, say so. Otherwise say "No changes." Render
+both tables in full either way — the point of repeated checks is current state at a glance.
+
+### 6. Suggest next actions (transition-driven)
+
+Surface a **Suggested actions** bullet list — copy-pasteable commands for PRs that *just became* actionable this tick. Read-only: point at commands, never run them.
+
+Fire on transitions, not standing state: on the first check of a session list the currently-actionable PRs as baseline; on later ticks list a PR only when it crosses into an actionable state.
+
+| Transition this tick | Suggested command |
+|---|---|
+| → 🚀 LGTM (newly mergeable) | `/ready-to-merge {n}` |
+| new or materially edited feedback candidate, or → 👎 changes requested | `/review-comments {n}` |
+| → ⏪ (fell behind its base) | `/rebase main` (on that PR's branch); stacked: `/rebase parent {base}` |
+| → 🔕 0 awaiting review with no requests | `gh pr edit {n} --repo {owner}/{repo} --add-reviewer <handle>` |
+
+Fire the reviewer suggestion only for a known zero: a PR enters that state when it leaves draft with
+no requests, or its last outstanding request is withdrawn or answered without approval. 🔔 N means
+requests are already pending and a bare 🔔 means the count is unknown — suggest nothing for either.
+
+The ⏪ suggestion fires when Sync enters ⏪ from any other state, regardless of review or
+approval state: rebasing before approval avoids invalidating it later. A PR already ⏪ stays
+quiet; a growing count is not a new transition (mention the `behindBy` count in the bullet).
+
+Order most actionable first (🚀 → 💬 → ⏪ → 🔕 0 no requests); omit the section when no PR
+changed state.
+
+Use the normalized record's author and bounded gist in the bullet. Keep its `identity` and
+`updatedAt` in session state so later polls distinguish an edit from a duplicate. Do not issue a
+second comment/thread query. When the inventory is partial, suggest a safe recheck and name the
+failed source instead of claiming that the candidate set is complete.
+
+### 7. Next-tick recommendation (watch context only)
+
+Omit this line on a direct `/pr-status` run. When invoked as a `/watch-prs` tick, end with one
+cadence line for the watcher to pace from:
+
+```
+next-tick: {hot|warm|cold} (~{N}s) — {reason}
+```
+
+- **hot (~180s)** — CI ⏳ on any open non-draft PR, a push in the last ~5 min, or a transition this tick
+- **warm (~600s)** — open non-draft PRs awaiting review or carrying threads, nothing in flight
+- **cold (1200 → 1800s)** — nothing actionable soon; escalate 1200 → 1500 → 1800 across consecutive cold ticks, reset on any non-cold tick
+
+If the fetch failed, emit `next-tick: warm (~600s) — incomplete fetch`. Keep the reason to a few words; no other pacing commentary.
+
+If the invoking prompt asks you to reschedule via `ScheduleWakeup`, follow its ordering: `/watch-prs` ticks call `ScheduleWakeup` first and print the dashboard as the closing message, because text written before the call is collapsed into a one-line summary.

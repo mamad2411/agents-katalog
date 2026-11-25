@@ -1,0 +1,213 @@
+---
+name: smart-intake
+description: >
+  Document-first intake when company details are unknown. Use for folder dumps,
+  "do the accounting" without context, messy receipts and banks. Infer first;
+  ask at most 3 questions. Prefer before a long questionnaire.
+---
+# /smart-intake
+
+## Purpose
+
+Make **folder-dump accounting** feel seamless.
+
+The user is not responsible for knowing MPERS, FYE, or form codes. 
+**We** read the folder, normalize context, and ask only smart questions.
+
+## Load first
+
+1. `shared/runtime-brief.md` (one screen — default)  
+2. Firm profile **if present** (defaults only — do not re-interview the firm)  
+3. On demand: `shared/shelf-first.md` · `shared/smart-intake.md` · `shared/user-questions.md` · `shared/operator-lens.md`  
+
+When called **from** `full-engagement-pipeline`, you are the **intake half** of one pass — do not re-run setup/source as separate ceremonies after this.
+
+
+## Operator + depth (write on state)
+
+Resolve **`operator`** before or with soft-confirm (`shared/operator-lens.md`):
+
+| Signal | `operator` |
+|---|---|
+| “my books / my company” · personal account · no firm profile | `owner` |
+| “bookkeeper for …” | `bookkeeper` |
+| Firm profile real + “the client” | `firm` |
+| Unclear | one structured ask (counts toward ≤3) |
+
+Default **`engagement_type`** on folder dump: `bookkeeping_only` (period on disk).
+
+## Classify depth (after extract)
+
+Do not decide deep standards work during the first three questions.
+
+After banks are extracted, set `classify_depth` when starting classify:
+
+- **year end / compilation / proper classifications** → `standards_aware` (`shared/classify-substance.md`)
+- **just code / bookkeeping only** → `bookkeeping`
+
+## When to use
+
+- User points at a folder / drops files and says do accounting / year end / books 
+- Company name, country, or FY **not** stated 
+- First contact for this client 
+
+If `engagement_state.json` already exists → use `resume-engagement` instead.
+
+## Workflow
+
+### Step 0 — Scope the ask (silent default)
+
+**Period truth first:** whatever bank months exist → that is the books period. Work it deeply.
+
+| User vibe | Default engagement_type | Say once |
+|---|---|---|
+| “Do the accounting / sort my books” / folder dump | `bookkeeping_only` for **period on disk** | “I’ll fully book the months you gave (extract→TB→ledger). Full-year FS only if you want it and coverage is complete.” |
+| Explicit “year end / prepare FS” + **complete** months | `year_end` | Proceed toward FS after books |
+| Explicit “year end” + **partial** months | `bookkeeping_only` + AMBER | Finish available months; offer upgrade when more banks arrive — **do not stall** |
+| “Tax only” | tax path later | — |
+| “Just categorise” | bookkeeping_only | — |
+
+Do not open with “Compilation or audit or review?” 
+Do not recommend “bring 12 months before I start.”
+
+### Step 1 — Shelf the papers (no questionnaire)
+
+Follow `shared/shelf-first.md` + `client-workspace`:
+
+1. **Discover** — cwd + every path the user named (not whole home)  
+2. **Inventory** — kind / period / entity guess  
+3. **Job map** — if multi-company, soft-confirm which job **now**  
+4. **Scaffold** — `clients/<slug>/` standard layout  
+5. **Place** — copy (default) or pointer into `source/bank|sales|…`  
+6. **Register** — `source/register.md` + coverage matrix  
+
+Do **not** extract until the active job has a shelf + register (mini-shelf OK for one clear bank PDF).
+
+### Step 2 — Read high-signal docs first (from the shelf)
+
+Order:
+
+1. Bank statements (PDF/CSV) — account title, bank brand, currency, date range, balances 
+2. Invoices/receipts — supplier names, SST, amounts 
+3. Any registration / prior FS if present 
+
+Start `extract-bank-statement` / CSV normalize **from shelved paths** in the same session once banks are identified. Do not wait for a long questionnaire.
+
+### Step 3 — Build Hypothesis Card
+
+Produce the card from `shared/smart-intake.md`. 
+Fill `inferences[]` with field, value, confidence, evidence.
+
+### Step 4 — Ask ≤ 3 questions — **structured tool required** (but don’t over-ask)
+
+Rules:
+
+- Never ask Tier A facts 
+- Soft-confirm **entity + period-on-disk** (one question is enough for most dumps) 
+- Max **3** questions · multiple-choice (3–5 options) 
+- **MUST** use structured tool when asking (`shared/user-questions.md`) 
+- Mirror into `workpapers/queries.md` — **not instead of** the tool 
+- **Do not** ask “will you supply the other 7 months?” unless they already demanded full-year FS 
+- Keep extracting/booking the months you have while soft-confirm is open 
+
+Example (good):
+
+```text
+Q1 Soft-confirm? → Accept Acme · MYR · banks cover Mar–Nov 2025 (Recommended) | Fix entity | Fix period
+```
+
+Example (only if they asked for year-end FS with gaps):
+
+```text
+Q2 Coverage gap: Finish Mar–Nov books now (Recommended) | Pause until more months | Keep going; I’ll add months later
+```
+
+**Bad:** Recommended option = “Provide all 12 months before we continue.” 
+
+**Do not** only paste a “Need you on:” bullet list in chat and continue.
+
+### Step 5 — Write state & continue
+
+Create workspace + `engagement_state.json`:
+
+```json
+{
+ "schema_version": "0.0.1",
+ "client_slug": "<from-name-or-folder>",
+ "legal_name": "<best guess or UNKNOWN — CONFIRM>",
+ "operator": "<owner|bookkeeper|firm>",
+ "engagement_type": "bookkeeping_only",
+ "classify_depth": "bookkeeping",
+ "current_stage": "source_documents",
+ "status": "waiting_on_user",
+ "provisional": true,
+ "notes": "Smart intake: inferences in README; provisional until identity confirmed"
+}
+```
+
+Also write `README.md` section **## Inferences** and **## Open questions**.
+
+Then **continue non-blocked work**:
+
+- finish bank extraction for available months 
+- classify high-confidence patterns 
+- build gap list (missing months, no openings, etc.) 
+
+### Step 6 — Gate for “final” work
+
+| Work | Allowed on partial months? |
+|---|---|
+| Extract, classify, post, recon, TB, Beancount for **available** months | **Yes — default path** |
+| Draft management P&L/BS labeled DRAFT / LIMITED PERIOD | Yes |
+| Deep classify adjudication + payee map for that period | Yes |
+| Final **signed full-year** FS | **No** — need complete coverage + identity + QC |
+| Claiming “full year complete” with missing months | **No** |
+| Refusing to book because months < 12 | **Forbidden** |
+
+## Entity-type heuristics (Malaysia pack default when bank is MY)
+
+| Evidence | Guess |
+|---|---|
+| “Sdn Bhd” / “Sdn. Bhd.” / “Sendirian Berhad” | Sdn Bhd → MPERS → Form C |
+| “PLT” / “LLP” | PLT → MPERS → Form PT |
+| “Bhd” without Sdn (careful) | possible Berhad → MFRS — confirm |
+| Personal name account, Grab/food receipts, no co. suffix | sole prop candidate — confirm |
+| “Enterprise” / “Ent” | often sole prop / enterprise — confirm |
+
+If jurisdiction is **not** inferable (foreign bank only, USD account, no clues):
+
+Ask **one** question: “Which country should these accounts be reported under?” 
+Do not dump the whole entity matrix.
+
+## Anti-patterns (do not do)
+
+1. Firm cold-start interview when they only dropped personal/client files 
+2. Assuming `operator: firm` because the product is engagement-shaped 
+3. Asking for framework/tax form before entity type 
+4. Stopping all extraction until every field is filled 
+5. Inventing company registration numbers or directors 
+6. Ten classification questions one-by-one (batch by payee) 
+7. **Prose-only Tier C asks** when a structured question tool exists 
+8. Writing `queries.md` and treating that as “user was asked” without a tool call
+9. Splitting work into business vs firm slash products
+10. Extracting from Desktop/Downloads with no `clients/<slug>/source/` shelf
+11. Mixing two companies into one workpapers set
+
+
+## Completion
+
+**Done when:** papers shelved + register written, Hypothesis Card written, ≤3 asks if needed, extract started from shelf, engagement state provisional or confirmed.
+
+## Outputs
+
+- `source/register.md` 
+- Hypothesis Card in chat 
+- `README.md` inferences 
+- `engagement_state.json` 
+- Partial `workpapers/transactions.json` if banks readable 
+- ≤3 questions 
+
+## Next
+
+- User answers → clear `provisional` flags as appropriate → `full-engagement-pipeline` 
+- Or continue pipeline stages already unblocked 

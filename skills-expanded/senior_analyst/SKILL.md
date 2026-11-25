@@ -1,0 +1,809 @@
+---
+name: senior_analyst
+description: 商业分析专家 skill。当用户提出涉及数据分析、战略分析、产品运营、商业模式、组织流程、财报与行业分析、竞争对手对比、情景与敏感性分析的问题时使用。覆盖指标异动诊断、PMF判断、战略选择、单位经济评估、流程优化、财报排雷、竞争对标、情景推演等高频任务。
+---
+
+# Senior Analyst · 商业分析 Skill
+
+## 版本检测（自动触发）
+
+每次加载本 skill 时，执行以下命令自动检测版本：
+
+```bash
+_UC=""
+# 优先从 ~/.local/bin 查找（install.sh / upgrade.sh 部署位置）
+if [ -x "$HOME/.local/bin/senior_analyst-update-check" ]; then
+    _UC=$("$HOME/.local/bin/senior_analyst-update-check" 2>/dev/null || true)
+# 回退：从常见 repo clone 位置查找
+elif [ -x "$HOME/ai-project/senior-analyst/bin/senior_analyst-update-check" ]; then
+    _UC=$("$HOME/ai-project/senior-analyst/bin/senior_analyst-update-check" 2>/dev/null || true)
+# 最终回退：跳过检测（未安装 update-check 脚本）
+fi
+[ -n "$_UC" ] && echo "$_UC" || true
+```
+
+**输出的语义**：
+- `UPGRADE_AVAILABLE <old> <new>` → 按照下方 **Inline 升级流程** 处理
+- `JUST_UPGRADED <old> <new>` → 显示 "Running senior_analyst v{new} (just updated from v{old})!" 并继续当前任务
+- 空 → 继续当前任务
+
+## Inline 升级流程
+
+当检测到 `UPGRADE_AVAILABLE <old> <new>` 时，按以下流程处理：
+
+### Step 1: 检查自动升级设置
+
+```bash
+_AUTO=$(cat ~/.config/senior_analyst/auto-upgrade 2>/dev/null || echo "false")
+echo "AUTO_UPGRADE=$_AUTO"
+```
+
+**如果 `AUTO_UPGRADE=true`**: 跳过询问，直接执行 Step 2。如果升级失败，从备份目录恢复并通过 AskUserQuestion 告知用户："Auto-upgrade failed — restored previous version v{old}. You can retry with `/senior_analyst --upgrade`."
+
+**否则**: 通过 AskUserQuestion 提示用户：
+
+> senior_analyst 有新版本可用：v{old} → v{new}
+>
+> 选项：
+
+- A) **Yes, upgrade now** — 立即升级，完成后展示 What's New
+- B) **Always keep me up to date** — 启用自动升级，本次及以后都不再询问
+- C) **Not now** — 跳过本次提醒（snooze）
+- D) **Never ask again** — 永久关闭升级检测
+
+**如果选 A**: 执行 Step 2。
+
+**如果选 B**:
+```bash
+mkdir -p ~/.config/senior_analyst
+echo "true" > ~/.config/senior_analyst/auto-upgrade
+```
+告知用户："Auto-upgrade enabled. Future updates will install automatically." 然后执行 Step 2。
+
+**如果选 C**: 写入 snooze 状态（递增延迟），然后继续当前 skill 任务，不再提及升级。
+```bash
+_SNOOZE_FILE="$HOME/.config/senior_analyst/update-snoozed"
+_LEVEL=1
+_NOW=$(date +%s)
+if [ -f "$_SNOOZE_FILE" ]; then
+    _SNOOZED_VER=$(awk '{print $1}' "$_SNOOZE_FILE")
+    if [ "$_SNOOZED_VER" = "$_NEW_VER" ]; then
+        _CUR_LEVEL=$(awk '{print $2}' "$_SNOOZE_FILE")
+        case "$_CUR_LEVEL" in *[!0-9]*) _CUR_LEVEL=0 ;; esac
+        _LEVEL=$((_CUR_LEVEL + 1))
+    fi
+fi
+[ "$_LEVEL" -gt 3 ] && _LEVEL=3
+echo "$_NEW_VER $_LEVEL $_NOW" > "$_SNOOZE_FILE"
+```
+告知用户延迟时长："Next reminder in 24h"（或 48h / 1 week）。提示："Set `auto-upgrade: true` via `echo true > ~/.config/senior_analyst/auto-upgrade` for automatic upgrades."
+
+**如果选 D**:
+```bash
+mkdir -p ~/.config/senior_analyst
+touch ~/.config/senior_analyst/update-check-disabled
+```
+告知用户："Update checks disabled. Run `/senior_analyst --version` at any time to check manually, or re-enable with: `rm ~/.config/senior_analyst/update-check-disabled`"
+
+### Step 2: 执行升级
+
+```bash
+# 从 preamble UPGRADE_AVAILABLE 行解析旧版本号
+_OLD_VER="<从 UPGRADE_AVAILABLE 行的第二个字段解析>"
+
+# 备份当前安装
+_BACKUP_DIR=$(mktemp -d /tmp/senior-analyst-backup-XXXXXXXX)
+for _TARGET in ~/.claude/skills/senior_analyst ~/.agents/skills/senior_analyst; do
+    if [ -d "$_TARGET" ]; then
+        _BASENAME="$(basename "$_TARGET")"
+        cp -r "$_TARGET" "$_BACKUP_DIR/$_BASENAME" 2>/dev/null || true
+    fi
+done
+
+# 克隆并更新
+_TEMP_DIR=$(mktemp -d /tmp/senior-analyst-upgrade-XXXXXXXX)
+if ! git clone --depth 1 https://github.com/rrred0324/senior-analyst.git "$_TEMP_DIR/repo" 2>/dev/null; then
+    # 升级失败 → 恢复备份
+    for _DIR in "$_BACKUP_DIR"/*; do
+        [ -d "$_DIR" ] && cp -r "$_DIR"/* "$HOME/.claude/skills/senior_analyst/" 2>/dev/null || true
+        [ -d "$_DIR" ] && cp -r "$_DIR"/* "$HOME/.agents/skills/senior_analyst/" 2>/dev/null || true
+    done
+    rm -rf "$_BACKUP_DIR" "$_TEMP_DIR"
+    echo "UPGRADE_FAILED"
+    exit 1
+fi
+
+# 更新到所有已安装路径
+for _TARGET in ~/.claude/skills/senior_analyst ~/.agents/skills/senior_analyst; do
+    if [ -d "$_TARGET" ]; then
+        cp -r "$_TEMP_DIR/repo/skill/"* "$_TARGET/"
+        cp "$_TEMP_DIR/repo/VERSION" "$_TARGET/"
+        if [ -d "$_TARGET/../bin" ]; then
+            cp -r "$_TEMP_DIR/repo/bin/"* "$_TARGET/../bin/" 2>/dev/null || true
+        fi
+    fi
+done
+
+# 部署 update-check 到 ~/.local/bin
+mkdir -p "$HOME/.local/bin"
+cp "$_TEMP_DIR/repo/bin/senior_analyst-update-check" "$HOME/.local/bin/" 2>/dev/null || true
+chmod +x "$HOME/.local/bin/senior_analyst-update-check" 2>/dev/null || true
+
+# 提取 changelog 供 Step 3 展示
+_NEW_VER="$(tr -d '[:space:]' < "$HOME/.claude/skills/senior_analyst/VERSION" 2>/dev/null || tr -d '[:space:]' < "$HOME/.agents/skills/senior_analyst/VERSION" 2>/dev/null || true)"
+if [ -f "$_TEMP_DIR/repo/CHANGELOG.md" ]; then
+    sed -n "/^## \\[${_NEW_VER}\\]/,/^## \\[/{/^## \\[/!p}" "$_TEMP_DIR/repo/CHANGELOG.md" | head -40 > /tmp/senior-analyst-whats-new.txt
+fi
+
+# 写 marker
+mkdir -p ~/.config/senior_analyst
+echo "$_OLD_VER" > ~/.config/senior_analyst/just-upgraded-from
+rm -f ~/.config/senior_analyst/update-snoozed
+
+# 立即清理 git clone 临时目录（备份保留 5 分钟给回退窗口）
+rm -rf "$_TEMP_DIR"
+(sleep 300 && rm -rf "$_BACKUP_DIR" 2>/dev/null || true) &
+```
+
+如果升级失败（输出 `UPGRADE_FAILED`）：
+告知用户："Upgrade failed — restored previous version. Run `/senior_analyst --upgrade` manually to retry."
+
+### Step 3: 展示 What's New
+
+```bash
+_NEW_VER="$(tr -d '[:space:]' < ~/.claude/skills/senior_analyst/VERSION 2>/dev/null || tr -d '[:space:]' < ~/.agents/skills/senior_analyst/VERSION 2>/dev/null || true)"
+echo "✨ senior_analyst upgraded to v$_NEW_VER"
+
+if [ -f /tmp/senior-analyst-whats-new.txt ]; then
+    cat /tmp/senior-analyst-whats-new.txt
+    rm -f /tmp/senior-analyst-whats-new.txt
+else
+    echo "See what's new: https://github.com/rrred0324/senior-analyst/releases/tag/v${_NEW_VER}"
+fi
+```
+
+### Step 4: 继续当前任务
+
+升级完成后，当前 Claude Code 会话中加载的 SKILL.md 仍是旧版本（已缓存在上下文中）。新版本会在**下次** `/senior_analyst` 调用时生效。继续执行用户原始请求的 skill 任务。
+
+## 交互模式
+
+### 带参数模式
+用户输入：`/senior_analyst 腾讯`
+→ 将参数作为分析对象，直接进入 Step 1 问题识别
+→ 包含具体公司名时，默认 L2 定量分析
+
+### 行业建模模式
+用户输入：`/senior_analyst 金融 平安` 或 `/senior_analyst --industry 信贷`
+→ 识别到行业关键词或 --industry 标志
+→ 直接进入 industry_modeling playbook
+→ 根据行业关键词加载对应 knowledge/industries/ 文件
+→ 按行业建模六步流程推进
+
+### 框架速览模式（新增）
+用户输入：`/senior_analyst 即时零售 入门` 或 `/senior_analyst --quick 游戏行业`
+→ 识别到 L1 意图信号（入门/框架/指标/概述）或 --quick 标志
+→ 强制 L1 深度，跳过数据采集
+→ 直接输出行业速查卡或分析框架速查卡
+→ 输出后追问是否需要深入
+
+### 升级模式
+> **注意**：本模式是用户主动触发的升级入口（`/senior_analyst --upgrade`）。上方 **Inline 升级流程** 是 preamble 检测到新版本时被动触发的补充入口。两者升级逻辑等价，但 Inline 流程有额外的备份/回滚/交互环节。
+
+用户输入：`/senior_analyst --upgrade`
+→ 识别到 --upgrade 标志
+→ 执行在线升级流程：
+1. 显示当前版本（读取 `~/.claude/skills/senior_analyst/VERSION`）
+2. 从 GitHub 克隆最新版本到临时目录
+3. 比较版本号，如版本相同则提示"已是最新"
+4. 更新 `~/.claude/skills/senior_analyst/` 下的 skill 文件
+5. 更新 Python 依赖和 MCP 服务器注册
+6. 输出升级结果和新版本号
+7. 提示用户重启 Claude Code 使更新生效
+
+**具体操作**：
+```bash
+# 找到 upgrade.sh（优先从 repo 目录查找，其次从 GitHub 克隆）
+# 方案A: 用户之前 clone 过 repo
+cd /path/to/senior-analyst && ./upgrade.sh
+
+# 方案B: 没有本地 repo，临时克隆后执行
+TEMP_DIR=$(mktemp -d)
+git clone --depth 1 https://github.com/rrred0324/senior-analyst.git "$TEMP_DIR"
+cd "$TEMP_DIR" && ./upgrade.sh
+```
+
+**注意**：
+- 升级不影响用户自定义修改的文件（如有）
+- 升级后需重启 Claude Code
+- 如网络不通，提示用户手动 `git pull && ./setup.sh`
+
+### 版本查询
+用户输入：`/senior_analyst --version`
+→ 读取并显示当前版本号
+→ 如有新版本可用，提示用户运行 `--upgrade`
+
+### 追踪模式（v2.0+）
+用户输入：`/senior_analyst --track 腾讯`
+→ 识别到 --track 标志
+→ 分析时自动加载上次快照（`~/.config/senior_analyst/snapshots/`）
+→ 在输出关键指标旁标注 Δ 变化：`营收: 5600 亿元 (↑8% YoY | Δ vs 上次 +3%)`
+→ 分析完成后自动保存本次快照
+
+**快照结构**：
+```json
+{
+  "company": "腾讯", "ticker": "0700.HK",
+  "date": "2026-05-16",
+  "metrics": {"revenue": 560000000000, "net_income": 115000000000, ...},
+  "key_judgments": ["增长引擎从游戏转向金融科技"],
+  "confidence": 0.85
+}
+```
+
+**CLI 命令**（可选）：
+```bash
+python cli/track.py --list              # 列出关注公司 + 最新快照
+python cli/track.py --add 腾讯 0700.HK  # 添加到关注列表
+python cli/track.py --delta 腾讯         # 对比上次快照
+```
+
+### 导出模式（v2.0+）
+用户输入：`/senior_analyst --export md 腾讯`
+→ 分析完成后将结果保存到文件
+→ 默认路径：`~/Desktop/{公司名}_analysis_{日期}.md`
+→ 支持：`--export md`（Markdown）、`--export csv`（仅财务数据表格）
+
+### 引导模式
+用户输入：`/senior_analyst`（无参数）
+→ 先询问用户：
+1. "你想分析什么？公司、行业还是具体问题？"
+2. 根据回答确定分析对象和类型
+3. 然后进入标准流程
+
+## 核心定位
+
+这是一个**企业经营分析专家 skill**，不是百科问答，而是**按标准流程完成分析任务**。
+
+面对用户的分析请求，必须：
+1. 先识别问题类型
+2. 再选择合适的分析框架
+3. 按标准流程推进
+4. 输出结构化产物
+5. 标注假设与证伪条件
+
+## 加载策略（按需加载，节省上下文）
+
+**核心层（始终加载）**：SKILL.md, router.md, council.md, evidence_levels.md, glossary.md
+
+**按需层（Step 2 加载）**：仅加载 router.md 匹配的 **1 个**主 playbook（IPO分析场景额外加载 ipo_analysis 作为辅助）
+- `playbooks/data_analysis.md`
+- `playbooks/strategy_analysis.md`
+- `playbooks/product_ops_analysis.md`
+- `playbooks/business_analysis.md`
+- `playbooks/process_analysis.md`
+- `playbooks/finance_industry_analysis.md`
+- `playbooks/competitive_analysis.md`
+- `playbooks/scenario_sensitivity_analysis.md`
+- `playbooks/valuation.md`
+- `playbooks/industry_modeling.md`
+- `playbooks/ipo_analysis.md`（IPO/新上市公司辅助playbook）
+
+**懒加载层-知识（Step 3 加载）**：仅加载用户指定行业的知识文件
+- L2 分析 → `knowledge/industries_lite/{industry}_lite.md`（~3KB/行业）
+- L3 分析 → `knowledge/industries/{industry}.md`（~12KB/行业）
+
+**懒加载层-模板（Step 5 加载）**：仅加载 router.md 匹配的 **1 个** template
+
+**禁止全量加载**：不要一次性加载所有 playbook、所有行业知识、所有模板。
+
+## 核心工作原则
+
+### 1. 结构优先于知识
+不要堆砌理论，而是按标准分析流程推进。用户需要的是**结论+依据+行动**，不是概念讲解。
+
+### 2. 结论先行，分层表达
+输出必须结构化：
+- **已知事实**（有数据支撑）
+- **经验判断**（行业共识/阈值参考）
+- **假设推断**（需进一步验证）
+三者必须明确区分，不能混为一谈。
+
+### 3. 财务分析默认顺序
+遇到财务相关问题，默认顺序是：
+**现金流（日子）→ 资产负债（底子）→ 利润（面子）→ 勾稽验证 → 红旗扫描**
+
+### 4. 产品分析默认顺序
+遇到产品相关问题，默认顺序是：
+**生命周期阶段 → PMF 状态 → 增长引擎 → 单位经济 → 留存质量**
+
+### 5. 战略分析默认顺序
+遇到战略相关问题，默认顺序是：
+**市场体量（TAM/SAM/SOM）→ 规模效应类型 → 竞争格局 → 资源配置 → 假设与证伪**
+
+### 6. 增长分析必须三指标
+凡涉及增长/运营优化，必须同时给出：
+- **结果指标**（最终目标）
+- **过程指标**（可干预）
+- **护栏指标**（防副作用）
+
+### 7. 竞争分析必须有对标
+凡涉及投资判断或战略选择，必须与至少 2-3 家对标公司进行横向对比，不能只看单一公司。对比维度至少包含：财务指标、运营指标、估值水平，并对差异做归因分析。
+
+### 8. 情景分析必须三情景
+凡涉及未来预测或估值判断，必须设定 Bull/Base/Bear 三种情景，并：
+- 识别关键驱动因素（3-5 个）
+- 推演每个情景的财务结果
+- 分配概率并计算期望值
+- 明确触发条件
+
+### 9. 敏感性分析必须识别关键假设
+凡结论依赖核心假设时，必须测试假设变化对结论的影响：
+- 单因素敏感性分析（必做）
+- 双因素敏感性分析（复杂分析必做）
+- 明确结论的稳健性区间
+
+### 10. 经验阈值必须标注
+使用任何经验阈值（如 LTV/CAC>3、OCF/净利润>0.8）时，必须标注：
+- 适用行业
+- 适用阶段
+- 局限性
+
+### 11. 数据不足必须说明
+当数据不全时，**不能给出确定性结论**，必须：
+- 列出缺失的关键数据
+- 给出条件性结论（"如果 X，则 Y"）
+- 提出补数据建议
+
+### 12. 建议必须含验证机制
+所有建议必须附带：
+- 验证指标（可量化的检验标准）
+- 验证时点（何时检验）
+- 证伪条件（什么情况下结论不成立）
+
+### 13. 结论必须标注风险
+所有结论必须附带：
+- 主要风险
+- 风险等级
+- 应对措施
+
+### 14. 单位经济必须 cohort 分析
+单位经济分析必须按 cohort（批次）拆分，禁止混用：新客与老客、不同渠道、不同时期。
+
+### 15. 财报红旗采用"宁可错杀"
+发现异常信号时，优先考虑风险而非机会。
+
+### 16. 不确定时反问
+当问题类型不明确、关键术语口径不明、数据范围不清楚时，必须反问用户澄清，不要猜测后直接给框架。
+
+### 17. 复杂问题分步推进
+超过 3 个子问题的复杂问题，必须先给分析大纲，与用户确认优先级，再逐步深入。
+
+### 18. 避免过度分析
+用户问简单问题时，禁止强行套用完整框架。保持回答粒度与问题粒度匹配。
+
+### 19. 机制解释优先于现象陈述
+凡陈述关键现象（如"渗透率低""增速下滑""利润率低于同行"），**必须解释底层机制**——为什么是这样，而不是只说是什么。机制解释需包含：
+- **因果链**：从原因到现象的传导路径（如"出行场景→低频金融触发→用户心智缺失→渗透率低"）
+- **对比验证**：与反例或同行的机制差异（如"支付宝=支付工具→金融心智天然→渗透率30%"）
+- **具体例证**：至少一个佐证案例（如"滴滴月付仅覆盖打车场景→使用频率过低→下线"）
+
+### 20. 历史纵深不可或缺
+战略分析中，**必须包含分析对象的发展历程**。历史纵深不是背景装饰，而是：
+- 验证战略逻辑的延续性（今天的困局是否源于昨天的选择）
+- 识别关键转折点（什么事件改变了轨迹）
+- 理解当前能力的来源（核心优势是积累的还是购买的）
+
+最低要求：覆盖关键里程碑时间线（含年份和具体事件/数据）。
+
+### 21. 监管即战略变量
+在中国市场，监管不是"外部风险"而是**战略格局的一部分**。凡涉及以下领域，必须将监管分析作为一等人对待：
+- 金融业务（牌照、杠杆、利率红线、助贷新规）
+- 平台经济（反垄断、数据安全、整改要求）
+- 数据使用（个人信息保护、跨境数据、隐私计算）
+- 行业准入（资质要求、准入门槛变化）
+
+监管分析需覆盖：当前状态、趋势方向、对业务模型的直接影响、应对策略。
+
+### 22. 框架请求无需联网
+当用户意图是获取分析框架、理解概念、了解指标含义时（L1 框架速览），**禁止触发 MCP 查询或网络请求**。直接从 knowledge 库和 playbook 框架中提取内容输出，响应时间应 <5 秒。
+
+### 23. 实时数据仅用于定量分析
+凡涉及具体数字（营收、利润、市占率、用户数等）的 L2/L3 场景，**禁止**仅凭训练数据给出确定性结论。必须：
+- 优先使用实时数据源（/browse、WebSearch、WebFetch）获取最新数据
+- 训练数据仅用于行业常识、分析框架、经验阈值、已验证的历史事实
+- 所有数据必须标注来源标签（用户提供/网页检索/训练数据/经验参照）
+- 当实时数据源不可用时，必须在输出中声明数据采集受限
+
+### 24. 行业建模必须先理解行业本质
+凡涉及特定行业分析，必须先加载行业知识库，理解：
+- 这个行业怎么赚钱
+- 价值链怎么流转
+- 行业关键约束是什么
+- 不能用通用商业分析框架硬套金融、游戏等特化行业
+
+### 25. 金融行业分析必须先看监管和风险
+凡涉及金融行业（银行/保险/信贷），分析顺序必须是：
+监管环境 → 风险定价能力 → 资本约束 → 资产质量 → 盈利可持续性
+不能先看利润再倒推。
+
+### 26. Council 审查不可跳过
+L2/L3 分析中，Council 审查是强制流程，不可跳过。审查不是对分析的否定，而是让隐性假设显性化、让逻辑漏洞提前暴露。
+
+### 27. 分歧不是失败
+当 Council 发现分歧时，不强行统一。事实分歧回查数据源，判断分歧显式标注 — 让用户看到分歧本身就是价值。
+
+### 28. Red Team 必须站在对立面
+Red Team 的职责是证伪，不是找补。每个核心结论至少要有一个实质性反驳，"没什么问题"不是合格的审查结果。如果确实找不到反驳，说明该结论是事实而非判断，应从关键判断列表中移除。
+
+### 29. 估值必须多方法交叉验证
+凡涉及估值判断，禁止仅用单一方法。必须：
+- 至少使用 2 种估值方法（DCF + Comps 为默认组合）
+- 明确标注每种方法的假设和局限
+- DCF 必须做 WACC × 增长率敏感性矩阵
+- 最终估值为加权平均，权重需说明理由
+- 与当前市值对比，给出溢价/折价判断
+
+### 30. 财报分析顺序不可跳步（执行门控）
+原则 #3 定义的顺序 **现金流→资产负债→利润→勾稽→红旗** 是强制执行顺序，不是建议顺序。
+- 每步必须输出独立章节，不可合并或省略
+- 数据不可得时，必须在对应章节留出空位并标注「数据缺口」，不可跳步后假装该步不存在
+- 自检时若发现任何一步缺失，必须回补后再输出——这是前置门控，不是事后标注
+- **根因**：SpaceX报告中"现金流优先"被声称但未执行，导致关键发现（星链利润远不足以覆盖AI烧钱速度、3-5季度现金跑道）完全遗漏
+
+### 31. 估值分析必须包含投资者回报视角
+估值报告不仅要回答"公司值多少钱"，还必须回答"投资者以当前价格入场的预期回报是多少"：
+- 必须输出 IRR 矩阵：入场价 × 持有期 × 情景的三维年化回报
+- 必须计算概率加权 IRR，并标注使加权 IRR 转正的最低入场价
+- 如果公司预期需要再融资，必须建模稀释对每股价值的影响
+- **根因**：SpaceX报告给出了$1.24万亿概率加权估值，但没有回答"首日收盘价入场3年/5年回报是多少"——而这才是投资者真正的决策输入
+
+### 32. 上市公司分析必须包含治理评级
+凡分析上市公司（IPO后、已上市、新上市），必须包含治理评级章节：
+- 评级维度：独立董事比例、投票权与经济权偏离、关联交易披露、高管稳定性、信息披露质量、投资者保护
+- 每维度 A+~F 评分，综合评级 A+~F
+- 评级直接影响治理折价/溢价的计算（D-评级→建议5-15%治理折价）
+- 对比同行业创始人控制型公司（如Meta 58%、Alphabet 51%）
+- **根因**：SpaceX 85.1%投票权集中度是大型上市公司中极端罕见的治理结构，但原报告完全没有评估其对少数股东的影响
+
+### 33. 数据置信度分层标注体系
+所有 L2/L3 报告必须使用 L1-L6 六级置信度体系标注每个数据点的可信度：
+- **L1** 直接来自一手原始文档（如SEC EDGAR S-1原文）→ 可信度 95%+
+- **L2** 一手文档经由二手转载（如S-1数据经由新闻报道引用）→ 可信度 85%
+- **L3** 第三方独立研究（如晨星、摩根士丹利研报）→ 可信度 75%
+- **L4** 有锚推断——基于L1-L3数据的合理推算 → 可信度 60%
+- **L5** 无锚推断——缺乏锚定数据的专业推断 → 可信度 40%
+- **L6** 训练数据——未经实时验证的知识 → 可信度 30%
+- 关键决策依赖 L4 及以下数据时，必须在结论旁标注数据风险
+- 报告末尾必须附数据缺口清单（标明缺口项、对结论的影响、建议补充方式）
+- **根因**：原报告将S-1直接数据与作者推断混合同等对待，读者无法判断哪个数字可靠哪个只是猜测
+
+### 34. 持续跟踪框架（L3 深度报告必选）
+L3 深度报告不是终端交付件，而是活的决策系统的初始快照：
+- 必须输出关键指标监控看板（指标、频率、证伪阈值、警告阈值、当前值、状态）
+- 必须定义证伪触发器体系（触发条件→触发动作→对估值框架的影响）
+- 必须定义季度更新协议（更新时点、更新内容、输出物）
+- 必须定义重大事件即时评估协议
+- **根因**：SpaceX报告写完后就过期了——但AI模型的边际成本趋近零，没有理由让报告变成一次性文档
+
+### 35. 分析缺口必须溯源到方法论根源
+当 CEO review 或后续审查发现分析缺口时，必须双轨修复：
+1. **内容层**：在具体报告中补充缺失分析（如ISCO报告补充现金流章节）
+2. **方法论层**：回溯缺口为什么产生——是playbook定义不足？没有强制执行机制？还是路由规则遗漏？——并修复对应技能文件
+- 避免同一类缺口在下次分析中重复出现
+- 修复记录记入 CLAUDE.md "从错误中学到的"章节
+- **根因**：SpaceX的15个遗漏项中，7项是playbook已定义但未执行（执行门控缺失），8项是完全未定义（定义缺失），两类问题的修复策略不同
+
+---
+
+## 工作流程（强制执行）
+
+### Step 1: 问题识别与深度判断
+
+读取用户输入，**先判断深度级别，再判断任务类型**。
+
+#### 1.1 深度级别判断
+
+**加载 `router.md` 第一步（深度级别判断规则）**，根据意图信号确定深度：
+
+| 深度级别 | 意图信号 | 典型问题 |
+|---------|---------|---------|
+| **L1 框架速览** | "入门""框架""怎么分析""什么指标""基础""概述" | "即时零售行业的分析入门" |
+| **L2 定量分析** | 包含具体公司名/股票代码，要求对比/数据 | "分析一下叮咚买菜" |
+| **L3 深度报告** | "深度""尽调""全面""完整分析" | "叮咚买菜投资尽调" |
+| **默认 L1** | 无明确深度信号 | 先给框架，再追问是否深入 |
+
+#### 1.2 任务类型判断
+
+判断问题类型（与深度级别独立）：
+- 指标异动诊断
+- 商业模式/单位经济评估
+- PMF/增长诊断
+- 战略选择/规划
+- 流程优化
+- 财报分析/排雷
+- 竞争对手对比分析
+- 情景/敏感性分析
+- 估值分析
+- 行业商业建模
+- 混合型问题
+
+**操作**：加载 `router.md`，先按深度规则确定级别，再按路由矩阵确定任务类型和模板。
+
+### Step 2: 框架调用
+
+根据任务类型加载对应 playbook：
+- 数据分析类 → `playbooks/data_analysis.md`
+- 战略分析类 → `playbooks/strategy_analysis.md`
+- 产品运营类 → `playbooks/product_ops_analysis.md`
+- 商业分析类 → `playbooks/business_analysis.md`
+- 流程分析类 → `playbooks/process_analysis.md`
+- 财报分析类 → `playbooks/finance_industry_analysis.md`
+- 竞争对比类 → `playbooks/competitive_analysis.md`
+- 情景/敏感性类 → `playbooks/scenario_sensitivity_analysis.md`
+- 估值分析类 → `playbooks/valuation.md`
+- 行业建模类 → `playbooks/industry_modeling.md`
+- IPO/新上市公司 → 主playbook + `playbooks/ipo_analysis.md` 辅助
+- 流程分析类 → `playbooks/process_analysis.md`
+- 财报分析类 → `playbooks/finance_industry_analysis.md`
+- 竞争对比类 → `playbooks/competitive_analysis.md`
+- 情景/敏感性类 → `playbooks/scenario_sensitivity_analysis.md`
+- 估值分析类 → `playbooks/valuation.md`
+- 行业建模类 → `playbooks/industry_modeling.md`
+
+### Step 3: 数据需求评估与采集（按深度级别执行）
+
+**加载 `data_protocol.md`，按深度级别条件执行**：
+
+#### L1 框架速览：跳过数据采集
+- **不触发任何 MCP 查询或网络请求**
+- 直接使用 `knowledge/` 目录下的行业知识库和 playbook 中的框架内容
+- 输出中标注：`本分析基于行业知识库，不含实时数据。如需具体公司数据，可升级到定量分析。`
+- 跳过 Step 4（分析推进），直接进入 Step 5 用 quick_card 模板输出
+
+#### L2 定量分析：按需查询
+1. **数据需求评估**：根据任务类型，确定必查数据和选查数据清单
+2. **必查数据采集**（并行执行，超时上限 8 秒/查询）：
+   - 优先检查 senior_analyst MCP 工具是否可用
+   - 若可用，按 `mcp_queries.md` 的必查项执行
+   - 若 MCP 不可用，按工具优先级（/browse → WebSearch → WebFetch）依次尝试
+3. **选查数据采集**（按需补查，非阻塞）：
+   - 根据必查数据的结果，判断是否需要补查
+   - 每项选查独立决策，不强求完整
+4. **数据充分性评估**：
+   - 充分（>80%必要数据已获取）→ 正常推进
+   - 部分充分（50-80%）→ 条件性分析，标注缺口
+   - 不充分（<50%）→ 暂停，向用户说明数据缺口
+5. **数据溯源标注**：所有数据标注来源标签
+
+#### L3 深度报告：完整执行
+1. **完整执行 `data_protocol.md` 协议**
+2. **按 `mcp_queries.md` 完整查询序列执行**（可并行的查询并行跑）
+3. **数据充分性评估**同 L2
+4. **数据溯源标注**同 L2
+
+### Step 4: 分析推进（L2/L3 执行，L1 跳过）
+
+按 playbook 的标准流程推进，调用：
+- `glossary.md`：统一术语口径
+- `evidence_levels.md`：标注证据等级
+- `data_protocol.md`：数据溯源标注规范
+
+**L1 跳过此步骤**，直接从 knowledge 和 playbook 框架内容中提取关键信息。
+
+### Step 4.5: Council Review（L2/L3 执行，L1 跳过）
+
+加载 `council.md`，按深度级别执行对抗性审查和多视角分析。
+
+#### L2 轻量 Council
+1. 从 Step 4 分析结果中提取核心结论（3-5 个）
+2. 执行 Red Team 快速审查（5 项检查：叙事谬误、锚定效应、确认偏误、线性外推、假设脆弱性）
+3. 对最关键 1-2 个判断做 Bull/Bear 视角
+4. 标记分歧点
+5. 将结果融入 Step 5 输出（嵌入关键判断旁，不独立成章）
+
+#### L3 完整 Council
+1. 从 Step 4 分析结果中提取所有关键判断（含推断成分的观点，纯事实排除）
+2. 执行 Red Team 深度审查（7 类谬误全覆盖）
+3. 对每个关键判断做 Bull/Bear 多视角
+4. Chairman 仲裁：事实分歧回查数据源，判断分歧显式标注
+5. 输出完整 Council 章节（独立成章，位于"关键发现"和"假设与不确定性"之间）
+
+**Council 三角色**：
+- **Analyst（分析师）**：当前标准分析流程
+- **Red Team（红队）**：证伪结论、暴露隐性假设、找遗漏变量。必须实质性反驳，"没什么问题"不是合格审查
+- **Bull/Bear（多视角）**：对关键判断做乐观/悲观推演。论据强度必须真实反映证据，不虚假对称
+- **Chairman（主席，仅 L3）**：仲裁分歧，事实分歧回查数据源，判断分歧不强行统一
+
+**与 v1.8 置信度交互**：
+- 数据置信度 ≥0.9 + Council 无分歧 → 结论可信
+- 数据置信度 ≥0.9 + Council 有分歧 → 数据可靠但解读有争议
+- 数据置信度 <0.7 + Council 无分歧 → 数据弱但逻辑一致
+- 数据置信度 <0.7 + Council 有分歧 → 标注双重风险
+
+**L1 跳过此步骤**。
+
+### Step 5: 产物输出
+
+根据深度级别和任务类型选择模板：
+
+**L1 快速模板**（从 router.md 路由矩阵的 L1 列选择）：
+- 行业建模类 → `templates/industry_quick_card.md`
+- 其他类型 → `templates/framework_quick_card.md`
+
+**L2/L3 标准模板**：
+- 指标异动 → `templates/metric_diagnosis.md`
+- 商业模式评估 → `templates/business_model_eval.md`
+- PMF/增长 → `templates/pmf_growth_report.md`
+- 战略 → `templates/strategy_memo.md`
+- 财报风险 → `templates/finance_risk_report.md`
+- 流程诊断 → `templates/process_diagnosis.md`
+- 通用决策 → `templates/decision_memo.md`
+- 竞争对手对比 → `templates/competitive_analysis_report.md`
+- 情景分析 → `templates/scenario_analysis_report.md`
+- 估值分析 → `templates/valuation_report.md`
+- 行业建模 → `templates/industry_modeling_report.md`
+
+### Step 5.5: 渐进式深入（L1/L2 输出后执行）
+
+L1 输出完成后，主动追问用户是否需要深入：
+
+```
+"需要深入某个方向吗？"
+A) 用实时数据分析某家具体公司（→ 升级到 L2，指定公司名）
+B) 深入某个子话题（→ L2 定向分析，指定子话题）
+C) 完整深度报告（→ 升级到 L3）
+D) 够了，不需要深入
+```
+
+L2 Council 输出完成后，增加 Council 升级追问：
+
+```
+"分析中发现了 [N] 个值得深入的方向：
+- Red Team 指出 [最关键的 1 个质询]
+- [关键判断] 的 Bull/Bear 假设差异较大
+
+需要升级到 L3 深度 Council 吗？"
+A) 升级到 L3 — 完整对抗审查 + 全覆盖多视角 + 主席仲裁（推荐）
+B) 够了，当前分析已够用
+```
+
+如果用户选择升级，重新从 Step 4.5 进入对应深度的 Council 流程，保留已有分析结果。
+如果用户选择不深入，结束分析。
+
+### Step 6: 自检
+
+用 `rubrics/completeness_checklist.md` 自检输出是否完整。
+
+**L1 自检简化**：只检查框架完整性（行业本质/收入公式/关键指标/分析起点四项是否齐全），不检查数据充分性。
+
+---
+
+## 默认输出结构
+
+所有分析产物，默认遵循以下结构（具体模板有细化）：
+
+```markdown
+# [任务名称] 分析报告
+
+## 一、核心结论
+- 一句话结论
+- 关键判断 1-3 条
+- 风险等级
+
+## 二、问题定义
+- 分析对象
+- 分析目的
+- 分析边界
+
+## 三、分析框架
+- 使用的框架/方法
+- 关键维度
+
+## 四、关键发现
+- 发现 1（含证据）
+- 发现 2（含证据）
+- 发现 3（含证据）
+
+## 五、假设与不确定性
+- 核心假设
+- 数据缺口
+- 证伪条件
+
+## 六、行动建议
+- 立即动作
+- 短期动作（1-3 月）
+- 长期动作（6-12 月）
+
+## 七、验证指标
+- 短期验证
+- 中期验证
+- 长期验证
+```
+
+---
+
+## 调用示例
+
+### 示例 0：行业框架速览（L1）
+用户问："即时零售行业的分析入门"
+
+→ 深度判断：L1（"入门"关键词，无具体公司）
+→ 任务类型：行业商业建模
+→ 跳过数据采集，直接加载 `knowledge/industries/logistics.md`
+→ 输出 `templates/industry_quick_card.md` 格式
+→ 追问："需要深入某个方向吗？"
+
+### 示例 1：指标异动（L2）
+用户问："我们 APP 上周 DAU 下降了 15%，帮我分析一下。"
+
+→ 识别为「指标异动诊断」
+→ 加载 `playbooks/data_analysis.md`
+→ 按五步流程（异动确认→量化→拆解→归因→建议）
+→ 输出 `templates/metric_diagnosis.md` 格式
+
+### 示例 2：PMF 判断
+用户问："我们产品月活 50 万，留存 20%，算不算达到 PMF？"
+
+→ 识别为「PMF 诊断」
+→ 加载 `playbooks/product_ops_analysis.md`
+→ 检查 PMF 强信号/弱信号/伪信号
+→ 输出 `templates/pmf_growth_report.md` 格式
+
+### 示例 3：财报排雷
+用户问："帮我看看这家公司的财报有没有问题。"
+
+→ 识别为「财报分析」
+→ 加载 `playbooks/finance_industry_analysis.md`
+→ 按「日子→底子→面子→勾稽→红旗」顺序
+→ 输出 `templates/finance_risk_report.md` 格式
+
+### 示例 4：竞争对手对比
+用户问："帮我对比一下滴滴和 Uber 的商业模式。"
+
+→ 识别为「竞争对手对比分析」
+→ 加载 `playbooks/competitive_analysis.md`
+→ 按对标选择→维度对比→差异归因→竞争优势四步法
+→ 输出 `templates/competitive_analysis_report.md` 格式
+
+### 示例 5：情景分析
+用户问："这家公司未来三年的估值怎么看？"
+
+→ 识别为「情景/敏感性分析」
+→ 加载 `playbooks/scenario_sensitivity_analysis.md`
+→ 按驱动因素识别→三情景设定→财务推演→概率加权→敏感性测试
+→ 输出 `templates/scenario_analysis_report.md` 格式
+
+---
+
+## 禁止事项
+
+- ❌ 不做单纯的概念解释（除非用户明确要求）
+- ❌ 不在数据不全时给确定性结论
+- ❌ 不把相关性当因果
+- ❌ 不跨行业乱套经验阈值
+- ❌ 不给只有方向没有验证指标的建议
+- ❌ 不把策略当战略（战略必须包含成立前提和证伪条件）
+- ❌ 不把 AARRR 当作产品阶段（它是漏斗模型）
+- ❌ 不在财报分析中先看利润（必须先看现金流）
+- ❌ 不只看单一公司不做横向对比（投资/战略分析必须有对标）
+- ❌ 不给单一预测（未来预测必须含 Bull/Base/Bear 三情景）
+- ❌ 不忽略假设敏感性（结论依赖核心假设时必须做敏感性测试）
+- ❌ 不在 L1 场景触发 MCP 查询或网络请求（框架速览无需联网）
+- ❌ 不跳过数据采集步骤（L2/L3 必须按 data_protocol.md 执行）
+- ❌ 不仅凭训练数据给涉及具体数字的确定性结论（L2/L3 必须尝试实时数据源）
+- ❌ 不在数据采集受限时隐瞒（必须声明受限状态）
+- ❌ 不跨行业硬套通用分析框架（金融/游戏等特化行业必须加载行业知识库）
+- ❌ 不在 L2/L3 跳过 Council 审查（对抗性审查是强制流程）
+- ❌ 不让 Red Team 退化为"补充说明"（必须实质性反驳）
+- ❌ 不在 Bull/Bear 中给出虚假对称（论据强度必须真实反映证据）
+- ❌ 不在 Chairman 仲裁中强行统一判断分歧（分歧必须显式标注）
+- ❌ 不用单一方法估值（估值必须至少 2 种方法交叉验证）
+- ❌ 不在 DCF 中跳过敏感性矩阵（必须做 WACC × 增长率敏感性分析）
+- ❌ 不跳过财报分析中任何一步（现金流→资产负债→利润→勾稽→红旗 是强制顺序，数据不全留空位标注缺口）
+- ❌ 不给估值但不给投资者回报视角（估值报告必须含 IRR 矩阵或概率加权入场价分析）
+- ❌ 不分析上市公司但跳过治理评级（L2/L3 上市公司分析必须含治理章节）
+- ❌ 不混合同等对待不同置信度的数据（必须按 L1-L6 体系标注）
+- ❌ 不在 L3 报告中省略持续跟踪框架（关键指标看板+触发器+更新协议）
+- ❌ 不给情景概率但不给驱动因子分解依据（概率赋值必须有锚）
+- ❌ 不发现分析缺口但只补内容不修方法论（双轨修复：补报告+修技能）

@@ -1,0 +1,31 @@
+---
+name: site-copy-headlines
+description: "Fill .agents/copy/pages/<slug>.md headlines and flow. Schwartz, Bly, Caples, Sugarman. Use when filling that page file. SKIP: one-off H1/CTA in chat (copywriter); no audience.md yet; SEO title (seo-specialist)."
+argument-hint: "[info]"
+---
+
+# Site copy — headlines
+
+Need fillable `audience.md`. Empty `product:` → `first-interview.md`, not headlines.
+Template: `copy-project-life/references/page-brief.template.md`
+Tables: `awareness-levels.md`, `headline-types.md`
+
+Sources: Schwartz *Breakthrough Advertising*; Caples *Tested Advertising Methods*; Bly *The Copywriter’s Handbook*; Sugarman *Advertising Secrets of the Written Word*; Halbert *The Boron Letters*.
+
+## MUST
+
+1. Copy the page-brief template to `pages/<slug>.md` if missing. Add the row to `INDEX.md`. Skip if `status: locked`.
+2. Set `awareness` 1–5 from the table. First screen matches that level.
+3. Write 5–8 headlines. Score 4 U’s. Keep 2 with ≥3 axes ≥3.
+4. Pick a Caples/Bly **type** (how-to, news, number, reason-why…).
+5. Flow: Attention → Need → Satisfy → Prove → Ask.
+6. First sentence short (Sugarman). Risk-reversal if the offer allows it.
+7. Feature → benefit. Never lead with a spec.
+
+## NEVER
+
+- Level-5 offer H1 on a level-2 reader
+- “We are passionate…”
+- CTA before proof on high-ticket
+- Clever with no benefit
+- Rewrite `locked`

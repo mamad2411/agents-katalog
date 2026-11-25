@@ -1,0 +1,292 @@
+---
+name: projectatlas
+description: Use ProjectAtlas before broad source reads, preferring the installed short atlas CLI for an exact checkout and MCP for registered worktree routing, compact session briefs, or federated graph evidence.
+---
+
+# ProjectAtlas
+
+## Goal
+
+For an exact local checkout, prefer the installed, version-matched short `atlas` CLI:
+
+`atlas next <task> -> atlas summary <file> or atlas symbols relations/search -> atlas slice <file> --start-line <n> --end-line <m>`
+
+`atlas` is the installer-managed forwarder to the same native command surface as `projectatlas`, not a second index. Use `projectatlas` to inspect the native runtime directly or when the short forwarder is unavailable. Use MCP when its per-call registered-worktree routing, compact session brief/typed continuation, or cross-worktree federation is needed. [Short CLI command routing](references/short-cli.md) lists every public command family, its function, and when to call it; read it when selecting a CLI command.
+
+ProjectAtlas is an agent orientation layer. It combines reviewed folder/file responsibility, current source summaries, parser trust, and bounded graph connections so agents select the right source before opening it. TOON is the default agent format; current saved bytes are authoritative, including dirty and non-Git trees.
+
+## Restore context and choose work
+
+After **every compaction**, use ProjectAtlas to recover the project, source ownership and architecture context needed for the active task. Read the repository's continuity instructions, select your own exact checkout, then make the startup navigation call below. A memory summary is a pointer to evidence; it does not replace this Atlas reorientation. Narrow the query to what was lost rather than rereading or indexing the whole repository.
+
+Use these loops to decide when and why to navigate:
+
+- **Understand or resume a change:** start with `atlas next <task>` or an exact-root compact MCP session brief. Follow the ranked owner to a summary, then only the relations or exact slices needed to restore its responsibility, callers and architecture boundaries.
+- **Implement against requirements:** locate the repository's declared specification and architecture context with documentation selection, and inspect current implementation with source selection. Use both selections for an explicit documentation/source bridge. Reconcile what the requirement promises with what the source does; a resolved link or accepted purpose alone does not prove conformance. Report a missing reference or unknown specification authority rather than inventing the association.
+- **Reflect during work:** at a meaningful task boundary, after review feedback, and before declaring completion, reconsider the affected owner for obsolete paths, duplicated work, dead-code candidates and simpler designs. Use a bounded relation/analysis request when it can answer that question, then check current callers, exports, registries and exact source. Partial graphs, unresolved dynamic calls and zero inbound rows do not prove code is dead. Keep improvements within the authorized task or record a concrete follow-up.
+- **Decide what is stale:** distinguish changed saved source, stale indexed projections, approved purpose text and old specification claims. Check current evidence before replacing any of them. Refresh ordinary saved edits/offline changes with `atlas watch --once`; use full scan or a symbol rebuild only for the corresponding typed recovery or an explicitly required rebuild. Reuse unchanged verified source, parse, graph and test evidence when its inputs still match.
+- **Finish or hand off:** reconcile the affected requirements, source, architecture and guidance, and record verified outcomes and remaining uncertainty in the repository's continuity mechanism. A health result or generated summary can identify work to inspect; it cannot substitute for the owning source and behavioral proof.
+
+The [short-command guide](references/short-cli.md) maps each command to its function and call trigger. Pick the smallest operation that answers the current question, and stop when the evidence is sufficient.
+
+## Task Startup
+
+At startup and after compaction, read this complete installed skill before Atlas calls. Every agent restores its exact selected project/worktree from its own live checkout, not another agent's remembered database binding. A hook reminder does not prove the skill was read. On Windows, the packaged automatic hook requires PowerShell; if Codex launches it through CMD, hooks are disabled or untrusted, or a resumed subagent has no fresh reminder after compaction, follow this recovery step manually before Atlas use.
+
+1. Select the exact checkout. On first use there, run `atlas init` only if project-local state is absent; if an MCP read returns `init_required`, use its exact `atlas_init` next call. For a registered worktree that needs safe control-atlas hydration, use `atlas_init(worktree: "<alias>")`. Never choose a database filename or reuse another root's writable state. Every project root owns its own `.projectatlas/projectatlas.db`, config, generated host configs, and exact index. Do not substitute scan, symbol build, or hand-written MCP config for init.
+2. For ordinary single-checkout work, run `atlas` from that checkout. For registered-worktree MCP use, keep the control checkout selected and pass `worktree` on each root-scoped call; for an unregistered root pass `project_path`. Use `atlas_set_project_path` only as a single-client process default. Never send both selectors.
+3. Refresh only when needed: `atlas watch --once` for ordinary changed files, or `atlas_watch_once` on an MCP-routed worktree. Use `atlas scan` / `atlas_scan` only when an initialized project has no published index or typed guidance requires a full refresh. Never scan merely because a session started.
+4. For a local CLI task, call `atlas next <task query>` once, follow its ranked file/folder recommendation, then use a bounded `atlas summary`, `atlas search`, or `atlas symbols relations` as needed. Use `atlas overview` and `atlas folders` before `atlas files` when broad structure is the question or `next` has no actionable candidate. For MCP-routed work, call `atlas_session_brief` once with `query`, the exact root selector, and `compact: true`; for a focused question start with `file_limit: 3`, `folder_limit: 3`, `blocker_limit: 1`, and `purpose_limit: 1`, then follow its typed next call.
+   When the task has a content role, carry `content_selection: "source"`, `"documentation"`, or `"both"` on the returned files, search, summary, slice, symbol, and detailed-relation calls that expose it. Use `source` for ordinary implementation work, `documentation` for specification or guidance discovery, and `both` only when the task crosses the two. Omit the field only when the legacy candidate universe, including configuration/data and other text, is intentionally required.
+5. For MCP, call a returned `atlas_file_summary` recommendation with `compact: true`; use full/default output only when complete totals or coverage state matter. For CLI, use `atlas summary <file>`.
+6. Use a selected summary's direct caller/dependency facts without reconfirming them. Use outline or symbols only when summary context is insufficient. Use detailed relations when resolution, incompleteness, ambiguity, or an unshown path matters (`atlas symbols relations` locally, `atlas_symbol_relations` for MCP). Follow any MCP `next_call` unchanged; do not reconstruct its cursor.
+7. Use `atlas slice` or `atlas symbols slice` locally, `atlas_slice` for MCP, for the smallest exact source range. Copy returned disambiguators rather than guessing a symbol line.
+8. Stop once exact evidence answers the task. For external reachability, verify the owning module, re-export, package, or route boundary once; a public nested declaration alone is not proof, but do not repeat a boundary already established by a trusted export or exact declaration. Public exposure is not an inbound-caller question: use the trusted export or a bounded module/re-export declaration, not a relation query on the entrypoint.
+9. For MCP, fall back to `atlas_overview` only when the brief is unavailable, has no actionable candidate, or broader structure is itself the task; then use `atlas_folders` before `atlas_files`.
+
+`connections_truncated` describes the compact sample. It means more relationships exist, not that the selected next call is wrong. Use the returned detailed-relations call only when those additional relationships matter.
+
+## Worktree MCP Workflow
+
+Treat `main` as the reserved alias for the explicitly selected control atlas, not as a branch or directory name. The control checkout may itself be linked, live under `.worktrees`, or live anywhere else on the filesystem. ProjectAtlas discovers existing Git structure but never creates, switches, moves, prunes, or deletes a Git worktree or branch.
+
+1. Call `atlas_worktree_list(include_retired: false)` from the control MCP process. Select a returned stable `selector`; do not reconstruct a full path or guess from a colliding directory or branch name. A row blocked because its common, administrative, or source path is not lossless UTF-8 has no registrable selector or root and must not be addressed through replacement-character display text.
+2. Register an existing checkout with `atlas_worktree_add(worktree: "<selector>", alias: "issue-430")`. The alias is optional only when the target directory name is already a valid unique alias. Registration changes only the control atlas catalog; it does not create the target `.projectatlas` directory or mutate Git or source files.
+3. Initialize an absent target with `atlas_init(worktree: "issue-430")`. A complete compatible control atlas seeds a private candidate, removes control identity, telemetry, task, and runtime state, reconciles the candidate against the target branch and dirty files, and publishes it atomically. A valid existing target database is preserved. An unsuitable baseline produces an explicit ordinary-init fallback; cancellation or integrity failure leaves the destination absent or unchanged.
+4. Route ordinary calls without changing directory or mutable process selection: `atlas_session_brief(worktree: "issue-430", compact: true)`, `atlas_watch_once(worktree: "issue-430")`, `atlas_file_summary(worktree: "issue-430", file: "src/lib.rs", compact: true)`, or a purpose/health call with the same alias. Each admitted call captures its exact root, database, project identity, registration identity, and alias, and refuses a recreated database whose project identity differs, so interleaved `main` and worktree calls cannot retarget one another.
+5. For a cross-worktree graph question, use one detailed or analysis `atlas_symbol_relations` call with `worktrees: ["main", "issue-430"]`. The first alias is primary. ProjectAtlas opens two to eight exact databases read-only, labels every participant/result/blocker/continuation, and never persists or merges sibling graphs. Do not also send legacy `roots`.
+6. Request repository totals with `atlas_token_report(worktree: "main")` or run `atlas token` / `atlas token --view tui` from the control checkout. The existing TUI layout combines native-control plus active and retired registered-worktree aggregates. `atlas_token_report(worktree: "issue-430")` stays exact to that target's local detail. Alias-routed MCP usage is recorded once in control; independent local usage synchronizes monotonically without copying raw per-session events.
+7. Retire only the ProjectAtlas registration with `atlas_worktree_remove(worktree: "issue-430")`. ProjectAtlas holds a short local SQLite writer-exclusion scope while it atomically final-syncs and retires the control registration, retains the accepted aggregate, and leaves the checkout, Git registration, branch, files, `.projectatlas`, and SQLite database untouched.
+
+Use the returned typed recovery state rather than switching to paths: `ambiguous` returns bounded selectors; `init_required` returns the exact alias init call; `refresh_required` names the stale alias; invalid or mismatched Git evidence fails closed; `worktree_required` asks for an exact active checkout when a bare/common manager cannot select one. If Git externally removes a registered checkout, `atlas_worktree_list` retains its active alias, last validated root, accepted telemetry revision, and typed missing state so `atlas_worktree_remove(worktree: "<alias>")` can retire it without reconstructing a path. A manager with `core.worktree`, an enabled `config.worktree` override, or unresolved config includes never guesses its parent. Add revalidates the selected root and lifecycle immediately before registration, and a moved-root refresh cannot reactivate an alias retired by a concurrent remove. If Git recreates a worktree administrative directory at a previously registered path, remove the stale ProjectAtlas alias and add the replacement explicitly; ProjectAtlas will not let the replacement inherit the alias or touch its atlas through that stale mapping. Lifecycle identity requires creation time plus platform file-object identity (Unix device/inode or Windows retained-handle volume/128-bit file ID), and every persisted common, administrative, and source path must be lossless UTF-8 for SQLite metadata and MCP JSON. If the filesystem or path cannot provide the complete evidence, alias registration fails closed; never reuse a replacement-character display path as `project_path`. `project_path` remains the compatibility route for unregistered and older workflows when the path is lossless UTF-8, while alias routing is the normal concurrent-agent path.
+
+## Bounded Relation Navigation
+
+Ordinary `atlas symbols relations --file <path>` / `atlas_symbol_relations(file: "<path>")`
+uses detailed pages: ten rows and 32 KiB encoded output. Supply an exact file,
+optionally an exact symbol. Follow returned continuations unchanged; preserve
+unknown totals, coverage and reached limits rather than treating a page as the
+whole graph. Analysis stays explicit with its existing 50-row/256-KiB defaults.
+
+Use explicit `--view legacy` / `view: "legacy"` only for complete small compatibility
+arrays. Omitted legacy rows remain 50; valid requests are 1–200 rows, default
+32 KiB and hard maximum 256 KiB output. Additional eligible rows, excess bytes
+or query work refuse with detailed-navigation guidance. Legacy SQL/decode work is
+bounded by 100,000 instructions, a cooperative one-second deadline and 1 MiB
+intermediate state; query text is at most 1,024 UTF-8 bytes with existing LIKE
+wildcard semantics. Tighter applicable caller limits win. Unsupported detailed
+controls and zero/oversized bounds are errors; never increase a legacy limit to
+try to fetch the whole graph.
+
+## Classified Documentation Navigation
+
+- Treat `classification` as a derived file role, not parser trust, purpose authority, or runtime truth. `documentation` is guidance; confirm implementation claims in current `source` summaries, symbols, or exact slices.
+- Start with classified files or search. Use `source` for code-only work, `documentation` for docs-only discovery, and `both` when finding an explicit bridge. The closed selections exclude configuration/data, other text, and opaque rows; omission preserves the broader legacy behavior.
+- Follow an explicit document bridge with `atlas_symbol_relations` using `view: "detailed"`, `relation: "documents"`, and the exact file or heading anchor. Outbound traversal moves from documentation to its validated repository target. Inbound traversal from source returns the same stored relation under the read-only `documented_by` view; no inverse fact is stored.
+- Inspect parser provenance, coverage, completeness, resolution, and typed unresolved reason together with classification. Missing, ignored, outside-root, case-conflicting, unsupported, and non-static targets are evidence to narrow or repair the navigation request, never permission to guess.
+- Submit the returned `next_call` unchanged. It preserves the exact file or heading selector, content selection, generation, and bounds; finish at current source evidence before making an implementation claim.
+- In linked-worktree or shared-host sessions, pass the exact checkout `project_path` on every call. Each checkout owns its ignored writable database and classified graph; never substitute a sibling database or combine sibling graph generations.
+
+## PHP Navigation
+
+Use this profile only when the selected runtime's language capabilities report built-in PHP support and its version matches the installed plugin. Read the PHP row in the bundled [generated language-support reference](references/language-support.md) for capability and parser identities; do not infer support from the `.php` extension or a release label alone. Regenerate that reference with the existing `render_language_support` example when the registry changes; its bytes must match the repository's generated language-support document.
+
+1. Start with `atlas next <task>` from the exact checkout, or a compact session brief when MCP alias routing is needed. Follow its ranked file recommendation; use overview, folders, and files when the repository layout or ownership is still unclear. In a Composer repository, inspect the actual source roots and ignore policy before selecting application code. Composer autoload declarations are configuration evidence, not proof that a runtime class or framework binding resolves.
+2. Read the selected file summary with `content_selection: "source"`. Inspect `parser_kind`, `summary_status`, and coverage together. PHP grammar-produced facts can retain Tree-sitter provenance while unsupported or dynamic regions make the summary fallback and coverage partial. A rescued declaration with fallback provenance has weaker evidence. Neither state makes omitted declarations or calls absent at runtime.
+3. Use outline for declaration ownership and bounded search for exact names or source syntax. Named namespaces, types, functions, and members provide navigation anchors where returned; copy the exact file, kind, parent, and span selector to distinguish duplicate names. A declaration's presence does not prove conditional code executed.
+4. For a dependency or caller question, request detailed graph evidence and inspect each relation's resolution, coverage, and source context. Static include/require paths and namespace imports have different meanings even when represented by the same import relation family. An extracted call is not necessarily a resolved target. Follow returned continuations and exact resolved selectors; inspect an unresolved call's source instead of inventing a destination.
+5. Finish with an exact slice and check the current bytes. Refresh after edits using the normal freshness route, then repeat only the affected query. Keep the same worktree or project selector on every call.
+
+Abstain from claims about variable calls, object dispatch, runtime include expressions, `eval`, framework containers, Composer autoload execution, or generated runtime behavior unless separate evidence establishes them. Mixed HTML/PHP and malformed recovery trees may leave valid PHP spans navigable while other regions remain partial or fallback; a PHP graph does not prove HTML or template semantics. Search and exact slices can establish literal text in these cases, not runtime execution or complete reachability.
+
+For generated or vendored source, verify the repository's ownership and ignore policy and locate the authored input before proposing a change. A generated file's static symbols do not establish its generator, regeneration command, or safe edit target. If the authored source or relation evidence is unavailable, state that limit and stop the unsupported inference.
+
+## Indexing Strategy
+
+- **First use with no project-local index, or typed `init_required`:** `atlas init` locally; use `atlas_init` for a registered alias or returned MCP next call. Do not repeat init for an existing valid index.
+- **Fresh existing index:** make no indexing call. Start locally with `atlas next <task>` or use `atlas_session_brief` when MCP routing is needed.
+- **Changed files:** use `atlas watch --once` locally or `atlas_watch_once` with an MCP alias; both incrementally refresh affected facts.
+- **Full refresh:** use `atlas scan` / `atlas_scan` only for an initialized project with no published index, an intentional rebuild, or typed full-refresh guidance.
+- **Deep symbol/graph rebuild:** use `atlas symbols build` / `atlas_symbols_build` only when the projection is reported missing/stale/incomplete or explicitly requested.
+- **Continuous editing:** a human may keep `atlas watch` running; agents use bounded one-pass refreshes.
+
+Indexing shares one cooperative budget across traversal, source hashing, parsing and publication
+checkpoints. MCP `timeout_seconds` and CLI `symbols build` / `watch` `--timeout-seconds` have a
+work-based automatic defaults computed from already-required source inventories and discovery
+counters; unknown work, including a cold initial index, retains 30 minutes. A verified warm no-op
+uses five seconds; known publication work reserves at least 30 seconds plus admitted-source
+and complete-verification work. The ceiling remains 30 minutes. Explicit limits take precedence;
+larger representable requests clamp, zero refuses, and unrepresentable deadlines fail closed.
+The repository's `docs/benchmarks/v0.5.1-indexing.md#automatic-budget-coefficients` defines
+coefficients. Estimation adds no filesystem walk and never resets the operation clock. Continuous watch budgets each refresh separately. The clock starts when indexing
+work control is created: root/config/store setup performed afterward consumes it; earlier startup/target
+selection is outside the budget. Checkpoint-based stopping can exceed the requested wall time. A
+deadline refusal preserves the last valid index, identity and approved purposes; retry with an adequate budget.
+
+Never reset or replace an incompatible database as an orientation shortcut. Follow its typed recovery guidance and preserve authored purpose state.
+
+## MCP Routing When Needed
+
+Use this table after selecting MCP for its alias, compact-brief, or federation behavior. For an exact local checkout, use the [short CLI command guide](references/short-cli.md) first.
+
+| Task | MCP route | Follow-up |
+| --- | --- | --- |
+| Startup, project state, ranked candidates | `atlas_session_brief` with `compact: true` | Execute the returned summary, search, relations, slice, health, or scan request |
+| Existing Git worktree inventory and registration | `atlas_worktree_list`, then `atlas_worktree_add` with its stable selector | Use the short alias on all subsequent root-scoped calls |
+| Registered worktree with no local index or typed `init_required` | `atlas_init` with `worktree` | Accept safe hydration or the explicit ordinary-init fallback; never copy a live DB manually |
+| Registered worktree retirement | `atlas_worktree_remove` with `worktree` | Retained token totals remain in control; Git and target files remain untouched |
+| Project with no local index or typed `init_required` | `atlas_init` | Honor the returned initial-index and purpose-curation handoff |
+| Changed files since the last verified index | `atlas_watch_once` | Continue only from the new complete generation |
+| Initialized project missing a published index, or typed full-refresh requirement | `atlas_scan` | Do not use for missing project-local state or routine session startup |
+| Missing, stale, or explicitly requested deep symbol/graph projection | `atlas_symbols_build` | Then use `atlas_symbols` or `atlas_symbol_relations`; do not rebuild repeatedly |
+| Broad work-area selection | `atlas_overview`, `atlas_folders`, `atlas_files` | Summary for the selected file |
+| One-file intelligence or direct impact already shown by crisp connections | `atlas_file_summary` with `compact: true` and task-appropriate `content_selection` | Follow the selected connection to another compact summary or exact slice; use relations only when its stronger trust/path facts are material |
+| Declaration lookup | `atlas_symbols` | Slice the returned exact selector |
+| Inbound/outbound relations or bounded graph projection | `atlas_symbol_relations` with `view: "detailed"`, `compact: true`, and task-appropriate `content_selection` | Request `relation: "documents"` explicitly for documentation bridges; use `worktrees` only for an explicit labelled read-only federation; submit a continuation or row `next_call` unchanged |
+| Public reachability | Trusted owning-file export or bounded search for the module/re-export declaration | Slice the exact declaration when source proof is required; a reviewed purpose and nested `pub` declaration are selection evidence, not exposure proof |
+| Architecture, impact, dead-code, cycle, or static path review | `atlas_symbol_relations` with its closed analysis view/mode | Treat candidate/inconclusive output as review evidence, then inspect returned source selectors |
+| Indexed text discovery | `atlas_search` with a bounded `file_pattern` and task-appropriate `content_selection` when possible | Slice the returned range; narrow before paging when truncated |
+| Exact source | `atlas_slice` with `content_selection: "source"` when supported by the returned call | Stop when sufficient |
+| Missing, suggested, stale, or wrong purposes | `atlas_purpose_queue`, then `atlas_purpose_review` or `atlas_purpose_set` | Delegate one bounded `low` batch through isolated subagent execution at the lowest reliable reasoning and cost tier the host supports; otherwise process it in the main agent; never edit SQLite |
+| Cleanup, coverage, or purpose diagnostics | `atlas_health` / `atlas_purpose_queue` | Resolve a confirmed conflict or curate through purpose APIs |
+| Manual ProjectAtlas ignore policy | `atlas_ignore_list`, then `atlas_ignore_add` / `atlas_ignore_remove` | Keep `.gitignore` authoritative and add only stricter atlas-specific rules |
+| Runtime/config/index diagnostics | `atlas_runtime_info`, `atlas_root`, `atlas_config`, `atlas_settings`, `atlas_watch_status` | Use typed recovery guidance |
+| CLI/MCP compatibility audit | `atlas_parity_report` | Use for explicit diagnostics or release/CI proof, not normal navigation |
+| Manual next-step ranking | `atlas_next` | Use when the compact brief is unavailable or the manual route is intentional; `atlas next` is the normal local CLI entry |
+
+Search is lexical by default. Literal/token acceleration must preserve exact results; regex, fuzzy, short, punctuation-sensitive, or Unicode-unsafe queries may use bounded persisted-text fallback. Inspect searched files/bytes, completeness, and truncation before widening. Semantic or hybrid retrieval is explicit and may return typed unavailable/stale lifecycle state.
+
+Case-insensitive literal, fuzzy and regex matching uses locale-independent Unicode simple case folding. It does not normalize canonically equivalent text or expand multi-character folds such as `ß` to `ss`. Results retain original source lines; case-sensitive matching keeps exact scalar distinctions.
+
+## Freshness, Trust, and Bounds
+
+- Exact slices read current source bytes. Indexed selectors and summaries must be fresh or return typed `refresh_required` guidance.
+- `summary_status: fallback` means generated summary prose needs deeper inspection; it is not full parser trust.
+- Purpose suggestions are not reviewed truth. Exact paths/names and reviewed responsibility outrank popularity.
+- Relation and analysis results are static indexed source facts, not runtime traces.
+- Preserve typed coverage, resolution, confidence, total-state, continuation, cancellation, and truncation fields. Never turn partial or ambiguous coverage into certainty.
+- Keep every query bounded by the available row/depth/edge/time/output controls. Prefer a returned continuation over broad source reads.
+- After edits, moves, deletes, ignore/config changes, or offline changes, refresh before trusting prior indexed results.
+- For a long local session, a continuous `atlas watch` may keep the index current; otherwise use `atlas watch --once` locally or `atlas_watch_once` with MCP routing.
+
+## Purpose Curation
+
+`folder_purpose` and `file_purpose` explain why a path exists; `content_summary` explains what is currently in it. Generated purposes remain `suggested` until an agent approves them. A purpose written through `atlas_purpose_set` or successfully applied through `atlas_purpose_review` becomes `approved`, `source: agent`, and `agent_reviewed: true` immediately; it is no longer a generated suggestion and needs no second approval pass. Approved purposes are durable authored responsibility: source, summary, symbol, graph, scan, and watcher changes do not demote them. Deleted/excluded paths leave purposes dormant; renames do not transfer approval.
+
+When init, session brief, or `atlas_purpose_queue` returns an actionable `low`-scope handoff:
+
+1. Keep the main task moving.
+2. If the host supports bounded isolated subagents, partition a large queue into bounded, non-overlapping batches and delegate them to one or more agents at the lowest reliable reasoning and cost tier the host supports. Examples when available: Codex `gpt-5.6-luna` with `low` reasoning, or Claude Code `haiku`; otherwise use the host's lowest reliable equivalent as model names and availability change. Respect the host's subagent and ProjectAtlas worker budget, assign each path to exactly one curator, and curate folders before files whose responsibility depends on them. Otherwise process the queue in the main agent.
+3. Give each curator only its queue rows and bounded summary/graph/outline/slice context.
+4. Copy each batch's `task`, `work_key`, and `state_token` into `atlas_purpose_review`. Write only through `atlas_purpose_set` / `atlas_purpose_review` or their CLI equivalents; never edit SQLite. A successful agent write is already approved and agent-reviewed.
+5. Skip accepted purposes unless an agent or user explicitly assigns a correction.
+6. Keep successful maintenance out of normal conversation. ProjectAtlas exposes the handoff; the Rust server does not spawn an agent.
+7. Never expand automatic work to `medium` or `strict`.
+
+For a single known wrong or genuinely repurposed accepted purpose, inspect enough current context and use `atlas_purpose_set` deliberately. For missing/suggested rows, use the bounded queue, review, refresh, and rerun health/lint. Do not resolve a missing-purpose finding; fill the purpose. Use `atlas_health_resolve` only for an inspected deterministic conflict that is intentionally correct.
+
+`atlas lint` defaults to `--purpose-level low`. Use `medium` only when all source files must be reviewed and `strict` only when every indexed file and folder must be reviewed.
+
+## Root, Ignore, and Isolation Rules
+
+- Run from the project root; the normal database is `<root>/.projectatlas/projectatlas.db`.
+- Every ordinary checkout and linked worktree owns a private ignored writable database. Hydration copies reusable baseline state only into an unpublished candidate; after activation, every checkout remains an independent graph, purpose, source, task, and generation authority.
+- One MCP server may serve several registered worktrees from the control checkout. Per-call `worktree` is the concurrency-safe normal route; per-call `project_path` remains available for an exact unregistered root.
+- Use `atlas_root` with `control_root` (or `projectatlas root status <path>`) for bounded mutation-free structural worktree status. A common manager with one active worktree may select it; zero or several active worktrees require an exact worktree path.
+- ProjectAtlas reports active, missing, and invalid Git structure and manages only its own alias registrations. It never creates, moves, prunes, removes, or switches Git worktrees. Git remains lifecycle authority.
+- The token TUI opened from the control checkout shows durable repository-wide totals across control plus active and retired registrations without adding a worktree selector UI. An exact worktree report remains origin-scoped.
+- Never route a path outside the selected root unless that addressed root is already indexed and explicitly selected.
+- If the selected DB is incompatible or belongs to another project, do not reset, migrate, attach, merge, substitute, or fall back silently. Use typed recovery guidance or an explicit isolated DB.
+- `.gitignore` is dynamically authoritative. ProjectAtlas manual ignores are a stricter atlas-only layer applied afterward.
+- Use `atlas_ignore_list` before adding excludes. Use `atlas_ignore_init_gitignore` only when the project root genuinely lacks the needed `.gitignore`.
+- Keep local agent/editor/cache state in `.gitignore`; do not encode personal tool folders as product invariants.
+- Run `atlas_reset_index` as a dry run first and apply only when rebuilding derived state is acceptable.
+- Remove legacy `.purpose` files only after scanning/importing and a successful `atlas_strip_legacy_purpose` dry run.
+
+## Setup and Runtime Repair
+
+When project-local state is absent, run `atlas init` from the exact root; when MCP returns `init_required`, use its exact `atlas_init` next call. For a registered worktree in that state, prefer `atlas_init(worktree: "<alias>")` from the control process so a valid control baseline can be reused safely. Both paths create or verify the target's local config, database, host configs, and exact index. Honor any returned hydration/fallback and purpose handoff; do not repeat init for an existing valid index.
+
+After installing ProjectAtlas, read and follow this shipped skill before broad source reads. If the harness does not load plugin skills automatically, preserve the repository's existing guidance and add one durable pointer to the nearest harness instruction file: `AGENTS.md` for Codex, `CLAUDE.md` for Claude Code, or the host's equivalent. The pointer should tell future agents to use the installed/version-matched ProjectAtlas skill and MCP tools, run init only when project-local state is absent, and follow the skill's incremental freshness policy. Do not replace unrelated project instructions or paste a duplicate copy of the full skill.
+
+For local CLI readiness, inspect the resolved short command first; use `atlas_runtime_info` for an MCP-routed host. The native-runtime diagnostic is:
+
+`projectatlas --format json runtime-info`
+
+The runtime must report MCP, SQLite, TOON, and a runtime `version` matching the selected plugin release. Verify the installed plugin version and shipped skill artifact separately through the installer and harness plugin inventory. If the runtime is missing or stale, resolve the installer from the installed, version-matched ProjectAtlas plugin root or a checked-out matching ProjectAtlas release, then pass the target project root separately:
+
+- Windows: `& "<projectatlas-plugin-root>\scripts\install-runtime.ps1" -ProjectRoot "<target-project-root>"`
+- Linux/macOS: `bash "<projectatlas-plugin-root>/scripts/install-runtime.sh" "<target-project-root>"`
+
+The command path belongs to the ProjectAtlas plugin/release artifact; the working/project-root argument belongs to the repository being initialized. Do not assume an unrelated target repository contains `plugins/projectatlas/scripts`.
+
+Prefer installer-generated absolute host configs:
+
+- generic/Codex: `.projectatlas/projectatlas.mcp.json`
+- Claude Code: `.projectatlas/projectatlas.claude.mcp.json`
+- OpenCode: `.projectatlas/projectatlas.opencode.json`
+
+After plugin/runtime updates, verify `codex plugin list --marketplace projectatlas --json` and `codex mcp get projectatlas` (or `codex mcp list`). Rerun the installer if the official plugin cache, skill, MCP registry, runtime version, DB/config binding, or downstream release pin is stale. Use `PROJECTATLAS_SKIP_CODEX_PLUGIN_UPDATE=1` or `PROJECTATLAS_SKIP_CODEX_MCP_REGISTRY_UPDATE=1` only in intentionally managed environments. A parent host may need restart; absolute generated configs remain authoritative.
+
+For a stale official plugin snapshot, run `codex plugin marketplace upgrade projectatlas --json`, `codex plugin remove projectatlas --marketplace projectatlas`, `codex plugin add projectatlas --marketplace projectatlas`, then `codex plugin list --marketplace projectatlas --available --json`. If that source is pinned to an older release tag, replace only the dedicated `styler-ai/ProjectAtlas` source after confirming it has no unrelated consumers: `codex plugin marketplace remove projectatlas`, then `codex plugin marketplace add styler-ai/ProjectAtlas --ref <matching-release-tag>`.
+
+MCP stdio uses newline-delimited JSON-RPC, not `Content-Length` framing.
+
+## MCP Operations for Routed Work
+
+Prefer `atlas` for ordinary commands in one exact checkout, including scripts and CI. Use MCP for registered alias routing, compact session briefs, typed continuations, or cross-worktree graph federation; it also remains available when CLI is not. Use the native `projectatlas` name when verifying the direct runtime rather than its short forwarder.
+
+- Select/setup: `atlas_set_project_path`, `atlas_init`, `atlas_worktree_list`, `atlas_worktree_add`, `atlas_worktree_remove`
+- Refresh: `atlas_scan`, `atlas_watch_once`, `atlas_symbols_build`
+- Navigate: `atlas_session_brief`, `atlas_overview`, `atlas_folders`, `atlas_files`, `atlas_next`, `atlas_file_summary`, `atlas_outline`, `atlas_symbols`, `atlas_symbol_relations`, `atlas_search`, `atlas_slice`
+- Maintain: `atlas_health`, `atlas_health_resolve`, `atlas_purpose_queue`, `atlas_purpose_set`, `atlas_purpose_review`, `atlas_lint`
+- Diagnose/admin: `atlas_root`, `atlas_root_set`, `atlas_config`, `atlas_settings`, `atlas_watch_status`, `atlas_runtime_info`, `atlas_ignore_list`, `atlas_ignore_init_gitignore`, `atlas_ignore_add`, `atlas_ignore_remove`, `atlas_mcp_config`, `atlas_reset_index`, `atlas_strip_legacy_purpose`, `atlas_parity_report`
+- Bounded task model: `atlas_task_status`, `atlas_task_cancel`
+- Telemetry: `atlas_token_report`
+- Current AtlasMap response on explicit request: `atlas_map` (never writes a TOON file; `json: true` also requests a JSON sidecar)
+
+Read-only review or CI smoke must set `PROJECTATLAS_NO_TELEMETRY=1`.
+
+## Short CLI Examples
+
+Read [the complete short-command guide](references/short-cli.md) for every command family, function, and call trigger. The examples below are only the common navigation route; `atlas` and `projectatlas` accept the same arguments.
+
+| Need | Command |
+| --- | --- |
+| Initialize missing local state | `atlas init` |
+| Refresh changed files | `atlas watch --once` |
+| Task-oriented navigation | `atlas next <query>`; then `atlas summary <file>` |
+| Broader discovery | `atlas overview`; `atlas folders <query>`; `atlas files <query> --folder <path>` |
+| Exact evidence | `atlas search <pattern> --file-pattern <glob>`; `atlas symbols relations --file <file>`; `atlas slice <file> --start-line <n> --end-line <m>` |
+| Health and gates | `atlas health --source-only --limit <n>`; `atlas purpose queue --limit <n>`; `atlas lint --report-untracked --purpose-level low` |
+| Runtime diagnostics | `atlas --format json runtime-info`; `atlas root verify`; `atlas config --print` |
+| Token impact | `atlas token`; `atlas token --view tui` for a human dashboard |
+
+## Token Reporting
+
+Use `atlas_token_report` or `projectatlas token` when asked. Control/main scope combines native control events with monotonically synchronized aggregates for active and retired registrations; an explicit worktree alias remains exact to that origin and does not present sibling detail as local. Treat `tokens_avoided` as the compatibility alias for the primary `average_tokens_avoided`: measured compression plus unchanged non-folder savings plus 50% of the deduped aggregate folder-navigation baseline, minus the complete Atlas payload. `maximum_tokens_avoided` retains the all-files folder-scope calculation. Inspect `average_policy`; 50% is a fixed policy estimate, not a benchmark-derived Codex average or provider-billing value. Default accounting is offline `ceil(chars_or_bytes / 4)` heuristic. Distinguish observed summary/slice replacement from modeled navigation narrowing; inspect accounting layer, baseline, confidence, provider/model/backend, accuracy, origin synchronization, and detail-availability labels. Search-modeled file reads avoided are weaker than observed summary/slice replacements. Tokenizer calibration is explicit; normal reporting never calls network APIs.
+
+## Repository Gates
+
+For ProjectAtlas itself:
+
+```bash
+cargo fmt --check
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo test --doc --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+cargo run -p projectatlas-cli -- lint --report-untracked
+```
+
+When an issue has OpenSpec tasks, keep exactly one visible `Implementation Tasks` section synchronized with its mapped local owner slice and exactly one canonical five-row `Acceptance and Review Tasks` section. Implementation tasks are live progress: check each row immediately after its behavior and required task-level proof pass, and reopen it immediately when review finds the implementation partial, resetting all acceptance/review rows. Keep acceptance unchecked until implementation is complete, then use a checked prefix. Every open mapped issue uses this current two-list contract; an already closed mapped issue is inert historical state and is not body-migrated or repeatedly task-validated. If an old issue is reopened, migrate its body to the current contract before work proceeds. Every open issue carries exactly one accepted `complexity:*` label, including unmapped backlog issues, without fabricating task fields. Use `(Implementation tasks: <task IDs>)` for open mapped pre-mortem mitigations, preserve existing implementation rows, and run the repository IssueOps checker before transitions. Pull-request validation resolves exactly one referenced owner, checks that open owner against live state, compares unrelated open slices with the accepted base, excludes closed unrelated history, and fails closed without ownership or base authority; `main` and release validation remain global and require native closed state for closure/release.
+
+## References
+
+- <https://github.com/styler-ai/ProjectAtlas>
+- <https://styler-ai.github.io/ProjectAtlas/>
+- `docs/projectatlas-3-architecture.md`
+- `docs/agent-integration.md`
+- `docs/format.md`
+- `docs/workflow.md`

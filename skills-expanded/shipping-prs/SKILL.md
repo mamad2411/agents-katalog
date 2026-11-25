@@ -1,0 +1,113 @@
+---
+name: shipping-prs
+description: Open, merge, release a PR - branch off main, gh pr create, auto-merge, PR body, CHANGELOG entry, tagged release. "PR stuck BLOCKED", "last commit didn't land", "which check is required", "check-release failed", "STALE.md blocks git pull". Not build/test (building-and-testing), not perf baseline (benchmark-cuda).
+---
+
+# Shipping PRs & Releases - imp
+
+## Hard rules
+
+| # | Rule | Detail |
+|---|---|---|
+| 1 | Branch off fresh `origin/main`, `gh pr create --base main`, NEVER stack | `git fetch origin && git switch -c <topic> origin/main`. Stacking on a squash repo caused recovery-PR cascades. Fewer, batched PRs. |
+| 2 | `main` merges are SQUASH | PR title = final commit subject `... (#NNNN)`. |
+| 3 | Required check = `Build` (ruleset 14716423) | Static gates block inside it since #1527 (`scripts/ci_static_gates.sh`: filesize, lanes, entrypoint, alloc, kernels, launchguards, docs, citations, hygiene). Advisory: `Lint`, `Mock API contract`, `Real API contract (model-less)`, `clang-tidy`, `Sanitizers`. `Test lanes` is its own check (#1770). Read `gh pr checks <n>` after the merge too. |
+| 4 | One PR in flight at a time | Every merged PR dirties every open PR through `CHANGELOG.md`. Resolve, `git commit` (hook: `make preflight`, ~20 s), land serially. |
+| 5 | Perf- or VRAM-moving change refreshes `tests/perf_baseline.json` IN THE SAME PR and says so | Gate 8% decode / 8% prefill / 10% `own_peak_mb`; `scripts/gen_perf_baseline.sh` (benchmark-cuda). |
+
+## The auto-merge race
+
+`auto-merge.yml` arms `gh pr merge --auto --squash --delete-branch` the moment a non-draft owner PR is opened (opened / ready_for_review / reopened). The squash fires the instant `Build` is green. Armed with the `AUTO_MERGE_TOKEN` PAT the merge starts CI on `main` and deletes the branch; on the `GITHUB_TOKEN` fallback it does neither (#2141-#2147: 0 of 7), so run `gh workflow run CI --ref main` after a release merge.
+
+- Push ALL commits before `gh pr create`. Draft PRs are not armed.
+- After the merge: `git log -1 --stat origin/main`; when a late commit changed a NUMBER, grep `main` for the corrected value (#1081 shipped disproved figures; #1082 fixed them). Lost commit precedent: `a5403bd5` in #718.
+- Late commit sequence: `gh pr merge --disable-auto <PR>` FIRST, edit, `make verify-fast`, `git push`, `gh pr merge --auto --squash --delete-branch`, verify the squash.
+- Do not branch a new topic while a previous auto-merge is in flight (#1516 born conflicted 29 min after #1515; #1519 repeated it against #1518 an hour later).
+- Never fix a red advisory check by pushing into an armed PR: disable, fix, push, re-arm (a red `Mock API contract` on #1803).
+
+## Ship sequence
+
+```bash
+git fetch origin && git switch -c <topic> origin/main
+# work; then:
+make preflight                                     # CPU only: static gates, tidy + format on changed lines, actionlint
+make verify-fast                                   # measures imp:test; rebuild first (make build)
+git push -u origin <topic>                         # NO --no-verify. scripts/pre-push.hook: make preflight; GPU verify-fast only with IMP_HOOK_GPU=1
+gh pr create --base main --title "<squash subject>" --body-file <file>
+git log -1 --stat origin/main                      # after merge
+```
+
+- `git push | tail` swallows the gate block (it prints BEFORE the git lines); read the full output.
+- `IMP_HOOK_GPU=1 git push` while your own `verify-fast` runs collides on the GPU; without it the hook touches no GPU.
+- `docs_lint.py` writes `docs/audit/docs-rewrite/STALE.md` only with `--write-stale`; hooks and CI never touch it (#2194).
+- Moving text from `docs/ROADMAP.md` to `docs/plans/` rewrites relative links (`](MODELS.md)` -> `](../MODELS.md)`); `make preflight` (both hooks) runs `hygiene`, CI `Release hygiene` too. Local: `docker run --rm -v $PWD:/src -w /src -e HOME=/tmp imp:toolchain bash -c 'git config --global --add safe.directory /src; bash scripts/ci_static_gates.sh hygiene docs citations'`.
+- PR monitors: `pgrep -f "<string>"` matches the monitor's own shell; stop an old monitor before starting a second on the same PR.
+
+## The PR body
+
+Every paragraph carries a number, a path or a decision; reasoning goes to `docs/` and the PR links it.
+
+```
+## <change>        one section per topic, bullets under it
+| | before | after |    a table wherever a count or a timing moved
+## Gate            the measured block, pasted from the captured run, nothing wrapped around it
+Not in here:       one line: what a reviewer would look for and not find
+```
+
+- Capture the gate output to a file, then paste. Never type gate numbers from memory (three wrong PR bodies in one day: #1664, #1666, #1689).
+- Cut: the sentence that sets a finding up, the retelling of how a bug was found, reading instructions for the numbers. #1531 went 162 -> 57 lines with no fact lost. Same for commit messages.
+
+## CHANGELOG entries
+
+- One to three lines and at most 360 characters (`tools/check_changelog_form.py`, gated): what changed for the reader, the number that makes it checkable, `(#NNNN)`. v0.31.0's cut went 389 -> 93 lines for 35 entries.
+- Write it short at PR time; before a release cut count lines per entry (>5 = journal).
+- New entries merge into the EXISTING `### Added` / `### Changed` / `### Fixed` block of `[Unreleased]`: a second `### Added` fails `check-release.sh` ("repeats a '###' heading").
+- Plain punctuation; no internal vocabulary without a greppable symbol; every number names model, quant, unit.
+
+## Triage: a PR that will not merge
+
+```bash
+gh pr view <PR> --json mergeStateStatus,statusCheckRollup,reviewDecision
+```
+
+| State | Meaning | Action |
+|---|---|---|
+| `Build` green, still BLOCKED | required-check name != `Build` | realign job name or ruleset 14716423 |
+| `reviewDecision` not APPROVED / unresolved thread | review action needed | |
+| `gh pr checks` prints NOTHING and `mergeStateStatus=DIRTY` | conflict with `main`; GitHub runs no workflow on an unbuildable merge ref, so no CI, no auto-merge, no arming | rebase onto `origin/main`; force-push is gated, so push a fresh branch and reopen |
+| `mergeStateStatus=UNKNOWN` | not computed yet | query again; never build a mechanism on it (#1516 cost an hour) |
+| `Build` red on a refactor that deleted or renamed cited code | `citations` gate: anchor of a `file:line` gone or ambiguous in a living doc (#1783; line drift alone only warns since #2231) | `python3 scripts/check_doc_citations.py .`; drift: `--fix` |
+| `Test lanes` red | a test in no ctest entry, or a `ctest -L unit` test demoted vs the base (`tools/check_test_lanes.py` names it) | register the module/test in `CMakeLists.txt`; a new GPU test in a `gpu` module needs no edit |
+| `File size` red | an allowlisted file past its pin ceiling (next multiple of 25) | `python3 tools/check_filesize.py --update` |
+
+## Cutting a tagged release
+
+Version SSoT: `CMakeLists.txt` `project(imp ... VERSION X.Y.Z)`. A release is its own PR.
+
+1. Bump `project(... VERSION X.Y.Z)`.
+2. `CHANGELOG.md`: rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]`.
+3. `docs/BENCHMARKS.md`: the `**Toolchain (current: \`vX.Y.Z\`):**` line (`check-release.sh` parses exactly that form).
+4. `bash scripts/check-release.sh; echo $?` and read the EXIT CODE (an aborted gate prints no FAIL line, #1394). Running containers: it lists them and asks `Stop them for the GPU stages? [y/N]`, restart offered at exit; without a terminal `IMP_RELEASE_STOP_CONTAINERS=yes|no` (default no). Known exit-1 cause: `test-spec-fidelity` "skipped, card not free enough" (needs ~26 GB free after the earlier stages); run `make test-spec-fidelity` separately, read exit 0. `check-release.sh` prints only `PASS make verify-fast`: run `make verify-fast` separately for the release-note figures; `bench-competitive` writes `/tmp/bench_competitive.tsv`.
+5. Merge (squash), then `git tag vX.Y.Z <sha> && git push origin vX.Y.Z`.
+6. `gh release create vX.Y.Z --title "vX.Y.Z: <what changed>" --notes-file <file> --verify-tag`. The tag alone is not the release.
+
+Release notes form (three headings and a footer, nothing before them; no install block, no "what imp is" paragraph, measurement conditions ride inside the numbers):
+
+```markdown
+## Highlights          3-5 bullets, headline number inline, (#NNNN) for detail
+## Also in here        one line each: deps, refusals, guards
+## Gate                verify-fast on the tagged tree, model + quant + card named
+No breaking changes. / Breaking: <what a user must change>
+Full detail: CHANGELOG. N PRs since vX.Y.(Z-1).
+```
+
+- Lead with what a reader can now do (a checkpoint that runs, a modality), then speed.
+- PR numbers in bullets come from `git log vPREV..HEAD --oneline`, not memory.
+- Titles name the change, not the anecdote: `v0.25.0: Nemotron-3.5-Lightning runs; Qwen3.6-35B sees images`.
+- Negative results are findings: verdict plus number.
+
+## Common mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Release only bumped one of {CMakeLists, CHANGELOG, BENCHMARKS} | | bump all three |

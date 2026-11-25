@@ -1,0 +1,347 @@
+---
+name: shoplazza-products
+description: >-
+  Use when the user wants to manage a shoplazza store's product catalog through the CLI —
+  creating / publishing / unpublishing products (建品 / 新建商品 / 上新 / 上架 / 下架),
+  searching or counting the catalog (搜商品 / 找商品 / 商品数量 / how many products I sell),
+  changing prices (改价 / 调价 / set price), adjusting stock (库存 / 补货 / 加库存 / 减库存 /
+  inventory), product tags (标签), variants / SKUs (变体 / 规格), collections
+  and collects (商品合集 / 商品分组), product images (商品图片 / 主图), gift cards (礼品卡 /
+  储值卡 — gift cards live HERE, not in discounts), customer product reviews (买家评价 / 评论
+  / product reviews), warehouse locations (仓库 / 库位), suppliers and procurement (供应商 /
+  采购单 / 进货). NOT discount codes / coupons / 优惠码 / 折扣码 / 满减 (→
+  shoplazza-discounts); NOT the store media library / file uploads / 媒体库文件 and NOT
+  metafields / 元字段 (→ shoplazza-shop); NOT order fulfillment / 发货 (→ orders domain); NOT theme card images / 装修配图 /
+  商品详情页模板 (→ shoplazza-themes).
+---
+
+# shoplazza CLI — products module
+
+**CRITICAL — before anything else, use Read on `../shoplazza-common/SKILL.md`.**
+It owns every cross-cutting mechanic: the three access tiers, the output envelope (`.data`),
+`--dry-run`, `--jq` (incl. "don't pass `-r`"), `--fields`, `schema`, `api rest`, auth / profiles,
+and the safety protocol. This file covers only the products domain and never repeats them.
+
+## Overview
+
+The `products` module manages the product catalog: products and their variants, prices,
+inventory, tags, images, collections, gift cards, customer reviews, warehouse locations,
+suppliers, and procurement. All three access tiers apply (tier-selection rule is in
+shoplazza-common — prefer `+shortcut`).
+
+There is **no `+update` or `+delete` shortcut** — updates and deletes are spec leaves.
+Products is a large domain: this file is the router plus the high-frequency operations;
+per-sub-resource depth lives in [`references/`](#references) (variants, inventory/locations,
+collections/collects, images, gift cards, comments, procurement/suppliers).
+
+## Command map
+
+Intent → command, highest-fit tier first. The authoritative flags/params live in
+`shoplazza products <cmd> --help` and `shoplazza schema products.<cmd>`, not this table.
+
+| User intent | Command |
+|-------------|---------|
+| Search / filter products | `products +search [--keyword <title-word>] [--vendor <exact>] [--published published\|unpublished\|any] [--collection-id <id>] [--fields id,title]` |
+| Count products | `products +count [--published …]` |
+| Create a single-variant product | `products +create --title <name> --price <n> --image <url> [--published]` |
+| Create a multi-spec product (规格矩阵: color × size × …) | two steps: `products +create --title <name> --price <n> --image <url>` then `products +set-variants --id <new-id> --add "Color:Red,Blue" [--add "Size:S,M"]` (the created variant becomes the first combination; the others copy its price) |
+| Add / remove / replace / rename spec values or dimensions, price variants — any mix in one call | `products +set-variants --id <product-id> [--add\|--remove\|--set "Name:v1,v2"] [--drop "Name[=value]"] [--rename "Name:old=new"] [--new-price …] [--set-price …]` |
+| Publish a product | `products +publish --id <product-id>` |
+| Unpublish (下架) a product | `products +unpublish --id <product-id>` |
+| Change a variant's price | `products +set-price (--variant-id <id> \| --sku <sku> [--all] \| --product-id <id>) --price <n>` |
+| Adjust stock (add or decrease) | `products +stock (--variant-id <id> \| --sku <sku> \| --product-id <id>) (--adjust <±n> \| --set <n>) [--location-id <id>]` |
+| Add / remove / replace tags | `products +tag --id <product-id> (--add a,b \| --remove c,d \| --set x,y)` |
+| Get one product | `products get --params '{"product_id":"<id>"}'` |
+| List (filters `+search` lacks: ids, handles, date ranges, spus…) | `products list --params '{…}'` |
+| Full-control create (fields the shortcuts lack) | `products create --data '{"product":{…}}'` (see `schema products.create`) |
+| Update product fields | `products update --params '{"product_id":"<id>"}' --data '{"product":{…}}'` |
+| Delete ONE product | `products delete --params '{"product_id":"<id>"}'` |
+| Delete MANY products | `products batch-delete --params '{"product_ids":["<id>",…]}'` |
+| List a product's variants | `products variants list --params '{"product_id":"<id>"}'` → [references/variants.md](references/variants.md) |
+| Update a variant (options, sku, weight…) | `products variants update --params '{"variant_id":"<id>"}' --data '{"variant":{…}}'` |
+| Look up variants by SKU | `products variants list-by-sku --params '{"sku":"<sku>"}'` |
+| Create a curated collection | `products collections create --data '{"collection":{"title":"…"}}'` → [references/collections-collects.md](references/collections-collects.md) |
+| Add a product to a collection | `products collects create --data '{"collect":{"collection_id":"<cid>","product_id":"<pid>"}}'` |
+| Attach an image to a product | `products images create --params '{"product_id":"<id>"}' --data '{"image":{"src":"<url>"}}'` → [references/images.md](references/images.md) |
+| Create a gift card (stored value = money → `--dry-run` first) | `products gift-cards create --data '{"gift_card":{"code":"…","initial_value":"…","expires_on":"YYYY-MM-DD"}}' --dry-run` → [references/gift-cards.md](references/gift-cards.md) |
+| Check a gift card's balance | `products gift-cards get --params '{"id":"<id>"}' --jq '.data.gift_card.balance'` |
+| Stop / "delete" a gift card (irreversible → `--dry-run` first + go-ahead) | `products gift-cards disable --params '{"id":"<id>"}' --dry-run` (**no delete endpoint exists**; disabling permanently stops redemption) |
+| Inventory levels / items, locations | `products inventory …` / `products locations …` → [references/inventory-locations.md](references/inventory-locations.md) |
+| Customer reviews (评价) | `products comments {list,create,batch-create}` → [references/comments.md](references/comments.md) |
+| Suppliers / procurement orders | `products suppliers …` / `products procurement …` → [references/procurement-suppliers.md](references/procurement-suppliers.md) |
+| Storefront categories | `products categories list` |
+
+## Acting on a request
+
+"新建商品 / 上架 / 调价 / 补货 / create a product / restock" is an **action**, not a question:
+
+1. **Match intent to a shortcut** via the trigger table below.
+2. **Check required fields** (each shortcut's *no-default* flags). Missing or ambiguous →
+   **ask with `AskUserQuestion`, never fabricate** — especially `--price` (money) and
+   `--image` (an asset URL you cannot invent). Bundle the missing fields into ONE question
+   batch, not a series.
+3. **Never ask about a flag that has a CLI default or is omit-to-disable.** Let the default win.
+4. **All required present** → run it. `+shortcuts` are safe to run directly; use `--dry-run`
+   first for deletes, batch ops, and gift-card creation (stored value = money), per
+   shoplazza-common → Safety protocol.
+5. **Degrade honestly**: if the platform cannot do it (e.g. decreasing stock at a
+   **non-default location** or on a **multi-location item** — see
+   [references/inventory-locations.md](references/inventory-locations.md)), emit **no write
+   command**; explain the limitation and offer a legitimate alternative.
+
+### Trigger phrase → shortcut
+
+| User says | Shortcut | How to extract values |
+|---|---|---|
+| 搜商品 / 找一下商品 / find / list products | `+search` | title word → `--keyword` (matches title only); 供应商/vendor → `--vendor` (exact match, verbatim); 未上架 → `--published unpublished`; 已上架 → `--published published` |
+| 有多少商品 / 商品总数 / how many products do I sell | `+count` | 已上架 → `--published published`; count comes from `.data.count` — never count by hand |
+| 新建商品 / 建品 / 上新 / create a new product | `+create` | product name → `--title` verbatim; 售价 → `--price`; 主图/图片 URL → `--image`; "上架" wording → add `--published`; "存草稿/draft" → **omit** `--published` |
+| 建多规格商品 / 有颜色和尺码的商品 / create a product with color & size options | `+create` then `+set-variants --add` | step 1: `+create` as above (draft); step 2: each dimension → one `--add "Name:v1,v2,…"` (max 3, order = storefront order) in one call (no price: every combo copies the price `+create` set; no `--existing`: the created variant takes the first values); per-combo skus → `--sku-template` with `{Name}` placeholders; publish last |
+| 加一个颜色 / 加几个码 / add a spec value | `+set-variants --add` | `--id` (or resolve by name); the dimension + new values → `--add "Color:White"`; one new variant per existing combination of the other dimensions (combos deleted earlier stay deleted); new combos need `--new-price` (per value: `--new-price "Color:White=19,Black=21"`) and, on products that require variant images, `--new-image` |
+| 加一个规格维度 / add a whole new dimension (e.g. 加个尺码规格) | `+set-variants --add` + `--existing` | unknown dimension name = new dimension. Existing variants take the value named by `--existing "Size:<value>"` (required when the dimension gets several values) and keep id/sku/stock/image; the other values get new variants copying price/compare-at/weight/image — **no sku, no stock** (`--new-stock` sets one). No price needed. Ask which value the current variants are before running |
+| 删掉某个颜色/码 / remove a spec value | `+set-variants --remove` | `--remove "Color:Red"`; affected variants are deleted and listed in the output. Values need their exact spelling (case-sensitive; a case-only mismatch is refused with a "did you mean"). A name/value that doesn't exist is an error — fix the spelling, never report success |
+| 不按某规格分了 / drop a whole dimension | `+set-variants --drop` | `--drop "Size"` keeps every variant (ids kept); when variants would merge into one combination it is refused — ask which value's variants to keep, then `--drop "Size=M"` (the other values' variants are deleted) |
+| 规格值只保留… / 整个换成… / set one dimension's values | `+set-variants --set` | `--set "Color:Red,Blue"` makes that dimension's values exactly these (order = storefront order); values not listed are removed with their variants, new ones get variants |
+| 改名 / 把 Red 改成酒红 / rename a value or dimension | `+set-variants --rename` | value → `--rename "Color:Red=Wine Red"` (several: `"Color:Red=Wine Red,Blue=Navy"`); dimension → `--rename "Color=Colour"`; renames in place — every variant keeps id/sku/stock/image. A new name already taken is refused (to swap two values go through a temporary name); a repeat reports the old name missing ("was it renamed already?") — that means it is done. Never model a rename as remove + add |
+| 规格改动一句话说了好几处（去掉某规格、只留某些值、改名、统一价…） | one `+set-variants` call | put every edit in the same call (`--drop`/`--set`/`--rename`/`--set-price` …): they apply in a fixed order (remove, drop, set, add, rename) and are written in one request; name everything as it is **now** (new names only on the right of `--rename`); the `changes` list in the output says what will happen |
+| 各规格值价格不同 / S 卖 20、M 卖 30 | `+set-variants --set-price "Size:S=20,M=30"` | per-value price for every variant with that value; combine with `--add` when the values are new. A plain number reprices every variant |
+| 上架商品 X / publish product X | `+publish` | id → `--id`; only a name? resolve via `+search --keyword` first |
+| 下架 / 隐藏商品 / unpublish | `+unpublish` | id → `--id` |
+| 改价 / 调价 / change the price to X | `+set-price` | **Target**: variant id → `--variant-id`; SKU → `--sku`; **product id → `--product-id`** (resolves that product's only variant; multi-variant is refused with the candidates listed); only a name? `+search --keyword` first. New price → `--price` verbatim; **`--price 0` CLEARS the price** (does not display ¥0) — surface that difference and get the user's confirmation before passing 0 |
+| 划线价 / compare-at price | `+set-price --compare-price` | only when the user names it |
+| 库存加 N / 补货 N 件 / add N stock | `+stock --adjust N` | 加/增加 N = positive delta → `--adjust N`. **Target**: variant id → `--variant-id`; SKU → `--sku`; product id → `--product-id` (single-variant products; multi-variant refused with candidates); only a name? `+search --keyword` first — never ask the user for a variant id |
+| 库存设为 N / set stock to N | `+stock --set N` | absolute target (≥ 0), either direction; decreases are gated to the **default location** of a **single-location item**; target flag as in the 库存加 N row |
+| 减库存 / 库存扣掉 N / reduce stock | `+stock --adjust -N` | 减/扣掉 N = negative delta → `--adjust -N`; the CLI refuses if the result would go below 0, if `--location-id` isn't the default location, or if the item is stocked at multiple locations — in those cases explain and offer `+unpublish` / stock-policy `deny` instead; target flag as in the 库存加 N row |
+| 加标签（保留原有）/ add tags | `+tag --add` | tags comma-separated; existing tags kept |
+| 去掉某标签 / remove a tag | `+tag --remove` | missing tags are ignored |
+| 标签整个换成… / replace all tags | `+tag --set` | replaces the full list — only on explicit "replace/换成/只保留" wording |
+
+If multiple rows match, **ask which one**. Don't guess.
+
+### Required-vs-ask matrix
+
+Only **no-default** flags are askable.
+
+| Shortcut | Must ASK if user did not specify | Infer if possible | Default silently |
+|---|---|---|---|
+| `+create` | `--price`, `--image` (one batch; **never fabricate a price or an image URL**) | `--title` from the product name in the utterance; `--published` from 上架/publish wording | `--published` (omit = draft), `--sku`, `--stock`, `--stock-policy` (default `deny`), `--compare-price`, `--tags`, `--collection-ids` |
+| `+set-variants` | `--new-price` **only when brand-new values appear** (adding a value to an existing dimension; adding a dimension copies prices, a delete or rename needs none); `--new-image` likewise, only when the CLI says the product requires variant images (must be one of the product's images); `--existing` when adding a dimension with several values to a product that has dimensions; the value to keep when `--drop` would merge variants; the dimensions + values (**never invent spec values**; keep the user's value spelling verbatim — values are case-sensitive) | the edit flags from wording (加→`--add`, 删/去掉→`--remove`, 不按…分→`--drop`, 只保留/换成→`--set`, 改名/改成→`--rename`, 统一价/都卖→`--set-price`); `--id` via `+search` by name | `--sku-template`, `--set-stock`, `--new-stock` (optional; omit = skus/stock untouched) |
+| `+set-price` | `--price` (never invent a number) | the target, from what the user gave: **variant** id → `--variant-id`, SKU → `--sku`, **product** id → `--product-id` (resolves that product's only variant). Never ask for a variant id — resolve it | `--compare-price`; `--all` (only when the user explicitly wants every variant matching the SKU) |
+| `+stock` | the amount — **and nothing else**. Never ask for a variant id or an inventory-item id; resolve them | `--adjust` vs `--set` from wording (加 N = `--adjust N`; 减/扣 N = `--adjust -N`; 设为 N = `--set N`); the target exactly as `+set-price`: variant id → `--variant-id`, SKU → `--sku`, product id → `--product-id`. No `--all` here — inventory writes target one variant | `--location-id` (defaults to the default location) |
+| `+publish` / `+unpublish` | `--id` (or resolve it via `+search` by name) | — | — (takes only `--id`) |
+| `+tag` | `--id`, the tag values | add/remove/set mode from wording | — |
+| `+search` / `+count` | *(nothing — all filters optional)* | filters from wording | `--page-limit`, `--fields` |
+
+**Identifier ladder — resolve, don't ask.** Merchants hold product names and product ids.
+Variant ids and inventory-item ids are internal plumbing they have never seen. Every rung below
+is one command, so walk down it instead of asking for an id the user does not have:
+
+```
+name  --(+search --keyword)-->  product id  --(--product-id, single-variant)-->  variant id
+                                product id  --(products variants list)-------->  variant id
+                                variant id  --(+stock resolves it internally)->  inventory item id
+```
+
+Ask only when a rung is genuinely ambiguous — the product has several variants and the user's
+words don't say which. `--product-id` refuses that case and lists the candidates: ask the user to
+pick from **that** list. Never take `variants[0]` on their behalf.
+
+**Sub-resource asks** (leaf-tier, same discipline):
+- `gift-cards create` — must ask `code` and `initial_value` if missing (**stored value = money;
+  never fabricate**). `customer_id` / `send_email` are optional: clarifying the customer is
+  fine, inventing one is not.
+- `variants update` — send **only** the fields the user asked to change; never pad the body.
+
+### Never-ask list
+
+Flags with a CLI default or omit-to-disable — they never appear in a question:
+`--location-id` (default location) · `--stock-policy` (default `deny`) · `--published`
+(omit = draft; set only on explicit publish wording) · `--compare-price` · `--sku` /
+`--stock` / `--tags` / `--collection-ids` on `+create` (optional) · `--page-limit` ·
+`--fields` (use only when the user asks for specific fields) · `--all` (explicit bulk
+override only) · `--sku-template` / `--set-stock` / `--new-stock` on `+set-variants`
+(optional) · the `+set-variants` edit flags (infer from wording: 加 = `--add`, 删 = `--remove`,
+不按…分 = `--drop`, 只保留 = `--set`, 改名 = `--rename`).
+
+### Decision examples
+
+| User says | Verdict |
+|---|---|
+| "新建一个商品：Lycra 瑜伽裤，售价 39.99，主图用 https://…/yoga.jpg，先存草稿" | CREATE — `+create --title "Lycra 瑜伽裤" --price 39.99 --image https://…/yoga.jpg`; 存草稿 = **omit** `--published` |
+| "帮我上架一个新的 T恤 商品" | ASK — price + image missing (one batch); title `T恤` is usable; plan `--published` (user said 上架) |
+| "把 SKU TSHIRT-RED-M 的价格改成 24.99" | CREATE — `+set-price --sku TSHIRT-RED-M --price 24.99`; no `--all` for a single-variant intent |
+| "给变体 998877 调一下价格" | ASK — the new price; target `--variant-id 998877` is already known |
+| "给变体 12345 的库存加 50 件" | CREATE — `+stock --variant-id 12345 --adjust 50` |
+| "把变体 88664 的库存减少 30 件" | CREATE — `+stock --variant-id 88664 --adjust -30`; if the CLI refuses (below 0 / non-default location / multi-location item), relay the reason and offer alternatives |
+| "给老客户发一张礼品卡" | ASK — `initial_value` + `code` (money; never fabricate) |
+| "建一个文胸套装，3 个颜色、15 个胸围码、6 个内裤码，统一 29.99" | ASK `--image` first, then two steps: `+create --title … --price 29.99 --image …` → `+set-variants --id <new> --add "Color:…" --add "Bra Size:…" --add "Brief Size:…"` (every combo copies 29.99) |
+| "给这个商品加个 White 色" | CREATE — `+set-variants --id <id> --add "Color:White" --new-price <n>`; ask the price if unknown (the new combos need one) |
+| "给已上架的 T 恤加一个尺码维度 S/M/L" | ASK FIRST — which size the current variants are (they keep id/sku/stock); the other sizes are created with each colour's price but **no sku and zero stock**. Then `+set-variants --id <id> --add "Size:S,M,L" --existing "Size:<answer>"` |
+| "把红色改名叫酒红" | CREATE — `+set-variants --id <id> --rename "Color:Red=酒红"` (in place; ids/sku/stock kept) |
+| "不要 lenses 规格了只留 6lenses 的，款式只要 Ocean 改叫 2 lenses，价格全部 19.9" | CONFIRM FIRST (variants are deleted) — one call: `+set-variants --id <id> --drop "lenses=6lenses" --set "Style:Ocean" --rename "Style:Ocean=2 lenses" --set-price 19.9 --dry-run`, relay its `changes`, then run it |
+| "不按 lenses 分了"（lenses 有多个值） | ASK — which lenses value's variants to keep; then `--drop "lenses=<value>"` |
+
+## Boundaries
+
+Reads like products, actually belongs elsewhere (and lookalikes this domain owns):
+
+| Sounds like | Actually belongs to | Command |
+|---|---|---|
+| 优惠码 / 折扣码 / 满减 / flash sale / discount & coupon codes | `shoplazza-discounts` | `discounts +*` |
+| 礼品卡 / 储值卡 / gift card (redeemable store credit) | **HERE** (not discounts, not billing) | `products gift-cards …` |
+| 上传文件到媒体库 / store media library asset | `shoplazza-shop` | `shop files` / `shop +upload-file` |
+| 给商品挂图 / image attached to a product | **HERE** | `products images create` |
+| 首页轮播图 / 卡片配图 / image inside a theme card | `shoplazza-themes` | `themes +page` → `themes +edit` |
+| 商品详情页模板 / custom product-page template | `shoplazza-themes` | `themes template create` |
+| 商品元字段 / metafields on products or shop | `shoplazza-shop` | `shop metafields-resource` / `metafields-definition` |
+| 库存同步 / 补货 / inventory & warehouse stock | **HERE** (not orders/fulfillment) | `products +stock` / `products inventory` |
+| 买家评价 / 评论 / product reviews | **HERE** (not shop blogs/pages content) | `products comments …` |
+| 博客 / 自定义页面 / storefront content pages | `shoplazza-shop` | `shop blogs` / `shop pages` |
+
+**Collections vs collects — intra-domain trap:** `collections` are the curated collection
+objects themselves (title, image, SEO, smart rules); `collects` are the *association records*
+linking a product to a collection. "把商品加进合集" = `collects create`, never
+`collections update`. See [references/collections-collects.md](references/collections-collects.md).
+
+## Permissions · Scope
+
+Authorization is by **domain** (the unit of `--domain`), not per command. Authorization flow is
+in shoplazza-common → Authentication.
+
+| Operation | Needs | Grant |
+|---|---|---|
+| read (`get` / `list` / `+search` / `+count` / sub-resource reads) | `products` read scope | `auth login --domain products` |
+| write (`+create` / `+publish` / `+set-price` / `+stock` / `+tag` / create / update / delete / sub-resource writes) | `products` write scope | `auth login --domain products` |
+
+Look up exact scope literals with `shoplazza auth scopes`; `--domain products` expands into them.
+
+## Gotchas
+
+Domain-specific pitfalls only (generic ones — `.data` prefix, `--jq` without `-r` — are in
+shoplazza-common).
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Stock decrease rejected | The `inventory_levels` write leaves (`set-stock` / `update-level`) only add; decreases ride `variant.inventory_quantity`, which is default-location-only and unverified on multi-location items — `+stock` gates accordingly | Use `+stock --adjust -N` / `--set N`; when the gate fires, explain and offer alternatives (unpublish, stock-policy) |
+| Product published when the user wanted a draft | `--published` on `+create` is a bare boolean — passing it publishes | Omit `--published` entirely for a draft (draft is the default) |
+| `unknown flag: --fields` on `+count` / other shortcuts | In this module `--fields` exists on `+search` **only** | Project with `--jq` elsewhere |
+| `+search --fields` result lacks a field you named | Names are **response keys** (`primary_image`, `price_min`, …); a misspelled or unknown name is silently ignored by the API. `id`, `title`, `created_at`, `updated_at` may come back regardless | Check names against the default output or `schema products.list --view response`; or skip `--fields` and project with `--jq` |
+| Tags wiped out after an update | `products update` (leaf) replaces the whole tag list; so does `+tag --set` | Use `+tag --add` / `--remove` — existing tags kept |
+| Variants vanished after a `products update` (leaf) with a `variants` array | The array is a **full replace**: any variant not listed is **deleted**, and listed variants without their `id` are matched by option values (exact, case-sensitive) and recreated when nothing matches (sku/stock reset) | Never hand-write a `variants` array on the leaf — use `+set-variants` (per-value prices included), which maps existing variants (carries ids) and reports every deletion |
+| "Result too large" on a big-matrix `products update` / `create` | The response echoes the full product — hundreds of variants × ~25 fields | Use `+set-variants` (bounded summary output). On the leaf, always narrow with `--jq` and pass the body via `--data @file` |
+| Write reported "result too large" and you're tempted to retry | The request very likely **succeeded** — only the echo was oversized | Don't resend. Verify first: `products variants count --params '{"product_id":"<id>"}'` |
+| Stock sits on one size only after adding a spec dimension | Adding a dimension keeps every existing variant (id, sku, stock, image) on the `--existing` value; the other values are new variants with the price copied and no sku/stock | Expected. Set the rest with `--new-stock`, `+stock` or `--sku-template`. `remapped_detail` / `created_detail` in the output say which variant went where |
+| `+set-variants` refused: "would merge variants that differ only by it" | Dropping the dimension would put two variants (e.g. Red/S + Red/M) on one combination — only one could keep its data | Ask which value's variants to keep, then `--drop "Size=<value>"` in the same call as any other edits |
+| A value "renamed" with remove + add lost its sku/stock | remove + add deletes the old variants and creates new ones | Use `--rename "Color:Red=红色"` — values change in place |
+| `+set-variants` output lists `sku_may_be_stale` | A kept variant's sku still names a value it no longer has (dimension dropped / value renamed) | Tell the user; regenerate with `--sku-template` if they want new skus |
+| `+set-variants` treats `S` and `s` as different values | Values are case-sensitive on the server; a new value differing only by case from another of its dimension is refused (add, update, new dimension), and remove needs the exact spelling | Use the exact spelling; respell with `--rename` |
+| A spec value is listed on the product but has no variants | Other edits leave it alone; `--add` / `--set` naming it creates its variants (one per existing combination of the other dimensions — needs `--new-price`) | Expected; drop it with `--remove` if it shouldn't be offered |
+| `--new-price` passed to `+set-variants` but some prices didn't change | `--new-price` only prices new variants with nothing to copy from; it never changes an existing price (the output's `price_applied` / `warnings` say so) | Reprice with `--set-price` (every variant, or per value `"Size:S=20"`) |
+| New product can't be ordered; API says "Out-of-stock" though stock is set | The product is a draft (`+create` default) — drafts are unorderable and the error message is misleading | `products +publish --id <id>` first |
+| `+set-price --sku` refused with a candidate list | The SKU matched several variants — the CLI refuses a multi-match | Pick the right `--variant-id` from the listed candidates, or pass `--all` only for an explicit "all of them" |
+| A product id in `--variant-id` → 404 `No variants found` (or "no inventory item found for that variant") | `--variant-id` is variant-scoped (`PUT /variants/{variant_id}`); a product id never matches it | Pass it to `--product-id` instead — the error's `hint` says so. Or list first: `products variants list --params '{"product_id":"<id>"}'` |
+| `--product-id` refused: "product … has N variants" | A multi-variant product has no single price or stock target | Ask the user which one, using the candidates in the `hint` (capped at 10 — it names the command that lists the rest), then re-run with `--variant-id` or `--sku`. Never guess `variants[0]` |
+| Price vanished after `+set-price --price 0` | `'0'` / `'0.00'` **clears** the price rather than setting zero | Only pass 0 when the user wants the price cleared |
+| Wanted `gift-cards delete` | No delete endpoint exists (subcommands: batch-create / create / disable / get / list / update) | `gift-cards disable` stops redemption; tell the user it disables, not deletes |
+| `variants update` 404 with product_id in path | `variants get` / `update` are variant-scoped: `/variants/{variant_id}` — no product_id | Only `variants list` / `create` / `delete` are product-scoped (`delete` needs BOTH ids) |
+| `inventory set-stock` rejects a variant id | Inventory levels key on `inventory_item_id`, which ≠ variant id | Map first: `inventory list-by-variant --params '{"variant_ids":["<id>"]}'` |
+| `comments create` rejected for missing fields | `star`, `like`, `created_at`, `user_name`, `content`, `product_id` are ALL required | See [references/comments.md](references/comments.md); use `like: 0` if unknown |
+| "加进合集" attempted via `collections update` | Product↔collection membership is a `collect` record | `collects create` (one) / `collects batch-create` (many) |
+| Invented `+delete` / `+update` shortcut | They don't exist | `delete` / `batch-delete` / `update` are spec leaves (see Command map) |
+
+## Recipes
+
+```bash
+# 1. All unpublished products from vendor Nike
+products +search --vendor Nike --published unpublished
+
+# 2. Ids, titles and main image only, of products with "hoodie" in the title
+products +search --keyword hoodie --fields id,title,primary_image
+
+# 3. How many published products?
+products +count --published published --jq '.data.count'
+
+# 4. Create a draft product (draft = no --published)
+products +create --title "Lycra 瑜伽裤" --price 39.99 --image https://cdn.example.com/yoga.jpg
+
+# 5. Publish a product you only know by name
+ID=$(products +search --keyword "瑜伽裤" --jq '.data.products[0].id')
+products +publish --id "$ID"
+
+# 6. Restock / reprice a product you only know by product id (single-variant product)
+#    --product-id resolves the one variant. A multi-variant product is refused with
+#    its candidates listed — show them to the user and let them pick.
+products +stock --product-id 7ab09fcd-2ee7-4118-8c4d-e44a10d51caf --adjust 50
+products +set-price --product-id 7ab09fcd-2ee7-4118-8c4d-e44a10d51caf --price 24.99
+
+# 7. Multi-variant product: resolve the variant the user actually named, then write.
+#    Pick by the option the user said (XL), never by position. If the user named no
+#    option, ask which variant — don't take variants[0].
+VID=$(products variants list --params '{"product_id":"9036f033-c605-4b6f-8a08-1b7ae090791c"}' \
+  --jq '.data.variants[] | select(.option2=="XL") | .id')
+products +stock --variant-id "$VID" --set 20
+
+# 8. Append tags without clobbering the existing ones
+products +tag --id 445566 --add summer,sale
+
+# 9. Delete one product — dry-run, restate, wait for the user's go-ahead, then run
+products delete --params '{"product_id":"778899"}' --dry-run
+products delete --params '{"product_id":"778899"}'          # only after the user agrees (next turn)
+
+# 10. Batch delete — always dry-run first and restate the count
+products batch-delete --params '{"product_ids":["111222","333444","555666"]}' --dry-run
+products batch-delete --params '{"product_ids":["111222","333444","555666"]}'
+
+# 11. Change one variant's size option (partial body — only the field to change)
+products variants update --params '{"variant_id":"24680"}' --data '{"variant":{"option1":"XL"}}'
+
+# 12. Create a multi-spec product: draft first, then add the dimensions (3 colors × 2 sizes = 6 variants)
+ID=$(products +create --title "Yoga Set" --price 29.99 --image https://cdn.example.com/yoga.jpg \
+  --jq '.data.product.id')
+products +set-variants --id "$ID" --add "Color:Black,White,Pink" --add "Size:S,M" \
+  --sku-template "YS-{Color}-{Size}"
+
+# 13. Add one color to an existing product (existing variants untouched)
+products +set-variants --id 7ab09fcd-…  --add "Color:White" --new-price 29.99
+
+# 14. Add a whole dimension — existing variants become 70B (id/sku/stock kept); 70A/70C copy the
+#     price with no sku/stock: ask which value the current variants are first
+products +set-variants --id 7ab09fcd-… --add "Bra Size:70A,70B,70C" --existing "Bra Size:70B"
+
+# 15. Drop one value / a whole dimension (deleted variants are listed in the output)
+products +set-variants --id 7ab09fcd-… --remove "Color:Pink"
+products +set-variants --id 7ab09fcd-… --drop "Size=M"
+
+# 15b. Rename a value / a dimension in place (every variant keeps its id, sku and stock)
+products +set-variants --id 7ab09fcd-… --rename "Color:Red=Wine Red"
+products +set-variants --id 7ab09fcd-… --rename "Color=Colour"
+
+# 15c. Several edits in one call — preview, relay "changes", then run
+products +set-variants --id 7ab09fcd-… --drop "lenses=6lenses" --set "Style:Ocean" \
+  --rename "Style:Ocean=2 lenses" --set-price 19.9 --dry-run
+
+# 15d. Prices per value
+products +set-variants --id 7ab09fcd-… --set-price "Size:S=20,M=25,L=30"
+
+# 16. Put a product into a collection
+products collects create --data '{"collect":{"collection_id":"999000","product_id":"555777"}}'
+
+# 17. "Delete" a gift card you only know by code — resolve the id, preview the disable
+#     (irreversible) in the SAME reply, then wait for the user's go-ahead
+ID=$(products gift-cards list --params '{"keyword":"GC9988"}' --jq '.data.gift_cards[0].id')
+products gift-cards disable --params '{"id":"'$ID'"}' --dry-run
+```
+
+## References
+
+- [references/variants.md](references/variants.md) — variants CRUD, SKU lookup/update, option handling
+- [references/inventory-locations.md](references/inventory-locations.md) — inventory items vs levels, decrement gates, locations
+- [references/collections-collects.md](references/collections-collects.md) — curated & smart collections, collects, categories
+- [references/images.md](references/images.md) — product image CRUD
+- [references/gift-cards.md](references/gift-cards.md) — gift card lifecycle (no delete; disable)
+- [references/comments.md](references/comments.md) — customer reviews (import, list)
+- [references/procurement-suppliers.md](references/procurement-suppliers.md) — suppliers, procurement orders
+- Per-command flags: `shoplazza products <cmd> --help`
+- Spec-leaf params / body / response: `shoplazza schema products.<cmd>` (nested: `schema products.variants.update`)
+- Cross-cutting mechanics (auth / tiers / output envelope / `--dry-run` / `--jq` / safety): `../shoplazza-common/SKILL.md`
+- Shortcut source of truth: `shortcuts/products/*.go`

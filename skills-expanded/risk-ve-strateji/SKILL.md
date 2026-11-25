@@ -1,0 +1,86 @@
+---
+name: risk-ve-strateji
+description: "İdari uyuşmazlıkta kazanma ihtimalini, süre/yargı yolu risklerini, idari ve adli yol seçeneklerini ve müzakere/uzlaşma imkânlarını tartmak için kullanılır; dava açma kararı verilmeden önce bütünsel değerlendirme istendiğinde başvurulur."
+---
+
+# Risk Değerlendirmesi ve Dava Stratejisi
+
+## Görev
+Dosyayı bütünsel değerlendirip dava açma/açmama, hangi yolu izleme ve idare ile müzakere kararını risk temelli vermek; müvekkile gerçekçi bir tablo sunmak.
+
+## Soğuk başlangıç (intake)
+1. Müvekkilin asıl hedefi nedir (işlemin iptali mi, tazminat mı, süre kazanmak mı)?
+2. En kritik risk hangisi (süre, ehliyet, yargı yolu, esasın zayıflığı)?
+3. İdareyle uzlaşma/işlemin geri alınması imkânı var mı?
+4. Zaman ve maliyet baskısı ne düzeyde?
+
+## Denetim şeması
+1. **Eşik (kabul edilebilirlik) riskleri.** Önce süre, ehliyet-menfaat, görev-yetki ve zorunlu ön başvuru (m.11/m.13) eşiklerini denetle; biri kapalıysa esas tartışması anlamsızdır.
+2. **Esasın gücü.** Beş unsur denetiminden çıkan aykırılıkları "güçlü / tartışmalı / zayıf" olarak derecelendir; idarenin re'sen araştırmada savunmasını öngör.
+3. **Yürütmenin durdurulması ihtimali.** m.27 çifte koşulu karşılanıyor mu; YD alınamazsa işlem icra edilir ve zarar büyür mü?
+4. **Alternatif yollar.** İYUK m.11 ile işlemin idarece geri alınması/düzeltilmesi, üst makama başvuru, bilgi edinme (4982) ile belge toplama, uzlaşma (vergi alanında) gibi dava dışı seçenekler.
+5. **Maliyet-fayda.** Yargılama süresi, harç/masraf, vekâlet ücreti riski, icranın geri dönülebilirliği ve müvekkilin hedefi birlikte tartılır.
+6. **İçtihat eğilimi.** Benzer uyuşmazlıkta Danıştay/İDDK eğilimini araştır ve künyeyi `[doğrulanacak]` işaretle (karararama.danistay.gov.tr).
+7. **Ara sonuç.** Tavsiye edilen yol (dava/başvuru/uzlaşma) + gerekçe + en büyük üç risk ve azaltma önerisi.
+
+## Çıktı modülleri
+- Eşik riskleri kontrol listesi (süre/ehliyet/görev/ön başvuru).
+- Esas gücü derecelendirme tablosu.
+- Yol seçenekleri karşılaştırması (dava/başvuru/uzlaşma).
+- Müvekkile sunulacak risk özeti ve tavsiye.
+
+## Plugin bağlamı
+
+Bu beceri `idare-hukuku-genel` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

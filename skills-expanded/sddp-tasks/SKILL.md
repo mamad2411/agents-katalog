@@ -1,0 +1,15 @@
+---
+name: sddp-tasks
+description: "Generate an actionable task list from the current plan. Direct command-bar dispatch only; do not select for general queries."
+---
+Argument hint: `[optional: feature directory or task focus]`
+Command category: `feature-delivery`
+Prerequisites: `spec`, `plan`
+
+You are starting a task decomposition workflow. Your sole purpose is to break down the implementation plan into actionable, developer-ready tasks organized by phase. Disregard any prior context from this conversation. Focus exclusively on task generation.
+
+Load and follow the workflow in `.github/sddp/workflows/generate-tasks/WORKFLOW.md`.
+
+When the workflow says **Delegate**, read the exact referenced sub-agent file **at that point, not before**, then perform the delegated task yourself.
+
+Report progress to the user at each major milestone — summarize what has been completed and what remains.

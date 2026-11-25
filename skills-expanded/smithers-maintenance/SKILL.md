@@ -1,0 +1,157 @@
+---
+name: smithers-maintenance
+description: Work on Smithers workspace graph, generated documentation, benchmark or eval evidence, or durable flow authoring in this repository.
+---
+
+# Smithers maintenance
+
+Use the owning source and current docs on the revision being changed. The source CLI (`makeCli()` in `packages/smithers/src/Cli.ts`) is the CLI syntax contract; the installed release can be stale. The 1.0 CLI separates target graph commands (`smthrs targets`, `show target`, `build|test|lint|docs|review|ci`) from durable flow commands (`smthrs flow list|plan|start`, `smthrs runs ...`). A flow start receipt does not prove completion; inspect its run and action receipts.
+
+- **Graph or root files:** read [CONTRIBUTING.md](../../../CONTRIBUTING.md), especially root-file and target-index generation. `PACKAGE.ts` declares targets; generated companions and the whole declaration-set index have explicit checks. Use `pnpm run target-index` when that contract calls for regeneration. The tree splits into `apps/` and `packages/`, never by language: a Rust crate lives under `packages/` beside its consumer (for example `packages/smithers/flows/jj-wasm`), so never add a top-level folder per language, such as a crates folder.
+- **Build/install/cache:** read [build](../../../packages/smithers/build/README.md), [workspace remote caching](../../../packages/smithers/build/docs/workspace/smithers-cloud-cache.md), and [cache trust](../../../packages/smithers/build/infra/CACHE-TRUST.md). The install flow currently supports pnpm only; Bun can still run target tools. Install actions use expected filesystem boundaries and do not enter the shared engine cache. The target `/ac` cache differs from engine step-cache/artifacts; hosted and self-hosted cache implementations need matching route, bound, and credential behavior.
+- **Type checking:** every `Typecheck` target, package `check` script, and `Markdown.CodeBlocks` target runs `vibelang`, VibeLang's compiler: TypeScript 7's checker, which also reads the `.vibe` source of the workspace packages a package imports, each `.vibe` file with its own package's VibeLang settings (VibeLang D278). TypeScript 7 rejects some code TypeScript 5.9 accepted; fix the code, not the gate. `typescript` 5.9 stays installed for typescript-eslint and editors. TypeScript 7 ignores tsconfig `plugins`, so `@effect/language-service` reports only in a TypeScript 5 editor; `tsc` never ran it either, because it is not patched in. In `.vibe` files VibeLang's EK4801-EK4825 cover its rules.
+- **VibeLang sources in builds and bundles:** a workspace package's exports name its source, so a `.vibe` module reaches every dependent, and tsc and plain bundlers cannot read it. `packages/repo-targets/scripts/build-library.mjs` picks the compiler per package (`packageCompiler`): vibelang when the package's `src`, or a linked dependency's `src`, holds `.vibe`; tsc otherwise. `buildLibrary`, the four hand-written build scripts, and `check-api-baseline.mjs` use that choice, and a package with its own `.vibe` sources takes its CommonJS from vibelang's ESM. Every bundler that bundles workspace sources takes the VibeLang plugin, rooted at the bundled app or package so each `.vibe` module compiles with its own package's tsconfig: `vibelang-vite` in Vite configs (apps/mvp, apps/app, apps/site), `vibelang-unplugin/esbuild` in esbuild scripts (browser-check, build-tui, build-views, model-host, the coding host, the design mock), `vibelang-unplugin/bun` in Bun.build (TUI binaries). An Alchemy Worker evaluates its own props, so its `build` takes `vibelang-unplugin/deferred` through `apps/mvp/infra/WorkerBuild.ts`; a static plugin import there would bundle the compiler into the Worker. Packing requires `.vibe` modules' ESM, declarations and CommonJS, and a package that ships `src/**/*.ts` also lists `src/**/*.vibe` in `files`.
+- **Tests that load VibeLang (`.vibe`) source:** a workspace package exports its source, so a suite that imports a migrated package loads `.vibe` modules. Every `vitest.config.ts` runs `vibelang-vite` with the package's test tsconfig, collects `*.test.vibe` beside `*.test.ts`, and counts `.vibe` files in its coverage globs; a `.vibe` module of another workspace package compiles with that package's own tsconfig. The CLI loads its own loader (see VibeLang source in Node below). A suite whose tests start Node on other source, such as `node -e`, sets `register: true` on the plugin, which puts `vibelang/register` in the `NODE_OPTIONS` its processes inherit; a child spawned with `NODE_OPTIONS` cleared needs `--import vibelang/register` itself. A package that imports `@effect/vitest` must resolve the same vitest copy as its runner (one `vite` version), or `describe` fails reading `config`. `node --test` on source needs `--import vibelang/register`. Bun loads `.vibe` through the `vibelang/bun` preload in the `bunfig.toml` of the directory Bun starts in, a package or the repository root (top level for `bun run`, `[test]` for `bun test`); `bun test` never discovers `*.test.vibe`, so a Bun suite imports `.vibe` modules from `.test.ts` files. `BuildAndCheckTypeScriptPackage`'s default source and test globs name `.{ts,vibe}`, so its targets are keyed on `.vibe` files.
+- **Source scanners and VibeLang:** a tool that reads sources treats `.vibe` as it treats `.ts`: VibeLang's imports, exports, type arguments and calls are TypeScript syntax, so `packages/repo-targets/src/ImportAnalysis.ts` parses a `.vibe` file as TypeScript, and every extension list in a scanner names `.vibe` (ImportRules, the dependency-boundary, test-pin, egress and fault-skip gates, LLM review batching, `ReviewJsdocAgainstCode`, `SdkRules`' Jev globs, the import-closure resolver, the CLI's implementation fingerprint, the public export audit, the site's published-links gate). Every package's `circular` target runs the one guard, `packages/repo-targets/scripts/circular.mjs` (`CircularImports`), which reads the module graph the VibeLang compiler resolves, so a cycle through `.vibe` modules fails; see the [repo-targets README](../../../packages/repo-targets/README.md#circular-imports). A script that imports CLI source in-process calls `installEffectResolution` first, which installs `vibelang/register`.
+- **Documentation:** Author library documentation in each package's `docs/` directory; it ships with the npm package. Run `pnpm docs:check` to verify tarball contents. Main-site projections use `pnpm --filter @smithers/site run sync:docs`.
+- **Benchmarks or performance claims:** read [.smithers/flows/bench/README.md](../../../.smithers/flows/bench/README.md). Distinguish the deterministic PR gate from scheduled observed timings, review candidate baselines, and retain methods and limitations with any claim.
+- **Evals:** read the owning suite's README, including [agent](../../../packages/smithers/agent/regression/README.md) and [seeded review](../../../.smithers/flows/review/seeded-bugs/README.md). Keep offline deterministic gates and deliberate baseline updates separate from live model measurements and spending.
+- **Flows:** read [@smthrs/flow](../../../packages/smithers/flows/flow/README.md) and [CLI reference](../../../packages/smithers/docs/reference/cli/README.md). A file flow at `.smithers/flows/<name>/flow.ts` (mvp.md M-49) default-exports a tagged `Flow.make` from `@smthrs/flow`. Export its action implementations as the optional named `layer` (`Declared.toLayer`, `AgentAction.layer`, or `Layer.mergeAll`); the registry composes it against the local host platform and agent services. Export implementations directly; the host owns `Action.Implementations`. Acquire extra dependencies during layer construction so missing services are refused at load. Use stable `Node.capture` callbacks for canonical persisted composition and matching `implementationVersion` declarations/registrations for sealed idempotent actions. New authoring uses Effect Schema, not retired JSX/Zod task examples. A decision inside a flow (classify, filter, rank, route, yes/no over items) asks Jev through `Classifier.make` and the host `Evaluator`, as one request with one question per item, never through an LLM seat; see [jev-check](../../../.smithers/flows/coding/jev-check.ts).
+- **Plans:** read [plan](../../../packages/smithers/flows/plan/README.md) and [plan-store](../../../packages/smithers/flows/plan-store/README.md). Node payloads are persisted as plaintext in `node_json` and approval cards without redaction; keep credentials out and resolve them at dispatch. Persisted plans are verified on write and read, and append uses an immutable-history compare-and-swap over the approved base and running prefix.
+- **Generated or untrusted flow declarations:** read [core planning rules](../../../packages/smithers/flows/core/README.md). `Graph.build` executes bodies and planning callbacks with the caller's process authority; capability/effect metadata does not sandbox that code. Translate validated data into nodes with trusted code, or plan untrusted code in an externally isolated process.
+- **Runtime or persistence:** read [flows runtime](../../../packages/smithers/flows/README.md), [engine](../../../packages/smithers/flows/engine/README.md), and [engine-store](../../../packages/smithers/flows/engine-store/README.md). `@smthrs/flow` declares behavior, the engine makes decisions, and the storage seam changes where state lives. Node and Bun use distinct native host/SQL adapters over the same SQLite migrations, journal, stores, cache, and recovery. Run migrations before SQL-backed services and use one writer for journal/state transitions; demonstrate cross-runtime recovery and cancellation. Browser bundling alone does not establish durable browser execution.
+- **Journal and ownership fencing:** read [journal](../../../packages/smithers/flows/journal/README.md) and [run-store](../../../packages/smithers/flows/run-store/README.md). Ownership is arbitrated by the journal's injectable `Consensus` strategy (`SqlConsensus` over `flows_consensus_leases` by default, `Consensus.layerLocal` in-process); fenced durable emissions join its `guard`, so the run must be claimed and activated through it, and the journal and run store must share one strategy instance. `RunStore` mirrors the outcome on `flows_runs`, so a fixture that forges ownership in SQL writes both. `emitDurableUnfenced` is only for genuinely ownerless admission or repair, never a bypass for `fence_lost`. An expired lease alone does not authorize takeover; `LivenessEvidence` must be current, and an unknown probe counts as alive.
+- **Step cache migrations:** read [step-cache](../../../packages/smithers/flows/step-cache/README.md). The earlier 1.0 RC migration 2002 identity is accepted explicitly; preserve its ledger and cached results during upgrade. An unknown migration identity remains a failure, not a reason to delete a runtime database.
+- **Time travel:** read [time-travel](../../../packages/smithers/flows/time-travel/README.md) before changing fork, rewind, or their receipts. A durable fork reuses completed prefix attempts by their original action identities and gives new work child-scoped keys; rewind archives future waits and refuses crossed irreversible effects or live descendants. Test recovery after an interrupted mutation.
+- **Sync:** read [sync](../../../packages/smithers/flows/sync/README.md) before changing cursors, subscriptions, or gateway mounts. Persist applied cursor progress with consumer state; change feeds are hints and a re-list is authoritative. Preserve rewind generation handling: `lineage_changed` requires rebuilding the projection. Branch RPC code is not currently mounted by the gateway.
+- **Artifacts:** read [artifact storage](../../../packages/smithers/flows/artifacts/README.md). Its filesystem backend needs trusted host filesystem semantics; kernel-guarded filesystem access cannot substitute for them. Treat deletion as explicit and keep engine-store responsible for liveness/reachability.
+- **Browser host:** read [platform-browser](../../../packages/smithers/flows/platform-browser/README.md). Its bash, filesystem, and jj views must share one volume, and a mounted filesystem is durable across a reload only after the mount's `sync()`. The durable flow engine runs in one dedicated worker per origin, the leader tab's, chosen with a Web Lock, and keeps its step record in SQLite on OPFS (`BrowserRuntime`, `BrowserEngine`); `apps/mvp`'s agent runs on it. Do not infer browser durability from a successful build or import.
+- **Bun host:** read [platform-bun](../../../packages/smithers/flows/platform-bun/README.md) before changing its filesystem or process adapters. Its trusted filesystem boundary runs the native `smithers-jj-export` helper (build with `cargo build --locked --release -p smithers-ffi --bin smithers-jj-export` or set an absolute `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY`); `PATH` is never searched. Bun's host bundle is not the browser adapter.
+- **VibeLang source in Node:** a workspace package's exports name its source, and a migrated package's source is `.vibe`, which Node loads only through `vibelang/register`. Every Node process that runs source must install it before the first `.vibe` import: `installEffectResolution` installs it (so `packages/smithers/bin/smithers.mjs`, `node src/bin.ts`, `smithers-build`, flows, declaration graphs, and scripts that import CLI source in-process get it), the workspace runtime's `imports: ["vibelang/register"]` in `.smithers/WORKSPACE.ts` preloads it for every `NodeTest` and `NodeBinary` target, and a script runs as `node --import vibelang/register file.ts`. Keep `packages/smithers/src/bin.ts`'s static imports out of migrated packages: they load before `installEffectResolution` runs. Action children receive no `NODE_OPTIONS`, so an action's argv must carry the flag. Compiles are cached on disk (`VIBELANG_CACHE_DIR`, `VIBELANG_DISABLE_CACHE=1`, `VIBELANG_REGISTER_DEBUG=1` to see hits); a type error stops the import with the diagnostics, which the CLI prints.
+- **Node host:** read [platform-node](../../../packages/smithers/flows/platform-node/README.md) before changing containment or process recovery. Confined operations require the `smithers-jj-export` helper built with the Rust toolchain `rust-toolchain.toml` pins; a missing helper refuses them. `ProcessLedger.layerMemory` cannot recover escaped children after a host crash, and permission checks belong around the host service bundle.
+
+For app work, read [apps/mvp/AGENTS.md](../../../apps/mvp/AGENTS.md) and [the rulings](../../../apps/mvp/docs/rulings.md); the old stack (`apps/app`, `apps/server`, `packages/backend`) was removed on 2026-10-21 and is readable with `jj file show -r 78407fce59dd <path>`. For TUI changes, read [apps/tui/AGENTS.md](../../../apps/tui/AGENTS.md) and its linked README. Treat issue state as a separate receipt from code status.
+
+- **Repository automation:** a repository action a person or agent runs (release steps, landing, docs sync, benchmarks, checks) is a typed flow in the repository flows directory whose action runs its module through `.smithers/flows/automation/run-module.ts`; start it with `smthrs flow start <name> --data '<json>' --wait`. Code that serves one package lives with that package (`packages/repo-targets/contracts` holds repository build-graph and workflow contracts). Never add a top-level scripts folder (#4094).
+- **Bootstrap landing helper:** `pnpm commit` runs `.smithers/flows/land/commit.mjs`, the module behind the `land` flow, directly so a fix still lands when `smthrs` on `main` is broken. Every authorized `pnpm commit --push` invocation must pass repeatable `--test "<command>"` flags. Commands run before VCS mutation with Bash pipefail. For an explicit exception, use `--no-test "<reason>"`; the helper records `Landing-Tests` in the commit. Require exit zero and `LANDED <sha>`, emitted only after fetching remote main and verifying ancestry. Push output alone is not a landing receipt.
+
+## Parallel lane identities
+
+Before rebasing a lane that adds decisions or Postgres migrations, fetch main
+and, under the existing `~/smithers-builders/main-push.lock`, run
+`node .smithers/flows/land/numbering.mjs prepare main@origin`. It allocates
+colliding decisions and all incoming migrations below the published high-water
+mark, rewriting only lane-added reference lines. Never renumber a migration
+already on main. `node .smithers/flows/land/numbering.mjs check` rejects duplicate
+numbers and unregistered migrations without an install. Add new migration tests
+in separate files; existing migration tests and ledger identities stay intact.
+See [parallel agents](../../../docs/devx/parallel-agents.md).
+
+## Source-only parallel workspaces
+
+Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
+
+- `create ~/smithers-builders/ws-<lane> <lane>`: a full source checkout on
+  immutable `main@origin`, with no install. Never parent a lane on another
+  workspace's mutable working-copy commit.
+- `sync`: fetch, allocate incoming numbers before rebase, rebase the private
+  lane, and repair known generated migration/schema sections. Ordinary conflicts
+  stop the command. Run only in your own workspace.
+- `recover`: preserve dirty source files and deletion metadata under the
+  invoking `.jj/agent-recovery/`, integrate its recorded working-copy operation,
+  run jj's supported stale recovery, and replay only the saved delta. It never
+  overlays a stale full tree. A conflicting delta stays visible and the saved
+  bytes remain available. Do not remove an unresolved safeguard.
+- `land --message "<gitmoji conventional message>" --test "<remote command>"`:
+  serialize with the same `~/smithers-builders/main-push.lock` legacy lanes use,
+  sync, regenerate/check the target index on the mini (cfbox on capacity timeout), run explicit commands,
+  reject conflicts, advance main by ancestry, push, verify, and print
+  `LANDED <full id>`. The full affected run and its receipt precede FIFO admission.
+  A FIFO lease spans sync, preparation, receipt checking, bounded validation and push;
+  queued landers hold no farm slot. Publication re-fetches main and refuses a
+  changed validation base or source, and an expired or reclaimed ticket cannot push.
+  Before bounded validation, a newer main keeps the receipt unless intervening
+  affected sets overlap; the refusal names the overlapping commit and targets.
+  `--validated "<existing receipt>"` records previously run
+  checks when rerunning is unavailable; it does not claim fresh execution.
+- `land --require path[=content] ...`: require a file/content predicate on
+  fetched main. This fails promptly rather than waiting on a rewritten commit id.
+- A land touching `apps/mvp` runs all four `pnpm typecheck` projects on the farm,
+  under its FIFO lease and even with `--validated`. A type error or a farm with no
+  answer refuses it.
+- Every land first runs the tests its change affects on the farm, before any
+  FIFO ticket: the index's test targets the change reaches, the tests of every
+  workspace package depending on it and, when it reaches apps/mvp, apps/mvp's
+  whole Vitest suite in six shards, each in its own cfbox `pg` box. `--validated` doesn't skip it. A run
+  with fewer suites than the affected set is incomplete and permits landing with
+  the stage recorded in the land log and proxy inbox;
+  a failure that passes on main refuses it. Docs and generated-index edits only
+  select their explicit readers. Unchanged zero-test files are compared on the
+  parent and reported. App gates queue separately with at most seven pg jobs,
+  a 30-minute whole-gate wall budget starting before metadata inspection and
+  including metadata, admission and cleanup, and no mini fallback. See docs/devx/parallel-agents.md, "The land's affected tests".
+- `land --no-review-needed "<reason>"`: land a commit the review gate refuses,
+  recording who and why in the land log and the proxy inbox. It refuses where
+  that inbox can't be written. See "Review receipts" below.
+- `remove`: forget and delete only a tool-owned workspace whose source is
+  already on remote main. Unpublished edits, unresolved safeguards, and ignored
+  personal files (including installs) prevent removal. The source and tool state
+  are deleted together. Never run it on the main checkout or someone else's lane.
+
+`SMITHERS_CO_AUTHOR` supplies your own co-author trailer when the tool describes
+a change; it never assigns a different agent as author.
+
+`SMITHERS_LOCK_TIMEOUT_MS` bounds admission (default one hour).
+`SMITHERS_LOCK_MAX_HOLD_MS` bounds a holder (default fifteen minutes).
+`SMITHERS_LOCK_STALE_MS` bounds a missing heartbeat (default one minute), with
+`SMITHERS_LOCK_HEARTBEAT_MS` refreshing every five seconds. Waiters reclaim
+expired or dead tickets, logging why; unknown legacy mkdir owners remain untouched.
+Atomic legacy acquisition also requires Python 3 (standard library only): its
+exclusive rename publishes the prepared owner directory without replacing an
+existing empty mkdir lock. Remote publication requires a stop receipt before
+reclamation; a remote deadline alone never proves termination.
+`SMITHERS_LAND_LOCK` is an
+explicit override for independent repositories/tests; all lanes of this repo
+keep the shared default. `SMITHERS_MINI_RUN` selects the farm client (default
+`~/.smithers-lead/scratchpad-mirror/mini-run`). No test command or install is
+invented on the MacBook. Existing manual landings continue to work.
+Target-index admission sets `MINI_RUN_WAIT_SECONDS=0`. Exit 7 or a failed
+`CAPACITY_TIMEOUT` selects `SMITHERS_CFBOX` (default `~/.vibe-orch/bin/cfbox`),
+which receives only jj-listed source. `SMITHERS_CFBOX_VIA` selects an upload
+relay; cfbox caching is disabled in relay mode.
+
+This is bootstrap automation, like `commit.mjs`: it must recover a source-only
+checkout even when the installed CLI or durable host cannot load. It does not
+introduce a workflow engine, background retry service, or product action.
+
+## Review receipts
+
+A lane's statement that Astra found nothing is not a review. `land` and
+`pnpm commit --push` refuse any commit that touches a path in
+`.smithers/flows/land/review-required.txt` unless a receipt shows Codex Astra
+passed that exact diff. Run the review from your workspace after your last
+edit; a hand-written receipt does not pass:
+
+```sh
+node .smithers/flows/land/review.mjs --rev @ --prompt-file <what to check>
+node .smithers/flows/land/review.mjs --rev 'main@origin..@' --prompt-file <what to check>
+```
+
+Exit 0 is PASS, 2 is FAIL, 1 is no verdict and no receipt. Add
+`--model gpt-6.1-sol` when Astra is unavailable. Set
+`SMITHERS_REVIEW_CODEX_HOME` to the Codex account to bill (then `CODEX_HOME`,
+then `~/.smithers/accounts/codex-2`). Read the
+[parallel-agents note](../../../docs/devx/parallel-agents.md#review-receipts)
+for what a receipt proves and what a follow-up fix costs.
+
+## Farm bootstrap clients
+
+Versioned sources: `.smithers/flows/land/farm/`. Install with
+`node .smithers/flows/land/farm/install.mjs`; it atomically replaces the seven
+client/helper files beside existing state and preserves private
+`farm-config.json`. Use `MINI_RUN_SRC=$PWD` or `LAT_RUN_SRC=$PWD` for your own
+source workspace. Private host aliases/endpoints stay outside the repository.
+See the [farm README](../../../.smithers/flows/land/farm/README.md) for admission,
+execution and cleanup contracts. Disk preflight failures require ownership and
+capacity investigation; never prune another lane's data or reset its runtime.
+Mini artifacts download only with `MINI_RUN_ARTIFACTS=1`.
