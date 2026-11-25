@@ -1,0 +1,364 @@
+---
+name: preapproval-agent
+description: "Approval pre-review agent. Process webhook-driven approval items, analyze request reasonableness, and execute auditable approve/reject decisions."
+provider_type: "smartcmp"
+instance_required: "true"
+
+tool_detail_name: "smartcmp_preapproval_get_request_detail"
+tool_detail_description: "Fetch a specific pending approval/request detail for the preapproval agent and return metadata for continued decision-making."
+tool_detail_entrypoint: "../approval/scripts/adapter.py:get_request_detail"
+tool_detail_groups:
+  - cmp
+  - approval
+tool_detail_capability_class: "provider:smartcmp"
+tool_detail_priority: 122
+tool_detail_result_mode: "llm"
+tool_detail_cli_positional:
+  - identifier
+tool_detail_parameters: |
+  {
+    "type": "object",
+    "properties": {
+      "identifier": {
+        "type": "string",
+        "description": "Request ID, approval ID, task ID, or process instance ID to inspect."
+      },
+      "days": {
+        "type": "integer",
+        "description": "Lookback window in days when searching pending approvals",
+        "default": 90
+      }
+    },
+    "required": ["identifier"]
+  }
+
+tool_catalog_name: "smartcmp_preapproval_get_catalog_detail"
+tool_catalog_description: "Fetch SmartCMP catalog/card detail by catalog ID and return pre-approval instruction metadata."
+tool_catalog_entrypoint: "../request/scripts/adapter.py:get_request_catalog"
+tool_catalog_groups:
+  - cmp
+  - catalog
+tool_catalog_capability_class: "provider:smartcmp"
+tool_catalog_priority: 123
+tool_catalog_result_mode: "llm"
+tool_catalog_cli_positional:
+  - catalog_id
+tool_catalog_parameters: |
+  {
+    "type": "object",
+    "properties": {
+      "catalog_id": {
+        "type": "string",
+        "description": "SmartCMP catalog/card ID to inspect."
+      }
+    },
+    "required": ["catalog_id"]
+  }
+
+tool_analyze_name: "smartcmp_preapproval_analyze_request"
+tool_analyze_description: "Run the shared read-only SmartCMP pre-approval analysis for one pending Request ID. This is the common evaluator used before the preapproval agent decides whether to call a mutating approval action."
+tool_analyze_entrypoint: "../approval/scripts/adapter.py:analyze_request"
+tool_analyze_groups:
+  - cmp
+  - approval
+tool_analyze_capability_class: "provider:smartcmp"
+tool_analyze_priority: 123
+tool_analyze_result_mode: "llm"
+tool_analyze_cli_positional:
+  - identifier
+tool_analyze_parameters: |
+  {
+    "type": "object",
+    "properties": {
+      "identifier": {
+        "type": "string",
+        "description": "SmartCMP Request ID to analyze before any preapproval decision."
+      },
+      "days": {
+        "type": "integer",
+        "description": "Lookback window in days when searching pending approvals",
+        "default": 90
+      }
+    },
+    "required": ["identifier"]
+  }
+
+tool_approve_name: "smartcmp_preapproval_approve"
+tool_approve_description: "Approve one or more pending SmartCMP Request IDs for the preapproval agent. Use the exact opaque user-facing IDs returned by the pending-approval list; the shared approval script resolves them to currentActivity.id internally."
+tool_approve_entrypoint: "../approval/scripts/adapter.py:approve"
+tool_approve_groups:
+  - cmp
+  - approval
+  - mutation
+tool_approve_capability_class: "provider:smartcmp"
+tool_approve_priority: 124
+tool_approve_result_mode: "llm"
+tool_approve_cli_positional:
+  - ids
+tool_approve_parameters: |
+  {
+    "type": "object",
+    "properties": {
+      "ids": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "array", "items": {"type": "string"}}
+        ],
+        "description": "One exact opaque SmartCMP Request ID, or an array of exact IDs for a batch. String contents are never split on whitespace or punctuation."
+      },
+      "reason": {
+        "type": "string",
+        "description": "Approval reason to record in SmartCMP."
+      }
+    },
+    "required": ["ids"]
+  }
+
+tool_reject_name: "smartcmp_preapproval_reject"
+tool_reject_description: "Reject one or more pending SmartCMP Request IDs for the preapproval agent. Use the exact opaque user-facing IDs returned by the pending-approval list; the shared rejection script resolves them to currentActivity.id internally."
+tool_reject_entrypoint: "../approval/scripts/adapter.py:reject"
+tool_reject_groups:
+  - cmp
+  - approval
+  - mutation
+tool_reject_capability_class: "provider:smartcmp"
+tool_reject_priority: 126
+tool_reject_result_mode: "llm"
+tool_reject_cli_positional:
+  - ids
+tool_reject_parameters: |
+  {
+    "type": "object",
+    "properties": {
+      "ids": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "array", "items": {"type": "string"}}
+        ],
+        "description": "One exact opaque SmartCMP Request ID, or an array of exact IDs for a batch. String contents are never split on whitespace or punctuation."
+      },
+      "reason": {
+        "type": "string",
+        "description": "Rejection reason to record in SmartCMP."
+      }
+    },
+    "required": ["ids"]
+  }
+
+# === LLM Context Fields ===
+triggers:
+  - webhook approval
+  - auto approve
+  - preapproval review
+  - agent approver
+
+use_when:
+  - Webhook payload targets approval pre-review
+  - Automated approval decision is required for a service request
+  - agent_identity is agent-approver
+
+avoid_when:
+  - User manually wants to approve/reject (use approval skill)
+  - User wants to query approval status (use approval skill)
+  - User wants to submit a new request (use request skill)
+
+examples:
+  - "Process approval webhook for request #12345"
+  - "Run preapproval agent on pending item"
+
+related:
+  - approval
+  - request
+---
+
+# Preapproval Agent
+
+Autonomous backend agent for approval pre-review. **Not a human confirmation flow.**
+
+## Purpose
+
+When triggered by a webhook:
+1. Fetch and analyze approval request details
+2. Evaluate request reasonableness with the shared pre-approval analysis contract
+3. Execute approve/reject via existing approval skills
+4. Return structured decision summary
+
+## Trigger Conditions
+
+This skill activates when:
+- Webhook payload targets approval pre-review
+- `agent_identity` is `agent-approver`
+- Valid `request_id` is provided
+
+## Robot Admin Execution
+
+For webhook-driven backend execution, AtlasClaw must select an explicit
+SmartCMP provider instance and robot/admin credential in the Tool Context. If
+that instance is not configured, execution must fail closed rather than
+falling back to `prod` or another instance.
+
+The robot provider instance should use a SmartCMP `cmp_tk_*` provider token
+when available. SmartCMP Provider sends those tokens as
+`Authorization: Bearer <token>` and keeps non-`cmp_tk_*` session tokens on the
+existing `CloudChef-Authenticate` header.
+
+Treat the webhook user as the AtlasClaw trigger identity, not as a CMP actor.
+Approval execution uses `smartcmp_preapproval_approve` and
+`smartcmp_preapproval_reject`; SmartCMP Provider resolves the selected robot
+credential and SmartCMP actor.
+
+Use this mode only for robot profiles whose `allowed_skills` include `smartcmp:preapproval-agent`. The same SmartCMP robot profile may also allow `smartcmp:request-decomposition-agent` when the same robot/admin account is approved for both workflows.
+
+## Inputs
+
+| Input | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider_instance` | string | Yes | CMP provider instance name (e.g., `cmp-prod`) |
+| `robot_profile` | string | For webhook robot mode | Robot profile configured on the selected provider instance |
+| `agent_identity` | string | Yes | Must be `agent-approver` |
+| `request_id` | string | Yes | Exact opaque SmartCMP Request ID returned by the pending-approval list |
+| `trigger_source` | string | No | Source label (e.g., `cmp-webhook`) |
+| `policy_mode` | string | No | Policy preset (default: `balanced`) |
+
+**Validation Rules:**
+- If `request_id` is missing → **Stop immediately**
+- If `request_id` cannot resolve to a pending approval activity → **Fail closed**
+- If `agent_identity` ≠ `agent-approver` → **Stop immediately**
+
+## Orchestrated Skills
+
+This agent does NOT access the platform directly. It orchestrates:
+
+| Skill | Purpose |
+|-------|---------|
+| `smartcmp_preapproval_get_request_detail` | Fetch pending approval details |
+| `smartcmp_preapproval_get_catalog_detail` | Fetch the service catalog/card Markdown by `catalogId` |
+| `smartcmp_preapproval_analyze_request` | Run the shared read-only pre-approval evaluator |
+| `smartcmp_preapproval_approve` | Execute approval with reason |
+| `smartcmp_preapproval_reject` | Execute rejection with reason |
+
+## Workflow
+
+```
+1. Validate Inputs
+   ├── Check provider_instance, agent_identity
+   └── Verify request_id exists
+         ↓
+2. Fetch Approval Context
+   └── smartcmp_preapproval_get_request_detail → Verify request_id
+         ↓
+3. Build Review Summary
+   ├── Service/request name
+   ├── Requester notes
+   ├── Full parameters
+   ├── Cost estimate
+   └── Approval history
+         ↓
+4. Evaluate Against Shared Analysis
+   └── smartcmp_preapproval_analyze_request → apply catalog policy and default rubric
+         ↓
+5. Choose Outcome
+   ├── approve
+   ├── reject_with_guidance
+   └── manual_review_required
+         ↓
+6. Execute Decision
+   ├── approve → smartcmp_preapproval_approve <request_id> --reason "<comment>"
+   ├── reject  → smartcmp_preapproval_reject <request_id> --reason "<comment>"
+   └── manual  → stop without mutating SmartCMP and return manual-review guidance
+         ↓
+7. Return Structured Result
+```
+
+## Shared Analysis Contract
+
+Use `smartcmp_preapproval_analyze_request` as the common evaluator before any automated decision. The same script powers user-facing read-only analysis, so approval reasoning does not drift between the manual UI flow and the backend preapproval agent.
+
+The analysis result is advisory. This agent is the only component in this workflow that may subsequently call `smartcmp_preapproval_approve` or `smartcmp_preapproval_reject`, and it must do so only after validating the analysis output and request context.
+
+## Catalog Policy Override
+
+For every pending approval, fetch the service catalog/card by the `catalogId` returned from approval metadata. If `catalogId` is missing, fail closed and do not approve.
+
+If the catalog Markdown contains `# Pre Approval Instructions`, that section is the authoritative approval policy for this request. Also accept `# Preapproval Instructions` and `# Pre-Approval Instructions` as heading variants.
+
+Only use the built-in Decision Rubric when the catalog/card was fetched successfully and no pre-approval section exists.
+
+If the catalog/card cannot be fetched, fail closed and do not approve. If catalog pre-approval instructions exist but cannot be deterministically evaluated by the shared analyzer, require manual review instead of speculative approval.
+
+## Decision Rubric
+
+### Approve When (most satisfied):
+
+| Factor | Criteria |
+|--------|----------|
+| **Business Purpose** | Requester explains what the resource is for |
+| **Resource Fit** | Size, environment, options proportional to stated use |
+| **Configuration** | Parameters don't conflict, technically plausible |
+| **Least-Necessary** | No excessive CPU, memory, storage without justification |
+| **Environment** | Production requests have stronger rationale |
+| **Cost** | Proportionate to described scenario |
+| **Actionable Notes** | Description concrete enough for approval |
+
+### Reject When (any true):
+
+- No meaningful business justification
+- Resources obviously oversized for stated need
+- Production resources for vague/low-risk scenarios
+- Request incomplete, contradictory, or copy-pasted
+- Unusual/expensive resources without explanation
+- Material risk with insufficient data
+
+## Decision Style
+
+> Be strict, concise, and auditable.
+
+- Do NOT invent facts missing from request
+- Do NOT ask requester follow-up questions
+- Prefer rejection with guidance over speculative approval
+- Explain what would make request approvable
+
+## Comment Templates
+
+**Approval example:**
+```
+Approved by agent pre-review. Business purpose clear, resource specs reasonable.
+```
+
+**Rejection example:**
+```
+Rejected by agent pre-review. Missing business justification, resource specs, and target environment. Please resubmit with details.
+```
+
+## Output Contract
+
+```json
+{
+  "decision": "approve",
+  "confidence": "high",
+  "reasoning": [
+    "Business purpose is explicit.",
+    "Requested capacity proportional to described workload."
+  ],
+  "improvement_suggestions": [],
+  "provider_action": {
+    "tool": "smartcmp_preapproval_approve",
+    "success": true
+  }
+}
+```
+
+For rejections, include `improvement_suggestions`.
+
+## Failure Handling
+
+| Scenario | Action |
+|----------|--------|
+| Detail retrieval fails | Return failure, do NOT approve |
+| Approval execution fails | Return provider error as-is |
+| Rejection execution fails | Return provider error as-is |
+| Ambiguous/expensive/high-risk | Return manual-review guidance without mutating SmartCMP |
+
+## References
+
+- [review-guidelines.md](references/review-guidelines.md) — Detailed review criteria

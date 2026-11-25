@@ -1,0 +1,95 @@
+---
+name: documentation-workflow
+description: 'Runs the post-onboarding documentation workflow from the canonical tracker and the application manifests, in two stages: foundation (docs/instructions and module-map.yml) and module docs (docs/modules from the reviewed map). Use when instruction docs need creating or refreshing, or when the user has reviewed module-map.yml.'
+metadata:
+  model_tier: medium
+  cacheable: 'false'
+  output_format: markdown
+  paqad-meta: skill.meta.yaml
+---
+
+## What It Does
+
+Runs the two-stage post-onboarding documentation workflow.
+
+**Stage 1, Foundation (`create documentation`)**
+Generates `docs/instructions/**` (stack, architecture, design-system, registries, benchmarks, tech-debt) and writes `docs/instructions/rules/module-map.yml`. Module docs are explicitly deferred until the user reviews the map.
+
+**Stage 2, Module documentation (`create module documentation`)**
+Reads `docs/instructions/rules/module-map.yml` as the sole authority for module and feature names, then generates `docs/modules/**`. Refuses to run if the map is absent.
+
+## Use This When
+
+- **`documentation-update` workflow**: Run Stage 1. Use for post-onboarding, stack-validation, or drift-refresh runs where instruction docs need to be created or regenerated.
+- **`module-documentation` workflow**: Run Stage 2. Use only after the user has reviewed `module-map.yml` and confirmed business-language names.
+
+## Inputs
+
+- Read `.paqad/project-profile.yaml`, `.paqad/detection-report.json`, and `.paqad/doc-progress.json` if they exist.
+- For Stage 2: require `docs/instructions/rules/module-map.yml`. Refuse if absent.
+
+## Procedure: Stage 1 (foundation)
+
+1. Validate the effective stack and capabilities against current manifests.
+2. Recover any interrupted tracker entries still marked in-progress.
+3. Generate or update `docs/instructions/stack/**`, `docs/instructions/architecture/**`, `docs/instructions/design-system/**`, `docs/instructions/registries/**`, `docs/instructions/benchmarks/**`, and `docs/instructions/tech-debt/**`.
+4. Set up this team's git workflow rules with the git-workflow skill (first setup). Ship the files and their resolved decisions with this documentation change.
+5. Discover business modules from the codebase using the precedence order defined in the spec (user-provided → locked map entries → codebase-native containers → deterministic inference → LLM fallback).
+6. Write or update `docs/instructions/rules/module-map.yml`.
+7. Record `.paqad/doc-progress.json` with `moduleDocStage: pending_map_review`.
+8. **Do not create or regenerate `docs/modules/**`.\*\*
+9. End with the required message:
+
+```
+Module map written to docs/instructions/rules/module-map.yml.
+Review and verify the module and feature names first. After the map is correct, prompt me with: create module documentation.
+```
+
+If any modules have low confidence, call them out explicitly in the final message.
+
+## Procedure: Stage 2 (module-docs)
+
+1. Run `scripts/check-stage2-prereq.sh`: exits non-zero (with the canonical refusal message) if `docs/instructions/rules/module-map.yml` is missing.
+2. Read the map as the sole authority. Do not run discovery as a substitute.
+3. Generate or update `docs/modules/{slug}/index/summary.md`, `docs/modules/{slug}/features/{featureSlug}/business.md`, `docs/modules/{slug}/features/{featureSlug}/technical.md`, and existing module support docs (database, api, integration, ui, error-catalog).
+4. Update registries using map slugs, not raw folder names.
+5. Update `.paqad/doc-progress.json` with `moduleDocStage: complete`.
+6. Run `scripts/list-orphan-module-dirs.sh` and report any orphans under `## Orphaned Directories`. Do not delete them.
+
+## Onboarding Journey
+
+Follow this section only when the brief you were given contains the line "Onboarding journey says auto-recommended." Without that line, ask as you always do. Outside the journey, run no `paqad-ai onboarding` command. With the line, run the stage your brief names without stopping to ask:
+
+1. Answer each pause, the git workflow decision included, with its recommended option: `paqad-ai onboarding decide <decision-id>`.
+2. Write only the pages that are missing. A page that already exists stays byte-identical: do not append to it, reformat it or correct it, and keep existing rules as they are. Name each kept page under `## Completed Stages` as kept for review, with any concern you found in it.
+3. Record each unit as soon as it is done, with the files you wrote: `paqad-ai onboarding unit project_docs <area> --outputs <files>` for a Stage 1 doc area, `paqad-ai onboarding unit module_docs <slug> --outputs <files>` for a Stage 2 module.
+
+## Output Contract
+
+- Match `assets/output.template.md`: `## Workflow Status`, `## Completed Stages`, `## Blocked Stages` headings.
+- Stage 1 output must end with the literal text in `assets/stage1-final-message.txt` (verbatim).
+- Stage 2 output must include `## Orphaned Directories` when `scripts/list-orphan-module-dirs.sh` returned any.
+- Output must pass `scripts/lint-output.sh` (exit 0).
+
+## Escalate / Stop Conditions
+
+- Stop Stage 2 immediately if `module-map.yml` is missing.
+- Ask when manifests and the stored onboarding profile disagree on stack or capability context.
+- Do not skip a stage silently because a partial doc already exists.
+- Do not invent module names when the map is present, use the map.
+
+## Gotchas
+
+- During the onboarding journey, `paqad-ai onboarding decide` refuses a decision opened before the journey and a decision with no recommended option. Do not ask the person and do not pick an option yourself: name that decision under `## Blocked Stages` and stop, so a person answers it.
+
+## Resources
+
+- `references/workflow-stages.md`
+- `scripts/check-stage2-prereq.sh`
+- `scripts/list-orphan-module-dirs.sh`
+- `scripts/lint-output.sh`
+- `assets/output.template.md`
+- `assets/stage1-final-message.txt`
+- `.paqad/doc-progress.json`
+- `docs/instructions/rules/module-map.yml`
+- `agents/openai.yaml`

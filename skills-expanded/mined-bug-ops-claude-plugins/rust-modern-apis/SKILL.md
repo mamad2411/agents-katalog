@@ -1,0 +1,169 @@
+---
+name: rust-modern-apis
+description: Reference for stable Rust APIs added in versions 1.89 through 1.100 (August 2025 - November 2026). Use whenever writing, reviewing, or refactoring Rust code when MSRV allows, to replace patterns that were verbose before newer APIs existed.
+when_to_use: Modernizing Rust code, upgrading MSRV, "the latest Rust features", "can this be simpler in modern Rust?", or seeing manual UTF-8 truncation, path extension manipulation, advisory file locking via external crates, ignored `retain` removal results, `try_into().unwrap()` for fixed arrays, `compare_exchange` loops for atomic update, `cfg_if` crate usage, matching `0`/`1` to `bool`, `assert!(matches!(...))` in tests, hand-rolled bit-manipulation idioms, chained `strip_prefix`/`strip_suffix`, `.map(f).unwrap_or_default()`, the `itoa` crate, manual UTF-16LE/BE decoding, the `filetime` crate, `from_utf8_lossy(&v).into_owned()`, `Box::into_raw` + `NonNull::new_unchecked` pairs, `strip_prefix(..).unwrap_or(s)`, `Result<T, Infallible>`, the `scopeguard` or `allocator-api2` crates, or `(0..n).map(f).collect::<Vec<_>>()`.
+---
+
+# Modern Rust APIs (1.89 – 1.100)
+
+This skill is a lookup table for stable Rust APIs added after 1.88. Use it when writing or reviewing Rust code — replace older verbose patterns with newer concise ones where the project's MSRV allows.
+
+## How to use this skill
+
+1. **Check the project's MSRV first.** Look at `Cargo.toml` for `rust-version = "X.Y"`. Only suggest APIs available at or below the MSRV. If MSRV is lower than an API's version, either skip the suggestion or note that "raising MSRV to X.Y unlocks this."
+
+2. **Scan the code for trigger patterns** (see section below). Each trigger maps to a newer API. When you see one, suggest the replacement with a brief before/after.
+
+3. **For detailed API info**, read the matching reference file in `references/`. Files are organized by domain, not by version.
+
+4. **Don't over-apply.** Some patterns are fine as-is. Only suggest a change when the new API is clearly better (shorter, safer, or fixes a subtle bug).
+
+## Trigger patterns — fastest lookup
+
+Scan for these code shapes first. Each points to a concrete API that replaces it.
+
+| Code pattern spotted | Modern replacement | Version | Details |
+|----------------------|-------------------|---------|---------|
+| `Duration::from_secs(60 * N)` or ad-hoc minute math | `Duration::from_mins(N)` | 1.91 | [time.md](references/time.md) |
+| `Duration::from_secs(60 * 60 * N)` | `Duration::from_hours(N)` | 1.91 | [time.md](references/time.md) |
+| `path.with_extension("X.tmp")` (trying to ADD suffix) | `path.with_added_extension("tmp")` | 1.91 | [paths.md](references/paths.md) |
+| Manual `file_stem` + `format!` to compose meta paths | `path.with_added_extension(...)` | 1.91 | [paths.md](references/paths.md) |
+| `file_stem()` returning wrong thing for `.tar.gz` | `Path::file_prefix()` | 1.91 | [paths.md](references/paths.md) |
+| `path.to_string_lossy() == "literal"` | `path == Path::new("literal")` or `path == "literal"` | 1.91 | [paths.md](references/paths.md) |
+| `Ipv4Addr::new(a, b, c, d)` from `[u8; 4]` | `Ipv4Addr::from_octets(bytes)` | 1.91 | [net.md](references/net.md) |
+| `Ipv6Addr::new(a, b, c, d, e, f, g, h)` from segments | `Ipv6Addr::from_segments(segs)` | 1.91 | [net.md](references/net.md) |
+| Manual `is_char_boundary` loop for UTF-8 truncation | `str::floor_char_boundary(n)` / `ceil_char_boundary(n)` | 1.91 | [strings.md](references/strings.md) |
+| `checked_add(x).unwrap()` where overflow = bug | `strict_add(x)` | 1.91 | [arithmetic.md](references/arithmetic.md) |
+| `iter.into_iter().chain(other)` as free pattern | `std::iter::chain(iter, other)` | 1.91 | [iterators.md](references/iterators.md) |
+| `[val; N]` requiring `Copy` for non-Copy types | `core::array::repeat(val)` | 1.91 | [iterators.md](references/iterators.md) |
+| `retain` where you need to see/count removed items | `extract_if(..)` (Vec since 1.87, BTree since 1.91) | 1.87+ | [collections.md](references/collections.md) |
+| `fs2::FileExt::try_lock_exclusive` or custom lock | `File::try_lock()` / `File::lock()` | 1.89 | [io-files.md](references/io-files.md) |
+| External `pid-lock`/`fd-lock` crate | Built-in `File::lock` | 1.89 | [io-files.md](references/io-files.md) |
+| `Result<Result<T, E>, E>` manual flatten | `Result::flatten()` | 1.89 | [results.md](references/results.md) |
+| `slice.try_into::<[T; N]>().unwrap()` | `slice.as_array::<N>()` / `as_mut_array::<N>()` | 1.93 | [slices.md](references/slices.md) |
+| `slice.windows(N)` with const N giving `&[T]` | `slice.array_windows::<N>()` giving `&[T; N]` | 1.94 | [slices.md](references/slices.md) |
+| `write_copy_of_slice` / `write_clone_of_slice` on `MaybeUninit` | Stabilized `<[MaybeUninit<T>]>::write_copy_of_slice` | 1.93 | [maybe-uninit.md](references/maybe-uninit.md) |
+| One-off `impl Display` for temporary formatter | `std::fmt::from_fn(|f| ...)` | 1.93 | [formatting.md](references/formatting.md) |
+| `pop()` then `if !cond { push_back }` | `Vec::pop_if(cond)` (1.86); `VecDeque::pop_front_if(cond)` / `pop_back_if(cond)` (1.93) | 1.86 (Vec), 1.93 (VecDeque) | [collections.md](references/collections.md) |
+| Checking `LazyLock` was initialized without blocking | `LazyLock::get()` / `LazyCell::get()` | 1.94 | [sync.md](references/sync.md) |
+| Mutating `LazyLock` after init with `&mut` access | `LazyLock::force_mut()` / `get_mut()` | 1.94 | [sync.md](references/sync.md) |
+| `peekable.peek().filter(...).map(...)` with consume | `peekable.next_if_map(|v| ...)` | 1.94 | [iterators.md](references/iterators.md) |
+| `duration.as_nanos() > u64::MAX` concerns | `Duration::from_nanos_u128(n)` | 1.93 | [time.md](references/time.md) |
+| Magic number `4` for UTF-8 byte length | `char::MAX_LEN_UTF8` | 1.93 | [strings.md](references/strings.md) |
+| Magic number `2` for UTF-16 unit length | `char::MAX_LEN_UTF16` | 1.93 | [strings.md](references/strings.md) |
+| `BTreeMap`/`BTreeSet` full scan to evict | `BTreeMap::extract_if(..)` / `BTreeSet::extract_if(..)` | 1.91 | [collections.md](references/collections.md) |
+| `Default` not implemented for `Pin<Box<T>>` etc | Now works for `Pin<Box<T>>`, `Pin<Rc<T>>`, `Pin<Arc<T>>` | 1.91 | [sync.md](references/sync.md) |
+| `Box::new(MaybeUninit::zeroed().assume_init())` (builds the value on the stack first) | `Box::<T>::new_zeroed()` then `assume_init()` (allocates zeroed in place; the `unsafe` remains at `assume_init`) | 1.92 | [maybe-uninit.md](references/maybe-uninit.md) |
+| `compare_exchange_weak` loop for atomic CAS-update pattern | `AtomicPtr/Bool/Isize/Usize::update()` / `try_update()` | 1.95 | [sync.md](references/sync.md) |
+| Matching integer `0`/`1` to produce `bool`, or `n != 0` for strict-validation | `bool::try_from(n)` (returns `Err` for any value ≠ 0/1) | 1.95 | [arithmetic.md](references/arithmetic.md) |
+| `cfg_if::cfg_if! { ... }` from external crate | `core::cfg_select! { ... }` (std macro) | 1.95 | [changelog.md](references/changelog.md) |
+| Manual `#[cold]` helper + `core::hint::unreachable_unchecked` to mark cold branches | `core::hint::cold_path()` | 1.95 | [changelog.md](references/changelog.md) |
+| `match` arm with `if let Some(x) = expr.foo() && cond(x)` simulated via nested matches | `match { Pattern if let Some(x) = ... => ... }` (`if let` guards) | 1.95 | [changelog.md](references/changelog.md) |
+| `unsafe { &*ptr }` to dereference a pointer known non-null | `unsafe { ptr.as_ref_unchecked() }` (and `as_mut_unchecked`) | 1.95 | [changelog.md](references/changelog.md) |
+| `assert!(matches!(x, Pat))` in tests, or `match x { Pat => {} _ => panic!() }` test scaffolding | `assert_matches!(x, Pat)` (prints the value's `Debug` on failure) | 1.96 | [assertions.md](references/assertions.md) |
+| `LazyLock::new(\|\| value)` / `LazyCell::new(\|\| value)` where `value` is already computed | `LazyLock::from(value)` / `LazyCell::from(value)` | 1.96 | [sync.md](references/sync.md) |
+| `std::ops::Range` field blocking `#[derive(Copy)]` on a struct | `core::range::Range` (is `Copy`; `IntoIterator` not `Iterator`) | 1.96 | [iterators.md](references/iterators.md) |
+| `1 << (Self::BITS - 1 - x.leading_zeros())` to isolate the highest set bit | `x.isolate_highest_one()` | 1.97 | [arithmetic.md](references/arithmetic.md) |
+| `x & x.wrapping_neg()` to isolate the lowest set bit | `x.isolate_lowest_one()` | 1.97 | [arithmetic.md](references/arithmetic.md) |
+| `Self::BITS - x.leading_zeros()` for value bit width | `x.bit_width()` | 1.97 | [arithmetic.md](references/arithmetic.md) |
+| Manual math for the index of the highest/lowest set bit | `x.highest_one()` / `x.lowest_one()` | 1.97 | [arithmetic.md](references/arithmetic.md) |
+| `s.strip_prefix(p).and_then(\|s\| s.strip_suffix(q))` chain | `s.strip_circumfix(p, q)` (also on slices) | 1.98 | [strings.md](references/strings.md) |
+| `haystack.find(part)` to recover the index of a `split()` result | `str::substr_range` / `slice::subslice_range` (pointer-derived, no search) | 1.98 | [strings.md](references/strings.md) |
+| `chunks_exact(2).map(u16::from_le_bytes)` + `String::from_utf16` | `String::from_utf16le` / `from_utf16be` (+ `_lossy`) | 1.98 | [strings.md](references/strings.md) |
+| `itoa` crate, or `n.to_string()` just to get digits into a buffer | `n.format_into(&mut NumBuffer::new())` | 1.98 | [formatting.md](references/formatting.md) |
+| `.map(f).unwrap_or_default()` on `Option`/`Result` | `.map_or_default(f)` | 1.98 | [results.md](references/results.md) |
+| `if cond { Ok(()) } else { Err(e) }` or `cond.then_some(()).ok_or(e)` | `cond.ok_or(e)` / `cond.ok_or_else(f)` | 1.98 | [results.md](references/results.md) |
+| `unsafe` transmute between `&mut u32` and `&AtomicU32` | `Atomic*::from_mut` / `from_mut_slice` / `get_mut_slice` | 1.98 | [sync.md](references/sync.md) |
+| `&mut *boxed as *mut T` raw-pointer extraction from `Box` | `Box::as_mut_ptr(&mut b)` / `Box::as_ptr(&b)` (no intermediate reference) | 1.98 | [sync.md](references/sync.md) |
+| `path.as_os_str().is_empty()` | `path.is_empty()` | 1.98 | [paths.md](references/paths.md) |
+| `pb.into_os_string().into_string().map_err(PathBuf::from)` | `pb.into_string()` | 1.98 | [paths.md](references/paths.md) |
+| Fast-math reassociation hacks (nightly `fadd_fast`, manual reordering) | `f32/f64::algebraic_add/sub/mul/div/rem` | 1.98 | [arithmetic.md](references/arithmetic.md) |
+| `u32::from_str_radix(s, 16)` then `NonZero::new(..).ok_or(..)` | `NonZero::from_str_radix(s, 16)` | 1.98 | [arithmetic.md](references/arithmetic.md) |
+| `String::from_utf8_lossy(&vec).into_owned()` (always copies) | `String::from_utf8_lossy_owned(vec)` (reuses the buffer) | 1.99 | [strings.md](references/strings.md) |
+| `from_utf8(v)` + separate lossy fallback re-reading the bytes | `String::from_utf8(v).unwrap_or_else(\|e\| e.into_utf8_lossy())` | 1.99 | [strings.md](references/strings.md) |
+| `filetime` crate, or opening a `File` just to `set_times` | `std::fs::set_times(path, times)` / `set_times_nofollow` | 1.99 | [io-files.md](references/io-files.md) |
+| `Box::into_raw(b)` + `NonNull::new_unchecked(p)` pair | `Box::into_non_null(b)` / `Box::from_non_null(p)` | 1.99 | [sync.md](references/sync.md) |
+| `Vec::into_raw_parts` + `NonNull::new_unchecked` for FFI handles | `Vec::into_parts()` / `Vec::from_parts(..)` (NonNull-based) | 1.99 | [collections.md](references/collections.md) |
+| `boxed_array.into_vec().into_iter()` or `.iter().cloned()` to consume `Box<[T; N]>` | `boxed_array.into_iter()` (`IntoIterator` for `Box<[T; N]>`) | 1.99 | [collections.md](references/collections.md) |
+| Reverse `retain` loop with `swap_remove_back` / index math on `VecDeque` tail | `VecDeque::retain_back(\|x\| ..)` | 1.99 | [collections.md](references/collections.md) |
+| `s.strip_prefix(p).unwrap_or(s)` / `strip_suffix(..).unwrap_or(s)`, or `trim_start_matches(p)` meant to remove once | `s.trim_prefix(p)` / `s.trim_suffix(p)` (str and slices) | 1.100 | [strings.md](references/strings.md) |
+| `path.strip_prefix(base).unwrap_or(path)` | `path.trim_prefix(base)` | 1.100 | [paths.md](references/paths.md) |
+| `Result<T, Infallible>`, `type Error = Infallible`, empty `enum Never {}` | `Result<T, !>` / `type Error = !` (never type; `Infallible` is now an alias) | 1.100 | [results.md](references/results.md) |
+| `scopeguard` crate, or a one-off `struct Guard` + `impl Drop` for cleanup/rollback | `core::mem::DropGuard::new(value, \|v\| ..)` + `DropGuard::dismiss` | 1.100 | [results.md](references/results.md) |
+| `(0..n).map(\|i\| f(i)).collect::<Vec<_>>()` | `Vec::from_fn(n, f)` | 1.100 | [collections.md](references/collections.md) |
+| `a.b.flag = !a.b.flag` (place expression repeated) | `a.b.flag.toggle()` | 1.100 | [arithmetic.md](references/arithmetic.md) |
+| `Box::new(f(*boxed))` re-allocating on every transform | `Box::map(boxed, f)` (also `Rc::map` / `Arc::map`) | 1.100 | [sync.md](references/sync.md) |
+| `let v = *boxed;` followed by `Box::new(next)` of the same type | `let (v, slot) = Box::take(boxed); Box::write(slot, next)` | 1.100 | [sync.md](references/sync.md) |
+| `allocator-api2` crate, arena-specific `Vec`/`Box` types | `std::alloc::Allocator` + `Box::new_in` / `Vec::new_in` | 1.100 | [allocators.md](references/allocators.md) |
+| `MaybeUninit::uninit().assume_init()` / `mem::zeroed()` to produce a ZST | `unsafe { mem::conjure_zst::<T>() }` | 1.100 | [maybe-uninit.md](references/maybe-uninit.md) |
+| `&*cell.get()` / `&mut *cell.get()` / `ptr::replace(cell.get(), v)` on `UnsafeCell` | `cell.as_ref_unchecked()` / `as_mut_unchecked()` / `replace(v)` | 1.100 | [maybe-uninit.md](references/maybe-uninit.md) |
+| `cargo-machete` / `cargo-udeps` in CI only for unused `[dependencies]` | built-in `cargo::unused_dependencies` lint (`[lints.cargo]`) | 1.100 | [compiler-cargo.md](references/compiler-cargo.md) |
+
+## Version → MSRV gate
+
+When suggesting an API, check MSRV first. Quick reference:
+
+- **MSRV 1.87+**: `Vec::extract_if`, `LinkedList::extract_if`
+- **MSRV 1.88+**: `HashMap::extract_if`, `HashSet::extract_if`
+- **MSRV 1.89+**: `File::lock` family, `Result::flatten`, `NonNull::from_ref`/`from_mut`
+- **MSRV 1.90+**: unsigned `checked_sub_signed`, `CStr` cross-comparisons, `lld` default linker on `x86_64-unknown-linux-gnu`
+- **MSRV 1.91+**: `Duration::from_mins`/`from_hours`, `Path` API expansion, `strict_*` arithmetic, `BTreeMap/Set::extract_if`, `ceil_char_boundary`, `iter::chain`, `array::repeat`, `Ipv*::from_octets`
+- **MSRV 1.92+**: `RwLockWriteGuard::downgrade` (std only), `Box/Arc/Rc::new_zeroed`, `NonZero::div_ceil`
+- **MSRV 1.93+**: `slice::as_array`, `fmt::from_fn`, `VecDeque::pop_front_if`/`pop_back_if`, `String::into_raw_parts`, `Vec::into_raw_parts`, `Duration::from_nanos_u128`, `char::MAX_LEN_UTF8`/`MAX_LEN_UTF16`, `MaybeUninit` slice API, `asm_cfg`
+- **MSRV 1.94+**: `slice::array_windows`, `LazyCell/Lock::get/get_mut/force_mut`, `Peekable::next_if_map`, `TryFrom<char> for usize`
+- **MSRV 1.95+**: `bool: TryFrom<{integer}>`, atomic `update`/`try_update` on `AtomicPtr/Bool/Isize/Usize`, `cfg_select!` macro, `core::hint::cold_path()`, `if let` guards on match arms, `core::range::RangeInclusive`/`RangeInclusiveIter`, `MaybeUninit<[T; N]>` array conversions (`From`/`AsRef`/`AsMut`), `Cell<[T; N]>::as_ref`, pointer `as_ref_unchecked`/`as_mut_unchecked`, const `fmt::from_fn` / `ControlFlow::is_break` / `is_continue`
+- **MSRV 1.96+**: `assert_matches!` / `debug_assert_matches!`, `From<T>` for `LazyCell<T>` / `LazyLock<T>` / `AssertUnwindSafe<T>`, `core::range::Range`/`RangeFrom`/`RangeToInclusive` (+ matching `*Iter`), `NonZero` range iteration
+- **MSRV 1.97+**: integer bit-manipulation methods `isolate_highest_one`/`isolate_lowest_one`/`highest_one`/`lowest_one`/`bit_width` (all integer types + `NonZero` equivalents, all `const fn`), `char::is_control` const
+- **MSRV 1.98+**: `str::substr_range`/`slice::subslice_range`, `strip_circumfix` (str + slices), `String::from_utf16le`/`from_utf16be` (+ `_lossy`), integer `format_into` + `core::fmt::NumBuffer`, float `algebraic_*` ops (const), `NonZero::from_str_radix` (const), `Option/Result::map_or_default`, `bool::ok_or`/`ok_or_else`, atomic `from_mut`/`get_mut_slice`/`from_mut_slice`, `Box::as_ptr`/`as_mut_ptr`, `PathBuf::into_string`, `Path::is_empty`
+- **MSRV 1.99+**: `String::from_utf8_lossy_owned`, `FromUtf8Error::into_utf8_lossy`, `fs::set_times`/`set_times_nofollow`, `Box::into_non_null`/`from_non_null`, `Vec::into_parts`/`from_parts`, `IntoIterator for Box<[T; N]>`, `VecDeque::retain_back`, `FusedIterator for StepBy`, `mem::size_of_val_raw`/`align_of_val_raw`, `Layout::for_value_raw`, `core::ffi::VaList` + C-variadic fn definitions
+- **MSRV 1.100+**: never type `!` in any type position (`Infallible` = `!`), `std::alloc::Allocator` + `Box::new_in` / `Vec::new_in` / `Vec::with_capacity_in` and the `*_in` / `*_with_allocator` raw-parts forms, `mem::DropGuard`, `mem::conjure_zst`, `UnsafeCell::replace`/`as_ref_unchecked`/`as_mut_unchecked`, `Box::take`, `Box::map`/`Rc::map`/`Arc::map`, `trim_prefix`/`trim_suffix` (str, slices) and `Path::trim_prefix`, `Vec::from_fn`, `bool::toggle`, `Default for Once`, `PartialEq<Cow<[U]>>` for `Vec`/`&[T]`, `extern "custom"`, Cargo `[lints.cargo]` + `min-publish-age`
+
+Full changelog by version lives in [references/changelog.md](references/changelog.md) if you need to explain a release to the user or find something not in the trigger table.
+
+## When a suggestion is NOT appropriate
+
+Don't push the replacement if:
+
+- **MSRV forbids it.** If `rust-version = "1.88"` and the API needs 1.91, either flag the MSRV gap or stay silent — don't produce code that won't compile.
+- **Unsafe rules forbid it.** If the project has `unsafe_code = "deny"` (check `Cargo.toml` `[workspace.lints]`), skip APIs that require `unsafe` blocks even if they'd be shorter — e.g., `Box::new_zeroed` returns `Box<MaybeUninit<T>>` and requires `unsafe { assume_init() }` afterward.
+- **The old pattern is load-bearing.** Sometimes `retain` with a side effect inside the closure is intentional for atomicity under a lock. Read the surrounding code before proposing `extract_if`.
+- **The types don't match.** `tokio::sync::RwLock` does not have `downgrade` — that's `std::sync::RwLock` only. Similarly, `parking_lot::RwLock` has its own upgrade/downgrade API, not the std one.
+- **The stable surface is narrower than the name suggests.** The 1.100 allocator API covers `Box` and `Vec` only — `Rc::new_in`, `Arc::new_in`, `String`, and map types in a custom allocator still need a polyfill crate. Check [allocators.md](references/allocators.md) before proposing a migration.
+- **The lenient form hides an error.** `trim_prefix` / `Path::trim_prefix` return the input unchanged when the prefix is absent. Where a missing prefix must be detected (path-traversal checks, protocol framing), `strip_prefix` + `?` is the correct code, not legacy.
+- **Context is a test or benchmark.** Low value to change test code for style alone unless the test is flaky because of the old pattern.
+
+## Migration mode: how to present changes
+
+When you find a replacement candidate in code, present it as a before/after diff with a one-line "why":
+
+```rust
+// Before: with_extension replaces the last suffix, so for `foo.jsonl` → `foo.tmp` — fragile for paths like `foo.jsonl.gz`
+let tmp = path.with_extension("tmp");
+
+// After (MSRV 1.91+): adds a suffix without replacing; works for any path
+let tmp = path.with_added_extension("tmp");
+```
+
+Don't produce walls of diffs for trivial cosmetic changes. Batch suggestions logically (all time/duration in one section, all path handling in another) if there are many.
+
+## Reference files
+
+Read these only when you need the details. Each file covers one domain across all versions:
+
+- [references/changelog.md](references/changelog.md) — full release notes by version (1.89-1.100) — use when the user asks about a specific release
+- [references/paths.md](references/paths.md) — `Path`/`PathBuf` API additions (1.91 mainly, `trim_prefix` in 1.100)
+- [references/strings.md](references/strings.md) — `str` and `char` additions
+- [references/time.md](references/time.md) — `Duration` additions
+- [references/arithmetic.md](references/arithmetic.md) — integer arithmetic (`strict_*`, `unchecked_*`, `carrying_*`, bit-manipulation like `isolate_highest_one`/`bit_width`, etc.)
+- [references/iterators.md](references/iterators.md) — iterator/chain/array helpers
+- [references/collections.md](references/collections.md) — Vec/VecDeque/BTree/HashMap additions
+- [references/slices.md](references/slices.md) — `[T]` and `[MaybeUninit<T>]` APIs
+- [references/io-files.md](references/io-files.md) — `File::lock`, pipe, seek additions
+- [references/sync.md](references/sync.md) — `LazyLock`, `RwLock`, atomics, `Pin<Box<T>>` Default, `Box::new_zeroed`, `Box::take`, `Box::map`/`Rc::map`/`Arc::map`
+- [references/allocators.md](references/allocators.md) — `Allocator` trait, `Box::new_in`/`Vec::new_in`, what is still unstable (1.100)
+- [references/net.md](references/net.md) — IP address constructors and network APIs
+- [references/formatting.md](references/formatting.md) — `fmt::from_fn`, debug formatting changes
+- [references/assertions.md](references/assertions.md) — `assert_matches!` / `debug_assert_matches!` test macros
+- [references/results.md](references/results.md) — `Result::flatten`, never type `!`, `DropGuard`, and error-handling additions
+- [references/maybe-uninit.md](references/maybe-uninit.md) — `MaybeUninit` slice operations, `conjure_zst`, `UnsafeCell` accessors
+- [references/compiler-cargo.md](references/compiler-cargo.md) — rustc/Cargo improvements (lld default, build-dir, Cargo lints, dependency cooldowns, etc.) that don't require code changes but affect builds

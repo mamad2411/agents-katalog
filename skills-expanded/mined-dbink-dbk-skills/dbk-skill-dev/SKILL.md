@@ -1,0 +1,107 @@
+---
+name: dbk-skill-dev
+description: Agent Skill 的全生命周期开发：从零创建新技能、把现有工作流沉淀为技能、修改或扩充已有技能、迭代改进技能行为与输出质量、修复不触发或误触发的技能、优化 description 触发准确率、评估与打包。当用户想创建、改动、迭代任何 skill，或反馈某个 skill 触发不准/效果不好时使用。不适用于只是调用或加载技能、不涉及创建与修改的任务。
+license: MIT
+compatibility: 需要网络访问 agentskills.io；触发实测示例脚本需 Python 3.10+（推荐 uv）并以 pi CLI 为例；校验可用 `uvx skills-ref`（也可本地安装）
+metadata:
+  author: DBinK
+  version: "0.2.0"
+---
+
+# Skill Dev
+
+Agent Skill 的全生命周期开发：创建、修改、迭代、评估、打包。Agent Skills 的格式规范**没有**写死在本文件里——而是实时从 agentskills.io 官方文档拉取，保证格式演进时规则始终是最新的。
+
+本文件是**工作流**。拉取的文档才是**唯一权威**的格式细节来源（frontmatter 字段、约束、目录约定、渐进式披露、eval schema、校验工具等）。
+
+> 规则优先级：**个人补充规则 > 在线规范（llms.txt 及其页面） > 本文件其余内容**
+
+## 个人补充规则（优先级最高）
+
+- **版本号更新**：`metadata.version` 使用 semver。首次引入设为 `0.1.0`；影响 agent 行为的内容变更（description、规则、compatibility 等）bump minor（如 `0.1.0` → `0.2.0`）；纯格式/无行为变化 bump patch（如 `0.1.0` → `0.1.1`）。是否 bump 由用户决定，不强制。
+- **`evals/trigger-queries.json` 是可选产物**：不要因为"在做技能开发"就自动创建它，也不要把创建它当成开发流程的必做项。目标仓库没有这套查询集时，不要主动补建。只在需要验证触发、或用户问到触发率时，提醒用户"可以建一套查询集来实测"。仓库里已有查询集时，才按第 5 步跑实测。
+
+## 核心原则：llms.txt 是唯一事实标准
+
+**https://agentskills.io/llms.txt 是本技能的唯一事实标准。** 它提供全部官方文档的活索引，所有格式规则都以它及其指向的页面为准。不要凭记忆或本文件里的示例写技能——永远先拉取 llms.txt 获取索引，再按需拉取对应页面。如果本文件内容与拉取的文档冲突，一律以拉取到的文档为准——个人补充规则除外。
+
+## 工作流
+
+### 1. 加载文档索引
+
+拉取 Agent Skills 全部文档的活索引：
+
+- `https://agentskills.io/llms.txt`
+
+它列出了所有可用页面。用它来确认**当前**的页面列表——不要假设下一步列出的页面名仍然正确。
+
+### 2. 拉取需要的页面
+
+根据任务拉取对应页面（具体 URL 以第 1 步的索引为准）：
+
+| 任务                       | 拉取                                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 任何创建 / 编辑 / 格式问题 | `specification.md` —— 格式规范：SKILL.md frontmatter、name/description 约束、目录结构、可选目录、渐进式披露、文件引用 |
+| 第一次做 / 最小示例        | `skill-creation/quickstart.md` —— 一个最小的可用技能                                                                  |
+| 设计技能内容               | `skill-creation/best-practices.md` —— 范围界定、控制力度、指令模式、gotchas、模板                                     |
+| 验证技能是否好用           | `skill-creation/evaluating-skills.md` —— 测试用例、evals/evals.json schema、baseline 运行、评分、迭代循环             |
+| 优化触发准确率             | `skill-creation/optimizing-descriptions.md` —— 触发评估查询、调优 `description`                                       |
+| 打包可执行代码             | `skill-creation/using-scripts.md` —— 如何设计和打包脚本                                                               |
+| 给 agent/客户端加支持      | `client-implementation/adding-skills-support.md` —— 仅当任务是关于客户端而非技能时                                    |
+
+任何涉及 SKILL.md 格式本身的任务都要拉 `specification.md`。新建技能时至少要拉 `specification.md` 和 `best-practices.md`；任务需要时再拉其他页面。
+
+### 3. 创建、编辑或迭代技能
+
+按拉取到的实时规范执行。以下是需要向拉取文档核实的要点（这些只是指引，不是权威规则——每一条都要复核）：
+
+- `SKILL.md` 包含 YAML frontmatter（`name` + `description` 必填）+ Markdown 正文。
+- `name` 符合文档规定的约束，包括必须与父目录名一致。
+- `description` 同时说明技能**做什么**和**何时用**——这是主要的触发机制。
+- 目录布局遵循文档约定（`scripts/`、`references/`、`assets/`）。
+- 指令采用渐进式披露：主 `SKILL.md` 保持精简，把细节放进按需读取的 reference 文件。
+
+编辑已有技能时：保留原 `name`，不改父目录名；除非路径只读，否则在原位置修改。
+
+### 4. 校验
+
+查看刚拉取的 `specification.md` 中当前的校验工具（例如 `skills-ref validate ./my-skill`），可用则运行——本机没装时用 `uvx skills-ref validate ./my-skill` 免安装直接跑。它会检查 frontmatter 是否合法、是否符合命名约定。如果没有校验工具，就对照规范手工复核 frontmatter 约束。
+
+### 5. 测试与迭代
+
+**迭代是常态而非收尾**：技能第一次写完往往不是最终形态，要在真实使用中持续打磨。
+
+- 用户反馈技能"没触发""误触发""效果不好"时，先定位问题类型：
+  - 该触发没触发 / 不该触发却触发 → 按 `optimizing-descriptions.md` 调 `description`（触发评估查询 + train/validation 循环）
+  - 触发了但输出质量差 → 按 `evaluating-skills.md` 的 eval 工作流：写 2-3 个真实测试提示词，带技能和不带技能（baseline）对比运行，评分并迭代
+- 每次用户纠正了技能的行为，把纠错沉淀回 SKILL.md 的注意事项或对应步骤，避免重复犯错。
+
+#### 触发率实测
+
+仓库里已有 `evals/trigger-queries.json` 时，用 `scripts/run_trigger_eval.py` 跑：
+
+```bash
+uv run scripts/run_trigger_eval.py <skill>/evals/trigger-queries.json <skill-name> --runs 1
+```
+
+`scripts/run_trigger_eval.py` 是一份可照抄的示例，以 pi 为例。脚本要求 Python 3.10+（`uv run` 会按脚本内的 PEP 723 元数据自动挑解释器，也可直接用任意 3.10+ 的 `python3`）。触发标志是"agent 真的读了技能正文"，换客户端要改的两处写在脚本开头的 docstring 里。
+
+几条实测纪律：
+
+- **卡住时先看心跳**：脚本每 5 秒往 stderr 打一行进度（完成数 + 正在跑的序号及已耗时），`--verbose` 每完成一次运行再打一行，结尾汇总每条查询耗时与整批总耗时；还定位不到就先用 `--only 2 --verbose` 跑小样本。
+- **先粗筛再确认**：`--runs 1` 只用来找可疑项。真实触发率落在 0.3–0.7 之间的查询，单次运行经常落成 0 或 1，只看单次结果会误判回归。要判定回归，就给新旧两版同口径各跑多次，或至少对翻转项补 `--runs 3`。
+- **客户端之间不可比**：同一技能在不同客户端或模型下的分数可能差一倍以上，前后对比必须固定同一个客户端。
+- **改完边界要复跑正例**：往"不适用"里补误触发场景，有时反而会吸引该场景命中。每次改 `description` 后正例和负例都要重跑，不能只看目标那几条。
+- **整批全 0 不等于没触发**：先看客户端自己的报错。实测有两条路径：客户端没把技能注入系统提示时，agent 手里没有技能——负例轻松通过、正例全军覆没且不报错；API 侧直接失败时（如 provider 返回 402 额度不足），模型完全没有输出，这类运行会被标成 `ERR` 不计入。已证伪的解释包括内存余量、并发数、客户端更新、输出捕获方式和临时目录。脚本自带预检（先跑查询集里第一条正例确认客户端能正常跑通），失败时退出码为 2，先把客户端修好再重跑。
+
+### 6. 打包与呈现
+
+- **本地安装产物**：如果用户想要可安装的归档产物，查看规范中当前的打包约定（例如 `.skill` 文件），按约定产出。
+- **GitHub 与 skills.sh 仓库分发**：上传至 GitHub 的技能仓库会同时在 GitHub 与 [skills.sh](https://www.skills.sh) 分发：
+  - **仓库页面分组（[`skills.sh.json`](https://www.skills.sh/docs/customize)）**：仅当仓库存在明显分级的嵌套分类文件夹（如 `skills/<分类>/<skill名>`）时，在仓库根目录配置 `skills.sh.json`（`$schema` 为 `https://skills.sh/schemas/skills.sh.schema.json`），通过 `groupings`（含 `title`、`description`、`skills`）映射目录分级与组内排序。已有 `skills.sh.json` 的仓库在新增、改名或删除技能时，同步更新其中的 `skills` 列表。
+  - **README 徽章（可选）**：可在仓库 README 顶部添加安装量徽章 `[![skills.sh](https://skills.sh/b/<owner>/<repo>)](https://skills.sh/<owner>/<repo>)`。
+
+## 范围护栏
+
+- 如果用户问的是**使用**技能（调用、加载），而不是**创建/修改/迭代**技能，本技能不适用。
+- 如果用户问的是某个具体产品的技能系统（如 VS Code、Claude Code、Copilot），拉取的规范页面可能涵盖发现路径——但产物格式仍需符合标准 Agent Skills 规范。

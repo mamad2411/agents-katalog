@@ -1,0 +1,103 @@
+---
+name: webhook-architect
+description: "Design the provider side of outbound webhooks: event envelope, HMAC signatures, replay protection, retries with backoff, dead-letter queue, and idempotency guidance for consumers. Use when the user wants to send webhooks, notify partners of events, or fix unreliable webhook delivery."
+---
+
+# Webhook Architect Protocol
+
+This skill focuses on building outbound webhooks that don't fail silently and don't overwhelm the consumer. An outbound webhook system must be treated as a mission-critical distributed system.
+
+**Core assumption:** The consumer's server *will* go down. It *will* timeout. A good webhook architecture guarantees eventual delivery without blocking the main application flow.
+
+---
+
+## 0. Context Intake
+
+Before designing, make sure you have the inputs below. Read the previous workflow step's artifact first if it exists. Ask only for what is missing, in a single message, and state any assumption you make instead of blocking.
+
+- Events to publish and who subscribes (partners, internal services).
+- Existing queue or worker infrastructure (Redis, SQS, BullMQ, Celery).
+- Delivery guarantees and payload privacy requirements.
+
+## 1. Event Payload Design (Static)
+Design the JSON structure of the event that will be sent.
+- **Envelope Pattern:** Wrap the actual data in a standard envelope containing routing information.
+  - `event_id` (UUID for tracing/idempotency).
+  - `event_type` (e.g., `order.created`, `payment.failed`).
+  - `created_at` (ISO 8601 Timestamp).
+  - `data` (The actual payload, kept minimal or providing a full object).
+
+## 2. Delivery & Reliability Strategy
+Define how the system handles failure:
+- **Timeouts & Retries:** Implement exponential backoff (e.g., retry instantly, then 1m, 1h, 6h, 24h).
+- **Dead Letter Queue (DLQ):** Where do messages go after the final retry fails (the example policy below uses 3 retries)? (e.g., A database table or queue for manual introspection).
+- **Idempotency:** Force the consumer to implement an idempotency check by providing a unique `event_id`. Provide clear docs on how to do this.
+
+## 3. Security Design
+A webhook without validation is an open door.
+- **HMAC Signatures:** Design a system where the payload is hashed with a shared secret (`v1=sha256=...`) sent in the `X-Webhook-Signature` header.
+- **Replay Attack Prevention:** Add a timestamp header (`X-Webhook-Timestamp`) and enforce a 5-minute tolerance window.
+
+## 4. Output Generation
+
+**Outputs.** In *file mode* — the user wants artifacts, or this skill runs as a step of an ecosystem workflow — write both files below to `docs/api-report/`. In *inline mode* — a quick question — answer in the chat and end with the JSON below as a *Handoff* block instead of creating files.
+
+1. **Human-Readable Markdown (`docs/api-report/webhook-architect-report.md`)**
+````markdown
+### 🎣 Webhook Architecture Plan
+- **Event Scope:** `user.created`, `user.deleted`
+- **Security:** HMAC-SHA256 Signature in `X-MyCompany-Signature`
+
+#### 📦 Payload Envelope Design
+```json
+{
+  "event_id": "evt_123456789",
+  "event_type": "user.created",
+  "created_at": "2024-03-24T12:00:00Z",
+  "data": {
+    "user_id": "usr_987",
+    "email": "hello@example.com"
+  }
+}
+```
+
+#### 🔄 Retry Policy
+- Initial Timeout: 5 seconds.
+- Retry 1: +1 min.
+- Retry 2: +1 hour.
+- Retry 3: +24 hours -> move to DLQ.
+````
+
+2. **Machine-Readable JSON (`docs/api-report/webhook-architect-output.json`)**
+```json
+{
+  "skill": "webhook-architect",
+  "events": ["user.created", "user.deleted"],
+  "signature_header": "X-MyCompany-Signature",
+  "retry_policy": {"initial_timeout_sec": 5, "max_retries": 3, "dlq_enabled": true}
+}
+```
+
+---
+
+## When to Skip
+
+- The user is the webhook consumer (receiving side) rather than the provider.
+
+## Guardrails
+- **Synchronous Delivery Ban:** NEVER send webhooks inline during an HTTP request cycle. They must be offloaded to a background worker (e.g., Redis Queue, BullMQ, Celery).
+- **Fat vs. Thin Payloads:** Recommend "Thin Payloads" (just sending IDs) if data privacy is critical. Warn against sending PII in webhooks unless explicitly required.
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-api` — API Domain.
+
+**Workflows:**
+- **Production Readiness Flow** (`api-production-readiness`, step 1 of 2): last step → once it passes, complete the workflow and report the outcome.
+
+**Direct handoffs:**
+- `@rate-limit-strategist` — Consumers need delivery throttling.
+
+**Handoff contract:** pass results to the next skill through `docs/api-report/webhook-architect-output.json` with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-api`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

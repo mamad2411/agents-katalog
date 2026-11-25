@@ -1,0 +1,202 @@
+---
+name: codex-review
+description: Default code review route — runs Codex (read-only `codex exec` via the codex-run wrapper) with the multi-language code-review methodology (severity matrix, file:line, scope triage, mandatory security pass). Read-only, no edits. Trigger when the user says "code review" / "审一下" / "review 一下" / "审这个 diff" / "用 codex 审" / "second opinion" / "复审" / "看看这次改动" or asks for any code review on a diff, file, or PR. This is the preferred entry point — route to the built-in /code-review skill when the user wants inline PR comments (--comment) or the findings auto-applied (--fix), and to the Claude-subagent dispatcher (code-review:code-review) only when the user explicitly asks for "Claude reviewers" / "subagent review" / "the multi-agent code-review".
+---
+
+# Codex Review
+
+The **default** code review route for this user. Codex sees the code without Claude's prior assumptions and reports back from a single read-only `codex exec` run. Read-only by hard default.
+
+## When to use
+
+- User says any of: "code review" / "审一下" / "review 一下" / "审这个 diff" / "复审" / "看看这次改动" / "用 codex 审" / "second opinion" → run this skill.
+- You just wrote something non-trivial and want an independent pass before declaring done — **ask the user first**, don't auto-trigger.
+
+## Routing — three review skills, one default
+
+Three review routes coexist; this skill is the default. Pick by what the user needs:
+
+| Route | Use when |
+|---|---|
+| **`codex-review` (this skill)** | Default for any "code review" request — external second opinion from a non-Claude model, read-only |
+| **Built-in `code-review` skill** | User wants findings posted as **inline PR comments** (`--comment`) or **auto-applied to the working tree** (`--fix`) — the only route of the three that can do either |
+| **`code-review:code-review` (plugin dispatcher)** | User explicitly asks for "Claude reviewers" / "subagent review" / "the multi-agent code-review" — Claude language-expert subagents (python/swift/typescript/security) |
+
+Additional reasons to pick the plugin dispatcher (`code-review:code-review`):
+
+- User wants automatic in-scope fix application (this skill never edits).
+- User wants the artifact written to `.claude/PRPs/reviews/` or auto-posted via `gh pr review`.
+
+**Inside `cpr`**: the PR pipeline runs this skill on every new HEAD as its merge gate, in place of Copilot review — see the exception under "After the call".
+
+**Chain pattern (optional, high-stakes work only)**: `/code-review` → apply fixes → `codex-review` as adversarial verification before merge. Mirrors `quality:santa-method`. Don't chain by default.
+
+## Invocation
+
+Codex removed `codex mcp-server` in 0.154.0, so there is no MCP tool any more.
+Run exactly one review through the `codex-run` wrapper (`~/.local/bin/codex-run`):
+
+1. `D=$(mktemp -d "${TMPDIR:-/tmp}/codex-review.XXXXXX")` — one scratch dir per review.
+2. Write the review brief (template below) to `$D/prompt.md` with the Write tool —
+   not a heredoc, diffs contain quotes and `$`.
+3. Bash: `codex-run --start <absolute cwd> "$D/prompt.md" "$D"` — returns at once;
+   the run is detached. Add `--model <name>` only if the user named a model.
+4. Bash (foreground, `timeout: 600000`): `codex-run --wait "$D"` — blocks up to
+   9 minutes. **Exit `75` means still running: call `codex-run --wait "$D"` again**,
+   and keep repeating until it returns anything else.
+
+Why not `run_in_background`: reviews take minutes (median ~7, up to ~17), past the
+10-minute foreground Bash limit, and a background task is killed together with its
+caller in headless `claude -p` and in subagents — verified 2026-09-15, the review died
+38 s in with no result. The detached `--start` run survives its caller, and `--wait`
+is an ordinary foreground call that works in every context. If the user interrupts,
+the run keeps going: resume with `--wait "$D"`, or cancel with `codex-run --stop "$D"`.
+
+Exit code of the final `--wait` decides what happened — **not** whether text came back:
+
+| exit | meaning | do |
+|---|---|---|
+| `0` | review finished; the report follows the `-----` line | present it (see After the call) |
+| `75` | still running | call `--wait` again |
+| `3` | Codex reported errors (usage limit, auth, bad model) — the wrapper prints them | report verbatim, stop |
+| `124` | hit `CODEX_RUN_MAX_SECS` (default 2400 s) | report, stop; offer a rerun at a lower `--effort` |
+| `130` | stopped (`--stop`) | report, stop |
+| `6` | the detached runner vanished without a result (reboot, kill -9) | report, stop; offer a rerun |
+| `90` | no codex with `--ignore-user-config` on this machine | report, stop |
+| other | codex crashed — wrapper prints stderr tail | report verbatim, stop |
+
+What the wrapper fixes for you, so do not re-add these by hand:
+
+- `--ignore-user-config`: `~/.codex/config.toml` is skipped, so the user's own
+  Codex MCP servers (blender, node_repl…) are not spawned and its global
+  `sandbox_mode = "danger-full-access"` cannot leak into a review.
+- `-s read-only` and `--skip-git-repo-check` (reviews of non-git paths work).
+- Model = `codex-best-model`, effort = `codex-best-model --effort` (see below).
+- Success is judged from the event stream: Codex exits 0 even when every tool
+  call inside the run failed, so the wrapper requires no `error` / `turn.failed`
+  events, a `turn.completed` event and a non-empty final answer.
+
+Artifacts stay in `$D` (`last.md`, `events.jsonl`, `stderr.log`) for debugging.
+
+**Run reviews at the model's ceiling.** `codex-best-model --effort` prints the
+highest level the selected model supports, so model and effort always match:
+today that resolves to `ultra` on `gpt-6-astra`. Do not hardcode `ultra` — not
+every model reaches it (`gpt-5.5` stops at `xhigh`, `gpt-5.6-luna` at `max`),
+and passing a level the model does not list is a silent-downgrade risk once the
+auto-selected model changes. The wrapper falls back to `max` if the command
+fails; pass `--effort <level>` only when the user asks for a lighter run.
+
+`ultra` is "maximum reasoning with automatic task delegation" — the model may
+fan work out to sub-tasks. Budget for it: reviews already ran ~7–8 min at the
+median on `max`, and a `max`-level review has hit the plan usage limit
+mid-report before. A review that dies partway with a usage-limit error is that
+expected failure mode, not a broken skill — rerun later or drop one level.
+
+**Picking the model.** `codex-run` calls `codex-best-model` and passes its stdout as the model.
+It reads `~/.codex/models_cache.json` — the catalog the Codex CLI refreshes on
+its own — and, among `visibility: "list"` models named `gpt-<version>-<tier>`,
+picks the strongest tier (astra > sol > terra > luna), then the newest version.
+A newly shipped Astra is therefore picked up automatically, with nothing to
+edit here. Add `-v` to see the rule used, the catalog's own default and the
+catalog age on stderr.
+
+`priority` in that catalog is Codex's default order, **not** a capability
+ranking: on 2026-10-08 it put the cheaper workhorse `gpt-6.1-sol` at 1 and the
+flagship `gpt-6-astra` at 2, and reviews silently ran on Sol for two days while
+the picker still used "lowest priority". The user wants reviews on the
+flagship (decided 2026-10-10). `codex-run` prints `model=` on every run — if it
+is not an Astra, check `codex-best-model -v` before trusting the rule.
+
+Do **not** hardcode a slug in this file: that silently keeps reviews on an
+ageing model after a better one ships. If `codex-best-model` exits non-zero,
+the wrapper omits the model and Codex uses its built-in default — never guess a
+model name. Never pass a `visibility: "hide"` model such as `gpt-reserve` or
+`codex-auto-review`; those are internal to Codex.
+
+Read-only is a hard default and `codex-run` has no write mode. If the user explicitly says "let codex edit / fix it", that is not this skill — confirm scope with the user and hand off to `codex:codex-rescue`.
+
+## Prompt template
+
+Codex hasn't seen your conversation, so brief it cold and embed the review discipline. This template mirrors the methodology in `code-review:code-review` (severity matrix, file:line, scope triage, security pass) — collapsed into a single prompt:
+
+**Keep the brief blind: context + scope + conventions only. Do not append your own "things worth scrutinising" list.** That list is Claude's prior assumptions, which the whole route exists to avoid. On 2026-09-15 a primed run's findings mostly echoed the hint list, and the user asked whether the review was really independent. If specific areas must be checked, run the blind pass first and verify those areas yourself afterwards.
+
+```
+You are reviewing a code change with the same rigor as a senior engineer
+gating a merge. I'm Claude Code on the same codebase; you are an
+independent reviewer. Output is read-only — do not edit files.
+
+CONTEXT (what + why):
+  <1–3 sentences>
+
+SCOPE TO REVIEW:
+  <paths / line ranges / inline diff. Small diffs: paste verbatim.
+   Larger: list paths and let Codex read.>
+
+PROJECT CONVENTIONS (if any):
+  <CLAUDE.md hard rules, naming, security gates, migration rules>
+
+REVIEW DISCIPLINE — apply all of these:
+
+1. Severity ladder (use exactly these labels, no others):
+     CRITICAL — security hole, data loss, prod breakage, payments
+                / auth / migration correctness
+     HIGH     — likely bug under normal use, perf cliff, broken
+                contract with a known caller
+     MEDIUM   — incorrect-but-unlikely path, missing edge case,
+                hidden coupling that will bite later
+     LOW      — quality / readability / minor robustness
+     NIT      — style only; safe to defer
+
+2. Security pass is mandatory. Even if the diff looks innocuous,
+   explicitly scan for: secret leakage, SQL injection, SSRF, unsafe
+   deserialization, missing authz, broken crypto, log injection,
+   path traversal, race conditions in auth-adjacent code. If clean,
+   say so explicitly in a one-line "Security: clean — checked X, Y, Z".
+
+3. Scope tagging per finding:
+     introduced   — this diff added the bug
+     enlarged     — bug pre-existed but this diff widens its blast radius
+     pre-existing — bug predates this diff; called out for awareness only
+   Default to "introduced" if uncertain. Pre-existing findings go last.
+
+4. File:line is required for every finding. Quote the offending
+   snippet (≤3 lines) when it disambiguates.
+
+OUTPUT FORMAT — one block per finding, ordered by severity then scope:
+
+  [SEVERITY] <short title>           (Scope: introduced|enlarged|pre-existing)
+  File:    <path>:<line>
+  Issue:   <1–2 sentences>
+  Fix:     <concrete recommended fix; "looks correct" is allowed only
+            when you also explain why a tempting alternative is wrong>
+
+End with a one-line verdict using this matrix:
+  any CRITICAL                       → BLOCK
+  HIGH-only (introduced or enlarged) → WARNING — merge with caution
+  zero CRITICAL/HIGH introduced      → APPROVE
+
+If you find nothing, say "No findings." then list the highest-risk
+areas you DID scrutinise so the user knows what the all-clear covers.
+Do not pad the report with restatement of the diff.
+```
+
+## After the call
+
+Apply the same rules as the `codex-result-handling` skill in the upstream plugin:
+
+- Preserve Codex's severity ordering, file paths, and line numbers verbatim.
+- Preserve evidence boundaries — if Codex marked something as inference or open question, keep that label.
+- **STOP after presenting findings.** Do not apply fixes. Ask the user which findings, if any, to fix. Auto-fixing from a review is forbidden, even for "obvious" ones — that's the whole point of an independent review.
+- **Exception — inside the `dev-workflow:cpr` pipeline.** cpr runs this review as its merge gate (it replaced Copilot review, user decision 2026-10-10), and invoking cpr pre-authorises the fix loop: verify each finding, fix the necessary ones, push, re-review until the gate passes, stopping only for the decisions cpr lists; failed runs follow cpr's own exit-code table. Outside cpr, both the stop rule above and the stop-on-failed-run rule below hold.
+- If Codex reported no findings, say so directly and include its "highest-risk area scrutinised" note so the user can judge coverage.
+- If `codex-run` exited non-zero (usage limit, auth error, timeout, crash), report its output verbatim and stop. Do not generate a substitute review yourself.
+
+## What this skill is NOT
+
+- Not `codex:codex-rescue` — that's for "Claude is stuck, hand off to Codex to implement". This is review-only.
+- Not the place to call `setup`, `cancel`, `status`, `result`. Those live in the upstream `openai-codex` plugin's slash commands.
+
+## Provenance
+
+The presentation rules under "After the call" (keep Codex's ordering, paths and evidence labels; stop after presenting findings; do not substitute a review when the run failed) are adapted from the `codex-result-handling` skill in [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc), Apache-2.0, Copyright 2026 OpenAI; see the plugin's THIRD_PARTY_NOTICES.md. The rest of this skill is original.

@@ -1,0 +1,76 @@
+---
+name: oculpm-journal
+description: Ocul recording spec (journal format, planner glyphs/log) for projects with .oculpm/. Use when finishing a unit of work and the oculpm MCP tools are unavailable — prefer journal_write/plan_update when visible.
+---
+
+# ocul-pm 기록 규격 (풀 스펙)
+
+**MCP 도구가 보이면 이 스킬 대신 도구를 쓴다** — `journal_write` / `plan_status` /
+`plan_update` 가 경로·파일명·frontmatter 규격을 서버에서 보장한다. 아래는 도구가
+없을 때 파일을 직접 쓰는 규격이다.
+
+> `plan_update` 는 **`base_hash` 가 필수**다 — 먼저 `plan_status` 로 그 플랜의
+> `hash` 를 읽고 그대로 넘긴다. 병렬 세션이 같은 플랜을 고칠 때 한쪽 변경이
+> 조용히 사라지는 것을 막는 장치다. 어긋나면 아무것도 쓰지 않고 현재 hash 를
+> 담은 오류가 오니, 다시 읽어 판단한 뒤 새 hash 로 재호출한다.
+
+## 1. 작업 일지
+
+경로: `.oculpm/journal/{YYYYMMDD}/{TypeFolder}/{HHMM}_{type}_{slug}.md`
+
+- `TypeFolder` = `Bugs` | `Features_to_add` | `Errors` | `Refactors` | `Chores`
+- `type` ∈ {`bug`, `feature`, `error`, `refactor`, `chore`}, `slug` = ASCII kebab-case ≤40자
+- 하나의 파일에 두 개 이상의 작업을 묶지 말 것. 기존 일지 수정 금지 (새 파일 + `related` 링크).
+
+frontmatter (8개 필수 — 자주 틀리는 3가지: ① `created_at` 은 `+09:00` 형태 tz offset 필수,
+② `agent` 는 id/version 키를 가진 **mapping**, ③ `files_touched[].op` 은
+`create|update|delete|rename|correct` enum 만):
+
+```yaml
+---
+schema_version: 1
+type: bug
+slug: short-kebab-slug
+status: done            # planned | in_progress | done | abandoned
+created_at: "2026-07-31T14:03:00+09:00"
+session_id: "manual-<workday>-HHMMSS"
+agent: { id: claude-code, version: "모델명" }
+language: ko
+verified_by_user: false
+files_touched: [{ path: src/x.rs, op: update }]
+related: []
+tags: []
+---
+```
+
+본문: 첫 줄 `[x] 영역: 무엇을 했다` 체크박스 — 제목은 영역 포함 40자 안 한 문장(예: `터미널: Claude 상태를 안다`). 영역(1~12자)은 이 프로젝트가 이미 쓰는 말을 다시 쓰고 `tags` 첫 칸에도 적는다. 줄표(—)로 두 문장을 잇지 않는다. 타입별 강제 헤더 — bug/error: `## 발생 원인` →
+`## 해결 방법`, feature: `## 추가 기능` → `## 동작 흐름`, refactor: `## 동기` →
+`## 변경 요약`. 공통 끝: `## 검증` (필수, 1~3줄), `## 메모` (선택).
+
+학습 품질 (growth-log 규율): 일지는 성과 나열이 아니라 **다음 세션이 헛수고를
+안 하게 하는 기록**이다 — 실패한 접근·막다른 길·의외였던 사실을 성공보다 우선
+기록한다 ("X 를 시도했지만 Y 라서 안 됨"이 "X 완료"보다 값지다). 같은 실패를
+반복하지 않도록 `## 메모` 에 다음 독자를 위한 학습 1줄을 남긴다.
+
+금지: `.oculpm/index/**` 쓰기, secrets/API key 포함, 기존 일지 수정.
+
+## 2. 플래너 갱신 (일지 직후)
+
+`.oculpm/planner/*.md` 의 대응 항목이 있으면: ① 상태 글리프 변경 — `[ ]` 할일 ·
+`[~]` 진행중 · `[x]` 완료 · `[!]` 막힘 · `[>]` 이월 · `[-]` 폐기, ② 하단 managed
+block 에 한 줄 append (기존 행 수정 금지):
+
+```markdown
+<!-- oculpm:plan-log begin v1 -->
+| 시각 | 항목 | 에이전트 | 변화 | 일지 | 메모 |
+|---|---|---|---|---|---|
+| 2026-07-31T14:03:00+09:00 | #item-id | claude-code | ~→x | journal/…/x.md | |
+<!-- oculpm:plan-log end -->
+```
+
+- 항목은 한 줄 (`- [ ] 내용 {#id}` — `{#id}` 를 둘째 줄로 넘기지 말 것). 셀 안의 `|` 는 `\|`.
+- 확인 명령을 돌렸으면 메모를 `판정 ✓ <결과 끝 줄>` 또는 `판정 ✗ <결과 끝 줄>` 로 시작한다
+  (en: `verdict ✓ …` / `verdict ✗ …`) — 시작 훅이 그 플랜의 「마지막 판정」으로 싣는다.
+- 큰 결정은 그 plan 의 `## 결정` 섹션에 `### Decision N — 제목 {#id}` 블록으로 잠근다.
+- `status:` 가 `active` 가 아닌 plan(`done`/`archived`)은 절대 수정 금지 — 새 plan 을 만든다.
+- 새 plan: frontmatter `oculpm_plan: v1` + `id`(파일명과 동일 kebab) + `title` + `status: active` + `created`/`updated` + `owner` → `**완료 조건:** …` · `**확인 명령:** …` 한 줄씩 → `## Phase {#id}` → 항목 → 빈 plan-log 블록.

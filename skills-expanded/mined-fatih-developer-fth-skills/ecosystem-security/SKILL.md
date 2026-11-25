@@ -1,0 +1,127 @@
+---
+name: ecosystem-security
+description: "Route agent-platform security work — skill audits and trust scores, runtime prompt-injection protection, the full security lifecycle — through security-auditor, adaptive-guard, and security-orchestrator. Use when the user asks whether a skill is safe, wants runtime protection for an agent, or wants the security ecosystem overview."
+---
+
+# 🛡️ Security Ecosystem
+
+This skill is the entry point of its ecosystem. It chooses a workflow, checks which member skills are installed, runs them in order with explicit handoffs, and degrades gracefully when a member is missing. The workflow map lives in `references/workflows.json`; the handoff format lives in `references/handoff-contract.md`.
+
+## Catalog
+
+<!-- BEGIN GENERATED: ecosystem-catalog (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Domain:** Security — Audit skills before deployment, guard agent runtimes against injection and exfiltration, and learn from incidents.
+
+**Philosophy:** No skill or message is trusted by default. Audit before deploy, guard at runtime, and feed every incident back into the rules. Security verdicts come from deterministic rules and human review, not from a single model judgment.
+
+| Skill | Role | Handoff artifact |
+|---|---|---|
+| `@security-auditor` | Audits skills statically, assigns trust scores, and generates guard rules. | inline handoff block |
+| `@adaptive-guard` | Filters runtime messages through a 5-layer guard and learns new rules from attacks. | inline handoff block |
+| `@security-orchestrator` | Runs the full security lifecycle in the correct order. | inline handoff block |
+| `@skill-security` | Deprecated alias — use `@security-auditor`. | inline handoff block |
+<!-- END GENERATED: ecosystem-catalog -->
+
+## Router Protocol
+
+<!-- BEGIN GENERATED: ecosystem-router (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+Follow this protocol whenever this ecosystem is invoked.
+
+1. **Match.** Compare the request with each workflow's *When* phrases. Pick one workflow, or route straight to a single member skill when the request is narrow. If two workflows fit equally, ask one question to choose. If the request belongs to another domain, use the ecosystem index in `@ecosystem-orchestration`.
+2. **Preflight.** Find out which step skills are installed: check the skills your host lists, or run `python <skill-dir>/scripts/install_all.py --status --workflow <id>` (`<skill-dir>` is the folder containing this `SKILL.md`). Show a short plan: step, skill, installed or missing, condition, expected artifact.
+3. **Missing skills never block.** Offer once: (a) install them — `install_all.py --workflow <id>` prints the commands and only runs them with `--execute` after the user agrees; or (b) continue in fallback mode — perform the step yourself using its *Does* and *Done when* columns and label that output `fallback`.
+4. **Conditions.** Skip optional steps whose condition does not hold, and say which steps you skipped and why.
+5. **Execute.** Run steps in order. Steps that share a parallel group are independent and may run concurrently (`@parallel-planner`). Pass artifacts as described in `references/handoff-contract.md`. Check each step's *Done when* before moving on.
+6. **Gates.** Before any destructive, irreversible, or production-impacting action, stop at `@checkpoint-guardian`, or ask for explicit confirmation when it is not installed.
+7. **Failures.** When a step misses its *Done when*, hand off to `@error-recovery`. Without it, retry once with a changed approach, then report the blocker with evidence instead of guessing.
+8. **State.** Keep a run log (workflow id, step, status, artifact). Record it with `@memory-ledger` when installed, and write a `@session-transfer` handoff if the run will continue in another session.
+9. **Finish.** Summarize artifacts, skipped steps, open risks, and the most relevant next workflow.
+
+**Skip this protocol** when the user names one specific skill (invoke it directly) or asks a quick factual question that needs no workflow.
+<!-- END GENERATED: ecosystem-router -->
+
+## Workflows
+
+<!-- BEGIN GENERATED: ecosystem-workflows (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+### 1. Skill Audit & Trust Flow (`sec-skill-audit`)
+
+**When:** “is this skill safe”; “audit a new skill”; “skill trust score”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@security-auditor` | Run AUDIT and TRUST modes on the skill. | Report with PASS/CONDITIONAL/FAIL and a 0-100 trust score. | — | — |
+| 2 | `@checkpoint-guardian` *(optional)* | Require approval before enabling a skill scored below the trusted tier. | User approved or the skill stays quarantined. | Trust score below 80 | — |
+
+### 2. Runtime Protection Flow (`sec-runtime-guard`)
+
+**When:** “add a security layer”; “prevent prompt injection”; “protect the agent at runtime”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@security-auditor` | Generate guard rules from the audit (GUARD mode). | Guard rules exist for every flagged risk. | — | — |
+| 2 | `@adaptive-guard` | Activate the layered filter with the generated rules and a baseline. | Guard decisions are logged and latency stays within budget. | — | — |
+
+### 3. Full Security Lifecycle (`sec-full-lifecycle`)
+
+**When:** “run the security workflow”; “security orchestrator”; “audit and guard everything”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@security-orchestrator` | Run discovery, audit, trust, guard, incident response, calibration, and report. | All seven phases report a status. | — | — |
+
+### Direct handoffs
+
+- `@adaptive-guard` → `@security-auditor`: An incident requires re-auditing the affected skill.
+- `@security-auditor` → `@skill-comparator`: A failing skill should be replaced by a safer alternative.
+<!-- END GENERATED: ecosystem-workflows -->
+
+## Ecosystem Map
+
+```text
+PRE-DEPLOYMENT         RUNTIME               LEARNING
+──────────────         ─────────────         ──────────
+security-auditor    →    adaptive-guard   →    Rule engine
+  │                      │                    update
+  │ Audit                │ K0-K4               │
+  │ Trust Score          │ Gradual filter      │ async
+  │ Guard rules          │ LLM Judge           │
+  ▼                      ▼                    ▼
+security-report.md   guard-decision.json   learned-rules.md
+trust-score.md       incident-report.md    guard-metrics.md
+```
+
+**Layer legend:** `K0`–`K4` are adaptive-guard's layers (K = *katman*, layer): K0 hash cache, K1 rule engine, K2 ML classifier, K3 LLM judge, K4 human approval.
+
+## Data Flow
+
+```text
+security-auditor audit output
+  → trust-score.md (used by adaptive-guard as trust threshold)
+  → security-report.md (added to adaptive-guard K1 rules)
+
+adaptive-guard attack detection
+  → incident-report.md (appended to security-auditor's next audit)
+  → learned-rules.md (feedback loop to K1 static rules)
+```
+
+## Supported Platforms
+
+| Platform | security-auditor | adaptive-guard |
+|----------|---------------|----------------|
+| Claude Code / claude.ai | ✅ Full | ✅ Full |
+| Telegram Agent | ✅ Audit | ✅ K0-K3 |
+| WhatsApp Agent | ✅ Audit | ✅ K0-K3 |
+| CI/CD Pipeline | ✅ Audit | ⚠️ K0-K1 (speed-focused) |
+| Local Dev | ✅ Full | ✅ K0-K2 (ML optional) |
+
+## Expansion Roadmap
+
+Skills to be added:
+
+| Skill | Priority | Status |
+|-------|---------|-------|
+| skill-integrity-checker | High | Planned |
+| content-sanitizer | High | Planned |
+| tool-call-auditor | Medium | Planned |
+| behavioral-baseline | Medium | Research |
+| chain-shadow-detector | Low | Research |

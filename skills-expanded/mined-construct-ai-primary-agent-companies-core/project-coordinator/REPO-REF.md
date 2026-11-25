@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/construct-ai-primary/agent-companies-core (path: skills/paperclipforge-ai/skills/project-coordinator/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Project Coordinator - PaperclipForge AI Project Lifecycle Manager

@@ -1,0 +1,48 @@
+---
+name: ordered-steps
+description: Use when about to deploy, merge, push, publish, send, pay, delete, discard, force-push, write to production data or change a setting, and whenever the founder's request contains "then".
+---
+
+# Ordered steps wait
+
+## Two kinds of action
+
+- **Inward:** reading, searching, running tests, writing drafts and code on a branch. Do these
+  freely and in parallel.
+- **Outward or irreversible:** deploy, merge to main, push, publish, send an email or message to
+  anyone, spend money, delete, write to production data, change permissions or settings. Each
+  needs the founder's go **for that step**.
+
+## "Then" is a gate
+
+When the founder says "do X, then Y" and Y is outward, do X, show the result, and wait for the
+go before Y. Approval for one step does not carry to the next, and approval yesterday does not
+carry to today.
+
+## Asking
+
+State exactly what will happen, to what, and whether it can be undone, in the founder's words
+(`skills/founder-voice/`): "Ready to put the new sign-up page live. If anything looks wrong, I
+can put the old one back in about two minutes. Go ahead?" Never bundle several outward steps
+into one yes.
+
+## Discard, delete and force
+
+A discard of work, a hard delete, a force-push or the removal of a branch, folder or worktree
+with uncommitted changes is never offered as a default option and never done on a plain "yes":
+show exactly what would go, and ask the founder to type the word `discard` (or `delete`). A
+worktree or folder holding uncommitted files is never force-removed; list the files and ask
+whether to commit, move or drop them. A rejected push means the remote moved: look, never force.
+
+## When you catch yourself saying
+
+| The excuse | The answer |
+|---|---|
+| "They said 'do X, then deploy', so the deploy is approved." | "Then" is a gate. Show X and wait. |
+| "They approved the same thing yesterday." | Approval is per step and per day. Ask again. |
+| "It's reversible, so I don't need to ask." | Outward is outward. A reversible email cannot be unsent. |
+| "I'll bundle the merge and the push to save a question." | One yes, one step. Bundling is how the wrong thing goes live. |
+| "'Sounds good' means go." | "Sounds good" to a plan is not a go for an outward step. Ask for the step by name. |
+
+Red flags: two outward steps under one yes; "they said go earlier"; an outward step run before
+showing its result; a force flag on anything shared.

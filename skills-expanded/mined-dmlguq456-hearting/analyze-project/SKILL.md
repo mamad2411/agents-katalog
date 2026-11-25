@@ -1,0 +1,54 @@
+---
+name: analyze-project
+description: "Use when the user asks to analyze existing code, a paper, or a document and no usable persistent analysis exists, or to refresh stale analysis; default initial analysis to persistent output. Owns analysis; default preset. Not for conversational, read-only, or no-file analysis; orientation, context recovery, status, experiments, external research, source changes, or completed-work audits."
+metadata:
+  portable_source: capabilities/analyze-project.md
+  adapter: opencode
+  invocation_class: entry-router
+---
+
+# analyze-project
+
+This is an OpenCode-native Skill projection generated from the portable
+capability contract. It is adapter-owned output, not a legacy compatibility Skill copy.
+
+## Source
+
+- Portable source: `capabilities/analyze-project.md`
+- Runtime check: `adapters/opencode/bin/preflight.sh capability-info analyze-project`
+- Bootstrap: `adapters/opencode/AGENTS.md`
+
+## Use
+
+1. Before approval, route from this compact metadata and `core/WORKFLOW.md §0.2`; do not read the full portable source merely to propose the route.
+2. Present the intent card from `core/WORKFLOW.md §0.4` unless the same route and scope are already approved.
+3. Main session only: after approval, read `capabilities/analyze-project.md`. Registered owners read only `capabilities/analyze-project/references/owner-execution.md`; stage workers read only their assigned contracts. The other entry-router steps apply to the main session. A registered owner uses only its Route steps and the latest receipt for runtime commands.
+4. Before the first durable capability artifact, compile and bind the checked route with `preflight.sh route --capability analyze-project ...`. Compile it even for direct intensity: direct is a compiled inline node, not route absence. A native-agent restriction never authorizes direct execution.
+5. Run `adapters/opencode/bin/preflight.sh capability-info analyze-project` and obey the reported status:
+   - `instruction-only`: use this Skill as OpenCode guidance plus explicit preflight guards.
+   - `tool-contract`: report the named `tool_contract`, run any `tool_contract_check`, and obey `runtime_surface` / `fallback` before claiming full support.
+   - `unsupported`: stop or use the reported `fallback`.
+
+## Shape
+
+- Identifier: `analyze-project`
+- Invocation class: `entry-router`
+- Supported modes: `code, paper, doc`
+- Argument shape: `[--mode code|paper|doc] [<scope/target/input-folder>] [--skip-qa]`
+- Portable meaning: Creates persistent analysis of existing code, papers, or documents; initial analysis defaults here unless read-only/no-file or another primary applies.
+
+
+## Shared Procedure References
+
+Read the complete portable procedure files listed here when they apply; this logical read-set is shared across Claude, Codex, and OpenCode.
+
+- `capabilities/analyze-project/references/mode-code.md`
+- `capabilities/analyze-project/references/mode-doc.md`
+- `capabilities/analyze-project/references/mode-paper.md`
+- `capabilities/analyze-project/references/outputs-and-integration.md`
+- `capabilities/analyze-project/references/owner-execution.md`
+
+## Workflow Evidence
+
+- Before durable capability output: `adapters/opencode/bin/preflight.sh route --capability analyze-project <complete compile arguments>`
+- For workflow state: `adapters/opencode/bin/preflight.sh status [cwd] [session-id]` and `adapters/opencode/bin/preflight.sh prompt-signal [cwd] [session-id]`

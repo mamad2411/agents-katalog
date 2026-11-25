@@ -1,0 +1,77 @@
+---
+name: audit-options
+description: Checks whether a set of options is well-constructed.
+---
+
+# Introduction
+
+## Goal
+Surface significant issues in how options are framed that could lead to a poor decision — missing options, unfair characterisations, false constraints.
+
+## Method
+
+Audit the option set using a context-blind agent against framing integrity criteria, then calibrate to surface only concerns that would materially affect the decision.
+
+### Success Criteria
+
+- **No significant omission** — Important option categories aren't missing
+- **No dimensional collapse** — The decision space isn't artificially flattened to one axis
+- **No description asymmetry** — Options are characterised fairly enough for sound comparison
+- **No criteria rigging** — Evaluation criteria don't structurally predetermine the outcome
+- **No false exclusivity** — Options aren't presented as mutually exclusive when combining them is viable
+- **No scope mismatch** — Options are at comparable levels of abstraction
+- **No constraint fabrication** — Constraints limiting the option set are real and relevant
+
+## Workflow
+
+### 1. Identify
+- Identify the option set the user has presented. State the decision context and list the options clearly. Use conversation history for context.
+
+### 2. Audit
+- Spawn a blind-reasoner agent (Sonnet). Name it: "Audit framing". Use the following prompt:
+
+```
+You are a framing integrity auditor. Work ONLY with what is given below.
+
+DECISION CONTEXT: "{context}"
+
+OPTIONS:
+{options}
+
+First apply the vanishing options test. Imagine every option above is suddenly unavailable and the decision still has to be addressed. Sketch 2-3 approaches you would use instead.
+
+Then evaluate the option set against these 7 framing integrity criteria, using your vanishing-options sketches to inform criterion 1:
+1. Omission — are obvious solution categories missing?
+2. Dimensional collapse — is the space artificially flattened to one axis?
+3. Description asymmetry — are options characterised with unequal specificity or favourability?
+4. Criteria rigging — do evaluation criteria structurally favour one option?
+5. False exclusivity — could options be combined?
+6. Scope mismatch — are options at different levels of abstraction?
+7. Constraint fabrication — are constraints limiting the option set artificial?
+
+For each criterion, flag any issues you find. If no issues, say so. Be direct and specific.
+```
+
+### 3. Calibrate
+- Take the audit results. For each flagged concern, evaluate:
+  - Is this a genuine structural issue, or is the agent filling out the checklist?
+  - Would acting on this flag materially improve the decision?
+  - Is this concern marginal or speculative?
+- Drop anything that doesn't survive calibration. Preserve ambitious options — do not flatten toward safe consensus.
+
+## Final output
+- If no concerns survive calibration: Proceed without comment. Do not tell the user the audit ran.
+- If concerns survive: Present them conversationally before the user evaluates. Do not expose the criteria names or audit process. Use language like:
+
+```
+Before you evaluate these options, a couple of things worth noting:
+
+- [concern in plain language]
+- [concern in plain language]
+
+Want to adjust the options or proceed as is?
+```
+
+## Related skills
+- **stress-test-decision** — After the user picks an option, stress-test the decision.
+- **clarify-framing** — If the decision context itself is unclear, run clarify-framing first.

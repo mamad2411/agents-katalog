@@ -1,0 +1,557 @@
+---
+name: outreach-find-email
+description: "Find professional email addresses for the people on a lead list, one at a time or in bulk, with Emelia's email finder. Runs the three attempt fallback cascade that recovers the rows a single lookup misses: the domain first, then the company name, then the trade name. States the credit cost before spending anything, polls each job to completion, and records what was found, what was not and which attempt won in outreach/enrichment.json and outreach/leads.csv. What the finder returns is already verified and goes straight into a campaign, so it never needs a second pass through the verifier. Never guesses an address pattern and calls it found. Triggers on: find email, email finder, find emails, find the email of, email address, email lookup, email enrichment, enrich emails, missing emails, bulk email finder, retry the finder, email not found, get emails for my list."
+license: MIT
+metadata:
+  author: Emelia
+  version: "0.1.0"
+  category: sales
+---
+
+# Find professional emails
+
+## What this does
+
+Turns rows that have a name and a company into rows that have a professional email
+address, using Emelia's email finder. It counts the rows and states the credit cost
+before spending anything, runs the lookups, and reports the discovery rate honestly:
+found, not found, still running. It does not invent addresses: when the finder
+returns nothing, the row is marked `not_found`, not filled with a guess.
+
+A row is never given up on after one call. The finder answers differently depending on
+whether you gave it a domain or a company name, so a miss on the domain is retried on
+the company name, then on the trade name. Section 3 is that cascade, and it is the part
+of this skill that changes your hit rate.
+
+**What it returns is ready to send.** Every result carries a `qualification` field,
+which is a verification verdict from the source that checked the mailbox, not a
+confidence score the finder made up. An address returned as `valid` has been
+verified. Put it in the campaign as it is.
+
+## When to use it
+
+Use it when you have a list with names and companies but no email addresses, or when
+a list has holes you want filled before writing a sequence.
+
+Use a different skill when:
+
+- The list is not filtered yet. Run `outreach-filter` first: every credit spent on a
+  row you are about to exclude is wasted, and this is the most common way people burn
+  their balance.
+- You already have addresses **from somewhere else** and want to know whether they
+  will bounce (`outreach-verify`). That skill is for a CSV, an old CRM export or
+  another tool's output, not for what this one returns.
+- You want the whole waterfall under one budget (`outreach-enrich`, which calls this
+  skill).
+- You want a mobile number (`outreach-find-phone`, which costs far more).
+
+### Do not send the results to the verifier
+
+The reflex after any enrichment is to run a verification pass over everything. Here
+it is a pure cost. Emelia's finder verifies before it hands you the address, so a
+verification of a `valid` result costs 0.25 credit and returns the verdict you
+already have. On 1,000 found addresses that is 250 credits for nothing.
+
+| What the finder gave you | Verify it? |
+|---|---|
+| `qualification: "valid"` | **No.** It is verified. Send it. |
+| `qualification: "risky"` | Your choice. It came from the secondary source below its "sure" threshold, so it is the one result that was not proven. Verify it (0.25 credit) or drop the row. |
+| Nothing, `not_found` | Nothing to verify. |
+| An address you built from an observed pattern, per section 5 | **Yes, always.** A pattern is your guess, not Emelia's answer. |
+
+The freshness rule from `outreach-verify` still applies later: a find from last week
+is fresh, a find from last year is not, and a large campaign on a year old file
+deserves a re-verification pass.
+
+## Inputs
+
+Per row, the finder needs two things:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `fullname` | yes | First and last name in one string, as the person writes it. `"Marie Dupont"`, not `"MARIE DUPONT"` and not `"Dupont, Marie"`. |
+| `companyName` | yes | The trading name, not the legal name. `"Emelia"`, not `"EMELIA SAS"`. |
+| `companyWebsite` | no, and its absence is meaningful | The company domain or site. `"emelia.io"` or `"https://emelia.io"` both work. Sending it and omitting it are two different searches, which is the whole point of section 3. |
+| `country` | **yes, always** | ISO 2 letter code (`FR`, `US`, `DE`). See the trap below. |
+
+**The country trap.** The published request schema lists only `fullname` and
+`companyName` as required, and the API validator requires `country` too: a call
+without it comes back as a 400, no job is created and no credit is taken. This is not
+a rare edge case, it is the single most common reason a first integration returns
+nothing at all. Always send it. If you do not know the country, infer it from the
+domain extension or the company address, and say in your summary which rows you
+inferred.
+
+One useful row from the list feeds the third attempt: a **trade name** when the source
+gives one that differs from the legal name. Basile exports carry it (the Google
+listing name, or the LinkedIn page name, next to the registry `legal_name`), and a CSV
+from a CRM often has it under `enseigne`, `trading name` or `brand`. Keep it in an
+`x_trade_name` column at sourcing time; you will need it below.
+
+Files: `outreach/leads.csv` in (ask for a CSV path or run `outreach-leads` first if
+it is missing), `outreach/leads.csv` and `outreach/enrichment.json` out.
+
+Access: `EMELIA_API_KEY` exported in the shell. The REST API is the documented path
+and this skill assumes it. If the Emelia MCP server is also configured, its
+`find_email` tool wraps the same two calls and does the polling for you. With
+neither, say so and run in dry run: you still produce the row count and the cost
+estimate, and you spend nothing.
+
+If you only have a LinkedIn URL for a person, this finder cannot use it. It needs a
+name and a company. Take them from the list row, and if they are not there, ask the
+user rather than deriving a name from a profile slug.
+
+## How to do it
+
+### 1. Count, then quote the cost, then wait
+
+Never start a bulk run without this step.
+
+At the time of writing, Emelia bills the email finder **1 credit per address
+actually found**. The credit is taken when the job starts and given back when the
+job ends with nothing, so a miss is free and a hit costs one. Confirm the current
+rate on your plan page in the Emelia app before a large run, since pricing can
+change.
+
+Print this and stop:
+
+```
+Email finder on outreach/leads.csv
+
+  Rows in the file            412
+  Already have an email        71   skipped
+  Missing name or company      18   skipped, listed below
+  To look up                  323
+
+  Cost: 1 credit per address found, nothing for a miss.
+  Worst case 323 credits, realistic range 180 to 240 at a 55 to 75% hit rate.
+  Your balance: 1,250 credits.
+
+Run it? (yes / no / a smaller sample)
+```
+
+Offer a 25 row sample when the list is above 200 rows and has never been run. The
+sample buys you the real hit rate on this data for about 15 credits, and that number
+drives every later estimate.
+
+### 2. One lookup
+
+Two REST calls: create the job, then poll it.
+
+```bash
+curl -s -X POST https://api.emelia.io/tools/find/email \
+  -H "Authorization: $EMELIA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"fullname":"Marie Dupont","companyName":"Emelia","companyWebsite":"emelia.io","country":"FR"}'
+# {"success":true,"jobId":"66f0c3..."}
+
+curl -s https://api.emelia.io/tools/find/email/66f0c3... \
+  -H "Authorization: $EMELIA_API_KEY"
+# {"success":true,"data":{"fullname":"Marie Dupont","companyName":"Emelia",
+#   "email":"marie@emelia.io","qualification":"valid","status":"done","date":"..."}}
+```
+
+Poll the GET every 2 to 3 seconds. Do not poll faster: it burns your request quota
+without making the job finish sooner.
+
+If the MCP server is configured, one call does both:
+
+```
+find_email
+  fullname: "Marie Dupont"
+  companyName: "Emelia"
+  companyWebsite: "emelia.io"
+  country: "FR"
+```
+
+It posts the job, polls it every 2 seconds for up to 90 seconds, and returns the same
+`data` object. Same fields in, same fields out, one call instead of a loop.
+
+### 3. The fallback cascade, which is where the hit rate comes from
+
+**One lookup is not an answer.** A row that comes back empty has been searched one
+way, not every way. Search it the other ways before you write it off.
+
+Behind the endpoint there are two sources chained together. The first one gets what
+you sent. When it finds nothing usable, the job is handed to a second source, and the
+company information it receives is **the domain when you sent `companyWebsite`, and
+the company name when you did not**. So the same person, searched with a domain and
+searched without one, goes down two genuinely different paths. Dropping the domain is
+not a degraded call, it is a different method.
+
+Run the attempts in this order, per row, and stop at the first address returned:
+
+| Attempt | What you send | Why it can work when the one before it did not |
+|---|---|---|
+| 1 | `fullname` + `companyName` + `companyWebsite` + `country` | The domain is the most direct route when your domain column is right. |
+| 2 | `fullname` + `companyName` + `country`, **no `companyWebsite`** | Both sources now resolve the company themselves, from the name. They find the mail domain your file did not have, or had wrong. |
+| 3 | `fullname` + `companyName` set to the **trade name** + `country` | A company known publicly under a name that is not on its registry filing. The registry name finds nothing, the name people actually use finds the company. |
+
+Attempt 3 only exists when the source gave you a trade name that differs from the
+company name, once you ignore case and the legal wrapper (`SAS`, `SARL`, `SA`, `Ltd`,
+`GmbH`, `Holding`, `Groupe`). `"BLABLACAR SAS"` and `"BlaBlaCar"` are the same name,
+so there is no third attempt. A registry name and a store sign that share no words are
+two names, so there is one.
+
+**What this costs, which is why you do it.** The credit is taken when the job starts
+and given back when the job ends with no address. A miss is refunded. So attempts 2
+and 3 are free unless they work, and a row that is found on attempt 2 costs exactly
+the same one credit as a row found on attempt 1. The only real cost of retrying is
+time and request quota. Not retrying costs you contacts you already paid to source.
+
+**Record which attempt won.** Write it in an `email_attempt` column (`domain`,
+`company_name`, `trade_name`). It is a data quality report you get for free:
+
+- Many rows rescued by attempt 2 after a domain was sent means your domain column is
+  wrong at the source. Fix it in `outreach-leads` rather than paying the retry every
+  run. The usual causes are a holding company site, an agency site, a redirect, or a
+  marketing domain that does not carry the mail.
+- Rows rescued by attempt 3 mean your list carries legal names where it should carry
+  trade names. Same fix, upstream.
+
+Two things not to do. Do not treat a row as harder just because it took two attempts:
+what comes back on attempt 2 carries its own `qualification` exactly like attempt 1,
+and a `valid` from either is verified. And do not run the attempts in parallel on the
+same person: you would pay twice when both find an address.
+
+**Where it stops.** After the last applicable attempt, the row is `not_found` and it
+stays `not_found`. Do not invent a fourth attempt by editing the company name yourself
+(cutting a word, swapping a domain you found on the web) unless you can point at a
+source for the new value, and say you did it.
+
+The cascade was checked against the live API on 9 September 2026: a lookup sent with a
+domain that was not the company's mail domain came back empty, and the same person
+sent again with the company name alone came back with a `valid` address on the real
+domain. One call would have written that row off.
+[`scripts/find-emails.py`](../../scripts/find-emails.py) runs the whole thing over a
+CSV, and section 5 is how to use it.
+
+### 4. Read the result properly
+
+The result carries two different fields and people confuse them constantly.
+
+`status` is about the job:
+
+| status | Meaning | What to do |
+|--------|---------|------------|
+| `running` | Not finished | Keep polling. Emelia queries one source, and when that source returns nothing usable it tries a second one, so a single lookup can legitimately run for two to four minutes. |
+| `done` | Finished | Read `email` and `qualification`. |
+| `error` | The job failed | No address. Retry once, then mark the row `error` and move on. Do not loop. |
+
+`qualification` is about the address, and it is a verification verdict, not a guess.
+Emelia queries a first source that checks the mailbox; when that source finds nothing
+usable it queries a second one, which reports its own confidence:
+
+| qualification | Meaning | Treat as |
+|---------------|---------|----------|
+| `valid` | The mailbox was checked and accepted, by the first source or by the second one at its "sure" level | **Found and verified. Send it. Do not run it through `outreach-verify`, you would pay 0.25 credit for the same answer.** |
+| `risky` | Returned by the second source when its confidence is below "sure" | Found but unproven. This is the only result worth a verification, and dropping the row is the other valid answer. |
+| `invalid` | No usable address | Not found |
+
+Two more cases that are not qualifications:
+
+- `status: "done"` with no `email` field: not found. This is the common miss.
+- The MCP tool returns `{"jobId": "...", "status": "running", "note": "..."}`: the
+  job outlived its 90 second wait. It is still running on Emelia's side. Keep the
+  `jobId` and come back to it later, with a plain `GET /tools/find/email/{jobId}` or
+  with the MCP tool built for it:
+
+```
+get_enrichment_result
+  type: "find_email"
+  jobId: "66f0c3..."
+```
+
+Never restart a lookup because it timed out in your client. You would pay twice for
+the same person.
+
+### 5. Bulk: run the script
+
+There is no bulk endpoint. Bulk means running the cascade once per row, and that is
+what [`scripts/find-emails.py`](../../scripts/find-emails.py) does. Prefer it over a
+loop you write on the spot: it already paces itself under the plan's request ceiling,
+polls each job, walks the three attempts, rewrites the CSV after every row and reports
+which attempt found what.
+
+```bash
+export EMELIA_API_KEY="..."
+python3 scripts/find-emails.py outreach/leads.csv --dry-run            # the plan, spends nothing
+python3 scripts/find-emails.py outreach/leads.csv --limit 25 --plan start   # a paid sample
+python3 scripts/find-emails.py outreach/leads.csv --out outreach/leads.csv --plan start
+```
+
+Useful flags: `--plan none|start|grow|scale` sets the requests per minute ceiling,
+`--limit N` runs a sample, `--max-attempts 1` disables the cascade when you have a
+reason to, `--country FR` fills in rows with no country, and `--resume` picks up a run
+that was interrupted without paying again for the rows it already answered. The
+plugin may be installed somewhere other than `scripts/`, so try the plugin directory
+too before deciding the script is missing.
+
+It reads your real column names through a list of aliases (`full_name` or
+`fullname` or first plus last, `company_name`, `company_domain` or `website`,
+`x_trade_name` or `enseigne`, `country_code`), and it appends `email`,
+`email_status`, `email_qualification`, `email_source`, `email_attempt`,
+`email_attempts_made` and `email_job_id` without touching a single existing column.
+
+If you run the loop yourself instead, the discipline it encodes is:
+
+1. Build the work list: rows that passed the filter, have a name and a company, and
+   have no email yet. Nothing else.
+2. Deduplicate on name plus domain. The same person appearing twice costs twice.
+3. Sort by company so all rows for one domain sit together. That makes the pattern
+   check in step 6 possible and partial results readable.
+4. Walk the cascade of section 3 per row and stop at the first hit. Never run the
+   attempts for one person in parallel.
+5. Run one row at a time, or at most three in flight, at roughly one new job per
+   second. Your plan's ceiling is 100 requests per minute on Start, 300 on Grow,
+   1,000 on Scale, 30 with no subscription, and each attempt is a POST plus several
+   GETs, so budget about 6 requests per attempt and pace at 80% of the ceiling.
+6. Write each result to disk as it lands, so an interrupted run keeps everything
+   already paid for.
+7. Every 50 rows, print one progress line: done, found, not found, credits spent.
+8. On a credit error (HTTP 402, or a message containing "credits"), stop the loop, do
+   not retry, and say where the run stopped.
+9. On HTTP 429, wait 60 seconds and resume from the same row. Do not drop the row.
+
+Jobs still `running` at the end of the loop go into a `pending` array with their
+`jobId`. Collect them with `get_enrichment_result` before you write the summary.
+
+### 6. What to do with the misses
+
+A miss is information, not a failure. Report it, do not hide it. A miss here means the
+whole cascade of section 3 came back empty, not that one call did.
+
+**Never do this:** see `marie@emelia.io` and `paul@emelia.io` in the results and
+write `julien@emelia.io` into `leads.csv` as if the finder returned it. A guessed
+address that bounces costs you sender reputation, which is worth far more than the
+credit you saved.
+
+**You may do this, with the user's agreement.** When a domain has at least five found
+addresses and at least four share the same shape (`first@`, `first.last@`, `f.last@`,
+`firstlast@`), you have an observed pattern for that domain. For a missing person on
+that same domain:
+
+1. Build the candidate address from the pattern.
+2. Verify it with `outreach-verify` (a quarter of a credit, charged either way).
+3. Accept it only when the verification says `valid` **and** the domain is not
+   catch-all. On a catch-all domain the verification proves nothing, so the candidate
+   stays a guess and is dropped.
+4. Write it with `email_source: pattern_verified`, never `finder`, so the user can
+   filter those rows out later if a reply comes back wrong.
+
+Show the pattern and the candidates, and ask before verifying. Rows where the pattern
+is unclear stay `not_found`.
+
+### 7. Realistic hit rates
+
+Rules of thumb, not measured Emelia figures. Use them to sanity check a run, not to
+promise a number to a client. They assume the full cascade ran: a single attempt per
+row lands lower.
+
+| Input quality | Expect |
+|---------------|--------|
+| Full name plus company domain, company has 10 or more people and its own mail domain | 55 to 75% |
+| Full name plus company name only, no domain | 15 to 20 points lower |
+| Micro companies, sole traders, generic mailboxes (gmail, orange, free) | under 40% |
+| Names from a scrape with initials, accents stripped, or the company field holding a legal name | much lower, and the input is the problem |
+
+If a 200 row run comes back under 30%, stop and look at the input before spending
+more. Nine times out of ten it is a bad `companyName` column (legal names, holding
+companies, agency names) or a country you did not send.
+
+## Output
+
+Two files. `outreach/leads.csv` gains columns and keeps every original column in its
+original order. `outreach/enrichment.json` holds the detail and the cost.
+
+`leads.csv`, after the run:
+
+```csv
+first_name,last_name,company_name,company_domain,x_trade_name,source,email,email_status,email_qualification,email_source,email_attempt,email_attempts_made,email_job_id
+Marie,Dupont,Emelia,emelia.io,,basile,marie@emelia.io,found,valid,finder,domain,1,66f0c3a1
+Paul,Martin,Emelia,emelia.io,,basile,paul@emelia.io,found,valid,finder,domain,1,66f0c3a2
+Sofia,Neri,Kotive Holding,kotive-group.com,Kotive,basile,sofia.neri@kotive.fr,found,valid,finder,trade_name,3,66f0c3a5
+Luc,Bernard,Vantia,vantia-corp.com,,csv,luc.bernard@vantia.fr,found,risky,finder,company_name,2,66f0c3a6
+Julien,Roche,Emelia,emelia.io,,basile,,not_found,invalid,,,2,66f0c3a3
+```
+
+Read that file as a diagnosis, not just as data. Sofia was found only because the
+trade name was in the list, and Luc only because the second attempt dropped a domain
+that was not the mail domain. Two rows out of five would have been lost by a single
+lookup, and the two wrong domains are worth fixing upstream.
+
+`outreach/enrichment.json`, the slice this skill owns:
+
+```json
+{
+  "run": {
+    "id": "2026-09-08-1042",
+    "step": "find_email",
+    "list": "outreach/leads.csv",
+    "started_at": "2026-09-08T10:42:11Z",
+    "finished_at": "2026-09-08T11:09:44Z"
+  },
+  "cost": {
+    "rate_at_run_time": "1 credit per address found, refunded on a miss",
+    "credits_spent": 241,
+    "credits_before": 1250,
+    "credits_after": 1009
+  },
+  "counts": {
+    "rows_in": 412,
+    "skipped_already_had_email": 71,
+    "skipped_missing_input": 18,
+    "looked_up": 323,
+    "found_valid": 218,
+    "found_risky": 23,
+    "not_found": 78,
+    "error": 4,
+    "pending": 0
+  },
+  "cascade": {
+    "attempts_made": 498,
+    "found_by_attempt": { "domain": 176, "company_name": 51, "trade_name": 14 },
+    "found_only_because_of_a_retry": 65,
+    "rows_with_a_trade_name": 88
+  },
+  "rates": { "discovery": 0.746, "note": "241 of 323 looked up" },
+  "not_found_rows": [12, 19, 44, 51],
+  "pattern_candidates": [
+    { "domain": "emelia.io", "pattern": "first@", "observed_on": 6, "rows": [51] }
+  ],
+  "notes": [
+    "18 rows had no company name and were never sent to the finder.",
+    "4 jobs ended in error and were not retried a second time.",
+    "65 addresses came from a retry after the domain attempt missed."
+  ]
+}
+```
+
+When `outreach-enrich` runs the waterfall it owns this file, and this skill writes
+into its `find_email` section instead of replacing it. Then say it in words:
+
+```
+323 rows looked up, 241 addresses found (74.6%), 78 not found, 4 errors.
+241 credits spent.
+
+176 were found on the domain. 51 more came back only after a second attempt
+without the domain, and 14 more only under the company's trade name. Without the
+cascade this run would have stopped at 176, so 65 contacts (20% of the list) exist
+because the first miss was retried. The retries that found nothing cost nothing.
+
+51 rescues on 227 rows that carried a domain is high. Your company_domain column is
+wrong on those rows: holding sites, agency sites or marketing domains that do not
+carry the mail. Worth fixing in the source rather than paying the retry every run.
+
+218 came back valid, which means verified: they go into the campaign as they are,
+with no verification pass. Checking them anyway would cost 54.5 credits and change
+nothing.
+
+23 came back risky, from the second source below its "sure" level. Those are the
+only ones worth 0.25 credit each to verify, or you drop them. Which?
+```
+
+## Checks before finishing
+
+- The cost was stated and the user said yes before the first paid call.
+- Every row of `leads.csv` still has its original columns, in their original order,
+  with their original values. Nothing was reordered or dropped.
+- **Every `not_found` row went through the whole cascade**, not one attempt. Check it
+  in the file: a row marked `not_found` whose `email_attempts_made` is 1 while it
+  carried a domain was given up on too early, and it is free to finish. A row with a
+  trade name must show 3 unless an earlier attempt found the address.
+- `country` was sent on every call, including the retries.
+- The summary names how many addresses came from a retry, and flags the domain column
+  when that number is high.
+- No address in the file came from a pattern unless it was verified and marked
+  `email_source: pattern_verified`.
+- **No `valid` result from the finder was sent to `outreach-verify`.** Only pattern
+  candidates and, if the user asked for it, the `risky` rows went there. State the
+  count of finder results you did not re-check, so nobody adds that pass later.
+- Found plus not found plus errors plus pending equals the number of rows looked up.
+  If it does not, a result was lost, so go and fetch it by `jobId`.
+- No job is left in `running`. Every `jobId` was either resolved or listed as pending
+  with instructions to collect it.
+- The summary states the discovery rate as a percentage, not as "the list is
+  enriched".
+- `credits_spent` in the JSON matches the difference in the account balance, or the
+  gap is explained.
+
+## Failure modes
+
+**400 with a validation message.** Almost always the missing `country`, sometimes an
+empty `fullname` or `companyName` after trimming. Fix the input and retry; no credit
+was taken because no job was created.
+
+**401.** The API key is wrong or disabled. Generate a new one in the Emelia app under
+Settings then API. Nothing else in this skill will work until this is fixed.
+
+**402, or an error mentioning credits.** The balance is empty. Stop the loop, report
+how many rows were done and where to resume. Do not retry: the balance will not refill
+by itself.
+
+**429.** Over your plan's request ceiling. Wait 60 seconds, resume from the same row,
+slow the loop down.
+
+**Job stuck in `running`.** Normal beyond 90 seconds because of the second source.
+Keep the `jobId` and come back to it. Still running after 15 minutes: record it as
+pending and tell the user, do not resubmit.
+
+**A high not-found rate on one domain.** Usually the domain is wrong (a redirect, a
+holding company, an agency site). The cascade catches most of these on attempt 2, so
+if attempt 2 keeps rescuing rows on the same domain, stop guessing and fix the domain
+in the list. If nothing on that domain is ever found, check one company by hand before
+spending more.
+
+**Everything comes back not found on the first pass, and the run was declared over.**
+The most expensive mistake in this skill, because the rows are already paid for
+upstream. One attempt is one method. Rerun the misses through attempts 2 and 3, which
+cost nothing unless they work.
+
+**Attempt 2 returns a different domain than the one in your file.** That is the
+cascade doing its job, and the address it returns carries its own verdict. Keep the
+address, and write the domain it came from next to it (`x_found_domain`) rather than
+silently overwriting `company_domain`, so the user can see the two disagree.
+
+**The trade name attempt never runs.** Either no column carries a trade name, or the
+trade name is the legal name with a wrapper (`SAS`, `Ltd`) around it, which is not a
+different name. Check the column mapping before concluding your data has no trade
+names, then go and source them in `outreach-leads`.
+
+**The same person is looked up twice under two spellings of the company.** You paid
+twice. Deduplicate on the person, not on the row, before the run.
+
+**A role mailbox comes back** (`contact@`, `info@`, `sales@`). Keep it, mark it, and
+do not treat it as a personal address in the copy: a first name variable on a shared
+mailbox is what makes cold email look automated.
+
+**Names with particles or two surnames** (`de la Fuente`, `Van den Berg`). Send the
+name exactly as it appears in the source: do not normalise it, do not strip accents.
+
+**A verification pass was run over the results anyway.** Someone chained
+`outreach-verify` behind this skill out of habit. It is a real cost with no return:
+0.25 credit per row for a verdict the finder had already given. Say how much it cost,
+and remove the step rather than repeating it next run.
+
+## Limits
+
+This skill finds business addresses. It does not confirm the person still works
+there, and a leaver's address can stay technically valid for months, so `valid` is
+not a promise that anyone will read it. A find is dated: fresh this month, stale next
+year, per the freshness table in `outreach-verify`.
+
+It cannot use a LinkedIn URL as input: the finder takes a name and a company. It does
+not find personal addresses and should not be pointed at consumer domains.
+
+It does not label a domain as catch-all. That test belongs to `outreach-verify` and
+it is worth paying for on addresses you brought yourself, where you have no verdict
+at all. It is not worth paying for on finder output: the finder already gave a
+verdict per address, and a control test would only tell you that a domain the finder
+already handled is permissive.
+
+The cascade has three attempts and no more. It cannot invent a company name that is
+not in your data, and it will not go looking on the web for a domain to try next: when
+all three attempts miss, the row is `not_found` and the honest answer is to say so.
+
+It does not send anything, does not add anyone to a campaign, and does not decide who
+is worth contacting.

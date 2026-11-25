@@ -1,0 +1,164 @@
+---
+name: assess
+description: Analyze issue/PR/problem before implementation; produce source-backed findings and measurable gates. Skip diff or PR correctness reviews owned by code-review and symptom-first debugging owned by investigate.
+---
+
+> Before asking, read [User Questions](../../shared/codex-user-questions.md).
+
+# Assess
+
+> Task-size routing follows [Proportional Execution](../../shared/native-skill-contract.md#proportional-execution); this skill's specialized lifecycle and acceptance checks remain authoritative.
+
+Run evidence-first analysis: truth, risk, next action before implementation, review, release, sync.
+
+## Input Schema
+
+```json
+{
+  "question": "required analysis question",
+  "scope": "required files, diff, issue text, report path, PR number, or repo area",
+  "mode": "optional local|github|report|ecosystem; default local",
+  "done_when": "findings are source-backed, ranked, and have explicit confidence"
+}
+```
+
+## Workflow
+
+<!-- policy-sibling: skills/code-remediate/references/intake.md (GitHub read permissions), skills/release/SKILL.md (Workflow: GitHub read permissions), skills/code-review/references/source-and-scope.md (GitHub read permissions); intentional divergence: assess permits reader or collector evidence, release uses the reader, and review/remediation use the collector with their own PR preflight and recovery rules. -->
+
+For allowed GitHub reads, run the direct helper under current effective network and filesystem grants or request runtime approval for the complete owning command when required capability is unavailable. No separate workflow consent is needed. Apply [GitHub Read Execution](../../shared/native-skill-contract.md#github-read-execution); an explicit runtime denial or non-overridable restriction stops the attempt.
+
+When runtime permissions show network access enabled and the helper's required paths writable, omit `sandbox_permissions` and `justification` on the direct helper call; give no approval brief. Apply GitHub Read Execution even when the active profile name is omitted. A missing label or failed lookup does not mean disabled access; do not run `codex execpolicy list` to detect a profile. Preserve explicit destination restrictions and check report, `.git`, and checkout paths separately where applicable.
+
+Codex provides this selected `SKILL.md` path. Resolve `PLUGIN_ROOT` as directory two levels above containing skill directory, then use only helpers under `PLUGIN_ROOT/shared/` that are listed in `package-manifest.json`. Never guess cache version or fall back to source checkout.
+
+### 01: Create run directory
+
+Run `create_run.py --skill assess` per `../../shared/helper-cli-contract.md`.
+
+### 02: Normalize the analysis mode
+
+Select the analysis mode from the direct request and available evidence. Local-only work remains local.
+
+- `local`: code, local diff/reports, pasted text.
+- `github`: live issue/release/repository metadata through `github_read.py`; use only its audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`) or explicit read-only GraphQL query for Discussions. PR collection uses `collect_pr.py` only. Prefer `gh`; use public HTTPS fallback only as final public REST fallback.
+- `report`: `.reports/**` or `.reports/codex/**` artifact.
+- `ecosystem`: downstream/API/dependency impact; current external claims need live web evidence. Do not invoke `gh` outside `github_read.py`.
+
+Use [GitHub Reader Runtime Boundary](../../shared/native-skill-contract.md#github-reader-runtime-boundary) for `github_read.py`. For PR evidence, use [PR Collection Runtime Boundary](../../shared/native-skill-contract.md#pr-collection-runtime-boundary) for `collect_pr.py`; the reader helper does not replace its outer collector. Bind a numeric PR target through `select-git-remote.py --canonical-pr-url`, preferring valid GitHub `origin` despite fork remotes and using the sole GitHub remote only when `origin` is absent. Use that canonical URL for collector `--target`, or stop if no safe default identity exists. A user-supplied canonical URL takes precedence and must match a configured remote. Do not create or modify runtime approval rules files. Runtime denial stops the current attempt under the existing recovery policy. Remote publication and other remote mutation remain forbidden; the PR worktree publication gate is not available to this skill.
+
+Run `collect_pr.py` as the direct owning command per GitHub Read Execution. On an explicit denial or non-overridable restriction, stop and use only already-available local or pasted evidence when the selected mode permits it. Runtime web tools keep their own permission path.
+
+If mode is unsupported, explain which supplied value is invalid and list accepted modes above. If request is ambiguous, name missing source or scope decision and ask one concrete question through User Questions with its supported choices or expected input format, such as a PR number/URL, issue number/URL, or local file path. Continue as `local` when pasted evidence supports requested analysis, stating its freshness limits; do not request mode choice that available evidence already resolves. Resume affected analysis when user supplies missing decision or evidence.
+
+### 03: Capture scope and source inventory before drawing conclusions
+
+Use `PLUGIN_ROOT/bin/python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` into `<run-directory>/baseline`. Scan references separately; record failed diff collection.
+
+**Structural context (optional)**: for `local`/`ecosystem` scope naming Python module or symbol, probe codemap-py once: `PLUGIN_ROOT/bin/python PLUGIN_ROOT/shared/codemap_adapter.py context --category analysis [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with evidence above. Persist result once here; step 05 specialist fan-out consumes `<run-directory>/codemap-context.json`; added queries only under the contract's bounded `Specialist follow-up queries` rule.
+
+### 04: Gather evidence with a ledger. Write `<run-directory>/evidence.md` with one row per claim:
+
+```markdown
+| Claim | Source | Freshness | Confidence | Notes |
+| --- | --- | --- | --- | --- |
+```
+
+Evidence rules:
+
+- Code claims: file/line refs.
+- External/current: primary sources or unavailable-live-verification caveat.
+- Thread/report: distinguish facts/hypotheses.
+- List duplicate/related findings; do not silently collapse.
+
+### 05: Orchestrate specialist analysis when the question has independent axes
+
+Read and apply `../../shared/specialist-orchestration.md` only for broad/multi-risk PR/issue, ecosystem, or independently challenged conclusions; do not load it when narrow local fan-out would duplicate context.
+
+Write `<run-directory>/orchestration.md` when fan-out is used or intentionally skipped for broad scope. Include:
+
+- specialist axes considered
+- context pack per triggered axis
+- skipped axes with rationale
+- consolidation plan
+
+Routes: `qa-specialist` testability; `web-explorer` current ecosystem; `scientist` method; `curator` config/workflow drift; `challenger` high-impact conclusions. Use `solution-architect` for architecture/API or `security-auditor` for risk only when user expressly requests that advisory pass or selects that role; each is bounded read-only evidence returned to the parent/session for next action and acceptance.
+
+### 06: Analyze alternatives before recommending action
+
+Required sections in `<run-directory>/analysis.md`:
+
+- `Question`
+- `Scope`
+- `Verified Facts`
+- `Hypotheses`
+- `Rejected Alternatives`
+- `Findings`
+- `Recommendations`
+- `Gaps`
+
+### 07: Run the Self-Critical Gate and the diff check
+
+Before step 08, write `<run-directory>/self-review.md` answering:
+
+1. Which claim would be most damaging if wrong?
+2. What evidence directly supports it?
+3. What plausible alternative did you rule out?
+4. Which facts are unverified or stale?
+5. What next check would most improve confidence?
+
+Critical conclusion without self-review cannot pass.
+
+Then, when a diff under analysis lives in the working tree, run `git diff --check -- <analysed paths>` as argv command, limited to the paths in the evidence ledger and `<run-directory>/baseline` scope so unrelated caller edits never decide the result; a collected or pasted diff outside the working tree is not covered by this command, so record that limit instead. Write combined output to `<run-directory>/review.txt` and retain its exit status as review evidence; do not erase nonzero result. Report subject whitespace defects as finding rows under `../../shared/quality-gates.md` §review; they do not decide the review gate. The gate still verifies the recorded self-review and request conformance. Outside a Git repository, record that reason and scan run-owned files by path for trailing whitespace and conflict markers. When no diff exists, record that absence in `<run-directory>/review.txt` instead of running the command.
+
+### 08: Decide gate result
+
+- `pass`: evidence-backed ranked findings, explicit gaps.
+- `fail`: missing scope/blocking-claim evidence, stale external claim as fact, or no result artifact.
+
+### 09: Run shared gates and write the validated result artifact
+
+Follow `../../shared/helper-cli-contract.md` and helper `--help`. Analysis-only: mark lint/format/types/tests not applicable with reasons; review needs non-empty `analysis.md`, `self-review.md`, clean diff. The validator's `assess` entry lists no required files or sections, so these file and section requirements (`evidence.md`, the `analysis.md` sections in step 06, `self-review.md`) are reviewer-checked: confirm them yourself before promotion. Write `ASSESS_METADATA`, validate `assess`, promote only validated candidate.
+
+Replace skip with command when analysis includes code changes/executable probes.
+
+## Fail-Fast Rules
+
+1. Missing question or scope => fail.
+2. Unsupported mode with insufficient pasted/local evidence => fail.
+3. Current external claim lacks live primary-source evidence/stale-unverified caveat => fail.
+4. Blocking conclusion without evidence ledger entry => fail.
+5. Missing self-review for critical conclusions => fail.
+6. Broad multi-axis analysis lacks orchestration evidence/skip rationale => fail.
+7. Result artifact missing => fail.
+
+## Quality Gates
+
+Required checks:
+
+- `review`: evidence ledger, self-review, `git diff --check` when diff exists.
+
+Optional checks:
+
+- `lint`, `format`, `types`, `tests`: only with code changes/executable probes.
+
+## Calibration Hooks
+
+Update calibration when routing or evidence expectations change:
+
+- benchmark patterns: `assess`
+- behavioral cases: unsupported claims, stale-source caveats, duplicate/related-item handling, networked CLI owning-command approval
+
+## Output Contract
+
+Historical `change-analysis` artifacts retain their original skill identity, use the `assess` column contract. Report-reading compatibility only; the installed skill is named `assess`.
+
+Before writing result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
+
+Use `../../shared/quality-gates.md`.
+
+### Final chat
+
+Final chat follows shared ordered frame. `Outcome` states analysis conclusion and recommended decision. `Results` has one ranked finding per row and exactly `Finding | Impact | Decision | Evidence | Next action`. Apply shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; remaining analysis limits include open assumptions, unavailable evidence, and next check.
+
+Minimum artifact payload template: `result-template.json`.

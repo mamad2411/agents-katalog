@@ -1,0 +1,245 @@
+---
+name: orchardcore-sql-indexing
+description: Skill for using SQL-based content indexing in Orchard Core. Covers content item indexing tables, field indexing tables, database schema reference, the ContentItemIndex SQL indexes including IDX_ContentItemIndex_ContentItemId, querying indexed data with C#, Razor views, Liquid templates, saved SQL queries and GraphQL, and SQL indexing performance patterns. Use this skill when requests mention Orchard Core SQL Indexing, Query SQL-Indexed Content, Enabling SQL Field Indexing, ContentItemIndex Schema, LocalizedContentItemIndex Schema, Content Field Index Tables, or closely related Orchard Core implementation, setup, extension, or troubleshooting work. Strong matches include work with OrchardCore.ContentFields.Indexing.SQL, OrchardCore.ContentManagement, ContentItemIndex, ISession, LocalizedContentItemIndex, ContentPart, ContentField, BooleanFieldIndex, TextFieldIndex, NumericFieldIndex, ContentPickerFieldIndex.
+license: Apache-2.0
+metadata:
+  author: CrestApps Team
+  version: "1.0"
+---
+
+# Orchard Core SQL Indexing - Prompt Templates
+
+## Query SQL-Indexed Content
+
+You are an Orchard Core expert. Generate code for querying SQL-indexed content in Orchard Core using YesSql sessions, Razor views, Liquid templates, and GraphQL.
+
+### Guidelines
+
+- The `ContentItemIndex` table is always available and indexes core content item fields.
+- Enable `OrchardCore.ContentFields.Indexing.SQL` to create SQL index tables for content fields (Boolean, Text, Numeric, Date, etc.).
+- Use `ISession.Query<ContentItem, TIndex>()` in C# to query indexed data.
+- Use `@inject ISession Session` in Razor views to access query capabilities.
+- In Liquid, create a SQL Query in Orchard Core admin and use `Queries.QueryName | query` to retrieve records.
+- Dates are stored as UTC — convert to local time when displaying.
+- Column types listed are SQL Server types; SQLite has no length limits on text fields.
+- GraphQL filters are automatically generated from SQL index tables when `OrchardCore.ContentFields.Indexing.SQL` is enabled.
+- All recipe JSON must be wrapped in `{ "steps": [...] }`.
+- All C# classes must use the `sealed` modifier, except View Models.
+
+### Enabling SQL Field Indexing
+
+```json
+{
+  "steps": [
+    {
+      "name": "Feature",
+      "enable": [
+        "OrchardCore.ContentFields.Indexing.SQL"
+      ],
+      "disable": []
+    }
+  ]
+}
+```
+
+### ContentItemIndex Schema
+
+The `ContentItemIndex` table is always available for querying content items.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `Id` | `bigint` | Primary key. |
+| `DocumentId` | `bigint` | YesSql document ID. |
+| `ContentItemId` | `nvarchar(26)` | Unique content item identifier. |
+| `ContentItemVersionId` | `nvarchar(26)` | Content item version identifier. |
+| `Published` | `bit` | Whether the item is published. |
+| `Latest` | `bit` | Whether this is the latest version. |
+| `ContentType` | `nvarchar(255)` | Content type name. |
+| `ModifiedUtc` | `datetime` | Last modified date (UTC). |
+| `PublishedUtc` | `datetime` | Publish date (UTC). |
+| `CreatedUtc` | `datetime` | Creation date (UTC). |
+| `Owner` | `nvarchar(255)` | Owner of the content item. |
+| `Author` | `nvarchar(255)` | Author of the content item. |
+| `DisplayText` | `nvarchar(255)` | Display text of the content item. |
+
+In Orchard Core 4.0 the SQL indexes of `ContentItemIndex` are `IDX_FK_ContentItemIndex` (created by YesSql on `DocumentId`), `IDX_ContentItemIndex_DocumentId_ContentType` (`DocumentId`, `ContentType`, `CreatedUtc`, `ModifiedUtc`, `PublishedUtc`, `Published`, `Latest`), `IDX_ContentItemIndex_ContentItemId` (`ContentItemId`, `DocumentId`, `Published`, `Latest`), `IDX_ContentItemIndex_ContentType` (`ContentType`, `DocumentId`, `Published`, `Latest`), `IDX_ContentItemIndex_Owner` (`Owner`, `DocumentId`, `Published`, `Latest`) and `IDX_ContentItemIndex_ContentItemVersionId` (`ContentItemVersionId`, `DocumentId`), plus `IDX_ContentItemIndex_ModifiedUtc` (`ModifiedUtc`, `DocumentId`, `Latest`, `Published`, `ContentType`) and `IDX_ContentItemIndex_ContentType_ModifiedUtc` (`ContentType`, `ModifiedUtc`, `DocumentId`, `Latest`, `Published`), which let the content items admin list sorted by modified date stop at the end of the page. Filters on one content type (admin list and its count, GraphQL, pickers, sitemaps), on the owner, on a content item id, or on a version id (`GetVersionAsync`, loading Lucene or Elasticsearch results) now seek instead of scanning. The 3.x indexes `IDX_ContentItemIndex_DocumentId`, `IDX_ContentItemIndex_DocumentId_Owner`, `IDX_ContentItemIndex_DocumentId_Author` and `IDX_ContentItemIndex_DocumentId_DisplayText` are dropped. To filter on another column, such as `Author` or `DisplayText`, add your own index from a data migration with `SchemaBuilder.AlterIndexTableAsync<ContentItemIndex>()`. Existing tenants get these changes through migration steps (versions 8 and 9). On a large table they take a moment; with YesSql 6.3 they no longer block writes on SQL Server editions with online index operations and on MySQL (`OrchardCore:YesSql:ConcurrentIndexCreationEnabled`), but still do on PostgreSQL and SQLite.
+
+`ContentItemIndex` and `LocalizedContentItemIndex` declare `SingleRecordPerDocument()` and `ExclusiveToDocumentType()`, so a query that only joins them isn't grouped by document and its count doesn't join `Document`. The content field index tables (`TextFieldIndex`, `ContentPickerFieldIndex`, ...) hold one row per field and don't declare them: joining one brings the grouping back.
+
+### LocalizedContentItemIndex Schema
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `Id` | `bigint` | Primary key. |
+| `DocumentId` | `bigint` | YesSql document ID. |
+| `ContentItemId` | `nvarchar(26)` | Unique content item identifier. |
+| `Published` | `bit` | Whether the item is published. |
+| `Latest` | `bit` | Whether this is the latest version. |
+| `LocalizationSet` | `nvarchar` | Localization set identifier. |
+| `Culture` | `nvarchar` | Culture code for the content item. |
+
+### Content Field Index Tables
+
+Each field type has a corresponding index table. All share these common columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `Id` | `bigint` | Primary key. |
+| `DocumentId` | `bigint` | YesSql document ID. |
+| `ContentItemId` | `nvarchar(26)` | Content item identifier. |
+| `ContentItemVersionId` | `nvarchar(26)` | Content item version identifier. |
+| `ContentType` | `nvarchar(255)` | Content type name. |
+| `ContentPart` | `nvarchar(255)` | Content part name. |
+| `ContentField` | `nvarchar(255)` | Content field name. |
+| `Published` | `bit` | Whether the item is published. |
+| `Latest` | `bit` | Whether this is the latest version. |
+
+**Field-specific columns by table:**
+
+| Table | Value Column(s) | Type |
+|-------|-----------------|------|
+| `BooleanFieldIndex` | `Boolean` | `bit` |
+| `ContentPickerFieldIndex` | `SelectedContentItemId` | `nvarchar(26)` |
+| `DateFieldIndex` | `Date` | `datetime` |
+| `DateTimeFieldIndex` | `DateTime` | `datetime` |
+| `HtmlFieldIndex` | `Html` | `nvarchar(max)` |
+| `LinkFieldIndex` | `Url`, `BigUrl`, `Text`, `BigText` | `nvarchar(766)` / `nvarchar(max)` |
+| `MultiTextFieldIndex` | `Value`, `BigValue` | `nvarchar(766)` / `nvarchar(max)` |
+| `NumericFieldIndex` | `Numeric` | `decimal(19,5)` |
+| `TextFieldIndex` | `Text`, `BigText` | `nvarchar(766)` / `nvarchar(max)` |
+| `TimeFieldIndex` | `Time` | `bigint` (TimeSpan ticks) |
+| `UserPickerFieldIndex` | `SelectedUserId` | `nvarchar(255)` |
+
+### Querying from C#
+
+```csharp
+using OrchardCore.ContentManagement;
+using OrchardCore.ContentFields.Indexing.SQL;
+using YesSql;
+
+namespace MyModule;
+
+public sealed class ProductService
+{
+    private readonly ISession _session;
+
+    public ProductService(ISession session)
+    {
+        _session = session;
+    }
+
+    public async Task<IEnumerable<ContentItem>> GetProductsByTextField(
+        string contentType,
+        string contentField)
+    {
+        return await _session
+            .Query<ContentItem, TextFieldIndex>(x =>
+                x.ContentType == contentType &&
+                x.ContentField == contentField &&
+                x.Published)
+            .ListAsync();
+    }
+
+    public async Task<IEnumerable<ContentItem>> GetExpensiveProducts(decimal minPrice)
+    {
+        return await _session
+            .Query<ContentItem, NumericFieldIndex>(x =>
+                x.ContentType == "Product" &&
+                x.ContentField == "Price" &&
+                x.Numeric > minPrice)
+            .ListAsync();
+    }
+
+    public async Task<IEnumerable<ContentItem>> GetRecentArticles(DateTime since)
+    {
+        return await _session
+            .Query<ContentItem, ContentItemIndex>(x =>
+                x.ContentType == "Article" &&
+                x.Published &&
+                x.CreatedUtc >= since)
+            .ListAsync();
+    }
+}
+```
+
+### Querying from Razor
+
+```html
+@using OrchardCore.ContentManagement
+@using OrchardCore.ContentFields.Indexing.SQL
+@using YesSql
+@inject ISession Session
+
+@{
+    var contentItems = await Session
+        .Query<ContentItem, TextFieldIndex>(x =>
+            x.ContentType == "Acme" &&
+            x.ContentField == "Country")
+        .ListAsync();
+}
+
+<ul>
+    @foreach (var item in contentItems)
+    {
+        <li>@item.DisplayText</li>
+    }
+</ul>
+```
+
+### Querying from Liquid
+
+First, create a SQL Query in the Orchard Core admin (Queries section). Name it `AllCountries` and do **not** select "Return Documents":
+
+```sql
+SELECT * FROM TextFieldIndex
+WHERE ContentType = 'Acme' AND ContentField = 'Country'
+```
+
+Saved SQL queries are parsed by the Cyqwel SQL parser (Orchard Core 4.0): only `SELECT` statements are accepted, the admin editor reports syntax errors with line and column when the query has no Liquid, and table names, `LIMIT`/`OFFSET` and helper functions (`year()`, `month()`, `now()`, `random()`, ...) are translated to the tenant database dialect. Use `@name:default` parameters for user input. See `orchardcore-content-queries` for the full Queries module reference.
+
+Then use the query in a Liquid template:
+
+```liquid
+{% assign allCountries = Queries.AllCountries | query %}
+{% for country in allCountries %}
+  {{ country.Text }}
+{% endfor %}
+```
+
+Saved queries are also exposed as data sets of the `Queries` data source, so data pipelines and reports can read them (see `orchardcore-data-sources`).
+
+### GraphQL Usage
+
+Enable `OrchardCore.ContentFields.Indexing.SQL` to build filters based on dynamic content fields in GraphQL queries.
+
+**Standard usage** — filtering products by a `NumericField` named `Amount` on `PricePart`:
+
+```graphql
+product(where: {price: {amount_gt: 10}}) {
+    contentItemId
+    displayText
+    price {
+        amount
+    }
+}
+```
+
+**Collapsed part** — when `PricePart` is collapsed:
+
+```graphql
+product(where: {amount_gt: 10}) {
+    contentItemId
+    displayText
+    amount
+}
+```
+
+**Collapsed with field name collision prevention:**
+
+```graphql
+product(where: {priceAmount_gt: 10}) {
+    contentItemId
+    displayText
+    priceAmount
+}
+```

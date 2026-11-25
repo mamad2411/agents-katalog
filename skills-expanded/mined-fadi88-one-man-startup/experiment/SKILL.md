@@ -1,0 +1,65 @@
+---
+name: experiment
+description: Run every bet, growth idea or workflow change as a pre-registered experiment - hypothesis, the number that would prove it, a read date, and what result would make it wrong - written before it starts. Use for pricing, copy, onboarding, channels, cost cuts and any "let's try".
+---
+
+# Experiment
+
+Write the entry in `docs/EXPERIMENTS.md` **before** the change ships. An experiment written after
+the result is a story.
+
+## The entry
+
+```markdown
+### 7. Annual plan at two months free, from 2026-03-01
+- **Why:** monthly churn is 9 percent; annual buyers churn less.
+- **Change:** one change only: the annual option on the pricing page.
+- **Hypothesis:** some monthly buyers choose annual.
+- **Prediction:** at least 15 percent of new paid sign-ups pick annual within 30 days.
+- **Wrong if:** under 5 percent pick annual. Then the annual option comes off and we look at
+  churn reasons instead.
+- **Confounds:** the launch post on 2026-03-03 brings unusual traffic.
+- **Read:** 2026-03-31.
+```
+
+And one line in the "At a glance" table at the top of the file.
+
+## Rules
+
+- One change at a time, or the result cannot be attributed.
+- The read date is kept. Reading early because it looks good is how false wins happen.
+- Record what the numbers say, not what was hoped. "Not distinguishable from noise" is a result.
+- A closed experiment moves to `docs/EXPERIMENTS_CLOSED.md` with its numbers and verdict.
+
+## A/B tests: when users can be split
+
+When the change is something users see (copy, onboarding, a price page, a feature) and enough
+of them arrive, test it on a random sample instead of before and after: half see the current
+version (A), half the new one (B), at the same time, so a news day or a launch post hits both.
+
+1. **Size first.** Pick one primary metric, today's rate and the smallest change worth acting
+   on, then run `python tools/ab_size.py size --base <rate> --target <rate>`. If that many users
+   will not arrive before the read date, do not run an A/B test: run it before and after, and
+   say the result is weaker.
+2. **Assign at random, once.** A user's arm comes from a stable hash of their user id and the
+   experiment's name, is logged when assigned, and never changes. Both arms ship behind the
+   flag (TPL-73), so B is switched off in one step.
+3. **Guardrails.** Name the numbers that must not get worse (errors, refunds, unsubscribes, AI
+   spend per user) and the drop that stops the test early. A guardrail is the only reason to
+   stop before the planned size.
+4. **No peeking.** Read once, at the planned size or the read date. First run
+   `python tools/ab_size.py srm --a <users> --b <users>`: a mismatch means assignment is broken
+   and the result is void. Then `read` for the difference and its p-value.
+5. **Ask first.** Showing users different prices or terms goes to `legal` and the founder before
+   it starts; the dashboard shows each arm's count and metrics from one place
+   (`skills/single-source/`).
+
+An A/B entry adds four lines to the template above, and `tools/checks/experiments_check.py`
+refuses one without them:
+
+```markdown
+- **Arms:** A, the current welcome screen; B, the three-step welcome screen. 50/50.
+- **Assignment:** hash of user id and "welcome-v2", logged at first open.
+- **Sample:** 3,839 per arm (`tools/ab_size.py size --base 0.10 --target 0.12`).
+- **Guardrails:** crash rate; stop if B's is double A's.
+```

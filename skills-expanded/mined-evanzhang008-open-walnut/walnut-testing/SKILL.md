@@ -1,0 +1,247 @@
+---
+name: walnut-testing
+description: Testing details for the Walnut repo — 5-tier pyramid (unit/integration/e2e/browser/live), per-tier vitest configs & parallelism, how to judge if YOUR change caused a failure (isolated run + HEAD baseline diff), known pre-existing failures, mock-constants helper, live test pattern, Playwright modes. Use when running tests, adding tests, or triaging test failures.
+---
+
+# Testing — Implementation Details
+
+**Before you plan, build, test or ship anything the user can see, read the `walnut-ui-requirements` skill** ([.claude/skills/walnut-ui-requirements/SKILL.md](../walnut-ui-requirements/SKILL.md)): the rules every UI change must meet, each with its real incident. Its proof and core-flow rules decide what a UI test must cover.
+
+For testing philosophy, run commands, and anti-patterns, see project `CLAUDE.md`.
+For the layered pipeline (which tier to run when), see
+[docs/reference/testing-pipeline.md](../../../docs/reference/testing-pipeline.md).
+
+## Run the cheap layer (start here)
+
+```bash
+bun run test:quick          # the fast files (~2,250), the default
+bun run test:focus <path>   # one file/dir, 0.3-30s
+bun run test:baseline       # ⭐ the honest verdict: fails ONLY on NEW failures
+bun run test:pre-commit     # maps your diff to the affected tiers
+```
+
+**Every tier runs on bun, and needs no Node** (CI removes the runner image's Node
+first: `scripts/ci-remove-node.sh`). The package scripts start vitest as
+`bun --bun vitest`, by its bare name, so bun also puts its own `node` shim first on
+PATH and every child a test starts as `node` runs on bun too. `npx vitest`,
+`bun x vitest` and `./node_modules/.bin/vitest` start vitest on Node, and the global
+setup refuses that run, as it refuses a bun older than 1.4.4
+(`tests/setup/runtime-deps.ts`). A test that starts a server or a script spawns
+`process.execPath` (in a vitest worker, that is bun) or `bunRuntime()` from
+`tests/helpers/bun-runtime.ts`; never `node`, `tsx` or `npx`. Only the Playwright
+runner stays on Node; the fixture servers it starts run on bun.
+
+**`bun run test:baseline` is how you judge a change.** The quick tier carries **one
+known failure** (recorded in `tests/setup/known-failures.json` with its cause, the
+same on bun 1.4.4 as it was on Node; re-recorded on bun 2026-10-23). The baseline gate ignores it and fails
+only on failures absent from the list, so you get a yes/no answer instead of
+eyeballing an aggregate. Fixed some? `bun run test:baseline:record`.
+
+⚠️ **Never raise the worker budget** (`tests/setup/worker-budget.ts`, 1 worker
+locally). Uncapped fan-out hard-crashed the dev Mac twice in July 2026. `bun run test:ci`
+runs tiers *sequentially* for the same reason — don't "optimise" it back to parallel.
+
+### The mergeConfig trap (cost 2× suite runtime for months)
+
+`mergeConfig` **CONCATENATES** `include`/`exclude` arrays. Passing `include`
+through its second argument appends to the base's `tests/**` instead of replacing
+it — so `vitest.unit.config.ts` and `vitest.integration.config.ts` each collected
+~336 files (the whole suite) and `npm test` ran nearly every test **twice** (349s +
+397s). Both now assign `config.test.include` *after* the merge;
+`tests/setup/quick-tier.test.ts` guards the invariant. **Any new narrowing config
+must do the same.**
+
+## Testing Pyramid (5 tiers)
+
+```
+                  ┌──────────────────┐
+                  │  Live (real APIs) │  *.live.test.ts — real Bedrock/MS-To-Do, $$$
+                  ├──────────────────┤
+                  │  Browser (PW)    │  tests/e2e/browser/ — Playwright
+                  ├──────────────────┤
+                │    E2E (vitest)      │  tests/e2e/ — real server + WS, 4 workers
+                ├──────────────────────┤
+              │   Integration (super)    │  tests/web/routes/ — supertest, parallel
+              ├──────────────────────────┤
+            │       Unit (vitest)           │  tests/core/, tests/model/ (unit tests)
+            └──────────────────────────────┘
+```
+
+| Tier | Location | What's real | What's mocked |
+|---|---|---|---|
+| **Unit** | `tests/core/`, `tests/model/` | Logic, data structures | File paths → tmpdir |
+| **Integration** | `tests/web/routes/` | Express app, middleware | File paths → tmpdir |
+| **E2E** | `tests/e2e/` | Server, WS, bus, disk I/O | `constants.js` → tmpdir, Claude CLI → mock script |
+| **Browser** | `tests/e2e/browser/` | Browser, server, full SPA | `constants.js` → tmpdir, Claude CLI → mock script |
+| **Live** | `tests/**/*.live.test.ts` | Everything real (LLM, MS To-Do API) | File paths only |
+
+## Test Configs & Parallelism
+
+Each tier has its own config. All tiers except Live run in parallel.
+
+All tiers share ONE worker budget: `tests/setup/worker-budget.ts` (2 locally, 4 in CI).
+
+| Tier | Config File | Files | Time | Timeout |
+|---|---|---|---|---|
+| **Quick** ⭐ | `vitest.quick.config.ts` | 306 | 51s @4w | 15s |
+| **Slow** | `vitest.slow.config.ts` | 26 | 311s | 60s |
+| **Unit** | `vitest.unit.config.ts` | 224 | — | 30s |
+| **Integration** | `vitest.integration.config.ts` | 112 | — | 60s |
+| **E2E** | `vitest.e2e.config.ts` | 103 | ~120s | 60s |
+| **Browser** | `playwright.config.ts` | — | — | 30s |
+| **Live** | `vitest.live.config.ts` | 11 | — | 300s (costs money) |
+
+**quick + slow = an exact partition** (306 + 26 = 332, zero overlap, zero orphans)
+of everything except e2e/commands/live/frontend-rooted. Membership is decided by
+*measured* time — the >2s list lives in `tests/setup/slow-tests.ts`. Re-measure
+rather than hand-editing it.
+
+`scripts/test-parallel.mjs` (`bun run test:ci`) runs the set CI runs, quick, slow,
+e2e, then the four frontend configs, **sequentially** (it used to be
+`Promise.all`, which multiplied the worker cap by 6 and crashed the machine).
+Until 2026-10-24 it ran unit + integration instead of quick + slow and missed
+201 files; `test:unit` and `test:integration` still exist for those two configs.
+`*.live.test.ts` is excluded from all non-live configs — never runs accidentally.
+
+## Judging whether YOUR change caused a failure (read before you panic)
+
+The suite has a meaningful baseline of **pre-existing failures**: a full `bun run test:ci` /
+full-integration run reports a large, scary aggregate number that is mostly NOT your fault.
+Do **not** judge regressions from the aggregate count. Instead:
+
+1. **Run the touched file(s) in isolation**: `bun --bun vitest run --config <tier>.config.ts <file>`.
+2. **Diff against a clean HEAD baseline** — stash-free method (project policy blocks `git
+   stash`): `cp` your working files aside, `git checkout HEAD -- <src>`, run the same isolated
+   file, then restore your files. If the failure count + the failing test *names* are identical
+   on HEAD, the failure is pre-existing and not yours.
+
+This is byte-for-byte reliable because each test file mocks `constants.js` to a **unique random
+tmpdir** (`createMockConstants()` uses `Date.now()`+random) and resets module singletons
+(`_resetForTesting()`). **There is no shared-`WALNUT_HOME` cross-file data pollution** — verified:
+a file's failing-test set is identical run-alone vs run-in-the-full-suite. Aggregate numbers look
+noisy only because of (a) the pre-existing failures below and (b) real **resource contention**
+when many forks spawn real sessions at once (`Timed out waiting for session result (15000ms)`),
+which is a perf artifact, not a correctness one.
+
+### Known pre-existing failures (NOT regressions — don't chase these)
+
+**These are now enumerated machine-readably in `tests/setup/known-failures.json`
+(118 entries when it was first measured on 2026-07-25; one since `d0ae758b2` fixed the
+rest at the root, and still one on bun), so prefer
+`bun run test:baseline` over the manual HEAD-baseline dance below**: it does the
+same comparison automatically and exits non-zero only on genuinely new failures.
+The prose below explains *why* the big clusters fail.
+
+- **`tests/providers/claude-code-session.test.ts`, `tests/providers/session-io.test.ts`,
+  `tests/e2e/ssh-session.test.ts`** import `buildRemoteCommand` (and `session-io.test.ts` also
+  `RemoteIO`, `transferImagesForRemoteSession`) — **these symbols no longer exist in
+  `src/providers/session-io.ts`** (a 2026-05-26 refactor, commit `3970344`, removed them while the
+  2026-03-28 tests still reference them). The bad import throws, failing **every** test in the
+  file (~57 in claude-code-session, ~22 in session-io). Fix is to update the test imports to the
+  surviving exports (`shellQuote`, `buildRemotePreamble`, `wrapInLoginShell`, `REMOTE_BASE_PATH`,
+  `createSessionIO`) — owned by the sessions subsystem, tracked separately.
+- **`claude-code-session.test.ts`** also needs a running local daemon
+  (`Local daemon not running. Call localDaemon.ensureRunning()`); ~37 fail without it under a bare
+  `bun --bun vitest` run.
+- Assorted contract-drift assertions (e.g. `context-inspector` expecting model `claude-opus-4-6`;
+  task DELETE expecting `200` vs actual `204`).
+
+Bottom line: a clean change can sit on top of a red full-suite run. Trust the isolated +
+HEAD-baseline diff, not the aggregate.
+
+## Mock Constants
+
+Use the shared `createMockConstants()` helper instead of inline mock blocks:
+
+```typescript
+import { createMockConstants } from '../helpers/mock-constants.js';
+vi.mock('../../src/constants.js', () => createMockConstants());
+```
+
+This generates all constants pointing to a unique tmpdir. Prefer this over inline mock boilerplate.
+
+## Stubbing a singleton: spy on it, don't `vi.mock` its module
+
+**If the code under test reaches a singleton through `await import(...)`, a
+`vi.mock` module factory may not reach it — and the miss is SILENT.** Patch the
+real object instead:
+
+```typescript
+// ✅ immune to which module instance the consumer resolves
+import { sessionRunner } from '../../src/providers/claude-code-session.js'
+beforeEach(() => { vi.spyOn(sessionRunner, 'findSessionByClaudeId').mockImplementation(...) })
+afterEach(() => { vi.restoreAllMocks() })
+```
+
+Measured on `tests/providers/session-init-after-result-turn-start.test.ts`
+(2026-08-18): with a `vi.mock('claude-code-session.js')` factory, the TEST file's
+import saw the mock while `core/phase.ts`'s stale-result gate — one dynamic
+`import()` away — got the REAL module in the same run. Proved by tagging the
+factory's object with `__isMock` and printing it from both sides: test `true`,
+gate `false`.
+
+- **The trigger is an unrelated static edge.** The gate only diverges once the
+  real module is already in the graph. `b7e23c32` created that edge
+  (`claude-code-session → acp-session → self-knowledge-contract → phase`).
+  Cutting just that one import flipped the gate to `isMock=true` and the three
+  failing assertions went green — so a test can rot from an import added in a
+  file it never mentions.
+- **Why it's dangerous:** the gate is written to fail OPEN (no live session →
+  proceed), which is correct for production. Combined with a stub that never
+  applies, the test asserts a guard that silently is not running. No error, no
+  mock warning, just three assertions failing for an invented reason. Any guard
+  that degrades gracefully hides this the same way.
+- **Second, independent hazard:** `{ ...actual.someSingleton }` on a CLASS
+  instance drops every prototype method (verified in a scratch repro: spreading
+  an instance leaves `find` `undefined`), so the "preserve the rest" idiom
+  quietly yields a near-empty object. Another reason to spy rather than rebuild.
+
+Module factories are still right for pure-data or leaf modules (`constants.js`
+above). Reserve them for cases with no live object to patch.
+
+## Live Test Pattern
+
+Live tests hit real external APIs (Bedrock, MS To-Do). They are expensive and opt-in only.
+
+```typescript
+import { isLiveTest, hasAwsCredentials } from '../helpers/live.js';
+
+describe.skipIf(!isLiveTest() || !hasAwsCredentials())('Bedrock live', () => {
+  it('sends a real prompt to Claude', async () => { /* ... */ });
+});
+```
+
+- `isLiveTest()` — checks `WALNUT_LIVE_TEST=1` or `LIVE=1` env var
+- `hasAwsCredentials()` — checks AWS env vars or `aws sts get-caller-identity`
+- `hasMsGraphCredentials()` — checks MS To-Do token env vars
+
+## Feature Coverage
+
+| Feature | Unit | Integration | E2E (vitest) | Browser (PW) | Live |
+|---|---|---|---|---|---|
+| Task CRUD | `tests/core/task-manager.test.ts` | `tests/web/routes/tasks.test.ts` | `tests/e2e/web-app.test.ts` | `tests/e2e/browser/app.spec.ts` | — |
+| Toggle complete | `tests/core/toggle-complete.test.ts` | `tests/web/routes/toggle-complete.test.ts` | `tests/e2e/todo-panel-fixes.test.ts` | `tests/e2e/browser/app.spec.ts` | — |
+| Favorites | — | `tests/web/routes/favorites.test.ts` | `tests/e2e/todo-panel-fixes.test.ts` | — | — |
+| Slash parsing | — | — | `tests/e2e/todo-panel-fixes.test.ts` | — | — |
+| Sessions (lifecycle) | `tests/providers/claude-code-session.test.ts` | — | `tests/e2e/session-lifecycle.test.ts` | — | — |
+| Session WS streaming | `tests/providers/claude-code-session.test.ts` | — | `tests/e2e/session-lifecycle.test.ts` | — | — |
+| Memory + search | `tests/core/memory*.test.ts` | — | `tests/e2e/memory-lifecycle.test.ts` | — | — |
+| Dashboard | — | — | `tests/e2e/web-app.test.ts` | — | — |
+| Config | — | — | `tests/e2e/web-app.test.ts` | — | — |
+| WS event delivery | — | — | `tests/e2e/web-app.test.ts` | `tests/e2e/browser/app.spec.ts` | — |
+| Context Inspector | — | `tests/web/routes/context-inspector.test.ts` | `tests/e2e/context-inspector-conversation.test.ts` | `tests/e2e/browser/context-inspector.spec.ts` | — |
+| Task reorder (DnD) | `tests/core/task-manager.test.ts` | `tests/web/routes/tasks.test.ts` | — | — | — |
+
+## Playwright
+
+Two modes:
+
+1. **Automated code tests** (`tests/e2e/browser/`): Run with `bun x playwright test`. The runner itself needs Node on PATH (`bun x` starts it through Playwright's own `node` shebang; it cannot load its config on bun), and the config starts the fixture server on bun automatically. At most 4 workers, each test creates unique data. Tests are standard `@playwright/test` specs.
+
+2. **Manual MCP verification** (final human-in-the-loop step): After automated tests pass, use Playwright MCP tools for visual spot-checks. Point them at an ephemeral server (`bun run dev:ephemeral` prints its port), never at :3456 when the check creates or changes data. A check that must write on :3456 runs as a test run (an automated browser marks itself; `curl`/`walnut` need `x-walnut-test-run` / `WALNUT_TEST_RUN`), so its objects stay off the user's board and are swept: see "Live verification" in the repo AGENTS.md.
+   ```
+   mcp__playwright__browser_navigate → http://localhost:<ephemeral port>
+   mcp__playwright__browser_snapshot → verify DOM structure
+   mcp__playwright__browser_take_screenshot → visual verification
+   ```
+   This is documented as "the AI's final manual step" — automated tests catch regressions, MCP screenshots confirm visual correctness.

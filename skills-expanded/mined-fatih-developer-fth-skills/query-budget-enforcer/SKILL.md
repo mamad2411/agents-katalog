@@ -1,0 +1,99 @@
+---
+name: query-budget-enforcer
+description: "Define and enforce query resource budgets: rows scanned, memory, execution time, and warehouse cost limits, plus N+1 detection and remediation. Use when queries are expensive or unpredictable, BigQuery or Snowflake costs spike, or the user wants guardrails against heavy queries."
+---
+
+# Query Budget Enforcer Protocol
+
+This skill acts as the financial and operational conscience of the database. It reviews queries not just for speed, but for computational cost, lock duration, and hardware limits.
+
+**Core assumption:** In cloud data warehouses (Snowflake, BigQuery), bad queries cost actual money. In OLTP (PostgreSQL), bad queries crash the server.
+
+---
+
+## 0. Context Intake
+
+Before designing, make sure you have the inputs below. Read the previous workflow step's artifact first if it exists. Ask only for what is missing, in a single message, and state any assumption you make instead of blocking.
+
+- Engine (PostgreSQL, MySQL, BigQuery, Snowflake) and where queries originate (ORM, BI tool, jobs).
+- Current pain: cost spikes, timeouts, lock contention, N+1 patterns.
+- Budgets already agreed, if any (max rows, timeouts, cost per query).
+
+## 1. Budget Categories (Static vs Dynamic)
+- **Default (Static):** Analyze queries textually based on known engine constraints (e.g. flagging `SELECT *` without `WHERE` for BigQuery or lack of `LIMIT`).
+- **Dynamic (On-Demand):** Connect to the database or metrics API (e.g. pg_stat_statements) to read historical query execution costs or dry-run estimates only if requested.
+- When evaluating a query, enforce limits based on the context:
+
+### A. Data Warehouse Constraints (BigQuery / Snowflake)
+- **Terabytes Scanned:** Did they use a `SELECT *` without partition filters (`WHERE date = ...`)? 
+- **Cost Estimation:** "This query scans 4TB. At $5/TB, this single run costs $20."
+
+### B. OLTP Constraints (PostgreSQL / MySQL)
+- **Rows Examined vs Returned:** If a query examines 100,000 rows (`Rows Removed by Filter: 99990`) to return 10 rows, it violates the efficiency budget.
+- **Locking Time:** Does the query hold an `Access Exclusive Lock` or lengthy `SELECT ... FOR UPDATE` that blocks concurrent transactions?
+- **Memory Spillage:** Does the sort operation exceed `work_mem` and spill to temporary disk?
+
+## 2. Enforcing Limits (The Output)
+
+Review the query and provide a Pass/Fail budget assessment.
+
+**Outputs.** In *file mode* — the user wants artifacts, or this skill runs as a step of an ecosystem workflow — write both files below to `docs/database-report/`. In *inline mode* — a quick question — answer in the chat and end with the JSON below as a *Handoff* block instead of creating files.
+
+1. **Human-Readable Markdown (`docs/database-report/query-budget-report.md`)**
+````markdown
+### 💳 Query Budget Assessment: FAILED ❌
+
+**Query Analyzed:**
+`SELECT * FROM events WHERE event_type = 'click';`
+
+**Violations Detected:**
+1. **[BigQuery] Partition Ignored:** The table is partitioned by `event_date`, but no date filter was provided. This will scan the entire 50TB table.
+2. **[OLTP] Over-fetching:** `SELECT *` pulls down 140 columns when the application likely only needs 3.
+
+### 💡 Remediation (How to get under budget)
+Rewrite the query to respect system limits:
+
+```sql
+-- ✅ Budget-friendly rewrite
+-- Added mandatory partition filter limit and explicit columns
+SELECT user_id, event_payload, created_at 
+FROM events 
+WHERE event_type = 'click' 
+  AND event_date >= CURRENT_DATE - INTERVAL '7 days';
+```
+````
+
+2. **Machine-Readable JSON (`docs/database-report/query-budget-output.json`)**
+```json
+{
+  "skill": "query-budget-enforcer",
+  "assessment": "FAILED",
+  "violations": [
+    {"type": "Partition Ignored", "engine": "BigQuery", "severity": "High"},
+    {"type": "Over-fetching", "engine": "OLTP", "severity": "Medium"}
+  ],
+  "suggested_sql": "SELECT user_id, event_payload..."
+}
+```
+
+---
+
+## When to Skip
+
+- The workload is a one-off analysis on an isolated replica with no cost or contention risk.
+
+## Guardrails
+- **Engine Awareness:** BigQuery hates `SELECT *` but loves denormalization. PostgreSQL hates denormalization but `SELECT *` is less deadly if properly indexed. Adjust budgets based on the target engine.
+- **Hard Limits:** Recommend configuring server-side limits like `statement_timeout` (PostgreSQL) or Maximum Bytes Billed (BigQuery) to definitively enforce budgets at the infrastructure layer.
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-database` — Database Domain.
+
+**Workflows:**
+- **Performance Optimization Flow** (`db-performance`, step 3 of 3): last step → once it passes, complete the workflow and report the outcome.
+- **Connection Scaling Flow** (`db-scaling`, step 2 of 2): last step → once it passes, complete the workflow and report the outcome.
+
+**Handoff contract:** pass results to the next skill through `docs/database-report/query-budget-output.json` with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-database`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/daidaij/my-skills (path: dev-tools/principle-encode-lessons-in-structure/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Encode Lessons in Structure

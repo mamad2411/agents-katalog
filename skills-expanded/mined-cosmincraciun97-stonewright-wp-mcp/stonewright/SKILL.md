@@ -1,0 +1,176 @@
+---
+name: stonewright
+description: >
+  Stonewright WordPress MCP entrypoint. Use for WordPress, Elementor,
+  Gutenberg, FSE, WooCommerce, ACF/CPT/content-model, PHP runtime, sandbox,
+  memory, skills, and agent workflow tasks.
+---
+
+# Stonewright
+
+Use this as the first Stonewright skill when the exact workflow is unclear.
+It routes the agent to the right specialized skill and MCP tools.
+
+## First Calls
+
+1. Call `stonewright-task-start` with the task, surface, and intent. Treat
+   `configured_mcp_surface` as the user's active Setup preference; a suggested
+   task profile is guidance, not permission to overwrite it.
+   For Elementor work, pass `post_id` of the page you will edit so document
+   architecture is detected automatically and V4-runtime writes are not blocked
+   as ambiguous. If the document is already corrupt (double-encoded meta or
+   duplicate ids), call `stonewright/elementor-v3-repair-document` before editing.
+2. Use `stonewright-context-bootstrap` or `stonewright-workflow-preflight` only
+   as compatibility paths when task-start is unavailable.
+3. Use `fast_path.tool_profile` from task-start before making a separate
+   `stonewright-tool-profile` call. Call `stonewright-tool-profile` only when
+   switching or verifying a compact profile.
+4. Read `expertise_refs` (`expertise_packs` with `responseMode=full`); load only
+   the matching section with `stonewright-expertise-get`. Never activate draft,
+   stale, retired, or version-incompatible guidance.
+5. If authentication or MCP visibility fails, call
+   `stonewright-wordpress-mcp-status` and `stonewright-setup-profile`, then use
+   direct `stonewright-wp-cli-*` tools only when WP-CLI is needed. Status uses
+   schema version 3. If it reports `reauthentication_required`, relay
+   `user_action` and stop WordPress work until the operator reauthenticates.
+   Ask the operator to run **Stonewright → Setup → Troubleshoot** (OAuth, Application
+   Password, local companion, or Not sure) when the client never sees tools,
+   fails auth, or cannot reach the site. Degraded task-start reconnects once.
+
+Styling ladder (Elementor and Gutenberg): block supports / preset slugs → typed
+widget controls → custom CSS only through approval-gated tools. On
+`stonewright_custom_code_approval_required` or
+`stonewright_custom_code_grant_required`, show `approval_url` and stop; never
+open it or issue a grant unless the user asks you to do that approval step.
+A theme-file write that was rolled back answers `stonewright_theme_write_smoke_failed`:
+read `attribution` and `custom_code_grant_status`. `reusable_once` means the rollback
+was not the change's doing and the same bytes may be applied once more with the same
+grant before it expires; `spent` means a new dry run and a new approval handoff.
+
+Gutenberg headings: check whether the theme already prints the page title as
+H1. If it does, section titles are H2 — do not double up. Query loops need a
+grid, cropped featured images (`aspectRatio` + `scale`), and card spacing;
+never ship the unstyled vertical dump.
+
+Honor site policy from compact `stonewright-task-start`:
+
+- `context.custom_instructions.text` is Context page text plus custom
+  instructions (truncated to 400 characters). Treat it as binding. Use
+  `responseMode=full` when you need the rest.
+- `context.design_direction_ref` means a Design Direction is active. Call
+  `stonewright-design-direction-brief` before visual writes. The MCP server
+  instructions you read on connect name the same direction on one line.
+  Pluginless Direct cannot see wp-admin Context or Design.
+- `context.agent_preferences`, when present, lists site preferences as
+  `key: value` pairs. Follow them.
+- `fast_path.routing_hint`, when present, names the typed tool for post meta,
+  option, Elementor data, or menu work the task mentions. A `routing_hint` in a
+  `stonewright-php-execute` response does the same for the snippet that ran.
+  Prefer the named tool; the hint is advice and never blocks a call.
+
+If `stonewright_essential_tools_mode` is enabled, expect a compact tool list.
+Use the fast-path tools returned by preflight instead of rediscovering the full
+ability surface. Use preflight's inlined tool profile first; use
+`stonewright-tool-profile` only to switch or verify a compact low-tools,
+Elementor, content-model, Gutenberg, WP-CLI, or site-admin profile, or the
+read-only `inspect` profile when the task is to look and not to change. Use
+`low-tools` for Antigravity, Gemini API, or other strict tool-cap clients; it
+keeps the client-visible startup surface under 30 tools before the agent
+switches to a specialist profile.
+
+### Profile self-upgrade loop
+
+When a needed tool is missing or an ability returns a gated/missing-tool error:
+
+1. Read `configured_mcp_surface` first. Do not activate a broader site-wide
+   profile than the user selected. Ask the user to change Setup, or use
+   `action: "activate"` only when they explicitly authorize that preference
+   change. Otherwise follow the ordered tools from `stonewright-task-start`.
+2. If the result has `tools_changed: true` or a non-empty
+   `re_list_instruction`, re-list tools (`tools/list`) before continuing.
+   stdio companion sessions emit `notifications/tools/list_changed` and refresh
+   their proxy registration; HTTP MCP already serves a fresh list per request.
+3. Retry the original work with the newly visible tools. If the client still
+   shows the old list after notification, restart the MCP session.
+
+The `full` profile (`stonewright/php-execute` and the other abilities that run
+or write code) is never switched on this way. Only an administrator chooses the
+Full surface in wp-admin (**Stonewright → Setup → Settings**); a request for it
+is refused with `stonewright_tool_profile_full_requires_admin`. Show the user
+the settings link (`approval_url`) and stop; do not look for another way to
+switch the profile.
+
+## Route
+
+- Design/image/Figma-to-WordPress: use `design-to-wordpress`.
+- Elementor V3 pages/widgets/templates: use `elementor-v3-builder`.
+- Elementor V4 (Atomic) documents: use `elementor-v4-atomic`.
+- Cloning or rebuilding an Elementor page or section: use `elementor-site-clone`.
+- Gutenberg/FSE/theme.json/templates: use `gutenberg-fse-builder`.
+- Blocksy, GenerateBlocks, Kadence, or Spectra pages: use `blocksy-build-page`,
+  `generateblocks-build-page`, `kadence-build-page`, or `spectra-build-page`.
+- ACF, CPT UI, Meta Box, Pods, taxonomies: use `content-model-integrations`;
+  ACF field groups and values: `acf-build-fields`.
+- WooCommerce catalog work: use `woocommerce-catalog`.
+- SEO titles, descriptions, canonicals, robots: use `seo-optimize`.
+- Contact forms: use `forms-inventory`.
+- Brand palette, typography, and kit sync: use `visual-direction`.
+- A new page on a site that may already have matching sections: use
+  `stonewright-section-reuse`.
+- Stonewright plugin development: use `wp-plugin-dev`.
+- Review/polish generated pages: use `stonewright-review`.
+- A `pending_incident`, a site that stopped loading, or an undo or redo of a
+  change: use `stonewright-rescue`.
+- Writing or importing a site skill: use `how-to-write-skills`.
+
+## Rules
+
+- Use native Stonewright abilities before ad hoc code.
+- Prefer one-call fast paths: `stonewright/elementor-v3-build-page-from-spec`
+  with `dry_run`, `stonewright/elementor-v3-batch-mutate` for existing
+  Elementor tree edits, `stonewright/theme-builder-apply-template` for real
+  Elementor Theme Builder templates with display conditions,
+  `stonewright/content-model-loop-grid-flow` for CPT/ACF-backed Loop Grid
+  data, then `stonewright/elementor-wire-loop` to plan or transactionally wire
+  the native Loop Grid/Carousel widget and loop-item template,
+  `stonewright/content-bulk-upsert-posts` for repeated
+  post/CPT/custom-field rows, `stonewright/media-upload-batch`,
+  and tokenized `stonewright-wp-cli-run` for content, option, cache, rewrite
+  and read-only plugin/theme commands (plugin and theme install, update, delete
+  and activate are refused there; use `stonewright/plugin-activate`,
+  `stonewright/plugin-deactivate`, `stonewright/plugin-delete`,
+  `stonewright/theme-activate`).
+  `stonewright/php-execute` for short runtime snippets is on the `full` profile
+  only.
+- For Theme Builder work, do not edit `_elementor_conditions` directly. Use
+  `stonewright/theme-builder-apply-template`; it renders the spec, snapshots,
+  applies conditions, clears/warms relevant state, and returns repair hints.
+- For admin-editable repeated cards, default to
+  `stonewright/content-model-loop-grid-flow` when the section needs CPT rows,
+  custom fields, a loop item template, and a Loop Grid widget contract.
+- For CPT rows plus many meta/custom-field values, use
+  `stonewright/content-bulk-upsert-posts` after the post type exists. Do not
+  fan out into dozens of `wp post meta update` calls unless the bulk ability is
+  unavailable.
+- On the `full` profile only, use `stonewright/php-execute` when a direct
+  WordPress/plugin API snippet is faster than many typed calls.
+- Use `stonewright-wp-cli-run` only with argv tokens.
+- For repeated read-oriented WP-CLI commands or non-ASCII values, use
+  `stonewright-wp-cli-batch-run` with JSON argv arrays instead of large inline
+  PowerShell/Node scripts; it refuses writes, which go through typed abilities,
+  `stonewright-wp-cli-run`, or a background job.
+- For long WP-CLI imports, plugin-owned CLI jobs, cache rebuilds, or large content
+  batches, use `stonewright-wp-cli-job-start` and poll with
+  `stonewright-wp-cli-job-status` instead of blocking one MCP request.
+- Do not run `wp ...` in a normal shell as Stonewright recovery, and do not use
+  another PHP adapter to replace Stonewright tools.
+- Never use `wp eval`, `wp eval-file`, `wp shell`, `wp package`, `--exec`, or
+  `--require`.
+- For visual work, implement one or two sections at a time and verify desktop,
+  tablet, and mobile before continuing.
+- For Elementor widgets, inspect schema or capability summary before writing.
+- After an Elementor apply, call `stonewright-elementor-css-regenerate` when
+  generated CSS must be rebuilt, then
+  `stonewright-elementor-post-write-verify`. The verifier is observation-only.
+- Generic content writes reject executable-code post types. Use the
+  approval-gated custom-code provider pipeline.

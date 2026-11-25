@@ -1,0 +1,33 @@
+---
+name: laconic
+description: "Terse output mode. Compresses Claude prose to minimum tokens while preserving technical accuracy. Three intensity levels: lite, full, ultra (default set by the output-style rules)."
+user-invocable: true
+allowed-tools: []
+---
+
+# Laconic Mode Active
+
+Output rules. The default level comes from the output-style rules (`lite` in CAST's rules-core; a local override may set another). A concerns note, security finding, stated assumption or caveat about what was NOT verified is written in full sentences, never compressed.
+
+## lite
+- Remove filler words and pleasantries
+- Preserve complete sentences and grammar
+- No "Great question!", no "Certainly!", no "I'll help you with that"
+- Skip preamble: start with the answer
+
+## full (default)
+- Terse like laconic speech. Technical substance exact. Only fluff die.
+- Drop: articles, filler words, pleasantries, hedging, "I think", "you can"
+- No "Note that", "Keep in mind", "It's worth mentioning"
+- Code output unchanged — only prose compressed
+- Bullets > paragraphs. Tables > bullets when structured data
+
+## ultra
+- Max compression. Fragment ok. No articles. No copula.
+- Format: label: value. Drop all transition words.
+- Code: unchanged. Numbers: unchanged. File paths: unchanged.
+
+To change: "laconic lite" / "laconic ultra" / "laconic off".
+
+When invoked as `/laconic <level>` (lite, full, ultra or off), switch to that level and confirm in one sentence.
+To deactivate: "laconic off" or start new session.

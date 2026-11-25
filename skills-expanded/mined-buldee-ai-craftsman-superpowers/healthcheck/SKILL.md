@@ -1,0 +1,72 @@
+---
+model: haiku
+description: "Run a comprehensive diagnostic of your Craftsman plugin installation and runtime. Use when troubleshooting plugin issues, after setup, or when session-start reports warnings."
+effort: low
+disable-model-invocation: true
+---
+
+# /craftsman:healthcheck - Plugin Diagnostic
+
+
+> The diagnostic is one command, `craftsman-healthcheck`. The plugin's `bin/`
+> is on PATH in the Claude Code Bash tool; on a host where it is not, call it
+> by its full path (`<plugin root>/bin/craftsman-healthcheck`). Do not use
+> `${CLAUDE_PLUGIN_ROOT}` in a skill body: Claude Code documents substituting
+> it inline in skill text (plugins-reference, read 2026-09-27), yet on Claude
+> Code 2.1.278 a skill that relied on it ran `source "/hooks/lib/config.sh"`
+> (measured 2026-09-20), the Bash tool's environment does not carry it, and no
+> other host is qualified for the substitution.
+
+## Outcome Contract
+
+- **Outcome**: a diagnostic of the plugin installation and runtime, with each failing check tied to a fix.
+- **Done when**: every check reports ok, warn, or error; each non-ok check names the action that resolves it.
+- **Evidence**: the healthcheck output itself, with counts.
+
+Run a full health check of your AI Craftsman Superpowers installation.
+
+## Process
+
+1. Run this command with the Bash tool, exactly as written, as your FIRST
+   action:
+
+```bash
+craftsman-healthcheck
+```
+
+   It prints the finished report: one line per check, `[ok]`, `[warn]` or
+   `[err]`, then the counts. Run it verbatim: do not source
+   libraries yourself, do not look for plugin files in the user's project
+   (this command lives in the installation and resolves its own paths), and
+   do not invent checks. If it is not found, the plugin's `bin/` is not on
+   PATH: call it by full path rather than replacing it with a diagnosis of
+   your own. Report a failure of this command as the finding it is.
+
+2. Show that output to the user as it came, every line of it. The command
+   already did the rendering; a diagnostic the assistant redraws is a
+   diagnostic the assistant can improve, and one that flatters the
+   installation is worse than none, because the user acts on it. Never raise
+   a `[warn]` or an `[err]` to ok, never head the report "ALL GREEN" while a
+   check is not ok, and never add a check the command did not print. Comment
+   BELOW the output, not inside it.
+
+   `craftsman-healthcheck --json` gives the same checks as an array when you
+   need to read them programmatically.
+
+3. Format as a clear diagnostic report:
+
+```
+╭─ Craftsman Healthcheck ─────────────────────╮
+│                                              │
+│  [check name]     [status icon] [message]   │
+│  ...                                         │
+│                                              │
+│  Status: N ok, M warnings, K errors          │
+╰──────────────────────────────────────────────╯
+```
+
+4. If any checks fail, provide specific fix instructions:
+   - missing deps → `brew install <dep>` (macOS) or `apt-get install <dep>` (Linux)
+   - missing config → `Run /craftsman:setup`
+   - Knowledge DB empty → `/craftsman:knowledge sync`
+   - Channels open → `/craftsman:healthcheck` will show cooldown status

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bradfrost/skills (path: skills/setup-brad-frost-skills/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: START HERE after installing Brad Frost's skills — run this once to get everything set up. Finds which of the skills you installed, runs the setup each one needs (the limits interview), and tells you h

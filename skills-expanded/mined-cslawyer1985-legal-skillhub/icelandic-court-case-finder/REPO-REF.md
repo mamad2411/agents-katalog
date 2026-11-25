@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/cslawyer1985/legal-skillhub (path: skills/icelandic-court-case-finder/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 当被要求查找、引用、分析或总结冰岛法院判决时使用本技能。涉及 Hæstiréttur（最高法院）、Landsréttur（上诉法院）、Félagsdómur（劳资法院）、héraðsdómur（地区法院）判例法或冰岛法律先例研究的请求会触发本技能。"

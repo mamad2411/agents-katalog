@@ -1,0 +1,267 @@
+---
+name: docx-review
+description: "Read, edit, and diff Word documents (.docx) with tracked changes and comments using the docx-review CLI — a .NET 8 tool built on Microsoft's Open XML SDK. Ships as a single 12MB native binary (no runtime). Use when: (1) Adding tracked changes (replace, delete, insert) to a .docx, (2) Adding anchored comments to a .docx, (3) Reading/extracting text, tracked changes, comments, and metadata from a .docx, (4) Diffing two .docx files semantically, (5) Responding to peer reviewer comments with tracked revisions, (6) Proofreading or revising manuscripts with reviewable output, (7) Any task requiring valid tracked-change .docx output with proper w:del/w:ins markup that renders natively in Word."
+metadata: {"nanobot":{"emoji":"📝","requires":{"bins":["docx-review"]},"install":[{"id":"brew","kind":"brew","formula":"sciclaw-docx-review","bins":["docx-review"],"label":"Install docx-review (brew)"}]}}
+---
+
+# docx-review
+
+CLI tool for Word document review: tracked changes, comments, read, diff, and git integration. Built on Microsoft's Open XML SDK — 100% compatible tracked changes and comments.
+
+## sciClaw-first rule
+
+When operating inside sciClaw, prefer the typed tools for the common flows:
+
+- `docx_review_read` for `--read --json`
+- `docx_review_diff` for `--diff --json`
+- `docx_review_apply` for manifest validation/apply flows
+
+Use raw `docx-review` CLI only as fallback or for advanced modes the typed tools do not cover yet, such as `--textconv`, `--git-setup`, `--create`, `--template`, or unusual flag combinations.
+
+## Install
+
+```bash
+brew tap drpedapati/tap
+brew install sciclaw-docx-review
+```
+
+Binary: `/opt/homebrew/bin/docx-review` (12MB, self-contained, no runtime)
+
+Verify: `docx-review --version`
+
+## Workflow Choice (Critical)
+
+### Creating a NEW manuscript/docx with clean output
+
+Use `pandoc` from Markdown, not docx-review edit manifests:
+
+```bash
+pandoc manuscript.md -o manuscript.docx
+```
+
+sciClaw auto-applies its bundled NIH reference template for DOCX output unless `--reference-doc` is provided.
+
+### Editing an EXISTING document with visible review markup
+
+Use `docx-review` when tracked changes/comments are explicitly desired:
+
+```bash
+docx-review input.docx edits.json -o reviewed.docx --json
+```
+
+Inside sciClaw, the preferred mapping is:
+
+- `docx_review_read` before planning edits
+- `docx_review_apply` for `--dry-run --json` and the final apply step
+- `docx_review_diff` for verification/comparison
+
+### Anti-pattern to avoid
+
+Do **not** use docx-review placeholder replacement manifests to create first-draft manuscripts. That workflow intentionally produces tracked changes and can make a fresh document appear as a markup-heavy revision file.
+
+## Modes
+
+### Edit: Apply tracked changes and comments
+
+Takes a `.docx` + JSON manifest, produces a reviewed `.docx` with proper OOXML markup.
+
+```bash
+docx-review input.docx edits.json -o reviewed.docx
+docx-review input.docx edits.json -o reviewed.docx --json    # structured output
+docx-review input.docx edits.json --dry-run --json           # validate without modifying
+cat edits.json | docx-review input.docx -o reviewed.docx     # stdin pipe
+docx-review input.docx edits.json -o reviewed.docx --author "Dr. Smith"
+```
+
+### Read: Extract document content as JSON
+
+```bash
+docx-review input.docx --read --json
+```
+
+Returns: paragraphs (with styles), tracked changes (type/text/author/date), comments (anchor text/content/author), metadata (title/author/word count/revision), and summary statistics.
+
+### Diff: Semantic comparison of two documents
+
+```bash
+docx-review --diff old.docx new.docx
+docx-review --diff old.docx new.docx --json
+```
+
+Detects: text changes (word-level), formatting (bold/italic/font/color), comment modifications, tracked change differences, metadata changes, structural additions/removals.
+
+### Git: Textconv driver for meaningful Word diffs
+
+```bash
+docx-review --textconv document.docx    # normalized text output
+docx-review --git-setup                 # print .gitattributes/.gitconfig instructions
+```
+
+## JSON Manifest Format
+
+This is the edit contract. Build this JSON, pass it to `docx-review`.
+
+```json
+{
+  "author": "Reviewer Name",
+  "changes": [
+    { "type": "replace", "find": "exact text in document", "replace": "new text" },
+    { "type": "delete", "find": "exact text to delete" },
+    { "type": "insert_after", "anchor": "exact anchor text", "text": "text to insert after" },
+    { "type": "insert_before", "anchor": "exact anchor text", "text": "text to insert before" }
+  ],
+  "comments": [
+    { "anchor": "exact text to attach comment to", "text": "Comment content" }
+  ]
+}
+```
+
+### Change types
+
+| Type | Fields | Result in Word |
+|------|--------|---------------|
+| `replace` | `find`, `replace` | Red strikethrough old + blue new text |
+| `delete` | `find` | Red strikethrough |
+| `insert_after` | `anchor`, `text` | Blue inserted text after anchor |
+| `insert_before` | `anchor`, `text` | Blue inserted text before anchor |
+
+### Critical rules for `find` and `anchor` text
+
+1. **Must be exact copy-paste from the document.** The tool does ordinal string matching.
+2. **Include enough context for uniqueness** — 15+ words when the phrase is common.
+3. **First occurrence wins.** The tool replaces/anchors at the first match only.
+4. Use `--dry-run --json` to validate all matches before applying.
+
+## JSON Output (--json)
+
+```json
+{
+  "input": "paper.docx",
+  "output": "paper_reviewed.docx",
+  "author": "Dr. Smith",
+  "changes_attempted": 5,
+  "changes_succeeded": 5,
+  "comments_attempted": 3,
+  "comments_succeeded": 3,
+  "success": true,
+  "results": [
+    { "index": 0, "type": "comment", "success": true, "message": "Comment added" },
+    { "index": 0, "type": "replace", "success": true, "message": "Replaced" }
+  ]
+}
+```
+
+Exit code 0 = all succeeded. Exit code 1 = at least one failed (partial success possible).
+
+## Workflow: AI-Assisted Document Revision
+
+Standard pattern for using docx-review with AI-generated edits:
+
+### Step 1: Extract text
+
+```bash
+docx-review manuscript.docx --read --json > doc_content.json
+```
+
+Preferred inside sciClaw: `docx_review_read`
+
+Or use pandoc for markdown extraction:
+
+```bash
+pandoc manuscript.docx -t markdown -o manuscript.md
+```
+
+### Step 2: Generate the manifest
+
+Feed the extracted text + instructions to the AI. Request output as a docx-review JSON manifest.
+
+Use this system context when prompting for manifest generation:
+
+```
+Generate a JSON edit manifest for docx-review. Output format:
+{
+  "author": "...",
+  "changes": [{"type": "replace|delete|insert_after|insert_before", ...}],
+  "comments": [{"anchor": "...", "text": "..."}]
+}
+CRITICAL: "find" and "anchor" values must be EXACT text from the document.
+Include 15+ words of surrounding context for uniqueness. First match wins.
+```
+
+### Step 3: Validate with dry run
+
+```bash
+docx-review manuscript.docx manifest.json --dry-run --json
+```
+
+Preferred inside sciClaw: `docx_review_apply` in validation/dry-run mode
+
+Check for failures. If any edits fail (`"success": false`), fix the manifest (usually the `find`/`anchor` text doesn't match exactly) and retry.
+
+### Step 4: Apply
+
+```bash
+docx-review manuscript.docx manifest.json -o manuscript_reviewed.docx --json
+```
+
+Preferred inside sciClaw: `docx_review_apply`
+
+### Step 5: Verify (optional)
+
+```bash
+docx-review manuscript_reviewed.docx --read --json | jq '.summary'
+docx-review --diff manuscript.docx manuscript_reviewed.docx
+```
+
+Preferred inside sciClaw: `docx_review_read` and `docx_review_diff`
+
+## Workflow: Peer Review Response
+
+For addressing reviewer comments on a manuscript:
+
+1. Extract manuscript text (`--read --json` or pandoc)
+2. Build manifest addressing each reviewer point — use `replace` for text changes, `comments` to explain changes to the author
+3. Dry-run validate
+4. Apply edits
+5. The output `.docx` has tracked changes the author can review in Word
+
+## Workflow: Proofreading
+
+1. Extract text
+2. Generate manifest with grammar/style fixes as `replace` changes and suggestions as `comments`
+3. Validate + apply
+4. Author opens in Word, accepts/rejects each change individually
+
+## Workflow: Template Population with Explicit Revision Trail (Advanced)
+
+Only use this workflow when the user explicitly wants visible tracked changes during template population (for audit/review history):
+
+1. Start from a template-backed `.docx`
+2. Read it with `--read --json` to identify exact placeholders
+3. Build a manifest that replaces placeholders with real content
+4. Apply with `docx-review` (tracked insertions/deletions are expected)
+5. Review and accept/reject changes in Word
+
+For normal first-draft generation, use `pandoc manuscript.md -o manuscript.docx` instead.
+
+## Key behaviors
+
+- **Comments applied first**, then tracked changes. Ensures anchors resolve before XML is modified.
+- **Formatting preserved.** RunProperties cloned from source runs onto both deleted and inserted text.
+- **Multi-run text matching.** Text spanning multiple XML `<w:r>` elements (common in previously edited documents) is found and handled correctly.
+- **Everything untouched is preserved.** Images, charts, bibliographies, footnotes, cross-references, styles, headers/footers survive intact.
+
+## Read mode output structure
+
+For programmatic processing of `--read --json` output, see `skill/references/read-schema.md`.
+
+## Companion tools
+
+The Open XML SDK ecosystem:
+
+| Tool | Install | Purpose |
+|------|---------|---------|
+| `pptx-review` | `brew install drpedapati/tools/pptx-review` | PowerPoint read/edit |
+| `xlsx-review` | `brew install drpedapati/tools/xlsx-review` | Excel read/edit |
+
+Same architecture: .NET 8, Open XML SDK, single binary, JSON in/out.

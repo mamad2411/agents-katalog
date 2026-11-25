@@ -1,0 +1,181 @@
+---
+model_tier: high
+name: adversarial-review
+description: "Adversarial critique — devil's advocate, stress-test, honest teardown ('poke holes', 'be brutal', 'was hältst du davon'); explicit request only. Routine code or design review → code-review-lens."
+personas:
+  - critical-challenger
+domain: quality
+council_depth: deep
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+---
+
+# Adversarial Review
+
+## When to use
+
+Use this skill when:
+- You've completed a plan, design, or proposed fix and are about to present it.
+- The change is non-trivial (affects multiple files, changes behavior, touches critical paths).
+- You're about to recommend an architecture or design decision.
+- The user submits **finished work** (draft, post, naming decision, design proposal) and asks for an honest critical take — "what do you actually think?", "be brutal", "was hältst du wirklich davon". The flow is the same Attack-Defend-Revise loop, but on the user's artifact rather than the agent's plan.
+
+Do NOT use when:
+- The task is trivial (renaming, formatting, simple config change).
+- The user explicitly asked for a quick/rough draft.
+- You're exploring options, not committing to one yet.
+
+**Inbound delegation:** [`decision-record`](../decision-record/SKILL.md)
+§ Weighted-matrix mode delegates a scoped attack here after the weighted
+sums ("attack the winner, using the losing options' strongest criteria")
+— treat the matrix + sensitivity block as the artifact under review.
+
+## Procedure: Adversarial review
+
+1. **Inspect the artifact** — Read the plan, diff, or draft you are about to critique; note its scope, assumptions, and the explicit asks before attacking.
+2. **Attack** — Run Step 1 below as the grumpy senior engineer.
+3. **Defend** — Run Step 2 as the balanced engineer; classify each criticism as must-fix / defer / reject.
+4. **Revise** — Run Step 3 to fold valid fixes back in, then report every criticism with its disposition. Deciding which trade-offs matter is the user's pass, not this step's.
+
+### Step 1: Attack (Grumpy Senior Engineer)
+
+Assume your plan/fix is flawed. Ask yourself:
+
+- What's the weakest assumption?
+- Where will this break under load, at scale, or with edge cases?
+- What did I ignore or hand-wave?
+- Is this over-engineered for the actual problem?
+- Would a simpler approach work just as well?
+- What will the next developer curse me for?
+
+### Step 2: Defend (Balanced Engineer)
+
+Counter the criticism fairly:
+
+- Which criticisms are valid and must be addressed now?
+- Which are theoretical and can be deferred?
+- What's the pragmatic middle ground?
+
+### Step 3: Revise
+
+- Fix the valid issues in your plan/fix.
+- Move deferred concerns to "Open Questions" or "Known Limitations".
+- Present the improved version to the user.
+
+**Debate internally, report completely.** The user sees the improved result
+rather than the blow-by-blow — but every criticism raised reaches the report
+with its disposition (must-fix / deferred / rejected, each with one line of
+reason). Do not decide on the user's behalf which concerns were worth their
+attention.
+
+This clause used to read *"surface only the trade-offs that need the user's
+input"*, and that is the pre-filter defect: an instruction to report a subset is
+followed literally — the review finds the defects, then withholds the ones it
+judged unimportant, and the loss is invisible because the withheld set leaves no
+trace. It matters here more than anywhere: `self_review_gate.ts` loads this file
+as the system prompt for the package's own CI self-review, so a suppression
+clause here suppresses findings on every pull request.
+
+## Context-specific attack questions
+
+### Feature plans / Architecture
+
+- Is this the simplest solution that works?
+- What happens when requirements change (and they will)?
+- Are there hidden dependencies or coupling?
+- Does this respect existing patterns or introduce a new one unnecessarily?
+- What's the migration/rollback story?
+
+### Bug fixes
+
+- Is this the root cause or just a symptom?
+- Will this fix break something else?
+- Does the fix handle the edge case that caused the bug?
+- Is there a regression test that proves the fix works?
+- Are there other places with the same bug pattern?
+
+### Code changes / Refactoring
+
+- Would I understand this code in 6 months without context?
+- Did I check all callers and downstream effects?
+- Are the tests actually testing the right behavior?
+- Did I introduce a new pattern where an existing one would work?
+
+### Database migrations
+
+- Can this destroy or corrupt data?
+- Is rollback possible?
+- What happens to running queries during migration?
+- Did I check the table size (large table ALTER can lock)?
+
+### API design
+
+- Is this a breaking change?
+- Is it consistent with existing endpoints?
+- Are error responses clear and actionable?
+- Did I consider pagination, filtering, versioning?
+
+### Security-sensitive changes
+
+- Where is the attack surface I'm not seeing?
+- Am I trusting user input anywhere?
+- Are there authorization gaps?
+- Would this pass a security review?
+
+## Integration with other skills
+
+- **feature-planning** — adversarial review after Understanding Lock, before presenting the plan.
+- **bug-analyzer** — review the proposed fix before implementing.
+- **code-review-lens** — self-review before creating a PR.
+- **laravel-migration** (or framework-native equivalent) — review migration for data safety.
+- **api-design** — review API design for consistency and breaking changes.
+- **security** — review security-sensitive changes for attack surface.
+
+## RDP: fresh-context verifier as the default gate (structural)
+
+Within the Reasoning Discipline Protocol the fresh-context verifier subagent is
+the **default** final gate — but, because it is a full extra inference pass, it
+fires only on the **structural-complexity** signal: ≥ 2 of {branching/conditional
+logic, ≥ 3 explicit must/must-not constraints, stateful operations,
+irreversibility} **and** estimated work ≥ ~1k tokens. Token length alone never
+triggers it. See [`rdp-gate`](../../contexts/execution/rdp-gate.md) (L12).
+
+### Validate
+
+- Confirm each identified risk has a concrete mitigation or explicit acceptance.
+- Verify the review produced at least one actionable finding (or explicit "no issues found").
+- Check that the review did not just restate the plan — it must challenge assumptions.
+
+## Output format
+
+1. Improved plan/code incorporating adversarial findings
+2. **Every criticism raised**, each with severity and disposition (must-fix /
+   deferred / rejected) and one line of reason. Not "top concerns" — a summary
+   that keeps only the highlights is the pre-filter defect wearing an
+   editor's hat.
+3. Remaining open risks (if any) with severity rating
+
+## Gotcha
+
+- Don't use this on trivial changes — it adds overhead without value on simple renames or config tweaks.
+- The model tends to invent risks that don't exist. Ground every concern in actual code, not hypotheticals.
+- Don't challenge the user's explicit requirements — challenge the implementation, not the goal.
+
+## Do NOT
+
+- Do NOT present the raw adversarial debate to the user — only the improved result.
+- Do NOT use this as an excuse to delay work — the review should take seconds, not minutes.
+- Do NOT apply this to trivial changes — it adds overhead without value.
+- Do NOT let the "grumpy engineer" kill good ideas — the balanced engineer must counter.
+- Do NOT skip Step 3 (Revise) — attacking without improving is just complaining.
+
+## References
+
+- **Tree-of-Thoughts (ToT)** — [arxiv.org/abs/2305.10601](https://arxiv.org/abs/2305.10601)
+  Deliberate problem-solving by exploring multiple reasoning branches.
+  This skill adapts ToT by pitting a grumpy engineer against a
+  balanced engineer — the branching happens between roles, not
+  between thought-tree nodes.
+

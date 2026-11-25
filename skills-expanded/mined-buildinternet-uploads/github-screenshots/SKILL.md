@@ -1,0 +1,467 @@
+---
+name: github-screenshots
+description: >-
+  Embed screenshots, images, diagrams, GIFs, and screen recordings in GitHub
+  PRs and issues — or stage them ahead of a PR, collect them into one
+  attachments comment, or get a durable public link to share a visual with a
+  person. Use this whenever a visual should end up in a PR or issue, in front
+  of a teammate, or saved for a PR that doesn't exist yet. Triggers include
+  "attach a screenshot to the PR", "add a before/after to the issue", "share
+  a GIF of the flow", "get me a link I can paste in Slack", "share a live
+  feed of this PR's screenshots", "stage screenshots for the PR", or having
+  just changed something visual that a shot would make clearer — even
+  mid-task, before a PR exists. Also applies when uploading via the hosted
+  MCP (agents.uploads.sh) without a local filesystem. Reach for this instead
+  of drag-and-drop or hand-rolled cloud-storage uploads; it also says when
+  `gh … --attach` is enough. Capture with whatever screenshot tooling you
+  have; this skill covers hosting and embedding.
+---
+
+# Screenshots and recordings in GitHub PRs and issues
+
+## Why this exists
+
+GitHub's native image hosting (`github.com/user-attachments/…`) is reachable
+from a browser and, since GitHub CLI 2.99 (September 2026), from
+`gh issue|pr create|edit|comment --attach <file>`. There is still no public REST
+endpoint (the CLI uses an undocumented upload host), the upload needs push access, and the hosted file is private to
+GitHub. Any other image URL in a PR/issue body written with `gh … --body-file`
+must already point at something publicly hosted. The **`uploads` CLI** and the
+hosted MCP at `https://agents.uploads.sh/mcp` both host the file on uploads.sh
+and return a stable public URL plus ready-to-paste markdown.
+
+## When `gh --attach` is enough
+
+Use plain `gh pr comment --attach ./shot.png` (or `create`/`edit`) when ALL
+of these hold:
+
+- `gh --version` is 2.99 or newer and you have push access to the repo.
+- The PR or issue already exists, or you are creating it in the same command.
+- The file is an image or video under 10 MB (video up to 100 MB on paid plans).
+  `gh --attach` takes media only.
+- Nobody needs the link outside GitHub. `user-attachments` URLs do not render
+  in Slack, docs, or other tools, and other agents cannot fetch them.
+
+Use uploads.sh when any of these are true instead:
+
+- The artifact is not media: a Lighthouse or test report, a log, JSON, a PDF, or
+  a zip. `gh --attach` does not take those; `uploads put` does, and the managed
+  comment links them.
+- The PR does not exist yet. Stage on the branch with `uploads put`; the
+  attachments comment appears when the PR opens.
+- The shot will be re-taken. Same filename, same URL, and the managed comment
+  updates in place instead of piling up.
+- The capture needs metadata (`--meta`), later retrieval (`uploads find`), or
+  the Screenshots view across projects.
+- The URL must work outside GitHub.
+- You are on the hosted MCP with no shell, lack push access, or the repo is on
+  GitHub Enterprise Server.
+
+Do not mix the two on one PR: pick one so the comment history stays readable.
+Media attached with `gh` is still indexed: the GitHub App imports attachments
+from PR and issue text into the workspace. The same webhook imports public
+Cursor `cursor.com/artifacts/c/art-*` rewrite URLs from that text. To mirror
+an existing `user-attachments` image or `art-*` URL by hand, use `uploads ingest`.
+
+## Issue artifacts
+
+GitHub issue artifacts (`gh issue artifact`) are a separate surface from the
+managed comment. They exist on issues. Pull requests keep the managed comment
+only.
+
+`gh issue artifact create --attach` is the right tool for GitHub-only media
+on an issue plan or root-cause write-up. It copies the bytes to
+`github.com/user-attachments`. That URL is auth-gated. It does not render in
+Slack, docs, or for another agent that cannot sign in to the repo.
+
+Use uploads for everything else in this skill:
+
+- A pull request, a PR or issue comment, or any public or shareable link.
+- Video. An issue artifact drops a `<video>` tag, so uploads renders the clip
+  as a link to the uploads.sh URL.
+- A private-repo capture that should become a public uploads.sh URL.
+
+`uploads attach` on an issue does this by default. It writes one Markdown
+artifact named `uploads.sh media` with the same block as the managed comment.
+Image URLs are uploads.sh embed or storage URLs. It does not pass `--attach`
+and does not copy bytes to GitHub. A later attach updates that artifact in
+place. When the issue has a gallery, a second artifact named
+`uploads.sh gallery` is a link to the gallery URL. If GitHub rejects the
+write, attach prints a warning and still succeeds.
+
+Turn it off in this order: `--no-issue-artifacts` on one command, then
+`comment.issueArtifacts: false` in `.uploads.yml`, then **Issue artifacts**
+under the workspace's Settings → GitHub. Anything not set leaves the next
+layer, and the last layer is on. The stdio MCP `attach` tool takes
+`issueArtifacts: false` for the same one-call opt-out and reads the repo file
+and the workspace setting. The hosted MCP does not write issue artifacts.
+
+## Which surface
+
+Pick one transport and stay on it. This skill is the workflow. The
+**uploads-cli** skill owns flags and MCP tool contracts.
+
+| You have                                                        | Use                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No shell (ChatGPT, or any host without a checkout)              | Hosted MCP `put` with (`contentBase64` + `filename`, or `contentUrl`) + `repo` + (`pr` or `branch`). Filename is optional with `contentUrl` when the URL path has a leaf. Embed the returned `markdown` / `embedUrl`. Never imply you can run `uploads attach ./shot.png`.                                                                            |
+| A shell and hosted MCP, but no `uploads` binary (cloud sandbox) | Hosted MCP `sign_upload_url` with `files: [{ filename }]` + `repo` + (`pr` or `branch`), then run each returned upload command (an HTTPS PUT to `https://agents.uploads.sh/u/<ticket>`). Each response carries `markdown`. With `pr`, call `comment` once after all uploads. On a proxy 403, ask the person to allow agents.uploads.sh, or use `put`. |
+| A checkout and the `uploads` binary                             | The CLI examples below. Git can fill `repo` / `branch`.                                                                                                                                                                                                                                                                                               |
+| A `localhost` page                                              | CLI only (`uploads screenshot`). Captures run in your local browser.                                                                                                                                                                                                                                                                                  |
+| Neither MCP nor the CLI                                         | Stop and say so. Do not treat `npm install -g` as the ChatGPT path.                                                                                                                                                                                                                                                                                   |
+
+On the hosted MCP there is no `attach` tool and the server has no git. If you
+have a checkout, read `repo` (`git remote get-url origin`) and `branch`
+(`git branch --show-current`) and pass both on every call. With `branch` +
+`repo`, the server attaches to the branch's open PR when the repo is linked to
+the workspace and exactly one is open; otherwise it stages. Once the PR
+exists, `promote` with `repo` + `pr` + `branch`, or `put` with `pr` + `repo`
+(optional `branch` also promotes). Without `repo`, files land under `misc/`
+with no GitHub link. The managed comment is bot-only on that server.
+
+## Step 1 — Capture the visual
+
+Skip this step if the visual is already in context (a ChatGPT attachment, a
+file the host already holds). Go straight to hosted MCP `put`.
+
+**Prefer `uploads screenshot <url|file.html>`** — it captures **and** hosts in
+one step (drives a local Chrome, or falls back to a server-side render), so you
+skip a separate host call. It takes `--viewport WxH@Nx`, `--wait`, `--selector`,
+`--full-page`, and `--out <file>` (to also save the PNG).
+
+Capturing your **own dev server**? No manual DOM surgery needed:
+
+- Known framework dev toolbars (Astro/Next/Nuxt/Vite) are hidden automatically
+  — opt out with `--no-hide-dev-tools`.
+- `--reduced-motion` settles animations.
+- `--hide <selector>` hides any other overlay (repeatable).
+- `--eval <js>` / `--init-script <file>` (local backend) are the escape hatch
+  to dismiss a banner or freeze a specific animation.
+
+Capturing a **clicked/selected state of a React/Next (or other hydrating) app**?
+A synthetic `el.click()` in `--eval` fires before the framework hydrates — the
+element is in the SSR HTML but no handler is attached yet, so it silently does
+nothing. Gate on the app's own "interactive" signal with `--wait-for <js>`
+which polls that expression until truthy before `--eval` runs:
+
+```bash
+uploads screenshot http://localhost:3000 \
+  --wait-for 'document.querySelector("[data-hydrated]")' \
+  --eval 'document.querySelector(".tab-settings").click()' --out settings.png
+```
+
+```bash
+uploads screenshot http://localhost:4321 --viewport 1520x960@1x --out home.png --reduced-motion
+uploads screenshot https://uploads.sh --selector main --dark
+```
+
+`--out` also drops a `<file>.uploads.json` sidecar next to the PNG — that's a
+working file for a later `put`/`attach` to pick metadata back up from, not
+something to commit, so `.gitignore` it (`*.uploads.json`) or delete it once
+you're done attaching.
+
+Only reach for your harness's browser tools / Playwright / an existing file when
+`uploads screenshot` can't reach the target (e.g. a flow that needs auth or
+interaction first). GIFs and video: capture with any tool and upload as-is — the
+optimizer only rewrites still images (PNG/JPEG → WebP).
+
+## Step 2 — Host and embed
+
+Two tiers, pick by whether a PR already exists:
+
+- **Simple — a PR/issue already exists.** One `put` per shot, labeled:
+
+  ```bash
+  uploads put after.png --pr 123 --meta path=/settings --state after --caption "Saved toast"
+  uploads put chat.png --pr 123 --app ios --screen "Chat" --state after   # app, no route
+  ```
+
+  (`uploads attach shot.png` infers the PR from the current branch.) Stable
+  per-PR key, embed URLs back immediately, and the managed comment collects
+  that PR's media and shows the labels with each image. You don't need to
+  post the images yourself; one or two in the PR description is still fine.
+  Labels apply to every file in a call, so label shots one call at a time.
+  `uploads list --pr 123` shows what's attached.
+
+- **Advanced — stage pre-PR, before there's anything to target.** `uploads put shot.png` on a branch (see below) — no PR/issue needed yet; promotion
+  and the comment happen automatically once the PR opens, **but only for a
+  repo already bound to the workspace** (see the caveat below). Reach for the
+  simple tier once the PR exists unless you're deliberately building up a
+  staged set across a longer branch.
+
+**Default loop: stage as you go, from the first visual milestone.** Don't wait
+for a PR to exist — the moment you have something worth capturing, mid-task on a
+branch, attach it right then.
+
+Two commands stage automatically, no extra flag needed:
+
+- A **bare `uploads put`**, whenever you're inside a git repo on a non-default
+  branch with no `--pr`/`--issue`/`--key`/`--ref`/`--prefix`. It stages under
+  the same branch-keyed path `attach --branch` would produce.
+- **`uploads screenshot`** with no `--pr`/`--issue`/`--branch` target.
+  Capturing straight from a URL carries every derived fact — path, url, env,
+  viewport, plus `--state` — through to the PR once it opens.
+
+Reach for `attach --branch` explicitly only when you want its extras: uploading
+several files at once with shared flags, or triggering promotion/comment sync as
+a side effect.
+
+Staging keys embed the branch name. Renaming it is followed automatically the
+next time you run any `uploads` staging or promote command on that branch — if
+the PR opens before that happens, recover the stranded files with
+`uploads attach --pr <n> --from-branch <old-branch-name>` (see uploads-cli).
+
+```bash
+uploads screenshot http://localhost:4321/settings --out step1-before.png --state before
+uploads screenshot http://localhost:4321/settings --out step2-after.png --state after
+
+# or, capturing an existing local file instead of a live URL:
+uploads put ./step1-before.png --meta path=/settings --state before
+
+# or, explicitly, e.g. to upload several at once:
+uploads attach ./step1-before.png ./step2-after.png --branch --state after
+```
+
+This uploads under stable, branch-keyed paths (no PR/issue target needed, no
+comment yet — there's nothing to comment on until a PR exists). Keep doing
+this at each meaningful visual milestone as you work; don't batch everything
+into one call at the end. On the default branch (or outside a git repo, or
+with `--no-git`), `put`/`screenshot` fall back to their ordinary dated
+layout — that's the opt-out, along with any explicit `--key`/`--ref`/
+`--prefix`/`--destination`.
+
+**Staging only auto-promotes into a bound repo — don't promise it blind.**
+Auto-promotion at PR-open time (webhook or CLI-triggered, below) needs the repo
+already bound to a workspace. Binding happens two ways:
+
+- Implicitly, from any earlier successful attach/comment/promote call against
+  that repo.
+- Explicitly, via `uploads github link`.
+
+A repo that's never been bound and only ever staged with `--branch` sees **no
+error and no comment** when the PR opens — a silent no-op. So if you can't
+confirm the repo is bound (`uploads github link --status`), don't tell the user
+the screenshot will "just show up." The fallback that works regardless of
+binding history: once the PR exists, run `uploads attach --promote` (or any
+targeted `uploads attach` against that PR) to promote and post explicitly.
+
+**Pass `--state before`/`--state after` and `--meta path=/route` as a habit —
+both, every time.** They're the two highest-value queryable tags, and the two a
+tool can't recover later:
+
+- `--state` before/after is the whole point of most PR screenshots, and nothing
+  can infer it from the image.
+- `path` is just as easy to forget, except on `uploads screenshot`, which
+  derives it from the captured URL. A `put`/`attach` of an existing file has no
+  URL to derive it from.
+
+Both cost one flag now and make `uploads find state=after` or `uploads find
+path=/settings` work months later, when the filenames mean nothing to anyone.
+
+**For a same-URL before/after pair, `uploads screenshot` is the straightforward
+path.** Its object name derives from the captured URL, and `--state` folds into
+that name — `localhost-docs-mcp.webp` becomes `-before.webp`/`-after.webp`. So
+capturing the same URL twice with different states lands two distinct objects
+instead of one overwriting the other. Pass an explicit `--key` when you need a
+specific object name. A `put` of an existing file has no URL to derive a stem
+from, so keep its before/after distinct with separate filenames or `--key`:
+
+```bash
+uploads screenshot https://app.example/settings --pr 123 --state before
+uploads screenshot https://app.example/settings --pr 123 --state after
+uploads put ./after.png --pr 123 --meta path=/settings --state after
+uploads put ./chat.png --pr 123 --app ios --screen "Chat" --state after   # app screen, no route
+uploads put ./empty.png --pr 123 --meta path=/projects --caption "Empty state after deleting the last project"
+```
+
+(`--state` also takes `empty`, `error`, and `loading`.) When an image lands with
+no `path` or `screen` meta, `attach`/`put --pr`/`put --issue` print `tip: add --meta
+path=/route (or --screen <name> for an app) to label this shot in the PR comment` on stderr (and a JSON `hint`
+field) — don't ignore it. For a mobile or desktop app screen with no route,
+pass `--screen <name>` instead; the PR comment shows it under the image. When
+a shot needs a word of explanation, add `--caption "<text>"` (up to 140
+characters); the comment shows it as plain text under the image. Viewport is derived for you on `screenshot`. See the
+**uploads-cli** skill for the full canonical vocabulary.
+
+**The PR comment assembles itself — you don't drive that step.** Once the PR
+opens (whether via `gh pr create` or the GitHub UI), every branch-staged file
+gets promoted into that PR's attachments and the managed comment is created
+automatically. Files you never mention in the description still show up there.
+The comment is identified by a hidden HTML comment at the top:
+`<!-- uploads.sh:attachments ws=<workspace> -->`. Bot posts are from
+`uploads-sh[bot]`; the local-`gh` fallback uses the same marker.
+
+- **With the uploads-sh GitHub App installed** on the repo, a webhook does
+  this the moment the PR opens, reopens, or gets a new commit — no CLI call
+  required at all.
+- **Without the App**, the next `uploads attach` you run against that PR
+  triggers the same promotion + comment refresh as a side effect. If you have
+  nothing new to add right after opening the PR, run `uploads attach
+  --promote` (zero file arguments) to promote and refresh explicitly — it
+  exits `0` even if nothing was staged. Skip auto-promotion on a given call
+  with `--no-promote`.
+
+**"PR already exists" is just the simple case of the same command** — same
+`uploads attach`, just pointed at a PR/issue number instead of a branch, and
+the comment updates immediately since there's already something to comment
+on:
+
+```bash
+uploads attach ./before.png ./after.png
+uploads attach ./flow.gif --issue 45 --repo myorg/myapp
+uploads attach ./shot.png --no-comment      # stable URLs only, no comment
+```
+
+For a URL you'll hard-code in a PR/issue **body** (re-uploads overwrite in
+place, URL never changes). Putting an image in the description works — that's
+the right place for a visual that belongs in the write-up (a before/after in
+"what it looks like"). You don't have to. Wait until the PR exists and use
+`--pr`, so the body gets the stable `pull/<n>/` key from the start. Don't
+paste a branch-staged URL into the description and later rewrite it to
+`pull/<n>/` just to "correct" it.
+
+```bash
+uploads put ./after.png --pr 123 --alt "Dashboard after" --width 700
+```
+
+For a durable public link to share anywhere (Slack, docs, a teammate):
+
+```bash
+uploads put ./demo.gif --format url
+```
+
+When you do embed, use the returned **markdown** (or `embedUrl`) — the
+no-cache host so overwrites propagate. Don't hand-build storage URLs.
+
+## Change feeds (live page, not a gallery)
+
+A feed is a live newest-first page of screenshots already tagged with a GitHub
+repo — or with one pull request. Same product; `--pr` is one extra filter.
+It is not a curated gallery (those stay `uploads gallery create`).
+
+- **Repo feed** — share “what landed in this repo lately.”
+- **PR feed** — share “everything on this pull request,” for reviewers or Slack.
+
+```bash
+uploads feed create owner/repo
+uploads feed create --repo owner/repo
+uploads feed create --repo owner/repo --pr 123
+uploads feed create --github owner/repo#123
+```
+
+MCP: `feed_create` with `repo`, or `repo` + `pr`, or `github` alone. See
+`uploads-cli` for flags. Creating the same scope again returns the existing URL.
+
+The managed PR comment ends with a "View on uploads.sh" button (count in the footer), linking
+the PR's feed (the web UI calls it a "live link"). Clicking an image opens
+`/c/<id>/<item>` (newer / older through that PR's files), not the standalone
+`/f/` page. The next comment sync creates the feed if it does not exist yet,
+through the bot or the local `gh` fallback alike. `<img src>` stays on the
+embed URL.
+
+**Comment briefly disappeared? Don't panic-repost.** If the App is installed
+and subscribed to the `issue_comment` event, a deleted or edited-out managed
+comment self-heals automatically on the next webhook delivery — no need to
+run `comment`/`attach` again just to bring it back.
+
+**Removed the wrong screenshots?** `delete` the object(s). A `gh/` attachment
+delete refreshes the managed comment when it can, and otherwise tells you to
+re-run `comment` (or the hosted `comment` tool). Staged the wrong branch?
+`uploads unstage --branch <name>` keeps the file and drops it from promotion.
+Once the last attachment
+is gone the comment is rewritten in place to a neutral empty state — it stays
+on the PR (a later upload repopulates it) rather than leaving stale entries
+that point at deleted files.
+
+**Neutral `uploads.sh` check saying "UI files changed, no uploads attached"?**
+The PR touches UI files and nothing is attached. It never blocks a merge.
+Attach before/after shots and the check turns green on the next sync. A
+workspace admin picks which files count under Settings → GitHub → UI file
+paths, or a repo sets `comment.uiPaths` in `.uploads.yml` (`[]` turns it off).
+
+**Bot comment not showing up at all?** The managed comment needs a
+repo↔workspace binding (normally created implicitly by the first
+comment/promote call, or by installing the GitHub App). If a comment you
+expected doesn't appear, check the binding first:
+
+```bash
+uploads github link --status
+```
+
+That's read-only and shows the current binding (or that the repo is
+unbound) without claiming anything. If the CLI reports `not_authorized`
+instead, the repo is already bound to a _different_ workspace — it
+won't fall back to posting via your own `gh` auth in that case. The fix is
+`uploads github unlink --repo owner/name` from the owning workspace, or
+asking an operator to reassign the binding; switching to the workspace that
+already owns it also works.
+
+**Curate, don't dump.** The comment inlines up to **16 images**; anything past
+that collapses into a `<details>` overflow list. Name and pick shots
+meaningfully (`before.png`/`after.png`, not `capture-1`..`capture-40`) rather
+than attaching every incidental screenshot from a long session — a curated
+handful of milestones reads better than a dumped folder.
+
+## Step 3 — Embed well
+
+- **Meaningful alt text**, always (`--alt`).
+- **Constrain width** on large shots with `--width` (emits sized `<img>`).
+- **Before/after** reads best side by side:
+
+  ```markdown
+  | Before                               | After                               |
+  | ------------------------------------ | ----------------------------------- |
+  | <img width="380" src="…/before.png"> | <img width="380" src="…/after.png"> |
+  ```
+
+- **Motion:** GitHub plays only native `user-attachments` videos inline.
+  `uploads put clip.mp4 --pr N` puts a poster (still plus play button) in
+  the managed comment. For a PR body, use a GIF, or a still that links to
+  the video.
+- Write bodies to a file and use `gh pr edit --body-file` / `gh issue comment
+  --body-file` rather than inline HEREDOCs.
+
+## Setup and escalation
+
+- No shell? Use the hosted MCP. Do not install the CLI.
+- CLI missing on a machine with a shell? `npm install --global @buildinternet/uploads`
+- Not authenticated on the CLI? `uploads login` (one-time, opens a browser),
+  then `uploads doctor` to verify. Hosted MCP uses OAuth on first tool call.
+- Everything deeper — flags, key layouts, MCP tool contracts, metadata and
+  search, galleries, config defaults, output formats, exit codes — lives in
+  the **uploads-cli** skill and `uploads <command> --help`.
+
+## Cautions
+
+- **Uploads are public and effectively permanent** until deleted. GitHub repo
+  visibility is not an access control, and `gh/<owner>/<repo>/pull/<num>/…`
+  keys are predictable. Never upload secrets, tokens, or customer PII —
+  crop/redact first.
+- **A held file is not a failure.** If the managed comment shows
+  `🔒 N files are held for review`, uploads.sh thinks a shot shows a secret
+  or personal data, and that file is out of the comment and its URL until
+  approved. Run `uploads approve --pr <n>` to see which file and why. Look
+  at the file: if it shows a real credential, tell the user to rotate it,
+  then redact and re-upload. Otherwise run `uploads approve --pr <n> --all`.
+  Do not approve on the user's behalf without checking.
+- **Private repos get an unguessable URL automatically.** When the uploads
+  GitHub App can see a target repo is private, attachments key under
+  `gh/private/<id>/…` instead — no flag needed. A staged file's key is
+  `gh/private/<id>/branch/<filename>`: the id belongs to one branch, so the
+  branch name is not in the key. `uploads staged --branch` lists that id
+  only. A file already on a pull request is left out. The id is durable, not
+  access-controlled: anyone who gets the URL can read it until you rotate it
+  (`uploads github rotate-prefix`). See **docs/private-attachments.md** for
+  the full model.
+
+## Secrets on the page?
+
+Uploads are public to anyone with the URL. If the page shows an API key, a
+token, or someone's email, black it out at capture time:
+
+```bash
+uploads screenshot http://localhost:3000/settings --redact '[data-testid=api-key]'
+```
+
+A `--redact` selector that matches nothing fails the capture rather than
+uploading the unredacted page. Prefer a caption over drawing on the image
+when you need to point at something.

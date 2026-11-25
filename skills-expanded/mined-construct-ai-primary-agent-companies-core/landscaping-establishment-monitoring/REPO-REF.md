@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/construct-ai-primary/agent-companies-core (path: skills/construct-ai/03000_landscaping/landscaping-establishment-monitoring/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Tracking of plant establishment rates, identification of underperforming areas, and remedial planting recommendations

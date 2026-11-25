@@ -1,0 +1,17 @@
+---
+name: handoff
+description: "Compacts the current conversation into a handoff document another agent can pick up. Use when the user says 'handoff', 'hand off', or wants to continue this work in a fresh session."
+argument-hint: "What will the next session be used for?"
+---
+
+> Source: [mattpocock/skills - productivity/handoff](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff)
+
+Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save it to a path produced by `f=$(mktemp "${TMPDIR:-/tmp}/handoff-XXXXXX") && mv "$f" "$f.md" && echo "$f.md"` (read the file before you write to it). The template keeps the file under `$TMPDIR`, which the sandbox allows; macOS `mktemp -t` writes elsewhere and fails there.
+
+Suggest the skills to be used, if any, by the next session.
+
+Redact any sensitive information - secrets, API keys, passwords, or personally identifiable information - before writing it into the document. `(review-time: no hook inspects free-form handoff-doc text before it is written)`
+
+Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
+
+If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.

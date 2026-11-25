@@ -1,0 +1,76 @@
+---
+name: new-feature
+description: The intake for any feature a user would notice - grill the founder, write the spec and requirement rows, pass the readiness gate, then route design, build, QA and reviews. Use whenever the founder asks for something new.
+---
+
+# New feature
+
+## 1. Open the work folder
+
+Reserve the next requirement id for the feature's area (`skills/requirement-first/`) and create
+`docs/work/<ID>-<slug>/status.md` with the track, the date and "intake".
+
+## 2. Research
+
+`researcher` writes `docs/work/<id>/research.md`: what similar products do for this job, with
+sources and dated, and the suggestions to put to the founder.
+
+## 3. Grill
+
+Run `skills/grilling/` on the feature, with the research suggestions as options, worded for the
+founder's level (`skills/founder-voice/`). The tree always includes these branches; skip one only
+by saying why it does not apply:
+
+- **Who and why:** which user, what they are trying to do, what they do today without it, how
+  we will know it worked (a number and a date).
+- **Scope:** the smallest version worth shipping, what is explicitly out, what can wait.
+- **Behaviour:** the main flow, every error, empty and edge state, what happens to existing
+  users and existing data.
+- **Data:** what is stored, for how long, who can see it, how it is deleted. Personal data,
+  payments, children, health or AI output each pull in `legal` and `security`.
+- **Regions:** does it change anything under the packs in `docs/legal/regions/`?
+- **Cost:** new services, their price at 10 times today's usage.
+- **Quality bar:** where the product's AI acts or decides, the eval pass bar, per language or
+  group of users where they differ (`agents/agentic-workflow.md` designs the evals against it).
+- **Speed:** targets for the screens and calls this feature adds, offering the defaults in
+  `skills/performance/`.
+- **Languages:** which languages the interface shows, apart from the languages of the content.
+- **Done:** what `qa` will check, row by row.
+
+An open question in `p1-open-questions.md` that names this feature goes to `legal` (if it is a
+legal point) and then to the founder before the spec is confirmed. Never mark a legal position
+answered yourself.
+
+## 4. Feasibility
+
+`feasibility` writes `docs/work/<id>/feasibility.md` from the grilling outcome: go, go with
+changes or no-go. Every change it recommends goes back to the founder as one more grilling round.
+
+## 5. Write it down
+
+- `docs/work/<id>/spec.md`: the answers at the founder's level, with the success number.
+- **Review focus**, in the spec: the five likeliest real-world inputs or conditions that would
+  break this feature and that no row yet tests (the empty account, the second device, the month
+  end, the retry, the user who leaves halfway). Each gets a row or is folded into one, and later
+  a ticket and a test.
+- Requirement rows, status `X`, in the area file, one per behaviour that can be tested.
+- Decisions taken during grilling into `p1-closed-decisions.md`; questions the founder deferred
+  into `p1-open-questions.md` with what each one blocks.
+
+`reviewer` reads the spec and rows (`docs/work/<id>/review.md`); fix blocking findings first.
+Show the founder the spec and rows; wait for their confirmation.
+
+**Several screens or areas at once.** One writer per area file, in parallel, each given the
+list of which area owns what. A writer that finds a behaviour another area owns writes it under
+"Proposed shared rows" and "Conflicts between sources" in its hand-back instead of editing
+another file; the orchestrator settles them after (`skills/requirement-first/`, "Covered by").
+
+## 6. Gate and route
+
+Run the design pass of `skills/readiness-gate/`. When it opens, the orchestrator routes
+`agentic-workflow` (if the product's AI acts or decides), `architect` (if data, integration or
+a new surface), `product-designer` (the design for every platform), and `legal` or `security`
+where step 3 pulled them in, with `reviewer` on each design. Then run the build pass. When it
+opens, route `web-dev`, `android-dev`, `ios-dev`, `desktop-dev` (each app the product has) and
+`backend-dev` against the contract, `reviewer` on each diff, then `qa`. The feature closes with
+the release and its retrospective (`skills/release/`).

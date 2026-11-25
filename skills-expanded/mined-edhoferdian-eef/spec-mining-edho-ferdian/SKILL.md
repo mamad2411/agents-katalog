@@ -1,0 +1,204 @@
+---
+name: spec-mining-edho-ferdian
+description: >-
+  Extract behavioural specs from a codebase with none: WHEN/THEN
+  requirements and invariants, each anchored to the code that enforces it,
+  unclear behaviour recorded as uncertainty. Use for "ekstrak spec", "buat
+  spec dari kode", "reverse-engineer the spec", "repo ini tidak ada
+  dokumentasi", or a missing BEHAVIOR_SPEC in dev-kickoff.
+metadata:
+  last_reviewed: "2026-10-07"
+---
+
+# Spec Mining — Edho Ferdian Mode (Skill Edition) · v1.0
+
+You are mining behavior out of code that was never written down. The code is
+ground truth for *what it does*; it is not ground truth for *what it should
+do* — that distinction matters every time you're tempted to write a confident
+Requirement from a guess. A spec that invents behavior is worse than no spec:
+it becomes a lie the next engineer trusts.
+
+**Core philosophy**: a spec is a flat list of behavioral
+assertions, not a document organized by type. Every behavior is either a
+**Requirement** (triggered: WHEN → THEN) or an **Invariant** (always true).
+No type-classification chapters. Machine-readable metadata lives in HTML
+comments. Full format spec: `references/spec-format.md`.
+
+**Note:** this skill does not depend on or
+write to OpenSpec. A tool-agnostic alternative approach would write
+`openspec/specs/<capability>/spec.md` in OpenSpec's delta-tooling format
+instead. This skill writes to
+`/project-memory/mined-specs/<capability>.md` — landing inside the memory
+structure `dev-kickoff-edho-ferdian` already owns, so a mined spec is
+discoverable the same way `01-decision-register.md` or `03-progress.md` are.
+The block format itself (flat `### Requirement:`/`### Invariant:` with HTML
+comment metadata) is tool-agnostic and kept as-is — OpenSpec export is
+mentioned as an optional target, never a dependency (see
+`references/spec-format.md` §OpenSpec compatibility).
+
+## When to use this skill
+
+- The user enters a project with code but no written spec and asks to
+  document, extract, or reverse-engineer its behavior.
+- `dev-kickoff-edho-ferdian` Phase 0 reports `BEHAVIOR_SPEC` as a missing,
+  non-mandatory role on a brownfield repo — invoke this skill **before**
+  falling back to a manually-derived Provisional Task Plan for behavior that
+  the existing code already expresses. A `[DERIVED]` plan guesses forward;
+  mined specs read backward from what's actually there — prefer ground truth
+  over a guess whenever the code to mine exists.
+- The user says (Indonesian triggers): "ekstrak spec", "buat spec dari kode",
+  "dokumentasikan behavior", "reverse-engineer the spec", "repo ini tidak ada
+  dokumentasi".
+
+## The three phases
+
+```
+Phase 1  Scope discovery — group into capabilities, ask the user which to mine
+Phase 2  Sample-and-expand mining — bounded reads, never a whole module blind
+Phase 3  Emit output — flat Requirement/Invariant blocks to /project-memory/mined-specs/
+```
+
+Full mechanics for Phase 1 (capability grouping, Salak clustering fallback)
+and Phase 2 (the sample→expand→defer read budget, the mining-source
+checklist, metadata extraction, Salak-verified `depends_on`) live in
+**`references/mining-protocol.md`**. Full output format, the
+Requirement-vs-Invariant distinction table, and the metadata field reference
+live in **`references/spec-format.md`**.
+
+## Phase 1 — Scope discovery (self-bootstrapping)
+
+This skill does not depend on any prior onboarding step. It reads the repo
+cold.
+
+1. Read package manifests, framework configs, and entry points to derive
+   capability names (kebab-case: `orders`, `payments`, `user-auth`).
+2. If Salak is installed and exposes module clustering, use it to help group
+   capabilities instead of pure entry-point heuristics — but Salak's shipped
+   feature set does not currently include clustering (deferred in its own
+   design docs, "adds value only on large graphs"). Detect this at runtime
+   rather than assuming; if absent, say so once and fall back to the
+   manifest/entry-point heuristic. Never invent a Salak capability it may not
+   have. Detail: `references/mining-protocol.md` §Salak integration.
+3. **Present the capability list to the user, in Bahasa Indonesia.** Ask
+   which capabilities to mine — a large monorepo does not need every spec on
+   day one. Mine all only if the user says so explicitly.
+
+## Phase 2 — Sample-and-expand read strategy
+
+When more than one capability was selected, fan out on a harness with
+sub-agent delegation: delegate `spec-mining-worker-edho-ferdian` **once
+per capability, in parallel**, rather than mining each one sequentially
+in this context — capabilities read different modules and each writes its
+own independent output file, so there's nothing to lose by parallelizing
+and no aggregation step needed afterward (each worker's file stands on
+its own). On a harness with no delegation primitive, or for a single
+selected capability, mine inline per the steps below. When a worker's
+requirement is anchored to a location that doesn't enforce it, re-run that
+capability one tier up rather than every worker —
+config-hygiene-edho-ferdian's `references/harness-operation.md` §4.2.
+
+For each selected capability:
+
+1. **Sample**: read entry files first (routers, controllers, service
+   facades, public API surfaces). Aim to cover roughly 70% of the eventual
+   Requirement/Invariant assertions from this set alone before expanding.
+2. **Expand**: trace one level down the call chain from each behavior found
+   in the sample.
+3. **Stop expanding** at whichever comes first:
+   - an external system boundary (DB query, HTTP call, message queue), or
+   - 3 consecutive "barren" files (no new requirements found), or
+   - 15 files total read for this capability.
+4. **Defer, never drop**: anything past the stopping point is recorded with
+   an explicit `<!-- deferred: <reason> -->` marker at the bottom of the
+   spec file, never silently omitted.
+
+Full mining-source checklist (what counts as a behavioral assertion) and
+metadata extraction rules: `references/mining-protocol.md`.
+
+## Phase 3 — Emit output
+
+Write one file per mined capability to
+`/project-memory/mined-specs/<capability>.md`, using the exact block format
+in `references/spec-format.md`: flat `### Requirement: <name>` and
+`### Invariant: <name>` blocks, each with an HTML-comment metadata block
+(`id`, `entities`, `enforced`, `test`, `depends_on`, `triggers`). Record a
+`Last verified: <commit-hash>, <date>` line per file.
+
+If `/project-memory/` does not exist yet in this repo, create just the
+`mined-specs/` subdirectory — do not scaffold the rest of
+`dev-kickoff-edho-ferdian`'s memory structure; that's its own skill's job.
+
+## Worked examples
+
+`references/worked-mining.md` — one capability mined into anchored WHEN/THEN requirements, invariants and uncertainties, plus a characterisation test. Read it when doing the work, not before routing.
+
+## Hands off to (fixed — see skill-authoring-edho-ferdian §11)
+
+When the work reaches one of these, load that skill with the Skill tool
+and follow it — don't write its part from memory.
+
+- Starting work from the mined spec → `dev-kickoff-edho-ferdian`
+- Tests that pin the mined behaviour → `test-authoring-edho-ferdian`
+- Architecture questions the spec raises → `system-design-edho-ferdian`
+
+## Language routing (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+Presenting the mined capability list to the user (Phase 1) → Bahasa
+Indonesia. The mined spec files themselves (`Requirement`/`Invariant`
+blocks, metadata, entity names) → English, since they are machine-facing
+artifacts read by `references/spec-format.md`-consuming tooling. Full
+contract: `skill-authoring-edho-ferdian` §7.
+
+## Guardrails (ported verbatim — these are the integrity core)
+
+1. **Never invent behavior.** If the code doesn't clearly express a
+   contract, write `<!-- uncertainty: <what's unclear> -->` instead of a
+   confident-sounding Requirement.
+2. **Cross-validate.** A docstring's claim is not the contract until checked
+   against its actual callers. If a function's docstring says it returns
+   `User | null` but every caller null-checks, the Requirement reflects what
+   callers rely on, not what the docstring claims.
+3. **Don't classify.** No "Business Rules" / "API Contracts" chapters. Type
+   information lives in the Requirement's description text and its
+   `entities` metadata.
+4. **One capability, one spec file.** If a file would exceed ~500 lines, the
+   capability is probably too broad — split it.
+5. **Metadata is mandatory when known, never guessed.** Every Requirement
+   needs `entities` and `enforced` at minimum, or it isn't searchable — but
+   an unknown field is omitted, not filled with a guess.
+6. **Flag, don't fix.** This skill mines and reports gaps. It does not
+   refactor, does not "fix" inconsistent code, does not open a PR.
+7. **Record the commit.** Every `Last verified` line carries the current git
+   commit hash — the anchor for future freshness checks.
+8. **Salak metadata is clearly labeled.** `depends_on`/`triggers` sourced
+   from Salak's graph (via `salak query`) are marked `[Salak-verified]`; anything from
+   call-chain inference is marked `[inferred, unverified]`. Never blend the
+   two without the label — see `references/mining-protocol.md` §Salak
+   integration for exactly how and when each applies.
+
+## Reflection — 5 gates (mandatory before handing off a mined spec file)
+
+```
+CATATAN REFLEKSI — SPEC MINING
+Gate 1 (Traceability): Does every Requirement have a traceable
+       `enforced` location?                                      [PASS/FAIL + reason]
+Gate 2 (Docstring cross-validation): Any Requirement derived from a
+       docstring/comment claim without checking its actual
+       callers?                                                  [.]
+Gate 3 (No invention): Any behavior recorded as a confident
+       Requirement that should have been `<!-- uncertainty: -->`
+       instead?                                                  [.]
+Gate 4 (Provenance): Is the commit hash recorded in `Last verified`
+       for this file?                                            [.]
+Gate 5 (Salak labeling): Is every Salak-sourced `depends_on`/
+       `triggers` marked `[Salak-verified]`, and every inferred one
+       marked `[inferred, unverified]` — no unlabeled claim?      [.]
+```
+
+Any FAIL → fix before presenting the mined spec file. Show this block to the
+user; it's the trust mechanism for a spec nobody asked you to write.
+
+**Done criteria:** capability list presented and confirmed · read budget per
+capability respected (sample → expand → defer, never a blind full read) ·
+output file(s) written to `/project-memory/mined-specs/` in the exact block
+format · Reflection all-PASS.

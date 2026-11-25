@@ -1,0 +1,636 @@
+---
+name: audit
+description: Audit a documentation-led repo against its own conventions — contiguous ADR numbering, INDEX sync, plan/ coverage, required sections, status validity, cross-reference resolution, language mandate, ADR-privacy leaks into user-visible code, cross-worktree collisions (duplicate numbers, duplicate plan ownership, same ADR edited on two branches), and — for a multi-repo product — cross-repo federation checks (bidirectional membership, identity collisions, dangling cross-repo references, roll-up drift, convention drift). Reports a punch list and offers to fix the mechanical issues. Use when the user says "audit the ADRs", "lint the conventions", "check repo consistency", or "are the ADRs in sync".
+---
+
+# audit
+
+Check a documentation-led repo against the conventions it declares.
+This is the enforcement `AGENTS.md` cannot guarantee on its own.
+
+## Step 0 — Preconditions and context
+
+1. Confirm the repo is bootstrapped.
+2. Read `CONVENTIONS.md` to learn what to enforce: the **ADR shape
+   scheme** — a single shape, two shapes declared by a `shape:` field in
+   each ADR's metadata block (no number boundary is recorded and none is
+   read), or the **legacy range encoding** described in item 4 — status
+   lifecycle, integration model, multi-agent mode,
+   language mandate, optional artefacts present (GLOSSARY, domains/),
+   the canonical glossary shape recorded in §Glossary (optional heading
+   and prose, then one `Term | Definition` table),
+   and any Q10 domain hard rules, and the **artefact root** (default:
+   repository root) — resolve `adr/`, `plan/`, `INDEX.md`, `_agent/` against it and
+   honour it in the cross-reference and INDEX-sync checks.
+3. If a `federation.md` exists, this repo is part of a multi-repo
+   product. Note its `Role` (`central` / `home` / `coordinator`
+   index-holder, or a plain `member`) and read the recorded identity
+   scheme; the cross-repo checks (check 12) run from the index-holding
+   repo.
+4. **Legacy range encoding.** Some two-shape repos were scaffolded
+   before the shape became a declared field and encode it in the
+   **number** instead: capability ADRs below a cutoff, technology ADRs
+   at or above it, and the technology template sitting at the boundary
+   as a pseudo-ADR. Two signals identify it, and **either one alone is
+   enough**:
+   - `CONVENTIONS.md` §ADR Shapes records a cutoff — a capability range
+     and a technology range rather than a `shape:` field; or
+   - `adr/` holds a template file numbered other than `0000` (e.g.
+     `adr/0100-template.md`, or whatever boundary the project chose).
+
+   Treat the two as one condition, not two findings. When it holds the
+   catalogue is **valid, not broken** — it predates the declared field.
+   Run the checks below under the **legacy rules** noted against
+   checks 1, 2 and 4, so a repo that passed before keeps passing, and
+   report the single finding of check 15. A migration onto the declared
+   field is offered in Step 4; nothing is rewritten here.
+
+## Step 1 — Run the checks (read-only)
+
+Report each as PASS / FAIL / N/A with specifics (file + line where
+relevant):
+
+**Templates are not decisions.** Every check that walks the catalogue
+excludes each `adr/0000-*.md` file — `0000-template.md` and, in a
+two-shape repo, `0000-template-technology.md`. They are never numbered,
+indexed, plan-covered, or section-checked as ADRs. Under the **legacy
+range encoding** the boundary-numbered template is excluded in exactly
+the same way: it is a template, not the first technology ADR.
+
+1. **Numbering.** ADR filenames contiguous, zero-padded, no gaps, no
+   duplicates — **one sequence for the whole catalogue**, whatever each
+   ADR's shape. Flag any template numbered other than `0000`.
+   *Legacy encoding:* apply the range rules exactly as they stood —
+   numbering contiguous **within each block** with no duplicates, the
+   gap at the cutoff expected rather than flagged, capability ADRs below
+   the cutoff and technology ADRs at or above it, and the
+   boundary-numbered template neither flagged nor counted as an ADR.
+2. **INDEX sync.** Every ADR appears in `INDEX.md`; every INDEX row has
+   a matching file; metadata fields (status, title, date) agree. In a
+   two-shape repo the table carries a **Shape** column and its values
+   agree with each ADR's `shape:` field (an absent field reads as
+   `capability`); a single-shape repo has no such column.
+   *Legacy encoding:* the table carries no Shape column — shape is read
+   from the range — so do not flag its absence.
+3. **Plan coverage.** Every `Accepted` ADR has a `plan/todo/` item;
+   every `Implemented` ADR has a `plan/done/` entry. Flag orphans both
+   ways. After a range migration, resolve an unchanged done entry's old
+   identity through the migration commit's recorded old-to-new map before
+   checking coverage. Cite that commit and pair; do not require history to
+   name today's number. Bind the full old path in the pre-migration tree
+   to the mapped current file using that commit's tree/rename evidence;
+   an equal number or title alone never establishes identity. A different
+   filename sharing the old prefix gains no exemption. Missing mapping or
+   tree evidence is unverifiable, not proof
+   of coverage. Unrelated or unmapped missing entries remain findings.
+4. **Section completeness.** Each ADR has the required sections in the
+   order its **declared shape** mandates — read the `shape:` field:
+   `capability`, or an absent field, means the capability order
+   (Context, Capability statement, User stories / scenarios, …);
+   `technology` means the technology order (Context, Decision,
+   Rationale, Consequences, …). In a single-shape repo every ADR takes
+   that repo's one order. Flag any `shape:` value that is neither
+   `capability` nor `technology`. A `shape:` field in a single-shape repo
+   is redundant, not wrong — report it as hygiene. Acceptance criteria
+   are numbered.
+   *Legacy encoding:* the shape is the ADR's side of the cutoff — below
+   it capability, at or above it technology — and no `shape:` field is
+   expected. Validate the section order against that, exactly as before,
+   with the one carve-out the encoding forces and these repos record for
+   themselves: an ADR below the cutoff that `CONVENTIONS.md` names as a
+   **documented exception** — typically the ADR adopting the method,
+   which is technology-shaped but has to be first in the sequence — is
+   checked against the technology order, not flagged. A mismatch the
+   conventions do **not** record is still a finding. A `shape:` field
+   contradicting the range is a real inconsistency; one agreeing with it
+   is hygiene, not a failure.
+5. **Status validity.** Every `status:` is in the declared lifecycle.
+   `Superseded` ADRs name a successor in `superseded-by:`; the successor
+   names them in `supersedes:` (symmetry).
+6. **Revision/Approvals.** Revision History present; Approvals populated
+   for ADRs at `Accepted` or beyond.
+7. **Cross-references.** Relative `adr/NNNN-*.md` links resolve to real
+   files. Glossary anchors (if used) resolve. Preserved `plan/done/` entries
+   and historical commit messages or tags are checked in their historical
+   context. A retired path explained by the migration commit's old-to-new
+   map and the full file-identity evidence from check 3 is not a dangling
+   active link; cite the evidence instead of rewriting
+   history. This exception never excuses an unresolved current ADR, INDEX,
+   domain listing or todo reference.
+8. **Language mandate.** If set, spot-check user-facing docs for the
+   required spellings.
+9. **ADR-privacy leaks.** Grep source / product directories for ADR
+   identifiers in user-visible strings — patterns like `ADR 0042`,
+   `adr-0042`, `see ADR`, ADR titles — in UI copy, API responses,
+   error messages, customer-facing logs, public docs, release notes.
+   Report each suspect; this rule is easy to violate by reflex.
+10. **Coordination hygiene.** `_agent/` is the agent operating
+    contract — who writes what, the one real mutex, and how an
+    unattended run behaves — and holds nothing git already records.
+    N/A if the repo has no `_agent/` directory (a valid state: a single
+    writer that is not eligible for the run prompt has none). Otherwise
+    read the recorded coordination mode. First recognise the legacy marker set
+    below: it gets one non-failing migration-available finding, and its
+    recorded hygiene rules remain active until migration. Modern-only file
+    and derived-state failures below do not duplicate that finding. Check:
+    - **Only the prescribed files exist.** Single writer:
+      `prompts/autonomous.md` and nothing else. Shared checkout:
+      `ROLES.md`, `LOCKS.md`, `prompts/autonomous.md`. Separate
+      worktrees: `ROLES.md`, `prompts/autonomous.md` — no lock ledger,
+      because the branch and its pull request are the claim.
+      `prompts/autonomous.md` is prescribed only where the repo is
+      eligible for it — a recorded verify gate **and** the `plan/todo/`
+      queue the prompt walks. A prompt in a repo with no plan queue is
+      an unprescribed file: report it, and say the fix is to add the
+      queue or drop the prompt. Under a single writer, no eligibility
+      means no `_agent/` directory at all. **Fail** on any other file
+      under `_agent/`, and on a
+      prescribed file the mode does not allow (a lock ledger in
+      separate-worktree mode, a roles list under a single writer).
+    - **No file carries derived state.** **Fail** on any `_agent/` file
+      whose content duplicates what git, the queue, or the live
+      branches already say: a log of shipped items, an in-flight or
+      per-worktree table, a snapshot of branch or queue state ("active
+      branch", "last shipped", "next item"), or a clause telling the
+      reader that git wins where the two disagree — that clause is the
+      file admitting it is a stale copy.
+    - **Stale claims.** In a shared checkout, a row in
+      `_agent/LOCKS.md` is a live mutex until there is **evidence** its
+      owner has finished or abandoned it. Writers claim a file *before*
+      editing it, so a claim with no pending change is the normal state
+      of a writer preparing an edit — **never** infer staleness from an
+      absent diff alone. Evidence must be tied to **this** claim, never
+      to the actor's history on the file — writers reuse files across
+      tasks, so a commit older than the row proves nothing about it.
+      Evidence is one of:
+      - a commit by the claiming actor that touches that path, with a
+        commit time **later than the row's timestamp**, has landed on
+        the integration branch and the row is still there (the claim
+        outlived its own work);
+      - the operator confirms the owner is gone.
+      Report rows with evidence as **hygiene**, naming the evidence.
+      Report every other claim as an **uncertain** row — listed for the
+      operator to confirm, counted as neither clean nor stale, and never
+      cleared automatically. Where the audit cannot attribute a row to a
+      commit at all (no matching actor in the history), it is uncertain,
+      not stale.
+    - **The in-flight view is derived, not read from a file.** Compute
+      it and render it in the report: `git worktree list` for the
+      worktrees on this machine, the remote branches matching the claim
+      convention (`claim/<item-key>`, the queue file name without its
+      extension), and open pull requests, draft or ready, where a pull-request
+      host is reachable. Then check it:
+      - **Fail** on an **item claimed twice** — two claim branches for
+        one item key, or a claim branch and a claim recorded on the item
+        naming different actors. One item maps to one ref precisely so
+        this cannot happen quietly; if it has, name both claims and the
+        item.
+      - **Resolve the item at the integration base and claim tip**, not
+        only in the auditor's checkout. An unmerged ready PR can already
+        contain the todo-to-done move: use its item reference and git move
+        history to connect the done entry. Only fail an orphan claim when
+        neither tree nor the linked PR explains its item. Missing read
+        access makes this unverifiable, not an orphan.
+      - **Stale branch-backed claim:** after successful fetch/prune, its
+        remote ref is confirmed absent. Offer cleanup with evidence, never
+        delete an uncommitted or unnamed worktree. Detached worktrees are
+        neither claims nor stale. Shared-checkout Claimed by and lock rows
+        have no remote claim branch: use the ownership evidence above;
+        absent remote refs and absent diffs alone prove nothing.
+      - Confirmed merged PRs and claim tips already reachable from the
+        integration branch are not live. An item still queued is merged but
+        unshipped and needs reconciliation; a linked completion entry on
+        the base is shipped. Use PR merge state when squash/rebase changed
+        ancestry. Unmerged draft and ready PRs remain live. Normal actor
+        changes in a continued claim's history are not duplicate ownership.
+      - **No remote, no verdict.** Where no remote is reachable the
+        branch and pull-request halves cannot be computed at all. Report
+        the in-flight view **unverifiable**, naming what could not be
+        reached — never PASS. Worktrees are still listed; they just do
+        not answer the question on their own.
+    - **Legacy layout.** Where the offending files are the former
+      scaffolded set — `WORKLOG.md`, `worklog/`, `CURRENT_FOCUS.md`,
+      `IN_FLIGHT.md`, `HANDOFF.md`, a `merge=union` attribute for the
+      worklog, or a `.gitignore` entry for the snapshot — report them
+      as **one** finding naming the layout and every file in it, not
+      one finding per file, at non-failing **migration available** severity.
+      Include a mode-inappropriate ROLES or LOCKS file as a marker too.
+      Offer the coordination migration below. Separately offer evidenced
+      stale-content cleanup; keep valid legacy rules if migration is declined.
+11. **Cross-worktree collisions** (repos that record several writers on
+    separate worktrees, or any audit that spans unmerged branches).
+    These catch semantic conflicts that a line-level git merge cannot,
+    and all three are **FAIL**, never hygiene — each one merges clean and
+    lands an incoherent catalogue:
+    - **Duplicate ADR or plan/todo numbers** — two ADR files, or two
+      `plan/todo/` items, (across branches/worktrees) claiming the same
+      `NNNN`. Distinct from check 1, which only sees one tree. This is the
+      collision the concurrency guardrails (G2 pre-merge / G3 gate) guard
+      against; flag it so the later author renumbers.
+    - **Duplicate plan ownership** — two `plan/todo/` items naming the
+      same owning ADR for the same scope, i.e. two worktrees building
+      the same thing.
+    - **Same ADR edited on two unmerged branches** — compare ADR files
+      across the live worktrees / open PRs; flag any ADR modified in
+      more than one. A `merge=union` would concatenate them silently.
+    Cross-check against the identifier blocks the wave reserved — read
+    them from each branch's pull-request description, or its first commit
+    message under direct-to-main, and from the claim branch each worktree
+    pushed. Every collision should correspond to a writer working outside
+    its reserved block or editing an artefact another claim names. There
+    is no file to cross-check against: the blocks are stated where the
+    work is.
+12. **Cross-repo (federation) checks** — only when a `federation.md`
+    exists; run from the **index-holding** repo (`Role: central`, `home`,
+    or `coordinator` — whichever holds `federation-index.md`). Reach each
+    member through the local checkout named in `federation-index.md`. A member not checked
+    out locally is reported **"unverified this run"** — never silently
+    passed, never a hard failure.
+    - **Bidirectional membership.** Every repo listed in the member index
+      carries a `federation.md` back-pointer to this index-holder, and
+      every repo whose back-pointer names this repo is listed in the
+      index. Flag either half-edge (in-index-without-back-pointer, or
+      points-here-but-unlisted).
+    - **Identity collisions.** Under the repo-prefixed scheme an identity
+      is `repo-id` + local number, so the only reachable collision is a
+      **duplicate `repo-id`**. Flag any repo-id that appears on more than
+      one `federation-index.md` row or in two members' `federation.md`
+      back-pointers.
+    - **Dangling cross-repo references.** Resolve each cross-repo link
+      along `repo-id → Pointer → adr/NNNN-*.md` — look up the repo-id's
+      Pointer in `federation-index.md`, then the ADR file under that repo.
+      A repo-id with **no index row** is a dangling reference. If the row
+      exists but the **checkout is absent**, report it **"unverified this
+      run"** (not dangling); only an **absent ADR in a present checkout**
+      is a true dangling reference. (Same-repo relative links are
+      check 7.)
+    - **Roll-up drift.** The roll-up agrees with each member's `INDEX.md`
+      metadata; flag rows that are stale, missing, or extra.
+    - **Convention drift.** Compare each member's **shared** conventions
+      against the index-holder's authoritative copy; flag a member whose
+      shared conventions have drifted from the source. Members' **local-only**
+      conventions are exempt.
+13. **Coverage (undocumented developments).** A heuristic nudge, not a
+    precise diff: scan the major modules / top-level source directories and
+    the recent `git log` for **substantial behaviour or an area with no
+    owning ADR** — a large feature, subsystem, or dependency the catalogue
+    never records. Report each as a prompt to **capture** it (reconstruct
+    the decision as an `Implemented` ADR + `plan/done`, per the backfill
+    path), **not** as a hard failure. Because the audit is doc-centric, keep
+    this conservative — flag clear, sizable gaps, not every file.
+14. **Artefact-root discovery.** If a `.docflow` **file** exists at the
+    repository root, its `root:` line must agree with the artefact root
+    recorded in `CONVENTIONS.md`, and it must not redundantly name
+    `.docflow/` (the directory is its own marker — flag the file for
+    removal). If the artefact root is **not** `.docflow/` and no pointer
+    file exists, surface it as an **offer** to add one (external tools
+    discover the catalogue through it) — never as a hard failure;
+    migration is offered, not forced.
+15. **Legacy shape encoding.** N/A unless Step 0 item 4 holds. When it
+    does, report exactly **one** finding at severity **migration
+    available**: name the signal(s) that identified the encoding (the
+    cutoff recorded in §ADR Shapes, the boundary-numbered template file,
+    or both), state that the catalogue is valid and passing under the
+    range rules, and say that a complete mechanical migration onto the
+    declared-field scheme is available (Step 4). Never split it into a
+    second finding — a template numbered off `0000` and a recorded
+    cutoff are the same condition — and never fail the audit for it.
+
+16. **Item status and reports.** Surface every nonempty Stopped field for
+    human attention. Modern queued items carry Claimed by / Blockers /
+    Stopped; done entries carry no live Status section. Check that the
+    Reporting convention and AGENTS pointer both exist or are both opted
+    out, with the same heading/labels. Inspect accessible PR bodies, wave
+    item/summary reports and stop records for Status at a glance, the three
+    labels, exact gate outcomes and outstanding work. Missing/inconsistent
+    blocks are drift; inaccessible reports are unverifiable. Draft PRs may
+    report verification as not run; they must never imply success.
+
+17. **Glossary structure.** N/A when `GLOSSARY.md` is absent — an absent
+    optional layer is valid and the audit must never create one to satisfy
+    this check. Otherwise read `CONVENTIONS.md` §Glossary and inspect what
+    rule it **actually declares**, not merely whether the section exists.
+    A repo can carry a §Glossary that states an older or unrelated glossary
+    convention; that is not adoption of this canonical table. The canonical
+    rule is the one this product records: an optional H1 heading and optional
+    introductory prose, then exactly one two-column table whose header is
+    `Term` and `Definition`, with every entry as its own row. **PASS** only
+    when the file is a single canonical table with optional heading/prose, no
+    term recorded as a heading, bullet or paragraph, **and no duplicate
+    term**. Check the duplicate condition as part of the pass test, not after
+    it, so a canonical table that repeats a term can never report PASS.
+
+    - **Duplicate term** (any structure) — report a **drift** finding
+      naming the repeated term(s). A repeated term is identified by its
+      visible name, so `<a id="alpha"></a>Alpha` and a plain `Alpha` row
+      count as the same term. There is no mechanical fix: a duplicate
+      needs user resolution, is never merged automatically, and is never
+      counted as clean.
+    - **Non-canonical shape with no §Glossary section** (a legacy or
+      opt-in-later repo that never adopted any glossary rule) — report
+      **one** finding at severity **migration available**, naming every
+      shape found and the file. The glossary is valid, just non-canonical;
+      it does not fail the audit or count as an issue, exactly like the
+      legacy range encoding.
+    - **Non-canonical shape whose §Glossary declares a different or older
+      glossary convention** (bullets, prose, or another column shape — not
+      the canonical two-column table). The repo declared a glossary rule,
+      but not **this** table rule, so its file is not drift against a rule
+      it never adopted. Report **one** finding at severity **migration
+      available** that covers the rule and the file together: the Step 5
+      dry run shows both the `GLOSSARY.md` migration and the proposed
+      §Glossary replacement, and the repo may accept either or both. It
+      does not fail the audit or count as an issue.
+    - **Non-canonical shape whose §Glossary declares the canonical
+      two-column table** (the repo adopted this shape and its own file
+      drifted from it) — report the same finding as **drift**, naming every
+      shape found and citing the declared §Glossary as the rule it broke.
+      It counts as an issue and lowers the verdict, but it is still fixed
+      only through the consented migration in Step 5 — never silently
+      rewritten.
+
+    In every non-canonical case, name any entry whose mapping cannot be
+    preserved without guessing and mark it for user resolution; those are
+    never migrated automatically, and where lossless preservation (for
+    example a heading anchor an incoming link points at) is uncertain, stop
+    for resolution instead of guessing.
+
+## Step 2 — Report
+
+Translate the audit verdict into the closing block's Overall vocabulary:
+verified when all required checks pass; a non-failing migration offer or
+optional hygiene finding alone does not lower that status. Use partially
+verified or failed for unresolved failed checks, and blocked or unknown
+when required evidence is unavailable. Keep the issue count, severity and
+optional next steps in the explanation, not in place of that status value.
+Overall covers the complete requested audit, including unrelated findings;
+do not label it "verified for the migration" while another required check
+fails. Put the successful migration outcome under This run instead.
+
+Lead with a one-line verdict (clean / N issues). Then the punch list,
+grouped by severity: **blocking** (privacy leaks, status/lifecycle
+violations, broken cross-refs), **drift** (INDEX out of sync, missing
+plan files, duplicate glossary terms, or a non-canonical glossary whose
+§Glossary declares the canonical table it drifted from), **hygiene**
+(evidenced stale locks,
+uncertain lock rows awaiting confirmation, formatting), and **migration
+available** (a superseded scheme the repo can move off — check 15 — or a
+non-canonical glossary with no §Glossary rule, or one whose §Glossary
+declares a different glossary rule — check 17).
+A migration-available finding does not count towards the issue count in
+the verdict and never makes the run dirty: a repo whose only finding is
+that one is **clean, with a migration available**.
+
+## Step 3 — Offer fixes
+
+Offer to fix the **mechanical** issues automatically: regenerate
+`INDEX.md`, create missing `plan/todo` stubs, clear the lock rows check
+10 found evidence for, prune the stale worktrees and delete the leftover
+claim refs check 10 named, fix broken relative links. A worktree is
+pruned only on a confirmation naming it — it may hold uncommitted
+work — and a claim branch is deleted only where its item has shipped or
+the operator says the work is abandoned. For shipped claims, follow
+ship-item's cleanup protocol using the source verified for integration;
+preserve the claim if that source is unavailable or the ref has changed.
+For explicitly abandoned work, lease deletion against the exact tip covered
+by the operator's confirmation; a later tip requires fresh confirmation.
+**Only** rows with
+that evidence are clearable: clearing a live claim in a shared checkout
+removes another writer's only mutex and lets two writers edit the same
+file. Uncertain rows are listed for the operator to confirm one at a
+time and are never included in a "fix everything" confirmation. **Do not** auto-edit ADR content, rewrite
+acceptance criteria, or remove suspected privacy leaks without the
+user confirming each — those need judgement. Commit fixes as
+`fix(adr): ...` / `docs: ...` with a `Rationale:` footer where an ADR
+is touched.
+
+The glossary migration is **not** one of these mechanical fixes: never
+bundle it into a "fix everything" confirmation, never convert a glossary
+without the concrete diff and explicit consent in Step 5, and never create
+an absent `GLOSSARY.md` to satisfy the check.
+
+If check 15 fired, offer the **legacy range migration** here too — as
+its own offer, separate from the mechanical fixes above, and never
+bundled into a "fix everything" confirmation. Step 4 is the procedure.
+
+## Step 4 — Offer the legacy range migration (only when check 15 fired)
+
+The migration is **offered, never forced**. A repo that declines keeps
+the range encoding, keeps passing under the legacy rules, and is offered
+again on the next audit. Nothing below is written without the
+confirmation in 4.2.
+
+### 4.1 — Dry run: show the old-to-new number map
+
+Compute the map and show it **before touching a single file**:
+
+- **Capability ADRs** — those below the cutoff — keep their numbers.
+  Nothing moves, so the numbers already cited in commits, tickets and
+  shipped plan entries still resolve.
+- **Technology ADRs** — those at or above the cutoff — take the numbers
+  immediately following the **highest capability ADR**, in their
+  original relative order. With capability ADRs ending at `0012` and
+  technology ADRs `0101`, `0102`, `0104`, the map is `0101 → 0013`,
+  `0102 → 0014`, `0104 → 0015`. Order is preserved; gaps in the old
+  technology block are closed, not carried over.
+- **The moved set is the technology *range*, not every technology-shaped
+  ADR.** The range encoding forces one exception — the ADR that adopts
+  the method is a technology-shaped decision that has to be first in the
+  sequence — and repos record it as such in their conventions. It is
+  below the cutoff, so it does **not** move: it keeps its number and
+  simply gains `shape: technology`, which is what retires the exception
+  clause in step 6. Renumbering it would churn the one number every
+  early commit cites, for nothing.
+
+Render the map as an `old → new` table with each ADR's title, then list
+what follows from it: every `depends-on`, `supersedes` /
+`superseded-by`, relative `adr/NNNN-*.md` link, `INDEX.md` row, domain
+`README.md` listing, and `plan/todo/` owning-ADR reference that names a
+moved number; the boundary template replaced by
+`adr/0000-template-technology.md`; §ADR Shapes rewritten to the declared
+field. Say plainly what is **not** touched: entire `plan/done/` entries, commit
+messages, tags, and any reference from outside the catalogue. Those are
+history, and history is not rewritten.
+
+### 4.2 — Confirm
+
+Ask for an explicit confirmation of **that map**. Write nothing without
+it. Acceptance of the audit report is not acceptance of the migration:
+ask for it as its own question, and take silence or ambiguity as a no.
+
+### 4.3 — Apply, as one commit
+
+1. `git mv` each moved technology ADR to its new number, keeping its
+   slug. Capability files do not move.
+2. In each moved file, update the `adr:` metadata field and the H1
+   heading to the new number.
+3. Write `shape:` on **every** ADR — the shape each one **actually
+   has**, not the block it came from. `technology` on the moved ones and
+   on the documented exception that stayed (4.1); `capability` on the
+   rest. Stamping the exception `capability` because it did not move
+   would put the field at odds with its sections, and the check in 4.4
+   would fail the catalogue the migration just produced. Write the field
+   explicitly on all of them: it is the encoding now, and a catalogue
+   carrying it on only half its ADRs is still readable but no longer
+   self-describing.
+4. Rewrite every in-catalogue reference to a moved number: `depends-on:`,
+   `supersedes:`, `superseded-by:`, relative `adr/NNNN-*.md` links in
+   any ADR body, `INDEX.md` rows, domain `README.md` listings, and the
+   owning-ADR line — and any other relative ADR link — of every
+   `plan/todo/` item. Rewrite by resolved
+   identity, not by text search alone — a bare `0101` in prose may be a
+   quantity, and a number that did **not** move must not be touched.
+5. Delete the boundary-numbered template and write
+   `adr/0000-template-technology.md` in its place — the technology
+   template, `shape: technology` pre-filled. `adr/0000-template.md`
+   stays as the capability template; no template carries any other
+   number afterwards.
+6. Rewrite `CONVENTIONS.md` §ADR Shapes to the declared-field form: two
+   shapes named by the field, an absent field meaning capability, one
+   contiguous sequence with no boundary, both templates numbered
+   `0000`, and a Shape column in `INDEX.md`. Delete the cutoff, and
+   delete any clause recording the seed ADR as an exception to the
+   range — under the declared field the seed is simply
+   `shape: technology`, and there is nothing to except. If `AGENTS.md`
+   mirrors the section, give it the matching shape hard rules.
+7. Regenerate `INDEX.md` from the new metadata, with the **Shape**
+   column.
+8. Commit **once**. The message lists **every** old-to-new pair, one per
+   line, so the renumbering is reconstructible from history alone — it
+   is the only record of the old numbers, and there is no alias field to
+   fall back on. Conventional Commit, with the `Rationale:` footer the
+   repo's git contract requires for ADR changes.
+
+### 4.4 — Verify before handing back
+
+Re-run Step 1 with the legacy rules **off**: one contiguous sequence,
+each ADR's sections matching its declared shape, a Shape column whose
+values agree with the fields, every active relative link resolving, and no
+template numbered other than `0000`. The catalogue must pass with **no
+manual edit**. If anything fails, the migration is incomplete — finish
+it in the same commit rather than leaving a half-migrated catalogue,
+which is the one state neither rule set describes.
+
+Preserve every `plan/done/` file byte for byte. Resolve its historical
+identity for coverage and reference checks using the commit map, as checks
+3 and 7 prescribe. A decision's preserved rationale describing the former
+scheme is historical context; only the active shape rules and metadata
+change. Do not treat this required preservation as an incomplete migration.
+
+## Step 5 — Offer the glossary migration (only when check 17 fired)
+
+This is a separate, consented offer. Like the range migration it is
+**offered, never forced**, and it rewrites nothing without the explicit
+confirmation in 5.2. Accepting the audit report is not accepting this
+migration; a decline keeps the file byte for byte and never adds a second
+shape, and the offer returns on the next audit. When the declared §Glossary
+itself states an older glossary convention, the offer covers the rule and the
+file together: the repo may accept the file migration, the rule replacement,
+both or neither, and declining any part leaves that part unchanged.
+
+### 5.1 — Dry run: show the concrete proposed diff
+
+Render the exact change before touching the file:
+
+- show the current glossary as it is, and the proposed canonical file
+  beside it;
+- map each non-table entry to a proposed `Term | Definition` row. Compare
+  the result against an explicit ordered list of the original entries and
+  prose: every term and its **complete definition wording** is preserved
+  verbatim — do not recase, reword, summarise or reorder an entry. Only the
+  structural escaping (a literal pipe as `\|`, a hard break as `<br>`) and
+  the table packaging change;
+- when the declared §Glossary states a different or older glossary rule,
+  show the proposed replacement `## Glossary` section as a second, labelled
+  part of the same diff, and state plainly that it is a separate choice;
+- preserve term spelling and meaning, aliases, links and inline code,
+  entry order, and all meaningful introductory prose;
+- **preserve heading entry anchors.** A term recorded as a heading
+  (`## Delivery`, or an H1 term heading after the optional `# Glossary`
+  title) exposes an anchor (`#delivery`) that other files may link
+  to. Converting the heading to a table row removes that target, and
+  preserving the link text alone is not enough. Keep the exact existing
+  slug as an explicit anchor on the row (for example
+  `<a id="delivery"></a>Delivery`), using the slug the heading already has
+  rather than recomputing it. List every heading entry and the incoming
+  links that reach it in the dry run, and if an anchor cannot be preserved
+  — an unknown or ambiguous slug, a link that targets a fragment the file
+  never defined, or two headings that collide — **stop and flag it for user
+  resolution** instead of guessing;
+- escape every literal pipe as `\|`, and keep a genuinely multiline
+  definition in one cell with `<br>` rather than extra rows;
+- list every entry whose mapping is ambiguous or duplicated and leave it
+  for user resolution — do not invent a definition, merge duplicate terms,
+  drop unexplained prose, or force a row the file does not support.
+
+State plainly that nothing has been written. This is a Markdown shape
+change only; it introduces no parser or dependency.
+
+### 5.2 — Confirm
+
+Ask for an explicit confirmation of **that diff**. Write nothing without
+it; take silence or ambiguity as a no. If the user declines, keep the
+file untouched, report the declined migration, and add no alternative
+shape.
+
+### 5.3 — Apply, as one commit
+
+On confirmation, rewrite the file to the canonical structure exactly as
+shown, preserving every term, its exact definition wording, the entry order,
+all meaningful prose, and every heading anchor an incoming link resolves to.
+If the accepted diff also replaced the declared §Glossary, write that
+replacement in the same commit; if the rule was declined, leave
+`CONVENTIONS.md` unchanged. If any entry or anchor cannot be
+preserved losslessly — including an anchor target the dry run could not
+confirm — stop and flag it for user resolution rather than committing a
+partial migration. Commit once with a `docs:` or `fix:`
+Conventional Commit whose message names the glossary migration; add the
+`Rationale:` footer only if the repo's git contract requires it for the
+files touched. Then re-run check 17: the file must pass as canonical with
+no manual edit. A half-migrated file is the one state neither shape
+describes — finish it in the same commit.
+
+## Coordination migration
+
+This is independent of range-number migration. Recognise any legacy
+worklog file/directory, IN_FLIGHT dashboard, CURRENT_FOCUS snapshot,
+HANDOFF, mode-inappropriate ROLES/LOCKS, worklog union attribute or snapshot
+ignore entry. Do not combine its report with unrelated semantic failures.
+
+1. **Dry run:** list each removal and its evidence/content destination.
+   Match live claims against git/PRs; carry owner, reservations and blockers
+   into the corresponding queue item or claim commit/PR. Preserve custom
+   operating instructions in their appropriate convention or run prompt.
+   Shipped history stays in git and plan/done. Uncertain ownership stays
+   unresolved and is never cleared merely because there is no pending diff.
+2. **Approval:** apply an existing explicit grant covering this migration,
+   or ask for approval of the displayed changes. Audit acceptance alone
+   is not migration approval. If declined, keep the old conventions/files.
+   Stale-content cleanup can be approved separately, per named removal.
+3. **Apply:** retire the legacy files and only their attribute/ignore rows;
+   preserve unrelated entries. Remove ROLES for a single writer and LOCKS
+   for separate worktrees. Add Status to open items, retaining live facts.
+   Write AGENTS' Picking up this repo from actual files: conventions,
+   catalogue, queue/status, newest done entries, first-parent git log,
+   and applicable worktree/claim/PR commands. Rewrite coordination rules;
+   regenerate the prompt from recorded root, mode, integration and gate.
+4. **Commit:** one migration commit lists every removed/moved file and
+   where its content now lives. Do not remove live branches or worktrees as
+   a side effect. Run the gate and repeat the audit under the new rules;
+   finish any incomplete migration before claiming it passed.
+
+Name checked scope, unresolved findings, inaccessible evidence and any applied fixes.
+
+<!-- docflow:closing-report -->
+## Closing report
+
+End every run, including blocked, failed and stopped runs, with a section
+headed exactly **Status at a glance**, containing these three labels:
+
+- **This run:** only actions actually attempted and their outcomes; quote each verify gate's exact output and exit code, including timeouts or interruptions.
+- **Overall:** implemented, partially verified, verified, blocked, failed or unknown. A passing sub-step is not an overall pass; incomplete or missing evidence never becomes success.
+- **Yet to do:** every remaining action, unresolved finding, verification, cleanup or required input. Write None only when the whole task is verifiably complete; never omit work because a budget ended.
+
+Routine progress messages need no block. Keep final results brief and
+distinguish work prepared on a PR from work confirmed shipped.
+<!-- /docflow:closing-report -->

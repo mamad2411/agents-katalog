@@ -1,0 +1,770 @@
+---
+name: sdd
+description: "Spec-Driven Development workflow: create a specification, write requirements, design a feature, plan implementation, break work into tasks, or review spec quality."
+when_to_use: "'let's spec this out', 'create a spec', 'write requirements', 'plan the implementation', or preparing work for a coding agent."
+effort: medium
+---
+
+# Spec-Driven Development
+
+Help users compose structured specifications that AI coding agents can reliably
+execute. The core principle: **the quality of AI-generated code is directly
+proportional to the quality of the specification.**
+
+## Formatting
+
+All SDD artifacts use Obsidian-flavored Markdown. Read the `obsidian-zettelkasten`
+skill references for syntax and formatting rules before writing any artifact.
+
+## How to Use
+
+This skill accepts a phase argument via `$ARGUMENTS`:
+
+- `/sdd init` — bootstrap SDD structure in the project
+- `/sdd specify <description>` — create a specification (Phase 1)
+- `/sdd plan [feature-dir]` — create a technical plan (Phase 2)
+- `/sdd tasks [feature-dir]` — break into implementation tasks (Phase 3)
+- `/sdd review [feature-dir]` — validate spec quality
+- `/sdd` (no args) — ask the user what they need
+
+Parse the first word of `$ARGUMENTS` to determine the phase. Everything after
+the phase keyword is the feature description or path.
+
+## Operating Mode
+
+You are an **interactive dialog partner**, not a template filler.
+
+1. Ask focused questions to understand intent
+2. Build the spec incrementally, section by section
+3. Surface edge cases and unstated assumptions
+4. Get confirmation before moving to the next phase
+5. Mark anything unclear with `[NEEDS CLARIFICATION: ...]`
+6. Follow the language policy below
+
+**Language policy** (single source for all SDD components):
+- Conversation, including gap-filling questions, is in the user's language (detect from the first message).
+- All output documents are in English regardless of conversation language: BRD, SRS, NFR, spec.md, plan.md, tasks.md, constitution, MOC, vault notes.
+- Glossary terms may add the original-language term in parentheses when the English translation is ambiguous (e.g., "Counterparty (Контрагент)").
+
+**Non-interactive runs.** When the caller says you run non-interactively (a team or CI spawn, where no user can answer):
+
+- Ask nothing and wait for no confirmation: write each gap as `[NEEDS CLARIFICATION: ...]` and continue.
+- A step that requires resolved markers (plan step 4) proceeds and carries the open markers into the plan's Risks / Open Questions.
+- Run exactly the phases the caller names; an explicit caller instruction overrides Scaling Depth.
+- Write under the spec root the caller names (File Layout).
+
+## File Layout
+
+All spec artifacts live under `.local/specs/` (the spec root) unless the caller names another root, such as `specs/{feature-slug}/` in team-develop's spec-driven chain. With a caller-named root outside `.local/specs/`, every `.local/specs/<NNN>-<name>/` path below means that root (no `NNN` prefix), and the package stays self-contained: no `MOC-specs.md` entry and no links to files outside it (an existing `.local/specs/constitution.md` is still read as input). A `.local/specs/<NNN>-<name>/` directory the caller pre-created is an ordinary package: add its `MOC-specs.md` entry unless the caller says it runs in Cycle mode.
+
+```
+.local/specs/
+├── MOC-specs.md                (Map of Content — index of all specs)
+├── constitution.md             (project principles, created by init)
+├── 001-feature-name/
+│   ├── spec.md                 (Phase 1 output)
+│   ├── plan.md                 (Phase 2 output)
+│   └── tasks.md                (Phase 3 output)
+└── 002-another-feature/
+    └── ...
+```
+
+Templates are embedded in this skill (see **Templates** section below).
+Read the relevant template before generating any artifact.
+
+---
+
+## Delta Model
+
+A spec under `specs/<capability>/` is the persistent source of truth for that capability. A new capability gets a package (spec, plan with Contracts, tasks). A change to a capability that already has a spec never rewrites it or adds a second spec: it adds one delta file.
+
+```
+specs/<capability>/
+├── spec.md · plan.md · tasks.md
+└── changes/
+    ├── <change-slug>.md                       (open delta)
+    └── archive/<YYYY-MM-DD>-<change-slug>.md  (merged deltas)
+```
+
+A delta has `## ADDED`, `## MODIFIED` (old and new text), and `## REMOVED` sections keyed by requirement id, plus `## Deviations` for the deviations approved during implementation. At spec sync (team-develop Step 8.5) apply the delta to `spec.md`, move it to `changes/archive/`, and mark the completed tasks in `tasks.md`. Both land in the change's PR, so the merge updates the source of truth and the archive together.
+
+---
+
+## Phase: init
+
+Bootstrap SDD in the current project.
+
+1. Check if `.local/specs/` exists. If yes, report state and ask what to do.
+2. Create `.local/specs/` directory.
+3. Scan the project to detect language, framework, test framework, patterns.
+4. Guide the user through creating `.local/specs/constitution.md`:
+   - Use the **Constitution Template** below for structure
+   - Pre-fill with detected values
+   - Ask the user to confirm and customize each section
+5. Create `.local/specs/MOC-specs.md` using the **MOC Template** below.
+6. Report what was created. Suggest: "Run `/sdd specify <description>` to create
+   your first spec."
+
+---
+
+## Phase 1: specify
+
+Create a feature specification. Focus on WHAT and WHY — no implementation.
+
+**Steps:**
+
+1. Read `.local/specs/constitution.md` if it exists.
+2. Use the **Spec Template** below for structure.
+3. Ask clarifying questions before writing anything: rank the gaps by impact × uncertainty across scope boundaries, data and state, error behaviour, NFR targets, integrations, and acceptance, then ask at most four, one at a time, each multiple choice with a recommended option.
+4. Determine the next feature number by scanning `.local/specs/` directories.
+5. Build the spec through interactive dialog. Cover:
+   - User stories (AS A... I WANT... SO THAT...)
+   - Functional requirements in EARS notation:
+     ```
+     WHEN <condition> THE SYSTEM SHALL <behavior>
+     ```
+   - Acceptance criteria in Given/When/Then
+   - Non-functional requirements (performance, security, accessibility)
+   - Edge cases and error handling
+   - Agent boundaries (always / ask first / never)
+   - Success criteria with measurable metrics
+6. Mark all ambiguities: `[NEEDS CLARIFICATION: specific question]`
+7. Save to `.local/specs/<NNN>-<feature-name>/spec.md`
+8. Add entry to `.local/specs/MOC-specs.md` under the appropriate section.
+9. Run the quality checklist (see below).
+10. Suggest: "Ready for `/sdd plan` to create the technical plan?"
+
+---
+
+## Phase 2: plan
+
+Create a technical plan. Focus on HOW.
+
+**Steps:**
+
+1. Read the feature's `spec.md`. If no feature specified, use the most recent.
+2. Read `.local/specs/constitution.md` if it exists.
+3. Use the **Plan Template** below for structure.
+4. Verify no unresolved `[NEEDS CLARIFICATION]` markers. Resolve with user first (non-interactive runs: carry them into Risks / Open Questions instead).
+5. Scan the codebase to understand existing architecture, stack, and patterns.
+6. Discuss key technical decisions with the user:
+   - Architecture approach
+   - Data model changes
+   - API design (if applicable)
+   - Testing strategy
+7. Save to `.local/specs/<feature>/plan.md`
+8. Suggest: "Ready for `/sdd tasks` to break this into implementation tasks?"
+
+---
+
+## Phase 3: tasks
+
+Break the plan into discrete implementation tasks.
+
+**Steps:**
+
+1. Read both `spec.md` and `plan.md` for the feature.
+2. Read `.local/specs/constitution.md` if it exists.
+3. Use the **Tasks Template** below for structure.
+4. Create ordered tasks. Each task must be:
+   - **Small** — one logical unit, roughly one agent session
+   - **Testable** — acceptance criteria as checkboxes
+   - **Ordered** — explicit dependencies
+   - **Self-contained** — enough context to implement alone
+
+   Task format:
+   ```markdown
+   ### T001: <title>
+
+   **Context**: Why this task exists
+   **Spec reference**: [[spec#FR-NNN]] / [[spec#US-NNN]]
+   **Acceptance criteria**:
+   - [ ] <criterion>
+   - [ ] <criterion>
+   **Dependencies**: none | T000
+   **Files**: <paths>
+   **Complexity**: low | medium | high
+   ```
+
+5. Include T000 for scaffolding/setup if needed.
+6. Present tasks for review. Ask:
+   - "Does the ordering make sense?"
+   - "Any tasks too large to split?"
+7. Save to `.local/specs/<feature>/tasks.md`
+8. Update the feature entry in `.local/specs/MOC-specs.md` to show tasks are ready.
+9. Suggest: "Spec complete. Start implementing with:
+   `Implement T001 from .local/specs/<feature>/tasks.md following the spec and plan.`"
+
+---
+
+## Phase: review
+
+Validate specification quality.
+
+1. Read all artifacts for the feature (spec.md, plan.md, tasks.md).
+2. Read `.local/specs/constitution.md` if it exists.
+3. Run quality checklist:
+
+   **Completeness:**
+   - [ ] Every user story has acceptance criteria
+   - [ ] No unresolved `[NEEDS CLARIFICATION]` markers
+   - [ ] Edge cases documented
+   - [ ] Non-functional requirements specified
+   - [ ] Agent boundaries defined
+   - [ ] Plan has a Contracts entry (preconditions, postconditions, undefined behaviour) for every new public function or endpoint
+
+   **Clarity:**
+   - [ ] Requirements use structured format (EARS / Given-When-Then)
+   - [ ] No vague language in requirement statements ("might", "appropriate"); RFC 2119 "should" and the `should` priority value are allowed
+   - [ ] Success criteria are measurable
+
+   **Consistency:**
+   - [ ] No contradictions between sections
+   - [ ] Plan covers all spec requirements
+   - [ ] Tasks cover all plan components
+   - [ ] Complies with constitution
+
+   **Implementability:**
+   - [ ] Self-contained — agent with no context could execute
+   - [ ] Tasks ordered by dependency
+   - [ ] Each task fits one agent session
+
+   **Obsidian format:**
+   - [ ] Passes `obsidian-zettelkasten` quality checklist
+   - [ ] MOC entry exists and is up to date
+
+4. Report as:
+   ```markdown
+   ## Spec Review: <feature>
+   ### Score: X/10
+   ### Strengths
+   ### Issues Found
+   ### Recommended Actions
+   ```
+5. Offer to fix issues interactively.
+
+---
+
+## Scaling Depth
+
+Match spec depth to task complexity. Not everything needs the full workflow. An explicit caller instruction about which phases to run overrides this table.
+
+| Size | Approach |
+|------|----------|
+| Typo / one-liner | No spec needed |
+| Small bug / single function | 3-5 sentences + acceptance criteria |
+| Feature (1-3 files) | Phase 1 only |
+| Multi-component feature | Phase 1 + 2 + 3 (the default package: spec, plan with Contracts, tasks) |
+| New system / architecture | Full workflow with constitution; BRD, SRS, and NFR (Phase A) only here or on explicit request |
+
+## Anti-Patterns to Detect
+
+- **Vague requirements** → Ask for specifics, add examples
+- **Implementation in spec** → "Let's capture what, not how, first"
+- **Missing edge cases** → "What if this input is empty/huge/concurrent?"
+- **Wall of text** → Break into structured sections
+- **Assumed context** → "The coding agent won't know that — let's document it"
+- **Over-specification** → Keep under 200 instructions to avoid compliance decay
+
+## Three-Tier Boundary System
+
+Every spec must define agent boundaries:
+
+```markdown
+### Always (without asking)
+- Run tests after changes
+- Follow existing code style
+
+### Ask First
+- Adding new dependencies
+- Changing database schema
+
+### Never
+- Commit secrets or credentials
+- Delete user data without backup
+```
+
+Ask: "Are there things the agent should absolutely never touch?"
+
+---
+
+## Templates
+
+### MOC Template
+
+```markdown
+---
+aliases:
+  - Specifications Index
+  - Specs Overview
+tags:
+  - moc
+  - sdd
+created: YYYY-MM-DD
+status: moc
+---
+
+# Specifications
+
+> [!abstract]
+> Map of Content for all project specifications. Each entry links to
+> a feature spec with its current phase and status.
+
+## Active Specs
+
+| ID | Feature | Phase | Status |
+|----|---------|-------|--------|
+| 001 | [[001-feature-name/spec\|Feature Name]] | specify | draft |
+
+## Completed Specs
+
+(none yet)
+
+## Project Foundation
+
+- [[constitution]] — non-negotiable project principles
+```
+
+---
+
+### Constitution Template
+
+```markdown
+---
+aliases:
+  - Project Principles
+tags:
+  - sdd
+  - constitution
+created: YYYY-MM-DD
+status: permanent
+---
+
+# Project Constitution
+
+> [!important]
+> Non-negotiable principles governing ALL development in this project.
+> Every specification, plan, and task MUST comply with this document.
+> Update this file only through explicit team decision.
+
+## I. Architecture
+
+[Define your architectural patterns and constraints]
+
+- Example: "Modular monolith with clear module boundaries"
+- Example: "All modules communicate through public API only, no direct DB access"
+
+## II. Technology Stack
+
+[Lock down the core stack to prevent drift]
+
+- Language: [e.g., Rust 1.80+]
+- Framework: [e.g., Axum]
+- Database: [e.g., PostgreSQL 16]
+- Additional: [libraries, tools]
+
+## III. Testing (NON-NEGOTIABLE)
+
+[Define minimum testing standards]
+
+- All features must have tests that pass before merge
+- Prefer integration tests with real dependencies over mocks
+- Coverage target: [e.g., > 80% for new code]
+- Framework: [e.g., cargo test + nextest]
+
+## IV. Code Style
+
+[Reference existing conventions or define them]
+
+- Follow existing patterns in the codebase
+- [e.g., No unwrap() in production code — use proper error handling]
+- [e.g., All public APIs must have doc comments]
+
+## V. Security
+
+- Never commit secrets, keys, or credentials
+- All user input must be validated and sanitized
+- [Additional security requirements]
+
+## VI. Performance
+
+- [e.g., API endpoints must respond within 200ms at p95]
+- [e.g., Memory usage must stay under X for the main process]
+
+## VII. Simplicity
+
+- Prefer standard library and framework features over third-party alternatives
+- New dependencies require justification
+- Maximum [N] external dependencies per module
+
+## VIII. Git Workflow
+
+- Branch naming: [e.g., feat/<NNN>-<name>, fix/<NNN>-<name>]
+- Commit messages: [e.g., conventional commits]
+- One logical change per commit
+```
+
+---
+
+### Spec Template
+
+```markdown
+---
+aliases:
+  - [Feature short name or acronym]
+tags:
+  - sdd
+  - spec
+  - [domain-tag]
+created: YYYY-MM-DD
+status: draft
+related:
+  - "[[constitution]]"
+---
+
+# Feature: [Name]
+
+> [!info] Metadata
+> **Author**: [name]
+> **Branch**: [branch-name]
+
+## 1. Overview
+
+### Problem Statement
+[What problem does this solve? Why does it matter?]
+
+### Goal
+[One sentence: what will be true when this is done?]
+
+### Out of Scope
+[Explicitly list what this feature does NOT include]
+
+## 2. User Stories
+
+### US-001: [Title]
+AS A [role]
+I WANT [capability]
+SO THAT [benefit]
+
+**Acceptance criteria:**
+```
+GIVEN [precondition]
+WHEN [action]
+THEN [expected result]
+```
+
+### US-002: [Title]
+...
+
+## 3. Functional Requirements
+
+Use EARS notation. One heading per requirement, so `[[spec#FR-NNN]]` links resolve. When an SRS exists, reuse its FR-NNN IDs unchanged.
+
+### FR-001
+
+WHEN [condition] THE SYSTEM SHALL [behavior]
+
+**Priority**: must
+
+### FR-002
+
+...
+
+**Priority**: should
+
+## 4. Non-Functional Requirements
+
+Use `NFR-{CAT}-NNN` IDs (PERF, SEC, USE, REL, COM, MNT, POR), one heading per requirement. When an NFR document exists, reuse its IDs unchanged.
+
+### NFR-PERF-001
+
+[e.g., Response time < 200ms at p95]
+
+### NFR-SEC-001
+
+[e.g., All inputs sanitized, auth required]
+
+### NFR-USE-001
+
+[e.g., WCAG 2.1 AA compliance]
+
+## 5. Data Model
+
+[Entity descriptions. Key attributes and relationships. No implementation details — describe WHAT data exists, not HOW it's stored.]
+
+| Entity | Description | Key Attributes |
+|--------|-------------|----------------|
+| [Name] | [What it represents] | [Important fields] |
+
+## 6. Edge Cases and Error Handling
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| [Input is empty] | [System responds with...] |
+| [Concurrent access] | [System handles by...] |
+| [External service unavailable] | [System degrades to...] |
+
+## 7. Success Criteria
+
+Measurable metrics that prove the feature works:
+
+| ID | Metric | Target |
+|----|--------|--------|
+| SC-001 | [e.g., Task completion rate] | [e.g., > 95%] |
+| SC-002 | [e.g., Error rate] | [e.g., < 0.1%] |
+
+## 8. Agent Boundaries
+
+### Always (without asking)
+- [e.g., Run tests after changes]
+- [e.g., Follow existing code patterns]
+
+### Ask First
+- [e.g., Adding new dependencies]
+- [e.g., Changing public API]
+
+### Never
+- [e.g., Commit secrets]
+- [e.g., Modify unrelated code]
+
+## 9. Open Questions
+
+- [NEEDS CLARIFICATION: ...]
+
+## 10. See Also
+
+- [[constitution]] — project principles
+- [[MOC-specs]] — all specifications
+- [Links to related specs, docs, designs, discussions]
+```
+
+---
+
+### Plan Template
+
+```markdown
+---
+aliases:
+  - [Feature Name] Plan
+tags:
+  - sdd
+  - plan
+  - [domain-tag]
+created: YYYY-MM-DD
+status: draft
+related:
+  - "[[spec]]"
+  - "[[constitution]]"
+---
+
+# Technical Plan: [Feature Name]
+
+> [!info] References
+> **Spec**: [[spec]]
+
+## 1. Architecture
+
+### Approach
+[High-level description of the technical approach. Why this approach over alternatives?]
+
+### Component Diagram
+
+```mermaid
+graph TD
+    A[Component A] --> B[Component B]
+    B --> C[Component C]
+```
+
+### Key Design Decisions
+
+| Decision | Choice | Rationale | Alternatives Considered |
+|----------|--------|-----------|------------------------|
+| [e.g., Storage] | [e.g., PostgreSQL] | [why] | [what else was considered] |
+
+## 2. Project Structure
+
+```
+[Show where new/modified files will live in the project tree]
+src/
+├── new-module/
+│   ├── ...
+```
+
+## 3. Data Model
+
+[Concrete schema, types, or interfaces — now we define HOW]
+
+```
+[Code block with types/schema in the project's language]
+```
+
+### Migrations
+[Database changes needed, if any]
+
+## 4. API Design
+
+[If applicable — endpoints, signatures, message formats]
+
+| Method | Path | Description | Request | Response |
+|--------|------|-------------|---------|----------|
+| POST | /api/... | ... | `{...}` | `{...}` |
+
+## 5. Integration Points
+
+| System | Direction | Protocol | Notes |
+|--------|-----------|----------|-------|
+| [e.g., Auth service] | outbound | [e.g., gRPC] | [details] |
+
+## 6. Security
+
+- Authentication: [approach]
+- Authorization: [approach]
+- Input validation: [approach]
+- Sensitive data: [how handled]
+
+## 7. Testing Strategy
+
+| Level | Framework | What to Test | Coverage Target |
+|-------|-----------|-------------|-----------------|
+| Unit | [e.g., pytest] | Business logic | [e.g., > 80%] |
+| Integration | [e.g., testcontainers] | API + DB | Key paths |
+| Contract | [e.g., pact] | Service boundaries | All endpoints |
+
+## 8. Performance Considerations
+
+- Expected load: [e.g., 100 req/s]
+- Bottlenecks: [identified risks]
+- Optimization plan: [if needed]
+
+## 9. Rollout Plan
+
+[How will this be deployed? Feature flags? Phased rollout?]
+
+## 10. Constitution Compliance
+
+[If [[constitution]] exists, confirm compliance with each principle]
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| [e.g., Test coverage > 80%] | Compliant | [details] |
+
+## 11. Risks and Mitigations
+
+| Risk | Impact | Probability | Mitigation |
+|------|--------|-------------|------------|
+| [risk] | high/med/low | high/med/low | [plan] |
+
+## 12. Contracts
+
+One entry per new public function or endpoint; the testing engineer derives acceptance and property tests from it.
+
+| Item | Preconditions | Postconditions | Undefined behaviour |
+|------|---------------|----------------|---------------------|
+| [function or endpoint] | [what callers must guarantee] | [what holds after success and after each error] | [inputs or states with no defined result] |
+
+## See Also
+
+- [[spec]] — feature specification
+- [[tasks]] — implementation tasks (after this phase)
+- [[MOC-specs]] — all specifications
+```
+
+---
+
+### Tasks Template
+
+```markdown
+---
+aliases:
+  - [Feature Name] Tasks
+tags:
+  - sdd
+  - tasks
+  - [domain-tag]
+created: YYYY-MM-DD
+status: draft
+related:
+  - "[[spec]]"
+  - "[[plan]]"
+---
+
+# Implementation Tasks: [Feature Name]
+
+> [!info] References
+> **Spec**: [[spec]]
+> **Plan**: [[plan]]
+> **Total tasks**: [N]
+
+## Progress
+
+- [ ] T000: Project scaffolding
+- [ ] T001: ...
+- [ ] T002: ...
+
+---
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T000[T000: scaffolding] --> T001[T001: data model]
+    T001 --> T002[T002: core logic]
+    T001 --> T003[T003: API layer]
+    T003 --> T004[T004: integration tests]
+    T000 --> T005[T005: UI components]
+    T005 --> T006[T006: E2E tests]
+```
+
+---
+
+### T000: Project Scaffolding
+
+**Context**: Set up the foundation — directories, configs, dependencies — so
+subsequent tasks can focus on logic.
+**Spec reference**: N/A (infrastructure)
+**Acceptance criteria**:
+- [ ] Directory structure created per [[plan]]
+- [ ] Dependencies added (if any)
+- [ ] Config files updated
+- [ ] Project builds and existing tests pass
+**Dependencies**: none
+**Files**: [list]
+**Complexity**: low
+
+---
+
+### T001: [Title]
+
+**Context**: [Why this task exists, what it enables for later tasks]
+**Spec reference**: [[spec#FR-NNN]], [[spec#US-NNN]]
+**Acceptance criteria**:
+- [ ] [Testable criterion derived from spec]
+- [ ] [Testable criterion]
+- [ ] Tests written and passing
+**Dependencies**: T000
+**Files**: [specific paths]
+**Complexity**: low | medium | high
+
+---
+
+[Continue for all tasks...]
+
+---
+
+## Implementation Notes
+
+### Order of execution
+[Any notes about optimal task ordering, parallelization opportunities]
+
+### Common patterns
+[Reference existing code patterns the agent should follow]
+
+### Gotchas
+[Known pitfalls, things the agent should watch out for]
+
+## See Also
+
+- [[spec]] — feature specification
+- [[plan]] — technical plan
+- [[MOC-specs]] — all specifications
+```

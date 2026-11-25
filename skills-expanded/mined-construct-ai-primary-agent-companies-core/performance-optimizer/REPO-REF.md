@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/construct-ai-primary/agent-companies-core (path: skills/mobileforge-ai/skills/Performance-Optimizer/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Performance Optimizer - MobileForge AI Mobile Performance Specialist

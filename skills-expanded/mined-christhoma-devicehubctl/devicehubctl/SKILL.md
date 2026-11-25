@@ -1,0 +1,200 @@
+---
+name: devicehubctl
+description: >-
+  Fold and unfold an iPhone Duo simulator (closed, partially open, open) or sweep
+  its hinge to any angle, rotate any iOS simulator, read the simulated screen,
+  and tap, long-press or drag on it through Xcode 27's DeviceHub with the
+  `devicehubctl` command-line tool. Use when a task needs a Duo pose or a hinge
+  angle (UIHingeInteraction), Split View on a Duo, the Duo's inner display, a
+  rotation or landscape coverage, or when idb or a simulator MCP server's tree,
+  tap and swipe tools fail on an iPhone Duo. Also use in bug hunts and UI checks
+  that target a Duo.
+---
+
+# devicehubctl
+
+simctl has no command to rotate a simulator or change an iPhone Duo's pose.
+DeviceHub, which replaced Simulator.app in Xcode 27, has no AppleScript dictionary,
+and System Events sees no UI in it. `devicehubctl` reaches DeviceHub's window
+through the accessibility API and presses the same buttons a person would.
+
+If `devicehubctl` isn't on PATH, install it from
+https://github.com/ChrisThoma/devicehubctl (`swift build -c release`) or ask the
+user to.
+
+## Commands
+
+```sh
+devicehubctl <udid> pose closed|partial|open   # iPhone Duo only
+devicehubctl <udid> hinge <degrees> [seconds] [--fade|--continuous]   # any angle, Duo only
+devicehubctl <udid> hinge timeline <degrees>[:<seconds>[:<hold>]] ...
+devicehubctl <udid> hinge replay fast|medium|slow [open|close|both]   # a real Duo's fold
+devicehubctl <udid> rotate [times]             # 90° right each time
+devicehubctl <udid> state                      # hinge, live display, orientation
+devicehubctl <udid> controls                   # the bar under the device
+devicehubctl <udid> press "<label>"            # any of those, e.g. Home
+devicehubctl <udid> tree                       # what's on the device's screen
+devicehubctl <udid> tap "<label or id>"        # tap something listed by tree
+devicehubctl <udid> type "<text>"              # type with the on-screen keyboard
+devicehubctl <udid> longpress "<label or id>" [seconds]   # touch and hold, 1.2 s
+devicehubctl <udid> split "<icon>" [<bundle id>]          # Duo Split View
+devicehubctl <udid> touch <x> <y> [<x> <y> ...] [seconds]  # real touches, 0.3 s apart
+devicehubctl <udid> drag <x1> <y1> <x2> <y2> [seconds]    # real drag, 0.5 s
+```
+
+Pass an explicit UDID from `xcrun simctl list devices`. `booted` works only when
+exactly one simulator is booted.
+
+## iPhone Duo displays
+
+Pass `--display` to `simctl io <udid> screenshot` so you know which screen you
+captured.
+
+- `--display=1`: the outer screen, live when closed
+- `--display=3`: the inner screen, live when partially open or open
+
+The display that isn't live captures black. `pose` returns only once the fold
+has landed (3 to 5 s, 15 s or more after a boot or on a busy Mac) and prints
+how long it took, so a screenshot right after
+it shows the new pose. A pose change is never instant: to fold during something
+short (an export, an animation), make that thing last 10 s or more, or the fold
+lands after it has finished.
+
+## Hinge angles
+
+`hinge` sweeps a Duo to any angle from 0 to 180 through SpringBoard's own test
+service, so apps get real `UIHingeInteraction` updates, status changes and the
+display hand-off. `pose` stops at three angles; use `hinge` to hold 60 degrees,
+open slowly, or flap. Default sweep is 2 s; `seconds` 0 still takes about 0.3 s.
+
+- Which display is live depends on the path, and the flags don't pin it.
+  Measured on 2026-11-07: from 180 to 60 the outer display took over with
+  `--continuous`, with `--fade` and with neither. From 120 to 60 with no flag
+  the inner one stayed live. Check with a screenshot of each display
+  (`--display=1` outer, `--display=3` inner) before relying on one.
+- `simctl io recordVideo --display=3` frames come out portrait (2006x2852).
+  Turn them to match the landscape screenshot with
+  `ffmpeg -noautorotate -i in.mp4 -vf transpose=1`: the file also carries
+  rotation metadata, which ffmpeg otherwise applies on its own.
+- A timeline step is `degrees[:seconds[:hold]]`, about 0.6 s extra per step. A
+  sweep can't be reversed partway.
+- `hinge replay` returns at once, before the fold has finished.
+- Apps get an update per degree moved, not a timed stream, and none during a hold.
+- A `pose` after a sweep starts from DeviceHub's own last angle, not the app's.
+- DeviceHub's rotate sends its own hinge angle along with the orientation, so
+  `rotate` after a sweep sweeps back to the swept angle and says so. Apps still
+  see the hinge visit DeviceHub's angle for about a second (at a swept 60 with
+  DeviceHub open, the inner display opens flat and closes again). When tenting,
+  `pose closed` first, then `hinge 60`: a rotate then keeps the outer display
+  live throughout.
+- `state` prints the hinge angle, status and orientation apps have (from
+  SpringBoard's log, with its age), DeviceHub's own angle, and which display is
+  live. Use it instead of adding logging to the app. About 8 s.
+- Several points in one `touch` land 0.3 s apart; separate runs take 3 to 4 s
+  each, too slow for a control that fades or a double tap.
+- Tested on the iOS 27.1 runtime only. A new Xcode could break it, because it
+  uses a private SpringBoard service and a simulator-only helper it builds on
+  first use.
+
+## Reading and tapping the screen
+
+On a Duo, use `tree` and `tap` in place of idb-based tools (for example a
+simulator MCP server's `ui_describe_all`, `ui_find_element` and `ui_tap`). When
+you hand simulator work to a subagent, say so alongside the UDID.
+
+- `tree` prints each element's role, label, value and accessibility identifier,
+  in screen order. It has no coordinates. Use labels, or identifiers where the app
+  sets them. A slider or adjustable stepper's value is what VoiceOver speaks
+  (`3 times`).
+- Navigation bar buttons (Edit, Done, Close, Cancel in a sheet or popover) are
+  never in `tree`; DeviceHub leaves them out. Their absence is not an app
+  accessibility bug. Touch them at their place in a screenshot.
+- `tap` matches a label exactly (case-insensitive) or an identifier, and then
+  presses that element. If nothing matches it lists what's on screen. If several
+  match and only one is a control, it presses that one; otherwise it lists them
+  as `Label#1`, `Label#2`, and you pick with `tap "Label#2"`. When nothing has
+  the whole label, a part between commas matches: SwiftUI joins a list row into
+  one button labelled `SPELL · ABUNDANCE, Bay Leaf Wish, Gives a...`, and
+  `tap "Bay Leaf Wish"` presses it. The failure message quotes each label, so
+  a row's parts aren't mistaken for separate elements.
+- `type "<text>"` types into the focused field by pressing the on-screen
+  keyboard's keys, about one a second. Focus the field first (`touch` it, or
+  `tap` it and check the keyboard came up). Text goes in at the cursor, which a
+  touch puts where it lands. iOS autocorrect still applies, so
+  read the field's value with `tree` afterwards. Hardware-only keys (arrows,
+  Escape, Command shortcuts) can't be sent; report those journeys as blocked.
+- An accessibility press isn't a finger. For a gesture the app handles itself,
+  use the touch commands below.
+
+## Touches: long press, touch, drag
+
+`longpress`, `split`, `touch` and `drag` send real touches to the simulator's
+digitizer service, on the Duo's inner display too.
+
+- `longpress` finds an element the way `tap` does and holds its centre.
+- `touch` and `drag` take x and y as fractions (0 to 1) of the screenshot
+  `xcrun simctl io <udid> screenshot --display=N` saves, from its top left, as
+  saved and not turned. The Duo's inner display counts in its landscape
+  screenshot, and a rotated device in its rotated one. Read the point off a
+  screenshot, then touch it.
+- On a Duo, touches go to the live display, found by which display's screenshot
+  isn't black. `--display outer|inner` overrides that.
+- Drags scroll lists and move the Split View divider. A drag across the Home
+  Screen does not turn the page.
+- Touches follow rotations made with `rotate` or with `press "Rotate Left"` /
+  `press "Rotate Right"`. One made by hand in DeviceHub isn't seen, so rotate
+  only with `devicehubctl`. Upside down is unchecked.
+- Some devices offer only Rotate Left (the iPhone SE 3rd generation on iOS
+  26.5). There `rotate` presses it three times per turn, so `rotate` still
+  means 90° right everywhere.
+- Single finger only. No pinch.
+
+## Split View on a Duo
+
+```sh
+devicehubctl <udid> pose open
+devicehubctl <udid> press Home
+devicehubctl <udid> split Settings <bundle id of the other app>
+```
+
+The icon's app takes the left half and the bundle id is launched into the right
+half. `split` turns Home Screen pages to find the icon and holds it for 1 s.
+The menu only opens for a hold lifted between about 0.7 and 1.5 s; from 2 s
+the Home Screen goes into jiggle mode instead. If no menu comes it presses Home
+and tries once more, then presses Home again and fails, so the Home Screen
+isn't left in jiggle mode. If the menu has no "Open in Split View", it lists
+what the menu offered. The divider (x 0.5 in the inner
+screenshot) settles back at half after a drag released between about 0.24 and
+0.76; released at 0.18 or less, or 0.8 or more, Split View closes. Run `split`
+again to get it back.
+
+## Shared machines
+
+- Only drive a simulator you booted or were assigned. `devicehubctl` refuses one
+  that isn't booted and won't start one.
+- If no DeviceHub window shows that device, it reuses a window left on a device
+  that isn't booted, or else opens a new window, instead of switching one a
+  person or another agent is looking at. Leave other windows
+  alone.
+- It needs the Mac unlocked. While the screen is locked, DeviceHub hides its
+  windows from accessibility and `devicehubctl` says so. Tell the user instead of
+  retrying in a loop.
+- Several simulators can be driven at once, from several agents. Windows are
+  matched by UDID. Runs wait for each other only while one opens or switches a
+  window.
+- Never close a DeviceHub window or quit DeviceHub: either shuts down the
+  simulators it shows, including other people's.
+- Shut down what you booted when you're done (`xcrun simctl shutdown <udid>`).
+
+## When it breaks
+
+- "needs Accessibility access": the app running the command (terminal, editor,
+  agent host) needs it in System Settings > Privacy & Security > Accessibility.
+  Ask the user to grant it.
+- "DeviceHub isn't running": `open -a DeviceHub`.
+- "DeviceHub isn't answering accessibility requests": it needs a relaunch, which
+  shuts down every simulator it shows. Ask the user before quitting it.
+- "Tapped ...; DeviceHub didn't confirm it": usually the tap opened something and
+  the element went away. Run `tree` to see where you are.
+- A pose or rotate label not found: run `controls` and compare. An Xcode update
+  may have renamed DeviceHub's buttons. Report the new labels upstream.

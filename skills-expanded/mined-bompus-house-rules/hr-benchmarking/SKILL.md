@@ -1,0 +1,394 @@
+---
+name: hr-benchmarking
+description: Benchmark equivalent work with repeated timing, CPU and memory measurements under stated inputs and controls, and check whether saved results support a performance claim. Use when asked to benchmark, to measure which option is faster or uses less memory, or to time agent or model runs. Not for public model leaderboard research.
+---
+
+# Benchmarking
+
+Follow the repository and host's commands, resource limits, authorization and
+landing rules. Reuse an existing workload. Take the runner from
+[the tool reference](references/tools.md): never time with a loop you write
+(`performance.now()`, `Date.now()`, `process.hrtime`, shell `time` around a
+script); a question about the machine itself may use a named machine program
+(kcbench, sysbench, fio, pgbench, Geekbench, STREAM), which is no outside runner.
+Read the reference before creating or extending any benchmark, and when selecting
+a profiler or correctness check or interpreting measurements. A project that
+already times with a hand-written loop, or with another runner outside the three
+there, names it in the plan before the first run, then moves the timing onto a
+listed runner, or says what the listed runners cannot measure and gets the
+user's agreement to keep it.
+
+## Define the comparison
+
+State the question, baseline, candidate, representative input and timed region.
+Exercise ordinary supported inputs and cases that disable an optimization.
+State any restrictions behind a performance claim.
+
+For a requested candidate set, record its inventory and distinguish
+configurations or capacity modes. Keep untested, invalid and unsupported
+candidates visible with reasons. A subset comparison establishes results only
+for its tested scope, not a winner across the full inventory.
+
+Test the newest stable release of each candidate. When the version installed
+or deployed differs, say so in the results, and ask which to test if the
+request does not settle it. When told to use an older version, use it and
+offer the newest as an alternative.
+
+Before running, list the runner and its version, the selected engines, workloads, metrics, controls and
+repetitions. Count the planned runs explicitly, including controls and stages;
+state which decision each retained dimension helps make. Choose combinations
+for that decision rather than automatically running every combination. Use a
+broader matrix when its required coverage is stated. State the benchmark's
+expected wall-clock time, waits included, before the first run.
+Name the measurement unit: request, operation, batch or whole command. State
+whether setup, startup, compilation, input loading, retries and cleanup count.
+
+Record exact runtime, compiler, dependency and runner versions, build flags,
+input identity and source revisions. Freeze copied quality and control artifacts;
+record their hashes and the executed artifact's identity. Agreement across
+runtimes alone does not verify the intended artifact. Keep these fixed across
+repeated arms; reject mixed versions when resuming a checkpoint.
+
+Compare runtime knobs within the same build. Use equivalent outputs, release
+settings and comparable tuning. An untuned arm compares configurations rather
+than implementations.
+
+Keep warm and cold conditions explicit. Reset state or use fresh processes
+where the question requires independence. Record warmup and cache conditions.
+A reused service needs equivalent state across arms, not an arbitrary restart.
+
+## Keep it as short as the decision allows
+
+A benchmark's length costs the host and everyone waiting. These are the places that cost most and how to
+cut them without leaving the rules that follow (three runs by default, alternation, the A/A arm, the pilot
+rule and a fresh admission check before each arm).
+
+- Rerun what changed. Carry a result forward only when every saved-evidence rule below holds; those
+  rules, not this list, decide whether a number can stand.
+- Fewer runs per arm only on the user's request. When the user asks for shorter benchmarks, the declared
+  count may be two per arm, still alternated and with the A/A arm. A pilot that shows gaps far outside the
+  variation criterion is the reason to offer two runs, not permission to take them. Extend to three and
+  then five only for comparisons inside the criterion or whose ranges overlap, and report one still
+  unresolved at five as inconclusive. Declare the count and the request before the first run.
+- The shortest run that clears the criterion. Shorten a run only as far as a pilot shows repeated runs
+  still agree, judged by the spread of those runs: a runner's own error figure can be that of the mean,
+  not the median. Keep the runner's minimum iteration counts and check the timer's resolution first.
+- One arm per unit. Put an arm's workloads and runtimes in one unit, so the fresh admission check each
+  arm needs is paid once per arm and a refusal discards one arm. Judge the competing-work limit on each
+  timed workload's own interval as well as on the unit, since a unit mean can hide a burst that hit one
+  workload. Do not skip or reuse a check to save time.
+- Retry a refused admission in seconds, not minutes. A controller that holds no lock, observer or other
+  resource between attempts can look again after a few seconds, keeping every refusal, up to a declared
+  attempt cap and the stop below; a fixed wait of a minute or more after each refusal can be most of a
+  run's elapsed time on a busy host.
+- Declare the expected duration and a wall-clock stop. When the first phase's measured rate puts the plan
+  past the stop, tell the user and get their choice between a smaller plan and more time; do not drop a
+  decision-critical comparison to fit.
+
+## Confirm the work
+
+Validate outputs, consumed results and error counts outside the timed region
+where practical. Confirm requests arrived and asynchronous work was awaited.
+Include failures, timeouts and unresolved attempts in both arms' denominators.
+A faster wrong result or skipped operation is not a performance improvement.
+Have each run print counts of the work it did, such as files read, rows written
+or operations completed, and a hash of its output. Compare them on the first
+pair of runs, before the remaining runs. A mismatch means the arms did different
+work; find the cause before timing anything else. A run that lasts a fixed time
+(pgbench, fio, sysbench, oha) does equal work per operation when the mix, inputs,
+settings and checks match; its completed count is the measurement, and a changed mix
+or an uncounted failure is the mismatch.
+
+When a change should leave a query tool's answers unchanged, replay real
+queries. Harvest queries or tool calls from past session transcripts, and keep
+only those whose target is on an allowlist of public repositories. Match each
+host exactly; a suffix pattern lets a lookalike such as `notgithub.com` pass.
+Replay each against the old and new builds with that call's own options.
+Compare the answer text, not only its size or a count. Treat each changed answer
+as an item to inspect, not as a failure. Before relying on the replay, inject a
+known fault into the new build and show that the replay flags it.
+
+Identify the limiting resource from CPU versus wall time, resource counters or
+a separate profile. Check that throughput is possible given the machine and
+input. When the generator limits the result, report that limit.
+
+Before changing a component to remove a suspected cost, attribute time to that
+component in the real workload with a profile or a counter. For fast feedback,
+benchmark each changed piece through its actual production entry point with
+representative fixed inputs and equivalent consumed outputs. Do not benchmark a
+copied implementation or stub out work material to the comparison.
+Time a shortcut to faster feedback before relying on it. In one project,
+related-test selection still chose 589 to 599 of 754 test files. A shared build
+directory cut a 139 s build only to 120 s, and the recorded suite time was more
+than twice out of date.
+
+When a test suite is slow, total the startup time each test file pays before
+splitting or tuning slow files. That startup often sets the suite's wall time.
+
+Before reproducing a CI timeout locally, read the per-test durations from CI's
+own passing runs. A desktop, even limited to the runner's core count, may not
+reproduce the runner's slowness. Raise a platform's test deadlines only after
+those durations show the tests are honestly slow rather than hung.
+
+Compare each piece before and after against its immediate predecessor. Before
+running, declare integration milestones when changed pieces enter the consuming
+workload. Keep that workload before any piece changes as the original baseline.
+At those milestones, compare the integrated workload with both its immediate
+predecessor and the original baseline to track cumulative effects. Plan applicable
+caller and integration checks for copying, serialization, startup and orchestration
+costs that isolation excludes. Run those checks at the milestones and report
+results or specific coverage limits. Re-time the change in the workload that uses
+it at those milestones; a full-application run is not required after every piece.
+An isolated gain does not establish an end-to-end gain. A setting that ran 7.6
+times faster in isolation changed a 33 s indexing run by 0.1 s.
+
+Select metrics for the question and limiting resource: wall time or latency,
+memory, disk I/O, CPU, throughput, errors and output size as relevant. State each
+metric's unit, process scope and interval; distinguish peak process memory from
+retained memory, logical bytes from physical storage I/O, and warm from cold cache
+state. Cache hits and delayed writeback can hide storage costs; record unavailable
+counters and attribution limits rather than inferring physical I/O from logical
+bytes. Do not require irrelevant additional counters; retain the CPU and memory
+observations required below.
+
+## Measure without changing the experiment
+
+Keep measured files, toolchains and services unchanged, and keep other work on
+the machine from competing with the run. That competing-work rule applies only
+while a measurement runs; when none does, nothing in this skill delays ordinary
+work.
+
+Prefer removing competing work to raising priority. Record effective CPU and
+I/O scheduling policies and memory protections; keep them equal across arms.
+Use normal scheduling and all available CPUs for ordinary measurements. Omit
+automatic `nice` and `taskset` wrappers; verify inherited priority and affinity
+rather than assuming their omission resets either. Use restricted affinity or
+changed priority only for representative deployment settings, an explicit resource
+agreement or a stated sensitivity question. Record the reason and effective values.
+Preserve frozen protocols and report constrained results within their tested scope.
+Read [scheduling controls](references/tools.md#scheduling-controls) before
+choosing them.
+
+Apply worker limits to requested processing concurrency. Report sampled OS-thread
+counts separately; runtime background threads are not processing workers. A
+thread count alone does not establish CPU contention; keep it diagnostic unless
+the experiment separately justifies using it to reject a run.
+
+Before collecting results, set the criteria for rejecting a run: competing
+load, swapping and memory-limit or OOM events, each with its metric and
+threshold. Check the machine against them before each arm and watch them
+throughout the measured interval. A run that fails them, or whose inputs change, is rejected even when the benchmark caused the
+failure. A rejection invalidates that measurement; it does not by itself show
+an implementation defect. Keep rejected runs outside the accepted sample and
+report them; a later passing run neither erases a rejection nor loosens the
+criteria.
+
+Attribute CPU, load and resident memory to the recorded benchmark process tree
+or resource scope before calling them competing work. Expected benchmark
+utilization is not contention, and total host CPU and load average include it.
+Keep an activity counter diagnostic until separate evidence shows its cutoff
+matters. Collect boundary counters adjacent to the measured work, with
+unrelated probes outside that interval, and record sample times. A counter
+interval extending past completion cannot by itself establish overlap; keep
+post-run observations diagnostic and let the machine settle before the next arm.
+
+Before claiming negligible observer impact or a small decisive gain, test
+sensitivity to observation separately with balanced controls and a preset
+precision criterion. Retain inconclusive controls; do not subtract observer CPU
+from workload wall time. For remote agent or model evaluations, record the
+timing regime and concurrent local work.
+
+A run that spends a login shared with other use (a live service, a reviewer,
+interactive sessions) is bounded by every usage limit that login has, not only
+the weekly one. A subscription seat can also have a short rolling window (for
+example five hours) that fills while the weekly figure stays low. Guards that
+watched only the weekly figure let two evaluation runs fill that window, and the
+live seat failed 29 calls. Before the first call, declare a stop at a percentage
+of each limit and reserve room for the calls still in flight when it fires plus
+a margin for the other use. Size the reserve from a known or enforced upper bound
+per call (a limit you apply, not an observed maximum or average), cap concurrency
+so the reserve fits, and add the usage the feed has not reported yet, or stop
+dispatching until the reading is current. Guard the pilot too: assume a
+conservative cost and run one call at a time until real costs are known. With no
+bound, or when the margin cannot be met, give the run its own login. A usage feed may store no
+row while a seat is idle, so check the seat itself before calling the feed dead.
+
+Screen correctness and quality first, then use one run per selected arm to
+explore timing and resource behavior. Preserve screened-out results and their
+reasons. Label screening exploratory; one run does not support a performance
+claim. A deterministic counter, such as user-space instructions or rows read,
+varies less than wall time or peak memory. One run of it can screen whether to
+run the full measurement, but it never replaces that measurement. In one study
+such counters did not reliably predict changes of about 5%, and allocation
+counts did not predict peak memory. A correctness-only check can use one
+candidate run; report its coverage.
+
+Before exploratory runs, define the decision-relevant signal for selecting
+comparisons for confirmation. Choose comparisons that meet that signal, plus
+decision-critical comparisons, for repeated confirmation; keep necessary controls.
+Set the confirmation plan before its runs and update the explicit run count
+when the scope changes.
+
+The default stopping rule for a performance claim is 3 runs per arm. Add 2 more
+per arm only when the arms' ranges overlap or the effect is near the noise,
+meaning the gap is within the variation criterion set below. 5 per arm is the
+cap. If 5 runs per arm leave the comparison unresolved, report it as
+inconclusive rather than adding runs. Use another count only when the user asks
+for it or a run is too long to repeat 3 times, and declare it before the first
+run, with the reason. Alternate the arms in every run so drift reaches each arm.
+
+For a performance claim, assess run-to-run variation from those alternating runs.
+Treat variation as already known only when earlier repeated runs of the
+same variant, build and input used the same workload, host, run conditions and
+variation statistic, and met the repetition count or stopping rule declared for
+this claim. Otherwise include an A/A arm,
+which runs the same variant twice in the same alternation. Its spread is that
+comparison's own noise floor, and it can supply the preset variation statistic.
+Before the first run used in that claim, set a reproducible variation criterion
+(statistic and threshold), and the stopping rule if it differs from the default.
+
+Once the required coverage and controls are in, size the benchmark to that
+criterion and no larger: plan the fewest cases, the shortest per-run duration
+and the fewest runs that can resolve it. Add no arms,
+stages, warm-ups or repeats beyond what a valid comparison needs unless the
+user asks. When a shorter run cannot clear the criterion within the stopping
+rule, report the comparison as inconclusive, describe any difference seen as
+indicative only, and state the wall-clock cost of a longer run instead of
+lengthening it.
+
+Run a pilot first when the full run is long, heavy or metered: expected to take
+more than 30 minutes of wall-clock time, to use most of the machine's CPU or
+memory, or to spend money. The pilot is the smallest sample that can show the
+answer: on every arm, the same harness and settings as the full run, over the
+fewest cases (at least 5, or all of them when fewer) chosen to cover each kind of
+case in the full set. Before it starts, write down what ends the work and what
+expands it.
+
+Stop when the verdict is settled: the pilot clears the declared
+criterion on every kind of case it covers (the spread between cases counts, not
+only run-to-run noise), or the cases left cannot change the result. A result
+that holds only for the pilot's cases is reported as that. Expand only when the
+pilot leaves the decision open, one planned stage at a time, with the stage's
+cost stated and the user's approval. Report the result with its sample size,
+and call a quality difference that sits inside the cases' run-to-run noise
+indicative only.
+
+For short or tail metrics, such as the longest stall in a run, give the
+threshold an absolute floor or use a percentile or count metric; a percentage
+of a single small maximum can fail on the workload's own variation.
+Retain every result. Keep pilots that informed the plan separate from the
+claim's sample. Capture raw results, exit status, elapsed time, CPU and memory
+observations. Report monitoring overhead separately from the
+measured workload; batch compatible probes when they dominate elapsed time.
+Report the selected repetition count or stopping rule, variation statistic and
+threshold, sample count, median and range. Always give the run count and the
+range with any central value, never a bare average. Apply the preset
+criterion and report a gap within run-to-run variation as no clear change. Profile
+separately from the runs used to claim a speed difference.
+
+When using saved evidence for a performance claim, bind archived inputs, source,
+cohort and results to their recorded identities and artifact hashes. Validate
+historical reports against that frozen archive; later changes in the live
+checkout alone do not invalidate historical evidence. Verify run identities and
+stages against the declared plan.
+
+Recompute qualification from recorded raw counters and preset limits; an accepted
+summary or changed label is insufficient. Reject missing, duplicate or
+misclassified required observations. When an evidence reader exists, put these
+checks and focused corruption regressions there. After a rebase or merge
+touches the reader or a check it imports, run the integrated reader over the
+saved archive before landing, and compare its accepted and excluded records
+with the frozen reader's. A shared check changed on the base branch can reject
+records that the frozen reader accepted.
+
+Record memory by what it measures. Whole-process peak RSS includes startup,
+inputs and dependencies. Heap snapshots describe retained objects; allocation
+profiles describe allocation activity. Forced-GC probes are separate from
+ordinary latency measurements. Match retention semantics and payloads when
+comparing caches; equal requested capacities need not mean equal memory use.
+For cache-retention probes, keep the cache owner reachable through the final
+observation; otherwise collection of the owner can be mistaken for release by
+the cache operation.
+
+For WeakRef-based retention probes, use bounded allocation batches and calibrated
+collection boundaries after creating or dereferencing targets. Avoid observer
+arrays or locals that keep measured values strongly reachable; preserve the
+intended owner lifetime. Report live payload, cache occupancy and process RSS
+separately. Keep this collection protocol outside ordinary latency runs; yielding
+or forced collection alone does not guarantee that a target is reclaimed.
+
+Batch latency percentiles describe batches, not individual requests.
+
+## Report and decide
+
+Keep the full workload, versions, conditions, repetitions, output identity,
+errors and measurement units in the measurement record. Include excluded costs,
+coverage limits, collector overhead, scheduling, resource caps, pre-run
+machine checks and rejected attempts there.
+
+Each reported result names the runtime versions it was measured on and is rerun
+when a new runtime release is likely to change it.
+
+Pull requests and other change summaries show the workload, baseline and
+candidate, measured results, relevant checks and limits that affect the claim.
+Omit operational measurement details unless the reader needs them to interpret
+the result or asks for them. A claimed difference with unknown limits, unequal
+work or missing repetitions is unverified or inconclusive.
+
+Show numeric before/after results in a table with a benefit column containing
+percent change or a times improvement. Use the metric's direction and label
+worsening, unchanged or inconclusive results. With a zero or missing baseline,
+show an absolute change or state that the benefit cannot be calculated.
+
+There is no minimum gain size. A favorable difference counts as a gain when it
+lies outside the variation criterion declared before the first run (the comparison's
+own run-to-run spread, from its A/A arm or already-known variation, as a
+percentage of the baseline) and the outputs are identical. Report a gap inside
+that criterion as no clear change, and name the statistic and threshold beside
+it. An unfavorable difference outside it is a regression; label it worsening.
+Report memory and CPU costs beside the gain. If the variation criterion cannot support a percentage, keep its result
+separate and label unsupported differences inconclusive. Changing presentation
+does not change frozen acceptance or rejection gates.
+
+Show a comparison of three or more variants or conditions as a chart beside the
+before/after table, unless every row is no clear change. Choose the chart for the
+question:
+
+| Question                         | Chart                                      |
+| -------------------------------- | ------------------------------------------ |
+| Repeated runs of each variant    | Dot plot of every run, mean marked         |
+| Conditions crossed with variants | Grouped bars, baseline as a reference line |
+| Ranking of options               | Sorted horizontal bars                     |
+| Resource cost (CPU, memory)      | Bars per variant, one panel per resource   |
+| Change with load or time         | Line chart                                 |
+
+Put units and run counts on the axes, start bars at zero, mark a gap inside the
+variation criterion as no clear change, and give the chart an explicit background colour so
+it reads the same on a light or a dark page.
+In a pull request, the headline chart and when it may be skipped come from
+`hr-writing-pr`; this table applies to any other chart.
+
+For agent, model, rule or skill comparisons, distinguish development cases
+from held-out cases and report runs per case. Check each case for a ceiling: a
+case every arm already passes cannot show a pass-rate improvement. Report it
+apart from the cases that could, and report any metric the case does not
+saturate (time, cost, graded quality) on its own. Include a one-line instruction
+control when claiming an improvement from a rule or skill. Keep helper,
+setup and retry costs visible. Before collecting results, define a per-case
+contribution threshold. If a case exceeds it, report results both with and
+without that case.
+
+For bug-review evaluations, freeze the supported input contract and label
+procedure before calls. A passing reference suite does not certify a clean
+control. Adjudicate additional findings against that contract. A confirmed extra
+defect makes the affected specificity estimate unavailable; retain earlier
+receipts and introduce a new control version. Leave disputed domains unresolved.
+
+Report provider completion, output-format compliance and independently checked
+artifact acceptance separately. Distinguish observed call time from verification
+and rework time. Keep returned usage units separate from attributable account
+charges; unknown attribution remains unknown.
+
+Record every experiment, rejected ones included, with the observed result and
+what was decided. End with adopt, reject or inconclusive, and the evidence for that
+decision. Any implementation or publication still follows the user's scope.

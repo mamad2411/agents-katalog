@@ -1,0 +1,70 @@
+---
+name: safe-data-write
+description: How any write to real user or business data proves itself and stays reversible - before-image journal, read-back proof that the target changed and nothing else did, undo by change id. Use for every write, migration, backfill or bulk edit on real data.
+---
+
+# Safe data write
+
+**Nothing may corrupt the data.** A 200 response proves the server answered, not that the data
+is right.
+
+## Every write
+
+1. **Before:** read the target rows and the row count of the table.
+2. **Journal:** append `{change_id, at, op, table, row_id, before, after}` to the change journal
+   before applying. The journal stores before-images, not table snapshots.
+3. **Apply** the write.
+4. **Prove:** read back. The target rows hold exactly the intended values, and every other row
+   is unchanged (compare a hash or the rows themselves). Return
+   `{ok, rows_before, rows_after, other_rows_checked, differences}`.
+5. **Accept** the write only if `ok` is true and `other_rows_checked` equals the table's row
+   count minus the rows changed. Anything else: undo it and report.
+
+An undo applies the inverse of a journal entry and is itself journalled, so undoing an undo is a
+redo.
+
+## Migrations and bulk changes
+
+Run on a copy first, with the proof. Then on production only with the founder's go for that
+exact operation, with a tested backup taken in the same session.
+
+## Schema changes
+
+Expand, then contract, never in one deploy:
+
+1. Add the new column or table beside the old, nullable, nothing reading it yet.
+2. Write both the old and the new.
+3. Backfill in throttled batches, each with the proof above; build large indexes without
+   blocking writes.
+4. Switch reads to the new shape; keep writing both until it has run a while.
+5. Stop writing the old; drop it in a later deploy of its own.
+
+Old and new code are both valid against the schema at every step. A drop or a rename never
+ships in the same deploy as the code that depends on it, and every step has a down path tried
+on the copy.
+
+## Deprecation and removal
+
+Nothing is deprecated without a replacement that already works in production, and nothing is
+removed until its use measures zero (metrics, logs or a dependency search); then code, tests,
+docs, config and notices go together. Traffic moves in steps (a tenth, half, all) with the old
+path kept until the last step holds.
+
+## Tests
+
+Every suite that touches stored data asserts the data it did not mean to change is
+byte-identical before and after.
+
+## When you catch yourself saying
+
+| The excuse | The answer |
+|---|---|
+| "It's one row, I'll just update it." | One wrong row on a customer's invoice is the whole incident. Same protocol. |
+| "The API returned 200." | 200 means the server answered. Read the row back. |
+| "A full read-back is too slow on this table." | Prove the largest set you can, say what was not checked, and never write "verified". |
+| "The backup exists." | A backup never restored is a hope. Restore it once, this session. |
+| "The migration is reversible in principle." | Run the undo on the copy and show the proof. |
+| "This is just a cleanup." | Cleanups delete. A delete is an update to `deleted_at` with the same proof until the founder sets a retention rule. |
+
+Red flags: a write with no before-image; "it returned 200" as proof; an undo nobody ran; a
+bulk change run straight on real data without a copy first.

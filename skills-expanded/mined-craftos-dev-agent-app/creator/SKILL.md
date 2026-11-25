@@ -1,0 +1,478 @@
+---
+name: creator
+activity: creator
+description: Create a new Agent App. Scaffolds, develops, validates, and launches a local web app with persistent state and an agent-operable surface. Load when the user wants custom software built. This is the stack-agnostic method; read your blueprint's reference/blueprint.md for the migration/hook/UI-kit specifics.
+---
+
+# Creator
+
+An Agent App is a self-contained web app: a backend (data, auth, realtime,
+custom operations) serving a frontend, with an **A2App adapter** as the ONLY
+agent surface. You declare schema, compose UI, wire operations — the framework
+and the adapter own the rest. A human uses the View; an agent operates the same
+data through the adapter; both converge on one Model.
+
+This skill is the method. If you scaffolded from a blueprint, read that
+blueprint's **`reference/blueprint.md`** FIRST — it is the authoritative map of
+that stack: which files are yours versus system-owned, the schema/migration API,
+how operations are implemented, the UI kit, external calls, and the gate. It
+carries the specifics you cannot get right from general knowledge, so you never
+have to reverse-engineer the adapter or the kit from source. Where this skill
+says "per your stack", `reference/blueprint.md` is the answer.
+
+## Step 0: Have a project
+
+1. **You were given a project directory** → it is already scaffolded; use it,
+   skip scaffolding.
+2. **No project yet** → `agent-app <dir> scaffold --blueprint <id>` scaffolds the
+   framework files, the adapter, the ownership canon, and the app's git
+   repository, with the scaffold as its first commit. `agent-app blueprints`
+   lists the ids and what each is built with; `blueprint-base` is the one with
+   no stack, for when none of the others fit. Pick `authMode` from
+   requirements, with `--auth-mode`: `none` (one person's tool — the default) or
+   `multi-user` (several people, each signing in: a team CRM, a shared tracker).
+   Choose `multi-user` whenever more than one person will use the app; adding it
+   later means deciding whose every existing record is. A multi-user app gets
+   sign-in, invites and *Connected agents* from the adapter — write no auth code
+   of your own. `agent-app <dir> owner` prints the first owner's setup link.
+   When your harness says its build panel shows checkpoints, add
+   `--checkpoints ui`: your questions and the requirements review then appear
+   there instead of in chat.
+
+## The ownership rule (the gate enforces this)
+
+Edit ONLY agent-accessible paths: your app/View code, your schema migrations,
+your operation implementations, the non-system entries of `operations.json`,
+`AGENT_APP.md` (your plan/context/index — keep it current), and in
+`manifest.json` the keys `name`, `authMode`, `modules`, `appVersion` and
+`capabilities`. Exact paths are per your blueprint.
+
+NEVER edit system-owned files — the A2App adapter, every other key in
+`manifest.json` (its `id`, `port`, `modificationLock`, `source`, version
+stamps, and `pipeline` unless your blueprint has you write it), vendored kit
+files, build config. The validation
+gate hashes them (the ownership canon) and **fails the build** if they changed,
+naming the file. Need a variant of a kit component? Wrap it in your own app
+code; never edit the locked original.
+
+## Commit as you go
+
+The app is its own git repository, and its history is part of the app
+(Quality Standard Q18): it is how a change is reviewed, rolled back, and
+verified. Keep it the way an engineer does:
+
+- **One coherent unit per commit, as you finish it** — the approved spec, one
+  feature (its schema, operations and UI together), one fix, one refactor —
+  with `agent-app <dir> commit --message "<what changed and why>"`. Never one
+  commit for the whole build at the end.
+- **Commit before every verification.** walk-verify verifies a commit;
+  uncommitted work is a walk that no later re-verify can start from.
+  `validate` says when work is still uncommitted.
+- The ignore rules keep credentials (any `*.secret` included), the database,
+  runtime state and `node_modules/` out of every commit; `commit` and
+  `validate` restore any that are missing. Other build output is your stack's:
+  add it to `.gitignore` before the first commit that would take it. The gate
+  fails an app that is not in a repository, and `commit` creates one.
+
+## The spec comes first
+
+`reference/requirements.md` is the app's binding spec, in two parts: **Part A
+(SRS)** — what must exist; the verifier drives every statement in it — and
+**Part B (Technical Specification)** — how it is built. The gate checks its
+structure; walk-verify checks the running app against it.
+
+The person is in this twice — your questions, then their approval of Part A —
+and both are **checkpoints**: `agent-app <dir> checkpoint` opens one, its
+`next` says what to do, and you END YOUR TURN. Where the person sees it is the
+harness's (a build panel, or your chat message), so follow `next` rather than
+deciding. Their reply arrives as their next message:
+
+- A reply that says **"already recorded"** came from the build panel: the
+  framework has it; record nothing and continue.
+- Any other reply to an open checkpoint, record before you continue:
+  `checkpoint answer --text "<their reply>"` for questions,
+  `checkpoint approve --by chat` for an explicit approval,
+  `checkpoint answer --changes "<their reply>"` for anything else.
+
+1. **Read `reference/blueprint.md` (your stack's map), `AGENT_APP.md`, and
+   `reference/requirements.md`.** If your instructions say the spec was
+   supplied (interviewed and written upstream) and the file holds it, it is
+   binding: implement it exactly, and go to step 4 to have Part A approved.
+   Otherwise YOU author it, from step 2. A blueprint's own starter spec — one
+   that ships filled in, approval line and all — is never the person's: its
+   Part A is replaced by theirs.
+2. **Ask before writing.** First read the user's cross-app conventions
+   (`agent-app global`) — design preferences, their own always-rules, and
+   ticked optional rules (ticked = requirement, unticked = not) — so you never
+   ask what they already decide. Then ask ONE batch: only what you genuinely
+   cannot decide (audience, must-have features, data that must survive, what
+   is explicitly out), as few as will do. Give each question 2–5 concrete
+   options (`multiSelect` where several apply) and, when it helps, a one-line
+   `why`; the person can always answer in their own words. Write them as JSON
+   and open the checkpoint:
+   `agent-app <dir> checkpoint ask --file <dir>/.a2app/questions.json` with
+   `{"questions": [{"id": "audience", "question": "Who will use it?",
+   "options": ["Just me", "My team"], "multiSelect": false}]}` (`.a2app/` is
+   never committed). An answer left blank is yours to decide. Ask a follow-up
+   batch only when an answer opens a decision you cannot make — a third is
+   refused; decide the rest and record each under `### Assumptions`.
+3. **Write Part A — replace every `<REPLACE: …>` marker in it** (the
+   `### Approval` line excepted: approval writes it). Each marker's text is
+   its fill instruction.
+   - **Part A** from the user's answers. Features are the contract: grouped
+     under `### Module: <name>`, stable IDs (`F-<MOD>-n`, never renumbered,
+     never reused), every statement binary and observable by a stranger
+     driving the app — "The user can <verb> …" / "The agent can <verb> …",
+     `WHEN … SHALL` where behavior is conditional; states the user must see
+     (empty, loading, error) are features too; one check per item — no
+     compound sentences, no aspirations ("fast", "intuitive"), no
+     implementation ("uses a modal"). Constraints enumerate their fixed
+     vocabularies COMPLETELY; A-1 is always the judged data volume, as a
+     number. **Out of Scope is exhaustive**: write what a reasonable builder
+     would otherwise add, because scope nobody bounded is scope you will
+     invent. Non-Functional Requirements carry only this app's measurable
+     bars — quality decisions belong in Quality Conformance.
+   - **Write it in parts, one section per write.** Every reply has an
+     output limit, and a reply cut off at it is lost whole; a full spec in
+     one write is long enough to hit it. The same goes for any large file —
+     code included.
+4. **Have Part A approved before anything else.** `agent-app <dir> checkpoint
+   review` opens the review — it refuses a Part A that is not complete and
+   says what is missing — then END YOUR TURN. A change request: revise Part A
+   (keep any edits the person made themselves) and open the review again.
+   Approval: the framework has written the dated line in `### Approval`;
+   never write it yourself. Re-read Part A, since the person may have edited
+   it. From that moment it is frozen — changes go through `## Changes` — and
+   Part B may add to it, never silently contradict it.
+5. **Write Part B — replace every marker left.** The gate refuses a spec that
+   still carries one, so template text can never reach verification. Read
+   the Agent App Quality Standard (`../QUALITY.md`, in the directory this
+   skill was installed from) first — MANDATORY: it is the bar the verifier
+   judges every app against, and building to it the first time is the only
+   path that does not loop.
+   - **Part B** from the Quality Standard and the global conventions. UI
+     Design: adopt the blueprint's design system and extend its tokens
+     (never fork a second one); one Screen entry PER SCREEN — primary
+     object, primary action, all five states, and narrow-width behavior
+     (decided here, not improvised in code; every device named in User
+     Characteristics must have matching decisions). **Quality Conformance
+     is where your QUALITY.md reading becomes visible: all 18 entries,
+     Q1–Q18, each answered with THIS app's concrete decisions** — "standard
+     defaults" is not an answer for Q1–Q11; N/A only with the reason; the
+     gate fails a missing entry, and the verifier fails an entry that is not
+     true in the running app. Mirrored global rules and any item overrides
+     (number + factual reason + revisit condition) go in `### Conventions
+     and overrides` — the ONE location the verifier reads. Process Flows
+     only where a lifecycle exists; Operations Design must match
+     `operations.json` exactly. One section per write, as for Part A. Part B
+     keeps evolving with the build.
+6. **Derive `reference/tasks.md` from the approved spec.** One task per
+   feature (or coherent feature group), and quality work as tasks of its own
+   — motion, focus flow, narrow-width behavior, resilience — each citing the
+   Feature ID or Q-entry it implements (`- [ ] T-1 (F-COR-1): …`), ending
+   with the Verification tasks. Tick tasks as you complete them, never in a
+   batch at the end; never delete a completed task — the ledger is the build
+   record, and evolution appends to it.
+7. **Any feature need data from outside the app? Check, then research.** FIRST
+   check whether a connected integration already covers the feature — if so, use
+   it; nothing to research. Only for THIRD-PARTY public APIs: research like an
+   engineer — endpoint, auth, response shape, limits — before writing a line;
+   never write an integration from memory. If it needs a key/tenant/account you
+   cannot find online, ask the user and build the rest while waiting. If the user
+   named no API, research candidates and pick a keyless public one yourself.
+   Nothing usable exists → build the honest empty/offline state and REPORT the
+   blocker. **Mock or generated data is forbidden** unless requirements explicitly
+   ask for demo data — a mock that renders is a lie that passes review.
+
+## Before any feature: name the modules
+
+**Modules are decided first, and they are decided once.** Every entity and every
+operation belongs to exactly one, they are declared in `manifest.json`, and they
+are what an agent sees when it opens the app — the root screen of `describe`
+lists them and nothing else.
+
+Read the `## Features` and `## Operations Design` sections of
+`reference/requirements.md` and group them into 3–8 areas a person would
+recognise as tabs: `sales`, `inventory`, `support`. Write them into
+`manifest.json` and into `## Modules` in `AGENT_APP.md` (the spec's Features
+are already grouped by module) BEFORE declaring an entity or an operation,
+because each of those has to name one.
+
+Two rules that keep this honest as the app grows:
+
+- **A module must fit its screen.** Every describe level is capped at 2,000
+  characters and the gate walks the running app to check it. A module whose
+  screen would overflow gets split — that is how an app grows. Lengthening a
+  flat list is not.
+- **Never use a reserved name**: `data`, `identity`, `whoami`, `context`,
+  `tasks`, `events`. The operate CLI resolves those first, so a module with one
+  of those names is unreachable and the gate rejects it.
+
+## Per feature: schema → operations → UI
+
+**Schema** — add a NEW migration. **Never edit AND never rename or delete a
+migration that has been applied** (after any successful launch): the filename is
+its identity in the live database; renaming one makes every boot re-run its
+"new" replacement into the existing schema and the app cannot start. Fixing a
+migration's mistake = writing a NEW migration that alters the collection. Match
+the app's `authMode`. On `multi-user`, decide per entity whose records it holds:
+a person's own data is scoped to the signed-in person, so members see only their
+records and owners see all; shared reference data is readable by anyone signed
+in. Nothing is ever readable without signing in. Your stack's
+`reference/blueprint.md` says how: an `ownedBy` field the adapter fills, or, on
+PocketBase, collection rules on `@request.auth.id`. **Never leave a public
+(`""`) rule on a multi-user app**: the gate reads the running app as a stranger
+and fails any entity it can read. Operation runners get the caller as
+`ctx.principal` and `ctx.role` and hold themselves to the same rule.
+(Migration API, seeding, relation fields: see `reference/blueprint.md`.)
+
+**Schema** — every entity also names the `module` it lives in, and may carry a
+one-line `summary` shown beside it on that module's screen.
+
+**Custom operations** — anything beyond plain CRUD is a declared operation:
+implement it behind the adapter PLUS a matching entry in `operations.json`. The
+gate fails an operation with no implementation (a toolkit "operations resolve"
+step), and fails the app part if a declaration is inconsistent. Plain CRUD needs
+no operation — the data API covers it.
+
+Each declaration carries four things beyond its name:
+
+- `module` — which screen it appears on. Required.
+- `params` — **typed**, using the same vocabulary as entity fields. Required; use
+  `{}` when it takes no arguments. The record screen renders this as the
+  operation's signature, so arguments described in prose inside `description`
+  can be neither shown nor checked. Writing `"Args: { category? }"` in the
+  description does NOT satisfy this.
+- `entity` — the entity it acts on, when it acts on one record. This is what puts
+  it on that entity's and that record's screens instead of only the module's.
+- `appliesWhen` — an optional condition over the record's own fields deciding
+  whether it is available on a given record, e.g.
+  `{ "field": "status", "ne": "done" }`. The adapter evaluates it and derives the
+  "blocked" reason from it. Comparisons only (`eq`, `ne`, `in`, `notIn`,
+  `isBlank`, composed with `all`/`any`/`not`) — never a natural-language rule.
+
+**Flags:** mark data-deleting operations `"destructive": true` (they require
+human approval). Also set `"readOnly": true` when an operation has no side
+effects, and `"idempotent": true` when repeating it is safe — an agent uses both
+to plan and to retry, and neither is assumed when absent.
+
+**Naming: kebab-case, and every place the name appears must agree** — the
+`operations.json` name, the route, and every frontend call. Pick the names once,
+before writing any of them.
+
+**Load-time calls must survive an EMPTY database.** A fresh app has no records:
+never call an operation or a filtered query at page load that fails without data
+— gate them behind existence checks. The verifier fails the app on any
+first-paint error.
+
+**External data (third-party APIs)** — call the internet from the **backend
+only** (never the frontend: browser CORS breaks and keys would be visible).
+(HTTP-from-backend API: see `reference/blueprint.md`.)
+
+**UI** — build the View from your blueprint's kit (`reference/blueprint.md` names
+what ships — a full kit, a static seam, or nothing); the adapter is the only agent
+surface, so never make the agent drive the DOM to operate the app. Build every
+screen to the Quality Standard (`../QUALITY.md`) — in particular, design every
+reachable state, not only the happy path: loading (skeletons, no layout jump),
+empty (says what belongs here, offers the action that fills it), error (what
+happened + what to do next), in-flight (control disabled, no double submit),
+success (visible where the user is looking, read back from what was STORED).
+Destructive actions confirm in the app's own dialog, naming the target. All
+colours, spacing, and type come from your tokens — never hardcode a value where
+a token exists. (Kit components and data hooks: see `reference/blueprint.md`.)
+
+After each feature: update `AGENT_APP.md` (entities, operations) and tick the
+completed tasks in `reference/tasks.md`.
+
+**App→agent triggers** — when a feature needs the AGENT to react to something in
+the app, the app puts the work on its **own queue** and an agent takes it from
+there. There is no manifest of instructions to write, and there is deliberately
+no way for the app to send one: an app declares the **event types** it may emit,
+and each trigger names a **capability** (the kind of work) plus a small payload.
+What the agent then does is decided by the agent, which is what stops a
+compromised app from steering it.
+
+```js
+// in an operation runner — the seam your blueprint gives you
+trigger("invoice.needs_review", { invoice: rec.id }, "review")
+```
+
+Three rules, and the first is the one that bites:
+
+- **Declare the event type** wherever your blueprint declares them. An
+  undeclared type is refused at the moment of firing — inside an operation, in
+  front of a user — so the set of things your app can ask for is fixed by you,
+  in code you own.
+- **Send ids, not prose and not data.** The agent re-reads the record itself, so
+  a copy is stale by the time it is read. Prose in a payload is an instruction
+  the app does not get to give: on the other side it is fenced and labelled as
+  data, and an agent that obeys it is misbehaving.
+- **Only where agent judgment adds value.** Plain events want plain code. Make
+  the work idempotent — a task can be redelivered if an agent dies holding it.
+
+**This is stack-specific, and not every blueprint has it** — `reference/blueprint.md`
+says whether yours does and how to reach it. If it does not, handle the event
+with plain code and record the limitation in `reference/requirements.md` rather
+than inventing a mechanism.
+
+Nothing is delivered until someone is listening: a bridge
+(`agent-app <dir> bridge start`, which launches the user's harness for each
+task) or their harness polling `a2app <dir> tasks next --wait`. A bridge starts
+agent runs on the user's machine, so it is theirs to switch on — see step 6 of
+**Finish** below. `agent-app <dir> bridge` reports whether one is running, which
+harness a start would launch, and how many tasks are waiting.
+
+**The UI that queues work must show that work until it is done.** An agent run
+takes seconds to minutes. A button that fires a toast and then goes quiet
+leaves the person staring at a screen that shows no sign anything is happening.
+Store the queue task id the trigger returns on the record, and have the View
+follow it (`GET /api/_a2app/tasks/{id}`, same origin, polled at its
+`pollAfterMs` only while unfinished). It needs no credential: on a single-user
+app the View is trusted, and on a multi-user app the person's session makes the
+read. The agent that runs the task acts as the person who queued it. Render
+every state, where the person asked:
+
+- `submitted` — waiting to be picked up, with elapsed time. After ~20 s with no
+  claim, say that no agent is listening and name `agent-app <dir> bridge start`.
+  Don't keep showing "waiting" with no end.
+- `working` / `input-required` — the agent has it: show `progress.step` (the
+  bridge and the agent both report one) and how long it has been running.
+- `completed` — done, with `result.summary` if there is one. Re-read the data
+  here, because the agent's writes are the answer.
+- `failed` / `canceled` — the `reason` in words, and a way to ask again.
+
+A badge wherever the record appears in a list ("Agent working") is what lets
+someone leave the screen and come back.
+
+## Finish: boot the candidate, gate, then verify
+
+1. **`agent-app <dir> dev`** (`dev --install` the first time: a fresh scaffold
+   has no dependencies yet) boots your build on a hidden port with a fresh
+   database created purely from your migrations — nothing is copied; the tree
+   you just wrote IS the running candidate, and its log is at the path `dev`
+   prints. While this instance is up, every `a2app` operate command and
+   `validate` target it automatically. Then **`agent-app <dir> validate`** runs
+   the gate (app-part consistency → build → migrations-on-a-fresh-db →
+   operations resolve → ownership canon → describe budget, measured on the dev
+   instance). On errors: read ALL of them, fix ALL of them, re-run `dev` (a
+   fresh boot picks up backend edits) and `validate` again. A step the gate
+   reports **UNCHECKED** did not pass — it could not run; with the dev instance
+   up, nothing should be unchecked. `validate` records the gate pass `promote`
+   will demand. Never start servers by hand.
+2. **REALITY CHECK — look at what actually exists, not at what you wrote.** Success
+   messages lie by omission; stored state does not. While the app runs:
+   - `a2app <dir>` → does the root show the modules you declared, with the entity
+     counts you expect? A module reading `0 entities` means nothing was filed
+     under it.
+   - `a2app <dir> <module> <entity>` → does the entity show the FIELDS you
+     migrated? An entity showing only `id` means your migration silently did
+     nothing.
+   - `a2app <dir> <module> <entity> <id>` on a real record → is each operation
+     available when it should be, and blocked with a sensible reason when it
+     should not? A wrong `appliesWhen` shows up here and nowhere else.
+   - Trigger one real data flow, then read a record back and LOOK at the values.
+     Missing fields, empty strings, all-zero numbers = the write silently failed,
+     whatever status it returned.
+   - Any path you CANNOT trigger for real (a scheduled send, a post to the user's
+     accounts): **dry-run it** — validate grant, params, and confirmation without
+     executing. A path never run NOR dry-run is not done.
+   Reason about ANY mismatch between what you intended and what is stored; fix it
+   before verifying. This catches the failure classes no error message reports.
+3. **Quality self-review — before handing off, not instead of it.** Every
+   Build task in `reference/tasks.md` is ticked first — an unticked task is
+   unfinished work, not a verification candidate. Then walk your own app once
+   against `../QUALITY.md`, section by section: resize to a phone width,
+   drive one flow keyboard-only, look at the empty state on a fresh database,
+   trigger one error, read every visible string. Fix what you find NOW — the
+   verifier will find it otherwise, and every defect it reports costs a full
+   fix-and-re-verify loop. This review does not replace verification: you are
+   the builder, and the builder does not grade itself.
+4. **walk-verify** — run the walk-verify skill: an independent run (NOT you) walks
+   the DEV instance in a real browser against `reference/requirements.md` AND the
+   Quality Standard. A clean pass is what earns the promote. Failures come
+   back as a report (features and Q-numbered quality items): fix them, then
+   repeat step 1 and step 4. **Commit before every verification**
+   (`agent-app <dir> commit --message "<what and why>"`) — the commit is what
+   the verifier verifies. From the second verification on, give the verifier
+   the last report and the commit it verified: it re-verifies what changed
+   since and what that report did not reach, not the whole app. Never ask it
+   for a full walk or for more than that — its rules set the scope, and a
+   wider request only repeats checks that already passed. Record each verdict
+   and its verified commit in the ledger, and commit that too.
+5. **Promote and put it in front of the user.**
+   `agent-app <dir> promote` requires the gate pass from step 1 (edited since
+   validating? validate again first — except the ledger, `reference/tasks.md`,
+   which is not gated: recording the verdict there needs no new validate),
+   takes the pre-promote backup when a live
+   database exists (a first delivery has none), applies your migrations to
+   live, and destroys the dev instance. Then `agent-app <dir> serve` runs the
+   manifest pipeline as a managed background process, polls health, and prints
+   the URL — open it, see **Showing the app to the user** below. Never start a
+   server by hand.
+6. **Agent work: ask before leaving a bridge running.** Only for an app that
+   queues agent work (an operation calls `trigger(…)` with a capability). After
+   promote + serve, run `agent-app <dir> bridge`.
+   - A bridge already running with `agentWork.bridgeTarget` `"live"`: say so in
+     the handoff.
+   - Any other state (a stale or wrong-target bridge, work not picked up):
+     tell the user what `bridge` says. A printed fix that starts or restarts a
+     bridge needs the same explicit yes as below — never run it on your own.
+   - No bridge: **ask the user, and wait for an explicit yes in this
+     conversation** — earlier approval of the build is not approval of this.
+     Tell them: which harness it will launch (the profile id `bridge` names);
+     that it runs in the background until `agent-app <dir> bridge stop`, after
+     this session ends and even after `agent-app <dir> stop`; and that every
+     queued task starts an agent run, which may cost money.
+   - On a yes: `agent-app <dir> bridge start`, then `agent-app <dir> bridge` to
+     confirm it is running.
+   - Without one: give them that exact command and say that queued tasks wait
+     in the app until a bridge or their own harness picks them up.
+
+   A subscribe-only harness has no bridge: `bridge start` prints the listen
+   command to hand over instead. `bridge start` refuses to run in the
+   background while a dev instance is up; `--once` and `--foreground` are for
+   trying a change on dev, not for the handoff.
+
+**Showing the app to the user.** A running app is not a delivered app until the
+person can see it. The framework cannot know what your harness can do, so YOU
+decide which of these you are:
+
+- **You have a browser tool** (a built-in browser pane, a Chrome extension):
+  run `agent-app <dir> open --print-only` and open the returned `url` with your
+  own tool, so the app appears in context. `--print-only` is what stops the CLI
+  also spawning a separate window — without it the user gets two.
+- **You do not**: run `agent-app <dir> open`. It uses the opener the harness
+  declared (`AGENT_APP_OPEN_CMD`), else the OS browser.
+
+Either way, give the user the URL in your reply. `"opened": false` in the result
+is NOT a failure — it means the environment has no browser to spawn (SSH, CI,
+headless) and the printed URL is how the user gets there. `agent-app <dir> serve
+--open` does the serve and the open in one step where you do not need the URL
+first.
+
+Test data is fine during the build — the dev instance's database is disposable
+and is destroyed at promote; at delivery the LIVE app boots with a fresh database
+built purely from your migrations, so records you or the verifier created never
+reach the user. Data your migrations SEED survives. Externally-fetched data does
+not carry over: an app that syncs from an API must self-populate on an empty DB
+(fetch at boot or when the collection is empty).
+
+## HONESTY RULE
+
+The app is ready ONLY when walk-verify returns a pass. If you cannot make it pass,
+tell the user the build **failed** and exactly what's blocking. Never claim a
+broken app is ready, and never present generated data as live — "live" means the
+app fetched it from the real source.
+
+## FORBIDDEN
+
+- Editing any system-owned file (the gate fails on canon drift).
+- Editing an already-applied migration — add a new one.
+- Making the agent drive the DOM to operate the app — the adapter is the surface.
+- Custom fetch layers, polling, or page reloads where the kit's realtime hooks
+  exist — use them.
+- Mock/random data standing in for external data — unreachable source means an
+  honest empty state plus a report, not a simulation.
+- Printing or committing credentials (`.agent-token` and equivalents).
+- Starting servers by hand.
+- Announcing completion before walk-verify returns a pass.

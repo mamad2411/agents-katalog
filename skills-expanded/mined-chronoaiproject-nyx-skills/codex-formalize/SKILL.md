@@ -1,0 +1,484 @@
+---
+name: codex-formalize
+description: Use when asked to formalize and close an open digestion atom in this repository.
+---
+
+# Codex Formalization Workflow
+
+## Install
+
+This is a Codex skill package. Install it by copying the `skills/codex-formalize/` directory into `$CODEX_HOME/skills/` (default `~/.codex/skills`), or load it by naming this `SKILL.md` path directly in a dispatcher. This repository copy is the single source of truth; any installed copy is a projection of it.
+
+## Scope and authority
+
+This file is Codex-specific packaging of repository obligations; it has no authority of its own. `docs/develop/spec/golden-ledger-repo-spec.md` is the sole normative specification; `CLAUDE.md` is the invariant frame governing how work is done; and `agents/CONTEXT.md` is the finite-context map and routing aid, not an authority above the specification. Live harness output is the decisive judge of fact about the current tree. If this file disagrees with any of them, they win and this file is the bug.
+
+## Read first
+
+- `CLAUDE.md` - owns the repository's invariant frame and working ethics.
+- `agents/CONTEXT.md` - owns the finite-context map, routing, and naming guidance.
+- `docs/develop/spec/golden-ledger-repo-spec.md` - owns the normative repository specification.
+- The applicable `agents/*.md` role charter - owns role-specific duties.
+- `agents/echo-template.md` - owns the statement-echo record.
+- `make help` - owns the live catalogue of canonical doors.
+- `tools/` - owns executable admission and repository enforcement.
+
+## State machine
+
+Follow these steps in order. Do not pass a step until its postcondition holds.
+
+### 0. Establish the environment and isolation
+
+Run:
+
+```sh
+eval "$(sed -n '/^export PATH=/p' tools/scripts/local-harness-gate.sh)"
+# If not already in a dispatcher-assigned isolated lane:
+make worktree KIND=math NAME=<lane> && cd <created-path-from-output>
+pwd -P && git rev-parse --show-toplevel && make -C tools dotnet
+```
+
+Re-read the current `export PATH` from `tools/scripts/local-harness-gate.sh` for every task rather than trusting a list quoted elsewhere; its `/usr/sbin` entry must survive because the report supervisor requires `lsof`, which lives there. If a dispatcher already assigned an isolated lane, do not create a second one: confirm the existing lane with the same `pwd -P` / `git rev-parse --show-toplevel` check. Otherwise, the `make worktree` output is JSON whose `path` field names the created path; substitute that value for `<created-path-from-output>` and work only there.
+
+Build through the canonical `make -C tools dotnet` door because `make show-atom` runs the Release CLI with `--no-build`.
+
+Before any deposit, require `git status --short` to print nothing except the intended formalization changes. Prefer a fully clean tree before beginning the task. Deposit and cover only update the working tree; inspect their resulting delta and commit it through the normal repository workflow.
+
+Postcondition: the pinned toolchain is on PATH; `pwd -P` and `git rev-parse --show-toplevel` agree with the assigned or created isolated lane; `make -C tools dotnet` has built the CLI so `make show-atom` succeeds; and no unrelated or unexplained change is present.
+
+### 1. Choose exactly one open atom
+
+Inspect candidate snapshots in `Generated/echo-residuals/<source_id>.md`. Treat them only as candidate listings. Obtain the authoritative atom text with:
+
+```sh
+make show-atom ATOM_ID=<id>
+```
+
+Never quote the projection as authoritative. Prefer an atom with few unresolved subitems and an elementary, self-contained statement.
+
+Triage the claim class before committing to it; each class below is named by landed outcomes, not speculation:
+
+- **Best odds — concrete certificate/computation claims** whose data is inside the atom text (a walk value, a finite identity, explicit witnesses): these close with `decide`/`norm_num` and have the highest landed success rate.
+- **Good odds — claims whose machinery is already frozen**: a bridge, instantiation, or characterization theorem connecting existing declarations.
+- **Not a standalone target — bind-only corollaries** (`CLAUDE.md` 5⁗). `proof_shape` is purely semantic: after inlining local aliases, private helpers, tactic expansions and definitional equalities, a public theorem is `bind-only` when its conclusion follows from frozen public theorems only by instantiation (substituting parameters — direct instantiations and 第 11 条 thin upstream wrappers are bind-only too), discharging a frozen hypothesis with a frozen witness (de-hypothesization), logical projection or repackaging (`.1`/`.2`/`.mp`/`.mpr`, conjunctions, TFAE), or normalization (definitional unfolding; `simp` with frozen/Mathlib rewrite lemmas only; `ring`/`linarith`/`omega`/`norm_num`/`decide` closing a goal whose atomic facts are all already supplied — a decision procedure that establishes a NEW proposition not supplied by the dependencies yields a candidate witness, not normalization). Non-exhaustive landed examples: one application of a frozen theorem; `obtain ⟨x⟩` then one frozen theorem; projections or compositions of frozen iffs; `Finset.sum_empty`/`simp`/`ring`/`linarith`-level rewrites; TFAE/conjunction packaging. Admissibility is a SEPARATE field, `admission_basis` ∈ {`escape-witness`, `rule-11-upstream-wrapper` (cite the upstream declaration hit AND the atom clause or concrete repository API/coverage need that makes the wrapper required), `atom-required-bridge` (cite the atom clause, the previously absent typed edge, and the pre-registered named consumer)}; the latter two are exceptions that permit a deposit without changing `proof_shape`. A probe may classify a candidate; once it is bind-only with no admission basis it is digestion (if a frozen theorem covers the atom verbatim, `make cover` it — zero Lean) or a named companion inside a module that has an escape-bearing theorem — never the sole content of a first-freeze module. If every open atom in reach is bind-only, the valuable output is `open` naming the missing analytic input, not a deposit.
+- **Definition clauses — only with an earning theorem** (see the thin-deposit taxonomy below); a definition alone is not a target.
+- **Do not encode — institutional/philosophical prose clauses** (governance clauses, postmortem narratives, interpretive premises): they have no mathematical content, and encoding them as generic set/logic predicates is how thin deposits happen. Report them as not-formalizable prose rather than dressing them in Lean.
+- **Do not attempt without a machinery plan — heavy universal claims** (representation theorems, general-dimension obstructions): landed lanes on these either time out or fabricate. If the machinery gap is real, `open` naming the gap is the valuable output.
+
+Postcondition: one atom ID is selected, its claim class is named in the report, and its verified `make show-atom` output is retained as the statement source.
+
+### 2. Echo the statement before proving it
+
+Follow `agents/echo-template.md`. Write a clause-level mapping from every quantifier, domain, hypothesis, conclusion, and generality claim in the authoritative atom text to the intended Lean declaration. Account for every unresolved subitem.
+
+If an ambiguity cannot be resolved without weakening the claim, stop and report the result as `open`.
+
+Postcondition: every source clause has one intended Lean counterpart, or the task has ended as `open` with the ambiguity named.
+
+### 3. Search the library before proving
+
+Apply `CLAUDE.md` 11, "library before proof." Search pinned mathlib and the repository's `D5/` declarations for the complete statement and for lemmas that close its dependencies. Record every query verbatim and record whether it hit.
+
+Check the bind path first: the cheapest faithful discharge is an existing frozen theorem, and dozens of residues have been discharged with zero new Lean. If a frozen declaration already covers the residue leg verbatim (not narrower — watch the grader traps below), the correct deliverable is a bind recommendation naming that declaration and the evidence, not a new module. Ledger surgery itself is dispatcher-owned; your report carries the finding.
+
+If the result exists upstream, import and apply it. Do not reprove it: a reproof of an existing declaration creates a second source of truth.
+
+Search for the statement shape, not the module name. A landed lane died reproving a frozen theorem in strictly weaker form (it added a derivable `Odd d` hypothesis) even though it had been told to read that exact module: reading a module and greping for the identity are different acts, and only the second one protects you. Grep `D5/` for the hypothesis pattern and the conclusion pattern of your target, for example:
+
+```sh
+grep -rn "≡ -1 \[ZMOD" D5/ --include='*.lean'
+grep -rn "jacobiSym\|J(" D5/ --include='*.lean' | grep -i <conclusion-token>
+```
+
+If the identity already exists in equal or stronger form, the correct output is the reuse or an `open`/abstain naming the frozen declaration — never a new module. A hypothesis derivable from your other hypotheses (parity from a congruence, coprimality from an inverse relation) must be derived, not assumed: assuming it makes your theorem strictly weaker than the source claim and reviewers reject it as a weaker duplicate.
+
+Postcondition: the search trace is recorded and every hit is either reused or accompanied by a concrete explanation of why it is not the same claim.
+
+If the search cannot be completed faithfully, end the task as `open` with no deposit, carrying the Step 8 evidence: statement echo, search trace, failed approaches with reasons, and machine diagnostics.
+
+### 4. Learn the current artifact shape
+
+Read the nearest current Lean and Scribe artifacts in the target bucket, then read the live
+path-policy and header owners. The current working tree is the template; historical commits
+are not a workflow contract.
+
+```sh
+git ls-files '<target-lean-directory>/*.lean'
+git ls-files '<target-blueprint-directory>/*.scribe.cs'
+sed -n '1,12p' <nearest-current-lean-module>
+```
+
+Copy the exact shape from current tracked neighbours rather than from remembered or historical
+formats. If this file and the current tree disagree, the current tree and its live harness win.
+
+Postcondition: the chosen current neighbours and owner paths are recorded, and the planned
+artifacts follow that observed shape.
+
+### 5. Write and compile the artifacts
+
+Write the Lean module and its `.scribe.cs` mirror using the live template. Discover the current path-to-GID rule from that template and the live path-policy owner; do not rely on a remembered grammar.
+
+A new theorem must go in a new Lean module. Before writing into an existing module, check whether it has an active Freeze event:
+
+```sh
+module_path='D5/path/Module.lean'; grep -l -F "$module_path" Golden/Frozen/accepted/*.json
+```
+
+Exit 0 with an accepted-record path means frozen; exit 1 with no output means not frozen (any other result is a failed check). The frozen ledger pins the module's declaration set, not just its bytes, so it refuses adding a declaration to a frozen module. Reattest covers changed bytes with an unchanged declaration set; it is not an escape hatch for adding a declaration. If the atom genuinely belongs inside an existing frozen module, do not edit it: end `open`, naming that module and the frozen-ledger constraint.
+
+Before creating the new module, set `lean_dir` to its target directory and `blueprint_dir` to the corresponding `Blueprint/` mirror directory, then read the live limit from its owner (`DirectoryFileLimit` in `tools/StrataLint.Engine/Rules/RepositoryRules.Structure.cs`; never a number remembered from this file), measure both, and confirm that adding one counted file to each stays within that limit:
+
+```sh
+limit=$(sed -nE 's/.*DirectoryFileLimit = ([0-9]+);.*/\1/p' tools/StrataLint.Engine/Rules/RepositoryRules.Structure.cs); test -n "$limit"; lean_count=$(git ls-files "$lean_dir" | awk 'END { print NR+0 }'); blueprint_count=$(git ls-files "$blueprint_dir" | awk '!/\.md$/ { n++ } END { print n+0 }'); printf 'limit %s\n%s %s\n%s %s\n' "$limit" "$lean_dir" "$lean_count" "$blueprint_dir" "$blueprint_count"; test $((lean_count + 1)) -le "$limit" && test $((blueprint_count + 1)) -le "$limit"
+```
+
+Committed Blueprint `.md` renderer oracles are excluded from capacity, but `.scribe.cs` sources count. If the natural target directory is full, do not place the module in a semantically wrong directory to evade the limit: split the bucket, register the new domain in `Meta/domains.yaml`, place the module in the new directory, and carry the protected-surface cost for the conservative-extension gate to judge. A protected-surface change is priced work, not a stopping condition. Reserve `open` for what is genuinely unresolvable, such as an ambiguity that cannot be settled without weakening the claim or a proof that will not close, never for work that merely costs more.
+
+Iterate on the source artifacts, then run the canonical door when they are ready:
+
+```sh
+make lean
+```
+
+Judge completion only by exit code, never elapsed time or quiet output. Full doors cost minutes each; a landed lane died by burning its entire three-hour budget on seventy-two full preflight runs chasing a flaky unrelated test. Iterate scoped, verify canonically once.
+
+Run every shape check NOW, before Step 7: line 6 ends with ` -/`, the generality tag matches the weakest import and the module's nature, the scribe formulas obey the rejection taxonomy, the emitted `.md` mirrors every conjunct. After a successful deposit the module's bytes are pinned by the frozen ledger, so catch defects before depositing rather than creating a conflicting frozen state.
+
+Postcondition: both source artifacts exist in the observed shape and `make lean` exits 0.
+
+If a faithful proof cannot be made to compile, end the task as `open` with no deposit, carrying the Step 8 evidence: statement echo, search trace, failed approaches with reasons, and machine diagnostics.
+
+### 6. Run the fidelity and non-hollowness gate
+
+Complete every evidence item in the checklist below. A green compiler and harness do not discharge this step.
+
+Postcondition: every checklist item has evidence and none is `ASSUMED-UNVERIFIED`; otherwise deposit is blocked.
+
+If any checklist item cannot be evidenced, end the task as `open` with no deposit, carrying the Step 8 evidence: statement echo, search trace, failed approaches with reasons, and machine diagnostics.
+
+### 7. Deposit and cover, then early local feedback
+
+Only after Step 6 passes, run:
+
+```sh
+make deposit ATOM_ID=<id> GID=<D5/Path/Module.theorem_name>
+make cover ATOM_ID=<id> GID=<gid>
+make preflight BASE="$(git rev-parse HEAD^1)"   # early feedback only; NOT a gate (CLAUDE.md 器律②)
+```
+
+Deposit and cover operate on the same working tree and may land in the same pull request. Neither
+command creates an intermediate commit.
+
+`make deposit` and `make cover` must exit 0. `make preflight BASE="$(git rev-parse HEAD^1)"` is local early feedback: report its exit code and every rejected rule verbatim, but a nonzero local preflight does not stop the lane — the three remote required checks are the only judgment (CLAUDE.md 器律②, user 2026-08-26; ②′ push and local verification run in parallel). This macOS host has known preflight noise (Perl `C.UTF-8` locale crashes in script tests, `ENGINEERING_TEST_EVIDENCE_FAILED` without TRX, an `SL-022` observation line); stop only on a content-level red you caused (Lean error, `SL-008` frozen-surface diff, `SL-010` generality, digestion coverage), and then end as `open`. Judge them only by exit code, and never pipe a judgment command: `cmd | tail -1` reports the pipe's exit status, not the command's, and three landed incidents (a merge that silently failed, validation run on a stale base, a cover failure read as success) trace to exactly this. Run the command bare, or capture `$?` on the command itself before any formatting.
+
+If `make deposit` or `make cover` exits nonzero, stop and end as `open`. Report the failed command and exit code, machine diagnostics, touched paths, and the actual resulting tree state; deposit and cover do not commit their changes.
+
+Before pushing, inspect the complete deposit-and-cover delta and create one builder-owned commit:
+
+```sh
+git status --short
+git diff --check
+git add -A
+git commit -F <commit-message-file>
+```
+
+Postcondition: deposit and cover exited 0; preflight exit code and diagnostics reported; the complete intended delta is in one explicit builder commit; and the worktree is clean. A failure is captured as an `open` outcome with diagnostics and no push.
+
+### 8. Push and open the pull request, or report `open`
+
+After Step 7 completes (local preflight reported, not gated), push the committed current branch and use the repository door:
+
+```sh
+git push -u origin <branch>
+make pr-open HEAD=<branch> MESSAGE=<message-file>   # deposit PRs: no AUTO_MERGE — the review triplet must return first
+# The message file's first line is the PR title; the rest is the PR body.
+```
+
+`AUTO_MERGE=1` explicitly opts an invocation into auto-merge; without that option, the door does not arm auto-merge. Deposit lanes must NOT pass it: the sshx review triplet (tests / quality / architecture) runs after the PR opens and must be able to block the merge (memory `review-must-precede-automerge`, #2337 precedent). After it opens the pull request, do not push further changes to that branch: the pull request may already have merged, in which case a later successful push does not put that commit on `dev`. Any further change requires a new branch and a new pull request.
+
+If the dispatched sandbox forbids git writes, state that constraint explicitly and hand the exact `git push` and `make pr-open` invocations above, with substituted arguments, to the caller; do not report `success` as though the work landed. Otherwise report `success` only with the opened pull request, touched paths, door-produced commit subjects, every relevant exit code, completed fidelity-gate evidence, and, for every public theorem, `proof_shape` (`content` | `bind-only`), its direct frozen public dependencies (GID + `statement_id`), its `escape_witness` (or `bind-only`) and the module's `admission_basis`. Or report `open`, naming the stopping step and carrying every evidence class reached; mark each unreached class not run and explain why. There is no third outcome.
+
+Postcondition: the task ends with an opened pull request, or with evidence-complete `open`.
+
+## Fidelity and non-hollowness gate
+
+Before Step 7, the producing seat must answer every item with concrete evidence. This checklist collects producer-side evidence; it is not machine-verified and does not itself prove non-hollowness. Independent adversarial review, not producer self-attestation, turns this evidence into verification.
+
+- Conclusion substance: show that the conclusion is not `True`, not definitionally equal to `True`, and not a restatement of a hypothesis.
+- Hypothesis satisfiability: exhibit a Lean term witnessing the hypotheses that elaborates in the pinned toolchain, such as a checked `example` in the module or a term the seat states and checks, and carry that term in the report. Prose asserting or naming a witness does not discharge this item; if no compiling witness can be produced, the outcome is `open` and deposit is blocked.
+- Domain inhabitance: exhibit a Lean term inhabiting the domain that elaborates in the pinned toolchain, such as a checked `example` in the module or a term the seat states and checks, and carry that term in the report. Prose asserting or naming an inhabitant does not discharge this item.
+- Proof substance: show that the statement carries content beyond unfolding a definition the producing seat itself introduced, whatever tactic closes it.
+- Deposit substance: for a module introducing a new definition, name the theorem(s) that make the definition earn its freeze (instantiation against existing repository structures, an independent-sides characterization, or a citable property), and show the module's connection to the existing machinery its vocabulary names. Anonymous `example`s do not discharge this item; see the thin-deposit taxonomy above.
+- Duplicate search: cite the Step 3 trace showing this is not a renamed duplicate of a mathlib or `D5/` declaration.
+- Clause fidelity: place the authoritative atom clauses beside the Lean clauses one-to-one, mapping every clause to an exact Lean binder, hypothesis, or conclusion. The dropped-or-weakened set must be empty; any weakening, omission, or unresolved ambiguity forces `open` before deposit.
+- Rendered-statement fidelity: read the emitted Blueprint `.md` for this document and compare its displayed statement against the Lean declaration symbol by symbol; use a neighbouring landed mirror as a shape check.
+  The formula DSL and writer own tokens that can be valid LaTeX and structurally accepted yet mean something different from the theorem, so `emit` exiting 0 is not evidence that the rendering is faithful.
+  A mismatch blocks deposit; resolve it against `tools/StrataLint.Scribe/Ast/FormulaDsl.cs` and `tools/StrataLint.Scribe/Writers/LatexWriter.cs`, or end the task `open`.
+
+Finally, run the grader-trap checklist against your own work before sign-off — witness-vs-universal, instance-vs-general, conditional-vs-unconditional, pointwise-vs-operator, proof-internal-vs-addressable-statement, multi-clause residue names, mechanism-vs-outcome — and record for each either "not applicable" or how your statement clears it. Reviewers will run exactly this list; a mismatch you find yourself is a free fix, one they find is a blocked lane.
+
+Any item without evidence blocks deposit. Mark an unverified fact exactly `ASSUMED-UNVERIFIED`; never replace measurement with hedging language. Compilation, deposit, and cover do not by themselves certify clause fidelity, so the evidence checklist remains mandatory.
+
+## Earned hard gates (precedent taxonomy)
+
+Every entry below names a failure class that actually occurred in landed rounds of this repository. These are not hypothetical defenses; they are the recurring ways seats fail review. The owners named in "What this skill does not own" still win on current thresholds — this section tells you where lanes die.
+
+### Mathematical content
+
+- **Definitional tautology (the most common kill, seven landed cases).** Never define a thing as the formula you then "prove"; never install the conclusion by definition; never prove an iff whose two sides you defined to coincide. Both sides of every equation and iff must have independent anchors: a frozen declaration, a mathlib declaration, or data present in the authoritative atom text.
+- **Invented-classifier variant.** Defining your own key or equivalence (for example a `Setoid.ker` quotient of a tuple you chose) and then proving bijectivity or a count over its quotient proves nothing: the result is true by construction for any injective key, and the arithmetic coordinates you computed go unused. If the subject's own orbit/class notion is not in the repository, the honest outcome is `open` naming the missing carrier — reviewers reject the invented one 2-1 or worse.
+- **Fabrication ban.** If a concrete datum your theorem needs — a case list, a walk, a witness pair, the meaning of a symbol — is not derivable from the authoritative atom text plus in-repo frozen definitions, do not invent it. Exhibiting concrete numerals you computed yourself from in-repo definitions is derivation and is fine; conjuring a list the source only attests is fabrication. End `open` naming precisely the missing datum.
+- **A stronger variant does not excuse a duplicate.** Twice now a lane found the frozen theorem covering its residue leg and wrote a new module anyway, rationalizing the addition as "exposing hidden facts" or "removing a hypothesis" — a strictly stronger or nicer-shaped variant of an already-covering frozen statement. If the frozen statement covers the leg, the deliverable is the bind report; strengthening it is gold-plating unless a named consumer needs the stronger form, and reviewers discard the module either way.
+- **Witness-vs-universal honesty.** An `∃`-witness does not discharge a universal claim; an instance (dim 4, a fixed modulus, an 18-ray set) does not discharge a general claim; a conditional theorem does not discharge its unconditional attestation. State exactly what you proved; graders run a named-trap checklist (witness-vs-universal, instance-vs-general, conditional-vs-unconditional, pointwise-vs-operator, proof-internal-vs-addressable-statement, multi-clause residue names, mechanism-vs-outcome) and a mismatch is a blocker, not a nuance.
+- **Unused hypotheses are dishonest signatures.** A binder the proof never uses gets stripped at collection; write the minimal true signature.
+
+### Artifact shape
+
+- **No new top-level domain for one module (three landed rejections in one day).** When your module's natural parent directory is at its file limit, the repository convention is a SPLIT BUCKET under that parent (`Parent/NewBucket/`, split-only, no moves), recorded in the stratum's MAP file (split-history entry AND bucket-catalog line; create the stratum MAP and register it as a governance document if the stratum has none), with any new group name registered where the precedent registers it. Reuse an existing bucket whenever ownership genuinely fits (a symmetry theorem belongs in the existing `Symmetry/` bucket, not a new sibling). Registering a fresh top-level domain in `Meta/domains.yaml` for a single module is the anti-pattern: every instance was struck down by review and relocated.
+- **FromLean is only legal for projector-registered shapes (five-statement landed rejection).** A lane once used `StatementSource.FromLean()` for all five of its Describes; the kernel projector returned Unprojectable for every one (`Finset`, a repo predicate, `LT.lt`, `DirichletCharacter`, `Nat.Prime` are all outside the registered shapes), the emitter exited 1, and no Blueprint mirror existed for the fidelity gate. `FromAuthor` with a typed Disp formula is the DEFAULT; before even considering FromLean, verify the statement's every constituent is projector-registered — when in doubt, FromAuthor. Then run the emit and READ the produced `.md`: a missing mirror blocks deposit by itself.
+
+- **Header law (three landed violations; corrected 2026-09-06 for the `utility:` line).** The header sits at byte zero and `digest:` is a SINGLE line ending ` -/` — it is the LAST header line, not necessarily line 6. The owner is `RepositoryRules.HeaderPattern`, whose exact shape is `GID` / `generality: [GIE]` / `mirror-B` / `mirror-E` / `anchors: [...]` / **optional `utility:`** / `digest: … -/`. So the header is SIX lines without `utility:` and SEVEN with it, and `utility:` sits between `anchors:` and `digest:` — that position is fixed by the pattern, not a convention. A wrapped digest is a violation; ` -/` alone on its own line is the same violation. Copy the shape from a CURRENT tracked neighbour (an older neighbour may predate `utility:`), then verify your file's last header line ends with ` -/`.
+- **A `FromLiterature` Describe drags in a Library note, and that note has a machine-checked shape (`incomplete-library-locator`, RED; landed 2026-09-06).** Whenever a Describe carries `AssessedProvenance.FromLiterature(<bibkey>)` (or an acknowledgement reference), the note at `Library/<Area>/<bibkey>.md` is pulled into the check. Owner: `tools/StrataLint.Scribe/Verification/DescribeContentGovernance.cs:212-237`. It is a **RED inside `DESCRIBE_STATUS`**, so it fails the `Canonical Lean report production` required check — **not** the engineering one, which is where you would look first if you only read the check name.
+  **The three conditions, verbatim from the source:** the note text must contain `\n## Verified locator\n` (or `\n## Locator\n`); the section body, taken up to the next `\n## `, must be **non-blank**; and that body must literally contain the frontmatter `doi:` value (case-insensitive). Putting the DOI only in the frontmatter **is not enough** — the frontmatter is what the checker compares *against*, not what satisfies it.
+  **Frontmatter is a closed alphabet** (`LibraryNoteCatalog.cs:45-53`): exactly `bibkey`, `authors`, `year`, `title`, `doi`, `claim`, `strata_touched`, `license`, `triage`. Required lines: `bibkey`, `title`, `authors`, `claim`, `license`, `triage`, and `year` as an integer in 1000–9999. Copy a current tracked neighbour in the same `Library/<Area>/` and change the values.
+  Minimal passing tail (this exact shape landed):
+  ```
+  ## Verified locator
+
+  - DOI: https://doi.org/10.2307/1990319
+  ```
+  **Landed precedent (2026-09-06, #5827).** A deposit whose Scribe used `FromLiterature(AlaogluErdos)` shipped a note with `doi:` in the frontmatter and no `## Verified locator` section. `DESCRIBE_STATUS` came back `red=1 observe=3865` — **the 3865 `OPEN projection` lines are pre-existing observations, not the failure**; the single RED was this locator. Cost: one full CI round trip. Verify the three conditions mechanically before you push, not by eye.
+- **`utility:` is mandatory on a first-freeze module and is machine-judged (SL-031, merged 2026-09-06, Block, Active).** Scope: a frozen-state path that the candidate ADDS (present in `Current`, absent from the protected `Baseline`) — i.e. exactly the first-freeze case of section 5⁗. Absent line, or the placeholder `EDIT-ME`, yields `UTILITY-MISSING module=<path>`; the finding carries no explicit effect and therefore takes the rule's registered default, and `Register` defaults to `AdmissionEffect.Block` with `RuleLifecycle.Active`. **Not a warning.**
+  Grammar (owner `UtilitySyntax.cs`; fields are separated by exactly `"; "`):
+  - `utility: none` — the whole declaration, for a module with no computational content. Legal and common; five modules on dev use it. It is NOT a way to skip the judgment: review still asks whether `none` is honest (section 5⁗ 用途准入 is soft there).
+  - `utility: kind=<K>; basis=<B>[; instance=<GID>][; premises=<GID>[,<GID>…]][; result=<GID>]` — `kind` and `basis` MUST be the first two fields in that order; the optional three, when present, must appear in the order `instance`, `premises`, `result`; 2–5 fields total, no duplicate keys.
+  - `<K>` ∈ `bounded-enumeration` | `checker` | `numeric-reduction` | `certified-instance`.
+  - `<B>` ∈ `consumer=<declaration GID>` | `refutes=<target>` | `terminal=<target>`, where `<target>` ∈ `atom:<atom_id>` | `task:<TASK code>` | `gid:<declaration GID>`.
+  - `kind=checker` REQUIRES `instance=`; `kind=numeric-reduction` REQUIRES `premises=` AND a basis of `consumer` or `refutes` (`terminal` is refused for it).
+  Landed example on dev (`b00aeab4a8`): `utility: kind=certified-instance; basis=terminal=atom:271aa869d74ec58b…`.
+  **Landed precedent for ignoring this (2026-09-06, #4971 closed under 第 12 条).** A deposit branch written 2026-09-03 carried two first-freeze modules with `utility:` line count **0**. It had three other blockers as well — its freeze output wrote only `Golden/Frozen/accepted/**` and no `Golden/Frozen/state/**` slice (so it does not even match the current deposit contract, and note SL-031 keys on the state path, so it would NOT have fired on that branch as it stood), a named engineering red (`FormulaCorpusInventoryTests.InventoryAllLegacyLatexStatementsAndSyntaxFamilies`), and a base 1118 commits behind. The single lesson worth carrying: **redo the deposit on current dev, and the `utility:` line is then required before the state slice can land.** Rebasing an old deposit branch is not enough.
+- **Generality tag follows the weakest import and the module's nature (two landed blockers).** A concrete-instance module (fixed modulus, fixed witness set) is `generality: I`; a general theorem module is `G`; a `G` tag on a file importing `I`-level facts is a violation. Compare your nearest landed neighbors before writing the tag.
+- **Scribe formula rejection taxonomy (dozens of mechanical rejections; owner `FormulaDsl.cs`/`LatexWriter.cs` wins on current tokens):** `F.Id` arguments are strictly alphabetic; `D()` takes one digit per argument (`D(2,3)` never `D(23)`); `Sp` is required after macro and relation tokens (`Neg`, `Neq`, `Vert`, `Lvert`, `Rvert`, `Forall`, `InMacro`, `Exists` after `Neg`, …) before `F.Id`/`Operatorname`; `Star` not `Ast`; `Neg` not `Not`; the `FormulaDsl` usings are required; private structural helpers in `.scribe.cs` (`Call`/`Bound`/`Seq` wrappers over `FormulaDsl` tokens) are the landed convention (600+ Blueprint sources on dev use them) — keep them minimal, typed, and never hand-assemble LaTeX strings; the displayed formula must mirror every conjunct of the Lean statement — mirror-value swaps (two constants exchanged between clauses) are a landed reviewer catch, so read your emitted `.md` value by value.
+
+### Deposit substance (thin-deposit taxonomy)
+
+A landed pull request consisting of one generic one-line `def` plus two `simp`-trivial anonymous `example`s, with an empty pull-request body, is the canonical thin deposit — it froze notation, not truth. The gates below name what was missing.
+
+- **Encoding is not formalization.** Strip your Lean statement of its prose-borrowed names and read what remains. If it is a generic set/logic triviality (`∀ x ∈ S, f x ⊆ {c}` under an "observer" vocabulary), you have renamed the source clause, not discharged it. Before depositing a definition, answer in writing: *what named theorem would make this definition earn its freeze?* If no such theorem is in reach, the honest outcome is `open` with the definition offered as a sketch, not a deposit.
+- **Definition-only modules are presumptively insufficient.** A new `def` must ship with at least one NAMED theorem that either instantiates it against existing repository structures, characterizes it (an iff with independently defined sides), or proves a property that some later consumer can cite. Anonymous `example`s are fidelity evidence, never deposit content: they have no GID, cannot enter coverage, and cannot be cited by anything.
+- **No island modules.** A module whose only relationship to the repository is its directory path is a second framework wearing repository vocabulary. If your definition names a concept the repository already has machinery for (observers, windows, channels, walks), it must import and connect to that machinery — an "observer" predicate that touches none of the existing observer declarations belongs to nothing and discharges nothing. If the concept genuinely has no repository counterpart yet, say so explicitly and justify why a floating generic definition is worth freezing now rather than when its first theorem arrives.
+- **The external-referee test.** Ask whether the module would survive review as a standalone library contribution: a one-line definition with `simp` examples would be rejected anywhere as content-free. The cost of freezing and covering a deposit is justified by content, and "it compiles and is honest" is the floor for a report, not a reason to deposit.
+- **Bind-only modules are thin deposits (escape witness).** Scope: any descriptor path with no active Freeze event on the protected base for which the candidate adds the first Freeze event; classify the COMPLETE declaration set that event records — the `make deposit` anchor GID does not change the classification. For every public theorem, record in the Step 8 report: `proof_shape: content | bind-only`; its DIRECT frozen public dependencies as GID + `statement_id` (pinned-Mathlib declarations are not frozen dependencies, but a conclusion obtained from a Mathlib lemma by direct instantiation is still not a witness); its `escape_witness` — one precisely stated new intermediate proposition whose proving declaration lies in the theorem's elaborated transitive constant-dependency closure, is NOT obtained from those dependencies by instantiation, projection or normalization, is neither definitionally equivalent to nor an alias/restatement of the theorem's conclusion, and lies on a LIVE derivation path to that conclusion (after ζ/β/ι reduction and removal of dead or projection-discarded proof terms; `(And.intro h frozen).2`-style smuggling is not a witness — if the conclusion is reachable by bind-only operations without it, it is not a witness); and `admission_basis`. A witness may take two forms: (1) a distinct intermediate proposition satisfying all four conditions, or (2) the public conclusion itself when it is produced on the live proof path by a named non-bind-only computation or construction (a `decide`/`norm_num` decision of a new numeric fact, an explicit witness construction, a new estimate chain) and the same counterfactual holds (bind-only operations cannot reach the conclusion without it) — do not manufacture an otherwise unneeded intermediate proposition. No witness ⇒ `bind-only`; `escape-witness` may be the admission basis only when at least one public theorem is classified `content` with such a witness. Source-line counts are non-load-bearing readings, never the criterion. A first-freeze module with no admission basis must not be deposited: stop before `make deposit` and report `open` with reason `proof_shape: bind-only`. Each bind-only companion in an admitted module must name its atom/obligation and a directed edge with both endpoints and consumer→prerequisite direction (the companion is a prerequisite of the escape-bearing theorem, or the escape-bearing theorem is a prerequisite of the companion, or a pre-registered named use); unrelated bind-only declarations may not ride along. If the witness observed after the probe differs from the one preregistered, re-preregister a new version; never relabel after the fact. Landed precedent (2026-09-04, itemized): across five RH-route addenda (W-10…W-21, PRs #5177/#5186/#5207/#5219), W-12 (an integrability proof) was the analytic escape; W-18's helper `activePrimePowers_eq_empty_of_exp_lt_two` and the W-14/W-15 companion `exists_supportRadius` were small new lemmas whose sufficiency as witnesses is judged by the four conditions above while the obligations W-14/W-15/W-18 themselves are `bind-only`; W-10/11/13/16/17/19/20/21 were de-hypothesizations, projections, `obtain ⟨Z⟩`-then-one-line or compositions of frozen iffs with no admission basis. The owner judged the sequence 平推 and the fifth same-shape lane was stopped unlanded.
+- **The pull-request body is evidence, not decoration.** Carry the clause-mapping echo, the search trace, and the explicit honest-partial disclosure (what is asserted, what remains open) in the pull-request body. An empty body on a deposit pull request hides exactly the thinness these gates exist to catch.
+
+### Cover and quarantine (digestion-side precedents)
+
+Every entry below names a failure class that actually occurred on 2026-09-05/06, each caught by
+independent review after all three required checks were green. The machine gates judge admission
+compliance; they do not judge coverage faithfulness.
+
+- **A cover door has four preconditions, not three.** Beyond (1) the covering module is frozen,
+  (2) the atom is still under `residual-open`, and (3) the atom is not multi-clause by the purely
+  syntactic test, the covering GID's theorem **must be referenced by its Scribe declaration**:
+  `grep -c "<theorem>" "Blueprint/<module>.scribe.cs"` must be at least 1. A zero there makes the
+  door answer `partial-closed deletable=false gaps=scribe-declaration-reference-missing`. Because
+  `make cover-batch` is strictly sequential and aborts on the first failure, one such pair blocks
+  every later pair in the batch.
+- **A theorem that is strictly weaker than the atom is not a cover.** Check the theorem's every
+  explicit hypothesis against the atom text and find the sentence that supplies it; a hypothesis the
+  atom neither states nor implies makes the bound statement weaker than the source claim. Landed
+  case: an owner requiring `0 < regularizer` was bound to an atom that only gave positive
+  semidefiniteness, and the cover was retracted.
+- **The same owner can be faithful for one atom and unfaithful for another.** The same theorem above
+  is a faithful cover for a different atom whose displayed definition writes `λ > 0` itself. Do not
+  judge by owner; judge by hypothesis set, per atom.
+- **Section narrative is not coverable.** An atom whose main sentences describe *what shape a
+  repository declaration currently has* ("the repo currently packages this fact as such-and-such an
+  existence statement", "its logical shape", "it is not X → Y") is code commentary, not an
+  object-level proposition, and must not be closed by theorem coverage. Landed case: retracted.
+- **Pick the matching theorem, not the module's first one.** A module with several public theorems
+  invites binding the first; verify the bound theorem is the one whose statement matches the atom.
+  Landed case: an atom asserting antitonicity of a test-family supremum was bound to a concrete
+  tail-space existence statement in the same file while the matching antitonicity theorem sat a
+  hundred lines below.
+- **A cover probe must be pre-registered, or it proves nothing.** If a seat searches for a candidate
+  theorem first and then writes the Lean statement, `exact`-closing that statement with that theorem
+  is vacuous. Write the statement from the authoritative atom text **before** searching, record it,
+  and close that statement.
+- **When a partial carrier is all that exists, the outcome is a quarantine record, not a cover and
+  not a deposit.** Write `receipts.quarantine` with `justification`, `reentry_condition`, and
+  `blocker_class: multi-clause-guard`, leaving `coverage_gids` empty. The justification must name
+  which clauses are carried by which part of which frozen owner, which are not and why, the
+  source-versus-owner scope gap, the near misses that were searched and found insufficient, and any
+  sibling atom already covered together with the exact clause-level difference. Ledger surgery is
+  dispatcher-owned; a producing seat drafts the text and never writes it.
+- **Quote a sibling atom, never summarize it.** Exclusive phrasing ("the sibling only asserts X")
+  is refutable by the sibling's own text and is a claim of verification you did not perform. Landed
+  case: a record said a sibling asserted only deletion-range clauses; that sibling's heading was
+  "infinite prime support" and its body concluded `cofinite-stable arithmetic support`. Read the
+  sibling's full CAS text before writing that sentence, and mark any interpretive reading
+  `ASSUMED-UNVERIFIED`.
+- **Verify every record before writing a batch, not a sample.** A batch of eleven records was
+  checked on four; the defective record was outside the sample.
+- **A `lake env lean` shape probe that fails does not mean the repository lacks a carrier.** The
+  probe imports Mathlib only, so a nonzero exit shows just that the written statement does not close
+  by direct pinned-Mathlib composition. It is a necessary condition for non-`bind-only`, never a
+  sufficient reason to dispatch an implementation seat: follow it with a `D5/` semantic search over
+  line-6 digests and concept-crossing conclusion patterns. Landed case: a probe reported a missing
+  connector between two branch criteria while a frozen theorem already stated the atom's branch
+  verbatim; the implementation seat's step-3 library search caught it and returned a bind
+  recommendation with nothing written.
+- **Check whether a quarantine record already exists before writing one.** Several drivers work this
+  repository concurrently; a blind write silently overwrites another driver's record.
+- **The cover door has a fifth precondition: the atom's `chain_atoms` must already be closed.**
+  A ledger entry may carry `receipts.chain_atoms`, a list of child atom ids. While any child is still
+  open, `DigestionReadinessQuery` classifies the parent as `close-chain` and the door answers
+  `partial-closed deletable=false gaps=chain-migration-incomplete`, naming the offending child in
+  `gaps[].detail`. Landed case (2026-09-06): a pair whose four documented preconditions all passed
+  and whose faithfulness was verified clause by clause — the owner's four conjuncts matched the
+  atom's four load-bearing clauses and `fibonacciSubstitution = !![1,1;1,0]` was confirmed identical
+  to the source's `F(x,y)=(x+y,x)` — was still refused, because one of the two children was open.
+  Check `receipts.chain_atoms` before spending a batch slot on a parent atom; close the children first.
+- **A failed `cover-batch` leaves a partial write, and it is not always the same gap.** The batch is
+  strictly sequential and aborts on the first failure, but before aborting it has already written
+  `receipts.cover_disposition` (`outcome`, `gids`, `gaps`) into that entry's YAML. Restore the file
+  byte-for-byte from `HEAD` before running the remaining pairs, or that speculative disposition ships
+  with the PR. Two distinct gap codes have produced this shape so far
+  (`scribe-declaration-reference-missing`, `chain-migration-incomplete`), so do not pattern-match on
+  the code — check the working tree after every non-zero `cover-batch`.
+- **A read-only mining seat still has to publish `result.json` itself; the runner never extracts it.**
+  The worker alone owns `result.json` and `completion.sentinel`; the runner "never creates, repairs,
+  copies, normalizes, touches, or substitutes" them. A brief that only says "print the envelope to
+  stdout" produces seats that finish the work and are still recorded as
+  `status=NOT_COMPLETE reason_code=RESULT_MISSING` with `carrier_exit=0`. Landed case (2026-09-06):
+  four of five mining seats landed in that state; all five had complete envelopes sitting in
+  `last-message.txt`, so nothing was lost, but the batch report read as a 4/5 failure. State the
+  artifact contract in the brief — write `result.json.tmp` then atomically rename, same for the
+  sentinel — and point at the attempt directory the runner appends to the brief rather than a path
+  you compose yourself.
+- **The bind-only test is "after unfolding the new definitions, is a mathematical fact still
+  missing", not "does the concept appear in the frozen prerequisites' text".** The word-level test
+  passes trivially and is worthless: a new module names new objects by construction, so its
+  prerequisites never mention them. Landed retraction (2026-09-06, #5717): a module was declared
+  `content` with an escape witness on the ground that neither frozen prerequisite's statement
+  mentions `Sym2` or the orbit-name map. An independent reviewer produced a four-step bind path
+  reaching the public conclusion without the claimed witness — unfolding `Injective` and the name
+  map, applying pinned Mathlib's `Sym2.eq_iff`, `or_imp`, and ordinary equality rewriting normalized
+  the "new combinatorial bridge" into `forall x, f x = x`; the remaining half-plane merge used
+  `Surjective.forall` plus an already-frozen `im_ne_zero`. Per 5-quadruple-prime a pinned-Mathlib
+  lemma is not a frozen prerequisite, **but a conclusion obtained by instantiating one is equally
+  not a witness**. Both the deposit and its cover were withdrawn.
+- **Post-hoc classification is disclosure, not admission.** The rule scopes by whether the candidate
+  adds the first `Freeze` event for a descriptor, **not by when the file was written**. Replaying
+  source that never landed still proposes a first freeze, so it gets no exemption, and honestly
+  labelling the classification as after-the-fact does not convert it into an admission basis. Same
+  landed case: the PR said plainly "this is post-hoc, I am not claiming pre-registration" and was
+  still rejected, correctly.
+- **Before drafting a quarantine record, check the entry for `cover_disposition`.** The door refuses
+  to let the two coexist (`BackfillInventoryLoader`: `cover_disposition cannot coexist with
+  quarantine`), and more importantly that disposition is usually an accurate record of the real
+  blocker written by the door itself, which may be a *different* `blocker_class` than the one you
+  are about to write. Landed case (2026-09-06): an entry carried a `cover_disposition` whose three
+  gaps were all `chain-migration-incomplete`, while the draft record was about to label it
+  `multi-clause-guard`. Deleting the door's accurate record to install a less accurate one is a
+  bookkeeping error; the atom was dropped from the batch instead.
+- **`blocker_class` must match the actual carrying situation, and the boundary is "one *complete*
+  load-bearing clause".** `multi-clause-guard` means some frozen theorem really carries part of the
+  atom; `missing-prerequisite` means nothing in the repository carries any complete clause. Writing
+  the former for a zero-carrier atom claims partial coverage the ledger does not have. **A general
+  contract lemma that keeps every substantive premise in hypothesis position does not carry
+  anything**: landed rejection (2026-09-06, #5739) bound an atom needing certificates for 32 named
+  matrices to `confluent_negative_jet_block`, whose statement assumes `H.PosDef`, `IsUnit L`,
+  `G.IsHermitian` and the factorisation outright. The drafting seat had itself written "carried is a
+  conditional proof step... the concrete target is still not carried" — **its own honest annotation
+  was the evidence that convicted the record**, because line 10 admitted no carrier while line 12
+  said `multi-clause-guard`. Reviewers can read that contradiction mechanically; so can you, before
+  writing it.
+- **A seat refusing to draft is a reading, not lost throughput.** Three drafting rounds produced
+  three different refusal reasons, and each one corrected the layer above it: (1) the brief demanded
+  a sibling comparison that a low-digestion volume cannot supply — my defect, fixed by adding the
+  empty-set form; (2) `NONE_VERIFIED` on five atoms the mining seat had called `partial` — the seat
+  caught a false positive in the upstream triage; (3) two of those five came back with
+  "zero-carrier premise is false" once a wider search found the carrier — the third layer pushed
+  them back up. **Two refusals in opposite directions, both correct.** Always ask a drafting brief
+  to name what it found when it refuses; that name is what routes the atom to the right line.
+- **Check that a recorded collection command actually collects what it claims.** A record's commands
+  are its provenance: a broken one hands the next reader a lying reproduction path. Landed case
+  (2026-09-06, #5731): four records carried `rg -l '^ quarantine:'`, which demands exactly one space
+  before the key while the real `receipts.quarantine` has two — it silently matches nothing, so a
+  reader "confirming" the zero count would confirm a fabrication. The counts themselves were true
+  (independently recomputed with `git show <base>:<file> | grep -q 'quarantine:'`), and a fifth
+  record in the same batch had written the correct `'^[[:space:]]+quarantine:'` — **the same batch
+  disagreed with itself**. Grep the batch for its own commands and run them.
+- **`chain-migration-incomplete` is a bookkeeping blocker, not a mathematical one — never file it as
+  a quarantine class.** The repository has exactly three `blocker_class` values
+  (`multi-clause-guard`, `missing-prerequisite`, `already-covered`); a parent atom whose
+  `chain_atoms` are still open is blocked by *structure*, not by a missing theorem. A drafting seat
+  raised this itself (2026-09-06): "what I verified is an independent
+  `chain-migration-incomplete`, which is not a 'no complete carrier' finding, and I do not route it
+  to the `missing-prerequisite` mathematical line." Written into the next brief, that boundary
+  produced six correct refusals in one batch.
+- **The chain children are unmined work that the selector cannot see.** `prime_pick` ranks parent
+  atoms; `chain_atoms` members never enter a mining round. Following seven chain-blocked parents
+  downward surfaced **19 open child atoms**, none of which carried a chain of its own — so closing
+  that single layer unblocks all seven parents. When a batch stalls on
+  `chain-migration-incomplete`, the children are the next work face, not a dead end.
+- **A record's `justification` is a YAML scalar and the writer will reject shapes that are perfectly
+  good prose.** `BackfillInventoryWriter.Scalar` throws on `" #"` (the YAML inline-comment
+  sequence), on a first character in `-?:!&*#{[`, on CR/LF, and on leading or trailing whitespace —
+  and the failure rejects the entire PR. Landed cases (2026-09-06, eight entries): `#check` (a Lean
+  command), `#{y ∈ Q | …}` (cardinality notation), `open issue #5555`, `PR #4900`, and a
+  `justification` that began with `[1. Evidence and search scope]`. **Every one was correct
+  technical writing**; the defect is invisible at the semantic layer where the author's attention
+  is, so it needs a machine check rather than care. `tools/scripts/agent/digestion/quarantine_lint.sh`
+  now reports the offending character offset and its context.
+- **When you batch-fix ledger text, three things go wrong in order.** All three happened on the same
+  cleanup: (1) a replacement anchored on whitespace-normalised text misses entries stored as
+  single-quoted YAML scalars — anchor on the raw file text instead; (2) a validation written after
+  `git commit` reports *after* the bad content is already pushed — check before writing, not after;
+  (3) testing one branch of a predicate leaves the others open — the `" #"` fix shipped while the
+  `first character is '['` branch, in the very record the previous round had edited, went unnoticed
+  until the next scan.
+- **`NOT_COMPLETE` is a runner-side verdict about artifacts, not a statement about the work.** Before
+  concluding a seat failed, read `status.json` for `reason_code` and `carrier_exit`, and size
+  `last-message.txt`. `carrier_exit=0` with a 30 KB last message means the seat did the work; the
+  envelope is recoverable. This is the codex-log rule (器律⑤) applied to the batch runner: the
+  surface symptom proves only that the observer did not see the result.
+
+### Moving base (multiple drivers, hourly-advancing dev)
+
+Several machines drive this repository concurrently and `dev` advances roughly hourly; three landed incidents define the discipline:
+
+- **Merge `origin/dev` and verify before changing the working tree**: the only trustworthy sync check is `git merge-base --is-ancestor origin/dev HEAD` — a piped or prettified merge command has silently failed and sent validation onto a stale base.
+- **A capacity or baseline red may be the baseline's fault, not yours**: a candidate diffed against an older base once made another driver's new file look like this lane's twelfth — the remedy was merging newer `dev` and re-pushing, not restructuring. Before treating a structural red as yours, re-sync and re-run.
+- **The remote branch may have been advanced by automation** (update-branch bots): if push is rejected, fetch the branch itself and follow the repository's merge-only synchronization policy. Never force-push. Deposit and cover remain uncommitted working-tree changes until the builder creates the single explicit commit from Step 7.
+
+### Process honesty
+
+- **Never claim a build result without its exit code.** A seat once reported `lake` green while the build failed; since then the dispatcher re-runs the build at collection and a false green is a terminal lane offense. Report the command and the exit code; quiet output and elapsed time are not evidence.
+- **Never touch `Meta/Digestion/**`.** Ledger surgery (coverage, residue removal, state moves) is exclusively the dispatcher's; a seat once edited it and the change was reverted wholesale. The same applies to `Golden/Frozen/**`.
+- **When a dispatcher assigns output paths, write exactly those.** `result.json` (a conclusion envelope, no logs inline) and `done.sentinel` at the assigned paths are the deliverable; your final prose message is not. A sentinel written while you keep running is worse than no sentinel — write it last, then stop.
+
+## Prohibitions
+
+- No `sorry` outside `D5/X_Frontier/`; the Lean admission harness owns this rule.
+- No new axiom; the Lean admission harness and axiom policy own this rule.
+- Never hand-write a status field; `agents/CONTEXT.md` and status derivation own it.
+- Never hand-edit generated projections; their canonical producers own them.
+- Never hand-edit the frozen ledger; the deposit door owns it.
+- Never add a declaration to a module with an active Freeze event; the frozen ledger owns this constraint.
+- Never exceed directory capacity; `tools/StrataLint.Engine/Rules/RepositoryRules.Structure.cs` owns this rule.
+- Never edit `Meta/Digestion/**` from a producing seat; digestion-ledger surgery is dispatcher-owned.
+- Never weaken the echoed statement to make a proof close; the statement echo and this fidelity gate own that obligation.
+- Never deposit a first-freeze module without an `admission_basis` (`escape-witness` | `rule-11-upstream-wrapper` | `atom-required-bridge`); `CLAUDE.md` 5⁗ owns this rule (report `open` with `proof_shape: bind-only` instead).
+- Never invent a "needs human review" outcome; `CLAUDE.md` 22 forbids human-review gates outright.
+
+## What this skill does not own
+
+- Path policy is owned by `tools/StrataLint.Engine/Coordinates/RepositoryPathPolicy.cs` and its registered policy data.
+- Capacity limits are owned by `tools/StrataLint.Engine/Rules/RepositoryRules.Structure.cs`.
+- Lean header shape is owned by the live harness and demonstrated by current tracked neighbours.
+- Import direction is owned by the repository specification and its StrataLint rules.
+- Admission, freezing, coverage, and status are owned by the canonical `make` doors and `tools/`.
+
+This skill names each concern's owner without reproducing its definitions or thresholds. The prohibitions above are pointers that carry the owner's name. Discover each concern's current form from its owner; the harness is the judge.

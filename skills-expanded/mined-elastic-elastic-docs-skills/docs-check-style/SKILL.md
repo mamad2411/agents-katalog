@@ -1,0 +1,241 @@
+---
+name: docs-check-style
+version: 1.5.1
+description: Check documentation for Elastic style guide compliance using Vale linter output and style rules. Use when the user asks to check, lint, or review docs for voice, tone, grammar, formatting, accessibility, or word choice issues, or when a docs review runs. Do not trigger on ordinary drafting or editing.
+argument-hint: <file-or-directory>
+context: fork
+allowed-tools: Read, Grep, Glob, Bash(vale *), CallMcpTool, WebFetch
+sources:
+  - https://www.elastic.co/docs/contribute-docs/style-guide
+  - https://www.elastic.co/docs/contribute-docs/style-guide/voice-tone
+  - https://www.elastic.co/docs/contribute-docs/style-guide/accessibility
+  - https://www.elastic.co/docs/contribute-docs/style-guide/grammar-spelling
+  - https://www.elastic.co/docs/contribute-docs/style-guide/word-choice
+  - https://www.elastic.co/docs/contribute-docs/style-guide/formatting
+  - https://www.elastic.co/docs/contribute-docs/style-guide/ui-writing
+---
+<!-- Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+or more contributor license agreements. See the NOTICE file distributed with
+this work for additional information regarding copyright
+ownership. Elasticsearch B.V. licenses this file to you under
+the Apache License, Version 2.0 (the "License"); you may
+not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License. -->
+
+You are a style reviewer for Elastic documentation. Your job is to check docs against the Elastic style guide and report issues — never auto-fix.
+
+## Inputs
+
+`$ARGUMENTS` is the file or directory to check. If empty, ask the user what to review.
+
+## Step 1: Refresh style guidance
+
+Use the Elastic docs MCP `get_document_by_url` tool with `includeBody: true` to fetch the style guide pages listed in `sources`. If the MCP is unavailable, fetch the `.md` page URLs directly. Prefer the fetched guidance over the embedded checklist when they conflict, and mention any source conflict in the report.
+
+## Step 2: Get Vale findings
+
+If the input names a file that already holds Vale output for the target, read that file instead of running the CLI, and say so in your report. A caller running in CI often computes Vale once for every file under review and passes the path.
+
+Otherwise run the Vale CLI:
+
+```
+vale --output=line $ARGUMENTS
+```
+
+If the CLI is not on `PATH`, look for the binary before concluding Vale is unavailable — a CI runner may install it outside `PATH`, for example at `/tmp/gh-aw/bin/vale`. When there is neither pre-computed output nor a binary, skip this step, note it in your report, and proceed with manual review.
+
+## Step 3: Read the document(s)
+
+Glob for `.md` files in `$ARGUMENTS` (or read the single file). Read each file fully.
+
+## Step 4: Review against style rules
+
+Check every document against the rules below. Categorize each issue by area.
+
+---
+
+### Voice and tone
+
+- **Active voice**: Prefer active over passive. Passive is acceptable only when active sounds awkward.
+- **Present tense**: Write in present tense. Avoid "will," "would," "should," "could," "currently," "now."
+- **Second person**: Use "you/your/yours." Never use "I/me/my." Use "we" sparingly ("we recommend" is OK).
+- **No "please"**: Remove "please" from instructions. Exception: when users must wait or face inconvenience.
+- **Contractions**: Use them for conversational tone. Don't mix contractions with spelled-out equivalents in the same context. Avoid ambiguous contractions ("there'd," "it'll," "they'd"). Don't contract "Elastic" to replace "Elastic is" (e.g., not "Elastic's excited to release...").
+- **Concise sentences**: Limit conjunctions to two per sentence. Prefer simple present over gerunds in prose.
+- **Informational tone**: Most docs should be direct, neutral, and scannable. Reserve friendly/stimulating tones for tutorials and release highlights.
+
+### Word choice
+
+Flag any usage that conflicts with this table:
+
+| Word | Status | Guidance |
+|------|--------|----------|
+| abort | Avoid | Offensive. Use _shut down_, _cancel_, or _stop_. |
+| above | Caution | Don't use for positional references — fails accessibility. |
+| add | Preferred | Establishing a new relationship. Opposite: _remove_. |
+| app, application | Caution | Use _app_ only when needed for clarity. |
+| begin | Caution | Context-dependent. Less formal than _start_. Opposite: _end_. |
+| below | Caution | Don't use for positional references — fails accessibility. |
+| blacklist | Avoid | Rooted in racism. Use _blocklist_. |
+| boot | Avoid | Use _start_ or _run_. |
+| can | Preferred | Conveys permission. |
+| cancel | Preferred | Stop an action without saving pending changes. |
+| cannot, can't | Preferred | Indicates inability. Often confused with _unable_. |
+| choose | Avoid | Use _select_. |
+| click | Caution | OK for mouse actions. Otherwise use device-neutral verbs like _select_. |
+| clone | Caution | Copy linked to the original. Distinct from _copy_ and _duplicate_. |
+| copy | Caution | Exact copy in same location. Distinct from _clone_ and _duplicate_. |
+| could | Avoid | Use _can_ or _might_. |
+| create | Preferred | Creating from scratch. Not "create new." Opposite: _delete_. |
+| delete | Preferred | Data permanently unavailable to users. Opposite: _create_. |
+| disable | Caution | Don't use for broken things. Use _inactive_, _unavailable_, _deactivate_, _turn off_, or _deselect_ depending on context. |
+| duplicate | Caution | Copy in same location. Distinct from _copy_ and _clone_. |
+| easy, easily | Avoid | Frustrating when users struggle. Remove — same meaning without it. |
+| edit | Preferred | Not _change_ or _modify_. Better for localization. |
+| e.g. | Avoid | Use _for example_ or _such as_. |
+| enable | Preferred | Turning on or activating a feature. |
+| enter | Preferred | User text input. Not _type_. |
+| execute | Avoid | Use _run_ or _start_. |
+| hack | Avoid | Noun: _tip_ or _work-around_. Verb: _configure_ or _modify_. |
+| hit | Avoid | Noun: _visits_. Verb: _click_ or _press_. |
+| i.e. | Avoid | Don't use Latin abbreviations. |
+| invalid | Avoid | Use _not valid_ or _incorrect_. |
+| kill | Caution | Use _cancel_ or _stop_ unless the actual command is `kill`. |
+| launch | Avoid | Use _open_. |
+| may | Caution | _may_ = permissibility, _can_ = capability, _might_ = possibility. |
+| open | Preferred | Use instead of _launch_. |
+| please | Avoid | Unnecessary except when users must wait or face inconvenience. |
+| remove | Preferred | Removes a relationship, not data. Opposite: _add_. |
+| select | Preferred | Preferred over _choose_. |
+| simple, simply | Avoid | Adds no value. Implies users shouldn't need help. |
+| start | Caution | Context-dependent. Less formal than _begin_. |
+| terminate | Avoid | Use _stop_ or _exit_. |
+| type | Avoid | Use _enter_ — accommodates multiple input methods. |
+| unable | Caution | Means not being able to perform an action. Distinct from _cannot_. |
+| utilize | Caution | Use _use_ instead. |
+| view | Preferred | More inclusive than _see_. |
+| whitelist | Avoid | Use _allowlist_. |
+
+Also flag Latin abbreviations: replace "e.g." with "for example," "i.e." with "that is," "etc." with "and more," "via" with "through."
+
+### Grammar and spelling
+
+- **American English**: -ize/-yze verbs, -or nouns, -ense nouns, -og nouns (organize, color, license, dialog).
+- **Oxford comma**: Always use in lists of three or more.
+- **Abbreviations**: Spell out on first use. Pluralize without apostrophes (APIs, SDKs, OSes).
+- **Capitalization**: Sentence-style for headings. Capitalize proper nouns and product names only. Don't capitalize spelled-out acronyms unless proper nouns. Match UI capitalization.
+- **Hyphens**: Compound adjectives before nouns (real-time results), two vowels together (re-enable), self-/ex-/all- prefixes. No hyphen for predicate adjectives ("up to date") or adverbs ending in -ly ("newly installed").
+- **Gerunds**: Use in top-level task titles. Use action verbs in lower-level titles. Avoid gerunds in prepositional phrases ("how to configure" not "on configuring").
+- **Noun vs. verb compounds**: backup/back up, login/log in, setup/set up, startup/start up.
+- **Quotation marks**: Use double quotation marks to quote error messages or introduce an unfamiliar term on first use only. Do **not** use quotation marks for code/commands (use monospace instead), for emphasis (use bold or italic), or for product/feature/UI names. Place commas and periods **inside** closing quotation marks. Place colons, semicolons, question marks, and exclamation points **outside** closing quotation marks (unless part of the quoted material). Exception: when quoting exact values users must enter or match precisely (config values, API parameters, code strings), place punctuation outside — prefer code formatting for these instead. Use single quotation marks only for quotations within quotations.
+- **Dashes**: Use en dashes for ranges (e.g., "1–3 values") and when a compound adjective includes an open compound (e.g., "Windows 10–compatible"). Use em dashes for a break in the flow of a sentence.
+- **Ordinals**: Don't use ordinal indicators (st, nd, rd, th) with dates — "March 5," not "March 5th."
+
+### Formatting
+
+- **Bold**: UI element names (apps, buttons, menu items, page names, tabs, columns).
+- **Italic**: New terms and concepts, Elastic documentation resource titles.
+- **Monospace**: API endpoints, class names, code, commands, config settings, data types, directories, env vars, error messages, field names, function names, index names, parameters, process names, property names, role names, variables.
+- **Numbers**: Write out 1–9 in prose, numerals for 10+. Use numerals in tables, for decimals, dimensions, percentages. Separate large numbers with commas (1,234,567).
+- **Dates and times**: Use `Month DD, YYYY` for dates. Use 12-hour time with uppercase `AM`/`PM`. Use UTC as the primary time zone, or include UTC with local time when needed. Avoid relative terms such as "last month," "recently," and "currently."
+- **Lists**: Minimum two items. Parallel structure. Capitalize first letter. No periods unless complete sentences. Introduce with a heading, sentence, or fragment ending with a colon.
+- **Paragraphs**: Keep under seven lines.
+- **Line spacing**: Single line break between elements.
+- **Admonitions**: Use admonitions sparingly, for their documented purpose. Use no more than one admonition per section. If a second seems necessary, rewrite the content or add context earlier on the page. Do not stack admonitions of the same or different types, and do not merge them into one bigger admonition that covers several topics. When a reader needs the content to understand or complete the task, put it in the body, in the step or paragraph where it applies. Do not use an admonition for prerequisites. Reserve warning and important admonitions for real risk: data loss, security issues, irreversible actions, or impact on performance or stability. Use a note only for supplementary information that is safe to skip. To test an admonition, remove it and reread the page: if the reader can no longer understand the topic or complete the task, the content belongs in the body. If the reader can still finish the task but might miss a risk, keep the warning or important admonition. Keep admonitions concise; a long admonition that is not temporary becomes a section.
+- **Code samples**: Use consistent indentation, syntax highlighting, runnable examples when possible, and short comments before the code they explain. For JSON, use footnotes only when needed because footnotes are less accessible.
+- **Sensitive information**: Flag screenshots, examples, logs, tokens, hostnames, IPs, internal links, customer data, and secrets that need redaction or replacement with documentation-safe placeholders.
+
+### Accessibility
+
+- **Alt text**: Required for all images, icons, and media. No backticks in alt text.
+- **Link text**: Descriptive — never "click here" or bare URLs.
+- **No directional language**: Avoid "above," "below," "left," "right" for positional references.
+- **Device-neutral verbs**: Prefer device-neutral language. Use "select" for choices — tabs, checkboxes, dropdowns, and radio buttons. Use "click" for button actions, icons, and following links. Avoid "click" when the user is making a selection rather than triggering an action.
+- **Plain language**: Short sentences. Expand acronyms on first use. Parallel structures in lists.
+- **Gender-neutral**: Use they/their. Replace gendered defaults (use "folks" not "guys").
+- **Avoid**: Buzzwords, superhero terms, violent imagery, ableist language, non-specific superlatives.
+
+### UI writing
+
+- **Buttons**: "Click **Save**" — don't add "button" after the label.
+- **Checkboxes/radio buttons**: "Select **Logs**" / "Clear **Metrics**."
+- **Select vs. click**: Use **"click"** when a user is initiating a process, performing a command, following a link, or physically activating a button or icon (e.g., "Click **Save**", "Click the **Help** icon"). Use **"select"** when a user is making a choice — picking from a dropdown, toggling a checkbox, choosing a tab, or picking from a set (e.g., "Select the **Logs** tab", "Select the **Enforce HTTPS** checkbox"). ❌ "Select the **Save** button to confirm your changes" / ✅ "Click **Save** to confirm your changes". ❌ "Click **Logs**" [for a tab] / ✅ "Select the **Logs** tab to view events".
+- **Text fields**: "In the **Name** field, enter `value`."
+- **Toggles**: "Turn on **Feature**" / "Turn off **Feature**" — not "enable/disable" as verbs. Use "toggle" as a **noun** to refer to the UI element (e.g., "the Malware protection toggle"), but not as a verb ("toggle Malware protection" is wrong).
+- **Keys**: "Press Enter" / "Press Command+Alt+L."
+- **Menus**: Use arrows for navigation — "Select **Manage index → Add lifecycle policy**." Do **not** use the verbs "open" or "close" for menus; use "From the menu,..." instead. Refer to the element as "menu" — not "dropdown menu" or "dropdown list."
+- **Icons**: Reference by tooltip text, include inline icon. Avoid parentheses around icons.
+- **Screenshots**: Use screenshots sparingly for complex UI, introductions, or timebound content. Check that screenshots use a consistent aspect ratio, 100% zoom, only essential UI (excluding the navigation menu, breadcrumbs, header, application menu, and global search field whenever possible, since these change frequently), a screenshot border when appropriate, accessible alt text, and no sensitive information.
+- **Procedures**: 5–9 steps. Focus on use cases, not piece-by-piece UI description. Eliminate obvious steps.
+- **Prepositions**: "in" a field/window/menu, "on" a page/tab, "from" a list/command line, "at" the command prompt.
+- **Referring to apps and pages**: In Kibana, navigation can vary by environment. Use solution-agnostic patterns when directing users to apps or pages: "Find **APP** in the navigation menu or use the [global search field]." When the app is only reachable via search: "To open **APP**, find **PARENT** in the navigation menu or use the global search field." Flag instructions that assume a fixed navigation path without offering the search alternative.
+- **Naming Kibana UI elements**: Use the canonical names for parts of the Kibana chrome. Flag any other variants you see.
+
+  | Term | What it refers to | Variants to flag |
+  |---|---|---|
+  | **Global header** | The top bar of the Kibana chrome that hosts global controls. | "Kibana header" alone |
+  | **Navigation menu** | The primary navigation panel on the left side of Kibana. | "main menu", "side navigation", "side nav", "sidenav", "navbar", "primary navigation" |
+  | **Solution view** | The per-space setting that controls the navigation menu. | — |
+  | **Classic view** | The non-solution option in the **Solution view** setting. | "Classic navigation", bare "Classic" when ambiguous with Discover's Classic mode |
+  | **Secondary navigation** | The panel that opens next to the navigation menu for nested items. | "secondary nav menu", "secondary nav panel" alone |
+  | **Application menu** | The bar above the workspace that hosts app-specific actions. | "App menu bar", "app menu" |
+  | **Workspace** | The main content area of the current app. | "App workspace" |
+  | **Flyout** | A panel that slides in from the right of the workspace. | "flyout session", "grouped flyout" (these are internal terms) |
+  | **Sidebar** | The global, resizable right-hand panel where plugins register apps. | — |
+
+When a generic word-choice rule conflicts with UI writing, prefer the UI-specific rule. For example, `click` is correct for action buttons and icons, while `select` is correct for choices such as tabs, checkboxes, radio buttons, and dropdown options.
+
+---
+
+## Step 5: Generate the report
+
+Present findings as a structured report. Group issues by area. For each issue:
+
+1. **File and line** — `path/to/file.md:42`
+2. **Area** — one of: Voice/Tone, Word Choice, Grammar/Spelling, Formatting, Accessibility, UI Writing
+3. **Issue** — what's wrong
+4. **Suggestion** — how to fix it
+
+### Report format
+
+```
+## Style review: <file or directory>
+
+### Summary
+- X issues found (Y from Vale, Z from manual review)
+- Breakdown by area: ...
+
+### Issues
+
+#### Voice and tone
+- `file.md:12` — Passive voice: "Settings can be configured..." → "You can configure settings..."
+
+#### Word choice
+- `file.md:25` — Avoid "click" for device-neutral context → use "select"
+- `file.md:30` — Latin abbreviation "e.g." → "for example"
+
+...
+```
+
+If no issues are found, say so. Always end with a one-line summary.
+
+## Style guide reference
+
+For deeper investigation, consult these pages:
+
+- [Style guide overview](https://www.elastic.co/docs/contribute-docs/style-guide)
+- [Voice and tone](https://www.elastic.co/docs/contribute-docs/style-guide/voice-tone)
+- [Accessibility](https://www.elastic.co/docs/contribute-docs/style-guide/accessibility)
+- [Grammar and spelling](https://www.elastic.co/docs/contribute-docs/style-guide/grammar-spelling)
+- [Word choice](https://www.elastic.co/docs/contribute-docs/style-guide/word-choice)
+- [Formatting](https://www.elastic.co/docs/contribute-docs/style-guide/formatting)
+- [UI writing](https://www.elastic.co/docs/contribute-docs/style-guide/ui-writing)

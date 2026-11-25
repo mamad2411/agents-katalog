@@ -1,0 +1,161 @@
+---
+name: dev-harness-context
+description: Use when you need to initialize or safely refresh AI project context by scanning a real repository and maintaining managed sections in README.md, ARCHITECTURE.md, HARNESS.md, and AGENTS.md
+---
+
+# dev-harness-context
+
+负责扫描真实仓库结构，由 AI 基于证据识别语言、框架、架构和验证入口，初始化面向开发者、AI Agent 和架构分析的项目上下文文件，并在后续开发中安全刷新自动识别区块。
+
+增强版重点不是生成“简介型 AGENTS”，而是生成一份**约束型 AGENTS.md**，尽量把调用链、架构边界、高风险文件、禁止操作和探索建议沉淀出来。
+
+## 工作模型
+
+Context 采用三层职责，不以硬编码 profile 作为项目识别白名单：
+
+1. **确定性 Evidence Collector**：只收集目录、文件类型、配置、入口候选和仓库快照指纹，不下架构结论。
+2. **AI Semantic Analyzer**：阅读真实代码，输出带证据路径和置信度的结构化分析。
+3. **Deterministic Validator / Writer**：验证证据没有越界、命令有来源、仓库快照未漂移，再按固定 Markdown 标题安全更新章节。
+
+内置 profile 是无 AI 调用时的兼容回退和高风险增强，不决定项目“能否被识别”。Qt/WPF/Win32、Harmony、Go、Flutter、Node.js/TypeScript、插件和 FastAPI 的按需提示见 [references/platform-enhancements.md](references/platform-enhancements.md)。遇到未列出的语言或框架时不得因为 profile 缺失而停止；证据充分时按同一协议识别，只有无法确认的单项标记 `Unknown`。
+
+
+
+## 适用场景
+
+- 新仓库第一次接入 AI 辅助开发
+- 项目开发一段时间后，需要刷新自动识别的结构、命令候选和约束索引
+- 需要补齐 `README.md`、`AGENTS.md`、`ARCHITECTURE.md`
+- 需要让 AI 更快理解目录结构、语言、构建系统和模块关系
+- 需要用固定模板产出可解析上下文文件
+
+## 输入要求
+
+至少需要以下输入：
+
+- 目标仓库根目录
+- 操作模式：首次初始化使用 `scan`，后续同步使用 `refresh`
+- AI 语义分析文件：按 `evidence` 输出中的 `analysis_contract` 生成
+
+## 输出契约
+
+输出必须满足以下约束：
+
+- 用户明确要求英文时使用英文；否则，中文项目以及新建且未指定语言的文档默认使用简体中文，刷新既有文档时沿用其主体语言
+- 标题、表格、模块说明、风险说明、验证结论和最终报告使用中国开发团队常用的自然中文，不做逐字硬译
+- 路径、命令、代码符号、API、协议、产品名、必要缩写以及 `Unknown`、`N/A`、`high / medium / low` 等内部字段或枚举保持原样；首次出现且容易误解时可补充中文解释
+- 语言规则只约束本次新建或更新的内容，不借机翻译用户维护的其他正文
+- 所有分析都基于真实代码、真实目录结构和真实配置文件
+- 所有非 `Unknown` 的 AI 结论必须携带至少一个仓库内证据路径，可附行号（如 `src/main.py:42`）
+- 包含“所有、必须、禁止、只能、不得”的强约束必须引用精确行号，并执行反证搜索
+- 每个 AI 结论必须标记 `high`、`medium` 或 `low` 置信度；低置信度结论只能进入“需人工确认”，不得渲染成事实
+- build / run / test / quick / bugfix / full 等命令没有仓库内证据时必须拒绝，不得用生态惯例猜测
+- install、build、run、test、quick、bugfix、full 必须按真实语义区分；依赖安装不得冒充构建
+- 首次创建 HARNESS 时，人工确认区使用 `用途 / 命令 / 状态` 表格，未知入口保留 `missing`；自动识别只更新候选区。刷新保留既有人工区，包括旧列表；Runtime 交接前由 Commands 按证据整理，不在 Context 中自动确认或迁移。
+- 证据明细保留在分析 JSON 中，不得把 `AI field[index] [confidence]` 等内部审计字段写入 AGENTS/HARNESS
+- AI 分析必须绑定 `evidence_fingerprint`；仓库在分析后发生漂移时必须重新扫描，不得写入旧结论
+- 每个证据引用都必须位于 `fingerprint_files` 覆盖范围；目录引用至少包含一个已纳入快照的后代文件。被排除、空目录或未纳入指纹的路径不能作为写入事实的证据。
+- AI 主路径区分未提供、明确 `Unknown`、低置信度和明确空列表；不使用离线 profile 把未知命令、规范或接口补成事实。未提供的风险项仅可补充风险候选。
+- 无法确认的信息必须写成 `Unknown`
+- 只按固定 Markdown 模板输出
+- 产物仅限：
+  - `README.md`
+  - `AGENTS.md`
+  - `ARCHITECTURE.md`
+  - `HARNESS.md`
+- **严禁修改任何文件的编码格式**（UTF-8 / UTF-8 BOM / UTF-16 / GBK / GB2312 / Latin-1 等）。若编码变更看似必要，必须先获得人工确认，不得绕过
+- `scan` 只创建缺失文件，现有文件即使使用 `--force` 也不得覆盖
+- `refresh` 只更新模板契约列出的固定 Markdown 章节，其他章节和标题之外文本归用户所有
+- 生成文件不得注入 `dev-harness:managed` 或其他 HTML 注释标记
+- `AGENTS.md` 的“项目规范索引”只记录专业文档路径，不复制 Git、代码、发布或 changelog 规则正文
+- 识别已有 Git 工作流、代码规范、发布规范和 changelog 文档；Context 不负责创建这些专业文档
+- 旧版合法 `dev-harness:managed` 标记在首次刷新时自动移除，标记正文保持不变
+- 固定标题缺失、重复、层级变化、混合换行、未知编码或损坏旧标记必须停止写入并报告错误
+- 输出路径必须是仓库内普通文件或尚不存在的路径；拒绝符号链接。补建使用排他创建，刷新在预览后及替换前重验原字节、文件身份和权限；发生变化时保留用户新内容并报告冲突。写入是逐文件操作，不承诺整组事务或跨进程锁。
+
+## 顺序化步骤
+
+1. 运行 `dev-harness-context evidence <repo-path>`，读取 JSON 证据清单和 `evidence_fingerprint`
+2. 若 `truncated` 为 `true`，立即停止；不得在不完整仓库视图上生成上下文
+3. AI 根据 `important_files`、`source_candidates` 和真实目录继续读取入口、依赖、测试、CI、构建脚本及关键模块
+4. AI 生成符合 `analysis_contract` 的 JSON；非 `Unknown` Claim 必须包含 `value`、`confidence`、`evidence`，README 核心模块通过 `core_modules` 提供真实职责
+5. 对每个强约束执行反证搜索；主动检查相同能力的其他实现、启动副作用、事务、旁路调用和异常路径，发现反例后收窄结论
+6. 对高风险候选逐项分类，至少覆盖应用启动、数据库/schema、认证授权、外部调用、锁与重试、文件写入、子进程、服务安装和不可信输入输出
+7. 生成四份文档的内存预览并检查命令分类、模块职责、绝对路径、动态测试数量、模板术语、重复内容和内部字段名
+8. 将分析 JSON 写入工作区外的临时路径，不得把扫描中间产物提交到目标仓库
+9. 首次初始化运行 `scan <repo-path> --analysis <analysis.json>`；后续同步运行 `refresh <repo-path> --analysis <analysis.json>`
+10. Validator 负责证据路径与行号、快照指纹、字段白名单和命令来源校验；校验失败时停止，不得绕过
+11. 无法确认的项保持 `Unknown`，不适用项写 `N/A`，空列表不得渲染成 `- Unknown`
+12. 在 `AGENTS.md` 中优先输出约束信息：调用链、架构边界、高风险文件、禁改规则、探索建议和证据不足项
+13. 内置 profile 只补充框架特有风险；新的语言或框架不要求先修改扫描器代码
+14. 首次初始化只创建缺失文件；后续刷新先展示固定章节差异，再按确认结果原子写入
+
+## 固定模板要求
+
+生成内容时按以下优先级选择模板：
+
+1. 目标仓库覆盖模板（兼容旧项目，可选）：
+   - `templates/context/README.template.md`
+   - `templates/context/AGENTS.template.md`
+   - `templates/context/ARCHITECTURE.template.md`
+   - `templates/context/HARNESS.template.md`
+2. 若目标仓库模板缺失或不完整，回退到 skill 自带模板（源码中位于 `context/templates/`，安装后位于 skill 根目录的 `templates/`）：
+   - `templates/README.template.md`
+   - `templates/AGENTS.template.md`
+   - `templates/ARCHITECTURE.template.md`
+   - `templates/HARNESS.template.md`
+
+不得擅自扩展字段，不得输出模板之外的解释性文字。仓库覆盖模板必须保留对应文件的固定章节标题及层级；标题是刷新定位契约。
+
+默认 AGENTS 模板仅保留按影响范围验证、复用有效证据和授权边界的简要约束，不复制验证档位、扩围判断或证据失效流程；这些决策细则由 `dev-harness-auto-fix` 负责。项目在 HARNESS 或自定义章节定义具体命令、风险边界和必跑门禁，Context 负责识别与引用，不替项目制定或降低门禁。模板默认规则不属于扫描所得的项目事实。
+
+刷新时沿用仓库覆盖模板与项目已有规则，不用通用默认值覆盖项目明确约束。固定章节由 Writer 整段替换，不能宣称会自动合并其中的人工补充；预览若将删除人工规则，先跳过该文件的刷新，待规则纳入仓库覆盖模板或项目自定义章节后再刷新，不得用 `--force` 覆盖。固定章节之外的项目自定义内容按原契约保留。
+
+## CLI
+
+安装后的最小运行入口为：
+
+```bash
+dev-harness-context evidence <repo-path>
+dev-harness-context scan <repo-path>
+dev-harness-context scan <repo-path> --analysis <analysis.json>
+dev-harness-context refresh <repo-path>
+dev-harness-context refresh <repo-path> --analysis <analysis.json>
+```
+
+默认行为：
+
+- `evidence` 输出通用仓库证据、分析字段契约和快照指纹，不输出框架结论
+- `scan` / `refresh` 传入 `--analysis` 时，优先使用经验证的 AI 语义分析；未传入时保留内置规则回退以兼容脚本和离线调用
+- AI Agent 调用本 skill 时默认必须走 `evidence` + `--analysis` 主路径，不得仅凭规则回退的 `Unknown` 宣告无法识别项目
+- `scan` 仅在上下文文件缺失时创建；已有同名文件保持原样，返回码 `2` 提示改用 `refresh`
+- `scan --force` 为兼容旧调用保留，但仍不得覆盖现有文件
+- `refresh` 按固定 Markdown 标题比较和更新章节，保持其他章节、原编码/BOM、CRLF/LF、末尾换行状态和文件权限
+- 新增或调整项目自己的 Git、代码、发布、changelog 文档后，运行 `refresh` 更新 AGENTS 索引
+- 代码规范只识别现有文档，不根据 formatter/linter 配置自动生成规则文档
+- `CHANGELOG.md` 不由 Context 创建；它由用户确认后或首次发布流程通过 `dev-harness-git-workflow` 初始化
+- 非交互 `refresh` 发现差异时只输出预览并返回 `2`；`refresh --force` 可直接应用成功定位的固定章节更新
+- 交互刷新支持 `y` / `n` / `all` / `none` / `quit`；`quit` 返回 `130`
+- 旧版合法 managed 标记会在刷新时无损移除；损坏标记直接报错，不猜测修复
+- 不得暴露“兼容模式”之类的自定义术语；仓库模板缺失时应直接回退到 skill 自带模板继续生成，不再额外询问模板模式选择
+
+## 停止条件
+
+- 无法访问目标仓库
+- 仓库结构扫描结果被截断
+- 关键配置文件无法读取
+- 文件缺少固定章节标题、同名标题重复或标题层级变化
+- 文件包含混合换行、无法解码的编码、重复/嵌套/不闭合旧标记或未知旧标记版本
+- 仓库模板缺失且 skill 自带模板也不可用
+- AI 提议或尝试修改文件编码且用户未明确确认
+
+满足任一条件时，必须停止并向用户报告阻塞原因。
+
+## 交接边界
+
+- 可作为 `dev-harness-auto-fix` 的前置上下文补充能力
+- 为 `dev-harness-codebase-audit` 提供唯一的 Canonical Context；Context 只描述项目结构和边界，不承担全库问题扫描
+- Git、提交、tag、发布与 changelog 规范的识别/初始化决策交给 `dev-harness-git-workflow`
+- 不负责修 bug、补测试或定义验证命令
+- 不得臆测架构模式、模块职责或接口关系
+- 不得擅自转换文件编码；若检测到编码不一致，应标记到 AGENTS.md 第 4 节交由人工决策

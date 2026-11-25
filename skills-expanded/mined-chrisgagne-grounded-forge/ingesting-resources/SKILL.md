@@ -1,0 +1,277 @@
+---
+name: ingesting-resources
+description: Runs the 9-pass ingestion protocol against a single source dropped in {corpus-root}/sources/ingest/, producing a .source.md sidecar, the converted markdown, a deep reference, a light reference, one distillation per applicable task axis, and index and image updates. On success, the input source is removed from sources/ingest/.
+argument-hint: "[source path inside {corpus-root}/sources/ingest/, or 'paste'] [--corpus {root}] [--full | --text-only]"
+---
+
+# Ingesting Resources
+
+Promotes a source from `{corpus-root}/sources/ingest/` (staging) to `{corpus-root}/sources/original/` (audited) by running the 9-pass protocol against it.
+
+Each successful invocation produces, all inside the active corpus:
+
+- One sidecar at `sources/original/{slug}.source.md` with frontmatter (title, author, URL, scope, licence, ingested, original_format, checksum_sha256).
+- Converted markdown at `sources/converted/{slug}.md` (the "tape" Pass C read).
+- One deep reference at `references/{slug}-deep.md`.
+- One light reference at `references/{slug}.md`.
+- One distillation per *applicable* task axis at `distillations/{task}/{slug}-{task}.md`. The protocol forms an opinion about applicability and asks the operator to confirm borderline cases.
+- Updates to the runtime JSON indexes (`references/slug-table.json`, `reference-index.json`, `concept-index.json`, per-task `distillations/{task}/task-index.json`) and the operator-inspection `.md` views alongside.
+- Substantive images extracted and indexed in `{corpus-root}/sources/converted/IMAGE-INDEX.yaml`.
+- An ingestion summary.
+- **The input source removed from `sources/ingest/`.** Directory state is the workflow indicator: anything in `ingest/` is unaudited; anything in `original/` has been through the protocol.
+
+`{corpus-root}` is operator-supplied (e.g., `corpus.commons/demo/`). Default: active corpus from working-directory inference, or `builds.yaml`'s `defaults.source_dir`.
+
+Per-pass procedures, templates, and failure modes are in [`9-pass-protocol.md`](9-pass-protocol.md).
+
+## When to use
+
+- Adding a new source to the corpus.
+- Re-ingesting after a substantive revision (new edition, corrected text, previous Pass I failure).
+- Re-ingesting when a model advance makes the deep ref materially better.
+
+## When not to use
+
+- Editing an existing reference's prose. Substantive edits rerun Pass C onwards; cosmetic edits rerun Pass I at minimum.
+- Adding a new task axis without a new source. Run `creating-tasks` → `creating-applications` instead.
+- Searching the corpus for an existing source. Run `matching-references` instead.
+
+## Cost and time
+
+The protocol pays its full cost upfront so query-time is selection, not synthesis. Before you run it, know what you are spending. Numbers below are from the May 2026 OpenStax pilot (12 books, 165–995 source pages each, mean ~480 pages); detail at [`docs/architecture/ingestion-protocol.md`](../../../docs/architecture/ingestion-protocol.md#cost-of-ingestion-observed).
+
+- **Per source, single ingestion:** ~28 min wall-clock when run alongside other work; ~$1–5 in Opus 4.7 tokens at `xhigh` effort for a book-length source. A short source (a paper, a chapter) lands at the low end. A long source with many task axes lands at the high end.
+- **Per corpus, parallel ingestion (4–5 subagents):** ~5h 30min wall-clock and an Opus token bill in the low hundreds of dollars for a 12-source corpus. Roughly doubles with corpus size; scales with axis count at Pass G.
+- **Re-ingestion** (revised edition, model advance, prior Pass I failure) costs as much as the first run. Plan re-ingestions deliberately. Do not rerun for cosmetic reasons.
+
+The cost lives in *context carried across turns*, not in generation. Every turn re-reads the agent's whole context from cache, so an agent's cost is roughly its turn count times its context size; in a 2026 eight-source run, output tokens were under 5% of the bill. Two habits follow: load each input when the pass that needs it starts (see the producer load order under *Parallel-batch operations*), and keep page images out of long-context agents (see the scanned-source quotation check under Pass E in [`9-pass-protocol.md`](9-pass-protocol.md)). Collapsing the passes into one mega-prompt does not help: it costs the audit surface, since Pass I checks against one inspectable artefact per pass. The amortisation runs across *queries*, not across passes. A source ingested once is read by however many queries the corpus serves over its life.
+
+**If the budget is tight,** ingest fewer sources at higher quality. The matrix's value is in curation, not coverage. The architectural answer to *is this source worth ingesting?* sits upstream of this skill — see [`finding-resources`](../finding-resources/SKILL.md).
+
+---
+
+## Setup gates
+
+Confirm before any pass runs.
+
+### Accept input
+
+**File path mode.** A path to a PDF, EPUB, or pre-extracted markdown file in `{corpus-root}/sources/ingest/`.
+
+```
+/ingesting-resources corpus.local/my-corpus/sources/ingest/some-book.pdf
+/ingesting-resources corpus.commons/demo/sources/ingest/new-source.epub
+```
+
+**Paste mode.** Literal text pasted with explicit source metadata. The pasted text is written to `{corpus-root}/sources/ingest/{slug}.md` first, then promoted by the protocol.
+
+```
+/ingesting-resources paste --corpus corpus.local/my-corpus
+```
+
+The operator provides: pasted source text, plus author, title, edition, year, ISBN or DOI.
+
+**Flags.**
+
+- `--corpus {path}`: set the active corpus root. Default: infer from input path, or `builds.yaml`'s `defaults.source_dir`. All output artefacts land inside this corpus root.
+- `--full` / `--text-only`: pre-commit the image-scope decision (pre-flight check 4). When absent, prompt the operator.
+
+```
+/ingesting-resources corpus.local/my-corpus/sources/ingest/some-book.pdf --text-only
+/ingesting-resources paste --corpus corpus.local/my-corpus --full
+```
+
+Required metadata (either mode):
+
+- Author (primary; secondary authors as a list).
+- Title and subtitle.
+- Edition / year of publication.
+- ISBN or DOI where available.
+- Source format and condition (PDF / EPUB / extracted markdown; conversion notes if any).
+- Source licence (exact string: `CC BY 4.0`, `CC BY-NC-SA 4.0`, `All rights reserved`, etc., or `unverified`).
+- Distribution scope: `open`, `open-nc`, `copyrighted`, `confidential`, or `personal`. Usually correlates with licence (CC BY → `open`, CC BY-NC-SA → `open-nc`, all-rights-reserved or unverified → `copyrighted`) but can diverge. The build excludes references whose scope exceeds a profile's `max_scope`; `personal` ships in no profile. Both fields land on the deep ref at Pass A: licence in `**Source:**`, scope on `**Scope:**`.
+
+**Source preparation.** Pre-extract to markdown for better citation-anchor preservation. Converted markdown lands in `{corpus-root}/sources/converted/`.
+
+- **PDF:** PyMuPDF text blocks in content-stream order: each page's `page.get_text("blocks", sort=False)`, one block per paragraph, pages separated by form feeds (`uv run --no-project --with pymupdf==1.28.2 python -I …`). Don't use `pymupdf4llm`: version 0.2.9 silently drops the text of framed boxes, sidebars and figure callouts. Gate the result page by page against `pdftotext -remove-hyphens none`: every word pdftotext reads on a page must be in that page's converted text. Patch any line MuPDF misreads from pdftotext and record it on the card.
+- **EPUB:** `python3 scripts/epub-keep-notes.py input.epub output.md` (pandoc, `-t markdown --wrap=none`). Plain pandoc silently drops footnote and endnote text whenever the EPUB's note links aren't marked `epub:type="noteref"`; the script keeps it. Never use markitdown on EPUB: it extracts only the navigation and heading layer, so the output *looks* complete while 93–95% of the body is missing. Gate every EPUB conversion with `python3 scripts/check-epub-coverage.py input.epub output.md`, which compares it with the EPUB's own XHTML. It must exit 0. Read each gap it lists and record on the card any you accept (a contents or title page).
+
+**Mandatory post-conversion sanity check (before any pass reads the file).** Silent-truncation converters are the highest-severity source-integrity failure because the loss is invisible downstream. After converting, run `wc -w` on the output and compare against this source's own page count (roughly 250–400 words/page). Then check the end of the file: the last chapter, the back matter (notes, index) and the original's final page are present, and the file carries no truncation marker (`grep -i truncated`). A size cap can cut a long book mid-chapter and still leave a word count that looks like a whole shorter book, so the end check matters as much as the count. If the count falls short of the page count's range or the end is missing, the converter dropped text — **stop, re-convert with a different tool, and re-check.** Never hand a suspiciously-short conversion to an ingestion pass or a subagent. This check is what turns the completeness pre-flight (below) from a heading-structure glance into a coverage guarantee.
+
+### Pre-invocation: check for duplicate
+
+Before invoking, run `matching-references` for the source's central topic. If a reference for this source already exists in the corpus, do not re-ingest unless one of the "When to use" conditions applies (substantive revision, model advance, prior Pass I failure).
+
+### Source-integrity pre-flight (mandatory)
+
+The first three checks below stop the run if they fail; the fourth is an operator decision recorded in the deep ref.
+
+**1. Confirm completeness — hard stop on incomplete sources.** Verify the source is whole without committing to a full read yet. Check: the table of contents matches actual section headers, chapter-boundary markers are present, no obvious gaps or truncation appear (a final chapter cut mid-paragraph is a clear signal). Enumerate the full chapter list from the TOC and record it in the deep ref's source/structure block — this anchor list becomes the audit target at Pass I.
+
+If anything is missing or partial, **stop the run and escalate to the operator.** Report the specific gap (which chapters are missing, why — scanner truncation, publisher's partial edition, conversion bug). The operator decides whether to (a) get a complete source and restart, (b) explicitly approve partial-coverage ingestion with a written rationale, or (c) abandon the ingestion.
+
+**The `coverage:` frontmatter field is operator-consent only.** Absence means complete. Presence requires `coverage: partial — operator-approved YYYY-MM-DD — reason` with the operator's reason recorded inline. **The model never sets `coverage: partial` unilaterally.** A reader-side decision to skip readable chapters is not a "partial coverage" outcome; it is a source-integrity violation. If you can read a chapter, you must read it; if you cannot finish the read in the available context budget, stop and escalate so the operator decides whether to continue, defer, or abandon.
+
+**2. Detect citation style.** Grep for page anchors (`{page` markers in pandoc output, or numeric page boundaries in the converted markdown):
+
+- Page anchors preserved: cite as `(Ch N, p. M)`.
+- Page anchors lost in conversion: cite as `(Ch N, "Section name")`.
+
+Per-source decision. Record it in the deep reference's source/structure block.
+
+**3. Confirm model identity.** Opus 4.7 or higher for every pass that writes or audits source-grounded content: Passes A–G and I. Record the operator's session model in the deep ref's frontmatter (Pass A). If those passes fan out to subagents, each subagent declares its model identity in its first response; on any mismatch, stop and report. Four index-feeding steps run through the `ingest-discovery-scanner`, `ingest-refs-extractor`, `ingest-concept-linker` and `ingest-topic-linker` agents, which pin Opus (their Codex twins run on the session's model). They write only to discovery or staging files, never to a reference or a distillation.
+
+**4. Image scope decision.** Declare up front whether this run includes image classification:
+
+- **Full.** Every extracted image is visually inspected and either added to `IMAGE-INDEX.yaml` (substantive) or deleted (decorative).
+- **Text-only.** Skip image classification this run. Record in the deep reference's coverage line. Complete later via `ingesting-images`.
+
+No default. If neither `--full` nor `--text-only` was passed, prompt the operator. **Never start full and truncate mid-classification on context budget**: that produces silent partial coverage and violates source-integrity. If full looks too large for one session, declare text-only and run `ingesting-images` later.
+
+### Effort and quality policy
+
+| Tier | Effort | Protocol |
+|---|---|---|
+| Deep reference | xhigh | Full 9-pass (A through I) |
+| Light reference | high | Pass F: 3-pass derivation from verified deep |
+| Distillation | high | Pass G: applicability gate plus 3-pass projection, per applicable task axis |
+
+Every downstream artefact (light, distillation, indexes) derives from the deep. Pass I is the gate; nothing ships before Pass I passes on the deep.
+
+---
+
+## The 9 passes
+
+Run in order. Full procedure, templates, contracts, and pass-specific failure modes are in [`9-pass-protocol.md`](9-pass-protocol.md).
+
+- **Pass A, Context.** Metadata, structure, citation-style block, frontmatter.
+- **Pass B, Structural read.** Read once at speed; build an internal map.
+- **Pass C, Deep read with citations.** Read the source in full; attach citations to every non-trivial claim.
+- **Pass D, Blockquote extraction.** Select short verbatim passages; verify character-by-character.
+- **Pass E, Synthesis.** Assemble the deep reference; apply `[V]` `[AP]` `[AR]` `[AE]` `[BT]` markers.
+- **Pass F, Light-reference derivation.** Three sub-passes from the verified deep; source not re-read.
+- **Pass G, Distillation projection.** Applicability gate (G.0); project per applicable axis (G.1–G.3).
+- **Pass H, Cross-reference.** Drive the mechanical-index pipeline: allocate slug-ID, run the discovery scan and preprocessor, dispatch the `ingest-refs-extractor`, `ingest-concept-linker` and `ingest-topic-linker` agents, regenerate JSON indexes. Cross-check sibling distillations.
+- **Pass I, Source-only audit.** Read the deep cold in a **fresh subagent** — never the session that produced it — and trace every claim. A same-context read certifies its own leakage: a session cannot see the training-priors it just wrote in as source-grounded, so it passes them off as verified. Only independent eyes catch them. Deep ships only when Pass I passes.
+
+---
+
+## Parallel-batch operations
+
+When ingesting many sources in one work-session, dispatch multiple subagents in parallel: one source per subagent for Passes A–H. **Pass I always runs in a separate fresh subagent** (per Pass I above), launched once the producing subagent has written the deep reference — a cold read is only cold from a context that did not write the reference.
+
+**Run Pass I with the driver, not by hand.** `python3 -m scripts.pass_i.run --corpus {corpus-root} {slug} [{slug} …]` runs the whole of Pass I as code: the fix-in-place leg (`ingest-auditor`) and the blind second leg in parallel, the sort, a fresh agent to apply the sort's remaining edits and bring the derived tier into line, the stamp, the derived-tier fidelity check and the provenance stamp. Each leg is a fresh headless `claude -p` or `codex exec` run, so none shares context with the producer. A source stops for the operator when a question is open after the sort, or when the fidelity check finds a defect in the deep reference itself; the driver writes `decisions-needed.md` in its work folder, and `--accept-gate {slug}` resumes after you have settled it. `--promote-original` moves the original from `sources/ingest/` to `sources/original/` before the stamp, so the stamped hash is the final one. A rerun skips every step already done. The second leg defaults to Codex. `--second claude` keeps it in the writer's family and `--second none` skips it; both are stamped audited-but-unverified. The orchestrating session launches the driver and reads its summary, rather than spending a turn at full context on every handback.
+
+**Producer load order: Passes A–E inputs before the tape, Passes F–G inputs after the deep reference.** A producer needs this skill, the protocol and its brief to read the source and write the deep reference. Task specs, `creating-distillations` and its projection protocol, and example references and distillations serve Passes F and G only. Read them once the deep reference is on disk. Loaded up front, they ride along on every turn of the tape read: in a 2026 run they were about 100k of each producer's 210k context before its first line of source, and about a tenth of producer cost. Reading them late also keeps the task framing out of the deep reference while it is being written. Within Passes F and G, decide each axis's applicability gate from its spec's problem statement and practitioner questions, then read the full spec and an exemplar only for the axes that pass; read an operator-view index only at the tables you add rows to; and write from the deep reference, not the tape, so no verbatim run from a restricted source slips into a distillation. In a 2026 run, the producer's Passes F and G read about 140k of specs, exemplars and index views; nearly all of the 72k of specs and exemplars served the two axes it declined, and an independent fidelity check later paraphrased 26 verbatim runs from the tape out of its two distillations.
+
+**The index steps belong to the orchestrating session.** As each deep reference lands, it runs the mechanical discovery baseline (which finds sources through their deep references) and dispatches `ingest-discovery-scanner` and `ingest-refs-extractor` for that source; once every source is in, it dispatches `ingest-concept-linker` once for the batch, then `ingest-topic-linker` once after the concept index is assembled (three stages over, for a vocabulary past about 1,000 concepts; see Pass H's topic step). The named agents carry the extraction rules; a source agent that ran these steps itself would work without them.
+
+**Per-source staging files.** Each source agent writes its per-source artefacts to namespaced staging paths the build scripts read at corpus level. The canonical JSON indexes are derived; nobody edits them by hand. Staging layout (paths relative to repo root):
+
+- `_planning/extracted/{corpus}/{slug}.json`: deterministic preprocessor output (one per source).
+- `_planning/staging/{corpus}/refs/{slug}.json`: refs-pass output (one per source).
+- `_planning/staging/{corpus}/concepts/candidates.json`, `decisions.json`: corpus-wide concept aggregation (single file, written once after every per-source step completes).
+- `_planning/staging/{corpus}/concepts/topic-payload.jsonl`, `topics.json`: the topic linker's input and its filing of concepts under topics (written once per batch, after the concept index is assembled). A staged pass adds `topic-names.jsonl`, `topic-payload.chunk-NN.jsonl`, `topics.skeleton.json`, `topics.chunk-NN.json` and `topics.consolidation.json` beside them.
+- `_planning/staging/{corpus}/images/_ingest_image_index_{slug}.yaml`: image-index staging (one per source per corpus; a slug ingested into two corpora has two). Merged into `{corpus-root}/sources/converted/IMAGE-INDEX.yaml` by `scripts/build_indexes/build_image_index.py` at Pass H; **an image absent from that index is not part of the library**, so the merge step is not optional. Like the rest of `_planning/`, it is gitignored, so a private corpus's per-figure descriptions stay off any public remote.
+
+The build scripts (`scripts/build_indexes/`) consume the staging artefacts and write the canonical JSON indexes in `corpus.commons/{corpus}/`. Two reasons for the staging layer:
+
+- **No race on the JSON indexes.** Per-source extractions and refs passes run in parallel; the build scripts merge at corpus level after every agent completes.
+- **Intermediate work survives partial failure.** If a source agent's session times out or rate-limits before its final report, staging artefacts remain on disk; the operator resumes without re-running the preprocessor.
+
+**Concurrency ceiling.** Around 4-5 simultaneous Opus 4.7 ingestion subagents. Beyond that, Anthropic-side rate limits drop requests. Wrap-up subagents (Pass H + I on already-text-complete sources) tolerate slightly more.
+
+**A stalled agent is usually not a failed agent — check disk before re-running.** Stall notifications fire on stream silence, not on death. Across a 2026 batch run, 5 of 7 agents reported failed had completed their writes; separately, two agents that *had* died left the deep reference edited and stamped with no audit log. Both mistakes are expensive in opposite directions, and both are settled the same way: look at the files. Compare content hashes and modification times against what the agent was asked to produce, and re-run only what is genuinely absent.
+
+**Where an agent dies matters more than that it died.** A half-finished ingestion leaves no broken grammar — it leaves confidently wrong classifications under an unearned stamp, and the retry inherits them with no way to tell what it is looking at. Have agents write their log or index artefact *before* reporting, and stamp only after that artefact exists, so a stamp always implies a completed pass.
+
+**A different model family is worth having in the pool, for two separate reasons.** It is the only thing that catches Pass I's prior-leakage blind spot (see Pass I in [`9-pass-protocol.md`](9-pass-protocol.md)). It also runs outside the Anthropic rate limit, so it is genuine additional capacity rather than a share of the same budget — five concurrent sessions ran without interference in 2026 testing — and it proved markedly more robust on very large tapes, completing 48k- and 72k-word source reads that had defeated several same-family agents. Expect its client to time out while it keeps working server-side: check disk before retrying, because the files usually landed.
+
+---
+
+## Post-pass operations
+
+After Pass I passes on the deep and Passes F, G, H have produced the derived artefacts, four operations finalise the ingestion.
+
+### Promote source from ingest/ to original/
+
+Directory state is the workflow indicator: anything in `sources/ingest/` is unaudited; anything in `sources/original/` has been through the protocol.
+
+1. **Author the `.source.md` sidecar** at `{corpus-root}/sources/original/{slug}.source.md` with frontmatter populated from Pass A metadata:
+
+   ```markdown
+   ---
+   title: {from Pass A}
+   author: {from Pass A — primary author, et al. for multi-author works}
+   publisher: {from Pass A, if known}
+   publish_year: {YYYY}
+   isbn: {if known}
+   url: {canonical URL or DOI}
+   scope: {open | open-nc | copyrighted | confidential | personal}
+   licence: {exact licence string from Pass A}
+   ingested: {YYYY-MM-DD of this run}
+   original_format: {pdf | epub | docx | md | ...}
+   converted_via: {PyMuPDF <version> text blocks, sort=False | pandoc <version> via epub-keep-notes.py | manual | ...}
+   checksum_sha256: {sha256 of the input file, if binary}
+   ---
+
+   # Source: {Title} ({Author})
+
+   {2–4 line body: provenance prose, where the source was acquired,
+   any conversion caveats, links to converted markdown and deep ref.}
+   ```
+
+2. **Write the converted markdown** to `{corpus-root}/sources/converted/{slug}.md` (if not already present from a manual pre-conversion). This is the "tape" Pass C read; Pass C's deep reference traces against this file.
+
+3. **Do NOT automatically copy the binary** from `ingest/` to `original/`. Whether to ship the original is a redistribution decision depending on licence and operator intent. The build's `.gitignore` ignores `corpus.commons/*/sources/original/*.{pdf,epub,mobi,azw3}`; operators with rights to redistribute can `git add -f` after this step.
+
+4. **Remove the input file** from `{corpus-root}/sources/ingest/`. The sidecar and converted markdown carry the audited record forward.
+
+**Failure recovery.** If any pass fails, **leave the input file in `ingest/`** and remove any partial output artefacts from `original/`, `converted/`, `references/`, `distillations/`. The `ingest/` directory state is the recovery signal: anything still there is unfinished business.
+
+### Image extraction
+
+Runs only if pre-flight scope is *full*. Skip if *text-only*; [`ingesting-images`](../ingesting-images/SKILL.md) handles it later.
+
+**Ordering:** image extraction must run before the input file is removed from `ingest/`.
+
+1. Run `python3 scripts/extract-images.py {corpus-root}/sources/ingest/{source}.pdf` before removing the input.
+2. The extractor writes images to `{corpus-root}/sources/converted/{source-slug}-images/` and an extraction manifest to `{corpus-root}/sources/converted/extraction-manifest.json`.
+3. Classify each extracted image by visual inspection (Read tool on the image file):
+   - **SUBSTANTIVE**: diagram, chart, table, model, framework, process flow, decision tree, formula illustration, or other figure carrying conceptual content. Add an entry to the staging file `_planning/staging/{corpus}/images/_ingest_image_index_{slug}.yaml` with description, tags, suggested-use, and framework cross-references; Pass H merges it into `{corpus-root}/sources/converted/IMAGE-INDEX.yaml`.
+   - **DECORATIVE**: photographs, cover art, ornamental rules, blank frames, publisher logos, paper textures, icons. Delete from `{corpus-root}/sources/converted/{source-slug}-images/`.
+4. Image *files* are gitignored. The *index* travels with the repo. If an image is not in `IMAGE-INDEX.yaml`, it is not part of the library.
+
+**Per-image visual inspection is mandatory.** Never bulk-classify by filename, file extension, file size, or any metadata-only signal: the same format carries diagrams in one source and photographs in another.
+
+### Build verification
+
+```bash
+npm run build
+```
+
+Both profiles should produce non-empty `{corpus-root}/apps/{profile}/` and pass referential integrity. The build's *sources pair-check* validates that every `sources/converted/{slug}.md` has a `sources/original/{slug}.source.md` sibling; a fresh ingestion should land both atomically.
+
+### Ingestion summary
+
+Output a one-screen summary covering:
+
+- Source ingested (citation).
+- Pass-by-pass results (durations, claim counts, audit fail count before fixes).
+- Files produced: `.source.md` sidecar path, converted markdown path, deep ref path, light ref path, distillation file paths.
+- Applicability decisions per task axis: applied, skipped (with reason), operator-confirmed on borderline calls.
+- Indexes updated.
+- Images extracted, classified SUBSTANTIVE, classified DECORATIVE.
+- **Promotion confirmed**: input file removed from `sources/ingest/` (or, on partial failure, input remains in `ingest/` for re-run; name this explicitly).
+- Open follow-ups (e.g., partial-coverage note in frontmatter flagged for re-ingestion when missing chapters arrive).
+
+---
+
+## Related skills
+
+- `creating-corpus`: scaffold a new corpus before ingesting into it.
+- `finding-resources`: triage candidates against the protocol's preconditions before dropping into `sources/ingest/`.
+- `matching-references`: search the corpus for an existing source before ingesting a duplicate.
+- `creating-distillations`: per-distillation projection; invoked by this skill's Pass G.
+- `creating-applications`: assemble a new application (build profile + distillation index + orchestrated per-distillation distillation).
+- `creating-tasks`: scope a new task axis. Upstream of `creating-applications`.

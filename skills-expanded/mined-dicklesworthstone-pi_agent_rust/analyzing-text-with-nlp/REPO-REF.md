@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dicklesworthstone/pi_agent_rust (path: tests/ext_conformance/artifacts/plugins-community/plugins/ai-ml/nlp-text-analyzer/skills/analyzing-text-with-nlp/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Nlp Text Analyzer

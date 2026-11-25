@@ -1,0 +1,243 @@
+---
+model_tier: medium
+name: accessibility-auditor
+description: "Use when reviewing UI for accessibility — WCAG 2.2 AA, keyboard nav, focus, ARIA, contrast, screen-reader semantics — even on 'is this a11y-OK?' or 'mach das barrierefrei'."
+personas:
+  - frontend-engineer
+domain: quality
+enforced_by:
+  - "test:tests/contracts/accessibility_wcag_version_claim.test.ts"
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+token_budget_class: rich
+---
+
+# accessibility-auditor
+
+> Audit a UI surface against WCAG 2.2 AA, keyboard-only operation,
+> and screen-reader semantics. Output is a verdict with cited
+> failures, not a vibes check. Pair with
+> [`tailwind-engineer`](../tailwind-engineer/SKILL.md) for token-level
+> contrast fixes and [`ui-component-architect`](../ui-component-architect/SKILL.md)
+> for structural fixes (landmarks, heading order).
+
+## When to use
+
+- A new screen, component, or form lands and a11y has not been
+  reviewed yet.
+- A bug report mentions keyboard, screen reader, focus order,
+  contrast, or "user can't reach the X button".
+- A modal, dropdown, popover, tab strip, or tree view is being
+  introduced — these are the highest-yield bug zones.
+- German triggers: "barrierefrei prüfen", "Tastatur-Bedienung",
+  "Screenreader testen".
+
+Do NOT use when:
+
+- The visual design itself is the question (palette, type scale) —
+  route to [`fe-design`](../fe-design/SKILL.md).
+- The diff has no UI surface — accessibility audits without a UI are
+  speculation.
+- A specific component spec is missing entirely — get the component
+  built first via the stack-specific skill, then audit.
+
+## Procedure
+
+### 1. Identify the interaction surfaces
+
+List every interactive element on the screen: links, buttons,
+inputs, custom widgets (combobox, tab, dialog, tree). Each row
+gets a verdict in step 5; missing one is a coverage failure.
+
+### 2. Walk the four checklists
+
+**Perceivable** — text alternatives for non-text (`alt`, `aria-label`),
+contrast ≥ 4.5:1 for body / 3:1 for large or UI components, no
+colour-only state ("error in red" must also be iconic or text).
+Grounded reference for palette + chart verdicts: the adopted corpus's
+WCAG-adjusted token sets (`--domain color`), chart a11y grades +
+colorblind fallbacks (`--domain chart`), and mobile touch/a11y rules
+(`--domain web`, 44pt targets) via
+[`design-intelligence`](../design-intelligence/SKILL.md) — cite the
+corpus row; the WCAG 2.2 AA *method* stays this skill's own checklists.
+Widget-pattern selection (dialog, combobox, tabs, toast, table, form
+errors, drag-reorder …) grounds in the ARIA-APG corpus:
+`node <skills-root>/corpus-grounding/scripts/ground.mjs search
+--manifest <skills-root>/accessibility-auditor/data/manifest.json
+"<component>"` →
+pattern, implementation, WCAG refs, anti-patterns
+([`data/aria-patterns.csv`](data/aria-patterns.csv)).
+
+**Operable** — every interactive element reachable by `Tab`, focus
+order matches visual order, focus indicator visible (≥ 3:1 against
+adjacent), `Esc` closes overlays, no keyboard traps.
+
+**Understandable** — labels associated (`label[for]` or wrapping),
+errors named in text (not just border colour), language attribute
+on `<html>`, predictable navigation across pages.
+
+**Robust** — landmarks present (`<header>`, `<nav>`, `<main>`,
+`<footer>`), heading order without skips, ARIA only when no native
+element exists, custom widgets follow ARIA-APG patterns.
+
+**Reduced motion — audit the PRESENTATION, not the presence of the
+query.** A `prefers-reduced-motion` block is easy to grep and proves
+nothing: `animation: none` on a scroll-revealed section leaves the
+content invisible, and a scrubbed sequence with its motion removed
+leaves the story untold. So the finding is about what the surface
+shows **instead**:
+
+| Motion carries | Reduced-motion presentation | Failure |
+|---|---|---|
+| A reveal (content fades/slides in) | The content at its **final** state, visible from the start | `opacity: 0` left standing — the content never appears |
+| A scrubbed sequence (scroll drives progress) | Each beat at its **resting** state, reachable by ordinary scrolling | Motion disabled and the beats collapse onto each other |
+| A transition between states | An instant state change, still announced | The state changes with no perceivable feedback |
+| Decoration (parallax, drift, ambient) | Nothing — removal is the correct presentation | — |
+
+Decoration is the only case where removal is the answer, which is why
+`animation: none` reads as correct so often and is wrong so often. Ask
+per block: *if the motion never plays, is the content still there and
+still understandable?* Record the answer, not the query.
+
+**WCAG 2.1 additions — the twelve A/AA criteria 2.0 did not have.** A 2.2 AA
+claim is cumulative across versions as well as levels: it carries these too.
+
+| SC | Level | Testable condition | Failure |
+|---|---|---|---|
+| 2.1.4 Character Key Shortcuts | A | A single-character shortcut can be turned off, remapped, or fires only while its component has focus | `s` while dictating triggers "send" |
+| 2.5.1 Pointer Gestures | A | Every multipoint or path-based gesture (pinch, swipe path) has a single-pointer, non-path alternative | Zoom only by pinch, no `+`/`−` control |
+| 2.5.2 Pointer Cancellation | A | No function completes on the down-event; or it can be aborted or undone; or the up-event reverses it; or completing on down is essential | A delete fires on `pointerdown`, so sliding off the button no longer cancels it |
+| 2.5.3 Label in Name | A | The accessible name contains the visible label text, ideally at its start | Visible "Send", `aria-label="Submit form"` — saying "Send" does nothing |
+| 2.5.4 Motion Actuation | A | A function triggered by device motion has a UI alternative and the motion response can be disabled | Shake-to-undo with no undo control |
+| 1.3.4 Orientation | AA | Content works in portrait and landscape unless one is essential | Locked to portrait; a mounted tablet cannot use it |
+| 1.3.5 Identify Input Purpose | AA | Fields collecting the user's own data carry the matching `autocomplete` token | Name/email/address fields lack `autocomplete` |
+| 1.4.10 Reflow | AA | At 320 CSS px width (400 % zoom) content needs no two-dimensional scrolling and loses nothing | A fixed-width layout forces horizontal scroll per line |
+| 1.4.11 Non-text Contrast | AA | UI component boundaries, states and meaningful graphics reach ≥ 3:1 against adjacent colors | A light-gray input border at 1.4:1 — the field is invisible |
+| 1.4.12 Text Spacing | AA | With line-height 1.5, paragraph spacing 2×, letter spacing 0.12em and word spacing 0.16em, nothing is clipped or overlaps | Fixed-height buttons clip their label |
+| 1.4.13 Content on Hover or Focus | AA | A tooltip or popover shown on hover/focus is dismissible (`Esc`), hoverable, and persists until dismissed | A tooltip vanishes when the pointer moves onto it |
+| 4.1.3 Status Messages | AA | A status message (saved, n results, error summary) is announced without moving focus — `role="status"` / `role="alert"` / live region | "Saved" shows; a screen reader hears nothing |
+
+Level **AAA**, outside an AA claim and named rather than silent: **1.3.6 Identify
+Purpose**, **2.2.6 Timeouts**, **2.3.3 Animation from Interactions**, **2.5.5
+Target Size (Enhanced)**, **2.5.6 Concurrent Input Mechanisms**.
+
+**WCAG 2.2 additions — the six criteria 2.1 did not have.** An AA claim is
+cumulative: AA conformance means every level-**A** criterion *and* every
+level-AA one, so the two level-A rows below sit inside the claim, not beneath
+it. Each is audited on its own; a surface that skips one is not AA under 2.2.
+
+| SC | Level | Testable condition | Failure |
+|---|---|---|---|
+| 2.4.11 Focus Not Obscured (Min.) | AA | `Tab` through every focusable element with sticky headers / footers / cookie bars present — the focused element stays at least partially visible, never fully covered | A sticky bar hides the focused row; the keyboard user cannot see where they are |
+| 2.5.7 Dragging Movements | AA | Every drag interaction (reorder, slider, map pan, kanban) has a single-pointer alternative that is not a drag — buttons, a menu, or arrow keys | Reorder is drag-only, so a user who cannot drag cannot reorder |
+| 2.5.8 Target Size (Min.) | AA | Every pointer target is ≥ 24×24 CSS px, **or** carries ≥ 24 px spacing to its neighbours, **or** is one of the stated exceptions (inline text, user-agent-controlled, essential) | 16 px icon buttons packed edge-to-edge in a toolbar |
+| 3.3.8 Accessible Authentication (Min.) | AA | No login step requires a cognitive function test (remembering, transcribing, puzzle-solving) without an alternative — a password manager can paste, and paste is not blocked | An OTP field that blocks paste, or "type the 3rd character of your memorable word" |
+| 3.2.6 Consistent Help | A | Where a help mechanism (contact link, chat, self-help) repeats across pages, it appears in the same relative order on each | Support link in the header on one page, buried in the footer on the next |
+| 3.3.7 Redundant Entry | A | Information already entered in the same process is auto-populated or selectable, unless re-entry is essential (confirming a password is essential) | A 4-step checkout asking for the same address twice |
+
+Outside an AA claim, and stated here rather than left silent: **2.4.12 Focus Not
+Obscured (Enhanced)** and **2.4.13 Focus Appearance** are level **AAA**. Audit
+them on request; their absence is not an AA failure.
+
+### 3. Run the keyboard pass
+
+`Tab` from page start: every interactive element receives focus,
+in visual order, with a visible indicator. `Shift-Tab` reverses
+cleanly. `Enter` / `Space` activate per role. Arrow keys work in
+composite widgets (tab strip, listbox, menu). `Esc` dismisses the
+top-most overlay only.
+
+### 4. Run the screen-reader pass
+
+Use VoiceOver (macOS), NVDA (Windows), or `aria-live` log
+inspection. Each surface announces: role, name, state, value,
+description (in that order). State changes (loading, expanded,
+selected, error) announce. Decorative images are silent.
+
+### 5. Score and report
+
+For each surface from step 1:
+
+| Surface | WCAG SC | Pass / Fail | Evidence |
+|---|---|---|---|
+| Submit button | 1.4.3 | Fail | contrast 3.1:1, expected 4.5:1 |
+| Modal | 2.1.2 | Fail | Tab leaves modal — focus trap missing |
+
+Verdict at the bottom: **AA-pass** (zero fails), **AA-pass-with-risk**
+(non-blocking gaps + plan), or **AA-fail** (blocking — fix before
+ship).
+
+## Output format
+
+```
+Scope:        <screen / component / route>
+Surfaces:     <count from step 1>
+Tools used:   <axe-core | manual | VoiceOver | NVDA — pick at least 2>
+
+Findings:
+  1. <SC>  <Pass/Fail>  <Evidence + file:line if known>
+  2. ...
+
+Verdict:      <AA-pass | AA-pass-with-risk | AA-fail>
+Top 3 fixes:  <ordered by user impact>
+```
+
+## Same-ramp contrast + dark-mode self-test (procedures, not a palette)
+
+Two deterministic procedures — they reference the consumer's tokens / an
+upstream color ramp, they never vendor a hex table:
+
+- **Same-ramp contrast.** Text on a colored fill uses a **darker stop of the
+  same color family**, never plain black/gray dropped on top — same-ramp keeps
+  the contrast on-brand and predictable. Title and subtitle are **two different
+  stops** of that ramp (hierarchy from the ramp, not from an off-ramp gray).
+- **Mandatory dark-mode self-test.** Before finalizing, ask: *"if the background
+  were near-black, would every text element still meet 4.5:1 (body) / 3:1
+  (large/UI)?"* A ramp that only works on light is a fail. Run the test even
+  when the brief is light-only — dark mode arrives later.
+
+The ramp itself is authoritative in [`design-tokens`](../design-tokens/SKILL.md)
+(token derivation) and the consumer's tokens (`brand-source-of-truth`
+§ Iron Law 2) — this procedure sits beside that authority, it does not duplicate the
+values.
+
+## Gotcha
+
+- `aria-label` on a `<button>` overrides its text content for
+  screen readers — only use when the visible text is not
+  descriptive (icon-only buttons).
+- `tabindex="-1"` removes from tab order *and* allows programmatic
+  focus; `tabindex="0"` adds to tab order. `tabindex >= 1` is
+  almost always wrong — fix the source order.
+- Native `<button>` and `<a>` come with role + keyboard for free;
+  reaching for `role="button"` on a `<div>` is a regression.
+- Contrast on disabled state has no WCAG threshold — but if the
+  user cannot tell it is disabled, that is a 1.4.1 failure on
+  state cue.
+
+## Do NOT
+
+- Do NOT declare AA-pass without a keyboard-only pass; an axe-core
+  green is necessary, not sufficient.
+- Do NOT add ARIA "to be safe" — wrong ARIA is worse than no ARIA.
+  Native semantics first.
+- Do NOT silence the audit on "internal-only tool" or "small user
+  base"; legal exposure does not scale with audience size in most
+  jurisdictions.
+- Do NOT close a finding by adjusting the test instead of the UI;
+  the user's experience is the ground truth, not the test report.
+
+## Why this skill is rich
+
+WCAG 2.2 AA compliance is non-negotiable detail — each success criterion
+has a specific testable condition, failure mode, and remediation path.
+The skill carries the WCAG 2.2 additions with concrete test
+procedures per criterion (not just "check contrast"), keyboard-navigation patterns
+(roving tabindex, trap management, escape-key handling), ARIA role/
+property/state tables, and screen-reader-specific edge cases per
+assistive technology. Condensing to "check contrast and add aria-labels"
+loses the test procedures that turn a vague finding into a reproducible
+failure with a specific remedy. Accessibility bugs that are described
+vaguely cannot be verified as fixed.

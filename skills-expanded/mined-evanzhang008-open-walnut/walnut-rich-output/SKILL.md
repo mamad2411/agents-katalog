@@ -1,0 +1,201 @@
+---
+name: walnut-rich-output
+description: Write replies as rich HTML that the Walnut web console and iOS app render natively while streaming — colored callouts, comparison grids, SVG diagrams, CSS-only steppers/tabs, animations, and sandboxed `html-app` islands for real JavaScript. Load this when explaining something hard (a paper, a codebase, a protocol, a decision) where visual structure beats prose, or when a reply is in rich output mode.
+---
+
+# Rich HTML output
+
+The Walnut web console and the iOS app both render raw HTML in an assistant reply as real DOM, streaming it like markdown. You do not need a special syntax or a wrapper: write `<div>`, `<style>`, `<svg>`, `<details>` in the reply and they render. Markdown still works alongside, so use HTML only where it earns its place.
+
+**Write visual HTML directly in the reply.** Do not replace it with an HTML file, a screenshot, or an HTML code fence unless the user explicitly requests that artifact. Use `html-app` only for JavaScript islands. Keep internal widget lines contiguous; separate the widget from surrounding markdown with blank lines.
+
+**Do not wrap the whole reply in one container.** Write each block at the top level of the reply, the way you write paragraphs. A single `<div>` around everything is not free: it keeps one element open from the first line to the last, which makes the entire reply one streaming block instead of many, and CommonMark then swallows the line right after the opening tag (a `## Heading` there renders as literal `## Heading`). The client strips a bare wrapper it can prove is ceremony, but a wrapper with attributes is taken at face value.
+
+## Markdown first, HTML for what markdown cannot express
+
+Rich mode does not mean "answer in HTML". It means HTML is available for the few things markdown has no way to say. **Mixing is the normal case**: write the reply in markdown and drop in HTML exactly where it buys something, separated from the prose by a blank line.
+
+| The content is | Write it as |
+|---|---|
+| headings, lists, bold, links, quotes | markdown |
+| a table of values, a handful of numbers | markdown table |
+| code, commands, terminal output, a diff, a file tree | markdown fence |
+| a plain `A -> B -> C` | a sentence |
+| colour carrying meaning: good vs bad, before vs after, severity, a highlighted term | HTML |
+| a diagram with branches, a return path, a loop or four or more parts: a flow, a call path, a sequence between parties, a state machine, an architecture, a trend over time | inline `<svg>`; never ASCII or box-drawing art in a code fence, never mermaid (it does not render) |
+
+An `<svg>` gets a `viewBox` and `width="100%"` (a fixed pixel width overflows a narrow column and the phone), short labels (a `<text>` never wraps, so a long label, Chinese especially, spills out of its box; put longer text outside the svg), and theme colours (`var(--fg)`, `var(--fg-muted)`, `var(--border)`, `var(--bg-secondary)`) so it reads in dark mode. State its point in prose too: notifications and search snippets do not show it.
+| a shape markdown has no syntax for: side-by-side panels, a card grid, a labelled callout | HTML |
+| interactivity: collapse, tabs, a stepper, hover reveal | HTML (`<details>`, CSS `:checked`) |
+
+When markdown can express it, HTML makes it worse, not richer. A hand-built `<table>` loses nothing visually and gives up the plain-text fallback that notifications, search snippets and the phone's native text rely on; a hand-built `<pre>` gives up copy-as-code and syntax highlighting. Reach for HTML when the answer has **colour, shape, or state** that markdown cannot carry, and for nothing else.
+
+**Skip it entirely for**: a short answer, a code diff, a list of three things. A wall of boxes is worse than a clean paragraph.
+
+## The three rules that matter
+
+1. **No inline `<script>`** — it is routed to a sandboxed iframe (see Islands) or dropped. Interactivity without JS: `<details>`, CSS `:checked` siblings, `:hover`, `@keyframes`.
+2. **Your CSS is auto-scoped to your own message.** Every selector in a `<style>` block is rewritten to match only inside that reply, so plain class names (`.card`, `.row`) are safe and cannot restyle the app. `@keyframes` names are rewritten too. `@font-face`, `@property` and `@import` are dropped.
+3. **The iOS app renders it too, one small web view per HTML run** — so your `<style>` reaches every run of the same reply, but prose between two cards stays native text (it is not styled), and `<img>` there loads only `data:`/`blob:` sources, so prefer inline `<svg>`. Inline markdown inside an HTML run works on both surfaces (bold, italic, `code`, links), but BLOCK markdown only works on the web: a heading, list or table has to sit in its own paragraph, separated from the HTML by a blank line, or the phone shows its `#` and `1.` as characters. Notifications and plain-text search snippets still show raw tags: keep the prose around a widget meaningful on its own, and never put the only copy of a fact inside markup.
+
+## Contrast: set both ends, or neither
+
+The one mistake that actually hurts readability. A panel gets a hardcoded pale background and its text is left muted or inherited, so the body copy lands grey-on-pink:
+
+```html
+<!-- BAD: background is pinned, text is not -->
+<div style="background:#fff5f5;padding:10px"><span style="color:var(--fg-muted)">barely readable</span></div>
+
+<!-- GOOD: both ends pinned -->
+<div style="background:#fff5f5;color:#7f1d1d;padding:10px">reads on that panel, and only that panel</div>
+
+<!-- ALSO GOOD: neither end pinned, theme handles it -->
+<div style="background:var(--bg-secondary);color:var(--fg);padding:10px">reads in light and dark</div>
+```
+
+Same rule inside a panel: a nested `<code>`, a caption, a table cell that inherits `--fg-muted` while sitting on your own background is the usual offender. Hardcoded hex is fine, as long as you own both ends of the pair.
+
+## Recipes
+
+Callout / conclusion card:
+
+```html
+<div style="border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:12px 16px;background:var(--bg-secondary)">
+<b style="color:var(--accent)">Conclusion</b><br>One sentence that answers the question.
+</div>
+```
+
+Theme variables keep it readable in dark mode: `--fg`, `--fg-muted`, `--bg`, `--bg-secondary`, `--border`, `--accent`, `--success`, `--warning`, `--error`, `--card-bg`, `--radius-md`, `--font-mono`. Hardcoded hex is allowed but check it survives a dark background.
+
+Depth on demand (native, zero CSS):
+
+```html
+<details><summary><b>Why this is safe</b></summary>
+<p>The long explanation only a reader who asked for it has to see.</p>
+</details>
+```
+
+Comparison grid:
+
+```html
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+  <div style="flex:1;min-width:220px;border:1px solid var(--border);border-radius:10px;padding:10px 12px"><b>Option A</b><br>trade-off</div>
+  <div style="flex:1;min-width:220px;border:1px solid var(--border);border-radius:10px;padding:10px 12px"><b>Option B</b><br>trade-off</div>
+</div>
+```
+
+CSS-only stepper (a wizard the reader clicks through, no JS). Radios hold the state; labels are the buttons:
+
+```html
+<div class="wz">
+<style>
+.wz { border:1px solid var(--border); border-radius:10px; padding:12px 16px }
+.wz input[type=radio] { display:none }
+.wz .step { display:none }
+#s1:checked ~ .body .p1, #s2:checked ~ .body .p2, #s3:checked ~ .body .p3 { display:block }
+.wz label { display:inline-block; padding:4px 12px; background:var(--accent); color:#fff; border-radius:6px; cursor:pointer }
+</style>
+<input type="radio" name="wz" id="s1" checked><input type="radio" name="wz" id="s2"><input type="radio" name="wz" id="s3">
+<div class="body">
+<div class="step p1"><b>Step 1</b> … <label for="s2">Next →</label></div>
+<div class="step p2"><b>Step 2</b> … <label for="s3">Next →</label></div>
+<div class="step p3"><b>Step 3</b> … <label for="s1">↻ Restart</label></div>
+</div>
+</div>
+```
+
+Tabs are the same trick with the panels side by side instead of sequential.
+
+SVG diagram (boxes and arrows beat ASCII art; it also scales and picks up theme colors):
+
+```html
+<svg viewBox="0 0 420 60" width="100%" style="max-width:420px">
+<rect x="4" y="16" width="120" height="30" rx="6" fill="var(--bg-secondary)" stroke="var(--accent)"/>
+<text x="64" y="36" text-anchor="middle" font-size="12" fill="var(--fg)">stage one</text>
+<text x="132" y="36" font-size="13" fill="var(--fg-muted)">→</text>
+<rect x="152" y="16" width="120" height="30" rx="6" fill="var(--bg-secondary)" stroke="var(--success)"/>
+<text x="212" y="36" text-anchor="middle" font-size="12" fill="var(--fg)">stage two</text>
+</svg>
+```
+
+Animation (CSS keyframes need no JS — a pulsing "in progress" dot, a flowing pipe, a bar that fills once, an SVG path that draws itself):
+
+```html
+<div class="anim">
+<style>
+@keyframes pulse { 0%,100% { transform:scale(1); opacity:1 } 50% { transform:scale(1.4); opacity:.5 } }
+@keyframes draw { to { stroke-dashoffset:0 } }
+.anim .dot { width:10px; height:10px; border-radius:50%; background:var(--success); display:inline-block; animation:pulse 1.1s ease-in-out infinite }
+.anim path { stroke-dasharray:240; stroke-dashoffset:240; animation:draw 2s ease-in-out forwards }
+</style>
+<span class="dot"></span> running…
+</div>
+```
+
+## Islands: when you genuinely need JavaScript
+
+Anything that has to compute (canvas, a value the reader types, physics, three.js, random) goes in an `html-app` fence. It renders as a seamless sandboxed iframe: auto-height, no border, real JS.
+
+````
+```html-app
+<div style="font-family:system-ui;padding:8px">
+<button id="b">Clicked 0</button>
+<script>let n=0;b.onclick=()=>{n++;b.textContent=`Clicked ${n}`}</script>
+</div>
+```
+````
+
+Island limits, by design: no access to Walnut data (no cookies, no `/api`, no parent DOM), no network at all, and its scripts start only once the fence closes. While the block streams, Walnut (the web console and the phone) shows its HTML and CSS as they arrive, with no script running, so write the visible layout as markup first and the `<script>` last: a page that draws itself only from script shows nothing until it is complete. Keep islands small and put the explanation in the prose above, not inside.
+
+### Keep the island's state: use `localStorage`
+
+The frame can be built again at any time: the reply re-renders, a folded question opens again, the reader switches sessions or reloads the page. Walnut keeps one `localStorage` per island (per reply and per island content; the console's browsers share it, the phone keeps its own) and hands it back, already filled, before your first line runs. So write the island like a page that must survive a reload:
+
+- Read the saved state at the top of your script and draw from it; write it again after every change the reader makes.
+- Save everything needed to redraw, including anything random: a shuffled question order, a seed, the reader's picks, the score, the current step. A quiz that shuffles on load and saves only "question 7" comes back on a different question 7.
+- Give the reader a way to start over (a "Restart" button that resets the state and redraws). Never `location.reload()`: the frame reloads with the state it was built with, not the latest.
+- `sessionStorage` is the same store. Keep the state small: up to 48 KB is kept (a larger write is refused and the last one stays).
+
+### An HTML file the user reads in the Files preview
+
+A page you write to a file (a report, a step-by-step walkthrough) loads again in the preview every time you write the file again, while the user may be on its third tab. The preview keeps its scroll, the tab or item marked selected, open `<details>`, checked boxes and typed values on its own, and gives the page the storage a browser gives a site, kept per file on this machine: `localStorage`, IndexedDB, cookies and the Cache API survive the reload, a reload of Walnut and a restart of the app, and `sessionStorage` (a separate store) lasts as long as the Walnut window, as a browser tab's does. Service workers and the origin private file system are not available (the page has no origin of its own). State that lives only in your script's variables does not: save it on every change (`localStorage.setItem('<page>', JSON.stringify(state))`, or the step in `location.hash`) and draw from it at the top of your script. Write the file again only when its content changed.
+
+### Hand a result back: `walnut.report(text)`
+
+When the island produces something the AI should see (a quiz score, the options picked, a form the reader filled), call `walnut.report(text)`. Walnut shows that exact text under the island with a **Send to AI** button; nothing is sent unless the reader presses it, and what they press sends the text exactly as shown, as their own message. A string is sent as written; anything else is sent as pretty JSON.
+
+- Write the text for the AI to act on, self-contained: what the block was, the outcome, and the details (for a quiz: the score, and for each wrong answer the question, the reader's pick and the right answer).
+- Report when the result is complete (the last question answered), and again if it changes (a retake). The same text twice is offered once.
+- Never ask the reader to copy and paste a result; that is what this is for.
+- Do not start the text with `/` (it would run as a command, so Walnut will not send it), and report only when the result changes: Send waits a moment after every change so the reader sends what they read.
+
+````
+```html-app
+<div id="q"></div><button id="next">Next</button> <button id="restart">Restart</button>
+<script>
+const QS = [{q:'2+2?', a:['3','4'], ok:1}, {q:'Capital of France?', a:['Paris','Rome'], ok:0}];
+const fresh = () => ({i:0, picks:[], order:QS.map((_, n) => n).sort(() => Math.random() - 0.5)});
+let s = JSON.parse(localStorage.getItem('quiz') || 'null') || fresh();
+const save = () => localStorage.setItem('quiz', JSON.stringify(s));
+function draw() {
+  if (s.i >= QS.length) {
+    const wrong = s.order.filter((n, k) => s.picks[k] !== QS[n].ok);
+    q.textContent = `Done: ${QS.length - wrong.length}/${QS.length}`;
+    walnut.report(`Quiz result: ${QS.length - wrong.length}/${QS.length} right.\n`
+      + wrong.map(n => `Wrong: "${QS[n].q}" picked "${QS[n].a[s.picks[s.order.indexOf(n)]]}", right "${QS[n].a[QS[n].ok]}"`).join('\n'));
+    return;
+  }
+  const item = QS[s.order[s.i]];
+  q.innerHTML = item.q + item.a.map((t, k) => `<label><input type=radio name=a value=${k}>${t}</label>`).join('');
+}
+next.onclick = () => { const c = document.querySelector('input:checked'); if (!c) return;
+  s.picks[s.i] = +c.value; s.i++; save(); draw(); };
+restart.onclick = () => { s = fresh(); save(); draw(); };
+draw();
+</script>
+```
+````
+
+## Streaming behaviour worth knowing
+
+A block freezes once its top-level tag closes, and frozen blocks are never re-rendered — that is what lets the reader click your stepper while the rest of the reply is still arriving. Two consequences: keep one widget in one contiguous block (no blank line in the middle of it), and put the widget before the long tail of prose if you want it clickable early.

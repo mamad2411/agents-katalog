@@ -1,0 +1,243 @@
+---
+model_tier: medium
+name: verify-completion-evidence
+description: "Use when claiming 'done', suggesting a commit, push, or PR — runs the evidence gate so completion claims come from fresh output in this message, not memory or earlier runs."
+personas:
+  - production-validator
+domain: quality
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+---
+
+# verify-completion-evidence
+
+## When to use
+
+* Just before claiming a task, feature, fix, or refactor is complete
+* Just before proposing `/commit`, `/create-pr`, or pushing
+* Before answering "is it ready?", "can I merge?", "does it work?"
+* After a sequence of edits, when next step would be reporting to the user
+* Whenever the wording "should work", "looks good", "probably fine" is
+  about to appear in a reply
+
+Do NOT use when:
+
+* Still actively editing — run targeted tests, not the full gate
+* Pure documentation changes with no executable impact
+* The user explicitly asks for a draft / exploration, not a final answer
+
+## Goal
+
+Make every completion claim **traceable to captured output from this
+message**. No claim survives unless the command that proves it was run
+and its output was read inside the current turn.
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH EVIDENCE IN THIS MESSAGE.
+```
+
+"I already ran it earlier in the conversation" does not count. Earlier
+runs are stale the moment another edit lands.
+
+## Procedure
+
+### 1. Identify the claim you are about to make
+
+Examples: *"all tests pass"*, *"this is ready for PR"*, *"the refactor
+is done"*, *"the bug is fixed"*.
+
+Each claim maps to a specific verification command. Write down the
+mapping before running anything:
+
+| Claim | Evidence command |
+|---|---|
+| "tests pass" | full or targeted test suite |
+| "no static errors" | project's type-checker on changed scope (PHPStan, `tsc --noEmit`, mypy / pyright, `go vet`, `cargo check`) |
+| "style is clean" | project's linter + formatter (ECS / Prettier / ESLint / Ruff / Black / gofmt / rustfmt) |
+| "no automated refactor pending" | project's auto-refactor dry-run if one exists (Rector for PHP — otherwise skip this row) |
+| "endpoint works" | curl / Postman / integration test output |
+| "UI renders" | Playwright snapshot or manual browser check |
+| "bug is fixed" | regression test passes |
+
+### 2. Run the command fresh
+
+* Run against the current working tree, not a cached summary.
+* If the project runs commands inside a container or VM (Docker, Devcontainer, Vagrant), run them there — not on the host. See [`docker`](../docker/SKILL.md) and [`/tests:execute`](../../domains/engineering-base/tests/execute/command.md).
+* Use targeted runs during iteration (`--filter=`, `--testNamePattern`).
+  Run the full suite only in the final verification pass.
+
+### 3. Read the full output
+
+* Check the exit code — the gate's own: `gate; echo $?` reports echo's, so keep `rc=$?`.
+* Count failures, errors, warnings.
+* Do not rely on the last line — scroll through the output for
+  deprecations, skipped tests, silent retries.
+
+### 4. Match output against the claim
+
+Ask: *"Does this output actually support what I am about to say?"*
+
+* 248/250 tests passed with 2 skipped → do not say "all green"; name the skips.
+* Type-checker exit 0 but only analyzed one file → do not say "no static
+  errors"; name the scope that was checked.
+* `curl` returned 200 → check the body, not just the status.
+
+### 5. Only then make the claim
+
+Reference the evidence: *"Tests: 250/250 passed. Type-checker: 0 errors
+on the changed scope."* — not *"everything looks good"*.
+
+## The end-of-work sequence
+
+**Gate zero:** when `quality.local_auto_run` is `false` or missing (the
+default), steps 2–3 below do NOT run — the user runs quality tools
+manually and remote CI is the authoritative gate (see
+[`quality-tools` § Execution policy](../quality-tools/SKILL.md)). Run
+only the narrowest probe the claim needs (step 1, a `curl`, a syntax
+check on the edited file) and close with *"quality gates delegated to
+remote CI"* — never a pass claim for tools that did not run. The full
+sequence applies when `local_auto_run: true`:
+
+1. **Targeted tests** — the test(s) covering the changed code pass.
+2. **Full test suite** — only after targeted pass is green.
+3. **Static analysis pipeline** — run the project's type-checker → auto-refactor dry-run (if any) → linter / formatter → type-checker (second pass catches issues the refactor / formatter may have introduced).
+4. Fix any output from steps 1–3 and restart the sequence.
+5. Only then: claim completion or suggest `/commit`, push, or PR.
+
+Do not run the full quality pipeline between intermediate edits — it burns time and tokens. Use it once, at the end.
+
+→ For the **exact PHP commands** (PHPStan → Rector → ECS → PHPStan): see [`quality-tools`](../quality-tools/SKILL.md).
+→ For TS / JS, Python, Go, Rust pipelines: the project's `Taskfile.yml` / `package.json scripts` / `Makefile` is the source of truth — read it before improvising.
+
+## Minimum evidence per task type
+
+The single authority for this table; `verification-mechanics` points here.
+The oracle class names what judges the result: a **tool**, the **data**
+itself, an **external artifact**, **another model**, or the model's own
+reading (**self**). Self is never enough on its own.
+
+| Task type | Required evidence | Oracle class |
+|---|---|---|
+| Code change (logic) | Targeted tests + the project's type-checker on the changed scope | tool |
+| New feature | Tests (new + suite) + type-checker + smoke check (curl / UI / integration probe) | tool |
+| Bug fix | Regression test (RED → GREEN) + full suite | tool |
+| Refactoring | Full suite + type-checker + auto-refactor dry-run if available | tool |
+| Config / env change | Relevant command or service output (not just the file diff) | tool |
+| Migration | Migration run output + rollback dry-run + tests | tool |
+| API endpoint | HTTP response body + status + content-type | tool |
+| Frontend component | Rendered state (Playwright or manual) + unit tests | tool |
+| Documentation | Links resolve and embedded commands run (the reference and claims checks) | tool |
+| Analysis or report with numbers | A script recomputes every figure from the raw input; each figure traces to a source row | data |
+| Research or summary | Each claim maps to a fetched primary source, or is marked secondary | external artifact |
+| Rendered artifact (page, SVG, deck) | Rendered and inspected; overflow and alignment checked | tool |
+| Media | Probe output (duration, streams) + key frames inspected | tool |
+| Game / scene / native runtime | The engine's own test run, or a runtime capture plus a cited reading of it; "build/import passed" is `static-only` (status words as in [`svg-authoring`](../svg-authoring/SKILL.md)) | tool |
+
+**Never accept** as proof: "should work", "looks correct", "the logic
+is sound", "compiles" (unless compilation itself is the contract).
+
+## Output format
+
+When reporting completion to the user:
+
+1. **What was changed** — one line summary per changed file / component
+2. **Verification run** — the exact command and its exit code
+3. **Result** — numeric breakdown (tests passed/failed/skipped, errors,
+   warnings)
+4. **Caveats** — anything the output flagged but you chose to accept
+5. **Untracked files** — if `git status --short` shows any untracked
+   files in the working tree, list them verbatim in the report. This
+   prevents silently-shipped artefacts (logs, scratch scripts, ad-hoc
+   notes) from disappearing into a future commit. Empty list means
+   omit the section.
+6. **Next step** — e.g. "Ready for `/commit`" or "Awaiting review"
+
+### Verified and not verified — the closing split
+
+A closing summary after a change carries two parts, and the second is not
+optional when it would be non-empty:
+
+* **`Verified:`** — each command that verified, with the exit code that was
+  **read from that command**. An exit code from an appended `echo`, a trailing
+  `; …`, or a pipe into `tail` / `head` / `grep` without `set -o pipefail` is
+  not the verifier's and is not evidence.
+* **`Not verified:`** — each changed surface that got no live check, with the
+  reason: no derived surface for it, or no tool in this session that can drive
+  it. A ratio of work done (`165 of 405`) that is not the whole goes here too,
+  never beside "done".
+
+Which surfaces exist is read, not remembered: `agent-config verify:surfaces`
+derives them from the repo's own files (`package.json` dev/start/preview/serve,
+`tauri.conf.json`, `playwright.config.*`, compose ports, Taskfile dev/run/serve)
+into `agents/state/live-surfaces.json`. Where a changed surface is reachable,
+start it with its derived command — or `agent-config ui:render` for a web page —
+and drive it before claiming. Where it is not, list it under `Not verified:`;
+the reply never hands that check to the user as a task.
+
+## Gotchas
+
+* A "no output" result from a linter is not proof it ran — check the
+  exit code and the analyzed-file count.
+* Silencing a warning with `@phpstan-ignore-next-line`, `// @ts-expect-error`, `# type: ignore`, or `//nolint`
+  without a reason code passes the linter but defers the real problem.
+* Running tests with `--stop-on-failure` then reporting "passed" — it
+  only ran until the first failure; the green streak after it is
+  unexamined.
+* Cached static-analysis results (`--cache` directories) can report
+  clean after you have broken something; clear the cache when the
+  change is large.
+* Running the test suite on the wrong branch (forgot to switch or
+  rebase) — verify `git status` and `git log -1` before the final gate.
+* A previously green static-analysis run in the same conversation is stale as
+  soon as any edit lands. Run it again.
+
+## Red flags — STOP and run the gate
+
+* About to write "done", "ready", "works", "passes" without a
+  command-output reference in the same message
+* About to suggest `/commit` / push / PR without a verification block
+* Relying on an earlier-in-conversation test run
+* Partial evidence (tests green, type-checker / linter not run — or vice versa)
+* "The failing test is unrelated, let me skip it" — verify first, then
+  decide
+* Reporting a green run by paraphrasing instead of quoting exit code
+  and counts
+
+## Do NOT
+
+* Do NOT claim completion without running the mapping command in this
+  message
+* Do NOT trust a summary written earlier in the conversation
+* Do NOT suppress warnings or skip tests to pass the gate
+* Do NOT report only the last line of output — read the whole thing
+* Do NOT run the full quality pipeline between intermediate edits —
+  and under `quality.local_auto_run: false` (the default) do NOT run
+  it at the end either; remote CI is the gate
+
+## When to hand over to another skill
+
+* Exact PHP quality commands (PHPStan / Rector / ECS) → [`quality-tools`](../quality-tools/SKILL.md)
+* Running tests inside a container / VM → [`/tests:execute`](../../domains/engineering-base/tests/execute/command.md)
+* Writing the regression test that the gate requires →
+  [`test-driven-development`](../test-driven-development/SKILL.md)
+* Diagnosing why the gate failed → [`systematic-debugging`](../systematic-debugging/SKILL.md)
+* Committing once the gate is green → [`git-workflow`](../git-workflow/SKILL.md)
+
+## Validation checklist
+
+Before sending a completion message:
+
+* [ ] Every claim in the message maps to a command run in this turn
+* [ ] Exit code of each command is read and matches the claim
+* [ ] Output is quoted with numeric counts, not paraphrased
+* [ ] No warnings or skips are hidden
+* [ ] Targeted tests green → full suite green → quality pipeline clean
+      (`local_auto_run: true` only; under the default `false` state
+      "quality gates delegated to remote CI" instead)
+* [ ] `git status` reflects only the intended change set
+* [ ] If `git status --short` shows untracked files, the report lists
+      them verbatim under "Untracked files"

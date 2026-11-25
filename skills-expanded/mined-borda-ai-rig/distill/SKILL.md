@@ -1,0 +1,308 @@
+---
+name: distill
+description: One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /foundry:audit --efficiency candidates. Roster boundary analysis → /foundry:audit agents (Check 46).
+argument-hint: '[prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager] [--keep "<items>"]'
+disable-model-invocation: true
+allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
+effort: low
+---
+
+<objective>
+
+Analyze how Claude Code is used, surface concrete improvements — new agents/skills to reduce repetition, or consolidate lessons into governance files (rules, agent instructions, skill updates) — without duplicating what exists.
+
+NOT for single-file edits or quality checks — use `/foundry:audit` for config quality checks. NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficiency` instead of `distill executables` for detection-only).
+
+</objective>
+
+<inputs>
+
+- **$ARGUMENTS**: optional. Modes:
+  - Omitted: analyze existing patterns and agents; generate suggestions proactively.
+  - `prune [--eager]` — evaluate project memory file for stale, redundant, or verbose entries. Default: advisory diff + apply prompt. `--eager`: score every entry (Usage likelihood × Impact → Tier P0/P1/P2), print full scored table with `#` column, let user select by tier or item numbers, delegate edits to `foundry:curator`.
+  - `memory [--eager]` — read `.notes/lessons.md`, memory feedback files and recurring transcript tool failures (`bin/mine_transcript_failures.py`), distill recurring patterns into proposed rule files, agent instruction updates, skill workflow changes. `--eager`: include Pattern count, Strength, Tier columns in proposal table; let user select clusters to promote by tier or item numbers; delegate writes to `foundry:curator`.
+  - `external <source> [--eager]` — analyse external plugin, skill, or agentic resource, produce structured adoption proposal. `<source>` is URL, file path, or local directory. `--eager`: lower adoption bar — recommend partial adoption even for single useful components.
+  - `executables [--eager] [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target specific run dir or report file. Runs inline Check 33 scan when no report exists. Default gates on HIGH/MEDIUM verdict. `--eager`: also surface LOW verdict clusters as extraction candidates. Spawns `foundry:sw-engineer` per cluster. Skip to **Mode: Executables Extraction** below.
+  - `[--eager] <recurring task description>` — use description as context when generating suggestions. `--eager`: lower frequency threshold from 3+ to 2+ occurrences; single high-effort occurrence also qualifies.
+  - `--project` — in `prune` and `memory` modes, show interactive project picker: enumerate all slugs under `~/.claude/projects/*/memory/` with MEMORY.md size in tokens, let user select which project(s) to operate on. Omit to operate on the **current project's** memory only (the working directory's memory dir, resolved by `resolve_memory_dir.py`) — other projects are never touched without the picker. No effect on other modes.
+
+</inputs>
+
+<compaction>
+- Key boundary 1: end of Step 2 frequency heuristics (default mode only — prune/memory/external/executables exit early), before Step 3 gap analysis.
+- Preserve at boundary 1: EAGER flag, ARGUMENTS_FINAL (stripped), no run-dir (default mode is stateless).
+- Terminal paths: end of Step 5 report (default mode); end of Memory Pruning mode (both eager and standard branches).
+</compaction>
+
+<workflow>
+
+**Task hygiene** — task tools may be deferred; load before first use: `ToolSearch(query="select:TaskList,TaskCreate,TaskUpdate,TaskGet", max_results=4)`. Call `TaskList` first and triage each task it returns: `completed` if work clearly done, `deleted` if orphaned, keep `in_progress` only if genuinely continuing. Never spend a turn on bookkeeping alone — every `TaskCreate`/`TaskUpdate` ships in the same response as the next substantive tool call; one exception, `TaskUpdate(completed)` immediately before a long output block (`rules/task-lifecycle.md`).
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse-skill-flags.py" --flags eager,project --keep-state distill-state --out-file "${TMPDIR:-/tmp}/distill-state-${CSID}/keep-items" -- "$ARGUMENTS" >/dev/null  # timeout: 5000 — no eval; distill-state-<flag>-${CSID} sentinels, keep-items into the state dir it makes, clears stale contract
+IFS= read -r EAGER < "${TMPDIR:-/tmp}/distill-state-eager-${CSID}" 2>/dev/null || EAGER=false
+IFS= read -r PROJECT_FLAG < "${TMPDIR:-/tmp}/distill-state-project-${CSID}" 2>/dev/null || PROJECT_FLAG=false
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/distill-state-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+echo "EAGER=$EAGER"  # shell vars don't persist across Bash calls — read from stdout
+echo "PROJECT_FLAG=$PROJECT_FLAG"
+echo "ARGUMENTS_FINAL=$CLEAN_ARGS"
+```
+
+> **Note**: `EAGER`, `PROJECT_FLAG` and stripped `CLEAN_ARGS` are set by this Bash block, but shell variable state does **not** persist across separate Bash() tool calls. After this block runs, read its stdout (`EAGER=true/false`, `PROJECT_FLAG=true/false`, `ARGUMENTS_FINAL=...`), carry those values as model-context references for all subsequent mode dispatch and threshold decisions. Do not rely on `$EAGER`/`$PROJECT_FLAG` as live shell variables in later steps — substitute the literal value read from stdout. `PROJECT_FLAG=true`: mode must run interactive picker before operating.
+
+**Report-first gate — every mode** (default Step 5, `prune`, `memory`, `external`, `executables`, no exception). Invariant: user decides from a complete report, and the decision survives a host blanking pre-call text:
+
+- Before any `AskUserQuestion` on what to apply, port, extract, prune or do next: print gate report in reply, rendered normal Markdown. Order: Write report file first → then, in the response that calls `AskUserQuestion`, print full report as reply text right before the call. No tool call between print and call. Question text still carries its plain summary (below).
+- Every report — gate modes (`prune`, `memory`, `external`, `executables`) and default Step 5 — carries all five; empty part stated `none — <reason>`, never left out:
+  - **Summary** — headline + counts
+  - **Recommendations** — what to do, recommended option, why
+  - **Findings table** — the gate's candidate/proposal/scored table; label names rendered form, so a per-item text list is **Findings list**
+  - **Review verdict** — challenger/reviewer outcome (verdict counts, discarded rows), or `⚠ unavailable` / ⏱ `timed_out`, or `none before gate — <reviewer> runs after apply`
+  - **Open decisions** — what the question decides + unresolved items (conflicts, Group B, manual-review rows)
+- Saved `.temp/`/`.reports/` file = addition, never substitute. Write content, Bash stdout, question text, bare `→ <file>` path ≠ printed report. Gate reached without printed report = violation: print it, then ask, question text keeping its plain summary.
+- Gate report = required rich content (`_full/communication.md` §Interactive Questions: named file first, printed once before the call) → full print, not Output Routing header/path/summary form. distill is no report-header follow-up (`_shared/terminal-summaries.md` final-reply-after-answer rule does not apply); saved file gets no `---` YAML header.
+- Default mode: Step 5 report, no gate, never a question; all five parts (`**Review verdict**: none — default mode runs no reviewer`). Next steps (`/foundry:manage create` — user-invoked only — or edit existing) print as plain-text user-run commands. This line is the authoritative default-mode policy; `_full/quality-gates.md` §Output Routing defers here.
+- Question text stays ≤6 plain lines: headline + counts + one-line top recommendation + `→ <file>` (`communication.md` §Interactive Questions) — carries the decision when a host blanks pre-call text.
+- Every question site names its report (`§Report-first gate`) or one named exclusion (`§Report-first gate exclusion: <name>`). Exclusions: `--project` picker (scope choice, no report built yet); per-item approval after printed diff (`Review first`, `Show diff first`, draft approvals, deletion confirms — diff/draft printed first); follow-up within printed gate (asked only after the gate's first answer needs it; report already printed; its question text repeats counts, top recommendation, path).
+- Legal ask forms: an `AskUserQuestion` sentence, a `- question:` block with its `- (x) label:` options, or a sentence carrying an exclusion tag. Plain-text question or wait-for-reply = violation (`communication.md` §Interactive Questions); free text arrives via the tool's auto-added `Other` answer.
+- Open items: each mode keeps one open-item list (`<mode> open items`); its gate and zero-result **Open decisions** both name it, never a hand-picked subset.
+- Menus list only actionable options: option offered only when its candidate set is non-empty; `Skip` always offered.
+- Option cap: each question ≤4 single-pick options; more choices → conditional follow-up within printed gate, never a second question every user must answer.
+- Zero-result run (analysis found nothing to propose): same five parts, empty ones stated, no question. Prerequisite stop (no input to analyse) prints its one status line only.
+
+<!-- ../../assets/images/distill-arch.svg diagrams the runs, gates and parallel fan-out. Documentation only, never loaded — update it in the same commit as any change to step order, gate placement, or agent fan-out. -->
+
+## Mode dispatch — before inventory
+
+> **Mode-token normalization** — all mode dispatches below compare against the **first whitespace-delimited token** of stripped `ARGUMENTS_FINAL` from stdout (after flag removal). Use this single rule consistently; don't rely on exact equality of the full `$ARGUMENTS` string — trailing flags/spaces from prior parsing may differ.
+
+**`--project` scope check** (run before the mode checks below): if `PROJECT_FLAG` (read from stdout above) is `true` and the first token is not `prune` or `memory`, print `` ⚠ `--project` ignored — it applies only to `prune` and `memory` modes. `` once and repeat it in the final reply (a mid-run print can arrive as an empty progress update), then continue with normal dispatch below.
+
+**If first token equals `executables`** (i.e. `executables` alone or `executables <path>`, NOT a path or word that merely starts with the string `executables`): skip Steps 1–5 entirely and go to "Mode: Executables Extraction" below.
+
+**If first token equals `prune`**: skip Steps 1–5 entirely and go to "Mode: Memory Pruning" below.
+
+**If first token equals `memory`**: skip Steps 1–5 entirely and go to "Mode: Memory Distillation" below.
+
+**If first token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): a second token is **required** — it is the source to analyse. No second token: print `` ! MISSING — `external` needs a source: `/foundry:distill external <url-or-path>`. `` and stop; do not enter the mode, do not guess a source, do not fall back to default-mode analysis. Second token present: skip Steps 1–5 entirely and go to "Mode: External Distillation" below; that mode collects the live inventory at E7.
+
+## Step 1: Inventory existing agents and skills
+
+Use Glob tool to enumerate agents and skills across all sources — project-local AND plugin-namespaced — avoids false-gap findings when candidate already exists in plugin:
+
+- **Project-local**: pattern `agents/*.md`, path `.claude/`; pattern `skills/*/SKILL.md`, path `.claude/`
+- **Plugin source** (workspace): pattern `*/agents/*.md`, path `plugins/`; pattern `*/skills/*/SKILL.md`, path `plugins/`
+- **Installed plugin cache**: resolve each installed plugin's current root with the block below — `${CLAUDE_PLUGIN_ROOT}` is foundry's own version dir, so globbing `*/agents/*.md` under it matches nothing, and globbing the whole cache double-counts orphaned versions
+
+```bash
+# timeout: 30000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+find "$HOME/.claude/plugins/cache" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | while IFS= read -r p; do
+    m="${p%/*}"; m="${m##*/}"
+    python "$PLUGIN_ROOT/bin/resolve_plugin_root.py" --plugin-name "${p##*/}" --marketplace "$m" 2>/dev/null | sed "s|^|PLUGIN_ROOT: ${p##*/} |"
+done
+```
+
+Then use Glob tool on each printed root for pattern `agents/*.md` and `skills/*/SKILL.md`, tagging entries with that plugin name. No `PLUGIN_ROOT:` line printed → installed inventory unavailable: state it in the report and never read an empty inventory as "no such agent/skill exists".
+
+For each agent/skill found, extract: name, description, tools, purpose. Tag each entry with plugin namespace (e.g. `foundry:sw-engineer`, `oss:resolve`) — used in Step 3 gap analysis to prevent recommending duplicates of plugin-namespaced agents/skills.
+
+## Step 2: Analyze work patterns
+
+Look for signals of repetitive or specialist work. Guard each independent git command with `git rev-parse --is-inside-work-tree >/dev/null 2>&1` before running it; outside a repository, report git history unavailable and continue with task and lesson evidence. First three git commands independent — run in parallel:
+
+```bash
+# timeout: 3000
+# --- run these three in parallel ---
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git log --oneline -50; else echo "git history unavailable"; fi
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git log --name-only --pretty="" -30 | sort | uniq -c | sort -rn | head -20; else echo "git history unavailable"; fi
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git log --oneline -100 | cut -d' ' -f2 | sort | uniq -c | sort -rn | head -15; else echo "git history unavailable"; fi
+```
+
+Then use Glob tool (pattern `todo_*.md`, path `.plans/active/`) to list active task files; read each with Read tool. Also read `.notes/lessons.md` (if exists) for task history and conversation hints.
+
+If `ARGUMENTS_FINAL` from the parse stdout is non-empty, use it as additional context for pattern analysis.
+
+### Frequency Heuristics
+
+- **3+ occurrences** of pattern in recent history: candidate for automation
+- **2+ different projects** using same manual process: cross-project skill
+- **significant manual effort** per occurrence (subjective — use git history context): high-value automation target
+- **Domain-specific knowledge** required: candidate for specialist agent (not just skill)
+
+With `--eager` (lower thresholds):
+
+- **2+ occurrences**: candidate for automation
+- **1 occurrence** with significant manual effort: qualifies as high-value candidate
+- Domain-specific threshold unchanged
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_PRESERVE="run-dir=n/a"
+python "$PLUGIN_ROOT/bin/write_skill_contract.py" --keep-file "${TMPDIR:-/tmp}/distill-state-${CSID}/keep-items" "foundry:distill" "gap-analysis (after work-pattern scan)" "n/a" "$_PRESERVE" "gap analysis (Step 3) → duplication check (Step 4) → report (Step 5)"  # timeout: 5000
+```
+
+## Step 3: Gap analysis
+
+For each identified pattern, check:
+
+1. **Already covered?** — search existing agent/skill descriptions for overlap
+2. **Frequent enough?** — recurring ≥3 times or clearly domain-specialized (see Step 2 heuristics — combine ≥3 occurrences with effort/frequency signals from Steps 1–2)
+3. **Would specialist add quality?** — needs deep domain knowledge?
+4. **Too narrow?** — single-use task doesn't warrant persistent agent
+
+Thresholds for recommendation:
+
+- **New agent**: recurring specialist role, complex decision-making, 5+ distinct capabilities
+- **New skill**: workflow orchestration, multi-step process with fixed structure
+- **No new file needed**: one-off or already covered by existing agent
+
+## Step 4: Check for duplication
+
+Before recommending anything, run overlap check and anti-pattern checklist:
+
+```markdown
+For each candidate agent/skill:
+- Does any existing agent cover >50% of its scope? → enhance existing instead
+  (with --eager: lower to >30%; any shared single named capability → flag as boundary issue)
+- Is the name/description confusingly similar to an existing one? → rename existing
+```
+
+Anti-pattern checklist — reject candidate if any apply:
+
+1. **Role vs task confusion**: agents are roles, not tasks. Don't create agent per different topic.
+2. **Near-duplicate**: candidate duplicates existing agent, slightly different name. Enhance existing instead.
+3. **Thin wrapper**: candidate skill just calls one agent with fixed args. Not enough value for new skill file. Exception: skills adding measure-first/measure-after bookends, multi-mode dispatch across 3+ agents, or safety breaks (retry limits, validation gates) justify wrapper even if only one agent executes for given invocation.
+
+## Step 5: Report
+
+Print report below in reply, rendered normal Markdown (§Report-first gate: all five parts, empty ones stated). Default mode has no gate: after the report, print next steps as plain-text user-run commands, never as a question (§Report-first gate, default-mode line).
+
+```markdown
+## Agent/Skill Suggestions
+
+**Summary**: [N patterns scanned · N gaps · N recommendations]
+
+**Recommendations** (`none — <reason>` when empty):
+
+### Existing Coverage (no gaps found)
+- [agent/skill]: covers [pattern] well — no new file needed
+
+### Recommend: New Agent — [name]
+**Trigger**: [what recurring pattern or gap justifies this]
+**Gap**: [what existing agents don't cover]
+**Scope**: [what it would do — 3-5 bullet points]
+**Suggested tools**: [Read, Write, Edit, Bash, etc.]
+**Draft description**: "[one-line description for frontmatter]"
+
+### Recommend: New Skill — [name]
+**Trigger**: [what repetitive workflow justifies this]
+**Gap**: [why existing skills don't cover it]
+**Scope**: [what workflow steps it would orchestrate]
+**Draft description**: "[one-line description for frontmatter]"
+
+### Recommend: Enhance Existing — [agent/skill name]
+**Add**: [specific capability missing from current version]
+**Why**: [what recurring task would benefit]
+
+### No Action Needed
+[pattern]: already handled by [existing agent/skill]
+
+**Findings table** (`none — <reason>` when no pattern found):
+
+| Pattern | Occurrences | Covered by | Gap |
+|---------|-------------|------------|-----|
+| [pattern] | [N] | [agent/skill or —] | [yes/no] |
+
+**Review verdict**: none — default mode runs no reviewer
+
+**Open decisions**:
+- [choice needing user input, e.g. which recommendation to scaffold — or `none — <reason>`]
+
+## Confidence
+**Score**: [0.NN]
+**Gaps**:
+- (-0.NN) [e.g., git history too shallow, task files not present, descriptions too generic to compare]
+
+**Refinements**: N passes. [Pass 1: <what improved>. Pass 2: <what improved>.] — omit if 0 passes
+```
+
+```bash
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
+
+## Mode: Memory Pruning — only when first token is `prune`
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/load_mode.py" distill modes prune.md --fallback-source  # timeout: 5000
+```
+
+Execute the mode loaded above.
+
+## Mode: Memory Distillation — only when first token is `memory`
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/load_mode.py" distill modes memory.md --fallback-source  # timeout: 5000
+```
+
+Execute the mode loaded above.
+
+## Mode: External Distillation — only when first token is `external`
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/load_mode.py" distill modes external.md --fallback-source  # timeout: 5000
+```
+
+Execute the mode loaded above.
+
+## Mode: Executables Extraction — only when first token is `executables`
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name foundry) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/load_mode.py" distill modes executables.md --fallback-source  # timeout: 5000
+```
+
+Execute the mode loaded above.
+
+</workflow>
+
+<notes>
+
+- Skill is introspective: looks at tooling itself, not just code
+
+- Invoke periodically (e.g. monthly) or after burst of correction/feedback; one-time snapshot, not continuous monitor
+
+- Suggestions are proposals — review before creating new files
+
+- After creating new agent/skill from suggestion, re-run skill once to confirm gap resolved, then stop
+
+- **`memory` mode is primary consolidation path** — run after any session with significant corrections, prevents lesson drift into MEMORY.md noise
+
+- **Agent Teams signal tracking**: when reviewing patterns, also look for:
+
+  - Skills using `--team` or team-mode heuristics more/less than expected: flag over/under-use relative to `CLAUDE.md` §Agent Teams (teams are user-invoked only) and the per-tier ceilings in `rules/agent-spawn.md` §Parallel Spawn Ceilings
+  - Security findings in reviews for non-auth code: foundry:qa-specialist teammate scope too broad; narrow it
+  - Model tier mismatches (e.g. heavy analysis assigned to `sonnet` teammates): flag for tier adjustment
+
+- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${CLAUDE_PLUGIN_ROOT}" -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | head -1` with fallback to `plugins/cc_foundry/skills/calibrate/modes/skills.md`:
+
+  - **caveman plugin** — narrow, self-contained communication mode, no local structural overlap: GT install-as-is recommended, Group A empty or thin
+  - **Karpathy autoresearch** — research automation tool, strong overlap with `research:` plugin structure: GT Group A candidates map to research plugin, digest recommended, install-as-is not triggered
+  - Ground truth = static snapshot of each tool's agent/skill/rule files (no live fetch needed); score adoption-table lane assignments against GT outcomes
+
+- Follow-up chains:
+
+  - Suggestion accepted for new agent/skill: `/foundry:manage create` to scaffold and register it
+  - Suggestion to enhance existing: edit agent/skill directly (project `.claude/` edits apply at once; plugin-source edits reach `~/.claude/` only via plugin update/reinstall, after which `/foundry:setup` re-merges plugin settings/rules)
+  - `memory` proposals applied: `/foundry:audit rules` to verify new rule files structurally sound
+  - `executables` extraction complete: plugin `bin/` scripts reach `~/.claude/` via plugin update/reinstall; run `/foundry:audit --efficiency` to confirm `extract_count == 0`
+
+</notes>

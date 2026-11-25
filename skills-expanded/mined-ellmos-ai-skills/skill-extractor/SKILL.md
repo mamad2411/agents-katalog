@@ -1,0 +1,294 @@
+---
+name: skill-extractor
+version: 1.3.2
+type: skill
+author: Lukas Geiger + Claude
+created: 2026-07-03
+updated: 2026-11-22
+description: Extrahiert aus einem Chatverlauf (aktuelle Session oder Transkript-Dateien) einen wiederverwendbaren Skill — oder verbessert einen sehr ähnlichen existierenden Skill, statt ein Duplikat zu erzeugen. Nutze diesen Skill bei „mach daraus einen Skill", „das sollten wir als Skill festhalten", „extrahiere Skills aus diesem/alten Chatverläufen", „diese Arbeitsweise wiederverwendbar machen", oder bei `/skill-extract`. Deckt auch Bulk-Läufe über viele alte Transkripte ab (mit Datenreduktion über Subagenten). Für wiederkehrende AUTOMATISIERUNGEN (Cron/Schedule/Loop) stattdessen den Schwester-Skill workflow-extract nutzen.
+standalone: true
+anthropic_compatible: true
+bach_compatible: false
+bach_origin: false
+category: infrastructure
+tags: [skills, extraction, transcript, chatverlauf, meta, dedup, neutralisierung, workflow]
+language: de
+status: active
+visibility: public
+dependencies: {'tools': [], 'services': [], 'protocols': [], 'python': []}
+provenance: {'origin': 'custom', 'origin_path': 'None', 'origin_version': 'None', 'origin_repo': 'github.com/ellmos-ai/skills', 'last_sync_from_origin': 'None', 'last_sync_to_origin': 'None', 'local_changes_since_sync': False}
+---
+
+<img src="banner.png" width="100%" alt="skill-extractor banner">
+
+> Deutsche Originalfassung. Weitere Sprachen: [EN](SKILL.en.md) · [FR](SKILL.fr.md) · [ES](SKILL.es.md) · [JA](SKILL.ja.md) · [RU](SKILL.ru.md) · [ZH](SKILL.zh.md)
+
+# Skill-Extractor — aus Chatverläufen Skills gewinnen (Deutsch)
+
+## Übersicht & Zweck
+
+Wertvolle Arbeitsweisen entstehen in Sessions: Ein Problem wurde mühsam gelöst, der User hat
+mehrfach korrigiert, am Ende steht ein funktionierender Ablauf — und beim nächsten Mal fängt
+der Agent wieder bei null an. Dieser Skill destilliert aus einem Chatverlauf das, was sich zu
+konservieren lohnt, und macht daraus einen Skill nach den Konventionen der lokalen
+Skill-Bibliothek. Kernprinzip: **Erweitern vor Neuanlegen** — existiert ein sehr ähnlicher
+Skill, wird der verbessert statt ein Duplikat erzeugt.
+
+Abgrenzung: Ergebnis ist hier ein **abrufbarer Skill** (Fähigkeit/Verfahren, das ein Agent bei
+Bedarf lädt). Soll aus dem Verlauf eine **selbstlaufende Automatisierung** werden (wiederkehrender
+Prompt, Cron, Schedule), den Schwester-Skill `workflow-extract` nutzen.
+
+## Ablauf
+
+### 1. Quelle bestimmen
+
+Drei Eingabeformen:
+
+| Quelle | Zugang |
+| --- | --- |
+| **Aktuelle Session** | Konversationskontext direkt nutzen — keine Dateien nötig |
+| **Einzelne Transkripte** | Dateien lesen; Fundorte und Parsing: `transcript-quellen.md` |
+| **Bulk (viele alte Verläufe)** | Erst Datenreduktion über Subagenten, dann Extraktion: Abschnitt „Bulk-Modus" |
+
+Bei Claude-Code-JSONL zuerst `scripts/segment_stations.py` nutzen. Das Skript bildet
+deterministische Stationen zwischen Berichtspunkten, ohne Chattext oder Toolparameter in die
+Ausgabe zu kopieren. Marker, Optionen und Ausgabeformat stehen in `transcript-quellen.md`.
+
+### 2. Extraktionswürdiges finden
+
+Nicht jede Session enthält einen Skill. Suche nach diesen Signalen — sie zeigen, wo Wissen
+steckt, das teuer erworben wurde und wieder gebraucht wird:
+
+- **Wiederholung:** Derselbe Ablauf kam ≥2-mal vor (in dieser oder über mehrere Sessions).
+- **Korrekturschleifen:** Der User hat den Agenten mehrfach nachjustiert, bis es stimmte —
+  die Endfassung ist das Destillat, die Korrekturen sind die Begründungen („warum so").
+- **Explizite Marker:** „merk dir das", „so machen wir das immer", „beim nächsten Mal direkt so".
+- **Werkzeugketten:** Eine nicht-offensichtliche Abfolge von Tools/Befehlen, die funktioniert hat
+  (inklusive der Sackgassen, die vermieden werden sollen).
+- **Entscheidungsregeln:** Kriterien, nach denen zwischen Alternativen gewählt wurde.
+
+Halte pro Kandidat fest: Auslöser (wann braucht man das), Ablauf (Schritte), Begründungen
+(warum so und nicht anders), Fallstricke (was schiefging), Ergebnisform.
+
+**Bei JSONL-Transkripten die Suche nicht von Hand führen.** `scripts/score_stations.py` nimmt die
+Stationen aus Schritt 1 und liefert statt Fundstellen im Fließtext eine **bewertete Kandidatenliste**:
+
+```bash
+python scripts/score_stations.py <transkript.jsonl> [weitere.jsonl ...] --candidates-only
+```
+
+Die Bewertung ruht auf einer einzigen Beobachtung: **der Anschluss ist das Label.** Eine Station wird
+danach beurteilt, was der Mensch als Nächstes sagt — bestätigt er, war das Verfahren tragfähig;
+korrigiert er, fehlte eine Regel; ändert er die Richtung, war der Ansatz falsch. Damit sind die
+oben aufgezählten Signale zählbar statt nur auffällig:
+
+| Signal aus der Liste oben | maschinelle Entsprechung |
+| --- | --- |
+| Korrekturschleifen | Anschlusstyp `KO`, gedeckelt gewichtet |
+| Wiederholung | gleiche Werkzeugkettensignatur in ≥2 Sessions |
+| Werkzeugketten | Kettenlänge ≥3 Schritte |
+| Sackgassen | Anschlusstyp `RA` — Punktabzug, als Fallstrick trotzdem lesenswert |
+| Fallstricke | `is_error` mit folgender Korrektur (Fehler ohne Korrektur zählt nicht) |
+
+Eine **Stationsfolge** ist die Einheit, nicht die einzelne Station — ein Skill entspricht einem
+durchgearbeiteten Abschnitt, nicht einem Berichtspunkt.
+
+**Die Grenzen der Automatik gehören mitgelesen.** Der Anschlusstyp entsteht aus einem
+deterministischen Wortlisten-Vorfilter; was nicht eindeutig ist, bleibt `unknown` statt geraten zu
+werden. Eindeutige Rückfragen werden als `NT` erkannt: mit Fragezeichen, mit wenigen klaren
+Frageanfängen wie „kannst du …“ oder „sollen wir …“ und bei Ergänzungen wie „noch etwas zu …“.
+Vage Zustandsmeldungen ohne erkennbare Frage, Korrektur oder Auftrag bleiben bewusst `unknown`.
+Steht `classified_ratio` unter 0,5, sagt die Ausgabe selbst, dass die Rangfolge nicht trägt — dann
+die Anschlüsse der obersten Kandidaten nachklassifizieren, bevor geerntet wird. Ein Score ist eine
+Leseempfehlung, keine Auswahlentscheidung: Schritt 3 bleibt Pflicht.
+
+**Nicht jeder Anschluss ist ein Prompt.** Leere Züge und Maschinen-Envelopes (Task-Benachrichtigung,
+Teammate-Nachricht, nacktes Slash-Kommando) tragen keinen Prompttyp und werden als `empty` bzw.
+`non_prompt` ausgewiesen — sie stehen **nicht** im Nenner von `classified_ratio`. Auf drei realen
+Transkripten waren das 127 von 246 Anschlüssen; sie als gescheiterte Klassifikation mitzuzählen
+drückte die Kennzahl von 0,64 auf 0,45 und hätte ein Modell auf Eingaben angesetzt, an denen es
+nichts zu erkennen gibt.
+
+**Optionale Modellstufe — und warum sie selten nötig ist.** `--classifier-cmd "<befehl>"` reicht die
+verbliebenen `unknown` an ein externes Kommando weiter (JSON-Liste rein auf stdin, JSON-Liste mit
+Labels gleicher Länge raus auf stdout; alles außerhalb der sieben Typen bleibt `unknown`). Bewusst
+ein **Kommando statt eines Provider-Adapters**: Diese Bibliothek ist nutzerneutral und trägt keinen
+Modell-Endpunkt. `follow_up_source` und der Block `classification` weisen aus, welche Labels vom
+Modell stammen.
+
+> **Datenschutz:** Das ist der einzige Schritt, bei dem Prompttext den Prozess verlässt. Der
+> Vorfilter liest Text nur lokal und gibt ausschließlich Labels aus; ein Klassifikator-Kommando
+> kann ihn beliebig weitergeben. Deshalb ist die Stufe standardmäßig **aus**.
+>
+> **Gemessen, bevor man sie einschaltet** (60 offene Anschlüsse, 57 handgelabelt, Gemini 3.7 Flash):
+> **70,2 % Treffer** — und in **0 %** der Fälle sagte das Modell ehrlich „weiß nicht". Es rät immer.
+> Die Fehler sind nicht gleichverteilt: 12 von 17 landeten auf `NM`, darunter 3 von 4 falsch
+> zugeordneten `KO`. Ausgerechnet `KO` vergibt im Score die Punkte — ein Modell, das Korrekturen
+> nach `NM` abräumt, verzerrt genau die Rangfolge, für die man es geholt hat. Für `--min-score` ist
+> dieser Stand **nicht** tragfähig.
+
+Wer die Quote heben will, hat den billigeren Hebel im Vorfilter: Auftragsprompts (`ticket:`,
+`erstelle`, `starte`, …) fingen in derselben Stichprobe **14 von 25 SP bei 100 % Präzision**,
+während das Modell 15 traf und dabei 17 andere Labels verdarb.
+
+### 3. Dedup-Gate: Erweitern vor Neuanlegen
+
+Bevor irgendetwas geschrieben wird, die bestehende Landschaft prüfen:
+
+1. Kandidaten-Stichwörter gegen die Skill-Verzeichnisse suchen (Deployment-Ordner des Agenten,
+   z. B. `~/.claude/skills/`, und — falls vorhanden — die kuratierte Skill-Bibliothek als Quelle
+   der Wahrheit; ebenso registrierte Plugin-Skills).
+2. Die 2–3 nächstliegenden Skills wirklich **lesen**, nicht nur Namen vergleichen.
+3. Entscheiden:
+
+| Befund | Aktion |
+| --- | --- |
+| Kandidat ist im Kern schon abgedeckt | **Erweitern:** fehlende Elemente in den bestehenden Skill einarbeiten (neue Sektion, neue Technik, neuer Fallstrick), Version MINOR erhöhen, Changelog-Eintrag |
+| Teilüberlappung, aber anderer Kern | **Neuer Skill** mit Querverweis („Verwandte Skills") auf die Nachbarn — keine Inhalte duplizieren, sondern verweisen |
+| Nichts Vergleichbares | **Neuer Skill** |
+
+Faustregel: Wenn mehr als die Hälfte des Kandidaten in einem bestehenden Skill steckt, wird
+erweitert. Ein Skill-Bestand voller Fast-Zwillinge ist schlechter als ein gepflegter Skill.
+
+### 4. Neutralisieren
+
+Der Rohstoff ist voller session-spezifischer Details. Vor dem Schreiben nach den Regeln in
+`neutralisierung.md` abstrahieren: Mechanik (allgemeingültig) von Konfiguration (user-/system-
+spezifisch) trennen, konkrete Pfade/Hosts/Namen durch Platzhalter oder einen klar markierten
+Konfigurationsblock ersetzen. Ziel: Der Skill funktioniert für andere User, andere Systeme,
+andere Projekte.
+
+### 5. Skill schreiben
+
+- **Format:** Konventionen der Ziel-Bibliothek beachten (Frontmatter, Namensschema, Sprache,
+  Changelog). In dieser Bibliothek: `docs/CONVENTIONS.md` (vollständiger YAML-Header,
+  kebab-case-Name, Deutsch primär, Semantic Versioning).
+- **Description „pushy" formulieren:** Die description ist der Trigger-Mechanismus. Sowohl WAS
+  der Skill tut als auch WANN er greifen soll (typische User-Formulierungen) hineinschreiben —
+  Skills werden eher zu selten als zu oft ausgelöst.
+- **Warum vor Was:** Begründungen aus den Korrekturschleifen in den Skill übernehmen. Ein Skill,
+  der nur Schritte auflistet, wird beim ersten Sonderfall falsch angewandt; einer, der erklärt
+  warum, lässt sich übertragen.
+- **Fallstricke dokumentieren:** Die Sackgassen aus der Session sind Gold — als „Red Flags"- oder
+  „Fallstricke"-Abschnitt aufnehmen.
+- **Schlank halten:** Unter ~300 Zeilen; Detailmaterial in Referenzdateien auslagern, auf die die
+  SKILL.md verweist.
+
+### 6. Command-Wrapper (optional)
+
+Wenn der Skill regelmäßig direkt aufgerufen werden soll, einen Slash-Command anlegen (bei
+Claude Code: kurze Markdown-Datei in `~/.claude/commands/<name>.md`, die auf den Skill zeigt
+und Argumente durchreicht). Konvention: Command = dünner Einstieg, Inhalt lebt im Skill.
+
+### 7. Registrieren und testen
+
+- In der Bibliothek ablegen (richtige Kategorie) und ins Deployment ausrollen (hier:
+  `python skill_sync.py deploy <name>` — Erstinstallation braucht den expliziten Namen).
+- Trigger-Test: 2–3 realistische Prompts formulieren, die den Skill auslösen sollten, und prüfen,
+  ob die description greift.
+- Für einen vollen Eval-Loop (Testfälle, Baseline-Vergleich, Beschreibungs-Optimierung) den
+  `skill-creator` nutzen, falls installiert — dieser Skill hier ist der Extraktor, nicht das Testlabor.
+- Index-/Routing-Pflege: Skill-Finder-/Index-Skills aktualisieren, falls vorhanden
+  (hier: `code-skill-index`, `skill-finder`-Routing-Tabelle).
+
+## Bulk-Modus: viele alte Chatverläufe
+
+Transkripte sind groß (oft >100k Tokens); niemals alle roh in einen Kontext laden.
+Map-Reduce über Subagenten (Muster: `swarm-operations`-Skill, Aufgabenschwarm):
+
+1. **Inventar:** Transkript-Dateien auflisten (Fundorte: `transcript-quellen.md`), nach Projekt/
+   Zeitraum bündeln. Bei sehr großen Beständen zuerst mit vorhandenen Kollektoren/Extraktoren
+   reduzieren (z. B. Prompt-Listener-/Studien-Datensätze, die nur User-Prompts enthalten) —
+   User-Prompts + Korrekturen tragen das meiste Signal.
+2. **Map:** Pro Bündel ein Subagent mit engem Auftrag: „Lies diese Transkripte, melde
+   Skill-Kandidaten als Kompaktliste (Auslöser, Ablauf, Begründungen, Fallstricke, Beleg-Session)"
+   — nur die Destillate zurückgeben, nie Rohtext.
+3. **Reduce:** Kandidatenlisten zusammenführen, clustern, Duplikate mergen. Häufigkeit zählt:
+   Ein Muster, das in 5 Sessions auftaucht, ist ein stärkerer Kandidat als ein einmaliger Trick.
+4. **Gate + Bau:** Für die Top-Kandidaten Schritte 3–7 des Normalablaufs durchlaufen.
+   Dem User vor dem Massenbau eine nummerierte Kandidatenliste zur Auswahl vorlegen —
+   Bulk-Extraktion erzeugt sonst Skill-Müll.
+
+## Beispiel & Anwendung
+
+```text
+User: „Wir haben jetzt dreimal PDF-Rechnungen nach demselben Schema geparst —
+mach daraus einen Skill."
+
+1. Quelle: aktuelle Session. Signal: Wiederholung (3×) + Korrektur („Beträge immer
+   als Dezimalzahl mit Punkt, nicht Komma").
+2. Dedup-Gate: Suche findet `pdf`-Skill (generisch, Erzeugung/Extraktion) — Kern
+   überlappt nicht (hier: Rechnungs-Schema + Validierungsregeln) → neuer Skill
+   `invoice-parsing` mit Querverweis auf `pdf`.
+3. Neutralisieren: konkreter Ablageordner und Firmenname → Konfigurationsblock.
+4. Skill schreiben: Schema-Tabelle, die Komma/Punkt-Korrektur als Fallstrick,
+   Changelog 1.0.0. Trigger-Test mit „lies diese Rechnung ein".
+```
+
+## Red Flags
+
+| Gedanke | Realität |
+| --- | --- |
+| „Ich lege schnell einen neuen Skill an" | Dedup-Gate zuerst — Erweitern vor Neuanlegen. |
+| „Die Pfade lasse ich drin, ist ja für dieses System" | Neutralisieren ist Pflicht; Konkretes gehört in einen Konfigurationsblock. |
+| „Der Verlauf ist lang, ich fasse aus dem Gedächtnis zusammen" | Signale (Korrekturen, Marker) gezielt heraussuchen — das Gedächtnis glättet genau die Stellen, die den Skill wertvoll machen. |
+| „Jede Session ergibt einen Skill" | Ohne Wiederholungs-/Korrektur-/Marker-Signal: kein Skill. |
+
+## Verwandte Skills
+
+- `workflow-extract` — gleiche Extraktion, aber Ziel ist eine selbstlaufende Automatisierung.
+- `skill-explorer` — Audit/Aufräumen der Skill-Landschaft (nutzt das Dedup-Gate in groß).
+- `skill-creator` (Plugin) — Eval-Loop und Beschreibungs-Optimierung für fertige Skills.
+- `swarm-operations` — Schwarm-Muster für den Bulk-Modus.
+
+## Änderungsprotokoll
+
+### 1.3.2 (2026-11-22)
+- Sprachhinweis korrigiert
+
+### 1.3.1 (2026-09-14)
+- **Konservativer NT-Vorfilter für offene menschliche Anschlüsse:** Ergänzungen wie „noch etwas zu
+  …“ sowie eindeutige Rückfragen per Fragezeichen oder mit einem klaren Frageanfang werden als `NT`
+  erkannt. Bereits greifende spezifische Marker behalten Vorrang.
+- **Keine Scheinpräzision bei Zustandsmeldungen:** Sätze ohne erkennbare Frage, Korrektur oder Auftrag
+  bleiben `unknown`; die zusätzliche Abdeckung erfindet keinen Prompttyp.
+
+### 1.3.0 (2026-09-13)
+- **Anschlüsse, die keine Prompts sind, zählen nicht mehr als gescheiterte Klassifikation.**
+  `prompt_kind()` trennt `empty` (leerer Zug), `non_prompt` (Maschinen-Envelope, nacktes
+  Slash-Kommando) und `human`; nur letztere stehen im Nenner von `classified_ratio`. Auf drei
+  realen Transkripten waren 127 von 246 Anschlüssen keine Äußerung — ihre Mitzählung hatte die
+  Kennzahl von 0,64 auf 0,45 gedrückt und die Warnung „Rangfolge nicht belastbar" ausgelöst, ohne
+  dass am Vorfilter etwas falsch war. Nebenwirkung: Maschinentexte wurden vorher teils über ihre
+  Wortmarker als `BE`/`KO` **fehl**klassifiziert; das entfällt.
+- **Auftragsprompt (`SP`) im Vorfilter.** S3 hatte gemessen, dass ein Startprompt sprachlich nicht
+  erkennbar ist — das gilt für den SESSION-Start, nicht für den AUFTRAG (`ticket:`, `erstelle`,
+  `starte`, …). Gegen 57 handgelabelte Anschlüsse: 14 von 25 `SP` bei 100 % Präzision. Wird
+  **zuletzt** geprüft, damit „erstelle X, aber nicht so" eine Korrektur bleibt.
+- **Optionale Modellstufe `--classifier-cmd`** hinter dem Vorfilter: ein Kommando (JSON rein, JSON
+  raus), kein Provider-Adapter — die Bibliothek bleibt nutzerneutral. Ein Batch-Aufruf für alle
+  offenen Anschlüsse; Längendifferenz, kaputtes JSON oder Fehlerexit führen nie zu versetzten
+  Labels. `follow_up_source` und der Block `classification` weisen die Herkunft jedes Labels aus.
+- **Messung zur Modellstufe, die gegen ihren breiten Einsatz spricht** (60 offene Anschlüsse,
+  Gemini 3.7 Flash): 70,2 % Treffer, 0 % ehrliches „unknown", und 12 von 17 Fehlern landen auf
+  `NM` — darunter 3 von 4 verschobenen `KO`, also genau der Klasse, die den Score trägt. Für eine
+  `--min-score`-Kalibrierung reicht das nicht; die Stufe bleibt opt-in und ist als Datenschutz-
+  Übergang gekennzeichnet.
+- Quote auf denselben drei Transkripten: **0,451 → 0,644**, ohne Modellaufruf.
+
+### 1.2.0 (2026-09-12)
+- Erntewert-Bewertung von Stationsfolgen ergänzt (`scripts/score_stations.py`): harte Signale je
+  Station, Anschlussklassifikation nach den sieben Typen der `promptarchaeologie`, Score und
+  Kandidatenliste. Schritt 2 „Extraktionswürdiges finden" bekommt damit eine bewertete Liste statt
+  einer Signalsuche im Fließtext. Ausgabe bleibt inhaltsfrei; `classified_ratio` weist aus, wie weit
+  die Automatik trägt, statt eine Rangfolge vorzutäuschen (Ticket T-20260831-971906399, S3/S4;
+  Nutzerentscheid D-20260906-012).
+- `station-skill-mask-v1.schema.json`: `$schema`/`$id` wiederhergestellt — beide Schlüssel waren
+  beim Anlegen einer Shell-Variablenexpansion zum Opfer gefallen (`""` als Schlüssel).
+
+### 1.1.0 (2026-08-31)
+- Deterministischen, datensparsamen Stationssegmentierer für Claude-Code-JSONL ergänzt.
+
+### 1.0.0 (2026-07-03)
+- Initiale Version. Entstanden aus dem Auftrag, Codex-Automatisierungen und Chatverläufe
+  systematisch zu Skills zu abstrahieren.

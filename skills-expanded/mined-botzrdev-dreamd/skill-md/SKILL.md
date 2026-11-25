@@ -1,0 +1,203 @@
+# dreamd — Agent Memory Skill
+
+**Works with:** Claude Code, Cursor, and Cline have adapter docs in this repo. Any MCP client can call the two tools below.
+
+dreamd gives you persistent memory across every coding agent you use. What Claude Code learns in one session, Cursor already knows the next. Memory lives in `.agent/` in your repo, checked into git, readable as plain text.
+
+---
+
+## Protocol note — do this first
+
+After `initialize`, send `notifications/initialized` before calling any tools, as the MCP lifecycle requires.  
+A search finds every node whose `append_node` returned before it. If the index needs more than one second to catch up, the search answers from what is already indexed, and the node shows up in a later search.
+
+---
+
+## Two tools
+
+### `search_nodes` — recall from memory
+
+```json
+{
+  "query": "axum error handling",
+  "k": 10
+}
+```
+
+| Field   | Type            | Required | Default |
+| ------- | --------------- | -------- | ------- |
+| `query` | string          | yes      | —       |
+| `k`     | integer (0–100) | no       | 5       |
+
+Returns `{"results": [...]}`: raw events and consolidated lessons ranked together by BM25 × salience (recency, pain, importance, recurrence). `query` and `k` are the only arguments — there is no layer filter. Any text works as `query`: the user's request, code, paths and a `skill_action` are split into words, and quotes, colons, `AND`/`OR`, `+` and `-` are not operators.
+
+Each result's first key is `id`: an `evt_` id for an event, an `lsn_` id for a lesson. It also carries `source` (`episodic` = a raw event, `semantic` = a lesson from `LESSONS.md`; lessons report `source_harness: "dreamd"`), `metadata.skill_action` (its cluster key) and `metadata.source_harness` (the harness that authored it), so you can quote the hit and see which tool taught it.
+
+**Call `search_nodes` when:**
+
+- Starting a task in a project you've worked in before
+- The user references a past decision, error, or pattern
+- You're about to make a choice that may have a documented prior
+- Session start — `search_nodes` with the user's request as the query
+
+---
+
+### `append_node` — write to memory
+
+```json
+{
+  "content": "Axum requires custom Error types to implement IntoResponse.",
+  "source_harness": "claude-code",
+  "skill_action": "rust::error_handling::axum_rejection",
+  "pain": 7.5,
+  "importance": 8.0,
+  "client_dedup_key": "axum_requires_custom_error_types_to_implement_intoresponse"
+}
+```
+
+| Field              | Type   | Required | Notes                                                                                                             |
+| ------------------ | ------ | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `content`          | string | **yes**  | The learning. One concrete fact or pattern.                                                                       |
+| `source_harness`   | string | **yes**  | Your agent identifier — see table below. Omitting causes a deserialization error.                                 |
+| `skill_action`     | string | **yes**  | Clustering key. See naming rules below.                                                                           |
+| `pain`             | number | no       | 0–10. How disruptive is it to not know this? Default 5.0.                                                         |
+| `importance`       | number | no       | 0–10. How broadly applicable is this? Default 5.0.                                                                |
+| `client_dedup_key` | string | no       | Optional retry key, derived from the content. Resend the same key with the same arguments to retry one write: you get the first id back, with no second record. The same key with different content is stored as a new record. Keys are forgotten when the server restarts. |
+
+Returns an MCP JSON-RPC `CallToolResult` after the coordinator has `sync_data`'d the JSONL line (fdatasync-equivalent on Unix). The result text is `{"id":"evt_…","timestamp":"…","deduplicated":false}` — the server mints the id and timestamp. The HTTP learn path returns 201; the MCP tool does not.
+
+**Call `append_node` when:**
+
+- You solved a problem that took more than one attempt
+- You discovered a constraint, gotcha, or project convention
+- The user says "remember this," "note that," or "log this lesson"
+- A build or test failure revealed a non-obvious fix
+
+---
+
+## `source_harness` values
+
+`source_harness` is a free-form string. The server stores what you send and checks only that the field is present (omitting it causes a deserialization error). Clustering uses `skill_action`, not this field. The names below are the convention. Adapter docs in this repo exist for Claude Code, Cursor, and Cline. Aider has HTTP notes. The other rows are names you may send.
+
+| Agent         | Value         | In this repo |
+| ------------- | ------------- | ------------ |
+| Claude Code   | `claude-code` | adapter      |
+| Cursor        | `cursor`      | adapter      |
+| Cline         | `cline`       | adapter      |
+| Aider         | `aider`       | HTTP notes   |
+| OpenCode      | `opencode`    | name only    |
+| Codex CLI     | `codex`       | name only    |
+| Gemini CLI    | `gemini-cli`  | name only    |
+| Copilot agent | `copilot`     | name only    |
+| Roo Code      | `roo-code`    | name only    |
+| Goose         | `goose`       | name only    |
+
+---
+
+## `skill_action` naming rules
+
+Format: `language::domain::specific`  
+Charset: `[a-z0-9_]` segments joined by `::` — dots, hyphens, and slashes are rejected (`invalid skill_action: …`).
+
+```
+rust::error_handling::axum_rejection
+rust::async::tokio_select_cancel_safety
+typescript::testing::vitest_async_timeout
+python::deps::virtualenv_activation
+general::git::rebase_conflict_resolution
+```
+
+Keep it lowercase, `::` -separated, language-first. The domain segment groups related learnings for the dream cycle. Be consistent — `rust::deps::cargo_workspace` clusters with other `rust::deps::*` entries. Three events under one key, or under sibling keys with a shared parent, make a lesson; a bare language root like `rust` only counts events filed as exactly `rust`.
+
+---
+
+## Session pattern
+
+**On session start** (before doing any work on a known project):
+
+```json
+search_nodes({ "query": "<the user's request>", "k": 10 })
+```
+
+Read the results. If relevant learnings exist, apply them before proceeding.
+
+**During the session** — write a node when you learn something worth keeping:
+
+```json
+append_node({
+  "content":        "cargo test --workspace requires all crates to share the same target dir; set CARGO_TARGET_DIR explicitly in CI.",
+  "source_harness": "claude-code",
+  "skill_action":   "rust::ci::cargo_target_dir",
+  "pain":           6.0,
+  "importance":     7.0
+})
+```
+
+---
+
+## The dream cycle
+
+dreamd consolidates `episodic/AGENT_LEARNINGS.jsonl` into `semantic/LESSONS.md`. A key promotes when at least 3 of its events that no deeper key has claimed fall in the last 30 days, deepest key first, and a one-segment key such as `rust` counts only events filed as exactly `rust`. Each cycle writes **one** lesson — the highest-salience exemplar from the top cluster (summed salience, then more events, then the newest event, then the key ascending). Trigger it with `npx -y dreamd-mcp dream` (or `dreamd dream` after a cargo install). Nothing runs it for you. There is no MCP tool for it, and `dream_cycle_mode = "auto"` makes `watch` fail.
+
+You can read `LESSONS.md` directly — it is plain UTF-8 markdown. A hand edit of `LESSONS.md` is kept: each cycle leaves the file as it is and says so, until you commit the edit with git or delete the file. After that, the next cycle rebuilds the lesson from the log, so record a correction you want kept with `append_node`. Durable JSONL appends go through `append_node` / the daemon, not hand-edits.
+
+---
+
+## Folder layout
+
+```
+.agent/
+  episodic/AGENT_LEARNINGS.jsonl   # append-only event log — written by append_node
+  semantic/LESSONS.md              # consolidated lessons — written by dream cycle
+  personal/PREFERENCES.md          # user preferences — committed with `.agent/` unless you gitignore it
+  working/WORKSPACE.md             # scratch file
+  .dreamd/                         # implementation state — gitignored
+```
+
+All files are UTF-8 plaintext. `.agent/` is checked into git (except `.dreamd/`). You can `cat`, `grep`, and `git diff` the store. Durable appends go through `append_node`; the dream cycle overwrites `LESSONS.md`.
+
+---
+
+## What dreamd is not
+
+- Not a replacement for `AGENTS.md` or `SKILL.md`. Those are human-authored project rules; `.agent/` is machine-written runtime memory. They work together.
+- Not a vector database. Recall is BM25 lexical × salience, for events and lessons alike. Vector/embedding recall is not shipped.
+- Not a hosted service. Memory stays local by default; an LLM-assisted dream cycle is the only opt-in network path (API key required; `--no-llm` stays offline). `npx` downloads the prebuilt binary from GitHub on first run. Everything in `.agent/` stays on your machine.
+
+---
+
+## Common mistakes
+
+| Mistake                                                 | Fix                                                                                 |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Skipping `notifications/initialized`                    | Send it after `initialize`, per the MCP lifecycle                                   |
+| Treating an empty `search_nodes` just after `append_node` as a timing miss | The search commits pending appends and waits at most one second. Empty after that usually means the query did not match. Under heavy disk load the commit can take longer, so search once more before concluding |
+| Using slashes in `skill_action` (`rust/borrow-checker`) | Use `::` (`rust::borrow_checker`) — slashes are rejected                            |
+| Omitting `source_harness`                               | Required field; omitting causes a deserialization error                             |
+| No `.agent/` in the project                             | Both tools answer `this folder is not set up for dreamd` (-32600) and name the setup command; run `setup`, then restart the MCP server. `~/.agent/` is the daemon home, never a project store |
+| Writing vague content                                   | One concrete fact per node; vague content scores low on recall                      |
+| Not calling `search_nodes` at session start             | You will re-discover things already known; call it first                            |
+| Waiting for a lesson after `append_node`               | Lessons are written by `npx -y dreamd-mcp dream`, which does not run on its own     |
+
+---
+
+## Install / MCP config
+
+```json
+{
+  "mcpServers": {
+    "dreamd": {
+      "command": "npx",
+      "args": ["-y", "dreamd-mcp"]
+    }
+  }
+}
+```
+
+Add to `.mcp.json` in your project root (Claude Code) or your harness's equivalent config file.
+
+`npx -y dreamd-mcp setup` writes this block for you (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor) and scaffolds `.agent/`; the tools need that folder to exist.
+
+No Rust required. Node ≥ 18. Prebuilt binaries: linux-x86_64, darwin-x86_64, darwin-aarch64.
+
+Repo: https://github.com/botzrDev/dreamd

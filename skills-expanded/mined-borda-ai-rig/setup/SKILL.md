@@ -1,0 +1,154 @@
+---
+name: setup
+description: "Post-install setup for the research plugin. Run once after installing on a new machine, or after a plugin version upgrade, to deliver this plugin's rules/*.md into ~/.claude/rules/ as namespaced symlinks and merge its own permissions.allow and permissions.deny entries into ~/.claude/settings.json. TRIGGER when: user installed or upgraded the research plugin and its rules are not loading, or its deny rules are not blocking; phrases: 'set up research', 'research rules not loading', 'merge research permissions', 'after upgrading research'. SKIP: statusLine/TEAM_PROTOCOL/plugin-cache setup (use /foundry:setup (requires `foundry` plugin)); editing rule content (edit the plugin source)."
+argument-hint: '[--approve]'
+allowed-tools: Bash, AskUserQuestion
+effort: low
+---
+
+<objective>
+
+Deliver research's rules to Claude's user-level rule namespace, and its own permission rules to Claude's settings.
+
+| Action | What happens |
+| -- | -- |
+| `rules/*.md` → `~/.claude/rules/research-<name>.md` | symlink |
+| Stale link from an older research version | refreshed silently |
+| Link whose source left the plugin | removed |
+| Real file or foreign link at a destination | preserved, reported as conflict |
+| Anything outside `~/.claude/rules/` | never touched |
+| `.claude-plugin/permissions-{allow,deny}.json` → `~/.claude/settings.json` | merged additively except for the exact shipped retired allow entries |
+| Any other key of `~/.claude/settings.json` | never touched |
+
+**Why namespaced?** Claude loads user rules from one flat directory. Four plugins ship a `rules/quality-gates.md`; installing source basenames would collide. Every rule installs as `<plugin>-<source-name>.md`, so `quality-gates.md` becomes `research-quality-gates.md`. The prefix is inert — verified against Claude Code 2.1.220 that a filename prefix changes neither unconditional loading nor `paths:` frontmatter matching.
+
+**Why symlink, not copy?** Rules load at session start. A symlink serves the installed version after every upgrade; a copy silently serves stale content forever.
+
+**Why does research deliver only its own rules?** Each plugin installs independently. A plugin that shipped a sibling's rules would break standalone installation and couple releases. Still true with the delta variant: `research-quality-gates.md` links either `rules/quality-gates-delta.md` (when a foundry-owned `foundry-quality-gates.md` is already delivered) or the complete `rules/quality-gates.md` (when it is not) — both sources belong to this plugin, and the delta only *points* at foundry's copy for the shared obligations rather than delivering it. Standalone install loses no rule; all four `quality-gates.md` copies loading at once was 51,274 B of context on every turn.
+
+NOT for: statusLine, `TEAM_PROTOCOL.md`, or plugin-cache purging — those are `/foundry:setup` (requires `foundry` plugin). Of `~/.claude/settings.json` only the `permissions.allow` and `permissions.deny` arrays are touched, additively except for removing exactly the entries listed in the shipped `permissions-allow-retired.json`. Writes nothing under `~/.codex/`.
+
+</objective>
+
+<inputs>
+
+- **No arguments** — interactive; prompts before replacing a conflicting destination.
+- **`--approve`** — non-interactive; replaces conflicting links without asking and preserves real user files. Used by `make sync-claude`.
+
+</inputs>
+
+<workflow>
+
+## Step 0: Flags
+
+Parse `$ARGUMENTS` for `--approve` (case-insensitive) → `APPROVE_ALL=true`, else `false`. Any other `--<token>` → print `` ! Unknown flag(s): `--<token>`. Supported: `--approve`. `` and stop.
+
+## Step 1: Python probe and dry run — see what would change
+
+`$CLAUDE_PLUGIN_ROOT` is the installed plugin version. `sync_rules.py` re-validates it (manifest exists, parses, declares `research`; `rules/` is a real directory holding at least one non-empty regular `*.md`) and aborts before touching anything if any check fails.
+
+```bash
+# later steps run bare `python` (plugin bin/python shim on PATH) — probe that exact command
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name research) || exit $?; export PLUGIN_ROOT
+python --version 2>&1 | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])" || { printf "! Python 3.10+ not found as 'python' — install it and re-run /research:setup\n"; exit 1; }
+printf "  Python: %s\n" "$(python --version 2>&1)"
+python "$PLUGIN_ROOT/bin/sync_rules.py" --plugin-name research --plugin-root "$PLUGIN_ROOT" --dry-run  # timeout: 15000
+```
+
+Non-zero exit → print stderr verbatim and stop; nothing was modified.
+
+## Step 2: Apply
+
+Run without `--dry-run`. `APPROVE_ALL=true` → run the `--approve` block below instead:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name research) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/sync_rules.py" --plugin-name research --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
+```
+
+`APPROVE_ALL=true` variant:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name research) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/sync_rules.py" --plugin-name research --plugin-root "$PLUGIN_ROOT" --approve  # timeout: 15000
+```
+
+Output lines, one per destination: `linked:` · `unchanged:` · `replaced (explicit approval):` · `removed obsolete:` · `conflict, kept as-is:` · `FAILED:`.
+
+Ownership is proved before any replace or remove: the existing link must resolve under the current plugin root, or under the same `~/.claude/plugins/cache/<marketplace>/research/` lineage as the current install. A link into another marketplace, another plugin, a source checkout, or a dotfiles tree is never adopted — path substrings are not evidence of ownership.
+
+## Step 3: Conflicts
+
+No `conflict, kept as-is:` lines → skip to Step 4.
+
+`APPROVE_ALL=true` with remaining conflicts → report them as undelivered and stop; do not assume replacement succeeded.
+
+Otherwise invoke `AskUserQuestion`, listing each conflicting destination and its current state:
+
+- (a) **Keep them** — those rules stay undelivered
+- (b) **Replace all with plugin links** ★ recommended — real user files are backed up beside the destination before replacement
+- (c) **Abort** — leave everything as it is
+
+On **(b)**, run this fixed replacement block only after the user explicitly chooses replacement, then report the resulting `replaced (explicit approval):` lines and sibling `<destination>.bak-<timestamp>` backups. `--approve` alone preserves real user files. On (a) or (c), report which rules remain undelivered.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name research) || exit $?; export PLUGIN_ROOT
+python "$PLUGIN_ROOT/bin/sync_rules.py" --plugin-name research --plugin-root "$PLUGIN_ROOT" --approve --replace-user-files  # timeout: 15000
+```
+
+## Step 4: Merge permissions.allow and permissions.deny
+
+This plugin ships its own `permissions-allow.json` and `permissions-deny.json`. Claude Code does not read them from the plugin manifest, so without this step they are inert files — the allow entries never suppress a prompt and the deny entries never block anything.
+
+Merge is idempotent: existing entries never duplicate. Each plugin merges only its own pair; the allow merge removes exactly the entries in `permissions-allow-retired.json` and preserves every other entry.
+
+The validation below uses Python’s standard JSON parser, so jq is not required. Create the file when this is a first install, and back it up before any write — a standalone install may reach this step with no `~/.claude/settings.json` at all:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+SETUP_BAK_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/research-setup-bak-ts-${CSID}"
+[ -f ~/.claude/settings.json ] || printf '{}\n' > ~/.claude/settings.json  # created in-bash — no Write-tool prompt, headless-safe
+cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
+```
+
+Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
+
+Before merging, remove exactly the entries in `permissions-allow-retired.json`: the obsolete `Bash(gh api repos/*:*)` entry and the broad `Bash(claude:*)`, `Bash(find:*)`, `Bash(node:*)`, `Bash(sed:*)` and `Bash(eval:*)` shell grants. Nothing replaces those retired entries. Preserve the four broad allow entries already in settings, because foundry uses the same strings: `Bash(gh api repos/*)`, `Bash(gh api graphql:*)`, `Bash(git branch:*)`, and `Bash(git tag:*)`. Preserve every other user allow entry, all deny entries, and unrelated settings.
+
+Writes merged `permissions.allow` and `permissions.deny` arrays via `merge_settings_permissions.py` — one atomic write covers both arrays, so allow never lands without deny. A missing or invalid shipped file aborts the block with settings unchanged. The same block then validates what was written: settings.json that no longer parses is restored from the backup taken above, the failure is printed, and the block exits 1 — report it and stop; zero exit → continue to Step 5:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name research) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/merge_settings_permissions.py" --allow "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" --drop-allow-file "$PLUGIN_ROOT/.claude-plugin/permissions-allow-retired.json" --deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" || { printf "! permissions merge failed — settings.json unchanged\n"; exit 1; }  # timeout: 5000
+if ! python -m json.tool ~/.claude/settings.json > /dev/null; then  # timeout: 5000
+    IFS= read -r SETUP_BAK_TS < "${TMPDIR:-/tmp}/research-setup-bak-ts-${CSID}" 2>/dev/null || SETUP_BAK_TS=$(ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//')
+    cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json  # timeout: 5000
+    printf "! settings.json failed validation after the merge — restored from %s\n" "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"
+    exit 1
+fi
+```
+
+Writeback happens in-bash above (atomic rename). Report from the script's two output lines: "Added N new permissions.allow entries (M already present)." plus the total retired allow entries removed (`dropped`), and "Added N new permissions.deny entries (M already present)." Also report: "stale gh deny entries from older versions: run /foundry:setup" (requires `foundry` plugin).
+
+## Step 5: Report
+
+- Rules linked: N → `~/.claude/rules/research-*.md`
+- Unchanged: N · Obsolete removed: N · Conflicts kept: N (name each)
+- Permissions: N allow entries added, N deny entries added
+- Failures: N (name each; a failure means the platform refused the symlink — rules are never copied as a fallback)
+
+</workflow>
+
+<notes>
+
+**Upgrade path**: `claude plugin install research@borda-ai-rig` then `/research:setup`. Links from the previous version share the install-cache lineage, so they refresh without prompting; a rule dropped in the new version has its link removed. `make sync-claude` runs `/research:setup --approve` headlessly for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+
+**Uninstall leaves state behind**: Claude Code runs no cleanup hook on uninstall, and neither `claude plugin uninstall` nor `make clear-all` removes what setup created. After removing the plugin, delete `~/.claude/rules/research-*.md` by hand — they become dangling symlinks once the plugin cache version is gone.
+
+**Testing**: setup is reachable only as `/research:setup` after the plugin is installed. To exercise it locally, bump `version` in `plugins/cc_research/.claude-plugin/plugin.json`, run `claude plugin install research@borda-ai-rig` from the repo root to refresh the cache, then invoke the skill. `bin/sync_rules.py` is a byte-identical propagated copy of the canonical helper; its regression suite lives beside that canonical copy in the AI-Rig repository.
+
+**Follow-up gate omitted** — setup is one-shot; Step 5 is terminal output.
+
+</notes>

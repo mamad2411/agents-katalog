@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/casemark/skills (path: skills/legal/royalty-report/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Drafts auditable royalty report forms for IP licensing agreements, calculating tiered royalties, minimum guarantees, and advance recoupments from governing license terms. Use when preparing licensee r

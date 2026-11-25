@@ -1,0 +1,205 @@
+---
+name: nyxid
+version: "0.10"
+description: Brokers credentials for downstream services so the agent never sees raw API keys or OAuth tokens. Use when the user explicitly mentions NyxID; asks to broker, store, proxy, connect, or manage credentials or a credential-backed service; manages NyxID inbound triggers, signed webhook delivery/replay, credential nodes, SSH, MCP, or other NyxID resources; or must call a protected downstream API using an available NyxID-managed credential because no suitable authenticated native path is available. Do not use merely because a service is external, for an ordinary public webhook that needs no NyxID trigger contract, for standard Git operations, or for ordinary GitHub work when local `gh` is authenticated. A GitHub username supplied only to select an account is not a trigger. Operate through the `nyxid` CLI or the authenticated NyxID Web API.
+metadata:
+  category: tool-based
+  tool-list:
+    - Bash
+  tag:
+    - credentials
+    - oauth
+    - proxy
+    - triggers
+    - nyxid
+    - sso
+  documentation: https://github.com/ChronoAIProject/NyxID
+  openclaw:
+    requires:
+      bins:
+        - nyxid
+    setup:
+      - bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChronoAIProject/NyxID/main/skills/nyxid/scripts/install.sh)"
+  clawdbot:
+    emoji: "key"
+    files:
+      - "scripts/*"
+      - "references/*"
+---
+
+# NyxID
+
+Use NyxID before asking the user to paste raw API keys or OAuth tokens for downstream services.
+
+NyxID is the credential broker. Use either the `nyxid` CLI or the authenticated NyxID Web API to discover services, configure user-owned routes, and make proxy requests. The CLI is a convenience client, not a prerequisite for supported API operations. NyxID injects the user's stored credentials automatically.
+
+Credential nodes can be personal or org-owned. Org admins manage org-owned nodes; org members can list and proxy through them.
+
+For the full API reference, error codes, and advanced topics (SSH, MCP, OAuth client integration, service accounts), load `references/playbook.md` (populated at install time from the NyxID server's `/llms.txt` endpoint), or fetch the latest directly from `<NYXID_BASE_URL>/llms.txt`.
+
+For device login, approval-time Agent Key choice and safe URL hints, read `references/device-login.md`. Its discovery endpoint map distinguishes public deployment metadata, the human's eligible approval choices, and services available to the agent's current credential. Read it before choosing login permissions or constructing an approval link.
+
+## CLI setup (optional)
+
+Install the NyxID CLI when a shell is available. This is the default "install NyxID" path; do not run the Docker backend setup unless the user explicitly asks to self-host. HTTP-only clients can instead call the authenticated Web API described in the reference pages.
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChronoAIProject/NyxID/main/skills/nyxid/scripts/install.sh)"
+```
+
+The installer downloads an attested prebuilt release binary (verified against the GitHub release workflow's Sigstore attestation), installs it into a versioned layout under `~/.local/share/nyxid/versions/`, links `~/.local/bin/nyxid` to the active version, and configures your shell PATH. No Rust toolchain is required on published targets: macOS x64/arm64 and Linux x64/arm64. Linux arm64 binaries target the Ubuntu 20.04 / `glibc 2.31` baseline. The installer falls back to a Cargo source build only on platforms with no compatible published binary; on Linux arm64 source fallback it uses `CC=clang` when available and otherwise tells the user to install `clang` if it detects the `aws-lc-sys` GCC compiler guard. Open a new terminal afterwards, then log in:
+
+```bash
+nyxid login --base-url https://nyx-api.chrono-ai.fun
+```
+
+The CLI stores tokens at `~/.nyxid/` and auto-refreshes them. The base URL is saved on login -- all subsequent commands use it automatically.
+
+> **Registration may require an invite code.** The global `auth:invitation-code` feature flag defaults to enabled and can be toggled by a platform admin. When enabled, users need a code from an admin and can register via the web UI or the CLI:
+>
+> ```bash
+> nyxid register --base-url https://nyx-api.chrono-ai.fun \
+>   --email you@example.com --name "Your Name" \
+>   --invite-code NYX-XXXXXXXX
+> ```
+>
+> When the gate is enabled, social login (Google, GitHub, Apple) only works for **existing** users -- first-time social sign-ups are blocked. Users must register with email + invite code first, then link a social provider afterwards by signing in with the same email. When the gate is disabled (public-launch mode), both email registration and first-time social sign-ups work without an invite code.
+
+## Updating
+
+Update the CLI and all installed AI skills in one command:
+
+```bash
+nyxid update                                 # download + verify + install the latest prebuilt CLI, then update skills
+nyxid update --skills-only                   # update only installed skills (skip CLI download)
+nyxid update --check                         # report installed vs latest without installing anything
+nyxid update --version 0.5.0                 # pin to a specific release (rollback or test a prerelease)
+nyxid update --rollback                      # retarget the active symlink to the previous installed version
+nyxid update --list-versions                 # list versions installed under ~/.local/share/nyxid/versions
+nyxid update --from-source                   # force the cargo install fallback (useful on unsupported targets)
+```
+
+`nyxid update` verifies the downloaded binary against the GitHub release workflow's Sigstore attestation before swapping the active symlink. Verification failures fail closed; pass `--insecure-skip-verify` only as an explicit opt-out.
+
+To update a specific tool's skill only:
+
+```bash
+nyxid ai-setup update --tool claude-code     # update a specific tool
+```
+
+When running any nyxid subcommand interactively, the CLI also prints a one-line "newer version available" notice once per 24h (telemetry-free; only hits the GitHub releases API). Set `NYXID_NO_UPDATE_CHECK=1` to disable, or run in CI (`CI=true` is auto-detected).
+
+If `nyxid update` is not recognized, your CLI predates this command. Update it first with:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChronoAIProject/NyxID/main/skills/nyxid/scripts/install.sh)"
+```
+
+The wrapper installer detects an existing legacy single-file install at `~/.local/bin/nyxid` and migrates it into the versioned layout transparently.
+
+## Diagnosing install or auth issues
+
+When the user reports "nyxid is broken", "I can't log in", "is my install OK", or similar, run `nyxid doctor` first before debugging individual commands. It prints a structured health check covering:
+
+- **Installation**: binary path, active symlink target, whether the install dir is in `$PATH`
+- **GitHub Releases**: API reachability, latest release tag vs installed, rate limit + reset time
+- **Authentication**: stored base URL, login state (token expiry shown; the token itself is never printed)
+- **Telemetry**: consent state
+- **Update check**: last-check timestamp, whether auto-check is enabled
+
+```bash
+nyxid doctor                                 # human-readable report
+nyxid doctor --json                          # structured output for scripts
+```
+
+Doctor exits non-zero if any check fails (warnings do not fail). Use it as the first triage step, then drill into the failing area with the specific reference page (`references/admin.md` for auth/error codes, `references/services.md` for service issues, etc.).
+
+## Reference map
+
+Load the matching `references/<file>.md` when the user asks for one of these topics. Each file is self-contained; load only what's needed.
+
+| Trigger keywords / user request | Load this reference |
+|---|---|
+| "list my services", "what's connected", "discover services", "add a service", "connect OpenAI / GitHub / Lark / etc.", Lark Base / Bitable `91403`, "OAuth scopes", browser-wizard / pairing-code questions, "where do I get the API key" | `references/services.md` |
+| "call the API", "proxy request", "send a message via Telegram/Discord/Slack" (single call), curl examples, raw HTTP integration, WebSocket auth-frame injection, Home Assistant connection | `references/proxy.md` |
+| "service pool", "pool slug", "load balance services", "several identical backends", "proxy to a pool" | `references/service-pools.md` |
+| "list / rename / delete a service", attaching an OpenAPI spec to a custom endpoint, default headers, identity propagation, `forward_access_token`, catalog service ID vs UserService ID, "create / rotate / delete an API key", agent key bindings, callback URLs, scope/rate-limit edits | `references/managing.md` |
+| "which services can this app access", "Authorized Apps", "OAuth consent", "consent service access", "restrict this app to service X", "legacy grant", "resource indicators", "RFC 8707", OAuth `resource` parameter, "app default services", `default_service_catalog_slugs`, "consent defaults" | `references/oauth-consent.md` |
+| Anything mentioning "org", "organization", "shared credentials", "family / company key", invites, role scopes, primary-org tiebreaker, org-level approval policies, `--via-service`, CLI profiles | `references/organizations.md` |
+| "set up a node", "credentials on my own machine", org-owned/shared nodes, node daemon (install/start/stop/logs), node credentials add/setup/list, remote credential injection / `node-credential inject` / "push a secret to a node from my laptop or browser without SSH" / fingerprint verification / browser accept page, SSH node-key credentials, SSH exec / terminal / cert-issue, SSH ProxyCommand | `references/nodes.md` |
+| "device login", "login approval link", "prefill permissions", "choose an Agent Key at login", "choose connected accounts", "login scope flags", "default login options", "what is available before login", "what can the current user access", `nyxid mcp discover`, `nyxid catalog list --public`, `nyxid login --device/--agent-key/--no-wait`, `nyxid login resume`, `/login/device`, `/login/agent-key` | `references/device-login.md` |
+| "provision a headless device", "approve a device", "ESP32", "factory key", "nyxprov QR", "device-code grant", `nyxid device approve/onboard/factory-key`, `/devices/code/*`, `/devices/onboard` | `references/devices.md` |
+| "approve / deny", "set up notifications", Telegram link, push notifications, approval grants, per-service approval configs, granular approval rules (method/path/verb), allow-list or deny specific endpoints, `default_effect`, scoped grants | `references/notifications.md` |
+| "channel bot", "register a bot", conversation routing, proactive / unprompted messages, `/channel-relay/send`, `/channel-relay/conversations`, `/channel-relay/reply`, callback / reply tokens, ADR-013 passthrough semantics, device events / HTTP Event Gateway, `/channel-events/{id}` | `references/channels.md` |
+| "inbound trigger", "webhook trigger", provider event relay, bearer/query/HMAC trigger verification, durable webhook delivery, delivery history/replay, signing-key rotation, Lark Base automation to Aevatar | `references/triggers.md` |
+| OpenClaw setup, `llm-openclaw` transport selection, `x-openclaw-scopes` default header | `references/openclaw.md` |
+| Billing configuration, exact prices, Telnyx managed offerings, credit grants, wallet funding, execution IDs, pending usage verification, `nyxid admin billing`, `nyxid admin credits`, `nyxid admin usage`, `nyxid billing executions`, `nyxid mcp tools/call` | `references/billing.md` |
+| `nyxid whoami / status / profile / mfa / session`, `nyxid admin user list/show/set-role`, platform roles (admin / operator / user), `nyxid admin invite-code`, `nyxid mcp config`, error codes (1001/1002/7000/7001/8003, downstream 403 / WAF / User-Agent override) | `references/admin.md` |
+| "list / revoke broker authorizations", "what apps hold credentials for me", `/settings/authorizations`, `nyxid oauth bindings`, OAuth `binding_id` / token vault, distinction from "Authorized Apps" (consents) | `references/oauth-broker.md` |
+
+Prefer the canonical reference over guessing. If a topic spans two files (e.g. "create an org-shared API key with rate limits"), load both `organizations.md` and `managing.md`.
+
+**Driving Aevatar through NyxID.** If the user wants to build or run things on the **Aevatar** agent platform — "create a workflow / team / member", "publish a service", "schedule a run", or "can Aevatar do X?" — that is a sibling skill family bundled in this plugin (not a `references/` file here). Start with **`aevatar-platform-map`** (the router). Those skills drive Aevatar through this same NyxID broker. Use either `nyxid proxy request aevatar "<path>"` or the equivalent authenticated `/api/v1/proxy/s/aevatar/<path>` Web API. Connect the service once through the CLI or supported service API.
+
+## Working Rules
+
+- Discover configured service instances with `nyxid service list --output json` or authenticated `GET /api/v1/keys` before assuming a slug or exact UserService exists. This is the authoritative discovery, readiness, and execution inventory, but the read may lazily materialize missing no-auth UserServices. Under a strict zero-mutation diagnostic constraint, start with `/api/v1/user-services` and operator-visible route/node state, and use `/keys` only when that bounded materialization is acceptable.
+- Treat `/api/v1/user-services` as a routing-configuration projection only. It cannot prove that a credential is discoverable, ready, or authorized for execution.
+- Use `--output json` for machine-readable responses.
+- Prefer slug-based proxy URLs, but pin the exact UserService with `--via-service <id>` or `/api/v1/proxy/{user_service_id}/...` whenever multiple credentials share a slug or downstream authorization depends on a specific account/Bot. Get that ID only from the authoritative `/api/v1/keys` inventory.
+- Catalog service IDs and account-owned UserService IDs are separate identities. Never send a catalog ID to `/api/v1/user-services/{id}`. After a user-owned route update, read `GET /api/v1/keys` again and verify the same UserService ID and field value.
+- Use exact downstream API paths. Do not guess undocumented endpoints.
+- Keep request bodies minimal and service-correct.
+- A failed NyxID service invocation may carry a short-lived opaque diagnostic handle (`X-NyxID-Diagnostic-Handle` on REST/LLM responses or `nyxid_invocation_diagnostic.handle` in MCP error content). Preserve the original status, body, and error as authoritative. Redeem a NyxID-issued handle at most once: shell/HTTP clients use `nyxid monitoring diagnose <handle> --output json`, while MCP callers use `nyx__diagnose_invocation` with only that handle. Either path may retry once only when the server explicitly returns `diagnostic_not_ready`. Treat the bounded result as secondary evidence, never infer or enumerate a UserService, never retry the failed business request automatically, and never log, repeat, or store the handle. `observation: agent` proves only that the same current General Agent Key authority reached the exact selected service's health/readiness path; it does not prove human-owner reachability or original-operation authorization. `unknown` and `non_delegable` provide no caller attribution. Unsupported Agent Key purposes receive no handle. A stale, stopped, or missing bot/conversation turn gets the same not-found result as every other identity mismatch; relay, session, delegated, and service-account callers receive no handle.
+- Never try to extract or display the user's stored provider credentials.
+- If multiple AI agents share a machine, each should have its own `NYXID_ACCESS_TOKEN`. Never share a single API key across multiple agents -- it defeats audit isolation and makes revocation impossible without disrupting all agents.
+- Your User-Agent header is forwarded to downstream services by default (passthrough). Some downstreams block SDK-specific User-Agent strings -- see the 403 troubleshooting note in `references/admin.md`.
+- If a downstream requires a static header on every call (scope hint, API version, routing key), configure it once as a service default via `nyxid service update ... --default-header 'name=value'` rather than sending it from every caller.
+- For Lark Base error `91403`, do not ask for `bitable:app:readonly` again when it is already enabled. The application API scope and the individual Base document ACL are separate: in the Base's `...`/More menu choose **Add Applications**, add the exact Bot application used by the selected NyxID UserService, and grant view access for read-only calls. Rebinding an Aevatar workflow cannot change that document ACL.
+- For receipt photos in a live NyxAgent owner chat, discover `bitable_fields_list` for current options, then use `bitable_record_create_with_attachments`. Both are shipped; the standalone `bitable_media_upload` returns a file token without creating a record or providing a record-replay ledger. Attachment tools require the live, non-guest owner-chat key and default-off `assistant:attachment-writes`; ordinary CLI/Agent Keys and external OAuth connections cannot use them. Never emulate a missing composite with raw upload/create calls. Success returns `{record_id, already_created:false}`; identical successful replay returns `{record_id, already_created:true}` even after credential rotation. Active writes say `in progress; try again shortly`; uncertain writes say `outcome unknown; check the Base; NyxID will not create it again`. A duplicate names its existing record; do not change tools/connections to evade it. `failed_definite` includes `not_sent` (the create request never left NyxID); fix the cause before a new call may create once. Load `references/services.md` for source completeness, field validation, permission errors, outcomes, and the Receipt-Bot scope recipe.
+
+## Service pools
+
+A service pool is a stable slug that resolves proxy traffic to one of several interchangeable configured services. Use a pool when the user has multiple equivalent backends for capacity or redundancy and callers should target one logical service name instead of choosing a member directly.
+
+Proxy to a pool by its slug exactly like a normal service slug:
+
+```bash
+nyxid proxy request <pool_slug> /v1/path -m POST -d '<body>'
+```
+
+Raw HTTP clients use the same slug route: `/api/v1/proxy/s/{pool_slug}/{path}`. For priority/failover, AI aliases, owner-aware CLI management and health, load `references/service-pools.md`.
+
+## External Endpoints
+
+Requests go to the authenticated NyxID instance, either through the `nyxid` CLI or its Web API. Downstream service calls are made server-side by NyxID.
+
+## Security and Privacy
+
+- **Credentials are protected.** For server-stored credentials, NyxID injects them server-side. For node-routed services, credentials never leave the user's node -- NyxID passes the request through and the node injects credentials locally.
+- **Remote credential injection is end-to-end encrypted.** When an admin provisions a node credential from a browser or laptop (`nyxid node-credential inject` or the web "Accept credential" page), the secret is encrypted client-side and NyxID relays only the ciphertext -- the server never sees the plaintext, never decrypts, and never derives the shared key. Only the target node decrypts it.
+- **Authentication tokens auto-refresh.** The CLI handles token refresh automatically.
+- **No data is sent to third parties.** All traffic flows between the agent and the user's NyxID instance.
+- **Audit logging.** All proxy requests are logged in NyxID for user review.
+
+## Model Invocation Note
+
+Invoke this skill autonomously only for explicit NyxID or credential-brokering intent, or when a protected downstream call must use an available NyxID-managed credential because no suitable authenticated native path is available. Check the available native path and its authentication state before selecting NyxID on the latter basis. Once selected, discover available services through NyxID and route credential-backed requests through the proxy without prompting for raw credentials.
+
+Positive examples:
+
+- "Store or proxy this API credential through NyxID."
+- "Call protected service X using my NyxID-managed credential."
+- "Set up a NyxID credential node for this private service."
+
+Negative examples:
+
+- "Call this public webhook." Externality alone is not credential-brokering intent.
+- "Commit these changes and rebase the branch." Standard Git operations do not require NyxID.
+- "Create an issue in repository X using GitHub account Y." When local `gh` is already authenticated, use it directly; the username selects an account and does not trigger NyxID.
+
+Users can disable this skill in their OpenClaw configuration to opt out.
+
+## Trust Statement
+
+By using this skill, requests are sent to your configured NyxID instance. NyxID forwards those requests to downstream services using your stored credentials. Only install this skill if you trust your NyxID instance operator.

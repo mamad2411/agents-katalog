@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/crestapps/crestapps.agentskills (path: plugins/crestapps-orchardcore/skills/orchardcore-ai-documents-azureai/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Skill for indexing CrestApps Orchard Core AI Documents with Azure AI Search. Covers Azure AI Search index profiles, managed chunk mappings, the embedding deployment picked from the embedding slot (tex

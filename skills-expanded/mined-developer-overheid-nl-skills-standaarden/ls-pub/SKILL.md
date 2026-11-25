@@ -1,0 +1,207 @@
+---
+name: ls-pub
+description: "Logius publicatieworkflow voor standaardenrepos: ReSpec, GitHub Actions, markdownlint, WCAG/a11y, Muffet linkvalidatie, tech radar. Niet voor API of code linting."
+allowed-tools:
+  - Bash(gh api *)
+  - Bash(gh issue list *)
+  - Bash(gh pr list *)
+  - Bash(gh search *)
+  - Bash(curl -s *)
+  - Bash(npx respec *)
+  - Bash(npx markdownlint *)
+  - Bash(npx @axe-core/cli *)
+  - Bash(npx muffet *)
+  - Bash(npx http-server *)
+  - Bash(node *)
+  - WebFetch(*)
+metadata:
+  created-with-ai: "true"
+  created-with-model: claude-opus-4-20250514
+  created-date: "2025-02-12"
+  status: concept
+---
+
+> **CONCEPT — Let op:** Deze skill is geen officieel product van Logius. De beschrijvingen zijn informatieve samenvattingen — niet de officiële standaarden zelf. De definities op [forumstandaardisatie.nl](https://www.forumstandaardisatie.nl/open-standaarden) en [Logius](https://www.logius.nl) zijn altijd leidend. Overheidsorganisaties die generatieve AI inzetten dienen te voldoen aan het [Overheidsbreed standpunt voor de inzet van generatieve AI](https://open.overheid.nl/documenten/bc03ce31-0cf1-4946-9c94-e934a62ebe73/file). Zie [DISCLAIMER.md](../../DISCLAIMER.md) en onze [verantwoording](https://github.com/developer-overheid-nl/skills-marketplace/blob/main/docs/verantwoording.md).
+
+# Publicatie & Tooling
+
+**Agent-instructie:** Deze skill is de centrale plek voor publicatie-tooling en kwaliteitschecks van alle Logius standaarden. Gebruik deze skill wanneer de gebruiker een document wil bouwen, valideren (WCAG, markdown lint, link check), publiceren, of een nieuw ReSpec-document wil opzetten. Dit is de ENIGE skill met markdownlint, axe-core en muffet tools.
+
+## Versiemodel van standaarden
+
+De publicatie-tooling ondersteunt het versiemodel van Logius-standaarden via de `specStatus` configuratiewaarde in ReSpec:
+
+| specStatus | Betekenis | Publicatiekanaal |
+|-----------|-----------|-----------------|
+| `WV` | Werkversie (draft) | `logius-standaarden.github.io` |
+| `CV` | Consultatieversie | `logius-standaarden.github.io/Openbare-Consultaties/` (automatisch op `consultatie/*` branches) |
+| `VV` | Versie ter vaststelling | `gitdocumentatie.logius.nl` |
+| `DEF` | Vastgestelde versie | `gitdocumentatie.logius.nl` |
+
+## Repositories
+
+| Repository | Beschrijving | Licentie | Publicatie |
+|-----------|-------------|--------|-----------|
+| [publicatie](https://github.com/logius-standaarden/publicatie) | Centrale publicatie-repo: alle vastgestelde standaarden | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode.en) | gitdocumentatie.logius.nl (geen directory listing) |
+| [Publicatie-Preview](https://github.com/logius-standaarden/Publicatie-Preview) | Preview-omgeving voor documenten in ontwikkeling | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode.en) | [Lees online](https://logius-standaarden.github.io/Publicatie-Preview/) |
+| [respec](https://github.com/logius-standaarden/respec) | Logius fork van W3C ReSpec documentatie-tool | [W3C Software License](https://www.w3.org/copyright/software-license-2023/) | - |
+| [ReSpec-template](https://github.com/logius-standaarden/ReSpec-template) | Basis template voor nieuwe ReSpec documenten | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode.en) | [Lees online](https://logius-standaarden.github.io/ReSpec-template/) |
+| [ReSpec-template-Logius](https://github.com/logius-standaarden/ReSpec-template-Logius) | Logius-specifiek ReSpec template met huisstijl — **gearchiveerd** november 2026, opgevolgd door ReSpec-template | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode.en) | [Lees online](https://logius-standaarden.github.io/ReSpec-template-Logius/) |
+| [Openbare-Consultaties](https://github.com/logius-standaarden/Openbare-Consultaties) | Gepubliceerde consultatieversies (CV) | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode.en) | [Lees online](https://logius-standaarden.github.io/Openbare-Consultaties/) |
+| [Automatisering](https://github.com/logius-standaarden/Automatisering) | Herbruikbare GitHub Actions workflows | Niet gespecificeerd | - |
+| [automatisering-test](https://github.com/logius-standaarden/automatisering-test) | Testomgeving voor de automatiseringsworkflows | [W3C Software License](https://www.w3.org/copyright/software-license-2023/) | - |
+| [tech-radar](https://github.com/logius-standaarden/tech-radar) | Technologie radar voor Logius standaarden | [MIT](https://opensource.org/licenses/MIT) | [Lees online](https://logius-standaarden.github.io/tech-radar/) |
+
+## ReSpec Documentatie-systeem
+
+ReSpec genereert technische specificaties als HTML en PDF vanuit Markdown. Logius gebruikt een eigen fork met aangepaste huisstijl.
+
+### Hoe ReSpec werkt
+
+Het hoofdbestand `index.html` laadt de ReSpec-engine en verwijst via `data-include` naar losse Markdown-bestanden per hoofdstuk:
+
+```html
+<section data-include-format="markdown" data-include="ch01.md"></section>
+<section data-include-format="markdown" data-include="ch02.md"></section>
+```
+
+### ReSpec Configuratie (`js/config.mjs`)
+
+Nieuwe documenten gebruiken ES-module formaat (`config.mjs`); oudere repos kunnen nog `config.js` bevatten. Voor een release naar gitdocumentatie is `config.mjs` sinds oktober 2026 vereist (zie [publish.yml](#publishyml---publicatie)).
+
+```javascript
+// js/config.mjs (nieuw, aanbevolen formaat)
+import { loadRespecWithConfiguration } from
+  "https://logius-standaarden.github.io/publicatie/respec/organisation-config.mjs";
+
+loadRespecWithConfiguration({
+  useLogo: true,
+  useLabel: true,
+  license: "cc-by",
+  specStatus: "WV",        // WV=Werkversie, CV=Consultatieversie, VV=Versie ter vaststelling, DEF=Vastgestelde versie
+  specType: "HR",           // HR=Handreiking, ST=Standaard, PR=Praktijkrichtlijn, IM=Informatiemodel
+  pubDomain: "dk",          // Toegestane waarden: api, bomos, dk, fsc, ftv, logboek, notificatieservices
+  shortName: "template",    // Moet kebab-case zijn: alleen kleine letters, gescheiden door streepjes
+  publishDate: "2023-06-21",
+  publishVersion: "0.0.3",
+  editors: [{ name: "Logius Standaarden", company: "Logius", companyURL: "https://logius.nl" }],
+  authors: [{ name: "Logius Standaarden", company: "Logius", companyURL: "https://logius.nl" }],
+  github: "https://github.com/logius-standaarden/ReSpec-template",
+});
+```
+
+> **Let op:** Oudere repos gebruiken `config.js` met `var respecConfig = { ... }` syntax. Die bevat soms extra velden zoals `content`, `alternateFormats` en `postProcess` die niet in de `config.mjs`-variant voorkomen.
+
+### Directory Structuur
+
+```
+.github/workflows/    # CI/CD workflows (verwijzen naar Automatisering repo)
+js/config.mjs         # ReSpec configuratie (of config.js bij oudere repos)
+media/                # Afbeeldingen, diagrammen
+ch01.md, ch02.md      # Hoofdstukken
+abstract.md           # Samenvatting
+index.html            # ReSpec entry point
+```
+
+## GitHub Actions Workflows (Automatisering repo)
+
+Alle standaarden-repos roepen centrale workflows aan uit de `Automatisering` repo.
+
+### build.yml - Document Generatie
+
+1. Branch-check op pull requests (sinds september 2026): een directe PR van `develop` naar `main`/`master` of andersom wordt geweigerd; maak een tussenbranch. Een PR naar `main`/`master` vereist `specStatus: "DEF"` of `"VV"` in `js/config.mjs`, een PR naar `develop` vereist `"WV"`. Zo kan een werkversie niet per ongeluk als vastgestelde versie worden gepubliceerd. Sinds oktober 2026 slaat de check PR's vanaf een `consultatie/*` branch over, zodat een consultatieversie gebouwd kan worden zonder `specStatus` aan te passen.
+2. Branch-detectie: `consultatie/*` branches krijgen automatisch `specStatus: "cv"` (via sed op `config.mjs`)
+3. HTML generatie: `npx respec --localhost --src index.html --out ~/static/index.html --haltonwarn`
+4. PDF generatie via Puppeteer/headless Chrome (met `scripts/pdf.js`)
+5. Cache opslag als GitHub Actions cache
+
+### check.yml - Kwaliteitschecks (3 parallelle checks)
+
+1. **WCAG check**: `npx @axe-core/cli http://localhost:8080/index.html --tags wcag2aa` (geautomatiseerde check; dekt ~30% van WCAG-criteria, handmatige toetsing blijft nodig). axe-core is een van meerdere tools die gestandaardiseerde [W3C ACT Rules](https://www.w3.org/WAI/standards-guidelines/act/rules/) implementeren; alternatieven zijn o.a. [Alfa](https://github.com/Siteimprove/alfa) (Siteimprove) en [QualWeb](https://github.com/qualweb/qualweb).
+2. **Markdown lint**: `npx markdownlint-cli sections/`
+3. **Link validatie**: Muffet valideert alle hyperlinks
+
+### publish.yml - Publicatie
+
+Bevat meerdere jobs afhankelijk van de context:
+- **Release** (push naar `main`/`master`): publiceert naar de centrale `publicatie` repo (gitdocumentatie.logius.nl). Sinds oktober 2026 werkt `release.py` de redirects alleen bij voor `specStatus: "DEF"`: de root van de standaard (`/publicatie/<pubDomain>/<shortName>/`) en de kortere versiepaden (bijv. `2.1/` en `2/` naar `2.1.0/`). Een versie ter vaststelling (`"VV"`) wordt wel gepubliceerd onder haar eigen versiepad, maar de "laatste versie" blijft verwijzen naar de vorige vastgestelde versie. `release.py` leest daarbij alleen nog `js/config.mjs`; de fallback naar `js/config.js` is vervallen, dus een oudere repo moet eerst naar `config.mjs` voordat een release slaagt.
+- **Deploy develop** (push naar `develop`): publiceert naar GitHub Pages van de standaarden-repo zelf
+- **Preview** (pull request): publiceert een preview naar de `Publicatie-Preview` repo
+- **Consultatie** (`consultatie/*` branches): publiceert naar de `Openbare-Consultaties` repo
+
+### link-checker.yml - Gepubliceerde Links Controleren
+
+Controleert periodiek of de gepubliceerde versie op gitdocumentatie.logius.nl geen dode links bevat. Stuurt een e-mail bij gevonden fouten.
+
+### Calling Workflow Voorbeeld
+
+```yaml
+# .github/workflows/build.yml in een standaarden-repo
+name: Build document
+on:
+  push:
+    branches: [main, 'consultatie/*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    uses: logius-standaarden/Automatisering/.github/workflows/build.yml@main
+    with:
+      workflow_input_file_names: '["index.html"]'
+```
+
+## Nieuw Document Starten
+
+1. **Fork het template**: Gebruik [ReSpec-template](https://github.com/logius-standaarden/ReSpec-template) als basis (het oudere ReSpec-template-Logius is gearchiveerd)
+2. **Configureer `js/config.mjs`**: Pas `specStatus`, `specType`, `pubDomain`, `shortName`, `title` aan. `pubDomain` accepteert alleen `api`, `bomos`, `dk`, `fsc`, `ftv`, `logboek` of `notificatieservices`. `shortName` moet in kebab-case (alleen kleine letters, gescheiden door streepjes, bijv. `rest-api`)
+3. **Schrijf content**: Maak hoofdstukken als losse Markdown-bestanden
+4. **Push naar GitHub**: CI/CD bouwt automatisch HTML en PDF
+
+## Checks Lokaal Draaien
+
+```bash
+# ReSpec bouwen naar statische HTML
+npx respec --src index.html --out output.html
+
+# WCAG Accessibility check (wcag2aa niveau)
+npx @axe-core/cli output.html --tags wcag2aa
+# ⚠️ Let op: axe-core checkt automatisch ~30% van de WCAG-criteria.
+# Een groene check betekent NIET dat je volledig voldoet aan EN 301 549 / WCAG 2.1 AA.
+# Handmatige toetsing op alle 55 succescriteria in WCAG 2.1 AA blijft nodig.
+# axe-core implementeert W3C ACT Rules (https://www.w3.org/WAI/standards-guidelines/act/rules/)
+# Alternatieven: Alfa (Siteimprove), QualWeb
+
+# Markdown linting
+npx markdownlint-cli 'sections/**/*.md'
+
+# Link validatie (start eerst een lokale server)
+npx http-server -p 8080 . &
+muffet --accepted-status-codes=200..300,403 http://localhost:8080/index.html
+```
+
+> **Waarom 403 wordt geaccepteerd:** steeds meer servers blokkeren geautomatiseerd crawlen en zien de link checker als AI-crawler. Een 403 betekent dat de pagina bestaat maar niet opvraagbaar is, niet dat de link dood is. De centrale `run-muffet.sh` in de Automatisering-repo accepteert daarom `200..300,403`; gebruik dezelfde vlag lokaal, anders krijg je fouten die de CI niet geeft.
+
+## Foutafhandeling
+
+| Fout | Oorzaak | Oplossing |
+|------|---------|----------|
+| `ReSpec error: data-include file not found` | Markdown-bestand ontbreekt | Controleer `data-include` verwijzingen |
+| `WCAG violation: Images must have alternate text` | Afbeelding zonder alt-tekst | Voeg alt-tekst toe: `![Beschrijving](media/img.svg)` |
+| Geen WCAG violations gevonden | axe-core heeft geen fouten gedetecteerd | **Let op:** dit betekent niet dat het document volledig toegankelijk is. axe-core test ~30% van de WCAG 2.1 AA criteria. Toets handmatig op alle 55 succescriteria in WCAG 2.1 AA, waaronder toetsenbordnavigatie, leesbare kopstructuur en logische leesvolgorde. |
+| `markdownlint MD013: Line length` | Regel te lang | Breek af op ~120 karakters |
+| `muffet: 404 Not Found` | Dode link | Verwijder of update de link |
+| `muffet: 403 Forbidden` | Server blokkeert de checker (bot-detectie), pagina bestaat wel | Geen dode link. De centrale workflow accepteert 403; draai lokaal met `--accepted-status-codes=200..300,403` |
+| `PDF generation failed` | Puppeteer crash | Controleer of document valid HTML genereert |
+| `Zet de specStatus op DEF voor publicatie` | PR naar `main`/`master` met `specStatus: "WV"` | Zet `specStatus` in `js/config.mjs` op `"DEF"` (of `"VV"`) vóór de release-PR |
+| `Zet de specStatus op WV voor een werkversie` | PR naar `develop` met `specStatus: "DEF"` | Zet `specStatus` terug op `"WV"` in de develop-branch |
+| `Maak geen directe PR aan vanaf develop naar main.` | PR rechtstreeks tussen `develop` en `main`/`master` | Maak een branch vanaf `develop` en open daaruit de PR naar `main` (of andersom) |
+
+### Consultatie Branch Gedrag
+
+Op `consultatie/*` branches wordt `specStatus` automatisch overschreven naar `"cv"`. Na merge naar `main` wordt `specStatus` uit `js/config.mjs` gebruikt. Sinds september 2026 controleert `build.yml` bij een PR naar `main`/`master` dat `js/config.mjs` op `"DEF"` of `"VV"` staat en bij een PR naar `develop` dat die op `"WV"` staat.
+
+## Achtergrondinfo
+
+Zie [reference.md](reference.md) voor gedetailleerde info over tech radar, label-updates workflow, en workflow-configuratie.
+Zie [conflicts.md](conflicts.md) voor bronconflicten en gemaakte keuzes.

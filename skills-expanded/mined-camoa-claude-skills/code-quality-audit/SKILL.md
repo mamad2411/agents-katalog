@@ -1,0 +1,391 @@
+---
+name: code-quality-audit
+description: Use when checking code quality, running security audits, testing coverage, finding SOLID/DRY violations, or setting up quality tools. Use when user says "audit this code", "check security", "run PHPStan", "code quality", "find violations", "SOLID check", "DRY check", "test coverage", "lint this", "security review", "is this production ready", "check for vulnerabilities", "code review", "grade this code", "watch mode lint", "deep review", "ultrareview", "schedule quality sweep". Supports Drupal (PHPStan, PHPMD, Psalm, Semgrep, Trivy, Gitleaks via DDEV) and Next.js (ESLint, Jest, Semgrep, Trivy, Gitleaks). Use proactively before deployment or after significant code changes.
+version: 3.11.0
+model: inherit
+allowed-tools: Read, Bash, Grep, Glob
+disallowed-tools: Write, Edit
+user-invocable: false
+hooks:
+  FileChanged:
+    - matcher: "composer.json|package.json|phpstan.neon|phpstan.neon.dist|phpstan.dist.neon|phpcs.xml|phpcs.xml.dist|.phpcs.xml|psalm.xml|psalm.xml.dist|eslint.config.js|eslint.config.mjs|eslint.config.cjs|.eslintrc.js|.eslintrc.json|.eslintrc.yml|.eslintrc.yaml|tsconfig.json"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PLUGIN_ROOT}/hooks/lint-changed.sh"
+          args: []
+          timeout: 30
+  PermissionDenied:
+    - matcher: "Read|Grep|Glob"
+      hooks:
+        - type: command
+          command: "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionDenied\",\"retry\":true}}'"
+          timeout: 2
+---
+
+# Code Quality Audit
+
+Run quality and security audits for **Drupal** and **Next.js** projects with consistent tooling and reporting.
+
+> **Reading strategy:** Audit, review, security, SOLID, and DRY commands are **Type B** work (audit / review / architecture analysis) — agents must read full source and config files. Do NOT grep-first these flows. Inherited methods, annotations, and config-wired classes are invisible to a grep-first pass. See `https://camoa.github.io/dev-guides/development/reading-strategy/` via `dev-guides-navigator`. When a code-intelligence plugin is installed, the **LSP tool** resolves those inherited and config-wired relationships semantically — prefer it for SOLID/DRY/review relationship questions, and fall back to the full-read pass when it is unavailable. See `references/code-intelligence.md`.
+
+## Quick Commands
+
+**For direct access, use these commands:**
+- `/code-quality-tools:setup` - First-time setup wizard (install and configure tools)
+- `/code-quality-tools:audit` - Run full audit (all 22 operations)
+- `/code-quality-tools:coverage` - Check test coverage
+- `/code-quality-tools:security` - Security scan (10 layers for Drupal, 7 for Next.js)
+- `/code-quality-tools:lint` - Code standards check
+- `/code-quality-tools:solid` - Architecture and SOLID principles check
+- `/code-quality-tools:dry` - Find code duplication
+- `/code-quality-tools:tdd` - Start TDD workflow (test watcher mode)
+- `/code-quality-tools:review` - Rubric-scored code review (/50 scale with quality gate)
+- `/code-quality-tools:ultrareview` - Cloud multi-agent deep review with pre-flight checks (5-10min, paid after free quota)
+- `/code-quality-tools:generate-review-md` - Generate v2 REVIEW.md for Claude Code's managed Code Review
+- `/code-quality-tools:architecture-debate` - Architecture debate (Pragmatist + Purist + Maintainer)
+- `/code-quality-tools:security-debate` - Security debate (Defender + Red Team + Compliance)
+
+**For conversational workflows, continue reading...**
+
+## Watch-mode Linting (skill-scoped)
+
+This skill declares two skill-scoped hooks in its frontmatter — active ONLY while the skill is loaded, NOT plugin-wide:
+
+| Event | When | What |
+|---|---|---|
+| `FileChanged` | Linter config changes — exact filenames for common variants: `composer.json`, `package.json`, `phpstan.neon*` (3 variants), `phpcs.xml*` (3 variants), `psalm.xml*` (2 variants), `eslint.config.{js,mjs,cjs}`, `.eslintrc.{js,json,yml,yaml}`, `tsconfig.json` | Runs `hooks/lint-changed.sh` — re-lints on config change; lints single file on source-file change when watchPaths include it |
+| `PermissionDenied` | `Read`, `Grep`, `Glob` denied in auto mode | Returns `{retry: true}` — retries non-destructive classifier denials during audits |
+
+**Scope discipline:** these hooks are registered when the skill is invoked and keep running for the rest of the session — they do **not** switch off when the skill goes inactive. What skill scope buys is the invocation gate, not an off switch: a `FileChanged` handler at plugin scope is live from session start in every conversation where the plugin is enabled, firing on file changes for people who never asked for an audit. Declared here, nothing fires until somebody actually invokes the skill. Use `CLAUDE_CODE_QUALITY_WATCH=0` below to stop watch-mode within a session, and `once: true` on a hook handler if you want Claude Code to remove it after its first successful run — `once` is honored only in skill frontmatter, and is a poor fit for watch-mode linting, which is meant to fire repeatedly.
+
+**FileChanged matcher is literal, not glob.** Per the Hooks Reference, `FileChanged` matcher values are split on `|` and registered as **literal filenames** — not globs. To watch arbitrary source files (`*.php`, `*.tsx`), populate `watchPaths` dynamically from a `CwdChanged` hook, or add specific absolute paths to your project's `.claude/settings.json`. The default watch list here covers linter-config churn; broaden it in your settings if you want per-file watch on source edits.
+
+**Force-disable mid-session:**
+
+```bash
+export CLAUDE_CODE_QUALITY_WATCH=0
+```
+
+Unset the variable (or set to anything other than `0`) to re-enable.
+
+**Why this isn't in `hooks/hooks.json`:** a plugin-scope hook needs no invocation — it is armed in every session the plugin is enabled in. Only `PreCompact` belongs there, because it should apply whether or not anyone ran an audit. Watch-mode linting should not fire for someone who never asked for it, which is what declaring it here prevents.
+
+### Known limitations
+
+- **`npx` inside a hostile clone.** If you load the skill in an attacker-controlled `package.json` repo and then edit a config file, the watch-mode dispatcher runs `npx --no-install eslint` from that tree. A trojaned `node_modules/.bin/eslint` would execute. Mitigation: the containment guard in `lint-changed.sh` refuses paths outside `cwd`, but cannot sandbox the linter itself. Don't load this skill in untrusted checkouts.
+- **`PermissionDenied` retry fires unconditionally for `Read|Grep|Glob`.** The matcher is the tightest available mechanism — there's no finer-grained filter on "only during audit tool invocations." Noise on unrelated read-only denials while the skill is loaded is accepted.
+- **`--json` output is model-generated.** The schema documents required shape + JSON-escape (`invariant 4` in `references/json-schemas.md`) but enforcement relies on the model following the contract. Consumers should `jq .` before trusting the document.
+- **`FileChanged` matcher is literal-filename.** Unlisted variants (e.g., `phpstan.local.neon`, custom names) won't fire — populate `watchPaths` dynamically from a `CwdChanged` hook if you need broader source-file watching.
+
+> **Note — Claude Code's built-in `/simplify`:** Claude Code ships a built-in `/simplify` skill for quick single-pass code review. `/code-quality-tools:review` is different: it runs automated tools (PHPStan/ESLint), scores across 10 rubric categories with a /50 scale, enforces a quality gate (PASS 35+/FAIL), and writes a persisted report. Use `/simplify` for fast ad-hoc feedback; use `/code-quality-tools:review` when you need a structured, scored, and documented assessment.
+
+> **Note — the `security-guidance` plugin and native `/security-review`:** This skill's security flows (`/code-quality-tools:security`, the debates) are the **whole-codebase / CI SAST** layer — framework-aware multi-tool scans across the whole tree. They sit *below* two native layers in Claude Code's defense-in-depth model: the official **security-guidance** plugin reviews Claude's *own* edits as it writes (per-edit / end-of-turn / commit — auto, no command; offered by `/code-quality-tools:setup`), native `/security-review` runs one generic, diff-scoped pass on demand, and the **Claude Security** plugin adds a multi-agent deep scan of a whole repository (or of a diff when asked) that emits SARIF and proposes patches it never auto-applies — its own docs keep existing scanners as a separate CI stage rather than replacing them, and its findings are nondeterministic between runs. Those layers reduce what reaches a whole-tree scan; they do **not** replace it — `/security-review` cannot do whole-repo Drupal/Next.js SAST, taint analysis, dependency CVEs, or multi-agent OWASP debate. Run this skill's security audit for the framework-specific, whole-codebase coverage native review does not perform.
+
+## When to Use
+
+**Drupal projects:**
+- "Setup quality tools" / "Install PHPStan"
+- "Run code audit" / "Check code quality"
+- "Check coverage" / "What's my coverage?"
+- "Find SOLID violations" / "Check complexity"
+- "Check duplication" / "DRY check"
+- "Lint code" / "Check coding standards"
+- "Fix deprecations" / "Run rector"
+- "Start TDD" / "RED-GREEN-REFACTOR"
+- "Check security" / "Find vulnerabilities" / "OWASP audit"
+
+**Next.js projects:**
+- "Setup quality tools" / "Install ESLint"
+- "Run code audit" / "Check code quality"
+- "Check coverage" / "Run Jest coverage"
+- "Find SOLID violations" / "Check complexity" / "Check circular deps"
+- "Lint code" / "Run ESLint"
+- "Check duplication" / "DRY check"
+- "Start TDD" / "Jest watch mode"
+- "Check security" / "Find vulnerabilities" / "OWASP audit"
+
+## Quick Reference
+
+Script paths below and throughout `references/` name a file **inside this plugin**, which
+is not the directory an audit runs from. Invoke one as
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/code-quality-audit/<path from the table>"
+```
+
+with the working directory left on the project being audited — every script scans its own
+cwd, so `cd`-ing into the plugin would audit the plugin. `${CLAUDE_PLUGIN_ROOT}` is the
+plugin's install directory, substituted by Claude Code; outside a session, substitute your
+checkout of this plugin.
+
+### Drupal Scripts
+| Task | Script | Details |
+|------|--------|---------|
+| Setup tools | `scripts/core/install-tools.sh` | See [Drupal Setup](references/operations/drupal-setup.md#operation-1-setup-tools) |
+| Full audit | `scripts/core/full-audit.sh` | See [Full Audit](references/operations/drupal-audits.md#operation-2-full-audit) |
+| Coverage | `scripts/drupal/coverage-report.sh` | See [Coverage Check](references/operations/drupal-audits.md#operation-3-coverage-check) |
+| SOLID check | `scripts/drupal/solid-check.sh` | See [SOLID Check](references/operations/drupal-audits.md#operation-4-solid-check) |
+| DRY check | `scripts/drupal/dry-check.sh` | See [DRY Check](references/operations/drupal-audits.md#operation-5-dry-check) |
+| Lint check | `scripts/drupal/lint-check.sh` | See [Lint Check](references/operations/drupal-audits.md#operation-11-lint-check) |
+| Fix deprecations | `scripts/drupal/rector-fix.sh` | See [Rector Fix](references/operations/drupal-audits.md#operation-12-rector-fix) |
+| TDD cycle | `scripts/drupal/tdd-workflow.sh` | See [TDD Workflow](references/operations/drupal-tdd.md) |
+| Security audit | `scripts/drupal/security-check.sh` | See [Security Audit](references/operations/drupal-security.md) (10 layers) |
+
+### Next.js Scripts
+| Task | Script | Details |
+|------|--------|---------|
+| Setup tools | `scripts/core/install-tools.sh` | See [Next.js Setup](references/operations/nextjs-setup.md) |
+| Full audit | `scripts/core/full-audit.sh` | See [Full Audit](references/operations/nextjs-audits.md#operation-14-full-audit) |
+| Coverage | `scripts/nextjs/coverage-report.sh` | See [Coverage Check](references/operations/nextjs-audits.md#operation-16-coverage-check) |
+| SOLID check | `scripts/nextjs/solid-check.sh` | See [SOLID Check](references/operations/nextjs-audits.md#operation-19-solid-check) |
+| Lint check | `scripts/nextjs/lint-check.sh` | See [Lint Check](references/operations/nextjs-audits.md#operation-15-lint-check) |
+| DRY check | `scripts/nextjs/dry-check.sh` | See [DRY Check](references/operations/nextjs-audits.md#operation-17-dry-check) |
+| TDD cycle | `scripts/nextjs/tdd-workflow.sh` | See [TDD Workflow](references/operations/nextjs-tdd.md) |
+| Security audit | `scripts/nextjs/security-check.sh` | See [Security Audit](references/operations/nextjs-security.md) (7 layers) |
+
+## Before Any Operation
+
+**Drupal:**
+1. Locate Drupal root: check `web/core/lib/Drupal.php` or `docroot/core/lib/Drupal.php`
+2. Verify DDEV: `ddev describe`
+
+**Next.js:**
+1. Verify npm: `npm --version`
+
+### Report directory — do not create one
+
+**Never run `mkdir -p .reports`, and never add `.reports/` to the audited repository's `.gitignore`.** Reports quote lines out of the audited source and name the files a secret scanner matched in, so they do not belong on a branch that travels. `.reports` inside the repository is no longer where they go.
+
+Every script under `scripts/` resolves its own report directory by sourcing `scripts/core/report-dir.sh`, creates it, and prints `Report directory: <path>` when it starts. Read that line rather than assuming a path. Resolution order: an explicitly set `REPORT_DIR`; else the `ai-dev-assistant` project folder registered for this working directory, under `<project>/audits/<date>/`; else outside the repository under `${XDG_STATE_HOME:-$HOME/.local/state}/code-quality-tools/<project>/<timestamp>/`. `.reports/` is reachable only by asking for it with `REPORT_DIR_IN_REPO=1`, and is gitignored at creation.
+
+When you need the path yourself — to read a report back, or to tell the user where to look — ask the same file instead of writing a directory name down:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/code-quality-audit/scripts/core/report-dir.sh" --print    # where the next run writes; creates nothing
+bash "${CLAUDE_PLUGIN_ROOT}/skills/code-quality-audit/scripts/core/report-dir.sh" --ensure   # same path, created with mode 0700; use before writing
+bash "${CLAUDE_PLUGIN_ROOT}/skills/code-quality-audit/scripts/core/report-dir.sh" --latest   # where the last run wrote; exits 1 if none yet
+```
+
+A non-zero `--latest` means no audit has been run here, not that an audit came back clean. Say so, and offer to run one.
+
+> **Sandbox users:** If the built-in **sandboxed Bash tool** (`/sandbox`) is enabled, bash scripts that invoke linters (PHPStan, ESLint, Semgrep, Trivy, Gitleaks) require their binary paths to be whitelisted. Add the tool binaries to your `allowedPaths` (e.g., `vendor/bin/phpstan`, `/usr/local/bin/semgrep`). DDEV-proxied commands run inside the container and are unaffected.
+>
+> **The git-hook install fails under the sandbox, and fails cryptically.** Sandboxing is enforced by the operating system for every Bash command *and its child processes*, and `hooks` and `config` inside `.git` are protected paths. Nothing lifts that: an `allowWrite` entry or an `Edit` allow rule covering the path does not, and only `sandbox.filesystem.disabled` turns it off — for every protected path at once, not selectively. So `/code-quality-tools:setup`'s git-hook step (GrumPHP's `vendor/bin/grumphp git:init` on Drupal, Husky on Next.js) cannot write `.git/hooks/` in a sandboxed session, because those installers write it themselves as child processes. Expect `unable to unlink old ... Read-only file system` on Linux and WSL2 rather than an error naming hooks. Install hooks outside the sandbox, or skip them.
+>
+> **Protect credentials before auditing a tree you do not trust.** `sandbox.credentials` covers sandboxed Bash commands, which is where this skill's gates run `composer audit`, `npm audit` and `semgrep`. `deny` blocks a credential file or removes an environment variable outright; `mask` (v2.1.199+ for variables, v2.1.221+ for files) substitutes a per-session sentinel and lets the sandbox proxy swap the real value back in for allowed hosts, so authentication still works and neither the command nor its logs ever hold the secret. This matters against the hostile-clone risk under "Known limitations" above.
+>
+> **An unattended session runs this plugin's hooks without asking.** Claude Code shows the folder trust dialog in interactive sessions only — a `claude -p` run or an SDK session never shows it, and hooks in settings files are used regardless. This plugin ships a plugin-scoped `PreCompact` hook and skill-scoped `FileChanged` and `PermissionDenied` hooks, so all three run against an unfamiliar clone in that mode with nobody consulted.
+>
+> The Bash sandbox restricts **only Bash** — built-in file tools, MCP servers, and **hooks run unconstrained on the host**. That matters here because the watch-mode dispatcher runs as a `FileChanged` **hook** (`lint-changed.sh`), so the `npx`-trojan risk documented under "Known limitations" above is **outside** the Bash sandbox's boundary. To contain hooks (and file tools and MCP) under one OS boundary **without Docker**, run the whole Claude Code process under the **sandbox runtime** (`@anthropic-ai/sandbox-runtime`, a beta research preview): configure `~/.srt-settings.json` (it denies all write + network by default) to allow your project dir, `~/.claude`/`~/.claude.json`, and `api.anthropic.com`, then launch with `npx @anthropic-ai/sandbox-runtime claude`. **Recommendation:** run audits of **untrusted checkouts** under the sandbox runtime (or, for kernel-level separation, a dedicated VM / Claude Code on the web). Compare the isolation approaches in the **Sandbox Environments** guide (`/en/sandbox-environments`).
+
+## When to Run What
+
+Read `decision-guides/quality-audit-checklist.md` for detailed guidance.
+
+| Context | What to Run | Time |
+|---------|-------------|------|
+| Pre-commit | `quality:cs` only | ~5s |
+| Pre-push | PHPStan + Unit/Kernel tests | ~2min |
+| Pre-merge | Full audit | ~10min |
+| Weekly | Full audit + HTML reports | ~15min |
+
+## Adaptive Audit Depth (`${CLAUDE_EFFORT}`)
+
+When this skill drives an audit, scale depth to the session's effort level. The `${CLAUDE_EFFORT}` substitution resolves to the current level:
+
+| `${CLAUDE_EFFORT}` | Audit depth |
+|---|---|
+| `low` | Fast lint only — coding-standards pass; skip security, SOLID, DRY, coverage |
+| `medium` | Lint + coverage + SOLID + DRY; skip the deep security battery |
+| `high` | Full audit — all 22 operations (the effective default) |
+| `xhigh` / `max` | Full audit, then offer `/code-quality-tools:security-debate` for a 3-agent review of the security findings |
+
+Treat an unset or unrecognized value as `high` (full audit) — never silently skip coverage or security because the level could not be read.
+
+This is a **pilot** (v3.5.0): adaptive depth is wired into the audit flow only. The `FileChanged` watch-mode dispatcher and per-command effort gates are intentionally not yet effort-aware — they will be revisited once this pilot has been observed in real use.
+
+## Scope Targeting
+
+To audit specific modules or components instead of the entire project:
+
+**See [Scope Targeting](references/scope-targeting.md)** for three approaches:
+1. **Change directory** (recommended) - `cd web/modules/custom/my_module`
+2. **Environment variables** - `DRUPAL_MODULES_PATH=path/to/module`
+3. **Full scan** (default) - Run from project root
+
+Intelligent detection: Claude detects current directory and user intent.
+
+## Secret scan ground (`CQT_SECRET_SCAN`)
+
+"Run gitleaks" is a choice of ground, not one operation, and the security gate makes it explicit. The default is the **working tree**, and the run prints a `[SCOPE]` line saying so; `security-report.json` carries the same values, so a reader of the artifact can tell a working-tree scan from a full-history one. `Gitleaks: 0 findings` after a tree scan means the checkout is clean, **not** that the repository is.
+
+Full history is an opt-in because it is expensive, and the number is measured rather than assumed: on the repository this came from (2,368 commits, 253,505 packed objects, 224.84 MiB of history, core/vendor/contrib all committed before a Composer migration) a full-history pass ran for many minutes at several hundred percent CPU and was killed at ten. Set it deliberately, and give it a budget.
+
+| Variable | Values | Cost and effect |
+|----------|--------|-----------------|
+| `CQT_SECRET_SCAN` | `tree` (default), `diff`, `history` | `tree` = `gitleaks dir`, the working tree, seconds. `diff` = a bounded commit range, the CI answer, proportional to the range. `history` = every commit reachable from every ref, the only pass that finds a secret that was committed and later removed, and the only genuinely expensive one. |
+| `CQT_SECRET_SCAN_BASE` | a git ref | `diff` base. Unset, it is derived from the first resolvable upstream ref. If none resolves, the scan is **refused and recorded as a skip** rather than silently widened to everything. |
+| `CQT_SECRET_SCAN_LOG_OPTS` | a string | Passed to `gitleaks --log-opts` on a `history` or `diff` pass. **No quote characters:** gitleaks word-splits this value before handing it to `git log`, so quoting is lost and a quoted pathspec scans zero bytes, finds nothing and exits 0. A value containing a quote is refused. Ranges and unquoted pathspecs work. |
+| `CQT_SECRET_SCAN_ALLOWLIST` | `vendored` | Applies `templates/gitleaks-vendored-allowlist.toml`. It **suppresses findings**, so it is opt-in and the run prints a `[FILTER]` line naming whichever config is in force. It makes the report readable; it does **not** make a history pass faster, because every blob is still read. |
+| `CQT_SECRET_SCAN_ALLOWLIST_FILE` | a path | Use this gitleaks config instead of the shipped one. |
+| `CQT_SECRET_SCAN_TIMEOUT` | seconds (default `300`) | Budget for any one pass, enforced with `timeout(1)`, not gitleaks' own `--timeout`: gitleaks given its own timeout writes a well-formed **empty** report and exits 1, which a caller cannot tell from a clean tree. `timeout(1)` exits 124 and writes nothing. On a machine without `timeout(1)` there is no budget, and the scope line says that instead of naming a limit nothing enforces. |
+
+```bash
+# What a PR build should run: only what this branch added.
+CQT_SECRET_SCAN=diff CQT_SECRET_SCAN_BASE=origin/main bash scripts/drupal/security-check.sh
+
+# The pass that finds a credential that was committed and later gitignored.
+CQT_SECRET_SCAN=history CQT_SECRET_SCAN_TIMEOUT=1800 \
+  CQT_SECRET_SCAN_ALLOWLIST=vendored bash scripts/drupal/security-check.sh
+```
+
+Full table, with the measured `--log-opts` failure modes: [Drupal](references/operations/drupal-security.md) / [Next.js](references/operations/nextjs-security.md).
+
+---
+
+# Operations
+
+All detailed operation instructions have been moved to reference files for better organization.
+
+## Drupal Operations
+
+### Setup & Configuration
+- **Operation 1:** [Setup Tools](references/operations/drupal-setup.md#operation-1-setup-tools) - Install PHPStan, PHPMD, PHPCPD, Coder
+- **Operation 6:** [Module-Specific Audit](references/operations/drupal-setup.md#operation-6-module-specific-audit) - Scope audit to one module
+- **Operation 7:** [Add Composer Scripts](references/operations/drupal-setup.md#operation-7-add-composer-scripts) - Configure quality scripts
+- **Operation 8:** [CI Integration](references/operations/drupal-setup.md#operation-8-ci-integration) - Setup GitHub Actions
+
+### Quality Audits
+- **Operation 2:** [Full Audit](references/operations/drupal-audits.md#operation-2-full-audit) - Run all quality checks
+- **Operation 3:** [Coverage Check](references/operations/drupal-audits.md#operation-3-coverage-check) - Measure test coverage
+- **Operation 4:** [SOLID Check](references/operations/drupal-audits.md#operation-4-solid-check) - Find principle violations
+- **Operation 5:** [DRY Check](references/operations/drupal-audits.md#operation-5-dry-check) - Detect code duplication
+- **Operation 11:** [Lint Check](references/operations/drupal-audits.md#operation-11-lint-check) - Coding standards
+- **Operation 12:** [Rector Fix](references/operations/drupal-audits.md#operation-12-rector-fix) - Auto-fix deprecations
+
+### Development Workflows
+- **Operation 10:** [TDD Workflow](references/operations/drupal-tdd.md) - RED-GREEN-REFACTOR cycle
+
+### Security
+- **Operation 20:** [Security Audit](references/operations/drupal-security.md) — 10 security layers
+  - Drush pm:security, Composer audit
+  - yousha/php-security-linter, Psalm taint analysis
+  - Custom Drupal patterns, Security Review module
+  - Semgrep SAST, Trivy scanner, Gitleaks
+  - Roave Security Advisories
+
+## Next.js Operations
+
+### Setup & Configuration
+- **Operation 13:** [Setup Tools](references/operations/nextjs-setup.md) - Install ESLint, Jest, security tools
+
+### Quality Audits
+- **Operation 14:** [Full Audit](references/operations/nextjs-audits.md#operation-14-full-audit) - Run all quality checks
+- **Operation 15:** [Lint Check](references/operations/nextjs-audits.md#operation-15-lint-check) - ESLint + TypeScript
+- **Operation 16:** [Coverage Check](references/operations/nextjs-audits.md#operation-16-coverage-check) - Jest coverage
+- **Operation 17:** [DRY Check](references/operations/nextjs-audits.md#operation-17-dry-check) - Detect duplication
+- **Operation 19:** [SOLID Check](references/operations/nextjs-audits.md#operation-19-solid-check) - Circular deps, complexity
+
+### Development Workflows
+- **Operation 18:** [TDD Workflow](references/operations/nextjs-tdd.md) - RED-GREEN-REFACTOR with Jest
+
+### Security
+- **Operation 21:** [Security Audit](references/operations/nextjs-security.md) — 7 security layers
+  - npm audit, ESLint security plugins
+  - Semgrep SAST, Trivy scanner, Gitleaks
+  - Custom React/Next.js patterns (XSS, eval, navigation)
+  - Socket CLI
+
+## Optional: DAST (Dynamic Testing)
+
+**Pre-production security testing for staging environments**
+
+- **Operation 22:** [DAST Tools](references/operations/dast-tools.md) — Dynamic security testing
+  - OWASP ZAP (full DAST scanner)
+  - Nuclei (template-based CVE scanning)
+  - Requires running application
+  - Use before releases on staging/pre-production
+
+---
+
+## Saving Reports
+
+All reports must follow `schemas/audit-report.schema.json`:
+
+```json
+{
+  "meta": {
+    "project_type": "drupal|nextjs|monorepo",
+    "timestamp": "2025-12-19T12:00:00Z",
+    "thresholds": { "coverage_minimum": 70, "duplication_max": 5 }
+  },
+  "summary": {
+    "overall_score": "pass|warning|fail|unknown",
+    "coverage_score": "pass|warning|fail",
+    "solid_score": "pass|warning|fail",
+    "dry_score": "pass|warning|fail",
+    "security_score": "pass|warning|fail|skipped"
+  },
+  "coverage": { "line_coverage": 75.5, "files_analyzed": 45 },
+  "solid": { "violations": [] },
+  "dry": { "duplication_percentage": 3.2, "clones": [] },
+  "security": { "critical": 0, "high": 0, "medium": 3, "low": 5, "issues": [] },
+  "recommendations": []
+}
+```
+
+---
+
+## References
+
+### Core Guidance
+- `references/tdd-workflow.md` - RED-GREEN-REFACTOR patterns, test naming, cycle targets
+- `references/coverage-metrics.md` - Coverage targets by code type, PCOV vs Xdebug
+- `references/dry-detection.md` - Rule of Three, when duplication is OK
+- `references/solid-detection.md` - SOLID detection patterns and fixes
+- `references/composer-scripts.md` - Ready-to-use composer scripts
+- `references/scope-targeting.md` - Target specific modules/components
+- `references/post-batch-aggregation.md` - Optional `PostToolBatch` aggregation pattern (Claude Code 2.1.118+); not shipped by default
+- `references/code-intelligence.md` - Optional LSP-tool code intelligence for deeper SOLID/DRY/review analysis (recommended-not-required)
+- `references/setup-hook-pattern.md` - Optional `Setup`-hook pattern for one-time CI tool bootstrap on `claude --init -p`; not shipped by default
+
+### Operations
+- `references/operations/drupal-setup.md` - Drupal setup operations
+- `references/operations/drupal-audits.md` - Drupal quality audit operations
+- `references/operations/drupal-security.md` - **Drupal security (10 layers, v2.0.0)**
+- `references/operations/drupal-tdd.md` - Drupal TDD workflow
+- `references/operations/nextjs-setup.md` - Next.js setup operations
+- `references/operations/nextjs-audits.md` - Next.js quality audit operations
+- `references/operations/nextjs-security.md` - **Next.js security (7 layers, v2.0.0)**
+- `references/operations/nextjs-tdd.md` - Next.js TDD workflow
+
+### Online Dev-Guides (Drupal Domain)
+
+For deeper Drupal-specific patterns beyond tool commands, fetch the guide index:
+
+**Index:** `https://camoa.github.io/dev-guides/llms.txt`
+
+Likely relevant topics: solid-principles, dry-principles, security, testing, tdd, js-development, github-actions
+
+Usage: WebFetch the index to discover available topics, then fetch specific topic pages when explaining violations, suggesting fixes, or providing architectural context.
+
+## Decision Guides
+
+- `decision-guides/test-type-selection.md` - Unit vs Kernel vs Functional decision tree
+- `decision-guides/quality-audit-checklist.md` - When to run what (pre-commit vs pre-merge)
+
+## Templates
+
+### Drupal
+- `templates/drupal/phpstan.neon` - PHPStan 2.x config (extensions auto-load)
+- `templates/drupal/phpmd.xml` - PHPMD ruleset for Drupal
+- `templates/drupal/phpunit.xml` - PHPUnit config with testsuites
+- `templates/ci/github-drupal.yml` - GitHub Actions workflow with security tools
+
+### Next.js
+- `templates/nextjs/eslint.config.js` - ESLint v9 flat config with TypeScript + security
+- `templates/nextjs/jest.config.js` - Jest config with coverage thresholds
+- `templates/nextjs/jest.setup.js` - Jest setup with Testing Library
+- `templates/nextjs/.prettierrc` - Prettier config with Tailwind plugin
+
+See `CHANGELOG.md` for version history.

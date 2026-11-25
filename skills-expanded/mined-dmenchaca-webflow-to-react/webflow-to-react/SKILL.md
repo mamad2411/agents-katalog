@@ -1,0 +1,184 @@
+---
+name: webflow-to-react
+description: >-
+  Converts a Webflow HTML export into a maintainable React app with TanStack Start
+  (SSR, TanStack Router conventions) using an idiomatic React-first approach.
+  Sets up Storybook early, builds UI primitive + page-section SOT components with
+  variant stories before composing routes. Use when the user has a Webflow export
+  (index.html + css/ + js/ + images/ + fonts/) and wants to migrate to React,
+  when they mention TanStack Start, TanStack Router, SSR, Storybook, SOT components,
+  "convert Webflow to React", or when a repo already contains a Webflow export at
+  its root. Works in Cursor, Claude Code, GitHub Copilot, Gemini, Codex, or any
+  agent that loads Markdown skills. Covers folder layout, font self-hosting, CSS
+  preservation, Storybook parity, global-effect hooks, first-run GitHub + Netlify
+  ship (MCP + auth fallbacks), optional Core Web Vitals patterns (font preload,
+  deferred analytics, CLS tweaks; adapt per export), GSAP kept intact (not rewritten
+  in Framer Motion), and document-shell cleanup so stack scanners do not see useless
+  Webflow fingerprints (data-wf-*, generator). Does not cover Webflow CMS (static
+  export only).
+---
+
+# Webflow → TanStack Start (React) migration (idiomatic-first)
+
+Turns a Webflow HTML export into a **TanStack Start** app (SSR + file-based routing via TanStack Router) using an **idiomatic React-first** strategy.
+
+**Default posture (mission critical):**
+
+- Prefer **JSX components** over importing/exporting raw HTML.
+- Prefer Webflow export as **reference + CSS/class heritage**, not the page runtime.
+- Avoid `dangerouslySetInnerHTML` for page layout. Only allow it for **small, sanitized, content-shaped** fragments (e.g. CMS body HTML) when explicitly chosen.
+- Avoid re-executing `<script>` tags from injected HTML. Re-implement behavior as hooks/components instead.
+
+> If you want “pixel parity fast” by embedding exported Webflow body HTML and replaying scripts, this skill should not do that unless the user explicitly opts into a parity-first mode.
+
+### Coding agents and IDEs
+
+This skill is **not tied to a single product**. The workflow, `playbook.md`, `gotchas.md`, and `templates/` apply in **Cursor, Claude Code, GitHub Copilot, Gemini, Codex**, and similar tools, as long as the assistant can read this repo (or a copy of `SKILL.md` plus linked files). Install the skill where your environment expects skills or long-lived instructions (for example user or project skill directories per that tool’s docs).
+
+**Rules (`rules/*.mdc`):** Same content works everywhere — they are Markdown with optional YAML frontmatter. Point **Cursor** at `.cursor/rules/` (see below); for **other agents**, copy the constraints into the project’s agent rules file (e.g. `AGENTS.md`, `.github/copilot-instructions.md`, or your tool’s equivalent) so fonts, GSAP, SSR, and Netlify settings stay consistent across sessions.
+
+**First-time migration ship:** If this is the **first** conversion of that site, the agent should **ship to a new private GitHub repo** (prefer **GitHub MCP** `create_repository`) and **connect Netlify** to that repo. **Mission critical:** In the Netlify dashboard **Build settings**, **every** field (**Runtime, Base directory, Package directory, Build command, Publish directory, Functions directory**) must stay **empty / Not set** so **only** repo-root `**netlify.toml`** controls the build — any filled UI field causes **real deploy failures** (404, missing SSR functions, wrong paths). See **[gotchas.md](gotchas.md) § *Mission critical: Netlify UI*** and **[shipping.md](shipping.md) §2.1**. Users may not be logged in — follow **[shipping.md](shipping.md)** for MCP failures and `gh` / dashboard fallbacks.
+
+## When to use this skill
+
+- The user has a Webflow export folder (`index.html`, `css/`, `fonts/`, `images/`, `js/`).
+- They want a maintainable React codebase aligned with **TanStack** (Router, optional Query/Table later).
+- They want **SSR** without bolting on a second framework.
+- They want to keep Webflow visuals and GSAP behavior.
+
+> [!NOTE]
+> **Scope:** Static **export** pages only—not **Webflow CMS** (collections, dynamic templates). CMS content needs a separate plan.
+
+## Non-negotiables (idiomatic-first)
+
+- **No HTML-host pages:** Do not build routes by importing `*.html` / `*.body.html` blobs and injecting them into the DOM for “full page” rendering.
+- **No `WebflowBody` shim:** Do not create a component that injects exported HTML then re-runs `<script>` tags to approximate Webflow runtime.
+- **No jQuery / `webflow.js`** in the app runtime.
+- **No in-markup third-party scripts** inside components or raw HTML. Centralize analytics/pixels in the document shell (head/body) only when the user requests them.
+
+## Strict checklist (build before deploy)
+
+Short prompts (e.g. “migrate to TanStack Start”) still mean: **run the build phase in order**. Nothing here is a runtime compiler, but the agent must treat the following as **non-optional** for a real migration.
+
+**Rule:** Do **not** start **first deploy** (GitHub + Netlify, [shipping.md](shipping.md), Quick workflow **~16+**) or present a deploy as the next action until the **build phase** below is **actually present in the repo** (files on disk, not a plan). If the user asks to deploy early, **stop**, say the build phase is incomplete, and list the missing items from the Quick workflow.
+
+**Build phase = Quick workflow 1 → 12b** (use [playbook.md](playbook.md) and [gotchas.md](gotchas.md); expand sub-steps 10/10b/10c/10d/10e/10f/10g and **14** where your tool needs rules):
+
+- **Scaffold** — `web/` with TanStack Start (React + TS), Netlify Vite plugin, deps, root `package.json` proxy to `web/` when the repo is split (steps **2–5**).
+- **Assets + CSS** — public assets, compiled Webflow CSS, `site-fonts.css` first, `marketing.css` barrel, global font-smoothing, document-shell fingerprint cleanup, styles wired in root layout/routes (**6–10**, **10b**, **10c**, **10e**).
+- **Storybook + design system** — install Storybook, wire `preview` to production CSS (**10f**); audit export for repeating UI chrome → one SOT + variant stories per pattern (**10g**); audit repeating sections → SOT + stories before routes (**11a**).
+- **Compose routes** — routes import section + UI SOT only; no export HTML for blocks that have stories (**11**). Verify Storybook ↔ live parity (**11b**).
+- **Client-only motion** — GSAP in `useEffect` + `gsap.context` only; **remove** jQuery and `**webflow.js`** from the app path (**12**).
+- **Lockfile / CI** — `npm ci` passes in **`web/`** with a committed **`package-lock.json`**; pin **`@tanstack/*`** for production deploys instead of **`latest`** where possible (**12b** — [gotchas.md](gotchas.md) § *npm ci, lockfiles, and `"latest"`*, [shipping.md](shipping.md) § *Lockfile and CI parity*).
+
+**Build-done gate (minimum):** A reviewer can see `web/`, Storybook running with UI + section stories, routes composed from SOT components (not export section HTML), correct CSS order / `<head>` parity, and no client bundle dependency on jQuery or `webflow.js`. **Then** SSR smoke test (**15**) and **deploy** steps apply.
+
+**Optional / parallel:** 10d (sitemap/robots), 13/13b (analytics, CWV), 14 (agent rules) — follow Quick workflow; do not use “optional” to skip **1–12b** or **10b/10c** when the user expects a faithful site.
+
+## Quick workflow
+
+```
+Migration progress:
+- [ ] 1. Audit the export (sections, fonts, JS, animations, analytics)
+- [ ] 2. Bootstrap web/ with TanStack Start (React) + TS
+- [ ] 3. Add Netlify Vite plugin for TanStack Start (hosting)
+- [ ] 4. Install deps (Tailwind v4, shadcn, GSAP if present, …)
+- [ ] 5. Wire root package.json proxy scripts (repo root → web/)
+- [ ] 6. Move assets → web/public/{images,fonts}/ (rewrite URLs to /)
+- [ ] 7. Copy compiled Webflow CSS → web/src/styles/marketing/
+- [ ] 8. Write web/src/styles/site-fonts.css (@font-face FIRST)
+- [ ] 9. Write web/src/styles/marketing.css barrel in the right order (fonts first; compiled **`*.webflow.css` before** body-embed / **`global-embed.css`** so **`.hide`** wins — [gotchas.md](gotchas.md) § *Designer-hidden nodes: `.hide` and stylesheet order*)
+- [ ] 10. Integrate marketing styles in TanStack root layout (__root.tsx) + routes
+- [ ] 10b. **Port the export `index.html` `<head>`** into `__root.tsx` (title, description, OG/Twitter, favicon links, theme-color, analytics/scripts if any) — TanStack Start has no static `index.html`; skipping this loses SEO and icons even when assets exist in `public/`
+- [ ] 10d. **Optional SEO — static `sitemap.xml` / `robots.txt`:** if the site needs them, add to **`web/public/`** (served at `/sitemap.xml` and `/robots.txt`; no special TanStack wiring). See [gotchas.md](gotchas.md) § *Static sitemap.xml and robots.txt* and [templates/sitemap.xml.example](templates/sitemap.xml.example) / [templates/robots.txt.example](templates/robots.txt.example). Use prerender+plugin sitemap or a server route when URL sets are large or dynamic (TanStack SEO guide)
+- [ ] 10c. **Global font-smoothing:** copy Webflow’s `* { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale }` (from `css/webflow.css` / `index.html`) into the app’s global CSS (e.g. `styles.css` `@layer base`) — without it, macOS often renders text **heavier** than production (see [gotchas.md](gotchas.md) § *Copy Webflow’s global font-smoothing*)
+- [ ] 10e. **Document shell vs stack scanners:** remove **`data-wf-page` / `data-wf-site`** from `<html>` when CSS does not reference them; set **`generator`** meta to the real stack; prefer **self-hosted or production-domain** OG/Twitter image URLs over **`uploads-ssl.webflow.com`**. **Keep** the **`w-mod-js` / `w-mod-touch` / `w-mod-ix`** init script when copied CSS still uses `html.w-mod-*` selectors (see [gotchas.md](gotchas.md) § *Stack detection* and [rules/stack-detection-webflow.mdc](rules/stack-detection-webflow.mdc)).
+- [ ] 10f. **Storybook + preview CSS parity** — install Storybook in `web/`; wire `preview` to the **same global CSS chain** production uses (see [templates/storybook-preview.example.ts](templates/storybook-preview.example.ts), [playbook.md](playbook.md) §3.8). Required before **10g** / **11a**.
+- [ ] 10g. **UI primitives SOT** — grep export for repeating chrome (buttons, chips, headings, …); one component + `Components/UI/*` variant stories per pattern. See [checklists/ui-primitives-pass.md](checklists/ui-primitives-pass.md) and [rules/react-sot-ui-primitives.mdc](rules/react-sot-ui-primitives.mdc).
+- [ ] 11a. **Section SOT + stories** — for each repeating export section, create page-section component + story **before** routes. See [checklists/section-sot-pass.md](checklists/section-sot-pass.md).
+- [ ] 11. **Compose routes from SOT** — TanStack routes import UI + section components only; export HTML is read-only reference; no `dangerouslySetInnerHTML` for sections that have stories; no post-hydration CTA/section swaps.
+- [ ] 11b. **Storybook ↔ production parity** — default stories match live routes (same props, no per-route visual tokens). See [checklists/sot-component-pass.md](checklists/sot-component-pass.md) and [rules/react-sot-storybook-parity.mdc](rules/react-sot-storybook-parity.mdc). Optional guard: [templates/check-sot-css-ownership.mjs](templates/check-sot-css-ownership.mjs).
+- [ ] 12. Keep GSAP in client-only code (useEffect + gsap.context); drop jQuery/webflow.js
+- [ ] 12b. **Lockfile + `npm ci`:** after dependency changes, `cd web && npm install`, then **`npm ci` must pass** from a clean **`node_modules`**; commit **`web/package-lock.json`**. Prefer **pinned** `@tanstack/*` versions over **`latest`** for deploy repos ([gotchas.md](gotchas.md) § *npm ci, lockfiles, and `"latest"`*, [shipping.md](shipping.md) § *Lockfile and CI parity*).
+- [ ] 13. Analytics: follow the **export + user** (remove/replace GTM/GA/Hotjar per agreement — not every site uses Plausible; see [gotchas.md](gotchas.md)); set generator meta in HTML shell
+- [ ] 13b. **Optional CWV:** `web/netlify.toml` from [templates/web-netlify.toml](templates/web-netlify.toml); font preloads / deferred third-party scripts / hero image priorities per [gotchas.md](gotchas.md) § Core Web Vitals
+- [ ] 14. Scaffold agent rules from `rules/` into the project (`.cursor/rules/` for Cursor, or merge into AGENTS.md / Copilot instructions / your tool’s rules — see *Coding agents and IDEs* above)
+- [ ] 15. **SSR import smoke test** before pushing — `vite build` is not a runtime check; see [gotchas.md](gotchas.md) § *Netlify SSR function crashes on first request* and [templates/vite-ssr-noexternal.example.ts](templates/vite-ssr-noexternal.example.ts). Per-site list, do not copy verbatim from another project.
+- [ ] 16. First-run ship: GitHub repo + Netlify — see shipping.md; **verify Netlify Build settings are all empty** (gotchas § Mission critical: Netlify UI)
+- [ ] 17. Open the live URL after deploy — Netlify “build success” does not exercise the function
+- [ ] 18. Run cleanup checklist (checklists/cleanup-before-done.md)
+```
+
+## Required reading before acting
+
+1. **[playbook.md](playbook.md)** — bootstrap order, TanStack Start layout, CSS, components.
+2. **[shipping.md](shipping.md)** — **first-run** GitHub (MCP) + Netlify + **unauthenticated** fallbacks.
+3. **[gotchas.md](gotchas.md)** — fonts, **`.hide` / CSS barrel order** (§ *Designer-hidden nodes*), SSR vs client-only hooks, **`npm ci` / lockfiles / pinning `latest`** (§ *npm ci, lockfiles, and `"latest"`*), **Netlify + TanStack deploy (`[build] base`, `web/netlify.toml`, UI overrides)**, **Core Web Vitals**, GSAP, iframes, **stack detection / Wappalyzer fingerprints**.
+4. **[checklists/pre-migration.md](checklists/pre-migration.md)**
+5. **[checklists/ui-primitives-pass.md](checklists/ui-primitives-pass.md)** — UI chrome SOT + variant stories (step 10g).
+6. **[checklists/section-sot-pass.md](checklists/section-sot-pass.md)** — page sections before routes (step 11a).
+7. **[checklists/sot-component-pass.md](checklists/sot-component-pass.md)** — Storybook ↔ production parity (step 11b).
+8. **[checklists/cleanup-before-done.md](checklists/cleanup-before-done.md)**
+
+## Templates
+
+Copy/adapt from `templates/`. TanStack Start also generates its own `vite.config.ts`, `src/routes/` — merge Webflow patterns into that structure rather than replacing the whole scaffold.
+
+- `templates/root-package.json` — proxy scripts to `web/`
+- `templates/web-package.json` — **reference only**; prefer versions from TanStack Start + your additions
+- `templates/netlify.toml` — production CI (repo root); `**templates/web-netlify.toml`** — local `vite dev` / Netlify plugin root = `web/`
+- `templates/PlausibleLoader.tsx` (example **only if** the project uses Plausible), `templates/site-font-preload.example.ts`, `templates/performance-overrides.example.css` — optional CWV patterns (**adapt per site**)
+- `templates/vite-ssr-noexternal.example.ts` — `web/vite.config.ts` shape with the `**ssr.noExternal`** pattern + local SSR smoke test for Netlify function crashes (**per-site list**, do not paste another project's deps)
+- `templates/site-seo.example.ts` — `web/src/site/seo.ts` + reminder that `**{ title }` belongs inside `head().meta`**, not top-level `head()`
+- `templates/sitemap.xml.example`, `templates/robots.txt.example` — copy into `**web/public/**` when using static sitemap/robots ([gotchas.md](gotchas.md) § *Static sitemap.xml and robots.txt*)
+- `templates/site-fonts.css`, `templates/marketing.css`, `MarketingSiteRoot.tsx` — same ideas as before, paths under `web/src/`
+
+## Rules to scaffold
+
+**Cursor (recommended for Cursor users):**
+
+```bash
+mkdir -p .cursor/rules
+cp ./rules/*.mdc .cursor/rules/   # from this skill repo root; or ~/.cursor/skills/webflow-to-react/rules/ if installed globally
+```
+
+**Other agents:** Copy or adapt the same files into your tool’s project instructions, or symlink this repo’s `rules/` into a path your assistant loads. Files: `webflow-css-preservation.mdc`, `react-sot-storybook-parity.mdc`, `react-sot-ui-primitives.mdc`, `self-hosted-fonts-vite.mdc`, `gsap-in-react.mdc`, `marketing-global-effects.mdc`, `widget-iframe-overlay.mdc`, `netlify-tanstack-deploy.mdc`, `npm-ci-reproducibility.mdc`, `ssr-noexternal-netlify.mdc`, `performance-cwv.mdc`, `stack-detection-webflow.mdc`
+
+## Tech stack (default)
+
+- **TanStack Start** (React) — SSR, TanStack Router file routes
+- **Vite** (as bundled by TanStack Start)
+- **TypeScript 5.9+**
+- **Tailwind CSS v4** via `@tailwindcss/vite`
+- **shadcn/ui** (`base-nova`) where components are needed
+- **GSAP** — keep from export; **client-only** initialization (see gotchas § SSR)
+- **Analytics** — match the export and user choice (Plausible, Fathom, none, etc.; do not assume Plausible)
+- **Netlify** — `@netlify/vite-plugin-tanstack-start` + `netlify.toml` (see templates)
+
+**Legacy opt-out:** If the user explicitly wants a **plain Vite SPA** (no SSR), follow the older Vite-only paths still described in playbook appendix; do not force TanStack Start against their wishes.
+
+## What this skill will not do
+
+- Rewrite GSAP in Framer Motion wholesale.
+- Run a full CMS migration from Webflow CMS (stop and ask).
+- Rebuild Webflow Interactions 2.0 keyframe-for-keyframe (re-implement only what matters).
+- Store Netlify/GitHub **secrets** in-repo or bypass OAuth with embedded tokens.
+
+## Parity-first mode (explicit opt-in only)
+
+If the user explicitly requests “pixel parity first” and accepts the trade-offs, you may temporarily:
+
+- Import a narrow HTML fragment (not an entire page shell) and render it with `dangerouslySetInnerHTML`.
+- Replay **only** the minimal inline script necessary for parity, and immediately track it as debt to remove.
+
+You must label this as a **temporary shim**, avoid spreading it across routes, and plan the removal path section-by-section.
+
+## Storybook opt-out (explicit only)
+
+Default build phase includes **10f–11b** (Storybook, UI primitives, section SOT, route composition, parity gate).
+
+Skip only when the user says **“Skip Storybook”** or **“no Storybook”** in that turn — then document the debt and still avoid per-route token forks when SOT components exist.
+
+## Hand-off
+
+Read **[playbook.md](playbook.md)** next, then **[shipping.md](shipping.md)** before any “push to GitHub / deploy” step.

@@ -1,0 +1,175 @@
+---
+name: alexandria-memory
+description: Use when working in known projects or domains, recalling prior conversations and decisions, learning durable preferences or facts, resolving bugs, or scheduling and managing reminders and future follow-ups with Alexandria memory.
+---
+
+# Alexandria Memory
+
+Alexandria is a persistent, cross-session agent memory server (semantic search + heat-based
+recency + graph clustering + scheduled reminders) reachable via MCP tools when the `alexandria`
+server is connected.
+Its whole value only materializes if it's actually used — an agent that never calls it behaves
+exactly like one with no memory at all. Default to using it; don't wait for an explicit
+"remember this" / "check your memory" instruction.
+
+## When to read memory (do this unprompted)
+
+- Starting a task in a project/domain you've plausibly touched before (early in the session,
+  before diving into research you might have already done).
+- The user references past context: "last time", "we decided", "like before", "you said",
+  "remind me what we decided".
+- The user asks for a future nudge ("remind me at 3", "don't let me forget to X") — see Reminders.
+- Before re-deriving an architectural decision, re-debugging something, or re-asking a
+  preference question the user may have already answered in a prior session.
+- Before proposing an approach that has tradeoffs — check whether a prior decision/rationale
+  already exists so you don't contradict it silently.
+
+Tool choice:
+
+- **`mcp__alexandria__retrieve_memories`** — specific lookup, you know roughly what you're searching for. Pass a
+  natural-language statement of the fact/topic (not a question). Returns ranked hits with
+  similarity + tags.
+- **`mcp__alexandria__recall`** — open-ended/broad exploration ("what do we know about X", "what's the state of
+  Y"). Call once with no `scope_handle` to get candidate clusters, then call again with the
+  returned `scope_handle` to narrow into the most relevant one.
+
+## When to write memory (do this unprompted)
+
+Store as soon as something durable and non-obvious emerges — don't wait to be told:
+
+- A user preference or convention (tooling choice, style rule, workflow habit).
+- An architectural/design decision **and its rationale** (the "why", not just the "what" —
+  rationale is what saves a future re-litigation of the same tradeoff).
+- The root cause of a bug once found (not the symptom).
+- A non-obvious gotcha, footgun, or platform/library quirk you had to discover the hard way.
+- A correction the user gives you about something you got wrong.
+
+Tool choice:
+
+- **`mcp__alexandria__store_memory`** — new fact. Write `content` as a standalone statement that still makes
+  sense without today's conversation (no "as discussed above", no pronouns without antecedents).
+  Add `tags` for the project/domain so future retrieval scopes well.
+- **`mcp__alexandria__update_memory`** — you found that an *existing* memory is stale/wrong. Prefer this over
+  `mcp__alexandria__store_memory` for corrections — it re-embeds if content changed and preserves the old
+  version via a `derived_from` lineage edge instead of leaving a stale duplicate floating
+  around.
+- **`mcp__alexandria__import_document`** — bulk reference material (a design doc, README, spec, meeting notes)
+  the user shares or points at that's worth retaining long-term. Chunks automatically
+  (heading/paragraph/fixed-size) and links chunks back to the source document.
+- **`mcp__alexandria__delete_memory`** — only when the user explicitly wants something forgotten. This is a
+  soft-delete; for corrections, prefer `mcp__alexandria__update_memory` so the lineage survives.
+
+## Sessions
+
+`mcp__alexandria__store_memory` accepts an optional `session_id` — an opaque handle you choose, typically
+this conversation's identifier or a task name — which groups that memory under a session and creates
+the session on first use. Worth doing when the grouping itself is the useful thing: "everything we
+learned about the auth refactor" stays retrievable as a unit even though the memories are
+topically scattered across clusters.
+
+- **`mcp__alexandria__list_sessions`** — enumerate sessions newest-first, filterable by `agent_id`, `tag`
+  and whether they were finalized, with `limit`/`offset` paging. This is how you find a session whose
+  id you did not keep.
+- **`mcp__alexandria__get_session`** — review everything stored in one session, oldest first, with its
+  metadata. Use when the user asks what was captured in a specific past conversation, or before
+  writing a session summary so you don't restate something already stored.
+- **`mcp__alexandria__finalize_session`** — set the session's summary, tags, and end timestamp. Call once
+  as work wraps up; it is what makes a session skimmable later instead of a pile of fragments.
+
+Rules that matter: a session's `ended_at` is refreshed by every store, so it tracks last activity,
+not closure — an unfinalized session still has `ended_at` set, and `summary: null` is the real signal
+that it was never closed. Sessions are not searchable by *content*: `mcp__alexandria__list_sessions`
+enumerates them by metadata, and `mcp__alexandria__get_session` needs an id you already have or one you just
+got from the list. Still worth recording the id you chose somewhere durable if you expect to revisit
+it. See `docs/session-memory.md` in the Alexandria repo for details.
+
+## Reminders
+
+Alexandria also schedules standalone messages ("remind me to X") that are delivered — to the agent
+context and the user together — on the first interaction after they come due. There is no background
+timer and no mid-session wake-up: a reminder waits for the next interaction, in every transport.
+
+When to set (do this unprompted, like writes):
+
+- The user explicitly asks to be reminded ("remind me at 3", "don't let me forget to renew the cert").
+- A time-bound follow-up this conversation can't finish ("check the deploy at 3pm", "ask me tomorrow
+  whether the migration landed").
+- Resolve relative phrasing ("in 20 minutes", "tomorrow morning") to an explicit datetime against the
+  current time before calling — the server never sees your conversation.
+
+Tool choice:
+
+- **`mcp__alexandria__set_reminder`** — schedule a one-shot or recurring message; exactly one of the three
+  kinds below. Write `message` so it still makes sense in a session with none of today's context.
+- **`mcp__alexandria__list_reminders`** — what is scheduled and when it fires; filter by `status`
+  (`pending` default, `delivered`, `cancelled`, `all`) and `target_project`. This is where you find an
+  id to cancel.
+- **`mcp__alexandria__cancel_reminder`** — soft-cancel by id when the user says it's no longer needed, or
+  after a delivery for a recurring reminder the user now wants stopped.
+
+Schedule kinds — give exactly one:
+
+- one-shot: `due_at: "2026-09-12T09:00:00"` — ISO-8601; an explicit UTC offset is honored, a naive
+  time is read in the server's reminders timezone.
+- pattern: `pattern: {freq: "weekly", time: "09:00", weekdays: ["fri"]}` — daily/weekly/monthly at a
+  wall-clock `HH:MM`; weekly needs `weekdays`, monthly needs `day_of_month` 1-31 (short months skip
+  the 31st rather than sliding to the 1st).
+- cron: `cron: "0 0 1,15 * *"` — the escape hatch for what patterns can't express (this one:
+  midnight on the 1st and 15th). Prefer patterns; use cron only when patterns fall short. Three
+  dialect caveats, all silent when you get them wrong: 5, 6 or 7 fields are accepted (a 5-field
+  expression gets seconds prepended; `@daily` is rejected, write it out); numeric days of week are
+  **1=Sunday through 7=Saturday** — not the usual 0-6 — so `1-5` means Sunday to Thursday and `0` is
+  rejected outright, so always write days as names (`MON-FRI`, `SAT`); and day-of-month and
+  day-of-week are **ANDed**, not ORed as in Vixie cron, when both are restricted — `0 9 13 * FRI` is
+  Friday-the-13th-only, so "the 13th *or* every Friday" is two reminders.
+
+Recurring times are wall clock in that timezone, so across a DST transition a daily 09:00 stays 09:00
+local: a time the spring-forward gap removed does not fire that day, and a time a fall-back fold
+repeats fires **once**, on its first pass. One wall-clock reading is one occurrence.
+
+Schedules are parsed and validated at set time — a bad cron or impossible time errors back at you, it
+is never stored to fail later, and a response may carry a `warning` naming a schedule that is valid but
+not what you meant (a restricted day-of-month with a restricted day-of-week, a `due_at` already past). The response echoes the parsed `schedule`, `next_fire_preview`, and the
+`timezone` it was evaluated in: **confirm those against what the user asked for before you end the
+turn** — a mis-parsed "every Friday" is cheapest to fix while they're still there. Optional `note` and
+provenance fields ride along at delivery for context.
+
+Targeting: reminders are **global** by default (delivered in any context). Use `target_project` for
+repo-bound follow-ups; delivery matches the project name exactly and case-sensitively. A targeted
+reminder in a project that stops being visited is not lost — once it is at least the server's
+escalation window overdue (`[reminders].escalation_hours`) it delivers everywhere, flagged
+`escalated: true`.
+
+Delivery happens only when something calls **`mcp__alexandria__check_reminders`** — some client
+integrations do it automatically at the start of each turn; if yours doesn't (check what your client
+actually does), you are that something. That call is the *only* thing that consumes reminders
+(recurring ones advance; missed fires coalesce rather than trickle). So don't call it reflexively;
+call it when the user asks "anything due?", or when a reminder they expected hasn't shown up, passing
+the current project so project-targeted reminders match. The `due_reminders` array on
+`mcp__alexandria__retrieve_memories` / `mcp__alexandria__recall` responses is a read-only safety net (a small
+oldest-due sample) that is *untargeted*: entries appear there with their `target` whatever project
+they belong to, so another project's entry is informational — it reaches the user through the next
+`mcp__alexandria__check_reminders` instead.
+
+## Guidelines
+
+- **Bias toward storing.** Memory writes are cheap and clustering handles rough dedup; losing a
+  decision/rationale is more costly than an extra memory entry.
+- **Write for a stranger.** Assume the reader has zero context from this conversation.
+- **Don't narrate it.** Store/retrieve silently as part of normal work, the same way you'd read
+  a file — don't announce "let me check my memory" unless the result changes what you tell the
+  user.
+- **Surface conflicts.** If a retrieved memory contradicts what you're about to do or say, flag
+  it to the user rather than silently picking one.
+- **Batch queries when exploring multiple angles** — call `mcp__alexandria__retrieve_memories` a few times with
+  varied phrasing rather than one query trying to cover everything, same principle as varying
+  web-search queries.
+
+## Availability
+
+These tools come from the `alexandria` MCP server (HTTP, `http://127.0.0.1:3000/mcp`), which must be
+configured with `"exposure": "direct"` for them to be declared to the model — the pi default is
+`codemode`, where they are reachable only from scripts. If the tools aren't present, the server may not
+be running or may be signed out: check `systemctl --user status alexandria` (if deployed as a systemd
+user service) and `pi mcp list`, and look for `exposure` before concluding memory isn't available for
+this session.

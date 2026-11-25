@@ -1,0 +1,229 @@
+---
+name: aq-comms
+description: Messages, inbox, and human questions in the aq daemon. Use to check for queued messages (`aq message inbox`), send a message to the user or another agent (`aq message send`), reply to a specific message (`aq message reply`), or report a blocking question with `aq message send`. Also covers the message-delivery model (session vs user vs task recipients).
+allowed-tools:
+  - Bash
+---
+
+# aq comms — Messaging and asking humans
+
+The daemon's message bus carries three kinds of frames: agent → user
+("I need X"), user → agent (chat + directives), and agent → agent
+(coordination). All flow through `aq message`.
+
+## Read
+
+```bash
+aq message inbox                              # your session's pending messages
+aq message inbox --json                       # structured (--json is
+                                              # global: any position works)
+aq message list --project <pid>               # everything sent in a project
+aq message list --thread-id dashboard:<pid>   # filter to a chat thread
+aq message status <message-id> --json         # one message you were handed,
+                                              # body included
+```
+
+Every session that starts with a bearer token gets an automatic inbox.
+Nothing renders it at every prompt boundary: the `UserPromptSubmit` hook
+that ran `aq inbox --inject` was removed on 2026-08-27. Pending messages
+reach you when `aq prime` runs (start, resume, post-compact) and through
+the cascade's nudge, which types a one-line pointer into the session once it
+goes idle: ``Handle `aq message status <id> --json`.`` Run that command to
+read the body. The nudge has already marked the message delivered, so
+`aq message inbox` no longer lists it. A plain session may read the status
+only of messages addressed to its own session, held task or profile;
+anything else answers "not found". (A task comment is the exception: its
+body is typed in directly.) `aq inbox --inject` is still a supported command,
+so run it yourself when you want the queue rendered inline mid-task;
+`aq message inbox` is the same queue as data.
+
+## Send
+
+Supervisors should use the native live-worker command for operational
+guidance. It resolves a task, agent, or session to its current live worker,
+queues the message durably, mirrors it in the task comments, and reports its
+delivery status:
+
+```bash
+aq agent message <task-id|agent-id|session-id> "Stop the full suite; run the focused file."
+aq agent message <task-id> "Please use xdist" --wait 60
+aq agent message --all-running "Never run a bare pytest" --profile worker
+aq message status <message-id>
+```
+
+When the guidance answers a worker's message, pass that message's id with
+`--reply-to <message-id>`. The guidance then joins the message's thread, which
+is what a worker's durable message wait (`aq wait register --kind message
+--ref <thread>`) waits for; guidance sent without it never satisfies that wait:
+
+```bash
+aq agent message <task-id> "Filed: fresh-ember and .1-.9." --reply-to <message-id>
+```
+
+Use `aq session nudge` only for low-level diagnostics; it is not a reliable
+supervisor-to-worker delivery surface.
+
+```bash
+# To the human operator.  `user:dashboard` is the canonical recipient — the
+# dashboard is the human's surface; Discord only mirrors decisions that were
+# escalated, and it is never addressed directly:
+aq message send --to user:dashboard --project <pid> \
+  --body "Blocked on the API key rotation — details in task xyz."
+
+# To another session (e.g. the supervisor):
+aq message send --to session:supervisor-<pid> \
+  --body "Please clear the merge conflict on branch aq/foo."
+
+# To a specific task's assigned agent:
+aq message send --to task:<task_id> \
+  --body "Rebase your branch on main before continuing."
+```
+
+Recipients use `KIND:ID` syntax. `dashboard` is the canonical ID for the
+human operator; other recipient IDs identify the specific session or task.
+
+## Reply
+
+Replies preserve threading so the receiver can trace the exchange:
+
+```bash
+aq message reply <original_msg_id> "Yes, proceed. I've cleared the gate."
+```
+
+## Report a blocker
+
+The old ask_human command was retired. For a mid-task
+blocking question, report the blocker through the supported message queue:
+
+```bash
+aq message send --to user:dashboard --project <pid> --body "Blocked: should I use the v1 or v2 schema for the migration?"
+```
+
+Include the task id and the decision needed in the message body so the
+supervisor or human can respond through the supported message flow.
+
+## Escalations: when a human decision is required
+
+A message to `user:dashboard` is how you *tell* a human something. It is not how
+a blocking decision gets tracked. When work is genuinely stopped until a person
+chooses, the durable record is an **escalation**, and creating one is the owning
+project supervisor's job, not a worker's:
+
+- A worker reports the blocker (message, task comment, or a `fail` outcome with
+  the reason) and stops. The blocked-task playbook routes it to
+  `session:supervisor-<pid>`.
+- The supervisor investigates, and only if a human must decide does it call
+  `escalation_create`.
+- The human replies — in the dashboard, or in the Discord thread the escalation
+  opened. Either way the reply is persisted as verified human evidence and
+  queued back to the supervisor.
+- The supervisor applies that evidence with `escalation_apply_reply` and records
+  the outcome.
+
+Two consequences for you as a worker: a Discord reply never reaches your
+terminal directly, and `question_answer` refuses a *human* caller outright —
+a person replies with `escalation_reply` instead. The owning supervisor may
+answer a narrow factual question itself; anything needing a person goes up with
+`aq question escalate <question-id> --reason "…"`, which creates or reuses the
+durable escalation for that question.
+
+```bash
+aq escalation list --states needs_human,reply_received   # waiting on a person
+aq escalation get --escalation-id <id>                   # conversation and history
+```
+
+See `docs/guides/escalations.md` for the full model.
+
+## Message delivery model (why messages are reliable)
+
+### Recurring prompts on every harness
+
+Use AQ's supported `aq cron` commands for recurring prompt wake-ups on Codex,
+Claude and other harnesses. No native scheduling tool or shell loop is needed.
+Register with a stable key; identical startup retries recover the same ID:
+
+```bash
+aq cron register --every 900 --offset 120 --idempotency-key patrol-v1 \
+  --prompt 'Run the authorized patrol and handle its findings.'
+aq cron register --cron '15 9 * * *' --timezone America/Los_Angeles \
+  --idempotency-key daily-v1 --prompt 'Run the authorized morning check.'
+aq cron list --json
+aq cron show SCHEDULE_ID --consume --json
+aq cron cancel SCHEDULE_ID
+```
+
+Registration never executes immediately. Intervals align to epoch multiples plus
+offset; 900/120 fires at :02/:17/:32/:47 UTC. Simple cron accepts minute 0–59,
+`*` or `*/N`, hour 0–23 or `*`, and requires `* * *` for the remaining fields.
+The IANA timezone defaults to UTC. Show/list expose next-fire and delivery diagnostics.
+Missed ticks coalesce into one pending message; busy owners defer delivery, which
+has five attempts with backoff and a one-hour expiry. A daemon restart retains
+the same session instance; ending/replacing that instance expires its schedules.
+A worker's claim ending also expires its schedules; cron grants no lease exemption.
+Global supervisors leave project unset and can register/list their own patrol.
+`--consume` consumes only the schedule's notification. Scheduling grants no extra
+authority to execute its prompt. See `docs/guides/agent-cron.md` for the lifecycle
+and installed grant/skill drift workflow.
+
+- Every message row is persisted before dispatch — daemon restarts don't
+  lose them.
+- Delivery is per-`to_kind` (session / task / user). The daemon retries
+  transient failures.
+- If a session is asleep or mid-turn when a message arrives, the message
+  parks. It is rendered when the session next primes, or when the
+  cascade nudges the idle session; `aq inbox --inject` renders the same
+  parked messages on demand. No hook injects them at a prompt boundary.
+- Chat messages between the dashboard and a supervisor session use the
+  thread id `dashboard:<project_id>` — filter by that thread id when
+  you want to see the current live chat.
+
+## Collaboration threads (agent-to-agent, same goal)
+
+A collaboration thread is a bounded ordered conversation between 2-4 held
+tasks, each on its own branch and worktree. It exists to let agents that are
+working on the same goal coordinate without one of them needing to hand off
+the task. Threads are operator- or supervisor-created and invite a fixed set
+of member tasks when created.
+
+Workers use:
+
+```bash
+aq collaboration show <thread-id>                       # goal, state, cursor,
+                                                        # up to 20 messages
+aq collaboration show <thread-id> --after 42            # resume after seq 42
+aq collaboration accept <thread-id>                     # join under your live claim
+aq collaboration list --task-id <your-task-id>          # threads you belong to
+aq collaboration close <thread-id> --note "Goal met."   # record final result
+```
+
+To send a message on a thread, use the ordinary send with the thread's id as
+the `--thread-id` and the target peer as `--to-kind task --to-id <peer-task>`:
+
+```bash
+aq message send --thread-id <thread-id> --to-kind task --to-id <peer> \
+  --body "I'm about to commit X; will need a rebase from you after that." \
+  --client-key turn-1
+```
+
+Re-send the same `--client-key` with the same body if you need to retry: the
+daemon de-duplicates it and does not double-count against the thread's budget.
+The `--client-key` is the only send-side flag collaboration-specific; everything
+else is the ordinary message send you already know.
+
+To wait on a reply from a peer, use the ordinary durable message wait with the
+thread id as the referral:
+
+```bash
+aq wait register --kind message --ref <thread-id> --after-seq <cursor> \
+  --idempotency-key turn-1-retry --timeout 3600
+```
+
+The wait resolves on the first collaboration message after your cursor. It
+also resolves in terminal in four ways that never require a re-register:
+`peer_failed` (a peer went FAILED or BLOCKED), `peer_gone` (all peers are
+terminal, archived, or missing), `thread_closed` (the thread reached a
+terminal state, or the deadline passed), and `partner_not_running` (no peer is
+running after a 120-second grace). See [agent-waits.md](/docs/guides/agent-waits.md)
+for the full wait contract and doctor checks.
+
+Full worker guide: [agent-collaboration.md](/docs/guides/agent-collaboration.md).

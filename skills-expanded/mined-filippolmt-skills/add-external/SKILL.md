@@ -1,0 +1,296 @@
+---
+name: add-external-skill
+description: "Add or update external skills, their Codex/pi outcomes, and the generated catalog. Usage: /add-external-skill <owner/repo> [path] [name] | /add-external-skill update"
+---
+
+Keep the marketplace catalog, cross-harness distribution metadata, and generated
+documentation in sync with upstream external skills.
+
+Arguments: `$ARGUMENTS`
+- `<owner/repo> [path] [name]` → **add mode** (default).
+- `update` (optionally `update <owner/repo>` to scope to one repo) → **update mode**.
+
+Default `name` to the skill folder's basename for a per-skill entry, or the
+upstream manifest's name for a whole-plugin entry. If Claude rejects that name as
+reserved, choose a descriptive catalog alias and report it; keep the upstream
+source unchanged.
+
+## Fetches
+
+Both modes use these. `HEAD` resolves the repo's default branch, so `main` vs
+`master` is never a guess. For an offensive-security source, read the manifests,
+licences, tree and README, and leave judging the skill content to the user.
+
+Skill folders in a repo:
+```bash
+curl -fsSL "https://api.github.com/repos/<owner>/<repo>/git/trees/HEAD?recursive=1" \
+  | jq -r '.tree[] | select(.path | endswith("/SKILL.md")) | .path | sub("/SKILL.md$";"")'
+```
+Latest release and its tags. The tags listing is ordered by version, so a retired
+series with higher numbers hides the current one: read the release first, and
+confirm the entry's path exists at the tag you pick.
+```bash
+curl -fsSL "https://api.github.com/repos/<owner>/<repo>/releases/latest" | jq -r '.tag_name+" "+.published_at'
+curl -fsSL "https://api.github.com/repos/<owner>/<repo>/tags?per_page=100" | jq -r '.[].name'
+```
+`releases/latest` answers 404 on a repo that publishes no release: read the tags
+alone then. When a tag above the release lacks the path, exclude those exact tags
+with `allowedVersions` (ADR-0040).
+The SHA a `ref` resolves to — `HEAD` for a branch pin, the tag name for a tag pin:
+```bash
+curl -fsSL "https://api.github.com/repos/<owner>/<repo>/commits/<ref>" \
+  -H "Accept: application/vnd.github.sha"
+```
+A skill's upstream frontmatter `description` — the **one-liner**, usually its
+first sentence:
+```bash
+curl -fsSL "https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>/SKILL.md"
+```
+The upstream author comes from the source that owns the attribution: its plugin
+manifest first, then its licence, then the GitHub owner's profile. The manifest
+counts only when the entry's `path` is that plugin root; a standalone skill folder
+takes its licence's copyright holder, plus every author the skill itself credits
+for its content (`metadata.credits`, a `CREDITS.md`): `pr` is "Matt Pocock and
+Dex Horthy". Preserve multiple credited authors; do not substitute the
+marketplace owner.
+
+## Pinning the `ref`
+
+Renovate updates an entry only when its `ref` has one of two shapes — one
+`customManager` in `renovate.json` per shape:
+
+- **Tag** — `vX.Y.Z`, optionally prefixed (`skill-v4.1.2`). Tag and `sha` bump
+  together. **The default when the repo publishes semver tags**, and what most
+  entries here use. The prefix names the tag series, so a repo publishing
+  several (`cli-v*`, `ext-v*`, `skill-v*`) only ever bumps within the one you
+  pinned.
+- **Branch** — literally `main` or `master`; the `sha` bumps to that branch's
+  HEAD. For a repo publishing no usable tags.
+
+A `ref` of any other value (`1.2.0`, `release-2026`, a bare SHA) matches neither
+manager, and that entry is then silently never updated again.
+
+## Check upstream Codex parity
+
+After resolving the pinned SHA in either mode, inspect the **whole upstream repo**,
+not only the Claude catalog path. Search its tree for native Codex surfaces such as
+root `plugin.json`, `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`,
+`.agents/skills/`, `.codex/hooks.json`, skill-adjacent `agents/*.toml`, and OpenAI
+plugin build/test files.
+
+For every discovered Claude artifact:
+
+1. A normal Agent Skill is native unless upstream ships a Codex-specific variant;
+   prefer that variant when it exists.
+2. Compare commands, agents, hooks and MCP configuration with candidate Codex
+   files by behavior, not filename. A native manifest that omits a Claude agent is
+   evidence of a gap, not an equivalent.
+3. When upstream owns an equivalent, record the Codex artifact as `adapted` in
+   `scripts/distribution-meta.json`, with repo-relative `sourcePath` and a test or
+   executable proof in `evidencePath`. The generator verifies both paths at the
+   pinned SHA. Prefer this upstream implementation over generating a translation.
+4. When no equivalent exists, keep the explicit generated adaptation or
+   unsupported limitation and fallback. Never infer parity from a manifest alone.
+
+Check runtime closure, not just file presence: a skill calling a plugin-root
+launcher needs its scripts, shared data, dependencies, and harness-specific path
+resolution. The inventory and generated-skill validators reject unresolved
+`CLAUDE_PLUGIN_ROOT` references, and a sibling skill loaded with the Skill tool
+but missing from `runtimeDependencies`. Use a proven upstream adaptation where
+available; otherwise record the exact unsupported limitation and fallback. When an entire
+entry requires an unavailable runtime, `unsupportedEntries` in
+`scripts/distribution-meta.json` supplies both harness outcomes; artifact-specific
+records take precedence.
+
+Run `node scripts/gen-distribution.js --verify`. Done means every artifact has one
+Codex and pi disposition, every recorded upstream equivalent exists at the pinned
+SHA, and unsupported runtime closures are not advertised as portable. This is a
+catalog change: leave package and parity-document generation to CI's `regenerate`
+workflow, as specified by CLAUDE.md.
+
+## Add mode
+
+1. Parse args. If `owner/repo` missing, ask for it.
+2. Decide granularity by CLAUDE.md's whole-plugin rule. A **whole-plugin** or
+   **url entry** skips per-skill discovery and takes `name` from the
+   `plugin.json`. Otherwise discover skills: `path` = a skill folder → single
+   entry; a parent folder → only folders under it (empty → stop, report);
+   omitted → all (batch).
+3. Pick the `ref` (see above), then fetch the SHA it resolves to — one SHA
+   shared by every entry from that repo. Confirm the skill's `path` exists at
+   that SHA, then run **Check upstream Codex parity**.
+4. `name` = arg (single) or folder basename (batch). Confirm **every** name is
+   free in `marketplace.json` — report collisions and ask before proceeding.
+5. For each skill, fetch its upstream `description` one-liner and author. Append
+   each entry to the `plugins` array (match existing formatting exactly):
+   ```json
+   {
+     "name": "<name>",
+     "source": {
+       "source": "git-subdir",
+       "url": "https://github.com/<owner>/<repo>",
+       "path": "<path>",
+       "ref": "<tag or branch>",
+       "sha": "<sha>"
+     },
+     "description": "<one line saying what the skill does>",
+     "author": {
+       "name": "<upstream author>",
+       "url": "<upstream author or repo URL>"
+     }
+   }
+   ```
+   The `description` says what the skill does in one line: a summary of
+   upstream's description (its first sentence when that already reads well),
+   or of the `SKILL.md` body when upstream's is empty or unusable. Drop the
+   "Use when…" trigger clauses: they steer the harness, not the catalog reader.
+   For a **whole-plugin** entry, list its bundled artifacts (agents +
+   skills), e.g. `"…: bash-pro and posix-shell-pro agents plus the
+   bash-defensive-patterns, bats-testing-patterns, and shellcheck-configuration
+   skills."`.
+6. Validate the catalog with `claude plugin validate .` first, resolving reserved
+   names with a descriptive alias. **Regenerate the README** (see below), then run
+   the remaining checks.
+
+Done when every skill the discovery in step 2 turned up is either an entry in
+`marketplace.json` or named as deliberately left out, and the repo has a row in
+ADR-0014's source table — **whole** or **curated**, asked, never guessed. A
+curated source also gets a `curationBaseline` in `scripts/catalog-meta.json`, set
+to its pinned `sha`; `validate` fails without it. A
+skill left out of a whole source goes in its exclusions table, with the reason.
+Every fact in a row's note or exclusion reason is read from the upstream file at
+the pinned `sha`.
+
+## Update mode
+
+For each external source repo (git-subdir or url entry) in `marketplace.json` (or the one named):
+
+1. Run the read-only freshness audit before changing pins:
+   ```bash
+   node scripts/check-upstream-versions.js
+   # Scope an update, or preflight a particular tag:
+   node scripts/check-upstream-versions.js <owner/repo> [candidate-tag]
+   ```
+   It reports each current ref/SHA against the latest tag in its own series or
+   branch HEAD, and branch-to-tag candidates as ahead, identical, behind or
+   diverged relative to the pinned SHA. Exit 1 means review needed; exit 2 means
+   incomplete: resolve the API error or truncated tree before proceeding.
+   Discover skill folders at the proposed SHA, not just default-branch HEAD.
+   Settle scope with the user from this audit, not from the issue that sent you
+   here: the `whole-sources` reports are computed at the pinned `sha`, so what
+   upstream added since is invisible in them.
+2. Reconcile against the existing entries:
+   - **New** upstream folder (no entry) → look the repo up in
+     `docs/adr/0014-each-source-repo-is-whole-or-curated.md`. Skip a **catalog
+     exclusion** and a harness mirror or fixture silently. On a **whole source**,
+     add an entry (as in add mode). On a **curated source**, list only what is
+     absent, at the same path, at the repo's `curationBaseline` in
+     `scripts/catalog-meta.json`, and **ask**. Once the user has picked, set the
+     baseline to the `sha` the entries now pin: that records every unpicked skill
+     as seen (ADR-0039). An exclusion row is only for a refusal worth a reason. A
+     repo with no row → ask which kind it is and add the row.
+   - **Removed** upstream (a git-subdir entry whose `path` no longer has
+     `SKILL.md`, or a url entry whose repo is gone) → list
+     it, **ask to confirm**, then delete the entry (see **Removing an entry**).
+     Left alone, regeneration prunes it anyway once Renovate moves its `sha`
+     (ADR-0015); doing it here just gets there first.
+   - **Stale exclusion** (an ADR-0014 exclusion that matches no skill folder at
+     the new `sha`) → remove the row in the same change; the reason stays in git
+     history (ADR-0014).
+   - **Branch-pinned repo that now tags** → choose a tag series explicitly when
+     several exist. Before proposing a behind/diverged candidate, run the scoped
+     audit with that tag. It compares pinned and candidate trees for absent
+     skill/plugin paths and removed nested skills, including repo-root plugins,
+     and lists possible new locations by name; a name match is a lead, not proof of a move.
+     Complete the loss/move inventory **before asking for downgrade approval**:
+     compare the pinned and candidate trees for every entry, including whole-plugin
+     artifacts, runtime closure, and `scripts/distribution-meta.json` source and
+     evidence paths. Inspect possible moves to distinguish relocation from loss.
+     Show the user the current and proposed ref/SHA, history relation, every
+     removed or moved skill/artifact, affected catalog names and bundles, and
+     proposed path/metadata changes. Report no losses explicitly when none exist.
+     Only then ask to confirm the downgrade/history change and any removals;
+     approval of an update alone is not approval of these losses. After approval,
+     re-pin the affected entries to the chosen tag and apply the agreed moves or
+     removals (see **Removing an entry**). An ahead/identical candidate can move
+     directly after verifying its paths and runtime closure.
+   - Bump each surviving entry to the SHA its `ref` now resolves to: a
+     tag-pinned entry moves `ref` and `sha` together to the latest tag, keeping
+     its tag series; a branch-pinned entry takes that branch's HEAD. (Renovate
+     also does this; harmless to set now.)
+   - Refresh each entry's `author` from upstream, and its `description` only
+     when upstream's meaning changed — a reworded upstream sentence is no reason
+     to rewrite a summary. A trigger clause that names a task, or a kind of
+     target, the summary does not cover is a meaning change: fold it into the
+     summary.
+     `marketplace.json` is the source of truth, so this is what consumers see.
+     After bumping, `node scripts/check-upstream-descriptions.js` lists every
+     entry whose upstream description needs this review.
+     A rewrite is checked against the upstream artifact at the pinned `sha` —
+     the `SKILL.md` body, or a whole plugin's manifest and artifact list —
+     before it lands, not only against upstream's description.
+     When a description is reviewed and kept, record the entry's pinned `sha`
+     under its name in `descriptionReviewed` in `scripts/catalog-meta.json`; a
+     rewrite needs no record: its commit is the review (ADR-0029), so
+     `check-upstream-descriptions.js` clears it only once committed.
+3. Run **Check upstream Codex parity** at each new SHA.
+4. **Regenerate the README**, then validate.
+
+Done when every external source repo in scope is accounted for — reconciled, or
+reported as already current. A repo silently skipped is one Renovate keeps
+bumping while its entry list drifts.
+
+## Removing an entry
+
+Whatever the reason — gone upstream, or dropped by decision — deleting an entry
+also means:
+
+- Drop its name from every bundle's `dependencies` that lists it, and bump that
+  bundle's `version`.
+- Tell the user that **installed copies break**: `claude plugin update` on a name
+  no longer in the catalog fails with `Plugin "<name>" not found`. List where it is
+  installed (`claude plugin list --json`, filter on `@filippo-skills`) and offer
+  `claude plugin uninstall <name>@filippo-skills -s <scope>` for each — a
+  `project` scope runs from that project's directory and edits its committed
+  `.claude/settings.json`, so ask before touching it. The README's *When a skill
+  leaves the catalog* gives other users the same steps; name the removed skills
+  in the PR body so they know what to uninstall.
+
+## Regenerate the README
+
+The README **Available skills** catalog is a **projection** of
+`marketplace.json` produced by `scripts/gen-readme.js` — never hand-edit it.
+
+- If you referenced a skill from a **new** source repo, add a group to
+  `scripts/catalog-meta.json` (ordered list):
+  ```json
+  { "repo": "<owner>/<repo>", "tagline": "<short label>", "kind": "skill" }
+  ```
+  Use `"kind": "plugin"` for a whole-plugin entry (renders a "What it bundles"
+  column). The generator **throws** if any external entry's repo has no group
+  (or is not omitted), so this can't be silently
+  missed.
+- Run the generator:
+  ```bash
+  node scripts/gen-readme.js
+  ```
+
+## Finish
+
+When delegating distribution work or checking full packages, follow
+`docs/agents/distribution-validation.md` for the acceptance matrix and validation order.
+
+```bash
+bash scripts/validate.sh --catalog-only
+```
+Generated `skills/`, Codex packages, pi filters, and the parity matrix intentionally
+remain stale until the post-merge regeneration workflow; `--catalog-only` skips
+their checks. Report what changed (added / removed /
+description updates), unsupported harness outcomes, checks actually run, and, for
+a new source repo, its licence and why it permits redistribution (ADR-0011: the
+PR is where that is judged).
+
+Then commit to the feature branch, and call the Skill tool with
+`code-review:code-review` (Matt Pocock's two-axis review) on the changes since
+`main`, with the issue as its spec. When this run was started by `/implement`,
+return to it instead: it runs that same review and commit.

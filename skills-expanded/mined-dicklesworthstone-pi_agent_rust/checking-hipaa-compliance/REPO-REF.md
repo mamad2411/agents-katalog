@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dicklesworthstone/pi_agent_rust (path: tests/ext_conformance/artifacts/plugins-community/plugins/security/hipaa-compliance-checker/skills/checking-hipaa-compliance/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Check HIPAA compliance for healthcare data security requirements. Use when auditing healthcare applications. Trigger with 'check HIPAA compliance', 'validate health data security', or 'audit PHI prote

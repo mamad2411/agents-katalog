@@ -1,0 +1,324 @@
+---
+name: velesdb-context-optimizer
+description: >
+  Compress an agent's working context deterministically with VelesDB's
+  context compiler before sending it to a model — fewer tokens, same facts,
+  every decision auditable and reversible. Use when a prompt is bloated with
+  repeated context, long logs, or accumulated conversation turns; when token
+  costs need to drop measurably; or when the user says "compress my context",
+  "optimize my prompt", "reduce token usage", "context is too big", or asks
+  why part of their context was dropped. Requires the velesdb-memory MCP
+  server (tools: compile_context, compile_transcript, context_savings,
+  explain_compilation, retrieve_context_source). Making a session RESUMABLE is
+  a different job and belongs to the velesdb-memory skill, which owns the
+  working-context tools; this one hands a distilled context over to it.
+---
+
+# VelesDB context optimizer
+
+## Installation
+
+Install: `cp -r skills/velesdb-context-optimizer ~/.claude/skills/` (repo clone; the npm package bundles it at `node_modules/@wiscale/velesdb-memory-node/skills/`).
+Server setup: [velesdb-memory README](https://github.com/cyberlife-coder/VelesDB/blob/main/crates/velesdb-memory/README.md#configure-your-client).
+
+You compress context with `compile_context` — a **deterministic** compiler
+(no LLM, no cloud): duplicates drop, repeated log lines collapse with counts,
+code / URLs / numbers / negative constraints survive verbatim, and whatever
+does not fit the budget becomes a recoverable `ctx://source/` handle, never a
+silent loss. Same input, same output, byte for byte.
+
+`compile_context` returns `{content, sections, decisions, sources,
+retrieval_handles, insights, risk, warnings}`. Those are the root fields used
+throughout this skill; the transcript shortcut below nests that whole envelope
+under its own `context` field.
+
+## Have a raw transcript? Skip steps 1-3.
+
+If what you are about to compress is a raw agent-session transcript (plain
+text with `System:`/`User:`/`Assistant:`/… markers, or JSONL — a saved
+conversation log, a `PreCompact` hook payload, a paste-in from another tool)
+rather than content you are hand-assembling into fragments, call
+`compile_transcript` directly instead of manually splitting it into
+fragments first: `{query, token_budget, transcript}` (or `path`, same
+`VELESDB_MEMORY_INGEST_ROOTS` allowlist as a `compile_context` fragment's
+`path`, capped at 8 MiB). It deterministically segments the transcript into
+turns and sub-turns (fenced code stays atomic, log runs collapse, the system
+turn is cache-tagged automatically) and compiles the result exactly like
+`compile_context`. **It returns two top-level keys, `{context, segmentation}` —
+not the compiled fields directly.** The `content`/`decisions`/`insights`/
+`risk`/`warnings`/`retrieval_handles` of `compile_context` all live one level
+down, under `context`; `segmentation` is the audit report beside it
+(`format_detected`, one entry per segment with turn/role/kind/byte
+range/`fragment_id`, `merged_segments`).
+Steps 4-10 below are written for a `compile_context` result, so when you
+apply them to a `compile_transcript` result read every one of those fields
+under `context` — `context.warnings`, `context.content`,
+`context.retrieval_handles`, `context.insights.tokens_saved`. Force
+`segmentation.format: "plain"` or `"jsonl"` when auto-detection would guess
+wrong (e.g. a transcript that happens to also parse as JSONL, or prose that
+cites `"User:"` and would otherwise falsely open a turn); a forced format
+that fails to parse is a hard error, never a silent fallback. Still building
+fragments from scratch (not segmenting an existing transcript)? Continue
+with steps 1-3.
+
+```json
+{"tool": "compile_transcript", "arguments": {
+  "query": "what did we decide about the canary rollback",
+  "token_budget": 4000,
+  "transcript": "System: You are the deploy assistant.\nUser: why is the canary red\nAssistant: …"
+}}
+```
+
+## Oversized tool results — usually not your job
+
+A tool result that blew up (especially a 300 KB `Bash` build log) is the
+single biggest source of context bloat, and it is worth
+compressing *once*, at the moment it arrives — every later turn re-sends it
+otherwise. But you are usually not the one who should do it: the
+`PostToolUse` hook shipped in `integrations/agent-hooks/` compresses it
+before it ever reaches you, using `velesdb-memory compile-stdin` (the
+store-free CLI form of this compiler) and replacing the tool result in
+place. When that hook is installed you will see results ending in a
+`--- velesdb: compiled N tokens down to M …` footer quoting the path of the
+complete original Bash output object serialized as JSON — `Read` that path
+when the compiled view is not enough.
+
+Compress a tool result *yourself* only when the hook is not installed, or
+when it deliberately skipped the tool (only the documented `Bash` output
+shape is currently enabled). In that case treat the output
+as a transcript and call `compile_transcript` on it. Never re-compress
+something that already carries the footer above: it has been compiled once
+already, and compiling a compilation only loses fidelity.
+
+## Workflow (10 steps)
+
+1. **Scope the problem.** Identify what is about to be sent to the model:
+   conversation turns, retrieved documents, logs, code, instructions.
+2. **Decide whether to compress at all** — see "When NOT to compress" below.
+   If in doubt on a small context, don't.
+3. **Split into fragments.** One fragment per coherent unit (a turn, a log
+   dump, a code block, a constraint). Tag `kind` when you know it
+   (`"code"`, `"log"`); mark caller-pinned text `metadata: {"verbatim": true}`
+   and stable preambles `metadata: {"cache": true}` (they form the stable
+   prefix, maximizing provider prompt-cache hits). One caveat: a media
+   fragment ignores `cache: true` (it always classifies `media.atomic` and
+   packs in the body, never the cache prefix). The prefix is byte-stable
+   across a query change too, even under a budget too tight for every
+   cache-marked fragment — a cache-marked fragment's rank never consults
+   relevance, so which ones survive a tight budget depends only on
+   priority and input order, never the query
+   ([issue #1455](https://github.com/cyberlife-coder/VelesDB/issues/1455),
+   fixed; see the crate README's prompt-cache section). Trade-off: a
+   same-tier non-cache fragment more relevant to the query can still lose
+   that tight-budget race to a cache-marked fragment.
+4. **Set the budget.** `token_budget` = the model window share you want the
+   context to occupy, minus your expected response length (or set
+   `policy.response_reserve_tokens`). Don't know the target model's context
+   window? Call `suggest_budget` (`{target_model, reserve_tokens?}` → a
+   static-table `window`/`suggested_budget`, dated "as of", never a network
+   call) for a starting point instead of guessing — `null` fields mean the
+   model isn't in the table yet.
+5. **Call `compile_context`** with a `query` describing the current task —
+   relevance to it orders what packs first. Add
+   `memory_scope: {k: 5, project: "..."}` to pull relevant stored memories in
+   — this is the tri-engine path: an HNSW vector search seeds on your query,
+   a graph walk follows the typed `relate` edges outward from that seed, and
+   fusion ranks both together. When the memory holds curated cause/fix
+   chains (built with `remember` + `relate`), raise the walk's weight:
+   `memory_scope: {k: 5, graph_boost: 0.6, hops: 2}` — measured on the
+   committed benchmark, that pulls the linked evidence even when it shares
+   **zero vocabulary** with the query (9/9 answer facts vs 3/9 for
+   vector-only recall).
+6. **Check `warnings` first (mechanical), then `risk`, then fall back to
+   scanning `decisions` only if still ambiguous.** `warnings` is a
+   pre-filtered shortlist: every externalized fragment relevant enough to
+   the query (lexical overlap ≥ the compiler's threshold) that you should
+   double-check it was not needed — read it before anything else, it is
+   cheaper than scanning `decisions` by hand. `risk: low`: everything fit —
+   only exact duplicates were dropped, so `content` is safe as-is.
+   `medium`/`high`: something was abstracted, dropped, or externalized. If
+   `warnings` is non-empty, start there; if it is empty but `risk` is
+   `medium`/`high` and you are still unsure, scan `decisions` for any
+   `action` other than `preserve`/`cache` and ask "could this fragment
+   plausibly answer what I was asked?" **Relevance ranking is lexical (word
+   overlap with your `query`), not semantic**: a terse fragment that
+   actually contains the answer can rank *below* verbose, repetitive filler
+   that merely shares more words with the query — "medium ... usually fine"
+   is about *fidelity*, not about *whether the one fact you need survived*.
+   (The durable remedy for this lexical limit is the memory path of step 5:
+   facts stored with `remember` + `relate` are reached by the graph walk
+   regardless of vocabulary — retrieval here is the tactical fallback.) If
+   `warnings` or your own scan turns up something relevant, retrieve it now
+   (step 7) — do not wait for the downstream model to notice something is
+   missing; it cannot ask about content it never saw existed. `high`
+   additionally means **critical content did not fit** — fall back: raise
+   the budget, drop whole fragments yourself, or send uncompressed.
+   Note: `warnings` never flags a `drop`-classified duplicate — its content
+   survives through the kept twin, so there is nothing to retrieve.
+7. **Use `content` as the prompt context, after the check above.** Keep
+   `retrieval_handles` (`retrievalHandles` in the Node binding) at hand for
+   anything you flagged in step 6, and fetch any content back with
+   `retrieve_context_source` before answering — re-inject only what you
+   need. Once a decision in your answer actually relied on a fragment that
+   came from `memory_scope` (its `decisions` entry carries a `memory_id`),
+   close the loop: call `feedback(memory_id, true)` — or `false` if it
+   turned out to be wrong — so the next `recall`/`compile_context` ranks
+   that memory accordingly.
+8. **Audit when asked.** Any "why was X dropped/shortened?" is answered by
+   `explain_compilation` (re-submit the same request + the fragment id) — the
+   decision carries the rule id, reason, relevance, and risk. When several
+   input fragments are byte-identical (same content-addressed `fragment_id`),
+   a plain `fragment_id` lookup always returns the FIRST one's decision (the
+   deduplication survivor) — pass the optional 0-based `fragment_index`
+   (position in `request.fragments`) to disambiguate a dropped twin;
+   `fragment_id` is still required even then. To audit an
+   entire batch before committing to a budget, dry-run it: call
+   `compile_context` with `token_budget: 10000000` (the request's own
+   ceiling) so nothing is dropped, abstracted, or externalized — `risk`
+   comes back `low` and every fragment's `decisions` entry still carries its
+   `relevance`; sort that array by `relevance` descending yourself for an
+   importance report of what a tighter budget would prioritize, without
+   actually losing anything.
+9. **Report savings honestly.** `insights.tokens_saved` is a *local
+   estimate* (deliberate over-count), not billed tokens — and it counts
+   externalized content too, so never quote savings from a `risk: high`
+   compilation you decided to reject. For money figures, pass a pricing
+   table in the request: `policy.pricing = {version, currency, models:
+   {"<model>": {input_micros_per_million_tokens}}}` with `target_model`
+   set — insights then carry `estimated_cost_saved_micros`, and
+   `context_savings` aggregates it per currency. Track the trend per
+   project; never present estimates as billed.
+10. **Iterate.** If the output reads truncated or the model misses facts,
+    raise the budget or mark more fragments verbatim — then recompile; it is
+    cheap (~ms) and deterministic.
+
+Once you have checked `warnings`/`risk`/`decisions` and are done auditing a
+given request shape, set `policy.slim_response: true` on later, identical-
+shape calls to drop `sections`/`decisions` from the response and save output
+tokens — `content`, `insights`, `risk`, `warnings`, `sources`, and
+`retrieval_handles` are unaffected, and the full audit trail is one
+re-compile away (deterministic, so nothing is actually lost).
+
+## A distilled context can outlive the prompt — see the memory skill
+
+Compression keeps one prompt small. It does not make the *session* resumable,
+and the two are different mechanisms: the compiler is a pure function that
+keeps nothing, while a working context is a fact that is embedded and stored.
+
+So when you have just distilled a context worth surviving the session — the
+goal, what is settled, what is next — hand it to the memory side rather than
+re-deriving it tomorrow. `save_working_context` is the handoff;
+`load_working_context` reads it back at the start of the next session, and
+neither is documented here: the **`velesdb-memory` skill** owns the
+working-context tools, the field shapes, and the discovery step that keeps an
+unknown session name from being mistaken for an absence of prior work.
+
+One rule is worth repeating rather than looking up: **an empty load is not
+proof of a fresh start.** Ask the memory skill's discovery step before you
+conclude anything from it.
+
+## Screenshots and images
+
+A fragment may carry an inline image alongside its caption:
+`media: {"mime": "image/png", "bytes_b64": "<base64>"}` on a fragment passed
+to `compile_context`. Route a screenshot into a fragment's `media` field
+instead of describing it in prose — the compiler prices it from the actual
+pixels (`ceil(width * height / 750)` for PNG/JPEG, a published per-image token
+constant), not from a text description that either under- or over-states its
+cost.
+
+- **Set `metadata.target`** to whatever the screenshot is *of* (a URL, a test
+  name, a UI element id) whenever you take repeated screenshots of the same
+  subject over a session (e.g. re-checking the same failing page after each
+  fix attempt). Fragments that share `media`, `kind: "screenshot"`, and the
+  same `metadata.target` form a succession series: only the LAST one (input
+  order in the request — never a clock) stays inline, every earlier one is
+  externalized behind a `ctx://source/` handle regardless of budget. Skipping
+  `metadata.target` means every screenshot competes for space on equal
+  footing with everything else — fine for one-off images, wasteful for a
+  before/after/after-again sequence of the same page.
+- **Pixel cost adds up fast.** A handful of full-resolution screenshots can
+  consume more budget than a page of text; prefer cropping to the relevant
+  region before attaching it, and lean on `metadata.target` supersession so
+  only the current state of a repeatedly-screenshotted subject stays inline.
+- **Fetching a media source back** is `retrieve_context_source` — like any
+  other handle, but the result carries `media: {mime, bytes_b64}` alongside
+  `content` (the caption) whenever the original fragment carried one.
+
+```json
+{"tool": "compile_context", "arguments": {
+  "query": "why is the deploy page still red",
+  "token_budget": 4000,
+  "fragments": [
+    {"content": "before the fix", "kind": "screenshot",
+     "metadata": {"target": "deploy-status-page"},
+     "media": {"mime": "image/png", "bytes_b64": "<base64>"}},
+    {"content": "after the fix", "kind": "screenshot",
+     "metadata": {"target": "deploy-status-page"},
+     "media": {"mime": "image/png", "bytes_b64": "<base64>"}}
+  ]
+}}
+```
+
+Here only "after the fix" stays inline; "before the fix" is retrievable on
+demand, not silently dropped.
+
+## When NOT to compress
+
+- **Small contexts.** Below a few hundred tokens the joiner/section overhead
+  and the risk are not worth it.
+- **Legal, security, or compliance text.** Mark it `verbatim: true` or keep
+  it out of the compiler entirely.
+- **Anything the user asked to keep word-for-word.** `verbatim: true`, or
+  don't compile it.
+- **Content whose exact formatting is the payload** (diffs to apply, config
+  files) — `kind: "code"` preserves fenced blocks, but if it is not fenced,
+  mark it verbatim.
+- **Timestamped logs**: line collapse (`(xN)`) only fires on byte-identical
+  lines by default — timestamps/counters defeat it and the log then packs or
+  externalizes whole. Set `policy.normalize_log_timestamps: true` instead of
+  pre-stripping yourself: it masks the usual volatile prefixes (ISO/syslog
+  timestamps, bracketed hex/pid counters) on `kind: "log"` fragments only,
+  with fixed patterns, before grouping — off by default because it changes
+  what "duplicate" means for logs.
+- **When risk comes back `high`** and you cannot raise the budget: prefer an
+  uncompressed prompt over a lossy one.
+
+## Fallback
+
+If `compile_context` errors: a zero/too-small budget or over-cap request is
+your input to fix (`INVALID_PARAMS` carries the reason); on any internal
+error, send the context uncompressed — the compiler is an optimization,
+never a gate.
+
+## Tool call examples
+
+```json
+{"tool": "compile_context", "arguments": {
+  "query": "fix the failing canary deploy",
+  "token_budget": 4000,
+  "project": "veles",
+  "memory_scope": {"k": 5},
+  "fragments": [
+    {"content": "You are the deploy assistant.", "metadata": {"cache": true}},
+    {"content": "<600 lines of CI logs>", "kind": "log"},
+    {"content": "Never restart the primary during a rebalance."}
+  ]
+}}
+```
+
+```json
+{"tool": "retrieve_context_source", "arguments": {"handle": "ctx://source/1234567890"}}
+```
+
+```json
+{"tool": "explain_compilation", "arguments": {"request": {"...": "same request"}, "fragment_id": 1234567890}}
+```
+
+(`fragment_id` is a JSON **number**, exactly as it appeared in the
+decisions; note that byte-identical fragments share one content-derived id —
+explaining that id returns the surviving twin's decision.)
+
+```json
+{"tool": "context_savings", "arguments": {"project": "veles"}}
+```

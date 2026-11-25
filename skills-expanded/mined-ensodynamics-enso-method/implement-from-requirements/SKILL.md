@@ -1,0 +1,385 @@
+---
+name: implement-from-requirements
+description: Default implementation skill — load full PRD and Technical Design context, size the work for a single AI session, split it into phases if too large (via phase-split, without stopping to ask) and carry on with the first leaf phase in the same chat, then implement, test, run deliverable review, harden the tests, commit, run the refactor pass, and push a feature branch. The "go build it" skill that runs after the requirements are ready.
+user-invocable: true
+---
+
+# Implement From Requirements
+
+The default skill for taking implementation-ready requirements and producing working, tested code.
+
+This skill assumes the requirements have already been refined (typically via `autonomous-design-refinement`, or `implementation-readiness-check` for a human checkpoint). Its job is to load full context, decide whether the work fits in one AI session, phase it if not, then implement, test, and verify the deliverable.
+
+The normal handoff runs `phase-split` before this skill, producing a phase plan or an explicit decision that no split is needed. Callers may also invoke this skill without having done that planning. Always run the sizing gate below before building: it handles both omitted phase planning and work that outgrows an existing plan, invoking `phase-split` when needed.
+
+This skill is one procedural arm of the `implementation-lifecycle` framework — **read that skill first if it isn't already loaded.** It holds which document carries what, the confidence thresholds, and the session discipline (the Materiality Gate, disposition of loose ends, the four stops, no hollow promises) that this entire session runs under. A user pointing you at a requirements doc should never need to name another skill — loading this one pulls the whole methodology with it.
+
+---
+
+## When to Use
+
+Use this skill when:
+
+- The PRD and Technical Design are ready to implement against (questions resolved, assumptions captured)
+- You're about to actually build the feature
+- The user has said something like "implement the X PRD" or "build feature Y"
+- You're being asked to implement just a single phase of a multi-phase PRD — same skill applies, just point it at the phase doc
+
+**Do NOT use this skill when:**
+
+- The PRD or Technical Design haven't been written yet — write those first using `prd-writing-standards` and `technical-design-writing-standards`
+- There are still major unresolved questions in the readiness check — resolve them first
+
+---
+
+## What the User Provides
+
+The user only needs to point you at the PRD (or a phase document, if implementing one phase of a multi-phase PRD). Examples of how a user might invoke this skill:
+
+- "Implement the user-notifications PRD"
+- "Build out the feature in `docs/prds/user-notifications/user-notifications-prd.md`"
+- "Implement phase 2 of user-notifications"
+
+**That's enough. You are responsible for discovering and loading all related context yourself** — the user should not have to enumerate every supporting document, and you should never start implementing before you've found and read everything tied to this PRD.
+
+**What counts as "related context" (find and read all of it):**
+
+- The PRD itself (`docs/prds/{feature}/{feature}-prd.md`, or `docs/changes/{feature}/{feature}-prd.md` — the two roots have the identical layout and are handled identically; see `prd-writing-standards`)
+- The Technical Design that goes with the PRD (`technical-design.md` in the same directory)
+- The Assumptions document, if one exists (`assumptions.md` in the same directory)
+- **On the PRD's first phase, or an unsplit build,** the Technical Design's Delivery section, "Before the build": confirm each item you can. One that is missing ends the session Blocked before any code is written, naming what is needed
+- Any other documents in the PRD's directory — text mockups, data model docs, data mapping documents, sample payloads, sample CSV exports, anything authored for this feature, apart from an end-user test guide
+- Documents referenced from inside the PRD or Technical Design that aren't already in the PRD directory (e.g., a linked data mapping spreadsheet, an external API spec, a referenced design doc) — follow those links and read those too
+- Existing code that the Technical Design points to or that you'll be modifying
+
+**The discriminating factor is "tied to this PRD."** A data mapping written specifically for this feature is required reading. Generic codebase documentation or unrelated background docs sitting in the repo from prior work are not — don't drown yourself in unrelated material, but also don't skim past anything that was authored for this feature.
+
+If you suspect a related document exists but you can't find it (e.g., the PRD references "the mockups" but no mockups directory exists), surface that to the user before proceeding rather than silently implementing from a partial picture.
+
+### When you're pointed at a partial spec, not a full PRD
+
+Sometimes the document you're handed is a **slice** of requirements, not a self-contained PRD — a phase doc, a "mini spec" for one improvement, or any partial that assumes a larger product context it doesn't restate. Don't get hung up on what it's titled, and don't treat the slice as the whole picture. The slice tells you *what to build*; you still need the broader context that tells you *what not to break and why the system is shaped the way it is*. Before implementing, find and read that broader context, in this order of preference:
+
+1. **A service or product overview** — a document whose job is to orient the whole service/product (names like `*-overview.md`, `service-overview`, `product-overview`, an architecture doc), or a substantive README at the repo/service root that does the same. If one exists, it's the single best source of overall context — read it.
+2. **The parent PRD the slice points to.** A well-formed slice names its parent; follow that pointer and read the PRD plus its Technical Design.
+3. **If there's no overview and no single parent — and especially if there are *several* PRDs** (a mature service accumulates them): do NOT read them all, that's wasteful. Read the one that best establishes the service as a whole — usually the **founding/earliest** PRD, since it tends to describe the service's purpose and architecture while later PRDs are narrow feature increments — and skim the *titles* of the rest so you know the breadth without reading each. Use judgment: if a later PRD is clearly the current architectural source of truth, prefer that one. Wherever you read an earlier PRD, follow its `Superseded by:` lines (`prd-writing-standards`, "When Later Work Changes an Earlier Criterion"): a superseded criterion records what was built then, not what the system should do now.
+
+If you can find no orienting context at all (no overview, no meaningful README, no PRD), the code is the context: read the code the slice touches and what calls it, and proceed.
+
+---
+
+## Assumed Starting State
+
+This skill assumes the PRD and Technical Design are **implementation-ready** — they've been through `autonomous-design-refinement`, or `implementation-readiness-check` for an explicit human checkpoint. Gaps and questions have been resolved, and any remaining business uncertainties are captured in an assumptions document.
+
+The skill does NOT preemptively run a readiness check. That would burn context and tokens for the common case where the user has already done the refinement work — and the user has explicitly chosen this skill to *implement*, not to re-validate.
+
+**If during Phase 1 (loading context) you find the docs are clearly under-baked** — vague acceptance criteria, multiple TBDs, missing technical design sections, obvious questions that haven't been addressed and aren't captured as assumptions — pause and recommend the user run `autonomous-design-refinement` before continuing. Catch this in Phase 1, before any implementation work begins.
+
+**Don't add a mid-implementation guard for this.** Some uncertainty only surfaces during implementation — the readiness check wouldn't have caught it either, so asking "did you run the readiness check?" mid-implementation isn't useful. Handle that uncertainty using the pattern below.
+
+**Handling uncertainty during implementation:**
+
+When you hit a gap that requires an assumption, propose your own answer to the question and assess how confident you are in *that proposed answer* (not in the question itself — confidence is in your specific answer). This follows the same confidence framework documented in `implementation-lifecycle`.
+
+The right response depends on whether the question is **technical** or **business**:
+
+- **Technical questions** (how to implement something — architecture, integration approach, error handling, data shape, naming): investigate to raise confidence (read code, query the database, test the API, check existing patterns). Then proceed with your best answer at whatever confidence it has, recording the reasoning in the commit message where it isn't obvious. A technical question never stops the session to ask (`implementation-lifecycle`, "Confidence Thresholds"); when no criterion work can proceed without access the session cannot obtain, that is a blocker. Technical questions should **rarely** become formal assumption-document entries: a choice between workable ways to build it is recorded in the Technical Design (or the commit message, for a small one), never as an assumption, and most factual questions are resolvable through investigation. The exception is a fact investigation could not reach, with the blocker named: that is a technical assumption, in the register's Technical Assumptions section (`assumptions-document-writing`, "Sort Every Entry by What Would Settle It"), never a business one. This matches the technical tier in `implement-from-discovery`.
+
+- **Business questions** (what we want and why: what the system should do, what users should experience, what business rule applies, what a stakeholder would consider correct; `assumptions-document-writing`, "Sort Every Entry by What Would Settle It"): the bar is higher — you can't unilaterally decide business rules, and **no amount of investigation can self-confirm one**. Proceed on your own only if you're 95%+ confident. Below 95%, at whatever confidence, the answer must be surfaced as a formal stated assumption for stakeholder validation, and you proceed on it. Only when your best answer is below 20% after significant investigation do you stop and ask, naming that best answer — the same tiering `implement-from-discovery` uses. Use the `assumptions-document-writing` skill to write the entry when this happens. **Do not load `assumptions-document-writing` preemptively** — it's large; load it when you are actually writing an assumption, **and equally when you are EDITING an existing assumptions register** — rewording an entry or touching the header. A stakeholder's answer to an assumption, however it arrives, including in this chat, is recorded with `assumptions-document-feedback` instead, which sends you to this skill's format rules. Editing in passing, without the skill, is the single largest source of format drift in these documents; read its "Editing an Existing Document" section before any such edit, including a one-line one.
+
+This aligns with the unified confidence framework in `implementation-lifecycle`: declared assumptions are a green light to proceed, not a request for stakeholder confirmation. Stakeholders validate asynchronously.
+
+**The assumptions document is the only surface a stakeholder decision may be routed to.** Every decision begins as a question, and the methodology never leaves a question as a question — it gets answered, declared, and built on. So an open decision without an assumption entry has not been dispositioned, regardless of what else records it.
+
+Do not route a decision to a review page, report, dashboard, or any other deliverable. Those are disclosure surfaces: they show a reader evidence, they carry no reply mechanism, and they grow until any single item on them is invisible. A decision recorded only there does not get answered — that is measured, not theoretical (see `implementation-lifecycle`, "A Decision Needs an Assumption Entry, Always"). Recording it on such a surface as well is fine and often right; it is never a substitute.
+
+---
+
+## Session Discipline: No Loose Ends
+
+This skill runs under the No Loose Ends session discipline (`implementation-lifecycle`, "Session Discipline: No Loose Ends") — **read that skill first if it isn't already loaded.** The gist: run every mid-implementation discovery through the Materiality Gate — only what's material to this phase's acceptance criteria and correctness becomes work, everything else is dismissed silently; disposition every would-be FYI/caveat that survives instead of reporting it (deal with it now, or file it into the document a later phase's build will load); never stop to ask a question when you're ≥90% confident what the user's answer would be; never end a turn announcing work you could do right now ("I'll add that test," "next X should be updated") — do it, or delete the sentence; apply the continuation test — an item whose disposition the PRD's natural continuation will handle gets no individual mention, only a count in the one-line disposition ledger ("2 assumptions declared, 3 items filed to phase-4"), and the wrap-up names only the four stops (a critical finding, a blocker, an action only a person can take, a business question with no answer above 20%); end turns only at completion or one of those.
+
+---
+
+## Process
+
+### Phase 1: Load Full Context
+
+Read everything related to this implementation before doing anything else. Do not skim.
+
+1. **The PRD itself** — focus on acceptance criteria, scope, and out-of-scope items
+2. **The Technical Design** — focus on architecture, data flows, integration points
+3. **The Assumptions document** (if exists) — treat assumptions as decided facts, not as open questions. The one thing to do with them: for each entry in its **Technical Assumptions** section that this work relies on, check whether its blocker has cleared (the access now exists, the data is now loaded) and, if it has, run the check its "Would settle it" line names before building on it. A settled one leaves the register for the validated table with the finding folded into the Technical Design; one that turns out wrong is a divergence, resolved by the Doc Divergence rule (Phase 4). One still blocked stays as it is, and the build proceeds on it
+4. **Supporting materials referenced by the PRD or Technical Design** — mockups, data mapping documents, data model docs, sample payloads, anything else authored for this feature
+5. **Documents referenced from inside the PRD or Technical Design that live elsewhere** — if either links to a document outside the standard locations (a data mapping spreadsheet, an external API spec, a related design doc), follow the link and read it. Anything authored for this feature is in scope, regardless of where it lives.
+6. **The phase doc** (if you were pointed at one) — note the scope it sets and which acceptance criteria it covers. A phase doc is one file per phase at every depth (`phase-2a1-{short-name}.md`; `phase-split` owns the scheme). If the doc you were handed has a `## Split into` table, it is a split parent, not an implementable phase: take its first child without a `**Closed:**` line under its title (walking down until you reach a leaf), say so in one line, and proceed with that leaf — don't stop to ask which one. If every child is closed, the parent is complete: say so and apply `continuation-prompt`'s end-of-track rule instead of building anything. A doc with an `**Added by delivery audit:**`, `**Added by test audit:**`, `**Added by stakeholder feedback:**` or `**Added by implement-from-discovery:**` line under its title is a completion phase (`phase-split`, "Completion Phases"): start from its "What the audit found missing", "What the feedback changed" or "What the fix found broken" lines, and build and prove each criterion it lists in full, against the PRD as it now stands.
+7. **Existing code referenced by the Technical Design** — read the files you'll be modifying or integrating with, plus their tests
+
+**Required vs optional documents:**
+
+- **PRD** — required. If it can't be located, stop and ask the user where it is.
+- **Technical Design** — strongly expected — most PRDs have one. If it can't be located, surface this prominently before proceeding — for example: "I couldn't locate a technical design document for this PRD. I'll proceed assuming this is a small enough feature that one isn't needed — flag if I should pause and create one first." Don't refuse to proceed.
+- **All other documents** (Assumptions, mockups, data mapping, data model docs, sample payloads, etc.) — optional. Their absence is normal and not worth flagging unless the PRD explicitly references one that's missing.
+
+**Open the first substantive response with the lineage, in one line, before anything else:** the PRD by its full H1 title and, when the work is a phase, the phase by its id and full H1 title — "Building Phase 2a1 — Delivery receipts from the SMS provider, of Order Notifications." An unsplit PRD is the skill's default entry and has no phase: "Building User Notifications, whole PRD, not split." A reader who opens this chat later sees at the top what it is for, without decoding `2a1` against the plan (`continuation-prompt`, "The lineage gate"). When the prompt already carried an `In service of:` block, the line simply agrees with it; when it did not, this is where the lineage gets written down. It is also the `serves:` line of this session's marker (`engineering-principles`, "Session Markers"), whose START is written before your first edit in each repo. The gate turns on the PRD being nameable: if no PRD title can be found for the work, that is not a formatting problem — say so and stop before sizing.
+
+**Pending feedback changes come first.** If the PRD directory holds a `{name}-pending-feedback-changes.md`, a stakeholder round has changed what this PRD must say and its documents may not carry it yet. Apply it first, before sizing, with `assumptions-document-feedback`, which resumes from that file (its Step 4a, "Resuming"); for its Step 6, the phase you were pointed at counts as not started, so a change it needs is carried into it. Commit that amendment on its own, then build against the amended documents.
+
+**If you were pointed at a phase doc, check that it's still current with the parent PRD.** Phase docs reference acceptance criteria from the parent PRD by number or text. If those criteria have been renumbered, rewritten, or removed since the phase doc was created, the phase doc is stale. When the mapping to the current criteria is unambiguous (a renumbering, a rewording that means the same), update the phase doc and say so in one line; stop and surface it to the user before implementing only when a covered criterion was removed or rewritten so that the phase's scope is unclear.
+
+**Preflight external access before going further.** Users often start this skill and walk away for an hour or two. A session that first discovers an expired credential at its first live test has spent that time stalled on a question nobody is there to answer. The first few minutes are when the user is most likely still at the keyboard, so find out now:
+
+1. **List every external dependency the work will touch** — from the Technical Design, the code you'll modify, its tests, and the repo README: AWS profiles, Google Cloud / BigQuery, GitHub (`gh`), third-party APIs, vendor platforms, databases, whatever the live tests read.
+2. **Make one cheap read-only call per dependency, in parallel, against the environment the work will actually use** — e.g. `aws sts get-caller-identity --profile <the profile the tests use>`, `gcloud auth application-default print-access-token` (what client libraries use, not just `gcloud auth list`), `bq ls --project_id=<project>`, `gh auth status`, `SELECT 1` against the database. Where cheap, prove the credential reaches the specific resource (list the bucket, the dataset), not only that it exists — a valid token without the grant fails just as late.
+3. **Fix what you can yourself** — run `aws sso login --profile <profile>` or the equivalent re-auth rather than asking the user to; its browser approval lands while they're likely still there.
+4. **If anything still fails, stop now** with a one-line ask naming the dependency and the exact command to fix it — before sizing or implementation, not after.
+
+Passing doesn't guarantee a credential outlives the session. If a call fails on authentication mid-run, re-authenticate and retry — it's an expired token, not a code failure — and for long unattended runs prefer a non-expiring profile where the project's credential guidance names one.
+
+---
+
+### Phase 2: Size for a Single AI Session
+
+This is the critical pre-implementation step. Before writing any code, decide whether you can confidently complete this work in one agentic session.
+
+**What "one session" means:**
+
+The work is happening **right now**, in this present AI session — one chat, which may run for hours. "Single session" means this immediate run, not some abstract future unit of work being scheduled.
+
+So the only sizing question worth asking is: *Can I, this AI, complete this whole thing end-to-end in this run without losing coherent context?* The constraint is your ability to hold the full design mentally as you build, test, and verify it — right here, right now.
+
+Human-time framings ("a day's work," "a sprint," "a couple of days") measure something fundamentally different — humans planning calendar work over future time. They aren't relevant here because the work isn't being scheduled, it's being done in this session. Skip that framing entirely.
+
+**How to size honestly:**
+
+Walk through the implementation mentally. How many distinct capabilities does it hold? How many integration points? How many tests? How much investigation may be needed for edge cases discovered mid-implementation? The point is not a precise count — it's a gut check on whether the whole thing fits in one focused, coherent run.
+
+Then check that gut read against the **Session Capacity Calibration** section of the `phase-split` skill — the single source of concrete anchors for what one session reliably carries with current models. Don't restate its numbers here; read it. It also records the bias to correct for: plans have been cut too fine far more often than phases have overrun, so a borderline read means the work fits.
+
+**The decision:**
+
+- **Fits in one session** → proceed to Phase 4 (Implementation). Phase 3 (Split, Then Keep Going) is skipped — it only applies when splitting is needed.
+- **Too large** → proceed to Phase 3 (Split, Then Keep Going). Do NOT start implementing until the split is written.
+
+**If you're uncertain**, start building. Every extra phase carries a full session's fixed cost, and work that does turn out too large is split mid-implementation in this chat (Phase 3), keeping what is already built.
+
+---
+
+### Phase 3: Split, Then Keep Going (only if too large)
+
+If Phase 2 determined the work is too large for a single session, **invoke the `phase-split` skill.** Do not size, propose splits, or write phase documents yourself — that logic lives entirely in `phase-split`; reproducing it here would just drift out of sync with it over time.
+
+Hand `phase-split` the PRD and Technical Design you loaded in Phase 1. It owns the sizing check, finding the natural seams (vertical slices, walking-skeleton foundation-first, read-before-write), deciding the split, and writing one document per phase in the PRD's directory under its positional id scheme (`2`, `2a`, `2a1` — one file per phase at every depth). **It does not stop to ask whether or how to split, and neither do you.** The split is declared in the response as a decision; the user redirects afterwards if they disagree, and the phase docs are uncommitted markdown, so a redirect is cheap. The wall-clock cost of a session that stops to ask "split as recommended?" — a question whose recorded answer is always yes — is the whole reason this step declares instead of asking.
+
+**Then keep going: implement the first leaf in this chat.** The context you loaded in Phase 1 is exactly what the first leaf needs, and the leaf is session-sized by construction, so a fresh chat would only re-read the same documents. Declare which leaf you are building in one line, continue to Phase 4 against that leaf's scope, and let the new phase docs ride in this session's changeset. A split made here creates the PRD's branch and worktree (`engineering-principles`, "One Branch for a Split PRD"), and the new phase docs and any work in progress move there before the leaf is built. Later leaves get one fresh chat each, via the wrap-up's continuation prompt.
+
+**This applies to phase docs too, at any depth.** Being pointed at a phase of an already-split PRD doesn't guarantee it fits — the original split was an estimate, and Phase 2 sizing (or mid-implementation discovery) can reveal a phase is bigger than the split assumed. When that happens, invoke `phase-split` to cut the remaining work into child phases rather than grinding on past coherent context. Work already completed stays; the cut covers what's left, and the first child is the one that holds the work already in progress — you finish that child here. **"Bigger than assumed" means the originally scoped work was underestimated — not that implementation surfaced extra things to do.** Discovered extras go through the Materiality Gate and disposition rule (`implementation-lifecycle`), not into new phases; re-splitting to house discoveries is decomposition as a way of avoiding closure.
+
+---
+
+### Phase 4: Implementation
+
+Build the feature, following the Technical Design and existing codebase patterns.
+
+**First, run the conflict check for the criteria this session builds** (`prd-writing-standards`, "When Later Work Changes an Earlier Criterion"), now that sizing has settled what those are. Narrow it from the last recorded check: `git log --grep='^Conflict check:' -1 -- <PRD directory>` finds refinement's completion commit or an earlier phase's. Check this session's criteria that changed in the PRD since that commit, and check all of them against any PRD file outside this directory that changed since (`git diff --name-only <commit>..HEAD` over the PRD roots, PRD files only); when neither applies, skip the check. With no recorded check, check the whole PRD and put a `Conflict check:` line with its result in this session's commit message, so later phases narrow from it. A criterion this session would build that already carries `Superseded by:` is not built, or only its part in force is. When building a criterion would change existing behavior rather than add it, and the code's history shows that behavior changed after the criterion was written, treat it as a finding too (`prd-writing-standards`, the shipped-behavior rule). An intended change gets its `Replaces:` line now. An unintended one is a business divergence, resolved by the Doc Divergence rule below before you build on it.
+
+**When a criterion this session builds carries `Replaces:`** (or `Replaces in part:`), add the matching `Superseded by:` (or `Superseded in part by:`) line to every earlier criterion it names (`prd-writing-standards`, "When Later Work Changes an Earlier Criterion"), and the matching line on any earlier design section the Technical Design says it changes (`technical-design-writing-standards`), in this session's commit. The replacing criterion is what requires those edits. If a named criterion already carries `Superseded by:`, another PRD replaced it first: re-point this `Replaces:` line to the end of that chain, and treat the new target as a conflict-check finding before building.
+
+**Then list each criterion's required parts, before writing code.** For every criterion this session builds, read it with the assumption entries and design sections it depends on, and keep a working list of each part someone could observe: every variant it covers (each provider, channel, screen or state it names is a part of its own), every entry point the criterion or design names (route, command, screen, job, handler), and every error or boundary case it states. Parts come from the requirements alone: a case nobody wrote down is not a part, and the list never adds scope. Most gaps found once a PRD's phases close are a part this list would have named: the second entry point, the error case the criterion spells out, the variant beside the one built.
+
+Also list any criterion an earlier closed phase of this PRD built, or one the conflict check surfaced, whose behavior a path this session adds will reach, such as a new screen showing work an earlier gate governs, or a new return path around an earlier guard. That path must keep the criterion true. This is the causation rule below, not new scope: name that criterion before any off-path edit it needs, route the new path through the earlier guard, extending shared code only as far as the new path needs, and never rework the earlier criterion's own behavior. Derive the list again if it leaves context. It is not shown in the chat, not written into the phase doc, and it is not included in the briefs for Phases 6 and 7, including deliverable-review's context summary, so its misses aren't copied into their reading.
+
+**Core principles:**
+
+- **Follow the Technical Design.** Architecture choices, data flows, and integration points are decided — implement them as specified. If you discover the design is wrong, see "Doc Divergence" below.
+- **Follow existing code patterns.** Read neighboring files for naming, structure, error handling, and logging conventions. Match them.
+- **Treat assumptions as decided.** Anything in the assumptions document is settled — proceed without re-litigating.
+- **Apply the engineering principles and house standards.** Follow `engineering-principles` (no silent fallbacks, the testing evidence standard, git safety in a shared clone), plus the house engineering standards named on an `Engineering standards:` line in the project's AGENTS.md/CLAUDE.md, if any — those own stack, style, structure and configuration.
+- **Apply its judgment principles when ambiguity arises.** `engineering-principles` also carries "finish what you started," "investigate before removing," "don't dismiss failures," and "scope follows intent, not literal words." When you're unsure how to handle an ambiguous mid-implementation situation, those principles apply.
+- **Judge every discovery against this phase's acceptance criteria.** Implementation surfaces anomalies constantly — brownfield systems have an infinite supply. Apply the Materiality Gate (`implementation-lifecycle`): a discovery is work only if it blocks an acceptance criterion, contradicts a requirement, or makes this implementation materially incorrect or unsafe — fix those now. An item a later phase's criteria need is carried forward through the disposition rule. Everything else is dismissed silently. Discoveries never expand this phase's scope, spawn sub-phases, or postpone completion.
+- **Before every edit to a file the Technical Design or phase doc did not put on the path, name the acceptance criterion that requires it.** The ID or the text — not "consistency," not "while I'm here," not "same pattern," not "it reads wrong now." No criterion, no edit, regardless of how small or how correct. The one thing this never excuses is your own breakage: what your in-scope change *made* wrong (a red test, a failing consumer, a page that now renders wrong) is the criterion's cost and is fixed before done — the test is causation, not location. Scope does not leak through tangents; it leaks through *neighbours* — the doc describing what you changed, the sibling check, the stale count — and each looks like correctness. If a non-criterion edit starts forcing follow-ups (regenerated artifacts, re-pinned tests, a drift gate going red), that cascade is the tell: **revert the root edit rather than fix the fourth consequence.** And if a discovery would take longer than the criterion work remaining, that alone decides it. (`implementation-lifecycle`, "Adjacency is how scope actually leaks".)
+- **Mind the test tripwire** (`engineering-principles`, "The test tripwire"). Before changing the expected result of an existing test this session did not write, or deleting one, check that something accounts for the change: a criterion or Technical Design decision this session builds, amends or enforces requires the new expectation. If nothing does, this build is changing behavior nobody declared: stop and resolve it by the Doc Divergence rule below.
+
+**Doc Divergence rule:**
+
+If during implementation you discover that the PRD or Technical Design says something that's wrong, contradicts reality, or is incomplete:
+
+1. **Stop coding.**
+2. **Decide whether the divergence is technical or business** — see the technical-vs-business framework in "Assumed Starting State" above.
+3. **Technical divergence:** investigate, decide on your best answer, update the PRD or Technical Design to reflect the correct decision, then continue.
+4. **Business divergence:** if you're 95%+ confident in the correct answer, update the docs, redrawing any mockup state the change affects (`prd-writing-standards`, "Mockups Show What the Criteria Require"), and continue. If you're below 95%, do NOT unilaterally rewrite the business decision — surface it as a stated assumption using `assumptions-document-writing` and proceed against that assumption. One exception to the 95% branch: if what the doc says is a decision a stakeholder personally made — a validated assumption folded into it, a ruling from their feedback — no confidence level lets you rewrite it. That is a reopening (Gate 3 in `assumptions-document-writing`): the doc keeps their decision, the reopened entry discloses yours, and you proceed on it.
+
+Never silently implement something different from what the docs say. The docs are the source of truth — keep them accurate.
+
+**MCPs:**
+
+If the implementation involves an external system (a third-party API, a database, etc.) and an MCP for it is already configured (e.g., a vendor platform's MCP for work against that platform), **use the MCP** for documentation lookups, schema inspection, and API exploration. Do not stop and ask the user to install an MCP — just use what's available.
+
+**Exploration scripts:**
+
+Sometimes you need to query a database, inspect an API response, or test a transformation in isolation before committing to an implementation approach. When you do:
+
+- **Location:** Put scripts in `scripts/exploration/` at the project root. This directory is clearly marked as exploration, not main program code.
+- **Header comment:** Every exploration script must start with a comment that says, in plain language, "This is an exploration script, not part of the main program," followed by what it explores. Example:
+  ```python
+  # Exploration script — not part of the main program.
+  # Queries the source system to confirm role permission codes before
+  # deciding how to map them in the new permission model.
+  ```
+- **Naming:** Use descriptive, intuitive file names that hint at what the script does (`explore-role-permission-codes.py`, not `test1.py`).
+- **Reusability:** Aim for scripts that someone else could run and understand. Parameterize where reasonable.
+- **Read-only:** SELECT, GET, list/describe operations only. Never INSERT, UPDATE, DELETE, POST, or PUT against external systems.
+- **Dev and sandbox first:** read production only read-only, only when nothing else can answer the question, and only where the project allows it (`engineering-principles`, "Production Data").
+
+At the end of the implementation, **make a judgment call on each exploration script:**
+
+- **Pure one-off, no future value** → delete it. No need to clutter the repo.
+- **Potentially reusable or instructive for future work** → keep it. Mention it in the wrap-up so the user knows it's there.
+
+When in doubt, ask the user — but prefer making the call yourself. The directory is clearly marked as exploration, so a kept script is low-cost.
+
+---
+
+### Phase 5: Tests
+
+After the implementation is in place, run and update tests. This phase runs the suite several
+times; if one run takes more than about two minutes, load `wall-clock-awareness` before the
+second run — the cheap fixes are an afternoon and every later session inherits them.
+
+**Approach:**
+
+1. **Run existing tests first.** If any fail because of your changes, fix them or fix the implementation that broke them. Changing what an existing test expects goes through the test tripwire (Phase 4).
+2. **Map verification evidence to acceptance criteria.** Every in-scope criterion must be demonstrably verified, but do not manufacture a separate unit test for each one. One high-value integration or workflow test may verify several criteria; a high-risk criterion may need more than one layer. **If you're implementing a single phase of a multi-phase PRD, map only against the acceptance criteria the phase doc covers** — later phases handle the rest.
+3. **Choose tests by failure risk.** Follow `engineering-principles`: use unit tests for isolated deterministic logic, integration tests for real boundaries and contracts, and end-to-end/workflow checks where several components or a user-visible path must work together. Add a test only when you can name the regression it would catch.
+4. **Use real resources for integration behavior.** Integration tests should hit real databases, APIs, and services in sandbox/dev environments. Use narrowly scoped mocks only for destructive, expensive, or hard-to-trigger conditions allowed by `engineering-principles` (its evidence standard); mock-only coverage does not prove an external integration works. **Anything a test writes, it writes to non-prod — integration tests never mutate production data, no exceptions.**
+5. **Run the full suite again** before moving on.
+
+**When the service has no non-prod environment yet**, don't drop integration testing entirely: where the project allows it (`engineering-principles`, "Production Data"), production may be used **strictly read-only** — GETs, SELECTs, and production-supported `--dry-run` planning paths. Write paths on such a service are verified at the unit level (with narrow mocks where `engineering-principles` permits) until a non-prod environment exists, and the evidence names the unproved write boundary as a gap. This read-only-prod arrangement is the exception for services without a non-prod counterpart, not a general option — flag the missing environment in the wrap-up rather than treating it as durable.
+
+Do not target a test count or add ceremonial unit tests. Build the smallest portfolio that credibly proves the acceptance criteria and the important failure modes. Don't pause to ask the user about ordinary coverage decisions — make the engineering judgment from the risks, requirements, and existing suite.
+
+---
+
+### Phase 6: Deliverable Review (auto-run)
+
+After tests pass, **automatically run the `deliverable-review` skill.** Don't wait for the user to ask.
+
+**Announce it clearly:**
+
+> "Tests are passing. Now running deliverable review automatically."
+
+This matters because the user (and other people on the team) often reach for `deliverable-review` as their next step after seeing implementation complete. If you've already done it without telling them, they'll re-run it and waste the work. So announce upfront, then again at the end:
+
+> "Deliverable review complete. [Brief summary of what was found / fixed / verified.]"
+
+Apply any fixes the review surfaces. Re-run tests after the fixes.
+
+---
+
+### Phase 7: Test Hardening (auto-run)
+
+After deliverable review completes — including any fixes it produced — **automatically run the `test-hardening` skill.** Same announce-before-and-after pattern as deliverable review, so the user doesn't re-run it manually:
+
+> "Deliverable review complete. Now running test hardening automatically."
+
+`test-hardening` owns the procedure: a fresh-eyes sub-agent maps this phase's acceptance criteria to test evidence, inventories mocks, and grades assertion strength; the main agent then strengthens the suite in priority order (missing evidence → mock-to-real conversions → weak assertions → risky edge cases) and gets the full suite green. The pass is bounded strictly by this phase's acceptance criteria — it never grows tests for behavior outside them, so it cannot become a side door for scope creep. It's an action pass, not an audit — the deliverable is the improved suite, and a suite whose evidence is already credible gets a one-line confirmation, not manufactured work.
+
+Deliverable review runs first deliberately: its fixes change code, and tests hardened before those fixes would go stale. If hardening surfaces an implementation bug (Step 4 of that skill), fix it here and re-run the affected tests.
+
+---
+
+### Phase 8: Wrap-Up
+
+When everything is done (and at any other terminal state, append the session marker's DONE line):
+
+1. **Verify acceptance criteria coverage explicitly.** Walk through the list of acceptance criteria the work was supposed to cover (every criterion in the PRD, or — if implementing a phase — the subset listed in the phase doc), leaving out any fully superseded one and saying so. For each one, confirm: is every required part on its Phase 4 list built and reachable from each entry point the list names, and what passing automated test or recorded workflow verification proves it? A part built for one variant or entry point and not another leaves the criterion unmet. Confirm too that each earlier criterion on that list still holds on the new path, proved by a test that drives the new path and counted as evidence for the criterion this session builds that adds it. A criterion does not require its own test, but it does require credible evidence. If any criterion is unmet or unverified, do NOT report the work as done — either close the gap or surface it explicitly to the user. A covered criterion with a `Replaces:` or `Replaces in part:` line is not done until each earlier criterion it names carries its matching `Superseded by:` or `Superseded in part by:` line, and each earlier design section the Technical Design says it changes carries its own. **Also check the parent PRD (and the phase doc, if implementing a phase) for a `## Pending human actions` section** — every listed entry that hasn't happened is a known open item: name each in the wrap-up with its prepared draft/artifact. Listed entries are surfaced, not pulled into this session's scope — but the PRD as a whole isn't complete while that list is non-empty.
+2. **State whether the scoped work landed, in a sentence or two.** Not an inventory: no list of files created or modified, no test counts, no walk back through the acceptance criteria. Those live in the diff and in the commit message, and repeating them here is the "what landed" summary the continuation test at the end of this list exists to stop. The user asked you to implement something — what they need back is whether it is done.
+
+   **If this session split, state completion against the leaf you declared, not against the entry you were handed.** This covers all three ways it happens: Phase 2 sized the work and declared a split, the work split mid-implementation, or a phase of an already-split PRD turned out to need splitting again. One line for what landed (the leaf's id), one line naming the sibling leaves now written and the plan table or split record that lists them.
+
+   **When the leaf's criteria are all verified, write its closure line** — `**Closed:** YYYY-MM-DD` under the leaf's title, in the feature commit (`phase-split`, "Closure is one line on the leaf"). That line is what the next session reads to find the first unfinished child, so a leaf without it is not closed no matter what the wrap-up says. **A session that scoped down and finished cleanly is COMPLETE, not partial** — splitting is a sizing decision the methodology asked you to make, so do not report it as a shortfall and do not go looking for its acceptance criteria in the original entry. The pull to justify a narrowed scope by listing everything you did is strong and it produces exactly the inventory this item forbids.
+3. **Note that deliverable review and test hardening were performed, and give the refactor pass's verdict (item 5)** — explicitly, so the user doesn't re-run any of them. When the user said not to commit, the refactor pass did not run: say it is recommended for after their commit.
+4. **Mention any kept exploration scripts** — what they do, why they're worth keeping
+5. **Stage, validate and commit, run `refactor-pass`, then push a feature branch** — the default for finished work unless the user's instructions say otherwise (`pre-commit-validation`, "Who Commits"). **Do this after every doc edit the other wrap-up items call for** — the closure line (item 2), `continuation-prompt`'s doc edits and the PRD-list row (item 6), assumption entries (item 7), items filed into future phase docs (item 8) — so they ride the feature commit.
+   - **a. Commit the feature work.** Load `pre-commit-validation` at the commit boundary — build the expected changeset, leave other sessions' staged files staged, stage only your specific files (never `git add .` or `git add -A`), and run its checks (secrets scan, diff sanity). Write the message to the project's commit conventions (`type(scope): description`), with the `Conflict check:` or `Conflict check skipped:` line when Phase 4 calls for one, announce it with the repo name, and commit.
+   - **b. Run `refactor-pass` in this chat, without asking.** This chat holds the evidence of whether the structure fought the change. Its usual outcome is a one-line "no refactor warranted"; when it tidies, it makes its own `refactor(scope):` commit after the feature commit.
+   - **c. Push** when `pre-commit-validation`'s default push or the user's authorization covers it ("Who Commits"): a feature branch is pushed by default, never forced; without authorization, a push that would land on `develop`, `main` or another integration branch is held — stop after the commits and tell the user in one line to say push when ready.
+
+   The wrap-up shows each commit's message with the repo name and the validation summary. A session ending Blocked stages its work and presents the commit instead. When the user has said not to commit — in this chat, in the prompt that started it, or in their instructions file — stop at the staged changeset with the message presented, and recommend `refactor-pass` for after the commit lands rather than running it: it never runs before the feature commit. When the user has said not to push, stop after the commits.
+
+   **On a split PRD's branch, open no pull request and wait on no CI** apart from an `**Early merge:**` line on the phase (`engineering-principles`, "One Branch for a Split PRD").
+
+   **If opening pull requests is authorized too, the session is about to wait on CI — and that wait never ends the turn.** Load `wall-clock-awareness` and follow its "Waiting on something external" section: start the CI watch in the background once a check is listed, do the independent work usually queued at this point (the PR numbers into the governing document, memory notes, reading the next phase's docs) without pushing to the branch under test, then block on a fresh bounded foreground watch and re-issue it on exit 124 until it exits 0 or 1. Check `mergeable` after opening each PR and re-check if it reads UNKNOWN — a CONFLICTING PR runs no CI and looks identical to "waiting". Do not end the turn or report the chat as resuming on its own while CI runs; it stays visibly running until green or red is stated.
+
+6. **If this was one phase of a multi-phase PRD**, remind the user about the next phase — the next leaf in execution order, which after a split is usually the sibling you just wrote — and provide its copy-paste prompt via `continuation-prompt`. That skill runs before the commit, not after: its first step moves everything the next session needs to know (state, owed items, inherited findings, hazards) out of the prompt and into the phase doc, and those doc edits ride in this session's commit. The prompt itself is a name line, the lineage block, and pointers. Present it after the push step, labelled with the commit hashes and any delivery still outstanding (held back by the user, held for the user's word on an integration branch, or a rejected push).
+   **If this closed the last open leaf of a split PRD**, the PRD's closing audits are the next unit of the track (`continuation-prompt`, "A split PRD's track ends at its test audit"): provide the next chat's prompt as for a next phase. The prompt runs `delivery-audit` on the whole PRD, including after completion phases added by either audit. A historical audit does not establish that these repairs are complete. Repeat the build-and-delivery-audit cycle until no gaps remain; the clean delivery audit then hands off to `test-audit`, which grades every criterion's test evidence and fills the gaps. Never run either in this chat: each needs fresh eyes on work this chat helped build.
+   **If this closed the last phase of a PRD in an initiative** (`initiative-breakdown`; the PRD's `**Initiative:**` line, or `**Roadmap:**` on an older one, says so), say the PRD's close-out continues with the audit above; the test audit that ends the track names the next PRD after it in the initiative's order that is not yet in production. Do not write that PRD's prompt unless asked: moving on is the user's decision (`continuation-prompt`, "An initiative is not a track"). If this session also promoted the work to production, set the PRD's PRD-list row to `in production YYYY-MM-DD` in this commit; otherwise name that one-line update as the user's action for when it ships.
+7. **Count declared business-logic assumptions in the disposition ledger line; don't call them out.** Before writing the line, sweep the work for decisions that were dispositioned onto a review page, a report, or any other deliverable rather than into the assumptions document — those are the ones that silently never get answered — and write an assumption entry for each. Every business-logic assumption this session wrote to the assumptions document is one count in the ledger line ("2 business assumptions declared"), never a list, a callout or a reminder (`implementation-lifecycle`, "Reporting Style"). The assumptions document is where they live, and the count is the user's cue to refresh the stakeholder review package.
+
+8. **Apply the No Loose Ends discipline to the wrap-up itself, and then the three-question test.** Every sentence is about an acceptance criterion and whether it landed, an action only the user can take, or a critical finding labelled as such — anything else, beyond the items this wrap-up list requires, is **deleted**, not softened or footnoted (`implementation-lifecycle`, "Reporting Style"). The wrap-up contains no FYIs, caveats, "worth noting" or "a few things I noticed" items, and the fix for one you were about to write is to delete the sentence, not to go file the item: something you were about to mention as an aside is an observation that already failed the gate, and filing it so it can be counted is a side quest earning a disposition it never deserved. Before writing, handle only what genuinely survived the gate: deal with it (keep working), file it into the appropriate future phase doc / Technical Design / assumptions doc, or, for one of the four stops, surface it in one line with a recommendation. Sweep it for hollow promises too: any "I'll do X" / "X should happen next" / "this still needs Y" about work you could do in this session means the session isn't done — go do it, or file it, before writing the wrap-up. Then apply the continuation test (`implementation-lifecycle`): items whose disposition means the PRD's natural continuation will handle them get **zero individual mention** — they're represented only by a single disposition ledger line of counts and destinations ("**Dispositions:** 2 assumptions declared, 3 items filed to phase-4"), never named or described; omit the line if nothing was dispositioned. Beyond that, the wrap-up names only what needs the user: the required items above (next-phase reminders, human-action surfacing) are exactly that — action items, not FYIs. Keep the whole wrap-up brief. **And apply Done Means Done (`implementation-lifecycle`):** once acceptance criteria are verified and deliverable review has run, declare the phase complete and stop — no further "what else could be wrong?" sweep, and never a fresh concern appended after the declaration.
+
+---
+
+## Rules and Constraints
+
+### DO
+
+- Load the full PRD, Technical Design, Assumptions, and supporting materials before sizing
+- Open the first response with the lineage line: PRD by full title, plus the phase by id and full title when the work is one; stop if no PRD can be named
+- Preflight every external credential and connection the work and its tests need at the end of Phase 1, so an expiry surfaces while the user is still present
+- Be honest about session sizing — hand off to `phase-split` when the work won't fit
+- Use the word "phase," not "story"
+- Delegate the split to `phase-split` when the work is too large — it owns deciding the cuts and writing one doc per phase; neither skill stops to ask
+- After a split, implement the first leaf in this same chat; every later leaf gets its own fresh chat
+- Implement only leaves — pointed at a split parent, take its first unfinished child and say so
+- Use real sandbox/dev resources for integration behavior; mocks only for isolated logic or the narrow cases `engineering-principles` allows
+- Auto-run deliverable review after tests pass, and announce both before and after
+- Auto-run `test-hardening` after deliverable review completes, with the same announce pattern
+- Run `refactor-pass` at wrap-up, after the feature commit and before any push — never before the commit
+- When the last open leaf of a split PRD closes, including a completion phase, hand off to a fresh whole-PRD `delivery-audit`; only a clean delivery audit hands off to `test-audit` — never run either in this chat
+- Before building, list each criterion's required parts (every variant, entry point and stated error case, from the requirements alone) and any earlier criterion a new path reaches, and confirm each one at wrap-up
+- Update docs first when implementation reveals they're wrong
+- Run the conflict check for the criteria this session builds, and write the `Superseded by:` line on each earlier criterion a built criterion replaces, in the same commit as the code
+- Make judgment calls on exploration scripts (keep or delete)
+- Count every business-logic assumption declared this session in the disposition ledger line — a count, never a callout or a reminder
+- Disposition every loose end per the No Loose Ends discipline (`implementation-lifecycle`) — dismiss it at the Materiality Gate, deal with it, file it into the methodology docs, or, for one of the four stops, surface it in one line with a recommendation
+
+### DO NOT
+
+- Estimate work in human time ("a day's work," "a sprint") — the work is happening in this session right now, not being scheduled across future calendar time
+- Size the work or write phase documents yourself when it's too large — invoke `phase-split` instead of reproducing its procedure here
+- Stop to ask whether to split, or which cut to use, or end the turn after the phase docs are written — declare the split, write the docs, build the first leaf
+- Silently implement something different from what the PRD or Technical Design says
+- Use a mock as the only evidence that an external integration works
+- Commit or push against the user's instructions — in this chat, the prompt that started it, or their instructions file (`pre-commit-validation`, "Who Commits") — or ask before the default commit and push; never force-push unless the user explicitly says to
+- Run deliverable review silently — always announce
+- End a turn to report FYIs/caveats, or stop to ask a question when you're ≥90% confident what the user's answer would be — keep working (No Loose Ends, `implementation-lifecycle`)
+- End a turn announcing future work you could do now, or list "next steps" that live nowhere but the chat — do the work, or file it where a future session will load it (`implementation-lifecycle`, "No Hollow Promises")
+- Treat a mid-implementation discovery as new scope — apply the Materiality Gate (`implementation-lifecycle`): fix only what blocks this phase, carry forward what a later phase's criteria need, dismiss the rest silently
+- Edit a file no acceptance criterion requires — not to keep a doc consistent, not because a sibling has the same flaw, not because a comment's count is stale. Neighbours are how scope leaks, and a cascade of "now this has to change too" from a non-criterion edit means revert the root, not fix the cascade (`implementation-lifecycle`, "Adjacency is how scope actually leaks")
+- Spend a session's time investigating a critical finding beyond confirming it is real and stating it in a line with a recommendation — whether to pursue it is the user's call, not the session's
+- Declare the phase complete and then append newly surfaced concerns — anything material belonged before the declaration; anything else was dismissed or filed (`implementation-lifecycle`, "Done Means Done")
+
+---
+
+## Relationship to Other Skills
+
+| Skill | How This Skill Uses It |
+|-------|-----------------------|
+| `implementation-lifecycle` | The session discipline this skill runs under — which document carries what, the confidence thresholds, the Materiality Gate, the disposition rule and the four stops. Read it first; reload it if the session drifts. |
+| `implementation-readiness-check` | Alternative predecessor — used when the user explicitly wants a human review checkpoint before implementation |
+| `autonomous-design-refinement` | Heavyweight predecessor — multi-pass refinement for bringing draft documents to implementation-ready state |
+| `phase-split` | Delegated to from Phase 3 when the work is too large for one session, at any depth. It owns the entire sizing/seam-finding/phase-doc-writing procedure and the phase id and file layout (`phase-{id}-{short-name}.md`, one file per phase) — this skill does not reproduce it. After it writes the docs, this skill builds the first leaf in the same chat and one leaf per fresh chat after that. |
+| `prd-writing-standards` | Defines PRD format and the `docs/prds/` and `docs/changes/` colocated directory convention referenced by phase docs |
+| `technical-design-writing-standards` | Defines Technical Design conventions referenced during implementation |
+| `assumptions-document-writing` | Existing assumptions are decided facts during implementation. New assumptions surfaced mid-implementation (when business confidence is below 95%) get written using this skill. Do not load preemptively — but load it whenever you write an assumption **or edit an existing register at all** (rewording an entry, editing the header), reading its "Editing an Existing Document" section first. Edits made in passing are the main source of format drift. A stakeholder's answer to an assumption, however it arrives, goes through `assumptions-document-feedback` instead. |
+| `deliverable-review` | Auto-invoked after tests pass to verify the deliverable |
+| `test-hardening` | Auto-invoked after deliverable review (Phase 7) — fresh-eyes pass that verifies every acceptance criterion has credible test evidence, converts unjustified mocks to real resources, and strengthens weak assertions before commit |
+| `delivery-audit` | Handed off to at wrap-up (Phase 8) whenever the last open leaf of a split PRD closes, including completion phases: an independent check that every criterion is built, which adds completion phases for the gaps. This skill builds those phases like any other. |
+| `test-audit` | Follows a current clean whole-PRD delivery audit: an independent audit of every criterion's test evidence across all its phases, which then fills the gaps |
+| `refactor-pass` | Run at wrap-up (Phase 8), after the feature commit and before any push, without asking — decline-biased judgment on whether this phase's work warrants refactoring, executing the refactor (structure-only, its own commit) when a concrete signal is present and the tidy is small |
+| `continuation-prompt` | Produces the next chat's copy-paste prompt at wrap-up (Phase 8) when a next phase or the PRD's closing audit exists. Runs before the commit so the facts it moves into the phase doc are part of the commit. |
+| `pre-commit-validation` | Commit-boundary hygiene — staging cleanliness on a multi-session workstation, secrets scan, diff sanity. Loaded in Phase 8 before the commit. |
+| `engineering-principles` | The method's engineering principles applied during implementation — no silent fallbacks, the testing evidence standard, git safety in a shared clone, and the judgment calls for ambiguous moments (finish what you started, investigate before removing, don't dismiss failures). Loaded together with the house engineering standards named on the project's `Engineering standards:` line in AGENTS.md/CLAUDE.md, which own stack, style, structure and configuration |
+| `implement-from-discovery` | Sibling skill — same downstream loop, different trigger. Use that one when the source of the requirement is research findings or a mid-investigation discovery rather than a fresh PRD. |

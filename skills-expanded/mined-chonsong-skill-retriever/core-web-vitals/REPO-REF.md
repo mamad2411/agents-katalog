@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/chonsong/skill-retriever (path: src/skill_retriever/community_skills/core-web-vitals/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Optimize Core Web Vitals (LCP, INP, CLS) for better page experience and search ranking. Use when asked to "improve Core Web Vitals", "fix LCP", "reduce CLS", "optimize INP", "page experience optimizat

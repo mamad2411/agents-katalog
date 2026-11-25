@@ -1,0 +1,31 @@
+---
+name: game-feel
+description: Add or tune game feel ("juice") - screen shake, hitstop, squash and stretch, easing, camera follow, input buffering, coyote time, hit flashes - so actions feel responsive and impactful. Use when the user says the game feels floaty, weak, stiff, flat or "not juicy", asks for screen shake or hit pause, or a playtest note says hits do not land. Follows SOP-18, including the accessibility rules (shake off switch, flash limit).
+---
+
+# Game feel
+
+Follow `docs/sop/SOP-18-game-feel.md`.
+
+1. **Check the mechanic first:** juice tunes a mechanic that already works (F4). If the core loop is not fun with plain
+   shapes yet, say so and stop.
+2. **Moments:** list the five to ten moments that matter (hit, land, jump, pick up, die) with the feeling each should
+   give, and pick at most two or three effects per moment (SOP-18 step 1). Confirm the list with the user.
+   When a moment calls for a common effect (hit confirm, damage number, knockback, recoil, camera kick, landing
+   squash, pickup pop, dash afterimages, casings and bursts, bullet spread, kill slow-mo, muzzle flash, tracer,
+   firing light, wall-impact debris), build it from its row in SOP-18 step 4 (the recipe table): its primitives, its
+   starting numbers, its rule. Build it in the game's code and add a test of the row's rule to the game's own tests;
+   do not add it to the kit's juice module (SOP-18 "When the kit grows" says when that happens).
+3. **Use the kit's juice module** (`docs/ENGINE.md` names the files; the spec is `tools/golden_vectors.py`). Do not write
+   a second shake or tween system. If a needed behavior is missing, change the reference first, run
+   `python tools/golden_vectors.py --write`, then the port, then its tests. Every overlay ships the module; in
+   RPG Maker MZ it is the GameJuice plugin, and MZ's own `$gameScreen.startShake` and `startFlash` already follow the
+   player's settings through GameAccess (docs/ENGINE_FLOW.md, "The shell, juice and accessibility in MZ").
+4. **Wire it:** game time in (`dt` after hitstop and game speed), the camera moves (never the world), every number in the
+   constants block or a data file.
+5. **Protect players (always):** shake intensity from `effective_shake(settings)`, reduce motion turns shake, bob and
+   pulses off, every full-screen flash through the flash limiter (SOP-18 step 3, F33, F34).
+6. **Prove it:** `check`, `test` (the juice tests against `data/golden/juice.json`; in RPG Maker MZ the Node tests
+   of GameJuice and of your plugin rules), then record a burst of each key
+   moment (`dev.py smoke --record`, a GIF with `tools/art/frames_to_gif.py`) and look at the frames before posting.
+7. **Report:** moments and effects, where the tunables live, the GIF links, and one playtest question for the user.

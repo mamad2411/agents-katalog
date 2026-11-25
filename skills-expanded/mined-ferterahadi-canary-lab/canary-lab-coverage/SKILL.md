@@ -1,0 +1,281 @@
+---
+name: canary-lab-coverage
+description: Use when working the Canary Lab semantic coverage ledger — "what's actually tested?", "map coverage for <feature>", "refresh the PRD summary", "close the coverage gaps", "add this plan/spec to the feature docs" — through the coverage MCP tools (write/list/delete_feature_doc, start/submit_external_summary, start/submit_external_coverage, get_feature_coverage, clear_prd_summary). For writing new tests use canary-lab-author.
+type: skill
+---
+
+# Canary Lab — Semantic Coverage Ledger
+
+## User input through MCP 2.0
+
+Use the native Canary connector in the requesting chat so SDK 2.0 elicitation
+(`input_required`) reaches the human there. Do not substitute a shell MCP client,
+answer a form yourself, or recreate the question in chat. Existing explicit
+instructions and autopilot choices still apply without another ask.
+
+Form decisions have one shared record. The native form links to the same approval
+in Canary Notifications, also surfaced above the Flight page. On `needs-input`
+with `approvalId` and `reviewUrl`, show that link and call `wait_for_approval` with
+the ID; repeat on `still_waiting`. The human answers once in either surface.
+A browser answer resolves the server decision; some clients keep their native
+form visible until the human dismisses it. Dismissal then returns the stored
+result. Client decline/cancel alone does not represent a human decision.
+
+Without an `approvalId`, leave `needs-input` pending after decline/cancel, stale
+input, or an unfinished UI action; do not automatically retry or repeat the
+question. Setup/reconnection can use chat while MCP is unavailable. Never collect
+passwords, API keys, or access tokens in chat or form elicitation; use the returned
+Canary UI URL for secret entry.
+
+## MCP Invocation
+
+Setup and the plugin expose one public Canary Lab MCP tool: `exec` (usually
+rendered as `mcp__Canary_Lab__exec`). Every
+Canary Lab tool name below is the exact `command` value, not a separate public
+tool. For a feature-scoped command, replace both placeholders in this shape:
+
+```json
+{"command":"<exact_tool_name>","arguments":{"feature":"<feature_name>"}}
+```
+
+This is the envelope shape, not every command's complete schema. Add the
+fields that command declares inside `arguments`; call `describe_tool` when a
+field is uncertain.
+
+Never invent a wrapper verb such as `learn` or `call`, embed JSON in a command
+string, or turn arguments into flags. Keep fields such as `confirm: true` inside
+`arguments`. Use `list_tools`, `search_tools`, or `describe_tool` as the
+`command` when discovery is needed. A deliberately selected focused or `full`
+profile still exposes atomic tools for debugging; the setup-installed path is
+`compact` + `exec`.
+
+This client reads the docs/tests and submits requirements + mappings; Canary
+Lab writes the tags and computes the ledger. These tools arrive via the
+Canary Lab MCP server. If this client is already connected (the plugin
+connects with `compact`), skip this step. To configure the same connection
+manually: `npx canary-lab mcp --profile compact`. Use this to answer "what's actually
+tested?" — coverage is claim-based: a tag claims a test maps to each
+requirement and its declared paths, regardless of run results. When the
+feature has a recorded run the ledger also carries an additive **proven**
+axis (`provenPct`, `totals.proven`, per-requirement/path `proven`,
+`provenRunId`): covered = a tag claims it; proven = the covering test
+actually passed in the latest run (omitted when no run is recorded).
+A path or variant cell also carries `failed` — no claiming test passed and
+at least one FAILED in that run. That is a broken promise, distinct from an
+unkept one (nothing has run it yet); fix the app, never the test. A pass
+wins, so `failed` is never true alongside `proven`.
+The ledger also carries the **time axis**: per requirement an `enforcement`
+block — `state`, `provenAt` (the newest run in which every mapped test
+passed), `testsChangedAt` (the last classified spec edit on a mapped test, with
+its verdict), `wordingChangedAt` — where `state` is one of:
+
+| `state` | Meaning |
+| --- | --- |
+| `proven-unchanged` | A green run over every mapped test is newer than both the tests' and the wording's last change |
+| `tests-weakened` | A mapped test was classified weaker AFTER the proof — the run that proved it never saw the weaker test |
+| `proof-stale` | A mapped test changed after the proof (or no run ever proved it) and no green run has followed |
+| `wording-ahead` | The wording moved after the tests and the proof — the tests may no longer test what it says |
+
+The ledger-level `enforcement` rolls it up (`provenUnchanged`/`total` for
+`runId`). Report these states as Canary derived them, never a claim of your
+own. A `tests-weakened` requirement is fixed by restoring the assertion — the
+weaker edit is exactly what the proof never saw — never by re-running.
+
+## Workspace Bootstrap
+
+1. Find the LIVE server first: read `~/.canary-lab/active-servers.json`, which records `projectRoot`, `port` and `pid` for every UI that registered. A stopped server's entry LINGERS — the file is only rewritten when the next server registers — so an entry is a candidate, not proof: the health check below is what confirms it. One entry → that is your server and its `port`. Several → take the one whose `projectRoot` is the workspace the user means. None → fall back to `~/.canary-lab/workspaces.json` (Windows: `%USERPROFILE%\.canary-lab\workspaces.json`): one workspace → use it, several → ask which, none → ask the user to run `npx canary-lab setup`. Do NOT start from a guessed port.
+2. Then CONFIRM it is the right server: `curl -s http://127.0.0.1:<port>/mcp/health` and check that `projectRoot` is the workspace you intended. A healthy response does **not** settle the question on its own — a stale UI left behind by a demo or a tarball smoke test answers a port just as convincingly as the right one, and that is how a flight ends up running in someone's throwaway workspace. `projectRoot` matches what you intended → continue and tell the user which workspace. It names a DIFFERENT workspace → this is the wrong server; go back to step 1 rather than adopting it. It is under a temp directory (`/tmp`, `/private/var/folders`, `%TEMP%`) → never auto-select it; those are throwaway demo workspaces, so use one only when the user names it explicitly. Only when no live server serves the workspace you want does one need starting.
+3. If the health check fails, start `npx canary-lab ui` from the workspace in a visible long-running terminal; if this client cannot run long-lived commands, ask the user to run `npx canary-lab ui` from the workspace and confirm when it's up.
+4. A healthy `/mcp/health` means the server is live. On the setup-installed `compact` profile, atomic names such as `get_feature_coverage` are deliberately absent from `tools/list`; only `exec` is public. Call `exec` with `{"command":"list_tools","arguments":{}}` before concluding the connection is missing. Only an unknown-tool error for `exec` means this session is not connected — ask the user to run `npx canary-lab setup --force` and reconnect/restart the client, then retry. Never drive `/mcp` with a hand-written HTTP/JSON-RPC client (curl included; the health check above is the only direct HTTP use): a custom client bypasses client detection and reconnect handling.
+
+## Arguments
+
+An invocation argument (`/canary-lab-coverage <suite>` — the Getting Started
+guide's "Measure Coverage" card emits exactly this shape) is a suite
+(feature) name in the connected workspace — go straight to its ledger.
+
+An explicit `/canary-lab-coverage <suite>` invocation is **execution mode**,
+not a read-only coverage question. After reading the ledger, the turn MUST call
+a start tool: when the summary is fresh, call `start_external_coverage` even
+when `state.coverage` is `"fresh"`; when the summary is stale or absent, start
+and submit the summary first, then start coverage mapping. Do not stop at the
+cached ledger. Starting that job is what makes the external agent's ownership
+and progress visible in Canary Lab. A natural-language question such as "what
+is covered?" remains read-only and may report a fresh ledger without starting
+a job.
+
+## Coverage Loop
+
+### Freshness and connected-session updates
+
+Canary must show current state without refreshing the browser. Read `freshness`
+and the `coverageUpdate` added to related tool replies before reporting numbers
+or choosing the next action. Stale, updating, unavailable or missing freshness
+means the displayed measurements are historical; do not call them current.
+While actively monitoring this suite, use `wait_for_feature_change(feature,
+afterRevision, timeout_ms:30000)` and retain its revision. Omit the revision to
+catch up after reconnecting. This reaches the agent through a tool response; it
+does not promise to wake an idle Claude/Codex host.
+
+Follow `nextAction` only within the user's task and existing launch permissions.
+Documents invalidate requirements then mapping; semantic test changes, including
+referenced helpers and hooks, invalidate mapping. Suite configuration does not,
+and remapping does not require a later verification run. Reuse valid earlier
+Flight stages. Respect `activeJobId`, its owner and any active Flight: continue
+owned work, never create a competing recovery. A rejected stale-input submission
+releases its job; obtain new context instead of resubmitting an obsolete answer.
+After recovery, re-read the ledger. Mapping completeness, latest-run outcomes and
+historical enforcement proof are separate; an old pass cannot conceal a newer
+failure. Do not clear summaries, weaken tests or launch paid work just to remove
+a freshness warning.
+
+**Start by reading the ledger, not by regenerating it**: call
+`get_feature_coverage(feature)` first and branch on `state`:
+
+- `state.summary: "fresh"` → **skip Step 1 entirely.** The shipped/stored
+  summary is current; re-running it is not just wasted work — a re-run that
+  fails to echo the previous requirement ids mints fresh ones and orphans
+  every existing `@req-*` tag, flipping covered requirements to untested.
+  Go to Step 2. Only a read-only natural-language question may report a fresh
+  mapping directly; an explicit invocation still starts Step 2.
+- `state.summary` `stale`/`absent` → run Step 1 (echo the previous ids!).
+- `state.coverage: "blocked"` → read the ledger's `next:` field and follow
+  it — don't present a menu. When `next` reports no source doc ("Setup
+  needed", `sourceDocCount: 0`), call `start_external_summary` with the
+  feature and your stable `session_id`. `needs-document-discovery` means search
+  the task's repositories, existing docs, and user-provided references first.
+  Read contents, honor source precedence, and use clearly relevant, authorized
+  documents automatically. Return `document_resolution` with `status: "resolved"`,
+  `searched`, and `sources: [{path, sha256, reason}]`; hashes identify the bytes read.
+  For missing material return `status: "missing"`, `searched`, `reason`; for
+  ambiguous/conflicting material return that status, `searched`, `question`, and
+  `candidates: [{label, sources}]` (1–5 for ambiguity, 2–5 for conflicts). Only these unresolved cases elicit input.
+  Use the selected documents from the result; rejected originals remain on disk.
+  When the user chooses to supply material, follow `document_source: "form"` or
+  `"upload"`. Only an unsupported client asks the focused question in chat.
+  Preserve previous user choices. Never invent requirements or infer them from
+  code/tests without authorization. A confidence percentage is not source evidence.
+
+**Step 1 — PRD summary** (only when stale/absent; author it YOURSELF; no local agent):
+
+Choose one stable `session_id` before the first start call and reuse it for
+both externally driven jobs in this conversation.
+
+1. `start_external_summary(feature, session_id)` → first follow any
+   `needs-document-discovery` result, including for linked or changed documents.
+   Once sources are resolved, it returns a `jobId`, selected source-doc paths,
+   the previous requirement ids to PRESERVE, and a `prompt`.
+2. Read each doc in the returned paths; extract the testable requirements.
+3. `submit_external_summary(jobId, requirements[, variantDimension])`.
+
+- Follow the returned `prompt`'s schema exactly: every requirement needs
+  `title`, `text`, and `pathTypes` (`kind`, `happyPath`, `unhappyPath`,
+  `variants`, `variantsNA`, `strictnessLadder` are optional; echo a prior
+  requirement `id` to PRESERVE it, omit for a new one).
+- If the feature has ONE cross-cutting dimension a requirement must hold
+  across (channel/tenant/region/…), also pass `variantDimension {name,
+  values}` and set each spanning requirement's `variants` — a requirement
+  that claims "all 4 channels" but is tested on one is `variant-incomplete`,
+  not covered.
+- Canary reconciles ids against the prior summary (surviving ids preserved;
+  new ones get fresh ids; dropped ones marked deprecated) and writes
+  `docs/_prd-summary.{json,md}` — it never re-derives the requirements.
+- The job is async + single-flight per feature and shows live in the GUI:
+  the suite's Flight page carries it on the matching stage (the summary on
+  Requirements, the mapping on Test authoring & coverage) — that view is
+  read-only while this client drives; the user monitors there, you act here.
+- If `start_external_summary` or `start_external_coverage` returns
+  `type: "getting_started_busy"`, a Getting Started demo already owns the
+  workspace — follow the active target it returns; do not start another
+  workflow.
+- Re-run whenever the ledger's `state` reports the summary `stale`
+  (`state.drift.changedDocs` names which docs moved) — ids are preserved, so
+  existing tags keep resolving.
+- `list_feature_docs(feature)` shows what feeds the PRD; `write_feature_doc`
+  adds a source doc and `delete_feature_doc(feature, relPath)` removes one.
+  Source docs are `.txt`/`.pdf`/`.docx` extracted to markdown on import.
+- `clear_prd_summary(feature)` resets coverage to a blank slate — removes the
+  generated summary **and** strips the `@req-*`/`@path-*`/`@variant-*` tags
+  from the specs (other tags kept; an emptied tag list reverts the test to
+  its pre-coverage shape), so a re-map starts clean instead of inheriting
+  stale tags (the UI "Redo from the start" does the same).
+- If your client supports subagents, give each a subset of docs to read and
+  merge their extracted requirements; otherwise read serially. Either way
+  call `submit_external_summary` exactly once.
+
+**Step 2 — coverage mapping** (map it YOURSELF; no local agent), after the
+PRD summary exists:
+
+1. `start_external_coverage(feature, session_id)` → returns the active requirements, the
+   feature's tests (each with the spec `file` to read), and a `prompt`.
+2. **Fan out the reading.** Group the tests by their `file` — never split one
+   spec file across two readers, since a file's tests share fixtures that
+   only make sense read together. If that leaves more than one group and more
+   than a handful of tests, dispatch **one read-only subagent per group in a
+   single parallel round** (up to 5 at once), each reading only its own
+   files; below that, read them yourself. Give every subagent the FULL
+   requirement list unchanged — the tests divide, the requirements do not,
+   because a mapping judged against a subset of them is wrong rather than
+   partial. Merge their answers.
+3. `submit_external_coverage(jobId, mappings, unmappable)`.
+
+- One mapping entry per test: `{testName, requirements: [ids], pathTypes:
+  ['happy'|'sad'|'edge'], variants: […]}` (`file`, `rationale`, and
+  `confidence` are optional).
+- **Every test must come back — in `mappings` or in `unmappable`
+  (`{testName, reason}`), never neither.** A submit that leaves tests
+  unaccounted for is REJECTED with their names. A dropped test is
+  indistinguishable from one you read and found no requirement for, so the
+  ledger would score it uncovered on your silence instead of on evidence. If
+  a subagent fails to return, say so in `unmappable` rather than omitting
+  its tests.
+- Link each `test()` to its requirement with **Playwright tags on the
+  test**: `test('…', { tag: ['@req-R3', '@path-happy', '@variant-email'] },
+  …)` — `@req-<id>` (repeatable), `@path-happy|sad|edge`, and
+  `@variant-<value>` (which of the feature's variant-dimension values the
+  test actually exercises). Tags are greppable and survive renames. (Legacy
+  `// @requirement` / `// @path` comments above the test still parse as a
+  migration fallback.)
+- Canary writes the `@req-*`/`@variant-*` tags through its canonical
+  tag-writer and recomputes the ledger (unknown ids/test names/variants
+  dropped). It writes the *tag* (mapping) — never the test body — and there
+  is **no** accept/reject review gate.
+- No PRD summary yet → `status: "needs-summary"` (run `start_external_summary`
+  first); single-flight per feature.
+- Split by spec file, never by test count, and call
+  `submit_external_coverage` exactly once with the merged answer.
+
+**Step 3 — read the ledger.** After `submit_external_coverage`, you MUST call
+`get_feature_coverage(feature)` before reporting; the submit response is not
+the final ledger. The ledger reports per
+requirement → covering tests → `gapType` (`untested` / `path-incomplete` /
+`variant-incomplete` / `covered`) + coarse `coverageStatus`
+(covered/partial/uncovered), a `Mapped N%` headline from `coveragePct` (fully
+mapped requirements ÷ total — every declared path and variant claimed) and a
+linked breadth in `mappedPct` (requirements with ≥1 test), per-test `strength`
+(`strong` / `solid` / `basic` / `shallow`, graded
+from each test's assertion tiers — independent of runs), `orphanTestNames`
+(tests with no requirement), and the derived `state` (summary × coverage
+axes + headline).
+
+**Step 4 — act on gaps.** `untested` means no test maps to the requirement
+(write one, or run the coverage engine to map an existing test);
+`path-incomplete` means a declared sad/edge path has no mapped test;
+`variant-incomplete` means the requirement spans variant values no mapped
+test exercises (test the missing variant, or add the `@variant-*` tag to a
+test that already does); a `shallow` test only reaches a weak assertion tier
+(write a stronger check — e.g. a browser confirming the real external effect
+rather than an app log); an orphan test needs a `@req-*` tag. The UI's
+full-screen Coverage dialog shows the same data — both surfaces read the
+same computation.
+
+## Guardrails
+
+- Generate one `session_id` before the first external start call and pass that
+  same value to `start_external_summary` and `start_external_coverage` for the
+  whole conversation. The submit calls take their `jobId`, not `session_id`.
+- New tests belong to the `canary-lab-author` skill/profile; this profile maps and measures.
+- Proving coverage takes a run — `canary-lab-run` (or a flight) records the run the `proven` axis reads.
+- The time axis reads run records, never a stored opinion: a `proof-stale` requirement is cleared by a green run, a `wording-ahead` one by matching tests passing after the wording change, a `tests-weakened` one by restoring the assertion.
+
+Broken document links are repaired before source discovery: the owning command elicits the moved file's new path on the Canary server. On `document-relinked`, retry that command with the same arguments. Keep the symlink and existing baseline; never omit the missing source or create recovery copies. Cancel/decline leaves work pending. Unsupported clients use Relink in the returned Canary UI.

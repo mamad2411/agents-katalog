@@ -1,0 +1,106 @@
+---
+name: schema-diff-analyzer
+description: "Detect schema drift between environments (dev, staging, prod) or against declarative definitions, rate each difference by risk, and produce an ordered sync plan. Use when environments disagree, a migration failed midway, or the user asks what changed between two schemas."
+---
+
+# Schema Diff Analyzer Protocol
+
+This skill takes two schema definitions (Source vs Target, or Environment A vs Environment B) and calculates the correct, safe delta between them. It doesn't blindly apply changes; it evaluates risk.
+
+**Core assumption:** Applying standard ORM or CLI diff outputs directly to production often creates dangerous lock conditions.
+
+---
+
+## 0. Context Intake
+
+Before designing, make sure you have the inputs below. Read the previous workflow step's artifact first if it exists. Ask only for what is missing, in a single message, and state any assumption you make instead of blocking.
+
+- The two schemas to compare (environment dumps, migration folders, or declarative definitions).
+- Which side is the source of truth.
+- Whether the target holds production data.
+
+## 1. Diff Extraction & Categorization
+Analyze the two inputs. Group identified changes into three core risk categories:
+
+### 🟢 Safe (Low Risk)
+- Adding new tables.
+- Adding new nullable columns.
+- Adding non-unique indexes (with `CREATE INDEX CONCURRENTLY`).
+- Adding new views (if they don't break existing dependencies).
+
+### 🟡 Warning (Medium Risk)
+- Modifying column types (e.g., `VARCHAR(50)` to `VARCHAR(100)`).
+- Adding missing constraints or foreign keys.
+- Dropping unused tables.
+
+### 🔴 Dangerous (High Risk / Blocking)
+- Dropping columns or tables actively used.
+- Renaming columns or tables (requires Expand-Contract).
+- Modifying a column to make it `NOT NULL` without default.
+- Adding a `DEFAULT` to a huge table (depends on DB dialect).
+
+## 2. Sync Plan Generation
+Do not provide a single monolith transaction if dangerous changes exist. Organize changes logically.
+
+**Outputs.** In *file mode* — the user wants artifacts, or this skill runs as a step of an ecosystem workflow — write both files below to `docs/database-report/`. In *inline mode* — a quick question — answer in the chat and end with the JSON below as a *Handoff* block instead of creating files.
+
+1. **Human-Readable Markdown (`docs/database-report/schema-diff-report.md`)**
+````markdown
+## ⚠️ Risk Assessment
+- **Safe:** Added table `audit_logs`.
+- **Dangerous:** Renamed `customer_id` to `client_id` in `orders` table.
+
+## 🛠️ Sync Execution Plan
+Rather than running `prisma db push` or raw alters directly, follow this safe order:
+
+**PHASE 1: (Pre-deployment Safe Alters)**
+```sql
+CREATE TABLE audit_logs (...);
+ALTER TABLE orders ADD COLUMN client_id UUID;
+```
+
+*(Delegate to `migration-strategist` for the backfill of `client_id` vs `customer_id`)*
+
+**PHASE 2: (Post-deployment Cleanup)**
+```sql
+ALTER TABLE orders DROP COLUMN customer_id;
+```
+````
+
+2. **Machine-Readable JSON (`docs/database-report/schema-diff-output.json`)**
+```json
+{
+  "skill": "schema-diff-analyzer",
+  "overall_risk_level": "High",
+  "changes": [
+    {"type": "Safe", "entity": "audit_logs", "action": "CREATE TABLE"},
+    {"type": "Dangerous", "entity": "orders", "action": "RENAME COLUMN", "details": "customer_id to client_id"}
+  ],
+  "recommended_phases": ["Phase 1 (Safe Alters)", "Backfill", "Phase 2 (Cleanup)"]
+}
+```
+
+## 3. Tool Handoff
+If the diff contains a "🔴 Dangerous" change, explicitly state that the user should engage the `migration-strategist` skill for that specific field to prevent downtime.
+
+---
+
+## When to Skip
+
+- Both environments are provisioned from the same migration history and are known to be in sync.
+
+## Guardrails
+- **Data Truncation Warnings:** Always explicitly flag operations where limits are reduced (e.g., `255` down to `50`).
+- **Dialect Specific Locks:** Recognize that PostgreSQL 11+ handles `ADD COLUMN ... DEFAULT` instantly, whereas older engines rewrite the table.
+- **Dependency Graphs:** Ensure dropping a table or column safely accounts for related views, sequences, or triggers.
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-database` — Database Domain.
+
+**Workflows:**
+- **Database Evolution Flow** (`db-evolution`, step 1 of 3): next → `@migration-strategist`.
+
+**Handoff contract:** pass results to the next skill through `docs/database-report/schema-diff-output.json` with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-database`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

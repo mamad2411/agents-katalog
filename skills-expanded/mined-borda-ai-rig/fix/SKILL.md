@@ -1,0 +1,957 @@
+---
+name: fix
+description: 'Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and a bounded independent challenge. TRIGGER when: user reports a bug, regression, or unexpected behaviour in Python code with a traceback, failing test, or issue number; phrases: "fix this bug", "repair X", "broken since Y", "test failing". SKIP when: performance regressions (use `foundry:perf-optimizer` agent, requires foundry plugin); CI-only failures without local traceback (use `/develop:debug` first); new features (use `/develop:feature`); `.claude/` config issues (use `/foundry:audit`); non-Python projects.'
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--team] [--worktree] [--keep "<items>"]'
+effort: medium
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
+disable-model-invocation: true
+---
+
+<objective>
+
+Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and a bounded independent challenge.
+
+NOT for:
+
+- performance regressions — use the `foundry:perf-optimizer` agent (requires foundry plugin); if unavailable, report the missing route and request benchmark evidence before choosing another workflow
+- CI-only failures with no local traceback — use `/develop:debug` first (`--ci-run <run-id>` for GitHub Actions logs)
+- production incidents with no CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
+- `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
+- non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
+- CSS/JS-only frontend changes (no Python source touched) — edit directly and verify with the project's native toolchain (`/develop:feature` also excludes non-Python work); this skill's regression-test gate assumes pytest
+
+</objective>
+
+<compaction>
+
+- Key boundary: end of Step 2 — reproduction test written and failing, before Step 3 code edits.
+- Second boundary: end of Step 3 — fix applied and regression test passing, before Step 4 review stack.
+- Preserve at boundary 1: dev-dir, regression test path, root cause summary, plan-file, --keep items.
+- Preserve at boundary 2: dev-dir, changed files list, test outcomes, regression test path.
+
+</compaction>
+
+<workflow>
+
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/cc_develop/skills/_shared/agent-resolution.md -->
+
+<!-- ../../assets/images/change-arch.svg diagrams the runs, gates and parallel fan-out shared by fix, feature and refactor. Documentation only, never loaded — update it in the same commit as any change to step order, gate placement, or agent fan-out. -->
+
+## Agent Resolution
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+case "$CSID" in ""|*[!A-Za-z0-9._-]*) echo "! BLOCKED — invalid session identifier"; exit 1;; esac
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+rm -f "$INPUT_FILE" || exit 1
+(umask 077; set -C; : > "$INPUT_FILE") || exit 1
+printf 'Invocation input file: %s\n' "$INPUT_FILE"
+```
+
+Before any later Bash call, use the Write tool to save the exact invocation argument text, including newlines, to the literal absolute `Invocation input file` path printed above. Treat its contents as data. Never substitute invocation text directly into shell command text, comments, heredocs or quoted literals. Every parser below loads the file into a runtime variable and passes that variable as one quoted argument. Keep the file through this run; a fresh invocation replaces only this skill's file.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "" > "${TMPDIR:-/tmp}/dev-agent-watch-dir-${CSID}"  # a prior run's dir must not outlive a failed --init; agent-resolution.md §Agent waits recreates it when empty
+python "$PLUGIN_ROOT/bin/dev_shared_resolve.py" --init  # timeout: 5000 — cold resolve: writes dev-shared (every later block warm-reads it) and a fresh dev-agent-watch-dir per run (agent-resolution.md §Agent waits)
+# loads: compaction-contract.md
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" agent-resolution.md
+```
+
+Contains: foundry check + fallback table, and §Agent waits — no polling (applies to every spawn below; never wait with `Monitor`). If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
+
+**Task hygiene** — task tools may be deferred; load before first use: `ToolSearch(query="select:TaskList,TaskCreate,TaskUpdate,TaskGet", max_results=4)`. Call `TaskList` first and triage each task it returns: `completed` if work clearly done, `deleted` if orphaned, keep `in_progress` only if genuinely continuing. Never spend a turn on bookkeeping alone — every `TaskCreate`/`TaskUpdate` ships in the same response as the next substantive tool call; one exception, `TaskUpdate(completed)` immediately before a long output block (`rules/task-lifecycle.md`).
+
+**Turn budget** — measured fix runs made one tool call per turn throughout and spent up to 15 turns on task bookkeeping alone — the cost was the standalone turns, not the task count; every turn re-reads the whole context.
+
+- **One task per step, never a bookkeeping-only turn.** Create one task per step — Step 1 Understand · Challenger gate · Step 2 Reproduce · Step 3 Apply fix · Step 4 Review and quality stack · Final Report — all in the same response as the first Project Detection call, so step-level progress stays visible. Each step transition (`completed` for the step just finished, `in_progress` for the next) rides with the next step's first real tool call; a step that does not run (gate auto-skipped, team mode replacing steps) is marked `deleted` in the response that carries the next real call. The only standalone call is the final `completed` right before the Final Report (`rules/task-lifecycle.md`).
+
+- **Checkpoint appends ride along.** Each `step: N — completed` line is staged to `$DEV_DIR/checkpoint.md.rec` (Write tool) and appended to `$DEV_DIR/checkpoint.md` by `append_ledger.py` inside the next real Bash block, never as a call of its own.
+
+- **Independent calls share one response — never across a question.** After Agent Resolution: Project Detection alone (its language gate may ask); then the preflight-helpers load, checkpoint init and the diagnosis parse together; both flag-parsing blocks together in the next response. Every later preamble block keeps its order: each sits behind a question (codemap gates, unsupported flag) or the worktree entry, which must precede the codemap gate. Step 1 evidence gathering — issue fetch, Reads of suspect files, Grep for the error pattern — in one response. Consecutive Edits to the same file in one response, unless an edit depends on the previous one's result.
+
+## Project Detection
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" runner-detection.md  # timeout: 5000
+```
+
+Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
+
+**Language preflight gate**: apply §Language preflight gate from `runner-detection.md` (loaded above) — sets `NON_PY` and runs the abort/continue question.
+
+**Optional `--plan <path>`**: `$ARGUMENTS` contains `--plan <path>` (any position) → read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — populate Step 1 analysis instead of cold codebase exploration. Store plan path as `PLAN_FILE`. Reuse its independent challenge and feasibility coverage only when `python "${CLAUDE_PLUGIN_ROOT}/bin/plan_hash.py" challenge-check "$PLAN_FILE"` exits 0 and that review covers the current acceptance criteria; missing, skipped, blocked or mismatching provenance requires the normal challenger gate. The extraction block also records the plan's build-time hash (`.plans/` is gitignored, so edits leave no diff); Final Report re-checks it.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" preflight-helpers.md  # timeout: 5000
+```
+
+Execute --plan path extraction; sets `$PLAN_FILE`.
+
+**Checkpoint init**: creates `.developments/<TS>/`, captures path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), stage `step: N — completed` as a record in `$DEV_DIR/checkpoint.md.rec` (Write tool) and append it with `append_ledger.py` (Growing Ledgers `.rec` staging).
+
+```bash
+# timeout: 5000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo missing > "${TMPDIR:-/tmp}/dev-fix-gate-p1-${CSID}"
+echo missing > "${TMPDIR:-/tmp}/dev-fix-gate-p2-${CSID}"
+DEV_DIR=$(python "$PLUGIN_ROOT/bin/dev_run_dir.py" --persist fix)  # also writes the dev-fix-dev-dir sentinel
+```
+
+## Fix Mode
+
+**Optional `--diagnosis <path>`**: provided (from preceding `/develop:debug` session) → read diagnosis file first. Skip Step 1 codebase analysis — root cause, suspect files, evidence pre-populated from diagnosis file.
+
+- Proceed from the pre-populated root cause and apply the challenger gate's proportional decision, retaining concise planning and preimplementation challenge with valid diagnosis evidence, including small-work handling and explicit user waivers, before Step 2. Do not repeat still-valid root-cause investigation. The required post-implementation challenge remains separate.
+- Skip only Step 1's **codebase analysis** (the sw-engineer spawn and its codemap queries) — apply every gate nested in Step 1 to the pre-populated root cause under its own conditions: premise grounding, scope gate, inline plan generation, and the `## Challenger gate`.
+- The cannot-reproduce gate is satisfied by the diagnosis file's Root Cause and Evidence sections; empty or absent → the gate fires as normal.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+printf '%s\n' "" > "${TMPDIR:-/tmp}/dev-fix-diag-file-${CSID}"
+printf '%s\n' "" > "${TMPDIR:-/tmp}/dev-fix-test-path-${CSID}"
+DIAG_FILE=$(python "$PLUGIN_ROOT/bin/diagnosis_parse.py" "$ARGUMENT_BLOB" 2>&1) || { echo "$DIAG_FILE"; exit 1; }  # timeout: 5000
+DIAG_FILE=$(python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).resolve().as_posix() if sys.argv[1] else "")' "$DIAG_FILE") || exit 1
+printf '%s\n' "$DIAG_FILE" > "${TMPDIR:-/tmp}/dev-fix-diag-file-${CSID}"
+```
+
+Diagnosis file format: see `/develop:debug` Step 4 (Hand off to fix) for canonical field definitions (Root Cause, Suspect Files, Evidence, Reproduction).
+
+## Flag parsing
+
+Parse flags into shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash resets between calls):
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+python "$PLUGIN_ROOT/bin/extract-keep-flag.py" dev-fix "$ARGUMENT_BLOB"  # timeout: 5000 — parses --keep, clears stale contract
+```
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 10000
+python "$PLUGIN_ROOT/bin/dev_parse_args.py" \
+    --skill fix --write-files "$ARGUMENT_BLOB"
+```
+
+Downstream blocks read back, e.g. `IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false`.
+
+**Diagnosis reproduction handoff** — after flag parsing, when `DIAG_FILE` is present, read its `## Reproduction` fields as data: `Test node ID / path`, `Runner exit`, `Issue ref`, `--repo`, and `Mode`. Pre-set `TEST_PATH`, issue context, `REPO_NAME`, and issue/symptom mode from these fields unless the current invocation explicitly overrides them. Use the Write tool to persist the exact test node/path to `${TMPDIR:-/tmp}/dev-fix-test-path-${CSID}`, the issue ref to `dev-fix-issue-ref-${CSID}`, the mode to `dev-fix-mode-${CSID}`, and the repository override to `dev-upstream-${CSID}` in the same temp directory. Persist an empty test path for `full-suite` or `not run`; preserve their distinct meaning in the diagnosis context. Missing fields in an older diagnosis remain unresolved and follow normal discovery. Never execute field text as shell code. Step 1's analysis is pre-answered only for fields the diagnosis actually supplies; do not derive a second test while an existing reproduction path is available.
+
+## Worktree isolation
+
+> loads: worktree-isolation.md
+
+`--worktree` set → offload the whole run into an isolated git worktree — **before** codemap resolve or any edit, so codemap scans + all mutations land in the worktree (per-worktree ephemeral index; parallel runs never share one index).
+
+```bash
+# timeout: 5000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r WORKTREE_ENABLED < "${TMPDIR:-/tmp}/dev-fix-worktree-${CSID}" 2>/dev/null; [ "$WORKTREE_ENABLED" = "true" ] || WORKTREE_ENABLED=false
+printf '%s\n' fix > "${TMPDIR:-/tmp}/dev-worktree-skill-${CSID}"
+if [ "$WORKTREE_ENABLED" = "true" ]; then python "$PLUGIN_ROOT/bin/dev_load_shared.py" worktree-isolation.md; fi
+```
+
+`WORKTREE_ENABLED=true` → follow §Enter (call `EnterWorktree`, warm-start codemap). Else skip — run in main tree (doc not loaded). Remember the branch for §Exit at Final Report.
+
+**Branch Safety Guard** — run after optional worktree entry, before any source edit or teammate dispatch; retain the quality stack's later recheck:
+
+```bash
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)                                                         # timeout: 3000
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@') # timeout: 3000
+if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ] || [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+    echo "⚠ On default branch ($CURRENT_BRANCH) — create a feature branch before running /develop"
+    exit 1
+fi
+```
+
+Guard fires: stop, report branch name, ask user create feature branch.
+
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-fix-codemap-${CSID}` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap_resolve.py`:
+
+```bash
+# timeout: 5000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_ENABLED=$(python "$PLUGIN_ROOT/bin/dev_codemap_gate.py" fix) || exit 1
+# codemap: integrated-via-shared
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" codemap-gates.md
+```
+
+> loads: codemap-gates.md
+
+Follow Gate A and Gate B.
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. Found → invoke `AskUserQuestion` with question text `` ! Unknown flag(s): `--<token>`. Supported: `--plan`, `--team`, `--worktree`, `--diagnosis`, `--no-challenge`, `--challenge`, `--codemap`, `--no-codemap`, `--accept-no-plan`, `--repo`, `--keep`. `` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Preflight** — if `CODEMAP_ENABLED=true`: execute codemap preflight from `preflight-helpers.md` (already loaded in Project Detection).
+
+<!-- Only active when --team flag passed (~10% of invocations) -->
+
+## Team Mode Branch
+
+**If `TEAM_MODE=true`**: execute team workflow now — do not proceed to Step 1.
+
+> loads: team-mode.md — gated; ~90% of runs (`--team` absent) skip the load entirely
+
+```bash
+# timeout: 5000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false
+[ "$TEAM_MODE" = "true" ] && python "$PLUGIN_ROOT/bin/render_plugin_root.py" "$PLUGIN_ROOT/skills/fix/modes/team-mode.md"
+```
+
+`TEAM_MODE=true` → execute the loaded protocol now, then re-enter the main workflow at §Premise Grounding Gate (the `premise-grounding.md` block above Step 2): run every gate below it against the **consensus root cause** — premise-grounding, scope gate, non-Python surface check, complexity classification, inline plan generation, then the `## Challenger gate` — and continue at Step 2 (regression test). Do not re-enter at Step 1 — only its sw-engineer analysis is what team mode replaced. `TEAM_MODE=false` → nothing was loaded; skip to Step 1.
+
+## Step 1: Understand the problem
+
+Gather all available context about bug:
+
+> **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
+
+```bash
+# timeout: 6000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/dev-fix-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""  # flags already stripped — a raw --repo o/r 42 fails the issue-number check
+if [[ "$CLEAN_ARGS" =~ ^#?[0-9]+$ ]]; then
+    python "$PLUGIN_ROOT/bin/dev_issue_fetch_wrap.py" fix "$CLEAN_ARGS" || echo "⚠ issue fetch failed (exit $?) — proceed without the issue body and say so"
+else
+    echo "no issue number — symptom text"
+fi
+```
+
+**Cross-repo adaptation** (`REPO_NAME` set) — issue filed against a different codebase. After fetching issue, analysis must:
+
+1. Understand bug's root cause intent from issue body — not just symptoms or described fix (which may reference upstream structure)
+2. Locate equivalent bug in LOCAL codebase — run Grep for relevant symbols/patterns; code paths may differ due to divergence
+3. Treat upstream issue as context, not prescription — implement fix appropriate to local structure
+
+If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
+
+`<test_path>` is a **substitution token** — resolve failing test file/node (from `$ARGUMENTS` or fetched issue) into `TEST_PATH` before running; bash reads a literal `<...>` as stdin redirect. Redirect order is `>file 2>&1` (stdout to file, then stderr onto stdout) — reversed (`2>&1 >file`) loses stderr to terminal.
+
+```bash
+# timeout: 600000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TEST_PATH < "${TMPDIR:-/tmp}/dev-fix-test-path-${CSID}" 2>/dev/null || TEST_PATH=""
+[ -n "$TEST_PATH" ] || TEST_PATH="<test_path>"   # REPLACE with the resolved failing test file/node before running this block — do not leave empty
+case "$TEST_PATH" in ""|*'<'*|*'>'*) echo "! Cannot run reproduction: TEST_PATH unresolved — resolve TEST_PATH from the invocation or issue before running"; exit 1;; esac
+python "$PLUGIN_ROOT/bin/dev_run_tests.py" pytest -- --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt-${CSID}" 2>&1
+PYTEST_EXIT=$?
+tail -40 "${TMPDIR:-/tmp}/pytest-out.txt-${CSID}"; if [ $PYTEST_EXIT -eq 64 ]; then echo "! runner refused to start — no test ran; re-run Project Detection"; elif [ $PYTEST_EXIT -ne 0 ]; then echo "PYTEST FAILED (exit $PYTEST_EXIT)"; fi
+```
+
+**Codemap route and target derivation** — resolve `CODEMAP_QUERY_KIND` before loading `codemap-context.md`. Use `skip` when request supplies exact file/symbol for a localized edit and no caller, dependency, blast-radius, test-impact, or coupling fact remains unresolved. Use `callers`, `blast`, `dependencies`, `test-impact`, `coupling`, or `central` for one matching unresolved fact; use `standard` when affected surface isn't yet bounded or needs symbol/import context. An explicit structural/tool request overrides `skip`. User may pass an explicit suspect as `module.path::function`:
+
+Run exactly one fixed block for the route decided above:
+
+`skip`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind skip -- "$ARGUMENT_BLOB"
+```
+
+`callers`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind callers -- "$ARGUMENT_BLOB"
+```
+
+`blast`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind blast -- "$ARGUMENT_BLOB"
+```
+
+`dependencies`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind dependencies -- "$ARGUMENT_BLOB"
+```
+
+`test-impact`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind test-impact -- "$ARGUMENT_BLOB"
+```
+
+`coupling`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind coupling -- "$ARGUMENT_BLOB"
+```
+
+`central`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind central -- "$ARGUMENT_BLOB"
+```
+
+`standard`:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INPUT_FILE="${TMPDIR:-/tmp}/dev-fix-arguments-${CSID}.txt"
+[ -f "$INPUT_FILE" ] && [ ! -L "$INPUT_FILE" ] && [ -O "$INPUT_FILE" ] || { echo "! BLOCKED — invocation input missing or untrusted; Write the arguments to the printed Invocation input file first"; exit 1; }
+ARGUMENT_BLOB=$(cat "$INPUT_FILE" && printf x) || exit 1
+ARGUMENT_BLOB=${ARGUMENT_BLOB%x}  # preserve trailing newlines without evaluating the text
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/parse_target_qname.py" --query-kind standard -- "$ARGUMENT_BLOB"
+```
+
+**If `CODEMAP_ENABLED=true`**:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CODEMAP_ENABLED  2>/dev/null < "${TMPDIR:-/tmp}/dev-fix-codemap-enabled-${CSID}" || CODEMAP_ENABLED="false"
+IFS= read -r CODEMAP_CURRENCY  2>/dev/null < "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" || CODEMAP_CURRENCY="no_index"
+if [ "$CODEMAP_ENABLED" = "true" ]; then python "$PLUGIN_ROOT/bin/dev_load_shared.py" codemap-context.md; fi  # timeout: 5000
+```
+
+Follow the codemap block. Flag false → nothing loaded; skip entirely.
+
+Spawn **foundry:sw-engineer** agent to analyze failing code path — Arm batch `scope` in the spawn response (`agent-resolution.md` §Agent waits — no polling, per-agent deadlines). It must identify:
+
+- Root cause — what wrong and why (not just symptom)
+- Entry point to failure — which modules does call cross?
+- State mutation — what state changed along way?
+- Invariant violated — what condition broke at failure point?
+- Minimal code surface needing change — exact files and functions
+- Related code possibly affected by fix — blast radius
+- Recent commits touching this path (from git log output, if provided)
+
+**Direct-caller impact** — `CODEMAP_ENABLED=true` and `TARGET_FN` NOT supplied via `$ARGUMENTS` → derive suspect qualified name from sw-engineer Step 1 finding (module/function named as minimal code surface), run `fn-rdeps` for direct callers — benchmarked far cheaper than a plain caller walk (94k vs 1M+ tokens, +40pp accuracy). Fires only when `TARGET_FN` NOT pre-set from args — pre-set case already covered by `fn-rdeps`/`fn-blast` queries inside shared `codemap-context.md`, which ran earlier using persisted `TARGET_MODULE`/`TARGET_FN`. Before this block, in the same response, Write the suspect as `suspect: module::function` plus the line `step: 1 — completed` as one record to the dev-dir’s `checkpoint.md.rec` with the Write tool; the block then appends it with `append_ledger.py` (unconditional — run the block even with codemap off; only the `fn-rdeps` query is conditional) and greps the ledger:
+
+```bash
+# timeout: 6000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CODEMAP_ENABLED  < "${TMPDIR:-/tmp}/dev-fix-codemap-enabled-${CSID}"  2>/dev/null || CODEMAP_ENABLED="false"
+IFS= read -r CODEMAP_CURRENCY  2>/dev/null < "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" || CODEMAP_CURRENCY="no_index"
+if [ "$CODEMAP_CURRENCY" = "stale" ]; then export SCAN_NO_AUTOBUILD=1; fi
+IFS= read -r TARGET_FN        < "${TMPDIR:-/tmp}/dev-fix-target-fn-${CSID}"        2>/dev/null || TARGET_FN=""
+IFS= read -r TARGET_MODULE    < "${TMPDIR:-/tmp}/dev-fix-target-module-${CSID}"    2>/dev/null || TARGET_MODULE=""
+IFS= read -r TARGET_QUALIFIED < "${TMPDIR:-/tmp}/dev-fix-target-qualified-${CSID}" 2>/dev/null || TARGET_QUALIFIED=""
+IFS= read -r DEV_DIR          < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}"          2>/dev/null || DEV_DIR=""
+_CODEMAP_NO_HEAL=""
+if [ "$CODEMAP_CURRENCY" = "stale" ] || [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then _CODEMAP_NO_HEAL="--no-heal"; fi
+[ -n "$DEV_DIR" ] && python "$PLUGIN_ROOT/bin/append_ledger.py" "$DEV_DIR/checkpoint.md"
+if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v codemap-py >/dev/null 2>&1; then
+    DERIVED_FN=$(grep -E '^suspect: [A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*$' "$DEV_DIR/checkpoint.md" 2>/dev/null | tail -1 | sed 's/^suspect: //')
+    if [ -n "$DERIVED_FN" ]; then
+        TARGET_QUALIFIED="$DERIVED_FN"
+        TARGET_MODULE="${DERIVED_FN%%::*}"
+        TARGET_FN="${DERIVED_FN##*::}"    # bare fn — keep consistent with the arg-supplied path
+        export TARGET_FN TARGET_MODULE TARGET_QUALIFIED
+        codemap-py query --timeout 5 $_CODEMAP_NO_HEAL fn-rdeps "$TARGET_QUALIFIED" --exclude-tests 2>/dev/null \
+            | tee "$DEV_DIR/fn-rdeps-output.txt" || true
+    fi
+fi
+```
+
+> Stage the suspect as the tagged line `suspect: module::function`. After revising the approach, append a new tagged suspect record; the last tagged line wins. Derived qualified name comes from that Step 1 record appended to `$DEV_DIR/checkpoint.md` above. No tagged suspect recorded → skip silently; `central` baseline already ran.
+
+**Cannot-reproduce gate**: sw-engineer unable to identify root cause, traceback, or any failing test → invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
+
+- question: "Cannot confirm root cause from available information. How to proceed?"
+- (a) Use `/develop:debug` — investigate interactively first
+- (b) Provide additional context — user pastes traceback, logs, or minimal reproduction; after reply, re-run Step 1 analysis with new context same session (DMI: can't wait for next invocation; apply additional context inline)
+- (c) Use `/foundry:investigate` (requires foundry plugin) — for production incidents with no CI trace
+- (d) Use the `foundry:perf-optimizer` agent (requires foundry plugin) — for performance regressions; if unavailable, report the missing route and request benchmark evidence
+
+Stop until user provides option (b) context or selects a redirect.
+
+If root cause not definitively established after analysis, surface assumptions before proceeding — and repeat the block in the Final Report's Follow-up, since text written before a tool call can arrive as an empty progress update:
+
+> ASSUMPTIONS I'M MAKING:
+>
+> 1. [assumption about root cause]
+> 2. [assumption about affected scope] -> Correct me now or I'll proceed with these.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" premise-grounding.md  # timeout: 5000
+```
+
+§Premise Grounding Gate. Apply using **fix** context from Skill contexts table.
+
+**Scope gate**: root cause spans 3+ modules → flag complexity smell — invoke `AskUserQuestion` with options: "Narrow scope (Recommended)" / "Proceed anyway". Inline planning does not require a separate routine approval.
+
+**Non-Python surface check**: sw-engineer's "minimal code surface" names no `.py` file (CSS/JS/template only) → invoke `AskUserQuestion` — "No Python source in the identified change surface; this skill's regression-test gate assumes pytest. How to proceed?" · (a) **Abort** — edit directly and verify with the project's native toolchain · (b) **Continue** — a Python-side test can still capture this. On Abort: stop.
+
+**Complexity classification**: classify the fix as `small` (≤3 files, single concern), `medium` (4–7 files, or a cross-module change), or `large` (8+ files, or a public-API/behaviour change). The plan-inline gate below reads this classification.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" plan-inline.md  # timeout: 5000
+```
+
+§Inline Plan Generation Protocol. Apply using **fix** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue through the challenger gate before Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip the standalone artifact, retain a concise plan, and continue through the proportional challenger gate before Step 2.
+
+## Challenger gate
+
+**Decision**: `--no-challenge` explicitly waives this challenge gate; disclose skipped coverage without claiming a challenge passed. `--accept-no-plan` waives only the supplied plan artifact, never concise planning or the proportional challenge. Small work requires a concise plan and brief parent self-challenge (not independent); resolve findings, accept the challenged plan within existing authority, and assign parent execution or useful bounded disjoint owners before editing. Small work then continues to Step 2 without the independent plan-review dispatch below, but retains the bounded post-implementation challenge unless explicitly waived. For medium/large work, reuse a still-valid independent challenge of that exact plan and scope; otherwise run this gate once. Resolve feasible findings and use one bounded higher-capability advisory pass when material uncertainty remains and a permitted route exists. Approve the challenged plan within existing authority before assigning bounded execution; ask only for an actual protected decision or missing authority, never routine approval. Consolidate actual source and handoffs, independent result coverage and verification against every accepted criterion. `--challenge` remains a compatibility flag.
+
+Arm batch `challenge` in the spawn response (`agent-resolution.md` §Agent waits). Spawn `foundry:challenger` with the current plan and root cause evidence (root cause, blast radius, assumptions, approach):
+
+> "Review root cause analysis and proposed fix approach. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
+
+Parse result:
+
+- **Blockers found** → Resolve feasible authorized blockers without asking; verify the revision and preserve findings and evidence. Stop for a protected decision or authority, an explicit user wait, or a blocker that remains unresolved. Only then Write the blocker findings (one line each: claim · file:line · evidence) to `$DEV_DIR/blockers.md` first; print them once as the last reply text before invoking `AskUserQuestion`, as normal Markdown. The question text carries the blocker count, headline and `→ $DEV_DIR/blockers.md`, at most 6 plain lines (target 600 characters, hard cap 1,500), no table, pipe layout or code fence. Options carry a label and a one-line description, no `preview` — "Challenger raised N blocker(s) on the fix approach. How to proceed?" · (a) **Revise approach** — return to Step 1 analysis with the blockers as input · (b) **Accept risk** — proceed to Step 2 with each blocker documented in the Final Report Follow-up · (c) **Abort**. On Abort: stop. Proceed only when the blocker is resolved or its risk explicitly accepted within applicable safety boundaries.
+- **Concerns only** → surface as advisory; continue.
+- **No findings / all refuted** → proceed.
+- **Codex quota signal** (with any outcome above) → record it per `agent-resolution.md` §Challenger Codex quota signal before continuing.
+
+**Authorized plan revisions**: The hash commands below apply only when a plan artifact exists; a concise inline plan does not require creating one. Before editing a recorded plan, run `plan_hash.py check` and stop for unexplained drift; verify the intended edits are limited to authorized findings. After those revisions and before implementation, record the revised plan's hash using the block below. Never re-record an unexplained or unauthorized change: retain the drift evidence and resolve it first. No plan revision → do not re-record.
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || PLAN_FILE=""
+[ -f "$PLAN_FILE" ] || { echo "! BLOCKED — revised plan missing"; exit 1; }
+python "$PLUGIN_ROOT/bin/plan_hash.py" record "$PLAN_FILE"  # timeout: 5000
+```
+
+## Step 2: Reproduce the bug
+
+(Use Glob tool — `pattern: **/test_*.py` — to discover test directories if `<test_dir>` unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
+
+### Part A — Test archaeology (before writing anything new)
+
+With a diagnosis reproduction test path, inspect and run that exact test first as the archaeology candidate. A recorded runner exit is evidence from the diagnosis, not a replacement for confirming the same failure now. If it captures the reported bug, choose Outcome A and reuse it; do not write duplicate reproduction tests. A missing test or changed failure returns to normal archaeology.
+
+1. Search for existing tests covering broken behavior:
+
+   Use the Grep tool with `output_mode: files_with_matches`, `glob: *.py`, and the discovered test directory as `path`: first search the resolved broken symbol or error pattern, then search `#` plus the resolved issue number when one is available.
+
+   Run any candidate tests found to see if they currently pass or fail:
+
+   ```bash
+   PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+   CANDIDATE_TEST="<candidate_test_file>::<candidate_test_name>"
+   case "$CANDIDATE_TEST" in ""|*'<'*|*'>'*) echo "! candidate test unresolved — resolve the archaeology target before running"; exit 1;; esac
+   IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""  # reload (Check 41)
+   [ -n "$PYTEST_CMD" ] || { echo "! BLOCKED — PYTEST_CMD sentinel missing; re-run Project Detection"; exit 1; }
+   python "$PLUGIN_ROOT/bin/pytest_gate.py" "$PYTEST_CMD" "$CANDIDATE_TEST"  # timeout: 120000
+   CANDIDATE_EXIT=$?; case $CANDIDATE_EXIT in 0) echo "CANDIDATE PASSES (exit 0) — not Outcome A";; 1) echo "CANDIDATE FAILS (exit 1) — Outcome A only if the failure matches the reported bug";; *) echo "! GATE ERROR: candidate could not run (exit $CANDIDATE_EXIT) — not a reproduction, never Outcome A; fix the path or runner and rerun";; esac
+   ```
+
+2. For each candidate test found — critically assess coverage quality:
+
+   - Exercises exact failing path (correct inputs, correct assertions)?
+   - Or a weak test — broad mocking, trivially happy-path, partial assertion — that deflected the problem rather than caught it?
+
+3. Three outcomes from archaeology:
+
+   - **A: Existing test fails already** (pytest exit 1 only — any other exit is a gate error) → captures bug; use as-is; proceed to Step 3
+   - **B: Existing test passes but is weak** (deflected problem) → fix existing test to properly reproduce; do NOT write new test; gate: test must fail after fix
+   - **C: No relevant test found** → write new test (proceed to Part B)
+
+Surface archaeology verdict before any writing:
+
+> Found: `[test path or "none"]` — verdict: `[captures / weak-deflected / no test]`
+
+### Part B — Write new reproduction test (only when outcome C)
+
+Arm batch `tests` (`agent-resolution.md` §Agent waits), then spawn **foundry:qa-specialist** agent (outcome C only — no existing tests found) to write two reproduction tests:
+
+Spawn with context:
+
+- Bug description: [symptom from $ARGUMENTS or issue]
+- Failing output: [exact error/traceback captured in Step 1]
+- Suspect files: [files identified by sw-engineer in Step 1]
+- Expected behaviour: [what should happen]
+- Actual behaviour: [what currently happens]
+
+**Path 1 — Full user flow (integration demo)**
+
+- Exercises complete user-reported scenario end-to-end
+- No mocking of broken subsystem — real execution
+- Confirms user-reported problem fully resolved
+- Name: `test_<bug>_user_flow` or `test_<bug>_integration`
+- Lives in `tests/integration/` or alongside existing integration tests
+
+**Path 2 — Targeted unit test (fast iteration)**
+
+- Minimal scope: isolates root cause directly
+- Mock external dependencies; only broken unit under test is real
+- Designed for quick re-run during fix iteration (sub-second)
+- Name: `test_<bug>_unit` or `test_<bug>_regression`
+- Lives next to broken module's existing unit tests
+- Use `pytest.mark.parametrize` if bug affects multiple input patterns
+- Add brief comment linking to issue if applicable (e.g., `# Regression test for #123`)
+
+**When to skip Path 1**: bug purely internal (no user-facing flow exists) → document why, run the Path 1 skip block, then Path 2.
+
+Both tests must **fail** against current code before proceeding, except for the documented internal-only Path 1 skip. Run the Path 1 reproduction block or its fixed skip block, then always run the Path 2 block. Check exit codes for each independently:
+
+```bash
+# timeout: 600000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo missing > "${TMPDIR:-/tmp}/dev-fix-gate-p1-${CSID}"; echo missing > "${TMPDIR:-/tmp}/dev-fix-gate-p2-${CSID}"  # reset — a stale or never-written value must block the stop gate
+GATE_P1=missing
+FLOW_TEST="tests/integration/<test_file>::test_<bug>_user_flow"
+case "$FLOW_TEST" in ""|*'<'*|*'>'*) echo "! Path 1 test unresolved — resolve the user-flow target before running"; exit 1;; esac
+IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""  # reload (Check 41)
+[ -n "$PYTEST_CMD" ] || { echo "! BLOCKED — PYTEST_CMD sentinel missing; re-run Project Detection"; exit 1; }
+VERDICT_FILE="${TMPDIR:-/tmp}/dev-tests-verdict-${CSID}"
+export DEV_TESTS_VERDICT_NONCE="$$.$RANDOM.$RANDOM"
+python "$PLUGIN_ROOT/bin/dev_run_tests.py" pytest -- --tb=short "$FLOW_TEST" -v
+GATE_P1=$?
+VERDICT=""; [ -f "$VERDICT_FILE" ] && [ ! -L "$VERDICT_FILE" ] && [ -O "$VERDICT_FILE" ] && IFS= read -r VERDICT < "$VERDICT_FILE"
+# wrapper writes failed NONCE only for a pytest failure with a summary: exit 1 without it = interpreter died first, 70 = never a reproduction
+[ "$GATE_P1" -eq 1 ] && [ "$VERDICT" != "failed $DEV_TESTS_VERDICT_NONCE" ] && { echo "! exit 1 but no failed verdict from the wrapper — no test ran"; GATE_P1=70; }
+case $GATE_P1 in 0) echo "GATE FAIL (Path 1): test passed — bug not captured";; 1) echo "GATE OK (Path 1): failed as expected (exit 1)";; *) echo "! GATE ERROR (Path 1): pytest could not run (exit $GATE_P1) — not a reproduction";; esac
+echo "$GATE_P1" > "${TMPDIR:-/tmp}/dev-fix-gate-p1-${CSID}"  # 1 = failed as expected; a skipped Path 1 must not read as a pass
+```
+
+Path 1 skip alternative — only after documenting why no user-facing flow exists:
+
+```bash
+# timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r GATE_P1 < "${TMPDIR:-/tmp}/dev-fix-gate-p1-${CSID}" 2>/dev/null || GATE_P1=missing
+case "$GATE_P1" in 0|1|70) echo "! Path 1 already ran — cannot replace its result with a skip"; exit 1;; esac
+PATH1_SKIP_REASON="<why no user-facing flow exists>"
+case "$PATH1_SKIP_REASON" in ""|*'<'*|*'>'*) echo "! Path 1 skip reason unresolved — document why no user-facing flow exists"; exit 1;; esac
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+[ -n "$_DEV_DIR" ] && [ -d "$_DEV_DIR" ] || { echo "! BLOCKED — dev-dir missing; re-run Checkpoint init"; exit 1; }
+printf '%s\n' "$PATH1_SKIP_REASON" > "$_DEV_DIR/path-1-skip-reason.txt" || exit 1
+echo skipped > "${TMPDIR:-/tmp}/dev-fix-gate-p1-${CSID}"
+echo missing > "${TMPDIR:-/tmp}/dev-fix-gate-p2-${CSID}"
+```
+
+Path 2 — required for both Path 1 routes:
+
+```bash
+# timeout: 600000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo missing > "${TMPDIR:-/tmp}/dev-fix-gate-p2-${CSID}"
+GATE_P2=missing
+UNIT_TEST="<unit_test_file>::test_<bug>_unit"
+case "$UNIT_TEST" in ""|*'<'*|*'>'*) echo "! Path 2 test unresolved — resolve the targeted test before running"; exit 1;; esac
+IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""  # reload (Check 41)
+[ -n "$PYTEST_CMD" ] || { echo "! BLOCKED — PYTEST_CMD sentinel missing; re-run Project Detection"; exit 1; }
+VERDICT_FILE="${TMPDIR:-/tmp}/dev-tests-verdict-${CSID}"
+
+export DEV_TESTS_VERDICT_NONCE="$$.$RANDOM.$RANDOM"
+python "$PLUGIN_ROOT/bin/dev_run_tests.py" pytest -- --tb=short "$UNIT_TEST" -v
+GATE_P2=$?
+VERDICT=""; [ -f "$VERDICT_FILE" ] && [ ! -L "$VERDICT_FILE" ] && [ -O "$VERDICT_FILE" ] && IFS= read -r VERDICT < "$VERDICT_FILE"
+[ "$GATE_P2" -eq 1 ] && [ "$VERDICT" != "failed $DEV_TESTS_VERDICT_NONCE" ] && { echo "! exit 1 but no failed verdict from the wrapper — no test ran"; GATE_P2=70; }
+case $GATE_P2 in 0) echo "GATE FAIL (Path 2): test passed — bug not captured";; 1) echo "GATE OK (Path 2): failed as expected (exit 1)";; *) echo "! GATE ERROR (Path 2): pytest could not run (exit $GATE_P2) — not a reproduction";; esac
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "$GATE_P2" > "${TMPDIR:-/tmp}/dev-fix-gate-p2-${CSID}"
+```
+
+Either gate exit is 0 → stop. Bug not reproduced on that path. Do not apply fix. Only exit 1 with the wrapper's `failed` verdict counts as reproduced — any other exit (pytest usage error, no tests collected, runner not found, or exit 1 from an interpreter that never reached the wrapper, recorded as 70) is a gate error, not a reproduction. DMI skill — stop enforced via bash gate check:
+
+```bash
+# timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r GATE_P1 < "${TMPDIR:-/tmp}/dev-fix-gate-p1-${CSID}" 2>/dev/null || GATE_P1=missing
+IFS= read -r GATE_P2 < "${TMPDIR:-/tmp}/dev-fix-gate-p2-${CSID}" 2>/dev/null || GATE_P2=missing
+if [ "$GATE_P1" = skipped ]; then
+    IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+    [ -n "$_DEV_DIR" ] && [ -s "$_DEV_DIR/path-1-skip-reason.txt" ] || { echo "! GATE ERROR: Path 1 skip reason missing from this run; cannot apply fix"; exit 1; }
+fi
+if [ "$GATE_P1" = 0 ] || [ "$GATE_P2" = 0 ]; then
+    echo "! GATE FAIL: one or more reproduction tests passed — bug not captured; cannot apply fix against unverified bug"
+    exit 1
+fi
+if { [ "$GATE_P1" != 1 ] && [ "$GATE_P1" != skipped ]; } || [ "$GATE_P2" != 1 ]; then
+    echo "! GATE ERROR: reproduction did not run cleanly — exit P1=$GATE_P1 P2=$GATE_P2; cannot apply fix against unverified bug"
+    exit 1
+fi
+```
+
+**Outcome B gate** (weak test fixed path): after fixing existing test, run it to confirm it now fails:
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+set -o pipefail  # PIPESTATUS is bash-only, absent under zsh (Claude Code's Bash tool login shell on macOS)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+EXISTING_TEST="<existing_test_file>::<existing_test_name>"
+case "$EXISTING_TEST" in ""|*'<'*|*'>'*) echo "! existing test unresolved — resolve the corrected test before running"; exit 1;; esac
+IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""  # reload (Check 41)
+[ -n "$PYTEST_CMD" ] || { echo "! BLOCKED — PYTEST_CMD sentinel missing; re-run Project Detection"; exit 1; }
+VERDICT_FILE="${TMPDIR:-/tmp}/dev-tests-verdict-${CSID}"
+export DEV_TESTS_VERDICT_NONCE="$$.$RANDOM.$RANDOM"
+python "$PLUGIN_ROOT/bin/dev_run_tests.py" pytest --tail 30 -- --tb=long "$EXISTING_TEST" -v; GATE_EXIT=$?  # timeout: 30000
+VERDICT=""; [ -f "$VERDICT_FILE" ] && [ ! -L "$VERDICT_FILE" ] && [ -O "$VERDICT_FILE" ] && IFS= read -r VERDICT < "$VERDICT_FILE"
+# wrapper writes failed NONCE only for a pytest failure with a summary: exit 1 without it = interpreter died first, 70 = never a reproduction
+[ "$GATE_EXIT" -eq 1 ] && [ "$VERDICT" != "failed $DEV_TESTS_VERDICT_NONCE" ] && { echo "! exit 1 but no failed verdict from the wrapper — no test ran"; GATE_EXIT=70; }
+case $GATE_EXIT in 0) echo "GATE FAIL: fixed test still passes — weak test not corrected; revisit";; 1) echo "GATE OK: fixed test fails as expected (exit 1)";; *) echo "! GATE ERROR: pytest could not run (exit $GATE_EXIT) — not a reproduction";; esac
+[ $GATE_EXIT -eq 1 ] || { echo "! GATE STOP: Outcome B gate not satisfied (exit $GATE_EXIT) — correct the test or fix the runner, rerun this block; do not apply the fix"; exit 1; }
+```
+
+**Outcome B failure-mode verification**: scan traceback output above for expected error string from reported symptom. Traceback lacks a recognizable match to reported bug symptom → surface: `⚠ Test fails but failure mode may differ from reported symptom — verify the test captures the actual bug before proceeding.`
+
+### Review: Validate the reproduction
+
+Before applying fix, critically evaluate reproduction test(s):
+
+1. **Correct failure mode**: fails for right reason (actual bug), not setup issue?
+2. **Isolation**: exercises exactly broken behavior, not too broadly?
+3. **Minimal reproduction**: smallest test demonstrating failure?
+4. **Parametrization**: key variants covered if bug spans multiple input patterns?
+5. **Archaeology honesty**: if outcome B (weak test fixed), is test now harder to pass? Does it catch actual failure mode?
+
+Issue found → revise test(s) before applying fix. Flawed reproduction = fix validated against wrong criteria.
+
+## Step 3: Apply the fix
+
+**Test-run policy** — inside the Step 3 fix loop and the Step 4 review loop, tests run targeted only (`dev_test_targets.py` or a fresh diagnosis-handoff set), never widened to the full directory. The full suite runs at the final gate once the loops are clean, and again after any fix to a full-suite failure (§Final gate).
+
+**Breaking change gate**: before applying fix, assess whether fix introduces a breaking change.
+
+Before this block, in the same response, Write the reproduction verdict, failing-test evidence, active task IDs and the line `step: 2 — completed` as one record to the dev-dir’s `checkpoint.md.rec` with the Write tool; the block then appends it with `append_ledger.py` before the contract write.
+
+```bash
+# boundary 1: after reproduction, before edit (compaction-contract.md)
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
+_PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
+python "$PLUGIN_ROOT/bin/append_ledger.py" "$_DEV_DIR/checkpoint.md"  # timeout: 5000
+python "$PLUGIN_ROOT/bin/write_skill_contract.py" --keep-sentinel dev-fix-keep-items "develop:fix" "edit (after reproduction test written)" "$_DEV_DIR" "$_PRESERVE; phase-report=$_DEV_DIR/checkpoint.md" "resume: re-cat own agent-resolution.md and semver-rules.md before the breaking-change gate (standard SemVer fallback if unavailable); apply minimal fix (Step 3) → review+quality stack (Step 4)" -- calls_ahead=30 "drop=reproduction analysis and failing-test evidence"  # timeout: 5000
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+python "$PLUGIN_ROOT/bin/compaction_boundary.py" "$_DEV_SHARED"
+cat "$_DEV_SHARED/semver-rules.md" 2>/dev/null || echo "semver-rules.md unavailable — use standard SemVer rules"
+```
+
+Follow the Boundary step printed above before applying the fix; report is the preserved dev-dir’s `checkpoint.md`. Keep the breaking-change gate below.
+
+`semver-rules.md` loaded → use it for semver classification; else standard SemVer rules (BREAKING = major bump, new feature = minor, fix = patch). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. Yes → stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
+
+Make minimal change to fix root cause:
+
+1. Edit only code necessary to resolve bug
+
+2. Run regression test to confirm now passes:
+
+   ```bash
+   # timeout: 600000
+   PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+   REGRESSION_TEST="<test_file>::<test_name>"
+   case "$REGRESSION_TEST" in ""|*'<'*|*'>'*) echo "! regression test unresolved — resolve the Step 2 test before running"; exit 1;; esac
+   python "$PLUGIN_ROOT/bin/dev_run_tests.py" pytest -- --tb=short "$REGRESSION_TEST" -v
+   REGRESSION_EXIT=$?
+   case $REGRESSION_EXIT in 0) echo "GATE OK: regression test passes (exit 0)";; *) echo "! GATE STOP: regression test did not pass (exit $REGRESSION_EXIT) — fix the test or runner and rerun before continuing"; exit 1;; esac
+   ```
+
+3. Run affected tests — targeted only (Test-run policy):
+
+   **Test impact (codemap-py)** — derive minimal test set before running anything.
+
+   **Reuse from diagnosis handoff first** — when invoked with `--diagnosis`, `/develop:debug` may have already run this query and written it into diagnosis file under `## Test Impact (codemap-py)`. Reuse it (one query total across debug→fix) only when still fresh — not `stale` and not older than current index — and every changed or untracked file belongs to the handoff's queried module. Function-specific queries, unknown coverage, changed tests, and any additional file force live selection. Reuse replaces affected-test selection only; the regression run in item 2 remains mandatory:
+
+   ````bash
+   # timeout: 6000
+   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+   IFS= read -r DIAG_FILE < "${TMPDIR:-/tmp}/dev-fix-diag-file-${CSID}" 2>/dev/null || DIAG_FILE=""  # reload — bash resets between calls
+   REUSED_PYTEST_CMD=""
+   if [ -n "$DIAG_FILE" ] && [ ! -f "$DIAG_FILE" ]; then echo "! diagnosis file unavailable — select tests live"; fi
+   if [ -n "$DIAG_FILE" ] && grep -q '^## Test Impact (codemap-py)' "$DIAG_FILE" 2>/dev/null; then
+       # extract the fenced JSON block that follows the marker heading
+       _TI_JSON=$(awk '/^## Test Impact \(codemap-py\)/{f=1} f&&/^```json/{g=1;next} f&&/^```/{g=0} g' "$DIAG_FILE")
+       _HANDOFF_AT=$(grep -m1 'index_scanned_at:' "$DIAG_FILE" | sed 's/.*index_scanned_at:[[:space:]]*//')
+       _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+       PROJ=$(basename "$_ROOT")   # raw basename — scanner writes it verbatim, never sanitized
+       _LIVE_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}/${PROJ}.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+       case "$_TI_JSON" in *'"stale": true'*|*'"stale":true'*) _TI_STALE=1;; *) _TI_STALE=0;; esac
+       _TI_SCOPE_OK=0
+       if _TRACKED=$(git diff --name-only HEAD) && _UNTRACKED=$(git ls-files --others --exclude-standard); then
+           _TI_SCOPE_OK=$(TI_JSON="$_TI_JSON" CHANGED_FILES="$(printf '%s\n' "$_TRACKED" "$_UNTRACKED")" python -c 'import json, os, re; data = json.loads(os.environ["TI_JSON"]); module = data.get("qname", ""); changed = set(os.environ["CHANGED_FILES"].splitlines()) - {""}; valid = isinstance(module, str) and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module); stem = module.replace(".", "/") if valid else ""; covered = {prefix + stem + suffix for prefix in ("", "src/", "lib/") for suffix in (".py", "/__init__.py")}; print(int(bool(valid and changed and changed <= covered and data.get("index", {}).get("stale") is False)))' 2>/dev/null) || _TI_SCOPE_OK=0
+       fi
+       if [ "$_TI_STALE" -eq 0 ] && [ "$_TI_SCOPE_OK" = 1 ] && [ -n "$_HANDOFF_AT" ] && [ "$_HANDOFF_AT" = "$_LIVE_AT" ]; then
+           REUSED_PYTEST_CMD=$(printf '%s' "$_TI_JSON" | grep -o '"pytest_cmd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+           echo "→ reusing test-impact from diagnosis handoff (index unchanged): $REUSED_PYTEST_CMD"
+       else
+           echo "→ diagnosis test-impact freshness or scope check failed — re-querying live"
+       fi
+   fi
+   echo "$REUSED_PYTEST_CMD" > "${TMPDIR:-/tmp}/dev-fix-reused-pytest-cmd-${CSID}"  # always written — an empty value clears a stale one; the next block re-reads it
+   ````
+
+   **Selection and run** — one block: a fresh reused handoff set runs as-is; otherwise one call selects and runs live: `codemap-py query test-impact` per changed module when available, path heuristics otherwise (name-matched tests plus tests importing the module); the regression test from Step 2 is selected as a changed file:
+
+   ```bash
+   # timeout: 600000
+   PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+   IFS= read -r CODEMAP_CURRENCY  2>/dev/null < "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" || CODEMAP_CURRENCY="no_index"
+   if [ "$CODEMAP_CURRENCY" = "stale" ]; then export SCAN_NO_AUTOBUILD=1; fi
+   IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""
+   IFS= read -r REUSED_PYTEST_CMD < "${TMPDIR:-/tmp}/dev-fix-reused-pytest-cmd-${CSID}" 2>/dev/null || REUSED_PYTEST_CMD=""
+   _REUSED_TESTS=""
+   case "$REUSED_PYTEST_CMD" in "$PYTEST_CMD "*) _REUSED_TESTS="${REUSED_PYTEST_CMD#"$PYTEST_CMD "}";; "pytest "*) _REUSED_TESTS="${REUSED_PYTEST_CMD#pytest }";; esac
+   if [ -n "$_REUSED_TESTS" ] && [ -n "$PYTEST_CMD" ]; then
+       printf '%s\n' "$_REUSED_TESTS" | xargs python "$PLUGIN_ROOT/bin/run_pytest_short.py" "$PYTEST_CMD"
+   else
+       python "$PLUGIN_ROOT/bin/dev_test_targets.py" --skill fix --run
+   fi
+   ```
+
+   - Reused set ran (no selection JSON, no `$DEV_DIR/test-targets.jsonl` record) → surface the handoff's `not_covered` caveat if present.
+   - The first output line is the selection JSON — surface any `codemap.partial`/`codemap.fell_back` count and every `not_covered` entry (`⚠ not_covered — some changed code has no mapped test`) as a coverage caveat; the selection and full log are recorded under `$DEV_DIR/test-targets.jsonl`.
+   - Empty selection (`note` set) → nothing ran beyond the Step 2 regression check; say so (Test-run policy).
+
+   **If the project has no tests beyond the regression test**: the regression test is the sole verification. Note in Final Report: "No pre-existing test suite found — regression test is sole verification."
+
+4. If existing tests break: fix has side effects — reconsider approach
+
+Before this block, in the same response, Write the fix summary, targeted-test results, active task IDs and the line `step: 3 — completed` as one record to the dev-dir’s `checkpoint.md.rec` with the Write tool; the block then appends it with `append_ledger.py` before the contract write.
+
+```bash
+# boundary 2: after fix applied, before review stack (compaction-contract.md)
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
+_CHANGED=$({ git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard; } | sort -u | tr '\n' ' ' | sed 's/ *$//')
+python "$PLUGIN_ROOT/bin/append_ledger.py" "$_DEV_DIR/checkpoint.md"  # timeout: 5000
+python "$PLUGIN_ROOT/bin/write_skill_contract.py" "develop:fix" "review+quality (after fix applied)" "$_DEV_DIR" "dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD; phase-report=$_DEV_DIR/checkpoint.md" "resume: re-cat own agent-resolution.md; review and close gaps (Step 4) → Final Report" -- calls_ahead=40 "drop=fix analysis and targeted-test results"  # timeout: 5000
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+python "$PLUGIN_ROOT/bin/compaction_boundary.py" "$_DEV_SHARED"
+```
+
+Follow the Boundary step printed above before the review and quality loop; report is the preserved dev-dir’s `checkpoint.md`.
+
+## Step 4: Review and close gaps
+
+Review the fix once and resolve feasible gaps. Only an explicitly requested iterative review-and-fix loop may repeat the steps below, up to 3 cycles.
+
+A request to repeat review and fix until a reviewer reports no findings or no security findings, or to resolve all findings; a second independent review round about to be dispatched for the same change; or a skill workflow repeating its review then fix cycle counts as an explicitly invoked loop from that moment: before the next reviewer dispatch, start ledger; follow `../../rules/_full/adversarial-loop.md` (helper output, stop/plateau rules, user's round budget).
+
+**First pass (repeat only for an explicitly requested iterative loop):**
+
+**5-axis quality scan** — before full criteria evaluation, assess fix on each axis:
+
+- **Correctness**: addresses root cause (not symptom)? Edge cases covered?
+- **Readability**: comprehensible without surrounding bug context?
+- **Architecture**: fits existing patterns? New coupling introduced?
+- **Security**: bug path touch input handling, auth, or data? If yes, addressed?
+- **Performance**: fix introduce loops, queries, or calls in hot path?
+
+Use scan to prioritize which criteria below get deepest scrutiny.
+
+1. Evaluate against all criteria:
+
+   - **Root cause**: fix addresses actual root cause, not just symptom
+   - **Minimality**: smallest change resolving bug; no collateral edits
+   - **Regression test quality**: test precisely isolates bug (fails before fix, passes after)
+   - **Side effects**: full suite passes without new failures or unexpected warnings
+
+2. Every gap found → implement fix immediately — tighten patch, remove collateral edits, adjust test. Return to Step 3 for gap requiring re-examined fix approach.
+
+3. Re-run the tests this cycle's changes touch — targeted only, same block as Step 3 (Test-run policy):
+
+   ```bash
+   # timeout: 600000
+   PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+   IFS= read -r CODEMAP_CURRENCY  2>/dev/null < "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" || CODEMAP_CURRENCY="no_index"
+   if [ "$CODEMAP_CURRENCY" = "stale" ]; then export SCAN_NO_AUTOBUILD=1; fi
+   python "$PLUGIN_ROOT/bin/dev_test_targets.py" --skill fix --run
+   ```
+
+   Non-zero exit → `PYTEST FAILED` for this cycle; empty selection → say nothing ran.
+
+4. **Adjacent bugs** (observation only): scan for similar patterns; document in Follow-up — don't fix here, avoids scope creep.
+
+5. **Objective convergence check**: findings this cycle identical to previous (same locations, same issues) → declare convergence, exit — further cycles won't resolve; surface to user instead.
+
+6. **Only nits remain**: document in Follow-up, exit loop.
+
+7. **Substantive gaps remain**: report unresolved gaps; start another cycle only for an explicitly requested loop (max 3 total).
+
+**After 3 cycles**: if substantive issues remain, stop — list them in the Final Report's Follow-up (opening it with `⚠ Unresolved after 3 review cycles`) rather than as reply text before the next tool call (text written before a tool call can arrive as an empty progress update).
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/dev_load_shared.py" --qs-dir foundry--quality-stack.md  # timeout: 5000
+```
+
+**Bounded independent implementation challenge**: After implementation and before the final gate, unless the user explicitly passed `--no-challenge`, dispatch one independent reviewer through the permitted `foundry:challenger` or available `bridge:review` route; never fork the implementation conversation. Supply only the current scoped diff, task acceptance and relevant evidence, allowing targeted source inspection. Reuse still-valid independent coverage for this exact result instead of dispatching again. Validate findings, apply feasible authorized fixes, rerun affected checks and report unresolved findings or missing independent coverage. Do not start another challenge or convergence loop automatically; after fixes, honestly report that the revised result lacks independent coverage. If no independent route is available, report the gap and do not claim the challenge passed.
+
+Execute Branch Safety Guard, Quality Stack, the bounded implementation challenge above, and Codex Mechanical Delegation; use Codex Pre-pass as that challenge only when selected, and run Progressive Review Loop only when explicitly requested. `foundry--quality-stack.md` ships in this plugin's own `_shared` (propagated foundry canonical, source-plugin prefix), so it is always present — absence means a broken install, not a missing optional dependency. Its directory-wide pytest run counts as the final gate's first full-suite run only when `$TEST_CMD` is that same pytest invocation (`pytest`, `python -m pytest`, `uv run pytest`, `poetry run pytest`); a `tox -q` or `make test` repository never ran its own command in the stack, so run the block below once even when no code changed. It runs again after code changes (§Final gate rerun).
+
+**Final gate rerun — full suite with the repository's own command**, after any code change that follows the quality stack's wide run — a Progressive Review fix, or any fix to a full-suite failure (the stack halting on a genuine failure, or this block failing) — a fix can break something outside the targeted set, and the stack's own re-checks are scoped. A suite that may outlive the ~10 min foreground cap runs as a background Bash call (`run_in_background: true`): end the turn, its exit re-invokes you, no polling. Non-zero → fix (rerun the failing node ids while fixing — never the verification), then rerun this block in full. Max 3 gate iterations; at the cap stop, surface the remaining failures, and never report the suite green. A green full suite is the last test evidence before the Final Report:
+
+```bash
+# timeout: 600000
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/dev_run_tests.py" suite
+```
+
+## Final Report
+
+**Plan drift check** — run first; any output means lead the report with that `! BLOCKED` line and let the user decide (detection only, never auto-revert):
+
+```bash
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_plugin_root.py" --plugin-name develop) || exit $?; export PLUGIN_ROOT
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+python "$PLUGIN_ROOT/bin/plan_hash.py" check  # timeout: 5000
+```
+
+> Template note, not part of the report: summarize the root cause in one or two sentences.
+
+```markdown
+## Fix Report: [bug summary]
+
+### Root Cause
+[root cause explanation]
+
+### Regression Test
+- File: [test file]
+- Test: [test name]
+- Confirms: [what behavior the test locks in]
+- Disposition: keep if a test runner auto-discovers this file; otherwise add to Follow-up as a cleanup candidate
+
+### Changes Made
+| File | Change | Lines |
+| --- | --- | --- |
+| path/to/file.py | description of fix | -N/+M |
+
+### Test Results
+- Regression test: PASS
+- Loop runs: targeted (N runs, selection source codemap/heuristic)
+- Full suite: PASS (N tests) — final gate, rerun after any fix to a full-suite failure; the last run is green
+- Lint: clean
+
+### Follow-up
+- [any related issues or code that should be reviewed]
+- [no test runner → `rm <test_file>` — no test suite will re-execute it; it served the gate, now expendable. **Exception**: test introduced this session and definitively wrong → delete it. Never delete pre-existing regression tests — they represent captured behavior predating this session.]
+
+## Confidence
+**Score**: 0.NN — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
+**Gaps**:
+- (-0.NN) [e.g., could not reproduce locally, partial traceback only, fix not runtime-tested]
+
+**Refinements**: N passes.
+```
+
+Clear the contract in the current worktree before calling `ExitWorktree`. The contract reader in `rule-inject.js` resolves `.temp/state` from `process.cwd()`.
+
+```bash
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
+
+**Worktree exit** — if `WORKTREE_ENABLED=true`: follow `worktree-isolation.md` §Exit — capture branch, call `ExitWorktree(action="keep")`, append the `Worktree` block (path · branch · merge hint) to the report. Never auto-merge, never `remove`.
+
+<!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. When to pass --team: the user already expects an unclear root cause or a bug spanning 3+ modules. The branch runs before triage, so these are the user's expectations at invocation time, not conditions this skill evaluates. -->
+
+</workflow>
+
+<notes>
+
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
+
+## Anti-Rationalizations
+
+| Temptation | Reality |
+| -- | -- |
+| "I already know root cause from symptom" | Unverified assumptions fix the wrong bug. Read code path first. |
+| "Regression test can wait — add after fix" | Fix without failing test = unverifiable. Test proves bug existed. |
+| "Clean up nearby code while here" | Scope creep produces side effects, obscures fix. Touch only root cause. |
+| "Targeted test passes — sufficient" | Targeted test shows bug fixed; full suite shows nothing else broke. Both required. |
+| "Fix obvious — Step 1 analysis overkill" | Obvious causes are often symptoms. Analysis reveals actual root cause, blast radius. |
+
+</notes>

@@ -1,0 +1,290 @@
+---
+name: carta-reporting-markdown
+description: >-
+  Internal step of carta-reporting: walks you through shaping a report. Drives the full
+  MARKDOWN-mode interaction: schema preview, customization checkpoint, transform config
+  (filtering, sorting, formulas, aggregations), output preview, and hand-off to
+  carta-reporting-excel. Invoked by carta-reporting (MARKDOWN mode, `Artifact` tool not
+  available) after the preview file lands. Not for direct user invocation.
+model: sonnet
+allowed-tools:
+  - AskUserQuestion
+  - Write
+  - Bash(UV_PYTHON_DOWNLOADS=never uv run "${CLAUDE_PLUGIN_ROOT}/skills/carta-reporting/scripts/report_processor.py" *)
+  - Skill(carta-cap-table:carta-reporting-excel)
+---
+
+<!-- carta:plugin-version -->
+<carta-plugin>carta-cap-table:6.119.1</carta-plugin>
+
+# Transform Configuration
+
+Called from `carta-reporting` step 4d (MARKDOWN mode, `Artifact` tool not available). Use values resolved earlier in this session: data file path, `corporation_id`, `user_report_pk`. The script lives at `${CLAUDE_PLUGIN_ROOT}/skills/carta-reporting/scripts/report_processor.py`; never search for it. Run it only in the one-line form below, as its own command: a heredoc, a pipe or a chained command needs approval every time.
+
+## Schema Preview
+
+Run `report_processor.py` on the data file with no transforms to extract column names and types:
+
+Write `carta-reporting/config.json` (in the working directory) with:
+
+```json
+{
+  "local_file": "<preview or full report file path>"
+}
+```
+
+Then run this as its own command, on one line:
+
+```bash
+UV_PYTHON_DOWNLOADS=never uv run "${CLAUDE_PLUGIN_ROOT}/skills/carta-reporting/scripts/report_processor.py" --config "carta-reporting/config.json"
+```
+
+Lead with a brief result summary (e.g. "Here's your Securities Ledger report — loading full data in the background."), then present the column inventory.
+
+**Column inventory format** — numbered list, grouped by category. Example for a 28-column report:
+
+```
+**All 28 columns:**
+
+Identity
+  1 — Stakeholder Name (text)    2 — Grant ID (text)    3 — Equity Plan (text)
+
+Grant details
+  4 — Grant Date (date)    5 — Grant Type (text)    6 — Exercise Price (money)
+  7 — Expiration Date (date)
+
+Share counts
+  8 — Shares Issued (integer)    9 — Shares Vested (integer)
+ 10 — Shares Unvested (integer)   11 — Shares Cancelled (integer)
+...
+```
+
+Grouping heuristics (apply in order; unmatched → "Other"):
+- **Identity**: names contain Stakeholder, Name, ID, Email, Type, Plan, Grant
+- **Dates**: type = `date`
+- **Share counts**: type = `integer`, name contains Share, Quantity, Count, Units
+- **Money**: type = `money`
+- **Percentages**: type = `percentage`
+
+---
+
+## Customization Checkpoint
+
+One `AskUserQuestion` covering columns, filters, sort, and format. Content adapts based on what the original prompt already specified. Always ask it before the output preview or an Excel export, also when the prompt asks to download or export the report. Ask it with the `AskUserQuestion` tool, not as a plain-text question: never end the turn with a question in text, such as "Reply **Export to Excel**". The row count, the rows with no values and the data warnings go in the question, not in text before it: the host shows text between tool calls only as a one-line summary. Start the question with this sentence word for word: "The report has {R} rows." ({R} is the sum of `kept_row_count` across sheets.)
+
+**When the prompt specified details:**
+
+> **Question:** I'll apply these settings from your request:
+> - **Columns:** Stakeholder Name, Grant Date, Shares Issued, Vested %
+> - **Filter:** Vested % > 50%
+> - **Sort:** Grant Date descending
+>
+> You can also add formula columns (% of total, running sum, ratio, delta) or aggregations (totals row, group-by).
+>
+> **Options:** `Continue with these settings` · `Adjust columns, filters or sort`
+
+**When the prompt was vague:**
+
+> **Question:** What would you like to customize? You can set any of:
+> - **Columns** — which to include
+> - **Filters** — e.g. "Vested % > 50", "Grant Date after 2024-01-01", "Name contains Smith"
+> - **Sort** — e.g. "Grant Date newest first", "Shares Issued descending"
+> - **Formulas** — % of total, running sum, ratio (A ÷ B), delta (row-over-row change)
+> - **Aggregations** — totals row or group-by rollup
+>
+> **Options:** `All columns, no filters` · `Customize`
+
+### Column name validation
+
+Before building the config, check every column name and filter target the user mentioned against the actual column names from the schema preview. The user's terminology often differs from the report's column names (e.g. "Department" → "Cost Center", "Employee" → "Stakeholder Name", "Vest %" → "Vested %").
+
+**Matching rules (apply in order):**
+1. Case-insensitive exact match → use it silently.
+2. One actual column name contains the user's term, or the user's term contains an actual column name (e.g. "vest percentage" ↔ "Vested %") → use it silently.
+3. No confident match → flag it in the checkpoint question.
+
+**When a term can't be matched**, surface it in the checkpoint with candidates:
+
+> ⚠ **"Department"** wasn't found in this report. Closest text columns: **Cost Center**, **Equity Plan**, **Grant Type**. Which did you mean, or should I skip this filter?
+
+Show at most 3 candidates, ranked by edit distance / word overlap. If the unmatched term was a filter target, do not add it to the config until the user resolves it.
+
+Apply this check to: explicit column selections, filter column names, sort column names, and formula source columns.
+
+### Column selection for wide reports (> 10 columns)
+
+Always pre-select key identifier columns (Stakeholder Name, Grant ID, or equivalent) plus any columns explicitly named in the prompt. State what's pre-selected in the checkpoint:
+
+> **Question:** Columns pre-selected: 1 — Stakeholder Name, 2 — Grant ID, 6 — Exercise Price. To add columns, type their numbers (e.g. **+8, 12, 13**) or a keyword (e.g. **vesting**).
+>
+> **Options:** `Keep the pre-selection` · `All 28 columns`
+
+If the user replies with a keyword, call `AskUserQuestion` once more showing only matching columns and ask them to confirm or add more by number. This is the only case where a second checkpoint question is allowed.
+
+---
+
+## Filtering Rules
+
+All filtering is handled by `report_processor.py` — do not apply filters in Claude's memory.
+
+Translate user requests to filter objects:
+
+| User request | Filter object |
+|---|---|
+| "vested % > 50" | `{"column": "Vested %", "op": ">", "value": 0.5}` |
+| "grant date after 2024-01-01" | `{"column": "Grant Date", "op": ">", "value": "2024-01-01"}` |
+| "name contains Smith" | `{"column": "Stakeholder Name", "op": "contains", "value": "Smith"}` |
+| "ownership above 5%" | `{"column": "Fully Diluted %", "op": ">", "value": 0.05}` |
+| "only Class A and Class B" | `{"column": "Share Class", "op": "in", "value": ["Class A", "Class B"]}` |
+
+Supported ops: `>` `<` `>=` `<=` `=` `!=` `contains` `in`
+
+`in` takes a list and keeps a row that `=` would keep for any one of the values; every other op
+takes one value. "Not one of" is a `!=` filter per value.
+
+Pass percentage values as decimals when the column type is `percentage` (e.g. 50% → `0.5`).
+
+When a filter removes all rows from a sheet, the script returns 0 rows — skip that sheet and note it in the summary.
+
+---
+
+## Column Selection
+
+All column selection is handled by `report_processor.py`. Pass column names in the desired display order; the script preserves that order.
+
+Always include key identifier columns (Stakeholder Name, Grant ID, or equivalent) even if the user didn't explicitly request them.
+
+---
+
+## Sorting
+
+Translate user requests to sort objects:
+
+| User request | Sort object |
+|---|---|
+| "newest first" | `{"column": "Grant Date", "direction": "desc"}` |
+| "largest first" | `{"column": "Shares Issued", "direction": "desc"}` |
+| "alphabetical" | `{"column": "Stakeholder Name", "direction": "asc"}` |
+
+Multi-key: pass multiple objects in priority order (first = primary sort key).
+
+---
+
+## Formula Columns
+
+Formula computation is handled by `report_processor.py`. Formulas are applied after column selection — they can only reference columns that are included in the output.
+
+### Scope boundary
+
+Formulas are for **mechanical transforms** on values already present in the report data — arithmetic that any spreadsheet could do without knowing anything about equity rules. The four supported ops:
+
+| Op | Description | Required fields |
+|---|---|---|
+| `pct_of_total` | Each row as % of the column's total **in this report** | `column` |
+| `running_sum` | Cumulative total down the column (current sort order) | `column` |
+| `ratio` | numerator ÷ denominator | `numerator`, `denominator` |
+| `delta` | Row-over-row difference (current sort order) | `column` |
+
+`pct_of_total` divides by the sum of the rows present, which is the whole company only when the
+report is. If `_scope_<corporation_id>` reports `is_limited_admin: true` (step 1b of
+`carta-reporting`), name the column "% of {Share Class} Total" — or "% of In-Scope Total" for more
+than one class — and never present it as ownership of the company.
+
+If a user asks for a value that requires understanding cap structure, equity rights, or ownership math, **direct them to the Carta report that already contains it**:
+
+> "That calculation involves equity rules that I can't safely compute from the raw data. Carta's **[Report Name]** report already has it — want me to pull that one instead?"
+
+Example:
+```json
+[
+  {"name": "% of Total Shares", "op": "pct_of_total", "column": "Shares Issued"},
+  {"name": "Cumulative Shares",  "op": "running_sum",  "column": "Shares Issued"}
+]
+```
+
+---
+
+## Aggregations
+
+Aggregation is handled by `report_processor.py`.
+
+**Summary row** — appends one totals row at the bottom (a `{"_t": [...]}` row); the label "Total" sits in the first visible column with no aggregation:
+```json
+{"type": "summary", "columns": {"Shares Issued": "sum", "Vested %": "avg"}}
+```
+
+**Group-by** — collapses rows by a key column, one row per unique value:
+```json
+{"type": "group_by", "group_by": "Stakeholder Name",
+ "columns": {"Shares Issued": "sum", "Grant Count": "count"}}
+```
+
+Supported ops: `sum` `avg` `min` `max` `count`
+
+---
+
+## Script: report_processor.py
+
+See **Script Reference** in `carta-reporting` for the full API (all fields, multi-sheet, merge, output format).
+
+**Phantom equity label:** If `_phantom_label_<corporation_id>` was resolved in this session (Step 1a of `carta-reporting`), include `"label_overrides": {"CBU": "<label>"}` in every `report_processor.py` invocation for this corporation — both the schema preview call and the output preview/full-report call. Use the corporation-keyed variable (e.g. `_phantom_label_12345`) to correctly handle multi-corporation flows.
+
+Always check `stats` after running:
+- `missing_columns` non-empty → list available column names from `data[sheet].columns` and ask the user which they meant, then re-run with the corrected name
+- `skipped_formulas` non-empty → tell the user which formulas couldn't run (usually the source column wasn't included in the selection)
+- `warnings.unknown_sheets` present → a requested sheet is not in this report; write the `warnings.unknown_sheets` row's sentence word for word (`carta-reporting` Error Handling table)
+- `warnings.merge_sources_missing` present, or `stats[<merged sheet>].schema_warnings` non-empty → say which sheet's rows are missing from the merged tab (wording in the `carta-reporting` Error Handling table)
+- `warnings.data_quality` present → add a `Show data warnings` option, and put this sentence word for word in the Customization Checkpoint question. One sentence with a clause for each sheet in `warnings.data_quality`: "Carta flagged {N} securities with data warnings" ({N} is the "Data Warnings" count) and "{M} defective securities" ({M} is the "Defective Securities" count). When the user picks it or says "show data warnings", rerun with `sheets` naming every sheet in `warnings.data_quality`. Do not use the checkpoint text of `carta-reporting` step 4d: it is for ARTIFACT mode only
+- `empty_rows_dropped` > 0 → put this sentence word for word in the Customization Checkpoint question: "{K} rows with no values were left out." (K = sum of `empty_rows_dropped` across sheets)
+- `filtered_row_count` = 0 → no rows matched; offer to relax the filter or change `as_of_date`
+- `displayed_row_count` < `kept_row_count` (section and `_t` rows not counted) → preview is active; re-run without `preview` for full results
+
+---
+
+## Output Preview
+
+After the Customization Checkpoint, check if `carta-reporting/carta_report_<user_report_pk>.json` exists. If ready, use it as `local_file`. If not, poll every 5 s up to 5 more attempts. If the data file is a preview (`carta_preview_<pk>.json`), label every table as a preview with partial rows. If the full report doesn't arrive, say "The full report didn't finish, so this is a preview — tell me to retry." Never present a preview as final.
+
+Run the script with `"preview": 5`:
+
+Write `carta-reporting/config.json` (in the working directory) with:
+
+```json
+{
+  "local_file": "<path>",
+  "columns": [...],
+  "filters": [...],
+  "sort": [...],
+  "preview": 5
+}
+```
+
+Then run this as its own command, on one line:
+
+```bash
+UV_PYTHON_DOWNLOADS=never uv run "${CLAUDE_PLUGIN_ROOT}/skills/carta-reporting/scripts/report_processor.py" --config "carta-reporting/config.json"
+```
+
+Show first 5 rows of each processed sheet as a markdown table. Above each table write: `N of M rows · K columns`, where N is `kept_row_count` and M is `original_row_count`.
+
+Ask:
+
+> Does this look right?
+> 1. **Generate full report** — all rows as a markdown table
+> 2. **Excel** — download as .xlsx
+> 3. Describe any change to filters, columns, or sorting — I'll update just that field and re-run the preview without restarting the whole checkpoint.
+
+If the user requests a change, update only the affected config field and re-run the preview — do not restart the customization checkpoint.
+
+If the user chooses **Excel**, invoke `Skill(carta-cap-table:carta-reporting-excel)`.
+
+---
+
+## Presentation
+
+- **One table per sheet** — label with the sheet name as a heading.
+- **Summary line above each table** — e.g. "89 of 212 grants matched (Vested % > 50%)."
+- **Money columns** — format as `1,234.56` with the row's currency symbol or code from the data (never assume `$`).
+- **Percentage columns** — format as `12.34%` (script stores as decimal, including percentage totals and formula columns; multiply × 100 for display. A cell that already reads like `5%` is already formatted).
+- **Date columns** — format as `MMM D, YYYY` (e.g. `May 3, 2026`) — the Carta brand standard.
+- If multiple sheets are returned and only one has data after filtering, hide the empty sheets.

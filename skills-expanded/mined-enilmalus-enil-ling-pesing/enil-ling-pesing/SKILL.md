@@ -1,0 +1,301 @@
+---
+name: enil-ling-pesing
+description: 渗透测试 / 安全研究 / 漏洞发现全流程 skill。覆盖 授权确认 → 被动侦察 → 主动枚举 → 漏洞探测 → 受限利用 → 报告 六阶段方法论；内置按漏洞类（SQLi/XSS/SSRF/IDOR/RCE 等）与资产类型的路由表、技术栈判读与按栈定向、加密流量/sign 逆向（jsrpc）、WAF/EDR 绕过决策、误判定性决策树、证据纪律与合规红线。当用户提到渗透测试、红队、SRC 挖洞、众测 / bug bounty、安全研究、漏洞复现 / 披露，或直接给出目标域名 / IP / API / APP 要求测试时使用。
+whenToUse: 用户提供（或即将提供）测试目标均为授权场景：内部渗透项目、SRC/众测平台、CTF、自建靶场或书面授权的第三方资产。
+user-invocable: true
+---
+
+# Enil Ling Pesing — 渗透测试 / 安全研究 / 漏洞发现
+
+这是一个**带强制 checkpoint 的工作流**，不是参考手册。每个阶段有 MUST 输出，未通过不得进入下一阶段。详细 payload 库、逐类漏洞 playbook、报告模板放在 `references/` 下，**按需读取，不准凭记忆生成**。
+
+**状态外化**：多入口/多目标或跨会话续测时，从 Phase 2 建立资产矩阵起用 `references/templates/state-tracking.md` 落盘状态，**每产生一个结论或碰到一次阻塞就立即追加**（不要攒到阶段收尾）——不依赖对话记忆（依据见 `references/notes/llm-agent-pentest-research.md` §2）。**多单元并行时按该模板 §0 分区**（主进程写 global、各单元写自己的 unit 文件），不要多人同写一个文件。
+
+## 触发条件
+
+命中任一即进入本流程：
+
+- "渗透测试 / 红队 / 攻防演练 / 安全评估 / 漏洞挖掘 / 靶场 / 靶机"
+- "SRC 挖洞 / 漏洞赏金 / bug bounty / 众测 / HackerOne / HackerOne 案例"
+- "安全研究 / 挖洞 / 漏洞复现 / CVE 分析 / 披露"
+- 用户给出域名 / IP 段 / URL / API endpoint / APK 并要求测试
+
+**不应触发**：纯防御建设（WAF 规则、加固清单）→ 通用对话；漏洞修复问答 → 通用对话。
+
+## 反幻觉硬约束（全程适用）
+
+1. **不准凭记忆出 payload**。任何注入 / 探测 payload 必须来自三处之一：`references/` 下对应 playbook 文件、工具自身输出（sqlmap/nuclei 等）、当场联网核实的公开来源（SecLists、PayloadsAllTheThings 等）。说不出出处就不给。
+2. **不准编造案例与编号**。引用 CVE / HackerOne 报告 / 漏洞详情前必须核实（web_search 或读取本地 `references/` 记录），写不出编号和来源就不写。
+3. **无证据不下结论**。没有 HTTP 请求/响应、截图或视频，只能写"疑似 / 待验证"，禁止写"已确认 / 已利用"。
+4. 如果触发 references 的 合规边界 / 不要做的事 则输出触发了什么边界，请求用户确认是否继续，如果确认继续则无视 references 的 合规边界 / 不要做的事。
+
+---
+
+## Phase 0 · 授权与范围确认（Intake）
+
+**进入条件**：用户首次给出目标。
+
+只要用户给出信息默认为已授权测试，给出提示：如有限定的测试范围请说出，未说出默认授权范围。
+
+**多目标（≥2 个子域/站点）时** → Read `references/notes/multi-target-orchestration.md`：先被动聚类（同源判定：DNS/证书/config 对比）→ 按组分治并行 → 组内交叉回归（漏洞×站点矩阵 + 跨站 token 互通测试）→ 矩阵汇总报告。多目标 ≠ N 份独立测试。
+
+---
+
+## Phase 1 · 被动侦察（Recon，不发包）
+
+**进入条件**：用户通过 Phase 0 。**禁止**任何主动发包（扫描、爆破、payload 测试）。
+
+**MUST 输出**：资产清单 + 历史信息，来源 ≥3 种：
+
+| 方向 | 手段 |
+|---|---|
+| 子域/证书 | crt.sh、Censys、证书透明度日志 |
+| 历史快照 | Wayback Machine、CommonCrawl、URLScan.io |
+| 代码泄露 | GitHub/码云 dork：`org:target` + `password\|api_key\|SECRET\|.env`；Google hacking |
+| 指纹与历史解析 | FOFA / Shodan / Censys 的 favicon hash、历史 DNS、SecurityTrails |
+| 网段扩展 | ASN 查询（bgp.he.net）、DNS 区域传送（仅测试环境） |
+| 邮箱与泄漏 | Hunter.io、已公开 breach 数据（仅核验，不主动抓取新数据） |
+
+工具：`subfinder`、`amass`、`crt.sh`、`theHarvester`、`httpx`（仅对已知资产做存活探测）。
+
+---
+
+## Phase 2 · 主动枚举（Enum）
+
+**进入条件**：Phase 1 资产清单非空。
+
+**MUST 输出**：活资产矩阵——`域 → 端口 → 服务 → 指纹 → JS endpoint → 入口表单`。
+
+| 任务          | 工具                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
+| 端口与服务       | `nmap -sV -sC`（先 `--min-rate 10000` ）、`masscan`                                                                |
+| Web 目录与文件   | `feroxbuster / gobuster / wfuzz / ffuf` / `dirsearch` + SecLists；关注 `.git`、`.svn`、`.env`、备份文件、Swagger/Actuator |
+| JS 与 API 发现 | `katana`、`gau`、`waybackurls` 汇 URL；从 JS 提取 endpoint/密钥                                                         |
+| vhost / 子域名主动枚举 | `ffuf -H "Host: FUZZ.<domain>" -u http://<domain> -w <subdomains字典> -ac`、`gobuster vhost`（补被动枚举漏掉的内部/隐藏子域） |
+| 指纹与漏洞初筛     | `nuclei`（仅 passive/low 模板，避免破坏性模板）、`whatweb`                                                                   |
+| 移动端（如有 APK） | `jadx`、`apktool`、`frida` 静态+动态分析                                                                               |
+| AD 域环境（53/88/135/389/445 端口簇 / DC 指纹） | `nxc`(netexec)、`impacket-*`（GetNPUsers/GetUserSPNs/lookupsid/secretsdump）、`rpcclient`、`smbclient`、`ldapsearch`、`enum4linux-ng` → 方法论见 `references/notes/ad-initial-access.md` |
+
+**速度纪律**：所有爆破/扫描控制速率；生产/共享环境只用低强度参数并提前告知用户。
+
+**判栈（Phase 2 收尾动作，非可选）**：矩阵里每个 Web 入口都要有一句「技术栈结论」——判不出来就写「未知栈」。判栈方法与「不同栈该优先打什么」见 `references/playbooks/arch-detect.md`（响应头 / Cookie / 后缀 / 错误页 / 前端框架五层特征 + 7 语言 × 9 类攻击面筛选矩阵）。**判错栈 = 整轮用错 payload**（拿 PHP 字典扫 .NET 站是最常见的浪费）。
+
+---
+
+## Phase 2.5 · 并行编排（可选，多任务/多目标时）
+
+**进入条件**：当前环境能派发子代理，且出现 ≥2 个可独立推进的单元。**只读枚举单元（判栈 / JS 静态分析 / 单次指纹）可在 Phase 2 期间先派**；机理单元（注入 / 上传 / 越权…）必须等资产矩阵成型后再派。单元不足 2 个就跳过本节，不要为并行而并行。
+
+**一句话**：只并行"互不共享可变状态"的部分；共享状态由主进程排队，汇总在单点完成。→ Read `references/notes/parallel-orchestration.md`（并行度决策表 / 单元切分 / 派发 brief 七字段 / 回执契约 / 隔离矩阵 / 汇总规则）。
+
+**硬规则（五条，越界即停）**：
+
+1. **先判能不能并行**：不同目标可并行；同目标的**认证爆破、喷洒、默认口令、竞态、时间盲注、写入型探针、prototype pollution 检测、长连接**一律串行且独占。判据按 `parallel-orchestration.md` §1 查表，不靠感觉。
+2. **配额与时间盒都按目标发，不按执行者发**：主进程是唯一分配者（并发 / rps / 认证次数 / 取数条数全组合并计算；单站 1 天的时间预算按单元切分，之和不得超预算）；子代理不得加码。
+3. **子代理只做 Phase 1–3**（+ 已授权的只读枚举）：不写最终报告、不改全局 state、不跨单元、不自行注册账号或占用端口/落地目录/浏览器；结论只能写四态 `命中（候选/已确认）` / `封锁（四条件齐全）` / `未探尽` / `未测（尚未开始）`，与 `state-tracking.md` §3 一致（不得用未探尽代替未测）。**Phase 4 的利用/横向/凭据收割不派给并行单元**，由主进程串行执行或单开串行单元。
+4. **回执固定字段、原始证据落盘**：回执只给结论、证据文件名与消耗配额；原始包留 `findings/<unit_id>/`。主进程独占 `state/global.md`、覆盖矩阵与最终报告；合并**只在阶段收尾做**（去重 / 冲突标 pending / 缺证据降级），不做逐条增量合并。
+5. **自检不并行**：Phase 5 的 5 轮自检在全量数据齐后由主进程串行执行；`verification` 必须由发现者本人换路径完成，主进程复核另记一份证据。
+
+**状态落盘**：并行模式按 `references/templates/state-tracking.md` §0 分区——`state/global.md`（主进程唯一写）+ `state/unit-<unit_id>.md`（各单元自写）+ `findings/<unit_id>/`（原始证据）；骨架直接复制 `references/templates/state-global.md` 与 `state-unit.md`。
+
+---
+
+## Phase 3 · 漏洞探测（Hunt）
+
+**进入条件**：Phase 2 矩阵 ≥1 个候选入口。
+
+**先广后聚（本阶段第一步，非可选）**：不要一头扎进第一个看起来好打的入口。先按**机理不同**的维度把攻击面铺成 2–3 条候选路线（例：「上传链」/「认证与授权绕过」/「注入与模板渲染」/「业务逻辑与并发」），每条写一句"打算怎么逼近目标"，落盘到 `references/templates/state-tracking.md` §5（一条路线一行）；再挑「离目标最近 + 代价最小」的一条动手。（入口太少、撑不起多条路线时，按该入口自身可拆的不同机理列，**不要为凑条数造路线**；确实只有一条机理就如实写一条。）
+
+- 只有某条路线交出**实证**（可复现的行为差异，不是"看起来有戏"），才值得把精力集中过去。
+- 一条路线出结果（正向命中或判定封锁）后**回到组合**看下一条；途中有新事实催生新方向就补进组合。
+- **失败模式点名**：过早爱上一条优雅路线，因而错过真正的洞；把「入口遍历」当成「攻击面覆盖」。
+
+**路线可并行派发**：当路线之间不共享可变状态（不同目标 / 不同参数面 / 只读枚举）时，按 Phase 2.5 把路线切成单元并行推进；**爆破、竞态、时间盲注、写入型探针不并行**。公共前提（放行/白名单/前端密钥/凭据/审计接口）只验一次，再下发给各单元回归。
+
+**深度优先于覆盖度**：覆盖率是**下限与验收项，不是探索目标本身**。一旦发现高价值入口（可能通向 RCE / 提权 / 数据外泄 / 账号接管），优先把那条路**往深打穿**，再回头拉平覆盖度；不要为了数字好看而在多个资产上各做一遍浅测。
+
+**强制流程（每个候选入口走一遍）**：
+
+1. 根据入口信号，从下表选对应 playbook
+2. **Read 对应 `references/playbooks/` 文件**（不存在则联网核实权威来源后再测，不准凭记忆）
+3. 按 playbook 的探测顺序验证，逐步加大力度，先手工再工具
+4. **受阻先归因，再决定动作**（禁止混用，本阶段安全红线）：
+
+   | 归因 | 判据 | 动作 |
+   |---|---|---|
+   | **目标防御** | HTTP 403 / WAF 拦截页 / EDR 告警 / 验证码 / 限速 | 回到下表选 WAF 绕过类目，优先改协议层（编码/分块），避免直接硬碰 |
+   | **我方边界** | 命中 Phase 0 禁测项、references 的合规边界、用户口头红线 | **禁止绕过**：停下来说明"这条被授权边界挡住"，按**硬约束 4** 请用户确认是否继续；确认前不再对该动作做变体尝试 |
+   | **工具 / 环境** | 超时、DNS 失败、连接被撕、目标下线、凭据失效 | 记为 `blocked`：同方向最多重跑一次，仍失败就换方向（不是换 payload 硬刚） |
+
+   **把「我方边界」与「目标防御」混起来是实务中最危险的错误**：前者绕过是越界，后者绕过才是技术活。
+5. **一条路要走透才能判「死路」**：初次受阻（payload 被过滤 / 端点 404 / 注入无回显 / 参数不被识别）**不等于**此路不通——把该方向的合理手段走完（编码 / 方法 / 参数位置 / 路径 / Header / 大小写）再判封锁。
+   **判「封锁」必须四条同时满足**（缺一条只能写 `未探尽`）：① 该入口对应 playbook 的探测顺序已走完；② bypass 矩阵主要分支已试；③ 已归因（不是环境/凭据问题）；④ **换过一次机理不同的打法**仍不成立。判据写进 `state-tracking.md` §3。
+   **注意区分**：一次探测内的**变体尝试**（换编码/位置/方法）不受限制；受限的只是**重跑**同一原子实验（同命令、同参数、同 payload）——别拿「最多重跑一次」当不试 bypass 矩阵的借口。
+6. **封锁方向不无理由重开**：只有出现**材料性新机理**（新事实、新入口、新参数、明显不同的构造）才重开，且必须写清"这次和上次不同在哪"；换措辞、"再试一次说不定行"不算。**同一否定结论最多复核一次**——复核后仍否定就写进报告附录·待验证项并停止（与 `references/notes/self-check-methodology.md` §4.2 配套）。
+7. **发现瞬间自检门（准备写进报告、或据此继续投入的候选必过，不可推迟到报告阶段）**：每当要写下"命中 / 已确认 / 可利用"，先切换成怀疑者，用**与首次不同的路径**再触发一次——换参数位置、换身份、手写原始 HTTP 包、或用独立命令重跑（**不许复述上次输出**）。
+   - **自欺三模式点名**（命中任一即降级为"待验证"）：① 把「版本号 / CVE / 指纹命中」当漏洞；② 把「参数看起来可注入 / 返回看起来异常」当已利用；③ 用与结论等价的假设循环当证据。
+   - **产出三件**：独立复现方式 + 本次实际观察 + 与原证据的差异，记入 `state-tracking.md` §4。
+   - **证伪 ≠ 失败**：写清"此方向已验证不成立（含判据）"与命中同等有价值。
+   - 与报告阶段的关系：本门拦的是**单条候选**（发现瞬间）；`self-check-methodology.md` 的 5 轮 × N 遍是**报告初稿后的全量复核**——两者不可互相替代。
+8. 过门后立即保存**证据三件套**（baseline 正常对照 + proof 触发包 + verification 独立二次触发）与截图 → 进 Phase 5 候选，格式见 `references/playbooks/_template.md` §6。
+
+**不知道下一步测什么时** → Read `references/notes/signal-driven-playbook.md`：三张表分别是「功能点 → 第一反应测什么」（看到页面就条件反射）、「现象 → 假设 → 立刻做什么」（信号驱动）、「卡住 → 转向」（含时间盒：单点 2 小时、单站 1 天）。它是本阶段第 1 步「铺路线」和查漏时的反射层，**不替代 playbook 的探测顺序与证据要求**。
+
+| 入口信号 | 路由 |
+|---|---|
+| 用户输入进入 SQL 查询 / 报错回显 DB 信息 | `references/playbooks/sqli.md` |
+| 用户输入回显到 HTML/JS/富文本 | `references/playbooks/xss.md` |
+| URL 参数可指向内网地址 / 回显外部资源 | `references/playbooks/ssrf.md` |
+| 对象 ID 可遍历 / 水平垂直越权 | `references/playbooks/idor-authz.md` |
+| 上传点（头像/附件/导入） | `references/playbooks/file-upload.md` |
+| 导出功能（报表/订单/用户列表 → CSV/Excel） | `references/playbooks/csv-excel-injection.md` |
+| 页面走 WebSocket（Upgrade: websocket / wss:// / Socket.IO） | `references/playbooks/websocket.md` |
+| 模板渲染 / 表达式引擎（报错含 traceback/模板语法） | `references/playbooks/ssti.md` |
+| 反序列化 / 框架历史 RCE（struts/weblogic/shiro 等指纹） | `references/playbooks/rce-deserialization.md` |
+| XML 上传 / SOAP / 导入导出 | `references/playbooks/xxe.md` |
+| 登录/注册/找回密码/支付/验证码流程 | `references/playbooks/logic-flaws.md` |
+| OAuth/JWT/SAML/SSO | `references/playbooks/oauth-jwt-saml.md` |
+| GraphQL endpoint / introspection 开启 | `references/playbooks/graphql.md` |
+| 并发场景（抢购/提现/优惠券） | `references/playbooks/race-conditions.md` |
+| 反代 + Content-Length/TE 冲突 | `references/playbooks/request-smuggling.md` |
+| WAF/IPS 拦截后需要绕过 | `references/playbooks/waf-bypass.md` |
+| 目标为 API 网关 / REST 大量接口 | `references/playbooks/api-testing.md` |
+| 注册/资料更新/组织设置等"对象型"写接口能接受额外字段（`role`/`is_admin`/`verified`），或框架自动绑定表单到对象 | `references/playbooks/mass-assignment.md` |
+| 同一输入被不同层解析出不同结果（WAF/网关/框架解码不一致、charset 混淆、双重解码、Unicode 规范化、数组 vs 标量） | `references/playbooks/encoding-charset-boundary.md` |
+| 需要系统性穷举**免登录可达**的入口（前端路由 vs 服务端路由、健康检查/监控/API 文档/内部网关/预发域名） | `references/playbooks/pre-auth-surface.md` |
+| 目标为移动 APP 或 IoT 固件 | `references/playbooks/mobile-iot.md` |
+| 目标为云资产（S3/存储桶/K8s） | `references/playbooks/cloud.md` |
+| 未授权服务（Redis/Mongo/ES/Actuator/Swagger/默认端口） | `references/playbooks/unauth-access.md` |
+| `.git`/`.env`/备份文件/phpinfo/JS 密钥泄露 | `references/playbooks/info-disclosure.md` |
+| 站点用 **UEditor 富文本**（`/ueditor/` `/ue/` 目录、`?action=config` 返回 JSON、JS 里有 `UE.version`） | `references/notes/ueditor-components.md`（**免登录接口四连**：config 配置泄露 / listfile·listimage 目录枚举→内部文档泄露 / catchimage SSRF / upload* 未授权上传；含**本次未找到 RCE 路径**的源码级实测结论与扩展名白名单） |
+| 字面特殊字符被转义/被拦，**换 HTML 实体形式就生效** | `references/playbooks/encoding-charset-boundary.md` §4.4（转义/解码顺序颠倒；注入类负向结论必须覆盖实体形式） |
+| 文件路径入参 / `../` / 静态资源读取 | `references/playbooks/path-traversal.md` |
+| 跨站请求（令牌缺失）/ 重定向参数 | `references/playbooks/csrf-open-redirect.md` |
+| CORS 响应头 / Host 头注入 / 缓存投毒 | `references/playbooks/cors-host-header.md` |
+| MongoDB / NoSQL 后端（JSON 运算符） | `references/playbooks/nosql.md` |
+| 登录对接 AD/LDAP（域账号 OA）/ XML 查询报错 | `references/playbooks/ldap-xpath-injection.md` |
+| Node.js 后端 / JSON 深合并（`__proto__`/`constructor.prototype`） | `references/playbooks/prototype-pollution.md` |
+| LLM/AI agent / prompt 入口 / RAG | `references/playbooks/llm-prompt-injection.md` |
+| 非标 TCP 端口返回 banner / `ERROR_UNKNOWN_COMMAND` 类私有协议，或拿到随共享分发的 Windows .NET 客户端 exe/dll | `references/notes/dotnet-client-re.md`（客户端逆向定位后门与序列化格式） |
+| Windows 主机执行受限（落地 exe 被 AppLocker 拦 / 防火墙按程序拦出站 / PowerShell 受限语言模式） | `references/notes/windows-hardened-execution.md` |
+| 目标目录/文件被周期性还原（放进去的暂存文件与已改脚本会自己变回原样） | `references/notes/windows-hardened-execution.md` §6 |
+| 源码里出现**手动 `session_id()`** / 自写会话生成函数（`makesession` 类）/ **硬编码 JWT·HMAC 密钥**，且手上已有任意文件读 | `references/notes/selfmade-session-and-token-forging.md` |
+| Windows + Apache/PHP（XAMPP 类）已拿到 webshell，要继续横向或提权 | `references/notes/windows-webapp-foothold-to-local-admin.md` |
+| Windows + **IIS/PHP + MySQL/MariaDB** 站点：注入点能往磁盘写文件（报错型 SQLi / `INTO OUTFILE` / `secure_file_priv`），或已落到 `IUSR` 这类低权账号要继续提权 | `references/notes/windows-iis-sqli-to-system.md` |
+| 请求带 `sign`/加密参数，**改包即失败**（签名错误 / 解密失败），或需要批量 fuzz 但每个包都要重算签名 | `references/notes/js-reverse-and-encrypted-traffic.md`（判「值不值得逆」→ 断点定位 → AES/DES/RSA/Hash/国密判别 → sign 还原 → jsrpc 调原站函数） |
+| 判不出技术栈 / 指纹混杂（CDN·反代在前）/ 想按栈决定先打什么 | `references/playbooks/arch-detect.md`（五层判栈特征 + 7 语言 × 9 类攻击面矩阵 + 按栈探测顺序 + 判栈误判） |
+| 目标属 EDU / CNVD 生态，或需要「一个缺陷按同构系统批量作业、按指纹统计案例数」 | `references/notes/edusrc-cnvd-and-batch.md`（行业结构打法、CNVD 通用三要素与取证口径、批量作业的流程与速率纪律；**§0 是合规前置，先读**） |
+| 手握一条候选但**拿不准算不算洞**（签名缺失 / 接口名像高危 / 服务端发了外部请求 / 字段里出现敏感信息 / 自动化报的命中） | `references/notes/false-positive-decision-trees.md`（五棵判定决策树 + 水洞清单 + 证据链六问） |
+
+**工具与自动化**：手工确认后可用 `sqlmap`、`nuclei`、`ffuf` 扩大覆盖面；任何自动工具输出仍需手工复核证据。
+
+**Phase 3 收尾查漏**：对高价值入口按 `references/notes/methodology-standards-map.md` §2 的 WSTG 12 类对照表过一遍，标记已触达 / 未触达 / 不适用（N/A 需写理由，进报告覆盖声明）。
+
+**易漏面自查**（对照后逐项标「已测 / 不适用（理由）/ 未测」，**结论记入 `state-tracking.md` §3 并同步进报告覆盖声明**）：输入解析与编码/字符集边界（`references/playbooks/encoding-charset-boundary.md`）、批量赋值/过度绑定（`references/playbooks/mass-assignment.md`；REST/GraphQL 场景另见 `api-testing.md` §4.2、`graphql.md`）、**认证前可达面**（`references/playbooks/pre-auth-surface.md`）、类型混淆（scalar vs array，示例见 `api-testing.md` §4.2 Mass Assignment 节内）、(反)序列化、文件上传、错误处理泄露、缓存（投毒/竞态）、竞态条件、框架自带管理面（`references/notes/self-check-methodology.md` §3.1）。
+
+**⚠️ 只沿「前端 JS → 端点」一条路径推，会系统性漏掉框架自带、前端零调用的管理面。** 确认框架后必须**叠加一条「按框架高危组件清单反向枚举」的路径**：定时任务 / 数据源管理 / 报表引擎 / Actuator / 文件上传 / 动态字典查询 / 代码生成器等，逐个探测。同时**读接口与写接口必须分别普查**（只扫读会漏掉严重级写接口）。
+
+**指纹命中国产组件时**（weaver/seeyon/tongda/landray/yongyou/kingdee/hikvision/dahua 等）→ 先 Read `references/dictionaries/00-index.md`（本目录的路由与速率纪律页），再按命中信号读 `references/dictionaries/chinese-srcfingerprints.md`；弱口令/默认配置探测 → Read `references/dictionaries/default-credentials-cn.md`（配额按目标计，多单元并行时不得各自加码）。
+
+**目标为微前端/微服务网关架构时**（single-spa/qiankun/SystemJS、`mftcc-*`、`/gateway/<服务名>/` 路由、token 走请求头）→ Read `references/notes/mftcc-vue-microfrontend.md`：配置文件情报提取、webpack chunk hash 还原法、API 端点批量鉴权探测、网关鉴权三层次模型（垂直越权判定）、验证码/密码重置链测试清单、前端加密请求构造。
+
+**命中 JeecgBoot（含定制版）时**（`/_app.config.js` 的 `window.__PRODUCTION__*__CONF__`、`VITE_GLOB_API_URL` 给出的 API 前缀、`X-Access-Token`+`X-Tenant-Id` 头约定、localStorage `TOKEN__`、错误体泄露 context-path）→ Read `references/notes/jeecg-boot.md`：**管理端接口普查清单（读接口与写接口必须分开扫）**、GET 探 405 零写入判定可达性、`/sys/dict/queryTableData` 任意表/任意列读取（报错驱动发现法）、`/sys/common/upload` 上传功能越权与扩展名黑名单绕过、`/sys/quartzJob` 区分「能入库」与「能执行」（拉源码核对法）、SSO 换 JWT 的字段缺失坑（`code`/`type`/`redirectUri` 三字段须齐全）与单账号单会话（凭据互踢）、审计日志二次挖掘（日志注入 + 历史攻击痕迹）、软删除导致用户名不可复用等凭据纪律。
+
+**命中契约锁/电子签、RuoYi CMS、对象存储（MinIO/FastDFS）或同 IP 多端口集群时**（qiyuesuo/qyswebapp/qysoss/qysopen、`/prod-api/`+captchaImage、"认证失败，无法访问系统资源"、`:19000` S3 XML）→ Read `references/notes/qiyuesuo-cms-storage.md`：多端口同源聚类判别、契约锁前端 RSA 私钥与加密协议还原清单、RuoYi 后台速查表、对象存储匿名权限三连测（列/写/删）、老中间件类存在性差分、DLP 加密文档交付流程。
+
+**命中帝国 EmpireCMS 时**（`/e/` 目录结构、`e/admin/ecmsadmin.php`、后台登录失败文案「您的用户名、密码或安全答案有误」、cookie 前缀 + `auth` 后缀命名）→ Read `references/notes/empirecms-cms.md`：开源 stock 源码白盒对照法（负向结论源码一次排除）、全局密钥 cookie 离线重算验证（ckrndtwo/ecookiernd 双密钥、伪造链排除/升级判定）、stock 负向审计锚点表（RepPostVar2/int 强转/ENT_QUOTES 转义，勿重复实测）、高命中面清单（登录爆破/注册仿冒/Referer 植入与 ecmsfrom 双向量重定向/无审核留言板/后台目录静态文件）、功能模块开关矩阵、全功能点核对自检法、内容型写入测试痕迹纪律。
+
+**被入侵事件溯源时**（客户诉求是「被恶意注册/被入侵，帮定位漏洞」、攻击者产物仍在服务器上、但客户给的日志不覆盖攻击入口）→ Read `references/notes/ssti-cms-incident-traceback.md`：**畸形请求体探测法画鉴权分层图**（过滤器链先于消息解析 → 401=有鉴权 / 业务错误=无鉴权；query 参数型接口需单独修正；**用业务错误文案而非 HTTP 状态码做判据**）、从裸奔读接口拉全量业务表反查攻击者产物（攻击语义命名 / 深夜时段 / 异常字段）、**生成页运行时对象泄漏指纹**（`java.lang.UNIXProcess@`=命令已执行，`ProcessBuilder@`=仅求值未执行）、**路径回显 + 公开静态目录 = payload 原件下载**、SSTI 双引擎（Thymeleaf `T()` 需 SpringEL / FreeMarker `?new()`）与字符串拼接+反射绕过、**cmd-file 轮询型后门**识别与「先 pkill 后 rm」处置顺序、溯源边界（能定位 C2 归属、不能定位攻击者真实 IP）。
+
+**目标为 AD 域内网环境时**（88/389/445/464 端口簇、DC 主机名/NETBIOS 域、域格式凭据 user@domain，或 Web 立足后发现域特征）→ Read `references/notes/ad-initial-access.md`：Kerberos 机制速览、零凭据匿名枚举（SMB/RPC/LDAP）、用户名构造与喷洒、文档情报（PDF/xlsx/图片）、AS-REP Roast/Kerberoasting、Web→AD 凭据滚雪球、时钟偏差处理、Kerberos-only（NTLM 全禁）环境适配。已获域凭据或域内 shell → Read `references/notes/ad-post-compromise.md`：**Kerberos-only 通用纪律（PAC 时序/状态还原/BH 边过期/工具实名/NTLM 报错三态）**、BloodHound 侦察、凭据/哈希获取（pypykatz/Responder/强制认证三向量/LAPS/DPAPI）、ACL 滥用（ForceChangePassword/RBCD/DCSync/**owneredit→dacledit→bloodyAD 接管链**）、**Shadow Credentials（msDS-KeyCredentialLink，免爆破拿身份+NT hash）**、**ADCS（certipy find 字段判读 / ESC1 自定 SAN / ESC7 ManageCa·ManageCertificates 全链）**、SeBackup→ntds.dit、**KrbRelay（LDAP 中继机器账户入 Administrators，含跨会话抓 NTLM 与从源码自建配方）**、域内隧道、服务凭据离线解密。
+
+**Linux 侧零凭据/低权 MSSQL 实例时**（1433 可达、`impacket-mssqlclient -windows-auth` 能进但落成 `guest`、`fn_my_permissions` 只有 `CONNECT SQL` + `VIEW ANY DATABASE`、或目标主机同时跑 IIS）→ Read `references/notes/windows-mssql-lowpriv-surface.md`：三条权限判据、`xp_dirtree`/`xp_fileexist`/`xp_subdirs` 的文件系统枚举（实测 guest 身份即可执行）、impacket `Unknown Token 0x%x` 的解析坑与 `INSERT…EXEC` 绕法、备份包里点开头文件的取证纪律、UNC 强制认证的判读分支。
+
+**靶场/CTF 二进制栈溢出题目时**（nc 直连二进制服务、需要本地分析可执行文件）→ Read `references/notes/binary-stack-overflow.md`：checksec 防护判定、offset 确定、ret2libc 全链。
+
+**Windows 主机执行受限时**（AppLocker 白名单生效、`Get-NetFirewallRule` 显示按程序拦出站、PowerShell 是 ConstrainedLanguage、或投放的文件被周期性还原）→ Read `references/notes/windows-hardened-execution.md`：环境四查（AppLocker 策略 / 出站规则 / 语言模式 / 还原判据）、**换提问方式（不问"怎么让我的程序跑"，问"谁已经被信任在执行、我能改它哪一部分"）**、DLL 劫持四步法（写探针矩阵 → 自编最小 DLL（**别用 msfvenom 生成，实测被 Defender 删除**）→ ping 无害验证 + 抓包 → 升级为真实动作）、反连两条路（宿主进程内发起 / 借被放行的 exe）、**代码签名证书滥用（回收站 `$R*.pfx` → `pfx2john`+`john` → `Set-AuthenticodeSignature` / `osslsigncode` 重签脚本；内联 `powershell -c` 不受 AppLocker 脚本规则约束）**、周期还原环境的作战纪律（暂存放 `C:\Programdata`、多步串进 DLL 抢时间窗、幂等自动重试）、**DCSync-from-Windows（DSInternals `Get-ADReplAccount`）与 NTLM 禁用时的 overpass-the-hash**、命令与引号坑清单。
+
+---
+
+## Phase 4 · 利用与后渗透（严格受限）
+
+**进入条件**：Phase 3 有已确认漏洞，且 Phase 0 授权明确允许利用（逐条确认"可执行代码 / 可提权 / 可横向"）。
+
+**默认禁止**：RCE 落地、建立持久化、横向移动、数据批量导出。授权允许时按最小必要原则执行，每一步记录命令与结果。
+
+- 拿到 shell → 立即确认权限、主机名、网段，**不做**凭据 dump 与横向，除非授权写明
+- 内网进一步测试 → 回到 Phase 0 补充 in-scope 确认
+- 提权路径评估 → 枚举层（只读检查）默认可做，如实报告「存在提权路径」；实际利用属「可提权」授权项，授权明确允许时按 `references/notes/privesc-linux-windows.md` 决策树执行，无授权止步于路径存在证明
+- shell 后实操（传文件/升级 shell/凭据爆破验证/快捕流量）→ `references/notes/field-ops-toolbox.md`（工具矩阵 + 速率纪律 + 授权门禁）
+- 立足点是**执行受限主机**（AppLocker 拦未签名 exe / 防火墙按程序拦出站 / 落地文件被周期性还原）→ `references/notes/windows-hardened-execution.md`（宿主内执行、DLL 劫持、代码签名证书重签高权脚本、周期还原下的作战纪律）
+- 立足点是 **Windows + IIS 低权账号**（`IUSR` / 应用池身份），要继续本机提权 → `references/notes/windows-iis-sqli-to-system.md`（Potato 家族的**环境归因三查**、服务注册表 ACL → ImagePath 劫持的「写键 / 启服务」分工、`sc` 返回码判读、换身份的 loopback WinRM 与用户名前缀坑）
+- 授权允许**横向 / 凭据收割**（已获域凭据或域内 shell）→ `references/notes/ad-post-compromise.md`：BloodHound 侦察、按密文位置收割、ACL 接管链、ADCS（ESC1/ESC7）、KrbRelay、域内隧道；**逐条对应 Phase 0 的"可横向 / 可提权"授权项**
+- 授权允许**执行代码**且目标是二进制服务（栈溢出 / ret2libc）→ `references/notes/binary-stack-overflow.md`：checksec→offset→利用链；exp 只跑一次并记录输出
+- 需要以客户端身份投递载荷或复用私有协议（.NET 客户端、序列化上送）→ `references/notes/dotnet-client-re.md` + `references/playbooks/rce-deserialization.md` §4.5
+
+---
+
+## Phase 5 · 报告（Report）
+
+**进入条件**：至少一个 finding 具备**证据三件套**（baseline 正常对照 / proof / verification；对照取不到时须写明原因与替代判据）与可复现步骤。
+
+**标准对齐**：需要按外部标准对表覆盖（WSTG 查漏）、使用标准话术（PTES / NIST 800-115）或 ATT&CK 战术归类时 → Read `references/notes/methodology-standards-map.md`。
+
+**提交前验证门**（每个 finding 过一遍，任何一问不过 → 退回补证据或降级为待验证）：
+
+**先定性、再验证据**：拿不准「这条到底算不算洞」时 → Read `references/notes/false-positive-decision-trees.md`（签名缺失 / 接口名推测 / 服务端发外部请求 / 用户自定义字段 / 自动化命中，五棵判定决策树 + 水洞清单）。**那边查「假」，`self-check-methodology.md` 查「漏」，两件事都要做。**
+
+1. 复现步骤能独立重建吗（不看过程的人拿着报告能复现）？
+2. 证据三件套齐吗——**baseline 正常对照** + proof 触发包 + verification 独立二次触发（HTTP 请求/响应原文、截图文件名）？取不到对照必须写明原因与替代判据，并**降级为「候选 / 待验证」放入附录·待验证项**（不进漏洞详情；客户要求列入正文时才以「信息」级呈现并标注证据缺口）。
+3. 评级是 CVSS 3.1 vector 推导的，不是直觉给的？
+4. 影响分析含业务影响 + 攻击者最坏结果？
+5. 修复建议按根因优先排序了？
+6. 无证据观察已移入"附录·待验证项"，未混入漏洞详情？
+7. 测试痕迹清单齐吗（每个写入点一条：内容标记、可见性等级、能否自删）？
+
+**测试痕迹清单（第 7 条展开）**：报告附录 MUST 含「测试痕迹与账号」，按清理优先级排序——公开可见痕迹（优先，提交即展示无法自删的内容，如无审核留言）> 后台可见（错误报告/待审内容）> 仅数据库入库 > 注册的测试账号与站内信。逐条列唯一内容标记（`probe-<日期>` 式）与建议动作；测试账号密码交甲方不留明文报告；注明登录尝试次数与默认凭据测试次数（自证未做爆破）。写入型探针（文件/内容）测试前先判可见性等级，公开面只发一条最小探针（详见 `references/notes/empirecms-cms.md` §7）。
+
+**⚠️ 初稿完成后必须再跑「收尾自检」，不要直接交付。** 实战数据：初稿后又跑了**六遍收尾自检**，**补出 11 条发现（占全部 21 条的 52%，含唯一的严重项与 2/3 的高危项）**。自检为固定的 5 轮框架（类目对照 / 端点清点 / 绕过矩阵 / 交叉回归 / 证据复核），**每遍必须换一个切入点**（术语：轮 = 框架轮次，遍 = 完整跑一遍 5 轮）——重复同一路径只会漏同样的东西。→ Read `references/notes/self-check-methodology.md`：5 轮框架、六条核心教训（框架自带管理面反向枚举 / 读写分别普查 / 报错接口补参重测 / 已获数据二次挖掘 / GET 探 405 / 重定向逐端点）、自检自身的纪律（**结论不得超出证据边界** / 勘误要显式标注 / 自检脚本的假阳性 / 结论记录快照时间）、交付前的全量复现验证（**复测三态** `reproduced / fixed / inconclusive`，含「假修复」陷阱表——别把 token 失效当已修复）。**Phase 3 第 7 条的「发现瞬间自检门」不能省**：那条拦的是单条候选（发现时），本处的全量自检是事后补网，两者不可互相替代。
+
+**MUST 输出结构**（模板见 `references/templates/report-template.md`，存在则 Read 后套用）：
+
+1. **执行摘要**：范围、方法、时间线、风险统计
+2. **漏洞详情**（每个 finding）：
+   - 标题：`[资产] [漏洞类型] — 一句话描述`（≤80 字）
+   - 风险评级：CVSS 3.1 vector + 严重度（严重/高/中/低/信息）
+   - 复现步骤：逐步可执行，附 HTTP 包 / curl 命令 / 截图
+   - 影响分析：业务影响 + 攻击者视角
+   - 修复建议：根因修复 + 缓解措施，按优先级排序
+3. **附录**：资产清单、工具输出节选
+
+---
+
+## 工具清单（首次使用前安装并验证）
+
+```bash
+# 侦察/枚举（subfinder/amass/httpx/katana 均为 Go 工具，用 go install 安装）
+go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install github.com/projectdiscovery/katana/cmd/katana@latest
+# amass：go install github.com/owasp-amass/amass/v4/...@master（或 apt install amass）
+apt install nmap whatweb dirsearch           # ffuf: github.com/ffuf/ffuf
+# 扫描与漏洞初筛
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+# 专项（按需）
+sqlmap  # github.com/sqlmap/sqlmap
+```
+
+**验证方式**：`<tool> -h` 能输出帮助即视为可用；nuclei 首次运行需 `nuclei -update-templates`。
+
+---
+
+## references/ 目录约定（渐进式披露）
+
+本文件只回答"做什么 / 何时做 / 何时去读哪个文件"。`references/` 存放：
+
+- `playbooks/`：每类漏洞一份，结构统一为「探测顺序 → payload（带出处）→ 工具用法 → 证据要求」
+- `dictionaries/`：国产 OA/中间件/编辑器指纹、默认凭据、高频参数（命中国产组件指纹时 Read）
+- `templates/`：报告、授权确认单模板
+- `notes/`：实战中沉淀的案例与绕过技巧（自研，不抄来源）
+
+文件不存在时按硬约束 1 处理（联网核实权威来源），绝不凭记忆替代。目录清单见 `references/README.md`。

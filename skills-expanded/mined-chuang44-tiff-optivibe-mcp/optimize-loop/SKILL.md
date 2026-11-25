@@ -1,0 +1,338 @@
+---
+name: optimize-loop
+description: Use when the user wants to optimize a lens design. Triggers on "optimize", "run optimization", "improve this design", "make it better", "hit the spec". Drives the OptiVibe optimize tool with checkpoints and a preflight, pauses at a midpoint for a look at the layout figure, and records a response to every finding raised there. A demanding spec (field, NA, working distance, distortion, MTF, zoom) is walked in by spec increments -- easier spec first, then the hard spec moved in by re-weighting -- with a stage review at every stage (see "Walk in a hard target").
+---
+
+# Optimize Loop — Driving OptiVibe Optimization
+
+## Overview
+
+Optimize a lens design through the OptiVibe `optimize` tool. You set up variables
+and a merit function, preflight with `dry_run`, then call `optimize` — which runs
+monitored optimization bursts for you and returns a verdict
+(`improved` / `diverged` / …). You do not hand-run the burst loop; the tool owns it.
+A DLS or OD run commits its result in place — there is no automatic restore of the
+starting form, which is why Step 1 checkpoints it. A Hammer run is the exception: it
+checkpoints first and attempts a best-restore if it comes out worse.
+
+The loop does not run start-to-finish unattended. Step 4 is a **midpoint pause**: you
+save a candidate, optionally ask for a look at its layout figure, and put what comes
+back to the user as suggestions before going further. When no human is there to steer
+(a headless run, or the user said to proceed without them), you are the steer. A design can meet every number
+you gave it and still be the wrong shape, and a merit function cannot see a defect
+nobody wrote a target for.
+
+## When to Use
+
+- User says "optimize this", "improve the design", "hit the spec"
+- After loading a starting point and deciding what to free and what to target
+- NOT for: a broad global search from scratch (ask for a Hammer run explicitly)
+
+**Do not run Hammer unless the user asked for it.** `algorithm: "Hammer"` is a
+global search: it is slow, it is not what "optimize this" means, and it can land
+somewhere structurally different from the form the user handed you. If DLS stalls,
+*say* it stalled and offer a Hammer run — do not just start one. This is a hard
+gate, not a preference.
+
+## Workflow
+
+### Step 1: Checkpoint the starting point
+
+Before optimizing, `save_snapshot` (or `save_candidate`) the START form. There is no
+reliable in-session undo across an optimization run, and `optimize` also auto-captures
+a per-pass `.zmx` trail.
+
+### Step 2: Set up variables + a merit function
+
+1. Free the variables with `set_variable` (radii, thicknesses, conics). A
+   reused or loaded design can carry INHERITED variables — check with
+   `list_variables`, and `clear_all_variables` to start clean.
+2. Establish a merit function: `build_merit` for a wizard default (it authors a positive
+   air-gap floor via `min_air`; pass `glass=true` to author the `min_glass` floor too),
+   or the user's own operands.
+   If the user supplied a verbatim merit function, drive on THAT.
+3. To ground an operand or a glass choice, use the reference tools (`lookup_operand`,
+   `search_reference`, `lookup_glass`) — do not guess a code.
+4. **Note what you are about to change about the design class.** Freeing conics,
+   substituting glasses, or changing element count alters what the part *is*, not
+   just how well it performs. Write down the starting class now; Step 4 must report
+   any change to it.
+
+### Walk in a hard target
+
+Walk in whenever a design task carries a demanding spec that reads far from its bound at the start -- image quality
+over a field, a high NA, a long working distance, low distortion, an MTF bar, a zoom range -- or any target more
+than about 25% off (a default, not a measurement). Reach it by SPEC increments -- the easier spec first, the harder
+next, re-optimizing after each move -- never by one merit that asks for all of it at once. Measured on the 60x
+seed: four STRH field rows took 14-30+ min a call and crashed the PC; per-field RWCE rows took 2-75 s.
+
+**Coarse goals.** Which spec item moves next is your call: say which and why, in one line, before each move.
+1. A feasible form: the easier specs met (typically geometry: working distance, EFL, NA, element count, clearance
+   floors) with every hard spec's terms still in the merit at a looser weight. An air-gap floor applies to air gaps
+   only; cemented joins are allowed and stay cemented. Tighten packaging (track, thickness
+   ceilings) early; it costs far more once the hard spec is close.
+2. Increments you set yourself: every hard spec's terms stay in the merit throughout; move the weights, the
+   packaging bounds and, when the diagnosis says so, the cause one step at a time. Save
+   every increment as a candidate, even if later moves fail, so the series is visible in the candidates folder;
+   each is a checkpoint, not permission to design a different lens. When you start optimizing for performance, run
+   `design-aberration-review` first (an advisor, not a per-stage gate).
+3. The stated spec: from the last increment, move the hard spec the rest of the way.
+The plan is yours to revise along the way: after each stage re-read every spec item and re-rank what is left --
+a spec that came free, one that got harder, a better order. Say what changed and why.
+
+**Rest takes budget.** A short call can stop by itself (`gain_below_threshold`) while the lens is still moving.
+Measured: a 10-cycle call read `stable` after one pass with 7-21 % of the merit still to gain, and a single 50-cycle
+call stopped up to 6 % short. Call a lens at rest only when a call of at least 50 cycles gains under about 0.5 % of
+the merit, confirmed by a second such call. Compare, keep or reject a form, a stage or a glass swap only at rest.
+
+**The craft is the weights.** Normally one merit for the walk-in; progress is chiefly re-weighting it.
+- Image terms: per-field polychromatic RWCE (ring 6, wave 0, one hy per stated field, target 0), or a `build_merit`
+  wavefront block, which carries every field. Move outward by raising the failing fields' weights a few-fold a step
+  (10 -> 30 -> 50) while the centre keeps its own.
+- Shift weight between families; never set a family that carries a stated spec or a packaging bound to weight 0
+  (a trial operand your diagnosis rejected may go). Measured: zeroing off-axis RWCE while pushing WD took the edge
+  0.44 -> 2.62 waves; zeroing the track ceilings to win it back ended at 157.5 mm where 80 mm meets the spec.
+- Move geometry with the image terms on. A bound's TARGET may step (track 150 -> 100 -> 80) or jump (WD 0.8 -> 5.2
+  in one 11 s call); give a floor an upper bound too (7.6 mm of WD against a 5.3 floor bought nothing).
+- One move, then re-read every field and `check_clearance`, so you know what it bought. When a 10x weight raise
+  barely moves the failing reading, the weights are done: diagnose.
+
+**Diagnose before a glass move or a new constraint.** At the failing field compare polychromatic RWCE (wave 0)
+with each single-wave RWCE. Poly well above every single wave, or one band-end wave far worse than the others, is
+colour: lateral if it grows with field (`analyze_lateral_color`), axial if the band-edge waves are poor on axis too;
+which element carries it is found by `design-glass-matching`'s screen, not by its position. Otherwise read field
+curvature and astigmatism; the levers are air spacings and power balance. A forced flat field made a colour-limited
+edge worse. Before you name a limiting aberration or launch an operand-targeted `optimize`, run
+`design-aberration-review`: it shows how the aberrations are balanced, so you do not chase one operand. Glass comes
+last: build the form and correct the third-order aberrations first. When the lens is at rest ("Rest takes budget")
+and secondary colour or field curvature is what remains, run `design-glass-matching` on the unchanged merit. When it
+hands the form back, take it up here for one attempt within the brief, then return to glass and judge again.
+
+**Hard rules.**
+1. STRH never sits in the merit at an `optimize`; RWCE drives. Read Strehl at a stage end with
+   `analyze_strehl(fields="all", best_focus=false)` and take each field's `per_field[].polychromatic`; it adds no
+   merit rows. A Marechal estimate from RWCE never stands in for that read. Before every `optimize`,
+   `dump_merit_function`: no STRH row, and no stated field's image term, floor or ceiling (MNCA/MNEG/OPLT/CTGT...)
+   at weight 0 (a measured operand a bound reads, such as TOTR under OPLT, stays at weight 0).
+2. Bound every call: the first at `cycles=10`, later ones sized from the envelope's `wall_time_s`. A DLS/OD call
+   stops at its time budget (`time_budget_s`, default 120 s) and keeps the partial result: when `budget_reached` is
+   true the lens is NOT converged, whatever the verdict reads, so call `optimize` again to continue. Give the run
+   enough budget to reach rest ("Rest takes budget") before changing the merit or the variables; if that budget is
+   not available, report the lens as unfinished.
+3. Every stage ends with `check_clearance`, a `save_candidate` under one `design_name`, and a stage review
+   (`design-vision-review` with that candidate's seq). The review is advice; the readings decide.
+4. A stage you cannot reach after weights, a diagnosis and trial moves is the REPORTED LIMIT: reload the last good
+   candidate, name the spec item, the readings at every field and what you tried, and promote that candidate with
+   its geometry spec intact. Never answer a missed stage by jumping to the full target.
+
+Keep a free-form stage log in your reply and in `walk_in_stages.md` when you can write files: per stage the spec
+aimed at, the moves, the readings, the candidate seq and the review outcome -- what helps the next reader.
+
+### Step 3: Preflight, then optimize
+
+1. `dry_run` first — it confirms readiness (variables set, merit computable) WITHOUT
+   opening the optimizer. If it reports a glass-vertex aperture stop, run
+   `normalize_stop` (or pass `auto_normalize`) — `optimize` / `dry_run` default-refuse
+   a glass-vertex stop.
+2. Call `optimize`. It runs monitored optimization internally and returns a VERDICT —
+   read it:
+   - `improved` — the merit came down **against the merit function you gave it**. This
+     is not the same as "the lens got better." See the reality check below.
+   - `diverged` — the merit got worse: an UNSTABLE configuration. Reload your
+     Step-1 snapshot, and make a high-level design change (different form / starting
+     point) rather than running more cycles.
+   - a verdict ending `_unphysical` (`improved_unphysical`, `stable_unphysical`) — the
+     geometry broke: reload your Step-1 snapshot and report.
+   - a verdict ending `_unverified` — the geometry audit established nothing (read
+     `geometry_audit.reason`; on a folded system this is the normal reading): check with
+     `check_clearance` before you count the gain, reload if it fails, else read it as the
+     verdict without the suffix.
+
+   `optimize` can also REFUSE instead of running: `ok=false` with error_family
+   `optimize_merit_uncomputable` and no verdict — a corner ray can't trace at full
+   pupil (a wide-field / fast merit). Apply corner vignetting with `set_vignetting`
+   (`from_rays`), then REBUILD the merit with `build_merit` and re-seed from a
+   gentler form before re-running.
+
+3. **Reality-check every `improved` verdict before you build on it.** A merit function
+   is a proxy, and a mis-authored operand can make a destroyed lens score well. After
+   an `improved` run, confirm the design is still physical:
+   - `check_clearance` — no negative air gaps, no interpenetrating surfaces.
+   - `get_first_order` — back focal distance still positive and sane.
+   - `get_spot` — the real spot moved the same direction the merit did.
+
+   If the merit fell and the geometry got worse, **the merit is wrong, not the lens.**
+   `dump_merit_function` and look for a row driving a measurement to an unintended
+   target. Reload your Step-1 snapshot or a per-pass `.zmx`, fix the merit, and re-run.
+
+A clean call is not proof of success — and neither is `improved` on its own. Trust
+the verdict, the read-back merit, **and** the geometry read-back together.
+
+### Step 4: Assess, checkpoint, then pause
+
+1. Read final EFL / F-number (`get_first_order`) and RMS spot (`get_spot`); compare
+   to the pre-optimization state.
+2. Confirm the geometry is physical (`check_clearance`) — this is the Step-3 reality
+   check, repeated once on the design you are about to keep. Run it BEFORE asking for
+   a look at the figure, not after: a remark about an element looking too thick or too
+   generous is judged against a measured thickness budget, and with no audit in hand
+   there is nothing to judge it against.
+
+   **It reports; it does not certify.** A `check_clearance` that flags nothing is not a
+   statement that the design is manufacturable. It substitutes for a degraded read
+   rather than refusing, so a surface it could not measure can still produce a
+   confident number. On a folded system each gap across the fold is measured and can
+   violate, but a gap it could not measure is listed in `fold_audit.not_measured` and
+   is never clean. Read what it measured, never the absence of a complaint.
+3. `save_candidate` the result. This is the checkpoint the pause is built on, and it is
+   what makes a remark about the figure recordable: the candidate's `seq` and its
+   `png_sha256` both come from this envelope.
+4. **The midpoint pause — ask, then stop for the steer (the user's, or yours when no
+   human is there).** With the candidate saved, you may invoke the
+   `design-vision-review` skill with that candidate's seq to get a second pair of eyes on
+   its paired layout figure. Do it here, and whenever the user asks what you think of the
+   layout.
+
+   **The reviewer is an ADVISOR, never an autopilot.** What it returns are SUGGESTIONS
+   for the user and for you. Nothing it raises edits the design, authors a constraint, or
+   re-enters the loop on its own. Present each remark with what was seen, where, the
+   levers that would address it, and the evidence — then, while a human is there,
+   **WAIT for the user's steer** before optimizing again or promoting.
+
+   **With NO human to steer, do not wait.** Follow `design-vision-review`'s NO HUMAN
+   rule: act on the finding (one soft, low-weight constraint, then re-optimize and
+   re-measure every stated target), or decline it with a measured cost.
+
+   A review that comes back silent is not a pass. Say the eye found nothing; silence
+   never certifies.
+
+Report:
+
+```
+## Optimization Result
+
+| Metric   | Before | After | Delta |
+|----------|--------|-------|-------|
+| Merit    | ...    | ...   | -X%   |
+| EFL      | ...    | ...   | ...   |
+| Max spot | ...    | ...   | ...   |
+
+Design class: unchanged  (or: name exactly what changed — see below)
+Setup changes: none  (or: list what YOU changed — wavelengths, fields, aperture, scale)
+Figure review: <n> recorded (<k> unanswered)  (or: silent — the eye found nothing; or: not asked)
+
+Verdict: improved / stable / diverged, with any _unphysical / _unverified suffix  (cycles/passes as reported by optimize)
+```
+
+**The last line of the report is the verdict line.** It begins with the literal token
+`Verdict:` and is read by tooling downstream. Do not replace it with prose — not
+"Bottom line", not "Summary", not "Notes". If you have more to say, say it *above*
+the line.
+
+**The `Design class:` line is mandatory and must be true.** If the run freed conics,
+substituted a glass, or changed element count, say so there in plain terms — e.g.
+*"changed: conics freed on S1–S4, S6–S7; this is no longer an all-spherical design."*
+A user who handed you an all-spherical triplet and gets back a six-asphere design has
+a different manufacturing proposition, and it is not disclosed by the metric table.
+Never describe the result using the class of the input if you changed the class.
+
+**The `Setup changes:` line is mandatory and must be honest about authorship.** If
+you changed wavelengths, the field set, the aperture, or scaled the lens, list it
+there as **your** change. Two rules about attribution:
+
+- **Do not blame the input file for a state you have not read back from it.** "The
+  seed had the wrong wavelengths" is a claim about a file; if you did not read the
+  file's wavelengths, you cannot make it. Say "I set the wavelengths to F/d/C"
+  instead — which is true, checkable, and just as useful.
+- A spec the user stated (50 mm, f/4, ±20°) is a *target*, not a licence to silently
+  restate the system. Changing the field set changes what every field-dependent
+  number in your table means.
+
+### Step 5: Answer every recorded finding, then suggest next steps
+
+If the midpoint pause recorded anything about the figure, each remark owes a RECORDED
+RESPONSE before the design can be promoted. **`promote_best` refuses** while any
+recorded finding under this design has no response anchored to a saved candidate, and
+it names the open ids when it does.
+
+The rule is narrower than it sounds, and the narrowness is the point: **the gate never
+reads whether the remark was TRUE, nor whether you AGREED with it.** It reads only that
+a response exists for those ids, bound to those bytes, carrying a non-empty reason.
+
+**Answering is not agreeing.** A rejection is a valid response — an obligation to
+respond is not an obligation to comply. Declining should be argued, and the argument is
+the reason you record. A decline names a MEASUREMENT that answers what the remark says —
+a passing floor does not answer a proportion remark — and a push-back to preserve
+performance names its cost in numbers, before and after. At the pause the user's steer
+IS the response: record it, whichever way it went. With no human there, your own
+recorded acted or declined response is.
+
+Record it rather than merely saying it. A remark you silently dropped and one you
+deliberately dismissed look identical afterwards, and prose in the reply scrolls past.
+Pass the call to the tool that writes it to disk beside the exact bytes it is about:
+
+```
+save_candidate(design_name=..., render=False, judgment={
+    "finding_ids": ["<the id the review returned for this remark>"],
+    "disposition": "acted" | "declined" | "superseded" | "referred",
+    "reason": "<why it is or is not worth acting on>"})
+```
+
+`finding_ids` are the ids the review RETURNED — never invented. They are computed from
+each remark's own content plus the picture's digest, so an id you composed yourself
+names nothing and discharges nothing.
+
+`disposition` is required whenever `finding_ids` is non-empty, and the vocabulary is
+four: `acted` (a change was made), `declined` (considered and rejected — the reason is
+the argument), `superseded` (it is about bytes the design has moved past), `referred`
+(routed to a person or a named test; open on someone else's desk). `reason` has no
+default and an empty one is refused. `promote_best` takes the same block.
+
+State it in your reply as well — the user is reading that. But the reply is not the
+record, and if you only write prose the judgment did not happen.
+
+Then:
+
+- Converged well: "Looks good. Run `/design-review` for a full assessment, or
+  `save_candidate` / `promote_best` to keep it."
+- Stalled: "Free more variables, relax a constraint, or change the starting point."
+- Diverged: "`diverged` means an UNSTABLE configuration — reload the saved snapshot if
+  the result is worse, then change the design form; don't run more cycles."
+
+## Key Rules
+
+- **Checkpoint before optimizing** (`save_snapshot` / `save_candidate`). No reliable
+  in-session undo.
+- **Preflight with `dry_run`** before every `optimize`.
+- **Let `optimize` own the loop.** It runs monitored optimization internally — call it
+  **once per merit configuration**; do not hand-run cycles against an unchanged setup.
+  Re-authoring the merit (or freeing different variables) and running again is normal
+  iterative design and is expected; re-running the *same* setup to squeeze out cycles
+  is not.
+- **Give a run the budget to reach rest** ("Rest takes budget", under "Walk in a hard target"); a stop
+  after a short call is not convergence, and the second call that confirms rest is not squeezing out cycles.
+- **An `improved` verdict is not proof the lens is sane.** It means the merit fell.
+  Confirm the geometry with `check_clearance` / `get_first_order` before you build on
+  the result — a mis-authored operand can score a destroyed design well.
+- **Trust the verdict, not the absence of an error.** A `diverged` run can leave a
+  worse design — reload your snapshot; an uncomputable merit needs vignetting + a
+  merit rebuild.
+- **Free the seat when the engine work is done.** Save first, then call `release_engine` before the
+  seat passes to another session or run. Its `kill_others: true` kills other sessions' engines, so ask
+  the user first.
+- **Disclose any change of design class** — conics freed, glass substituted, element
+  count changed — in the `Design class:` line of the report. Always, even when the
+  user did not ask.
+- **The figure review is an ADVISOR, not an autopilot.** At the midpoint pause, while a
+  human is there, you present its suggestions and WAIT for the user's steer; a lever is
+  applied only when the user picks it. Nothing it raises edits the design or re-enters
+  the loop by itself. With NO human there, you are the steer: act, or decline with a
+  measured cost. When the user asks what you think of the layout, save a candidate and ask for
+  a review of that seq — at any point in the session, not only at the pause.
+- **You cannot promote over an unanswered recorded finding.** `promote_best` refuses and
+  names the open ids. Meeting every stated target is not the same as being finished:
+  answer each recorded remark with a `judgment` block. The gate checks that a response
+  exists, never that it agreed — so a rejection closes it, provided the reason argues
+  the decline.
+- Ground operands and glasses with `lookup_operand` / `search_reference` /
+  `lookup_glass` — do not guess a code.

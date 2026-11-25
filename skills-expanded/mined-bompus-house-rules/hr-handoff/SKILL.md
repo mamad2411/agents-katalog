@@ -1,0 +1,117 @@
+---
+name: hr-handoff
+description: Create a resumable handoff when the user requests one, or when the enabled low-quota-handoff modifier calls for one. Do not invoke merely because a conversation is long.
+argument-hint: "What will the next session be used for?"
+disable-model-invocation: false
+---
+
+Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save it outside disposable storage and task worktrees, as § Durable notes in the house rules requires.
+
+Default to `handoffs/<project>/<session>.md` in your notes directory (§ Durable notes), expanding `~` and environment variables to an absolute path. Respect a user-selected persistent location. Create parent directories as needed, choose a unique session name, reuse the file for updates, verify its contents, and report the absolute path. Do not default to temporary directories or caches for resumable handoffs.
+
+For a low-quota handoff (trigger defined by the `low-quota-handoff` modifier), do only what
+is necessary to reach a safe boundary. Do not abandon time-critical duty mid-action. Create the essential
+current state, Git ownership
+and next action first so they survive an interrupted write; then fill in the
+remaining context. Record the triggering bucket, reading source/time and reset
+time when known, and unknown quota/reset information as unknown.
+
+Verify the saved handoff, report its absolute path, and end the turn without
+continuing substantive work, even if tasks were previously authorized; this is the stop
+the house rules' § End of every reply allows for a rule you are following. Only an explicit
+user instruction resumes work, limited to its requested scope; update this same
+handoff and stop again afterward while quota remains low. Do not change
+provider, model or effort without authorization.
+
+For a handoff unrelated to quota, follow the user's requested continuation or
+stop boundary.
+
+Before a handoff unrelated to quota, check the docs this session relied on or
+changed against the current code: repository guidance, READMEs and design docs
+that name the files, commands or behavior the session touched. List each claim
+the code contradicts, with the doc's file and line and the code evidence, and
+propose the smallest fix for each. Edit docs only with the user's approval;
+record unapproved contradictions as open items so the next session doesn't
+trust them. Skip this check for a low-quota handoff.
+
+Preserve, stated exactly and complete even at the cost of length: (1) problems that came up and how they were handled; (2) options raised, tried, or set aside, and why; (3) anything asked for, decided, ruled out, or established as a preference, constraint, or boundary; (4) exactly where things stand now, including any external action started without a recorded result; (5) anything still open, promised, or expected next; (6) details that are hard to reconstruct: names, numbers, dates, exact wording, paths, links. Keep what the user said close to their own words; condense your own reasoning to what it concluded or produced. Everything else stays concise.
+
+Give every pending wait (a deploy, an upload, a review, a queue, a person's reply, a time) a wake-up: the event or time that starts or reminds the next session when the wait ends, with its owner. Examples are a pull request or CI watch, the completion of a delegated task, a scheduled task with its time, or the user telling the session. Record an existing wake-up with where it is delivered, and check that its binding survives the handoff. When a wait has none, create a watch or task only within what the request or the user's guidance already authorizes; a handoff written only to save state schedules nothing. Otherwise write the wait as "no wake-up: <the decision needed>" and surface it. "The user tells me" counts only when the user agreed to it; never assign the wait to the user by assumption.
+
+Give every pending check its exact access, so the next session does not rediscover it: the machine and how to reach it, the absolute paths of the files, logs and folders to read, how to connect to each database or service (its name and the connect command, never a secret), and the known traps, such as a slow or hung mount or a command that never returns, with what to run instead. A handoff that names a check without its access is incomplete. At a low-quota stop, write "wake-up not set" or "access not recorded" for each one that lacks it instead of leaving it out.
+
+Close the loop on remaining work: inventory every current and past item as done,
+open, or deferred, each with its owner and next action, and state whether all
+items are addressed. When the handoff spans several threads or scopes, include
+an integrated plan. Preserve an already-selected next action; record unresolved
+decisions and recommendations in priority order.
+
+For a handoff unrelated to quota, follow
+[reconciliation.md](references/reconciliation.md) to compare the current and
+preceding source transcripts, linked ledgers and Git inventory with this
+inventory. Name each predecessor plan as a source, so every open or deferred
+line in its ledger carries over as an item. Save its receipt and run the offline checker. Report coverage gaps
+and mechanical results separately from the reviewed claim that all items are
+addressed. Include owned unlanded PRs, dependency PRs and own commits without a
+PR; preserve their owners and landing authority.
+
+When a handoff unrelated to quota moves work to another thread, also move what
+the host binds to the outgoing thread:
+
+1. Inventory it: scheduled or recurring tasks, linked pull requests and PR
+   watches, and any agent-mail or messaging registration and its subscriptions.
+   Use the host's own list or status commands for each.
+2. Move or record each item. Where the host lets the receiving thread bind it,
+   the handoff names the exact call the receiver makes; some hosts let a thread
+   bind a task only to itself, so the outgoing thread cannot move it. Otherwise
+   record why it stays. Read each item back after the move; a move without a
+   read-back is unfinished. Retire the outgoing copy of a task only after the
+   receiver's read-back confirms its replacement, so the work neither runs twice nor is lost.
+3. Follow any thread-switch checklist the owning repository or the user's
+   guidance names, and list it in the handoff.
+4. Keep the outgoing registration until the outgoing thread is archived or the
+   user closes it, then retire it.
+5. Give each bound item a row in the receipt, with owner, state and next action.
+
+When the new thread replaces this one as its successor, also follow
+[successor-thread.md](references/successor-thread.md) for when a replacement is
+warranted, its safe boundary, the title, where the successor goes (project,
+environment, pin) and retiring the outgoing thread (settle, then archive).
+
+At a low-quota stop, save essential state first and record partial coverage
+when feasible. An unfinished receipt or failing check never delays that stop.
+
+Ask what to work on next only when an unresolved decision needs the user's
+input and the handoff's stop boundary permits it. Follow the house rules'
+§ Offers and § Finishing work. When stopping for low quota, the saved handoff and recorded next action serve
+as the offer; do not ask a new selection question.
+
+A session resuming from a handoff re-reads the repository's guidance index,
+meaning its `AGENTS.md` (or configured instruction root) and the rules and docs
+it names. It also checks `git log` on those paths plus the house-rules checkout
+for changes since the handoff was written; an installed or composed copy of
+the rules can lag its source. Boot-injected rules are a snapshot, not proof of
+current text.
+
+Include a **Git** section when the handoff involves repo work:
+
+```markdown
+## Git
+
+- Checkout: <absolute path>; branch or detached HEAD: <verified value>
+- Owns: `path/globs`
+- Do not touch: `<paths other chats own>`
+- Last commit: `<sha> <subject>`
+```
+
+If two chats run in parallel on this repo, owns must not overlap. Prefer one implementation chat at a time.
+
+Write a prompt for the resuming agent. It must name the handoff's absolute path, tell the resuming session to read the handoff fully before acting (which itself directs the guidance re-read), and state the recorded next action plus any provider or host constraint the user gave. When the outgoing thread starts the successor, the prompt also says the successor archives the outgoing thread as successor-thread.md describes. Keep it under ten lines; the handoff carries the detail, the prompt only points at it.
+
+When the user has directed the move to a new conversation (their own words, or choosing a handoff or rotate option), or a rule requires it, and the host can start a conversation, start the successor yourself with that prompt as its first message, then retire the outgoing thread as [successor-thread.md](references/successor-thread.md) says. Do not end by asking the user to paste the prompt. That direction is the user's direction § Repository work asks for. When the direction is ambiguous, start the successor and say so in one line.
+
+End the report with the prompt in a fenced code block, so the user can copy it into a fresh session verbatim, only as the fallback: the host cannot start a conversation, the start failed (say why), or the handoff was written with no direction to move to a new conversation (a pause, or a low-quota handoff where the user chose no successor; a request only to write or save a handoff directs no move).
+
+Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
+
+If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.

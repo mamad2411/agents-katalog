@@ -1,0 +1,252 @@
+---
+name: address-issue
+description: >-
+  Plan and implement a GitHub issue on the current branch, stopping for approval
+  first. Use for "address issue #42" or "fix issue #42"; for a new worktree, use
+  workmux:start-issue.
+argument-hint: "<issue-number...|description> [--dry-run|--no-approval] [--no-commit] [--commit-per-change]"
+---
+
+# Address Issue
+
+Fetch a GitHub issue, plan the work, stop for approval, then execute changes and commit with issue references.
+
+## Options
+
+The user may provide these options inline:
+
+- **--dry-run**: Fetch and analyze the issue, present the plan, but do not change files or GitHub state, including assignments and labels
+- **--no-approval**: Skip the approval stop in step 6 and go straight from the plan to execution
+- **--no-commit**: Make changes but do not commit them
+- **--commit-per-change**: Commit after each logical change instead of grouping at the end
+
+`--dry-run` and `--no-approval` are opposite ends of the same gate: `--dry-run` stops permanently after the plan, the default stops and resumes once the user approves, and `--no-approval` never stops.
+
+## Several Issues
+
+Several issue numbers, as in `/address-issue 42 57`, share one plan and one approval gate. Step 6 may propose separate PRs and must identify which changes belong on the current branch. `workmux:start-issue` chains into this form when it opens one worktree for several issues. Every step below applies to each issue, as follows:
+
+- **Step 1:** fetch every issue by number. Several issues are always given as numbers; descriptive text names one issue and follows the single-issue workflow.
+- **Step 2:** check each issue's state. Ask about every closed issue at once, and drop any the user declines.
+- **Step 3:** unless `--dry-run` was specified, self-assign and label each open issue, recording the result for each one.
+- **Step 4:** show every issue's context, one block per issue.
+- **Step 5:** classify each issue and extract its sub-tasks, keeping track of which issue each sub-task came from.
+- **Step 6:** collect every issue's requirements into one plan, headed `## Plan for Issues #42, #57`, that says which change serves which issue and identifies overlapping files, requirements and shared changes. There is one approval gate for the whole plan, not one per issue.
+- **Step 8:** each commit references every issue its change addresses, as in `feat: add dark mode toggle (#42, #57)`, and together the commits reference every issue addressed on the current branch. The commit prefix follows the classification of the issue or issues the commit addresses.
+- **Steps 9 to 11:** report the status of every issue, including which are marked in progress and which sub-tasks remain for each.
+
+`--dry-run`, `--no-approval`, `--no-commit` and `--commit-per-change` apply to the one combined plan, exactly as they do for one issue.
+
+## Workflow
+
+### 1. Find the Issue
+
+The user provides either an issue number or descriptive text. For several issue numbers, see "Several Issues" above.
+
+**By number:**
+
+```bash
+gh issue view NUMBER --json number,title,labels,assignees,body,state
+```
+
+**By text (fuzzy search):**
+
+```bash
+gh issue list --search "USER_TEXT" --state all --json number,title,labels,state --limit 10
+```
+
+If the search returns exactly one result, proceed automatically with that issue without asking for additional confirmation.
+
+If the search returns multiple results, present them to the user and ask which one to use.
+
+If no results, try broadening the search or ask the user to refine their query.
+
+### 2. Check Issue State
+
+If the issue is closed, warn the user and ask whether to proceed. Do not proceed without confirmation.
+
+### 3. Mark Issue In Progress
+
+**If `--dry-run` was specified, skip this entire step.** Do not self-assign, create a label or add a label. Record that status marking was skipped, then continue to step 4.
+
+Otherwise, if the issue is open, signal that work is starting. Skip this step for closed issues.
+
+**Self-assign:**
+
+```bash
+gh issue edit NUMBER --add-assignee @me
+```
+
+**Ensure the label exists, then add it:**
+
+```bash
+gh label create "in progress" --description "Work is actively being done" --color FBCA04 2> /dev/null || true
+gh issue edit NUMBER --add-label "in progress"
+```
+
+The `gh label create` command is safe to run even if the label already exists. `2> /dev/null` suppresses the "already exists" error and `|| true` ensures a zero exit code so the subsequent command always runs. This ensures the label is available before `gh issue edit --add-label` attempts to use it, since `gh` does **not** auto-create labels.
+
+Self-assignment is idempotent, safe to re-run if the assignee already exists.
+
+If any command fails, warn the user but continue. Status marking is best-effort and must never block the primary workflow. Record whether this step succeeded for the completion summary.
+
+If the session is already in plan mode when the skill starts, all three commands above write to GitHub and will be blocked: the self-assign, the label creation, and the label add. Skip this step, note that the issue was not marked in progress, and continue.
+
+### 4. Display Issue Context
+
+Show the issue details to establish shared context:
+
+```text
+## Issue #NUMBER: TITLE
+
+**State:** open/closed
+**Labels:** label1, label2
+**Assignees:** user1, user2
+
+BODY_CONTENT
+```
+
+- If the issue body exceeds approximately 2000 characters, truncate it at the nearest paragraph or sentence boundary and append: "(Issue body truncated. Run `gh issue view NUMBER` for full details.)"
+- If the issue body is empty, note that the body is empty.
+- If there are no labels, omit the labels line.
+- If there are no assignees, omit the assignees line.
+
+### 5. Analyze the Issue
+
+**Classify the issue** into one of these types based on labels, title, and body content:
+
+<!-- prettier-ignore -->
+| Type          | Signals                                                       | Commit prefix |
+| ------------- | ------------------------------------------------------------- | ------------- |
+| bug fix       | "bug" label, "fix", "crash", "error", "broken" in title/body  | `fix`         |
+| feature       | "enhancement"/"feature" label, "add", "implement", "support"  | `feat`        |
+| documentation | "documentation" label, "docs", "readme", "guide"              | `docs`        |
+| refactor      | "refactor" label, "clean up", "simplify", "reorganize"        | `refactor`    |
+| chore         | "chore"/"maintenance" label, "update", "bump", "dependencies" | `chore`       |
+
+Default to `feat` when the classification is ambiguous.
+
+**Extract sub-tasks** from the issue body if it contains GitHub task list checkboxes:
+
+- Unchecked items (`- [ ] ...`) become sub-tasks to address
+- Checked items (`- [x] ...`) are treated as already completed and skipped
+
+If there are no task list items, treat the entire issue as a single task.
+
+### 6. Plan the Work
+
+**Do not create, modify, or delete any file until the plan is approved.** This is a hard gate, not a suggestion. Asking the user a clarifying question is allowed; editing is not.
+
+**Check the flags before doing anything else in this step.** `--dry-run` and `--no-approval` both bypass plan mode, so read their paragraphs at the end of this step first.
+
+**If your harness provides plan mode** (Claude Code) and neither flag was given: call `EnterPlanMode` before exploring, keep the exploration read-only, then call `ExitPlanMode` with the plan below and wait for the approval result.
+
+**Otherwise** (Codex CLI, or any harness without those tools): present the plan below, then stop and wait for the user to confirm, adjust, or reject it.
+
+Enter plan mode here rather than at step 1. Steps 1 and 4 are read-only, but step 3 writes to GitHub, and plan mode would block it.
+
+1. Explore the codebase to understand the relevant areas
+1. Identify the files that need to be created, modified, or deleted
+1. When the plan changes independent areas, propose separate PRs, naming each PR's scope and dependencies. Put sanitizers, parsers, validators and security boundaries in their own PR, together with the tests, consumers and documentation required for that change. Identify the changes to execute on the current branch and leave the other PRs as planned follow-ups; one approval gate still covers the plan.
+1. For input checks, prefer an allowlist of exact known-good forms or a structural parse that removes the whole class over a blocklist or an ad hoc regex patched one input form at a time. Use the `review-anti-patterns` skill's Sibling input forms and Validator gaps questions to assess the design; reference its checklist rather than copying it into the plan.
+1. Present a plan to the user:
+
+```text
+## Plan for Issue #NUMBER
+
+**Classification:** bug fix / feature / documentation / refactor / chore
+**Sub-tasks:** N (if extracted from task list)
+
+### Changes
+
+1. Modify `src/auth.go` - fix null pointer in login handler
+1. Add `src/auth_test.go` - add test for the fix
+1. Update `README.md` - document the new behavior
+```
+
+**If `--dry-run` was specified**: Present the plan, then stop permanently. Do not make any changes.
+
+**If `--no-approval` was specified**: Skip the stop and continue to step 7.
+
+**Either flag bypasses plan mode entirely.** With `--dry-run` or `--no-approval` set, call neither `EnterPlanMode` nor `ExitPlanMode`, and present the plan as plain output instead. Skipping only `EnterPlanMode` while still following the instruction above to call `ExitPlanMode` would leave the harness exiting a mode it never entered. Neither flag has an approval for those tools to gate: `--dry-run` ends at the plan, and `--no-approval` proceeds past it without asking.
+
+### 7. Execute the Changes
+
+Work through each planned change assigned to the current branch, announcing progress. Keep changes assigned to separate PRs as follow-ups:
+
+```text
+### Change 1 of N: Modify src/auth.go
+```
+
+If sub-tasks were extracted from the issue body, work through those assigned to the current branch in order.
+
+### 8. Commit the Changes
+
+**If `--no-commit` was specified**: Skip this step entirely.
+
+**If `--commit-per-change` was specified**: Commit after each change in step 7 instead of waiting until the end.
+
+**Default behavior** (neither flag): After all changes are complete, group them into the smallest logical commits that are appropriate. Each commit should be a self-contained, reviewable unit.
+
+All commit messages must:
+
+- Use the conventional commit prefix derived from the issue classification (step 5)
+- Include the issue number for GitHub auto-linking: `(#NUMBER)`
+- Be concise and descriptive
+
+Examples:
+
+```text
+fix: resolve null pointer in login handler (#42)
+feat: add dark mode toggle to settings page (#15)
+docs: update installation instructions (#88)
+```
+
+For multi-commit cases, each commit references the same issue number.
+
+### 9. Leave Issue In Progress
+
+Do not remove the "in progress" label after local implementation or committing.
+
+The label means the issue has active work associated with it. Keep it in place until the related pull request is merged or the user explicitly abandons the effort.
+
+If step 3 succeeded, report that issue status cleanup is deferred until PR merge or explicit abandonment. If step 3 was skipped or failed, report that no issue status was retained. Do not add PR merge automation or invent an abandonment workflow.
+
+### 10. Report Completion
+
+Display a summary of what was done:
+
+```text
+## Summary for Issue #NUMBER: TITLE
+
+| #   | Change                              | Status  | Commit  |
+| --- | ----------------------------------- | ------- | ------- |
+| 1   | Fix null pointer in auth.go         | Done    | abc1234 |
+| 2   | Add test for login handler          | Done    | abc1234 |
+| 3   | Update README                       | Skipped | -       |
+
+**Total**: N changes made, M skipped
+```
+
+If any changes were skipped, list them with explanations.
+
+If step 3 succeeded, include a note that issue #NUMBER remains labeled "in progress" until the related PR merges or the user explicitly abandons the effort.
+
+### 11. Offer Next Steps
+
+Suggest logical follow-up actions:
+
+- `/pr` to create a pull request for the changes
+- If the issue had sub-tasks and some remain unchecked, note which items still need attention
+- If the issue references other issues, mention them
+
+## Error Handling
+
+- If `gh` is not installed or not authenticated, instruct the user to install it from https://cli.github.com/ and run `gh auth login`
+- If the issue is not found, report that and stop
+- If the issue is closed, warn and ask before proceeding
+- If status marking fails (assignment or labeling), warn but continue with the work
+- If the session is already in plan mode, step 3 is blocked; skip it, say so, and continue
+- If the user rejects the plan in step 6, stop without making changes and report that the issue is still marked in progress
+- If a planned change cannot be made (file not found, ambiguous requirement), skip it with an explanation and continue with the remaining changes
+- If commits fail, report the error and leave changes uncommitted for the user to handle

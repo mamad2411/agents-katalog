@@ -1,0 +1,403 @@
+---
+name: outreach
+description: "Universal B2B outreach skill. Define an ICP, build and clean a lead list, find and verify professional emails and mobile numbers, write and personalize a multichannel sequence, check deliverability, launch the campaign, handle replies, and read the results. Works with the Emelia MCP server or REST API, the Basile API for French B2B data, or a plain CSV. Triggers on: outreach, cold email, prospecting, lead list, lead generation, email finder, email verification, phone finder, sequence, campaign, follow-up, deliverability, warmup, SDR, ICP, personalization, reply handling."
+user-invokable: true
+argument-hint: "[command] [target]"
+license: MIT
+metadata:
+  author: Emelia
+  version: "0.1.0"
+  category: sales
+---
+
+# Claude for B2B Outreach
+
+**Invocation:** `/outreach $1 $2` where `$1` is the command and `$2` is the target
+(a brief, a list name, a CSV path, a campaign name or a URL).
+
+This skill orchestrates 17 sub-skills and 5 sub-agents that take an outbound campaign
+from a vague idea to replies in an inbox. Every step writes a file you can read,
+edit and re-run. Nothing is a black box.
+
+## Quick reference
+
+| Command | What it does |
+|---------|-------------|
+| `/outreach pilot` | **Start here.** A guided first campaign on 100 contacts, with a checkpoint at every step |
+| `/outreach full <brief>` | The complete pipeline: ICP, list, enrichment, copy, sequence, launch, analysis |
+| `/outreach offer <url or description>` | Turn what you sell into an offer a competitor could not copy, from your website or from a conversation |
+| `/outreach icp <brief>` | Turn a vague brief into a targeting spec: titles, industries, size, geography, signals |
+| `/outreach leads <icp or query>` | Build the lead list from Basile (France), LinkedIn or a CSV |
+| `/outreach filter <list>` | Deduplicate, exclude customers and blacklist, segment, drop unusable rows |
+| `/outreach find-email <list>` | Find professional emails, in bulk or one by one |
+| `/outreach find-phone <list>` | Find direct mobile numbers |
+| `/outreach verify <list>` | Verify deliverability of every address before sending |
+| `/outreach enrich <list>` | The full waterfall: find, verify, decide, fill custom fields |
+| `/outreach write <angle>` | Write the sequence copy: subjects, openers, follow-ups, break-up |
+| `/outreach personalize <list>` | Per-contact icebreakers and AI variables at scale |
+| `/outreach sequence <spec>` | Design the multichannel flow: steps, delays, conditions, A/B tests |
+| `/outreach deliverability` | SPF, DKIM, DMARC, warmup, sending limits, ramp plan |
+| `/outreach campaign <spec>` | Create and launch the campaign in Emelia |
+| `/outreach replies` | Triage replies, draft answers, handle unsubscribes |
+| `/outreach audit <campaign>` | Rates per step and per variant, against benchmarks, what to change |
+| `/outreach update` | Say whether this checkout is behind the published repository, and what changed |
+
+No command given? Ask what the user wants to do, then suggest `/outreach pilot`
+if they have never run a campaign, or `/outreach full` if they know their market.
+
+## The working directory
+
+Everything a run produces lands in `outreach/` in the current directory, so the user
+owns the output and can re-run a single step without redoing the rest:
+
+```
+outreach/
+  offer.md            # what you sell, and the block the writing prompt consumes
+  icp.json            # the targeting spec, human editable
+  leads.csv           # the list, one row per contact, source column kept
+  enrichment.json     # what was found, what was not, what it cost
+  sequence.md         # the copy, step by step, with variables
+  campaign.json       # what was created in Emelia, with ids
+  audit.md            # what is wrong with the emails, and the one thing to fix
+```
+
+Never overwrite a file from a previous run without saying so. Append a suffix when
+the user is clearly starting a second campaign (`leads-q4.csv`).
+
+## Data sources
+
+Three ways to get contacts, in this order of preference:
+
+1. **Basile API** (`api.basile.cc`) for French B2B: around 26.8 million companies and
+   29.5 million contacts, from the legal registry, LinkedIn and Google My Business.
+   Header `Authorization: <raw key>`, no `Bearer`. Filters are nested objects, not
+   flat arrays: `filters.result_role.include`, `filters.result_country_code.include`,
+   `hide_legal_entities`. **Send `countOnly: true` to count for free**; without it
+   every returned row costs a credit. The full spec is at
+   `https://docs.basile.cc/openapi.yaml`, and an AI oriented index at
+   `https://docs.basile.cc/llms.txt`. Read the spec before writing a filter, because
+   a query written from intuition will be rejected.
+2. **LinkedIn**, through a Sales Navigator search URL and the Emelia LinkedIn scraper.
+   Best for a named account list or a role-based search outside France.
+3. **A CSV the user already has.** Always supported, no key needed. Map the columns,
+   then treat it exactly like a sourced list.
+
+Enrichment (email, mobile, verification) always goes through Emelia, which bills in
+credits. See "Credit discipline" below.
+
+## Connecting to Emelia
+
+Two ways in: the MCP server, which the user can connect by signing in with their
+Emelia account, and the REST API, which needs an API key. Read this before writing any
+call.
+
+### Pick the way in, before the first call
+
+Check once per run, in this order, and tell the user in one line which way you use.
+
+1. **The Emelia MCP server, when it is connected.** Look for an Emelia tool among
+   your tools: a name that ends in `__get_campaign_sequence_guide` or
+   `__list_campaigns`. It is `mcp__emelia__list_campaigns` when the user followed
+   [SETUP.md](../../docs/SETUP.md), but a claude.ai connector or another server name
+   changes the prefix, so match the end of the name, never the prefix. If your tools
+   are loaded on demand, search for them first (`emelia list_campaigns`). Then call
+   `list_campaigns` once: it only reads, costs nothing, and proves the sign-in works.
+   A server that `/mcp` shows as needing authentication has no tools until the user
+   picks it there and chooses **Authenticate**.
+   When it is connected, use its tools for everything they cover: campaigns and their
+   sequence, lists and contacts, enrichment, LinkedIn extractions, mailboxes and
+   warmup, blacklist, credits, and the inbox once it is open in Emelia. The REST tables
+   below then only explain what a tool does underneath.
+2. **`EMELIA_API_KEY`, when it is set.** Test it with `[ -n "$EMELIA_API_KEY" ]` and
+   never print it. Use the REST API below. It is also the only way for the bundled
+   scripts (`scripts/find-emails.py`, `scripts/preflight-campaign.py`), which call
+   REST directly.
+3. **Neither.** Before falling back to dry run, offer the shortest way in, which needs
+   no key at all:
+
+   ```bash
+   claude mcp add --transport http --scope user emelia https://mcp.emelia.io/mcp
+   ```
+
+   Then `/mcp` in Claude Code, `emelia`, **Authenticate**, and **Authorize** on the
+   Emelia page that opens in the browser. If the tools do not show up in this session,
+   ask the user to start a new one. If they would rather not connect anything, dry run.
+
+Two consequences of signing in rather than using a key. Claude Code keeps the access
+token to itself: the shell cannot read it, `$EMELIA_API_KEY` stays empty and the
+scripts cannot run, so do their work with the MCP tools (`find_email`,
+`verify_email`, `get_campaign` and the others) and say so. And the tools act as the
+user on the whole account, exactly as a key would: the rules below on credits and on
+sending apply unchanged.
+
+Suggest the name `emelia` and no other: the agents of this plugin list their tools as
+`mcp__emelia__<tool>`, so under another name they lose the MCP tools and work through
+REST, or report what they could not read.
+
+### The REST API, the documented path
+
+This is the way in when there is a key and no MCP server, and the one the scripts
+use. The user creates an API key at
+[app.emelia.io/settings/api](https://app.emelia.io/settings/api) and exports it:
+
+```bash
+export EMELIA_API_KEY="..."      # required for anything that enriches or sends
+export BASILE_API_KEY="..."      # optional, French B2B data
+```
+
+Base `https://api.emelia.io`, header `Authorization: <key>`. Never write a key into a
+file. The full surface, which is all there is:
+
+| Method and path | What it does |
+|---|---|
+| `POST /tools/find/email` then `GET /tools/find/email/{jobId}` | Find an email from `fullname`, `companyName` or `companyWebsite`, and `country`, which is **required** despite what some schemas say |
+| `POST /tools/find/phone` then `GET /tools/find/phone/{jobId}` | Find a mobile from `linkedinUrl` |
+| `POST /tools/verify/email` then `GET /tools/verify/email/{jobId}` | Verify one address |
+| `GET /lists/list`, `POST /lists/list` | Read the lists with their columns, create one. Returns `listId` |
+| `POST /lists/custom-variable` | Declare a custom variable before loading contacts: `{technicalName, schema, displayName}`, `schema` being `lead` or `company`. 201 when created, 422 when it already exists, so it is safe to call every time |
+| `GET /lists/custom-variable/check` | `?technicalName=...&schema=lead`, whether that custom variable exists |
+| `POST /lists/list/{listId}/contacts/batch` | Load up to 100 contacts per call, `?updateIfExists=true` to re-run safely (a query parameter, never a body key) |
+| `GET /lists/list/{listId}/rows` | Read the contacts back, paginated, `pageSize` caps at 100 |
+| `POST /advanced/lists/contacts` | Add one contact to a list, for a single row, never for a file |
+| `POST /advanced/campaign/contacts` | Add a contact straight into a campaign, with custom fields |
+| `PATCH /advanced/contacts` | Set a custom field on a contact |
+| `POST /advanced/campaigns` | Create a campaign from a `name`: email, LinkedIn or both. The routes in the next table then set its steps, settings, list and sending accounts |
+| `GET /advanced/campaigns` | List campaigns |
+| `GET /advanced/campaigns/{campaignId}/activities` | Activity feed: sent, opened, clicked, replied, bounced |
+| `POST /emails/reply` | Reply to a reply: `messageId`, `providerId`, `to`, `subject`, `content` |
+| `POST` and `DELETE /emails/blacklists/contact` | Add or remove an address from the blacklist |
+| `GET /linkedin/campaigns` | Legacy. LinkedIn campaigns of the old platform |
+| `POST` and `DELETE /linkedin/campaign/contacts` | Legacy. Contacts in an old platform LinkedIn campaign, profile URL as `linkedinUrlProfile` |
+| `POST /linkedin/lists/contacts`, `PATCH /linkedin/contacts` | Legacy. Old platform LinkedIn lists (profile URL as `url`) and custom fields |
+
+**Every campaign you create is an advanced campaign**, `POST /advanced/campaigns`, and
+that includes a LinkedIn only campaign and a plain sequence of four emails. The channel
+is decided by the step tree you push afterwards, not by the route. The old platform
+routes (`POST /emails/campaigns`, `POST /linkedin/campaigns`) still create campaigns
+there: never call them. The legacy rows above are kept to read and manage a campaign
+that already exists on the old platform. When you meet one, suggest moving it to an
+advanced campaign built from the matching template in `outreach-sequence`
+(`pure-linkedin` or `linkedin-premium-or-sales-navigator` for a LinkedIn only one).
+
+Rate limits, per minute and per key: 30 without a subscription, 100 on Start, 300 on
+Grow, 1000 on Scale. Batch and pace accordingly.
+
+### Building and launching a campaign, end to end
+
+These routes are not in the public documentation yet, and they were verified against
+the live API on 8 September 2026 with a plain API key, then their behaviour checked
+again against the product on 29 September 2026. They are what makes the whole
+pipeline programmable, so use them, and tell the user they are not contractual yet.
+
+| Method and path | What it does |
+|---|---|
+| `GET /advanced/campaigns/{id}` | The full campaign: status, steps, schedule, recipients, identities |
+| `PATCH /advanced/campaigns/{id}/steps` | Set the sequence, `{"steps": {...}}`: an object, not an array. Replaces the whole tree. Leave out every `_id` but `"START"` on the root and the server generates them; one you write is a MongoDB ObjectId, 24 lowercase hex characters, never a UUID |
+| `PATCH /advanced/campaigns/{id}/settings` | Schedule, daily volumes, tracking, stop conditions, wrapped in `settings`. Merged into the current schedule: a field you omit keeps its value. `trackLinks`, `trackOpens`, `blacklistUnsub`, `start` and `end` go in every call |
+| `PATCH /advanced/campaigns/{id}/recipients` | Attach lists (`lists`) and exclusion lists (`excludedLists`). Both arrays replace what was there |
+| `PATCH /advanced/campaigns/{id}/identities` | Choose the sending accounts. Replaces the list |
+| `PATCH /advanced/campaigns/{id}/name` | Rename it, `{"name": "..."}` |
+| `POST /advanced/campaigns/{id}/test-email` | Send yourself a test before launching |
+| `POST /advanced/campaigns/{id}/start` and `/pause` | Launch and pause. No body |
+| `PATCH /advanced/campaigns/{id}/planned-start` | Schedule the launch for later |
+| `POST /advanced/campaigns/{id}/duplicate` and `/archive` | Duplicate, archive |
+| `DELETE /advanced/campaigns/{id}` | Delete a campaign, useful to clean up a test |
+| `GET /advanced/campaigns/{id}/progress`, `/failed-activities`, `/export` | Follow a running campaign |
+
+A freshly created campaign already carries a default schedule (35 contacts added per
+day, 500 emails maximum, Europe/Brussels, Monday to Friday, 08:00 to 17:00) and four
+empty steps. Read it back with `GET` before patching, so you change what you mean to
+change and nothing else.
+
+The order that works: create, patch the steps, patch the settings, attach the list,
+choose the identities, send yourself a test email, then start. Never skip the test.
+
+### The MCP server
+
+`https://mcp.emelia.io/mcp`. The user connects it by signing in with their Emelia
+account (OAuth, nothing to copy) or with an API key in the `Authorization` header.
+Both give the same access to the whole account.
+
+It covers the whole API except the legacy campaigns, plus what REST does not offer.
+The tools the skills reach for most: `get_campaign_stats`, `get_warmup_status` and `set_warmup`, `list_email_providers`,
+`check_mailbox_health`, the list management tools (`create_list`, `list_lists`,
+`get_list`, `rename_list`, `delete_list`, `get_list_contacts`, `update_contact`,
+`delete_contact`), `find_contact`, which searches a contact across every list of the
+account, `create_linkedin_scraper`, which starts a LinkedIn extraction from a search
+URL, and, once the Inbox is open in Emelia, the inbox tools (`list_emails`,
+`search_emails`, `get_thread`, `draft_reply`). The full list, with every parameter, is
+at [docs.emelia.io/docs/mcp/tools](https://docs.emelia.io/docs/mcp/tools). Before
+writing or changing a sequence through it, read `get_campaign_sequence_guide`.
+
+Never assume it is there. Check as described above, and fall back to REST or to
+asking the user.
+
+Two things verified against the live server on 8 September 2026, because getting them
+wrong costs a failed call every time: `find_email` rejects any request without
+`country`, even though its schema lists only `fullname` and `companyName` as
+required; and `find_contact` takes a single `query` parameter, not `email`, whatever
+its description suggests. Enrichment jobs answer in under five seconds, so poll every
+three seconds rather than every thirty. Bulk contact adds cap at 100 rows per call and
+return a `created` / `duplicates` / `updated` / `failed` breakdown you should report
+to the user as is. Deleting a list deletes its contacts too, and updates the campaigns
+that used it.
+
+### What no API can do, and what that means for you
+
+The whole pipeline is programmable, but two things still deserve care.
+
+**A campaign is never launched without the user saying so.** Not because the API
+stops you, but because a message to a real person is not reversible. Show the copy,
+the recipient count and the daily volume, send the test email, then ask.
+
+**Contacts live in lists.** A list attached to a running campaign feeds it
+continuously: every contact you add enters the campaign on its own. That is the
+product's central mechanic, and it is what makes an ongoing campaign easy to feed
+without touching its configuration again.
+
+Say this plainly to the user the first time, rather than letting them discover it.
+If neither the MCP server nor a key is there, offer to connect the MCP server first
+(see "Pick the way in"), then **dry run**: every step still produces its file,
+nothing is sent, nothing is charged.
+
+### Why these skills exist next to an API
+
+An endpoint tells you how to call it. It does not tell you to count before you
+extract, to filter before you enrich, that a catch-all domain cannot be verified,
+that a 40% open rate with no replies is an offer problem and not a deliverability
+one, or that adding a thousand contacts to a live campaign on a cold domain will
+burn it. That judgment is what each sub-skill carries. The transport is a detail.
+
+## The rules that make this trustworthy
+
+**Credit discipline.** Finding an email, a mobile or a verification costs the user
+money. Before any bulk enrichment: count the rows, state the cost in credits, and get
+an explicit yes. Never enrich a row you are going to filter out later, so filter first.
+
+**Verify before you send.** A list that has not been verified will bounce, and bounces
+cost sender reputation, which is far more expensive than the credits saved. Sending
+to an unverified list is a refusal, not a warning.
+
+**Deliverability is a gate, not a chapter.** `/outreach campaign` calls
+`outreach-deliverability` first. If warmup is off, if SPF, DKIM or DMARC is missing,
+or if the daily volume is above what the mailboxes can carry, stop and fix it.
+
+**Identify yourself, and offer a way out.** Every message says who is writing and for
+which company, and every step from the second onwards carries a working unsubscribe
+link. That is not paperwork, it is what separates outreach from spam, and a reader who
+cannot opt out marks you instead.
+
+**Say what you did not do.** If the finder found 62% of the list, say 62%, do not
+round it up and do not quietly drop the rest.
+
+## How a full run flows
+
+```
+/outreach full "sell our API monitoring tool to CTOs of French SaaS, 20 to 200 people"
+
+  1  outreach-offer           -> offer.md          what you sell, and why it is not generic
+  2  outreach-icp             -> icp.json          you confirm before spending
+  2  outreach-leads           -> leads.csv         count first, extract second
+  3  outreach-filter          -> leads.csv         dedupe, exclude, segment
+  4  outreach-enrich          -> enrichment.json   find, verify, cost stated up front
+  5  outreach-write           -> sequence.md       copy, reviewed by you
+  6  outreach-personalize     -> leads.csv         icebreakers per contact
+  7  outreach-sequence        -> campaign.json     steps, delays, conditions, A/B
+  8  outreach-deliverability  -> gate              blocks the launch if unsafe
+  9  outreach-campaign        -> live in Emelia    you confirm the launch
+ 10  outreach-replies           -> replies triaged   labels and drafts, you send
+ 11  outreach-audit         -> audit.md          what is wrong with the emails
+```
+
+Steps 1, 4, 5 and 9 stop and wait for the user. The rest runs through.
+
+## Speed, and why it is a correctness question
+
+A run that takes two hours is not a slow run, it is a wrong one: the user stops
+watching, cannot correct you, and you finish alone. Three rules, in order of how much
+time they save.
+
+**Never wait on one row before starting the next.** The finders are asynchronous. `POST
+/tools/find/email` returns a `jobId` immediately and `GET /tools/find/email/{jobId}`
+answers when the server is done. Submit the whole file, then poll the whole file.
+Submitted serially, 250 rows take between one and three hours, because each one waits
+out the server's own search. Submitted as a wave, the same 250 come back in about the
+time the slowest single row takes, which is a minute or two.
+`scripts/find-emails.py` does exactly that and it is the reference implementation.
+The `/tools/` routes are exempt from the rate limit of the plan, so nothing is gained by
+holding back.
+
+**Move on at the number you need, not at the last row.** `--enough 120` stops the
+polling as soon as 120 addresses are in. The jobs still running are not lost: their
+`jobId` is written into the file and `GET /tools/find/email/{jobId}` collects them
+later. Building the campaign with the contacts you already have, and folding in the
+stragglers afterwards, is always faster than waiting for a complete file.
+
+**Fan out everything that divides.** This is a Claude Code plugin, and a step that
+loops over items should be several agents, not one loop. Writing 100 personalised
+sequences is ten agents of ten contacts each, not one agent of a hundred. Sourcing from
+three cities is three agents. Auditing nine mailboxes is nine. Give each agent the same
+written brief, a disjoint slice, and its own output file, then read the outputs back,
+check them against the brief yourself, and reconcile. The `agents/` directory holds the
+briefs that already exist: `outreach-lead-sourcer` (several sources at once),
+`outreach-enricher` (batches), `outreach-copywriter` (a slice of contacts each),
+`outreach-deliverability-auditor` (one mailbox each), `outreach-auditor` (per campaign
+or per step).
+
+Two things do not parallelise, and forcing them costs more than it saves: anything that
+writes the same file, and anything that spends credits on rows another agent may already
+have covered. Split the input first, then fan out.
+
+## Say what is happening, while it happens
+
+The user is in a conversation with you, not reading a log afterwards. When you fan work
+out to agents, or start something that runs for a minute, say so before it starts and
+report each result as it lands: what you launched, what came back, what it cost, what
+you are doing next. A silent stretch longer than a couple of minutes is a bug in how you
+are working, not a property of the task.
+
+The same rule applies inside Emelia, because that is where the user will look. **Create
+the campaign early and let it fill up in the open.** Create it as soon as you know the
+name, with the state in the name in parentheses, and rename it as the run advances,
+with `PATCH /advanced/campaigns/{id}/name` and `{"name": "..."}` (a `name` inside the
+settings body renames it too):
+
+```
+Croitr pilote 1 (en attente des contacts)
+Croitr pilote 1 (100 contacts charges, redaction en cours)
+Croitr pilote 1 - agences com Bordeaux
+```
+
+Push the contacts as soon as they exist, before the copy is written. The batch route
+takes `?updateIfExists=true`, so pushing the same rows again later with their message
+columns updates them in place rather than duplicating them. A user who opens Emelia
+mid-run should see a campaign filling up, not an empty account.
+
+## Keep the plugin up to date
+
+This repository moves. `/outreach update` runs the check on demand, and you run it
+yourself at the start of a run and once a day inside a long one:
+
+```bash
+bash scripts/check-update.sh
+```
+ One call to the remote, one line back: `up to date`, or
+`behind by N commits, run: git -C <dir> pull`.
+
+When it says behind, tell the user in one sentence, with the command, and say what
+changed if you can see it. Do not pull on their behalf: it is their checkout, and a run
+in progress should not have its instructions swapped underneath it. Finish the run, then
+suggest the pull.
+
+## Sub-skills
+
+Each command above maps to a skill in `skills/outreach-*`. Read the matching
+`SKILL.md` before acting: it holds the field names, the API shapes, the benchmarks
+and the failure modes for that step. Do not reimplement a step from memory.
+
+## Limits worth stating to the user
+
+This skill does not place calls, does not scrape LinkedIn outside the official Emelia
+integration, does not buy data from grey market brokers, and does not guarantee an
+email is deliverable when the domain is catch-all. Reply rates depend on your offer
+far more than on your tooling: when the copy is the problem, say it.

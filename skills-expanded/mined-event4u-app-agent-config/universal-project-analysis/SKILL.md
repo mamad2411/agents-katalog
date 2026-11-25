@@ -1,0 +1,170 @@
+---
+model_tier: high
+context_window: large
+name: universal-project-analysis
+description: "Deep multi-pass codebase audit — orchestrates project-analysis-core plus the framework-specific project-analysis-*; explicit request only. Single-pass scan → project-analyzer."
+domain: discovery
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+---
+
+# universal-project-analysis
+
+## When to use
+
+Use this skill when:
+
+* The user explicitly requests a full project analysis
+* The user wants a deep codebase audit
+* The user wants a comprehensive architecture review
+* The system is large, unclear, or spans multiple layers
+* `analysis-autonomous-mode` routes here for broad understanding
+
+Do NOT use when:
+
+* The task is normal feature work
+* Only a small isolated code area needs review
+* The issue is already narrow enough for a specialist skill
+* A framework-specific analysis skill can be called directly
+
+## Mission
+
+Run the deep multi-pass audit itself, and hand each pass to the right
+specialist. Picking *which* skill a request needs in the first place belongs to
+[`analysis-skill-router`](../analysis-skill-router/SKILL.md) — that chooser and
+this orchestrator are deliberately separate files, and the scope test, the
+detection step, and the decision table live there, not here.
+
+This skill must NOT become:
+
+* a giant framework encyclopedia
+* a shallow pointer-only file
+* a replacement for framework-specific deep-dive skills
+
+## Core principles
+
+1. Never assume — verify against code, config, docs, and evidence
+2. Version dictates behavior
+3. Broad understanding comes before narrow conclusions
+4. Use framework-specific skills once the stack is known
+5. Use hypothesis-driven analysis when root cause is unclear
+6. Mark uncertainty explicitly
+
+## Thinking model
+
+Always think in this order:
+
+1. Observe
+2. Understand
+3. Verify
+4. Route
+5. Investigate
+6. Conclude
+
+## Analysis modes
+
+### Exploration mode
+
+Use when the system is unknown.
+Goal: understand structure, identify major components, detect investigation paths, choose the next specialist skill.
+
+### Investigation mode
+
+Use when there is a concrete issue inside a large or unclear system.
+Goal: isolate the affected area, route into root-cause analysis, verify likely causes with evidence.
+
+### Optimization mode
+
+Use when the system works but may be inefficient or over-complex.
+Goal: identify hot paths, find expensive boundaries, route into architecture or performance specialists.
+
+## Procedure
+
+### 1. Confirm scope
+
+Invoked through the router, this is already settled — proceed. Invoked
+directly, apply the router's scope test before spending a multi-pass audit on
+something a specialist covers.
+
+### 2. Discover the project
+
+Identify: language, framework, runtime environment, package managers, major entrypoints, documentation locations.
+Look at: package manifests, lock files, bootstrap files, Docker/CI config, README/AGENTS/docs.
+
+### 3. Choose the primary route
+
+* unknown or mixed system → `project-analysis-core`
+* concrete root-cause problem → `project-analysis-hypothesis-driven`
+* Laravel → `project-analysis-laravel`
+* Symfony → `project-analysis-symfony`
+* Zend/Laminas → `project-analysis-zend-laminas`
+* Node/Express → `project-analysis-node-express`
+* React → `project-analysis-react`
+* Next.js → `project-analysis-nextjs`
+
+### 4. Chain specialists where needed
+
+* bottleneck found → `performance-analysis`
+* security concern found → `security-audit`
+* bug isolated → `bug-analyzer`
+
+### 5. Consolidate findings
+
+Combine: system overview, framework-specific findings, verified risks, explicit uncertainties, next investigation steps.
+
+### 6. Validate analysis quality
+
+Check:
+
+* full-project analysis was actually justified
+* framework detection is explicit
+* chosen specialist skills match the discovered stack
+* uncertainties are marked
+* conclusions are evidence-based
+
+## Ingestion preprocessor
+
+* `markitdown` — when the project ships PDFs, DOCX, XLSX, PPTX, EPUB,
+  images, or audio that need to feed into any of the routes in steps 3–4.
+  Convert first via the upstream `markitdown-mcp` server, then
+  route the resulting Markdown into the relevant deep-dive skill.
+  Never read a binary office format raw.
+
+> The route lists in steps 3 and 4 are the routing map. A second copy of them
+> lived here until 2026-08-02 and was removed — one list, one place.
+
+## When to add a new framework analysis skill
+
+A framework gets its own `project-analysis-*` skill ONLY if:
+
+* it has its own lifecycle that creates unique debugging patterns
+* it produces failure classes that `project-analysis-core` cannot explain
+* debugging it requires framework-specific mental models (not just API knowledge)
+
+Examples that qualify: Laravel, Symfony, Express, React, Next.js.
+Examples that do NOT qualify: Tailwind, small utility libraries, CSS frameworks, simple state libs.
+
+## Output format
+
+1. Investigation summary
+2. Detected stack and framework
+3. Chosen analysis mode
+4. Routed specialist skills
+5. Consolidated findings
+6. Risks and next steps
+
+## Gotcha
+
+* This skill must remain a real orchestration skill.
+* Do not move long framework-specific deep dives back into this file.
+* Do not let this skill become a generic "analyze everything" bucket.
+
+## Do NOT
+
+* Do NOT analyze everything here directly if a specialist skill exists
+* Do NOT skip framework detection
+* Do NOT present broad guesses as conclusions
+* Do NOT turn this into a shallow pointer-only file
+* Do NOT duplicate framework-specific deep-dive content here

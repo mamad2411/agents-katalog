@@ -1,0 +1,194 @@
+---
+name: mallard-release
+description: >
+  Workflow for adding skills/commands to mallard and shipping a new release.
+  Use when the user asks how to release mallard, ship a new mallard version, add a
+  skill or command to mallard, bump a mallard version, "publicar mallard", "subir
+  mallard", "nueva versión de mallard", or anything involving editing this repo
+  and getting the change to the team's machines.
+version: "0.2.1"
+metadata:
+  author: Eduardo Calvo
+---
+
+# mallard release workflow
+
+Reference for adding/updating skills, commands, and shipping releases for [mallard](https://github.com/educlopez/mallard). The tool lives in your local clone of that repo. The path differs per machine, so resolve it instead of assuming one: `dirname "$(dirname "$(readlink ~/.claude/skills/mallard-release)")"` prints the repo root, because every mallard-managed skill is a symlink into `<repo>/skills/<name>`. Run the commands below from that directory.
+
+## When to use this skill
+
+- "How do I add a skill to mallard?"
+- "Release a new version of mallard" / "ship mallard" / "tag mallard vX.Y.Z"
+- "Update mallard" / "bump the mallard version"
+- Anything that involves editing files under `skills/`, `claude/commands/`, `claude/agents/`, or shipping the change to other team members.
+
+## TL;DR
+
+```bash
+# 1. Edit the skill/command file
+# 2. Bump its `version:` in frontmatter (semver, conservative)
+# 3. Test locally
+go build -o mallard .
+./mallard update                    # re-link with backup
+./mallard registry                  # confirm new version + ok status
+
+# 4. Commit using Conventional Commits, in English
+git add skills/<name>/ claude/commands/<name>.md
+git commit -m "feat(skills): add <name>"   # or fix:, refactor:, docs:, chore:
+
+# 5. Branch + PR (main is protected: never commit or push to it directly)
+git checkout -b <type>/<short-name> && git push -u origin HEAD
+gh pr create --base main --title "<conventional title>" --body "<why>"
+
+# 6. Wait for green checks, merge, then CONFIRM main has your commit
+gh pr checks <n> --watch && gh pr merge <n> --merge --delete-branch
+git checkout main && git pull origin main && git log --oneline -3
+
+# 7. Tag a release (this is what propagates to the team). Run it as its own
+#    step, only after step 6 succeeded; never chain it after the merge.
+git tag vX.Y.Z
+git push origin vX.Y.Z
+
+# GitHub Actions runs goreleaser → publishes binaries + auto-changelog
+```
+
+The README tables (Skills, Commands, Agents) are the source for the docs site and landing. `scripts/lint-skills.sh` fails CI if a skill, command or agent is missing from them. Once the PR merges, `.github/workflows/docs-sync.yml` pings `mallard-docs`, which opens a PR that regenerates its catalog tables, landing counts and fallback list (`pnpm sync:catalog` does it by hand). Spanish text for new entries goes in `scripts/catalog-es.json` in `mallard-docs`. That ping is optional and needs a `DOCS_SYNC_TOKEN` secret (fine-grained PAT with write access to `mallard-docs`); without it the docs catch up on their daily run.
+
+Team members pick it up with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/educlopez/mallard/main/install.sh | bash
+mallard update
+```
+
+## Adding a new skill
+
+1. Create `skills/<skill-name>/SKILL.md` with frontmatter:
+   ```yaml
+   ---
+   name: <skill-name>
+   description: >
+     When to trigger this skill. Be specific — Claude uses this to decide
+     whether to invoke. Include keywords the user might say, project types,
+     and contexts.
+   version: "0.1.0"
+   ---
+   ```
+2. Write the skill body in markdown. Sections, code blocks, tables — whatever helps Claude execute the skill. Reference existing skills in this repo for style.
+3. Locally: `go build -o mallard . && ./mallard update` — the symlink will appear in `~/.claude/skills/<skill-name>/`.
+4. Validate: `./mallard doctor` (managed count goes up) and `./mallard registry` (entry shows `v0.1.0 ok`).
+5. Skip to **Shipping a release** below.
+
+## Adding a new command
+
+1. Create `claude/commands/<command-name>.md` with frontmatter:
+   ```yaml
+   ---
+   name: <command-name>
+   description: One-line summary of what the command does.
+   version: "0.1.0"
+   ---
+   ```
+2. Body: instructions for the slash command. Available in Claude Code as `/<command-name>` after install.
+3. Locally: `./mallard update`.
+4. Skip to **Shipping a release** below.
+
+## Adding a new agent
+
+Agents are written as Claude Code subagents. Claude gets the file as-is (`~/.claude/agents/`).
+Codex, OpenCode and Cursor get a rendered copy (Codex TOML in `~/.codex/agents/`, OpenCode
+`mode: subagent` in `~/.config/opencode/agents/`, Cursor `model: inherit` in `~/.cursor/agents/`)
+written to `<source>/.generated/<agent>/agents/` and symlinked. `model` and `color` are dropped
+for them; `tools` only decides readonly (Cursor) and edit/bash denies (OpenCode). Codex ignores
+`tools`: an agent file cannot override its sandbox. Gemini, Windsurf and the
+generic adapter skip agents.
+
+1. Create `claude/agents/<agent-name>.md` with frontmatter:
+   ```yaml
+   ---
+   name: <agent-name>
+   description: When Claude should route to this agent.
+   tools: Read, Grep, Glob, Bash
+   model: sonnet
+   color: orange
+   version: "0.1.0"
+   ---
+   ```
+2. Body: the agent's system prompt. Optionally add a `/<name>` command in `claude/commands/`
+   to invoke it explicitly.
+3. Locally: `./mallard update` — the symlink appears in `~/.claude/agents/<agent-name>.md`.
+4. Skip to **Shipping a release** below.
+
+## Bumping an existing skill, command, or agent
+
+1. Edit the file.
+2. Bump `version:` in the frontmatter. Semver guidance:
+   - Patch (0.1.0 → 0.1.1): typo fixes, doc clarifications, no behavior change.
+   - Minor (0.1.0 → 0.2.0): new functionality inside the skill, backward-compatible.
+   - Major (0.1.0 → 1.0.0): breaking change in expected user-facing behavior (rare for a skill).
+3. Locally: `./mallard update && ./mallard registry` — confirm new version shows `ok`, old `drift` if you also have an older symlink elsewhere.
+
+## Shipping a release
+
+```bash
+git add <files>
+git commit -m "feat(skills): add <name>"
+# Conventional Commit prefixes: feat, fix, refactor, docs, chore, ci, test
+# then PR + merge as in the TL;DR (steps 5-6)
+git tag vX.Y.Z      # only after the merge landed and main contains the commit
+git push origin vX.Y.Z
+```
+
+A tag pushed on the wrong commit starts the release workflow and creates a draft release. If that happens: delete the remote tag (`git push origin :refs/tags/vX.Y.Z`), the local tag and the draft (`gh release delete vX.Y.Z`), then tag again on the right commit.
+
+Version the **mallard release**, not the skill: skills carry their own versions inside frontmatter, the tag versions the binary + the set of skills shipped together.
+
+GitHub Actions (`.github/workflows/release.yml`) runs goreleaser, which:
+- Builds for darwin/linux/windows × amd64/arm64
+- Uploads tarballs + checksums to the GitHub release
+- Writes a release changelog grouped by Features / Bug Fixes / Refactor / Others (filters out `docs:`, `test:`, `ci:`, `chore:`)
+
+If the changelog auto-text needs richer notes (highlights, breaking changes, etc.), edit the release after publish:
+
+```bash
+gh release edit vX.Y.Z --notes "$(cat <<'EOF'
+## Highlights
+- ...
+
+## Skills
+- new: ...
+- updated: ...
+EOF
+)"
+```
+
+## Team upgrade path
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/educlopez/mallard/main/install.sh | bash
+mallard update     # re-symlinks skills + commands, backs up any conflicts
+mallard doctor     # verify
+mallard registry   # see what's installed per agent + versions
+```
+
+Windows: download the latest zip from https://github.com/educlopez/mallard/releases and replace `mallard.exe` on the PATH.
+
+## Gotchas
+
+- **NEVER skip the `version:` field** on skill/command frontmatter. Without it, `mallard registry` reports `unversioned`.
+- **Conventional Commits are mandatory** — they drive the changelog grouping. `chore:` commits get filtered out of release notes.
+- **`mallard update` makes backups** before replacing files. If you blow something away, `mallard update --list-backups` and `--restore <ts>` will recover it.
+- **The first run on a new agent dir** (Claude / Codex / OpenCode / Cursor / generic) appears as `missing → installed` for every entry. That's expected, not drift.
+- **Run `update` from the repo, not a stray binary.** A binary with no sibling `skills/` (for example one built into `/tmp`) materializes its embedded source into `~/.mallard/source/<version>/` and relinks every skill there. For local testing run `./mallard update` from the repo root, or set `MALLARD_DIR=<repo>`. Check afterwards with `ls -la ~/.claude/skills/<name>`: the link must point into the repo.
+- **Skills only ship via tags.** Pushing to `main` without tagging publishes nothing — GH Actions release workflow only fires on `v*` tags.
+
+## Useful commands
+
+| Command | What |
+|---------|------|
+| `./mallard` | Interactive TUI (Install / Update / Doctor / Registry / Quit) |
+| `./mallard update --dry-run` | Show what update would change without touching disk |
+| `./mallard update --restore <ts>` | Recover from a backup batch |
+| `./mallard registry --source` | List what the repo ships (without scanning installed) |
+| `./mallard registry --all` | Include foreign / unmanaged entries from other tooling |
+| `./mallard version` | Print version (release tag injected at build time) |

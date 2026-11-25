@@ -1,0 +1,93 @@
+---
+name: api-mock-designer
+description: "Design realistic, stateful API mock servers and example payloads from a contract, covering error and edge cases, not only happy paths. Use when frontend or partner teams need a mock API, when the user wants mock data for an OpenAPI spec, or to unblock integration work before the backend exists."
+---
+
+# API Mock Designer Protocol
+
+This skill allows mobile and frontend developers to construct robust UIs without waiting for the backend to be finished. It goes beyond simple static JSON stubs to provide a truly simulated environment that mimics production chaos.
+
+**Core assumption:** If a frontend only tests against static `200 OK` responses, it will break immediately in production when a `503 Service Unavailable` or a 4-second latency spike occurs.
+
+---
+
+## 0. Context Intake
+
+Before designing, make sure you have the inputs below. Read the previous workflow step's artifact first if it exists. Ask only for what is missing, in a single message, and state any assumption you make instead of blocking.
+
+- The contract (OpenAPI/AsyncAPI file or `contract-designer-output.json`); without one, list the endpoints you will assume.
+- Who consumes the mock (frontend, mobile, partner) and which flows they must exercise.
+- Mock tooling already in use (Prism, MSW, WireMock, json-server) or none.
+
+## 1. Scenario Planning (Static)
+Analyze the API spec and design scenarios that consumers *must* handle:
+- **Happy Path:** Standard CRUD operations.
+- **Chaos / Edge Cases:** 
+  - `429 Too Many Requests` (Testing retry logic).
+  - `500/503` (Testing error boundaries/toasts).
+  - High Latency Responses (Testing loading spinners/skeleton screens).
+  - Partial or Empty Lists (Testing "No items found" UI states).
+
+## 2. Stateful Design
+A good mock server must be stateful in a single session.
+- If a client sends `POST /users`, the next call to `GET /users` MUST include the newly created user in memory.
+
+## 3. Output Generation
+
+**Outputs.** In *file mode* — the user wants artifacts, or this skill runs as a step of an ecosystem workflow — write both files below to `docs/api-report/`. In *inline mode* — a quick question — answer in the chat and end with the JSON below as a *Handoff* block instead of creating files.
+
+1. **Human-Readable Markdown (`docs/api-report/api-mock-report.md`)**
+```markdown
+### 🧪 API Mock Server Blueprint
+
+**Tooling Recommendation:** WireMock or MSW (Mock Service Worker)
+
+#### 🚥 Configured Scenarios
+
+**1. Stateful Order Flow**
+- `POST /orders`: Returns `201` and saves `{ id: 123 }` to memory.
+- `GET /orders/123`: Returns the saved order instead of a random stub.
+
+**2. The Chaos Endpoint (Latency & Reliability)**
+- `GET /products`:
+  - 80% chance: Returns `200 OK` (with 500ms - 2000ms randomized latency).
+  - 15% chance: Returns `503 Service Unavailable` (to test failure UI).
+  - 5% chance: Returns `429 Too Many Requests`.
+
+**3. Empty State Testing**
+- `GET /notifications`: Purposefully returns an empty array `[]` to ensure the frontend displays the "All caught up!" screen correctly.
+```
+
+2. **Machine-Readable JSON (`docs/api-report/api-mock-output.json`)**
+```json
+{
+  "skill": "api-mock-designer",
+  "tooling": "MSW",
+  "scenarios": [
+    {"name": "Stateful Validation", "endpoint": "/orders", "method": "POST/GET"},
+    {"name": "Chaos Latency", "endpoint": "/products", "error_rate_pct": 20, "max_latency_ms": 2000},
+    {"name": "Empty State", "endpoint": "/notifications", "returns": []}
+  ]
+}
+```
+
+---
+
+## When to Skip
+
+- The backend already exists and is reachable in a shared dev environment, or the user only needs a single example payload.
+
+## Guardrails
+- **Avoid Over-Engineering:** Mock servers shouldn't recreate complex backend business logic (like computing tax). They just need to faithfully replay expected structural responses.
+- **Schema Validation:** Ensure the mock data strictly adheres to the definitions in the `contract-first-designer`'s OpenAPI spec.
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-api` — API Domain.
+
+**Workflows:**
+- **OpenAPI-First Design Flow** (`api-design`, step 3 of 4): last step → once it passes, complete the workflow and report the outcome.
+
+**Handoff contract:** pass results to the next skill through `docs/api-report/api-mock-output.json` with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-api`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

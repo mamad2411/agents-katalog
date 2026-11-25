@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/casemark/skills (path: skills/capital/managing-infrastructure-asset-lifecycle/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Tracks infrastructure asset performance with maintenance planning, capital expenditure optimization, and end-of-life valuation. Use when managing infrastructure portfolios, planning capex, or evaluati

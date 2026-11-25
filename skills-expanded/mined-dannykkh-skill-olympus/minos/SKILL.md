@@ -1,0 +1,478 @@
+---
+name: minos
+description: QA 시나리오 수집·현장 생성 → Playwright 코드 생성 → 실행·수정 반복을 수행한다. CI 감사 요청은 실행 이력·소요시간·실패를 분석해 보고한다. /minos, 미노스, /qpassenger, 큐패신저, QA 통과할 때까지, 테스트 통과까지, playwright test until pass, CI 감사 요청에 사용한다.
+---
+
+# Minos (미노스)
+
+> **미노스(Minos)**: 그리스 신화의 저승 심판자. 죽은 자의 영혼을 심판해 합격/불합격을 가립니다.
+> 코드를 심판대에 세워 모든 테스트가 통과할 때까지 fix 루프를 반복하는 이 스킬의 본성과 일치합니다.
+
+QA 시나리오를 Playwright 테스트 코드로 변환하고, 모든 테스트가 통과할 때까지 자동으로 수정을 반복합니다.
+
+## Quick Start
+
+```
+/minos                           # 자동 감지 (qa-scenarios.md 또는 docs/qa/)
+/minos @qa-scenarios.md          # 특정 QA 문서 지정
+/minos --api-only                # API 테스트만
+/minos --ui-only                 # UI 테스트만
+/minos --ci-audit                # CI 이력·시간·실패 분석, 수정 없이 보고
+/minos --ci-audit --limit 150     # 최대 150개 실행을 표본으로 분석
+```
+
+**공식 호출명:** `/minos` (별칭: `미노스`, 레거시: `/qpassenger`, `큐패신저`)
+
+검사만·읽기 전용 요청은 기존 검사와 응답 보고로 제한하며 소스·테스트·보고서 파일을
+생성하거나 수정하지 않습니다. 수정이 허용된 실행만 아래 코드 생성·Healer 단계를 수행합니다.
+
+## 진입 모드 선택
+
+`--ci-audit` 또는 CI 실행 이력·병목·대기/준비/실행 시간 감사 요청이면
+[references/ci-audit.md](references/ci-audit.md)를 읽고 **CI 감사 모드로만** 진행합니다.
+이 분기는 QA 입력 탐색·시나리오 생성·서버 준비·Playwright 실행·Healer보다 먼저 선택합니다.
+일반 QA에서는 CI 참조를 읽거나 CI 이력을 수집하지 않습니다.
+
+CI 감사는 분석·보고로 종료하며 기존 `--fix-code` 기본값을 상속하지 않습니다. QA/Healer 옵션과
+함께 받으면 CI 감사 범위만 수행하고 적용하지 않은 옵션을 알립니다. 구현·CI 설정·테스트·QA
+시나리오 문서를 수정하거나 원격 실행을 재시작하지 않습니다. 개선 구현은 포세이돈, 변경 전후
+측정은 미노스, 필수 검사·계약 보존 감리는 아르고스로 연결합니다. 호출만으로 후속 실행이
+승인되지는 않으며 이미 요청된 범위만 이어갑니다.
+
+## 워크플로우 (7단계)
+
+```
+Step 1: 시나리오 수집
+  ↓
+Step 2: Playwright 코드 생성
+  ↓
+Step 3: 서버 준비 (자동 감지 + 실행)
+  ↓
+Step 4: 테스트 실행
+  ↓
+Step 5: 브라우저 탐색 QA (탐색 스크립트 생성·실행 → 이슈 회수)
+  ↓
+Step 6: Healer Loop (실패 → 수정 → 재실행, max 5회)
+  ↓
+Step 7: 결과 보고 + 서버 정리
+```
+
+위는 Playwright 기본 경로입니다. Step 2에서 관련 API·워커 통합 테스트 하네스를 선택한 사례는
+그 하네스의 준비·실행 경로를 따르며, 적용 여부와 실행 증거는 같은 QA 결과에 남깁니다.
+
+---
+
+## Step 1: 시나리오 수집
+
+QA 시나리오를 수집합니다. 우선순위 순으로 탐색:
+
+1. `$ARGUMENTS`로 전달된 QA 문서 경로
+2. `qa-scenarios.md` (zephermine 산출물)
+3. `docs/qa/*.md` (기존 QA 문서)
+4. 위 모두 없으면 → Minos Step 1 계약으로 현장 생성
+
+공개 사이트의 방문 행동·CTA·폼·페이지를 검사하면 [public-site-qa.md](references/public-site-qa.md)를
+읽고 해당 사례·완료 의미를 기존 QA에 연결합니다. 일반 업무 UI나 CI 감사에는 이 확장을 강제하지 않습니다.
+
+### API 직접 호출·서버 검증 시나리오
+
+상세 기준은 `skills/code-reviewer/references/security-audit.md`의 `API 직접 호출·서버 검증 계약`이다.
+프로젝트에 없으면 현재 CLI 활성 루트, 이어서 `SKILLS-CATALOG.md`의 code-reviewer 원본 경로로
+해석하고 그 모듈의 참조를 직접 읽는다. source-only를 slash 호출하거나 전역 활성화하지 않는다.
+참조 누락은 `NOT RUN`으로 남긴다. 대상 API에 계약 ID별 사례를 매핑하고 기존 QA의 누락을 보충한다.
+UI 입력만으로 끝내지 않고 독립 계정의 직접 HTTP 요청(기존 API 테스트 또는 Playwright request)을 실행한다.
+정상 대조군·거부 응답·저장/상태/부수 효과의 전후 비교와 실행 증거를 계약 형식으로 남긴다.
+기존 증거는 대상 버전·환경·조건이 같을 때 재사용한다. 서버·계정·관찰 수단 부족은 `NOT RUN`이며,
+필수 사례 미실행을 전체 PASS로 표시하지 않는다. 명시적 UI-only 범위에서는 API 시험을 확장하지 않고
+API 보안 검증 제외를 보고한다. 테스트를 통과시키려고 검증을 제거하거나 거부 기대값을 완화하지 않는다.
+
+### 멱등성·분산 처리·데이터 일관성 시나리오
+
+담당 기능에 재시도·동시 변경·외부 연동·메시지 처리가 있으면 위와 같은 모듈 경로 해석으로
+`code-reviewer`의 `references/reliability-contract.md`를 직접 읽고, 적용되는 검사만 기존 QA·AC에
+연결합니다. 단일 DB 작업에 분산 처리를, 큐가 없는 기능에 메시지 검사를 강제하지 않습니다.
+정상 처리 후 응답 유실·중복 실행·처리 중 장애의 저장 결과와 부수 효과는 해당 계약에 맞는
+API·워커 통합 테스트 하네스로 확인합니다. 브라우저 성공 표시나 HTTP 200만으로 큐 처리·데이터
+일관성을 PASS로 판단하지 않으며, 참조·실행 환경·관찰 수단이 없으면 해당 검증은 `NOT RUN`입니다.
+명시적 UI-only/API-only 범위를 넘는 검사는 제외 범위와 후속 담당을 남기고 자동 확장하지 않습니다.
+이 확장은 일반 QA에만 적용하며 CI 감사 모드의 분석·보고 범위를 바꾸지 않습니다.
+
+### 시나리오 파싱 규칙
+
+QA 문서에서 테스트 케이스 테이블을 추출합니다:
+
+```markdown
+<!-- 이 형식을 인식 -->
+| TC-ID | 시나리오 | 입력 | 기대 결과 | 우선순위 |
+|-------|---------|------|----------|---------|
+| TC-001 | 로그인 성공 | valid@email.com / Pass123! | 대시보드 이동 | P0 |
+| TC-002 | 로그인 실패 | invalid@email.com / wrong | 에러 메시지 | P0 |
+```
+
+### 보충 시나리오 소스
+
+`qa-scenarios.md`의 테스트 케이스가 부족하면 추가 소스를 참조합니다:
+
+1. `operation-scenarios.md` (운영 시나리오) — qa-scenarios의 근거 문서. 메뉴별/업무별 흐름에서 누락된 테스트 케이스를 보충
+2. `api-spec.md` — API 엔드포인트 중 qa-scenarios에 없는 것을 추가
+
+담당 기능에 상태·전이 계약이나 재설계 보존 조건이 있으면 정상 전이와 해당 실패·취소·재시도·
+중복 요청·금지된 상태의 거부 사례를 기존 QA에 보충합니다. 응답뿐 아니라 저장 상태와 부수
+효과도 확인하며, 관련 없는 엣지 케이스나 별도 상태 모델을 만들지 않습니다. 리팩토링의 버그
+유입 위험 감소는 원래 재현과 관련 회귀 결과로 보고합니다. 측정 대상·표본·방법이 없는
+"버그 발생 확률 x% 달성"을 추정하거나 테스트 통과율로 대신하지 않습니다.
+
+### 시나리오 없을 때 현장 생성
+
+qa-scenarios.md가 전혀 없으면 미노스가 직접 시나리오를 생성합니다:
+
+**1단계: 프로젝트 분석 (자동)**
+
+```bash
+# 라우트/API 엔드포인트 탐색
+grep -rn "router\.\|@Get\|@Post\|@app\.\|app\.get\|app\.post" --include="*.{ts,tsx,js,py,java}" src/ app/ 2>/dev/null | head -30
+
+# 페이지/컴포넌트 탐색
+find src -name "*.tsx" -path "*/pages/*" -o -name "*.tsx" -path "*/app/*" 2>/dev/null
+```
+
+**2단계: 시나리오 생성 (CRUD + 엣지 케이스)**
+
+| 입력 소스 | 생성 전략 |
+|-----------|----------|
+| `operation-scenarios.md` 있음 | 업무 흐름 기반 TC 작성 (우선) |
+| `api-spec.md` 있음 | API 엔드포인트별 정상/에러 케이스 |
+| 둘 다 없음 | 코드 분석으로 라우트/페이지 자동 감지 → TC 생성 |
+
+**3단계: TC 테이블 작성**
+
+각 기능에 대해 아래 형식으로 테스트 케이스를 작성합니다:
+
+```markdown
+| TC-ID | 시나리오 | 유형 | 입력 | 기대 결과 | 우선순위 | 전제조건 |
+|-------|---------|------|------|----------|---------|---------|
+| TC-001 | 정상 로그인 | 정상 | valid@test.com / Pass123! | 대시보드 이동 | P0 | 회원 가입 완료 |
+| TC-002 | 잘못된 비밀번호 | 에러 | valid@test.com / wrong | "비밀번호 오류" 표시 | P0 | - |
+| TC-003 | 빈 이메일 제출 | 엣지 | (빈값) / Pass123! | "이메일 필수" 검증 | P1 | - |
+```
+
+**TC 유형별 필수 포함:**
+
+| 유형 | 최소 케이스 | 예시 |
+|------|-----------|------|
+| 정상 (Happy path) | 기능당 1~2개 | 로그인 성공, 주문 완료 |
+| 에러 (Error) | 기능당 2~3개 | 잘못된 입력, 권한 없음, 404 |
+| 엣지 (Edge) | 주요 기능당 1~2개 | 빈값, 특수문자, 최대길이, 동시 요청 |
+| 회귀 (Regression) | 변경 영역당 1개 | 기존 기능이 깨지지 않았는지 |
+
+**4단계: 저장**
+
+생성된 시나리오를 `qa-scenarios.md`로 저장 → Step 2로 진행
+
+### 도메인사전 컨텍스트 로드
+
+Step 1 끝에 `docs/domain-dictionary.md` 존재 여부를 확인하고, 있으면 메모리에 로드하여 Step 2~6 전체에서 참조합니다.
+
+**용도:**
+- 시나리오 텍스트의 도메인 용어를 사전 한글 표기와 일치시킴 (예: 사전 `Cart=장바구니`인데 시나리오에 "쇼핑백"이면 정정)
+- Step 2 코드 생성 시 `describe`/`it` 블록에 사전 영문 식별자 사용
+- 사전 위반 발견 시 Step 6 Healer Loop의 수정 후보로 분류
+
+사전이 없으면 이 컨텍스트 단계 건너뜀.
+
+---
+
+## Step 2: Playwright 코드 생성
+
+시나리오 → Playwright TypeScript 테스트 코드로 변환합니다.
+
+신뢰성 사례에 기존 API·워커 통합 테스트 하네스가 있으면 그 실행 경로를 재사용합니다.
+해당 사례는 Step 2~5의 Playwright·브라우저 준비 대신 그 하네스에 필요한 준비·실행을 수행하고,
+같은 TC-ID·AC에 실행 증거를 연결합니다. 검증 범위에 UI가 없으면 브라우저 탐색은 해당 없음으로 남깁니다.
+UI와 API·워커 검사가 함께 있으면 사례별 실행 경로를 나누고, UI 검증과 필요한 Playwright 준비는 유지합니다.
+
+> 아래 코드 생성·프로젝트 감지는 Playwright 경로에 적용합니다. 상세 변환 규칙: [references/playwright-codegen.md](references/playwright-codegen.md)
+
+### 프로젝트 감지
+
+```
+# 테스트 프레임워크 자동 감지
+playwright.config.ts 존재 → Playwright 설정 재사용
+package.json "playwright" → 버전 확인
+없으면 → npx playwright install 안내
+```
+
+파일 구조: `tests/e2e/{feature}.spec.ts` + `tests/api/{feature}-api.spec.ts` (기능 단위 분리)
+
+### 코드 생성 원칙
+
+- 각 기능별 `describe` 블록, TC-ID 주석 포함
+- Role-based selector 우선, 하드코딩 URL 금지, `beforeEach`로 상태 초기화
+- **도메인사전 준수** (사전 있을 때): `describe('Cart')`, `it('adds item to 장바구니')` 같이 영문 식별자(클래스/함수명) + 한글 표기(테스트 설명/UI 라벨 매칭) 모두 사전 따름. 사전 금지 표현(예: `basket`)은 코드/주석에 절대 사용 금지
+
+---
+
+## Step 3: 서버 준비 (자동 감지 + 실행)
+
+선택한 테스트 경로가 앱 서버를 요구하면 실행 전에 자동으로 준비합니다. 사용자 개입 없이 진행합니다.
+API·워커 하네스가 자체 환경을 준비하거나 앱 서버가 필요 없으면 해당 준비 절차만 수행합니다.
+
+감지 순서: docker-compose.yml → Dev Server → Django → 사용자 안내
+
+> 네이티브 `/run`과의 관계: /run은 단발 실행·확인용이고, 이 Step은 테스트 수명주기에 묶인 서버 준비
+> (포트 정리·헬스체크·종료)라 자체 절차가 기본입니다. 자체 감지가 모두 실패하면 /run의 실행 패턴을 참고.
+
+환경별 서버 실행, 포트 정리, 헬스체크 상세: See [server-setup.md](references/server-setup.md)
+
+---
+
+## Step 4: 테스트 실행
+
+아래 명령과 worker 설정은 Playwright 경로에 적용합니다. API·워커 하네스는 기존 실행 명령과
+동시성 설정을 사용하고, 같은 TC-ID·AC에 assertion 결과와 필요한 서비스의 준비 상태를 연결합니다.
+
+### Worker 수 제한 (CPU 보호)
+
+**기본값: CPU 논리코어의 50%** (`--workers=50%`)
+사용자가 `--workers` 옵션으로 오버라이드 가능합니다.
+
+```bash
+# 기본 실행 (CPU 50% 제한)
+npx playwright test --reporter=list --workers=50%
+
+# 사용자가 --workers 지정 시 해당 값 사용
+npx playwright test --reporter=list --workers=3      # 고정 3개
+npx playwright test --reporter=list --workers=25%    # CPU 25%
+npx playwright test --reporter=list --workers=1      # 직렬 (디버깅)
+
+# headed 모드 (디버깅 필요 시)
+npx playwright test --headed --workers=50%
+
+# 특정 파일만
+npx playwright test tests/e2e/auth.spec.ts --workers=50%
+```
+
+### 사전 조건 확인
+
+테스트 실행 전 머신 상태(CPU 코어, workers 수, 예상 RAM)를 감지하여 사용자에게 보여줍니다.
+
+CPU 감지 명령어 및 출력 형식: See [server-setup.md](references/server-setup.md)
+
+추가 사전 조건은 선택한 테스트에 필요한 서버 실행(Step 3), DB 시드, `.env.test`를 확인합니다.
+Playwright 브라우저 설치는 브라우저를 사용하는 UI 테스트·탐색 QA에 필요합니다.
+
+---
+
+## Step 5: 브라우저 탐색 QA (코드화 방식)
+
+UI가 검증 범위에 있으면 자동화 테스트(Step 4) 이후 **탐색용 Playwright 스크립트를 생성·실행**하여 실제 브라우저에서
+탐색적 QA를 수행합니다. 자동화 테스트가 잡지 못하는 콘솔 에러, 네트워크 실패, 레이아웃 깨짐을 발견합니다.
+UI가 없는 범위는 해당 없음으로 보고하고, 필요한 UI를 실행하지 못한 경우는 `NOT RUN`으로 구분합니다.
+
+Antigravity에서 사용자가 `/browser`를 명시적으로 열었거나 현재 세션에 browser capability가 노출돼
+있으면 초기 탐색과 재현 후보 수집에 사용할 수 있습니다. 이 스킬이 slash command를 프로그램적으로
+호출한다고 가정하지 않습니다. 네이티브 browser에서 발견한 이슈는 반복 가능한 Playwright 테스트나
+`tests/explore/*.spec.ts`로 재현한 뒤에만 자동 PASS/FAIL 증거로 승격하며, 코드화하지 못한 관찰은
+`exploratory-only`로 보고합니다. `/browser`는 Step 2~5의 Playwright 산출물과 Healer 재실행을 대체하지 않습니다.
+
+> 상세 프로토콜: [references/browser-explorer.md](references/browser-explorer.md)
+
+### 설계 원칙 (gstack browser 차용)
+
+Step 2에서 이미 Playwright 코드를 생성하므로, 탐색 QA도 동일하게 **코드화**하여 일관성과 효율을 확보합니다.
+
+| 원칙 | 의미 | 효과 |
+|------|------|------|
+| 코드화 | 페이지 순회·수집을 단일 Playwright 스크립트로 생성·실행 | Healer 반복 시 재탐색 비용 0 (스크립트 재실행) |
+| 토큰 효율 | 수집 결과를 `report.json`으로 덤프, 컨텍스트엔 이슈만 적재 | 페이지 수에 무관하게 컨텍스트 안정 |
+| MCP 비의존 | Playwright 이벤트 리스너로 console/network/error를 한 번에 수집 | Playwright MCP 설치 불필요 |
+
+### 실행 조건
+
+- **UI가 검증 범위에 있고 Playwright가 준비되면 기본 실행** (MCP 불필요)
+- `--no-explore` 옵션으로 스킵 가능
+- `--explore-only` 옵션으로 Step 2~4를 건너뛰고 이 단계만 실행 가능
+- `--explore-mcp` 옵션으로 기존 Playwright MCP 방식 fallback (페이지마다 도구 직접 호출)
+
+### 체크 항목
+
+| 체크 | 수집 방법 (Playwright 이벤트) | 감지 대상 |
+|------|------------------------------|----------|
+| JS 에러 | `page.on('pageerror')` | `Uncaught TypeError`, unhandled rejection |
+| 콘솔 에러 | `page.on('console')` (type=error) | React warnings, deprecated API |
+| 네트워크 실패 | `page.on('response')` (status>=400) | 4xx/5xx, CORS, 404 리소스 |
+| 구조 검증 | `page.accessibility.snapshot()` | 빈 페이지, 접근성 누락 |
+| 시각적 확인 | `page.screenshot({fullPage})` | 레이아웃 깨짐, overflow, 빈 화면 |
+| 인터랙션 | 생성된 `interact.spec.ts` (Phase 4) | 버튼 미반응, 폼 제출 실패 |
+
+### 실행 흐름
+
+```
+1. 라우트 수집 (소스/qa-scenarios에서)
+2. 탐색 스크립트 생성 → tests/explore/explore.spec.ts
+   (ROUTES 순회 + console/pageerror/response 리스너 + screenshot + snapshot 덤프)
+3. npx playwright test tests/explore/explore.spec.ts 실행
+4. test-results/explorer/report.json 생성
+5. jq/grep으로 이슈 항목만 추출 (전체를 컨텍스트에 올리지 않음)
+6. (선택) snapshot.json 읽고 interact.spec.ts 생성·실행 (액티브 인터랙션)
+```
+
+### 발견 이슈 처리
+
+- **P0/P1 코드 수정 가능** (JS 에러, API 실패) → Healer Loop(Step 6)에 전달
+- **수동 확인 필요** (레이아웃, UX) → 결과 보고서(Step 7)에만 기록
+
+---
+
+## Step 6: Healer Loop
+
+테스트 실패(Step 4) + 브라우저 탐색 QA 발견 이슈(Step 5)를 자동으로 분석하고 수정을 반복합니다.
+
+> 상세 프로토콜: [references/healer-loop.md](references/healer-loop.md)
+
+API·워커 하네스에서 실패한 사례는 같은 하네스의 원래 검사와 영향받는 회귀를 재실행합니다.
+참조의 Playwright 명령 예시는 Playwright 경로에만 적용하며, 재시도로 하네스나 기존 예산을 초기화하지 않습니다.
+
+실제 실패나 수리 가능한 탐색 이슈가 있을 때만 `healer-loop.md`의 `디버깅 모듈 연결`로
+`systematic-debugging` 정본을 읽고 기존 루프 안에서 적용합니다. 검사만·읽기 전용 요청에서는
+코드·테스트·보고서 파일을 수정하지 않습니다. `--fix-test-only`와 기존 상한은 그대로 유지합니다.
+
+### 루프 구조
+
+```
+max_retries = 사용자 지정값 또는 5
+retry = 기존 실행에서 사용한 횟수 (새 실행만 0)
+
+WHILE (수리 가능한 미해결 테스트/탐색 이슈 존재) AND (retry < max_retries):
+  1. 원래 재현·실패 증거 확인 (탐색 이슈도 재검증 수단 먼저 지정)
+  2. 계약과 관측값 대조 → 근거 있는 가설 하나 → 수정 대상 결정
+  3. 허용된 최소 수정 적용; 권한 밖·계약 모순·실행 불가는 차단 사유 기록
+  4. 원래 실패 검사/탐색 재현 재실행, 마지막 수정 뒤 영향받는 회귀 확인
+  5. retry++
+
+수리 가능한 이슈가 없으면 보고 단계로 종료. blocked는 미해결 집계에 유지하며 빈 재시도로 예산을 소모하지 않음.
+
+IF retry >= max_retries:
+  남은 이슈 → 기존 보고서에 exhausted(미해결, ≠통과)로 집계; 테스트를 자동 skip/fixme로 바꾸지 않음
+  → Healer 소진은 PASS가 아니다. "조건부 통과"로 둔갑시키지 않는다 (아래 판정 기준 참조)
+```
+
+### 원인 조사 후보
+
+에러 이름만으로 원인이나 수정 대상을 확정하지 않습니다. 아래는 조사할 후보이며,
+실제 결정은 계약·실행 증거와 `healer-loop.md`의 수정 대상 결정 규칙을 따릅니다.
+
+| 원인 | 수정 대상 | 예시 |
+|------|----------|------|
+| 셀렉터 변경 | 테스트 코드 | `button[name]` → `getByRole('button')` |
+| API 응답 불일치 | 구현 코드 | 404 → 엔드포인트 경로 오류 |
+| 타이밍 이슈 | 테스트 코드 | `waitForResponse`, `waitForSelector` 추가 |
+| 비즈니스 로직 버그 | 구현 코드 | 유효성 검증 누락 |
+| 테스트 데이터 문제 | 테스트 코드 | fixture/seed 데이터 수정 |
+| 콘솔 JS 에러 | 구현 코드 | `TypeError`, `Unhandled Rejection` (Step 5 발견) |
+| 404 리소스 | 구현 코드 | 이미지/폰트/API 경로 오류 (Step 5 발견) |
+| 인프라 문제 | 사용자 안내 | DB 연결, 포트 충돌 |
+
+### 수정 원칙
+
+- **계약 대조 우선**: 현재 요구사항·AC·API 명세로 기대 동작을 확인하고, 그 계약과 다른 구현 또는 테스트를 수정합니다. 실제 응답만 보고 기대값을 바꾸지 않습니다. 판단 절차는 [healer-loop.md](references/healer-loop.md)의 `수정 대상 결정 규칙`을 따릅니다.
+- **통과 기준 보존**: 기대값 변경은 계약 근거를 남깁니다. 기준을 낮춰 통과시키거나 미해결 항목을 통과로 세지 않습니다.
+- **수정 범위 최소화**: 실패한 부분만 정확히 수정
+- **인프라 문제는 수정하지 않음**: 사용자에게 보고
+
+---
+
+## Step 7: 결과 보고 + 서버 정리
+
+### 결과 보고서 생성
+
+요약·수정 이력·미통과 항목·브라우저 탐색 발견 이슈 4섹션으로 구성합니다.
+보고서 마크다운 템플릿 및 QA 문서 업데이트 형식: See [result-report.md](references/result-report.md)
+
+### 판정 기준 (Minos 실행 증거 기준)
+
+| Grade | 조건 | 판정 |
+|-------|------|------|
+| **PASS** | 적용 대상 자동 테스트 + 탐색 QA 전체 통과 | 실행한 QA 범위 통과; 해당 없음은 근거와 함께 별도 표시 |
+| **CONDITIONAL** | P0/P1 통과, P2/P3에 exhausted·blocked·unverified·기존 fixme 또는 탐색 QA 경고만 남음 | 조건부 진행; 남은 상태·범위 명시 |
+| **FAIL** | P0/P1 실패 또는 필수 검증 미완료 (자동 테스트 또는 탐색 QA) | 구현 결함과 NOT RUN을 구분해 보고 |
+
+> **완료 계약 (028 — 거짓 완료 방지):** 각 시나리오의 "통과"는 그 시나리오의 Playwright 또는 해당 API·워커 통합 테스트 하네스의 assertion이 실제 green인 것을 증거로 한다.
+> Healer 소진은 `exhausted`(미해결)로 집계하고 테스트를 자동 `skip`/`fixme`로 바꾸지 않는다.
+> 기존 또는 별도 승인된 `fixme`도 통과에 합산하지 않는다.
+> 필수 또는 P0/P1 검증이 불가하면 `FAIL — 검증 미완료`와 해당 `NOT RUN`/`UNVERIFIED`를 보고한다.
+> 이미 재현된 P0/P1 실패는 blocked/exhausted로 바뀌어도 FAIL을 유지하며, 미실행과 구분한다.
+> P0/P1에 `exhausted`가 하나라도 있으면 PASS/CONDITIONAL로 올리지 않고 **FAIL**로 판정한다 — 반복 소진을 조건부 통과로 둔갑시키지 않는다.
+
+### QA 문서 업데이트
+
+쓰기 가능한 실행은 원본 시나리오 문서에 통과·실패·exhausted·blocked 상태를 반영합니다.
+
+---
+
+## 옵션
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `--workers N` | Playwright worker 수 (숫자 또는 퍼센트) | 50% |
+| `--api-only` | API 테스트만 생성/실행 | false |
+| `--ui-only` | UI E2E 테스트만 생성/실행 | false |
+| `--max-retries N` | Healer 최대 반복 횟수 | 5 |
+| `--headed` | 브라우저 화면 표시 | false |
+| `--skip-generate` | 기존 테스트 코드 사용 (Step 2 건너뜀) | false |
+| `--no-explore` | 브라우저 탐색 QA 스킵 (Step 5 건너뜀) | false |
+| `--explore-only` | 브라우저 탐색 QA만 실행 (Step 2~4 건너뜀) | false |
+| `--explore-mcp` | 탐색 QA를 Playwright MCP 방식으로 실행 (코드화 대신 fallback) | false |
+| `--no-explore-active` | 액티브 인터랙션 탐색(Phase 4) 스킵, 패시브 수집만 | false |
+| `--fix-code` | 구현 코드 수정도 허용 | true |
+| `--fix-test-only` | 테스트 코드만 수정 (구현 코드 수정 금지) | false |
+| `--ci-audit` | QA와 독립된 CI 실행 이력·시간·실패 감사; 분석·보고 전용 | false |
+| `--limit N` | CI 감사에서 수집할 최대 workflow run 수(양의 정수); 기간·workflow·branch 조건은 요청에서 전달 | 30 (CI 감사 전용) |
+
+---
+
+## 연관 실행 경로
+
+| 경로 | 역할 | 연결 |
+|------|------|------|
+| Minos Step 1 (내장) | 프로젝트 근거 기반 시나리오 현장 생성 | Step 1 입력 |
+| 네이티브 테스트 작업자 | 실제 테스트 설정·인접 테스트·빌드 명령 기반 코드 작성 | Step 2 구현 |
+| zephermine (스킬) | qa-scenarios.md + operation-scenarios.md 생성 | Step 1 입력 |
+| argos (스킬) | 설계 산출물 대비 준공 검증 | 별도 감리 |
+
+---
+
+### 서버 정리
+
+테스트 완료 후 Step 3에서 실행한 서버를 정리합니다.
+
+서버 정리 명령어 상세: See [server-setup.md](references/server-setup.md)
+
+---
+
+## 주의사항
+
+- Playwright 브라우저를 사용하는 검사에서 브라우저 미설치 시 `npx playwright install` 필요. API·워커 하네스만 사용하는 범위에는 강제하지 않음
+- 브라우저 탐색 QA(Step 5)는 탐색 스크립트를 생성·실행하므로 Playwright만 있으면 동작 (MCP 불필요). `--explore-mcp`로 MCP 방식 fallback 가능
+- 탐색 결과(`report.json`)는 전체를 컨텍스트에 올리지 말고 jq/grep으로 이슈 항목만 추출 (토큰 절약)
+- Healer가 구현 코드를 수정하므로, 커밋되지 않은 변경사항이 있으면 주의
+- 외부 의존성(메일, 결제 등) 테스트는 mock 대체 권장
+
+---
+
+## 다음 단계 안내
+
+QA가 완료되면 사용자에게 다음 단계를 안내합니다:
+
+```
+✅ Minos 완료! (결과: {PASS/CONDITIONAL/FAIL})
+
+👉 다음 단계 (선택):
+  Docker 배포 환경 생성 → 카탈로그의 source-only docker-deploy 모듈을 직접 읽어 실행
+  코드 리뷰             → 현재 CLI의 네이티브 리뷰 사용
+  API 문서 생성          → 프로젝트 계약과 코드 근거로 작성
+  변경사항 커밋          → 현재 CLI의 네이티브 Git 흐름 사용
+  세션 핸드오프          → mnemo 핸드오프 계약 사용
+
+📎 참고: docs/workflow-guide.md
+```

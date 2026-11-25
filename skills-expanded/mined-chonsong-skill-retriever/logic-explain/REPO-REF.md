@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/chonsong/skill-retriever (path: src/skill_retriever/community_skills/logic-explain/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Explain what a specific piece of code actually does for a given input by producing a step-by-step execution trace (interprocedural, with name resolution and type transitions). Trigger when the user is

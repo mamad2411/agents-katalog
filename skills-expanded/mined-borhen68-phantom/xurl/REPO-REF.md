@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/borhen68/phantom (path: skills/openclaw-compat/xurl/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: A CLI tool for making authenticated requests to the X (Twitter) API. Use this skill when you need to post tweets, reply, quote, search, read posts, manage followers, send DMs, upload media, or interac

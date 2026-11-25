@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/brycewang-stanford/awesome-agent-skills-for-empirical-research (path: skills/25-HosungYou-Diverga/skills/humanize/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Humanization Pipeline Orchestrator v3.1

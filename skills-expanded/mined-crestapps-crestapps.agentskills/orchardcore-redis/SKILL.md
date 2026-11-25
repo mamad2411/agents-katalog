@@ -1,0 +1,374 @@
+---
+name: orchardcore-redis
+description: Skill for configuring Redis in Orchard Core. Covers Redis cache, message bus, distributed locking, data protection, health checks, the OrchardCore Redis configuration section, environment variable and Key Vault secret names, InstancePrefix and AllowAdmin, key storage structure, the OrchardCore.SignalR.Redis backplane, TUS upload metadata and locks for the Media Gallery, and multi-instance deployment. Use this skill when requests mention Orchard Core Redis, Redis configuration, SignalR Redis backplane, scaling Orchard Core across instances, upgrading from the OrchardCore_Redis section, or closely related Orchard Core implementation, setup, extension, or troubleshooting work. Strong matches include OrchardCore.Redis, OrchardCore.Redis.Cache, OrchardCore.Redis.Bus, OrchardCore.Redis.Lock, OrchardCore.Redis.DataProtection, OrchardCore.SignalR.Redis, IDistributedCache, IDistributedLock, and ISignal.
+license: Apache-2.0
+metadata:
+  author: CrestApps Team
+  version: "1.0"
+---
+
+# Orchard Core Redis - Prompt Templates
+
+## Configure Redis Integration
+
+You are an Orchard Core expert. Generate code and configuration for Redis integration including Redis cache, message bus, distributed locking, data protection, health checks, configuration, key storage, and multi-instance deployment.
+
+### Guidelines
+
+- Enable `OrchardCore.Redis` as the base feature for Redis configuration support.
+- Enable `OrchardCore.Redis.Cache` for distributed caching using Redis as the `IDistributedCache` backend.
+- Enable `OrchardCore.Redis.Bus` for distributed `ISignal` service, making cache invalidation work across multiple application instances.
+- Enable `OrchardCore.Redis.Lock` for distributed locking using Redis.
+- Enable `OrchardCore.Redis.DataProtection` for storing ASP.NET Core Data Protection keys in Redis.
+- Configure the Redis connection string via `OrchardCore:Redis:Configuration` (env var `OrchardCore__Redis__Configuration`, Key Vault secret `OrchardCore--Redis--Configuration`). Without it (or when it is invalid) an error is logged and the tenant keeps running without Redis: Cache, Bus, Lock, DataProtection and the SignalR backplane fall back to the default implementations, and the health check reports Redis as unhealthy.
+- Use `InstancePrefix` to namespace all Redis keys and prevent collisions between environments or applications.
+- Data Protection keys must be stored in durable storage; ensure Redis persistence (AOF or RDB) is enabled.
+- The Redis module provides a health check for monitoring Redis server status.
+- For multi-instance deployments, enable Redis Bus so that `ISignal` cache invalidation propagates across all nodes.
+- All recipe JSON must be wrapped in `{ "steps": [...] }`.
+- All C# classes must use the `sealed` modifier.
+- `OrchardCore.SignalR.Redis` reuses the same connection for the SignalR backplane.
+- In a module that depends on `OrchardCore.Redis`, inject `IRedisService` directly; it is always registered (a `NullRedisService` when the configuration is missing or invalid). In a startup that swaps a default service for a Redis-backed one, guard with `services.IsRedisConfigured()`.
+
+### Enabling Redis Features
+
+```json
+{
+  "steps": [
+    {
+      "name": "Feature",
+      "enable": [
+        "OrchardCore.Redis",
+        "OrchardCore.Redis.Cache",
+        "OrchardCore.Redis.Bus",
+        "OrchardCore.Redis.Lock",
+        "OrchardCore.Redis.DataProtection"
+      ],
+      "disable": []
+    }
+  ]
+}
+```
+
+### Redis Features Summary
+
+| Feature | Module ID | Description |
+|---------|-----------|-------------|
+| Redis | `OrchardCore.Redis` | Base Redis configuration support |
+| Redis Cache | `OrchardCore.Redis.Cache` | Distributed cache using Redis as `IDistributedCache` backend |
+| Redis Bus | `OrchardCore.Redis.Bus` | Distributed `ISignal` service for cross-instance cache invalidation |
+| Redis Lock | `OrchardCore.Redis.Lock` | Distributed locking for coordinating work across instances |
+| Redis DataProtection | `OrchardCore.Redis.DataProtection` | Stores ASP.NET Core Data Protection keys in Redis |
+
+### Redis Configuration
+
+Configure the Redis connection in `appsettings.json`:
+
+```json
+{
+  "OrchardCore": {
+    "Redis": {
+      "Configuration": "localhost:6379,abortConnect=false,connectTimeout=5000",
+      "InstancePrefix": "MyApp:",
+      "AllowAdmin": true
+    }
+  }
+}
+```
+
+#### Configuration Options
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `Configuration` | The Redis connection string | Yes |
+| `InstancePrefix` | A prefix added to all Redis keys to prevent collisions | No |
+| `AllowAdmin` | Whether to allow admin commands (enables persistence check) | No (defaults to `false`) |
+
+### Production Configuration Example
+
+For a production multi-instance deployment with SSL:
+
+```json
+{
+  "OrchardCore": {
+    "Redis": {
+      "Configuration": "myredis.example.com:6380,password=MySecurePassword,ssl=true,abortConnect=false,connectTimeout=5000,syncTimeout=5000",
+      "InstancePrefix": "Production:",
+      "AllowAdmin": true
+    }
+  }
+}
+```
+
+### Key Storage Structure
+
+Redis Data Protection stores keys using the following pattern:
+
+```
+{InstancePrefix}{TenantName}:DataProtection-Keys
+```
+
+Examples:
+
+| InstancePrefix | Tenant | Redis Key |
+|---------------|--------|-----------|
+| `MyApp:` | `Default` | `MyApp:Default:DataProtection-Keys` |
+| `MyApp:` | `Tenant1` | `MyApp:Tenant1:DataProtection-Keys` |
+| *(none)* | `Default` | `Default:DataProtection-Keys` |
+
+### Data Protection
+
+The `OrchardCore.Redis.DataProtection` feature stores ASP.NET Core Data Protection keys in Redis. This is essential for:
+
+- **Load-balanced environments**: All instances share the same data protection keys.
+- **Multi-tenant deployments**: Each tenant gets its own key ring in Redis.
+- **Protecting sensitive data**: Authentication cookies, anti-forgery tokens, and persisted secrets (e.g., SMTP passwords).
+
+#### Prerequisites
+
+1. A running Redis instance with persistence enabled.
+2. `OrchardCore.Redis` feature enabled and configured.
+3. `OrchardCore.Redis.DataProtection` feature enabled.
+
+#### Persistence Warning
+
+Data protection keyrings are not cache files and must be kept in durable storage. Ensure Redis has a backup strategy:
+
+- **AOF (Append-Only File)**: Logs every write operation for point-in-time recovery.
+- **RDB (Redis Database)**: Creates periodic snapshots.
+
+The module automatically checks if persistence is enabled (when `AllowAdmin` is `true`) and logs a warning if it is not configured.
+
+### Redis Cache
+
+When `OrchardCore.Redis.Cache` is enabled, Redis replaces the default in-memory `IDistributedCache`. All Orchard Core features that use `IDistributedCache` automatically benefit from distributed caching.
+
+Use `IDistributedCache` to store and retrieve cached data:
+
+```csharp
+using Microsoft.Extensions.Caching.Distributed;
+
+public sealed class CachedProductService
+{
+    private readonly IDistributedCache _cache;
+
+    public CachedProductService(IDistributedCache cache)
+    {
+        _cache = cache;
+    }
+
+    public async Task<string?> GetProductAsync(string productId)
+    {
+        return await _cache.GetStringAsync($"product:{productId}");
+    }
+
+    public async Task SetProductAsync(string productId, string data)
+    {
+        var options = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30),
+            SlidingExpiration = TimeSpan.FromMinutes(10),
+        };
+
+        await _cache.SetStringAsync($"product:{productId}", data, options);
+    }
+}
+```
+
+### Redis Bus (Distributed Signal)
+
+When `OrchardCore.Redis.Bus` is enabled, the `ISignal` service becomes distributed. Cache invalidation signals propagate across all application instances via Redis Pub/Sub.
+
+This is critical for multi-instance deployments. Without Redis Bus, signaling cache invalidation on one instance does not affect other instances.
+
+```csharp
+using OrchardCore.Environment.Cache;
+
+public sealed class ProductCacheInvalidator
+{
+    private readonly ISignal _signal;
+
+    public ProductCacheInvalidator(ISignal signal)
+    {
+        _signal = signal;
+    }
+
+    public async Task InvalidateAsync()
+    {
+        // This signal propagates to ALL instances via Redis Bus.
+        await _signal.SignalTokenAsync("productcatalog");
+    }
+}
+```
+
+### Redis Lock (Distributed Locking)
+
+When `OrchardCore.Redis.Lock` is enabled, Orchard Core uses Redis for distributed locking via `IDistributedLock`. This ensures only one instance executes a critical section at a time:
+
+```csharp
+using OrchardCore.Locking.Distributed;
+
+public sealed class ImportService
+{
+    private readonly IDistributedLock _distributedLock;
+
+    public ImportService(IDistributedLock distributedLock)
+    {
+        _distributedLock = distributedLock;
+    }
+
+    public async Task RunImportAsync()
+    {
+        var (locker, locked) = await _distributedLock.TryAcquireLockAsync(
+            "IMPORT_LOCK",
+            TimeSpan.FromMinutes(5),
+            TimeSpan.FromSeconds(30));
+
+        if (!locked)
+        {
+            return; // Another instance is already running the import.
+        }
+
+        await using var _ = locker;
+
+        // Perform the import safely knowing no other instance is doing it.
+        await ExecuteImportAsync();
+    }
+
+    private Task ExecuteImportAsync()
+    {
+        // Import logic here.
+        return Task.CompletedTask;
+    }
+}
+```
+
+### Health Checks
+
+The Redis module provides a health check to report the status of the Redis server. This integrates with ASP.NET Core health checks and can be used for load balancer probes.
+
+Enable the health check feature:
+
+```json
+{
+  "steps": [
+    {
+      "name": "Feature",
+      "enable": [
+        "OrchardCore.Redis",
+        "OrchardCore.HealthChecks"
+      ],
+      "disable": []
+    }
+  ]
+}
+```
+
+### SignalR Backplane and Media Gallery
+
+- `OrchardCore.SignalR.Redis` (depends on `OrchardCore.SignalR` and `OrchardCore.Redis`) routes SignalR messages across instances through Redis, with a tenant-qualified channel prefix. It reads `OrchardCore:Redis:Configuration`; do not also enable `OrchardCore.SignalR.Azure` on the same tenant.
+- The Media Gallery TUS uploads keep their metadata in `IDistributedCache` and their chunk locks in `IDistributedLock`, so `OrchardCore.Redis.Cache` and `OrchardCore.Redis.Lock` make resumable uploads safe across instances. Chunk data itself stays on the temp file system or in Azure/S3 (see `orchardcore-media-gallery`).
+
+```json
+{
+  "steps": [
+    {
+      "name": "Feature",
+      "enable": [
+        "OrchardCore.Redis",
+        "OrchardCore.Redis.Cache",
+        "OrchardCore.Redis.Bus",
+        "OrchardCore.Redis.Lock",
+        "OrchardCore.Redis.DataProtection",
+        "OrchardCore.SignalR.Redis"
+      ],
+      "disable": []
+    }
+  ]
+}
+```
+
+### Using Redis from a Module
+
+`IRedisService` (`OrchardCore.Redis.Abstractions`) exposes `ConnectAsync()`, `Connection`, `Database` and `InstancePrefix`. `Connection` and `Database` stay `null` until a connection is created, which can fail, and are always `null` for `NullRedisService`:
+
+```csharp
+using Microsoft.Extensions.Logging;
+using OrchardCore.Environment.Shell;
+using OrchardCore.Redis;
+
+public sealed class CounterService
+{
+    private readonly IRedisService _redis;
+    private readonly string _prefix;
+    private readonly ILogger _logger;
+
+    public CounterService(IRedisService redis, ShellSettings shellSettings, ILogger<CounterService> logger)
+    {
+        _redis = redis;
+        _prefix = redis.InstancePrefix + shellSettings.Name + ':';
+        _logger = logger;
+    }
+
+    public async Task<long> IncrementAsync(string key)
+    {
+        if (_redis.Database is null)
+        {
+            await _redis.ConnectAsync();
+
+            if (_redis.Database is null)
+            {
+                return 0;
+            }
+        }
+
+        try
+        {
+            return await _redis.Database.StringIncrementAsync(_prefix + key);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Unable to increment '{KeyName}'.", _prefix + key);
+
+            return 0;
+        }
+    }
+}
+```
+
+Only replace a default implementation with a Redis one when Redis is configured:
+
+```csharp
+public sealed class Startup : StartupBase
+{
+    public override void ConfigureServices(IServiceCollection services)
+    {
+        if (services.IsRedisConfigured())
+        {
+            services.AddSingleton<ICounterStore, RedisCounterStore>();
+        }
+    }
+}
+```
+
+### Multi-Instance Deployment Checklist
+
+For load-balanced or multi-instance Orchard Core deployments using Redis:
+
+1. **Enable `OrchardCore.Redis`** and configure the connection string.
+2. **Enable `OrchardCore.Redis.Cache`** so all instances share the same distributed cache.
+3. **Enable `OrchardCore.Redis.Bus`** so `ISignal` cache invalidation propagates across all nodes.
+4. **Enable `OrchardCore.Redis.Lock`** to coordinate background tasks and prevent duplicate work.
+5. **Enable `OrchardCore.Redis.DataProtection`** so all instances share data protection keys.
+6. **Set `InstancePrefix`** to namespace keys and prevent collisions with other applications sharing the same Redis instance.
+7. **Enable Redis persistence** (AOF or RDB) to prevent data loss on Redis restart.
+8. **Set `AllowAdmin: true`** in configuration so the module can verify persistence is enabled.
+9. **Enable `OrchardCore.SignalR.Redis`** when SignalR features (such as `OrchardCore.Media.SignalR`) must reach clients on every instance.
+
+### Upgrading from 3.x
+
+- Rename the `OrchardCore_Redis` section to `Redis` (`OrchardCore:Redis:Configuration`).
+- Environment variable `OrchardCore__OrchardCore_Redis__Configuration` becomes `OrchardCore__Redis__Configuration`; Key Vault secret `OrchardCore--OrchardCore---Redis--Configuration` becomes `OrchardCore--Redis--Configuration`.
+- The old name is deprecated but still read; the new name wins when both are set.
+- `IRedisService` is now always registered while `OrchardCore.Redis` is enabled. Remove `serviceProvider.GetService<IRedisService>()` null checks, and replace `services.Any(d => d.ServiceType == typeof(IRedisService))` with `services.IsRedisConfigured()`; otherwise tenants without a Redis configuration get Redis-backed replacements.
+- `RedisHealthCheck`'s constructor takes an `IRedisService` instead of an `IServiceProvider`; code constructing it directly instead of calling `AddRedisCheck()` must be updated.

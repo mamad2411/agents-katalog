@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/construct-ai-primary/agent-companies-core (path: skills/shared/using-git-worktrees/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Using Git Worktrees Skill

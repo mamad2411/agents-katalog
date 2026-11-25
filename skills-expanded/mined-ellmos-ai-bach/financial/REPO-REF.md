@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ellmos-ai/bach (path: system/hub/_services/financial/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Financial Mail Service

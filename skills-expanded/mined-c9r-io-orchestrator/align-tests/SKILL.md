@@ -1,0 +1,98 @@
+---
+name: align-tests
+description: Execute formatting and unit-test alignment after large refactors or broad code changes. Trigger when the user explicitly uses the command "-- 对齐测试 --" or asks to align/fix tests after massive modifications. Run formatters, fix code style, run relevant unit tests, analyze failing test cases, update tests and/or implementation, and iterate until stable.
+---
+
+# Align Tests
+
+Run a strict formatting + test-alignment workflow after major refactors.
+
+In this repository, discover Rust workspace commands from `Cargo.toml` and frontend commands from `gui/package.json`. For other targets, derive commands from their own build files before running anything.
+
+## Workflow
+
+1. Scope the impacted areas.
+- Inspect changed files with `git status --short` and `git diff --name-only`.
+- Prioritize test suites by changed modules. Typical mapping:
+  - Backend (`core/` or equivalent) → language-native unit/integration tests.
+  - Frontend (`gui/`) → JS/TS unit tests, Playwright, build, and type checks when relevant.
+- If the project layout differs, discover module boundaries from the directory structure and build configs.
+
+2. Run formatters and fix code style.
+- Auto-detect and run the appropriate formatter for each affected area:
+  - Rust: `cargo fmt --all` — applies `rustfmt` to the entire workspace.
+  - TypeScript / JavaScript: inspect `gui/package.json` for a formatter or linter and use its declared scripts. Do not invent a formatter dependency.
+  - Other languages: use whatever formatter the project already configures (`go fmt ./...`, `black .`, `mix format`, etc.).
+- After formatting, check `git diff --stat` to confirm what changed.
+- If formatting produces changes, continue with the rest of the workflow — these will be included in the final commit.
+- **Do not skip this step** even if the refactor seems small; CI pipelines typically gate on formatting.
+
+3. Run unit tests first, then broaden.
+- Backend (discover from project config):
+  - Rust: run a focused package test first, then `cargo test --workspace` from the repository root.
+  - Other languages: use the project's existing test command (`make test`, `go test ./...`, etc.).
+- Frontend (discover from `gui/package.json`):
+  - `cd gui && npm test`.
+  - Use `npm run build` for TypeScript/build drift and `npm run test:e2e` when browser behavior is in scope.
+
+4. Analyze failures by root cause.
+- Classify each failure:
+  - Refactor signature drift (function/argument/type changed).
+  - Behavior change (assertion no longer matches intended logic).
+  - Test fixture/mock drift (mocked dependency contract changed).
+  - Environment/order issues (state leakage, async timing).
+- Prefer preserving intended product behavior; only update expectations when behavior change is intentional.
+
+5. Apply fixes with minimal blast radius.
+- Update tests to match deliberate API/contract changes.
+- Update implementation when behavior regressed unintentionally.
+- Keep handlers thin; move logic fixes into service/domain layers when applicable.
+- Follow project conventions:
+  - Rust: `cargo fmt`, `cargo clippy` when applicable.
+  - Frontend: maintain linter/TypeScript compatibility.
+  - Other: run whatever formatter/linter the project already uses.
+
+6. Re-run and converge.
+- Re-run failing suites immediately after each fix.
+- Re-run full relevant unit-test set before finishing.
+- Stop only when tests pass or a clear blocker is identified.
+
+7. Run and fix lint + warnings.
+- Backend (discover from project config):
+  - Rust: `cargo clippy` and `cargo fmt` to check for warnings.
+  - Other: use the project's linter (`make lint`, `golangci-lint run`, etc.).
+- Frontend:
+  - `cd portal && npm run lint` (or the project's equivalent script).
+  - If failures indicate type drift: `cd portal && npm run typecheck` (if available).
+- **FIX COMPILATION WARNINGS**: Run `cargo build` and fix ALL warnings (unused imports, unused variables, dead code, etc.)
+- **FIX CLIPPY WARNINGS**: Run `cargo clippy` and fix all clippy suggestions
+- Fix findings with minimal blast radius, then re-run until clean.
+- After lint is clean, re-run relevant unit tests to ensure no regressions.
+
+8. Re-run formatters before final verification.
+- Run the same formatters from step 2 again — test fixes and lint fixes may have introduced new formatting drift.
+- Verify `git diff` shows no remaining unformatted code.
+
+9. Final verification.
+- Rebuild binary to ensure everything compiles cleanly
+- Run full test suite one more time
+- Verify CLI/tools work as expected
+
+10. Report outcome clearly.
+- Summarize:
+  - Formatting changes applied.
+  - Failing tests and root causes.
+  - Warnings and clippy issues fixed.
+  - Files updated.
+  - Final test status and remaining risks/blockers.
+
+## Rules
+
+- **RUN FORMATTERS FIRST**: Always run formatters (step 2) before tests; formatting failures are the cheapest CI gate to fix.
+- Do not skip failure analysis; every failing test must have a cause.
+- Do not mass-disable tests to get green.
+- Do not introduce external dependencies solely for test execution.
+- Do not skip lint verification for touched modules.
+- **FIX ALL COMPILATION WARNINGS**: Never leave unused imports, unused variables, dead code, or other warnings in the codebase.
+- **FIX ALL CLIPPY WARNINGS**: Always apply clippy suggestions to keep code clean.
+- If a blocker prevents completion, provide exact failing command and error snippet.

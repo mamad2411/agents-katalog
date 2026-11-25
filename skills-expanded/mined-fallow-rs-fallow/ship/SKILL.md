@@ -1,0 +1,240 @@
+---
+name: ship
+description: Land completed Fallow work after review, run pre-push parity, monitor merged-commit CI, and leave repositories clean. Use when asked to ship, merge, or move approved work to main.
+---
+<!-- Generated from .agents/skills. Do not edit. -->
+
+# Ship
+
+1. Confirm the branch and diff exactly match the reviewed scope. Then run
+   `node scripts/ship-rebase.mjs --pr <number> --if-needed --push`, also
+   for one pull request. Do not rebase by hand. The required checks of
+   `main` do not require an up-to-date branch, so a rebase is only
+   necessary when a squash merge is not safe as it is. With
+   `--if-needed`, the script rebases only when the merge into `main`
+   conflicts, when the branch and `main` both change a generated file, or
+   when the merge loses a version bump of the branch. Otherwise it prints
+   the merge command for the current head, and no new CI run is necessary. The checks of the pull
+   request then ran against an older `main`. A change on `main` that
+   breaks the branch without a text conflict shows only in steps 6 and 7.
+   After a rebase, the
+   script compares the result with a merge and checks each version
+   constant. A failed manual `rebase --continue` leaves commits on a
+   detached HEAD. For a stacked branch after a squash merge of its parent,
+   add `--upstream` (see "Serial merge of many pull requests").
+   When GitHub rejects a push with a server error (for example HTTP 500
+   or `fatal error in commit_refs`) after the pre-push hooks passed,
+   retry once with `HK=0 git push`. The hooks already passed for the same
+   commits. Then compare `git ls-remote origin <branch>` with the local
+   head, because the first push can land in spite of the error.
+2. Re-run the required checks from `docs/development/quality-gates.md`.
+3. Verify that public contracts and generated files are pushed. Merge each
+   companion change into the default branch of its repository (for example
+   fallow-docs `main`). A pushed feature branch is not enough: the release
+   then must merge it. When the merged change touches `npm/fallow/skills`,
+   run `node scripts/sync-skills-companion.mjs --pin <merge commit>` right
+   after the merge. Publish its commit with the commands that it prints.
+   `ship-wait-checks.mjs` prints this step for such a change.
+4. Create signed conventional commits only.
+5. Merge with pinned auto-merge after steps 1 to 4. Arm it before any CI
+   wait, except in a serial merge (see "Serial merge of many pull
+   requests"). Do not keep the merge for a later step of the session: when
+   the session stops, an unarmed pull request stays open. Do not wait for
+   the checks in the foreground:
+
+   ```bash
+   gh pr merge <number> --auto --squash --match-head-commit <reviewed sha> --subject "<type>: <summary> (#<number>)"
+   ```
+
+   GitHub merges when the last required check passes. The pin stops the
+   merge when someone pushes a commit that you did not review. After each
+   own push that you reviewed, run the command again with the new head.
+   When all required checks already passed, the same command merges at
+   once. `--admin` does not skip a required check, because the branch
+   protection of `main` applies to administrators too. A pull request that
+   lands on `main` after the `--if-needed` run can make the same version
+   bump. Git merges two equal edits without a conflict, so step 7 checks
+   the version constants of the merge.
+6. Monitor the merged commit until required CI completes. Use
+   `node scripts/ship-wait-checks.mjs --commit <full sha> --follow-main`.
+   Do not give `--min-checks`: path filters decide which workflows a push
+   starts, so the run count of another push is not the count of this
+   commit. The script takes the runs that GitHub created for the commit,
+   and stops when all of them are complete for a short time. A newer push
+   to `main` cancels the runs of the merged commit. With `--follow-main`,
+   the script then waits for the newest commit of `origin/main` that
+   contains the merged commit, and prints one line for each move. On a busy `main`, new
+   pushes can cancel each long run, and the wait can time out with pending
+   runs. Then do not start the same wait again. For each workflow without a
+   pass, watch its newest in-progress run on a commit that contains the
+   merged commit (`gh run watch <run id> --exit-status`). Before you retry a
+   failed job, confirm that the branch contains the current base
+   (`git merge-base --is-ancestor origin/main HEAD`). A second identical
+   failure is a defect, not a flake: diagnose it instead of a third retry.
+   The script compares each failed run with the same workflow on the
+   commits before the merged commit. A run that also failed there gets the
+   line `FAIL (also on main <sha>)`. When all failed runs failed before,
+   the script stops with exit code 4: the failure does not come from your
+   merge, so do not report it as yours. Exit code 1 means that at least
+   one failure is new.
+7. Inspect the merged tree for conflict markers and generated drift. Then
+   run `git diff <reviewed head> <merge commit>`. Then run
+   `node scripts/check-version-bumps.mjs --base <merge commit>^ --head <reviewed head>`.
+   A failure means that `main` made the same version bump before the merge.
+   Set the constant above the value of `main` in a follow-up pull request.
+   A pull request that merged
+   after your last rebase shows there, also when it did not conflict. Read
+   each hunk in a file that your pull request changed. Such a merge can make
+   your code, a comment or a doc wrong without a text conflict. Fix that in
+   a follow-up pull request.
+8. Return every touched checkout to a clean, synchronized state. When
+   the status of step 10 is `DONE` and `.plans/<task>.md` lists no open
+   item, delete `.plans/<task>.md` and `.plans/<task>/`. Keep both for a
+   `BLOCKED` or `RUNNING` status.
+9. Run the `sweep` skill as the last step of the objective. Do not wait
+   for a prompt from the maintainer, and do not end the turn before it.
+10. Start the final report with one status line:
+    - `DONE`: every pull request is merged and the merged-commit CI is green.
+    - `BLOCKED: <owner>: <next action>`: the work waits on a person or an
+      external system.
+    - `RUNNING: <what>, expected <time>`: the work continues without the
+      maintainer.
+
+    After the report, mark the thread with `t3_thread_organize` when the
+    tool is available: settle a `DONE` thread, snooze a `RUNNING` thread
+    until the expected time, and leave a `BLOCKED` thread active.
+
+Each new pull request of the objective, for example a follow-up of step 7,
+goes through `review` and `ship` too. Record its URL in `.plans/<task>.md`.
+
+Do not call work complete while required merged-commit workflows are still
+running.
+
+## Serial merge of many pull requests
+
+A pull request adds its changelog entries as a file in `changelog.d/`, so
+merges do not conflict in the changelog. Use these scripts for each pull
+request, one at a time:
+
+1. Rebase the branch when necessary:
+   `node scripts/ship-rebase.mjs --pr <number> --if-needed --push`. When
+   the script reports "No rebase needed", do step 2 for the current head
+   and then step 3. Otherwise the
+   script resolves the conflicts that have one mechanical answer and
+   stops on any other conflict:
+   - A `*CACHE_VERSION` constant: it takes the value of `main`. After the
+     rebase, a new commit sets each cache bump of the branch that the
+     rebase lost to the value of `main` + 1.
+   - A generated contract file: it takes the side of `main`. Then it does
+     not push and prints the regeneration steps for the kept worktree.
+
+   Git rerere is off for the rebase. The script pushes only when these
+   checks pass:
+   - The result is the same as a merge of the branch into `main`. A
+     rebase drops the changes that a merge commit of the branch made, so
+     this check finds them. At a path where the merge itself conflicts,
+     the check has no reference. That path fails the check only when the
+     branch has merge commits. Then compare the path by hand. The failure
+     does not always mean a lost change.
+   - Each version bump of the branch is still a change against `main`.
+     This covers each `*SCHEMA_VERSION` constant, for example
+     `CHECK_SCHEMA_VERSION`, and each `*CACHE_VERSION` constant that the
+     script could not bump again (a string value or a moved constant).
+
+   A stacked branch still holds the original commits of its parent branch.
+   After a squash merge of the parent, a plain rebase replays those commits
+   on the squash, and they conflict. Do not run `git rebase --onto` by
+   hand: a manual resolution with `git checkout --ours` on a whole file
+   drops each hunk of the branch in that file, also a hunk without a
+   conflict. Give the old tip of the parent branch to the script instead:
+
+   ```bash
+   node scripts/ship-rebase.mjs --pr <number> --upstream <old parent tip> --push
+   ```
+
+   The old parent tip is the last commit of the parent branch in the
+   history of the stacked branch. The script then runs
+   `git rebase --onto <base> <old parent tip>` and replays only the own
+   commits of the branch. The checks change in this way:
+   - The tree check merges the branch into `main` with the old parent tip
+     as the merge base, because `main` already holds the squash of the
+     parent.
+   - The hunk check compares the hunks of `<old parent tip>..<old tip>`
+     with the hunks of `main..<new tip>`, without context lines. A lost
+     or changed hunk fails the check, also when the merge comparison
+     passes. The check leaves out the generated files that took the side of
+     `main` and the cache version lines. A failure prints the
+     `git range-diff` command that compares the commits.
+   - The version checks use the old parent tip as the old base. The cache
+     version handling is the same: a lost cache bump gets the value of
+     `main` + 1.
+
+   The option needs Git 2.40 or later.
+2. Wait for CI. The rebase script prints the wait command after the push.
+   Set `--head` to the pushed tip. Right after a push, GitHub can still
+   report the checks of the old head, so the script warns when `--head` is
+   absent. Set `--min-checks` to the check count of a recent complete run.
+   Without `--min-checks`, the count is 1, and the checks must stay
+   complete and unchanged for 2 minutes before the wait passes. A set of
+   checks without a passed check never passes. The dependabot-auto-merge
+   workflow skips at once on each pull request, before `ci.yml` starts its
+   jobs. Such a set ends after 10 minutes with exit code 0 and the line
+   "no check passed". Then look at the checks before you merge.
+
+   ```bash
+   node scripts/ship-wait-checks.mjs --pr <number> --head <full sha> --min-checks <count>
+   ```
+
+   GitHub starts no `pull_request` workflow for a pull request that
+   conflicts with its base. The script then stops with exit code 3.
+   Update the branch, push, and wait again.
+
+   GitHub does not start the workflows of some pull requests from a fork
+   until a maintainer approves them. Pinned auto-merge then never merges,
+   and the few checks that ran can look complete. The script stops with
+   exit code 5 and lists each run. Read all of the code of the pull request
+   first, because the approved runs execute it. Then approve each listed
+   run with `gh api -X POST repos/<owner>/<repo>/actions/runs/<run id>/approve`,
+   and wait again. Each new push of the fork needs a new approval.
+
+   The script compares each failed check with the same check name on the
+   newest completed run of `main`. A check that also fails on `main` gets
+   the line `FAIL (also on main <sha>)`. When all failed checks also fail
+   on `main`, the script stops with exit code 4. The failure does not come
+   from the pull request, so do not stop as blocked. Wait for the fix on
+   `main`, merge `main` into the branch, push, and wait again. Exit code 1
+   means that at least one failure is new on the pull request.
+
+3. Merge with pinned auto-merge (step 5 of "Ship"). Wait until the merge
+   is on `main` before you run step 1 for the next pull request. The
+   `--if-needed` check reads `main` at the time of the run, so it cannot
+   see a merge that lands after it.
+
+For a companion pull request in fallow-rs/docs, run
+`node <fallow>/scripts/ship-docs-rebase.mjs --pr <number> --push` in a
+docs checkout. The script regenerates `public-content-manifest.json` for
+each commit that conflicts on it. The manifest generator reads the
+directory. The rebase runs in a fresh worktree, so untracked files of the
+checkout do not get into the manifest. The script runs the same merge
+comparison outside that file. Then add `--repo fallow-rs/docs` to the
+pull request wait command. For the merged docs commit, run
+`node <fallow>/scripts/ship-wait-checks.mjs --commit <full sha> --min-checks <count> --follow-main`
+in a docs checkout, without `--repo`. `--follow-main` reads `origin/main`
+of the working directory, so the script refuses it together with `--repo`.
+
+The rebase scripts do not change the checkout where they run. They add a
+temporary worktree with a detached HEAD, and the rebase, the checks and
+the push run there. The checkout can be on any branch and can have
+changes. The pre-push hook of the checkout runs on the push. When the
+checks pass, the script removes the worktree. After a stop, a failed
+check or a failed push, the script keeps the worktree and prints its
+path and the next commands:
+
+- After a conflict, the rebase stays in progress in the worktree.
+  Resolve it there and run `git -C <worktree> rebase --continue`, or run
+  `git -C <worktree> rebase --abort`.
+- If a check fails, the script does not push.
+- To discard the worktree, run the printed
+  `git -C <checkout> worktree remove --force <worktree>` command.
+
+Each script prints its options and exit codes with `--help`.

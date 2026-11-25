@@ -1,0 +1,116 @@
+---
+name: wise-pr-create-auto
+description: >-
+  Autonomous variant of `/wise-pr-create` — detect the PR state for
+  the current branch and create or refresh the PR with NO prompts.
+  The body is drafted from the project's PR template; the base branch
+  is chosen autonomously (the repo's default branch) instead of asked.
+  Built for unattended ticket→PR runs. Invoked as `/wise-pr-create-auto`
+  (bare alias) or `/wise:wise-pr-create-auto` (canonical). Use when the
+  user says "create the PR without asking", "auto-create a PR", or
+  types `/wise-pr-create-auto`. For the interactive version (base-branch
+  picker) use `/wise-pr-create`.
+argument-hint: "[--on <harness>[:<model>[:<effort>]] | --on ask]"
+allowed-tools: Read, Write, Bash(git:*), Bash(gh:*), Bash(cat:*), Bash(head:*), Bash(test:*), Bash(cd:*), Bash(bash:*), Bash(date:*), Bash(printf:*), AskUserQuestion
+---
+
+# /wise-pr-create-auto — create or refresh a PR, autonomously
+
+Before executing, follow [model fallback](../../references/workflow-host-control.md#model-fallback)
+for unavailable models or delegation routes, including in autonomous procedures.
+
+At every skill start, identify your main/child role and the current client
+and GUI/TUI question tools, then read and follow the
+[question lifecycle](../../references/workflow-host-control.md#keep-asynchronous-questions-open).
+Keep asynchronous prompts open until answered; this rule does not authorize
+questions in autonomous or otherwise prompt-free procedures.
+
+## Why this skill exists
+
+`/wise-pr-create` is interactive — it asks the user to pick the base
+branch. An unattended ticket→PR pipeline can't stop to ask.
+`/wise-pr-create-auto` is the decision-free variant: it picks the
+repo's default branch as the base and never calls `AskUserQuestion`.
+It is also the reusable building block the `ticket-auto` workflow's
+PR-create step follows.
+
+## Arguments
+
+This skill takes no arguments. Ignore anything the user types beyond
+the skill name.
+
+## Run on another harness (`--on`)
+
+If `$ARGUMENTS` contains `--on <harness>[:<model>[:<effort>]]` (or
+`--on ask` / a bare `--on`), do
+NOT run the procedure below in this conversation. Strip the `--on`
+tokens (everything left is `SKILL_ARGS`), then read
+`${CLAUDE_PLUGIN_ROOT}/references/dispatch.md` and follow it with:
+
+- `SKILL_MD` = `${CLAUDE_PLUGIN_ROOT}/skills/wise-pr-create-auto/SKILL.md`
+- `SKILL_ARGS` = the remaining tokens
+
+`--on ask` (or a bare `--on`) picks harness, model and effort through
+one composite `AskUserQuestion` before any child spawns — the ONE
+sanctioned prompt in this skill: it happens at invocation time, so the
+dispatched run itself stays decision-free.
+The reference probes the harness login, validates model and effort
+against the engine catalog, and runs the procedure as a headless child
+via `engine.sh dispatch --relay`. Follow its run, handle any required gates
+in the main harness, and relay the final result as specified by the shared
+dispatch reference. This does not add routine prompts to autonomous paths.
+Without `--on`, this section does not apply.
+
+Before dispatching, run the §0 GitHub remote check here first, so no
+child is spawned for a repository with no GitHub remote.
+
+## Procedure
+
+### 0. GitHub remote check
+
+Read `${CLAUDE_PLUGIN_ROOT}/references/pr/github-remote.md` and run its
+check first. If the outcome is `none` or `other`, print the single
+create-variant line from its table and stop successfully; never call
+`gh pr`. Only continue when the outcome is `github`.
+
+### 1. Resolve the project + branch
+
+```bash
+git rev-parse --show-toplevel
+git rev-parse --abbrev-ref HEAD
+```
+
+Use the toplevel as `project.path` and the branch as
+`current_branch`.
+
+### 2. Follow the shared fragment
+
+Read `${CLAUDE_PLUGIN_ROOT}/workflows/ticket-auto/prompts/ensure-pr-auto.md`
+and follow it end to end with `current_branch` and `project.path`.
+The fragment detects PR state, drafts the body (via
+`references/pr/draft-body.md`), and creates or refreshes the
+PR with the repo default branch as base. The drafting step mandates
+reading `${CLAUDE_PLUGIN_ROOT}/skills/wise-human-writing/SKILL.md` —
+the body follows those human-first rules; do not skip that read.
+
+### 3. Relay the result
+
+The fragment's final line is `PR-CREATE: number=<n> url=<url>`.
+Surface the PR url to the user and stop. Suggest `/wise-pr-watch-auto`
+as the next step.
+
+## Guardrails
+
+- Without a GitHub remote, print the one-line notice from
+  `references/pr/github-remote.md` and stop; never call `gh pr`.
+- Never call `AskUserQuestion` mid-run — the one exception is the
+  `--on ask` pick before dispatch; this skill is the autonomous variant
+  by definition.
+- Never force-push, amend, rebase, or retarget an existing PR's base.
+- Never invoke another wise action skill.
+- Refuse to create a PR from a protected branch (`main` / `master` /
+  `release*`) that has no PR — stop with a clear message.
+- Never draft the body freehand — the `wise-human-writing` read that
+  `draft-body.md` §5 mandates is part of the procedure, not optional
+  polish.
+- Profile-insensitive by design: the session token-budget profile (`/wise-profile`) does not change this skill — one mechanical drafting pass; nothing to scale.

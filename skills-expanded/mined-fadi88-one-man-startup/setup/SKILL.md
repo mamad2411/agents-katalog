@@ -1,0 +1,27 @@
+---
+name: setup
+description: The setup interview that customises this template for one founder's company by region, domain, audience, customer size, stack, gates, team, budget and licence, and writes project.toml. Use at the start of a new company or when any of those change.
+user_only: true
+---
+
+# Setup
+
+Run `skills/grilling/` over the interview tree, in rounds, each question with a recommended
+answer and worded for the founder's level (`skills/founder-voice/`). Facts you can look up (the
+founder's git identity, an existing codebase's stack, a region's data protection law) you look
+up. Write nothing until the founder confirms the summary.
+
+Each step is its own file. Open the one you are on, in order:
+
+1. **Check the computer**: `skills/setup/1-check-tools.md`. Git and Python, and whether the
+   repository is public, before round one.
+2. **The interview**: `skills/setup/2-interview.md`. The tree of questions and what unlocks what.
+   Its licence question uses `skills/setup/licences.md`, which explains the options.
+3. **Write it down**: `skills/setup/3-write.md`. Every file the answers settle.
+4. **Finish**: `skills/setup/4-finish.md`. Clean out the template's own content, write the
+   licence, run the checks, show the founder, commit on their go.
+
+When setup runs again later (a new region, market, stack or team), skip step 1 and ask only the
+branches that changed. When the founder asks to publish (a website, an app, a release), that is
+the publish branch: say what will go public and what it costs, and set `[publish] enabled =
+true` on their go; `devops` then adds the publishing workflow.

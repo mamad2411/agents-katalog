@@ -1,0 +1,86 @@
+---
+name: ui-refinement
+description: Review and refine website or desktop UI, and carry established design decisions and contribution gates into new features. Uses the repository's component workbench (Storybook, Chromatic or equivalents) for state inventory, story tests and visual diffs when one exists.
+---
+
+# Review the interface
+
+Apply this method to the requested product and scope. It is independent of framework, rendering engine and operating system. Discover the repository's instructions, design system, existing decisions, current changes and actual verification commands. Preserve unrelated work. A skill is not a permission grant; commits, publication and external writes require their usual authority.
+
+## Use with the ritual
+
+For a planned interface change, use `ritual` or `ritual-full` as the delivery router and this method as its UI specialist. Invoke both by name, for example: “Use ritual-full with ui-refinement to refine the account and journal pages.” Read the selected ritual and its current step first. Follow its preflight, Chronis epic, handoffs and gates; this method neither starts a second flow nor grants approval. If the selected ritual is unavailable, report that and its [installation guide](https://github.com/decebal/decebal-claude-skills/blob/main/docs/ritual-zero-to-hero.md); do not pretend the full flow ran. A standalone UI review can use this method without a ritual.
+
+Add UI evidence to the ritual's existing artifacts instead of creating a competing plan or tracker:
+
+| Ritual step | UI contribution |
+| --- | --- |
+| Think | Define the user journey, scope, affected page families and unknown states in the brief. |
+| Spec | Put the decision, representative evidence, shared patterns, exceptions and acceptance criteria in or linked from the design. For full ritual, retain its Semantic ISA and independent design reviews. |
+| Plan | Map each affected page and state to its source and verification; add browser, accessibility and regression checks to the existing testing trophy and dependency graph. |
+| Build | Claim ready work through the ritual, capture before and after for the tested build, implement decisions, and run the relevant story-level checks. |
+| Review | Give the fresh-context reviewer the design, diff, page inventory, decisions and evidence; exercise the journey and verify untested states are not called passes. |
+| Ship | Attach the existing evidence to the ritual's PR proof and run the actual contribution and release gates. |
+| Reflect | Record UI drift, gate failures and uncovered states in the ritual report. |
+
+The ritual's approval, review and drift rules remain authoritative. Do not change an approved design to append implementation results; put those in the plan, review or linked decision record according to the ritual.
+
+## Apply decisions to new features
+
+Before designing or building a new UI feature, find the product's current indexed design decisions, component inventory, page and state reviews, open owner feedback, and actual contribution gates. Trace the new journey and affected shared components to applicable rules and approved examples; record the source of each requirement in the existing ritual design or plan. Use the project's established controls and patterns, including documented exceptions. A missing decision, conflicting instruction, absent component or unenforced gate is an open finding: resolve it with the owner where needed, or explicitly mark the affected work unverified. Do not invent a product-wide rule from one example.
+
+When a live product and repository both exist, compare the affected rendered behavior and shared components before choosing a baseline. Record deployment identity when known, and reconcile differences before replacing either version. Capture the owner's explicit design approval and its scope in the decision record; a screenshot or passing automated gate is not approval.
+
+Map each applicable decision to a concrete check at the real boundary: an automated rejection where practical, or a named human review with reproducible evidence where judgment is required. Include affected pages, responsive states, keyboard and accessibility behavior; preserve existing security, indexing and validation checks. Prove both acceptance and rejection for new automated gates, and report whether each gate blocks locally, runs in CI or is required for merge. Do not claim universal enforcement from instructions or an optional hook.
+
+Break owner feedback into tracker tasks within the current ritual, grouped by a complete user journey and clear ownership. Each builder handoff includes the exact reproduction, expected result, source and shared consumers, applicable decisions and checks, dependencies, evidence required and unverified states. Preserve explicit owner preferences; distinguish observed defects from hypotheses and link screenshots when supplied. Do not dispatch a builder or send context externally without the applicable authorization.
+
+For an authorized fix handoff, include the tested build and environment, route and viewport, starting state, exact actions and test data, observed and expected behavior, impact and evidence. Name affected sources, shared consumers, existing gates, worktree ownership, uncommitted work and permitted actions. State what remains unverified; require the recipient to reproduce the journey and retain source-bound screenshots. Do not send secrets or private customer data.
+
+## Establish a baseline
+
+Use [the review template](assets/ui-review-template.md) in the product's existing ritual artifacts. Complete its WCAG audit, design judgment, page and state coverage, decisions, and gate evidence. Use the installed accessibility audit and design-taste skills when available; otherwise apply the template and name the unavailable skill. Adapt guidance to the product and its existing stack and design system.
+
+Inventory every reachable page and material state in scope, including entry points, empty, loading, error and populated states, responsive sizes, themes and input modes where applicable. Record exclusions and access blockers. Map each page to its user goal, primary action, source implementation and shared patterns. Start the actual application using a bounded, owned process; inspect the rendered product, not source alone. Record build identity, environment, viewport, state and date for every capture. Never equate a remote preview with a local checkout without evidence binding them.
+
+Capture comparable screenshots for representative states and widths, then exercise the critical journey, keyboard focus and recovery paths. Before attributing a visual result to a candidate, verify the browser loaded its changed assets; account for cached files, generated bundles and preview redirects. Record any mismatch and recapture after correcting the environment. Inspect visual content directly: decorative elements may be absent from the accessibility tree. Check hierarchy, understandable labels, content, navigation, spacing, typography, contrast, responsive reflow, interaction feedback and accessibility. Record observed defects with trigger, user consequence, location and evidence; mark unobserved states unverified. Consider how a local fix affects every consumer of a shared component.
+
+For efficiency, discover routes and shared components once, then batch deterministic presence, reflow and broken-link checks across affected pages. Inspect representative shared patterns and each distinct page or state that can change the user's decision or journey; record per-page results and exceptions. Run focused checks while iterating and whole-product gates once at the ritual's integration boundary. A batch result never substitutes for visual judgment or proves an unvisited state.
+
+For shared navigation and footer changes, inventory every page family and rendering path that uses them. At narrow and wide sizes, check visible labels, link destinations, reflow and keyboard order and focus, including a journey through the actual links. Capture representative header and footer states and record which families were exercised. If a regression gate checks source structure alone, keep it and add rendered checks where the project can run them; do not treat source presence as proof of working navigation.
+
+## Use the component workbench when the repository has one
+
+Detect it before the baseline: a Storybook configuration (`.storybook/`, a `storybook` dependency, a `*.stories.*` tree), a hosted visual-review service such as Chromatic (`chromatic` dependency, configuration file, or a documented publish command), and any snapshot or story-test projects. Read the repository's own guide and task runner for how each is run, which themes and viewports it renders, and what it costs; do not substitute a generic command such as `npx chromatic` for the documented one. Equivalents (Ladle, Histoire, Percy, Playwright component snapshots) take the same role.
+
+- **State inventory.** List the stories for every component on the affected pages, from the running Storybook's index or its MCP server when available. Each material state from the baseline (empty, loading, unreachable, populated, overflow, long text, each theme) needs a story; a missing story is a finding, and Build adds it before changing the component.
+- **Story tests.** Run the repository's story tests, including interaction and accessibility checks, in every theme it supports. Report counts per theme and name each failure; a story marked as a known accessibility exception stays listed as one.
+- **Captures.** Capture representative stories through the repository's deterministic mode (frozen clock, seeded data, finished animation) so before and after are comparable. Record the story id, theme, viewport and commit for each.
+- **Visual diff.** A hosted service compares changed stories with the baseline branch. Publishing uploads rendered, unreleased interface to an external service: use only the repository's sanctioned command, with the authority that command requires, within its snapshot quota, and never put its token in the repository, a log or a report. Accepting a changed baseline is a design approval and belongs to the owner. "No visual changes" proves pixel equality with the baseline, not correctness; an unreviewed change is not a pass.
+- **Story is not product.** Stories render with fixtures. Capture the running application for the journey as well, check that fixtures match the shapes the real data source returns, and label a story-only capture as such where no real-app capture exists.
+
+In the ritual, Plan lists a story per state, the story-test run and the visual-diff build as trophy rows; Review receives the story list and the diff build link; Ship attaches both with their counts. When the repository has no workbench, do not install one as part of a refinement; record the gap and propose it as a contribution gate for the owner to decide.
+
+## Decide and refine
+
+Audit controls and text links across every page family and state, including guides, generated pages and printable screen views. Record when a control is needed, its semantic role, approved component or style, and its focus, hover, disabled and error states. Check adjacent actions have visible separation at narrow and wide widths and remain usable with keyboard and touch. Compare ordinary text links consistently while distinguishing navigation, inline links, destructive actions and deliberate exceptions. Shared headers alone do not make a standalone page visually consistent. Preserve print-specific layouts and access to the underlying content.
+
+Activate every distinct in-scope control in the rendered page, including controls that change the current page without navigation. Record starting state, action, visible result and expected result; exercise open, close, repeat, keyboard activation and focus return. For persistent choices, verify acceptance, rejection, reload, revisiting and changing the choice, without assuming a shared component behaves identically in every rendering path. Check overlays for occlusion, unexpected scroll and layout shifts. Capture relevant before, activated and resulting states; unpressed or inaccessible controls remain unverified. Use disposable data and honor the user's choice and privacy controls.
+
+Check navigation alignment and wrapping at widths around each breakpoint, and trace oversized blank regions to their actual layout cause. Apply the product's approved primary action and link patterns according to purpose; record exceptions instead of treating visual similarity as proof of working behavior.
+
+For printable journeys, activate the real print control and inspect generated output, not only the screen layout or print CSS. Verify expected page count, content on every page, clipping and unwanted blank pages at relevant paper sizes and browser or printer settings. Inventory every printable and record tested combinations; add a rendered-output regression gate that fails on extra or blank pages and prove it rejects a planted defect. Treat a passing browser PDF as evidence for that environment, not proof for every printer.
+
+Map these decisions to deterministic contribution checks where practical: reject unapproved control implementations or missing shared styles and test both valid and invalid examples. Exercise rendered action spacing and link treatments across representative page families and responsive widths; report coverage and failures per route. Keep visual judgment and necessity of each control as human review criteria. Run checks in the project's actual CI and installed hook chain without replacing existing hooks; report whether each path can block a contribution and which contributors it covers.
+
+For each page, record the intended user outcome, alternatives, decision and rationale. Link before/after screenshots and actual source examples. Reuse existing decisions and tokens when suitable; document deliberate exceptions and their scope. Keep product-specific values in the product, with portable workflow instructions here. Update decisions when superseded instead of leaving conflicting rules. Do not present a proposed design as accepted without an authorized decision.
+
+Freeze deterministic checks and their inputs before measuring any experiment. Use a project adapter for build, capture and evaluation. When autoresearch-rs is available, freeze its manifest, evaluator, environment, candidate scope and objective, run a baseline, change one hypothesis per candidate, and retain the actual keep/discard and verification evidence. Its hard gates must pass independently of the score. Screenshot similarity, accessibility samples and numerical scores do not establish usability or visual quality: require human judgment and actual task completion as separate checks. If a Git checkout, runnable app or required evaluator is missing, record the blocker and do not claim a completed experiment.
+
+## Make future changes accountable
+
+Maintain an indexed design decision record in the product repository, with source links and screenshot paths, approved examples, rule owner, exceptions and review date. Define contribution gates with an explicit trigger, command or reviewer procedure, expected result and failure behavior. Gate changed and affected pages on: usable primary journey; consistency with applicable decisions; clear labels and hierarchy; responsive or window-size reflow; keyboard/focus and relevant accessibility; screenshots tied to the tested build; and absence of unexplained regressions. A missing or unrun check is unverified, not a pass. Verify the real enforcement path and its scope with rejected and accepted contributions. A local Git hook blocks only where installed; a merge gate blocks only if repository policy requires it. Distinguish evidence-presence checks from human approval of clarity and consistency. Do not make pixel equality a substitute for design review.
+
+## Finish with evidence
+
+Reopen every affected page, repeat the relevant journeys and compare matching captures. Report actual commands and results, decisions and exceptions, experiment baseline and candidate outcomes, and remaining unverified states. Preserve the evidence in indexed repository docs. Never claim complete page coverage from a representative sample or a green score.

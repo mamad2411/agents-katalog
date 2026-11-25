@@ -1,0 +1,292 @@
+---
+name: dbx-plugin
+description: DBX 插件开发全流程。Use when 创建、开发、调试、打包、签名、发布或上架 DBX 插件；处理 manifest.json、dbx-plugin.toml、.dbxp 包、贡献点（connection-provider / proxy_route / workbench / filesystem-provider / context-menu / result-view / command / menus / mcp）、Host API（window.dbxPlugin 桥接）、Redis 值解码器（redis-value-codec-v1）、Rust/Go Sidecar 协议、dbx-plugin CLI（create / dev / package / keygen）、dbx-store 候选 PR 与 catalog 校验时使用。
+---
+
+# DBX 插件开发
+
+本 skill 覆盖 DBX 插件的**创建 → 开发 → 调试 → 打包 → 发布 → 官方商店上架**全链路。
+所有契约以 Manifest v1 + Host API 1.x + Sidecar Protocol v1 + `.dbxp` 包格式为准。
+
+最近核验：2026-10-29，DBX `1b8dfd9673e993f65a6253c0faa0882bd49a544b`、dbx-store `f8b87d4eaced4beb53077dbf3eab46411f3a49ae`。本轮新增 MCP 外部工具的 toolsets、访问级别、连接子范围与 Marketplace `mcpTools` 标记，并扩展文件拖放回调的 iframe CSS 坐标；Store 的 Schema、脚本、Workflow 与签名规则未变。源码能力不等于已发布 CLI 或目标宿主必然支持，仍需按 reference 中的能力探测与验收要求处理。
+
+## 0. 先建立正确的心智模型（读之前必看）
+
+### 0.1 四个契约各自管什么
+
+| 契约 | 载体 | 作用 |
+| --- | --- | --- |
+| Manifest v1 | `manifest.json` | 插件身份、权限、入口、贡献点、国际化。运行时契约，**拒绝未声明字段** |
+| 构建配置 | `dbx-plugin.toml` | 打包包含哪些目录、是否有原生后端、dev 构建命令。**不进入插件包** |
+| Host API 1.x | `window.dbxPlugin` / Sidecar callback | 沙箱 UI 与 DBX 宿主通信；Host API 1.1 支持 `host/requestUserInput`，Host API 1.2 增加估算执行计划 API，Host API 1.3 增加表结构元数据和剪贴板读取，Host API 1.4 增加用户授权的只读数据查询，近期 Host API 还提供贡献点 identity、工作台标题、脱敏连接列表、桌面浮动窗口/关闭、AI 流式生成、剪贴板图片与媒体流；新增能力需运行时探测 |
+| Sidecar Protocol v1 | stdin/stdout JSON-RPC | 可选原生后端与 DBX 通信 |
+| 包格式 | `.dbxp`（ZIP 容器） | DBX 实际安装的东西 |
+
+SDK **不需要启动**：没有常驻 SDK Server。开发时只用三类工具——`dbx-plugin` CLI、Rust/Go SDK（仅原生后端链接用）、DBX 注入的 `window.dbxPlugin`。
+
+### 0.2 三个仓库的分工（最常见的错误来源）
+
+| 你要改的东西 | 提交到哪里 |
+| --- | --- |
+| 你的插件前端、Rust/Go 后端、测试、发布脚本 | **你自己的插件源码仓库** |
+| 新插件上架、版本更新、商店图标/介绍 | `t8y2/dbx-store`，目标分支 `main` |
+| DBX Host、Manifest/Marketplace Schema、SDK、CLI、Packager、官方示例、插件开发文档 | `t8y2/dbx` |
+| 某个第三方插件自身的 Bug | 该插件自己的源码仓库（**不要**提到 `dbx-store`） |
+| 数据库厂商 JDBC Driver JAR | 不提交到任何 Git 仓库，用户本机导入 |
+
+> 上架 PR 提到 `t8y2/dbx-store`，**不是** `t8y2/dbx`。普通插件源码也不要复制进 `t8y2/dbx`。
+
+### 0.2.1 插件中心、仓库和目录的边界
+
+- 插件中心分为 Marketplace、Installed 和 Settings：前者读取目录并按当前平台选择 artifact，Installed 管理已安装实例，Settings 管理本地 `.dbxp`、自定义仓库和开发包开关。
+- 官方目录固定为 `https://raw.githubusercontent.com/t8y2/dbx-store/main/catalog/index.json`，不能在插件中心设置里替换。官方仓库公钥由 DBX 内置；自定义仓库使用用户管理的公钥，不能借此伪装成官方仓库。
+- Marketplace 先选择精确的当前 target，再回退到 `universal`；客户端会校验目录声明的 URL、大小、SHA-256、Manifest 身份、权限和 `signingKeyId`，只有受信任的 Ed25519 仓库签名包才会激活。
+- 连接型插件的快捷入口由插件中心全局配置管理。入口可排序、按插件隐藏，`appToolbar` 的可见条件和命令 enablement 仍然生效；隐藏入口不会关闭已经打开的工作台。插件设置入口位于入口列表末尾，没有可显示入口时整个快捷区域隐藏。
+
+### 0.3 包与签名模型
+
+```
+插件源码仓库                          DBX Store（t8y2/dbx-store）
+  dbx-plugin package .                     人工审核
+        │                                        │
+        ├─ dist/<id>-<ver>-<target>.dbxp         │  受保护 Workflow 用仓库 Ed25519 密钥签名
+        ├─ dist/<id>-<ver>-<target>.artifact.json│        │
+        └─ release-candidates.json  ─────────────┘        ▼
+             （未签名候选）                     最终签名 .dbxp + artifact metadata + signing receipt
+                                                         │
+                                                         ▼
+                                             catalog/index.json（DBX 客户端读取）
+```
+
+- 开发者**永远不接触官方私钥**，也**不自行填写 `signingKeyId`**。
+- 未签名包只能本地开发测试：插件中心 → 设置 → 第三方与开发者选项 → 允许安装未签名开发包。
+- 签名保证「装到的字节 = 审核过的字节」，**不是** OS 沙箱，也不代表插件安全。
+
+---
+
+## 1. 我要做什么 → 读哪个 reference
+
+| 任务 | 读 |
+| --- | --- |
+| 写/改 `manifest.json`、权限、入口、`localizations` | `references/manifest.md` |
+| 加连接表单、工作台、文件系统、右键菜单、结果视图、命令、菜单和 MCP 工具面 | `references/contributions.md` |
+| 写沙箱 UI、浮动窗口、贡献点路由、AI/媒体流、主题/CSP/全屏 | `references/host-api.md` |
+| 写 Rust/Go Sidecar、连接生命周期、有状态 MCP 工具、Redis 值解码器、二进制帧 | `references/sidecar-protocol.md` |
+| 用 `dbx-plugin` 命令、装 CLI、模板选择 | `references/cli.md` |
+| 起 dev host 调试、看日志、诊断接口 | `references/debugging.md` |
+| 打包、`dbx-plugin.toml`、target、包体积限制 | `references/packaging.md` |
+| 发布 Release、候选 PR、审核签名、上架/更新版本 | `references/publishing.md` |
+| 报错信息 → 原因 → 修法 | `references/troubleshooting.md` |
+
+---
+
+## 2. 标准工作流
+
+### 步骤 1：装 CLI 并创建项目
+
+```bash
+npm install --global @dbx-app/plugin-cli   # 或 npx @dbx-app/plugin-cli
+dbx-plugin --help                          # 验证安装与版本
+
+dbx-plugin create my-plugin \
+  --template svelte \
+  --id com.example.my-plugin \
+  --name "My Plugin" \
+  --publisher example \
+  --description "A DBX plugin." \
+  --version 0.1.0 \
+  --yes
+```
+
+模板选择（不要为了「像完整插件」而强行加 Sidecar）：
+
+| 模板 | 组成 | 产物 | 适用 |
+| --- | --- | --- | --- |
+| `frontend` | 沙箱前端 | 一个 `universal` 包 | 纯 UI / 调 Host API |
+| `svelte` | Svelte 5 + Vite 前端 | 一个 `universal` 包 | 自定义工作台 |
+| `rust` | 前端 + Rust Sidecar | 每平台一个包 | 终端、SSH、复杂协议、高性能 |
+| `go` | 前端 + Go Sidecar | 每平台一个包 | Go 生态、网络服务 |
+
+### 步骤 2：开发
+
+- 共用 UI 入口时，在 `await dbxPlugin.ready` 后读取 `contributionId` 路由；context 与身份独立。桌面小组件复用 `workbench`，通过 `floating.open` 打开，需 `host.workbench` 与 `capabilities.floating`，不新增 Manifest 类型；`surface` 可为 `tab`、`dock` 或 `window`。详见 `references/host-api.md`。
+- 前端入口由 `entrypoints.ui.entry` 指定，必须落在 `ui.root` 内（root 为 `ui` 时写 `ui/index.html`）。
+- 所有 UI 必须构建为包内静态资源；**不要把 Vite dev server 或 CDN 地址写进发行包**。
+- 需要原生能力（S3/SSH/系统凭据/长连接/高性能）才写 Sidecar。Sidecar 不是 OS 沙箱，以当前用户权限运行。
+- 连接表单可用 `visible_when` / `required_when` 的 `all_of`、`any_of`、`not` 组合条件，以及 `picker` 提供本地文件选择；依赖这些能力时设置足够新的 `engines.dbx`。
+- 若握手可能超过通用超时，连接表单可声明 `config` 字段 `connect_timeout_secs`；DBX 会用其解析值作为 `connection/test` 与 `connection/connect` 的 deadline。需要访问 Kafka `advertised.listeners` 或集群发现等多端点协议时，在 connection-provider 上声明 `proxy_route: true`，通过生命周期请求的 `runtime.proxy` SOCKS5 路由连接广播端点。Sidecar 进程按插件共享、跨标签页复用，后端会话应按 `connection.id` 管理。
+- 工作台可声明 `ai.recommendations`，`command` 和 `menus` 可把同插件工作台放入命令面板、应用工具栏或侧边栏；Workbench UI 可用 `executeCommand` 复用这些命令，`instance_key` 可按连接隔离 panel，dock command 可用 `options_action` 从 Sidecar 获取启动选项；动态 `context-menu` 可生成一层原生子菜单。`mcp` 可声明 Sidecar 的 MCP 工具是否进入内置 AI 或外部 `dbx` MCP 服务，并用 `toolsets`、`tools.access`、`scope` 细化外部授权；Store 条目有 `mcpTools` 标记。这些入口必须引用已声明的贡献点，并按运行时 capability 与用户开关做降级。
+
+- Redis 值解码器通过顶层 `capabilities[].kind: "redis-value-codec-v1"` 声明，并由原生 Sidecar 实现 `redis/codec/decode`；它不是新增 contribution 或 Host 权限。用户显式选择后才传值，输入/结果各限 2 MiB、10 秒超时、只读不回写，详见 `references/sidecar-protocol.md`。
+- 有状态 MCP 工具的 `mcp/tools` 只做发现；start/stop 必须为显式修改型调用。`mcp/call` 执行时检查绑定连接与策略，不能把隐藏工具或只读标注当作授权；可能已提交的事务结果应报告 `unknown`，不要自动重试。
+
+### 步骤 3：本地调试
+
+```bash
+dbx-plugin dev --path . --port 5190          # 不启动 DBX，浏览器开发宿主，需 Node.js 22+
+curl -sS 'http://127.0.0.1:5190/api/diagnostics?after=0&limit=100&level=error'   # 脚本/Agent 读脱敏日志
+```
+
+细节（自动重载、`DBX_UI_BUILD_SUCCESS` 约定、数据目录、能力边界）见 `references/debugging.md`。
+
+### 步骤 4：打包未签名候选
+
+```bash
+dbx-plugin package .
+# 前端：dist/<id>-<ver>-universal.dbxp + .artifact.json
+# 原生：dist/<id>-<ver>-<os>-<arch>.dbxp + .artifact.json（必须在对应平台构建）
+```
+
+`.dbxp` 内含 `checksums.json`，除该文件和签名文件外的每个条目都必须恰好有 SHA-256；正式安装要求受信任仓库签名，未签名包只在显式开发安装开关下接受。正式签名版本不可原地覆盖，DBX 通过激活记录支持回滚；显式允许的本地未签名开发包可同版本重装。
+
+打包前先跑随附预检脚本（见 §5），它能提前发现 manifest/toml/include/资源不一致。
+
+### 步骤 5：发布 Release（在自己的插件仓库）
+
+生成的 `.github/workflows/plugin-release.yml` 会在发布 GitHub Release 时产出各平台候选包、`.artifact.json` 和合并的 `release-candidates.json`；它固定到与 CLI 相同的 `plugin-cli-v<version>` reusable workflow tag，并传入相同的 `plugin-cli-version`。**不要把 `.dbxp` 提交进 Git**。
+
+### 步骤 6：进入官方商店
+
+- 已登记 `autoUpdate: true`：Store 的定时 Workflow 自动读取最新 Release 的 `release-candidates.json`，创建/更新 `candidates/<id>.json` 候选 PR（分支 `automation/plugin-release/<id>/<version>`）。作者不需要手工建 Issue/PR。
+- 未登记：Fork `t8y2/dbx-store`，向 `main` 提**一个** PR，包含 `publishers/<publisher-id>.json`（仅首次）和 `candidates/<plugin-id>.json`。
+- 之后由维护者审核 → 运行受保护签名 Workflow（PR 下评论 `/sign`）→ 回写 `plugins/<id>.json` + `catalog/index.json` → 合并。
+- CI 在签名前**故意保持红色**（`open candidate(s) awaiting DBX Store signing`），这是设计如此。
+
+完整字段、`.dbx-store.json`、校验规则与常见坑见 `references/publishing.md`。
+
+### 步骤 7：发新版本
+
+```bash
+# 1. 改代码，递增 manifest.json 的 version（不要复用旧版本号）
+# 2. 打新 Tag、发新 Release（旧 Release 资产不可覆盖）
+# 3. 等同步 Workflow 建候选 PR → 审核 → 签名 → 合并
+```
+
+**已发布的字节不可覆盖**：任何字节变化都必须递增版本并重新审核。
+
+---
+
+## 3. 硬性约束（违反必然失败）
+
+**Manifest**
+- `manifest.json` 必须在包根目录；Manifest v1 **拒绝任何未声明字段**（顶层白名单只有 `$schema`、`manifest_version`、`id`、`name`、`icon`、`version`、`publisher`、`description`、`source`、`homepage`、`engines`、`permissions`、`entrypoints`、`capabilities`、`contributions`、`localizations`）。
+- `id` 只能小写字母/数字/`.`/`_`/`-`，首字符为字母或数字；发布后不可更改。`version` 必须是合法 SemVer。
+- 包内路径相对包根，**不能**以 `/` 开头、不能含 `..`、反斜杠或重复斜杠。
+- `entrypoints.ui.entry` 必须位于 `ui.root` 内。
+- 已废弃字段会被 CLI 拒绝：`entrypoints.ui.kind`、`entrypoints.backend.binaries`、`entrypoints.backend.protocol`。
+- `command` 贡献点的 `action.workbench` 必须引用同一 Manifest 中的 `workbench`；`action.presentation` 只能是 `tab` 或 `panel`，`reuse` 只能是 `singleton` 或 `new`，`instance_key` / `options_action` 必须是非空字符串。Workbench 内调用 `executeCommand` 仍需 `host.workbench`，预期失败通过 `{ error }` 返回；宿主 context 的底部停靠 surface 使用 `dock`（旧的 `panel` surface 值不再是稳定契约）。`menus.items[].command` 应引用已声明的命令，位置只能是 `commandPalette`、`appToolbar` 或 `appSidebar`。`context-menu.dynamic` 必须是布尔值，且为 `true` 时必须有 backend entrypoint；动态返回项只允许一层子菜单。`mcp` contribution 必须有 `type` 与 `id`，可选 `description`、`ai_tools`、`external_tools`、`toolsets`、`scope` 和 `tools`；每个 Manifest 最多一个，且必须有 backend entrypoint。启用外部工具时，逐工具 `tools` 声明决定 read/write/full 访问级别，未声明工具不会暴露。
+
+**权限**
+- 只声明真正用到的权限，取最小集合：`host.workbench`、`host.events`、`host.filesystem`、`host.binary`、`host.plans:read`、`host.schema:read`、`host.storage`、`host.ai`、`host.clipboard:read`、`host.data:read`、`host.connections:read`、`host.network:https://host[:port]`（HTTPS、无路径/通配符/Token，最多 8 个）。`host.plans:read` 仅开放宿主生成的估算执行计划读取；`host.schema:read` 仅开放已打开连接中单个 table 的窄化结构元数据；`host.data:read` 仅开放用户授权连接上的单条只读 SQL；`host.connections:read` 仅开放脱敏连接摘要。
+- `host.network` 只影响浏览器 CSP 的 `connect-src`，**不是** Sidecar 的网络防火墙，也仍受目标服务 CORS 约束。
+- 估算执行计划 API 属于 Host API 1.2：需要 `host.plans:read`，并同时检查初始化能力 `capabilities.planApi` 与连接级支持；若插件无法在缺少该能力时工作，在 `engines.host_api` 声明 `^1.2`。表结构元数据与剪贴板读取属于 Host API 1.3；只读数据查询属于 Host API 1.4，需分别检查 `schemaMetadataApi`、`clipboardRead`、`dataApi`，并在无法降级时声明相应的 `engines.host_api` 下限。连接枚举需要 `host.connections:read` 与 `capabilities.connectionsApi`，只返回脱敏摘要；工作台标题需要 `host.workbench` 与 `capabilities.workbenchTitle`。工作台持久化小状态使用 `host.storage` 与 `window.dbxPlugin.storage`（单值 256 KiB、插件总量 1 MiB），并检查初始化能力 `capabilities.storage`。需要把数据快照交给 DBX 内置 AI 面板时声明 `host.ai`，调用 `window.dbxPlugin.ai.openConversation` 前检查 `capabilities.ai`；需要模型列表或纯文本生成时分别检查 `aiModelDiscovery`、`aiCompletion`，宿主确认后只返回脱敏模型项和纯文本，不暴露凭据、不启用工具或文件写入。旧宿主缺少这些能力时应优雅降级。
+- Workbench 的 `ai.recommendations` 最多 5 条；运行时用 `ai.setRecommendations` 覆盖默认项或用 `ai.clearRecommendations` 清空。`label` / `prompt` 支持从 context 读取的 `{{path.to.value}}` 占位符，无法解析或包含原型污染路径的推荐会被隐藏；调用前检查 `capabilities.aiRecommendations`。
+
+**安全**
+- 密码、Token、私钥**绝不**放进 `config`、Workbench context、事件或日志；需要持久化的敏感值用 `binding: "secret"`。
+- `.dbx-dev/` 可能含明文凭据，必须加入 `.gitignore`，不得提交、不得打包（打包会直接报错）。
+- 不要导入 DBX 的 Vue/Tauri 模块；不要假设页面能直接访问 Node.js、文件系统或网络。
+
+**打包/发布**
+- `.dbxp` 是安装包不是源码；不要把 `dist/` 当输入目录再次打包。
+- 打包会拒绝：符号链接、越界路径、`..`、`.dbx-dev`、超限文件、不安全输出位置。
+- 候选包**必须未签名**且 `.artifact.json` 里**不含 `signingKeyId`**；候选 URL 必须 HTTPS，且不能指向 `t8y2/dbx-store` 的 Release。
+- `release-candidates.json` 的 `plugin.permissions` 应来自 Manifest；商店优先使用非空的该列表，缺失或空列表会回退到商店元数据。权限全部删除时，务必同步 `.dbx-store.json.permissions: []`。
+- dbx-store 签名前会解包候选并逐项核对候选 `permissions` 与包内 `manifest.json.permissions`；新增或删除权限必须同时更新候选与包并递增版本。
+- 候选的 `id`/`version`/`publisher` 必须与包内 `manifest.json` 完全一致（签名时逐一比对）。
+- `plugins/*.json` 和 `catalog/index.json` **永远不要手工编辑**（由签名 Workflow 生成）。
+
+---
+
+## 4. 命令速查
+
+```bash
+# 安装
+npm install --global @dbx-app/plugin-cli
+npx @dbx-app/plugin-cli create my-plugin
+
+# 创建（--template frontend|svelte|rust|go；--backend 为别名；--language rust|go 兼容别名）
+dbx-plugin create my-plugin --template rust --sdk-root /path/to/dbx
+
+# 调试（Node.js 22+）
+dbx-plugin dev [--path DIR] [--port 5190] [--data-dir DIR]
+
+# 打包（始终产出未签名候选）
+dbx-plugin package . [--target universal] [--output-dir dist] [--artifact-url https://...]
+
+# 仅私有/自定义仓库运营方需要
+dbx-plugin keygen company.plugins.release   # 生成 0600 权限的私钥 env 文件
+
+# 其他
+dbx-plugin version
+NO_COLOR=1 dbx-plugin --help
+```
+
+相关环境变量：`DBX_PLUGIN_TARGET`（打包 target）、`DBX_PLUGIN_SDK_ROOT`（改用本地/自带 SDK 源码）、`DBX_PLUGIN_DEV_RUNTIME`、`DBX_PLUGIN_NODE`（dev 运行时）、`DBX_PLUGIN_CLI_BINARY`（npm launcher 覆盖二进制）、`NO_COLOR` / `CLICOLOR` / `CLICOLOR_FORCE`。
+
+---
+
+## 5. 随附脚本（零依赖，Node.js 18+）
+
+脚本位于本 skill 的 `scripts/` 目录（下文记为 `<skill-root>/scripts`）。
+
+```bash
+# 1) 打包前预检：manifest / dbx-plugin.toml / include 覆盖 / 资源存在 / 前后端一致 / 权限语法
+node <skill-root>/scripts/check-project.mjs [项目目录] [--json]
+
+# 2) 解包检查 .dbxp：条目清单、manifest、checksums 校验、签名状态、bin 目标一致性
+node <skill-root>/scripts/inspect-dbxp.mjs dist/my-plugin-0.1.0-universal.dbxp [--json] [--extract DIR]
+
+# 3) 从 dist/*.artifact.json 生成 candidates/<id>.json 与 release-candidates.json
+node <skill-root>/scripts/make-candidate.mjs [项目目录] [--release-notes "..."] [--out dist]
+#    会自动校验每个 .artifact.json 的 sha256/size 与 .dbxp 实际字节一致
+
+# 4) 读取 dev host 脱敏日志（轮询/api/diagnostics，自动沿用 nextAfter+instanceId）
+node <skill-root>/scripts/dev-logs.mjs --port 5190 [--level error] [--follow] [--json]
+```
+
+---
+
+## 6. 排错入口
+
+先跑预检，再对症查表：
+
+1. `node <skill-root>/scripts/check-project.mjs` —— 覆盖绝大多数 manifest/toml/include 类错误。
+2. 打包/签名/上架报错 → `references/troubleshooting.md` 的错误信息对照表。
+3. dev host 起不来或 UI 不刷新 → `references/debugging.md` 的「能力边界」与「自动重载」两节。
+
+高频真相（避免误判）：
+
+- `Sidecar identity or protocol does not match manifest`：初始化响应里的 `plugin.id`/`version` 与 `manifest.json` 不一致，或协议版本不在双方支持范围内。
+- 改完 UI 页面不刷新：编译型前端需要 `[dev].ui_watch`，且构建成功必须打印**独立一行** `DBX_UI_BUILD_SUCCESS`。
+- 桌面端文件选择、保存和系统拖放通过 `window.dbxPlugin.fileTransfer` 流式处理；文件夹拖放会展开普通文件并带 `relativePath`、`dropId`、`truncated` 和 iframe CSS `position` 元数据，拖拽状态也提供坐标，能力由 `capabilities.fileTransfer` 探测；Web 宿主没有拖放能力时回退到 `<input type="file">` 或 Sidecar 自己的传输协议。
+- `manifest.json contains unknown top-level field(s): ...`：写进了 Manifest v1 不接受的字段（常见于手写 `signingKeyId`、`verified`、自定义键）。
+- `... is not covered by [package].include`：`icon` / `ui.entry` 所指文件不在 `[package].include` 声明的目录内。
+- 原生插件 `target 'X' does not match build host 'Y'`：原生包必须在目标平台构建，用 CI 矩阵而不是本机交叉打包。
+- 商店校验 `candidate URLs must not reference DBX Store releases`：候选只能指向你自己仓库的**未签名**包。
+
+---
+
+## 7. 事实来源
+
+- 官方文档：<https://dbxio.com/cn/docs/plugin-development>
+- 上游权威源码与 Schema（`t8y2/dbx`，`main` 分支）：
+  - `plugins/manifest.schema.json`、`plugins/marketplace.schema.json`
+  - `plugins/README.md`（完整贡献点与协议）、`plugins/RELEASING.md`、`plugins/SIGNING.md`
+  - `plugins/sdk/cli`、`plugins/sdk/packager`、`plugins/sdk/dev-host`、`plugins/sdk/{rust,go}`
+- 官方商店仓库：<https://github.com/t8y2/dbx-store>（`CONTRIBUTING.md`、`schemas/plugin-candidate.schema.json`、`scripts/validate.mjs`）
+
+注意：模板中 `manifest.json` 的 `$schema` 默认指向 `.../t8y2/dbx/plugin-sdk-v1/plugins/manifest.schema.json`，该 ref 目前**不存在（404）**。若你依赖编辑器校验，请改为 `main` 或具体版本 tag。以 CLI 与运行时校验为准，Schema 只是编辑期辅助，不是安全边界。
+
+---
+
+## 8. 分析/审查插件时的输出要求
+
+被要求 review 一个 DBX 插件或候选包时，按以下顺序给结论，并标注证据（文件:行 或命令输出）：
+
+1. **身份一致性**：`id` / `version` / `publisher` 在 `manifest.json`、`.dbx-store.json`、`candidates/*.json`、`artifact.json` 中是否一致。
+2. **权限最小化**：声明的每个权限是否都有实际调用点；`host.network` origin 是否精确。
+3. **Secret 处理**：有无把凭据写入 `config`、context、事件或日志。
+4. **包内容**：`inspect-dbxp.mjs` 输出中是否有 `.dbx-dev`、多余文件、错误 target 的 `bin/`。
+5. **可复现性**：`sha256`/`size` 是否与实际字节一致；是否覆盖了已发布版本。
+6. **上架合规**：候选未签名、URL 为 HTTPS 且非 dbx-store Release、未手工改 `plugins/` 或 `catalog/`。

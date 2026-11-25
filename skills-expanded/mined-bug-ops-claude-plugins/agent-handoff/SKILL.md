@@ -1,0 +1,90 @@
+---
+name: agent-handoff
+description: Handoff protocol for the dev-agents multi-agent system. Subagents communicate via Markdown+frontmatter files in .local/handoff/. ALWAYS read on agent startup.
+---
+
+# Agent Handoff Protocol
+
+Subagents work in isolated context. This protocol enables communication via Markdown+frontmatter files.
+
+## File Path
+
+`.local/handoff/{TS}-{agent}.md`, where `{TS}` is a `YYYY-MM-DDTHH-MM-SS` timestamp taken when you write the file, and `{agent}` is your teammate name (`developer-a`, `impl-critic`) when your prompt makes you a teammate, otherwise your role suffix. Parallel agents of one role then never share a file name. The role suffix also selects your Output schema (`{role}`):
+
+`architect` · `developer` · `testing` · `performance` · `security` · `review` · `cicd` · `debug` · `critic` · `live-tester` · `researcher` · `arch-analyst` · `security-analyst` · `tech-writer` · `sdd-orchestrator`
+
+## On Startup
+
+1. Read `${CLAUDE_SKILL_DIR}/references/{role}.md` for your Output schema. Exception: `arch-analyst` and `security-analyst` take their Output schema from their audit skill (`arch-inspect` / `security-audit`) — skip this read.
+2. Parent handoff frontmatter arrives inline in your task description — that is routing metadata. Read a full body only when you need detailed context: `cat .local/handoff/{id}.md`
+3. For grandparent+ chain read frontmatter only: `awk 'BEGIN{n=0}/^---/{n++;if(n==2)exit}n==1&&!/^---/{print}' file.md`
+
+## Before Finishing
+
+1. Run `date +%Y-%m-%dT%H-%M-%S` and `mkdir -p .local/handoff` in one Bash call (shell variables do not persist between calls); `{HANDOFF_ID}` is that timestamp, a dash, and `{agent}`.
+2. Write `.local/handoff/{HANDOFF_ID}.md` with the Write tool, using the literal path:
+
+~~~markdown
+---
+id: {HANDOFF_ID}
+parent: {parent-id | [id1, id2] | null}
+agent: {agent}
+status: {completed | blocked | needs_discussion | no_change_needed}
+verdict: {reviewer and critic only, values in your Output schema; omit for every other agent}
+summary: "One sentence: what was done + key artifact"
+next_agent: {suffix | null}
+next_task: "Short imperative task, or empty"
+follow_ups: {number of Follow-ups entries, 0 when none}
+---
+
+## Context
+Stack: {profiles and reference files read, per the stack skill — e.g. `rust (toolchain, developer)`; omit for agents that do not load stack}
+{<=2 sentences: constraints or decisions the next agent cannot get from the frontmatter chain. Do NOT restate the task or parent summaries.}
+
+## Output
+{Per references/{agent}.md schema.}
+~~~
+
+Frontmatter is flat scalars; the only allowed array is `parent: [id1, id2]` when parallel work converges on one agent.
+
+`no_change_needed` is returned only by the architect and the debugger, when the request is already satisfied or the code behaves as intended. Its `## Evidence` section holds the reproduction attempt (command and output) or the code (`file:line`) that already satisfies the request. The lead stops the chain and reports the evidence to the user.
+
+Conditional sections: `## Blockers` if `status: blocked`; `## Acceptance Criteria` if `next_task` needs more than one line; `## Follow-ups` if `follow_ups` is above 0; `## Evidence` if `status: no_change_needed`. On `needs_discussion` state the open question — the caller returns it to the user.
+
+### Follow-ups
+
+Work outside this task's scope that must not be lost: a defect you found, a capability the code needs but the task does not cover, tech debt, or a `TODO` marker you placed in code. Every `TODO`/`FIXME` you add has an entry. One entry per item:
+
+`F1` — `defect | enhancement | tech-debt | todo | security` — `file:line` — what is wrong or missing — evidence (failing input, command, log line) — expected vs. actual (defects) — why it is outside this task — suggested priority `P0`–`P4`
+
+In `team-develop` and `team-debug` runs you never file issues yourself: the lead collects every handoff with `follow_ups` above 0, the critic checks each entry against the evidence and the declared architecture, plan, and spec, and the reviewer files the confirmed ones (in `team-debug`, which has no critic, the reviewer checks them and files after the user approves). Record only what you can back with evidence or a reference — an unsupported entry is rejected. Agents with their own filing protocol (`live-tester`, `researcher`, `arch-analyst`, `security-analyst`) keep it only in standalone and `continuous-improvement` runs. An item that blocks your own task is not a follow-up — hand off with `status: blocked`. Additions the critic asked to remove are not follow-ups unless the user chose to keep the idea for later.
+
+3. Return frontmatter + path to caller — parent routes without reading the file. The block goes where your caller reads results: `SendMessage` to the lead when you are a teammate, the `SubagentHandback` call when you have that tool, otherwise your final message:
+
+~~~markdown
+## Handoff
+**File:** `.local/handoff/{HANDOFF_ID}.md`
+**Frontmatter:**
+```yaml
+{the frontmatter block above}
+```
+~~~
+
+## In an Agent Team
+
+When your prompt says you are a teammate, its lines `Teammates:`, `Peers:`, `Task:`, and `Code ownership:` set your team rules:
+
+- **Report** to the lead with `SendMessage(to: "team-lead", message: "...", summary: "...")` carrying the Handoff block above. Plain text at the end of your turn does not reach the lead.
+- **Ownership**: edit only what the `Code ownership:` line allows; everything else is a finding in your handoff. Only the lead commits. The prompt rule always applies; the plugin's hook backs it best-effort where the payload identifies the role (see the README Hooks section).
+- **Peers**: message a teammate from the `Teammates:` line only for the flows the `Peers:` line names. Results, blockers, scope questions, and anything that changes the plan go to the lead.
+- **Task**: with a `Task:` line, load the tools (`ToolSearch("select:TaskUpdate,TaskList")`), set that task `in_progress` on start and `completed` after you report.
+- **Shutdown**: answer a `shutdown_request` with `SendMessage(to: "team-lead", message: {type: "shutdown_response", request_id: "<echo the request_id>", approve: true})`.
+
+## Compactness Rules
+
+Every handoff body is re-read by downstream agents — each extra line costs tokens on every read:
+
+- Never restate the task, parent summaries, or anything the frontmatter chain already carries.
+- Never list what `git diff` shows: no function/test name listings, no code snippets. Counts + paths + one-line descriptions. Exception: debugger — the fix snippet IS the payload.
+- Omit empty or inapplicable sections entirely. No decorative estimates or filler prose.
+- Aim for <=40 lines of body; never pad.

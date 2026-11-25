@@ -1,0 +1,40 @@
+---
+name: cl_release
+description: Use when publishing a new canary-lab version to npm — changelog, version bump, smoke test, publish, tag.
+disable-model-invocation: true
+---
+
+<!-- GENERATED FROM .claude/skills — DO NOT EDIT.
+     Run `npm run gen:skills` after editing the source skill (the build does this too). -->
+
+# Releasing canary-lab
+
+User-invoked only (`/cl_release`). Publishing is outward-facing — confirm the version
+and changelog with the user before `publish:package`.
+
+## Checklist
+
+1. **Version**: set the next `version` in both `package.json` and
+   `package-lock.json` (for example, `npm version --no-git-tag-version <next>`).
+   The changelog and tag tools read `package.json`, so this must happen first.
+2. **Changelog**: `npm run changelog:preview` (dry run), then `npm run changelog`.
+   Entries are plain-language and area-tagged using the area tags defined in the
+   `docs/CHANGELOG.md` header (that header is the source of truth — don't rely on
+   a memorized list).
+   If consumers should refresh their workspace (template/sample changes, MCP
+   re-registration), say so in the release's header line
+   (e.g. "Run `npx canary-lab upgrade` …" / "run `npx canary-lab setup`").
+3. **Gates**: `npx vitest run`, `npx tsc -p tsconfig.build.json --noEmit`, then
+   `npm run smoke:pack` (builds, packs, scaffolds a temp project, verifies the
+   scaffold flow).
+4. **Publish**: `npm run publish:package` — refuses a dirty worktree
+   (`--allow-dirty` is the escape hatch; prefer committing instead).
+5. **Tag**: `npm run tag` (`tag:force` only to move a botched tag).
+
+## Common mistakes
+
+| Mistake | Consequence |
+| --- | --- |
+| Publishing without `smoke:pack` | A broken scaffold/tarball ships; `prepack` builds but doesn't verify the scaffold flow |
+| Changelog entries in engineer-speak | The changelog promises plain language anyone can follow |
+| Forgetting the upgrade/setup note | Consumers keep stale samples or unregistered MCP tools and report "bugs" |

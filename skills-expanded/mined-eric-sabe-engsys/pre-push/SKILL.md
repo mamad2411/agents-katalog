@@ -1,0 +1,158 @@
+---
+name: pre-push
+description: Run the project's diff-aware pre-push gate before pushing — builds, lints, and tests only what changed. Use when the user says "run precheck", "pre-push check", or "validate before push".
+---
+
+# Pre-push Gate
+
+Trigger: user says "run precheck", "pre-push check", "validate before push", or equivalent.
+
+## The Contract
+
+Run the project's pre-push gate from the repo root before every `git push`. The gate is a
+**diff-aware contract**: it inspects `git diff origin/main...HEAD`, then runs only the checks
+relevant to the files that changed. It should be enforced by a `pre-push` git hook so it runs
+automatically on `git push`. Run it manually if you want early feedback before committing.
+
+The gate is invoked through whatever the project defines — a script (`scripts/precheck.sh`), a
+package-manager task (`npm/pnpm/yarn run precheck`, `make precheck`, `just precheck`,
+`cargo`/`go`/`mvn` equivalents), or a Taskfile target. The name and runner are project-specific;
+the contract is not.
+
+```bash
+<precheck-command>              # standard — diff-driven, runs relevant gates only
+<precheck-command> --full       # force the full suite even if the diff didn't trigger it
+PUSH_OVERRIDE=1 git push ...    # emergency bypass — no local gates run, CI is sole safety net
+```
+
+## What It Does (diff-aware gate selection)
+
+The gate maps changed paths to checks. Always run **build + lint**; layer on the rest based on
+what the diff touched. Each project defines its own table — the shape is always
+`changed files → gates triggered`:
+
+| Changed files                          | Gates triggered                                        |
+| -------------------------------------- | ------------------------------------------------------ |
+| Any                                    | build + lint (always)                                  |
+| Source files                           | + unit tests                                           |
+| Data/schema/migration files           | + codegen + dependent-package builds                   |
+| End-to-end / integration spec files    | + e2e for the changed specs only                       |
+| Test-harness / matrix config           | + full e2e suite (harness change can affect all specs) |
+| UI / frontend source                   | + browser/e2e suite                                    |
+| Infrastructure-as-code files           | + IaC syntax/validate check                            |
+| Container/build files (`Dockerfile*`)  | + container build smoke (if the engine is available)   |
+| Docs / markdown                        | + doc lint                                             |
+| CI workflow files                      | warn — validate manually                               |
+
+The first column is the project's actual path globs; the second is the project's actual commands.
+This skill defines the **discipline** (diff-aware, fast, gracefully degrading), not the specific
+tooling.
+
+**Reference skeleton (in the engsys repo):** `core/templates/repo-gates/scripts/precheck.sh.tmpl` implements this contract
+as a table-driven selector. You declare gates as `name|path-regex|command` rows and keep the generic
+machinery: the branch diff against `origin/main`, the docs / agent-config-only fast path that skips
+the build gate (an empty diff still runs it), `fail()` setting `FAILED` plus an ERR trap so a gate
+cannot print `[FAIL]` and exit 0, a Docker preflight for gates flagged `@docker`, the `PUSH_OVERRIDE=1`
+escape, and a summary that exits non-zero on any failure. Its README (`core/templates/repo-gates/README.md`)
+covers adopting it, the husky `pre-push` hook that calls it, and `worktree-bootstrap.sh.tmpl`, which links
+the husky shim so pushes from a worktree still hit the gate. Start from it rather than writing a
+gate script from scratch.
+
+## Design Constraints
+
+- Target: fast enough to run on every push (aim for under ~10 min for a single changed spec).
+- Run only the spec/test files affected by the diff, not the full matrix, in the standard path.
+- Gates for optional tooling (container engine, IaC CLI, cloud CLI) skip gracefully when the
+  tool is not installed — a missing optional tool must not fail the push.
+- A gate the diff **triggered** never skips silently. If it needs a runtime that is installed but
+  down (e.g. the container engine isn't started), fail fast up front with the remediation command
+  rather than skipping or failing deep into the run.
+
+## Local == CI (heavy gates)
+
+When the gate runs E2E/integration suites, make the local run mirror a CI leg — otherwise it fails
+for reasons CI never sees, or passes for reasons CI won't:
+
+- **Same isolation groups as CI.** Run specs group-by-group the way the CI matrix does, not the
+  whole suite against one environment (cross-spec fixture pollution and rate-limit accumulation fail
+  specs unrelated to your diff). Keep the local grouping and the CI matrix in one source or add a
+  drift check that fails the gate; unregistered specs run as a trailing ungrouped set.
+- **Self-provisioned, disposable environment.** The gate creates a fresh test DB per group
+  (drop → create → migrate → seed) and flushes any cache holding rate-limit/lockout state — never
+  touching the developer's dev data. It uses a canonical test env, not the developer's local
+  secrets file (whose values nothing in the test stack accepts).
+- **Servers from the code just built.** Let the test runner boot the app from the build the gate
+  just produced, exactly like CI — stale images become impossible by construction.
+- **Lease shared resources.** If several agent sessions may run the gate on one machine, don't
+  hardcode ports/DB names — acquire a slot from a small lease pool, export what the grant provides,
+  and release **unconditionally** (explicit call + `EXIT` trap) so a crashed run can't leak a slot
+  and starve the pool. Do the same for manual runs outside the gate.
+- **Retry parity.** Give unit and E2E suites the same **one-retry** budget locally and in CI (no env
+  forks) so a healthy spec can't fail under parallel-machine load. A genuinely broken test still
+  fails both attempts; report pass-on-retry as a flake worth filing. Keep the budget at 1 — more
+  starts masking real flakiness.
+
+A red heavy gate: classify flake vs regression (the maintenance lane, if the project has one)
+before reaching for the bypass.
+
+## Full Suite Locally
+
+When the test harness itself changes, or when you want to run the full suite regardless of the
+diff, force it:
+
+```bash
+# 1. Bring up any infra the full suite needs (db, services, browsers)
+<bring-up-infra-command>
+
+# 2. Force the full suite
+<precheck-command> --full
+
+# 3. Or run a specific spec manually
+<run-single-spec-command>
+```
+
+## Review before push (local code review)
+
+Review is local — run the gate reviewer (the built-in `/code-review` skill unless `CLAUDE.md` names
+another) **before** you push so the PR opens already-reviewed and CI minutes aren't spent on a
+post-push review loop.
+
+```bash
+git fetch origin   # local main is often stale — compare against the remote
+# then run a local code review with the built-in /code-review skill against origin/main:
+# structured findings; fix Critical + Warning, then re-run once
+```
+
+This is **not** part of the pre-push gate (a multi-minute review shouldn't block every push).
+Invoke it deliberately before the push that opens/updates the PR. After opening the PR, persist
+the local review findings as a PR comment for the closeout ceremony to mine. Full contract:
+[`../code-review/SKILL.md`](../code-review/SKILL.md) and the root CLAUDE.md § Code review.
+
+## Draft-First PR Convention
+
+Draft PRs should skip the expensive full matrices (browser/e2e, a11y, flake audits) in CI; keep
+those for Ready-for-review. If your CI opens PRs as ready by default, add a workflow that demotes
+opened-as-ready PRs to draft automatically (template:
+`core/templates/repo-gates/github/workflows/auto-draft-pr.yml`; it needs the repo setting "Allow GitHub
+Actions to create and approve pull requests" and comments when that setting is missing).
+
+Workflow:
+
+1. Run a local code review with the built-in `/code-review` skill → fix Critical + Warning → re-run clean
+2. The pre-push gate runs on your diff → push branch
+3. `gh pr create --draft` → cheap CI (build/lint/test only) → persist the local review findings as a PR comment
+4. Mark **Ready for review** → full matrices fire
+5. Matrices pass → human merges
+
+Mark Ready for review only once the local review is resolved and the pre-push gate is green.
+
+## Git Hook
+
+The project's `pre-push` hook (e.g. under `.husky/` or `.git/hooks/`) calls the gate automatically
+on every `git push`. To bypass:
+
+```bash
+PUSH_OVERRIDE=1 git push origin agent/<branch>
+```
+
+Use the bypass only when optional local tooling is unavailable and you are confident CI will pass.

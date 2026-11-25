@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/casemark/skills (path: skills/med/analyzing-epidemiological-data/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Structures epidemiologic analysis with incidence, prevalence, rate calculations, and statistical inference. Use when calculating disease rates, analyzing epi data, or interpreting population statistic

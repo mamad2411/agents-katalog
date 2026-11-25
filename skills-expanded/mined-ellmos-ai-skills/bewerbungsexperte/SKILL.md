@@ -1,0 +1,147 @@
+---
+name: bewerbungsexperte
+version: 1.2.2
+type: expert
+author: BACH Team / ellmos (standalone port)
+created: 2026-01-25
+updated: 2026-11-22
+description: "Verwenden, wenn sich jemand bewirbt: Stellenanzeige analysieren, Lebenslauf gegen die Anforderungen abgleichen, Lebenslauf oder LinkedIn-Profil schärfen, Anschreiben verfassen (auch bei Lücken im Lebenslauf) oder aus Berufsdaten (SQLite-Datenbank, Ordner für Arbeitgeber, Abschlüsse und Zertifikate als Inhaltsquelle) einen Text-Lebenslauf erzeugen: 'ich bewerbe mich auf ...', 'prüf meinen Lebenslauf gegen diese Anzeige', 'schreib ein Anschreiben', 'mein LinkedIn-Profil wirkt blass', 'Bewerbung', 'Lebenslauf generieren', /bewerbungsexperte. Macht ATS-sicheres Keyword-Matching, Unternehmens-Check, CV-Tuning und individuelle Anschreiben und führt den eigenständigen cv_generator.py aus (keine BACH-Laufzeit nötig). NICHT verwenden, um zwei Jobangebote gegeneinander abzuwägen (decide), KI-Formulierungen aus einem fertigen Anschreiben zu entfernen (llm-text-hygiene) oder für reine Dokumentverarbeitung wie Text extrahieren, OCR, Dateien umbenennen oder sortieren, auch bei Bewerbungsunterlagen."
+standalone: true
+anthropic_compatible: true
+bach_compatible: true
+bach_origin: true
+category: utilities
+tags: [bewerbung, cv, anschreiben, linkedin]
+language: de
+status: active
+visibility: public
+dependencies: {'tools': ['cv_generator.py'], 'services': [], 'protocols': [], 'python': ['sqlite3', 'pathlib', 'argparse', 're']}
+provenance: {'origin': 'bach', 'origin_path': 'system/agents/_experts/bewerbungsexperte/', 'origin_version': '1.0.0', 'origin_repo': 'github.com/ellmos-ai/bach', 'last_sync_from_origin': '2026-06-22', 'last_sync_to_origin': 'None', 'local_changes_since_sync': True}
+---
+
+<img src="banner.png" width="100%" alt="bewerbungsexperte banner">
+
+> Deutsche Originalfassung. Weitere Sprachen: [EN](SKILL.en.md) · [FR](SKILL.fr.md) · [ES](SKILL.es.md) · [JA](SKILL.ja.md) · [RU](SKILL.ru.md) · [ZH](SKILL.zh.md)
+
+# BEWERBUNGSEXPERTE v1.2.2 (Deutsch)
+
+> Dein strategischer Partner fuer den naechsten Karriereschritt.
+
+## AKTIVIERUNG
+
+```bash
+# Beispiel-CV ohne Datenbankzugriff (Deutsch)
+PYTHONDONTWRITEBYTECODE=1 python cv_generator.py --dry-run
+
+# CV aus SQLite-Datenbank generieren (Deutsch)
+PYTHONDONTWRITEBYTECODE=1 python cv_generator.py --db <pfad/zu/daten.db>
+
+# CV in Datei speichern (Deutsch)
+PYTHONDONTWRITEBYTECODE=1 python cv_generator.py --db <pfad> --output lebenslauf.txt
+
+# Mit Ordner-Scan (Deutsch)
+PYTHONDONTWRITEBYTECODE=1 python cv_generator.py --db <pfad> --career-path <ordner>
+```
+
+## LEISTUNGSKATALOG
+
+### 1. CV-Generierung (`cv_generator.py`)
+- **Persoenliche Daten:** Aus `assistant_user_profile`-Tabelle lesen (key/value)
+- **Berufserfahrung:** Arbeitgeber-Ordner scannen (Zeugnisse, Vertraege)
+- **Ausbildung:** Abschluesse-Ordner scannen
+- **Fortbildungen:** Zertifikate-Ordner scannen
+- **Referenzen:** Aus `contacts`-Tabelle (category='beruflich')
+- **Dry-Run:** Ohne Datenbank -- Beispieldaten fuer Tests
+
+### 2. Stellendiagnose
+- **Keyword-Matching:** Abgleich von CV mit Job-Requirements (ATS-Safe)
+- **Unternehmens-Check:** Recherche zu Firmenkultur und Benefits
+
+### 3. Unterlagen-Service
+- **CV-Tuning:** Strukturierung und Pointierung von Erfahrungen
+- **Anschreiben:** Erstellung von individuellen, ueberzeugenden Briefen
+- **Portfolio:** Beratung zu Arbeitsproben und Referenzen
+
+## DATENBANK-TABELLEN (optional)
+
+`cv_generator.py` liest aus diesen Tabellen, wenn vorhanden:
+
+- `assistant_user_profile` (key TEXT, value TEXT) — Persoenliche Daten
+  - Felder: name, full_name, email, phone, address, birthday, nationality, marital_status
+- `contacts` (name, organization, position, phone, email, is_active, category) — Referenzen
+
+Fehlende Tabellen werden ignoriert (leere Sektionen im CV).
+
+## ORDNERSTRUKTUR (fuer --career-path etc.)
+
+```
+_Arbeitgeber/
+  Firma_A_2020-2023/
+    Arbeitsvertrag.pdf
+    Arbeitszeugnis.pdf
+  Firma_B_2018-2020/
+    ...
+_Abschluesse/
+  Universitaet/
+    Bachelor_Zeugnis.pdf
+_Fortbildungen/
+  Zertifikat_Cloud_AWS_2024.pdf
+```
+
+## CLI-OPTIONEN
+
+```
+--db <pfad>           Pfad zur SQLite-Datenbank (Pflicht ohne --dry-run)
+--output, -o          Ausgabedatei (ansonsten stdout)
+--career-path         Pfad zum Arbeitgeber-Ordner
+--education-path      Pfad zum Abschluesse-Ordner
+--certs-path          Pfad zum Fortbildungen-Ordner
+--dry-run             Beispiel-CV ohne Datenbankzugriff
+```
+
+## WORKFLOW: CV-GENERIERUNG
+
+1. **Vorbereitung**
+   - SQLite-DB bereitstellen (BACH-DB oder eigene)
+   - Ordnerstruktur mit Dokumenten anlegen (optional)
+
+2. **Test ohne DB**
+   - `python cv_generator.py --dry-run` -- prueft ob Tool funktioniert
+
+3. **Generierung**
+   - `python cv_generator.py --db <pfad> --career-path <arbeitgeber>`
+   - Ausgabe pruefen und ggf. anpassen
+
+4. **Export**
+   - `python cv_generator.py --db <pfad> --output lebenslauf.txt`
+
+## ABHÄNGIGKEITEN
+
+Nur Python-Stdlib: `sqlite3`, `pathlib`, `argparse`, `re`, `datetime`.
+Kein pip-Install noetig, kein BACH-Runtime-Import.
+
+## ÄNDERUNGSLOG
+
+### 1.2.2 (2026-11-22)
+- EN- und FR-Fassung vollständig übersetzt (bisher deutscher Fließtext)
+
+### 1.2.1 (2026-11-22)
+- Versionsangabe in der Überschrift und Sprachhinweise korrigiert
+
+### 1.2.0 (2026-11-06)
+- Beschreibung mit klarem Auslöser und Abgrenzung neu gefasst (Regel aus docs/CONVENTIONS.md): Einsatzsituation, typische Nutzerformulierungen und Slash-Befehl vorn, Nachbar-Skills in einer NICHT-verwenden-Klausel.
+
+### 1.1.0 (2026-06-22)
+- Standalone portiert aus BACH v1.0.0
+- `--db <pfad>` statt hardcodiertem Origin-DB-Pfad
+- `--dry-run`-Modus hinzugefuegt
+- `--scan-folders` entfernt (erforderte BACH user_data_folders-Tabelle)
+- Footer-Text neutralisiert
+- BACH-Runtime-Unabhaengigkeit verifiziert
+
+### 1.0.0 (2026-01-25, BACH-intern)
+- Initiale Version in BACH system/agents/_experts/bewerbungsexperte/
+
+---
+Status: AKTIV
+Domain: Karriereberatung

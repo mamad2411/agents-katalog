@@ -1,0 +1,251 @@
+---
+name: agent-restart
+description: "Exercise graceful, forced, and recovery paths for a Domios agent restart."
+---
+
+# Agent-restart testing playbook
+
+How to test the `domios agent restart` flow against a dev instance —
+both the graceful path (default) and the forced path (`--force`).
+
+Cross-references:
+- Service code: `src-tauri/src/service/agent_restart.rs`
+- REST route: `src-tauri/src/api/tab_agent_routes.rs`; handler: `src-tauri/src/api/agent_routes.rs::agent_restart_handler`
+- CLI: `cli/src/main.rs::Agent { Restart { ... } }`
+- API doc: [`prod-docs/API.md` §Agent Restart](../../prod-docs/API.md#agent-restart-post-apitabsidagentrestart)
+
+## What the flow does
+
+Agent restart takes an observed live provider through its graceful exit command and then resumes or fresh-launches it in the same Tab; a provider that already exited to its shell is recovered in place (section 6). A confirmed `LaunchBindingUnconfirmed` shell with a known PTY provider and no verified recovery session selectable from its lineage or journal also starts that provider fresh from its recorded launch. Update shutdown is deliberately different: it tears down owned
+PTY process trees without sending `/exit`, preserves each Tab's session binding
+and lifecycle lineage, persists the snapshot, and resumes after relaunch. Steps:
+
+1. Lookup the Tab and provider (Claude / Codex / ...).
+2. Send the provider's exit command (Claude: `/exit`, etc.) only when the Tab
+   reads `idle`. A busy composer would queue it as a user turn, so a working
+   agent skips it and is stopped at the process by step 4.
+   A provider declaring `commands.idleRestartTermination` skips the command
+   for its own nonce-verified idle session with no known background work.
+   Claude declares this because its transcript is written per message.
+3. Wait up to `grace_secs` (default 10) for the PTY to exit cleanly.
+   A proven provider exit cancels the exit command's submit wait through the
+   existing per-PTY cycle signal, even when `/exit` writes no user transcript
+   turn. This ends shutdown without claiming message-delivery confirmation.
+4. If `--force` is set, the Tab was busy, or the timeout fires, kill the PTY.
+5. The existing Tab lifecycle detects the exit and respawns the agent
+   with `--resume <session_id>` if a session id was recorded — otherwise
+   a fresh session is started. The command is built from the Tab's recorded
+   spawn (`restorable_launch`: model, effort, arguments, identity
+   instructions) through the same seam restore uses
+   (`restored_fresh_launch_input`), so restart and restore cannot diverge.
+   Coverage: `restart_preserves_launch_args`.
+
+For a Chat-backed tab declaring `agentRuntime`, restart unloads the process and uses the runtime ensure path to resume the same thread with a new epoch and nonce. The composed system prompt, role and launch options remain; claimed or uncertain input never replays. An authorized `--fresh` opens a new thread (`--force` is required while live). A ready receipt requires `thread_loaded`, with null PTY ids; failure stays visibly degraded. Provider handoff into or out of a runtime is refused with `runtime_provider_handoff_unsupported`. Canonical DEV verification checks the thread and nonce before and after resume and fresh, then asks for a previously supplied codeword.
+
+For rebind recovery, use two disposable sessions A and B from the same runtime provider with distinct history. Start on B, run `tab rebind A --tab ID`, then `agent restart --tab ID`. Require the tab and runtime to report A, `agent_ready`/`loaded`, a changed nonce and epoch, and A's history without B's rows. Rebind back to B and repeat after the restart cooldown. If a load fails, the recorded target must remain and another restart must recover it after the cause is resolved. `sessions resume A` on a degraded already-bound tab must return a conflict naming `agent restart --tab ID`; it must never return an unchanged degraded tab as a successful resume. Source-only lanes defer this live check and Rust execution to canonical.
+
+## Setup
+
+The DEV owner starts the intended instance through the dev-run skill. Select
+an owned disposable agent in a QA shell using the dev-locked library:
+
+```bash
+source evals/_lib/lib.sh
+TOKEN="$(dev_token)"
+dc tab list
+# Select an owned disposable DEV agent from the list.
+TAB='<owned-dev-tab-id>'
+```
+
+## 1. Graceful restart
+
+```bash
+dc agent restart --tab $TAB
+```
+
+Expected:
+- The Tab prints whatever `/exit` produces (Claude shows a goodbye
+  banner), then the PTY closes.
+- Within ~1s the same Tab respawns with a new PID; if the previous
+  session had a `claude_session_id` recorded, the new process is
+  launched with `--resume <id>`. Verify with:
+  ```bash
+  curl -s http://127.0.0.1:7686/api/tabs -H "Authorization: Bearer $TOKEN" \
+    | python3 -c "import sys,json; p=[x for x in json.load(sys.stdin) if x['id']==\"$TAB\"][0]; print(p)"
+  ```
+  `pty_id` should change; `claude_session_id` should remain stable.
+
+## 2. Forced restart on a hung agent
+
+To simulate a hang, run a Claude Tab and `Ctrl-Z` it (Unix) or send a
+SIGSTOP to the PTY's child process (Windows: use Process Explorer to
+suspend the process). Then:
+
+```bash
+dc agent restart --tab $TAB --force --grace-secs 3
+```
+
+Expected:
+- The graceful exit times out (the suspended process won't respond),
+  the PTY is killed at the 3s mark.
+- The Tab respawns. `session_was_stale` in the response indicates
+  whether the recorded session id was valid; if the JSONL was deleted
+  between runs, the field is `true` and the new Tab starts a fresh
+  session.
+
+## 3. Rate-limit guard
+
+The service throttles restarts per-tab to avoid restart loops. Hit
+the endpoint twice in quick succession:
+
+```bash
+for i in 1 2; do
+  curl -i -X POST "http://127.0.0.1:7686/api/tabs/$tab/agent/restart" \
+    -H "Authorization: Bearer $TOKEN"
+done
+```
+
+The second call returns `429 Too Many Requests` with a `Retry-After`
+header. Wait for the cooldown, retry, and the call should succeed.
+
+## 4. Error cases
+
+- **`404`** — Tab id doesn't exist (typo, closed Tab).
+- **`400`** — liveness is unobserved and the Tab is not a confirmed bare
+  shell eligible for fresh launch, its exited session is not owned by exactly
+  one provider, it has no live shell, or the provider doesn't support restart.
+- **`500`** — internal failure (PTY spawn error). Check
+  `~/.domios-dev/logs/domios.log` for the trace.
+
+## 5. Use from another agent
+
+A common pattern: an Orchestrator notices a Worker is stuck and asks
+the system to restart it.
+
+```bash
+domios agent restart --tab $WORKER_TAB_ID --grace-secs 30
+```
+
+For a Worker on another peer, add `--mesh PEER` and pass its peer-side tab id
+explicitly. A mesh restart refuses without `--tab` and never reads the caller's
+local `CODETERM_TAB_ID`.
+
+```bash
+domios agent restart --tab "$WORKER_TAB_ID" --grace-secs 30 --mesh PEER
+```
+
+The Orchestrator's Tab keeps running; only the Worker's PTY cycles.
+Reports the Worker had already sent are preserved (the in-memory
+`ReportStore` is not tab-scoped to PTY id; it's keyed on the parent +
+child Tab ids which don't change across restart).
+
+## 6. In-tab provider relaunch and recovery
+
+A provider started by hand inside a tab's surviving shell (for example through
+`domios tab exec`) has no launch pipeline to seal it. When its hook session
+start echoes the tab's current binding nonce with an accepted session, while no
+launch owns the tab (`agent_booting` false), the tab still has a pre-agent stage
+(none, `pty_*`, `reader_ready`, `shell_ready`, `pty_reattached`), and its PTY is
+live, `reconcile_boot_stage_with_session_binding` records `agent_ready`. From
+that transition the tab is observed `live`, public and Chat UI sends pass the
+ready gate, a user send parked while it was not ready is delivered once,
+`agent restart` is accepted, and a later provider exit is observed and clears
+the identity. Launch-owned, provisional, failed, and already-ready stages keep
+their own rules. Without this rule the epoch recorded `session_bound` but never
+`launch_ready`, restart refused the tab as not observed, and Chat UI sends were
+parked as `tab_busy_refused`.
+
+A provider exit observed outside a shutdown clears the provider, session and
+live nonce, retiring the nonce into `prior_session_binding_nonces` tagged with
+its session, and leaves an `absent` `shell_ready` PTY with its role and Team.
+`agent restart` recovers that tab in place. It takes the newest lineage session
+(the journal's newest `session_bound` when the tab has no lineage), requires a
+journaled nonce-verified binding for it and exactly one provider owning its
+session record (`provider_for_claimed_session`), skips the graceful exit and
+teardown, retires the shell's boot stage, and relaunches that provider with
+resume through `launch_agent_in_background` (origin `exit_recovery`) on the same
+PTY, so the nonce rotates and boot stages and the journal behave as in a launch.
+The response carries `recovered_in_place: true` with equal `old_pty_id` and
+`new_pty_id`. The verified binding survives compaction: a checkpoint that
+carries a binding never shares its `seq` with a retained `session_bound`, and a
+rolled-back checkpoint stays as that session's proof. A refused journal tail is
+quarantined into `tab-lifecycle.refused.jsonl` on open or compaction, so later
+bindings replay. Coverage: `exit_clear_keeps_verified_binding_in_lineage`,
+`exit_recovery_resumes_roleless_and_team_tabs`, and the codeterm-pty
+`compaction_replay` tests. Refusals happen before acceptance with `exit_recovery_no_live_shell`,
+`exit_recovery_no_verified_session` or `exit_recovery_session_not_owned`; then
+spawn a fresh agent, or replace a missing Team Orchestrator through
+`domios agent spawn <provider> --team <team-id> --role orchestrator`. The
+General Agent keeps its own restart control. `tab restart` refuses an absent tab
+that still carries an agent role (`shell_restart_agent_member`): a hand-typed
+provider resume there bypasses the launch builder and starts the agent without
+its granted permission bypass, sandboxed away from the daemon.
+
+A provider resumed by hand in that surviving shell (the `claude --resume <sid>`
+line the provider prints on exit) inherits the exited launch's
+`CODETERM_SESSION_BINDING_NONCE`. When its session-start hook reports that
+nonce, the tab has no live nonce, no launch owns it and its PTY is live, the
+claim reinstates the nonce as the tab's own, the binding is verified, a
+lifecycle operation opens so `session_bound` is journaled, and the in-tab rule
+above records `agent_ready`, so the tab becomes sendable. It still runs without
+the recorded launch arguments, so prefer `agent restart`. Coverage:
+`manual_resume_in_shell_is_adopted`.
+
+The same recovery holds across a daemon restart. The session snapshot persists
+the binding lineage (`agent_identity.prior_session_bindings`) and restore keeps
+it for every tab, so a team member that exited to its shell before shutdown
+restores as a shell with its role, Team and lineage intact. Restore does not
+relaunch it from the snapshot: no agent was running, and the proof that its
+session was verified lives only in the lifecycle journal, which restore never
+uses as authority. Once that shell is ready, exit recovery resumes it once. The
+restore report names the pane `agent_exited_before_shutdown` with
+`exited_session_id` and logs the recovery command, and the journal records one
+`restore_awaiting_agent_restart` per member and session, not one per boot.
+`domios agent restart --tab <id>` recovers that exact lineage session in place
+as above. A relaunch (restore, resume, restart, exit recovery) of a task-bound
+Worker owes no dispatch startup handshake: its persisted task binding alone
+never fails the launch for a missing startup waiter, and every launch failure
+logs `[launch] Tab <id> launch failed ... at <stage>`. Coverage:
+`restore_resumes_idle_worker`,
+`restore_contract_exited_member_*`,
+`restore_contract_startup_flags_an_exited_member_and_journals_its_decision_once`,
+`restore_contract_restored_lineage_recovers_the_session_that_exited_before_shutdown`,
+and the exited-member phase of `evals/restore-lifecycle`.
+
+Routed tab messages carry a return-address marker only when the target record
+declares an agent (`agent_type` set or a launch in flight); otherwise the body
+is shell input. A live provider behind a record that no longer declares it
+receives the raw text in its composer, where a leading `/` is a provider command.
+
+Manual check: exit an agent to its shell and confirm the caller's workspace map
+from `domios tab list` shows the tab `absent`, then run `domios agent restart --tab $TAB`. It returns
+`agent_ready` with `recovered_in_place: true` and the prior `session_id`, the
+dev log shows `[agent-launch] origin=exit_recovery`, the tab is `live` on the same
+PTY, and a Chat UI send is delivered without `tab_busy_refused`.
+
+For a bare shell at `LaunchBindingUnconfirmed`, with a known provider and no
+verified recovery session selectable from lineage or journal, run `domios agent restart --tab <id>`. It replaces
+the shell PTY, launches the provider from the recorded spawn without resuming
+the unverified session, and reports `action=fresh_launch`. If the provider or
+recorded launch cannot be used, the command fails instead of reporting success.
+
+## Implementation sources
+
+Restart stage telemetry uses `[restart-timing]` with `tab`, `pty`, `stage`, and
+`at_ms` (Unix milliseconds). Compare `exit-request`, `process-exit`,
+`relaunch-request`, `relaunch-spawn`, `session-bound`, and `ready` for both agent
+restart and the model restart fallback. `idle-terminate` proves the bypass ran.
+`first-composer` records the first composer observed by the launch input gate;
+hook-only resume can settle readiness without entering that gate. Never infer a
+composer timestamp from `session-bound` or `ready`.
+
+`provider-exit` records shutdown released by proven process exit rather than
+submit confirmation. `relaunch-worker`, `relaunch-pty-request`, and
+`relaunch-pty-created` split thread scheduling and launch setup from native PTY
+creation and reader/link setup before `relaunch-spawn`. Sidecar preparation runs
+in parallel with PTY creation; shell readiness follows `relaunch-spawn`.
+
+- `src-tauri/src/service/agent_restart/exit_recovery.rs` — in-place recovery of an exited agent session
+- `src-tauri/src/service/pty_io/lifecycle.rs` — restored agent materialization and PTY lifecycle
+- `src-tauri/src/service/tab/lifecycle_exit.rs` — identity retirement after observed exits
+- `src-tauri/src/crash/restore_report.rs` — startup restore outcomes and liveness classification

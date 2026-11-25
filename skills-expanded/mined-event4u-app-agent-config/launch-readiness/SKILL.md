@@ -1,0 +1,219 @@
+---
+model_tier: inherit
+name: launch-readiness
+description: "Use before merging a release-shaped PR — pre-merge checklist, rollout plan, rollback criteria, ops handoff. Triggers on 'ready to ship', 'launch checklist', 'rollout plan for X'."
+status: active
+tier: senior
+domain: process
+context_spine: [team, product]
+recommended_for_user_types: [ops, developer, founder]
+workspaces:
+  - founder
+packs:
+  - founder-strategy
+install:
+  removable: true
+---
+
+# launch-readiness
+
+## When to use
+
+- A change is about to merge that crosses a release boundary (new feature on `main`, version bump, public-facing comms attached).
+- An ops handoff is implied — the on-call rotation, support team, or downstream consumers need to know.
+- A rollback criterion has not been written down yet.
+
+Do NOT use for routine internal merges
+([`finishing-a-development-branch`](../finishing-a-development-branch/SKILL.md))
+or for the comms text itself ([`release-comms`](../release-comms/SKILL.md)).
+This skill produces the **decision** to ship and the rollback contract.
+
+## Cognition cluster
+
+- **Mental model 10 — Reversible vs irreversible.** Map every step
+  of the rollout to a reversibility class; the rollback criteria
+  must name the irreversible steps and the abort threshold for each.
+  See [`docs/contracts/mental-models.md`](../../../docs/contracts/mental-models.md) § 10.
+- **Mental model 29 — Pre-mortems.** Imagine the rollout failed in
+  six hours; what failed first? The pre-mortem becomes the rollback
+  criteria, not a separate document. See `mental-models.md` § 29.
+- **Mental model 4 — Second-order thinking.** Enumerate what
+  becomes harder *after* the launch (rollback cost, contributor
+  ergonomics, doc churn). See `mental-models.md` § 4.
+- **Team + product context-spine slots.** Read **team** for the
+  on-call rotation and ops handoff path; read **product** for the
+  segment / cohort exposure of the rollout. See
+  [`context-spine`](../../../docs/contracts/context-spine.md).
+
+## Procedure
+
+### 1. Identify the launch shape
+
+One sentence: *"This change ships **X** to **segment Y** behind
+**rollout mechanism Z**."* If you cannot, the change is not
+release-shaped; route to `finishing-a-development-branch`.
+
+### 2. Inspect the pre-merge checklist
+
+Walk the diff with the following gates:
+
+- Integration suite green (cite the run).
+- Quality gates green (static analysis / linters / type-checks).
+- Migrations are reversible OR the irreversibility is explicit.
+- Feature flag / kill switch named, default off unless intended — a lever in
+  the inventory (blueprint: `security-audit/references/control-section.md`).
+- Doc / changelog / release notes present (hand off to
+  [`release-comms`](../release-comms/SKILL.md) for the prose).
+- Rollback path tested at least mentally; named in step 4.
+- Security: `agent-config audit:code show` — open confirmed, needs_validation,
+  coverage % and last run. No ledger reads "not checked", never "no findings".
+
+Cells without evidence block the launch — surface the gap, do not hand-wave.
+
+### 2b. Epistemics block — the diagnostic report (contract-backed)
+
+For a consumer-facing diagnostic (not just the merge decision), emit a
+report per [`docs/contracts/prelaunch-diagnostics.md`](../../../docs/contracts/prelaunch-diagnostics.md)
+(schema: `prelaunch-report.schema.json`). Rules:
+
+- **Coverage backbone** — diagnose exactly the fixed area vocabulary
+  (`prelaunch-areas.yml`): auth · migrations · secrets · observability ·
+  rollback · agent-governance. No ad-hoc areas.
+- **AUTH** — on account-flow changes run
+  `npx tsx node_modules/@event4u/agent-config/src/scripts/check_account_surface.ts <repo-root>`:
+  `violated` → an `AC-AUTH-NNN` id, an undecided class stays `unknown`; the
+  output is unmeasured while `claim:account-surface-finds-planted` is unbacked.
+- **Every area gets one state:** `pass` (cited evidence REQUIRED) ·
+  `finding` (IDs listed) · `unknown` (the honest default — **absence of
+  findings is Unknown, never an automatic Pass**) · `not-applicable`
+  (reason required).
+- **Findings carry immutable IDs** (`AC-<AREA>-NNN`) — retitle freely,
+  never re-assign; the ID is the diff key across runs.
+- **Verdict:** any open P0 → NOT ready, regardless of every other area;
+  any open P1 or a launch-gate area not at pass/N-A → NOT ready. Ready is
+  the residual state, never the default.
+- **Questions section** — list the questions that would change the
+  diagnosis; the next run converts them into evidence or findings.
+- Validate + verdict via
+  `npx tsx node_modules/@event4u/agent-config/src/scripts/prelaunch_diagnostics.ts validate <report.json>`;
+  regression-gate against the committed baseline via
+  `… diff <baseline> <current> --ci` (contract § 4–6).
+
+### 2c. Fix loop (approval-gated, read-only diagnostic)
+
+Rank open findings by severity, then launch-gate membership; propose the
+**safest first approval batch** (reversible, small blast radius — explicitly
+not the full backlog). Status vocabulary per finding: `open · fixed ·
+accepted-risk · deferred-with-reason · suppressed-with-evidence ·
+not-applicable` — everything except open/fixed carries a reason. Rescore
+whenever evidence changes. The diagnostic itself never mutates the project;
+fixes flow through the normal approval-gated engines.
+
+### 3. Plan the rollout
+
+- **Mechanism** — flag, canary cohort, blue-green, immediate.
+- **Order** — internal → trusted segment → general; cite the
+  segment per stage from the **product** spine slot.
+- **Telemetry** — the metric that **proves** rollout health.
+- **Owner** — named role per stage (not name); from the **team**
+  spine slot.
+
+### 4. Write rollback criteria
+
+For each stage:
+
+- **Trip wire** — the metric value that fires rollback.
+- **Decision window** — how long the trip wire must hold.
+- **Abort path** — what the on-call does (revert PR, flip flag,
+  drain queue), pre-rehearsed.
+- **Irreversible steps** — explicit list; if any irreversible step
+  is in scope, the launch needs a written sign-off, not implicit.
+
+Pre-mortem rule: every trip wire must answer *"what would have
+caused this in six hours?"* If you cannot, the trip wire is wrong.
+
+### 4b. Post-deploy verification fragments (manual checks, not an auto-canary)
+
+Right after deploy, the on-call runs these by hand — cheap "did the deploy
+silently break a thing that doesn't page" probes, **not a canary** (a runtime,
+out of scope). Include only the ones that apply to the stack:
+
+- **SSE / streaming heartbeat** — if the app serves Server-Sent Events or a
+  long-lived stream, confirm a connection stays open and emits a heartbeat past
+  the proxy's idle timeout (a deploy that changes proxy/buffering config silently
+  kills streaming while every other endpoint looks fine).
+- **Static-asset content-type drift** — fetch a built asset and assert the
+  `Content-Type` (JS as `text/javascript`/`application/javascript`, CSS as
+  `text/css`); a CDN/build change that serves assets as `text/plain` or
+  `application/octet-stream` breaks the app in the browser but returns HTTP 200.
+- **LCP delta** — spot-check Largest-Contentful-Paint on the top route against
+  the pre-deploy baseline; a regression beyond the agreed delta is a trip wire
+  even when no error fires.
+
+Each is a one-shot pass/fail check; failures feed the § 4 trip wires.
+
+### 5. Ops handoff
+
+- Who is paged on which alert (from **team** spine slot).
+- Where the rollback runbook lives (link).
+- Date / time of the handoff conversation; sign-off from the
+  receiving role.
+
+### 6. Hand back
+
+Hand the artefact to the requester; comms go to
+[`release-comms`](../release-comms/SKILL.md), post-launch metrics to the
+team's monitoring stack.
+
+## Related Skills
+
+**WHEN to use this**
+
+- A release-shaped PR is about to merge.
+- Rollback criteria must be written down before merge.
+- Ops handoff is implied and not yet executed.
+
+**WHEN NOT to use this**
+
+- The change is internal and routine — route to
+  [`finishing-a-development-branch`](../finishing-a-development-branch/SKILL.md).
+- The output is the public comms — route to
+  [`release-comms`](../release-comms/SKILL.md).
+- The rollout decision involves stakeholder conflict — route to
+  [`stakeholder-tradeoff`](../stakeholder-tradeoff/SKILL.md) first.
+- The decision is reversible and cheap — a one-line note will do.
+
+## When the agent should load this
+
+- "Sind wir launch-ready?"
+- "Bau mir die Rollback-Kriterien für Phase X."
+- "Ops-Handoff für die Release morgen."
+- "Was bricht, wenn wir den Flag flippen?"
+- "Pre-merge-Checklist für PR #N."
+
+## Output
+
+1. **Launch shape** — one-sentence statement of the change.
+2. **Pre-merge checklist** — gate · status · evidence (citation).
+3. **Rollout plan** — stages × mechanism · order · telemetry · owner.
+4. **Rollback contract** — per stage: trip wire · decision window ·
+   abort path · irreversible steps.
+5. **Ops handoff** — pager mapping · runbook link · sign-off.
+6. **Outstanding** — each launch blocker, listed explicitly.
+
+## Gotcha
+
+- All green with no citations is theatre; every green needs an artefact.
+- A trip wire without a decision window is unactionable — *"if
+  errors spike"* is not a trigger; *"5xx > 2% for 10 min"* is.
+- Irreversible steps without written sign-off are the most common
+  post-mortem ancestor — surface, do not skip.
+
+## Do NOT
+
+- Do NOT write the comms text here — that is `release-comms`.
+- Do NOT lock the rollback contract verbally — it lives in the
+  output block, citable.
+- Do NOT let any stage own itself — every stage names a role from
+  the **team** spine slot.
+- Do NOT hand the artefact to a receiver who has not signed off on ops handoff.

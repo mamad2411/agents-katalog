@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/craftos-dev/craftbot-agent-bundles (path: agents/community-manager/skills/sentiment-monitoring-in-community/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Sentiment Monitoring in Community — SKILL

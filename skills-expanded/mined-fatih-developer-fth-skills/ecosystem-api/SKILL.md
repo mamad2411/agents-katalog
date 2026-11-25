@@ -1,0 +1,96 @@
+---
+name: ecosystem-api
+description: "Route API work — design, security, scaling, versioning, webhooks, observability — through the right fth-skills API skills in order. Use when the user wants to design a new API, secure or rate-limit an API, release a new API version, add webhooks or monitoring, or asks which API skills to use."
+---
+
+# 🌐 API Ecosystem
+
+This skill is the entry point of its ecosystem. It chooses a workflow, checks which member skills are installed, runs them in order with explicit handoffs, and degrades gracefully when a member is missing. The workflow map lives in `references/workflows.json`; the handoff format lives in `references/handoff-contract.md`.
+
+## Catalog
+
+<!-- BEGIN GENERATED: ecosystem-catalog (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Domain:** API Domain — Design, secure, scale, and evolve REST, GraphQL, gRPC, and event-driven APIs with a contract-first workflow.
+
+**Philosophy:** API work is contract-driven and security-first. Protect consumers from breaking changes, design authentication before endpoints go public, and never trade backward compatibility for speed in a public API.
+
+| Skill | Role | Handoff artifact |
+|---|---|---|
+| `@protocol-selector` | Chooses REST, GraphQL, gRPC, or event-driven based on latency, payload, and client needs. | `docs/api-report/protocol-selection-output.json` |
+| `@contract-first-designer` | Writes the OpenAPI/AsyncAPI contract before code. | `docs/api-report/contract-designer-output.json` |
+| `@api-mock-designer` | Builds stateful mock servers from the contract. | `docs/api-report/api-mock-output.json` |
+| `@sdk-scaffolder` | Scaffolds idiomatic client SDKs from the contract. | `docs/api-report/sdk-scaffold-output.json` |
+| `@auth-flow-designer` | Selects API keys, JWT, OAuth2, or mTLS and designs token lifecycles and scopes. | `docs/api-report/auth-flow-output.json` |
+| `@rate-limit-strategist` | Designs throttling algorithms, quotas, and 429 responses. | `docs/api-report/rate-limit-output.json` |
+| `@breaking-change-detector` | Diffs two contract versions and classifies breaking changes. | `docs/api-report/breaking-change-output.json` |
+| `@changelog-generator` | Turns contract diffs and commits into consumer-facing changelogs. | `docs/api-report/api-changelog-output.json` |
+| `@webhook-architect` | Designs outbound webhook payloads, signing, retries, and DLQ. | `docs/api-report/webhook-architect-output.json` |
+| `@api-observability-planner` | Defines metrics, structured logs, tracing, and alerts for the API boundary. | `docs/api-report/api-observability-output.json` |
+<!-- END GENERATED: ecosystem-catalog -->
+
+## Router Protocol
+
+<!-- BEGIN GENERATED: ecosystem-router (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+Follow this protocol whenever this ecosystem is invoked.
+
+1. **Match.** Compare the request with each workflow's *When* phrases. Pick one workflow, or route straight to a single member skill when the request is narrow. If two workflows fit equally, ask one question to choose. If the request belongs to another domain, use the ecosystem index in `@ecosystem-orchestration`.
+2. **Preflight.** Find out which step skills are installed: check the skills your host lists, or run `python <skill-dir>/scripts/install_all.py --status --workflow <id>` (`<skill-dir>` is the folder containing this `SKILL.md`). Show a short plan: step, skill, installed or missing, condition, expected artifact.
+3. **Missing skills never block.** Offer once: (a) install them — `install_all.py --workflow <id>` prints the commands and only runs them with `--execute` after the user agrees; or (b) continue in fallback mode — perform the step yourself using its *Does* and *Done when* columns and label that output `fallback`.
+4. **Conditions.** Skip optional steps whose condition does not hold, and say which steps you skipped and why.
+5. **Execute.** Run steps in order. Steps that share a parallel group are independent and may run concurrently (`@parallel-planner`). Pass artifacts as described in `references/handoff-contract.md`. Check each step's *Done when* before moving on.
+6. **Gates.** Before any destructive, irreversible, or production-impacting action, stop at `@checkpoint-guardian`, or ask for explicit confirmation when it is not installed.
+7. **Failures.** When a step misses its *Done when*, hand off to `@error-recovery`. Without it, retry once with a changed approach, then report the blocker with evidence instead of guessing.
+8. **State.** Keep a run log (workflow id, step, status, artifact). Record it with `@memory-ledger` when installed, and write a `@session-transfer` handoff if the run will continue in another session.
+9. **Finish.** Summarize artifacts, skipped steps, open risks, and the most relevant next workflow.
+
+**Skip this protocol** when the user names one specific skill (invoke it directly) or asks a quick factual question that needs no workflow.
+<!-- END GENERATED: ecosystem-router -->
+
+## Workflows
+
+<!-- BEGIN GENERATED: ecosystem-workflows (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+### 1. OpenAPI-First Design Flow (`api-design`)
+
+**When:** “design a new API”; “create endpoints”; “build an API from scratch”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@protocol-selector` *(optional)* | Decide the protocol when it is not already fixed. | One protocol chosen with trade-offs recorded. | Protocol not yet decided | — |
+| 2 | `@contract-first-designer` | Write the OpenAPI/AsyncAPI contract: resources, schemas, errors, versioning. | Contract passes a spec linter and covers every endpoint in scope. | — | — |
+| 3 | `@api-mock-designer` | Generate stateful mocks and example payloads from the contract. | Consumers can exercise happy and error paths against the mock. | — | `consumers` |
+| 4 | `@sdk-scaffolder` *(optional)* | Scaffold typed client SDKs with retry, timeout, and pagination. | SDK compiles and matches the contract. | — | `consumers` |
+
+### 2. API Security & Scale Flow (`api-security-scale`)
+
+**When:** “secure the API”; “add authentication”; “prepare the API for high traffic”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@auth-flow-designer` | Design authentication, token lifecycle, and authorization scopes. | Every endpoint has an auth requirement and scope. | — | — |
+| 2 | `@rate-limit-strategist` | Design rate limits and quotas per user, key, and IP. | Limits, headers, and 429 behavior are specified. | — | — |
+| 3 | `@security-auditor` *(optional)* | Audit agent-facing or skill-facing surfaces when bots or agents call the API. | No STRICT REJECT findings. | Agents or external bots consume the API | — |
+
+### 3. API Evolution Flow (`api-evolution`)
+
+**When:** “release v2”; “change endpoints”; “update the API contract”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@breaking-change-detector` | Diff the old and new contracts and classify MAJOR/MINOR/PATCH changes. | Every change is classified and breaking changes have a migration path. | — | — |
+| 2 | `@changelog-generator` | Publish a consumer-facing changelog and deprecation notices. | Changelog lists features, fixes, and deprecations with dates. | — | — |
+
+### 4. Production Readiness Flow (`api-production-readiness`)
+
+**When:** “make the API production-ready”; “add webhooks”; “add monitoring to the API”
+
+| # | Skill | Does | Done when | Condition | Parallel group |
+|---|---|---|---|---|---|
+| 1 | `@webhook-architect` *(optional)* | Design outbound webhooks: envelope, signing, retries, DLQ. | Delivery is async, signed, idempotent, and retried. | The API emits events to consumers | `readiness` |
+| 2 | `@api-observability-planner` | Define RED metrics, structured logs, tracing, and SLO alerts. | Each critical endpoint has metrics, traces, and an alert. | — | `readiness` |
+
+### Direct handoffs
+
+- `@contract-first-designer` → `@breaking-change-detector`: A previous contract version exists.
+- `@auth-flow-designer` → `@access-policy-designer`: Authorization must also be enforced in the database (RLS).
+- `@webhook-architect` → `@rate-limit-strategist`: Consumers need delivery throttling.
+<!-- END GENERATED: ecosystem-workflows -->

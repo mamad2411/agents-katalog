@@ -1,0 +1,86 @@
+---
+name: rule-script-generator
+description: 'Writes deterministic .mjs verification scripts with pass and fail fixtures for each deterministic or heuristic rule that has no enforcer, and registers a script only after it classifies its own fixtures correctly; a failing script goes to a Decision Pause. Use when the user asks to generate or regenerate rule scripts after analyze rules produced a reviewed map.'
+metadata:
+  model_tier: reasoning
+  cacheable: 'false'
+  output_format: markdown
+  paqad-meta: skill.meta.yaml
+---
+
+## What It Does
+
+For every rule in `rule-script-map.yml` whose `verifiability.kind ∈ {deterministic, heuristic}` and whose `enforced_by` is empty, authors one or more Node ESM scripts under `.paqad/scripts/rules/<mirror>/<rule-file>/NNN-name.mjs`, each with `__fixtures__/pass/` and `__fixtures__/fail/`. Each script:
+
+- Carries the `@paqad-rule-script` header (validated against the header schema).
+- Reads `{ projectRoot, files }` from stdin and writes the findings JSON contract to stdout.
+- Is validated against its own fixtures **before** registration. Pass fixtures must yield zero findings; fail fixtures at least one. A script that fails is rejected and surfaced, never registered.
+
+No `.sh` scripts are ever produced. See `references/script-authoring.md` for the full contract.
+
+## Use This When
+
+- A user prompt matches the priority-225 router rules `generate rule scripts` or `regenerate scripts for rule RL-<id>`.
+- After `analyze rules` has produced a reviewed `rule-script-map.yml`.
+
+## Inputs
+
+- `docs/instructions/rules/rule-script-map.yml` (read for rules + classifications; written only via the bundled `register-script.mjs` → `src/rule-scripts/apply.ts`).
+- The rule text for each target rule (to author the detection logic).
+- Existing in-scope source files, used for the over-flagging dry-run guard.
+
+## Procedure
+
+1. Load the map. Select target rules: `kind ∈ {deterministic, heuristic}` and `enforced_by == []`. If `only_rule_id` is set, restrict to it.
+2. For each target rule, author `NNN-name.mjs` with the header + stdin/stdout contract (`references/script-authoring.md`), plus 2–4 synthetic 5–15 line fixtures under `__fixtures__/pass/` and `__fixtures__/fail/`. Fixtures are synthetic: never copied from the user's real code. When the script loops `for (const file of files)` and each file's findings depend only on that file's own content (no other file read, no state shared across files), add `// per_file: true` to the header so the pre-edit check can reuse its earlier results for files that did not change; leave it out otherwise.
+3. Validate the script against its fixtures:
+   ```
+   node scripts/validate-script.mjs <abs-script-path>
+   ```
+   Exit 0 = accepted. Exit 1 = rejected: surface a Decision Pause packet ("script `NNN-name.mjs` failed its own fixtures, regenerate / edit / mark unverifiable?") and do **not** register.
+4. Over-flag dry-run: run the accepted script across in-scope existing files. If the flag rate exceeds the per-kind threshold (`deterministic: 0.05`, `heuristic: 0.20`), surface a Decision Pause packet before registering.
+5. Register the validated script onto its rule:
+   ```
+   node scripts/register-script.mjs <project-root> <script-path-rel> <rule-id> <kind> <scope>
+   ```
+6. At the end of the cycle, prune orphaned scripts (left by edited / downgraded / removed rules):
+   ```
+   node scripts/prune.mjs <project-root>
+   ```
+   Deletes any `.mjs` + `__fixtures__/` under `.paqad/scripts/rules/` not referenced by an active map rule. Archived rules' scripts survive one cycle, then this prunes them.
+7. Present the `## Generation Summary`: scripts accepted, scripts rejected (with reasons), over-flag warnings, pruned files. Tell the user the next prompt (`feature-development` will now enforce them).
+
+## Onboarding Journey
+
+When the brief you were given says "Onboarding journey says auto-recommended.", do not stop to ask: take each recommended option with `paqad-ai onboarding decide <decision-id>`, keep existing pages and rules as they are, and record your units with `paqad-ai onboarding unit`. Without that line, ask as you always do.
+
+Inside the journey, steps 3 and 4 open no packet. A check that fails its fixtures is rewritten once. When it still fails, when validation exits 2 for a missing binary, or when it flags too much, leave it unregistered and mark its rule unverifiable with a reason that starts `onboarding:` (`onboarding: fixtures failed`, or `onboarding: flags too much`), so a later analyze run keeps the mark. Write the mark through rule-analyzer's map writer, which also goes through `src/rule-scripts/apply.ts`:
+
+```
+node <this skill's scripts folder>/../../rule-analyzer/scripts/write-map.mjs <project-root> .paqad/tmp/onboarding-checks/<rule-id>.json
+```
+
+where the file holds `[{"id":"<rule-id>","verifiability":{"kind":"unverifiable","reason":"onboarding: fixtures failed"}}]`. The journey keeps checks for the rules it added warn-only until a person reviews them: never clear that marker yourself.
+
+## Output Contract
+
+- Accepted scripts written under `.paqad/scripts/rules/...` with their `__fixtures__/`.
+- `rule-script-map.yml` updated via `src/rule-scripts/apply.ts` with each accepted script entry (`path`, `kind`, `runtime`, `scope`, `last_validated_at`, `fixtures_passed: true`).
+- A `## Generation Summary` markdown block listing accepted / rejected / over-flag, each rejection naming the exact regen prompt.
+
+## Escalate / Stop Conditions
+
+- Never register a script that fails its fixtures or whose header is invalid: surface a Decision Pause packet instead, or, inside the onboarding journey, follow `## Onboarding Journey`.
+- Never author a `.sh` script; Node `.mjs` only.
+- Never copy fixtures from the user's real code: fixtures are synthetic.
+- Skip rules with non-empty `enforced_by` (already covered) and `unverifiable` rules.
+- All map writes go through `src/rule-scripts/apply.ts`: `register-script.mjs` for a check, and rule-analyzer's `write-map.mjs` only for an `onboarding:` unverifiable mark during the journey.
+
+## Resources
+
+- `references/script-authoring.md`: header + findings + fixtures contract.
+- `runtime/base/skills/rule-script-generator/agents/openai.yaml`: agent interface metadata.
+- `src/rule-scripts/fixture-runner.ts`: the fixture gate.
+- `src/rule-scripts/guard.ts`: the over-flagging guard.
+- `src/rule-scripts/prune.ts`: orphan-script pruning (end-of-cycle).
+- the Decision Pause Contract (in the framework bootstrap): packet semantics for rejected scripts.

@@ -1,0 +1,39 @@
+---
+name: readiness-gate
+description: The checklist a feature passes twice - the design pass before architect and designer start, the build pass before any developer does. Use before routing a confirmed spec to design, and before handing any ticket to a developer agent.
+---
+
+# Readiness gate
+
+The gate has two passes, because lines 5 to 7 are the architect's own output (TPL-82):
+
+- **Design pass:** lines 1 to 4 and 8 to 10. It opens `agentic-workflow`, `architect`,
+  `product-designer`, `legal` and `security`.
+- **Build pass:** every line, and no blocking review finding open. It opens the developers.
+
+Report each line as met or not met, with the file that shows it, in
+`docs/work/<id>/readiness.md`. One "not met" keeps that pass shut. When the build pass opens,
+the file gets the line `Build pass: open` with the date; until then
+`tools/checks/gate_check.py` fails any change to product code. The release adds
+`Build pass: closed <date>`, so a shipped feature does not open the gate for later work.
+
+The fix track has no readiness gate. The orchestrator writes `Fix: open <row id> <date>` in
+the fix's `docs/work/<id>/readiness.md` when it routes the fix, and `qa` adds
+`Fix: closed <row id> <date>` with its PASS (TPL-120). At `[gates] level` light the check skips.
+
+1. `docs/work/<id>/spec.md` exists and the founder confirmed it (the date is in `status.md`).
+2. Every behaviour in the spec has a requirement row, and every row cites a testable outcome.
+3. No question in `p1-open-questions.md` blocks this feature.
+4. The success number and its read date are in the spec, and so is the review focus: the
+   likeliest real-world failures, each with a row.
+5. If the feature stores data: `design.md` names the source of truth, retention and deletion.
+6. If it has a client and a server: `contract.md` exists and both sides build against it.
+7. `tickets.md` slices the work so each ticket is buildable and testable alone, with blocking
+   edges, and each ticket cites its rows.
+8. The constitution in `AGENTS.md` is not broken by the plan. Where the plan bends a rule, the
+   reason is written down and the founder accepted it.
+9. The reviews this feature needs (`legal`, `security`) are scheduled in `status.md`.
+10. If the feature touches existing code: `docs/work/<id>/spec-audit.md` (`skills/spec-audit/`)
+    says "delegate" or "delegate with review", and any listed silent fills are in the brief.
+
+A pass that opens says what it read. "Looks ready" is not a pass.

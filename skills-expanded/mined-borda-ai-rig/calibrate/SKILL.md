@@ -1,0 +1,155 @@
+---
+name: calibrate
+description: Calibrate skills/role cards for leaks/gaps with recall, precision, and confidence-accuracy checks. Skip configuration and workflow-contract audits owned by audit.
+---
+
+> Before asking, read [User Questions](../../shared/codex-user-questions.md).
+
+# Calibrate
+
+> Task-size routing follows [Proportional Execution](../../shared/native-skill-contract.md#proportional-execution); this skill's specialized lifecycle and acceptance checks remain authoritative.
+
+Run calibration for Codex workflow integrity and behavioral scoring.
+
+## Input Schema
+
+```json
+{
+  "require_live_routes": false,
+  "done_when": "recall and bias scores emitted with measured recommendations; strict-live gate applied when require_live_routes=true"
+}
+```
+
+The runner always scores the full packaged task set; it has no scope, pace, apply, or gate-skip selector.
+
+## Workflow
+
+Installed plugin runs use `--layout plugin --root <consuming-project>`. The runner discovers package assets from its own file location under `runtime/calibration`, `skills`, `roles`, `shared`; `--root` controls only report output and Git context. Live classification tasks use disposable temporary workspaces; tool-use tasks use prepared fixture workspaces under the run output. It must not fall back to source checkout or project `.codex`.
+
+Legacy: `--layout source --root <source-project>` validates only a project that still keeps `.codex/agents`, `.codex/calibration`, and `.codex/skills/_shared`; without them every agent check fails `missing-agent-file`, so a package-only source tree uses `--layout plugin`. Never mix source agents, sync manifests, or project registration checks into installed-plugin result.
+
+### 01: Load calibration task set from `../../runtime/calibration/tasks.json`
+
+### 02: Load behavioral cases from `../../runtime/calibration/behavioral-cases.json`
+
+### 03: Load behavioral observations from `../../runtime/calibration/behavioral-observations.jsonl`
+
+- Require `source`, `run_id`, `observed_at`. `source=live-*` also needs route; campaign/pair IDs; pair/registered role; actual model/effort; recomputable prompt/task-contract SHA-256; task type/scope; input/cached/output tokens; latency; outcome; tool/check failures; normalized cost; pricing reference. Each complete campaign exactly matches case/role/type/scope signatures in `live-ab-tasks.json`; substituted task, fixture, gate, prompt input fails.
+
+### 04: Inspect `PLUGIN_ROOT/bin/python PLUGIN_ROOT/runtime/calibration/run.py --help`, then run plugin layout against the consuming project
+
+Use `--require-live-routes` only for strict-live gate. Invoke calibration helpers through `PLUGIN_ROOT/bin/python`; on native Windows use `PLUGIN_ROOT/bin/python.cmd`. Default offline scoring remains fixture-backed and makes no paid model calls. Composition/outcome checks reject known redundant orchestration, conflicting active instructions, false progress stalls, and premature review plateaus; they are bounded regressions rather than a general natural-language policy proof. Historical observations stay archived. Fresh paired route evidence requires a separately supplied policy and authorized collection.
+
+### 05: Inspect `checks_failed`, `leaks_found`, and `behavioral`
+
+### 06: Review behavioral metrics:
+
+- `recall`: expected IDs recovered from known cases.
+- `precision`: reported IDs matching expected IDs.
+- `confidence_accuracy`: `1 - mean(abs(confidence - per-case F1))`.
+- `mean_overconfidence`: mean positive confidence bias over per-case F1. A case expecting no findings scores F1 1.0 when nothing is reported, so a correct clean answer adds no overconfidence.
+- `negative_specificity`: share of negative-control observations answered with no finding, gated by `min_negative_specificity`; false alarms on clean cases fail it even when aggregate precision and overconfidence stay inside their thresholds. The same threshold also gates each observation source on its own (`behavioral-source-negative-specificity`, sources listed in `negative_specificity_failing_sources`), so clean fixture negative controls cannot dilute a new source's false alarms.
+- `gate_metrics_raw`: unrounded pass/fail values.
+- `by_source`: recall, precision, confidence calibration by source.
+- `observation_freshness`: latest `observed_at`, missing timestamps, live/fixture counts.
+- `live_route_acceptance`: matched baseline/candidate classification and isolated tool-use quality, normalized token-efficiency proxy, evidence sufficiency per configured route; not monetary pricing evidence.
+
+### 07: Classify gaps as blocking or non-blocking
+
+### 08: Emit measured recommendations for what should be fixed or improved next
+
+- Start with plain-English explanation of whether calibration passed and what any failure means. Then prioritize failed structural/behavioral checks and leaks, naming the concrete invalid result, evidence, next-action owner, and gate that must pass to resume acceptance. Benchmark wording-pattern misses are advisory diagnostics in `checks.txt`; inspect their meaning without treating a phrase mismatch alone as a failed obligation or stopping delivery.
+- Behavioral recommendations name metric gap/affected cases when available.
+- Separate fixture-only caveats from live-quality claims.
+
+### 09: Write skill artifacts to `.reports/codex/calibrate/<timestamp>/`; preserve runner evidence under `.reports/codex/calibration/<timestamp>/`
+
+### 10: Write the validated skill-level artifact when this skill wraps the runner
+
+Follow `../../shared/helper-cli-contract.md`/authoritative help. Gate intent: ruff lint/format calibration+skills, explicit no-typed-target reason, calibration tests when calibration code changes, else explicit skip reason, clean diff under the [shared whitespace-scoping rule](../../shared/quality-gates.md#required-checks), retaining the other review checks. The validator's `calibrate` entry lists no required files, so runner evidence under `.reports/codex/calibration/<timestamp>/` is reviewer-checked: confirm it yourself before promotion. Write `CALIBRATE_METADATA`, validate `calibrate`, promote only validated candidate.
+
+## Native Contract Checks
+
+Verify configured native surface, not only runner internals.
+
+Skill checks:
+
+- configured skill file exists; frontmatter has unindented `---`, `name:`, `description:`; required sections exist; artifact path `.reports/codex/<skill>/`; examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, `artifact_path`; no external runner-only metadata/cache.
+- CLI checks find every shebang `*.py` entry point in calibration, shared helpers, `code-review`, and `challenge-resolve` (source layout adds shared and `.github` shell helpers and the offline harness); other skill-local executables are outside this roster; each executable, fixed-help-roster registered, authoritative `--help`.
+- every skill references `helper-cli-contract.md`, not complete local CLI invocations.
+- apply `behavioral-version-policy` under Quality Gates and Fail-Fast Rule 7 to `../../runtime/calibration/behavioral-cases.json`.
+
+Role checks:
+
+- installed layout requires every packaged `roles/<role>/ROLE.md`; source layout requires each configured source agent.
+- role-card frontmatter contains role ID, namespaced name, reasoning effort, approval policy, sandbox, and fallback modes; package-manifest skill/role rosters contain every calibrated target.
+- Preserve archived route evidence and strict failures; do not treat historical assignments as current role requirements or make unsupported quality claims.
+- `model_reasoning_effort` follows the agent-effort-policy: normal parent, implementation, verification, performance, static analysis, and web evidence use `medium`; deep review, data/research method, challenge, coordination, documentation, CI/CD, OSS, curation, architecture, and security use `high`. `xhigh`/`max` require evidenced task escalation.
+- Concrete model selection occurs at actual subagent dispatch and respects explicit user choice.
+- role has clear trigger/skip/not-for boundaries, evidence ownership, execution constraints, handover, and confidence contracts; sensitive roles retain sandbox, especially read-only security audit; packaged roles require no external runtime path variable.
+- plugin-layout calibration checks one distinct task cue in each of the fifteen shipped role-card `Trigger` lines; a missing or multiply owned cue fails `agent-task-routing`. This checks declared routing only; live task selection still needs live observations.
+
+## Usage Notes
+
+- After meaningful agent/skill instruction change, confirm routing/output match stack.
+- `leaks_found` primary drift; `checks_failed` mechanical gate.
+- Behavioral metrics measure supplied observations only. `fixture-selftest` validates scoring; live Codex quality requires replacing/appending live-prompt observations.
+- Missing route coverage is `insufficient-evidence`, never acceptance; `require_live_routes=true` exits nonzero.
+- Compare thresholds with `gate_metrics_raw`, not rounded display.
+- Paid paired campaigns: `../../runtime/calibration/run_live_ab.py`; plans by default, executes only `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API key env, no `CI`/`GITHUB_ACTIONS`. An executing campaign applies full networked CLI approval and denial contract in [Networked CLI Approval](../../shared/native-skill-contract.md#networked-cli-approval) and [Approval Brief](../../shared/native-skill-contract.md#approval-brief) to complete owning command because it spawns `codex exec`. The operation-specific brief is: `Action and purpose`: run confirmed paid paired calibration; `External capability`: paid ChatGPT subscription execution through `codex exec`; `Credential behavior`: use verified local ChatGPT subscription login without reading API keys or credentials; `Filesystem and worktree effects`: write calibration artifacts only to selected run directory; `Retry policy and safe denial outcome`: stop turn on denial, retain sandboxed planning or offline scoring only. Planning and offline scoring remain sandboxed.
+- Each live task names canonical role. Plugin layout prepends exact packaged role card to both prompts; source layout preserves project-instruction plus source-agent prompt construction. Tool pairs can accept candidate passing executable gate when successfully invoked baseline fails; infrastructure timeout is never candidate win.
+- Archived paired evidence and `live-route-policy.json` retain their original quality rule; that legacy campaign does not establish quality or cost acceptance for a different route. Define a new model-and-effort paired campaign before making such a claim.
+- Never claim currency savings from `normalized-token-v1`; need dated authoritative model-specific price.
+- Fixture `schema_version` is a committed-history marker; apply `behavioral-version-policy` under Quality Gates and Fail-Fast Rule 7.
+- Missing registration/pattern mismatch: inspect named file and expected registration or pattern first; record observed mismatch. Apply smallest evidenced correction only within authorized edit scope, then rerun that failed check before widening. Otherwise ask for exact missing file, scope approval, or owner decision; never offer only "fix configuration and retry".
+
+## Fail-Fast Rules
+
+1. Missing calibration files => fail.
+2. Missing configured skill or role file => fail.
+3. Native skill/role contract mismatch => fail unless result waives.
+4. Runtime leakage in native skill or role files => fail.
+5. Behavioral gate below threshold => fail.
+6. Result artifact missing => fail.
+7. Behavioral case-set `schema_version` skips or downgrades from committed HEAD, or starts a new family above 1 => fail.
+8. `require_live_routes=true` with incomplete route pairs => fail.
+9. Live row without strict paired execution schema => fail.
+
+## Quality Gates
+
+Required checks:
+
+- `calibration`: `PLUGIN_ROOT/bin/python PLUGIN_ROOT/runtime/calibration/run.py --layout plugin --root <consuming-project>`.
+- `behavioral-version-policy`: compare the shipped case-set integer `schema_version` with `git show HEAD:<path>` for its own path in a source checkout: same or exactly one commit-relative version step; a new family starts at 1. The dirty tree stays committed or one-next version until commit. Installed plugin layout records an explicit immutable-fixture installed-cache skip; source layout with no `.codex/calibration/behavioral-cases.json` records an explicit missing-source-fixture skip, not a completed check.
+- `review`: inspect failed patterns, leaks, behavioral gaps, stale fixtures before recommendations.
+
+Conditional checks:
+
+- `tests`: run focused tests when calibration code changes.
+- `format`: validate JSON and shell syntax when calibration fixtures change.
+
+## Calibration Hooks
+
+When calibration expectations change, update together:
+
+- `../../runtime/calibration/benchmarks.json`
+- `../../runtime/calibration/behavioral-cases.json`
+- `../../runtime/calibration/behavioral-observations.jsonl`
+- `../../runtime/calibration/run.py`
+- `../../runtime/calibration/live-route-policy.json`
+- `../../runtime/calibration/live-ab-tasks.json`
+- `../../runtime/calibration/run_live_ab.py`
+
+Behavioral coverage includes networked CLI owning-command approval for paid live execution.
+
+## Output Contract
+
+Before writing result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
+
+Use `../../shared/quality-gates.md`.
+
+### Final chat
+
+Final chat follows shared ordered frame. `Outcome` is `pass`, `fail`, or `insufficient-evidence`. `Results` has one measured check or metric per row and exactly `Check / metric | Result | Evidence | Next action`. Apply shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include runner mode/coverage, every failed/skipped/deferred check, and calibration recovery evidence.
+
+Minimum artifact payload template: `result-template.json`.

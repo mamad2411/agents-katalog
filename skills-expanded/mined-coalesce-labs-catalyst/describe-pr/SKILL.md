@@ -1,0 +1,54 @@
+---
+name: describe-pr
+description:
+  "Generate or update PR description with incremental changes. **ALWAYS use when** the user says
+  'describe the PR', 'update PR description', 'generate PR description', or after pushing new
+  commits to an existing PR. Supports incremental updates that preserve manual edits."
+disable-model-invocation: false
+allowed-tools: Bash, Read, Write
+version: 2.0.0
+---
+
+# Generate/Update PR Description
+
+Generates or updates a PR description with incremental information, auto-updates the title, and links the Linear ticket — fully automated, no interactive prompts.
+
+**Paths.** Commands below name files inside this skill's own directory as `${CLAUDE_SKILL_DIR}/…`. Claude Code fills that in. On any other harness, set CLAUDE_SKILL_DIR to the absolute directory that contains this SKILL.md before running them. If you cannot, stop and report `skill_dir_unresolved`.
+
+## Prerequisites
+
+```bash
+# Thoughts must exist for this skill's documents. CTL-2306: the full host setup check (daemon,
+# registry, house rules) belongs to the setup-catalyst skill, not to a skill that must run anywhere.
+[[ -e thoughts/shared ]] || echo "⚠️ thoughts/shared is missing in $(pwd) — run \`humanlayer thoughts init\` or the setup-catalyst skill; if the prompt names an output path, write there" >&2
+```
+
+## No Claude attribution
+
+Never write "Generated with Claude Code", "Co-Authored-By: Claude", or any AI-assistance reference into a PR title or body. Descriptions are professional and attributed to the human author.
+
+## Process overview
+
+1. **Read the template, identify the PR, extract its ticket, gather its diff/commits/checks.** See [process.md](references/process.md).
+2. **Merge the new analysis into the existing description** (regenerate auto-generated sections, preserve manual edits), **add the Linear reference, generate the title.** Sibling tickets are referenced by GitHub PR number, never a bare Linear token — the own ticket's `Fixes https://linear.app/{workspace}/issue/{ticket}` line stays. See [merge-and-title.md](references/merge-and-title.md); why: [linear-sibling-guard.md](references/linear-sibling-guard.md).
+3. **Run verification checks, save to `thoughts/shared/prs/`, write the description and title back to GitHub** via `linear-pr-skip.sh`'s `linear_sibling_skip_block_from_branch` + `linear_sibling_skip_block_from_body` (CTL-623/633 sibling-skip guard block), **update the Linear ticket** (skip the transition under `CATALYST_PHASE`). See [verify-and-writeback.md](references/verify-and-writeback.md).
+4. **Report the outcome** — first-time generation vs. incremental update. See [metadata-and-errors.md](references/metadata-and-errors.md), which also covers error handling and configuration.
+
+## Configuration
+
+Uses `.catalyst/config.json` (`teamKey`, `stateMap.inReview`, `pr.testCommand` etc.) — see [metadata-and-errors.md](references/metadata-and-errors.md) for the full schema.
+
+## Load on demand
+
+| Situation | Reference |
+|---|---|
+| Identify PR, extract ticket, read existing description, gather diff/commits/checks | [process.md](references/process.md) |
+| Merge descriptions, add Linear reference, generate title | [merge-and-title.md](references/merge-and-title.md) |
+| Why sibling tickets are referenced by PR number, not a bare Linear token | [linear-sibling-guard.md](references/linear-sibling-guard.md) |
+| Verification checks, save/sync, write back to GitHub, update Linear | [verify-and-writeback.md](references/verify-and-writeback.md) |
+| Metadata header format, result templates, error handling, config schema | [metadata-and-errors.md](references/metadata-and-errors.md) |
+
+## Remember
+
+- Fully automated — no interactive prompts, incremental updates preserve manual edits.
+- For Linearis CLI syntax and the direct-SQLite read rule (reads → replica, writes → linearis), see the `linearis` skill's "Reading Linear" section.

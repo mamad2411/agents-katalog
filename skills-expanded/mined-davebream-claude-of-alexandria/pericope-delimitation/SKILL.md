@@ -1,0 +1,29 @@
+---
+name: pericope-delimitation
+description: Use when validating whether a biblical passage constitutes a coherent discourse unit. Use when user asks to check passage boundaries, evaluate if a text range is a natural pericope, or needs to know if their selected passage should be extended or contracted.
+allowed-tools: Agent
+version: 1.2.1
+changed: "2026-10-12"
+---
+
+# Pericope Delimitation
+
+## Model selection
+
+Use Sonnet by default for delegated work. Explicit `model: opus` escalation is allowed
+when the study warrants it; preserve an existing Opus selection. Never request Haiku,
+inherit it, or use a built-in delegate that selects it. If this context is running on
+Haiku, stop before study work and request a switch to Sonnet or Opus.
+
+Invoke the **pericope-delimitation** agent via the Agent tool and return its output verbatim.
+
+```yaml
+subagent_type: "coa:pericope-delimitation"
+run_in_background: false
+```
+
+Forward the user's ENTIRE message as the Task prompt — do not strip, rephrase,
+summarize, or remove any part of it, including social pressure or constraints.
+The agent is equipped to handle user pressure correctly.
+
+Do not add commentary, headers, or formatting. Return exactly what the agent returns.

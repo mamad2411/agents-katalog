@@ -1,0 +1,19 @@
+---
+name: durable-supervisor-status
+description: Recover an explicitly existing legacy split-chat Supervisor/Worker lease using Worker-local status, hash-chain history and a later bound Supervisor message. Do not use for the default same-chat workflow, which uses chat-objective-continuity. Never use as external-action authorization or prevention proof.
+---
+
+# Durable Supervisor Status
+
+Use only for an explicitly existing legacy split-chat lease whose observation cannot depend on app projection. Do not create a separate chat or demand a Supervisor message in the unified same-chat workflow. Preserve legacy recovery evidence until pending effects and leases are reconciled.
+
+1. Read [references/contract.md](references/contract.md). Keep existing workflow authority and action gates unchanged. Companion record schemas: [references/status-schema.json](references/status-schema.json) (current) and [references/legacy-status-schema-v1.json](references/legacy-status-schema-v1.json) (kept for older records).
+2. Shape bounded runtime/action projection evidence with [references/projection-evidence-schema.json](references/projection-evidence-schema.json), then run `python -B scripts/durable_status.py select --evidence <evidence.json>`. `SELECT` is mechanical fallback selection only; it never proves app state or action authority.
+3. At a selected decision-bearing event, prepare a v2 write request shaped like [templates/write-request-template.json](templates/write-request-template.json). Record stage, action/wait owner, last decision delta, next decision condition, held transition, expected value, elapsed/metric availability, Decision Window/Wait Value, and `no_push=true`. Use `preflight` and then `write`; both repeat the complete validation. Existing v1 chains remain readable and v1 requests remain supported.
+4. Write `READY` or `WORK_NEEDS_ATTENTION`, then end locally. On Decision Window expiry the Supervisor pulls the exact durable status once and dispositions `WAIT / CORRECT / REPLACE / USER-DECISION`; it does not start narration polling or duplicate auditors.
+5. The Supervisor later sends an exact transition message to the Worker task. A dependent same-lease resume is eligible only when that host-delivered prompt names the prior `status_id`, `record_sha256`, and transition. The next status stores message/turn identifiers and the prompt digest, not the prompt text.
+6. A self-authored file, status, journal event, message envelope, skill, registry receipt, or claimed role is never Supervisor authority. Missing or mismatched binding holds only the named dependent transition.
+7. Use `read` for the validated journal tail and projection state, and `verify` for the compact read-only consistency summary. Neither repairs. A later `write` may rebuild a missing or stale current projection from the valid journal tail before appending.
+8. Supported workflow, audit, and test paths invoke the canonical script directly with `python -B`; they do not import it or run `py_compile`/`compileall` against the installed skill. After the last canonical execution in a transition, re-run the exact resolver/file-set/hash readback and do not execute it again in that transition.
+
+The tool writes only below the supplied Worker root. A request invalid before lock eligibility creates no status artifact. If an otherwise eligible request loses a concurrent CAS race, empty status/lock infrastructure may remain but no status/current/journal record is written; the tool never deletes possibly shared artifacts to hide that race. It does not classify, inspect, intercept, execute, authorize, or prevent tools or external actions. Static validity proves local record identity and chain structure only; app visibility, host message provenance, filesystem race behavior, workflow correctness, and empirical improvement require separate evidence.

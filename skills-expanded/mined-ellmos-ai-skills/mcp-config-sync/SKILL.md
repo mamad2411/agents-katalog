@@ -1,0 +1,63 @@
+---
+name: mcp-config-sync
+version: 2.0.1
+type: skill
+author: Lukas Geiger + Claude + Codex
+created: 2026-05-16
+updated: 2026-11-22
+description: "Verwenden, wenn MCP-Server-Konfigurationen zwischen verschiedenen Agenten-Tools (Claude, Gemini, Codex, etc.) abgeglichen und synchronisiert werden sollen (z. B. 'MCPs synchronisieren', 'MCP-Konfiguration abgleichen', 'MCP-Server übertragen', /mcp-config-sync). Ermittelt vorhandene Server-Definitionen und gleicht sie nutzergeführt ohne festen Master-Hub ab. NICHT verwenden, wenn zusätzlich Skills und Regeln gespiegelt werden sollen (dafür agent-config-sync)."
+standalone: true
+anthropic_compatible: true
+bach_compatible: true
+bach_origin: false
+category: infrastructure
+tags: [mcp, config, sync, provider-neutral, discovery, multi-agent]
+language: de
+status: active
+visibility: public
+dependencies: {'tools': ['python'], 'services': [], 'protocols': ['agent-config-sync'], 'python': []}
+provenance: {'origin': 'custom', 'origin_path': 'skills/infrastructure/mcp-config-sync/', 'origin_version': '2.0.0', 'last_sync_from_origin': None, 'last_sync_to_origin': None, 'local_changes_since_sync': False}
+---
+
+
+<img src="banner.png" width="100%" alt="mcp-config-sync banner">
+
+> **Deutsch** — Hinweis: Der Inhalt dieser Datei ist derzeit englisch.
+
+# MCP Config Sync (Deutsch)
+
+This is the MCP-focused entry point to `agent-config-sync`. It assumes no
+provider, app or master file.
+
+## Ablauf
+
+1. Ask which concrete endpoints or axes the user wants: within one provider
+   across app classes, within one app class across providers, an explicit list,
+   or every detected provider and class.
+2. Run `agent-config-sync/scripts/sync.py --discover`, then `--offer`.
+3. Present detected endpoints separately from unverified candidates.
+4. Let the user choose truth source, targets, direction and conflict policy.
+5. Materialize `registry.json`, review `--plan`, and only then use
+   `--apply --yes`.
+
+Discovery and offers are read-only. There is no implicit hub and no implicit
+“sync all”. The former Claude Code↔Claude Desktop scripts are a legacy profile,
+not the generic default.
+
+## Beispielaufruf
+
+```
+agent-config-sync/scripts/sync.py --discover
+agent-config-sync/scripts/sync.py --offer
+agent-config-sync/scripts/sync.py --plan
+agent-config-sync/scripts/sync.py --apply --yes
+```
+
+## Änderungsprotokoll
+
+- v2.0.1 (2026-11-22): Sprachhinweis korrigiert
+- v2.0.0 (2026-07-27): Sync provider-neutral gemacht -- keine implizite
+  Hub-/Master-Datei mehr, Nutzer waehlt Quelle, Ziele, Richtung und
+  Konfliktpolitik selbst.
+- v1.0.1 (2026-06-13): Skill veroeffentlicht (Sync-Scripts + Vorlage auf
+  generische Pfade umgestellt, Referenzen anonymisiert, EN-Version).

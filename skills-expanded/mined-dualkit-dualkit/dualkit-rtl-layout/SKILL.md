@@ -1,0 +1,123 @@
+---
+name: dualkit-rtl-layout
+description: Use when building or reviewing UI that must work right-to-left in Arabic as well as English, including mirroring, icons, phone numbers or codes inside Arabic text, input fields, Tailwind or CSS direction, and bidi bugs where numbers or punctuation appear in the wrong order
+---
+
+# RTL layout
+
+## Overview
+
+Direction is set once, on the root, and everything else follows it. The hard bugs are not margins. They are left-to-right runs (phone numbers, IBANs, codes, emails) inside Arabic text, which the bidi algorithm reorders. This skill sets no font. For fonts, sizes and leading, use dualkit-type-pairing.
+
+## Set direction on the document
+
+```tsx
+<html lang={locale} dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+```
+
+Use the `dir` attribute, never `direction` in CSS. Flex, grid, text alignment and native controls follow it for free. Set `lang` too, because fonts, hyphenation and screen readers depend on it.
+
+## Logical properties, always
+
+| Physical (never) | Logical (always) |
+|---|---|
+| `margin-left` | `margin-inline-start` |
+| `padding-right` | `padding-inline-end` |
+| `left: 0` | `inset-inline-start: 0` |
+| `text-align: left` | `text-align: start` |
+| `border-left` | `border-inline-start` |
+| `border-top-left-radius` | `border-start-start-radius` |
+
+`transform: translateX()`, `background-position`, SVG coordinates and animation keyframes do **not** flip. Pair them with `:dir(rtl)`, which also respects LTR blocks nested inside:
+
+```css
+.x { transform: translateX(-100%) }
+.x:dir(rtl) { transform: translateX(100%) }
+```
+
+## Left-to-right runs inside Arabic text (the bug every model ships)
+
+In an RTL line, the bidi algorithm resolves the spaces between digit groups to right-to-left, so each group becomes its own run and `مثال 050 123 4567` renders as `مثال 4567 123 050`. The same thing happens to `+971 50 123 4567`, card numbers, times like `10:30 - 11:00`, and versions.
+
+Wrap every such run in an isolate:
+
+```tsx
+<p>{t.phoneHint} <bdi dir="ltr">050 123 4567</bdi></p>
+```
+
+When markup is not possible (placeholders, `aria-label`, toasts, push text), put the isolate characters in the string: `⁦` (LRI) before the run and `⁩` (PDI) after it.
+
+```ts
+const hint = `مثال ⁦050 123 4567⁩`
+```
+
+`dir="ltr"` is only for runs with no Arabic letters. A formatted Arabic amount (`1,234.50 د.إ`) or Arabic date contains Arabic, so give it a plain `<bdi>` with no `dir`. Forcing it to LTR moves the currency to the wrong side. User-supplied names and values also get plain `<bdi>`.
+
+## Punctuation and brackets
+
+A block with no Arabic still runs right to left on an Arabic page, so its last mark shows on the left, before the text. `Gregorian:` shows as `:Gregorian`, and `Great service, thank you!` as `!Great service, thank you`.
+
+A Latin label in Arabic UI: translate it. If the Latin word must stay and the label has no Arabic, isolate the word and its colon together. If the label also has Arabic, isolate the word alone and leave the colon outside, or the colon lands between the two words.
+
+```html
+<label>ميلادي:</label>
+<label><bdi>Gregorian:</bdi></label>
+<label>تاريخ التقويم <bdi>Gregorian</bdi>:</label>
+```
+
+A bracketed code next to a number, in a cell or badge with no Arabic: `1,234.50 (AED)` shows as `(AED) 1,234.50`. Isolate the whole amount, brackets included, or use the Arabic abbreviation.
+
+```html
+<td><bdi>1,234.50 (AED)</bdi></td>
+<td><bdi>1,234.50 د.إ</bdi></td>
+```
+
+User content in either script (reviews, comments): give the block `dir="auto"`, so it takes the direction of its first letter.
+
+```html
+<p dir="auto">Great service, thank you!</p>
+```
+
+## Inputs: direction by what people type
+
+Fixed formats (phone, IBAN, Emirates ID, card, OTP), email and URL use `dir="ltr"`. Fields where people may type either script (names, search, addresses, free text) use `dir="auto"`. The Dualkit starter Field uses `dir="auto"` on every input, which also works, because a typed value with no Arabic letters resolves to left to right. Keep the label and error in the page direction.
+
+```html
+<input type="tel" dir="ltr" inputmode="tel" autocomplete="tel">
+<input type="text" dir="auto" autocomplete="name">
+```
+
+Put a `+971` prefix chip and the input, not the label, in one `dir="ltr"` wrapper, so the chip stays on the left.
+
+## What to mirror
+
+| Mirror | Do not mirror |
+|---|---|
+| Back and forward arrows, chevrons | Play, pause, fast-forward (they follow tape direction) |
+| Progress bars, steppers, sliders | Clocks and anything circular that shows time |
+| Send icons, reply and redo arrows | Checkmarks, logos, brand marks |
+| Carousels and swipe direction | Phone numbers, numerals, Latin text, code |
+| Drawers (open from the start edge) | Media timelines |
+
+Mirror with CSS. Swapping a single icon for its opposite also works; you don't need a second icon set. The class goes on the `<svg>`:
+
+```css
+.icon-directional:dir(rtl) { transform: scaleX(-1) }
+```
+
+Do not mirror with `rotate(180deg)`. It turns an icon that is not vertically symmetric upside down.
+
+## Common mistakes
+
+- `left: 0` or `margin-left` on anything that should follow the reading edge.
+- A phone number or IBAN example in an Arabic hint or error, with no isolate.
+- Forcing `dir="ltr"` on the whole field group, which flips the label too.
+- `<bdi dir="ltr">` around a formatted Arabic amount or date.
+- A Latin word leading an Arabic label, like `الgregorian:`. Translate the label.
+- A bare `(AED)` next to a number, in a cell or badge with no Arabic.
+- 12px badge text in Arabic, under the 14px floor.
+- Testing RTL with Lorem ipsum instead of real Arabic copy mixed with real numbers.
+
+## In Tailwind
+
+Use the logical classes: `ms-4`, `pe-4`, `text-start`, `border-s`, `rounded-ss-lg`, and `inset-s-0` for `inset-inline-start` (v4.2+; `start-0` before, deprecated since). Pair transforms with the `rtl:` variant, as in `-translate-x-full rtl:translate-x-full`. Mirror directional icons with `rtl:-scale-x-100`. In Arabic, `text-sm` (14px) is the smallest size. Never `text-xs` or an arbitrary size under 14px.

@@ -1,0 +1,48 @@
+---
+name: summarize
+description: "Summarizes the current session's work into a diary entry at .claude/state/sessions/ and runs worktree auto-cleanup. Use when the user says 'summarize' or '/summarize', or when closing out a completed work session."
+---
+
+Summarize the current session's work and save it to `$STATE/sessions/YYYY-MM-DD-<topic>.md` (use today's date and a brief topic slug).
+
+Resolve `$STATE` first: `.claude/state` in the main checkout of the repo being changed, per `rules/state-persistence.md`. A session that changed several repos writes one diary in each.
+
+Format the file as:
+
+```markdown
+# Session: <date> - <topic>
+
+## What was done
+
+- List of completed changes with file paths
+
+## Files changed
+
+- List of all modified/created/deleted files
+
+## What remains
+
+- Any incomplete work or follow-up tasks
+
+## Open questions
+
+- Unresolved decisions or blockers
+
+## Key decisions
+
+- Important choices made during this session and why
+
+## Harness candidates
+
+- Each failure that happened twice, and the rule or hook that would prevent it
+```
+
+Fill **Harness candidates** from this session and the last three diaries in `$STATE/sessions/`. A failure seen twice means the harness needs fixing, not the output. Propose each fix as a rule line or a hook. Do not apply it without the user's approval. Write "None" when nothing repeated.
+
+Also output the summary to the conversation. Keep it concise - suitable for a standup update or handoff to another session.
+
+## Worktree auto-cleanup
+
+After saving the diary, run `~/.agents/scripts/worktree-prune.sh --apply --repo <target>` for each target repo. The script applies the conservative rule (upstream-gone OR merged into default, including squash merges) and reports what was removed vs kept. Locked worktrees are auto-unlocked iff safely removable. Anything with unpushed work or open PR is preserved.
+
+The same hook fires automatically at SessionEnd, so this step is mostly for explicit closure and surface visibility.

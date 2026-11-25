@@ -1,0 +1,105 @@
+---
+name: dbk-pr-execute-reply
+description: 作为 PR 作者，把已经定夺的 PR 评审修复方案立刻落地：改代码、按领域分段提交、推送到 PR、逐条回复 reviewer 的评审意见，一条龙做完。仅在用户显式调用时使用（点名 dbk-pr-execute-reply，或明确要求"按刚聊的方案执行并提交推送回复评审"）；不要从上下文自动触发。作为 reviewer 向他人 PR 发送内联评审意见、只聊方案不动手、改动已就绪只差提交、评估评审意见、创建或合并 PR、排查 CI 都不适用。
+compatibility: 需要 git 与已安装并登录的 gh CLI
+license: MIT
+metadata:
+  author: DBinK
+  version: "0.2.1"
+---
+
+# PR 评审修复的执行与落地（作者视角）
+
+作为 PR 作者（比 `dbk-pr-commit-reply` 多一步）：在 `dbk-pr-feedback` 或对话中已经定夺好修复方案后，从**改代码**开始，一路做到分段提交、推送、逐条回复 reviewer 并重新请求评审。
+
+## 授权前提
+
+用户显式调用即视为授权整条链路：改代码 → commit（可分段）→ push → 回复评论 → 重新请求评审。前提是方案已经在对话里聊清楚；方案有歧义或没聊完时先停下来问，不要自行发挥。
+
+不适用：
+
+- 只聊方案、只要评估，不动手 → 走 `dbk-pr-feedback` 或普通对话
+- 改动已经就绪、只差提交推送和回复 → 走 `dbk-pr-commit-reply`
+- 作为 reviewer 把评估笔记发为 PR 内联评论 → 走 `dbk-pr-submit-review`
+- 只改代码不提交、只提交不回复、创建或合并 PR、排查 CI → 都不走本技能
+
+## 工作流
+
+### 1. 锁定方案
+
+把对话里聊定的方案落成执行清单：改哪些文件/模块、每条对应哪条评审意见、哪些明确不修。
+
+方案在对话里已经明确就直接开工，不再重复确认；有缺口或歧义时停下来问。
+
+若 `./notes/review/` 下有本次 PR 的评估笔记，对照里面的条目执行。
+
+### 2. 执行
+
+按清单改代码，范围严格限定在方案内，不顺手扩大改动。
+
+执行中发现方案走不通、或撞上更合理的设计选择，停下来把问题和选项交给用户决策，别自行改方案。
+
+### 3. 自检
+
+按语言栈跑门禁（Rust 项目走 `dbk-rust-gates`，其他按项目约定），确认改动可用。
+
+### 4. 分段提交
+
+改动跨多个领域（不同模块、不同评审条目、代码改动 vs 格式化 vs 文档）且量较大时，按领域拆成多次提交；单一领域的改动用一个提交。切分判据与 `dbk-pr-commit-reply` 一致：
+
+- 一个提交只做一件事，message 能一句话说清；
+- 尽量让每个提交独立可构建，冲突时以不破坏构建为先；
+- 同一文件里混着无关改动且拆开不影响构建时，用 `git add -p` 分离；
+- 别为拆而拆。
+
+三个以上提交、或涉及关键模块时，先把提交清单给用户过一遍。提交 message 对齐仓库习惯（`git log --oneline -20`），说清对应哪条评审意见。
+
+### 5. 推送
+
+```bash
+git push
+```
+
+只有分支已与远端分叉、确实需要时才强推，且必须用 `--force-with-lease` 并先问用户。默认不强推。
+
+### 6. 逐条回复评审意见
+
+```bash
+# in_reply_to_id 为 null 的是顶层评审评论
+gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --jq '.[] | {id, path, line, in_reply_to_id, body}'
+# 回复到对应的内联 discussion
+gh api repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies -f body="..."
+```
+
+回复里说清结论：已修（怎么改的、在哪个提交）/ 不修（理由）。一条意见一条回复，别揉成一条 PR 级总评论；不得不在 PR 级评论里回复时，正文 @ 该 reviewer。
+
+### 7. 重新请求评审
+
+回复完成后，把留下评审意见的 reviewer 重新加回评审请求，让 PR 回到待评审状态：
+
+```bash
+# 找出给过意见的 reviewer（reviews 与内联评论合并去重）
+gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews --jq '.[].user.login' | sort -u
+gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --jq '.[].user.login' | sort -u
+
+# 逐个重新请求评审（人类 reviewer，跳过机器人）
+gh api --method POST repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers \
+  -f 'reviewers[]=<login>'
+```
+
+只请求人类 reviewer：`[bot]` 结尾的账号（CodeRabbit 等）无法被请求，跳过它们。某个 reviewer 已被请求且仍处于待评审状态时重复请求会报错，忽略即可。
+
+### 8. 汇报
+
+向用户列：提交清单（hash + message）、push 结果、逐条回复了哪些意见、重新请求了哪些 reviewer、没回的原因。push 后 CI 会重跑，把链接一并给出。
+
+## 注意事项
+
+- 别把"聊到一半的设想"当成已定方案执行；确认过再动手。
+- 执行阶段顺手冒出来的无关改动，既不混进提交，也不单独开提交。
+- 回复必须挂在对应的内联 discussion 上，reviewer 才看得到。
+- 回复不会自动 resolve discussion，要不要标记已解决由用户决定，别擅自点。
+- `./notes/review/` 笔记默认是本地材料，不进提交。
+- 强推会重置 PR 时间线，可能让既有评论的行号错位；能不强推就不强推。
+- 交付时把提交和评审条目对上号，别张冠李戴。
+- 重新请求评审的对象是留下意见的人类 reviewer，不是机器人；把 `[bot]` 账号也塞进 `reviewers[]` 会请求失败。

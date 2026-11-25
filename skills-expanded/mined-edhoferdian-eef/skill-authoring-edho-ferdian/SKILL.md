@@ -1,0 +1,343 @@
+---
+name: skill-authoring-edho-ferdian
+description: >-
+  Create and govern this ecosystem's skills: search before building, a
+  quality bar, compliance checks, promoting repeated principles to rules,
+  and packaging dist/*.skill. Use for "bikin skill baru", "ada skill buat X
+  gak", "fork skill ini", "skill gue kepake gak sih", "package skill ini",
+  "buatkan .skill-nya".
+metadata:
+  last_reviewed: "2026-10-08"
+---
+
+# Skill Authoring — Edho Ferdian Mode
+
+## Boundary with `skill-audit-edho-ferdian`
+
+| Moment | Skill |
+|---|---|
+| Before a skill exists — should it? does one already? | **this skill** §1 |
+| While writing it — quality bar, description that triggers | **this skill** §2 |
+| After it ships — is it actually obeyed? | **this skill** §3 |
+| Periodically across all skills — stale, redundant, broken links | `skill-audit-edho-ferdian` |
+| Principles recurring across many skills → rules | **this skill** §4 |
+| Packaging a finished skill into `dist/*.skill` | **this skill** §6 |
+
+Neither skill runs the other's checks. If you find yourself grading
+description quality across the whole `skills/` tree, you are running the
+audit, not this.
+
+Also distinct from `opensource-release-edho-ferdian`: that skill packages
+*someone else's project* for public open-source release. §6 below packages
+*this ecosystem's own* skill folders for distribution. Same verb
+("package"), different object — don't route a "package this skill" request
+there.
+
+## §1 — Search before you build
+
+The failure mode is building the twelfth variant of something that already
+exists. Search in cost order, cheapest first:
+
+1. **This ecosystem** — `skills/*/SKILL.md` in this repo. A near-match here
+   is usually a FOLD (a new `references/*.md` under an existing skill), not
+   a new top-level skill. This is the same consolidation rule D-009 set for
+   this ecosystem's earlier porting work, applied to original work.
+2. **Installed and marketplace skills** — name match first, then
+   frontmatter descriptions.
+3. **GitHub** — `gh search repos`, `gh search code --filename SKILL.md`.
+4. **Web** — at most three targeted queries.
+
+**Vet anything external before adopting it.** Read the full SKILL.md and
+every reference. Look for unexpected shell commands, file writes outside
+the working tree, network calls, credential handling, or package installs.
+Check whether the repo is maintained. Copy into a fresh branch and review
+the diff rather than editing a marketplace original in place. An external
+skill is untrusted content until read — the same standard this ecosystem
+holds for any other fetched file.
+
+If the user explicitly says to skip the search, acknowledge it and proceed.
+
+**Choosing the right artifact form.** A repeated pattern becomes a
+**command** when a human decides to invoke it at a known moment; a **skill**
+when it should fire on its own from a description-level trigger; an
+**agent/subagent** when it needs its own context window or an isolated
+write surface. Choosing "skill" for something that is really an on-demand
+checklist is what produces trigger collisions later — see `skill-audit-
+edho-ferdian`'s redundancy category.
+
+## §2 — The quality bar
+
+A skill in this ecosystem is not done until:
+
+- **The description triggers.** It names concrete phrases the user actually
+  says (including Indonesian ones), and it says what the skill is *not* for
+  when a neighbouring skill exists. A description that is merely accurate
+  but never fires is a dead skill.
+- **The description is short.** At most 450 characters (CI enforces it via
+  `measure_context.py --max-desc-chars`): what the skill does, then the
+  trigger phrases. Claude Code caps the whole skill listing and drops the
+  descriptions of rarely used skills when it overflows, so a long
+  description can cost another skill its triggers. Boundary detail goes in
+  the body.
+- **Its boundary is stated.** If it overlaps another skill, the overlap is
+  named and adjudicated in the text — the audit skill treats a stated
+  boundary as intentional architecture, not redundancy.
+- **Provenance is recorded** when adapted from an external source: what it
+  was adapted from, the fetch date, and what was deliberately changed.
+- **References are split by lens, not by chapter.** Many small
+  `references/*.md` loaded on demand beats one long SKILL.md.
+- **No live dependency on an external harness** (D-005), and no
+  Claude-Code-only construct that breaks portability (D-008).
+
+## §3 — Compliance: does anyone actually obey it?
+
+The unexamined assumption behind every skill collection is that written
+instructions are followed. They frequently are not, and nobody notices because nobody looks.
+
+Test one skill by running the same task at three prompt strictness levels
+and classifying what the agent actually did:
+
+| Level | Prompt shape | What a pass looks like |
+|---|---|---|
+| Supportive | Names the skill explicitly | The skill's steps appear in order |
+| Neutral | Describes the task using the skill's own trigger phrases, without naming it | The skill still fires |
+| Competing | Describes the task while nudging toward a shortcut the skill forbids | The skill's constraint holds |
+
+The neutral level tests the description; the competing level tests whether
+the rules are load-bearing or decorative. Report the compliance rate and
+the tool-call sequence, not an impression. A skill that only passes at the
+supportive level has a description problem; one that fails at the competing
+level has a rules problem.
+
+## §4 — Distilling rules from skills
+
+When the same principle appears in three or more skills, it belongs in a
+rule, not repeated in each. This is the same promotion rule Stage 6 of
+`dev-kickoff-edho-ferdian` applies to instincts ("three or more related
+instincts pointing the same way → propose promoting them into PDR §3"),
+applied one level up.
+
+Method: collect exhaustively and mechanically (grep for the repeated
+phrasing across all `skills/**/*.md`), then judge with full context —
+scripts gather facts, the model decides. Output is one of: append to an
+existing rule file, revise an outdated one, or create a new one. Replace
+the now-duplicated passages with a cross-reference rather than leaving both.
+
+## §5 — Incremental audit handoff
+
+A full pass over every skill is
+expensive and mostly re-reads unchanged files. Prefer a **quick scan**:
+compare each `SKILL.md` and `references/*.md` mtime against the last audit
+run, re-evaluate only what changed, and carry forward previous findings for
+the rest. Report the diff. Fall back to a full pass when no previous run
+exists, or on explicit request.
+
+The findings format and the four audit categories belong to
+`skill-audit-edho-ferdian` — this section only governs *which files* that
+audit needs to look at.
+
+## §6 — Packaging for distribution (`dist/*.skill`)
+
+Packages *this ecosystem's own* skill folders for manual upload (Claude.ai /
+Claude Desktop / Claude Code Skills UI) — not `opensource-release-edho-
+ferdian`'s job. Whenever `skills/<name>/` changes and is about to be
+committed: run `python scripts/validate_skills.py`, then
+`python scripts/package_skills.py` (all skills, or `<name>` for one;
+`--check` is the dry run CI's `dist-sync` job uses). Never hand-zip a skill
+folder. Publishing the archive anywhere is a separate, explicit-permission
+action. What the validator does and doesn't check, and why the script is
+the only packaging path: **`references/packaging.md`**.
+
+## §7 — Language routing (canonical contract — all skills point here)
+
+The single source of truth for which human language a *shipped, installed*
+skill uses wherever it runs. It is not this repo's own `CLAUDE.md` §F (which
+governs curation work inside this repo) — the two agree in value but are
+separate documents; don't merge or delete either. Why this was promoted and
+the full scope note: **`references/contract-history.md`**.
+
+**The base rule (fixed, never ask):**
+1. Narration, explanations, questions, and reports to the user → **Bahasa
+   Indonesia**.
+2. Code, diffs, commit messages, filenames, folder names, and any other
+   machine-facing generated artifact → **English**.
+3. Never ask the user which language to use — this is fixed, not a
+   preference to elicit.
+
+**When a skill's own source material carries a language** (e.g. a spec,
+document, or dataset already written in a specific language it must mirror
+back), detect that source language and follow it for content that mirrors
+the source, while the base rule above still governs narration and
+artifacts. `dev-kickoff-edho-ferdian`'s "Language routing" section is the
+fullest worked example of this split (`doc_lang` vs `artifact_lang`,
+because it ingests specs that may already be Indonesian or English) — read
+it before writing a new multi-language exception rather than re-deriving
+one from scratch.
+
+**Standard form for every other skill** (one heading, 1-2 sentences, no
+inline restatement of the full contract):
+`## Language routing (fixed — see skill-authoring-edho-ferdian's canonical
+contract)` followed by a sentence naming the base rule and pointing here.
+
+## §8 — Development loop convention (canonical contract — orchestrating skills point here)
+
+Every skill in this ecosystem that drives multi-step implementation work —
+not a single-purpose lens like `code-review-edho-ferdian`, but a skill that
+plans, writes, and closes out a task — follows the same seven-stage loop:
+
+```
+PLAN → TEST → IMPLEMENT → REVIEW → VERIFY → REMEMBER → IMPROVE
+```
+
+`dev-kickoff-edho-ferdian` is the canonical, fully-specified implementation
+of this loop (`references/execution-loop.md` there has the complete
+per-stage protocol, gate list, and the auto-invocation contract that wires
+each stage to the matching specialist skill in this ecosystem — read it
+before re-deriving any part of this cycle elsewhere). Two rules apply to any
+other skill that adopts this loop:
+
+1. **Point, don't restate.** State the loop in one line and point to
+   `dev-kickoff-edho-ferdian`'s `references/execution-loop.md`, the same way
+   every skill states Language routing in one line and points to §7. A
+   second full copy of the per-stage protocol is a duplicate that will drift.
+2. **The last two stages are not optional decoration.** REMEMBER without
+   IMPROVE records a lesson that never changes anything; a skill that
+   implements PLAN through REMEMBER but drops IMPROVE has built a diary, not
+   a feedback loop. If a skill's scope genuinely has no instincts/debt/
+   dead-code surface to check (rare — most implementation work does), say so
+   explicitly rather than silently truncating the cycle to six stages.
+
+**Auto-invocation is the same idea as the "search before you build" (§1)
+discipline, applied mid-task instead of pre-build.** A skill mid-loop that
+hits a stage matching another skill's specialty (writing a test → consult
+`test-authoring-edho-ferdian`; reviewing code → consult
+`code-review-edho-ferdian`; a build breaks → consult `build-fix-edho-ferdian`)
+invokes that skill rather than reproducing its judgment from general
+knowledge. This is what makes the ecosystem behave as one system instead of
+33 isolated documents that happen to share a naming suffix.
+
+## §9 — External docs lookup (Context7) (canonical contract — authoring skills point here)
+
+Context7 (`mcp__context7__resolve-library-id` → `query-docs`) is a third live
+external dependency for this ecosystem, alongside ECC (D-005) and Salak
+(D-004) — consumed, never rebuilt (D-044). It fetches current documentation
+for a library/framework/SDK/API/CLI directly from source, correcting for
+training-data staleness on version-specific API surfaces.
+
+**When to call it (authoring-time only, not every line of code):**
+1. Adding a new dependency or integration.
+2. Upgrading or migrating a dependency's major/minor version.
+3. Using an API surface that changes fast, or is used rarely enough that a
+   memorized signature is unreliable.
+4. Diagnosing a build/compile error that is actually a signature or
+   version-drift issue (`build-fix-edho-ferdian`'s narrow use case).
+
+Do not call it for refactoring, business-logic debugging, code review, or
+general programming concepts that don't hinge on a specific library's
+current API — this matches the boundary the Context7 MCP server itself
+declares.
+
+**Session discipline:**
+- Resolve a library's ID once per session and reuse it across every
+  `query-docs` call for that library — don't re-resolve on every question.
+- On rate-limit or failure: fall back to `WebFetch` against the library's
+  official docs directly; if that also fails, answer from training
+  knowledge but say explicitly it is unverified and may be stale. Never
+  silently answer as if it were confirmed current.
+- **No local caching of fetched docs** — a local copy quietly goes stale,
+  the same burden this ecosystem rejected for ECC and Salak. Query live.
+
+**Rate limits.** The anonymous/no-key connection is rate-limited; a free
+Context7 API key raises the limit. Adding one is a manual user action — the
+executor never stores a key or reconfigures the MCP server unattended.
+Setup steps: **`references/contract-history.md`**.
+
+**Standard form for every other skill** (one heading, one sentence, pointing
+here — same convention as §7/§8):
+`## External docs (fixed — see skill-authoring-edho-ferdian's canonical
+contract)` followed by a sentence naming when this skill calls Context7 and
+pointing here.
+
+## §10 — Surgical changes (canonical contract — any code-editing skill points here)
+
+A general default for editing existing code, distinct from any single
+skill's own workflow: **touch only what the user's current instruction
+requires.** This governs every skill that edits code, not just the ones
+that already name it below.
+
+**The rule:**
+1. Don't "improve" adjacent code, comments, or formatting while you're in
+   a file for an unrelated reason. Match existing style even where you'd
+   choose differently — that choice belongs to a separate, explicit task.
+2. Don't refactor something that isn't broken as a side effect of fixing
+   or extending something else.
+3. When your own change makes an import, variable, or function unused,
+   remove it — but don't remove *pre-existing* dead code you merely
+   noticed. Flag it (or hand off to `dead-code-cleanup-edho-ferdian`)
+   instead of pulling it into scope.
+4. The test that decides an edge case: every changed line should trace
+   directly to the user's current request. If it doesn't, it's a separate
+   task — mention it, don't fold it in silently.
+
+**This is a default, not an absolute** — a skill with its own stricter
+version keeps it (e.g. `build-fix-edho-ferdian`'s Phase 3 "never touch
+unrelated code, even a one-line obvious improvement" sharpens it for the
+build-fix moment). Skills that flag violations at review time
+(`code-review-edho-ferdian`'s BC-08 "scope creep", `dev-kickoff-edho-
+ferdian`'s "silent scope creep" anti-pattern) keep doing so — this section
+is the authoring-time default they catch violations of.
+
+**Standard form for every other skill** (one heading, one sentence, pointing
+here — same convention as §7/§8/§9):
+`## Surgical changes (fixed — see skill-authoring-edho-ferdian's canonical
+contract)` followed by a sentence naming how this skill's own scope
+discipline relates to the default (inherits it as-is, or sharpens it for
+this skill's specific moment, per the build-fix example above).
+
+## Hands off to (fixed — see skill-authoring-edho-ferdian §11)
+
+When the work reaches one of these, load that skill with the Skill tool
+and follow it — don't write its part from memory.
+
+- Checking existing skills for overlap or staleness → `skill-audit-edho-ferdian`
+- Updating README and catalog docs → `docs-sync-edho-ferdian`
+
+## Worked examples
+
+`references/skill-template.md` — a copy-ready SKILL.md, a weak vs good description, a worked-example skeleton, the wiring steps (router, guard, handoffs, dev-kickoff) and the pre-PR checks.
+
+## §11 — Skill handoffs (canonical contract — every skill's "Hands off to" points here)
+
+EEF skills complement each other: each SKILL.md ends with a short
+**Hands off to** list — the situations where another skill owns the next
+part of the work. The contract:
+
+1. **Load, don't paraphrase.** When the work reaches a listed situation,
+   load the target with the Skill tool (on Claude Code) or read its
+   `SKILL.md` (other harnesses) and follow it. Writing that skill's part
+   from general knowledge is the failure this section exists to prevent.
+2. **Plugin names.** Installed as the Claude Code plugin, every skill is
+   namespaced: `ekosistem-edho-ferdian:<skill-name>`.
+3. **One owner per step.** The current skill keeps ownership of its own
+   output; the target owns only its part. Return to the current skill's
+   process afterwards (e.g. dev-kickoff's loop continues at its next
+   stage).
+4. **Skip only with a reason**, stated in the response — e.g. the target
+   isn't installed, or the step is trivial for that stack.
+5. **Keep lists short** (2–7 rows), situations not topics, and point only
+   at skills that exist. Optional skills that ship separately say so.
+6. **Mechanical backstops** on Claude Code: the `skill-router` hook names
+   skills from the prompt; the `skill-guard` hook names the owner skill on
+   the first edit of its kind of file. Both only add context; neither
+   blocks.
+
+`dev-kickoff-edho-ferdian` is the orchestrator for whole projects: its
+stage map (PLAN → … → IMPROVE) and touched-file map decide which skill
+loads when.
+
+## Provenance
+
+Consolidated into one skill per D-009; install-specific paths were replaced
+with this repo's own `skills/` tree. When and why each of §6–§10 was added,
+including §10's external source and what was deliberately not ported:
+**`references/contract-history.md`**.

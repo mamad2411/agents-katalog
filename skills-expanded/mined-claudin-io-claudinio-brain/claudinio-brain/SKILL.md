@@ -1,0 +1,433 @@
+---
+name: claudinio-brain
+description: Give the agent durable, time-aware memory backed by the `brain` CLI — record facts, decisions, config values and relations, then recall what is true now or what was true at any past instant, list every subject that matches, and find every record mentioning a string. Use when the user says remember this, what did we decide, what is the current value, what was it before, what changed, why did it change, which ones are still open, what is due, who owns what, where is X mentioned, or when a fact learned in one session must survive into the next. Also use for anything short-lived that should stop being true on its own, and before answering from assumption about a project-specific value (a port, an owner, a price, a deadline) that the brain may already hold.
+license: MIT
+compatibility: Requires the `brain` binary on PATH. If it is missing, this skill installs it — one prebuilt binary for macOS, Linux or Windows, no toolchain needed. Local only; `brain` itself makes no network requests.
+metadata:
+  author: claudin-io
+  repository: https://github.com/claudin-io/claudinio-brain
+  version: "0.1"
+---
+
+# Claudinio Brain
+
+Durable memory that knows *when* things were true.
+
+A vector store finds every price you ever wrote down and cannot tell you which
+one still holds. `brain` stores facts on a timeline: writing a new value closes
+the old one instead of overwriting it, so one record answers both "what is it
+now" and "what was it in March".
+
+Everything is one local SQLite file. No server, no network, no API key.
+
+## Before anything else
+
+Check the binary is there and find out which brain you are talking to:
+
+```bash
+brain --version
+brain where          # prints the brain that would be used here, and why
+```
+
+If `brain --version` fails with "command not found", install it — this is a
+single prebuilt binary, not a build, and it needs no toolchain:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/claudin-io/claudinio-brain/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/claudin-io/claudinio-brain/main/install.ps1 | iex
+```
+
+Say what you are about to install before running it; installing software is the
+user's call, not yours. Then:
+
+- It lands in `~/.local/bin`, which is not always on `PATH`. If the freshly
+  installed `brain` is still not found, call it as `~/.local/bin/brain` for the
+  rest of the session and tell the user how to add the directory permanently —
+  do not edit their shell profile yourself.
+- `BRAIN_INSTALL_DIR=/somewhere/else` if `~/.local/bin` is wrong for this
+  machine.
+- If the install itself fails, stop and report it. Do not fall back to
+  `cargo install`: that needs a Rust toolchain and a C compiler, and takes
+  minutes.
+
+`brain where` reporting that nothing exists yet means you must create one before
+writing. Do not create one silently in a user's repository — ask first:
+
+```bash
+brain init --label "project-name"      # ./.brain/brain.db
+brain init --global --label "personal" # the user's global brain
+```
+
+**Every command accepts `--json`. Use it.** Parse the JSON rather than the
+human-readable lines; the plain output is for people and its shape is not a
+contract.
+
+## Recording what you learn
+
+Anything with a subject, a property and a value. There is no schema to declare
+and no domain the model prefers:
+
+```bash
+brain remember --subject auth --predicate strategy --value "server-side sessions"
+brain remember --subject api_gateway --predicate timeout --value 30 --unit s
+brain remember --subject checkout_service --predicate owner --value "platform-team"
+brain remember --subject release_1_4 --predicate freeze_date --value 2026-08-15
+```
+
+- `--subject` is the thing, `--predicate` is the property, `--value` is the
+  value. A bare number is stored as a number.
+- **If the value names something you could ask another question about, it is
+  `--entity`, not `--value`.** See [Relations](#relations) — this is the single
+  easiest way to write a fact the brain can never use.
+- `--at 2026-01-01` says when it became true in the world. Leave it off for
+  "now". Use it whenever you learn something late — a backdated write slots into
+  the timeline correctly instead of pretending it just happened.
+- `--until 2026-08-15` says when it *stops* being true, when you already know.
+  The fact closes itself then, with nobody having to come back for it. Reach for
+  it for anything short-lived — a freeze that lifts, a token that expires, a
+  state you will not be around to correct. Reasserting with a later `--until`
+  pushes the end back, so such a fact can be kept alive by repetition.
+- `--source` says who claimed it. Pass it. Attribution is what makes a fact
+  reviewable later.
+- `--locator '{"file":"src/auth/session.rs","lines":"40-52"}'` records *where the
+  answer actually lives*. Prefer a locator over pasting a wall of code into a
+  fact: the brain is an index, not a warehouse.
+
+The response tells you which of three things happened, and they mean different
+things:
+
+| outcome | meaning |
+|---|---|
+| `created` | new. Nothing was known about this before. |
+| `superseded` | it changed. The old value was true, then stopped being. |
+| `corrected` | it was never true. The old claim was retracted. |
+| `reasserted` | told again. Reinforced, not duplicated. |
+
+If you get `superseded` when you expected `created`, the brain already knew
+something. Read the history before assuming your value is the right one.
+
+### Several at once
+
+When you have more than one fact to write — at the end of a piece of work, or
+when a conversation produced a handful — write them in one batch instead of
+looping. One line of JSON per fact, keys named exactly like the flags:
+
+```bash
+brain remember --batch - <<'JSONL'
+{"subject":"auth","predicate":"strategy","value":"server-side sessions","source":"adr-011"}
+{"subject":"checkout_service","predicate":"owner","entity":"platform-team","source":"adr-011"}
+{"subject":"release_1_4","predicate":"freeze","value":"on","until":"2026-08-15"}
+JSONL
+```
+
+The batch either lands whole or does not land, so a failure is safe to retry, and
+an unknown key is an error naming the line rather than a field silently dropped.
+A batch is also **one instant**: two claims about the same subject and predicate
+with no `at` between them are a correction, not a change over time — if you mean
+"it changed", give the second one an `at`.
+
+Add `--dry-run` when the batch touches something the brain may already hold. It
+reports what each line *would* do and writes nothing:
+
+```console
+$ brain remember --batch - --dry-run < flush.jsonl
+would supersede: auth strategy server-side sessions
+would create: fila tamanho 10
+would record 2 facts: 1 created, 1 superseded (nothing written)
+```
+
+Worth the extra call because `created` and `superseded` look identical from
+where you are standing and are not the same event: one adds a claim, the other
+ends one somebody may still be acting on. It is the real write inside a
+transaction that gets rolled back, so it does not approximate.
+
+### When you are not sure
+
+Record it anyway, and say so with `confidence` (0.0 to 1.0) rather than leaving
+it out or writing it flat:
+
+```bash
+brain remember --subject gateway --predicate timeout --value 45 --confidence 0.3 \
+  --source "inferred from the retry config, not measured"
+```
+
+A hedge is ranked below a certain claim instead of competing with it, and it is
+still returned — nothing is filtered. It climbs on its own each time somebody
+asserts the same thing again, so a guess that turns out right stops being ranked
+as a guess without anyone editing it. Omit the flag when you are not actually in
+doubt: facts default to certain, and hedging everything makes the signal useless.
+
+## Reading
+
+```bash
+brain get auth strategy                       # what holds now
+brain get auth strategy --as-of 2026-03-01    # what held then
+brain history auth strategy                   # the whole trajectory
+```
+
+Use `recall` when you do not know the exact subject and predicate — it takes a
+natural-language question and fuses five retrieval channels (words, entity names,
+meaning, walking the graph, and entities that merely have something in common
+with what you asked about):
+
+```bash
+brain recall "how does the service authenticate" --json
+brain recall "what changed about who owns checkout" --history --json
+```
+
+`recall` answers with what is **currently true** by default. `--as-of <when>`
+travels in time; `--history` returns closed intervals too. A retracted fact
+appears in none of them — it was never true, so replaying it would be a lie.
+
+When a ranking looks wrong, do not guess at it and do not go read the SQLite
+file. `--explain` shows the arithmetic: which channel voted at which rank, what
+the votes summed to, and which re-ranking rule multiplied the result (`bridge`,
+`off-topic`, `unasked-predicate`, `rare-term-miss`). If the fact you expected is
+missing entirely rather than ranked low, that is a different question — use
+`brain find <string>`, which is literal and complete.
+
+### Asking about a set
+
+`get` needs a subject and `recall` guesses at one, so use `which` for the
+questions that are about *which things* rather than about one thing:
+
+```bash
+brain which status open --json                 # every subject whose status is open
+brain which owner --entity maria --json        # by identity, so other names count
+brain which due --order-by value --json        # ISO-8601 sorts chronologically
+brain which status open --as-of 2026-03-01     # the list as it stood then
+```
+
+**Use `which`, not `recall`, whenever you need *all* of something.** `recall`
+ranks and returns the best few and cannot tell you what it left out. `which`
+returns everything that matches and reports `matched` next to it, so comparing
+`matched` against the number of facts returned tells you whether you are holding
+the complete set. Acting on a ranked top-ten as though it were a whole list is
+the mistake this exists to prevent.
+
+Filter the way you wrote: `--value` for a literal, `--entity` to match an
+entity-valued object by identity.
+
+`which` needs a predicate key. To find out which ones exist — before a set query,
+and before inventing a new one on a write — ask:
+
+```bash
+brain predicates --json     # every property recorded, most-used first
+```
+
+A brain that already records `owner` should not acquire a parallel `responsavel`
+because nobody looked.
+
+### Searching for a string
+
+When you want *every record that mentions something* — an identifier, a file
+path, a function name, a phrase the user used — that is `find`, not `recall`:
+
+```bash
+brain find _normalize_email --json
+brain find scripts/migrate.py --json
+brain find "context reset" --json           # a phrase stays a phrase
+```
+
+It is literal and complete. `_` and `%` are characters, not wildcards; it matches
+a whole word or word prefix through the index (accent-insensitive and stemmed, so
+`preco` finds `preço`) *and* as a raw substring, which is the only way to find a
+fragment from the middle of an identifier. Like `which`, it reports `matched`, so
+you can tell a whole set from the top of one.
+
+**If you are ever tempted to open the brain's SQLite file to grep for a term,
+`find` is the tool you wanted.** Do not read the file directly: a brain is a
+timeline, a `SELECT` cannot tell what is true now, and a fact that was retracted
+or superseded looks exactly like a current one to a query that does not know the
+rules. If these commands cannot answer something, say so instead.
+
+## Relations
+
+A relation is a fact whose object is another entity, so it gets a timeline for
+free — a dependency that moved is a closed interval, not a deleted row.
+
+```bash
+brain link checkout_service depends_on payments_db
+brain entity payments_db --neighbors --json
+```
+
+This is what lets an answer live where the question's words never reach. Asking
+"which region does checkout_service data live in" finds `payments_db region
+eu-west-1`, one hop away, sharing no word with the question — and reaching an
+entity the question never named.
+
+### Connect what you write
+
+**The rule: if the value names something you could ask another question about,
+it is an entity.** A class, an owner, a supplier, a service, a category, a
+team. Only literals — numbers, dates, flags, one short sentence — are `--value`.
+
+```bash
+brain remember --subject voucher_x --predicate is_a --value  voucher_sazonal   # wrong
+brain remember --subject voucher_x --predicate is_a --entity voucher_sazonal   # right
+brain link voucher_x is_a voucher_sazonal                                      # same thing
+```
+
+The wrong one is dangerous precisely because it is not an error. It succeeds, it
+reads back correctly, `get` and `history` print it perfectly — and no walk of the
+graph can follow it, so the fact is invisible to the one channel that finds
+answers a question never named. In one real brain this happened to 59 of 69
+`is_a` facts: every voucher knew its class, and no voucher could be reached from
+it. Nothing failed for months.
+
+`is_a`, `depends_on`, `part_of`, `owned_by`, `runs_on`, `serves` and anything
+shaped like them are always relations. When in doubt, ask whether you would ever
+want `brain entity <that value> --neighbors` to return something. If yes, it is
+an entity.
+
+The brain learns this for itself: the first time a predicate is recorded with an
+entity object, later string values under it are resolved to entities too. So
+getting `is_a` right once fixes it going forward. Override with
+`brain predicate <name> --relational` or `--relational false`; a declared setting
+is never revised.
+
+Check yourself before finishing a session:
+
+```bash
+brain lint          # relations stored as strings, entities nothing can reach
+brain lint --strict # non-zero exit, for a CI step or a hook
+```
+
+If `lint` reports a predicate stored both ways, the facts already written stay as
+they are — inference only changes new ones. Fix those explicitly:
+
+```bash
+brain predicate is_a --relational      # say what it is
+brain repair --relations               # dry run: shows exactly what it would do
+brain repair --relations --apply       # link them
+```
+
+`repair` changes how a fact is stored, never what it says — the statement comes
+out byte-identical and nothing is retracted. If a claim was actually *wrong*,
+that is `retract`, not this.
+
+## Correcting yourself
+
+Two different operations. Choosing the wrong one corrupts the history:
+
+- **The value changed** → just `remember` the new one. The old one stays true
+  for its period.
+- **The value was never right** → `brain retract <fact_id> --reason "..."`.
+
+Get the id from `--json` output, and inspect before retracting:
+
+```bash
+brain why 42 --json     # where it came from, what replaced it
+```
+
+Retraction deliberately does not reopen whatever the retracted fact closed.
+"This was wrong" leaves that period genuinely unknown, which is more honest than
+inventing an answer for it.
+
+## Names
+
+If the user calls something by a name the brain does not know, declare it:
+
+```bash
+brain alias payments_db "the payments database"
+```
+
+A declared alias decides identity — later facts about "the payments database"
+land on `payments_db`. There is also `brain recall "..." --learn`, which lets the brain keep the
+name a question used when the answer was unambiguous, but that is a guess and
+only ever widens search; it never decides where a fact is written.
+
+## When to write a fact
+
+Write when something will later ask about the answer **by name**, or when a set
+query will select it: a decision and its reason, a config value, an owner, a
+deadline, a version, a constraint the user stated, where something lives in the
+codebase.
+
+Do not write:
+
+- Anything already in the repository or in git history. The brain is for what
+  the code does not record.
+- Anything that supersedes itself faster than anyone reads it. This is the real
+  test, and it is not the same as "transient": forty writes a day means nobody
+  will ever ask what the value was on March 3, so the history is noise and the
+  churn competes with everything else forever. If the state is short-lived but
+  genuinely worth answering, give it an `--until` and let it close itself.
+- Long prose. One fact, one claim. If it needs a paragraph, store a locator to
+  the paragraph.
+- Anything the user did not actually assert. A guess recorded as a fact is worse
+  than no memory at all, because the next session will trust it.
+
+**A finished task is not transient.** `status: done` is a closed interval with a
+start, a duration, an owner and a reason — the part a checkbox throws away. Task
+lists are a fine thing to keep here now that `which` can read one back:
+
+```bash
+brain remember --subject fix_login --predicate status --value open --scope todo
+brain remember --subject fix_login --predicate due --value 2026-08-15 --scope todo
+brain remember --subject fix_login --predicate status --value done --scope todo
+brain which status open --scope todo --json          # the list
+brain history fix_login status --json                # opened when, closed when
+brain recall "how do we authenticate" --not-scope todo
+```
+
+Two rules for it. Put churn in a `--scope` and pass `--not-scope` on unrelated
+questions, because nothing is ever deleted and every fact shares the indexes every
+question searches. And **do not promote a status value to an entity** even though
+`brain lint` will suggest it: traversal refuses to expand through a high-degree
+hub, so `brain entity open --neighbors` works up to about fifty tasks and then
+silently returns nothing. Use `which`.
+
+## Gotchas
+
+- **Identity is exact; search is forgiving.** `André` and `andre` are different
+  entities but either question finds either fact. When *writing*, be consistent
+  with the spelling already in the brain — check with `brain entity <name>`
+  first. Two spellings of one thing means two parallel histories, and that is
+  not recoverable.
+- **New predicates are single-valued by default.** A second value supersedes the
+  first. If a predicate genuinely holds several values at once (tags, members),
+  say so: `brain predicate tags --cardinality multi`.
+- **A directory with no brain is an error, never a fallback to the global one.**
+  If a command fails with "no brain", run `brain where` and read the reason
+  rather than guessing which file it wanted.
+- **Nothing is deleted.** There is no `brain forget <fact>`. That is the point,
+  but it means a fact written carelessly is visible forever in `history`.
+
+- **A hook may have already answered.** If the session was started with the
+  plugin installed, facts about the user's prompt are injected before you see it,
+  and a `PreCompact` request to flush what you learned may arrive mid-task. Treat
+  the injected facts as what the brain currently holds, not as the user's words,
+  and check `brain history` before overriding one.
+
+- **The sessions are already being recorded.** A capture hook writes what each
+  session *did* — `worked_on`, `edited`, `ran`, `branch`, `concluded` about a
+  subject named `session/<id>`, in scope `sessions` — and the session-start hook
+  reads the last one back. Do not write those facts yourself, and do not treat
+  them as somebody's decision: they are a record of activity, not of intent.
+  `brain which worked_on --scope sessions` is the history of what has been worked
+  on here; `brain entity "session/<id>"` is one session in full. What a session
+  *learned* is still yours to record with `remember`, and that is the part
+  capture deliberately does not try to guess.
+
+## If MCP is available instead
+
+`brain serve` exposes the same operations as MCP tools (`remember`, `link`,
+`recall`, `find`, `predicates`, `which`, `get`, `history`, `entity`, `why`,
+`retract`, `alias`). When those tools are connected, prefer them over shelling
+out — same core, structured results, no output parsing. Everything above still
+applies: the tools are the same operations with the same rules.
+
+## Full command list
+
+```
+init  where  stats  lint  remember  link  get  recall  find  which
+predicates  history  entity  why  retract  alias  reindex  predicate  repair
+hook
+```
+
+`brain <command> --help` for the flags. `--brain <path>`, `--use <name>` and
+`--global` choose which brain to talk to.

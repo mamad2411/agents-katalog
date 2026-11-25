@@ -1,0 +1,198 @@
+---
+name: director
+description: >-
+  Coordination protocol for working alongside other concurrent Claude Code sessions through
+  the shared Director log. Use whenever you make a decision, defer a follow-up, hit a blocker,
+  reach a handoff boundary, or need to leave context for a parallel/future session — anything
+  that another session "should know." Covers how and when to run `director emit` and
+  `director resolve`, and how to treat the CHARTER + digest injected at session start.
+---
+
+# Director coordination protocol
+
+You are one of many concurrent Claude Code sessions a single human runs across many repos. You
+coordinate with the others through a shared, durable, append-only **LOG** — not by relaying
+messages through the human. The `director` CLI is the **only** sanctioned writer of that log:
+**never** use Edit/Write to record coordination state, and never hand-edit the log file.
+
+Your transient working state (what you decided, what you deferred, where you are) survives a
+compaction or a fresh start **only if you wrote it to the LOG during a turn.** No hook can flush
+it for you. The habit below is the real guarantee against lost context — treat it as load-bearing.
+
+## 1. Continuous boundary-flush (the load-bearing habit)
+
+Emit durable state to the LOG **as you work** — do not batch it for the end of the session — and
+treat an emit as a tool call, not a turn.
+
+- Emit a decision or a deferred follow-up **in the turn it arises**. An item written that turn
+  survives an unexpected compaction; an item you were "going to log at the end" is exactly what
+  gets lost.
+- **Ride along, never stand alone.** Put the `director emit` in the same message as your next
+  tool call, or as the last tool call of the turn when nothing else is left (an extra message
+  beats a fact lost to compaction); several events go out as parallel calls in one message.
+  Ride along with independent calls only: never in parallel with a call that removes the
+  checkout or ends the session, since the emit may not have landed when that call runs.
+  Every extra message re-reads the whole context, and that re-read, not the body, is what an
+  emit costs (measured 2026-09: every emit took its own message plus a scratch-file Write for
+  the body, roughly doubling the turns spent on the ledger).
+- **Terse body, on stdin.** A headline plus a pointer (ULID, path, PR) for a decision,
+  open-item, or note; a handoff's four parts joined with ` · `. Terse is not a word cap: if a
+  body wants a file, the rationale belongs in a doc the body points at (routing rule below).
+  Never draft the body in a scratch file first. Pass it on stdin as a quoted heredoc:
+
+  ```bash
+  director emit --type decision --area store - <<'DIRECTOR_EOF'
+  Keep NDJSON append-only; the fold is the merge (see docs/specs/... §4). Rejected: SQLite.
+  DIRECTOR_EOF
+  ```
+
+  Inside a quoted heredoc nothing expands, so apostrophes, quotes, `$` and backticks are safe.
+  The delimiter is `DIRECTOR_EOF` rather than `EOF` because a body line that matches the
+  delimiter ends the heredoc early and hands the rest of the body to the shell as commands;
+  no body line reads `DIRECTOR_EOF`. Never wrap the call in `$( )` to capture the ULID: read
+  it from the command's output instead. Bash 3.2 (macOS `/bin/bash`, which the Claude Code
+  harness uses) scans the text inside `$( )` for quotes even within a quoted heredoc, so a
+  body with an odd number of apostrophes breaks the whole call. A double-quoted argument is
+  not safe either: the shell expands `$VAR`, backticks and `$( )` before
+  `director` sees the body, and an embedded quote ends it early.
+- At each **natural boundary of work that will resume** (finishing a sub-task, switching focus,
+  pausing, wrapping up mid-workstream), emit a `handoff`: **current task · next action ·
+  hypotheses · dead ends**. This is the positional snapshot a fresh session (you, after
+  compaction, or a peer) reads to pick up where you left off.
+  Dead ends go in the body ("tried X, failed because Y") — negative results are what stop the next
+  session from re-walking a path this one already burned.
+  `/director:handoff` is the one command a person runs at any workstream boundary: in a worktree
+  whose PR is already merged and whose tree is clean, it recognises the finished workstream and
+  runs the `/director:complete` close-out instead of writing a handoff. Running
+  `/director:complete` directly stays valid.
+- A deferred loop is its **own `open-item` event** — do **not** pack it into the handoff body.
+  The handoff carries *position*; open-items carry *carried-forward loops*. `brief`/`render`
+  join the two. Packing them together duplicates state, and duplication goes stale.
+- A finished **self-contained task** (a PR review, a one-shot investigation) records its
+  **outcome as a `note`** — a handoff is only for work that *resumes*, and starting a task needs
+  no event at all. A task-lifecycle handoff on a shared workstream shadows the coordination
+  session's real resume point. (The main checkout's workstream never dies, so a task finished
+  there is never a close-out: its outcome is a note.)
+
+Prefer **flush-often, then start fresh at a boundary** over riding a session up into the
+degradation zone (a reliable degradation signal: the human giving you the same correction twice). Because you flush continuously, a fresh start is already covered — there is no
+need to hand-compose a big handoff at the last second.
+
+## 2. The four event kinds — when to use each
+
+There are exactly four model-emitted kinds. Pick by what the fact *is*:
+
+The `-` in each example reads the body from stdin (a quoted heredoc, §1); the second span is
+the body.
+
+| Kind | Use it for | Example |
+|---|---|---|
+| `decision` | a choice + what it affects (carries `--risk low\|escalate`) | `director emit --type decision --area auth --risk low -` + `Use ULID not UUID for event ids — sortable, matches log fold` |
+| `open-item` | an open loop / follow-up / deferred item — the canonical home for "documented, not dropped" | `director emit --type open-item --area render -` + `Resolve cross-machine ULID tie-break before multi-machine sync` |
+| `handoff` | current task · next action · hypotheses · dead ends (positional snapshot at a boundary) | `director emit --type handoff --area store --refs <the resume point ULID(s) you rehydrated from> -` + `Done: NDJSON append. Next: wire emit dispatch. Hypothesis: O_APPEND is line-atomic on POSIX. Dead end: fsync-per-line, 30x too slow` |
+| `note` | FYI / context for a parallel or future session; a finished task's outcome (a review verdict, an investigation result) | `director emit --type note --to @next-on-hooks --area hooks -` + `settings.json merge is _managedBy-tagged — don't strip GSD entries` |
+
+Two **reserved ref meanings** and one explicit flag, all load-bearing:
+
+- `director emit --type note --conclude <handoff-ulid>` CONCLUDES a **handoff** — that handoff
+  (and the workstream's older ones, a parallel session's included) leaves the digest's resume
+  points, staying in the log. Only `/director:complete` does this, to retire a dead workstream's
+  last resume point. `--conclude` takes ULIDs of handoffs that are still live resume points (a concluded or
+  superseded one is refused) and is valid only on a note. A note's
+  `--refs` may not name a handoff: `emit` refuses it and writes nothing, so cite the handoff's ULID
+  in the note's body when it is only a cross-link; never reach for `--conclude` to get past the
+  refusal. Put every flag before the body (or the stdin `-`) and give `--refs` and `--conclude` once
+  each (several ULIDs are one comma-separated list): `emit` refuses its own flags after the body
+  (anything else there becomes body text) and a repeated one.
+- A `handoff` whose `--refs` names same-workstream **handoff(s)** SUPERSEDES exactly those
+  positions and nothing else (nothing older than them, nothing newer): retirement is set
+  membership, so a position no handoff ever named still stands. Ref the resume point(s) you
+  rehydrated from plus any handoff you emitted earlier this session, and a parallel session's
+  position on the same workstream survives instead of being silently overwritten. A handoff with
+  no such refs retires ALL older positions of the workstream, including one you never saw.
+  `/director:handoff` does this on every checkpoint.
+- A `decision` whose `--refs` names **decision(s)** SUPERSEDES them: they leave the digest's active
+  decisions, staying in the log. There is no status, workstream, or ordering check: any decision's
+  refs retire any decision they name. Ref the earlier decision when yours replaces, amends, or
+  withdraws it; a withdrawal is itself a decision, emitted like any other. A `note`'s refs on a
+  decision retire nothing.
+
+Refs you pass to `emit` never retire an open-item; only `resolve` does, by writing a closed
+open-item marker whose refs name its targets. A `note`'s or an `open-item`'s refs to a decision
+do not supersede it. When your injected state shows **several** resume points for
+your workstream, that is two parallel sessions' positions stacked: read them all, consolidate them
+into your next handoff body, and `--refs` each — that collapses the stack back to one.
+
+Routing rule: an **open loop you carry forward** → an `open-item` event (its one home).
+**Durable structured knowledge** (intent, architecture, a decision's full rationale) → the living
+docs (CHARTER, README, ADRs), with the `decision`/`open-item` body holding a short pointer, not
+the full content.
+
+### "Stuck, needs a human" — there is no `blocker` kind
+
+When you are blocked and need the human, emit an **`open-item` with `--risk escalate`**:
+
+```bash
+director emit --type open-item --area deploy --risk escalate - <<'DIRECTOR_EOF'
+Need prod DB creds to finish migration — cannot proceed
+DIRECTOR_EOF
+```
+
+The escalate-flagged open-set is exactly what surfaces in the cockpit's **Needs-you** band. Use
+`--risk escalate` only for genuine needs-a-human items; a routine follow-up is plain `open-item`.
+
+`done` is **not** a kind you emit — it is fleet-liveness only (a hook marks the session terminal).
+"What's done" belongs in the `handoff` body when the work resumes, or in the task-outcome `note`
+when it doesn't.
+
+### emit returns the new event's ULID
+
+`director emit` prints the new event's **ULID to stdout**. Note it — that is the id others (and
+you) use to `--refs` or `resolve` it later. It also echoes a routing line to **stderr**
+(`→ <repo-key> · <workstream-id>`) naming the project it wrote to; if that is not the project you
+expect, your cwd drifted and the event landed in the wrong log.
+
+## 3. Closing open-items — resolve discipline
+
+When an open-item is handled, close it:
+
+```
+director resolve <ulid>
+```
+
+This appends a close-marker (an `open-item`-typed marker with `status: closed`). Critical:
+
+- The `<ulid>` **must** be one the CLI surfaced to you — `emit` printed it when the item was
+  created; `render`, `status`, and `brief` list open-items with their ids. **Copy it.**
+- **Never invent, guess, or reconstruct a ULID.** `resolve` validates the target and rejects
+  anything that isn't a real, currently-open `open-item` (invented ids, non-open-items, and
+  already-closed items are refused). If you don't have the exact id in front of you, run
+  `director status` (or `render`/`brief`) to surface it, then copy it.
+
+### Promoting decisions — human-directed only
+
+`director promote <ulid>... --to <doc>` folds aged-but-durable decision rationale into a
+slow-layer doc: the promoted decisions leave the digest and a one-line doc pointer stays.
+Promotion is a curation act; **the human decides what graduates** to the slow layer. Run it only
+at the human's direction, after the rationale has actually been written into the target doc,
+never on your own initiative. The same ULID discipline applies: copy CLI-surfaced ids —
+`promote` rejects invented, non-decision, already-promoted, and superseded targets.
+
+## 4. Treat injected state as authoritative (Ground Truth)
+
+At session start (including after an autocompaction) Director injects the project **CHARTER** plus
+a bounded **digest** of current state. That block is your **authoritative current picture.**
+
+- **Build on it. Do not rebuild it.** Do not re-read the log, re-scan the repo, or re-derive
+  project state to "reconfirm" what you were just handed.
+- Re-deriving burns the exact context budget the digest was sized to save — and accelerates the
+  next compaction. Perfect context that you ignore and rediscover is no better than no context.
+- The digest is an **INDEX**: every line is a capped headline, not the full text. The sanctioned
+  deeper read is `director show <ulid>` — one event in full, one deterministic hop from any
+  headline. Before touching an area, pull the full bodies of its listed decisions rather than
+  guessing past a headline.
+- Reach for the underlying log/docs only to go **deeper** than the digest on a specific question,
+  or when escalation requires a fresh authoritative read (a render can be stale — but that is a
+  targeted `show`/scan, not a wholesale re-derivation of what you already hold).
+
+Take the injected CHARTER + digest as true, start from there, and add to the LOG as you go.

@@ -1,0 +1,182 @@
+---
+name: heylead
+description: LinkedIn outreach through the HeyLead MCP server. Use when the user wants to find and message people on LinkedIn - sales prospecting and lead generation, recruiting and candidate sourcing, user-interview or research participants, job-search networking with hiring managers, investor or partner outreach, vendor scouting, event invitations - or to check replies, campaign status and analytics, or publish LinkedIn posts in their own voice. Campaigns are saved as drafts and nothing is sent until the user launches them. Not for scraping profiles in bulk or for posting to company pages.
+---
+
+# HeyLead — AI agent for LinkedIn outreach
+
+One sentence starts a draft campaign. Nothing is sent until you launch it.
+
+HeyLead is an AI agent for LinkedIn outreach: it finds the right people, writes to them in the voice of your own LinkedIn posts, follows up, and handles replies. It runs from Claude Code, Cursor, any MCP client or a web dashboard. This skill connects it to your OpenClaw agent.
+
+## What This Skill Does
+
+This skill connects HeyLead as an MCP server in your OpenClaw agent, giving it 22 specialized LinkedIn outreach tools:
+
+- **ICP Generation** — RAG-powered buyer personas with pain points, fears, barriers, and LinkedIn search parameters
+- **Campaign Management** — Create, pause, resume, archive, and compare outreach campaigns
+- **Personalized Outreach** — Voice-matched connection invitations that sound like you, not a bot
+- **Multi-Touch Sequences** — Follow-up DMs, engagement warm-ups (comments, likes, endorsements)
+- **Reply Handling** — Sentiment classification, auto-responses, meeting scheduling
+- **Analytics** — Funnel reports, conversion rates, stale lead detection, engagement ROI
+- **Autonomous Scheduling** — HeyLead connects to heylead.dev and sends from the cloud with your laptop closed
+
+## Use cases
+
+A campaign has one of six goals, and the ICP, the fit check and the messages follow it: Sell a product or service, Find a job, Hire people, Find partners or investors, Find a vendor and Research interviews.
+
+- **Sell a product or service**: Reach the people who buy what you built.
+- **Find a job**: Reach the people who hire for the role you want.
+- **Hire people**: Reach candidates for a role you are filling. Works with a custom brief.
+- **Find partners or investors**: Reach the people who can sign a partnership or an investment. Works with a custom brief.
+- **Find a vendor**: You are the buyer. Reach the people who sell what you need.
+- **Research interviews**: Reach people to interview, survey or test with. Works with a custom brief.
+
+Hire people, Find partners or investors and Research interviews run on a custom brief until their message sets exist.
+
+## Setup
+
+### Prerequisites
+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed (`brew install uv` on Mac; other systems: see uv's install page)
+
+### Configuration
+
+Add to your `openclaw.json`:
+
+```json
+{
+  "mcp": {
+    "servers": [
+      {
+        "name": "heylead",
+        "command": "uvx",
+        "args": ["heylead"]
+      }
+    ]
+  }
+}
+```
+
+### First-Time Account Setup
+
+After adding the MCP server, tell your OpenClaw agent:
+
+> "Set up my HeyLead profile"
+
+HeyLead connects to heylead.dev. Take the [90-second quiz](https://heylead.dev/quiz), Sign in, connect LinkedIn on Account, then launch the draft campaign. Or start at [heylead.dev/auth/login-url](https://heylead.dev/auth/login-url). Paste the token message into chat — the backend handles LinkedIn access and AI calls. The quiz waitlist is marketing-only.
+
+
+## Usage Examples
+
+```
+"Find me CTOs at fintech startups in New York"
+"Generate an ICP for AI SaaS founders"
+"Create a campaign targeting VP of Sales at Series B startups"
+"Send outreach to the campaign"
+"Check my replies"
+"How's my outreach doing?"
+"Suggest next action"
+"Enable the cloud scheduler"
+```
+
+## Typical Workflow
+
+```
+1. setup_profile(backend_jwt="...")             → Connect LinkedIn
+2. generate_icp(target_description="CTOs fintech") → Create buyer personas
+3. create_campaign(target_description="...", icp_id="...") → Find prospects (saved as a draft)
+4. campaign(action="launch", campaign_id="...") → Start outreach
+5. scheduler(action="status")                   → Confirm cloud sending
+6. inspect() / check_replies() / show_status()  → Monitor pipeline and agent holds
+7. prospect(action="close", outcome="won")      → Track conversions
+```
+
+## Agent ops
+
+When the user asks what the agents did, who is held, or why a reply was skipped, call `inspect()` first. It is read-only and never writes. If they ask what the agents decided on a hosted account, call `inspect(action='journal')`. If a campaign looks idle in the send window, call `inspect(action='review')`. If they ask what the agents left for the next tick, what the swarm thinks, or who went dark, call `inspect(action='commons')`. A campaign-wide coordinator hold: `campaign(action='clear_coordinator_hold', campaign_id='...')`.
+
+A hold: `prospect(action="conversation", outreach_id="...")` then `send_message(action="reply", outreach_id="...")`. Operator replies skip the reply agent.
+
+Never paste model-authored text as the LinkedIn message. The send tools generate it.
+
+Never launch a draft unless the user asked.
+
+In-process agents default to act. Use `edit_campaign(enable_reply_agent="observe")`, `edit_campaign(enable_strategist_replan_agent="observe")`, `edit_campaign(enable_hot_lead_closer="observe")`, or `edit_campaign(enable_coordinator_agent="observe")` to return to logging-only, `"off"` to disable. `product(action='tick')` can patch this git checkout and open a PR — never from the send path; cloud workers and `uvx` installs without `.git` refuse.
+
+## Sending model
+
+Campaigns are created as drafts and only start when explicitly launched. Every send passes rate limits, working-hours checks, and a 1st-degree connection guard. HeyLead sends from your own LinkedIn account at a human pace. On HeyLead Free: at most 8 invitations a day and 40 a week. On Pro: at most 20 invitations a day and 100 a week on a free LinkedIn account (more on Premium or Sales Navigator: an account new to Pro starts at 20 a day and doubles each week up to its limit). Monday to Friday 08:00 to 22:00 in your time zone, minutes apart. It backs off when LinkedIn pushes back and resumes on its own. You can pause any campaign at any time.
+
+On a hosted workspace that has not chosen otherwise, opening DMs, follow-ups and answers to replies go out as HeyLead writes them, without anyone reading them first. Review is one switch away: `scheduler(action="approval_mode", mode="require_approval")` or Settings → Sending; then they wait (`inspect(action="waiting")`, `prospect(action="approve_message")` or `discard_message`) and the approved text is what is sent. Invitations are never held. In review mode, invitations go out without a note. This is the same on every plan.
+
+## All 22 Tools
+
+Brand and content, signals, bulk import, CRM sync and the shared network pool are registered only when the client is started with `HEYLEAD_TOOLS=all`, which brings the full set of 47.
+
+| Tool | What it does |
+|------|-------------|
+| `setup_profile` | Connect LinkedIn, analyze writing style, create voice signature |
+| `account` | Manage LinkedIn accounts — list, switch, or disconnect |
+| `organization` | Hosted orgs — list, switch, invite editor/viewer, create a client workspace |
+| `generate_icp` | Create Ideal Customer Profiles with buyer personas |
+| `icp` | Preview which LinkedIn profiles a saved ICP matches, without creating a campaign |
+| `profile_signals` | Compile a targeting request (country ties, interests) into LinkedIn recall queries and profile evidence |
+| `create_campaign` | Find prospects and build an outreach campaign (as a draft) |
+| `campaign` | Launch, pause, resume, archive, delete, emergency stop, retry failed |
+| `edit_campaign` | Update name, mode, booking link, preferences, or agent act flags |
+| `import_prospects` | Import prospects from CSV |
+| `generate_and_send` | Send personalized connection invitations |
+| `send_message` | Follow-up DMs and replies |
+| `send_email` | Send email via Unipile (Gmail/Outlook). Never Mail.app. |
+| `check_replies` | Monitor inbox, classify sentiment, surface hot leads |
+| `book_meeting` | Put an agreed call on your Google Calendar and invite the prospect |
+| `show_status` | Campaign dashboard with stats and health; links to the matching heylead.dev/dashboard page and, on hosted accounts, attaches a snapshot card |
+| `engage_prospect` | Comment, react, follow, or endorse prospects |
+| `inbox` | Browse and read LinkedIn inbox messages |
+| `backfill_inbox` | Process unreplied inbox messages through the inbound pipeline |
+| `create_post` | Generate and publish posts to LinkedIn, or publish your approved words with a photo or a short video |
+| `prospect` | Skip, close with outcome, view conversation or timeline |
+| `contacts` | Search and manage the global contact base |
+| `partner` | Track follow-ups with partners, vendors, and investors |
+| `crm_sync` | Sync won deals to HubSpot CRM |
+| `analytics` | Reports, comparisons, and exports |
+| `inspect` | Read-only digest of operator holds, replans, closer decisions, reply skips, gated jobs, and (hosted) `action='journal'` |
+| `suggest_next_action` | AI-recommended next step |
+| `signals` | View and analyze buying signals |
+| `manage_watchlist` | Manage signal keyword watchlists |
+| `network` | Network intelligence across pool members' connected accounts (reciprocal: join to use it) |
+| `brand_strategy` | LinkedIn personal brand audit and strategy |
+| `profile` | View and restore LinkedIn profile change history |
+| `scheduler` | Autonomous scheduler — status, on/off, always-on |
+| `knowledge` | Knowledge base that grounds messages — list, add, remove, refresh, search sources. Hosted only |
+| `product` | Local git checkout only — patch this repo and/or open a PR |
+
+## Pricing
+
+- **Free:** $0, one connected account (a LinkedIn seat or an email mailbox), cloud sending included, until your 2nd hot lead. From then HeyLead keeps working the conversations already open and reaches new people on Pro.
+- **Pro:** $29 per connected account per month (a LinkedIn seat or an email mailbox). HeyLead keeps reaching new people after your 2nd hot lead. Monthly, cancel any time, no setup fee.
+
+Plan limits. Active campaigns at once: 1 on Free, more than 1 on Pro. Follow-ups per person: up to 2 on Free, up to 5 on Pro. Connected accounts in one workspace: one on Free (a LinkedIn seat or an email mailbox), a LinkedIn seat and an email mailbox together on Pro.
+
+A hot lead is a person whose reply HeyLead reads as interested.
+
+A connected account is a LinkedIn seat or an email mailbox. Free includes one of either.
+
+Invitation limits follow the LinkedIn account (free, Premium or Sales Navigator), not the HeyLead plan.
+
+## Privacy
+
+- Contacts and messages stored in local SQLite database
+- AI calls routed through HeyLead backend or your own key
+- No messages or contacts stored on HeyLead servers
+
+## Links
+
+- [PyPI](https://pypi.org/project/heylead/)
+- [GitHub](https://github.com/D4umak/linkedin-outreach-mcp)
+- [Issues](https://github.com/D4umak/linkedin-outreach-mcp/issues)
+
+## License
+
+MIT

@@ -1,0 +1,154 @@
+---
+name: verify-done
+description: "Use when about to claim work is complete, fixed, passing, or done — before committing, creating PRs, or moving to the next task. Also use when you're about to say 'Done!', 'All tests pass', 'Ready for review', 'Fixed', or ANY positive statement about work state. If you haven't run the verification command in this message, you cannot claim it passes."
+---
+
+# Verification Before Completion
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.
+
+## The Gate Function
+
+```
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying
+```
+
+## What Each Claim Requires
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| "Tests pass" | Test command output: 0 failures AND 0 unexplained skips | Previous run, "should pass", "0 failures" with skips unmentioned |
+| "Linter clean" | Linter output: 0 errors | Partial check, extrapolation |
+| "Build succeeds" | Build command: exit 0 | Linter passing, "looks good" |
+| "Bug fixed" | Test original symptom: passes | Code changed, assumed fixed |
+| "Regression test works" | Red-green cycle verified | Test passes once |
+| "Requirements met" | Line-by-line checklist | Tests passing |
+| "E2E coverage" | `npx playwright test` output: 0 failures, 0 skipped | "Playwright not installed", unit tests only |
+
+## Skipped Tests Are Failures
+
+`7 passed, 18 skipped` is a failing suite wearing green. (Real audit result: 18 of 25 E2E tests in one project were skip-guarded on auth and had NEVER executed — the suite reported green for months.)
+
+Before claiming tests pass:
+
+- Report the FULL counts: passed / failed / **skipped**.
+- Hunt for permanent and conditional skips:
+  ```bash
+  grep -rnE "test\.skip\(|describe\.skip|\.skip\(true|xit\(|it\.skip" tests/ src/
+  ```
+- Every skip needs a written justification. A conditional skip (e.g. `test.skip(true, "Not authenticated")`) means the test may have never run — prove it has actually executed (its name appears as *passed* in output) or treat it as red.
+- An assertion that accepts a failure state (e.g. `.or(signInHeading)`) is a skip in disguise — a test that cannot fail verifies nothing.
+- Skips that guard on missing infrastructure (auth, test DB, API keys) mean the infrastructure work was dodged: go set it up with the user, or verification FAILS.
+
+## E2E Gate (when invoked from /start)
+
+If this verification was triggered by the `/start` pipeline, you MUST verify that Playwright E2E tests exist and pass:
+
+```bash
+npx playwright test
+```
+
+If this command fails because Playwright is not installed or no E2E tests exist, **verification FAILS**. Go back to Step 5 of `/start` and do the work. Do not rationalize skipping E2E.
+
+## Test Proportionality Check
+
+Before claiming completion, assess whether tests are proportional to the code you shipped.
+
+**For each piece of production code, identify its test:**
+
+| Production code you wrote | Required test (AT MINIMUM) |
+|---|---|
+| API route handler (GET/POST/PUT/DELETE) | Integration test or E2E that calls the route, checks status + body |
+| UI component with interactions (>50 lines) | E2E that clicks/types/drags and verifies outcomes |
+| Bug fix (any) | Regression test that reproduces the original symptom |
+| Navigation change (sidebar, mobile nav, routes) | E2E that clicks nav item and verifies destination |
+| Extracted helper/utility | Unit test — BUT the feature using it also needs its own test |
+| State management / data flow change | Test through the UI or API that triggers the flow |
+
+**Proportionality failures (verification MUST fail if any apply):**
+
+- 200+ lines of UI code shipped with 0 component/E2E tests covering interactions
+- API routes shipped with only input-validation helper tests (route handler itself untested)
+- Bug fix shipped without a regression test reproducing the original symptom
+- Navigation added/changed without an E2E test clicking the nav and verifying the destination
+- "All N tests pass" where N hasn't increased despite new production code
+
+**The check:** Look at `git diff --stat` for the work being verified. For every production file changed, point to the test that covers it. If you can't → verification FAILS.
+
+**When proportionality fails, route back explicitly:**
+
+| What's missing | Go to | Then |
+|---|---|---|
+| Integration test for API route | `/start` Step 4 — write it with `/tdd` (red→green) | Re-run `/verification` from the top |
+| E2E test for UI/nav/workflow | `/start` Step 5 — write it with `/e2e-playwright` | Re-run `/verification` from the top |
+| Regression test for bug fix | `/start` Step 4 — write it with `/tdd` (red→green) | Re-run `/verification` from the top |
+
+**After ANY loop-back:** Re-run the FULL gate function (identify → run → read → verify). Do not skip re-verification. Do not assume the new test fixed everything — run ALL tests and re-check ALL proportionality. Partial re-checks prove nothing.
+
+## Patterns
+
+**Tests:**
+```
+✅ [Run test command] [See: 34/34 pass] "All tests pass"
+❌ "Should pass now" / "Looks correct"
+```
+
+**Regression tests (TDD Red-Green):**
+```
+✅ Write → Run (pass) → Revert fix → Run (MUST FAIL) → Restore → Run (pass)
+❌ "I've written a regression test" (without red-green verification)
+```
+
+**Build:**
+```
+✅ [Run build] [See: exit 0] "Build passes"
+❌ "Linter passed" (linter doesn't check compilation)
+```
+
+**Requirements:**
+```
+✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
+❌ "Tests pass, phase complete"
+```
+
+## Red Flags — STOP
+
+- Reporting "N passed" without mentioning skip counts
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!")
+- About to commit/push/PR without verification
+- Trusting agent success reports without independent verification
+- ANY wording implying success without having run verification
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Should work now" | RUN the verification |
+| "I'm confident" | Confidence ≠ evidence |
+| "Just this once" | No exceptions |
+| "Linter passed" | Linter ≠ tests ≠ build |
+| "Agent said success" | Verify independently |
+| "Partial check is enough" | Partial proves nothing |
+
+## The Bottom Line
+
+Run the command. Read the output. THEN claim the result.
+
+This is non-negotiable.

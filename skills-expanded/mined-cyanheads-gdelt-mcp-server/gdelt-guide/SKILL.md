@@ -1,0 +1,51 @@
+---
+name: gdelt-guide
+description: Investigate recent news spikes and compare historical television coverage with gdelt_* tools. Use for theme resolution, evidence searches, station comparisons, or coverage and framing claims that require date-range, identifier, sampling, and completeness checks.
+license: Apache-2.0
+metadata:
+  author: "cyanheads"
+  version: "1.4"
+---
+
+## Scope
+
+Use DOC analysis for recent global news and TV analysis for monitored television captions. TV archives cannot substitute for historical global newspaper coverage. Article results contain links and metadata, not full article text; TV clips contain short caption excerpts and archive links.
+
+## Identifiers
+
+- Obtain GKG theme identifiers and paste-ready `theme:` operators from `gdelt_search_themes`. Its listed count is a lookup figure, not a live article total. Search words in identifiers; a zero match does not establish that a concept is absent from the taxonomy.
+- Obtain station IDs, network and market values, and monitoring dates from `gdelt_list_tv_stations`. Use `stationId` or a resolved result's `station` for filtering. A display name or archive URL prefix is not a station ID: `stations` refuses an entry that is not letters and digits before any request, and GDELT rejects one it does not know. If a result omits its station ID, resolve it through the catalog before chaining.
+- Chain a breakdown series into article search with its `operator` (`sourcecountry:<FIPS>` or `sourcelang:<name>`; country codes are FIPS, not ISO, so `AU` is Austria). A series without one maps to no single GDELT code.
+- Obtain exact breakdown labels from `gdelt_get_coverage_breakdown`, timestep dates from `gdelt_get_coverage_timeline`, and histogram bins from `gdelt_get_tone_distribution` before requesting expanded evidence. Preserve labels as returned.
+
+## Gates
+
+1. Verify temporal coverage before interpreting an empty result. Article search and relative `timespan` windows cover a rolling three months, and a longer article-search `timespan` runs on three months, disclosed in `windowClamp`. Sentence search covers the last 72 hours of English-language coverage. Explicit `startDatetime`/`endDatetime` windows reach older coverage in the `volume` and `tone` timeline modes, the language and country breakdowns, and the tone distribution; `volume_raw` and `volume_with_articles` stay within three months. GDELT documents coverage from January 1, 2017, so confirm that a dated answer actually spans the window you asked for. TV monitoring ranges differ by station, and a relative TV `timespan` counts back from now, past the end of most stations' monitoring. Intersect station ranges for comparisons and pin explicit historical dates. An empty TV result for named `stations` names each one whose range the window misses. An empty answer outside coverage says nothing about whether a topic was discussed, and an empty DOC answer inside it may be GDELT under load: GDELT also returns empty answers when overloaded, so retry the same call later before reporting no coverage. A DOC timeline or breakdown can also leave out timesteps where GDELT has no data: `missingTimesteps` and the notice name them, and a left-out timestep is not zero coverage, while an explicit 0 is.
+2. Keep the query, window, station population, resolution, normalization, and smoothing comparable. For TV, align windows to period boundaries (clock hours, days, Sunday–Saturday weeks, months) and read the covered-window notice: GDELT widens an explicit window outward to whole periods, but an `endDatetime` exactly on the clock hour is read as the second before it, so a window ending on a boundary is already aligned and only an edge inside a period widens (a window the trim would leave under 30 minutes is the exception: it counts the hour after its end, and the notice says so). Raw TV values count matching 15-second clips; normalized values measure airtime share. DOC raw-volume values count distinct matching articles, or moving averages when smoothed; `norm` remains an unsmoothed monitored denominator. Do not compare those units interchangeably.
+3. Treat a source country as the outlet's origin, not the event's location. DOC country/language breakdown values are shares of each source's output; do not add different sources into a global share or infer absolute article totals from their rank.
+4. Inspect linked articles or TV excerpts before explaining a spike, claiming stance, or inferring causation. `referenceCount` counts links supplied by GDELT, not all matching articles. Expanding references retrieves supplied evidence only.
+5. Treat TV context as vocabulary from a relevance-ranked sample, not exhaustive term prevalence or proof of editorial stance. Compare stations or windows with a separate context call for each, then inspect clips. `totalTerms` is a vocabulary count, never an analyzed-clip count.
+6. Follow `nextOffset` with otherwise identical inputs and read cap/continuation notices before claiming completeness. Article and clip APIs have provider caps rather than record cursors; use returned continuation windows and deduplicate records. Dense TV hours can contain clips that no narrower window retrieves. A failed or rate-limited request is not zero coverage. A `staleResponse` field means GDELT refused, failed, or answered empty on the refetch and the server returned its stored answer from `fetchedAt`: it holds nothing published after that time, and a relative `timespan` answer covers the window ending at `fetchedAt`, not now. Retry later before claiming the latest coverage.
+7. Use unsmoothed timelines when timing matters. A trailing moving average needs a full source window, omits leading steps without one, and can move apparent peaks later.
+8. Read TV ranking units before comparing rows. Station rankings measure airtime percentages or raw matching clips; show rankings always measure percentages of matching clips, even when normalization is disabled. An ellipsized show label may not work as an exact show selector.
+9. Read `source` on DOC results. `source: "gkg_mirror"` means the server answered from its own copy of GDELT's Global Knowledge Graph because the DOC API refused or returned nothing, or because an explicit window under 30 minutes is shorter than DOC accepts and DOC was not asked. Keywords matched article titles and entity names (persons, organizations, locations), not article text, and translated articles keep their source-language titles. `theme:` matches the exact theme ID, and because GKG themes are tagged on translated articles too, it reaches non-English coverage a keyword misses; the notice says so when the query requires a keyword. Source countries come from a 2015 domain list that leaves some outlets without one; a country breakdown's notice counts the matching articles left out. Counts and shares are over mirrored articles. When `coverage` is present, every figure comes from `answeredStart` to `answeredEnd`, not the requested window. Do not compare mirror and DOC figures across calls, and a mirror zero is not evidence of no coverage. A query using `near`, `repeat`, or image operators, a query longer than 1,000 characters, or another form the mirror cannot evaluate, cannot be answered from it; the error or `attempts` detail names the part.
+
+## Core chain
+
+Resolve the vocabulary and covered dates → locate a signal in a timeline → expand the evidence at the relevant dates → inspect the underlying reporting → compare coverage or tone using the same scope. Separate the measured pattern from the explanation the evidence supports.
+
+## Workflows
+
+### Investigate a recent-news spike
+
+Start with keywords, or use `gdelt_search_themes` when a taxonomy theme fits the question. Run `gdelt_get_coverage_timeline` with article references to locate candidate spikes. Expand the interesting timesteps to see every reference GDELT supplied; use `gdelt_search_articles` for a wider set of reporting within that same window.
+
+Read the evidence before assigning a cause: inside the last 72 hours, `gdelt_search_sentences` returns the matching sentences themselves, and its `continuationWindow` reaches further matches. Then use `gdelt_get_coverage_breakdown` to compare source-country or language attention, and `gdelt_get_tone_distribution` to distinguish a broad tonal shift from mixed positive and negative coverage. A tone timeline answers when average tone changed; a histogram answers how tone is distributed across matching articles. Keep the two interpretations separate.
+
+### Compare historical television coverage
+
+Start with `gdelt_list_tv_stations` and choose stations whose monitoring ranges overlap the target period. Run `gdelt_search_tv` with fixed historical dates to compare separate station timelines. Normalized values compare attention within each station's monitored airtime; raw values compare clip counts. A Combined timeline pools matching and monitored clips, rather than averaging station percentages, and does not identify an individual station.
+
+Use `gdelt_get_tv_breakdown` when the question is which stations or shows ranked highest across the whole window. A ranking answers a window-level question; return to the timeline to establish when its coverage occurred.
+
+Use `gdelt_get_tv_context` separately for each station and the same period to discover candidate framing vocabulary. Retrieve `gdelt_get_tv_clips` for the stations and dates that support the comparison, inspect caption excerpts, and follow archive links when more context is needed. Report vocabulary as sampled evidence and distinguish it from measured coverage intensity.

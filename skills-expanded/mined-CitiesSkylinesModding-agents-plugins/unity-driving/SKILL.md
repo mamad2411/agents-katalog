@@ -1,0 +1,123 @@
+---
+name: unity-driving
+description: 'Driving a live Unity Mono development build with the unity MCP tools. Load before first use of any unity tool, when planning multi-step live state edits, or when a unity tool call fails or returns puzzling results.'
+---
+
+# Driving a Unity game over SDB
+
+The `unity` tools drive a running Unity Mono development build over the Mono Soft Debugger protocol (SDB); this skill is the procedure the tool schemas cannot carry.
+Everything holds for any dev-Mono Unity game; the type names in examples are placeholders (`MyGame.…`), so substitute the target's own.
+A retail build exposes no SDB port of its own: drive a development Mono build, or `attach` to the port an external loader opened.
+
+## Session lifecycle
+
+The first tool that needs the VM attaches on its own, the session persists, and a dropped connection reattaches on the next call, so just call the tool you need.
+The game is found by the PlayerConnection beacon it multicasts, which carries the debugger endpoint: there is nothing to configure, and every attach resolves that endpoint afresh, so a game restart costs nothing.
+`status` is the read-only orient step: what the beacon advertises, the endpoint an attach would use, whether another client on this machine holds that endpoint's slot (`slotHeld`), and session state (attached, held suspensions).
+Everything it reports describes the present, so act on it as read.
+A game running while `status` reports no beacon means the beacon is not getting through: multicast blocked by a firewall or a VPN interface, or `beaconFault`/`beaconListening` reporting the listen itself impaired. Either way, call `attach` with the game's debugger port. That port governs that one attach, so give it again after any reattach for as long as the beacon still cannot see the game.
+Rule that out first when `status` also shows a held suspension: a suspended game stops broadcasting, so a window held past ten seconds makes its own beacon expire. Resume and ask again before diagnosing the network.
+A beacon whose `debuggerEnabled` is false is a game running without `player-connection-debug=1`: only a relaunch with that option makes it attachable.
+The debugger slot is exclusive: while attached, an IDE debugger (Rider/dnSpy/VS) cannot attach to the game, and vice versa; `detach` frees the slot, and the next unity call reattaches on its own.
+An attach failure while another client holds the slot takes one of two shapes, neither of them the words "slot taken": a refused connection, or one accepted and then never greeted. Read `slotHeld` in `status` before attaching again.
+Use `detach` to hand the slot over, or to free a debugger another call reports held — never to clear a failure: a client-side fault is not improved by a fresh connection, and every attach is charged to the game. A Windows game under Proton leaks descriptors per connection and never reclaims them, so enough cycles and its agent stops accepting ANY debugger until the game restarts — an attach that connects and hears nothing, with nothing attached, is that state.
+A Unity Editor is attachable on the same protocol, but no Editor has been confirmed on the beacon: try `status` first, and where it reports none, find the Editor yourself by reading its debugger port off the OS listener table for that process and passing the port to `attach`. Expect a domain reload — a script compile, entering or leaving play mode — to drop the connection.
+
+## Suspend windows
+
+Between calls the game runs; each operation freezes it briefly around itself, so single reads and writes need no ceremony.
+When several calls must see one consistent state (read-decide-write, multi-write edits), open a window: `suspend`, act, `resume`.
+A held window freezes the game entirely (simulation AND rendering); keep it short, and treat a long-held window as a bug in your plan.
+Suspensions are counted: one `resume` per `suspend`; `status` shows the held count.
+`detach`, a dropped connection, and server shutdown all resume the game fully, as last-resort safety nets.
+
+## Names and types
+
+Every type parameter wants a fully qualified name (`MyGame.Movement.Speed`, not `Speed`).
+`find_types` answers naming from either end: `search` turns a concept you can only describe (a mechanic, a system's job) into names harvested from the running process, and `fullName` resolves one you already hold.
+Start broad and narrow on `count`: only the first search pays the harvest, so iterating on a pattern afterwards costs only your reading.
+The convention across the toolset: a pattern you author is a regex (`search`), a fragment you paste is a substring (`signature` on the debug tools).
+Before writing, run `find_types` with `members`: live field names and types are the ground truth for `ecs_set_component` and buffer edits.
+`members` lists statics too, prefixed `static`: look there for a singleton rather than guessing its name.
+
+## Entities and ECS
+
+An entity is `index[:version]`, read identically by every ECS tool: a bare `index` resolves to whatever is live at that index, an explicit `index:version` is verified and fails loudly when stale rather than reading the entity that recycled the index.
+Carry the version when you have it: it is what catches a recycle between reading an index and acting on it.
+`ecs_query` counts and lists entities having ALL the given components; the count is always exact, `limit` caps only the listing.
+`label` attaches human-readable identity to raw entities via a one-Entity-arg method on a managed system, typically the game's name system (`MyGame.UI.LabelSystem:GetLabel`).
+`select` is the bulk read: it reads component values off every listed entity in the same call, as `component[:field]` specs (`MyGame.Movement.Speed:m_Value`), the spelling `follow` takes, so a census is one `ecs_query` with `limit` raised to the count.
+`components` picks the rows and `select` the columns: a match lacking a selected component stays listed with that spec missing from its `values`, so name the component in `components` too when you want only its carriers.
+Read `summary` before the rows: it counts the listed rows each spec was absent from, failed on, or disabled on, which is what keeps a gap from being read as data.
+State on an entity carrying Unity's `Prefab` or `Disabled` tag is invisible to `ecs_query`, and so is an entity whose queried enableable component is currently disabled (the engine's own default `EntityQuery` filtering) — but a game's prefab-like entities are excluded only when they actually carry the tag, so try the query before concluding the state is unreachable, and chase what it cannot see by following a reference into the tool below.
+`ecs_list_components` is the orient step on an unknown entity: one call lists every component type it carries, so a read starts from what is there instead of from a guess.
+Each entry's `kind` says what can read it — `component` → `ecs_get_component`, `buffer` → `ecs_get_buffer`, `tag` → no fields to read (presence, plus `enabled` where it carries one, is the state), `shared` and `chunk` → `eval` only, `managed` (class `IComponentData`) → out of reach over SDB, listed so you know the state is there.
+Enableable components carry `enabled`: read it before concluding a system should have acted on the entity.
+Orient on the shape first; `values=true` adds each `component` entry's contents when the shape is not enough to act on.
+State the entity you hold does not carry often lives on one it references, and `follow` chases that reference in the same call, naming the component that holds it: a placed instance whose data sits on its prefab costs one call, not two.
+`ecs_set_component` is a whole-component read-modify-write overriding one field, reporting before and after read back from the game: verification is built in.
+`ecs_buffer_edit` `add` clones element 0 as its template (an empty buffer cannot seed a new element) and overrides one field via `set`.
+An entity you WRITE is never resolved: a component field, a buffer `set`, and eval's `entity(index)` all take the value literally and default the version to 1, so spell those `index:version`.
+
+## Evaluating C# in the game
+
+`eval` runs a C# statement sequence on the game's main thread, like an IDE debugger: `var` declarations, expression statements, and assignments; the final expression's value is the result (its trailing semicolon is optional).
+Roots are fully-qualified type names plus the builtins `em` (the selected world's EntityManager), `world` (the World), `entity(index, version)` (an Entity value, refused past the store's highest index), and `_` (the previous successful eval's result; a heap result may be garbage-collected once the game resumes, and using it then fails with a "re-evaluate" error).
+A generic method's type argument is inferred when it is an argument's own type (`em.SetComponentData(entity(123, 1), speed)`), and written when it is not: `world.GetExistingSystemManaged<MyGame.UI.LabelSystem>()`.
+`em` reaches the ECS accessors without the presence gate the `ecs_*` tools apply, and its buffer accessor without the read-only narrowing `ecs_get_buffer` applies: where an entity may lack the component, read it with `ecs_get_component`, or guard in `eval` with `em.HasComponent<T>(e) ? em.GetComponentData<T>(e) : default(T)`.
+Managed systems are plain C#: `world.GetExistingSystemManaged(typeof(MyGame.UI.LabelSystem)).SetLabel(entity(123, 1), "New Name")`.
+Structs build with initializer syntax (`new MyGame.Movement.Speed { m_Value = 5f }`), and struct writes follow honest C# copy semantics: mutating a component copy does not persist it, finish with `em.SetComponentData(entity(...), copy)`.
+A `readonly` field takes a write, to itself or to a member, where C# refuses it, and a mutating call through it changes the field rather than a copy; game code the JIT compiled before the write may still use a `static readonly` field's old value, though `eval` reads back the new one.
+A static field of a type whose static constructor has not run yet is refused rather than read as zeros: run the constructor with the call the error names, knowing it runs the type's own code, or read it once the game has touched the type.
+`out var x` declares a local the call writes; later statements can read it: `MyGame.Navigation.PathUtils.TryGetEndpoints(em, e, out var start, out var end)`. `ref x` passes a `var` local in and writes the callee's value back into it.
+Type aliases root members and calls as in C# (`int.MaxValue`, `string.Join(", ", names)`), and `default(T)` builds a type's zero value or null.
+Excluded by design: lambdas, LINQ, loops, and control flow (ternary, `?.`, and `??` do work; the final expression is the result, so write no `return`); unsupported constructs are rejected up front with an "unsupported: ..." parse error.
+Also outside the grammar: array-creation expressions (`new T[] { ... }`) and the `as` operator — a cast works; and overload matching does no `params` expansion, so a variadic method takes exactly one argument already typed as its array, which array creation being excluded usually puts out of reach.
+One eval runs in one suspend window; hold `suspend`/`resume` around several evals when they must see one consistent state.
+Methods and constructors match by name, argument count, and argument compatibility, trailing optional parameters omitted as in C#, a boxed argument by the type it holds (a box of an int binds `M(int)` over `M(object)`), and an extension method is called in its static form: `MyGame.Movement.SpeedExtensions.Clamp(speed, 10f)`.
+On failure the error reports the failing statement, the in-game exception, and the locals evaluated so far, a long one clipped and its elided length named, so end on a value you need whole as the final expression; on success only the final value returns, nested structs formatted to a fixed depth with anything deeper elided as `TypeName {...}`, so end with an interpolation like `$"{a:F1} | {b}"` to read several values at once.
+
+## Seeing the game
+
+`screenshot` returns the frame the renderer is drawing as an inline image. It spends the running time a capture needs itself, so it works inside a held `suspend` window as well as outside one, advancing that window by up to 0.2 s.
+For a file on the game's own machine rather than an image in your context, `eval` the engine call the tool is built on — `UnityEngine.ScreenCapture.CaptureScreenshot(path)`. Build that path absolute and on the game machine (`UnityEngine.Application.persistentDataPath`, or `System.IO.Path.GetTempPath()` as the tool does): a relative one resolves per platform, and one from your own filesystem is not there. It is a request, not a capture, so a frame has to render before the file appears: inside a held `suspend` window spend one with `advance`, outside one the game renders on its own. A game rendering nothing writes no file and reports nothing — a minimized window on a build that does not run in the background is the usual cause.
+
+## Debugging with breakpoints
+
+Where `eval` reads the game from outside, the `debug_*` tools stop it from inside: arm (`debug_set_breakpoint` / `debug_break_on_exception`), trigger the behavior in game, catch the hit (`debug_wait`), inspect (`debug_pause_state`, `debug_evaluate`), move (`debug_step`), release (`debug_step action=resume`).
+Burst decides what is debuggable: Burst-compiled jobs are native code the Mono debugger cannot see, no frames and no hits on any thread; managed code hits fine, worker threads included.
+Mod code is normally non-Burst, so it just works; to reach the game's own Burst-compiled systems, run the game with Burst compilation disabled (Unity games generally take a `--burst-disable-compilation` launch option) and everything becomes managed and visible.
+A hit freezes the whole game until released, but every other unity tool keeps working against the frozen state (suspends are counted), so inspect at leisure; the UI stops rendering, which is normal, not a crash.
+The two exceptions are `screenshot` and `advance`, which need the game to run: both refuse while a hit holds it, and releasing it with `debug_step action=resume` abandons the frame you were inspecting. A refusal that `debug_pause_state` then denies is a hit the pump was still classifying — usually a conditional breakpoint auto-resuming on a false condition — so retry rather than resume.
+Arm hot-path breakpoints with a `condition` gating on the instance you care about (an entity index, a parameter value, a field of `this`): false hits release the game automatically, so a method called every frame costs little until YOUR case arrives.
+A condition that fails to evaluate pauses with the error recorded in the pause state; fix the expression and re-arm rather than guessing.
+`debug_evaluate` is `eval` plus the frame, sharing its `_`: locals, parameters, and `this` resolve and assign like C# variables, save the divergences below, and `frameIndex` climbs the stack.
+An interface slot refuses a number or bool, even one the debuggee holds, and a nullable slot refuses a client number or bool, or a debuggee one of another type: give a nullable a debuggee-side value of its underlying type (a local, a field, a call's result), and an interface slot a boxed value a debuggee call returns, such as `System.Convert.ChangeType(n, typeof(int))`.
+A write through or to `this` in a `readonly` member or `readonly struct`, or through an `in` parameter, reaches the caller's value, where C# refuses the assignment and makes a mutating call change a copy.
+A call or member write through a slot typed as an interface, or a call through one typed object, stores a changed struct back as a new box, which other references to the old box do not see.
+A write to a local initialised from a constant may never reach the resumed code, the JIT having folded the constant: check the effect after resuming.
+On an agent below protocol 2.44, an assignment to or through a struct's `this` is refused, and a mutating call on it loses its write.
+A local you wrote by name reads back that write for the rest of the pause, even once a write through another frame's `ref` parameter or struct `this` changed it; under a plain `suspend` hold, a local written before a call reads back its old value in `debug_pause_state` and from the next `debug_evaluate` on, though the resumed code gets the write.
+Method entry (no line) is the only anchor that works without debug info; `debug_locations` is the substitute for source text (SDB carries none), mapping lines to IL offsets and telling you which lines can host a breakpoint.
+Breakpoints die with the connection (game restart, detach): `debug_status` is the ground truth for what is armed, re-arm after any reconnect.
+The cross-plugin loop: the unity and gameface tools drive the same process over separate channels, so arm a breakpoint on a handler, drive the UI to trigger it with the gameface tools (`game_click`, ...), and `debug_wait` catches the hit; while the game sits paused at it, gameface calls that need a live frame loop will stall, so inspect over SDB, resume, then return to the UI.
+
+## Advancing time deterministically
+
+"Let the simulation react, then verify" is `advance`: under a held `suspend` window it releases the game for N real seconds and re-freezes it, replacing the unpause-sleep-repause dance.
+The game's OWN pause (a simulation-speed or pause flag in game state) is game logic no debugger operation can lift; pass `before`/`after` eval snippets to flip it, keeping the per-game recipe on your side.
+With breakpoints armed, `advance` doubles as "run until the next hit, at most N seconds": a hit during the window holds after it returns (`pausedDuringAdvance`), so inspect it before resuming.
+
+## Writes are live
+
+Every write hits the running simulation immediately and persists; there is no undo.
+Assume a throwaway save, and read state back after each mutation rather than chaining blind writes.
+
+## When a call fails
+
+Error messages come from the server verbatim and usually name the fix (a wrong type or field name with the ones it could have meant, entity not found).
+"No Unity game is advertising itself" means no beacon arrived at all: the game is not running, is not a development Mono build, or its multicast is not reaching the server — `status` and the `attach` recovery above settle which.
+A refused connection means nothing accepted you there: the port is wrong, the game's agent never bound it (a relaunch fixes that), or an IDE debugger already holds the exclusive slot. On the beacon's endpoint the error names it as advertised, and the wrong port is then a stale beacon a crashed game left: `status` shows what is advertised now.
+"Sent no Mono debugger greeting" means something IS listening there and said nothing back. A debugger agent serves one client and answers any other with silence, so the usual cause is that the slot is taken — an IDE, or another copy of this server — and the next move is to free it rather than to hunt for a port. With nothing attached anywhere, it is instead the exhausted-agent state described above, which only a game restart clears: do not attach again to find out, since each attempt spends the budget that caused it.
+"Did not answer" means the address never replied at all: `status` reported an endpoint the beacon advertised on an interface this machine cannot route to, so `attach` with that same port, which dials loopback.
+A drop found BEFORE the call touched the game retries once, resolving the endpoint from the beacon again, so a game restarted between calls self-heals. A drop MID-call does not retry and says so: the operation may have partially applied, and the next call reattaches, so verify the effect before redoing it rather than reissuing on the assumption it never landed. Repeated connection failures mean the game is gone, so report it and wait for a relaunch.

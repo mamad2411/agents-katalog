@@ -1,0 +1,319 @@
+---
+model_tier: inherit
+name: design-system-capture
+description: "Write and maintain DESIGN.md + PRODUCT.md — captures visual decisions and interaction patterns so design tasks stay consistent across sessions without re-scanning past work."
+domain: engineering
+personas:
+  - frontend-engineer
+workspaces:
+  - engineering
+packs:
+  - frontend-design
+token_budget_class: rich
+scope:
+  write: []
+  verification_reason: "execution declares no handler, so this skill runs nothing of its own — every write is the calling agent's, under the rules that govern it. No command can prove a scope the skill never executes."
+execution:
+  type: manual
+---
+
+# design-system-capture
+
+> Solves "design amnesia" — the failure mode where every AI design task
+> re-invents visual patterns (radius, shadows, motion, spacing) and
+> interaction patterns (destructive-action handling, optimistic UI, filter
+> persistence) because the agent has no cross-task memory of decisions
+> already made.
+>
+> **Boundary:** `brand-to-tokens` extracts *primitives* (colors, font
+> families → DTCG tokens). `existing-ui-audit` inventories *what exists*.
+> **This skill captures *usage decisions*:** "we use 8px radius for
+> elevated surfaces", "all destructive actions require typed confirmation".
+> They are complementary, not redundant.
+
+## Why this skill is rich
+
+DESIGN.md and PRODUCT.md serve as the project's design memory. To write
+useful capture documents and to read/apply them effectively, the agent
+needs full templates with worked examples showing what a well-structured
+DESIGN.md and PRODUCT.md look like in practice. A condensed version that
+says "write down your design decisions" produces documents too vague to
+be useful. The worked examples teach agents both the *vocabulary*
+(elevation, motion strategy, destructive-action policy) and the
+*specificity level* that makes these documents actionable across tasks.
+
+## When to use
+
+- Starting a new consumer project (initial capture, run once early)
+- After 2+ design tasks in the same project (update to capture what was decided)
+- When a subsequent design task produces inconsistent results (audit and reconcile)
+- Explicitly asked: "capture the design system", "write a DESIGN.md", "document our patterns"
+
+## The two documents
+
+### `DESIGN.md` — visual-system decisions
+
+Captures the *visual usage decisions* (not token primitives) that agents
+should apply consistently across all UI tasks in this project. Unlike
+`tokens.json` (which records what a color value IS), DESIGN.md records
+*how and when to use it*.
+
+**Format:**
+
+```markdown
+# DESIGN.md — [Project name] visual system
+
+> AI-readable project design memory. Update after each design decision.
+> Last updated: [date]
+
+## Design philosophy
+One sentence: [density/formality/complexity philosophy]
+
+## Owned components
+| Component | Status | Story file | Registry item |
+|---|---|---|---|
+| [Name] | stable \| experimental \| deprecated | [path to *.stories.tsx] | [registry item name, or —] |
+Example: "Information-dense dashboard; optimize for power users, not casual exploration."
+
+## Owned components — filled from the tree, never from memory
+
+The § Owned components table is populated by **globbing `*.stories.tsx`** (and, when a
+Storybook manifest is reachable, reading it — see
+[`storybook-workshop`](../storybook-workshop/SKILL.md) § MCP path). One row per component
+the project owns: its name, its status, its story file, and its registry item where the
+library publishes one.
+
+**Never write a row from memory.** A remembered component is exactly the row a reader will
+trust and a `ui-component-architect` run will then skip re-checking — an inventory that is
+wrong in the direction of "we already have this" causes the duplicate it exists to prevent.
+A component with no story file gets a row with an empty story cell, not an omission: absent
+from the table reads as "does not exist".
+
+`deprecated` rows stay in the table. Deleting one loses the only durable record that the
+component should not be reached for again.
+
+## Visual system
+
+### Elevation and radius
+- Elevated surfaces (modals, sheets, dropdowns): [X]px radius, [shadow-spec]
+- Inline elements (cards, chips): [X]px radius
+- Buttons: [X]px radius
+
+### Shadows
+- Elevated: [box-shadow value]
+- Floating (tooltips, popovers): [box-shadow value]
+- None (flat cards): [confirm]
+
+### Motion
+- Overlays and modals: [spring / easing spec + duration]
+- Micro-interactions (button feedback, toggles): [duration + easing]
+- Page transitions: [strategy or "none"]
+
+### Spacing
+- Base unit: [X]px
+- Card padding: [spec]
+- Section gap: [spec]
+- Tight grouping: [spec]
+
+### Color usage
+- Primary action: [token name]
+- Destructive: [token name]
+- Surface hierarchy: [primary bg → secondary bg → elevated bg]
+
+## Taste Dials
+Three 1–10 dials that tune generation. Absent = unset (design-intelligence
+infers from the brief via its Dial Inference Table). One-line rationale each.
+- Variance: [1–10] — [why; 1 = perfectly symmetric, 10 = expressive/asymmetric]
+- Motion: [1–10] — [why; 1 = static, 10 = cinematic]
+- Density: [1–10] — [why; 1 = airy, 10 = packed/data-dense]
+
+## Consistency Locks
+Within-project invariants (derived from the confirmed system). A value outside
+a declared Lock is off-system; `design_lock.ts` flags it (rebuttable).
+- Theme Lock: [single | light+dark via prefers-color-scheme] — no mid-surface inversion
+- Colour Lock: [one accent family] — [the accent hue]
+- Shape Lock: [one corner-radius scale] — [the radius set, e.g. 6/12/16px]
+
+## Stack and conventions
+- CSS approach: [Tailwind / CSS modules / styled-components / etc.]
+- Component primitives: [shadcn / Radix / Headless UI / custom]
+- Icon system: [Phosphor / Heroicons / Lucide / etc.]
+```
+
+### `PRODUCT.md` — product truth and cross-feature interaction patterns
+
+Captures *what the product is* and the *interaction decisions* that should be
+consistent across features. Unlike a feature spec (which describes one
+feature), PRODUCT.md captures what applies everywhere. The format is a
+superset of the product-truth format other design tools write (Register,
+Users, Purpose, Anti-references, Principles), so a file either side writes
+reads on both.
+
+**Format:** [`references/product-md-template.md`](references/product-md-template.md) — Register, Users, Purpose, Anti-references, Principles, then `## Interaction patterns` with destructive actions, mutation feedback, filter and sort persistence, empty states, error handling, navigation and routing, and the mental model.
+
+## Procedure
+
+### Step 1 — Assess what exists
+
+1. Check if `DESIGN.md` and `PRODUCT.md` already exist in the project root.
+   For an existing PRODUCT.md, classify it before anything else:
+   `npx tsx node_modules/@event4u/agent-config/src/scripts/product_md_dialect.ts PRODUCT.md`.
+   `superset` or `ac-interaction` is this skill's own file. `product-truth`
+   or `unknown` was written by something else: **read it, never rewrite it**
+   — every addition is proposed to the user as a diff, and the file stays
+   byte-identical unless they apply it. Its Register, Users and Principles
+   are inputs to the capture, not fields to overwrite.
+2. If they exist: read both → skip to Step 3 (Update).
+3. If they don't exist: run `existing-ui-audit` (if not already done for this session) to inventory existing components, tokens, and conventions → proceed to Step 2.
+
+### Step 2 — Create (first run)
+
+1. **Extract visual decisions from the audit** (`state.ui_audit`): dominant
+   radius values, shadow patterns, spacing conventions, motion patterns.
+   Fill the DESIGN.md template above with the observed values. Mark
+   un-observed sections as `TBD`.
+2. **Extract interaction decisions from the codebase**: scan for delete
+   confirmation patterns, toast/feedback patterns, filter/URL persistence.
+   Fill the PRODUCT.md template. Mark un-observed sections as `TBD`.
+3. Write `DESIGN.md` and `PRODUCT.md` to the project root.
+4. Surface a one-paragraph summary: what was captured, what is still TBD,
+   and what action the user should take (review and correct the TBDs).
+
+### Step 3 — Update (subsequent runs)
+
+1. Read existing `DESIGN.md` and `PRODUCT.md`.
+2. Identify any decisions made in recent tasks that aren't yet captured
+   (e.g., a modal was built with 12px radius — add that to DESIGN.md).
+3. Correct any TBDs that are now resolved.
+4. Update the "Last updated" date.
+5. Output a diff summary: what changed and why.
+
+## Importing an extracted design system
+
+A consumer can reverse-engineer an existing site/repo's look-and-feel with any external
+static-extraction tool and hand the result to this skill as a `design-system.json`
+artifact. We own the **import contract**, not the crawler. The artifact is *observed, not
+authoritative*: never write it in silently, and a conflict with a registered brand value is
+flagged rather than applied (`brand-source-of-truth`).
+
+Import contract, the `/design-system:import` supply path, the five-step procedure and the
+two source shapes — read only when an import is requested:
+[`references/import-procedure.md`](references/import-procedure.md). Full schema:
+[`references/design-system-json.md`](references/design-system-json.md).
+
+## How the design skills consume these documents
+
+When `DESIGN.md` or `PRODUCT.md` is present in the project root:
+
+- **`design-intelligence`** and **`fe-design`**: read DESIGN.md at the
+  start of any design task — use the captured decisions as project
+  constraints that override corpus suggestions.
+- **`ui-component-architect`**: read DESIGN.md for radius/shadow/motion
+  conventions before proposing any new component.
+- **`existing-ui-audit`**: when a full audit is impractical (large project),
+  read DESIGN.md as a proxy for "what this project's conventions are".
+
+The boundary from `brand-to-tokens`:
+- `tokens.json` carries primitive values (gray-700 = #374151)
+- DESIGN.md carries usage decisions (elevated surfaces use 8px radius,
+  not 4px or 12px)
+Both are consumed together; DESIGN.md takes precedence for usage questions.
+
+## Design→dev handoff README (template)
+
+When handing a design to implementation, emit a README a developer can build
+from **without the mockup open**. Template only — no vendored values (tokens
+come from the consumer's `tokens.json` / DESIGN.md):
+
+```markdown
+# <Feature> — implementation handoff
+
+Fidelity: <hi-fi = pixel-recreate the mockup | lo-fi = apply the codebase's
+          existing design system, mockup is directional only>
+
+## Screens
+- <screen>: components used + each component's states (default/hover/active/
+  disabled/empty/error/loading)
+
+## Interactions
+- <interaction>: trigger → result, duration + easing (name the token, not a ms
+  literal)
+
+## Tokens
+- Color / type / spacing / radius: reference DESIGN.md / tokens.json — do not
+  inline hex or px
+
+## Done means
+- Implementable from this README alone; every state and interaction named.
+```
+
+Fidelity declaration is load-bearing: hi-fi vs lo-fi tells the dev whether to
+recreate the mockup pixel-for-pixel or apply the existing system — the single
+most common handoff ambiguity.
+
+## Design-system extraction floor
+
+When the goal is to extract this repo's design system as a **reusable package
+artifact** (not just DESIGN.md prose), the extraction meets this floor — the
+handoff shape emitted alongside `design-system.json`
+([import contract](references/design-system-json.md)).
+
+- **Contract contents.** A complete extraction carries: a root guide / manifest;
+  token CSS (or the stack's equivalent); the typography / colour / spacing /
+  iconography foundations; component specimens; an asset inventory (logos, icons,
+  fonts); UI-kit screens; and starting-point templates where appropriate.
+- **Specimen granularity.** Many small foundation cards beat one dense dump —
+  each specimen demonstrates ONE reusable sub-concept (a single button state,
+  one spacing step, one elevation level), so a consumer lifts concepts
+  one by one, not from a monolith.
+- **Developer handoff bundle** (extends § Design→dev handoff README): a
+  high-fidelity reference, behaviour notes, the assets list, the component
+  mapping (design name → code component), responsive states, known caveats, and
+  — for a mock — an explicit "prototype, not production code" warning so a
+  consumer never ships the reference verbatim.
+
+**React stacks with the host's canvas:** the host's own `/design-sync` (not
+shipped by this package) projects the components; run `/design-system:sync plan`
+first, never hand-build the bundle. This floor stays the artifact for a manual
+projection — a non-React stack, or a host without the sync.
+
+**What to capture FROM** a running project: sources first, SSR fetch second,
+rendered snapshot only with consumer tooling; record the git SHA. Rationale:
+[snapshot preference order](references/snapshot-preference-order.md).
+
+## Gotcha
+
+- **Over-writing instead of diff-updating** — the most common failure.
+  Always read existing `DESIGN.md`/`PRODUCT.md` before writing; carry
+  all existing decisions forward and only add/correct. Losing prior
+  captured history is worse than capturing nothing.
+- **Copying tokens into DESIGN.md** — DESIGN.md is NOT a copy of
+  `tokens.json`. It captures *usage decisions* ("8px radius on elevated
+  surfaces"), not primitive values ("gray-700 = #374151"). The
+  distinction is what makes DESIGN.md actionable.
+- **Capturing feature-specific behavior** — PRODUCT.md is for patterns
+  that repeat across 2+ features. A delete-confirmation pattern in one
+  form does NOT belong in PRODUCT.md until it appears in at least two
+  independent features.
+
+## Do NOT
+
+- Do NOT overwrite DESIGN.md/PRODUCT.md without first reading and diffing
+  the existing content — accumulated history is the value.
+- Do NOT make DESIGN.md a copy of `tokens.json` — it captures decisions,
+  not token definitions.
+- Do NOT capture feature-specific behavior in PRODUCT.md — only patterns
+  that repeat across multiple features.
+- Do NOT mark a decision as captured without evidence from the actual codebase.
+
+## Output format
+
+On create:
+1. Write `DESIGN.md` to the project root with the extracted visual decisions.
+2. Write `PRODUCT.md` to the project root with the extracted interaction patterns.
+3. Surface a one-paragraph summary of what was captured and what is TBD.
+4. List any questions where the existing code is ambiguous.
+
+On update:
+1. Update both files with new decisions.
+2. Output a short diff: "Added: destructive-action policy. Updated: motion strategy (was TBD, now spring)."

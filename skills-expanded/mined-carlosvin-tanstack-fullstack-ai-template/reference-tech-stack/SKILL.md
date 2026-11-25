@@ -1,0 +1,120 @@
+---
+name: reference-tech-stack
+description: >-
+  **UTILITY SKILL** - Opinionated vendor map for this template's reference app
+  (UI, validation, DB, auth, AI, observability, deploy).
+
+  USE FOR: reference tech stack, which UI library, use Zod, Netlify deploy,
+  template defaults.
+
+  DO NOT USE FOR: architecture invariants (use
+  tanstack-promptable-fullstack-app-template), env parse or logger factories
+  (use observability-and-env), prompt concepts or mobile first layout (use
+  promptable-ux).
+
+  INVOKES: AGENTS.md operational sections and companion skills.
+
+  FOR SINGLE OPERATIONS: Look up one package in the Stack map; do not treat this
+  skill as the architecture contract.
+license: MIT
+metadata:
+  author: Carlos Martin-Sanchez
+  version: "1.7.0"
+  repository: https://github.com/carlosvin/tanstack-fullstack-ai-template
+---
+
+## Companion skills (install if missing)
+
+This template publishes **multiple** skills. If only **this** skill is installed, add companions **before** related work:
+
+- **`tanstack-promptable-fullstack-app-template`** (parent) — Architecture contract — schema layers, server boundaries, AI tools, and middleware-inferred request context. Vendor-agnostic; install for all TanStack work.
+  ```bash
+  npx skills add carlosvin/tanstack-fullstack-ai-template --skill tanstack-promptable-fullstack-app-template
+  ```
+
+- **`observability-and-env`** (companion) — Env parse, logger factories, and error-tracking bootstrap. This stack skill names pino + Sentry; that companion owns the setup recipe.
+  ```bash
+  npx skills add carlosvin/tanstack-fullstack-ai-template --skill observability-and-env
+  ```
+
+- **`repository-architecture`** (companion) — Language-agnostic repository architecture: injected collection owners, indexes, stale-data cleanup, and resource lifetime. This stack skill names the database driver; that companion owns the pattern.
+  ```bash
+  npx skills add carlosvin/tanstack-fullstack-ai-template --skill repository-architecture
+  ```
+
+- **`promptable-ux`** (companion) — Shared UX for both prompt concepts. This stack skill names the UI kit; that companion owns where the prompt sits.
+  ```bash
+  npx skills add carlosvin/tanstack-fullstack-ai-template --skill promptable-ux
+  ```
+
+- **`agentic-ux`** (companion) — Fully agentic tool-only shell. Mantine views render as declarative A2UI surfaces.
+  ```bash
+  npx skills add carlosvin/tanstack-fullstack-ai-template --skill agentic-ux
+  ```
+
+Discover all skills: `npx skills add carlosvin/tanstack-fullstack-ai-template --list`
+
+# Reference Tech Stack (Opinionated Defaults)
+
+**Purpose:** Name the **concrete packages** this template uses so agents can
+implement and extend the **reference app** without re-introducing vendor
+coupling into the architecture skill.
+
+> **Parent skill:** `tanstack-promptable-fullstack-app-template` — architecture
+> (vendor-agnostic). Load that for schemas, routes, AI tools, and boundaries.
+>
+> **Companion:** `observability-and-env` — env parse, pino factories, Sentry
+> bootstrap. This skill only records that we chose pino + Sentry.
+>
+> **Handbook:** [AGENTS.md](https://raw.githubusercontent.com/carlosvin/tanstack-fullstack-ai-template/main/AGENTS.md)
+> — file layout, snippets, and validation commands.
+
+## Skill routing
+
+| Task | Load |
+|------|------|
+| "What does this template use for X?" / scaffold matching the demo app | **This skill** |
+| Architecture, schemas, routes, AI tools, server boundaries | **`tanstack-promptable-fullstack-app-template`** |
+| Env schemas, `shellSession`, logging/Sentry bootstrap | **`observability-and-env`** |
+| Collection repositories, indexes, stale-data cleanup, resource lifetime | **`repository-architecture`** |
+| Prompt concepts, mobile first, assistant markdown | **`promptable-ux`** |
+| Day-to-day file paths and UI/auth/AI how-to | **AGENTS.md** |
+
+## Stack map (this repository)
+
+| Concern | Choice | Primary packages / notes | Handbook |
+|---------|--------|--------------------------|----------|
+| Runtime validation | **Zod** | `zod` — tools, repo, router search, env | Architecture skill samples; `src/services/schemas/`, `src/env/` |
+| UI kit | **Mantine** | `@mantine/core`, `@mantine/hooks`, `@mantine/notifications`, `@mantine/charts` | AGENTS.md §3 |
+| Icons | **lucide-react** | One icon library; do not mix Tabler | AGENTS.md §3 |
+| Database | **MongoDB + seed** | `mongodb`; in-memory seed when unset | AGENTS.md §6; `src/services/repository/` |
+| Auth | **JWT header** | `jose` (unsigned/`alg:none` accepted in template); `Authorization` header | AGENTS.md §5 |
+| AI adapter | **Gemini → OpenAI/Gateway → Azure** | `@tanstack/ai-gemini` + `@tanstack/ai-openai`; first configured provider wins (`GEMINI_API_KEY`, then `OPENAI_API_KEY` / Netlify AI Gateway, then Azure). Keep all `@tanstack/ai*` on the **latest** matching line together. | AGENTS.md §8; `src/services/ai/adapter.ts` |
+| Optional MCP | **`createMCPServer`** | `@tanstack/ai-mcp` — opt-in HTTP MCP for the same server tools (`/api/mcp`); not required by Core Contract #11 | Architecture skill **Special Patterns**; AGENTS.md §8 |
+| Chat markdown | **react-markdown + remark-gfm** | GFM tables/links/code in `ChatDrawer` | AGENTS.md §8 |
+| Logging | **pino** (+ `pino-pretty` in TTY) | Via `createServerLogger` | **`observability-and-env`**; AGENTS.md §9 |
+| Error tracking | **Sentry** | `@sentry/tanstackstart-react`; `SENTRY_DSN` | **`observability-and-env`**; AGENTS.md §9 |
+| Lint / format | **Biome** | `@biomejs/biome` — not ESLint/Prettier | AGENTS.md §11 |
+| Unit tests | **Vitest** + Testing Library | jsdom; `renderWithProviders` | AGENTS.md §10 |
+| E2E | **Playwright** | Chromium; seed repo; auth via JWT headers | AGENTS.md §10 |
+| Deploy | **Netlify** | `@netlify/vite-plugin-tanstack-start`; Git deploy previews | AGENTS.md CI/CD; `netlify.toml` |
+| Agentic UI | **A2UI** | Mantine task views: `@a2ui-bridge/core` and `@a2ui-bridge/react` `Surface` with a varied local Mantine 9 catalog (`Column`, `Row`, `Card`, `Text`, `Title`, `Badge`, `Button`, `Table`, `Timeline`), `@mantine/charts` primitives (`BarChart`, `DonutChart`, `PieChart`, `LineChart`, `AreaChart`, `Sparkline`), and custom visuals (`StatCard`, `DistributionBar`). Do not add `@a2ui-bridge/react-mantine` (Mantine 8 and Tabler). | **`agentic-ux`** |
+| Package manager | **pnpm** | Lockfile committed | AGENTS.md §12 / §15 |
+
+**Fixed (not listed as choices):** TanStack **Start**, **Router**, **AI**, and CLI — owned by the architecture skill.
+
+## How to use these defaults
+
+1. Prefer the stack map when extending *this* repo or cloning the template as-is.
+2. Do not add a second library for the same concern unless you are intentionally migrating.
+3. Keep interfaces when swapping (repository, `AIAdapterService`, `ObservabilityService`); update this stack map and AGENTS.md; leave the architecture skill vendor-agnostic.
+4. UI and schema *how-to* live in AGENTS.md §3 / the architecture skill — this skill only names packages. Prompt concepts live in **`promptable-ux`**.
+5. **TanStack packages stay current:** before dependency work, check `@tanstack/*` for newer releases and upgrade toward latest when migration cost is acceptable (architecture skill **Fixed vs swappable stack**). Do not treat this map as a pin to old minors.
+
+## Expressing the UX concepts in this stack
+
+**`promptable-ux`** owns mobile first and the two prompt concepts. In *this* template, express mobile first with Mantine responsive props (`base`, then `sm` / `md` / `lg`). The reference app declares **Promptable UI (side)**: navigation that overflows a narrow header uses `AppShell` + `Burger` + `NavLink`, and the prompt is a right `Drawer` (AGENTS.md §3 and §8), not a permanent aside. Prompt-first would still use those responsive props; it would not add a second drawer.
+
+## Verification
+
+After stack-affecting changes: update this `SKILL.md`, run `pnpm skills:check` and `pnpm skills:waza`, and follow AGENTS.md §15.

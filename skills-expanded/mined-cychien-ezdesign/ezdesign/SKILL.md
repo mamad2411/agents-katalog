@@ -1,0 +1,44 @@
+---
+name: ezdesign
+description: Open an ezdesign review session on a running web page. The user annotates the page in the browser, and each batch reaches the coding agent with exact source locations. Use when the user invokes /ezdesign, or asks to review, annotate or give visual feedback on a running page, or to explore designs on a canvas.
+metadata:
+  version: 0.13.0 # x-release-please-version
+---
+
+# ezdesign
+
+Open a review: [reference/start.md](reference/start.md). A bare `/ezdesign`, with nothing after
+it, is that request: open a review on the project's running dev server.
+
+## Inside a review session
+
+The daemon has done the routing: its prompt says whether the turn is a feedback batch or an
+explore round, and what to do with it. Do not route again. A batch carries the page's `url`, the
+annotated `items` with their `anchor` (source `file:line`, selector, viewport), `references`, and
+`attachments`. A video attachment carries `video`: never open its `path`; read what `video.read`
+says, which points you at contact sheets of its frames, each labelled with its time. An explore adds one element's capture - its markup, computed styles, slot and the
+page's tokens - and takes each variant back through a tool, editing no file.
+
+## Canvases
+
+An ACP review session also gives you the `ezdesign-canvas` tools. Each turn's prompt says which tab
+the user sent the batch from and which canvases exist.
+
+- When the user wants to explore directions, compare options or see a design before it is built,
+  put each one in a frame on a canvas: one `add_frame` per design, as soon as each is ready, on the
+  canvas the turn's prompt names. Call `create_canvas` only when no canvas is open or the user asks
+  for a new one. Leave `position` out; frames are placed for you.
+- A frame is a complete HTML document with its own `<head>` and styles, at a real viewport width
+  (390 phone, 768 tablet, 1280 desktop). Nothing is shared between frames.
+- An item whose `anchor.frame` is set was made inside a frame: `anchor.source` is a line of that
+  frame's file under `.ezdesign/canvases/`. Change a frame with `update_frame` (pass the
+  `expectedHash` you last read) or by editing its file.
+- An item with `anchor.frames` is about those whole frames rather than an element in them (the
+  user clicked a frame's title, or boxed several frames): `anchor.source` is the frame's file, or
+  `anchor.contains` lists each frame's file and title.
+- An item with `anchor.parts` is one group spread over several frames (or device previews): each
+  part is an anchor of its own, with its own `frame` (or `frames` for a whole frame) and `source`.
+- When a change makes a frame's content taller or shorter, pass `height` to `update_frame`; the
+  frames below it move down to make room. Never remove a frame and add it again to resize it: that
+  loses its place and the annotations made on it. Its width stays the viewport it was added at.
+- Never edit `canvas.json` or `layout.json` by hand. Where a frame sits is the user's.

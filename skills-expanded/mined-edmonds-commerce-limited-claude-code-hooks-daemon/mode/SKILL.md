@@ -1,0 +1,155 @@
+---
+name: mode
+description: Get or set daemon operating mode - switch between default and unattended (blocks Stop events) - and turn this session's focus mode or manual-goals mode on or off
+argument-hint: "[get|unattended|default|focus|goals] [message|task|off|manual|auto]"
+---
+
+# /mode - Daemon Mode Management
+
+## Run this first
+
+Claude Code loads this markdown and nothing else — the file below is not run
+for you, and it holds the procedure to follow (Plan 00324):
+
+```bash
+bash "${CLAUDE_SKILL_DIR:-.claude/skills/mode}/invoke.sh" <the arguments the user typed>
+```
+
+Follow its output exactly; what is written here is orientation.
+
+## Description
+
+View or change the daemon's operating mode. Supports `default` (normal operation) and `unattended` (blocks Stop events to keep Claude working autonomously).
+
+## Usage
+
+```claude-code
+# Show current mode
+/mode
+/mode get
+
+# Switch to unattended mode (blocks Stop events)
+/mode unattended
+
+# Switch to unattended with custom task message
+/mode unattended finish the release and run all tests
+
+# Switch back to default mode
+/mode default
+
+# Focus THIS session on one task (session mode; see focus_mode_trigger)
+/mode focus <task>
+
+# End focus (aliases: done, end, disable)
+/mode focus off
+
+# Manual goals for THIS session: no automated goal write or retirement clear (alias: off)
+/mode goals manual
+
+# Back to automated goals (alias: on)
+/mode goals auto
+```
+
+`/mode goals manual|auto` runs `hooks-daemon goals off|on`, the same as typing
+`hooks-daemon goals manual` as a whole prompt; see `CLAUDE/SessionModes.md` (manual-goals).
+
+`/mode focus` is the same as typing `hooks-daemon focus <task>` at the start of a prompt: it
+changes only the current session, not the daemon-wide mode. It runs
+`hooks-daemon session-mode focus <task>` / `session-mode focus off`; `/mode get` also prints
+`session-mode get`. `hooks-daemon mode-history` lists every session's live modes and the recent
+mode transitions, each with what triggered it.
+
+## Modes
+
+| Mode         | Behaviour                                                                      |
+| ------------ | ------------------------------------------------------------------------------ |
+| `default`    | Normal operation - all handlers process events as configured                   |
+| `unattended` | Blocks Stop events unconditionally to keep Claude working without interruption |
+
+## What Unattended Mode Does
+
+When enabled, a **mode interceptor** runs before the handler chain on every event:
+
+- **Stop events**: Blocked with a DENY response instructing Claude to continue working
+- **SubagentStop events**: NOT blocked (subagents should stop normally)
+- **All other events**: Pass through to normal handler chain unchanged
+
+The interceptor includes re-entry protection (checks `stop_hook_active` flag) to prevent infinite loops.
+
+## Custom Messages
+
+When switching to unattended mode, you can include a custom message that gets appended to the block reason. This lets you give Claude specific instructions about what to work on:
+
+```claude-code
+/mode unattended complete all remaining tasks in the plan
+```
+
+The message appears in the Stop event denial reason, so Claude sees it when it tries to stop.
+
+## Python Path Detection
+
+There is no interpreter to detect. The deployed wrapper resolves the
+fingerprint-keyed venv itself, and lives at the same place relative to the
+daemon root in both install modes:
+
+```bash
+# self-install (daemon development)
+./bin/hooks-daemon <command>
+
+# normal install
+.claude/hooks-daemon/bin/hooks-daemon <command>
+```
+
+## IPC Protocol
+
+The skill communicates with the daemon via Unix socket system requests:
+
+**Get mode:**
+
+```json
+{"event": "_system", "hook_input": {"action": "get_mode"}}
+```
+
+**Set mode:**
+
+```json
+{"event": "_system", "hook_input": {"action": "set_mode", "mode": "unattended", "custom_message": "optional"}}
+```
+
+**Session modes (one session):**
+
+```json
+{"event": "_system", "hook_input": {"action": "get_session_modes", "session_id": "<id>"}}
+{"event": "_system", "hook_input": {"action": "enter_focus", "session_id": "<id>", "task": "<task>"}}
+{"event": "_system", "hook_input": {"action": "exit_focus", "session_id": "<id>"}}
+```
+
+## Output
+
+### On get mode:
+
+```
+Mode: default
+```
+
+### On set unattended:
+
+```
+Mode: unattended (changed)
+Message: finish the release
+```
+
+### On set default:
+
+```
+Mode: default (changed)
+```
+
+## Requirements
+
+- Daemon must be running
+- Python venv must be available (self-install or normal install)
+
+## Version
+
+Introduced in: v2.17.0

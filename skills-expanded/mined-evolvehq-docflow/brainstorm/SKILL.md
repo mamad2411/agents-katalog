@@ -1,0 +1,119 @@
+---
+name: brainstorm
+description: Decompose a problem, feature, or goal into candidate ADRs and plan items for a documentation-led repo — one decision per ADR, dependency edges, suggested ordering. Proposes drafts for review and writes nothing until approved. Use when the user says "brainstorm ADRs", "break this down into decisions", "what ADRs do we need for X", "plan out the work", or invokes /brainstorm.
+---
+
+# brainstorm
+
+Turn a fuzzy problem into a structured set of candidate ADRs and plan
+items. This skill is **generative and read/propose-only** — it never
+writes ADRs or plan files directly. On approval it hands each candidate
+to the **new-adr** and **new-plan** skills.
+
+## Step 0 — Preconditions and context
+
+1. Confirm the repo is bootstrapped (or note that the output can seed a
+   fresh run of the **bootstrap** skill).
+2. Read `CONVENTIONS.md` for ADR shape and lifecycle, and skim
+   `INDEX.md` + existing ADRs so candidates don't duplicate or
+   contradict what already exists, and so dependencies point at real
+   ADRs.
+
+## Step 0.5 — Assessment (run first)
+
+Run the shared assessment protocol before decomposing:
+
+- **Reuse supplied answers first.** Treat applicable choices already supplied
+  in the request or this session, including depth, as answered. Summarise
+  them without asking again; defaults never replace explicit choices. If
+  every material choice is supplied, proceed. Ask only about a material
+  missing or conflicting choice. A repository preference alone is not a
+  current answer or execution grant.
+- **Depth selector for unresolved choices.** If depth is not supplied and
+  choices remain, ask how deep this assessment should go:
+  **express** — every choice takes its recommended default; only
+  questions with no derivable default (the free-text essentials) are
+  still asked; **guided** — only the questions marked high-impact
+  below, plus the free-text essentials; **full** — every question
+  below. If the repo's `CONVENTIONS.md` records an `Assessment depth:`,
+  pre-select it as the recommended option when asking; a recorded depth
+  is never applied silently. Otherwise
+  recommend **full** when the request arrived with little or no
+  context and **express** when it is already fully specified. At any
+  question the operator may answer "defaults from here" or "go
+  deeper"; honour the switch immediately.
+
+- Ask the questions below **one at a time**, each with a **recommended
+  option** and a one-line reason; wait for each answer.
+- Use **structured selection** (single- or multiple-choice). If the host
+  exposes a structured single-/multi-select question tool, use it and
+  mark the recommended option; otherwise list options A/B/C in plain text
+  and name the recommended one. Use **free text only** where an
+  enumerable set is impossible (e.g. the goal statement).
+- **The operator decides.** Never proceed past a question without an
+  answer, and never guess scope when invoked with no context.
+
+Questions (skip any the request already answers):
+1. **Goal / problem** — free text (the unavoidable open answer; asked
+   at every depth) if not already given.
+2. **Output** — candidate ADRs only, or ADRs + plan items.
+   *Recommended: ADRs + plan items.*
+3. **Decomposition depth** — quick (top candidates) or thorough (full
+   decomposition). *Recommended: quick first, expand on request.*
+
+No question here is marked high-impact — a guided run behaves like
+express for this skill.
+
+This skill still **writes nothing** until you approve the outline.
+
+## Step 1 — Understand the problem
+
+Ask for the goal/feature/problem if not given. Probe for scope
+boundaries, constraints, and the regulatory/quality concerns that
+matter for this repo. Do not start decomposing until the goal is clear.
+
+## Step 2 — Decompose
+
+Produce a candidate list. For each candidate ADR:
+- Proposed number (next available, contiguous), working title, shape
+  (capability vs. technology if the repo splits).
+- One-line scope — the single decision it captures.
+- Dependencies on other candidates or existing ADRs.
+
+**One decision per ADR.** If a candidate bundles several decisions,
+split it and say why. If a candidate is really an existing ADR needing
+revision, say that instead of proposing a new number.
+
+## Step 3 — Order the work
+
+Propose a plan ordering (which `plan/todo/` items, in what sequence)
+respecting the dependency edges. Note where work can parallelise (useful
+input for the **agent-wave** skill).
+
+## Step 4 — Review and hand off
+
+Present the full set as a reviewable outline (candidates + dependencies
++ ordering). Take edits. **Write nothing yet.** Once the user approves,
+create them by invoking the **new-adr** skill per candidate and the
+**new-plan** skill per
+queued item — or hand the approved outline to those skills.
+
+Guardrail: if the problem is too vague to decompose without inventing
+requirements, say so and ask for more, rather than producing
+speculative ADRs.
+
+Name agreed options and remaining decisions; discussion alone writes no artefacts.
+
+<!-- docflow:closing-report -->
+## Closing report
+
+End every run, including blocked, failed and stopped runs, with a section
+headed exactly **Status at a glance**, containing these three labels:
+
+- **This run:** only actions actually attempted and their outcomes; quote each verify gate's exact output and exit code, including timeouts or interruptions.
+- **Overall:** implemented, partially verified, verified, blocked, failed or unknown. A passing sub-step is not an overall pass; incomplete or missing evidence never becomes success.
+- **Yet to do:** every remaining action, unresolved finding, verification, cleanup or required input. Write None only when the whole task is verifiably complete; never omit work because a budget ended.
+
+Routine progress messages need no block. Keep final results brief and
+distinguish work prepared on a PR from work confirmed shipped.
+<!-- /docflow:closing-report -->

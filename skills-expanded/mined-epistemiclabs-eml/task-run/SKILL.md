@@ -1,0 +1,83 @@
+---
+name: task-run
+description: Advance one brain task stage by stage (ideation → planning → ready → implementation → resolved), stopping at a checkpoint after each stage so the user decides whether to go on. Invoke when a session starts with "Use the task-run skill for task …" (the cockpit's "Advance task" button), or when the user says "advance this task", "work through this task", "bring the task forward", "Task weiterbringen", "Task abarbeiten".
+---
+<!-- managed-by: engramprotocol-setup -->
+
+# task-run
+
+You run one task. You do one stage, write its result to the brain, stop at a
+checkpoint, and continue only when the user says so. The whole run stays in
+this one session.
+
+## Start
+
+1. `eml_get <task id>` — content, stage, status, journal, the decisions and
+   notes bound to it. Then `eml_show <the task's scope>` for the project
+   around it.
+2. If the task is resolved or invalidated: say so and stop.
+3. `eml_track_task` with text "Task run started." — and status `active` if it
+   is `planned`.
+4. Say in two or three lines what the task is, which stage it is in and what
+   this stage will produce — then do that stage. If the task has no intent yet,
+   the stage begins with it.
+
+## One stage at a time
+
+The stage is how mature the task is; your step takes it from where it stands
+to the next checkpoint:
+
+| Stage now | What you do | Result in the brain |
+|---|---|---|
+| (none) / ideation | First the intent: draft what will be different, for whom, once the task is done, and how we'll notice; ask the user to confirm or correct it. Then sharpen the problem, collect options and judge them against the intent, name the open questions. Read code and context; change nothing. | The confirmed intent via `eml_track_task` (`intent`, with text); a note on the task (`eml_note` with `task_id`, `binding: task`, a title): problem, options, open questions. |
+| planning | Settle the open questions with the user, one at a time. Write the plan: steps, files, how it is verified. Each plan step names the part of the intent it serves; question a step that serves none. Change nothing. | Each choice via `eml_decide` (`task_id` and `binding`: standing if it still holds after the task, task if it only governs this task); the plan via `eml_note` (`task_id`, `binding: task`). |
+| ready / implementation | Do the work in the place given under *Where to work* (below), step by step as planned. Verify it (tests, a real run). | Progress via `eml_track_task` with text; the result where it belongs (commits, files, drafts). Work that splits off → a sub-task (`eml_create_task` with `parent_id`). |
+| done | Check the result against the intent's "how we'll notice" before proposing to close. Summarise what was delivered and what is left. Look at the bound decisions and notes: which still hold once the task is done? | On the user's go: `eml_track_task` status `resolved` with `outcome` (one line), `text` (the story) and `keep` (the bound items that stay, or `[]`). |
+
+A task past ideation without an intent: ask for it before doing the stage.
+
+A stage that turns out to need a question only the user can answer is a
+checkpoint too — ask instead of guessing.
+
+## Checkpoint
+
+At the end of every stage:
+
+1. Write the stage result to the brain (table above).
+2. Set the stage to what the result reached — `eml_track_task` with `stage`
+   and a text: ideation note written → planning; plan and decisions settled →
+   ready; the build starts → implementation. The stage is yours to keep; never
+   ask the user about it.
+3. Summarise in this pane: what was done, what the next stage would do, what
+   you need from the user.
+4. Ask whether to go on — unless the user already said to (e.g. "go through
+   to implementation"); then go on. Otherwise stop and do not start the next
+   stage's work.
+
+The start message ("Use the task-run skill for task …") arriving again —
+after a restart or a reconnect — is not a go: re-read the task, say where it
+stands, and wait.
+
+When the user stops the run: `eml_track_task` with a text saying where it
+stands; the task keeps its stage.
+
+## Where to work
+
+Ideation and planning only read; they run where the session started. From
+`implementation` on, work here:
+
+- **Project folder is a git repo:** a worktree on branch `task/<title>`
+  (`git -C <repo> worktree add <repo>-task-<title> -b task/<title>`), and work
+  there. Use absolute paths or `git -C`; the shell's cwd resets to the project.
+- **Project folder without git:** the folder itself.
+- **No project folder** (an email, research, organising): `$COCKPIT_TASKS_DIR/<title>/`
+  for drafts and files; results that matter go into the brain.
+
+`<title>` is the task's title (its kebab-case anchor), or its short id if it
+has none.
+
+## Never without the user's explicit go
+
+Anything that leaves this machine or can't be undone is its own checkpoint, in
+every stage: send, push, publish, deploy, merge, delete, pay. Prepare it, show
+it, wait for the go.

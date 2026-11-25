@@ -1,0 +1,124 @@
+---
+name: backend
+description: 后端开发约定。Python 规范、FastAPI 层级、Pydantic 命名、安全日志脱敏、外部请求安全。修改后端代码前必须阅读。
+---
+
+# 后端开发约定
+
+## 代码风格
+
+- Python 导入按标准库/第三方/本地模块分组；`from` 导入在前，普通 `import` 在后，并保持可读的字母顺序。
+- 复杂逻辑保留或补充注释和类型注解；参数化泛型使用 `typing` 模块。
+- 已确定类型的变量直接访问属性，少用不必要的 `getattr`、`setattr` 和 `or` 兜底。
+
+## API 与数据模型
+
+- 业务时间统一使用 `app.core.tz.now_utc()`；存储 UTC，展示时按用户时区转换。
+- 前后端 API 请求体遵循模型实际声明：`CamelModel` 使用驼峰字段，普通 `BaseModel` 使用下划线字段。
+- API、业务服务、Agent、数据库模型和任务按现有目录分层，不跨层复制逻辑。
+- API 请求/响应沿用现有 Pydantic 命名规则、归属校验和确认门。
+
+### 长任务状态通知
+
+- 长时间运行、需要前端呈现进度或终态的任务，应把状态和必要进度持久化，并优先通过现有用户级事件总线/SSE发布轻量状态变更通知；前端收到通知后读取权威状态。避免为了刷新任务状态而设计固定频率的前端轮询。
+- 先提交状态变更，再发布通知；事件不承载敏感正文或大结果。发布失败不能回滚已经成功的任务状态，状态查询 API 必须能恢复当前状态。若需要保证通知可重放或不能丢失，采用项目现有可靠投递/outbox机制，不把 Redis Pub/Sub 当作持久队列。
+- 复用 `app.core.events`、既有 live 事件协议和资源失效语义；仅当任务状态确实需要实时展示时扩展事件协议，并同时核对鉴权、事件过滤、前端订阅及断线重连后的状态补读。
+- 只有没有可用推送渠道、或轮询的是外部系统且其协议不支持回调/事件时，才新增状态轮询；限制间隔、并发和生命周期，设置超时/退避，并在成功、失败、取消等终态停止。不要让 Worker 为向 UI 汇报状态启动高频后台轮询。
+
+## 安全
+
+- 用户输入、异常和上游响应不得进入可见日志；错误使用 `app.core.redaction.redact()` 脱敏。
+- 原始诊断使用受限诊断日志 `diag_log()`/`diag_log_raw()`。
+- 跨用户数据查询使用 `app/core/ownership.py` 的 `get_owned()`。
+- 外部请求设置超时、重试边界和 URL 安全校验，不盲目重试非幂等操作。
+
+## 工具权限与提示词边界
+
+- 工具是否可用、可用范围、用户/会话权限、功能开关、权限回落和确认要求，必须由代码决定：注册表过滤、请求权限快照、dispatch 校验和 destructive confirm gate 是唯一事实来源。
+- 除 `backend/agent/prompts/policy.md` 外，禁止把运行时工具权限写入模型提示词。`skills.md`、Skill 正文、工具 description、context builder、动态 reminder、RAG 注入和历史包装都不得注入“当前用户拥有/没有某工具”“当前范围是 workspace/system/personal”“权限不足时回落到某范围”等运行时权限事实。
+- `policy.md` 只能描述稳定的行为原则，例如“没有真实工具回执不得声称完成”；不得写入某个用户、会话或平台当前的具体权限状态，也不得替代码决定工具范围。
+- 工具不可用时，优先在工具注册/调用前阻断并返回结构化结果；不要依赖模型读取提示词自行判断权限，也不要通过 prompt 让模型自行切换、扩大或回落权限。
+- 修改工具、Skill 或上下文组装时，必须检查是否新增了权限语义注入；发现重复权限提示词应删除，而不是继续叠加文案。
+
+### 明确例外：系统范围 Shell 环境说明
+
+- 系统范围 Shell 是管理员与用户双侧明确开启的高信任能力，允许由 `agent.security.shell_policy` 的实时策略结果生成本轮环境与范围说明。此例外仅用于现有 Shell 状态说明，不扩展到其他工具、Skill 或 RAG。
+- 说明必须区分默认 `sandbox` 与显式 `scope="system"`，不得把允许使用解释为已经切换环境。system 指应用服务所在环境；容器部署不等于宿主机，且不意味着 root 权限。
+- 状态说明每轮按实时策略重新计算，并按固定位置追加到 system prompt；不写入冻结 snapshot、Canonical 历史或持久化历史。这样做首先是为了让模型在稳定、明确的位置理解当前执行环境与权限边界，避免把它放在对话尾部改变上下文位置后影响回答内容或工具选择。工作区授权通常不是每轮变化的设置，所以即使每轮重新校验，未变化时生成的 system 前缀仍保持一致；不得把提示词当作授权凭据，执行器逐调用校验、权限撤销、定时任务隔离与确认门保持有效。
+
+## 本地验证
+
+- 本地编辑后通过 Mutagen session `gugu-web` 同步到 devserver。
+- Web 使用 `cd backend && make dev-web`；Worker 使用 `make dev-worker`，启动前确保没有重复 Worker。
+- 生产环境 `make install` 后，`make start/stop/restart/status` 管理 `gugu-backend`、`gugu-worker`、`gugu-gateway` 三个 systemd 服务。
+- 改动网关适配器时只重启对应平台子进程，不重启整个 gateway。
+- 后端修改后在 devserver 运行 `PYTHONPATH=. .venv/bin/pytest`。
+
+## LLM Prompt 缓存策略
+
+### Token 用量与压缩触发口径
+
+- 触发上下文压缩、判断模型上下文占用时，**优先使用同一模型、同一请求最近一次 provider 返回的实际输入量**；缓存读取和缓存写入的输入 token 都属于上下文，须按 provider adapter 归一化后的 `fresh input + cache read + cache write` 计算。不得使用累计多轮用量或仅用未命中缓存的 input 代替当前请求的完整输入。
+
+- 禁止使用本地 LLM tokenizer、字符换算或其他估算生成 token 用量。缺失 Provider 用量时保持未知；正常请求的自动压缩仅依据 Provider 上报的输入量，达到上下文窗口的 85% 时触发。
+- Provider 明确报超限时，按完整消息单元缩窗后有限重试。独立的文本体量上限以字符或字节为单位。
+
+**当前策略（2026-08-24，Shell 例外按 v1.4.0）**：system prompt 通常只包含静态内容（persona/skills/policy），动态内容（beh/memory/projects/time）通过带 `[system-reminder]` 的 `role=system` 消息注入 conversation。Shell 环境状态是例外：每轮按实时策略重算，追加在 system prompt 固定位置；环境未变时保持该段与前缀稳定，环境变化时更新该段。它不进入 snapshot 或持久历史，且不代替执行器逐调用授权校验。内部上下文与真实 user message 分离；原生 Anthropic adapter 在 wire 边界把消息级 system reminder 转成允许的 user message，MiniMax/百炼按已验证能力保留 system role。
+
+**为什么把动态内容移到 conversation**：测试验证 behavior block（相处姿态）在不同 call 间变化（Query 430 chars → Companion 705 chars），导致 system prefix 断裂，缓存命中率从 99%+ 降到 0.4%。移到 conversation 后，静态 system 完全不变；再用 role=system 表达其语义，避免模型把动态上下文误当成用户发言。
+
+**实现位置**：`backend/agent/runner.py` 组装段 + `backend/agent/context/builder.py` 的 `build_split()`。
+
+2026-10-04 方案校正：Web、IM、定时任务的本轮 Shell 状态都按 v1.4.0 方案重新计算，并追加到 system prompt 的固定位置。权限提示会影响模型输出和工具选择，不能因缓存布局重构而改变其上下文位置；工作区授权通常不频繁变动，未变时重复计算仍产生相同前缀。状态不写入 snapshot、Canonical 历史或动态尾部，执行器仍逐调用判权。此前“Shell 状态统一使用 `extra_reminder`”的记录作废；普通 `extra_reminder` 的其他用途不受影响。
+
+2026-10-03：反思快照复用 Area 的不可变 ProviderConversation，包含冻结 `request_prefix`，排除 dynamic tail；压缩与反思不得把已投影的 wire 消息转成裸列表再走 canonical renderer。持久历史重建不承诺命中率。缓存探针按 Provider 实际用量判定，指纹基于完整前缀。合成 MiniMax-M3 三组 A/B 见 `docs/reports/OPT-Cache-Strategy-2026-10-03.md`。
+
+2026-10-09：跨 run 压缩时，向压缩器传入 `MessageArea.protected_history_start`，让当前 run 的压缩边界与后续持久历史重建一致，避免把上一 run 的保留轮次并入摘要、却在下一 run 从数据库恢复其原文。合成消息 MiniMax A/B 的第二轮 cache_ratio 从旧路径 0.87% 提升到修复路径 99.84%；这只验证 provider 输入前缀行为，未验证已运行服务的 LoopScope trace。详见 `docs/reports/2026-10-09-OPT-跨run压缩前缀连续性.md`。
+
+owner 闲置反思触发的会话压缩，应先在捕获主请求快照的同一进程内执行；worker 仅在短 TTL 协调标记过期后作为进程退出时的接管路径。压缩复用快照前缀必须逐条验证模型身份、持久化行边界和消息序列，不能精确对齐时安全回退到数据库重建路径。完整快照不得写入 Redis/数据库/日志；该路径改善前缀一致性，但不承诺特定 provider 的缓存命中率。
+
+群被动消息不启动或续期闲置反思；保留全群累计 50 条触发，主动 run 完成后登记 4 分钟群闲置。4 分钟是 owner、群及群友反思共用的闲置窗口。
+
+普通群级与成员级反思必须共用同一个群 session 的原始主 Run 快照，只追加该 Run 之后的群消息；不要为两种 scope 分别重建历史。若跨进程恢复时原快照不可用，保留任务等待下一次成功主 Run，不静默回退到持久历史重建。`context-pressure` 和压缩改变 baseline 后的重建属于显式例外。
+
+反思前的 85% 判定使用同一请求的实际 Provider 用量；用量缺失时不触发自动压缩。压缩前缀允许纯文本字符串与单个 text block 等价，工具块和其他结构必须严格对齐；对齐成功后发送原始主请求前缀。2026-09-26 的合成 MiniMax-M3 A/B 见 `docs/reports/OPT-Cache-Strategy-2026-09-26.md`。
+
+2026-10-13：真实 MiniMax-M3.1-Flash-Preview / Anthropic run 回放确认，反思分支无条件删除主请求已恢复的原生 thinking/signature 会破坏前缀。同模型 wire 分支现保留原生块，继续清理外协议 reasoning_content 和孤立工具事件；默认历史清洗与续接身份校验保持既有语义。两条真实请求恢复后的 wire digest 均与原 run 精确匹配，隔离 A/B 缓存率从 37.9%/0% 提升至 96.2%/96.6%。后台持久历史重建未改变，不保证相同提升；详见 `docs/reports/OPT-Cache-Strategy-2026-10-13.md`。
+
+2026-10-13：自动内联压缩同样必须复用与当前 Area revision/digest/entry count/固定前缀边界一致的 Provider projection，不能把 wire 消息降成 canonical history 重渲染，否则会丢失原生 thinking/signature。真实 QQ 历史隔离 A/B 的 canonical 重建与 wire 复用缓存率分别为 88.54%/99.04%；历史配置指纹不匹配时仅作为明确标记的历史回放结果，不代表当前续接状态可复用。详见 `docs/reports/2026-10-13-INVEST-内联压缩thinking缓存AB.md`。
+
+同日协议扩查：Responses 续接开/关及 Anthropic 关闭续接均通过主请求→快照→反思的 SDK payload 前缀回归；Chat Completions 的 wire 历史已含基础 system，分支不可再次无条件插入，否则会重复人格前缀。该插入问题已修复，字符串和 text block 两种形态均覆盖。Responses 原生 reasoning/function-call 项继续原样传递，协议回归不代表真实 provider 缓存率保证。
+
+2026-10-18：群组与成员反思的任务增量先放共同的已有记忆资料，再放专用任务指令，避免相同资料因首段规则不同重复读取；私聊任务与 owner 快照路径保持原顺序。真实 MiniMax Responses 对照中成员反思由约 65% 提升到约 98%；首次冷重建单独统计，不保证命中。用量场景统计新增冷请求次数（有输入且 cache_read 为 0）和排除冷请求后的输入 token 加权缓存率；微量命中仍计入。详见 `docs/reports/2026-10-18-INVEST-记忆反思缓存率与群分支资料顺序.md`。
+
+2026-10-19：实际输入达到 90% 的运行中压力压缩保留用户最后原文和最近一个完整执行轮，允许摘要本 run 的较早执行轮；普通恢复仍沿用十轮窗口。保护位置在压缩后同步更新，摘要分支复用真实 wire，压缩范围使用 Area 投影坐标。所有 Provider 的 Chat 追加 JSON 分支统一不额外发送 `response_format`，保留任务 JSON 指令、统一解析与业务校验；独立 JSON 请求保留各 Provider 原有参数。DeepSeek 实测可改善缓存，MiniMax 未发现缓存退化；这不代表所有模型输出可靠性都经过真实验证。真实 A/B 中三次后续主请求未命中输入减少 64.25%，同输入 JSON 分支命中率 29.94% → 99.89%；794 项回归通过。详见 `docs/reports/OPT-Cache-Strategy-2026-10-19.md` 与对应 devlog。
+
+2026-10-20：群闲置反思在仍持有主 run 快照的进程内收束；Redis 仅保存 worker 协调标记。被动消息追加必须逐条匹配持久化历史尾部，成功时保留原始 Provider wire、system 和工具声明；否则回退数据库重建。真实 DeepSeek Chat A/B 使用合成历史，持久历史重建 cache read 为 0，原始前缀追加读取率为 90.59%/91.09%；第二轮由正式 `ContextBranch` 写入隔离 LoopScope trace。MiniMax M3.1 Flash Preview 的三轮真实 Anthropic 对照中，历史投影缓存率为 2.05%–2.25%，原始前缀追加为 99.57%–99.65%；该对照未经过正式 `ContextBranch`。实验不证明真实群历史必然匹配，线上还需按 `snapshot_source` 与 cache ratio 观察。详见 `docs/reports/2026-10-20-INVEST-群反思原始前缀复用真实模型AB.md`。
+
+2026-10-28：Web、IM 和反思共用的历史加载器按摘要覆盖水位读取连续历史，不再按 100/500 条截断；物理保留只清理摘要覆盖的旧消息。合成 MiniMax 对照中截去历史开头的缓存读取率为 0.47%，保留相同历史为 100%；这不是线上会话前后对照，新代码加载后的 LoopScope 验证仍待完成。详见 `docs/reports/OPT-Cache-Strategy-2026-10-28-历史baseline.md`。
+
+2026-11-12：排除冷请求时，将完整输入大于零且缓存读取率低于 1% 的请求视为冷请求。有可对齐的逐轮用量时按 Provider 请求统计，其余账本行按整行判断。画像和行为自动整理归入压缩场景。Run 内压缩结果进入 MessageArea 时保留摘要语义，使用与持久历史恢复一致的投影。详见 [开发记录](../../docs/devlog/2026-11-12-主对话冷请求统计与压缩摘要前缀.md)。
+
+**修改缓存策略前必须**：
+
+1. 用 `backend/scripts/diagnostics/compare_cache_strategies.py` 做对比测试
+2. 记录到 `docs/reports/OPT-Cache-Strategy-*.md`
+3. 更新 devlog 和本节
+4. 在 LoopScope 验证 cache_ratio 提升
+
+## PR 前本地 CI + 手动触发 GitHub CI
+
+提交 PR 前必须在本地完成以下检查，确保不引入回归：
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/pytest -q                    # 单元测试
+python scripts/checks/check_ownership.py             # 归属校验
+python scripts/checks/check_confirm_gate.py          # 确认门校验
+python -m compileall -q app agent                    # 语法检查
+```
+
+本地通过后再提交 PR。**GitHub CI 不随 PR 自动运行**（省 Actions usage）：PR 决定合并前，
+人工对 `runtime-integration.yml` 和 `docker-release.yml` 各手动触发一次（Actions 页
+Run workflow 选 PR 分支，或 `gh workflow run <name> --ref <分支>`），全绿后才合并，
+详见 `docs/ops/release.md` §1。

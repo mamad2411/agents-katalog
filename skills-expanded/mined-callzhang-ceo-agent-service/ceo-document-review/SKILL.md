@@ -1,0 +1,49 @@
+---
+name: ceo-document-review
+description: Use for requests to inspect, revise, summarize, compare, comment on, or approve DingTalk or Lark documents, files, images, and tables. Use ceo-mail-review for the enclosing mail thread and ceo-meeting-work for meeting records. Load the operation Skill matching the actual material type before reading or editing it.
+metadata:
+  managed_by: ceo-agent-service
+  version: 2
+---
+
+# CEO Document Review
+
+Identify the material type, read the current version, and keep review output tied to evidence in that material.
+
+Load the operation Skill that matches the actual material type before a business operation, comment, or delivery. For read-only source inspection in CEO Agent Service Consumer or Audit runs, use the matching native MCP route below; load the operation Skill only when its additional workflow is needed.
+
+## Material Reads
+
+| Material | Operation Skill | Required read |
+| --- | --- | --- |
+| DingTalk document | `dingtalk-doc` | read current content |
+| DingTalk AI table | General tasks: `dingtalk-aitable`; CEO Agent Service Consumer/Audit: use the read-only `agent_cli` route below | never use document read |
+| ordinary file | `matching drive Skill` | use the supplied exact command |
+| image | none for attached input | inspect the image before conclusions |
+| Lark document | `lark-doc` | read current content |
+| Lark table | `lark-base` | read current table data |
+| Lark file | `lark-drive` | use the supplied exact command |
+
+For CEO Agent Service Consumer/Audit, read an AITable through `agent_cli.read_dingtalk_aitable_base` → `read_dingtalk_aitable_tables` → `read_dingtalk_aitable_records`; do not load the full operation Skill just to choose the reader. Do not use document/workbook readers or shell DWS calls for an AITable. If these MCP tools are unavailable, report a dependency failure.
+
+For DingTalk stored files, the matching drive Skill is `dingtalk-drive`. Load `dingtalk-chat` before delivering a DingTalk chat response. For another supported source, load its corresponding document, table, drive, and source-conversation Skills rather than substituting a DingTalk operation.
+
+## Review Workflow
+
+1. Determine the material's real type from its reference and metadata, then load the matching operation Skill. Do not treat a table as a document or choose a read merely because two references look similar.
+2. The agent chooses and performs every content read. The service exposes references and exact read commands but does not interpret business content. For an ordinary file, use the supplied exact download/read command and inspect the downloaded content.
+3. For an attached image, inspect the image content already present in the current Agent input before drawing conclusions. If the input instead exposes an exact supplied local material reference or operation, use that exact reference or operation to inspect the image. Do not load image-generation and do not guess an image-reading Skill. A filename, caption, attachment card, or prior description is not image evidence.
+4. Reread the current material when the sender says it changed, was supplemented, or received new comments. Do not reuse a conclusion from an older version.
+5. Review readable material directly. Do not ask the sender to paste content that the agent can read. Tie conclusions, requested changes, risks, and next steps to the content actually inspected. For a reported defect, give the material identity, inspected version or read time, exact sheet/cell/section, observed value, and the applicable rule or expected value. Distinguish a cached/displayed value from a formula or a newly recomputed result. A later follow-up must use the same source or an explicitly verified successor; compare versions before withdrawing an earlier finding. If a read fails, explain the technical gap and retain any exact prior observations as historical evidence; do not repeat an unverified demand to repair the material or use the Agent's own previous reply as proof of the defect.
+6. For a verified material access denial, use an authorized `request_access` purpose action once when an actual request route exists. The reviewed executor sends the request; its verified receipt anchors `action=retry`, `reason=access requested`, with that receipt in `evidence_refs`. The service persists at most three subsequent Consumer reads, 12 hours apart, with a 72-hour hard deadline from the original request. Native sessions, feedback revisions and restarts do not reset the budget. Request delivery is not permission approval. When no permission request route exists, the OA purpose may propose a real `action=return` under its operation Skill; explain access denial and request accessible materials without claiming business noncompliance. Other purposes use their declared supported business action. Download/parser/OCR/client failures remain explicit technical failures and never establish applicant fault or actual access denial. Do not infer missing content.
+7. Deliver comments in the material when the loaded operation Skill supports comments; otherwise deliver the review in the source conversation after loading that conversation's operation Skill.
+
+## Long Documents and Full-Coverage Revisions
+
+When work spans many sections or the requester expects complete coverage:
+
+- Identify the authoritative source and record its version and the source items in scope. Keep stable source IDs or section anchors so reordered sections, repeated headings, and omissions remain visible. Treat partial answers and appendices as working material unless the requester makes them the governing source.
+- Save completed sections and remaining gaps as work proceeds. When resuming or revising after feedback, inspect the latest saved revision against the current source and requested changes. Keep valid work, complete what is missing, and recheck sections affected by a source change.
+- Before reporting coverage, compare the exact files to be delivered against the source inventory. Read the content for each source item to check that it answers that item, and resolve duplicated or misplaced material. Heading counts alone do not establish coverage. State unresolved facts separately from missing review items and describe only the work verified in those files.
+
+Consumer reads the material and proposes any comment or response; it does not perform those controlled actions. Audit independently reads the same business and operation Skills, validates the exact path and SHA receipts, and rereads current material when required. It approves, returns, or rejects the exact current proposal. The System Executor alone performs approved controlled actions and verifies their result; the service records operations but never decides what the material means.

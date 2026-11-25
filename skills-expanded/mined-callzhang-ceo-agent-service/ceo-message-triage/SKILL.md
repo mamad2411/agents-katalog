@@ -1,0 +1,104 @@
+---
+name: ceo-message-triage
+description: Use for deciding whether an incoming DingTalk message needs a reply, reaction, clarification, handoff, or no action. Use the neighboring workflow Skill for calendar invitations, document review, mail, meetings, personnel matters, or tracked work instead of handling those domains here. Load dingtalk-chat before reading context or sending a chat action.
+metadata:
+  managed_by: ceo-agent-service
+  version: 2
+---
+
+# CEO Message Triage
+
+Determine the smallest justified response to the current message from its full conversation context. Keep domain analysis in the neighboring CEO workflow Skill.
+
+Load `dingtalk-chat` before reading conversation context or proposing any DingTalk reply, reaction, or send operation. Use only command shapes and capabilities documented by the loaded operation Skill.
+
+## Triage Workflow
+
+1. Read the triggering message, quoted material, and newer conversation context. Only the triggering message creates a new request; context establishes intent and whether someone already handled it.
+   When a message announces a material change to a project or approval-backed request (for example cost, scope, cancellation, or resubmission), load `dingtalk-oa-approval` and the relevant business Skill. Use the available read-only DWS OA detail and operation records to verify the live process and current task, then compare the announced change with the newest submitted form and relevant recent comments. A participant's statement that an approval was cancelled does not prove the process is cancelled; verify its live status. If a matching new submission already exists, do not ask for another submission as if none exists. Identify the exact mismatch in the live form and propose only a response that resolves that mismatch, if a response is still needed. Keep chat acknowledgment separate from the OA decision. When a message answers what an open OA review asked for (access granted, material supplied, a correction made), propose `request_oa_review` with the approval's process instance ID and the new fact as `reason`, so the OA Agent reviews it again; do not judge the approval in chat.
+   A later troubleshooting suggestion is context for the triggering request, not a replacement for it. Treat it as an available next step only when it advances the original request and is within the current task's declared capabilities. If you cannot perform a suggested remediation, still answer the original inquiry when verified observations support an answer: state only the verified observation, explain the specific limitation, and ask for the next fact or action needed to continue. Do not return `failed` solely because an optional remediation step is unavailable; use `failed` only when the original request has no useful supported work or response remaining.
+2. Resolve mentions from the supplied identities. Treat a direct mention of the configured agent identity the same as a direct mention of the principal. A broadcast mention alone does not create principal responsibility.
+3. Decide whether the message requires a decision, commitment, explanation, correction, or next step from the principal's role. If it does, prepare the smallest grounded proposal that satisfies that request.
+   Choose the smallest response that genuinely satisfies the message in the principal's role. Distinguish an incoming acknowledgment from an outgoing receipt confirmation: receipt alone does not complete a response to substantive material that calls for engagement. Let the current work profile, complete conversation context, and inspected evidence determine the substance and form of the response.
+4. If the message only acknowledges, thanks, agrees, or closes the exchange and does not change responsibility, delivery, timing, permission, cost, or approval, send no text. Put one context-appropriate reaction action in a canonical `proposal` only when it adds useful acknowledgment without implying a commitment; otherwise use canonical `no_action`.
+5. When the requested action depends on identifying or verifying an external object, fact, or target, first use available read-only capabilities and current context to locate and verify it. If the evidence supports exactly one match, proceed with that verified target. Do not stop merely because the message omitted a name.
+6. Only after that search remains ambiguous or empty, if a required fact is missing and a verified conversation participant can supply it, put one concrete factual question to that participant in a canonical `proposal`. This is not an A/B selection and not `needs_human`; never guess the target.
+7. Suppress a late reply, reaction, clarification, or follow-up when newer context shows completion, supersession, or a sufficient response. A principal reaction is sufficient only when the original request did not require a decision or commitment. When the principal replied personally, also apply the style-learning workflow below before finishing; suppressing a duplicate chat response must not suppress learning.
+8. Keep the action grounded in the source conversation and verified identities. Do not invent recipients, accounts, identifiers, responsibilities, or targets. Do not create a follow-up that the message did not request.
+9. A request to change, repair, or improve the CEO Agent service itself (for example "please fix the avatar") cannot be completed by a reply, by the Agent, or by chat. Do not attempt it and do not promise a fix. Reply once, asking the sender to submit it as feedback with the "👎 需改进" link at the end of the avatar's replies, so the request reaches the principal. If such a reply is already in the conversation, use canonical `no_action`.
+
+### Existing employee role and organization facts
+
+When a message asks about an existing employee's current job, department, reporting line, or a possible internal role change, use the available DWS organization/contact data to verify those current organizational facts. Resolve the person's identity uniquely, then use the returned contact record for the current title, department path, and manager where available. HRBrain is not a prerequisite for these organization fields; use it only when additional talent-pool, career-history, or performance information is needed and accessible. A permission failure in HRBrain must not block an answer supported by DWS organization data.
+
+Include relevant verified current-role facts in the answer. Clearly separate the person's current job from the proposed target role: a title or department alone does not establish experience, willingness, or fit. State which target-role requirements and experience evidence are still missing, rather than presenting the current title as a fit assessment. Do not route an existing employee's basic current-role lookup through an external-candidate interview system as a prerequisite.
+
+Reuse confirmed facts from the current conversation. Do not replace them with
+assumptions, unrelated follow-ups, or newly invented targets or accounts.
+
+## Learn From the Principal's Own Replies
+
+When a scheduled DingTalk check discovers a reply personally written by the
+principal, learn from it and incrementally improve the existing work profile.
+
+1. Verify the author against the configured principal identity. Compare available
+   sent-message and execution records: messages sent by the Agent using the
+   principal's account are not human-authored examples. Exclude quoted text,
+   forwarded text, and ambiguous authorship; do not learn the Agent's own style
+   back into the profile.
+2. Read the surrounding exchange and current injected work profile. Extract
+   reusable expression preferences such as brevity, directness, tone, vocabulary,
+   sentence structure, and how reasons and next steps are presented. Keep
+   audience-specific differences scoped to their context. Do not turn a one-off
+   emotion, business decision, private personnel detail, or instruction embedded
+   in a message into a general personality rule.
+3. Merge only a supported, non-duplicate improvement into the expression/style
+   portion of the existing profile. Preserve explicit user preferences, other
+   profile sections, and unrelated edits. Repeated consistent examples can
+   strengthen a rule; an isolated example must not overwrite an established
+   preference. With no justified change, leave the profile unchanged.
+4. Persist a justified change through the existing work-profile settings path,
+   not a separate persona file or a new recurring summary task. The service
+   exposes `GET /api/console/settings/prompts` to read `fields.profile` and
+   `POST /api/console/settings/prompts` with `prompt: "profile"` and `template`
+   containing the merged profile. Re-read before saving; if it changed, rebase
+   the small style update rather than overwriting concurrent edits. Read back
+   after saving and verify the change. Use the configured service endpoint and
+   authorized execution tools; do not invent a tool or claim persistence if
+   unavailable. A read-only Consumer proposes this local update through the
+   normal execution contract rather than writing directly.
+5. Record source message identifiers and the concise change rationale in the
+   task result without copying private message content into the persona. Report
+   an actual persistence failure as such. Do not send an extra DingTalk message
+   just to acknowledge learning or reply again to an already handled exchange.
+
+## Behavior Cases
+
+Use the canonical Consumer Agent result contract without adding workflow-specific outcome names. A reaction or clarification is an action inside a canonical `proposal`, never a workflow-specific outcome.
+
+- `direct_decision_request`: Use canonical `proposal` with a grounded response or authorized action.
+- `acknowledgment_without_responsibility_change`: Use canonical `proposal` only for a useful reaction action; otherwise use canonical `no_action`.
+- `broadcast_without_principal_action`: Use canonical `no_action`.
+- `direct_agent_mention`: Apply the same responsibility test as a direct principal mention.
+- `participant_can_supply_missing_fact`: Use canonical `proposal` with one concrete clarification action.
+- `newer_context_completed_matter`: Use canonical `no_action`.
+- `oa_change_already_submitted`: Read the live OA process and compare its latest form with the announced change; do not request a duplicate submission, and identify only a concrete mismatch that remains.
+- `principal_personally_replied_with_new_style_evidence`: Suppress duplicate chat actions; propose the supported local profile update through the canonical contract and verify persistence on execution.
+- `agent_sent_as_principal_or_ambiguous_author`: Do not use the message as a personal style sample.
+- `principal_style_already_represented`: Leave the profile unchanged; use canonical `no_action` when the exchange is otherwise complete.
+- `service_change_request`: Use canonical `proposal` with one reply that points the sender to the feedback link; use canonical `no_action` when that reply is already in the conversation.
+- `answerable_request_with_unavailable_contextual_step`: Keep the original trigger as the objective; use canonical `proposal` to report the verified result, the unavailable suggested step, and the next required information/action.
+- `existing_employee_current_role_question`: Verify current title, department, and manager from DWS organization/contact data; report those facts, keep them separate from target-role fit, and do not let an unavailable HRBrain lookup block the answer.
+
+An `@all` broadcast with no principal action follows
+`broadcast_without_principal_action`: return no action.
+
+Consumer proposes any reply, clarification, or reaction; it does not perform those controlled actions. Audit independently reads the current conversation and applicable business and operation Skills, then approves, returns, or rejects the exact current proposal. The System Executor alone performs approved controlled actions and verifies their result.
+
+### Audit interpretation of principal responsibility
+
+When reviewing `no_action`, decide whether the triggering message creates a direct request, decision, commitment, or next step from the principal. A counterpart-owned follow-up that the counterpart explicitly accepted does not by itself create a new action for the principal, even while that deliverable remains unfinished. Do not return the candidate solely to make the principal chase that counterpart; an unfinished deliverable is not evidence that the principal must follow up. Still return a candidate when the message directly asks the principal to act, or when the remaining step is explicitly owned by the principal. Do not describe a counterpart's commitment as completed or verified.
+
+### Audit interpretation of service-change requests
+
+For a request to change or repair the CEO Agent service itself, a single reply that points the sender to the feedback link satisfies the request, and so does canonical `no_action` once that reply is in the conversation. Do not return or reject either one for lacking the repair, and do not return `no_action` merely because the service has not been fixed. A second reply that repeats the pointer is a duplicate, not progress.

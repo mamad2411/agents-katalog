@@ -1,0 +1,59 @@
+---
+name: copywriting
+description: Copywriting style guidelines. Use when drafting, rewriting, or reviewing copy.
+---
+
+# Copywriting
+
+Write for the reader's immediate question, task, or decision. Sound like an experienced editor: direct, concrete, calm, and precise.
+
+## Start With the Reader
+
+Open with why the subject matters to the reader and what they can understand or decide after reading. State the substance directly, without announcing what the writer plans to cover or how the piece will unfold.
+
+## Shape the Copy
+
+- Organize around the reader's needs rather than the writer's method or the order in which the work was produced.
+- Give each paragraph a clear job and advance the idea instead of circling it.
+- Keep sentences concise without piling up concepts or straining for quotable lines. Preserve useful sentence-length and rhythm variation; do not make every line sound like a slogan.
+- Remove throat-clearing, repeated introductions, redundant summaries, repeated signposting, and conclusions that merely restate the preceding copy.
+- Keep internal rationale, strategy labels, production notes, layout intent, and commentary about the writing process out of final copy. State the content directly instead of announcing or reviewing what the text will say, is saying, or has said.
+
+## Prefer Concrete Language
+
+- Name the actual object, action, problem, outcome, or constraint.
+- Prefer plain, specific words over slogans, internal abstractions, and corporate language.
+- Introduce a necessary abstraction only after grounding it in something the reader can do, see, compare, or decide.
+- Reduce adverbs that add emphasis without useful information; prefer accurate verbs and concrete nouns. Preserve modifiers that carry necessary information about time, negation, scope, frequency, degree, or certainty, and keep the original meaning when revising.
+
+## Avoid Rhetorical Shortcuts
+
+- Avoid stock assistant phrases, automatic praise, and enthusiasm that the context does not support.
+- Avoid “not X, but Y” constructions used only for emphasis or to make a point sound insightful. Use them only when they correct a real misunderstanding or clarify an important difference.
+- Avoid self-talk, writing-process commentary, and internal reasoning, including scope decisions and explanations of your mistakes, unless requested or needed for the reader to understand, decide, or act.
+- Avoid formulaic “first..., then...” constructions that invent a user journey or sequence of behavior without support from the context. Use sequential language only when the order is real and relevant.
+- Avoid vague “from X to Y” formulas that name two endpoints without explaining what changes or how they are related.
+- Avoid using em dashes or extra commas merely to create pauses, dramatic rhythm, or a false sense of depth.
+- Avoid using colons merely to add emphasis between normal prose clauses. Use them when they serve a clear structural purpose, such as in labels, lists, definitions, and code.
+- Avoid empty positioning language such as "redefine", "empower", "unlock the future", or "build a new paradigm". Replace it with a specific capability, behavior, or result.
+- Avoid literal cross-language calques and unnatural collocations (such as "边界" from "boundary", "稳" from "stable/solid", or "判断很直接" from "straightforward"); choose specific, idiomatic wording native to the target language.
+
+## Adapt to Content Type
+
+Apply these strategies to the relevant passages when they suit the reader's needs, purpose, and requested tone. Keep the voice coherent across the piece.
+
+### Product Copy
+
+State the section's promise in the headline. In the supporting copy, connect the user-visible result to the product capability that produces it, and explain the mechanism at the level needed to make the claim credible.
+
+### Narrative and Scene Writing
+
+When a narrative or scene benefits from vivid action, restrained expression, and emotional subtext, draw on Hemingway's style. Favor precise verbs, concrete actions, sensory details, and character reactions over adverbs that label emotion or manner. Let those details carry emotion and leave room for inference. Use direct explanation or emotional summary when it better serves clarity, pacing, or the reader's needs.
+
+## Final Check
+
+Before delivering copy, verify that:
+
+- the opening answers the reader's immediate need
+- no slogan, abstraction, or repetition exists only for rhetorical effect
+- the chosen writing strategies suit the passages and the final copy sounds coherent and natural in its intended channel and language

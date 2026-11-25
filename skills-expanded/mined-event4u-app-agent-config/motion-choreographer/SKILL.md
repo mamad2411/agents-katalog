@@ -1,0 +1,219 @@
+---
+model_tier: inherit
+name: motion-choreographer
+description: "Locked still + blueprint → provider motion prompt: camera, motion, physics, audio sync, for Veo/Kling/Sora. Code film → code-film."
+personas:
+  - ai-video-technical-director
+domain: product
+workspaces:
+  - small-business
+packs:
+  - ai-video
+lifecycle: experimental
+trust:
+  level: experimental
+install:
+  default: false
+  removable: true
+---
+
+# motion-choreographer
+
+> Turn an approved still + the 12-block scene blueprint into a
+> provider-tuned **motion prompt** that the target video adapter
+> consumes. Camera choreography, primary subject motion, secondary
+> environment motion, physics constraints, and — when the adapter
+> declares `audio: native` — a synchronized audio direction block.
+> Reads adapter capabilities from
+> [`adapter-contract.md`](../../scripts/media/lib/adapter-contract.md);
+> never speaks to a network API.
+
+## When to use
+
+- An image is locked (operator picked one candidate via
+  `operator-pick.sh`) and the next step is motion + audio direction
+  for the video adapter.
+- The blueprint exists in `scenes/<id>/blueprint.json` but the
+  motion prompt has not been emitted yet.
+- A provider switch (Veo → Kling, Sora → Higgsfield) requires the
+  same scene retuned for the new adapter's capability profile.
+
+Do NOT use when:
+
+- The blueprint is still prose only — run
+  [`scene-expander`](../scene-expander/SKILL.md) → `parse-blueprint.sh`
+  first.
+- No still has been locked — the operator-selection checkpoint
+  must complete first.
+- The output is a still graphic — `canvas-design`.
+
+## Procedure
+
+### Step 0: Inspect
+
+1. Read `scenes/<id>/blueprint.json` — fail loud if missing.
+2. Read `scenes/<id>/selection.json` — fail loud if missing; the
+   locked image path is required as the motion anchor.
+3. Read the target adapter's capability via
+   `scripts/ai-video/adapters/<id>.sh capability`. Cache `audio=*`
+   for Step 3.
+4. If a `character.json` lock exists, load it verbatim — identity
+   tokens are immutable.
+5. Continuous take or connector asked for? Read the model's
+   `start_frame` / `end_frame` first —
+   `scripts/ai-video/adapters/<id>.sh capability --model <m>`. `null` is
+   unknown, never `true`. A model that cannot frame-lock is **declined
+   with a one-line why**, never substituted in
+   ([`adapter-contract.md#end_image`](../../scripts/media/lib/adapter-contract.md#end_image)).
+
+### Step 1: Camera choreography
+
+Emit a `CAMERA MOTION` block with the move type, distance, speed
+in seconds, and start-end framing.
+
+- Move types: lock-off, pan, tilt, dolly-in, dolly-out, truck,
+  pedestal, push, pull, handheld, gimbal-glide, crane, whip.
+- Speed in seconds per beat (`0.4s push, hold 1.6s, 0.4s pull`).
+- Start and end framing named (`MS → CU`, `WS → MS`).
+
+Blueprint intent-class decoding — the blueprint CAMERA block names
+one of six provider-agnostic intent classes; map it to the move types
+above before encoding:
+
+| Intent class | Move-type mapping |
+|---|---|
+| static hold | lock-off |
+| push-in | push / dolly-in |
+| pull-back | pull / dolly-out |
+| lateral track | truck / pan |
+| handheld drift | handheld / gimbal-glide |
+| orbit | crane / arc via truck+pan |
+
+Adapter quirks (per-provider encoding of the mapped move). These are undated
+and unverified against provider documentation — check the model-capabilities
+entry (`verified`, `recheck_by`) before trusting one:
+
+- **Veo** — accepts named moves; prefers ≤ 8s clips.
+- **Kling** — motion intensity 0–1 token; map our speed to that.
+- **Sora** — natural-language move + duration; no token.
+- **Higgsfield** — preset-driven; pick the preset that matches the
+  move; record the preset id in the motion prompt.
+- **LENS handling** — blueprint mm + aperture translate to the
+  provider's nearest lens / FOV idiom; never forward raw mm to a
+  provider that lacks lens grammar.
+- **DURATION handling** — the blueprint value is free; clamp to the
+  provider ceiling here and record the clamp in `review.md` (a
+  silent clamp is a drift bug).
+
+### Step 2: Primary + secondary motion
+
+Two blocks:
+
+1. **PRIMARY MOTION** — what the subject does, beat-counted, with
+   physics anchors (mass, contact points, momentum). Reuse `ACTION`
+   from the blueprint; refine for the adapter's preferred verb
+   density.
+2. **SECONDARY MOTION** — what the world does (hair, fabric,
+   foliage, water, dust, particles, breath). One layer per line.
+3. **TIMED SEGMENTS** (optional, when the clip has more than one
+   beat) — `0–3 s: …`, `3–7 s: …`, covering the whole duration
+   without gaps; each segment names what changes, never a mood.
+
+### Step 3: Audio direction (conditional)
+
+If adapter capability is `audio: native` AND the blueprint's
+`audio.enable_native_audio` is `true`:
+
+Emit an `AUDIO DIRECTION` block with:
+
+- `DIALOGUE TIMING` — `speaker @ 0.4s: "line"` per dialogue entry.
+  The prompt itself is English; every spoken line stays verbatim in
+  its own language and script, tagged (`[de] "…"`). Never translate
+  a line the user wrote.
+- `AMBIENT LAYERS` — copy from blueprint; one layer per line.
+- `SYNC CUES` — which action beat maps to which audio cue
+  (`footstep @ 1.2s`, `door close @ 2.1s`).
+
+If adapter capability is `audio: none`:
+
+- Emit a `# AUDIO: ffmpeg-mux fallback` comment with the
+  blueprint's audio paths queued for stitch-time mux.
+- Set `enable_native_audio: false` in the motion-prompt JSON.
+- Blueprint carries DIALOGUE → the mux fallback cannot speak text
+  lines. Emit a mandatory `AUDIO DOWNGRADE` warning block in
+  `motion-prompt.txt` AND `adapter-notes.md` listing every dialogue
+  line that will not render. The decision whether that is acceptable
+  belongs to the orchestrator gate (adapter-contract § Audio
+  ownership) — this skill translates, it never validates, and it
+  NEVER silently strips dialogue.
+
+### Step 4: Physics constraints
+
+Emit `PHYSICS` — a short list of what the model must respect:
+gravity direction, contact friction, fluid behavior, hair / cloth
+inertia, lens parallax. Single line per constraint.
+
+Then `NEGATIVE LOCKS` — what must not happen, one line each:
+identity drift, readable text the blueprint did not ask for, extra
+limbs or fingers, a cut the shot list does not contain, a logo that
+is not the user's. Only locks the blueprint gives reason for.
+
+### Step 5: Emit motion-prompt JSON
+
+Write `scenes/<id>/motion-prompt.json` with the adapter-contract
+stdin shape. The orchestrator pipes this into the video adapter's
+`submit` subcommand.
+
+### Step 6: Validate
+
+1. JSON parses (`jq .`).
+2. `requires.audio_native` is consistent with the chosen adapter's
+   capability.
+3. Duration in the motion prompt matches blueprint duration ±0.
+4. Identity tokens (if `character.json` exists) are verbatim.
+
+## Output format
+
+1. **`scenes/<id>/motion-prompt.json`** — adapter-contract stdin.
+2. **`scenes/<id>/motion-prompt.txt`** — labeled prose blocks
+   (CAMERA MOTION · PRIMARY MOTION · SECONDARY MOTION · AUDIO
+   DIRECTION · PHYSICS) for operator review.
+3. **`scenes/<id>/adapter-notes.md`** — which adapter, which
+   capability, which preset / model, with rationale.
+
+## Gotcha
+
+- The model wants to "improve" the blueprint's `SUBJECT` block —
+  identity tokens are immutable; refuse the temptation.
+- Picking `audio: native` on an adapter that returns `audio: none`
+  produces silent video — always read capability first, never
+  guess from the adapter name.
+- Higgsfield preset id must be recorded; otherwise the rerun
+  drifts to whichever preset the model picks on the next call.
+- Sora durations > 8s often degrade — clamp at the adapter table
+  limit; surface the clamp to the operator.
+
+## Do NOT
+
+- Do NOT emit motion prompts for an adapter whose capability you
+  did not query this turn.
+- Do NOT skip the still-locked check — motion direction without an
+  anchored image diverges on every call.
+- Do NOT paraphrase identity tokens from `character.json`.
+- Do NOT call any network API — this skill is provider-tuning
+  prose only.
+
+## Policies
+
+Paths, enforcement model, and the full set: the
+[media policy preamble](../../../agents/settings/policies/media/README.md).
+
+Motion prompts inherit every constraint the upstream blueprint carries. Before emitting provider-tuned prose:
+
+- **`disclosure`** — every distributed clip carries the non-removable AI-generation disclosure; refuse adapter flags that would suppress it.
+- **`transparency`** — provider provenance (C2PA / SynthID) is preserved; refuse re-encode flags whose effect is to strip provenance.
+- **`voice-cloning`** — when the motion prompt requests `audio: native` narration in a named voice.
+- **`brand-impersonation`** — when the motion prompt copies a recognised brand's chyron / mascot / signature transition.
+
+Refuse-and-surface; the motion prompt cannot launder a policy gap upstream skills should have caught.
+

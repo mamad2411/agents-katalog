@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/cynco-labs/ai-accounting-skills (path: accounting-engagement/skills/subledger-reconciliations/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: /subledger-reconciliations

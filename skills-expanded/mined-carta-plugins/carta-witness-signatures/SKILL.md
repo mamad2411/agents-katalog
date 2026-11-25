@@ -1,0 +1,171 @@
+---
+name: carta-witness-signatures
+description: >-
+  Track who still needs to sign witness and spousal consent forms. Shows the status of
+  witness and spousal-consent signature requests on option grants, RSAs and PIUs:
+  awaiting details, awaiting signature, signed or expired. Covers one award, one
+  company, or the user's own awards across their portfolio. Read-only.
+when_to_use: >-
+  Use when asked whether a witness or a spouse has signed, who has not signed the
+  witness or spousal consent forms, which grants wait on a witness, why a grant waits
+  for spousal consent, which signature requests are awaiting signature or have
+  expired, how many witness requests are pending, when a signing link expires, or to
+  list witness / spousal-consent requests for a single award, a company, or the user's
+  own awards across their portfolio. Phrasings like "did the witness sign", "did my spouse sign", "is the
+  spousal consent done", "who hasn't signed the witness forms", "which grants are
+  waiting on a signature", or "any expired signing links". Not for holder acceptance
+  of a grant, officer or board signatures, stockholder consents, or certificate
+  signing: this skill has no data for them.
+model: inherit
+allowed-tools:
+  - mcp__carta__call_tool
+  - mcp__carta__read_tool
+  - mcp__carta__list_contexts
+  - mcp__carta__set_context
+  - mcp__carta__list_accounts
+  - mcp__claude_ai_Carta__call_tool
+  - mcp__claude_ai_Carta__read_tool
+  - mcp__claude_ai_Carta__list_contexts
+  - mcp__claude_ai_Carta__set_context
+  - mcp__claude_ai_Carta__list_accounts
+  - mcp__2827383e-1775-4df3-b6ff-04d5392f6d18__call_tool
+  - mcp__2827383e-1775-4df3-b6ff-04d5392f6d18__read_tool
+  - mcp__2827383e-1775-4df3-b6ff-04d5392f6d18__list_contexts
+  - mcp__2827383e-1775-4df3-b6ff-04d5392f6d18__set_context
+  - mcp__2827383e-1775-4df3-b6ff-04d5392f6d18__list_accounts
+  - AskUserQuestion
+  - Read
+---
+
+<!-- carta:plugin-version -->
+<carta-plugin>carta-cap-table:6.119.1</carta-plugin>
+
+<!-- Part of the official Carta AI Agent Plugin -->
+
+# Witness & Spousal-Consent Signatures
+
+Show the status of the extra signatures some equity awards need before they're fully in place.
+
+## Background
+
+When someone is granted equity, the award sometimes needs a signature from a person other than the recipient before it's complete:
+
+- **Witness** — an independent person who confirms they watched the recipient sign. This is a legal requirement in some markets.
+- **Spousal consent** — the recipient's spouse signs to acknowledge the award. This applies where local marital-property rules give a spouse an interest in equity earned during the marriage.
+
+Each one is tracked as a **signature request** tied to a single award. A request moves through these stages:
+
+| Stage | What it means |
+|-------|---------------|
+| **Awaiting details** | The request exists, but the witness or spouse's name and email haven't been added yet. |
+| **Awaiting signature** | Details are in and the signing link has been sent. Waiting on the witness or spouse to sign. |
+| **Signed** | Done — the witness or spouse has signed. |
+| **Expired** | The signing link's deadline passed before it was signed. Signing links expire about 30 days after they're sent. |
+
+These three awards can carry signature requests: **option grants**, **RSAS (restricted stock awards)**, and **PIUs (profits interest units)**.
+
+## When to Use
+
+- "Did the witness sign Jordan's option grant?"
+- "Which grants are still waiting on a signature?"
+- "Is the spousal consent done for this award?"
+- "Show me any expired signing links for this company."
+- "List the outstanding witness signatures across my portfolio."
+
+
+## Prerequisites
+
+- **One company or one award** → you need the company. Do not call `list_accounts` or ask which company before the first read: Carta finds the company. Reuse the company already resolved in this conversation unless this prompt names or numbers another. Else send the numeric id the user gave, else the company name as the user said it, else no `corporation_id` (Carta uses the user's only company). On an error, and for later calls, follow `${CLAUDE_PLUGIN_ROOT}/references/find-the-company.md` (the plugin's own `references/`, not this skill's; read it by that path, do not search for it). Its reads are cap table reads: reuse `meta.company.id` on later calls.
+- **A single award** → you also need its type (`OPTION_GRANT`, `RSA`, or `PIU`) and the award itself. The company-wide list (below) returns these, so start there if you don't already know which award you mean.
+- **A portfolio** → you need the user's own portfolio: the awards they hold across companies. Get it from `list_accounts` (an `organization_pk:` entry) and pass that id as-is. Carta refuses a firm's or another holder's portfolio.
+
+If another required input is missing (the award type, or the portfolio), ask for it with `AskUserQuestion` before fetching. Do not ask for the company before the first read.
+
+## Data Retrieval
+
+Pick the command that matches the scope of the question.
+
+**One company** — every request for a single company:
+
+```
+read_tool({"name": "cap_table__list__witness_signatures_for_corporation", "arguments": {"corporation_id": corporation_id}})
+```
+
+Optional filters: `request_type` (`WITNESS` or `SPOUSAL_CONSENT`), `status` (a list of `PENDING`, `FILLED`, `SIGNED`, `EXPIRED`), `page`, `page_size`.
+
+**One award** — every request on a single award you've already identified:
+
+```
+read_tool({"name": "cap_table__get__witness_signatures_for_security", "arguments": {"corporation_id": corporation_id, "security_type": "OPTION_GRANT", "security_id": security_id}})
+```
+
+`security_type` is one of `OPTION_GRANT`, `RSA`, `PIU`.
+
+**A portfolio** — requests across every company in a portfolio:
+
+```
+read_tool({"name": "cap_table__list__witness_signatures_for_portfolio", "arguments": {"portfolio_id": portfolio_id}})
+```
+
+Optional filters: `request_type`, `status`, `issuer_id` (narrow to one company), `page`, `page_size`.
+
+> **Spousal consent in portfolio view**: the portfolio list returns witness and spousal-consent requests together. `request_type` has no effect on this list; read `request_type` on each row to tell them apart. Use `issuer_id` to narrow to one company.
+
+> **Default status filter**: when you don't pass `status`, the results show the requests that usually need attention — those awaiting signature and those that have expired. To see requests still awaiting details or already signed, pass `status` explicitly (e.g. `"status": ["SIGNED"]`).
+
+## Key Fields
+
+Each request carries:
+
+- `status`: `PENDING`, `FILLED`, `SIGNED`, or `EXPIRED` — map to the friendly labels in the Background table.
+- `request_type`: `WITNESS` or `SPOUSAL_CONSENT`.
+- `expires_at`: the signing deadline.
+- `issuer_name`: the company that granted the award.
+- `security_label`: the award's reference (for example, "ES-1007").
+- `security_type`: `OPTION_GRANT`, `RSA`, or `PIU`.
+- `witness_name`, `witness_email`: the witness or spouse who needs to sign (blank until details are added).
+- `acceptance_date`: when the recipient accepted the award.
+
+## Gates
+
+**Required inputs**: a portfolio (`portfolio_id`) for the portfolio command; `security_type` and the award for the single-award command. If missing, call `AskUserQuestion` before proceeding. The company for the company and award commands is not an input to ask for: it comes from Prerequisites (omitted, a name, or `meta.company.id`).
+
+**AI computation**: No — this skill presents Carta data directly.
+
+## Presentation
+
+**Format**: Table.
+
+**BLUF lead**: Lead with the counts — how many are awaiting signature, signed, and expired — then the table.
+
+> 4 signature requests: 2 awaiting signature, 1 signed, 1 expired.
+
+**Translate codes to plain language.** Never show the raw status, type, or any internal reference. Use "Awaiting signature", "Witness" / "Spousal consent", and "Option grant" / "RSA" / "PIU". Identify each request by company, award reference, and the person's name — not by any internal number.
+
+**Sort order**: Awaiting signature first, then by soonest deadline; expired next; signed last.
+
+**Date format**: MMM d, yyyy (e.g. "Jan 15, 2026").
+
+| Company | Award | Type | Needs to sign | Status | Deadline |
+|---------|-------|------|---------------|--------|----------|
+| Acme | ES-1007 (Option grant) | Witness | Dana Lee | Awaiting signature | Jun 1, 2026 |
+| Acme | PIU-12 (Profits interest unit) | Spousal consent | Sam Rivera | Signed | — |
+
+For a single award, lead with the award and the count, then list its requests.
+
+**End with a next step** — for example, point out which requests are closest to expiring, or note that reminders and deadline extensions are handled in Carta.
+
+## Error Handling
+
+| Situation | What to do |
+|---|---|
+| Company error | Follow *Company errors* in `${CLAUDE_PLUGIN_ROOT}/references/find-the-company.md`. |
+| 403, `role_required` or access denied | Say the user's role can't see this company's signature requests. Do not retry. |
+| `invalid_argument` on `portfolio_id` (not the user's own portfolio) | The portfolio list shows only the user's own awards. Do not try other ids. For a company the user manages, use the company list. |
+| Response too large | Call again with the default `page_size` (50, at most 200) and a `status` filter. Then read the next pages with `page`. |
+| Validation error on `security_type` | Send `OPTION_GRANT`, `RSA` or `PIU`. Other security types have no signature requests. |
+| The user asks about grant acceptance, officer or board signatures, or certificates | Say this skill shows only witness and spousal-consent requests. Do not show grant or certificate status as signature status. |
+
+## Caveats
+
+- Read-only: this skill can't add details, send reminders, or extend deadlines — those are done in Carta.

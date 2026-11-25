@@ -1,0 +1,87 @@
+---
+name: dualkit-bilingual-copy
+description: Use when writing, structuring or reviewing interface strings for an Arabic and English product, including plurals and counts, interpolated values, gendered Arabic, punctuation, uppercase labels, language switchers, and translation files
+---
+
+# Bilingual copy
+
+## Overview
+
+Arabic is not English with different words. It has six plural forms, gendered second person, its own punctuation and right-to-left word order. Strings must be whole sentences with placeholders that a translator can move. Concatenated fragments cannot be translated. This skill sets no font. For fonts and sizes, use dualkit-type-pairing.
+
+## Plurals: all six Arabic forms
+
+Arabic plural rules have `zero`, `one`, `two`, `few`, `many` and `other`. Above 10 they go by the last two digits, so 103 is `few`, 111 is `many`, and 100, 101 and 200 are `other`. Provide all six, and never pick the form by hand. Select it with `Intl.PluralRules`.
+
+```ts
+const count = 5
+const items = {
+  zero: 'لا توجد عناصر في هذا الطلب',
+  one: 'لديك عنصر واحد في هذا الطلب',
+  two: 'لديك عنصران في هذا الطلب',
+  few: 'لديك {count} عناصر في هذا الطلب',
+  many: 'لديك {count} عنصرًا في هذا الطلب',
+  other: 'لديك {count} عنصر في هذا الطلب',
+}
+const digits = new Intl.NumberFormat('ar-AE-u-nu-latn')
+const line = items[new Intl.PluralRules('ar').select(count)].replace('{count}', digits.format(count))
+```
+
+`one` and `two` usually drop the number entirely. English still needs its own `one` and `other`. The `-u-nu-latn` tag pins Western digits. Use the same digit system as the rest of the product (see dualkit-gulf-formats).
+
+## Whole sentences with movable placeholders
+
+| Instead of | Write |
+|---|---|
+| `t.youHave + count + t.items` | `t.items` with `{count}` inside |
+| `name + "'s account"` | `'{name}’s account'` / `'حساب {name}'` |
+
+Wrap any interpolated value that can be left to right (a number, an email, a brand name, a code) in an isolate so it cannot reorder the sentence: `⁦{value}⁩` in plain strings, `<bdi>` in markup.
+
+## Case and emphasis
+
+- Store sentence-case source strings. If the design wants a capitalised eyebrow, apply `text-transform: uppercase` in CSS for Latin only. Strings stored as `'SECURE CHECKOUT'` are read out letter by letter by some screen readers, and they leak into Arabic layouts.
+- Arabic has no case. Emphasise with weight or colour.
+
+## Address the person without guessing their gender
+
+Arabic imperatives and "you" are gendered. In buttons and labels, use the verbal noun, which is neutral: `تسجيل الدخول` (signing in), not `سجّل دخولك` (sign in, masculine). Where you need a full sentence, rephrase around the action or the object.
+
+## Punctuation and register
+
+- Arabic uses the same full stop as English. The comma, semicolon and question mark change: `،` `؛` `؟`.
+- Use Modern Standard Arabic for UI text. Use Gulf dialect only for marketing, and only on purpose.
+- Keep brand and product names in Latin script inside Arabic, isolated.
+
+## Two languages on one label
+
+When a label shows both languages stacked, give each line its own `lang`, and a `dir` when it differs from the page. On an English page, `lang="ar"` lets the `:lang(ar)` rules from dualkit-type-pairing reach the Arabic line. On an Arabic page, `lang="en"` stops `:lang(ar)` matching the English line, but it still inherits the Arabic parent's line-height, letter-spacing and size tokens, so reset those on it. Screen readers read it in an English voice.
+
+```html
+<div>
+  <p lang="ar">الطلبات السابقة</p>
+  <p lang="en" dir="ltr">Past orders</p>
+</div>
+```
+
+- The Arabic line keeps the 14px floor, even when it is the secondary line. Mute it with colour, not size.
+- Neither line is italic or tracked.
+- `dir="ltr"` also moves the English line to the left edge. To keep both lines on one edge, add `text-align: end` to the line with its own `dir`.
+
+## Language switcher
+
+Label each language in itself: `English` and `العربية`. Never use flags, because languages are not countries. Switching changes `lang` and `dir` on the document and keeps the user on the same page.
+
+## Translation files
+
+- Keep `en` and `ar` keys identical, and add a test that fails when one file has a key the other lacks.
+- Machine translation is a first draft only. A native Arabic speaker reviews every string before launch.
+- Allow the Arabic text to be up to 30% shorter or longer. Never size a button to its English label.
+
+## Common mistakes
+
+- An Arabic `zero` form missing, so `لديك 0 عناصر` appears.
+- `count === 1 ? one : other` in shared code that also serves Arabic.
+- A phone or IBAN example dropped into an Arabic sentence with no isolate.
+- Masculine imperatives on every button.
+- A stacked English line with no `lang`, read out in an Arabic voice.

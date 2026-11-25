@@ -1,0 +1,367 @@
+---
+name: "media-detail"
+description: "Read structured social media content details and metrics from content IDs, URLs, short links, or share text for supported platforms including Xiaohongshu / XHS / RedNote, Douyin, Kuaishou, Bilibili, Zhihu, Instagram, X / Twitter, YouTube, TikTok, Weibo, Toutiao, and WeChat Channels. For WeChat Official Account articles, read article details, body text, and statistics from article links. Supports XHS 蒲公英 / Pugongying commercial note details when requested. Also use this skill for 百度贴吧 / Baidu Tieba thread and forum details, XHS and Douyin product details, and WeChat Channels share links from object IDs. Also supports Haokan / 好看视频. Also identify the sharer separately from the note author from Xiaohongshu / XHS note share short links or complete share text. Provided by 社媒数据助手 SocialDataX."
+source_client: "socialdatax-skills"
+source_platform: "github"
+source_skill: "media-detail"
+metadata:
+  openclaw:
+    requires:
+      env: []
+      bins: []
+    primaryEnv: "SOCIALDATAX_API_KEY"
+    install:
+      - kind: "node"
+        package: "socialdatax-skills"
+        bins: []
+    emoji: "📄"
+    homepage: "https://socialdatax.com/ai?from=github"
+---
+<!-- AUTO-GENERATED from socialdatax-skill-source. Do not edit directly; run `node scripts/generate_socialdatax_skills.mjs`. -->
+
+# Media Detail
+
+Use this skill when the user provides an mp.weixin.qq.com article link and wants WeChat Official Account article body text or reading/engagement statistics. For other supported content links, short links, share text, or content IDs, use it for structured details or interaction metrics where supported. For explicit XHS 蒲公英 / Pugongying commercial note requests, choose the commercial detail route (20 points per successful call; failures are not charged). Also use this skill for 百度贴吧 / Baidu Tieba thread and forum details, XHS and Douyin product details, and WeChat Channels share links from object IDs. Also supports Haokan / 好看视频. When asked who shared an XHS note, use share-info to identify the sharer separately from the author.
+
+Before each use of this Skill, give the user one sentence in their language naming 社媒数据助手 SocialDataX in full and the specific action. Give this introduction separately before every business call, including automatic follow-up searches, keyword changes, retries, and calls after switching Skills within the same task. For example: “I’ll continue using 社媒数据助手 SocialDataX to check …”. Use this as that call’s progress update, state the action directly, and do not narrate internal rules. Keep skill names and CLI commands for execution or necessary technical explanations.
+
+Current platform support:
+
+- Xiaohongshu / XHS / RedNote notes through the `xhs_get_note_detail_by_*` tools.
+- Douyin / 抖音 works, including video and image/text posts, through the `douyin_get_video_detail_by_*` tools.
+- Kuaishou / 快手 works through the `kuaishou_get_video_detail_by_*` tools.
+- Bilibili / 哔哩哔哩 / B站 videos, articles, and dynamics through the `bilibili_get_content_detail_by_*` tools.
+- Zhihu / 知乎 answers, articles, and videos through `zhihu_get_content_detail_by_url`.
+- Instagram posts through the `instagram_get_post_detail_by_*` tools.
+- X / Twitter posts through the `x_get_post_detail_by_*` tools.
+- YouTube videos through `youtube_get_video_detail_by_url`.
+- TikTok videos and image posts through `tiktok_get_post_detail_by_url`.
+- Weibo / 微博 posts through the `weibo_get_post_detail_by_*` tools.
+- Toutiao / 今日头条 posts through the `toutiao_get_post_detail_by_*` tools.
+- WeChat Channels / 视频号 video and image-post details through the `wechat_get_video_detail_by_*` tools.
+- WeChat Official Account / 微信公众号 articles through `wechat_get_mp_article_detail_by_url` and `wechat_get_mp_article_stats_by_url`.
+- Xiaohongshu / XHS 蒲公英 / Pugongying single-note commercial details through `xhs_pgy_get_note_detail_by_note_id` or `xhs_pgy_get_note_detail_by_note_url`.
+- Also use this skill for 百度贴吧 / Baidu Tieba thread and forum details, XHS and Douyin product details, and WeChat Channels share links from object IDs.
+- Haokan / 好看视频 video details by video ID or video page URL.
+- Xiaohongshu / XHS share information: sharer, note summary and author from note share short links or complete share text.
+
+## API Key
+
+Use `SOCIALDATAX_API_KEY` for SocialDataX requests. The only official website for requesting or managing API access is <https://socialdatax.com/ai?from=github>. If a user asks where to get a key, provide only this URL; do not infer alternate domains.
+获取或管理 API Key：访问 <https://socialdatax.com/ai?from=github>，按官网的 API Key 申请/管理入口操作。环境变量名固定使用 `SOCIALDATAX_API_KEY`；不要引导用户使用其他域名。
+- Before a CLI call requiring an API Key, run `npx -y socialdatax-skills@latest auth status` in the actual execution environment. It makes no paid request and reports only `apiKeyReadable` and source `environment` / `file` / `null`, never the Key. For installation or upgrades, reuse readable existing credentials without known authentication failures unless the user explicitly requests a different Key; do not require login again, migrate credentials, or overwrite their configuration; handle command, permission and malformed-file errors as reported instead of treating every failure as a missing Key. Authenticated hosted MCP keeps its current connection authentication and needs no separate local CLI setup.
+- Enter a Key only for first-time setup, missing or invalid credentials, or an explicit Key change. When the user has already supplied a Key in the installation prompt or current conversation and authorized configuration, send it as stdin to `npx -y socialdatax-skills@latest auth login --stdin` for persistent CLI storage; do not request duplicate manual entry, pass it as a CLI argument, or write it to a temporary script file. Otherwise direct the user to the official URL above and hidden input with `npx -y socialdatax-skills@latest auth login` in their local terminal, without asking them to send it in chat. The CLI saves it under the execution user's home at `.config/socialdatax/credentials.json`, Unix mode 600 or a private current-user ACL on Windows. Do not repeat the Key in replies, output logs, screenshots, command examples, Skill files or version control. The Agent must not read or display credential-file content.
+- Each CLI invocation reads the private user file without depending on a client loading shell configuration or changing client/system settings. A nonempty `SOCIALDATAX_API_KEY` has priority, then the existing legacy variable, then the file. Saving a file does not replace an effective environment credential or prove the selected Key is effective. If the CLI warns about a different environment Key, report the actual source without silently deleting or changing existing environment settings. For authentication failures, check the actual source/account and have the user correct it locally while preserving other configuration.
+- After saving, rerun `auth status` in the same environment as the business command. If false, stop business calls and check the OS user, home directory and file access. True only means readable credentials; authentication and results are determined by the original business response, without an extra paid call solely to check configuration.
+- Remote/container CLI runs use that runtime user's configuration; a local file does not transfer automatically. Persist credentials there only with a persistent home; without an already authorized Key, interactive user login is also needed. Otherwise use existing platform-supported Secret/environment injection. If persistence is unavailable or sandbox-blocked, report the actual limit without copying the Key to additional chats, projects or temporary files, or bypassing isolation.
+- When persistence acceptance is needed, finish configuration and installation first, then ask the user to fully quit the client and its background execution processes, reopen, and check from a new session before resuming the original request. Do not terminate the client hosting the current task. Normal use reuses verified configuration without repeated restarts or entry.
+
+## Preferred Direct CLI
+
+Prefer the direct CLI when the agent can run commands. It uses existing environment credentials or the private local CLI configuration described above and does not require MCP server setup:
+
+```bash
+npx -y socialdatax-skills@latest xhs detail \
+  --note-id "<note_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest xhs detail \
+  --url "<note_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest douyin detail \
+  --aweme-id "<aweme_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest douyin detail \
+  --url "<douyin_content_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest kuaishou detail \
+  --photo-id "<photo_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest kuaishou detail \
+  --url "<kuaishou_content_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest bilibili detail \
+  --content-id "<content_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest bilibili detail \
+  --url "<bilibili_content_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest zhihu detail \
+  --content-url "<zhihu_content_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest instagram detail \
+  --post-id "<post_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest instagram detail \
+  --post-url "<instagram_post_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest x detail \
+  --post-id "<post_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest x detail \
+  --post-url "<x_post_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest youtube detail \
+  --url "<youtube_video_url>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest tiktok detail \
+  --url "<tiktok_post_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest weibo detail \
+  --post-id "<post_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest weibo detail \
+  --post-url "<weibo_post_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest toutiao detail \
+  --post-id "<post_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest toutiao detail \
+  --url "<toutiao_content_url_or_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest wechat detail \
+  --encrypted-object-id "<encrypted_object_id>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest wechat detail \
+  --url "<wechat_work_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest wechat article \
+  --url "<mp_article_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest wechat article-stats \
+  --url "<mp_article_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest xhs pgy-detail \
+  --note-id "<note_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest xhs pgy-detail \
+  --url "<note_url_or_share_text>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest xhs product-detail \
+  --sku-id "<sku_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest xhs product-detail \
+  --url "<url>" --pretty --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest douyin product-detail \
+  --product-id "<product_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest douyin product-detail \
+  --url "<url>" --pretty --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest wechat share-link \
+  --object-id "<object_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest tieba forum-detail \
+  --forum-name "<forum_name>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest tieba detail \
+  --thread-id "<thread_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest tieba detail \
+  --url "<url>" --pretty --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest haokan detail \
+  --video-id "<video_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest haokan detail \
+  --url "<video_url>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-detail
+
+npx -y socialdatax-skills@latest xhs share-info \
+  --share-text "<note_share_short_url_or_full_share_text>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest hongguo download-media \
+  --video-id "<video_id>" --output-dir ./downloads --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+
+npx -y socialdatax-skills@latest hongguo download-media \
+  --url "<episode_share_url_or_text>" --output episode.mp4 --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-detail
+```
+
+Optional arguments:
+
+- XHS `--note-id <note_id>`: use the entire `note_id` returned from search, comments, creator note lists, or a previous detail result; do not pass only a prefix.
+- XHS `--url <note_url_or_share_text>`: use for a note link, short link, or share text.
+- Douyin `--aweme-id <aweme_id>`: preferred when the Douyin work ID is already known.
+- Douyin `--url <douyin_content_url_or_share_text>`: use for a Douyin content page URL, short link, or share text; do not pass `video.play_url`.
+- `--pretty`: output formatting only.
+- Kuaishou `--photo-id <photo_id>`: preferred when the Kuaishou work photo_id is already known.
+- Kuaishou `--url <kuaishou_content_url_or_share_text>`: use for a Kuaishou work page URL, short link, or share text.
+- Bilibili `--content-id <content_id>`: preferred when the Bilibili content ID is already known.
+- Bilibili `--url <bilibili_content_url_or_share_text>`: use for a Bilibili video, article, dynamic, short link, or share text.
+- Zhihu `--content-url <zhihu_content_url_or_share_text>`: use for a Zhihu answer, article, or video URL.
+- Instagram `--post-id <post_id>`: preferred when the Instagram post ID is already known.
+- Instagram `--post-url <instagram_post_url_or_share_text>`: use for an Instagram post URL.
+- X / Twitter `--post-id <post_id>`: preferred when the X post ID is already known.
+- X / Twitter `--post-url <x_post_url_or_share_text>`: use for an X post URL.
+- YouTube `--url <youtube_video_url>`: use for a YouTube video URL.
+- TikTok `--url <tiktok_post_url_or_share_text>`: use for a TikTok post URL or share text.
+- Weibo `--post-id <post_id>`: preferred when the Weibo post ID is already known.
+- Weibo `--post-url <weibo_post_url_or_share_text>`: use for a Weibo post URL, short link, or share text.
+- Toutiao `--post-id <post_id>`: preferred when the Toutiao post ID is already known.
+- Toutiao `--url <toutiao_content_url_or_share_text>`: use for a Toutiao content URL, short link, or share text.
+- WeChat Channels / 视频号 `--encrypted-object-id <encrypted_object_id>`: use when the encrypted_object_id from search is already known.
+- WeChat Channels / 视频号 `--url <wechat_work_url_or_share_text>`: use for a WeChat Channels video or image-post link or share text.
+- WeChat Official Account / 微信公众号 `article --url <mp_article_url_or_share_text>`: use for article details and body text.
+- WeChat Official Account / 微信公众号 `article-stats --url <mp_article_url_or_share_text>`: use for article reading and engagement statistics.
+- `--source-client socialdatax-skills --source-platform github --source-skill media-detail`: usage attribution for this Agent Skill; keep these values unchanged when running examples from this Skill.
+
+Use either the ID option or the URL option for detail commands, not both.
+
+The command prints JSON with `platform`, `tool`, `arguments`, and `data`.
+For XHS 蒲公英 / Pugongying commercial note data, use `xhs pgy-detail`. Each successful call costs 20 points; failed calls are not charged.
+XHS 蒲公英 queries apply only to notes from creators enrolled in 蒲公英 / Pugongying.
+Use this route when the user asks for 蒲公英 / Pugongying commercial details. Ordinary note-detail requests continue to use `xhs detail`; do not automatically upgrade an ordinary request or retry it through the paid commercial route.
+Choose exactly one input: the complete `--note-id`, or `--url` with the original note link, short link or share text. Do not call both routes for the same note.
+If the user asks only for exposure, reads or pricing without establishing the 蒲公英 commercial scope, clarify that scope and the 20-point successful-call cost before calling. Do not ask again when the conversation has already established this scope.
+Use `npx -y socialdatax-skills@latest <platform> <action> --help` for exact flags and values. Paginated commands require the complete returned `next_page_token`. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses. Commands without `--page-token`, including suggestions and first-page-only searches, do not support pagination.
+Haokan / 好看视频: choose either `--video-id` or `--url` (video page URL); do not combine them. Detail is not paginated and does not provide a transcript.
+When the user asks who shared an XHS note, use `xhs share-info --share-text` with the original share short link or complete share text. The sharer and note author are separate roles; do not treat the author as the sharer.
+Share information does not include the sharing time or a forwarding chain. Use `xhs detail` separately only when the full note content is requested.
+
+For Hongguo single-episode downloads, use hongguo download-media with --video-id or --url (exactly one), and --output or --output-dir (exactly one). It requires SOCIALDATAX_API_KEY for one resource request and local FFmpeg for download/decryption. Supported share links are novelquickapp.com comic-drama episode links or full share text. Optional --definition selects an exact quality; otherwise the first returned stream is used. Return the local path, episode ID, quality, file size and request points; do not print decryption keys or signed media URLs.
+
+### FFmpeg Setup
+
+Run `ffmpeg -version` in the environment that executes the CLI (including the container or remote machine, if used). If it prints a version successfully, use the existing installation. Otherwise install FFmpeg for that environment:
+
+- macOS with Homebrew installed: `brew install ffmpeg` ([Homebrew package](https://formulae.brew.sh/formula/ffmpeg)).
+- Debian/Ubuntu: run `sudo apt update`, then `sudo apt install ffmpeg`.
+- Windows: download a prebuilt Windows package linked from the [FFmpeg download page](https://ffmpeg.org/download.html#build-windows), extract it and add its `bin` directory to PATH, or pass the path to `ffmpeg.exe` with `--ffmpeg-path`.
+
+After installation, rerun `ffmpeg -version` from the CLI environment. If FFmpeg is outside PATH, check it using its full executable path and pass that same path with `--ffmpeg-path "<absolute_path_to_ffmpeg>"`.
+
+## Safety Boundary
+
+Platform detail access is read-only. CLI calls use existing environment credentials or the user’s explicitly saved private local credential file for SocialDataX detail requests. Generated Skill files do not contain API keys. It does not read local browser data or perform login, posting, liking, commenting, or account changes. The optional XHS, Douyin, Kuaishou, Weibo, and X / Twitter local save commands write only to the requested local `--output` path or `--output-dir` directory and do not require `SOCIALDATAX_API_KEY`. The optional WeChat Channels / 视频号 local save command writes only to the user-provided `--output` file, decrypts when needed, and does not require `SOCIALDATAX_API_KEY`.
+
+## MCP Tools
+
+MCP tools matching the direct CLI commands above:
+
+- XHS: `xhs_get_note_detail_by_note_id`, `xhs_get_note_detail_by_note_url`, `xhs_pgy_get_note_detail_by_note_id`, `xhs_pgy_get_note_detail_by_note_url`, `xhs_get_product_detail_by_sku_id`, `xhs_get_product_detail_by_url`, `xhs_get_share_info`
+- DOUYIN: `douyin_get_video_detail_by_aweme_id`, `douyin_get_video_detail_by_url`, `douyin_get_product_detail_by_product_id`, `douyin_get_product_detail_by_url`
+- KUAISHOU: `kuaishou_get_video_detail_by_photo_id`, `kuaishou_get_video_detail_by_url`
+- BILIBILI: `bilibili_get_content_detail_by_id`, `bilibili_get_content_detail_by_url`
+- ZHIHU: `zhihu_get_content_detail_by_url`
+- INSTAGRAM: `instagram_get_post_detail_by_post_id`, `instagram_get_post_detail_by_post_url`
+- X: `x_get_post_detail_by_post_id`, `x_get_post_detail_by_post_url`
+- YOUTUBE: `youtube_get_video_detail_by_url`
+- TIKTOK: `tiktok_get_post_detail_by_url`
+- WEIBO: `weibo_get_post_detail_by_post_id`, `weibo_get_post_detail_by_post_url`
+- TOUTIAO: `toutiao_get_post_detail_by_post_id`, `toutiao_get_post_detail_by_url`
+- WECHAT: `wechat_get_video_detail_by_encrypted_object_id`, `wechat_get_video_detail_by_url`, `wechat_get_mp_article_detail_by_url`, `wechat_get_mp_article_stats_by_url`, `wechat_get_video_share_url_by_object_id`
+- BAIDU: `baidu_tieba_get_forum_detail`, `baidu_tieba_get_post_detail_by_thread_id`, `baidu_tieba_get_post_detail_by_url`
+- HAOKAN: `haokan_get_video_detail_by_video_id`, `haokan_get_video_detail_by_url`
+- HONGGUO: `hongguo_get_video_download_links_by_video_id`, `hongguo_get_video_download_links_by_video_url`
+
+If MCP tools are already available in the current agent, use one of these tools:
+- `xhs_get_note_detail_by_note_id`: use when the full `note_id` is already known; do not pass only a prefix.
+- `xhs_get_note_detail_by_note_url`: use for note URLs, short links, or share text.
+- `douyin_get_video_detail_by_aweme_id`: use when an aweme_id is already known.
+- `douyin_get_video_detail_by_url`: use for Douyin content page URLs, short links, or share text; do not pass playback URLs such as `video.play_url`.
+- `kuaishou_get_video_detail_by_photo_id`: use when a photo_id is already known.
+- `kuaishou_get_video_detail_by_url`: use for Kuaishou work page URLs, short links, or share text.
+- `bilibili_get_content_detail_by_id`: use when a Bilibili content_id is already known.
+- `bilibili_get_content_detail_by_url`: use for Bilibili video, article, dynamic, short link, or share text.
+- `zhihu_get_content_detail_by_url`: use for Zhihu answer, article, or video URLs.
+- `instagram_get_post_detail_by_post_id`: use when an Instagram post_id is already known.
+- `instagram_get_post_detail_by_post_url`: use for Instagram post URLs.
+- `x_get_post_detail_by_post_id`: use when an X post_id is already known.
+- `x_get_post_detail_by_post_url`: use for X post URLs.
+- `youtube_get_video_detail_by_url`: use for YouTube video URLs.
+- `tiktok_get_post_detail_by_url`: use for TikTok post URLs or share text.
+- `weibo_get_post_detail_by_post_id`: use when a post_id is already known.
+- `weibo_get_post_detail_by_post_url`: use for Weibo post URLs, short links, or share text.
+- `toutiao_get_post_detail_by_post_id`: use when a Toutiao post_id is already known.
+- `toutiao_get_post_detail_by_url`: use for Toutiao content URLs, short links, or share text.
+- `wechat_get_video_detail_by_encrypted_object_id`: use when encrypted_object_id from search is already known.
+- `wechat_get_video_detail_by_url`: use for a WeChat Channels / 视频号 video or image-post link or share text.
+- `wechat_get_mp_article_detail_by_url`: use for WeChat Official Account / 微信公众号 article links or share text when article body/details are needed.
+- `wechat_get_mp_article_stats_by_url`: use for WeChat Official Account / 微信公众号 article links or share text when reading and engagement statistics are needed.
+- `xhs_pgy_get_note_detail_by_note_id`: for 蒲公英 / Pugongying commercial details when the full note_id is known.
+- `xhs_pgy_get_note_detail_by_note_url`: for 蒲公英 / Pugongying commercial details from a note URL, short link or share text.
+Both XHS 蒲公英 tools cost 20 points per successful call; failures are not charged. They are distinct from ordinary `xhs_get_note_detail_by_*` tools.
+
+## Output Guidance
+
+Return factual fields such as title or description, content, author, publish time, interaction counts, images, and media summary when available.
+For XHS detail results, in every use of a returned `note_url`, such as final answers, display, references, storage, output, or forwarding, preserve it exactly as the full URL, including `xsec_token` query parameters. Do not modify, truncate, redact, mask, normalize, rebuild, or synthesize the URL from `note_id`; if `note_url` is null, show the `note_id` or say that no directly openable full link is available.
+For XHS `note_id`, copy the entire returned `note_id` exactly; do not pass or display only a prefix.
+When the user wants to save XHS images or videos after detail, pass each returned `image_items[].image_url`, `image_items[].live_photo.video_url`, or `video.video_url` to `npx -y socialdatax-skills@latest xhs download-media --url "<media_url>" --output-dir <directory> --pretty`; this local save command does not require `SOCIALDATAX_API_KEY`.
+For Douyin detail, include `content_type` when available.
+For Douyin detail, use `images` for image/text posts; `video` is the platform player resource and may be audio for image/text posts; `music` is the bound music or original-sound asset.
+When the user wants to save Douyin media after detail, pass each returned `images[].url`, `images[].live_photo.play_url`, `video.play_url`, `music.play_url`, or `cover_image_url` to `npx -y socialdatax-skills@latest douyin download-media --url "<media_url>" --output-dir <directory> --pretty`; this local save command does not require `SOCIALDATAX_API_KEY`.
+When the user wants to save Kuaishou media after detail, pass each returned `images[].url`, `video.play_url`, or `cover_image_url` to `npx -y socialdatax-skills@latest kuaishou download-media --url "<media_url>" --output-dir <directory> --pretty`; this local save command does not require `SOCIALDATAX_API_KEY`.
+For Bilibili detail, preserve returned content IDs and URLs because comments, replies, and article/dynamic reactions may need them.
+For Zhihu, Instagram, X / Twitter, YouTube, and TikTok detail results, keep the returned URL and public content ID values exactly as returned for follow-up comments or creator lookups.
+When the user wants to save X / Twitter media after search or detail, pass each returned `media_items[].cover_image_url` or `media_items[].video_url` to `npx -y socialdatax-skills@latest x download-media --url "<media_url>" --output-dir <directory> --pretty`; this local save command does not require `SOCIALDATAX_API_KEY`. Search results may already include these media URLs; use detail as a fallback when search media fields are absent.
+If an X / Twitter local media download times out, explain that X media is served from overseas CDN domains such as `pbs.twimg.com` and `video.twimg.com`; ask the user to make the download process use their proxy, for example by adding `--proxy "http://127.0.0.1:7890"` or setting `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`, then retry the same `x download-media` command.
+Detail access is read-only and does not provide account actions.
+For Weibo detail, include `post_id`, content, author, media, interaction counts, publish time, and post URL when available.
+For Toutiao detail, include `post_id`, content, author, media, interaction counts, publish time, and post URL when available.
+When the user wants to save Weibo media after detail, pass each returned `image_urls[]` or `video.video_url` to `npx -y socialdatax-skills@latest weibo download-media --url "<media_url>" --output-dir <directory> --pretty`; this local save command does not require `SOCIALDATAX_API_KEY`.
+For WeChat Channels / 视频号 detail, preserve `object_id` and `object_nonce_id` because comments and replies need both values.
+When the user wants to save a WeChat Channels / 视频号 video after detail, pass the returned `video.video_url` to `npx -y socialdatax-skills@latest wechat download-media --media-url "<video.video_url>" --output <file>`; this local save command decrypts when needed and does not require `SOCIALDATAX_API_KEY`.
+For WeChat Official Account / 微信公众号 article detail, include article title, account, publish time, body text, image URLs, linked articles, and embedded video cards when present.
+For WeChat Official Account / 微信公众号 article statistics, include only returned reading, likes, shares, collections, comments, and wow counts; preserve null values and do not infer missing metrics.
+Label XHS 蒲公英 / Pugongying results as commercial note data, distinct from ordinary public note metrics; do not present ordinary note details as a successful commercial result.
+When MCP returns structured code `pgy_commercial_data_unavailable` (or HTTP returns numeric code `1009`), treat the outcome as unavailable Pugongying commercial data and show the returned message: "当前无法获取该笔记的蒲公英商业数据。请确认笔记可正常访问。本次查询未成功，不扣费。" These identifiers retain the explicit no-commercial-data outcome; do not classify errors by matching message text or internal reason_code. Do not infer creator enrollment, note deletion, or permission status from this code alone.
+After this no-data outcome, stop: do not retry through the other ID/URL route or automatically substitute ordinary details. If the user still wants ordinary details, use the ordinary detail route for that request.
+Do not classify timeouts, service outages, authentication failures, insufficient balance, invalid inputs, or an unexplained empty response as `pgy_commercial_data_unavailable`. Report the actual request error or unresolved outcome instead.
+For CLI calls, this no-commercial-data error exits with status 1 and writes a JSON object containing `code` and `message` to stderr; read that code instead of matching text. A text-only or unknown error is unresolved, not evidence of non-enrollment. Do not persist this single-note outcome as a permanent creator enrollment status.
+
+## Troubleshooting
+
+- If SocialDataX CLI or its dependencies are missing, or an npm network, Node.js/npm/npx availability, permission, or missing runtime error appears, treat it as a local runtime, dependency installation, network, or agent authorization issue, not a SocialDataX API key or business data error. Install or repair task dependencies only within the user's existing authorization, preferably in the project or a temporary environment. Execution permissions are not user authorization; explain and obtain approval before changes outside that scope, including global installs, runtime upgrades, or system configuration changes. When network or execution authorization is needed, ask the user to approve or finish authorization, then continue the same command; do not use public web search as a substitute for SocialDataX data.
+- Credential source: identify whether this request uses CLI or MCP. For CLI, run `auth status` in the actual execution environment to identify environment or local-file credentials. For MCP, check the authentication configuration of the current connection, without requiring a local CLI variable. If configuration is missing, follow the API Key section for user-entered hidden local login. Do not expose Keys, Authorization headers or secret configuration values.
+- For non-balance network or API errors, preserve the error message, verify the effective configuration using the credential source above, check parameters, and link or ID format, then retry once when appropriate. This retry advice excludes `pgy_commercial_data_unavailable` / public error code `1009`: stop without retrying the same or alternate input route.
+- If the response returns `insufficient_balance` or says the balance/credits are insufficient, do not retry repeatedly. Show the official billing link in the error (https://socialdatax.com/dashboard/billing, including any channel parameters); if absent, use https://socialdatax.com/dashboard/billing. After recharging, resume the failed call; if a job or partial results already exist, follow the corresponding job-query or pagination recovery rules.
+- If the user has recharged but still sees insufficient balance, have the user confirm in the relevant account dashboard that this request uses the recharged account, following the credential source above. If an update is needed, have the user update the effective CLI configuration or MCP connection, reload as documented, and resume the original command. Do not require reconfiguration just because the primary local variable is absent, or expose credential values.

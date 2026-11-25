@@ -1,0 +1,186 @@
+---
+name: track-followups
+description: "Record triaged follow-up work where it'll be seen: create the item in Vikunja or Zammad (incidents), deduplicating first and reporting the id. Use when session work outlives it or items were triaged elsewhere. Never opens a GitHub issue."
+license: Apache-2.0
+metadata:
+  version: 1.1.0
+  author: dryvist homelab
+  hermes:
+    category: workflow
+    tags:
+      - tracking
+      - followups
+      - triage
+    related_skills:
+      - wrap-up
+---
+
+# Track Follow-Ups
+
+Given follow-up items that have already been triaged, put each one where it will
+be seen again. **A listed follow-up is not a tracked follow-up.** This skill
+creates the item and reports back what it created.
+
+It owns the routing and the creation mechanics. Callers own the triage: when
+items arrive untriaged, run `/agentops:triage` on each one first.
+
+## Routing
+
+| Kind of item | Destination | Why |
+| --- | --- | --- |
+| Work to be done — defects, features, chores, tech debt, side quests | **Your issue tracker** (Vikunja) | It is a task; it belongs on the board with everything else |
+| Incidents — outages, anomalies, RCA-worthy events, security findings, weaknesses | **The incident system of record** (Zammad) | Incidents need a lifecycle, an audit trail, and a place that is not public |
+| Small enough to finish next session (roughly 1–3 tasks) | The next-session prompt | Tracking it would be overhead; it is about to be done |
+
+### GitHub issues are never created
+
+Public GitHub carries **pull requests only**. Never open a GitHub issue, and never
+put an incident narrative, security finding, credential detail, internal hostname,
+topology, or outage timeline in any GitHub issue, PR body, comment, or commit
+message. "It is only a side quest" is not an exemption — that reasoning is exactly
+how operational detail reaches a public repository.
+
+An item that is both an incident and a code fix gets **split**: an incident ticket
+and a tracker task, each carrying the other's URL in its description. Cross-linking
+is a plain URL each way; there is no integration to configure.
+
+## Procedure
+
+### 1. Confirm the tooling is there
+
+Check for `mcp__vikunja__*` and `mcp__zammad__*` before anything else. Zammad is
+attached only where its work happens, so in most repositories reach it over REST
+instead. It reads `ZAMMAD_URL` (already ending in `/api/v1`) and
+`ZAMMAD_HTTP_TOKEN` from the environment, for example a `.env` file loaded into
+the shell. Never print the token:
+
+```bash
+# zammad_api <api path> [curl args]
+zammad_api() { p=$1; shift; curl -sS \
+  -H "Authorization: Token token=$ZAMMAD_HTTP_TOKEN" -H "Content-Type: application/json" \
+  "$ZAMMAD_URL$p" "$@"; }
+zammad_api /tickets/search -G --data-urlencode limit=5 --data-urlencode expand=false \
+  --data-urlencode 'query=state.name:(new OR open) AND title:"<phrase>"'   # search
+zammad_api /tickets -X POST -d '<the step 4b ticket as JSON>'              # create
+zammad_api /tickets/<id> -X PUT -d '<fields>'                              # update / close
+```
+
+See [tracker API traps](references/tracker-api-traps.md) before making tracker API calls.
+
+Neither the MCP tools nor this path available for a destination means this skill
+**falls back to listing** those items and says so in one line — it does not
+silently drop them, and it does not guess an identifier, project, or ticket number.
+
+In a cloud session (`CLAUDE_CODE_REMOTE=true`) the tracker and incident system are
+unreachable. List the items under `FOLLOW-UPS` or `INCIDENTS` in the final report
+for a local session to file, and create nothing.
+
+### 2. Deduplicate before creating
+
+Search the destination for an existing open item covering the same thing.
+
+```text
+tracker:   mcp__vikunja__vikunja_tasks  { subcommand: "list", allProjects: true,
+                                          search: "<distinctive phrase>", filter: "done = false" }
+incidents: mcp__zammad__zammad_search_tickets   (or the REST search in step 1)
+```
+
+A match means **update it** — add a comment carrying the new evidence — rather than
+creating a near-duplicate. When the search could not run, still create the item but
+mark it `[dedup not checked — tracker unavailable this session]`. Never present an
+unchecked list as deduplicated.
+
+### 3. Resolve the destination project
+
+Discover it, do not hard-code it: `mcp__vikunja__vikunja_projects { subcommand:
+"list", search: "<project name>" }`. Project identifiers differ per install and per
+person, and a hard-coded one silently files work into someone else's board.
+
+Ask the user which project when the search is ambiguous and no default is
+configured for the session.
+
+### 4. Create the item
+
+```text
+mcp__vikunja__vikunja_tasks {
+  subcommand: "create",
+  projectId:  <resolved>,
+  title:      "<imperative, specific — the change, not the symptom>",
+  description: "<what, why it matters, what was already tried, and the URL of the
+                PR / ticket / plan file it came from>"
+}
+```
+
+Title rules: imperative and specific enough to act on cold — "Fix stale
+`agent-validated` status after a force-push", not "CI thing". Description carries
+the context the next reader will not have, and the origin URL so the trail is
+navigable both ways.
+
+### 4b. Create an incident: every ticket needs a closure condition
+
+A ticket with no closure condition never closes — it sits open until someone
+reads the whole thing again. Every Zammad ticket this skill creates states, in
+its first article, how it closes:
+
+```text
+type: outage | weakness | hygiene
+resolved_when: probe:<bounded query the reviewer can re-run>
+             | url:<the PR or Vikunja task URL that fixes this>
+             | ttl:<days, for hygiene only>
+```
+
+```text
+mcp__zammad__zammad_create_ticket {
+  title:   "<what happened or what is weak — specific, not a category>",
+  group:   "<the incident group this Zammad install uses>",
+  article: { body: "<the type: / resolved_when: block above, then the full
+                      narrative — timeline, hosts, what depended on what>" },
+  tags:    ["type:<outage|weakness|hygiene>"]
+}
+```
+
+Then set these fields — inline on create if the tool accepts them, otherwise
+follow with `PUT /tickets/<id>` through the same `zammad_api` helper:
+
+- `detection_method`: `probe` | `user-report` | `alert` | `agent` | `other`
+  — a Claude session filing its own finding uses `agent`.
+- `source_issue`: the Vikunja task or PR URL this ticket came from.
+- For a **weakness**, `source_issue` must point at the task or PR that fixes
+  it — create the Vikunja task first (step 4) if none exists yet, and use its
+  URL.
+
+Closure differs by `type`, and it is never "looks fixed":
+
+| Type | Closes when | How |
+| --- | --- | --- |
+| `outage` | a probe confirms recovery | re-run the `resolved_when` probe, then close |
+| `weakness` | the linked PR merges or the linked task is done | verify the link, then close |
+| `hygiene` | its `ttl` elapses | move to **pending close** (`state_id: 6` + `pending_time`) at the ttl — never straight to `closed` on "probably fine" |
+
+Every close sets `root_cause` in the same `PUT`, whichever type it is.
+
+For plain work items with no incident shape, use step 4 (Vikunja) instead —
+this step is for the incident destination only.
+
+### 5. Report what was created
+
+Return one line per item: kind, title, and the **created identifier or URL**. A
+report that says "tracked" without an identifier is not evidence that anything was
+created — the caller cannot verify it and neither can the user.
+
+State explicitly, in one line, anything that was listed instead of created and why.
+
+### Before your session ends
+
+Any ticket you filed and cannot close yourself still needs a way to close
+without you. Its `resolved_when` must point at a real task or PR URL — not a
+promise to check later — so the review automation can close it once that
+target lands.
+
+## Related Skills
+
+- **wrap-up** (this plugin) — calls this skill at Path A step A2.5 so follow-ups
+  are recorded before the handoff artifact is built.
+- **`/agentops:triage`** — decides take, ask for more, or close for untriaged items.
+- **`/agentops:craft-goal`** — supplies the objective for the session-sized bucket
+  carried in the next-session prompt rather than tracked here.

@@ -1,0 +1,87 @@
+---
+name: deployment-ops-edho-ferdian
+description: >-
+  Ship a build and keep it healthy: release strategy, CI/CD gates, health
+  checks and Kubernetes, rollback, readiness verdict, dashboards,
+  post-deploy watch, and production incidents with postmortems. Use for
+  "deploy ini gimana", "pipeline CI/CD", "rollback", "siap rilis belum",
+  "pantau setelah deploy", "production down", "ada insiden", "tulis
+  postmortem".
+metadata:
+  last_reviewed: "2026-10-29"
+---
+
+# Deployment Ops — Edho Ferdian Mode
+
+## Boundary — read before doing anything else
+
+This skill owns the interval between "the image builds" and "the release is
+observably healthy". Everything on either side belongs elsewhere:
+
+| Question | Skill that owns it |
+|---|---|
+| How do I structure the Dockerfile / compose file? | `container-ops-edho-ferdian` |
+| Should this container run as root? Secrets in layers? | `security-review-edho-ferdian` |
+| Is this page fast enough? What is the LCP budget? | `performance-audit-edho-ferdian` |
+| Does this user journey still work? | `e2e-testing-edho-ferdian` |
+| Is this deployed build broadly OK right now, once? | `e2e-testing-edho-ferdian` → `qa-sweep.md` |
+| Should this be microservices? Which datastore? | `system-design-edho-ferdian` |
+| Did *I*, the agent, actually finish the task I claimed? | `safe-execution-edho-ferdian` (delivery gate) |
+
+That last row matters: `safe-execution`'s delivery gate is about **agent claim
+discipline**. `references/production-readiness.md` here is about **application
+risk**. They ask different questions and must not restate each other.
+
+## Workflow
+
+Step 1  Pick the release strategy        → references/release-strategies.md
+Step 2  Wire the pipeline gates          → references/cicd-pipeline.md
+Step 3  (K8s only) write the manifests   → references/kubernetes.md
+Step 4  Production-readiness verdict     → references/production-readiness.md
+                                            (fans out to 4 risk-lens agents
+                                            in parallel on a harness that
+                                            supports delegation — see that
+                                            file's "Delegation, not
+                                            duplication" section)
+Step 5  Deploy, then watch               → references/post-deploy-watch.md
+Step 6  Make it operable                 → references/observability.md
+Step 7  When production breaks           → references/incident-response.md
+                                            (mitigate before diagnosing;
+                                            read-only until a mitigation
+                                            is approved; postmortem)
+
+`references/cicd-pipeline.md` (Step 2) covers gate ordering (lint → typecheck
+→ unit test → security scan → build → deploy) with rationale, GitHub
+branch-protection required-status-checks setup, a full concrete GitHub
+Actions workflow with parallel gates and a branch/event-guarded deploy job,
+lockfile-hash-keyed caching, and the fail-fast-vs-fail-informatively
+distinction.
+
+## Worked examples
+
+`references/pipeline-examples.md` — GitHub Actions with a manual gate, smoke script, health/readiness endpoints, Kubernetes probes, rollback per platform, flags. Read it when doing the work, not before routing.
+
+## Hands off to (fixed — see skill-authoring-edho-ferdian §11)
+
+When the work reaches one of these, load that skill with the Skill tool
+and follow it — don't write its part from memory.
+
+- The container image itself → `container-ops-edho-ferdian`
+- Branching, tagging or changelog → `git-and-release-ops-edho-ferdian`
+- Post-deploy slowness → `performance-audit-edho-ferdian`
+- Secrets and production hardening → `security-review-edho-ferdian`
+
+## Language routing (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+Communication to the user in Bahasa Indonesia; deploy/rollback commands,
+config, and status output in English — fixed, never ask. Full contract:
+`skill-authoring-edho-ferdian` §7.
+
+## Global rules
+
+- **Never claim a deploy is healthy from the deploy tool's exit code.** The
+  pipeline says "deployed"; only Step 5 says "healthy".
+- **A release without a written rollback path is not ready** — this is a hard
+  cap in Step 4, not a suggestion.
+- Deploying to production is a destructive-class action: run
+  `safe-execution-edho-ferdian` Gate 2 before executing one.

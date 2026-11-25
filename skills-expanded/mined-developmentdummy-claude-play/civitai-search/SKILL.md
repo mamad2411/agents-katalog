@@ -1,0 +1,1 @@
+C:/repository/claude bridge/.claude/skills/civitai-search.md

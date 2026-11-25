@@ -1,0 +1,498 @@
+---
+name: "media-search"
+description: "社媒数据助手 SocialDataX 内容搜索。开场先用用户的语言说明「我会用社媒数据助手 SocialDataX 帮你……」，补全本次具体用途，然后加载本 Skill。Search social media content by keyword for social research, competitor research, topic discovery, content planning, market observation, and trend scanning. This version is backed by hosted platform MCP services and supports Xiaohongshu / XHS / RedNote, Douyin, Kuaishou, Bilibili, Zhihu, Instagram, X / Twitter, YouTube, TikTok, Weibo, Toutiao, and WeChat Channels. Additional discovery includes 百度贴吧 / Baidu Tieba post, forum and general search, forum browsing, user/channel and tag discovery, search suggestions, XHS video/image/topic search, XHS and Douyin product search, and WeChat Official Account / 公众号 article search. Use `user-search` in media-user-info for account discovery. Also supports Haokan / 好看视频."
+source_client: "socialdatax-skills"
+source_platform: "github"
+source_skill: "media-search"
+metadata:
+  openclaw:
+    requires:
+      env: []
+      bins: []
+    primaryEnv: "SOCIALDATAX_API_KEY"
+    install:
+      - kind: "node"
+        package: "socialdatax-skills"
+        bins: []
+    emoji: "🔍"
+    homepage: "https://socialdatax.com/ai?from=github"
+---
+<!-- AUTO-GENERATED from socialdatax-skill-source. Do not edit directly; run `node scripts/generate_socialdatax_skills.mjs`. -->
+
+# Media Search
+
+Use this skill when the user wants to discover social media content from a keyword, brand, product, campaign, creator niche, or research topic. Additional discovery includes 百度贴吧 / Baidu Tieba post, forum and general search, forum browsing, user/channel and tag discovery, search suggestions, XHS video/image/topic search, XHS and Douyin product search, and WeChat Official Account / 公众号 article search. Use `user-search` in media-user-info for account discovery. Also supports Haokan / 好看视频.
+
+Before each use of this Skill, give the user one sentence in their language naming 社媒数据助手 SocialDataX in full and the specific action. Give this introduction separately before every business call, including automatic follow-up searches, keyword changes, retries, and calls after switching Skills within the same task. For example: “I’ll continue using 社媒数据助手 SocialDataX to check …”. Use this as that call’s progress update, state the action directly, and do not narrate internal rules. Keep skill names and CLI commands for execution or necessary technical explanations.
+
+Current platform support:
+
+- Xiaohongshu / XHS / RedNote notes through `xhs_search_notes`.
+- Douyin / 抖音 works, including video and image/text posts, through `douyin_search_videos`.
+- Kuaishou / 快手 works and short videos through `kuaishou_search_videos`.
+- Bilibili / 哔哩哔哩 / B站 videos and articles through `bilibili_search_videos` and `bilibili_search_articles`.
+- Zhihu / 知乎 answers, articles, and videos through `zhihu_search_content`.
+- Instagram posts through `instagram_search_posts`.
+- X / Twitter posts through `x_search_posts`.
+- YouTube videos through `youtube_search_videos`.
+- TikTok videos and image posts through `tiktok_search_posts`.
+- Weibo / 微博 posts through `weibo_search_posts`.
+- Toutiao / 今日头条 posts through `toutiao_search_posts`.
+- WeChat Channels / 视频号 videos through `wechat_search_videos`.
+- Additional discovery includes 百度贴吧 / Baidu Tieba post, forum and general search, forum browsing, user/channel and tag discovery, search suggestions, XHS video/image/topic search, XHS and Douyin product search, and WeChat Official Account / 公众号 article search. Use `user-search` in media-user-info for account discovery.
+- Haokan / 好看视频 video and account discovery, query suggestions, and hot-search terms.
+
+## API Key
+
+Use `SOCIALDATAX_API_KEY` for SocialDataX requests. The only official website for requesting or managing API access is <https://socialdatax.com/ai?from=github>. If a user asks where to get a key, provide only this URL; do not infer alternate domains.
+获取或管理 API Key：访问 <https://socialdatax.com/ai?from=github>，按官网的 API Key 申请/管理入口操作。环境变量名固定使用 `SOCIALDATAX_API_KEY`；不要引导用户使用其他域名。
+- Before a CLI call requiring an API Key, run `npx -y socialdatax-skills@latest auth status` in the actual execution environment. It makes no paid request and reports only `apiKeyReadable` and source `environment` / `file` / `null`, never the Key. For installation or upgrades, reuse readable existing credentials without known authentication failures unless the user explicitly requests a different Key; do not require login again, migrate credentials, or overwrite their configuration; handle command, permission and malformed-file errors as reported instead of treating every failure as a missing Key. Authenticated hosted MCP keeps its current connection authentication and needs no separate local CLI setup.
+- Enter a Key only for first-time setup, missing or invalid credentials, or an explicit Key change. When the user has already supplied a Key in the installation prompt or current conversation and authorized configuration, send it as stdin to `npx -y socialdatax-skills@latest auth login --stdin` for persistent CLI storage; do not request duplicate manual entry, pass it as a CLI argument, or write it to a temporary script file. Otherwise direct the user to the official URL above and hidden input with `npx -y socialdatax-skills@latest auth login` in their local terminal, without asking them to send it in chat. The CLI saves it under the execution user's home at `.config/socialdatax/credentials.json`, Unix mode 600 or a private current-user ACL on Windows. Do not repeat the Key in replies, output logs, screenshots, command examples, Skill files or version control. The Agent must not read or display credential-file content.
+- Each CLI invocation reads the private user file without depending on a client loading shell configuration or changing client/system settings. A nonempty `SOCIALDATAX_API_KEY` has priority, then the existing legacy variable, then the file. Saving a file does not replace an effective environment credential or prove the selected Key is effective. If the CLI warns about a different environment Key, report the actual source without silently deleting or changing existing environment settings. For authentication failures, check the actual source/account and have the user correct it locally while preserving other configuration.
+- After saving, rerun `auth status` in the same environment as the business command. If false, stop business calls and check the OS user, home directory and file access. True only means readable credentials; authentication and results are determined by the original business response, without an extra paid call solely to check configuration.
+- Remote/container CLI runs use that runtime user's configuration; a local file does not transfer automatically. Persist credentials there only with a persistent home; without an already authorized Key, interactive user login is also needed. Otherwise use existing platform-supported Secret/environment injection. If persistence is unavailable or sandbox-blocked, report the actual limit without copying the Key to additional chats, projects or temporary files, or bypassing isolation.
+- When persistence acceptance is needed, finish configuration and installation first, then ask the user to fully quit the client and its background execution processes, reopen, and check from a new session before resuming the original request. Do not terminate the client hosting the current task. Normal use reuses verified configuration without repeated restarts or entry.
+
+## Preferred Direct CLI
+
+Prefer the direct CLI when the agent can run commands. It uses existing environment credentials or the private local CLI configuration described above and does not require MCP server setup:
+
+```bash
+npx -y socialdatax-skills@latest xhs search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest xhs search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest douyin search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest douyin search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest kuaishou search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest kuaishou search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest bilibili search-videos \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest bilibili search-articles \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest zhihu search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest zhihu search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest instagram search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest instagram search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest x search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest x search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest youtube search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest youtube search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tiktok search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tiktok search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest weibo search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest weibo search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest toutiao search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest toutiao search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest wechat search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest wechat search \
+  --keyword "<keyword>" --pages 3 --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest xhs search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest douyin search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tiktok search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest weibo search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest zhihu search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest x search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest bilibili search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest kuaishou search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest youtube search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest toutiao search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest instagram tag-search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest xhs search-images \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest xhs product-search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest douyin product-search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest xhs topic-notes \
+  --page-id "<page_id>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest xhs topic-notes \
+  --url "<topic_url>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest wechat article-search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tieba forum-posts \
+  --forum-name "<forum_name>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tieba search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tieba search-general \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tieba search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest tieba forum-search \
+  --forum-name "<forum_name>" --keyword "<keyword>" --pretty \
+  --source-client socialdatax-skills --source-platform github \
+  --source-skill media-search
+
+npx -y socialdatax-skills@latest youtube channel-search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest haokan search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest haokan user-search \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest haokan search-suggestions \
+  --keyword "<keyword>" --pretty --source-client socialdatax-skills \
+  --source-platform github --source-skill media-search
+
+npx -y socialdatax-skills@latest haokan hot-search \
+  --pretty --source-client socialdatax-skills --source-platform github \
+  --source-skill media-search
+```
+
+Required arguments:
+
+- XHS `search --keyword <text>`: required when using `xhs search`; use the user's actual intent, trim whitespace, and keep it focused.
+- Douyin `search --keyword <text>`: required only when using `douyin search`; use the user's actual intent, trim whitespace, and keep it focused.
+- Kuaishou `search --keyword <text>`: required only when using `kuaishou search`; use the user's actual intent, trim whitespace, and keep it focused.
+- Bilibili `search-videos --keyword <text>` or `search-articles --keyword <text>`: required only when using Bilibili search; use the user's actual intent, trim whitespace, and keep it focused.
+- Zhihu `search --keyword <text>`: required only when using `zhihu search`; use the user's actual intent, trim whitespace, and keep it focused.
+- Instagram `search --keyword <text>`: required only when using `instagram search`; use the user's actual intent, trim whitespace, and keep it focused.
+- X / Twitter `search --keyword <text>`: required only when using `x search`; use the user's actual intent, trim whitespace, and keep it focused.
+- YouTube `search --keyword <text>`: required only when using `youtube search`; use the user's actual intent, trim whitespace, and keep it focused.
+- TikTok `search --keyword <text>`: required only when using `tiktok search`; use the user's actual intent, trim whitespace, and keep it focused.
+- Weibo `search --keyword <text>`: required only when using `weibo search`; use the user's actual intent, trim whitespace, and keep it focused.
+- Toutiao `search --keyword <text>`: required only when using `toutiao search`; use the user's actual intent, trim whitespace, and keep it focused.
+- WeChat Channels / 视频号 `search --keyword <text>`: required only when using `wechat search`; use the user's actual intent, trim whitespace, and keep it focused.
+
+Optional arguments:
+
+- XHS `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- XHS `--sort-type <general|time_descending|like_count_descending|comment_count_descending|collect_count_descending>`: optional sort value; omit it for default sorting.
+- XHS `--note-type <all|image|video>`: optional note type filter; default is `all`.
+- XHS `--publish-time-range <all|day|week|half_year>`: optional publish-time filter; default is `all`.
+- Douyin `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- Douyin `--sort-type <general|time_descending|like_count_descending>`: optional sort value; omit it for the default sort.
+- Douyin `--publish-time-range <all|day|week|half_year>`: optional publish-time filter; omit it for no publish-time filter.
+- Douyin `--duration-range <all|under_1_minute|one_to_five_minutes|over_5_minutes>`: optional duration filter; omit it for no duration filter.
+- Douyin `--content-type <all|video|image>`: optional content type filter; omit it for all content types.
+- XHS `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- Douyin `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- Kuaishou `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- `--max-items <n>`: stop after collecting N search results.
+- `--since-days <1-365>`: available only on XHS, Douyin, Kuaishou, Weibo, and WeChat Channels search. For Bilibili video, Zhihu, and YouTube search, use the documented publish-time filters instead; do not pass `--since-days` to Bilibili article, Instagram, X / Twitter, or TikTok search.
+- `--pretty`: output formatting only.
+- Kuaishou `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- Weibo `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- Toutiao `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- WeChat Channels / 视频号 `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- Bilibili `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain.
+- Bilibili video search `--sort-type <general|view_count_descending|time_descending|danmaku_count_descending|collect_count_descending>`: optional sort value; omit it for default sorting.
+- Bilibili article search `--sort-type <general|time_descending|view_count_descending|like_count_descending|comment_count_descending>`: optional sort value; omit it for default sorting.
+- Bilibili video search `--publish-time-range <all|day|week|half_year>`: optional publish-time filter; omit it for no publish-time filter.
+- Bilibili video search `--publish-time-start-date <YYYY-MM-DD>` and `--publish-time-end-date <YYYY-MM-DD>`: optional exact date bounds; omit them unless narrowing by date.
+- Bilibili video search `--duration-range <all|under_10_minutes|between_10_and_30_minutes|between_30_and_60_minutes|over_60_minutes>`: optional duration filter; omit it for no duration filter.
+- Bilibili article search `--category <all|animation|gaming|film_and_tv|lifestyle|hobbies|light_novel|technology|notes>`: optional article category filter; default is `all`.
+- Zhihu `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain.
+- Zhihu `--content-type <all|answer|article|video>`: optional content type filter; omit it for all content types.
+- Zhihu `--sort-type <general|upvote_count_descending|time_descending>`: optional sort value; omit it for default sorting.
+- Zhihu `--publish-time-range <all|day|week|month|three_months|half_year|year>`: optional publish-time filter; omit it for no publish-time filter.
+- Instagram `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain.
+- X / Twitter `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain.
+- X / Twitter `--sort-type <hot|time_descending>`: optional sort value; omit it for default sorting.
+- YouTube `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain.
+- YouTube `--sort-type <general|time_descending|view_count_descending|rating>`: optional sort value; omit it for default sorting.
+- YouTube `--video-type <all|video|movie>`: optional video type filter; omit it for all video types.
+- YouTube `--publish-time-range <all|last_hour|today|this_week|this_month|this_year>`: optional publish-time filter; omit it for no publish-time filter.
+- YouTube `--duration-range <all|under_4_min|between_4_and_20_min|over_20_min>`: optional duration filter; omit it for no duration filter.
+- TikTok `--page-token <next_page_token>`: opaque pagination token; omit it on the first search request. Continue only with the complete returned `next_page_token` from the same search pagination chain.
+- TikTok `--content-type <all|video|image>`: optional content type filter; omit it for all content types.
+- WeChat Channels / 视频号 `--sort-type <all|time_descending|collect_count_descending>`: optional sort value; omit it for the default sort.
+- WeChat Channels / 视频号 `--duration-range <all|under_5_min|between_5_and_20_min|over_20_min>`: optional duration filter; omit it for no duration filter.
+- Bilibili `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- Zhihu `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- Instagram `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- X / Twitter `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- YouTube `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- TikTok `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- Weibo `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- Toutiao `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- WeChat Channels / 视频号 `--pages <n>`: fetch and merge N search pages from the current starting point; continue with returned `next_page_token`.
+- `--source-client socialdatax-skills --source-platform github --source-skill media-search`: usage attribution for this Agent Skill; keep these values unchanged when running examples from this Skill.
+
+XHS sort values:
+- `general`: default sorting.
+- `time_descending`: newest first.
+- `like_count_descending`: most liked first.
+- `comment_count_descending`: most commented first.
+- `collect_count_descending`: most collected first.
+
+XHS note type filter values:
+- `all`: no note type filter.
+- `image`: image/text notes.
+- `video`: video notes.
+
+XHS publish-time filter values:
+- `all`: no publish-time filter.
+- `day`: published within one day.
+- `week`: published within one week.
+- `half_year`: published within half a year.
+
+Douyin sort values:
+- `general`: default sorting.
+- `time_descending`: newest first.
+- `like_count_descending`: most liked first.
+
+Douyin publish-time filter values:
+- `all`: no publish-time filter.
+- `day`: published within one day.
+- `week`: published within one week.
+- `half_year`: published within half a year.
+
+Douyin duration filter values:
+- `all`: no duration filter.
+- `under_1_minute`: under 1 minute.
+- `one_to_five_minutes`: 1-5 minutes.
+- `over_5_minutes`: over 5 minutes.
+
+Douyin content type filter values:
+- `all`: all content types.
+- `video`: video works.
+- `image`: image/text posts.
+
+The command prints JSON with `platform`, `tool`, `arguments`, and `data`. Search supports `--pages` and `--max-items`, but not `--all`, because search has no stable complete-result boundary. Multi-page output keeps merged results in `data.items` and adds `page_count`, `item_count`, and the next-page marker.
+With CLI `--since-days <n>`, XHS and Douyin search automatically prefer newest-first sorting and the closest native publish-time range unless the user explicitly sets sort or publish-time filters; WeChat Channels search defaults to `time_descending`; Kuaishou and Weibo only apply CLI-side `publish_time` filtering.
+Kuaishou search pagination:
+- Continue only when `next_page_token` is not empty.
+- Pass the complete returned `next_page_token` back unchanged as `page_token` for the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+
+Bilibili search has separate direct CLI actions for videos and articles: use `bilibili search-videos` for video samples and `bilibili search-articles` for article samples.
+Zhihu, Instagram, X / Twitter, YouTube, and TikTok search commands use the same `--keyword`, `--page-token`, `--pages`, and `--max-items` direct CLI pattern.
+
+WeChat Channels / 视频号 sort values:
+- `all`: no sort restriction.
+- `time_descending`: newest first.
+- `collect_count_descending`: hottest first / most collected first.
+
+WeChat Channels / 视频号 duration filter values:
+- `all`: no duration filter.
+- `under_5_min`: under 5 minutes.
+- `between_5_and_20_min`: 5-20 minutes.
+- `over_20_min`: over 20 minutes.
+
+Weibo, Toutiao, and WeChat Channels search pagination:
+- Continue only when `next_page_token` is not empty.
+- Pass the complete returned `next_page_token` back unchanged as `page_token` for the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+Use `npx -y socialdatax-skills@latest <platform> <action> --help` for exact flags and values. Paginated commands require the complete returned `next_page_token`. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses. Commands without `--page-token`, including suggestions and first-page-only searches, do not support pagination.
+Haokan / 好看视频: use `search` for videos, `user-search` for accounts, `search-suggestions` for query suggestions, and `hot-search` for search terms rather than a video ranking. Only the two search commands accept page tokens; video search uses bounded `--pages`, not `--all`. No `--since-days` filter is available.
+
+## Safety Boundary
+
+Search access is read-only. CLI calls use existing environment credentials or the user’s explicitly saved private local credential file for SocialDataX search requests. Generated Skill files do not contain API keys. It does not read local browser data or perform login, posting, liking, commenting, or account changes. The optional X / Twitter local save command writes only to the requested local `--output` path or `--output-dir` directory and does not require `SOCIALDATAX_API_KEY`.
+
+## MCP Tools
+
+MCP tools matching the direct CLI commands above:
+
+- XHS: `xhs_search_notes`, `xhs_search_suggestions`, `xhs_search_images`, `xhs_search_products`, `xhs_get_topic_notes_by_page_id`, `xhs_get_topic_notes_by_topic_url`
+- DOUYIN: `douyin_search_videos`, `douyin_search_suggestions`, `douyin_search_products`
+- KUAISHOU: `kuaishou_search_videos`, `kuaishou_search_suggestions`
+- BILIBILI: `bilibili_search_videos`, `bilibili_search_articles`, `bilibili_search_suggestions`
+- ZHIHU: `zhihu_search_content`, `zhihu_search_suggestions`
+- INSTAGRAM: `instagram_search_posts`, `instagram_search_tags`
+- X: `x_search_posts`, `x_search_suggestions`
+- YOUTUBE: `youtube_search_videos`, `youtube_search_suggestions`, `youtube_search_channels`
+- TIKTOK: `tiktok_search_posts`, `tiktok_search_suggestions`
+- WEIBO: `weibo_search_posts`, `weibo_search_suggestions`
+- TOUTIAO: `toutiao_search_posts`, `toutiao_search_suggestions`
+- WECHAT: `wechat_search_videos`, `wechat_search_mp_articles`
+- BAIDU: `baidu_tieba_get_forum_posts`, `baidu_tieba_search_suggestions`, `baidu_tieba_search_general`, `baidu_tieba_search_posts`, `baidu_tieba_search_posts_in_forum`
+- HAOKAN: `haokan_search_videos`, `haokan_search_users`, `haokan_search_suggestions`, `haokan_get_hot_search_list`
+
+For XHS, call `xhs_search_notes` with:
+- `keyword`: required search phrase or topic; use the user's actual intent and trim whitespace.
+- `page_token`: optional opaque pagination token. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+- `sort_type`: optional, one of `general`, `time_descending`, `like_count_descending`, `comment_count_descending`, `collect_count_descending`; omit it for default sorting.
+- `note_type`: optional search filter, one of `all`, `image`, `video`; default is `all`.
+- `publish_time_range`: optional search filter, one of `all`, `day`, `week`, `half_year`; default is `all`.
+
+Use the same meanings as the CLI XHS sort and filter values above.
+
+For Douyin, call `douyin_search_videos` with:
+- `keyword`: required search phrase or topic.
+- `page_token`: optional opaque pagination token. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+Do not pass `page` to `douyin_search_videos`; omit `page_token` on the first request.
+- `sort_type`: optional, one of `general`, `time_descending`, `like_count_descending`; omit it for the default sort.
+- `publish_time_range`: optional publish-time filter, one of `all`, `day`, `week`, `half_year`; omit it for no publish-time filter.
+- `duration_range`: optional duration filter, one of `all`, `under_1_minute`, `one_to_five_minutes`, `over_5_minutes`; omit it for no duration filter.
+- `content_type`: optional content type filter, one of `all`, `video`, `image`; omit it for all content types.
+
+Do not pass `page` to `xhs_search_notes`; omit `page_token` on the first request.
+Continue XHS pagination only when `next_page_token` is not empty, and pass the complete returned `next_page_token` back unchanged as `page_token` for the same keyword, sort, note type, publish-time range, and caller chain.
+Continue Douyin pagination only when `next_page_token` is not empty. Pass the complete returned `next_page_token` back unchanged as `page_token` for the same keyword and filter chain.
+Do not stop only because one page has empty `items`.
+For Kuaishou, call `kuaishou_search_videos` with:
+- `keyword`: required search phrase or topic.
+- `page_token`: optional opaque pagination token. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+Do not pass `page` to `kuaishou_search_videos`; omit `page_token` on the first request.
+Continue Kuaishou pagination only when `next_page_token` is not empty. Pass the complete returned `next_page_token` back unchanged as `page_token` for the same keyword chain.
+For Bilibili, call `bilibili_search_videos` for videos with `keyword` and optional `page_token`, `sort_type`, `publish_time_range`, `publish_time_start_date`, `publish_time_end_date`, or `duration_range`; call `bilibili_search_articles` for articles with `keyword` and optional `page_token`, `sort_type`, or `category`.
+For Zhihu, call `zhihu_search_content` with `keyword` and optional `page_token`, `content_type`, `sort_type`, or `publish_time_range`.
+For Instagram, call `instagram_search_posts` with `keyword` and optional `page_token`.
+For X / Twitter, call `x_search_posts` with `keyword` and optional `page_token` or `sort_type`.
+For YouTube, call `youtube_search_videos` with `keyword` and optional `page_token`, `sort_type`, `video_type`, `publish_time_range`, or `duration_range`.
+For TikTok, call `tiktok_search_posts` with `keyword` and optional `page_token` or `content_type`.
+For Weibo, call `weibo_search_posts` with:
+- `keyword`: required search phrase or topic.
+- `page_token`: optional opaque pagination token. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+Do not pass `page` to `weibo_search_posts`; omit `page_token` on the first request.
+Continue Weibo pagination only when `next_page_token` is not empty. Pass the complete returned `next_page_token` back unchanged as `page_token` for the same keyword chain.
+For Toutiao, call `toutiao_search_posts` with required `keyword` and optional `page_token`. Do not pass `page` to `toutiao_search_posts`; omit `page_token` on the first request. Continue only when `next_page_token` is not empty and pass it back unchanged for the same keyword chain.
+For WeChat Channels / 视频号, call `wechat_search_videos` with:
+- `keyword`: required search phrase or topic.
+- `page_token`: optional opaque pagination token. Continue only with the complete returned `next_page_token` from the same search pagination chain. Do not modify, truncate, redact, mask, omit, normalize, rebuild, generate, or replace the middle with ellipses.
+Do not pass `page` to `wechat_search_videos`; omit `page_token` on the first request.
+- `sort_type`: optional, one of `all`, `time_descending`, `collect_count_descending`; omit it for the default sort.
+- `duration_range`: optional duration filter, one of `all`, `under_5_min`, `between_5_and_20_min`, `over_20_min`; omit it for no duration filter.
+Continue WeChat Channels pagination only when `next_page_token` is not empty. Pass the complete returned `next_page_token` back unchanged as `page_token` for the same keyword and filter chain.
+`--since-days` uses CLI-side filtering only and is not an MCP tool argument; for MCP-only calls, request newest-first/native publish-time filters where available and filter returned `publish_time` values in your analysis.
+
+XHS search parameter naming reminder: direct CLI uses `--sort-type`, `--publish-time-range`, and `--note-type`; the `xhs_search_notes` MCP tool uses `sort_type`, `publish_time_range`, and `note_type`. Do not pass `sortType`, `publishTimeRange`, or `noteType`.
+
+## Output Guidance
+
+Summarize visible evidence separately from interpretation. Include useful content IDs, URLs, titles or descriptions, authors, counts, and publish time when the user needs traceability.
+For XHS search results, in every use of a returned `note_url`, such as final answers, display, references, storage, output, or forwarding, preserve it exactly as the full URL, including `xsec_token` query parameters. Do not modify, truncate, redact, mask, normalize, rebuild, or synthesize the URL from `note_id`.
+For XHS `note_id`, copy the entire returned `note_id` exactly; do not pass or display only a prefix.
+For Douyin search results, include `content_type` when the user needs traceability.
+For Douyin image/text search results, use returned `images` and treat `video.media_type="audio"` as an audio player resource rather than a video post.
+For Kuaishou search results, include `photo_id`, `share_url`, author facts, and visible interaction counts when the user needs traceability.
+For Bilibili search results, include content IDs, URLs, titles or descriptions, creator facts, and visible interaction counts when the user needs traceability.
+For Zhihu search results, include content URLs, titles or summaries, creator facts, and visible interaction counts when the user needs traceability.
+For Instagram, X / Twitter, YouTube, and TikTok search results, include returned post or video URLs, public IDs, author facts, and visible interaction counts when the user needs traceability.
+For X / Twitter search results, preserve returned `media_items[].cover_image_url` and `media_items[].video_url` values when present. When the user wants to save X media, pass one returned media URL at a time to `npx -y socialdatax-skills@latest x download-media --url "<media_url>" --output-dir <directory> --pretty`; this local save command does not require `SOCIALDATAX_API_KEY`. If the CLI process does not inherit the user's local proxy, add `--proxy "http://127.0.0.1:7890"` or set `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`. If search media fields are absent, use X detail as the fallback before downloading.
+For Weibo search results, include `post_id`, `post_url`, author facts, interaction counts, and publish time when the user needs traceability.
+For WeChat Channels / 视频号 search results, include `encrypted_object_id`, author facts, interaction counts, publish time, and duration when the user needs traceability.
+
+## Troubleshooting
+
+- If SocialDataX CLI or its dependencies are missing, or an npm network, Node.js/npm/npx availability, permission, or missing runtime error appears, treat it as a local runtime, dependency installation, network, or agent authorization issue, not a SocialDataX API key or business data error. Install or repair task dependencies only within the user's existing authorization, preferably in the project or a temporary environment. Execution permissions are not user authorization; explain and obtain approval before changes outside that scope, including global installs, runtime upgrades, or system configuration changes. When network or execution authorization is needed, ask the user to approve or finish authorization, then continue the same command; do not use public web search as a substitute for SocialDataX data.
+- Credential source: identify whether this request uses CLI or MCP. For CLI, run `auth status` in the actual execution environment to identify environment or local-file credentials. For MCP, check the authentication configuration of the current connection, without requiring a local CLI variable. If configuration is missing, follow the API Key section for user-entered hidden local login. Do not expose Keys, Authorization headers or secret configuration values.
+- If the CLI exits with status 1 and prints `partial: true`, preserve `data.items` and the error, and report incomplete results. This recovery rule overrides advice to rerun the original command. After resolving the error (including insufficient balance), resume only with a non-empty `data.next_page_token` and the same query parameters. Keep the original page and item limits: subtract cumulative `page_count` and `item_count` from the respective `--pages` and `--max-items` limits, if set. Stop parent-list pagination when either limit is reached. An empty token does not mean completion. Do not restart from the first page; investigate repeated-token errors before continuing.
+- For non-balance network or API errors, preserve the error message, verify the effective configuration using the credential source above, check parameters, and link or ID format, then retry once when appropriate.
+- If the response returns `insufficient_balance` or says the balance/credits are insufficient, do not retry repeatedly. Show the official billing link in the error (https://socialdatax.com/dashboard/billing, including any channel parameters); if absent, use https://socialdatax.com/dashboard/billing. After recharging, resume the failed call; if a job or partial results already exist, follow the corresponding job-query or pagination recovery rules.
+- If the user has recharged but still sees insufficient balance, have the user confirm in the relevant account dashboard that this request uses the recharged account, following the credential source above. If an update is needed, have the user update the effective CLI configuration or MCP connection, reload as documented, and resume the original command. Do not require reconfiguration just because the primary local variable is absent, or expose credential values.

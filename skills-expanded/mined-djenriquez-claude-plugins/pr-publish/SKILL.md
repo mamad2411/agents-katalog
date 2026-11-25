@@ -1,0 +1,70 @@
+---
+name: pr-publish
+description: "Publishes finished work as a GitHub pull request: discovers branch state, drafts or refreshes a layered human-readable PR description (with required humanizer pass), pushes safely, and creates or updates the PR."
+argument-hint: "(optional) freeform notes, linked issue, or observability evidence to incorporate"
+disable-model-invocation: false
+allowed-tools:
+  - Bash(git:*)
+  - Bash(gh:*)
+  - Read
+  - Glob
+  - Grep
+  - Skill
+  - AskUserQuestion
+---
+
+# PR Publish
+
+Publish completed branch work as a PR, or refresh the current branch's existing PR. Treat `$ARGUMENTS` as extra drafting context such as linked issues, incident notes, or validation evidence.
+
+Load `references/github-pr-workflow.md` before making branch or PR decisions. Load `references/pr-description-style.md` when drafting the body. Load `skills/humanizer/SKILL.md` (`pr-body` mode) for shared writing rules and the required pass before publishing.
+
+The PR body is for humans. If a busy reviewer cannot understand the change from the Summary, the body is not done.
+
+## Invariants
+
+- Stop on dirty tracked files or diverged local/remote; never force-push; do not
+  auto-commit tracked changes.
+- On default branch with only untracked files, you may create a feature branch
+  and commit those explicit paths.
+- Describe the merged end state relative to the base branch — never the journey
+  through intermediate commits.
+- Required `pr-body` humanizer on title and body before print/publish (inline
+  Process by default). Summary must skim in plain language without internal
+  type/function names. Do not invent test results.
+- No figure in the PR body. On private repositories GitHub renders embedded
+  images with a short-lived signed token in the URL, and Slack unfurls of the
+  PR expose it to secret scanners. Drop a figure embed left in an existing body
+  on refresh. Users who want a diagram can run `/pr-figure` separately.
+- No hard-wrapped prose in the PR body: each prose paragraph (especially
+  Summary) is one unbroken line. Blank lines between paragraphs/sections are
+  fine; lists and fenced code keep structure. GitHub soft-wraps — do not insert
+  mid-paragraph newlines for terminal width.
+- Print final title and body before publishing.
+
+## Workflow
+
+1. Discover: status, current/default branch, merge-base commits/diff, current PR.
+2. Stop for safety cases in `references/github-pr-workflow.md`.
+3. Gather only framing that changes the body (issues, evidence, affected users).
+4. Draft title (<70 chars) and body via `references/pr-description-style.md`;
+   rewrite journey-relative phrasing; join hard-wrapped prose into unbroken
+   paragraphs.
+5. Apply `skills/humanizer/SKILL.md` (`pr-body` mode) to the title and full
+   body. Remove repeated ideas across sections, unwrap any remaining hard
+   wraps, and re-check the base-branch frame. Optional `technical-writing`
+   only for rare long procedure sections.
+6. Push if needed; create or update the PR (`gh pr create` / edit body; retitle
+   only if generated, non-conventional, or over 70 chars).
+7. Print the PR URL.
+
+## Output
+
+End with:
+
+```text
+PR published: <url>
+Title: <title>
+```
+
+If stopped for safety, report the exact condition and the next safe command or decision needed from the user.

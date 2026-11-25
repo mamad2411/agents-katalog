@@ -1,0 +1,277 @@
+---
+name: change
+description: Handle mid-track requirement changes. Analyzes impact on completed and pending tasks, proposes amendments to spec.md and plan.md before applying.
+---
+
+# Course Correction
+
+You are handling a mid-track requirement change using Draft's Context-Driven Development methodology.
+
+## Red Flags - STOP if you're
+
+- Applying changes to spec.md or plan.md without showing the user what will change first
+- Invalidating `[x]` completed tasks without flagging them explicitly
+- Proceeding past the CHECKPOINT without user confirmation
+- Editing files when the user said "no" or "edit"
+
+**Show impact before applying. Always confirm.**
+
+---
+
+## Step 0: Verify Draft Context
+
+```bash
+ls draft/tracks.md 2>/dev/null
+```
+
+If `draft/` does not exist: **STOP** — "No Draft context found. Run `/draft:init` first."
+
+---
+
+## Step 1: Parse Arguments
+
+Extract from `$ARGUMENTS`:
+
+- **Change description** — free text describing what needs to change (required)
+- **Track specifier** — optional `track <id>` prefix to target a specific track
+
+### Default Behavior
+
+If no `track <id>` specified:
+
+- Auto-detect the active `[~]` In Progress track from `draft/tracks.md`
+- If no `[~]` track, find the first `[ ]` Pending track
+- Display: `Auto-detected track: <id> - <name>` before proceeding
+
+If no change description provided:
+
+- Error: "Usage: `/draft:change <description>` or `/draft:change track <id> <description>`"
+
+---
+
+## Step 2: Load Context
+
+1. Read `draft/tracks/<id>/spec.md` — extract requirements and acceptance criteria
+2. Read `draft/tracks/<id>/plan.md` — extract all tasks with their current status (`[ ]`, `[~]`, `[x]`, `[!]`)
+3. Read `draft/tracks/<id>/metadata.json` — for track type and status
+4. Read `draft/tracks/<id>/hld.md` if present — extract Architecture, Detailed Design components, Dependencies, Checklist sections, and Approvals table (signed/unsigned)
+5. Read `draft/tracks/<id>/lld.md` if present — extract Classes/Interfaces, Data Model, Algorithms, Error Handling sections
+
+---
+
+## Step 3: Analyze Spec / HLD / LLD Impact
+
+Analyze the change description against the loaded spec, HLD, and LLD.
+
+**Code-grounded impact (Ground-Truth Discipline G1, G2, G4):** Classification ("Modified", "Unaffected", etc.) must be informed by the current code, not just the prior spec text. For each requirement / AC you're about to mark **Unaffected**, confirm the code path it depends on still behaves as the spec claims — Read the cited file or a representative file in the affected module before stamping Unaffected. Specs and implementations drift; "spec text unchanged" ≠ "behavior unchanged."
+
+For each requirement and acceptance criterion, classify the effect:
+
+| Classification | Meaning |
+|---|---|
+| **Added** | New requirement or AC introduced by this change |
+| **Modified** | Existing requirement or AC needs updating |
+| **Removed** | Existing requirement or AC is no longer needed |
+| **Unaffected** | No change needed |
+
+Produce a concise impact list. Example:
+
+```text
+Spec impact:
+- AC #2 "User can export to CSV" → Modified (now also requires JSON format)
+- AC #5 "Export limited to 1000 rows" → Removed (no row limit)
+- NEW: AC #6 "Export progress indicator for large datasets"
+```
+
+**HLD impact** (only when `hld.md` exists):
+
+- §Architecture / Component Diagram — does the change introduce new modules or alter integration edges?
+- §Detailed Design — does any per-component subsection need updating, or are new components introduced?
+- §Dependencies — new/removed dependent components?
+- §Checklist (Performance, Scale, Security, Resiliency, Multi-tenancy, Upgrade, Cost) — do any answers need re-evaluation?
+- §IP / TPT — does the change introduce new third-party technology or invention disclosure?
+- §Deployment — does the deployment surface change?
+
+**LLD impact** (only when `lld.md` exists):
+
+- §Classes and Interfaces — signatures added/modified/removed?
+- §Data Model — schema changes? New fields? Migration required?
+- §Key Algorithms and Workflows — algorithm changes? New sequence diagrams needed?
+- §Error Handling — new error classes or retry policy changes?
+- §Observability — new metrics or alert thresholds?
+
+**Re-approval flag:** If the HLD Approvals table has any signed rows (Date column populated) AND the change touches HLD structural sections (Architecture, Detailed Design, Dependencies, Checklist, IP, Deployment), surface this warning prominently:
+
+```text
+⚠️ HLD modified after sign-off — Approvals table requires re-circulation.
+    Signed rows: [list which roles signed and when]
+    Changed sections: [list of HLD sections impacted]
+```
+
+Same logic applies to LLD Approvals when LLD §Classes/Interfaces, §Data Model, or §Key Algorithms change.
+
+---
+
+## Step 4: Map Impact to Plan Tasks
+
+For each task in `plan.md`, determine if the spec change affects it:
+
+- **`[x]` completed tasks** that are now invalidated by the change → flag as:
+  `⚠️ [task description] — may need rework`
+
+- **`[ ]` pending tasks** that need updating → show the proposed new task text
+
+- **`[~]` in-progress tasks** that are affected → flag as:
+  `⚠️ IN PROGRESS: [task description] — review before continuing`
+
+- **`[!]` blocked tasks** that are affected → flag as:
+  `⚠️ BLOCKED: [task description] — re-evaluate; requirement change may alter blocking condition or resolution path`
+
+- **Unaffected tasks** — skip, do not mention
+
+---
+
+## Step 5: Present Impact Summary
+
+Display a clear summary before proposing any file changes:
+
+```yaml
+Change: [change description]
+Track: <track_id> — <track_name>
+
+Spec impact:
+  - [classification] [requirement/AC]
+  - [classification] [requirement/AC]
+
+Plan impact:
+  - ⚠️ [N] completed task(s) may need rework
+  - [M] pending task(s) need updating
+  - [K] in-progress task(s) need review
+  - [B] blocked task(s) need re-evaluation
+
+Completed tasks that may need rework:
+  - [x] [task description] (commit: abc1234)
+
+Pending tasks with proposed changes:
+  Before: - [ ] [original task text]
+  After: - [ ] [proposed new task text]
+```
+
+---
+
+## Step 6: Show Proposed Amendments
+
+Display only the changed sections of each file (not full rewrites):
+
+### Proposed spec.md changes
+
+Show the diff as before/after for each modified section. Do not rewrite unchanged sections.
+
+### Proposed plan.md changes
+
+Show each task that would be modified as before/after. Do not rewrite the full plan.
+
+### Proposed hld.md changes (when HLD exists and is impacted)
+
+Show before/after for each impacted HLD section. Preserve §Approvals table verbatim — do not modify Approvals as part of the spec amendment; re-circulation is the author's manual step. Surface a "Sections changed" list at the top of the diff so reviewers can see scope at a glance.
+
+### Proposed lld.md changes (when LLD exists and is impacted)
+
+Show before/after for each impacted LLD section. Preserve §Approvals verbatim. Flag schema changes (Data Model) for migration consideration.
+
+---
+
+## Step 7: CHECKPOINT
+
+```text
+Apply these changes to spec.md and plan.md? [yes / no / edit]
+```
+
+- **`yes`** — proceed to Step 8
+- **`no`** — discard all proposed changes, announce "No changes applied." and stop
+- **`edit`** — let the user describe adjustments to the proposed amendments, then revise and re-present the CHECKPOINT again. The loop continues until the user selects `yes` or `no`.
+
+---
+
+## Step 8: Apply Changes and Log
+
+1. Apply the agreed amendments to `spec.md`, `plan.md`, and (when impacted) `hld.md` / `lld.md`. Preserve §Approvals tables in HLD/LLD verbatim — re-approval is a manual author step, not an automated edit.
+
+2. Update `draft/tracks/<id>/metadata.json`:
+   - Set `updated` to current ISO timestamp
+   - Recalculate `tasks.total` by counting all `- [ ]`, `- [~]`, `- [x]`, and `- [!]` lines in the updated `plan.md`. Update `tasks.completed` by counting only `- [x]` lines.
+
+3. Append a Change Log entry (with current git SHA (obtain via `git rev-parse --short HEAD`) and timestamp) to `plan.md`. If a `## Change Log` section does not exist, add it at the bottom:
+
+```markdown
+## Change Log
+
+| Date | Description | Impact |
+|------|-------------|--------|
+| [ISO date] | [change description] | [N completed may need rework, M pending updated] |
+```
+
+4. Announce:
+
+```text
+Changes applied: <track_id>
+
+Updated:
+- draft/tracks/<id>/spec.md
+- draft/tracks/<id>/plan.md
+[when HLD impacted:]
+- draft/tracks/<id>/hld.md
+[when LLD impacted:]
+- draft/tracks/<id>/lld.md
+
+[If completed tasks flagged:]
+⚠️ Review N completed task(s) — they may not align with the updated spec.
+    Re-run /draft:implement to address rework, or /draft:review to assess.
+
+[If HLD/LLD modified after sign-off:]
+⚠️ HLD/LLD modified after sign-off — re-circulate to approvers listed in §Approvals.
+    /draft:upload will block git upload for high-criticality tracks until re-signed.
+
+Next: /draft:implement to continue, or /draft:review to assess current state.
+```
+
+---
+
+## Error Handling
+
+### Track Not Found
+
+```yaml
+Error: Track '<id>' not found.
+Run /draft:status to see available tracks.
+```
+
+### No Active Track
+
+```yaml
+Error: No active track found.
+Use: /draft:change track <id> <description>
+```
+
+### No Spec or Plan
+
+```yaml
+Error: Missing spec.md or plan.md for track <id>.
+Cannot perform change analysis without both files.
+```
+
+---
+
+## Examples
+
+### Change description for active track
+
+```bash
+/draft:change the export format should support JSON in addition to CSV
+```
+
+### Targeting a specific track
+
+```bash
+/draft:change track add-export-feature also require a progress indicator for exports over 500 rows
+```

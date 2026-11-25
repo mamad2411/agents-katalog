@@ -1,0 +1,95 @@
+---
+name: pr-figure
+description: >
+  Creates one verified reviewer diagram for a GitHub pull request, hosts it as a
+  GitHub user-attachment without committing, and posts it as a comment or
+  returns markdown for a PR body. Use when the user asks for a PR figure,
+  reviewer diagram, image on a PR, or a picture of the change. Works from any checkout; pass a PR URL such as
+  https://github.com/djenriquez/claude-plugins/pull/34 or OWNER/REPO#N.
+argument-hint: "[PR URL|#N] [comment|body|url]"
+disable-model-invocation: false
+allowed-tools:
+  - Bash(git:*)
+  - Bash(gh:*)
+  - Bash(python3:*)
+  - Bash(curl:*)
+  - Read
+  - Glob
+  - Grep
+  - AskUserQuestion
+---
+
+# PR Figure
+
+One diagram of the merged end state so a busy reviewer does not have to
+reconstruct architecture from prose. Drawing rules, prompt skeleton, harness
+table, and hosting fallbacks live in `references/pr-figure.md` — load it
+before generating.
+
+## Placement
+
+Post a `comment` unless the user asks for `body` or `url`.
+
+## Arguments
+
+`$ARGUMENTS` may include a PR reference (`#N`, `N`, or
+`https://github.com/OWNER/REPO/pull/N`) and a placement (`comment`, `body`,
+`url`). If the PR is omitted, use the current branch's PR (see
+`references/github-pr-workflow.md`). Do not guess a number from recent
+history. A full GitHub URL is enough even when the current workspace is a
+different repository.
+
+## Process
+
+1. Resolve the PR and its `OWNER/REPO` from the URL or `gh pr view --repo`.
+   Use the PR's base repository, including for fork PRs. A local checkout of
+   that branch is optional for figure-only work. Read its visibility before
+   hosting. If the user requires a non-public figure and the repository is
+   public, keep the figure local.
+2. Load title, body, changed files, and the base-branch diff (`gh pr diff`
+   or `git diff <base>...HEAD` when that checkout is the PR head). Ground the
+   prompt only in that evidence.
+3. Load `references/pr-figure.md`. Skip when that reference says to skip.
+4. Record the required actors and directed edges from that evidence, then
+   fill the prompt skeleton. Generate once and verify every arrow's source,
+   destination, direction, and label against the recorded graph. Correct one
+   failed candidate at most. If it still fails, render the same graph with
+   code using the reference's deterministic fallback. Inspect the final PNG
+   before upload; fewer mistakes is not a passing result.
+5. Copy the file to `$TMPDIR` / `/tmp`. Upload from the `djenriquez-core`
+   plugin root:
+
+   ```sh
+   python3 skills/pr-figure/scripts/upload_github_asset.py "$FIGURE_PATH" --repo OWNER/REPO
+   ```
+
+6. The uploader confirms a repository-scoped upload and checks private/internal
+   attachments for anonymous exposure before printing a URL. Raw downloads may
+   return `404` for public uploads or a browser SSO page when using an API token;
+   do not make those downloads a posting gate or claim rendering was verified.
+   Private/internal attachments must deny anonymous access. On verification
+   failure, keep the local file and report the reason; do not post the URL or
+   widen permissions. Follow the reference's response to an exposed private
+   attachment. Do not use public hosting fallbacks or scrape GitHub cookies.
+7. Deliver:
+   - `comment`: `gh pr comment --repo OWNER/REPO` with `![title](url)` and a
+     one- or two-sentence `pr-reply` note. Not a commit.
+   - `body`: return `![title](url)` for the user to embed. For a private or
+     internal repository, say first that GitHub serves a body image through a
+     signed URL that Slack unfurls of the PR expose to secret scanners, and
+     that `/pr-publish` removes body figures when it refreshes the
+     description. A `comment` avoids both.
+   - `url`: print the asset URL.
+   After posting, check rendering on the PR when a browser is available
+   (signed in for a private/internal repository). Otherwise, report that the
+   upload and posting succeeded but rendering remains unverified.
+8. Delete workspace copies after upload and required exposure checks succeed
+   (commit fallback in the reference is the exception).
+
+## Output
+
+```text
+Figure: <asset-url | skipped: <reason>>
+Placement: comment|body|url
+PR: <url>
+```

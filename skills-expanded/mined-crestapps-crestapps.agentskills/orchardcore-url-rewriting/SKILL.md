@@ -1,0 +1,299 @@
+---
+name: orchardcore-url-rewriting
+description: Skill for configuring URL rewriting in Orchard Core. Covers redirect vs rewrite rules, regex pattern matching, Apache mod_rewrite flags, admin path exclusion, rule ordering with drag-and-drop in List and Grid admin list layouts, the ManageUrlRewritingRules permission, custom rule sources, IRewriteRuleHandler, display drivers for custom rule types, and the UrlRewriting recipe step. Use this skill when requests mention Orchard Core URL Rewriting, redirects, 301 or 302 redirects, rewrite rules, Redirect Rule Properties, Rewrite Rule Properties, or closely related Orchard Core implementation, setup, extension, or troubleshooting work. Strong matches include OrchardCore.UrlRewriting, OrchardCore.UrlRewriting.Models, IUrlRewriteRuleSource, IRewriteRulesManager, RewriteRuleHandlerBase, AddRewriteRuleSource, RewriteRule, QueryStringPolicy, and RedirectType.
+license: Apache-2.0
+metadata:
+  author: CrestApps Team
+  version: "1.0"
+---
+
+# Orchard Core URL Rewriting - Prompt Templates
+
+## Configure URL Rewriting and Redirects
+
+You are an Orchard Core expert. Generate URL rewrite rules, redirect configurations, and custom rule sources for Orchard Core.
+
+### Guidelines
+
+- Enable `OrchardCore.UrlRewriting` for URL rewrite and redirect support. Manage rules under **Tools > URL Rewriting**; this requires the `ManageUrlRewritingRules` permission (`OrchardCore.UrlRewriting.UrlRewritingPermissions.ManageUrlRewritingRules`).
+- Rules are processed sequentially by `Order` (then creation date). Each rule is translated to an ASP.NET Core Apache mod_rewrite rule (`RewriteRule pattern substitution [NC,QSA|QSD,R=301]`).
+- Requests under the admin prefix (`/Admin` by default) are always excluded, so a bad rule cannot lock you out of the admin.
+- Use **Redirect Rules** (301/302/307/308) to send users to a new URL (browser address bar changes).
+- Use **Rewrite Rules** to serve content from a different URL without changing the browser address bar.
+- Patterns use regular expressions; use `^` and `$` for exact matches.
+- Use `$1`, `$2`, etc. in substitution patterns to reference regex capture groups.
+- Set `IsCaseInsensitive` to `true` for case-insensitive pattern matching.
+- Configure `QueryStringPolicy` to `Append` (keep query strings) or `Drop` (discard them).
+- Custom rule sources implement `IUrlRewriteRuleSource` and are registered with `services.AddRewriteRuleSource<T>()`.
+- Use the admin UI drag-and-drop to reorder rules. The rules list is rendered with the shared `AdminList` shape and stays drag-sortable in both the `List` and `Grid` layouts: the view sets `rows-*` attributes on the `<admin-list>` tag (`RowsAttributes`: `rows-id` is the sortable container id `UrlRewritingAdminList.SortableContainerId`, `rows-data-sort-url` the sort endpoint) so each row, a subgrid in the `Grid` layout, has its own box to drag. A sort is saved immediately through the module's sort endpoint.
+- Validation (editor and `UrlRewriting` recipe step) requires a non-empty `Pattern` and `SubstitutionPattern` that the ASP.NET Core mod_rewrite parser accepts: `Pattern` is checked as `RewriteRule {Pattern} -` and `SubstitutionPattern` as `RewriteRule ^ {SubstitutionPattern}`. A substitution is not a regular expression: `/products/$1` and `https://%{HTTP_HOST}/new-page` are valid, but a trailing `$` or `%` (`/new-page$`, `/new-page%`) is rejected, as is a pattern with a space (`^/old page$`) or an unbalanced group.
+- A stored rule that still can't be parsed (for example saved before this validation) is skipped and logged as an error (`Unable to configure the URL rewriting rule '{RuleName}'`); it no longer prevents the other rules, or the tenant, from working.
+- Always seal classes.
+
+### Enabling URL Rewriting
+
+```json
+{
+  "steps": [
+    {
+      "name": "Feature",
+      "enable": [
+        "OrchardCore.UrlRewriting"
+      ],
+      "disable": []
+    }
+  ]
+}
+```
+
+### Available Rule Types
+
+| Rule Type | Description | Use Case |
+|-----------|-------------|----------|
+| **Redirect Rule** | Sends an HTTP redirect response (301/302/307/308) to the client. The browser URL changes. | URL migrations, domain changes, SEO canonical URLs. |
+| **Rewrite Rule** | Modifies the request URL server-side. The browser URL stays the same. | URL aliasing, serving content from different paths. |
+
+### Redirect Rule Properties
+
+| Property | Description |
+|----------|-------------|
+| `Id` | Unique identifier. Leave empty to create new; match existing ID to update. |
+| `Name` | Descriptive name for the rule. |
+| `Pattern` | Regex pattern to match against the request URL. |
+| `SubstitutionPattern` | Target URL for the redirect. Supports `$1`, `$2` capture groups. |
+| `IsCaseInsensitive` | When `true`, pattern matching ignores case. |
+| `QueryStringPolicy` | `Append` keeps original query string; `Drop` discards it. |
+| `RedirectType` | `MovedPermanently` (301), `Found` (302), `TemporaryRedirect` (307), or `PermanentRedirect` (308). |
+
+### Rewrite Rule Properties
+
+| Property | Description |
+|----------|-------------|
+| `Id` | Unique identifier. Leave empty to create new; match existing ID to update. |
+| `Name` | Descriptive name for the rule. |
+| `Pattern` | Regex pattern to match against the request URL. |
+| `SubstitutionPattern` | Target URL for the rewrite. Supports `$1`, `$2` capture groups. |
+| `IsCaseInsensitive` | When `true`, pattern matching ignores case. |
+| `QueryStringPolicy` | `Append` keeps original query string; `Drop` discards it. |
+| `SkipFurtherRules` | When `true`, no subsequent rules are processed if this rule matches. |
+
+### Redirect Type Reference
+
+| Value | HTTP Status | Description |
+|-------|-------------|-------------|
+| `Found` | 302 | Temporary redirect. |
+| `MovedPermanently` | 301 | Permanent redirect; clients should update bookmarks. |
+| `TemporaryRedirect` | 307 | Temporary redirect; preserves HTTP method (POST stays POST). |
+| `PermanentRedirect` | 308 | Permanent redirect; preserves HTTP method. |
+
+### Recipe: Create Redirect and Rewrite Rules
+
+```json
+{
+  "steps": [
+    {
+      "name": "UrlRewriting",
+      "Rules": [
+        {
+          "Source": "Redirect",
+          "Name": "Redirect old-page to new-page",
+          "Pattern": "^/old-page$",
+          "SubstitutionPattern": "/new-page",
+          "IsCaseInsensitive": true,
+          "QueryStringPolicy": "Append",
+          "RedirectType": "MovedPermanently"
+        },
+        {
+          "Source": "Redirect",
+          "Name": "Redirect legacy blog URLs",
+          "Pattern": "^/blog/post/(\\d+)$",
+          "SubstitutionPattern": "/articles/$1",
+          "IsCaseInsensitive": true,
+          "QueryStringPolicy": "Drop",
+          "RedirectType": "MovedPermanently"
+        },
+        {
+          "Source": "Rewrite",
+          "Name": "Serve media from img path",
+          "Pattern": "^/img/(.*)$",
+          "SubstitutionPattern": "/media/$1",
+          "IsCaseInsensitive": true,
+          "QueryStringPolicy": "Drop",
+          "SkipFurtherRules": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Recipe Behavior
+
+The `UrlRewriting` step (requires `OrchardCore.Recipes.Core`) updates a rule when its `Id` matches an existing rule; otherwise it creates one from `Source`. Validation errors are reported and the rule is skipped. There is no dedicated deployment step; re-create rules from a recipe in each environment.
+
+### Custom Rule Source Implementation
+
+```csharp
+using Microsoft.AspNetCore.Rewrite;
+using Microsoft.Extensions.Localization;
+using OrchardCore.UrlRewriting;
+using OrchardCore.UrlRewriting.Models;
+
+namespace MyModule.UrlRewriting;
+
+public sealed class CustomRuleSource : IUrlRewriteRuleSource
+{
+    public const string SourceName = "CustomRule";
+
+    public CustomRuleSource(IStringLocalizer<CustomRuleSource> stringLocalizer)
+    {
+        DisplayName = stringLocalizer["Custom rule"];
+        Description = stringLocalizer["Custom URL rewrite rule"];
+    }
+
+    public string TechnicalName => SourceName;
+
+    public LocalizedString DisplayName { get; }
+
+    public LocalizedString Description { get; }
+
+    public void Configure(RewriteOptions options, RewriteRule rule)
+    {
+        if (!rule.TryGet<CustomRuleMetadata>(out var metadata) || string.IsNullOrEmpty(metadata.Host))
+        {
+            return;
+        }
+
+        // Add any ASP.NET Core rewrite rule.
+        options.AddRedirectToWwwPermanent(metadata.Host);
+    }
+}
+
+public sealed class CustomRuleMetadata
+{
+    public string Host { get; set; }
+}
+```
+
+### Populating a Custom Rule from Recipes
+
+Rule data from the recipe (or `IRewriteRulesManager.NewAsync(source, data)` / `UpdateAsync(rule, data)`) reaches your source through an `IRewriteRuleHandler`. Derive from `RewriteRuleHandlerBase` and store your metadata on the rule (`RewriteRule` is an `Entity`):
+
+```csharp
+using OrchardCore.Entities;
+using OrchardCore.UrlRewriting.Handlers;
+using OrchardCore.UrlRewriting.Models;
+
+namespace MyModule.UrlRewriting;
+
+public sealed class CustomRuleHandler : RewriteRuleHandlerBase
+{
+    public override Task InitializingAsync(InitializingRewriteRuleContext context)
+        => PopulateAsync(context.Rule, context.Data);
+
+    public override Task UpdatingAsync(UpdatingRewriteRuleContext context)
+        => PopulateAsync(context.Rule, context.Data);
+
+    private static Task PopulateAsync(RewriteRule rule, System.Text.Json.Nodes.JsonNode data)
+    {
+        if (rule.Source != CustomRuleSource.SourceName)
+        {
+            return Task.CompletedTask;
+        }
+
+        var metadata = rule.GetOrCreate<CustomRuleMetadata>();
+        var host = data[nameof(CustomRuleMetadata.Host)]?.GetValue<string>();
+
+        if (!string.IsNullOrEmpty(host))
+        {
+            metadata.Host = host;
+        }
+
+        rule.Put(metadata);
+
+        return Task.CompletedTask;
+    }
+}
+```
+
+Override `ValidatingAsync` to reject invalid data with `context.Result.Fail(new ValidationResult(...))`.
+
+### Custom Rule Display Driver
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+using OrchardCore.DisplayManagement.Handlers;
+using OrchardCore.DisplayManagement.Views;
+using OrchardCore.UrlRewriting;
+using OrchardCore.UrlRewriting.Models;
+
+namespace MyModule.UrlRewriting;
+
+public sealed class CustomRuleDisplayDriver : DisplayDriver<RewriteRule>
+{
+    public override IDisplayResult Edit(RewriteRule model, BuildEditorContext context)
+    {
+        return Initialize<CustomRuleViewModel>("CustomRule_Fields_Edit", viewModel =>
+        {
+            // Populate view model from model properties.
+        }).Location("Content");
+    }
+
+    public override async Task<IDisplayResult> UpdateAsync(RewriteRule model, UpdateEditorContext context)
+    {
+        var viewModel = new CustomRuleViewModel();
+        await context.Updater.TryUpdateModelAsync(viewModel, Prefix);
+
+        // Apply view model values to the model.
+
+        return Edit(model, context);
+    }
+}
+
+public class CustomRuleViewModel
+{
+    public string CustomProperty { get; set; }
+}
+```
+
+### Registering a Custom Rule Source in Startup
+
+```csharp
+using OrchardCore.DisplayManagement.Handlers;
+using OrchardCore.Modules;
+using OrchardCore.UrlRewriting;
+using OrchardCore.UrlRewriting.Models;
+
+namespace MyModule;
+
+public sealed class Startup : StartupBase
+{
+    public override void ConfigureServices(IServiceCollection services)
+    {
+        services.AddRewriteRuleSource<CustomRuleSource>(CustomRuleSource.SourceName)
+            .AddScoped<IRewriteRuleHandler, CustomRuleHandler>()
+            .AddScoped<IDisplayDriver<RewriteRule>, CustomRuleDisplayDriver>();
+    }
+}
+```
+
+### Common Redirect Patterns
+
+| Scenario | Pattern | Substitution | Type |
+|----------|---------|--------------|------|
+| Exact page redirect | `^/about-us$` | `/about` | `MovedPermanently` |
+| Path prefix redirect | `^/old-blog/(.*)$` | `/blog/$1` | `MovedPermanently` |
+| Trailing slash removal | `^(.+)/$` | `$1` | `MovedPermanently` |
+| Legacy ID to slug | `^/post/(\\d+)$` | `/articles/$1` | `MovedPermanently` |
+
+### Common Rewrite Patterns
+
+| Scenario | Pattern | Substitution | SkipFurtherRules |
+|----------|---------|--------------|------------------|
+| Media alias | `^/img/(.*)$` | `/media/$1` | `true` |
+| API versioning | `^/api/v1/(.*)$` | `/api/v2/$1` | `true` |
+| Clean URLs | `^/page/(.*)$` | `/content/$1` | `false` |
+
+### Upgrading from 3.x
+
+- The rules list is now an `AdminList` (List or Grid layout, page size selection, breadcrumbs). A theme or module that overrides `Views/Admin/Index.cshtml` of `OrchardCore.UrlRewriting` must render the `List` context with the `<admin-list>` tag and keep the `rows-id`/`rows-data-sort-url` attributes (`RowsAttributes`), or drag sorting stops working in the `Grid` layout.

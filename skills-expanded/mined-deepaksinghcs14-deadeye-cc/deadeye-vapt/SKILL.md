@@ -1,0 +1,528 @@
+---
+name: deadeye-vapt
+description: Whole-service VAPT / pen-test pass -- complete OWASP Top 10:2025, API Security Top 10 2023, and LLM Top 10:2025 coverage, ranked worst-first.
+license: MIT
+---
+
+<!-- deadeye-vapt: canonical rubric; edit internal/vapt/ruleset.md, the skill and every host rendering are generated from it -->
+# Deadeye VAPT
+
+A whole-service vulnerability assessment and penetration test, static and
+whitebox: find this service's real attack surface, then find what an
+attacker reaches through it. This is not a diff review. `/deadeye-guard`
+and `/deadeye-review` catch what changed; this catches what's already
+there — the endpoint nobody touched this session, the auth check that was
+never written, the route still live from an API version everyone thinks
+is retired.
+
+**What this is not.** No traffic is sent, no exploit is run, nothing
+outside this repository's source is touched — no network probing, no
+host/container/cloud-IAM layer, no runtime fuzzing. This is the source
+half of a VAPT: a whitebox read that reasons like an attacker with the
+code in hand, not the network half. A source read can't establish edge
+TLS/header behavior, whether a WAF or rate limit actually fires, runtime
+object ownership, cloud IAM in practice, DNS/subdomain takeover, cache
+behavior, or timing side channels — name that gap, don't imply a dynamic
+pass happened. Say this plainly in the output, not just here.
+
+<!-- claude-only -->
+**How this runs.** Phase 0 (the five surface tracks below) and the
+ambiguous-scope gate run first, sequentially, as normal interactive turns
+— Phase 0 is a handful of greps, no fan-out needed, and the ambiguity
+gate needs a live turn to actually ask from (a Workflow runs to
+completion in the background with no pause point to ask mid-script).
+Once scope is settled, on Claude Code, load the `workflow-authoring`
+skill and run the rest as a Workflow: Phase 1 (attack-surface inventory)
+fans out across whichever surface tracks Phase 0 confirmed, then Phase
+3/4 (triage + verify) fan out one agent per tag-family. A fanned-out
+agent doesn't inherit this conversation's context the way a sequential
+turn does — **interpolate Phase 2's full trust-boundary map text
+directly into every Phase 3/4 `agent()` call's prompt**, not just a
+reference to it; "grounded in the map" means the map's actual text
+travels into the call, not that it's assumed to already be in scope.
+Then one integration pass over every returned finding before the report
+(Phase 5) is generated.
+This is the default, not an opt-in — a whole-service pass is already the
+heaviest, least-frequent command here, and it spends meaningfully more
+tokens than a single-agent pass to get meaningfully more coverage; say so
+if asked why. Every other host has no Workflow tool — run every phase
+below as one agent there, same as always.
+
+**Set each agent's tier explicitly in the script** — a Workflow's `agent()`
+calls run outside deadeye's own routing advisory (that only watches the
+interactive `Agent` tool, not a script's internal calls), so an untiered
+script silently inherits the session's own model for every agent, tiering
+nothing. Phase 1 inventory is grep-driven pattern matching: the cheapest
+tier that fits. Phase 3/4 verification needs real judgment: floor each
+tag-family agent at tier 1 (sonnet), reserving the top tier for a family
+touching a risky surface (authn/authz/crypto/inject/llm). Run the closing
+integration pass at the strongest tier available — it's the one place
+seeing every finding at once.
+
+<!-- /claude-only -->
+
+## Scope
+
+`git ls-files` (or `find -maxdepth` outside a git repo) — never read
+whole directories. Grep-first; open full file bodies only for candidates
+that make the attack-surface table.
+
+**Phase 0 — confirm there's a real attack surface.** Five independent
+tracks; any one alone is enough to proceed, a target may have any
+combination:
+
+- **Network-facing.** Grep for route/handler/controller shapes
+  (`@app.route`, `router.`, `http.HandleFunc`, `@RequestMapping`,
+  `#[get(`, Express `app.get/post`, gRPC/GraphQL defs).
+- **LLM/agent context-injection.** Grep for an LLM SDK call (`anthropic`,
+  `openai`, `.messages.create(`, `.chat.completions.`, `generateContent(`,
+  a langchain/llamaindex import), a prompt/system-message template built
+  from variables, or an agent/hook framework injecting content into a
+  model's context (`additionalContext`, a `SessionStart`-shaped hook, a
+  RAG/tool-output pass-through). A CLI with no HTTP surface can still be
+  exactly this — its whole job is feeding external content to an LLM.
+- **Message/event-driven.** Grep for a queue/topic consumer or
+  subscriber registration (`kafka.NewConsumer`/`consumer.Subscribe(`/
+  `@KafkaListener`, `channel.Consume(`/`@RabbitListener`, SQS
+  `ReceiveMessage(`/`@SqsListener`, `redis...Subscribe(`, NATS
+  `nc.Subscribe(`) or a scheduled/cron handler that processes external
+  data on a trigger instead of a request. No inbound HTTP request and no
+  LLM call doesn't mean no attacker-controlled input — the message body
+  is exactly that.
+- **Client-side/UI.** Grep for a frontend framework (React/Vue/Angular/
+  Svelte components, a client-side router — `createBrowserRouter`,
+  `<Route path=`, `useNavigate`) or a browser-extension manifest. A
+  UI-only repo with no backend at all still renders untrusted content,
+  stores tokens, and embeds third-party scripts — it's a real target on
+  its own, not a "nothing to review here."
+- **Infrastructure-as-code / CI-CD.** Grep for deployment config:
+  Terraform/CloudFormation (`*.tf`), Kubernetes manifests (`kind:
+  Deployment/Role/ClusterRoleBinding`), Dockerfiles (`FROM`, `USER`),
+  pipeline defs (`.github/workflows/*.yml`, `.gitlab-ci.yml`,
+  `Jenkinsfile`). A repo with no app code at all can still be exactly
+  this — provisioning infra or running builds with real credentials.
+
+None found → say so and stop. Whichever track(s) DO apply set Phase 1's
+inventory shape (below); tags with no matching surface end up `n/a` in
+the coverage matrix, not skipped from it.
+
+**Scope is ambiguous → ask, don't guess.** Phase 0 turning up multiple
+independently-deployed services (a monorepo — separate top-level dirs,
+each with its own entrypoint/manifest), vendored/generated code mixed
+with first-party surface, or a client SDK for a service defined
+elsewhere → name what was found and ask which service(s) to scope to
+before Phase 1. Flattening several into one surface produces a coverage
+matrix that LOOKS complete and isn't — a real decision point, not
+another `not reached` line.
+
+**Phase 1 — attack-surface inventory.** Network-facing: every route,
+method, path, handler, and what auth middleware is actually mounted (trace
+the chain, not just what's declared). Uploads, webhooks, admin panels,
+GraphQL/gRPC/WebSocket endpoints. A live `/v1/` beside a `/v2/` is itself
+a finding (`inventory:`, API9), not just scope. Cross every route against
+every role that can reach it in a role×endpoint table — an empty
+caller-scope cell is the `authz:` finding; BOLA/BFLA is the most common
+real API defect and earns a systematic pass here, not ad hoc grepping.
+
+LLM/agent surface: every place external or repo-derived content reaches
+the model's context — a hook injection point, a RAG result, a
+tool-output pass-through, a file scan rendered into a prompt — and
+whether that text carries ANY framing marking it untrusted. No framing
+IS the finding (`llm:`, LLM01) — no crafted payload needs to be
+demonstrated; a missing trust boundary is reportable the same way a
+missing authz check is, without a full exploit chain.
+
+Message/event-driven surface: every queue/topic consumed, the consumer
+group, what triggers processing, whether the payload is schema-validated
+and the claimed sender authenticated BEFORE use. An unbounded retry on a
+poison-pill message is a `ratelimit:`/`dos:` finding on its own.
+
+Client-side/UI surface: every place user- or third-party-controlled
+content renders into the DOM, where tokens are stored (localStorage vs.
+an httpOnly cookie), every `postMessage` listener and whether it checks
+`event.origin`, third-party script embeds, and whether a CSP exists.
+
+Infrastructure/CI-CD surface: every pipeline's trigger and secret access
+— does `pull_request_target` (or similar) check out and run untrusted
+PR content with secrets in scope? Every IaC resource's effective
+permissions — wildcard IAM, `privileged: true`/root containers, a
+`ClusterRoleBinding` granting cluster-admin, or a hardcoded credential in
+a manifest. On Kubernetes specifically, also check for a `hostPath`
+mount, `runAsUser: 0`, a missing `securityContext`, or a namespace with
+no `NetworkPolicy`.
+
+Report the applicable table(s) first, before any finding.
+
+**Phase 2 — trust-boundary map.** Per surface, name attacker-controlled
+inputs: path params, body, headers, cookies, query string, uploads,
+webhook payloads — LLM surface: repo/file content, tool output,
+retrieval results — message/event surface: message body,
+headers/metadata, claimed sender identity — client-side/UI surface:
+URL/query string, `postMessage` payloads, third-party script content,
+anything a server response reflects into the DOM — infrastructure/CI-CD
+surface: a PR's own branch content checked out before verification,
+secret values injected into a build, an image tag pulled from a
+registry. Unnamed here, no finding later. **Print this as a "Trust-boundary map" section, before
+findings** — name each input source's file:line. This is the one durable,
+citable artifact of the pass — Phase 4's verification and every
+fanned-out Workflow agent cite it directly instead of re-deriving it from
+scratch each time; Phase 3's ranking right after it, by contrast, is
+scratch work nobody needs to audit.
+
+**One abuse-case pass.** Per surface, name what a malicious authenticated
+user would actually want — read another tenant's data, escalate role,
+drain a balance, skip a workflow step. Insecure Design (`bizlogic:`, A06)
+hides behind code that runs correctly; grepping alone won't surface it,
+asking "what would an attacker want here" will.
+
+**Phase 3 — triage, then deep-read only the top candidates.** An
+endpoint taking an object id with no visible ownership check outranks one
+taking no input at all. Rank before you open files, not after.
+
+**Phase 4 — verify.** Same proof discipline `/deadeye-review` and
+`/deadeye-guard` enforce, raised to pen-test standard: a finding's
+`proof:` is a **reproduction**, not a description — the concrete request
+(method, path, a real param value) and the exact sink it reaches, or —
+for an LLM surface — the payload shape that would reach the model's
+context unframed and the injection point it flows through. Before
+claiming an authz/validation/rate-limit check is MISSING, grep
+OUTSIDE the obvious file and follow the value into the callee —
+middleware, a base handler, a decorator one call up — the real guard
+often lives there. No reachable input, no reproduction → drop the
+finding; a claim without a proof is a guess with a CVSS score attached.
+A multi-hop proof must cite every hop's file:line, not just entry and
+sink.
+
+## Coverage — every OWASP category, mapped to a tag
+
+Twenty tags — the exact same set `/deadeye-guard` uses on a diff, so a
+vulnerability that's ever touched by a reviewed PR and one that's been
+sitting untouched for years get tagged identically; only the scope
+differs. Every OWASP Top 10:2025 category, every API Security Top 10 2023
+category, and every LLM Top 10:2025 category maps to one — none dropped,
+none silently folded away.
+
+**Reference — cite these, never a fabricated deep link:**
+
+| taxonomy | link |
+|---|---|
+| OWASP Top 10:2025 (A0x) | https://owasp.org/Top10/2025/ |
+| OWASP API Security Top 10 2023 (APIx) | https://owasp.org/API-Security/editions/2023/en/0x11-t10/ |
+| OWASP Top 10 for LLM Applications 2025 (LLMx) | https://genai.owasp.org/llm-top-10/ |
+
+**OWASP Top 10:2025** (the current edition — supersedes 2021; two
+categories are genuinely new, and two 2021 categories were folded into
+others rather than carried forward unchanged, noted below):
+
+| id | category | tag |
+|---|---|---|
+| A01:2025 | Broken Access Control (absorbs 2021's standalone SSRF category) | `authz:` (SSRF shape still separately tagged `ssrf:`) |
+| A02:2025 | Security Misconfiguration | `config:` |
+| A03:2025 | Software Supply Chain Failures (expands 2021's "Vulnerable and Outdated Components" to the whole ecosystem, not just direct deps) | `dep:` |
+| A04:2025 | Cryptographic Failures | `crypto:` / `secret:` |
+| A05:2025 | Injection | `inject:` |
+| A06:2025 | Insecure Design | `bizlogic:` |
+| A07:2025 | Authentication Failures | `authn:` |
+| A08:2025 | Software or Data Integrity Failures | `integrity:` |
+| A09:2025 | Security Logging & Alerting Failures (alerting on an auth failure counts, not just logging it) | `logging:` |
+| A10:2025 | Mishandling of Exceptional Conditions (new for 2025 — error handling and logic errors) | `exceptions:` |
+
+**OWASP API Security Top 10 2023:**
+
+| id | category | tag |
+|---|---|---|
+| API1 | Broken Object Level Authorization | `authz:` |
+| API2 | Broken Authentication | `authn:` |
+| API3 | Broken Object Property Level Authorization | `massassign:` / `expose:` |
+| API4 | Unrestricted Resource Consumption | `ratelimit:` / `dos:` |
+| API5 | Broken Function Level Authorization | `authz:` |
+| API6 | Unrestricted Access to Sensitive Business Flows | `bizlogic:` |
+| API7 | Server-Side Request Forgery | `ssrf:` |
+| API8 | Security Misconfiguration | `config:` |
+| API9 | Improper Inventory Management | `inventory:` |
+| API10 | Unsafe Consumption of APIs | `thirdparty:` |
+
+**OWASP LLM Top 10 2025** — apply only when the service has an LLM or
+agent surface; state `n/a — no LLM surface` in the coverage matrix
+otherwise:
+
+| id | category | id | category |
+|---|---|---|---|
+| LLM01 | Prompt Injection | LLM06 | Excessive Agency |
+| LLM02 | Sensitive Information Disclosure | LLM07 | System Prompt Leakage |
+| LLM03 | Supply Chain | LLM08 | Vector/Embedding Weaknesses |
+| LLM04 | Data and Model Poisoning | LLM09 | Misinformation |
+| LLM05 | Improper Output Handling | LLM10 | Unbounded Consumption |
+
+All ten fold under `llm:`, with the sub-id named in the finding
+(`llm:LLM01`) — except LLM03, which is a `dep:` finding wearing an LLM
+hat (a poisoned or unpinned model/plugin/tool dependency), and LLM10,
+which is `ratelimit:` (unbounded token/cost consumption) — those two cite
+the LLM row for the sub-id and their own row for the tag.
+
+## The twenty tags
+
+| tag | covers |
+|---|---|
+| `authn:` | absent/weak auth, unverified JWT signature, `alg:none`, algorithm confusion, no expiry, session fixation, weak reset/OTP flow, OAuth `state`/PKCE flaws |
+| `authz:` | BOLA/IDOR, BFLA, missing tenant scoping, privilege escalation, CSRF, access-control bypass |
+| `bizlogic:` | abuse-control-free flows, race/TOCTOU on balance or inventory, negative/overflow quantities, workflow step skipping |
+| `inject:` | SQL, NoSQL, command, LDAP, SSTI, CRLF/header, path traversal, zip-slip, XSS sinks, unsafe deserialization, XXE, prototype pollution |
+| `secret:` | a credential literal in source, or a secret that can leak (logs, errors, client output) |
+| `ssrf:` | attacker-controlled URL reaching a fetch: cloud metadata, internal network, webhook/redirect-follow targets, DNS-rebind-prone validation |
+| `massassign:` | request body bound straight to a model, letting a client set `role`/`is_admin`/`balance` |
+| `expose:` | excessive data in a response on the NORMAL path (PII, hashes, internal ids), debug endpoints reachable, XS-leaks |
+| `validation:` | absent/weak boundary validation — no schema, type confusion, unbounded size, missing allow-list |
+| `ratelimit:` | no throttle on login, OTP, reset, signup, or an expensive query; unbounded pagination |
+| `dos:` | untrusted input sizes or shapes an allocation, loop, recursion, or compile (ReDoS) → the shape, not a missing throttle (`ratelimit:`) |
+| `crypto:` | weak/absent crypto, ECB/static IV, non-CSPRNG token, TLS off/weak version |
+| `config:` | debug mode, permissive CORS, missing security headers, insecure cookies, default creds, clickjacking, host-header injection, cache poisoning, request smuggling |
+| `dep:` | vulnerable/superseded dependency, unpinned CI action ref, mutable `:latest` image, `curl \| sh` installer |
+| `integrity:` | unsigned/unverified update or plugin load, CI/CD trusting unreviewed input, subdomain takeover |
+| `logging:` | auth failures/privileged actions with no audit trail, log injection/forging |
+| `inventory:` | undocumented/shadow endpoints, deprecated API versions still routable, debug hosts exposed, orphaned routes |
+| `thirdparty:` | third-party responses trusted without validation, unvalidated redirects to partner services, blind trust in upstream data shape |
+| `llm:` | prompt injection, system-prompt leakage, output handling, excessive agency, embedding weaknesses, data poisoning, misinformation, unbounded consumption |
+| `exceptions:` | an uncaught exception leaking a stack trace (the ERROR-path twin of `expose:`), or a caught error that fails open on a security path |
+
+**Overlap rule** — three pairs above share a mechanism at a glance; tag
+by the more specific one and never split one finding across two matrix
+lines: a deserializer that executes attacker-controlled code is
+`inject:` (not `integrity:`, which owns the supply-chain/trust dimension
+— an unsigned update, a poisoned CI input, a takeover); an exception path
+that leaks a trace or internal state is `exceptions:` (not `expose:`,
+which owns normal-path over-sharing — a response returning more fields
+than the caller needs); a privilege decision that trusts a self-declared
+identity or role with no server-side check is `authz:` (not `authn:` —
+the exploitable defect is the untrusted decision, and it exists even in
+a system with solid identity proof elsewhere). Report `authn:` as its
+own separate finding only when missing identity verification is
+independently exploitable on its own path; otherwise name it once in
+`proof:` alongside the `authz:` finding it enables, same as the other
+two pairs — never split one finding across two matrix lines.
+
+**Citation scope** — don't assume every tag dual-cites; cite whichever
+table above actually carries a row for it. `authz:`, `authn:`,
+`bizlogic:`, and `config:` have a real row in BOTH tables — cite both.
+`dep:`, `crypto:`, `secret:`, `inject:`, `integrity:`, `logging:`, and
+`exceptions:` have a Top 10:2025 row only (`secret:` is credited inside
+A04:2025's own entry alongside `crypto:` — cite A04:2025 alone, not a
+dedicated row). `ssrf:`, `massassign:`, `expose:`, `ratelimit:`, `dos:`,
+`inventory:`, and `thirdparty:` have an API Security row only (`ssrf:`
+is credited inside A01:2025's own entry above, not a dedicated `ssrf:`
+row — cite API7 alone, not A01; `dos:` likewise shares API4 with
+`ratelimit:` — cite API4, not a dedicated row). `llm:` always cites the
+LLM table regardless of the other two. `validation:` has no dedicated
+row anywhere in any of the three tables — cite the Top 10:2025 link
+generically and name the ASVS chapter (V2, below) in `fix:` instead of
+forcing a citation that doesn't exist.
+
+**Beyond the Top 10** — classic pen-test findings with no standalone
+Top-10 slot fold into the tags above rather than get dropped: CSRF and
+clickjacking (`authz:`/`config:`), open redirect and host-header
+injection (`config:`), HTTP request smuggling and web cache
+poisoning/deception (`config:`), subdomain takeover (`integrity:`),
+TOCTOU race conditions and negative-quantity abuse (`bizlogic:`), ReDoS
+(`dos:`), pagination/batch amplification (`ratelimit:`), zip-slip and
+file-upload-to-RCE (`inject:`), prototype pollution (`inject:`), JWT
+`kid`/JWK confusion and OAuth/SAML flow flaws (`authn:`), GraphQL
+batching, introspection left enabled, and field-level authz
+(`ratelimit:`/`inventory:`/`authz:`), gRPC reflection and WebSocket
+origin checks (`config:`), CSV/formula injection in an export and
+HTTP parameter pollution (`inject:`), a leaked source map or committed
+build artifact (`inventory:`), MFA/2FA bypass — step-skipping,
+re-enrollment with no re-auth, OTP replay (`authn:`), a mass-assigned
+nested/associated model, not just a top-level field (`massassign:`), and
+an SSRF allow-list beaten by IP encoding (decimal/octal/hex) or a
+redirect chain (`ssrf:`). On an LLM/agent surface specifically: an MCP
+tool description that injects instructions, a confused deputy across
+chained tool calls, and a tool scoped wider than the task needs
+(`llm:`, LLM06). Each one names its owning tag in the finding line, so
+the mapping stays explicit rather than implied.
+
+**ASVS 5.0** (OWASP Application Security Verification Standard — the
+17-chapter 5.0 edition; its numbering moved from 4.0.3, so don't reuse an
+older chapter number from memory or a stale doc) is the depth reference
+per tag — when a finding needs a stricter control statement than "this is
+wrong," name the relevant chapter (V2 Validation and Business Logic, V4
+API and Web Service, V6 Authentication, V8 Authorization, V13
+Configuration, V14 Data Protection) in the fix. Referenced per-finding,
+never enumerated wholesale — 350+ controls inlined would bury the rubric
+a pen-tester needs to scan fast.
+
+## Report format
+
+One block per finding — richer than a diff-review one-liner since a
+pen-test finding needs a reproduction and a remediation — using the same
+four severity glyphs this product speaks, not a CVSS scale: 🔴 `critical`
+(exploitable now, data loss, account takeover), 🟠 `high` (must fix
+before ship), 🟡 `medium` (should fix), ⚪ `nit` (optional). Every finding
+also carries `prereq:` (what the attacker needs) and, when one clearly
+applies, `cwe:`.
+
+```
+🔴 authz: IDOR on GET /api/orders/{id}
+   endpoint: orders.go:88 (handler getOrder)     owasp: API1:2023 / A01:2025
+   cwe:      CWE-639                              link: https://owasp.org/API-Security/editions/2023/en/0x11-t10/
+   prereq:   any authenticated user, no special role
+   attack:   any authenticated user swaps {id} and reads another tenant's order
+   proof:    id comes from mux.Vars(r)["id"] at L88, passed straight to
+             db.GetOrder at L94; grep for ownerID/tenant across the package
+             returns nothing on this path (confirmed)
+   fix:      scope the query by the session's tenant, not the path param
+```
+
+`owasp:` names every category the finding maps to (Top 10 id, API Top 10
+id, or `llm:LLM0N`) — never left blank; that's what the coverage matrix
+below is built from. `cwe:` names the matching CWE id when one clearly
+applies (a scanner or ticketing system keys off it) — skip the field
+rather than force-fit one that doesn't cleanly map; never fabricate a
+CWE id, same rule as a CVE below. `prereq:` names what the attacker needs
+to reach the finding — unauthenticated, any authenticated user, another
+tenant's user, a specific role, network position, or victim interaction —
+severity is uncalibratable without it: an admin-only IDOR is not
+`critical`. `link:` is mandatory on every finding: the matching URL from
+the Reference table above (Top 10:2025 → the Top10 link, APIx → the API
+Security link, LLMx → the LLM link; cite both when a finding maps to two
+taxonomies). Always one of those three fixed URLs — never a fabricated
+per-category deep link, and never omitted. Append `(confirmed)` to
+`proof:` when a tool or an actual reproduction backs the finding — the
+same convention `/deadeye-review` and `/deadeye-guard` use — otherwise it
+reads as `likely`. `fix:` gets a code snippet when the fix is mechanical,
+same rule `/deadeye-review`'s "Suggested fixes" uses — a judgment-call
+fix ("which auth policy is correct") stays prose.
+
+**Dedup by root cause, not by endpoint.** The same root cause reachable
+through several endpoints is ONE finding with every endpoint listed, not
+N near-duplicates — this is what keeps the findings cap below from
+filling with copies of the same bug.
+
+**The report closes with a mandatory coverage matrix — nothing left
+behind.** Every category from every applicable list above gets exactly
+one line, one of three states:
+
+- `findings: <ids>` — the findings under this category, by number
+- `clean` — checked, nothing survived verification
+- `n/a — <reason>` — e.g. `n/a — no LLM surface`, `n/a — no third-party
+  API consumed`
+
+A category may never be silently absent from the matrix. If the pass
+could not actually reach a category (too large to triage fully, a
+sub-surface never opened), say `not reached — <why>` — that is a
+coverage gap to disclose, never a clean result to imply.
+
+End with the tally (`<C> critical, <H> high, <M> medium, <N> nits`), the
+coverage matrix, and the scope disclaimer from above (no traffic sent,
+source-only). Nothing survives verification anywhere → skip individual
+findings and print exactly:
+
+`Clean line of fire — no service-level exposure survived verification.`
+
+— still followed by the full coverage matrix; "clean" is a per-category
+verdict, not a reason to omit the matrix.
+
+## Report generation
+
+Once the findings and coverage matrix above are final, generate a
+shareable report: build the JSON shape `deadeye vapt` expects (one
+object per finding — severity, tag, title, endpoint, owasp ids, link,
+attack, proof, fix — plus the coverage rows, the tally, and the Phase 1/2
+text printed above) and run:
+
+`"repo"` is the repo's own name (its directory name, or `git remote`'s
+`owner/repo` if one exists). `"scope"` names whatever the pass actually
+covered — if the ambiguous-scope gate fired and narrowed to one service,
+put that service's name here (e.g. `"billing service"`), never the whole
+repo's name; leave it empty only when no gate fired and the entire repo
+was genuinely in scope. This is what stops the report from reading as
+full coverage when it wasn't.
+
+```bash
+deadeye vapt --in=- <<'JSON'
+{...}
+JSON
+```
+
+This writes `vapt-reports/vapt-<timestamp>.html` in the scanned repo — a
+print-optimized report; open it and use the browser's Print → Save as PDF
+for a shareable copy, no separate tool needed. If `vapt-reports/` isn't
+already in `.gitignore`, suggest adding it — a findings report is
+sensitive, like any other security artifact.
+
+This step is purely additive. `deadeye vapt` missing or failing
+(not on PATH, bad JSON) never blocks or invalidates anything above — the
+findings printed to chat are the deliverable regardless; note the report
+generation failed and move on, same fail-open discipline the dependency
+auditor step already follows.
+
+## Honesty boundaries (load-bearing)
+
+- Never invent a CVE, advisory id, or CVSS score you did not see from a
+  tool or an OSV/advisory database lookup.
+- If a dependency manifest exists, run its native auditor when installed
+  (`govulncheck ./...`, `npm audit`, `pip-audit`, `cargo audit`, or
+  `osv-scanner -L <manifest>` as a fallback) — no auditor installed → say
+  so, do not fabricate a result. No manifest anywhere in the repo (a
+  script or app with no lockfile/dependency file at all) → `dep:` is
+  `n/a — no dependency manifest`, not `not reached`; `not reached` is
+  reserved for a manifest that exists but the pass genuinely couldn't
+  examine (too large, auditor timed out).
+- `secret:` isn't just a working-tree grep — a credential rotated out of
+  a file is often still reachable in `git log`. Run `gitleaks detect` or
+  `trufflehog filesystem --since-commit <first commit>` when installed
+  (same best-effort, fail-open contract as the dependency auditor above)
+  — no scanner installed → say so, and note the working-tree grep alone
+  is a partial substitute, not equivalent coverage.
+- State plainly, every report, that no traffic was sent and no exploit
+  was run — this is a source read, not a live pen-test.
+- Findings above the cap (~25) get ranked, not padded — say how many
+  lower-severity ones were omitted; never present a ranked sample as
+  exhaustive coverage.
+- A `deadeye: <shortcut>. ceiling: <limit>. upgrade: <trigger>.` comment
+  over a hunk is a recorded decision, not a finding — count it separately
+  as accepted.
+
+## Learning loop
+
+Before finalizing, run `deadeye lessons priority` (best-effort — retry
+once with `~/.deadeye/bin/deadeye` if `deadeye` isn't on PATH; if that
+also fails, run the pass normally). Recent coder misses or disputed
+findings on the `security:` lens raise the bar for the matching tag here
+too — this rubric shares the learning signal with `/deadeye-guard` and
+`/deadeye-review`'s security lens, not a separate ledger.
+
+Under each shape it prints the reasons recorded with it. For a miss,
+recheck the path the reason names; for a dispute, check whether its
+grounds still hold before reporting that tag again.
+
+For each finding that survives verification and makes the final report:
+
+```bash
+deadeye lessons record coder-miss security:<tag> "<one line: what in this repo let it through>"
+```
+
+using the tag without its trailing colon — e.g. an `authz:` finding →
+`deadeye lessons record coder-miss security:authz "the admin router skips
+the auth middleware"`. One line, your own words, plain text — no
+backticks, quotes, or `$`, it goes through the shell.
+
+When the user disputes a finding ("that's not reachable", "already
+gated upstream", "won't fix"), record it with their grounds:
+
+```bash
+deadeye lessons record review-false-positive security:<tag> "<one line: why it isn't reachable here>"
+```
+
+## Boundaries
+
+- Findings are a LIST. Do not apply or push any fix unless asked.
+- This is a static, source-only, whitebox pass — never imply live traffic
+  was sent or an exploit was run.
+- Not a diff review: `/deadeye-review`/`/deadeye-pr` (four lenses,
+  diff-scoped) and `/deadeye-guard` (security-only, diff-scoped) are the
+  right tool for "did this change introduce a problem." This is "what can
+  an attacker already reach in this service," scoped to the whole repo by
+  design.
+- None of Phase 0's five tracks found → say so and stop. Do not invent
+  a route, an LLM call, a consumer, a rendered page, or a deployment
+  resource for a plain library that genuinely has none of the five.

@@ -1,0 +1,158 @@
+---
+name: manage
+description: 'Manage Codex agents, skills, or config entries: create, update, or remove with guardrails.'
+---
+
+> Before asking, read [User Questions](../../shared/codex-user-questions.md).
+
+# Manage
+
+Guarded Codex config management for agents, skills, rules, and local config.
+
+The installed plugin tree is immutable input. Resolve requested targets against consuming project or explicit user-approved external scope; never edit this skill's plugin cache, packaged role cards, shared helpers, runtime assets, or package manifests. Codex Rig agent links are managed only by bundled `agent-shims` workflow, not by this general-purpose skill.
+
+## Input Schema
+
+```json
+{
+  "intent": "create|update|delete|rename|add-permission|remove-permission",
+  "target": "required agent, skill, rule, config key, or path",
+  "change": "required description or spec path",
+  "execution": "optional auto|serial|parallel-read|parallel-write; default auto",
+  "done_when": "target and all references are updated or explicitly left unchanged"
+}
+```
+
+## Lightweight Local Work
+
+<!-- policy-sibling: shared/native-skill-contract.md §Proportional Execution, skills/implement/SKILL.md §Lightweight Local Work and §Execution Route Selection; intentional divergence: management mutations remain parent-serial and native support is read-only. -->
+
+> Read and apply [Proportional Execution](../../shared/native-skill-contract.md#proportional-execution) before choosing the direct or detailed path.
+
+Use a parent-only path for a small, understood, reversible local change with bounded impact and existing task authorization. A code fix plus its regression test remains one change. Routing examples are optional; tests and documentation for one change do not create separate domains.
+
+1. Inspect the affected flow and applicable instructions; define a concise plan with core acceptance and deferred scope. Investigate an unknown cause before editing. Perform a brief parent self-challenge (not independent); accept the challenged plan under existing authority. Assign execution to the parent for indivisible work; management mutations remain parent-serial.
+2. Make the authorized change with the smallest coherent core. Consolidate the actual result and handoffs; reconcile conflicts and integrate before result review. Obtain one bounded independent challenge of the actual result and retain its findings and independence limits. Run the relevant acceptance check and configured lint/format checks; inspect the diff. After acceptance and configured checks pass, no critical findings remain, and shared confidence policy passes, run the [Local Git approval grant](../../shared/native-skill-contract.md#local-git-approval-grant) check and apply its completion-commit rules; otherwise record `commit skipped`. A user instruction for no commit, leave unstaged or to wait takes precedence.
+3. Report the outcome, verification, and material limits concisely. Do not create unnecessary standalone execution-plan artifacts, specialist packs, confidence worksheets, five-entry gate bundles, or final-handoff/result artifacts solely for this path. Reuse still-valid checks for unchanged source and environment.
+
+This path takes precedence over the detailed workflow and role examples below. Select the detailed workflow for medium/large or unexpectedly nontrivial work under Proportional Execution, an explicitly requested structured report/review, or work requiring independent specialist coverage. Actual runtime permissions, protected-state decisions, and project-required checks still apply. Missing parallel controls select parent-serial work; they do not require another permission request for already-authorized local edits.
+
+## Execution Route Selection
+
+Before preparing or dispatching any child, resolve invocation `--execution=<mode>` → `CODEX_RIG_EXECUTION` → `auto` and apply the loaded Proportional Execution selector. Honor `serial`; `parallel-read` chooses only the strict portable section; reject unsupported `parallel-write`. Absent, explicit, or environment `auto` chooses suitable observed native bounded work or parent-serial work, never the portable route. Native support is read-only; all management mutations remain parent-serial.
+
+Record the choice and reason in the existing plan or concise outcome. Use portable helpers and digest receipts only after selecting `parallel-read`; native work does not inherit their helper-level `auto` resolver.
+
+## Parallel Adoption (Portable read-only)
+
+> Only when Execution Route Selection resolves to `parallel-read`, read and apply [portable-parallel-read.md](references/portable-parallel-read.md) in full before any child preparation; `serial`, `auto`, and native routes do not load it. The reference retains this skill's portable scope, consumer values, frozen-plan barrier, parent ownership, commands, runtime validation, resource conflicts, and stop rule, and loads the shared portable contract.
+
+## Workflow
+
+### 01: Create run directory
+
+Run `create_run.py --skill manage` per `../../shared/helper-cli-contract.md`. Apply Execution Route Selection before any child preparation. Native or parent-serial work follows its selected route; only selected `parallel-read` work enters Parallel Adoption and its helper/receipt lifecycle.
+
+### 02: Parse intent and target
+
+Intents:
+
+- `create`: scaffold new skill/agent/rule/config entry.
+- `update`: edit existing target.
+- `rename`: move target and update references.
+- `delete`: remove target only after dependency scan.
+- `add-permission` / `remove-permission`: modify permission policy with rationale.
+
+Unknown intent => fail before edit.
+
+### 03: Resolve owned files and blast radius
+
+Require `rg` (ripgrep) on PATH for inventory and reference scans; if unavailable, report the missing prerequisite before scanning. Run `rg --files` with the `AGENTS.md`, `.codex/**`, and `.agents/**` globs as argv command; sort its lines and write them to `<run-directory>/inventory.txt`. Run `rg -n` for exact target over `.codex`, `.agents`, and `AGENTS.md`, write results to `<run-directory>/references.txt`, and record unavailable inputs or command failure explicitly.
+
+Write `<run-directory>/ownership.md` with the validator-required `Intent`, `Owned Files`, `Verification`, and `Residual Limits` sections: `Owned Files` lists exact edited and intentionally untouched files; complete `Verification` and `Residual Limits` after Step 07.
+
+Resolve the current skill path and reject any target whose canonical path is inside the same installed plugin root. Reject generated `codex-rig-*.toml` targets here even when they are outside the cache; report the bundled `agent-shims` workflow as the only permitted owner.
+
+### 04: Run safety gates before editing
+
+Deletion safety required for `delete` and `rename`.
+
+- Delete/rename: no unresolved references or explicit migration plan.
+- Permission changes: reason, use case, risk note; `security-auditor` is available for advisory review of the permission change only when the user explicitly requests that pass, under the same explicit-request gating as other specialist routing in `../../shared/specialist-orchestration.md` — not mandatory for every permission change.
+- Public behavior change: consider docs/routing/calibration.
+- Versioned calibration fixtures are committed-history markers: compare current value to `git show HEAD:<path>`; while uncommitted, advance at most one step from last committed value.
+- A new-commit request never authorizes rewriting existing commit. Amend, rebase, reset, squash, fixup, and equivalent history edits require explicit request for that exact operation.
+- Home sync out of scope unless explicitly requested.
+
+### 05: Apply the smallest reversible edit
+
+The parent applies this edit itself; it stays provisional until Step 07 gates pass and the parent accepts it.
+
+Use Codex's native scope: `.agents/skills/` for repository skills, `AGENTS.md` for repository guidance, and `.codex/config.toml` for project runtime settings. Use custom agent-config paths only when active Codex contract and user request require them. Never infer that source repository is present from installed cache layout.
+
+### 06: Propagate references
+
+For behavior changes, update relevant descriptions, mappings, routing text, calibration notes in same patch. List intentionally stale references in `<run-directory>/unresolved-references.md`.
+
+For broad changes with separable config, docs, calibration, or verification workstreams, route read-only scans, proposals, and evidence through `delegation-lead` and shared specialist orchestration. Use lowest-cost capable canonical role per bounded workstream. Delegated roles never mutate files: accept a delegated proposal only after handover gate proves ownership, objective evidence, applicable checks, and visible unresolved limits; the parent then applies every mutation serially and owns final acceptance.
+
+### 07: Run shared quality gates
+
+Inspect `PLUGIN_ROOT/bin/python PLUGIN_ROOT/shared/run_gates.py --help`. Supply real affected-surface commands and explicit reasons for every inapplicable gate; never use `true` as skip reason. Review includes `git diff --check -- <Owned Files paths>`, limited to files listed in `ownership.md` so unrelated caller edits never decide the result.
+
+### 08: Write mandatory result artifact
+
+Manage artifacts include `ownership.md`; follow `../../shared/helper-cli-contract.md`. Write with `MANAGE_METADATA` and validate the result candidate as `manage` before the completion commit.
+
+Only after all project-relevant gates pass, no critical findings remain, shared confidence policy passes, and result candidate validation passes, perform the completion commit below; otherwise record `commit skipped` in the handoff and do not commit.
+
+Completion commit: run the [Local Git approval grant](../../shared/native-skill-contract.md#local-git-approval-grant) check. `grant …` → commit the verified, owned changes with the shared commit template unless the user asked for no commit, leave unstaged or to wait; `no grant` → an explicit commit request commits after checks, otherwise ask that section's one question (Approve / Approve always / Deny) before committing, and **Deny** leaves the changes unstaged. Record the check result, any answer and the commit disposition in the handoff.
+
+Revalidate any result candidate or final handoff changed to record the commit disposition, and promote only a validated candidate.
+
+## Fail-Fast Rules
+
+1. Missing intent or target => fail.
+2. Delete/rename with unresolved references => fail.
+3. Permission/config change without rationale => fail.
+4. Behavior change without routing/docs/calibration decision => fail.
+5. Detailed workflow: result artifact missing => fail.
+6. Target resolves inside installed plugin root => fail without editing.
+7. Target is generated `codex-rig-*.toml` role link => fail and route to the bundled `agent-shims` workflow.
+8. Existing history would be rewritten without explicit request for that exact operation => fail.
+
+## Quality Gates
+
+Required:
+
+- `review`: inventory diff, reference scan, `git diff --check` on `ownership.md` owned paths.
+- `artifact`: `ownership.md`, gate logs, result JSON pass shared validator.
+
+Conditional:
+
+- `lint`/`format`: when generated Python, TOML, shell, or Markdown formatters available.
+- `tests`: calibration or smoke checks for changed skills/agents when behavior changes.
+
+## Calibration Hooks
+
+Behavior-changing management edits update or explicitly review owning project's configuration, tests, documentation, routing, and calibration fixtures. Codex Rig maintainers use `PLUGIN_ROOT/runtime/calibration/` and `PLUGIN_ROOT/shared/native-skill-contract.md`; installed plugin cache remains immutable.
+
+Calibration must reject premature portable read-only runtime opt-in, generic write authorization, mutable or unjoined scan packs, delegated management mutations, and quality-gate parallelism without executable resource-isolation evidence.
+
+Versioned calibration artifact changes follow the Step 04 one-step rule against `HEAD`.
+
+Commit-output management also keeps owning project's commit-response contract aligned with required message shape. Canonical packaged contract: [Required Commit Message Shape](../../shared/commit-response-template.md#required-commit-message-shape).
+
+Keep `Verification:` change-specific and compact: include only final checks that materially validate the committed surfaces, consolidate related gates, and omit exploratory probes, failure-first reproductions, repeated reruns, setup diagnostics, and unrelated broad checks. The canonical contract is authoritative for the full exclusion and not-run rules.
+
+## Output Contract
+
+Before writing result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
+
+Use `../../shared/quality-gates.md`.
+
+### Final chat
+
+Final chat follows shared ordered frame. `Outcome` is completed, rejected, or blocked management action. `Results` has one changed or evaluated surface per row and exactly `Surface | Outcome | Verification | Remaining limit`. Apply shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include ownership/policy checks and every required human action with owner.
+
+Minimum artifact payload template: `result-template.json`.

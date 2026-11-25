@@ -1,0 +1,395 @@
+---
+model_tier: medium
+name: agent-docs-writing
+description: "Use when reading, creating, or updating agent documentation, module docs, roadmaps, or AGENTS.md. Understands the full .augment/, agents/, and copilot-instructions structure."
+domain: process
+workspaces:
+  - agent-config-maintainer
+packs:
+  - meta
+---
+
+# agent-docs
+
+## When to use
+
+Use this skill when:
+- Navigating the documentation structure to find relevant information
+- Creating or updating agent documentation after changes
+- Setting up documentation for a new module or package
+- Understanding what documentation exists and where
+
+Do NOT use when:
+- Creating code or making technical changes (use coding skills)
+- Looking for coding guidelines (use `guidelines` skill)
+
+## Documentation hierarchy
+
+The documentation is organized in layers, from cross-project to module-specific:
+
+### Layer 1: `.augment/` — Cross-project (identical in all repos)
+
+```
+.augment/
+├── rules/          ← Always-active rules (coding, docker, scope, language, etc.)
+├── commands/       ← Slash commands (fix-ci, create-pr, quality-fix, etc.)
+├── skills/         ← Reusable skill definitions (coder, code-refactoring, etc.)
+├── contexts/       ← Shared contexts about the agent system itself
+├── templates/      ← Templates for features, roadmaps, contexts
+└── guidelines/     ← Coding guidelines by language
+    └── php/        ← PHP guidelines (controllers, eloquent, patterns, etc.)
+```
+
+**Purpose:** Universal agent behavior that applies to ALL projects and packages.
+**Language:** English.
+**Key rule:** This directory is **identical** across repos. Never add project-specific content here.
+**Templates** are the single source of truth for document structure — never store templates in `agents/`.
+
+### Layer 2: `AGENTS.md` — Project-level entry point
+
+Located in the project root. Contains:
+- Project description and tech stack
+- Development setup (Docker, env files, Makefile targets)
+- Testing conventions
+- Quality tool configuration
+- Links to `./agents/` for detailed docs
+
+**Purpose:** First file an agent reads. Provides the full project context.
+**Not every project has this** — packages may only have `./agents/`.
+
+### Layer 3: `.github/copilot-instructions.md` — Coding standards
+
+Located in `.github/`. Contains:
+- Architecture rules
+- PHP coding standards
+- Naming conventions
+- ORM & database rules (Laravel example: Eloquent)
+- API development rules
+
+**Purpose:** Coding standards shared with GitHub Copilot and other AI tools.
+**Not every project has this** — check if it exists before referencing it.
+
+### Layer 4: `agents/overrides/` — Project-level overrides
+
+```
+agents/overrides/
+├── rules/           ← Override .augment/rules/*.md
+├── skills/          ← Override .augment/skills/*/SKILL.md
+├── commands/        ← Override .augment/commands/*.md
+├── guidelines/      ← Override .augment/guidelines/**/*.md
+└── templates/       ← Override .augment/templates/*.md
+```
+
+**Purpose:** Project-specific customizations of shared `.augment/` resources (which are delivered as a package).
+**Mechanism:** Each override file has a `Mode` header — `extend` (additive) or `replace` (full swap).
+**Key rule:** Never modify `.augment/` directly — always use overrides for project-specific needs.
+**See:** `.augment/contexts/override-system.md` for naming conventions and format.
+
+### Layer 5: `./agents/` — Project-specific documentation
+
+```
+agents/
+├── database-setup.md       ← DB architecture, connections, tenancy
+├── testing.md              ← Test suites, conventions, seeders
+├── dto.md                  ← DTO patterns and base classes
+├── services-and-repos.md   ← Service layer conventions
+├── overrides/              ← Project-level overrides (see Layer 4)
+├── features/               ← Feature plans (project-wide)
+│   └── {feature-name}.md
+├── roadmaps/               ← Multi-step change plans
+│   └── {roadmap-name}.md
+│   └── current.md
+└── contexts/               ← Context documents (codebase area snapshots)
+    └── {context-name}.md
+```
+
+**Purpose:** Project-specific architecture, conventions, and domain knowledge.
+**Structure rule:** Structural docs directly in `agents/`, features/roadmaps in subdirectories.
+**Templates** live in `.augment/templates/`, NOT in `agents/` subdirectories.
+
+### Layer 6: `{module_root}/{Module}/{agent_folder}/` — Module-specific documentation
+
+`{module_root}` comes from `modules.root_paths` and `{agent_folder}` from
+`modules.agent_folder` in `.agent-project-settings.yml`. Discover via
+`scripts/_lib/agent_settings.ts::enumerate_modules()`. Common shapes:
+Laravel `app/Modules/{Module}/agents/`, Symfony `src/Bundle/{Bundle}/agents/`,
+monorepo `packages/{Pkg}/agents/`.
+
+```
+{module_root}/{Module}/                  ← e.g. app/Modules/ClientSoftware/
+├── {agent_folder}/                      ← e.g. agents/
+│   ├── module-description.md
+│   ├── features/                        ← Module-scoped feature plans
+│   │   └── {feature-name}.md
+│   ├── roadmaps/                        ← Module-scoped roadmaps
+│   │   └── {roadmap-name}.md
+│   └── contexts/                        ← Module-scoped context documents
+│       └── {context-name}.md
+└── Docs/
+    └── technical-docs.md
+```
+
+**Purpose:** Documentation scoped to a specific module.
+**When to create:** When a module has its own conventions, complex domain logic, or active roadmaps.
+
+### Layer 7: `Docs/` — Technical documentation
+
+```
+Docs/                                    ← Project-level technical docs
+{module_root}/{Module}/Docs/             ← Module-level technical docs
+```
+
+**Purpose:** Technical documentation for humans (setup guides, architecture diagrams, API docs).
+**Difference from `agents/`:** `Docs/` is for human readers, `agents/` is optimized for AI agents.
+
+### Layer 8: Package documentation
+
+```
+{package-root}/
+├── agents/
+│   ├── package-description.md
+│   └── roadmaps/
+└── AGENTS.md (optional)
+```
+
+**Purpose:** Same structure as projects, but for Composer packages.
+
+## Reading order
+
+When starting work, read documentation in this order:
+
+1. `AGENTS.md` (if it exists) — project overview
+2. `.github/copilot-instructions.md` (if it exists) — coding standards
+4. `agents/overrides/` — check for project-level overrides of skills/rules/commands
+5. `./agents/` — project-specific docs relevant to the task
+6. `{module_root}/{Module}/{agent_folder}/` — if working on a module (resolved via `modules.root_paths` + `modules.agent_folder`; Laravel: `app/Modules/{Module}/agents/`, Symfony: `src/Bundle/{Bundle}/agents/`, monorepo: `packages/{Pkg}/agents/`)
+7. `agents/features/` or module `{agent_folder}/features/` — if related feature plan exists
+8. `agents/roadmaps/` or module `{agent_folder}/roadmaps/` — if continuing existing work
+
+## Procedure: Create or update agent docs
+
+1. **Identify trigger** — What changed? (see table below)
+2. **Locate target** — Find the correct file in the documentation hierarchy.
+3. **Update content** — Edit or create the doc. English only in `.md` files.
+4. **Verify** — Confirm the doc is consistent with surrounding files and cross-references are valid.
+
+| Trigger | Action |
+|---|---|
+| New module created | Create `{module_root}/{Module}/{agent_folder}/` with module description (Laravel example: `app/Modules/{Module}/agents/`) |
+| Significant multi-step change | Ask user about creating a roadmap in `agents/roadmaps/` |
+| New convention introduced | Update relevant doc in `./agents/` or `.augment/guidelines/` |
+| Database schema changed | Update `agents/reference/docs/database-setup.md` |
+| Architectural decision made | Use the [`adr-create`](../adr-create/SKILL.md) skill — writes a numbered ADR under `docs/adr/` (or `docs/decisions/`) and regenerates the index |
+
+## When to update documentation
+
+After making changes, check if docs need updating:
+
+- **Roadmap step completed** → mark `[x]` in the roadmap file
+- **Structural changes** → update affected docs in `./agents/`
+- **New patterns** → update or create guideline docs
+
+## Doc-Impact — the mandatory check after every code change
+
+This is the detection procedure the [`downstream-changes`](../../rules/downstream-changes.md)
+§ Doc-Impact obligation points at. **Run it after every code change** — the
+*detection* is non-optional; the human still confirms the actual edit.
+
+**Step 1 — did a public surface change?** Framework-agnostic surface list:
+
+| Public surface changed | Doc that describes it — update in the same change |
+|---|---|
+| HTTP route / endpoint (Laravel `routes/`, Next.js `app/api`, FastAPI/Express handlers, Go mux) | OpenAPI / API reference, `README` usage, `AGENTS.md` API section |
+| Exported function / class / method signature | The doc/example that calls it; `agents/reference/docs/services-and-repos.md` if referenced |
+| CLI command or flag | `README` usage, `AGENTS.md` commands section, `--help` text |
+| Config / settings key | Settings doc, `README` config section, schema/example file |
+| Environment variable | `.env.example`, `AGENTS.md` environment section |
+| DB schema / migration | `agents/reference/docs/database-setup.md` |
+| Event payload / job constructor | The listener/consumer doc that documents the contract |
+| New module | `{module_root}/{Module}/{agent_folder}/` (resolve via `modules.root_paths` + `modules.agent_folder`) |
+| New pattern / convention | Relevant guideline in `.augment/guidelines/` |
+| Architectural decision | [`adr-create`](../adr-create/SKILL.md) — numbered ADR + index regen |
+
+**Step 2 — apply the fire/no-fire test.** Drift is a **falsifiable-claim
+contradiction**, not incompleteness:
+
+- **FIRE** (doc is now wrong — a reader would be misled): endpoint no longer
+  exists, wrong return type, renamed key, removed flag, broken code example.
+- **DO NOT FIRE** (completeness / quality only): the doc is high-level and
+  omits a new internal detail it never claimed to list; "could be clearer".
+
+**Step 3 — escape hatch.** Refactor-only / no public-surface change → no doc
+obligation. Surface changed but genuinely needs no doc edit → state the
+one-line reason; never edit a doc just to satisfy the rule (false-positive
+fatigue is worse than a missed nit).
+
+**When a doc edit IS needed but you are unsure of the wording** — flag it with
+numbered options; do NOT auto-rewrite prose without the user's knowledge:
+```
+> 1. Yes — update the docs
+> 2. No — leave as-is (reason: …)
+```
+
+## Rules
+
+- All `.md` files must be in **English**.
+- Do NOT create docs unless there's a real need.
+- Do NOT duplicate content that's already in `AGENTS.md` or `.github/copilot-instructions.md`.
+- Do NOT write docs just to document what you did — only document things others need to know.
+- If unsure whether a doc needs updating, **ask the user**.
+- **Sibling-routing sentences are edited as a set, never alone.** When a skill's
+  `description:` carries a routing clause naming an overlapping sibling
+  (`Animated → pixar-storyteller`), editing it obliges re-reading every sibling
+  it names and every sibling that names it, so no user phrase ends up routed to
+  two skills and none ends up routed to neither. One-sided edits are how a
+  cluster's descriptions drift back into ambiguity between sweeps;
+  `lint_skill_descriptions` catches a *missing* clause, not an *inconsistent*
+  one.
+
+## Output format
+
+1. Created or updated documentation file(s) in the correct location
+2. Summary of what changed and why
+
+## Gotcha
+
+- Don't create documentation files unless explicitly requested — the scope-control rule overrides this skill.
+- Always check if a doc already exists before creating a new one — duplicates are worse than gaps.
+- AGENTS.md and copilot-instructions.md have different audiences — don't copy content between them.
+- Module docs go in `{module_root}/{Module}/{agent_folder}/` (per `modules.root_paths`), NOT in the central `agents/` directory.
+
+## Frugality Standards
+
+Apply the [Frugality Charter](../../contexts/contracts/frugality-charter.md)
+to every agent-doc update you author.
+
+**Examples in this artifact:**
+- Per the charter's default-terse rule, doc updates state what
+  changed; no "In this section we will…" frames.
+- Per the cheap-question check, AGENTS.md surface offers options
+  only where the project genuinely diverges.
+- Per the post-action summary suppression, doc edits append change
+  notes to the existing log entry; no new "Summary of changes" block.
+
+**Pre-save self-check:**
+1. Does the doc open with a narrative intro instead of the actual
+   content?
+2. Are paragraphs added that summarize an existing table?
+3. Does the doc duplicate the rule index instead of linking the
+   relevant rule?
+4. Is German prose present outside `DE: / EN:` anchor blocks?
+
+## User inbox workflow (agents/tmp/)
+
+When a command or skill consumes a file from `agents/tmp/` as its INPUT
+(roadmap created from it, note promoted to knowledge, etc.), move the source
+file to `agents/tmp.old/<original-name>` in the **same reply** as the output.
+
+```bash
+mv agents/tmp/<filename> agents/tmp.old/<filename>
+```
+
+- Move only files that were **explicitly named as input** to the command.
+- Never sweep or auto-move other files in `agents/tmp/`.
+- No confirmation needed — `tmp/` and `tmp.old/` are gitignored, local-only.
+- Never write agent-generated scratch into `agents/tmp/` — use `agents/runtime/tmp/`.
+
+See `docs/contracts/agents-layout.md § User Inbox Workflow`.
+
+## Transient-reference discipline — mechanics (migrated from the `no-roadmap-references` rule)
+
+Body of [`no-roadmap-references`](../../rules/no-roadmap-references.md)
+(per P4 of `road-to-kernel-and-router.md`). The Iron Law — never link a
+specific `agents/roadmaps/` or `agents/runtime/council/` file from a stable
+artifact — stays in the rule; the pattern catalog lives here.
+
+### Forbidden patterns
+
+These paths must not appear inside a stable artifact:
+
+- `agents/roadmaps/<file>.md`, `agents/roadmaps/archive/<file>.md`,
+  `agents/roadmaps/skipped/<file>.md`
+- `agents/runtime/council/questions/<file>.md`,
+  `agents/runtime/council/responses/<file>.json`,
+  `agents/runtime/council/sessions/<file>.json` or `<timestamp>/...`
+
+Stable artifact = any file under `src/{rules,skills,domains}/`,
+`src/agent-src/{contexts,templates,personas}/`, `agents/settings/contexts/`,
+`docs/guidelines/`, `docs/contracts/`, `docs/architecture.md`,
+`docs/customization.md`, `docs/getting-started.md`, `docs/catalog.md`,
+`AGENTS.md`, `README.md`, `copilot-instructions.md`.
+
+CI enforcement: `scripts/check_no_roadmap_refs.ts` (roadmap layer)
+and `scripts/check_council_references.ts` (council layer) — both
+fail the build on any new violation.
+
+### Allowed patterns
+
+- `agents/roadmaps/` and `agents/runtime/council/` subdirs as **directory**
+  mentions (talking about the layer, not a specific file)
+- Roadmap → roadmap references (siblings within the transient layer)
+- The `ai-council` skill and `/council:*` commands documenting the
+  output path schema
+- Inline council convergence summary — e.g. *"Council
+  (claude-sonnet-4-5 + gpt-4o, 2026-05-06) converged on …"* with
+  date + members, no filepath
+- Council sessions, `agents/runtime/.agent-chat-history`, commit messages, PR
+  descriptions — transient by construction, not part of the package
+  surface
+
+### Structural carve-outs (immutable inputs / decision provenance)
+
+Two source/target shapes are exempt from the council-link ban
+because the target is **immutable input** or **decision provenance**,
+not transient drafting state. The linter implements these directly
+(`STRUCTURAL_CARVEOUTS` in `scripts/check_council_references.ts`);
+they do **not** need an inline `<!-- council-ref-allowed: ... -->`
+pragma.
+
+| Source | Target | Why |
+| --- | --- | --- |
+| `agents/settings/contexts/evaluation-*.md` | `agents/runtime/council/questions/<question>.md` | Question file is a frozen function-parameter / spend-gate input, not documentation. |
+| `docs/contracts/*.md` | `agents/runtime/council/sessions/<ts>/synthesis.md` | Synthesis is the audit-trail receipt; contract inlines the decision body itself. |
+
+Driven by the 2026-05-14 P3.4 council round (claude-sonnet-4-5 +
+gpt-4o, converged on rule refactor over escape-hatch overuse). Any
+other source/target combination still needs an inline pragma or
+inline-summary rewrite.
+
+### What to do instead
+
+When a stable artifact needs to cite a transient finding:
+
+1. Identify the durable conclusion — decision, contract, lesson,
+   mechanic.
+2. Promote it to a context file under `agents/settings/contexts/` (ADR,
+   mechanics doc, locked decision). The roadmap or council session
+   can then point at the context, not the other way around.
+3. Reference the context from the stable artifact.
+4. For council convergences specifically: inline a convergence-summary
+   block (members, date, cost if relevant — see
+   [`ai-council`](../ai-council/SKILL.md) § Output format) instead of
+   linking the session JSON.
+
+Failure modes:
+
+- *"I'll just link to the roadmap, it's evidence."* The roadmap
+  gets archived, then deleted, then the link rots. **Promote first,
+  link second.**
+- *"I'll just link to the session JSON, it's evidence."* The session
+  is gone in 7 days. **Inline first, link never.**
+
+## Do NOT
+
+- Do NOT create docs unless there's a real need (new module, significant change).
+- Do NOT duplicate information already in AGENTS.md or copilot-instructions.md.
+- Do NOT write docs just to document what you did — only document things others need to know.
+- Do NOT write agent-generated scratch into `agents/tmp/` — that is the user's inbox.
+- Regen-only outputs (`agents/evidence/analysis/*`, `agents/reports/*` generated by a script): commit only together with the work that consumed them. A session that regenerates as a side-effect discards with `git checkout --` before ending. See `docs/contracts/agents-layout.md § Session-leftover discipline`.
+
+## Auto-trigger keywords
+
+- agent documentation
+- docs structure
+- when to read docs
+- documentation maintenance

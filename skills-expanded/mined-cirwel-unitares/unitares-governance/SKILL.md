@@ -1,0 +1,192 @@
+---
+name: unitares-governance
+description: >
+  Compatibility umbrella skill for UNITARES, accountability infrastructure for
+  long-running AI agents. Use this as the entrypoint when you need the overall
+  model and route into the split governance skills.
+last_verified: "2026-11-05"
+freshness_days: 35
+source_files:
+  - unitares/docs/EISV_COMPUTATION.md
+  - unitares/src/agent_loop_detection.py
+  - unitares/src/eisv/adapter.py
+  - unitares/src/mcp_handlers/core.py
+  - unitares/src/mcp_handlers/identity/handlers.py
+  - unitares/src/mcp_handlers/tool_stability.py
+  - unitares/src/mcp_handlers/middleware/envelope_step.py
+  # Added 2026-09-14: strict identity refusal and its no-handler-execution
+  # guarantee live here; resolver failure can still perform bookkeeping.
+  - unitares/src/mcp_handlers/middleware/identity_step.py
+  - unitares/src/monitor_metrics.py
+  # Added 2026-09-07 on re-verification: the claims about the default surface,
+  # the token TTL, lineage reasons, and coherence provenance live here.
+  - unitares/src/tool_modes.py
+  # Added 2026-09-21: the compact-vs-rich list_tools response split lives here.
+  - unitares/src/mcp_handlers/introspection/tool_introspection.py
+  - unitares/src/mcp_handlers/identity/session.py
+  - unitares/src/mcp_handlers/schemas/identity.py
+  - unitares/src/identity/lineage_semantics.py
+  - unitares/src/coherence_provenance.py
+  - unitares/src/mcp_handlers/lifecycle/recovery_policy.py
+  # Added 2026-09-08: this skill now states that advertised parameter
+  # descriptions are abridged and that describe_tool returns the full text.
+  - unitares/src/schema_brief.py
+  - unitares/skills/governance-lifecycle/SKILL.md
+  - unitares/skills/governance-fundamentals/SKILL.md
+  - unitares/skills/knowledge-graph/SKILL.md
+  - unitares/skills/dialectic-reasoning/SKILL.md
+  - unitares/skills/unitares-dashboard/SKILL.md
+---
+
+# UNITARES Governance
+
+This umbrella skill exists for backward compatibility and as a stable top-level
+entrypoint into UNITARES.
+
+For the normal first-session path, read the
+`skills/governance-lifecycle/SKILL.md` section *Don't Panic: six rules* first.
+Return here when you need the broader model or routing among the split skills.
+
+## What UNITARES is
+
+Accountability infrastructure for long-running AI agents: a self-hosted,
+single-operator federation kernel for agent identity, claims and evidence,
+review, outcomes, and reconstruction. Identity, shared memory, review and
+outcome records are the core; the EISV state model below is one instrument in
+the check-in path.
+
+## Check-in Instrument
+
+The current implementation invokes **EISV** synchronously for newly accepted
+check-ins. It maintains a time-smoothed state estimate that informs guidance
+and policy. Neutral acceptance survives assessment failure, and replaying a
+checkpoint receipt does not evaluate state again. See `governance-lifecycle`
+for acceptance and retry semantics.
+
+- `E`: weighted complexity, outcome, and actor work-tool error observations
+- `I`: calibration, consistency, and continuity features
+- `S`: agent-local deviations, continuity, and actor work-tool velocity features
+- `V`: separately smoothed raw E/I observation gap
+
+These describe the behavioral producer; other producers share the field names.
+The [computation contract](https://github.com/cirwel/unitares/blob/master/docs/EISV_COMPUTATION.md#role-runtime-and-evidence)
+separates these operational definitions, their intended interpretations,
+evidence of benefit and the staged optional-module direction. `record_result`
+grades a check-in against a real outcome.
+How to read `coherence` and its producer tags is in
+`skills/governance-fundamentals/SKILL.md` (*Coherence*).
+
+EISV is digital proprioception, not an authority grant. By default,
+`UNITARES_POLICY_ACTUATION=observe`: `policy_evaluation` preserves the raw
+recommendation, while a recommended pause becomes non-coercive `proceed` /
+`guide` with `enforcement.applied=false`. Only an operator's explicit
+`UNITARES_POLICY_ACTUATION=enforce` setting gives inferred policy the historical
+circuit-breaker effect. Observation posture keeps the estimator running; it
+does not make the current check-in implementation assessor-free. Identity,
+authorization, archive state, existing
+durable pauses, and coordination controls remain authoritative in both modes.
+Dialectic is an optional communication and review protocol unless an actual
+applied pause needs recovery.
+
+Call `start_session(force_new=true)` once per process for a fresh process
+identity, then use `sync_state()` as the check-in loop for that same running
+process. A new user message is not a reason to call
+`start_session(force_new=true)` again; that mints another process identity.
+These are the primary workflow tools; raw implementation tools such as
+`onboard(...)` and
+`process_agent_update(...)` remain available for compatibility. Interface contract
+1.13.0 and later keeps one complete negotiated catalog, including routers,
+diagnostics, and installed plugins, while advertising a small progressive
+starting surface by default. Use `list_tools(lite=true)` for the live contract
+and complete capability-name index, `list_tools(lite=false)` for rich metadata,
+`describe_tool` for action parameters, and `use_tool` to invoke a capability
+omitted from the initial listing through its normal middleware. Operators can
+set `UNITARES_TOOL_ADVERTISEMENT=full` to advertise every schema up front; old
+`GOVERNANCE_TOOL_MODE` settings are ignored. Older servers may still advertise
+a restricted profile; inspect their actual catalog (see governance-lifecycle,
+*MCP Tools Reference*).
+
+### Response shapes
+
+The full raw
+payload remains available under `raw_governance`; the read aliases
+`check_working_state` and `search_shared_memory`, bounded `sync_state` modes,
+a plain fresh `start_session`, a routine `request_review` (an open review
+waiting on a known move; one that carries the review itself keeps it), and the
+write aliases `store_finding`, `update_finding` and `record_result` omit it by
+default. The reads, check-ins
+and mint take their documented full-mode option to include it. A write ack's
+`raw_governance_hint` names where to read more, and names a repeat only where
+it writes nothing: an identical prediction-bound `record_result` repeated under
+the same identity (pass `client_session_id`) with
+`response_mode="full"` replays the stored outcome in full. Otherwise it is
+`response_mode="full"` on a later `record_result` (without a `prediction_id` a
+repeat records a second outcome), or a `knowledge(action="details")` read of the
+stored finding, which the hint names as `use_tool(tool_name="knowledge", ...)`.
+
+## Session Continuity
+
+Use `start_session(force_new=true)` to register a fresh process identity once.
+If the process is a deliberate handoff continuing an exited predecessor's work,
+declare that with `parent_agent_id=<prior uuid>` and
+`spawn_reason="explicit"`.
+Use raw `onboard(...)` instead for older servers or raw response shape.
+
+Use `identity(agent_uuid=..., continuity_token=..., resume=true)` only when
+rebinding the same live owner to an existing UUID (the token's scope and TTL
+are in governance-lifecycle, *Creation, lineage, and resume*). A bare `identity(agent_uuid=..., resume=true)` is an
+unsigned UUID claim (hijack-shaped, rejected under strict identity mode). An
+argument-less `onboard()` is refused under strict identity, the default, with
+`lineage_declaration_required`: call `start_session(force_new=true)`. An
+`onboard()` that would resume on weak signals only, a cosmetic `name` or the
+transport session / IP:UA fingerprint, is refused under strict identity with
+`resume_proof_required`; an `identity()` matched that way reports who it
+matched but returns `client_session_id: null`, no `continuity_token`, and
+`credentials_withheld`. Credentials go only to a call that sent its own
+session or token, attested over UDS, or minted.
+
+In-process tool calls thread the response's `client_session_id` through
+subsequent invocations to maintain transport continuity within a single
+process. Use that for ordinary `sync_state()` / `check_working_state()` calls.
+`client_session_id` is the proof string for this running process; do not treat
+it as cross-process selfhood. Do not pass `continuity_token` on every call; reserve
+it for explicit same-live-owner `identity(..., resume=true)` rebinds.
+
+Use `sync_state()` only at a meaningful milestone when you also hold a judgment
+the substrate cannot infer; completion or session exit alone does not call for
+one. Record that judgment and the relevant work, then read `action_summary` for
+the decision and its evidence maturity, `next_action`,
+`recovery_hint`, and, when you asked for them with
+`include_memory_suggestions=true`, `memory_suggestions`. Pass
+`confidence` only when it is a real forecast; if the response returns a
+`prediction_id`, thread that exact ID into `record_result(...)` when the outcome
+lands. Use raw `process_agent_update()` when you need the unwrapped handler
+response.
+
+If the call is refused for identity, the response is the typed refusal rather
+than the envelope: no `next_action`, but `status`, `hint`, `next_step`,
+`safe_options`, `do_not` and `refused: true`. It carries `success: true`, so
+detect it by `refused`, `status` or `rollout_flag`, not by `success is False`. The target tool handler
+did not run. Treat that as a no-handler-execution receipt, not a blanket
+no-write receipt: resolver-failure paths may already have performed
+identity-resolution bookkeeping.
+
+## Knowledge Layer
+
+The governance system is coupled to the **knowledge graph**. Use
+`search_shared_memory()` before duplicating work, `store_finding()` for durable
+discoveries/root causes/corrections, and `update_finding()` to close the loop.
+Task/tool/test outcomes belong in `record_result()`, not in the finding store.
+
+## Split Skills
+
+The old monolithic skill was split into focused skills:
+
+- `skills/governance-lifecycle/SKILL.md` for onboarding, check-ins, and recovery
+- `skills/governance-fundamentals/SKILL.md` for EISV, basins, coherence, and verdicts
+- `skills/knowledge-graph/SKILL.md` for knowledge graph search and contribution
+- `skills/dialectic-reasoning/SKILL.md` for thesis/antithesis/synthesis workflows and filing an outside verdict (`consult`)
+- `skills/unitares-dashboard/SKILL.md` for the buildless operator dashboard
+
+If you need the full mental model, start here. If you know the task shape,
+prefer the focused skill directly.

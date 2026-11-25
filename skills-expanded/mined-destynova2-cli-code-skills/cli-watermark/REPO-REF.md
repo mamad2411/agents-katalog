@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/destynova2/cli-code-skills (path: cli-watermark/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: CLI Watermark — Steganographic Code Fingerprinting

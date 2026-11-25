@@ -1,0 +1,405 @@
+---
+name: ai-architect-mcp-spec
+version: 0.9.0
+description: Action-driven PRD generation. The MCP server runs a stateless reducer for PRD generation and specification verification. The host submits each result and can read a validated Define handoff for planning. Architect-os owns implementation. Multi-judge verification combines genius reasoning patterns with zetetic team subagents. Grounded in the ai-architect ecosystem (ai-architect-mcp-codebase MCP, Cortex MCP, zetetic-team-subagents).
+dependencies: node>=20
+prd_contexts: proposal, feature, bug, incident, poc, mvp, release, cicd
+request_sizes: standard, tiny
+mcp_tools:
+  - start_pipeline
+  - submit_action_result
+  - get_pipeline_state (read-only diagnostic; does not advance the pipeline)
+  - plan_section_verification
+  - plan_document_verification
+  - conclude_verification
+mcp_tools_legacy:
+  - get_config, read_skill_config
+  - check_health, get_prd_context_info, list_available_strategies
+  - validate_prd_section, validate_prd_document
+  - get_quality_history, get_strategy_effectiveness
+  - map_failure_to_retrieval
+ecosystem:
+  - ai-architect-mcp-codebase (Rust MCP) — codebase indexing, graph queries, impact, semantic-diff
+  - cortex (Python MCP) — persistent memory, recall, methodology, narrative
+  - zetetic-team-subagents — engineer, code-reviewer, test-engineer, security-auditor, dba, ...
+  - genius reasoning patterns — liskov, dijkstra, fermi, popper, ...
+---
+
+# AI Architect MCP Spec (v0.9.0) — Dispatcher Protocol
+
+You (the host) drive a loop:
+
+1. Call `start_pipeline` with `semantic_review: true` → receive an envelope with `{ run_id, messages, action, ... }`.
+   Declare what you know and the server does not. You have the whole conversation; the server has only `feature_description`.
+   - `prd_context`: the kind of PRD. Omit it and the server reads the kind from the words of the description, or asks the user.
+   - `request_size`: `"tiny"` for a small, self-contained change. It is the fast path: 4 sections (overview, requirements, acceptance criteria, testing) and 4 to 5 clarification rounds, in place of those of the kind. What it leaves out: every other section of the kind (for a feature: goals, user stories, the technical specification, the data model, the API specification, security and performance; for a release or a CI/CD change, deployment and the timeline too); with them the affected-symbols file (`stage-5.affected_symbols.json`), so on a codebase the PRD-versus-graph check reads the PRD text alone and planning receives no affected-symbols sidecar on that path; and the quality score of the run, which is not filed in the history of its kind. An incident keeps the plan of its kind whatever the size, when the run knows it is one: declare `prd_context` whenever you declare `request_size: "tiny"`. A kind the server reads from the words can miss an incident ("checkout returns 500 since the deploy" reads as a bug), and the run would then take the fast path. The server never reads a size from the description: omit `request_size` and the run has the rounds and sections of its kind.
+   - These two choices set the cost of the whole run. Make them the way you commit to an approach: in Claude Code with an advisor configured, that is a point where you consult it.
+2. Display every entry in `messages` to the user.
+3. Execute `action` per the dispatch table below.
+4. Call `submit_action_result(run_id, result)` → receive next envelope.
+5. Repeat until `action.kind === "done"` or `action.kind === "failed"`.
+
+**`emit_message` is never returned to the host as `action`.** The runner coalesces all status messages into the `messages` array; the `action` field always carries something the host actually has to do.
+
+---
+
+## ENVELOPE SHAPE
+
+Every response from `start_pipeline` and `submit_action_result` has this shape:
+
+```json
+{
+  "run_id": "run_abc_123",
+  "current_step": "context_detection",
+  "messages": [
+    { "text": "🟢 PRD Spec Generator — TRIAL TIER\n...", "level": "info" }
+  ],
+  "action": { "kind": "ask_user" | "call_pipeline_tool" | ... , ... },
+  "state_summary": { "sections": [...], "clarification_rounds": 3, "errors": 0 }
+}
+```
+
+- `run_id` — handle for `submit_action_result` and `get_pipeline_state`. Caputre once from the first response and reuse.
+- `messages` — banners/status lines collected while the runner advanced internally to reach `action`. May be empty. Display each `text` at the given `level` (default `info`) before executing `action`.
+- `action` — what you must execute. **Never `emit_message`.** Always one of: `ask_user`, `call_pipeline_tool`, `call_cortex_tool`, `spawn_subagents`, `write_file`, `done`, `failed`.
+
+---
+
+## TERMINOLOGY (read this before the dispatch table)
+
+| Term | Means |
+|---|---|
+| **the host** | Claude Code (or another MCP-aware client) running this dispatcher loop |
+| **the project directory** | The codebase root where `.mcp.json` lives — distinct from "the host" |
+| **the runner** | The MCP server's stateless reducer behind the pipeline tools |
+| **the result** (always typed) | The `ActionResult` value the host passes to `submit_action_result` — exactly one of four `kind`s |
+| **agent output** | The raw text returned by an Agent tool call to a subagent — appears in `subagent_batch_result.responses[i].raw_text` |
+| **a judge** (`purpose: "judge"`) | A spawned subagent invocation that returns a `JudgeVerdict` JSON object. The same word also names the `judge` field inside `JudgeVerdict`, which holds the `AgentIdentity` of the agent that rendered the verdict. |
+| **routing token** | One of `correlation_id`, `invocation_id`, `batch_id`, `question_id` — opaque strings the host MUST echo back unchanged |
+| **`messages`** | The array of `{ text, level }` entries the runner collected while advancing internally to the substantive `action`. Display each `text` at its `level` before executing `action`. |
+| **substantive action** | Any `action` kind that requires host execution and a submitted result: `ask_user`, `call_pipeline_tool`, `call_cortex_tool`, `spawn_subagents`, `write_file`. Plus terminal kinds `done` and `failed`. (`emit_message` is NEVER returned to the host — the runner coalesces it.) |
+| **coalescing** | The runner's behavior of collecting status signals (which would otherwise be individual `emit_message` actions) into the `messages` array, so each response carries exactly one substantive action plus its accumulated message context. |
+
+---
+
+## DISPATCH TABLE — ONE ROW PER ACTION KIND
+
+### `ask_user`
+
+**Action shape:**
+```json
+{
+  "kind": "ask_user",
+  "question_id": "prd_context",
+  "header": "Which kind of PRD?",
+  "description": "...",
+  "options": [{ "label": "feature", "description": "..." }] | null,
+  "multi_select": false
+}
+```
+
+**Execute:** Invoke `AskUserQuestion` with `header`, `description`, and `options` (if non-null). If `options === null`, accept freeform.
+
+**Submit:**
+```json
+{
+  "kind": "user_answer",
+  "question_id": "<echo action.question_id verbatim>",
+  "selected": ["<chosen option label string>"],
+  "freeform": "<text answer if any>"
+}
+```
+
+`AskUserQuestion` returns the chosen option's `label` string directly. Place that string in `selected[0]`. If the user typed a freeform answer, place it in `freeform` and leave `selected` empty. For a decision question, the reducer trims whitespace, collapses whitespace runs and ignores case when comparing the answer to the offered labels. For PRD context the description also lists allowed kinds beyond the four buttons. If nonblank fields disagree or no accepted label matches, present the retry. Display any reported fallback or failure. After three unmatched answers to the PRD-context question or the clarification-continue question, the reducer emits `failed` naming the question and the count. The host is expected to stop the run. If it keeps answering, each further unmatched answer increments the count and emits `failed` again, and a valid answer continues the run.
+
+---
+
+### `call_pipeline_tool`
+
+**Action shape:**
+```json
+{
+  "kind": "call_pipeline_tool",
+  "tool_name": "index_codebase",
+  "arguments": { "path": "/abs/path", "output_dir": "...", "language": "auto" },
+  "correlation_id": "input_analysis_index"
+}
+```
+
+**Execute:** Call the **ai-architect-mcp-codebase MCP** tool named `tool_name` with `arguments` exactly as provided. The tool prefix is `mcp__plugin_<plugin-name>_<server-key>__<tool_name>`. The plugin is `ai-architect-mcp-codebase` and its sole `.mcp.json` server key is `ai-architect`, so the prefix is `mcp__plugin_ai-architect-mcp-codebase_ai-architect__<tool_name>`. Inspect your `.mcp.json` to confirm.
+
+**If the ai-architect-mcp-codebase MCP is not registered in your project**, submit a tool_result with `success: false`. The pipeline will halt with a `failed` action; the user must register the dependency before re-running.
+
+**Submit (success):**
+```json
+{
+  "kind": "tool_result",
+  "correlation_id": "<echo action.correlation_id verbatim>",
+  "success": true,
+  "data": <the JSON the tool returned, unmodified>
+}
+```
+
+**Submit (failure):**
+```json
+{
+  "kind": "tool_result",
+  "correlation_id": "<echo action.correlation_id verbatim>",
+  "success": false,
+  "error": "<error string>"
+}
+```
+
+---
+
+### `call_cortex_tool`
+
+**Action shape:** identical to `call_pipeline_tool` but `tool_name` refers to a **Cortex MCP** tool. Tool prefix convention: `mcp__plugin_hypermnesia-mcp_cortex__<tool_name>` or `mcp__cortex__<tool_name>` per your `.mcp.json`.
+
+> The plugin-scoped prefix carries **both** the plugin name and the MCP server key: `mcp__plugin_<plugin-name>_<server-key>__<tool>`. Cortex renamed the plugin `cortex` -> `hypermnesia-mcp` in v4.15.0 (community-directory name collision) while keeping the server key `cortex`, so the prefix is `mcp__plugin_hypermnesia-mcp_cortex__`, not `mcp__plugin_cortex_cortex__`. An unresolvable MCP tool name is dropped silently by the host, so the old prefix fails with no error. <!-- mcp-prefix-allow-legacy: this line quotes the dead spelling on purpose -->
+
+
+The handlers currently emit `tool_name: "recall"` for section-context retrieval. Other Cortex tools may be added by future handlers; do not assume a fixed list.
+
+**Submit:** same `tool_result` shape as `call_pipeline_tool`. Pass `data` through unmodified — the runner's parser expects the standard Cortex `{ results: [{ content, score, ... }] }` shape.
+
+---
+
+### `spawn_subagents`
+
+**Action shape:**
+```json
+{
+  "kind": "spawn_subagents",
+  "purpose": "draft" | "judge" | "review",
+  "batch_id": "self_check_verify",
+  "invocations": [
+    {
+      "invocation_id": "self_check_judge_0001",
+      "subagent_type": "zetetic-team-subagents:genius:liskov",
+      "description": "Judge FR-001 (genius:liskov)",
+      "prompt": "<full self-contained prompt — DO NOT modify>",
+      "isolation": "none"
+    }
+  ]
+}
+```
+
+`purpose` is an observability label — your dispatch logic does NOT branch on it.
+
+`subagent_type` is an opaque string. Pass it verbatim to the Agent tool's `subagent_type` parameter. Do not parse, normalize, or construct it yourself.
+
+**Execute:** Issue **all** invocations in a **single message** with **multiple parallel Agent tool calls**. (Sequential dispatch produces a correct result but multiplies wall-clock time by N — for self-check batches with many judges this can exceed practical timeouts.) Each Agent call: `subagent_type = invocation.subagent_type`, `description = invocation.description`, `prompt = invocation.prompt`. Forward the invocation's `model` and `effort` when present. If the configured route cannot execute the requested model under its configured account and billing policy, submit an `error` for that invocation. Do not substitute a different model or billing route. **Never modify the prompt** — judge prompts contain JSON-output instructions that the runner's parser depends on.
+
+**Submit:**
+```json
+{
+  "kind": "subagent_batch_result",
+  "batch_id": "<echo action.batch_id verbatim>",
+  "responses": [
+    {
+      "invocation_id": "<echo invocation.invocation_id verbatim>",
+      "raw_text": "<the agent's full final reply text>"
+    },
+    {
+      "invocation_id": "<echo invocation.invocation_id verbatim>",
+      "error": "<set this if the agent failed; raw_text optional>"
+    }
+  ]
+}
+```
+
+For a successful agent: include `raw_text` (the full reply string). The runner extracts JSON from it.
+For a failed agent: include `error`. The runner records an `INCONCLUSIVE` verdict for that claim.
+
+---
+
+### `write_file`
+
+**Action shape:**
+```json
+{ "kind": "write_file", "path": "prd-output/abc12345/01-prd.md", "content": "..." }
+```
+
+**Execute:** Write `content` to `path` (relative to the project directory). Create parent directories as needed.
+
+**Submit:**
+```json
+{ "kind": "file_written", "path": "<echo action.path verbatim>", "bytes": <UTF-8 byte length of content> }
+```
+
+`bytes` is the UTF-8 byte length of `content` (not character count). Use `Buffer.byteLength(content, 'utf8')` or equivalent.
+
+---
+
+### `done`
+
+**Action shape:**
+```json
+{ "kind": "done", "summary": "...", "artifacts": ["overview: passed", ...],
+  "outcome": { "status": "needs_attention", "reasons": ["1 section(s) failed validation"] } }
+```
+
+`outcome` says whether the deliverables can be trusted as is: `"passed"`, or `"needs_attention"` when a section failed validation, the deterministic checks found a critical violation, or the hard-output score is 0.00. `reasons` names each fact. It is absent only on a `done` that did not go through the self-check.
+
+**Execute:** Display `messages` (if any), then `summary`, then the `artifacts` list. When `outcome.status` is `"needs_attention"`, tell the user the run finished but its output needs review, and list `outcome.reasons`. **Stop the loop.**
+
+---
+
+### `failed`
+
+**Action shape:**
+```json
+{ "kind": "failed", "reason": "...", "step": "input_analysis" }
+```
+
+**Execute:** Display `messages` (if any), then `reason` and the failing `step`. **Stop the loop.** If the user wants more detail, call `get_pipeline_state(run_id, format: "full")` and show `state.errors[]`. The `full` response is bounded to the 100,000-char MCP budget and degrades least-relevant detail first (grounding → oldest clarifications → section content); a `__bounded` block records anything omitted/elided, and `errors[]` is never shed. To pull the full code-graph grounding that `full` sheds first, call `get_pipeline_state(run_id, format: "grounding")`.
+
+---
+
+## SPECIFICATION HANDOFF
+
+When an automatic run returns `done` with `outcome.status: "passed"`, call
+`get_pipeline_state({ run_id, format: "define_handoff_v1" })` directly if you are
+driving planning. Forward the validated handoff to architect-os. Treat a refusal
+as a blocked handoff and surface its reasons. No review question follows `done`.
+
+An older run can still expose an `implementation_gate` question. Read its
+handoff while that checkpoint is pending. `PRD only` closes the older run.
+Execution requires a separately approved plan in architect-os.
+
+## ERROR TRANSPORT
+
+`submit_action_result` itself can return `isError: true` from the MCP layer.
+
+| Cause | Recovery |
+|---|---|
+| `architect_os_required` | The saved action belongs to the retired execution loop. Inspect the historical run using `format: "full"` and continue execution in architect-os. |
+| Concurrent submission rejected — you called `submit_action_result` for the same `run_id` while a previous call was still in flight | The host implementation has a bug. Wait for the in-flight call to return, then submit ONCE. Do not retry blindly. |
+| Unknown `run_id` | The server holds no run under that id and has no file for it. A run is kept in `~/.prd-gen/runs/` and survives a restart of the server, so the id is wrong, the run is a finished one the server dropped 30 minutes after its last use, or its file was deleted. Call `start_pipeline` to begin a new run. |
+| The state kept for the `run_id` cannot be read | The file of the run is damaged. Tell the user which run, and call `start_pipeline` to begin a new run. |
+
+In these cases, display the `error` field from the response to the user and stop.
+
+A restart of the server while a run is in progress is not one of them: the run is still there. Call `get_pipeline_state({ run_id, format: "action" })`, execute the action it returns, and submit its result. Do not resubmit the result you were sending when the connection dropped without that check. If that call answers "unknown run_id", the server is one that keeps runs in memory only (the packaged server up to 0.9.0): the run is lost, and the first row of the table applies.
+
+---
+
+## HARD RULES
+
+1. **Never modify `prompt` in any `spawn_subagents.invocations[i]`.** Forward it verbatim. Modifying judge prompts breaks the runner's JSON parser; modifying drafter prompts produces sections that fail validation.
+
+2. **Never alter routing tokens.** `correlation_id`, `invocation_id`, `batch_id`, and `question_id` are opaque values emitted by the runner; the host echoes them back unchanged on the corresponding result. The runner uses them to route results back to the handler that is waiting.
+
+3. **Always issue `spawn_subagents` invocations in parallel.** One message; many Agent tool calls. (Performance, not correctness — but production-relevant.)
+
+4. **Never call `start_pipeline`, `submit_action_result`, or `get_pipeline_state` from inside an Agent tool call.** Subagents return their text; the host (not the subagent) submits the batch result.
+
+5. **Stop the loop on `done` or `failed`.** Do not re-call `submit_action_result` afterwards.
+
+6. **One pipeline = one `run_id`.** Do not interleave actions from different runs.
+
+7. **Never call `submit_action_result` concurrently for the same `run_id`.** The runner's in-flight guard rejects with `isError: true`.
+
+8. **`subagent_type` is opaque.** Pass it verbatim to the Agent tool. Do not construct, normalize, or guess it.
+
+---
+
+## VERIFICATION TAXONOMY (judge-facing — host does not enforce)
+
+This table describes constraints baked into judge prompts. The host does not enforce verdicts; the runner does, via the `concludeDocument` consensus engine.
+
+| Verdict | Meaning |
+|---|---|
+| PASS | Structurally complete + verifiable from the document |
+| SPEC-COMPLETE | Test method specified; needs runtime to confirm |
+| NEEDS-RUNTIME | Cannot verify at design time |
+| INCONCLUSIVE | Depends on unresolved OQ-XXX or external factor |
+| FAIL | Structurally invalid or contradicts other claims |
+
+NFR claims (latency, throughput, fps, storage) MUST NOT receive PASS — judges receive this constraint in their prompts. The host does not inspect or filter verdicts.
+
+---
+
+## ECOSYSTEM BOUNDARY (informational — for project setup, not host dispatch)
+
+| Concern | Owner |
+|---|---|
+| Codebase indexing, graph queries, impact, semantic diff | **ai-architect-mcp-codebase MCP** |
+| Persistent memory, recall, narrative, methodology | **Cortex MCP** |
+| Reasoning roles (engineer, reviewer, dba, ...) | **zetetic-team-subagents** |
+| Genius reasoning patterns | **zetetic-team-subagents/genius** |
+| PRD generation, multi-judge verification, hard-output rules, file export | **ai-architect-mcp-spec** (this) |
+
+A correctly configured project has all four ecosystem dependencies registered in `.mcp.json`. Missing dependencies surface as `tool_result.success: false` from `call_pipeline_tool` or `call_cortex_tool`, which causes the pipeline to emit `failed`.
+
+---
+
+## CORTEX MEMORY HOOKS (what gets remembered + recalled across sessions)
+
+Cortex is the persistent memory engine. The pipeline uses it on two surfaces — **recall during section generation** (already covered in the `call_cortex_tool` dispatch row above) and **storage of decisions/lessons that future sessions benefit from**. The host does not orchestrate this storage; Cortex's hooks (`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SessionEnd`, `Notification`) capture it automatically when the Cortex plugin is installed.
+
+### What recall pulls IN (during section generation)
+
+Each section's `pending → retrieving` transition emits `call_cortex_tool({ tool_name: "recall", arguments: { query: "<section-specific>", max_results: 8 } })`. The query template is per-section-type (see `packages/orchestration/src/section-plan.ts:SECTION_RECALL_TEMPLATES`):
+
+| Section type | Recall query shape | What's recalled |
+|---|---|---|
+| `requirements` | `requirements decisions for <feature>` | Past FR decisions, rejected approaches, scope boundaries |
+| `technical_specification` | `architecture pattern <feature> ports adapters` | Past architecture choices, port/adapter conventions, framework rejections |
+| `data_model` | `data model <feature> tables relationships migrations` | Schema decisions, migration history, FK conventions |
+| `acceptance_criteria` | `acceptance criteria <feature> Given When Then` | Past AC patterns, traceability conventions |
+| `security_considerations` | `security threats <feature> auth authz STRIDE` | Threat model decisions, auth choices, secret-handling patterns |
+| `performance_requirements` | `performance NFR <feature> latency throughput SLA` | Past p95/p99 targets, measurement methods, capacity decisions |
+| `testing` | `testing strategy <feature> coverage e2e integration` | Test patterns, coverage decisions, anti-patterns to avoid |
+
+The recall results land in the engineer subagent's prompt as `<codebase_context>...</codebase_context>` (truncated to 800 chars per result; max 8 results per section — see `RECALL_MAX_RESULTS_INCLUDED` in `section-generation.ts`). The engineer is instructed to weight recall content but not blindly copy it.
+
+### What's worth storing OUT (for future PRDs)
+
+When this PRD reaches `done`, the Cortex `SessionEnd` hook captures session content automatically. The most valuable artifacts to store:
+
+1. **Clarification answers.** The Q&A turns in `state.clarifications` — these are the user's load-bearing decisions. Tag: `decision`, `feature:<feature_description>`.
+2. **Section-failure violations.** Each entry in `state.errors` with `error_kind: "section_failure"` represents a validator violation the engineer couldn't fix in 3 attempts. These are anti-patterns worth remembering. Tag: `lesson`, `failure-mode:<rule>`.
+3. **Strategy effectiveness.** Each `state.strategy_executions` entry records `(strategy, claim_characteristics, wasCompliant, actualConfidenceGain)`. This is the closed feedback loop — recorded automatically via `EffectivenessTracker.recordExecution` into the project's `EvidenceRepository` (separate from Cortex; SQLite-backed). Cortex is NOT the storage for this signal — it lives in `~/.prd-gen/evidence.db` by default, or at the absolute path in `PRD_GEN_EVIDENCE_DB` when set.
+4. **Multi-judge verdict patterns.** `done.verification.distribution` per claim. A `distribution_suspicious=true` flag is itself worth remembering — it indicates the panel was likely too soft on this kind of claim. Tag: `lesson`, `verification:confirmatory-bias`.
+
+The host does NOT explicitly call `cortex.remember(...)` from the dispatch loop — Cortex's `PostToolUse` and `SessionEnd` hooks observe the `done` action's `summary` + `verification` fields and store what's structured enough to retrieve later.
+
+### Verification of recall freshness
+
+If a section's recall returns content stale enough to mislead the engineer, the validator catches it via `fr_traceability` / `architecture` / etc., the section retries, and a new draft emerges without the stale guidance. The retry budget (`MAX_ATTEMPTS=3`) is the safety bound on bad-recall propagation.
+
+---
+
+## MINIMAL WORKED LOOP (illustrative; not exhaustive)
+
+```
+host: start_pipeline({ feature_description: "build OAuth login", codebase_path: "/abs/path", prd_context: "feature" })
+
+  → envelope { run_id, messages: [<welcome banner>, <PRD context: Feature>],
+              action: { kind: "call_pipeline_tool", tool_name: "index_codebase",
+                        arguments: { path: "/abs/path", output_dir: "...", language: "auto" },
+                        correlation_id: "input_analysis_index" } }
+
+host: displays the 2 messages, then calls mcp__<your-pipeline-key>__index_codebase(...)
+host: submit_action_result(run_id, { kind: "tool_result", correlation_id: "input_analysis_index",
+                                       success: true, data: { graph_path: "...", ... } })
+
+  → envelope { messages: [<Codebase indexed: ...>, <Scope acceptable. Proceeding to clarification.>],
+              action: { kind: "spawn_subagents", purpose: "draft", batch_id: "clarification_compose_1",
+                        invocations: [ { invocation_id: "...", subagent_type: "zetetic-team-subagents:engineer",
+                                         prompt: "<compose clarification question>", ... } ] } }
+
+host: spawns the engineer subagent in parallel, collects the JSON-formatted question
+host: submit_action_result(run_id, { kind: "subagent_batch_result", batch_id: "clarification_compose_1",
+                                      responses: [ { invocation_id: "...", raw_text: "..." } ] })
+
+  → envelope { messages: [],
+              action: { kind: "ask_user", question_id: "clarification_answer",
+                        header: "Round 1: <question>", ... } }
+
+... loop continues until action.kind === "done" or action.kind === "failed"
+```
+
+The runner collects status messages (welcome banner, PRD-context-detected, codebase-indexed, scope-decision, ...) into `messages`. The host displays them and proceeds to `action`. There is never a "void" round-trip where the host has nothing to submit.

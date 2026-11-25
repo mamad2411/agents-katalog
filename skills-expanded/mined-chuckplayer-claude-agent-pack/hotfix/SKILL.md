@@ -1,0 +1,97 @@
+---
+name: hotfix
+description: "Fast-track fix pipeline for production incidents. Skips worktree isolation and planning ceremony. Still requires code-reviewer and merge-reviewer as a safety gate. Use only when the root cause is already known and the fix is well-understood. Trigger this when someone says: emergency fix, production is broken, quick patch, urgent fix, hotfix, critical bug in prod, I know the fix I just need to apply it. Do NOT use when diagnosis is still needed — use /debug first. Do NOT use when the fix touches more than 3 files, adds dependencies, or changes the schema — use /implement instead."
+---
+
+# Hotfix
+
+Apply a targeted fix with minimal ceremony. This pipeline is intentionally abbreviated — use it only when the problem is already diagnosed and the change is small and well-understood.
+
+> **When to use `/debug` instead:** If you don't yet know the root cause, use `/debug` to diagnose first, then return here to apply the fix.
+
+## 1. Confirm the fix is in scope for hotfix
+
+Before starting, confirm all of the following are true:
+- The **root cause** is known
+- The fix touches **3 or fewer files** and fewer than **50 lines of logic**
+- **No new dependencies** are introduced
+- **No schema changes** are required
+- The fix does not introduce a new architectural pattern
+
+If any of these are false, use `/implement` instead — state which condition failed and why.
+
+## 2. Branch setup
+
+Run `git branch --show-current`.
+
+- If on `main` or `master`: create a `hotfix/<brief-slug>` branch immediately. Do not proceed on main.
+- If already on a non-main branch: confirm it is the correct branch for this fix.
+
+No worktree isolation. The engineer works directly on the hotfix branch.
+
+## 3. Engineer — direct fix
+
+Route to the appropriate engineer based on file type:
+
+| File type | Engineer |
+|-----------|----------|
+| `.cs` / .NET | **csharp-engineer** |
+| `.ts` / `.vue` | **frontend-engineer** |
+| `.ts` in an MCP server | **mcp-engineer** |
+| SQL / migration | **database-engineer** |
+
+Pass:
+- Exact files to change
+- Root cause and the intended fix
+- How to verify (test command or manual repro)
+
+**No `isolation: "worktree"`** — engineer works directly on the hotfix branch.
+
+## 4. ts-linter (if applicable)
+
+If frontend-engineer or mcp-engineer made changes, run **ts-linter** immediately. Block on FAIL before proceeding.
+
+## 5. code-reviewer
+
+Always. Pass the changed files and the root cause context. This is a non-negotiable safety gate even in a hotfix.
+
+- Skip **security-reviewer** and **performance-reviewer** unless the fix touches auth, data access, secrets, or a critical hot path. State your reasoning.
+- **smell-reviewer is intentionally skipped** in the hotfix pipeline — structural review of a ≤3-file targeted fix is not worth the latency. This is a deliberate exemption from the "smell-reviewer runs on every code change" rule in CLAUDE.md.
+
+## 6. merge-reviewer
+
+> **No plan governs a hotfix, deliberately.** This skill passes no `plan_id`, so merge-reviewer's
+> gate 4a reports "not applicable" and neither the acceptance bars nor the `## Deviations` checks
+> apply. That is the exemption working as designed — plan consumption is opt-in per invocation, and
+> a hotfix has no plan because it skipped planning. **Do not add `plan_id` handling here** without
+> first deciding who would write the plan and when; an emergency path that acquired a planning
+> artifact would stop being an emergency path.
+
+Pass:
+- Summary of the fix (root cause, what changed, why)
+- Which pipeline stages ran and which were skipped (with reasons)
+- code-reviewer findings
+
+If PASS: proceed to step 7.
+If FAIL: fix the blocking issue and re-run steps 5–6. Allow **1 retry only** — if it still fails, escalate to the user rather than looping further.
+
+## 7. Push
+
+After merge-reviewer returns PASS, push the hotfix branch immediately. Ask the user whether to open a pull request targeting `main` and whether to request an expedited review.
+
+> **test-engineer is skipped** in the hotfix pipeline — speed is the priority and the change scope is intentionally narrow.
+
+**Required PR description items** — the PR body must include both of these before the hotfix is considered complete:
+
+- `**Test coverage gap:** <list each changed method/function that has no test coverage>`
+- `**TODO:** Add tests for <method(s)> in a follow-up task before next release`
+
+Do not open the PR without these items. They create a traceable artifact so the coverage gap is not silently forgotten. If the user declines to open a PR, include the same items in the commit message body.
+
+## Gotchas
+
+- **Scope creep during the fix:** If the engineer discovers that the fix requires touching a 4th file, adding a dependency, or changing a schema, stop and escalate to /implement. Do not quietly expand scope — the scope gate in step 1 exists for a reason.
+- **Skipping code-reviewer:** Even under time pressure, code-reviewer is non-negotiable. A hotfix that introduces a new bug or security gap is worse than the original incident. It takes minutes and can catch critical mistakes.
+- **merge-reviewer FAIL with no more retries:** If merge-reviewer still returns FAIL after 1 retry, do not loop further. Surface the unresolved report to the user and let them decide whether to convert this to a full /implement pipeline.
+- **Applying a hotfix to main directly:** Step 2 requires a `hotfix/<slug>` branch even for emergencies. Working directly on main risks losing the change if anything goes wrong. The branch is fast to create and provides an obvious audit trail.
+- **Diagnosis not yet complete:** If you are not certain of the root cause, use /debug first. A hotfix applied to the wrong place will need to be reverted under pressure — more costly than taking 10 extra minutes to diagnose properly.

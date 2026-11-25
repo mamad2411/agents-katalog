@@ -1,0 +1,1014 @@
+---
+name: video-intel
+description: >
+  Ingest/curate side of the video intelligence plugin. Use whenever the
+  user wants to modify or build the corpus: scan YouTube channels for new
+  videos and generate mind maps via Gemini; render the headline digest of
+  channels followed loosely ("any headlines", "peripheral headlines",
+  "what's new in channels I don't follow", "show me the digest"); transcribe a video (URL or
+  local MP4); run the full mindmap+transcript+concepts pipeline on a local
+  video; extract and normalize concepts into the taxonomy; rebuild the
+  LanceDB hybrid-search index from existing transcripts, or update it with
+  only the new or edited transcripts ("index just the new videos",
+  "incremental index"); see the whole
+  corpus as one visual catalog page (cards with thumbnails and timestamped
+  headings, a dated table of contents, a channel-by-month grid) and export
+  a shareable public subset of it behind a policy; clean up
+  title-rotation duplicates; prune YouTube Shorts that polluted the corpus;
+  manage channel configuration. Trigger phrases:
+  "scan channel", "scan all channels", "what's new from [creator]" (with
+  scan intent), "last N days of [creator]", "transcribe this video",
+  "transcribe [creator]'s backlog", "videos I am missing from [creator]",
+  "catch up on [creator]", "fully scan [creator]", "backfill [creator]",
+  "add [channel] to my watchlist", "find duplicate videos", "clean up
+  duplicates", "dedupe my corpus", "the same video got scanned twice",
+  "why do I have two mindmaps for [video]", "creator rotated the title",
+  "prune shorts", "remove shorts from corpus", "delete YouTube Shorts",
+  "clean up shorts", "too many shorts in my corpus",
+  "process this local video", "run the full pipeline on [file]", "mindmap
+  plus transcript plus concepts on one upload", "do everything on this
+  MP4", "extract concepts", "rebuild the taxonomy", "rebuild the index",
+  "build the search index", "captions-only indexing", "just use the YouTube
+  captions", "skip the expensive transcript", "fall back to captions when
+  Gemini fails", "this channel keeps hanging", "fix identity-less metas",
+  "backfill missing video_id", "this video keeps getting re-transcribed",
+  "set up my profile", "persist my profile", "personalize my briefings",
+  "save the inferred profile", "create my audience profile",
+  "catch me up on my videos", "what am I behind on", "what haven't I been
+  briefed on yet", "give me a catch-up briefing", "build me a briefing on
+  [topic]", "what should I know about [topic]", "open my video
+  wiki", "browse my creator atlas", "open the Obsidian wiki", "who talked
+  about [X] first, who followed", "who's ahead of the curve on [topic]",
+  "what's trending across my channels", "what's spiking this month",
+  "who has validated ties across my creators", "build the video catalog",
+  "refresh the corpus catalog", "what is in my corpus as one file",
+  "render the catalog page", "open my catalog in the browser", "show me
+  my corpus as a page", "export a public catalog", "make a shareable
+  subset of the catalog", "make the public demo catalog".
+  Requires GEMINI_API_KEY, YOUTUBE_API_KEY, and
+  `channels:` configured in config.yaml - this skill must run from the
+  plugin repo checkout, not a globally-installed cache. Calls Gemini as
+  multimodal proxy (frames + on-screen text + audio). For read-only
+  queries against an already-built corpus (library search, cross-creator
+  synthesis, corpus-freshness reports, summarizing a video that is already
+  indexed), use the video-intel-search skill instead - that one is safe
+  to install globally and invoke from any project.
+---
+
+# Video Intel
+
+**Editing this plugin's code?** The per-subsystem review guardrails are NOT all in `CLAUDE.md`. They live in `.claude/rules/*.md` and auto-load when a session reads a matching source path - `transcript.md`, `scan-config.md`, `search-index.md`, `evals.md`, `briefings.md`, `docs-currency.md`, `intelligence-layer.md`, `translate-bcs.md`. They are binding. A reviewer that does not auto-load them (Codex reads `AGENTS.md` and `CLAUDE.md` only) must be handed the file for the subsystem under review.
+
+Multimodal video scanning and transcription powered by Gemini.
+
+## What This Skill Does
+
+Three layers, designed as a narrowing funnel.
+
+1. **scan** - Fetch new videos from configured YouTube channels. Before any
+   fetch or write, scan snapshots the resolved config into
+   `<output_dir>/_config-backups/` as `config.<date>.yaml` plus
+   `config.latest.yaml`, so the channel list that produced a given corpus
+   state is always recoverable. It is automatic and content-compared: nothing
+   is written when the config has not changed, and a dated snapshot is never
+   overwritten. Do NOT hand-copy the config as a separate step; that habit is
+   what this replaces. Every other corpus-mutating command does the same. For each
+   video, in this order: (a) Gemini multimodal transcript reading frames +
+   audio + on-screen text; (b) mindmap built from that transcript via a
+   text-only Gemini call (~10× cheaper than reading video, no 10800-frame
+   cap); (c) concept extraction from the mindmap. Only step (a) touches the
+   video; (b) and (c) are text-only and read what (a) wrote to disk. The
+   `mindmap_source: auto` per-channel knob (default) routes step (b) to the
+   text-only path when a transcript exists, with a fallback to mindmap-from-
+   video when no transcript is on disk. Per-channel `transcript_source`
+   (default `gemini`) can route step (a) to `yt-captions` (caption track only,
+   no Gemini) or `auto` (Gemini then captions on failure/timeout, issue #60).
+   Before any Gemini call, scan drops `upcoming`/`live` premieres and
+   non-public videos via a pre-flight metadata check (issue #70) - the corpus
+   indexes what has aired, not what is scheduled. The same pre-flight call
+   flags **completed livestream VODs** (issue #120): those route captions-first
+   unless the channel explicitly sets `transcript_source: gemini` (an explicit
+   choice is honored), get at most one guarded Gemini transcript attempt when no
+   caption track exists, and never fall back to mindmap-from-video afterwards -
+   the scan logs the local-file recovery recipe instead. An **aired premiere**
+   of an ordinary upload carries the same API shape; when `yt-dlp` is on PATH
+   the tool asks it for the watch page's own verdict and routes premieres as
+   the regular uploads they are, slides included (issue #245). Without yt-dlp
+   the explicit `transcript_source: gemini` is the escape hatch. Regular
+   uploads are unaffected.
+
+2. **transcript** - Generate a fused document for a single video: diarized
+   speech interleaved with timestamped SCREEN sections describing what was
+   shown (slides, diagrams, code, demos). Uses a three-task decoupled prompt
+   for best quality. **Gemini multimodal is the default and the only path
+   that captures on-screen content and diarization.** A cheaper speech-only
+   fallback exists (issue #60): `transcript_source: yt-captions` builds the
+   transcript from the YouTube caption track alone (no SCREEN, no diarization,
+   no Gemini), and `transcript_source: auto` tries Gemini first and falls back
+   to the caption track when the Gemini transcript fails (token-cap, 403, the
+   `prompt=0` confab guard; and a hung call on the single-shot path). See the
+   captions rows in the intent table below.
+   (A separate SRT path lives in `translate_video.py` for BCS subtitle
+   translation only - that is a different thing; do not confuse the two.)
+
+3. **concepts** - Extract and normalize key concepts from mind maps into a
+   canonical vocabulary (taxonomy.json). Different videos use different words
+   for the same idea — the concept layer resolves synonyms so cross-video
+   queries work without reading every file.
+
+**Triage workflow — pick the right mode first:**
+
+| Query type | Examples | Command |
+|------------|----------|---------|
+| **Evidence** (who/what/when/how) | "which companies adopted X?", "what did they say about Y?" | `search "X" --vector` |
+| **Discovery** (which videos / themes) | "which videos cover X?", "what themes recur?" | `search "X"` (no flag) |
+| **Synthesis** (what do creators say, together) | "nugget brief on X", "what do creators agree/disagree about Y?", "consultant brief" | `nugget "X"` |
+
+- `--vector` uses **hybrid search** (BM25 keyword + vector semantic + RRF fusion).
+  Results include full transcript passages — follow-up reads usually unnecessary.
+- Concept search (no flag) matches taxonomy labels/aliases. Fast, no API calls.
+- Read only the files returned by search — don't scan the entire corpus.
+
+## Prerequisites
+
+Two API keys required as environment variables:
+
+- **GEMINI_API_KEY** - Get free at https://aistudio.google.com/apikey
+- **YOUTUBE_API_KEY** - Get free at https://console.cloud.google.com/apis/credentials
+  (enable "YouTube Data API v3")
+
+Python dependencies:
+
+```bash
+pip install google-genai google-api-python-client pyyaml
+
+# Optional: for vector search
+pip install lancedb voyageai
+```
+
+If prerequisites are missing, tell the user what's needed and where to get it.
+
+For ad-hoc analytics over the corpus (who covered a concept first, what is bursting), point the user at the optional DuckDB intelligence store - see "Exploring the Intelligence Store" in the repo README for install (`pip install -e ".[intelligence]"` plus the separate `duckdb` CLI binary) and the ready-made analysis scripts.
+
+## Important: These Commands Are Slow
+
+Gemini API calls read video frames and audio — they take **1-5 minutes per video**. A scan of 10 videos can take 10-30 minutes. This is normal.
+
+- **Default log level is `info`** - progress is visible without extra flags.
+- **`--log-level` goes BEFORE the subcommand.** `python video_intel.py --log-level info scan` works; `python video_intel.py scan --log-level info` errors with argparse. Applies to every subcommand.
+- **`--dry-run` is preview only** - shows what would be processed but creates no files and makes no Gemini calls. Use it to verify config before committing to a real scan.
+- **Use a long bash timeout** (at least 600000ms / 10 minutes) for scan and transcript commands. The default 2-minute timeout WILL kill multi-video scans prematurely.
+- **Silence between log lines is normal.** Gemini is processing video - don't diagnose or interrupt. A genuinely *hung* call is bounded: each transcript Gemini call has a hard `transcript_timeout_seconds` wall-clock cap (default 600s, issue #74). On expiry it raises, so one hung video can no longer freeze a whole scan; under `transcript_source: auto` it then falls back to the caption track - on the single-shot path, and on the chunked path when a chunk is lost (the caption track replaces the whole video and the Gemini partial is kept as a `.transcript.raw.chunked-partial.txt` sidecar). Under `gemini` a chunked run that lost a chunk stays `partial` and the log prints the two recipes that work: `--chunk-minutes 10` or `--transcript-source yt-captions`.
+- **For large scans (10+ videos):** run in the background so the user isn't blocked. Check the output directory afterward for results.
+- **For single transcripts:** 1-3 minutes is typical. Wait for the "Saved:" line before proceeding.
+- **Transcripts are resilient to malformed JSON.** If Gemini returns broken JSON, the script tries to salvage partial content (speech entries, screen content) and writes a partial transcript with a visible warning. A partial transcript is useful for curiosity/search. For strategically important videos, rerun with `--model gemini-2.5-pro` or retry later.
+- **Raw Gemini responses are saved on failure** as `.transcript.raw.txt` sidecars for debugging, and as `.mindmap.raw.txt` when the mindmap confabulation guard discards a response.
+- **Exit 0 ≠ success on `--url` paths. Always verify.** `mindmap --url` and `transcript --url` exit 0 even when Gemini returns `403 PERMISSION_DENIED` (members-only, age-gated, region-locked, or otherwise restricted videos). The error is logged inline but not re-raised, so the script can keep going inside a `scan` batch. After any URL run, grep the captured output for `PERMISSION_DENIED` **and `confabulation guard`** (or check that the expected `<prefix>.mindmap.md` / `<prefix>.transcript.md` actually landed on disk) before reporting success to the user. The confabulation guard exits 0 the same way: it logs, withholds the artifact, and records `last_error` in meta.json, so a run that "succeeded" may have written nothing. If 403 is found, jump to **"When a YouTube URL returns 403"** below. This caveat is narrower than it used to be for `process`: that command now exits **3** when a step it was asked to run left no artifact, so on `process` the exit code is worth trusting. It still applies in full to `mindmap --url` and `transcript --url`, which have no such check.
+
+## Interpreting User Intent
+
+The verb a user reaches for doesn't always match a CLI command name. This
+table is the canonical mapping — read it before picking a command.
+
+| User says (intent) | Run | Notes |
+|---|---|---|
+| "transcribe this video" + URL | `transcript --url URL --channel <NAME>` | Single video. Grep log for `PERMISSION_DENIED` before reporting success. |
+| "scan this single video" + URL, "process this URL", "full pipeline on this URL", "do everything on [URL]" | `process --url URL --channel <NAME>` | Single-shot URL pipeline. **Issue #54 ordering**: transcript first (auto-chunked at the 30-min default on anything longer) → mindmap built FROM the on-disk transcript text (text-only Gemini, ~10× cheaper than mindmap-from-video, no 10800-frame cap) → concepts. Resolver picks mindmap source per channel: `mindmap_source: auto` (default) uses transcript, falls back to video when transcript fails. Same exit-code contract as `process --file`: **0** = every requested step left an artifact, **3** = the run finished but a requested step produced nothing, **1** = hard failure (mindmap/upload/config). After the run, **grep log for `PERMISSION_DENIED`** — exit 0 lies on gated content. |
+| "fully index this 3-hour talk", "transcribe this conference recording", "process this Lex Fridman episode" | `process --url URL --channel <NAME> --chunk-minutes 20` | Long-form ergonomic. Same issue #54 ordering: transcript first (auto-chunks via `--chunk-minutes`, default 30; pass a lower value on dense material, never a higher one - issue #157 lowered the default from 50 on purpose; each chunk becomes one Gemini call, merged into a single `.transcript.md` with offset-applied timestamps and a coverage-table header) then mindmap-from-transcript (one fast text call no matter how long the video) then concepts. Failure mode: per-chunk failures land as `.transcript.raw.chunkN-START-END.txt` sidecars; meta.json carries `transcript_status: partial` if any chunk failed; the resulting mindmap inherits `mindmap_source_status: partial` and a `<!-- source: partial transcript -->` HTML comment header. |
+| "run full pipeline on [local file]", "mindmap + transcript + concepts on one upload", "process this MP4" | `process --file PATH` | Local video only; single upload, lazy-skipped when artifacts already exist. **Stays on legacy mindmap-from-video** because chunking would multiply uploads (one-upload guarantee). For local files exceeding the chunk threshold, manual `--start`/`--end` segments are still the workaround. |
+| "regenerate mindmap on [URL]", "redo the mindmap for [video]", "mindmap from transcript instead of video" | `mindmap --url URL --channel <NAME>` (with on-disk transcript) | Issue #54: when a transcript is already on disk for the URL, `mindmap --url` automatically routes to the cheap text-only path. Pass `--force` to overwrite an existing mindmap. Per-channel `mindmap_source: video` forces the legacy video path even when transcript exists. |
+| "scan", "what's new", "check for new videos" | `scan` | All channels, configured `since`. When it wrote any artifact it ends by rebuilding `taxonomy.json`, `topics.json` and the catalog (free, no Gemini) and, when it wrote transcripts, prints `index --incremental`: scan never embeds, so run that line to make the new videos searchable. "What's new in channels I do NOT follow" is the `headlines` row below, not a scan |
+| "what's new from [creator]" | `scan --channel X` | Single channel, configured `since` |
+| "transcribe [creator]'s backlog", "videos I'm missing from [creator]", "catch up on [creator]" | `scan --channel X --since 2y` (or wider) | **Always `--dry-run` first** to surface scope |
+| "fully scan [creator]", "everything from [creator]" | `scan --channel X --since 2005-01-01` | **Always `--dry-run` first** — implies entire channel history |
+| Backlog of N videos to transcribe | `scan` with `auto_transcript: all` configured | NOT N separate `transcript --url` calls |
+| "rebuild the index", "reindex after dedupe" | `index --force` | Whole-corpus rebuild of LanceDB; re-embeds everything, so it costs real Voyage spend on a large corpus. Query uses `video-intel-search` |
+| "index just the new videos", "make the new videos searchable", "incremental index", "cheap reindex", "update the index after a scan" | `index --incremental [--channel X]` | Embeds only transcripts the index does not hold as they are on disk; every other row is untouched. What `scan` prints after it writes transcripts. An index built before content hashes existed sees new videos only (it says so; one `index --force` turns change detection on). Requires an existing index. Cannot be combined with `--force` |
+| "re-index just [creator]", "rebuild one channel", "I only changed one channel" | `index --channel X` | Incremental: embeds only that channel, replaces only its rows, preserves every other channel. Requires an existing index (refuses before spending if there is none). `--channel X --force` means "re-embed X", never "drop the rest" |
+| "prune shorts", "remove shorts", "too many shorts in my corpus" | `prune-shorts [--apply]` | **Always `--dry-run` first** — destructive on `--apply`; deletes mindmap/transcript/concepts/meta per Short |
+| "rebuild taxonomy", "update master vocabulary" | `taxonomy-build` | Derived artifact; rebuildable anytime |
+| "rebuild topics", "which channels belong to [topic]", "why is this channel in my corpus", "update the topic index", "what videos are in my FDE thread" | `topics-build [--dry-run]` | Derived artifact; rebuildable anytime. Unions two assertion sources: briefing front-matter `video_ids` keyed by the first folder under `_briefings/` (so `_briefings/fde/**` is topic `fde`; `_briefings/nuggets/` is reserved and excluded), and per-video `topics` stamps from `--topic`. Writes `<output_dir>/topics.json`; byte-stable, and it never touches `taxonomy.json`. Read it back with `status` (per-channel rollup) or `search --topic <slug>` in the search skill. |
+| "tag this video as [topic]", "this one is for the FDE thread", "record why I pulled this in", "backfill a topic onto a video I already have" | `--topic <slug>` on `process` / `transcript` / `mindmap` (repeatable) | Merges normalized slugs into the video's meta.json `topics`. `FDE`, `fde` and `fde/` are one topic. **Recorded even when every stage lazy-skips** - provenance is the flag's whole purpose, so it is the way to tag a video that is already fully processed. Run `topics-build` afterwards to refresh the join. There is no `--remove-topic`: delete the slug from the meta (or the id from the briefing) and rebuild. |
+| "catch me up on what I missed", "what haven't I been briefed on", "videos I haven't seen yet", "generate a catch-up briefing", "fill the gaps in my viewing guides", "give me the briefing as a PDF", "a briefing I can open on my phone / share" | `briefings --unseen [--dry-run] [--since DATE] [--until DATE] [--limit N] [--pdf]` | Surfaces corpus videos absent from every existing `_briefings/**/*.md` `video_ids` list, including topic subfolders like `_briefings/sales/` (strict set difference, never re-surfaced once briefed), **across the whole corpus by default (no recency floor)**, ranked by relevance overlap with the inferred profile in `_briefings/profile.yaml` and capped to the top `N` (default 30; `--limit 0` = no cap). Each entry shows an age badge (`age 3y`) and a "By year" appendix regroups the same set chronologically. `--dry-run` previews; otherwise writes `_briefings/<date>-catch-up-unseen.md`. `--pdf` additionally writes a clickable `.pdf` beside it (bold, accent-colored, hyperlinked timestamps; needs the `[pdf]` extra). Pass `--since 30d` (or any date) to *narrow* to a recency floor. No Gemini, no `channels:` required. |
+| "any headlines", "what's new in channels I don't follow", "catch me up on what I follow loosely", "peripheral headlines", "flip through new uploads", "anything worth pulling from the digest-only channels", "show me the digest without a scan" | `headlines` (preview with `headlines --dry-run`) | Renders the headline digest on its own: new uploads (last 14 days) in `enabled: false` + `headline_digest: true` channels, ranked by title and description against the interest profile, positive matches first then a few recent "Other headlines", about 10 per run. Metadata-only (a few YouTube Data API units per digest channel), no Gemini, no corpus artifacts; needs the plugin `config.yaml` (curate side, not reachable from the globally installed search skill) and snapshots it like `scan`. **Default to `--dry-run` when the user is only asking what exists**; without it the rendered items are marked seen in `_headlines/seen.json` and never resurface, so run it bare only when they mean to consume the digest, and say so when a peek marked items seen. "Catch me up" + "loosely" / "don't follow" means this row, not `briefings --unseen` (the corpus catch-up) or `scan`. To ingest a headline that earned it, follow with `process --url <url> --channel <name>`. |
+| "why am I seeing this", "what's ranking my briefings", "show my interest profile", "what does the digest think I care about", "where is my profile", "how do I retune my recommendations" | `profile show` | Also available from the read-only `video-intel-search` skill, so this question can be asked from any project (issue #117). Read-only. Prints the resolved interest model (source: persisted vs inferred), top weighted concepts/domains, and the on-disk paths of `_briefings/profile.yaml` (ranking weights) + `_briefings/audience.md` (reader-context prose). Writes nothing. One model powers both `briefings --unseen` and the scan headline digest. |
+| "my priorities are shifting", "I care about X now", "stop showing me Y", "update my preferences", "remember that I now focus on Z" | *Edit `<output_dir>/_briefings/audience.md` in session* | Not a command. This file is the user's standing reader context and the ONLY home for a stated preference change - do not record it in a note, a memory or a new file instead. **Copy it to a dated sibling (`audience.backup-<YYYY-MM-DD>.md`) BEFORE editing**: nothing regenerates it and `profile init` refuses to overwrite it, so a bad edit is unrecoverable. Sharpen an existing pillar rather than inventing a parallel one; add to "what counts as signal" / "what counts as noise" when the user names either. Edit `profile.yaml` too only when ranking weights should actually move. Report the change and the backup path back to the user. |
+| "set up my profile", "personalize my briefings", "let me tune what surfaces first", "create my audience profile", "save the inferred profile" | `profile init` | Persists the inferred `_briefings/profile.yaml` and scaffolds `_briefings/audience.md` from the template. **Never overwrites** an existing file (even a partial/malformed one) - hand-editing is the retune path. After it runs, point the user at the two files; there is no `profile edit`. |
+| "build me a briefing on **[topic]**", "what should I know about X", "catch me up on **[topic]**", "make me a curated guide on Y" (a **specific topic**, not the deterministic unseen catch-up) | *In-session curation workflow* (see "Curated topic briefing" below) | NOT a single command. Read `_briefings/audience.md`, gather candidates via `search --vector` across several vocabulary angles, verify mindmaps + exact timestamps, author the editorial structure (lens, watch-these-N, pillars, why-it-matters-to-you, signal/noise) with a `video_ids:` front matter, write to `_briefings/<topic>/`, render per the authoring contract in the skill's `references/briefing-authoring.md` (PDF always; EPUB when the reader context asks for an e-reader channel; surface pipeline-level findings). The assistant authors the judgment; the scripts only supply candidates + render. |
+| "this video keeps getting re-transcribed", "fix identity-less metas", "backfill missing video_id", "meta.json has no video_id" | `repair-metas [--apply]` | **Dry-run first** (issue #66). Reconstructs `video_id`/`url`/`title`/`published` from the `.transcript.md` header for metas missing identity; only fills missing fields; refuses local/non-YouTube sources. Re-run `index --force` after `--apply`. |
+| "assess my transcripts", "which transcripts were never quality-checked", "clear the not-assessed transcripts" | `assess-transcripts [--channel NAME] [--force] [--apply --backup-dir PATH]` | **Dry-run first.** Runs the transcript quality assessor over `.transcript.md` files already on disk whose meta has no `transcript_quality_flags` yet (`--force` re-assesses all). Reads files only, no Gemini call. Writes the quality fields and marks a healthy transcript `partial` when a severe flag lands. `--apply` requires `--backup-dir`, which receives a verified copy of every meta before it changes plus `manifest.csv`. |
+| "what repos did [creator] link to", "what tools were in that video's description", "where is the PDF he offered", "the shownotes link", "give me the GitHub links from [creator]" | Read `description` in the channel's `*.meta.json` (no command) | Issue #224: every meta written from a YouTube source carries the raw description, which is where shownotes PDFs and `owner/repo` URLs live. Metas written BEFORE this shipped do not - run `backfill-descriptions` first, and local `--file` ingests never have one because there is no snippet to read. - they are often on-screen only, so no transcript has them. Deliberately NOT indexed, so answer by reading meta.json, not via `search`. **Parse the JSON first** - `rg` over the raw file matches the escaped `
+` between two links and returns one invalid joined URL (verified against real descriptions):<br>`python -c "import json,glob,re,sys;[print(u) for f in sorted(glob.glob(sys.argv[1])) for u in re.findall(r'https://github\.com/[^\s)\]]+', json.load(open(f,encoding='utf-8')).get('description') or '')]" "<output_dir>/<channel>/*.meta.json"` |
+| "backfill the descriptions", "my older videos have no description", "fill in the missing shownotes links" | `backfill-descriptions [--channel X] [--apply]` | Fills `description` into metas written before issue #224, from `videos.list(part=snippet)` (1 quota unit per 50 videos). Dry-run by default. Only FILLS an absent value - an existing description is never replaced, so re-running is safe and a hand-edit survives. |
+| "skip transcript on this video", "stop trying to transcribe [URL]", "this video keeps failing transcript", "block transcript only" | `mark-skip --url URL --mode transcript [--reason TEXT]` | Per-mode skip (issue #42). Mindmap and concepts continue to run. Repeatable: `--mode transcript --mode concepts`. |
+| "permanently ignore this video", "never re-process [video_id]", "skip these IDs on backfill", "stop touching this URL on every scan" | edit `skip_video_ids` under the channel in `config.yaml` | Declarative pre-fetch blocklist. Listed IDs never reach Gemini, never get a meta.json, no cost. Override = remove the ID from config. Cheaper than `mark-skip` since no meta.json roundtrip needed. |
+| "I want notifications about new videos but no auto-processing", "discover only", "tell me what's new but don't run Gemini", "follow [creator] but don't pay for it" | set `auto_mindmap: none` and `auto_transcript: none` on the channel in `config.yaml` | Notify-only mode: scan logs new videos but skips both Gemini calls. Cherry-pick episodes manually with `mindmap --url URL --channel <name>` when one looks worth indexing. Useful for long-form podcasters (Lex Fridman). |
+| "drop short videos for [creator]", "only count [creator]'s long-form content", "for Lex anything under 30 min isn't worth it" | set `min_duration_seconds: 1800` on the channel in `config.yaml` | Per-channel duration floor (30 min = 1800s in this example). Drops anything shorter before Gemini sees it. Independent from the standard 60s `skip_shorts` filter. |
+| "get the long ones cheaply", "don't pay Gemini for his two-hour courses", "captions for anything over an hour", "stop dropping the long videos" | set `captions_over_duration_seconds: 3600` on the channel (or `--captions-over-duration 3600`) (issue #227) | Above the threshold the transcript comes from the free caption track; below it, nothing changes. **Beats `transcript_max_duration_seconds`** when both apply, so a long video is fetched cheaply instead of dropped with no artifact. `mindmap_source: auto` then routes off that transcript, so the mindmap and concepts still run. Speech-only: no on-screen content, no diarization. A video with no caption track errors into the FAILED summary rather than silently falling back to Gemini. |
+| "free captions", "SRT captions", "index this cheaply", "captions only", "skip the expensive transcript for [creator]", "discovery-only indexing", "just use the YouTube captions" | `transcript --url URL --transcript-source yt-captions` (one-off) or set `transcript_source: yt-captions` on the channel (issue #60) | Skips the Gemini **transcript** call and builds a speech-only transcript from the YouTube caption track. **On its own it does not make the channel Gemini-free:** with the default `mindmap_source: auto` the captions transcript still feeds a text-only mindmap call, and the top-level `auto_concepts: true` still runs a concepts call. The zero-Gemini recipe is four knobs together - `auto_transcript: all`, `transcript_source: yt-captions`, `mindmap_source: none`, `auto_concepts: false` (the last is a per-channel override of the top-level flag). Cheap, but **no on-screen content / no diarization** (flagged `transcript_source: youtube_captions`); under the full recipe also no mindmap and no `concepts.json`, so those videos never appear in concept-mode `search` and are reachable only via `search --vector`. Fails when the video has no captions. |
+| "fall back to captions when Gemini fails", "auto-recover failed transcripts", "this channel keeps hitting the token cap", "this channel keeps hanging" | set `transcript_source: auto` on the channel, or `--transcript-source auto` (issue #60) | Tries Gemini first; on failure (token-cap `INVALID_ARGUMENT`, 403, the `prompt=0` confabulation guard, **or a wall-clock timeout / hang per issue #74**) falls back to the YouTube caption track. On a chunked run, ONE lost chunk (hang, parse failure, confab discard) also routes the WHOLE video to captions and keeps the Gemini partial as a sidecar; a thin or quality-flagged partial keeps the Gemini content. Never worse than `gemini`. |
+| "who leads on X", "who covers ideas first", "who's ahead of the curve on [topic]", "who follows whom" | `python scripts/lead_lag_report.py` (add `python scripts/lead_lag_viz.py --out <output_dir>/_reports/lead-lag.html` for the visual version) | **Intelligence layer (optional/experimental).** Coverage-corrected precedence: who covered a concept first, corrected so deep-backfill channels can't fake it. Needs the DuckDB store - if it's missing, run `python scripts/intel_graph.py load` first. Read-only, no Gemini. Lecture: `docs/intelligence-layer.md`. |
+| "what's spiking", "what just caught fire", "what's heating up in the corpus", "trending concepts this month" | `python scripts/burst_report.py` | **Intelligence layer (optional).** Kleinberg bursts: concepts jumping above their own baseline, with start date and rising/cooled status. Same store requirement (`intel_graph.py load`). Tell the user to read the corpus-volume table first - a big scan makes many concepts "burst" at once. No Gemini. |
+| "who has validated ties", "who clusters with whom", "which creators overlap more than chance", "the real creator network" | `python scripts/sdsm_network.py` | **Intelligence layer (optional).** SDSM-validated creator network: creator pairs sharing more concepts than a degree- AND popularity-preserving null expects. Prunes the naive-overlap noise (a topically homogeneous corpus makes almost every pair "overlap"). Same store requirement (`intel_graph.py load`). Undirected co-adoption ties, not influence - "who leads whom" is the lead-lag report. No Gemini. |
+| "open my video wiki", "show me the atlas", "let me look at what's already there" | `python scripts/register_obsidian_vault.py "<output_dir>/_wiki" --open --launch` | Opens an **already-built** wiki (Obsidian must be closed). If `_wiki/` doesn't exist yet, fall through to the build row below instead. |
+| "build the creator atlas", "make the wiki", "let me browse the findings", "generate the Obsidian wiki" | `python scripts/wiki_atlas.py --wiki-dir <output_dir>/_wiki` | **Intelligence layer (optional).** Writes a browsable wiki of the lead-lag findings. To open it in Obsidian when the GUI won't add the vault: `python scripts/register_obsidian_vault.py "<output_dir>/_wiki" --open --launch` (Obsidian must be closed). Same store requirement. No Gemini. |
+| "build the video catalog", "refresh the corpus catalog", "what is in my corpus as one file" | `python scripts/atlas_build.py --corpus <output_dir> --index-dir <vector_db_dir>` | Writes `<output_dir>/_atlas/atlas.json`: one row per video with facets, a headings-only synopsis, timestamped deep links and already-seen signals (briefing membership, wiki pages). Complete by design: every video is a row, so treat the file as private. Reads the corpus (and the search index at `--index-dir`, which must be the config's `vector_db_dir` when one is set, for an "in search index" facet), writes only `_atlas/atlas.json`, no Gemini. `scan` runs it automatically after any scan that wrote an artifact. Prints one counts-only summary line; see `docs/atlas.md` for how to read it. A different tool from the creator wiki that `wiki_atlas.py` builds. |
+| "render the catalog page", "open my catalog in the browser", "show me my corpus as a page" | `python scripts/atlas_render.py --atlas <output_dir>/_atlas/atlas.json` | Turns the catalog into one self-contained `<output_dir>/_atlas/catalog.html` (Cards with thumbnails and timestamped headings, Compact table of contents, Grid of channel by month; filters, search, light and dark). Opens from disk by double-click; nothing is fetched except YouTube thumbnails, which a button turns off. Run the build row first when `atlas.json` is missing or stale; when unsure, run both, they are free (no Gemini). Pass `--out <file>` for a different location; an existing `catalog.html` this script did not write is refused, never overwritten. The page is private like the atlas. Not the Obsidian wiki: for that, see the open-wiki row above. |
+| "export a public catalog", "make a shareable subset of the catalog", "make the public demo catalog" | `python scripts/atlas_export.py --atlas <output_dir>/_atlas/atlas.json --policy <output_dir>/_atlas/export-policy.yaml --deny-terms <private term list>` | Writes `<output_dir>/_atlas-export/atlas.json` and `catalog.html` (pass `--out` for another folder; `_atlas/` itself is refused): only the channels the policy lists, only videos on or after its `since` date, only canonical YouTube watch URLs the YouTube API confirms are public (needs `YOUTUBE_API_KEY`; unlisted videos are dropped and named), only the public row fields (no topics, briefing membership, wiki keys or aliases). Run the build row first when `atlas.json` is missing. The policy is YAML with `channels` (required list), `since` (optional `YYYY-MM-DD`) and `exclude_video_ids` (optional); unknown or duplicate keys are refused. **The channel list and the deny-term file come from the user: ask for both, never invent a channel list, never run without the term file.** On a deny-term hit nothing is written; report the matched video to the user and let them choose between `exclude_video_ids` and a demo copy of the term list. Do not edit the term list, the policy or retry on your own. Hand the bundle to the user; do not commit or push it. See `docs/atlas.md`, "Share a subset". |
+| "find videos about X", "search for Y", "nugget brief on Z", "corpus status", "verify quote", "fact-check claim against [creator]" | — | **Wrong skill.** These are read-only queries; use the **video-intel-search** skill. |
+
+### Channel name resolution
+
+When the user names a creator (e.g. "Grace Leung", "Nate Jones"):
+
+1. Read `${CLAUDE_SKILL_DIR}/../../config.yaml` and match the name
+   case-insensitively against both the `name` field and the handle in `url`.
+2. If exactly one match — use that channel's `name`.
+3. If multiple matches — list them and ask which one.
+4. If zero matches — list available channels and ask whether to add the
+   creator. **Do not invent a YouTube handle and proceed.**
+
+### When to pause and confirm
+
+Before running `scan` (which costs Gemini quota), run `--dry-run` first if
+any of these are true:
+
+- The user said "all", "fully", "missing", "backlog", or "catch up"
+  without an explicit date window
+- The implied scope is more than ~10 new videos
+- The channel name was fuzzy and required config-file resolution
+- `auto_transcript: all` is set on the target channel (each new video =
+  3 Gemini calls: a transcript that scales with video length, a cheap
+  mindmap-from-transcript, and a concepts call that carries the WHOLE
+  taxonomy and costs the same for a 5-minute or a 2-hour video)
+
+Report the count of new videos, their total duration, and a cost estimate
+in money, not just a call count. Use the formula and measured rates in
+[docs/cost-model.md](../../docs/cost-model.md); never quote concepts as
+"cheap". Two things move the number most: how many video-hours go through
+the Gemini transcript (captions-routed videos cost nothing there), and
+whether concepts run back to back (`scan`, `concepts --channel X`: cache
+hits, a few cents each) or interleaved one video at a time (`process --url`
+in a loop: cache misses, roughly five times more). For a hand-picked list,
+run `transcript` and `mindmap` per video, then one `concepts --channel X`
+per channel at the end. With `auto_transcript: none`: 1 expensive
+mindmap-from-video call (legacy path, used when no transcript is on disk).
+Wait for the user's go-ahead before running the real scan.
+
+## When processing fails
+
+A video that does not process cleanly almost always matches one of these
+scenarios. Route by symptom; the full causes + step-by-step recovery SOPs
+live in [`docs/troubleshooting.md`](../../docs/troubleshooting.md), and the
+meta.json fields these reference are in [`docs/meta-json-schema.md`](../../docs/meta-json-schema.md).
+
+| Symptom | Cause | Recovery |
+|---|---|---|
+| Scan never finds a video that exists | **Unlisted** (not in the uploads feed - a hard YouTube Data API limit) | manual `process --url`/`--file`, or `--transcript-source yt-captions` for a cheap captions index |
+| `403 PERMISSION_DENIED` (grep every URL run for it) | **Members-only / gated** | download via membership, then `process --file` |
+| `400 INVALID_ARGUMENT`, fails fast | **Token cap** on a long video | `process --url --chunk-minutes 20` (below the default 30), or set `transcript_source: auto` (captions failover) |
+| Transcript lands `partial` with **no** API error, `meta.transcript_status: truncated_output` | **Output cap** on a short-but-dense video - the response hit 65536 output tokens and the JSON stopped mid-object | `process --url URL --chunk-minutes 20 --force`, or set a lower `chunk_minutes` on that channel so `scan` chunks it next time. `meta.transcript_output_tokens` / `transcript_finish_reason` record the evidence, and the salvaged text is often nearly complete - check before paying for a re-run |
+| Transcript hangs for many minutes | **Gemini stall** | Auto-capped per transcript (`transcript_timeout_seconds`, default 600s, issue #74) -> failover under `transcript_source: auto`, including when only one chunk of a chunked run hangs; under `gemini` the log names the remedy (`--chunk-minutes 10` or `--transcript-source yt-captions`); `mark-skip --mode transcript` or `skip_video_ids` as backup |
+| Tiny `prompt=0` transcript that looked "complete" | **Future/scheduled premiere** confabulated | the issue #60 confab guard now discards it; delete any old stub |
+| Mindmap content is about a different video (frontmatter still looks right) | **`prompt=0` on the mindmap-from-video call** - Gemini saw no video and wrote from priors | the confab guard now discards it (raw response kept as `.mindmap.raw.txt`) and records `last_error`; to clean up one already on disk you must land a transcript FIRST, delete the stale `.mindmap.md` + `.concepts.json`, then `mindmap --url --channel <name> --force` - a bare `--force` re-resolves to `video` and loops (see `docs/troubleshooting.md`) |
+| Generic `400 INVALID_ARGUMENT` or a confabulated mindmap on a **past livestream** | **Completed livestream VOD** - Gemini's URI ingestion breaks on these far more often than on regular uploads | automatic since issue #120: captions-first, one guarded Gemini attempt, then the mindmap-from-video fallback is skipped and the local-file recipe is logged. To finish it: `transcript --file <PATH> --channel <NAME>` then `mindmap --file <PATH> --channel <NAME>` |
+| Two mindmaps/metas for one video | **Title rotation** | `dedupe` |
+
+Governing principle: **the corpus indexes things that have happened, not
+things that will happen** - skip future/scheduled premieres (`liveBroadcastContent: upcoming`).
+
+## Model Selection
+
+The default model (`gemini-3.7-flash` from config.yaml) works for most
+operations. Override with `--model` / `-m` when needed:
+
+| Scenario | Model | Why |
+|----------|-------|-----|
+| Default (transcripts, mindmaps, concepts, scan) | `gemini-3.7-flash` | Best deep video understanding for the transcript step; cheap text-only model for mindmap+concepts |
+| Transcripts failing with JSON errors | `gemini-2.5-pro` | More reliable structured JSON, higher output token limit |
+| Gemini 3.x backend unreliable / 503s | `gemini-2.5-pro` | Stable fallback |
+| Long videos (>60 min transcripts) | `gemini-2.5-pro` | Less likely to truncate mid-output |
+
+```bash
+# Override model for a single command
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --model gemini-2.5-pro transcript --url "URL"
+
+# Model for scan (all videos in batch use this model)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --model gemini-2.5-pro scan --channel natebjones
+```
+
+Precedence: `--model` flag > `config.yaml` `model` field > `gemini-3.7-flash`.
+
+## Query Workflow (Different Skill)
+
+For searching the corpus, nugget briefs, corpus status, or summarizing a video
+that is already indexed, use the **video-intel-search** skill. It is read-only,
+globally installable, and reads the same `output_dir` this skill writes to.
+This skill covers the write path only: scan, transcribe, process, index,
+concepts, dedupe, taxonomy-build, topics-build, prune-shorts, mark-skip,
+repair-metas, assess-transcripts, briefings.
+
+## How to Use
+
+### Scan channels for new videos
+
+```bash
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info scan
+```
+
+Scans all channels in config.yaml, processes new videos since each channel's
+`since` window. Per video the order is: transcript (Gemini multimodal) →
+mindmap (text-only Gemini, reads the just-written transcript) → concepts
+(text-only Gemini, reads the mindmap). All three artifacts land in the
+output directory. **This command is slow** — multiple Gemini API calls,
+1-5 min each (the transcript step dominates wall-clock).
+Use a 600000ms bash timeout. `--log-level info` is mandatory so progress is
+visible; without it the command appears to produce no output.
+
+Options:
+- `--since 14d` - Override the time window for this run
+- `--channel natebjones` - Scan only this channel
+- `--dry-run` - Show what would be processed without calling Gemini
+- `--force` - Regenerate even if output files exist
+
+### Transcribe a specific video
+
+**YouTube URL:**
+
+```bash
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info transcript \
+  --url "https://www.youtube.com/watch?v=XXXXX"
+```
+
+**Local MP4 file** (works for screen recordings, meetings, Dropbox/GDrive sync folders):
+
+```bash
+# Full file (<1GB)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info transcript \
+  --file ~/Videos/meeting.mp4
+
+# Specific segment (required for files >1GB)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info transcript \
+  --file ~/Videos/meeting.mp4 --start 05:30 --end 18:45
+```
+
+Local files produce `{name}.transcript.md` and `{name}.meta.json` in the same
+directory as the source by default. Uploaded files auto-expire from Gemini
+after 48 hours.
+
+**LOW media resolution by default.** Both the single-shot transcript path
+(local files and short YouTube videos) and the chunked-transcript path
+(long YouTube videos) use Gemini's LOW media resolution by default
+(~70 tokens/frame instead of HIGH ~258 tokens/frame). LOW gives equivalent
+quality on talking-head + slide content at 3× lower input-token cost, and
+keeps hour-long videos under Gemini's 1M-token cap. Pass
+`--media-resolution high` only when the prompt depends on reading fine
+on-screen text (slides, burned-in captions). HIGH on a video over ~67 minutes
+will fail with `400 INVALID_ARGUMENT` (token-cap exceeded).
+
+**When a YouTube URL returns 403 (members-only / gated content)**
+
+**Detection.** Gemini cannot fetch members-only, paid, age-gated, or
+region-locked videos and returns `403 PERMISSION_DENIED`. The script logs
+the error and exits 0 — there will be a stub `<prefix>.meta.json` on disk
+with `modes_completed: []` and `last_error: "...PERMISSION_DENIED..."`,
+but no `.mindmap.md` or `.transcript.md`. This applies to `scan`,
+`mindmap --url`, and `transcript --url` alike. The stub meta is **not
+garbage** — it carries the canonical identity (`video_id`, `title`,
+`published`, `channel`) and the recovery flow below will reuse it to
+write artifacts under the canonical `{YYYY-MM-DD}-{slug}` prefix.
+
+**Hint.** If `output_dir/<channel>/` already contains an MKV/MP4 with a
+companion `.transcript.md`, the user has done this recovery before for
+the same creator — follow the same pattern.
+
+**Recovery (preferred: `process --file` — one upload, both modes):**
+
+1. Download the video locally via the user's member access. The script
+   does not download for you.
+2. Save under `output_dir/<channel>/` named `<videoId>.mp4` (the 11-char
+   YouTube ID). This makes the tool G2-dedup against any existing stub
+   meta and route artifacts to the canonical `{YYYY-MM-DD}-{slug}`
+   prefix automatically. `.mkv`, `.mp4`, `.mov`, `.webm`, `.avi` are all
+   accepted.
+3. Run `process --file`:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info process \
+  --file "${OUTPUT_DIR}/everyinc/jPrwIL2B56Q.mp4" \
+  --video-id jPrwIL2B56Q \
+  --title "Camp: Codex for Knowledge Work" \
+  --date 2026-04-24
+```
+
+`--video-id` / `--title` / `--date` are redundant when a stub
+`.meta.json` already exists with those fields, but passing them is
+harmless and explicit. With a `<videoId>.mp4` filename and no stub,
+they let the tool stamp identity into a fresh canonical meta.
+
+**Why `process --file` over separate `mindmap --file` + `transcript --file`:**
+single Gemini upload (the legacy form uploaded twice), lazy-skip when
+artifacts already exist, automatic file-expiry recovery if Gemini's 48h
+TTL expires mid-run, and inline concepts when the channel is configured.
+
+**Legacy two-call form** (still works, kept for reference; prefer
+`process --file` for new recoveries):
+
+```bash
+# Drop the MP4 under output_dir/everyinc/ first, then:
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" mindmap \
+  --file "${OUTPUT_DIR}/everyinc/Compound Engineering Camp.mkv"
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" transcript \
+  --file "${OUTPUT_DIR}/everyinc/Compound Engineering Camp.mkv"
+
+# Or keep the MP4 elsewhere and pass --channel explicitly:
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" transcript \
+  --file "~/Downloads/lfML5OJc-CM.mp4" --channel everyinc
+```
+
+When the local filename is `<videoId>.mp4` (11-char YouTube ID), the tool
+matches it against an existing canonical scan-generated `.meta.json` in the
+channel folder and writes artifacts under the canonical `{YYYY-MM-DD}-{slug}`
+prefix, keeping a single meta.json per video. When BOTH `--title` and `--date`
+are passed (and no sibling meta or canonical match claims the file), artifacts
+also follow the `{YYYY-MM-DD}-{slug}` convention, derived from those flags -
+so curated local ingests sort alongside scanned artifacts instead of landing
+under a raw filename stem. Otherwise the filename stem is used as both the
+title and the artifact prefix.
+
+Options:
+- `--url` - YouTube URL to transcribe (mutually exclusive with `--file`)
+- `--file` - Path to local MP4 / MKV / MOV / WebM / AVI (mutually exclusive with `--url`)
+- `--start`/`--end` - Segment time offsets (accepts `MM:SS`, `HH:MM:SS`, or raw seconds)
+- `--channel <NAME>` - Save output under this channel's folder; with `--file`, enables in-place recovery routing
+- `--video-id <ID>` - 11-char YouTube video ID for explicit canonical-meta matching
+- `--title <T>` / `--date YYYY-MM-DD` - Override filename-inferred defaults
+- `--force` - Regenerate even if transcript exists
+- `--transcript-source {gemini,yt-captions,auto}` - Where the transcript text comes from (issue #60). Default `gemini` (multimodal). `yt-captions` = caption track only, speech-only, no SCREEN/diarization. `auto` = Gemini then captions fallback on failure. Overrides the per-channel config knob. Captions need a YouTube URL, so keep a local `--file` on `gemini` - `yt-captions`/`auto` have no caption track to fetch on a local upload.
+
+### Process a local video (full pipeline on one upload)
+
+Use `process --file` when the user has a local MP4 and wants the complete
+artifact set — mindmap + transcript + concepts — from a single Gemini upload.
+The existing `mindmap --file` and `transcript --file` commands still work for
+single-mode runs; `process` is the opt-in efficient path when both are wanted.
+
+```bash
+# Channel inferred from parent folder (drop the MP4 under output_dir/<channel>/)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info process \
+  --file "./video-intel/earlyaidopters/some-talk.mp4"
+
+# Or keep the MP4 anywhere and pass --channel explicitly
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info process \
+  --file "~/Downloads/some-talk.mp4" --channel earlyaidopters
+
+# Regenerate everything from scratch (bypasses lazy-upload skip)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" process \
+  --file "./video-intel/earlyaidopters/some-talk.mp4" --force
+```
+
+How `process --file` works:
+
+- **Pipeline ordering: transcript first, then mindmap, then concepts.**
+  Step 1 transcribes the video (chunked into ~30-min windows on long files,
+  single-shot otherwise). Step 2 generates the mindmap by reading the on-disk
+  transcript via a cheap text-only Gemini call (~10× cheaper than reading
+  video frames again, no 10800-frame cap). Step 3 extracts concepts from
+  the mindmap. Mirrors `process --url`. Local files where the on-disk
+  transcript can't be produced (e.g., transcript step fails entirely) fall
+  back to mindmap-from-video automatically via the `mindmap_source` resolver.
+- **Long-video chunking.** Transcripts on videos longer than `--chunk-minutes`
+  (default 30) auto-chunk into uniform windows. `scan` chunks too, and takes the
+  size from `chunk_minutes` (per-channel, then top-level, then the default) or a
+  `--chunk-minutes` flag. Lower it for channels whose talks are *dense* rather
+  than long: density, not duration, is what blows the 65536-token OUTPUT cap, so
+  a 42-minute keynote can truncate while a 90-minute interview does not. Each chunk is a separate
+  Gemini call with `VideoMetadata.start_offset/end_offset` against the SAME
+  upload — implicit caching makes follow-up chunks cheap. The "one upload"
+  guarantee is preserved. Without chunking, hour-long single-shot transcript
+  requests return malformed JSON intermittently from Gemini 2.5 Pro
+  (different break point each retry, irrecoverable).
+- **One upload** per invocation. The MP4 is uploaded to Gemini Files API
+  exactly once and referenced by every Step-1 chunk + the optional Step-2
+  mindmap-from-video fallback.
+- **Lazy upload skip.** When meta.json already shows all modes completed and
+  artifacts exist, `process` uploads nothing and exits quickly. A partial
+  prior run (e.g., transcript succeeded but mindmap did not) re-uploads
+  once and regenerates only the missing steps.
+- **File-expiry recovery.** If Gemini's 48h Files API TTL expires mid-run
+  (rare), `process` detects the expiry error, re-uploads once, retries
+  once, then fails cleanly.
+- **Observability.** Each Gemini call emits a
+  `usage <label> prompt=N cached=N thoughts=N candidates=N total=N` log line
+  at info level. `cached>0` on follow-up calls (chunks 2..N, or the mindmap
+  step when it falls back to source=video) means implicit caching fired and
+  you got a token discount. A field can also render as `?`, which means the
+  SDK did not report that count in a readable shape - not that it was zero.
+  A `prompt=?` is worth attention: it is followed by a warning, and it means
+  the `prompt == 0` confabulation guard could not run for that call.
+- **Exit-code contract (tri-state).** `0` = every step the run was asked to
+  produce left a usable artifact. `3` = the run finished but a requested step
+  produced nothing (most often a failed transcript or concepts step); the
+  artifacts that did land are still on disk and nothing is rolled back. `1` =
+  a hard failure that stopped the run (mindmap failed, upload failed, bad
+  config). Deliberate skips (`skip_modes`, `mindmap_source: none`, the
+  livestream mindmap suppression, concepts on an unconfigured channel) keep
+  exit 0, and so do the degraded-but-real salvage statuses (`partial`,
+  `truncated_output`, `thin`). A caller that wants the old lenient behavior
+  treats `rc in (0, 3)` as non-fatal. Automation that needs per-step detail
+  inspects `modes_completed`, `transcript_status`, and `concepts_status` in
+  the resulting meta.json.
+- **LOW media resolution by default.** The mindmap-from-video fallback
+  step (and the chunked-transcript step) use Gemini's LOW media resolution
+  by default (~70 tokens/frame) instead of the API default HIGH
+  (~258 tokens/frame). LOW yields equivalent quality for theme/concept
+  extraction at 3× lower input-token cost, and removes the previous
+  ~67-minute ceiling under Gemini's 1M-token input cap. Pass
+  `--media-resolution high` only when the prompt depends on reading fine
+  on-screen text (slides, burned-in captions).
+
+Concepts extraction runs inline when the channel is configured in
+`config.yaml`. For loose files (no channel match), concepts is skipped with
+a warning log and the run still exits 0.
+
+Options:
+
+- `--file PATH` - Path to local video file (required).
+- `--channel NAME` - Channel name (must exist in config.yaml). Overrides
+  parent-folder inference.
+- `--video-id ID` - 11-char YouTube video ID for G2 dedup against a canonical
+  scan meta.json.
+- `--title T` / `--date YYYY-MM-DD` - Override filename-inferred defaults.
+- `--start`/`--end` - Segment time offsets (shared across both video calls).
+- `--force` - Regenerate all artifacts from scratch.
+- `--prompt NAME` - Mindmap prompt override (default from config.yaml).
+- `--chunk-minutes N` - Chunk size for the transcript step on long videos.
+  Available on `scan`, `transcript --url`, `process --url`, and `process --file`;
+  when the flag is not passed, per-channel then top-level `chunk_minutes` in
+  config.yaml applies on all four, then the default (30). Manual `--start`/`--end`
+  disables chunking on the file path.
+  (default: 30). Auto-triggered when video duration exceeds this; disabled
+  when manual `--start`/`--end` is set.
+- `--media-resolution {low,high}` - Gemini media resolution for the mindmap
+  step (default: low). Use `high` only when the prompt depends on reading
+  fine on-screen text. LOW handles hour-long videos that HIGH cannot fit
+  under Gemini's 1M-token cap.
+- `--transcript-source {gemini,yt-captions,auto}` - Transcript source for the
+  `--url` path (issue #60): `gemini` (default), `yt-captions` (caption track
+  only), or `auto` (Gemini then captions fallback). The `--file` path is always
+  Gemini multimodal (a local upload has no caption track to fall back to).
+
+### Build the search index
+
+```bash
+# Build or rebuild the LanceDB index from all transcripts (requires VOYAGE_API_KEY)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" index
+
+# Force a rebuild from scratch after dedupe or large corpus changes
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" index --force
+```
+
+The `index` command is a write-path operation (rebuilds the LanceDB hybrid
+index). Querying the index belongs to the `video-intel-search` skill.
+
+### Generate a catch-up briefing (unseen videos)
+
+```bash
+# Preview what hasn't been surfaced in any _briefings/ guide yet (writes nothing)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" briefings --unseen --dry-run
+
+# Write a catch-up briefing: top 30 unseen videos across the whole corpus (unbounded by default)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" briefings --unseen
+
+# Narrow to just recent videos, and raise the cap
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" briefings --unseen --since 30d --limit 60
+
+# Also write a clickable PDF beside the Markdown (needs the [pdf] extra)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" briefings --unseen --pdf
+```
+
+`briefings --unseen` surfaces corpus videos that appear in no existing
+`_briefings/**/*.md` front-matter `video_ids` list (strict set difference, so a
+video is never re-surfaced once it lands in any briefing). By default the scan
+is **unbounded** - every never-briefed video is a candidate regardless of age,
+because a catch-up should surface old-but-missed videos, not hide them. Pass
+`--since` / `--until` to *narrow* to a date window when you want one. Results
+are capped to the top `N` by relevance (`--limit`, default 30; `--limit 0` = no
+cap). Uncapped videos stay unseen for the next run, so the cap creates a
+rolling catch-up rather than dropping anything. Ranking is concept/taxonomy
+overlap with the interest profile at `_briefings/profile.yaml` (hand-edit to
+retune; never overwritten once it exists) - recency is only a tiebreaker, so an
+old-but-important video still ranks near the top. Each entry carries an age
+badge (`age 3y`), and a secondary "By year" section at the end regroups the same
+videos chronologically for quick temporal scanning without disturbing the
+relevance order. When no `profile.yaml` has been persisted yet, one is inferred
+in memory for the run and discarded - `briefings` itself never writes it, and on
+a first run against a large corpus a one-line warning points at `profile init`.
+No Gemini calls and no `channels:` config required. Writes
+`_briefings/<date>-catch-up-unseen.md`; `--dry-run` only prints the ranked
+unseen set.
+
+### Personalization profile (`profile show` / `profile init`)
+
+Both personalized surfaces - `briefings --unseen` and the scan's headline
+digest - rank from ONE compiled interest model built from two corpus files:
+
+- `<output_dir>/_briefings/profile.yaml` - machine ranking weights
+  (`interest_concepts: {concept_id: weight}` + `interest_domains`).
+- `<output_dir>/_briefings/audience.md` - hand-written reader context (persona,
+  pillars, goals, signal/noise) used when YOU author a curated topic briefing.
+
+```bash
+# Print the resolved model, its source, top concepts/domains, and both paths
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" profile show
+
+# Persist the inferred profile.yaml and scaffold audience.md for hand-editing
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" profile init
+```
+
+`profile show` writes nothing at all. `profile init` is the only command that
+persists `profile.yaml`, and it never overwrites either file - including a
+partial or malformed one, since hand-editing is the retune path. There is no
+`profile edit`: editing is opening the file, and `show` prints its path. A
+single weight edit moves BOTH surfaces wherever each has matching evidence
+(a headline moves when a current title carries a recognized phrase; a briefing
+entry moves when the video's concepts.json carries the concept id) - one model,
+one interpretation. Paths are `output_dir`-relative, so the profile travels with the corpus.
+
+When a user asks "why am I seeing this", "what is ranking my briefings", "how do
+I retune my recommendations", or "where is my profile" - run `profile show`
+first, then point at the file to edit. Never re-derive or hand-write ranking
+weights in-session; the file is the control surface.
+
+**Organizing briefings into topic subfolders is safe and needs no config.**
+`_briefings/` can hold arbitrary subfolders (e.g. `_briefings/sales/`,
+`_briefings/<any-topic>/`) for manually curated or moved-there briefings -
+`load_seen_video_ids` recurses into them, so a video already surfaced in a
+subfoldered briefing stays "seen" and is never re-surfaced by a future
+`--unseen` run. This is a filesystem convention, not a feature the command
+knows about by name; there is no per-topic flag and none is needed.
+
+Pass `--pdf` to additionally write a clickable `_briefings/<date>-catch-up-unseen.pdf`
+rendered from the same ranked set: a one-page-friendly, shareable guide whose
+video titles and timestamped moments are bold, accent-colored hyperlinks that
+open YouTube at the exact second. The PDF is purely additive - the Markdown is
+always written and remains the seen-coverage record. Requires the optional
+`reportlab` dependency (`pip install -e ".[pdf]"`); without it the Markdown
+still writes and an install hint is logged.
+
+### Curated topic briefing (the editorial layer, authored in-session)
+
+`briefings --unseen` is the *deterministic candidate feed*. A **curated topic
+briefing** - the kind a user means by "build me a briefing on AI observability"
+or "what should I know about X" - is the richer editorial artifact you (the
+assistant) author in-session. The script never authors this judgment: it has no
+reader context and does not call an LLM during triage. Your job is the curation;
+the committed scripts only supply candidates and render.
+
+Route a "briefing / catch me up / what should I know about **a specific topic**"
+request (as opposed to the deterministic unseen catch-up) to this workflow:
+
+1. **Read the reader context.** If `<output_dir>/_briefings/audience.md` exists,
+   read it - its standing pillars, current goals, and signal/noise calls are what
+   ground the "why it matters to YOU" lines. (Template: `examples/audience.md`.)
+   **If it does NOT exist, do not invent the reader's goals.** Either ask the user
+   for their pillars/priorities (and offer to save them as `audience.md`), or fall
+   back to *topical* relevance - a "why it matters" line grounded only in the
+   video's own content, not a fabricated personalization - and say so. Never
+   manufacture "matters to YOU because you're working on X" without a real source.
+2. **Gather candidates via hybrid search.** Run `search "<angle>" --vector`
+   across several *vocabulary angles* for the topic (creators rarely use the
+   user's exact term - see the observability example: they say "tracing,"
+   "telemetry," "agent analytics," not "observability"). A video surfacing under
+   multiple angles is a strong signal.
+3. **Verify before you cite.** Read the matched `*.mindmap.md` files to confirm
+   each is genuinely on-topic and to copy **exact** timestamps. Drop title-similar
+   results that turn out off-topic; mark honest `core` vs `peripheral`.
+4. **Author the editorial structure** (match `examples/catch-up-briefing-personalized-sample.pdf`):
+   an intro/lens line, a "watch these N" top-picks section, `## Pillar` groupings
+   from `audience.md`, a why-it-matters-to-you line per item grounded in the
+   mindmap + reader context, and an explicit signal/noise ("skim or skip",
+   "explicitly excluded") section. Put a `video_ids:` front-matter list at the top
+   so the briefing counts toward the seen-set.
+5. **Render + place.** Write the Markdown into `_briefings/<topic>/` (a topic
+   subfolder), then render the clickable PDF beside it:
+
+   ```bash
+   python "${CLAUDE_SKILL_DIR}/../../scripts/markdown_pdf.py" _briefings/<topic>/<file>.md _briefings/<topic>/<file>.pdf
+   ```
+
+   `markdown_pdf.py` gives curated briefings the same bold/accent/hyperlink
+   aesthetic as the `--pdf` flag, and keeps `[text](url)` + `&t=` deep-links
+   clickable even inside `**bold**` headers.
+
+   Check the reader context (`audience.md`) for a preferred reading channel: if
+   the reader reads on an e-reader, also build the `.epub` beside the `.md` +
+   `.pdf` in the same batch.
+
+6. **Follow the authoring contract** in
+   [`references/briefing-authoring.md`](references/briefing-authoring.md)
+   (colocated with this skill). It defines the required sections - including
+   "What happened while making this" for pipeline-level findings (failed or
+   recovered videos with their *cause*, guard failures, spend, scope decisions)
+   - and the run-companion artifact required whenever subagents authored parts
+   of the work. Core rule: a finding that reaches only the chat has not been
+   delivered.
+
+Do NOT fabricate "why it matters" prose from the deterministic ranking alone -
+that line requires the reader context in `audience.md`, which is the whole point
+of keeping it separate from the machine-scored `profile.yaml`.
+
+### Extract and normalize concepts
+
+```bash
+# Extract concepts from all mindmaps that don't have concepts yet
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info concepts
+
+# Re-extract for a specific channel
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" --log-level info concepts --channel natebjones --force
+
+# Rebuild master taxonomy from all concept files (fast, no Gemini call)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" taxonomy-build
+```
+
+### Follow a topic (curation intent, not emergent concepts)
+
+Topics answer "why did I pull this video in". They are a separate layer from
+`taxonomy.json`, which answers "what does this video say". Nothing moves on
+disk: membership is a tag keyed by `video_id`, so it survives title rotation.
+
+```bash
+# Tag at ingest time, before any briefing exists (repeatable).
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" process --url "URL" --topic fde --topic sales
+
+# Backfill a topic onto a video that is already fully processed. Every stage
+# lazy-skips and the stamp still lands.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" transcript --url "URL" --topic fde
+
+# Rebuild the join. Preview first if you want to see what the briefing folders assert.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" topics-build --dry-run
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" topics-build
+```
+
+Everything ever filed under a `_briefings/<topic>/` folder becomes tagged on
+the first `topics-build` run, at zero retroactive cost. A briefing id with no
+corpus artifact is kept and flagged `unresolved`, and counted in the summary
+line, rather than silently dropped.
+
+### Clean up title-rotation duplicates
+
+YouTube creators A/B-test video titles for SEO, which rotates the slug
+and can fool `is_processed()` into re-scanning the same `video_id` under
+a second prefix. Prevention is automatic (the video_id index inside
+`is_processed()` catches repeats across any slug change), but historical
+duplicates from earlier scans need a one-shot cleanup.
+
+```bash
+# Dry-run: report all video_id groups with >1 meta.json (no mutation)
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" dedupe
+
+# Restrict to one channel
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" dedupe --channel natebjones
+
+# Apply: merges discarded titles into canonical meta's alt_titles list,
+# moves any artifact only a loser has, deletes all loser siblings.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" dedupe --apply
+```
+
+Canonical selection: latest `processed` timestamp wins. Tie-breaks:
+larger `modes_completed` set, then alphabetical prefix. Discarded titles
+are preserved as `alt_titles: [...]` on the surviving meta.
+
+After `dedupe --apply`, derived artifacts may be stale. Re-run:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" taxonomy-build
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" index --force
+```
+
+Dedupe is dry-run by default because it mutates shared state (disk).
+Only pass `--apply` after reviewing the dry-run report.
+
+### Prune YouTube Shorts
+
+Shorts polluted the corpus before the scan-time `skip_shorts` filter
+existed (default-on as of plugin v1.11.0). The `prune-shorts` subcommand
+removes them retroactively. Detection: `duration < 60s OR /shorts/<id>
+HEAD redirect returns 200`. Sidecars from `translate_video.py` (`.en.srt`,
+`.translate-bcs.txt`) are preserved.
+
+```bash
+# Dry-run: report all Shorts with title, duration, URL, artifact count
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" prune-shorts
+
+# Restrict to one channel
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" prune-shorts --channel chase_h_ai
+
+# Apply: deletes mindmap.md, transcript.md (+ raw forensics), concepts.json,
+# meta.json, and any mindmap.<variant>.md files for each detected Short.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" prune-shorts --channel chase_h_ai --apply
+```
+
+After `prune-shorts --apply`, derived artifacts may be stale. Re-run:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" taxonomy-build
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" index --force
+```
+
+Like dedupe, prune-shorts is dry-run by default. Always review the dry-run
+output before passing `--apply` — eyeball the 60-90s edge-case rows to make
+sure nothing substantive is in the deletion list.
+
+### Skip a single mode on one video (per-mode skip)
+
+Issue #42: a 2h 24m video kept truncating its transcript and hung scan for
+hours. Marking the whole video `skip: true` worked but also blocked the
+concepts pass that the existing mindmap could have fed. Use `mark-skip`
+when you want to silence one mode (commonly `transcript`) and let the
+others keep running.
+
+```bash
+# Stop trying to transcribe a single video. Mindmap and concepts keep going.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" mark-skip \
+  --url "https://www.youtube.com/watch?v=X5UN2LrRK48" \
+  --mode transcript \
+  --reason "JSON truncation on 2h24m video, structured output exceeds MAX_OUTPUT_TOKENS"
+
+# Block both transcript AND concepts but keep mindmap
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" mark-skip \
+  --url "https://www.youtube.com/watch?v=X5UN2LrRK48" \
+  --mode transcript \
+  --mode concepts
+```
+
+Writes `skip_modes: ["transcript"]` (or whatever modes you passed) into
+the video's `.meta.json`. On subsequent scans, `is_skipped(..., mode="transcript")`
+sees the array and skips just that loop. Repeating the same `--mode` is
+idempotent. The optional `--reason` lands as a `skip_reason` field for
+your own bookkeeping.
+
+The default 2-hour filter (`transcript_max_duration_seconds` in
+config.yaml) handles the long-video case automatically — `mark-skip` is
+for cases where the duration is under threshold but transcript fails for
+other reasons (poor audio, region-locked transcript fetch, etc.).
+
+Backward compat: existing meta.json files with the old `skip: true`
+keep behaving as full-skip on every mode. To migrate to per-mode, just
+re-run `mark-skip` with the new flags — `skip_modes` wins outright when
+both keys exist.
+
+### Backfill identity-less metas (repair-metas)
+
+Issue #66: a transcript meta.json written without `video_id` is skipped by the
+video_id index, so the video is re-transcribed every scan (and a re-queued one
+could hang). Going forward the transcript writers stamp full identity; for metas
+already on disk, `repair-metas` reconstructs identity from the `.transcript.md`
+header.
+
+```bash
+# Dry-run (default): report which metas would be backfilled, write nothing.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" repair-metas
+
+# Apply: write the reconstructed video_id/url/title/published/channel.
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" repair-metas --apply
+
+# Restrict to one channel
+python "${CLAUDE_SKILL_DIR}/../../scripts/video_intel.py" repair-metas --channel twist --apply
+```
+
+It only fills MISSING fields (never overwrites an existing value) and refuses to
+guess for non-YouTube sources (local/Skool recordings with no Source URL in the
+header - those are reported as "unrepairable"). A meta that already has
+`video_id` is skipped entirely, even if other identity fields are missing - the
+index only needs `video_id`. Like `dedupe`/`prune-shorts`, it is dry-run by
+default. After `--apply`, re-run `index --force` so the backfilled videos'
+chunks carry their identity.
+
+### Manage channels
+
+Edit config.yaml directly or ask Claude Code to add/remove channels.
+Claude Code has write access to the config file.
+
+### Configuration
+
+Configuration lives at the plugin root, `${CLAUDE_SKILL_DIR}/../../config.yaml`. Key settings:
+
+```yaml
+output_dir: ~/video-intel          # Where output files are saved
+default_since: 10d                 # Default lookback window
+default_prompt: mindmap-knowledge  # Which prompt to use by default
+auto_concepts: true                # Extract concepts after mindmap generation
+model: gemini-3.7-flash           # Gemini model (overridable via --model)
+transcript_max_duration_seconds: 7200   # Skip transcripts on videos longer than this
+                                        # (issue #42). Default 2 hours - leaves headroom
+                                        # for technical talks. Mindmap phase is
+                                        # unaffected. Override per workload.
+transcript_timeout_seconds: 600         # Hard wall-clock cap per transcript Gemini call
+                                        # (issue #74). Default 10 min. On expiry the call
+                                        # raises -> failover under transcript_source: auto.
+                                        # Per-channel override supported.
+
+channels:
+  - name: natebjones               # Folder name for output
+    url: https://youtube.com/@natebjones
+    auto_transcript: all            # all | none
+    since: 10d                      # Override default lookback
+
+  - name: seankochel               # Selective mode: playlists + keywords
+    url: https://youtube.com/@iamseankochel
+    playlists:                      # Playlist names (resolved via YouTube API)
+      - Agent Skills
+    keywords:                       # Channel-scoped search terms
+      - ux design
+    auto_transcript: none             # mindmaps for discovery, transcript manually
+    since: 30d                        # also catch recent uploads (additive)
+
+  - name: lennyspodcast            # Manual one-offs only: skipped by `scan`.
+    url: https://youtube.com/@lennyspodcast
+    auto_transcript: all
+    enabled: false                   # see "One-off creators" below
+
+  - name: seankochel
+    url: https://youtube.com/@iamseankochel
+    auto_transcript: all
+    skip_video_ids:                  # Issue #42: declarative pre-fetch blocklist.
+      - X5UN2LrRK48                  # 2h24m SaaS workshop - transcript truncates,
+                                     # mindmap + concepts already done by hand.
+      - SOMEOTHERID                  # add IDs here as you see them fail. The scan
+                                     # never touches these on subsequent runs.
+```
+
+**Selective scanning:** Channels with `playlists` or `keywords` target specific
+content instead of scanning all uploads. Playlist names are resolved via YouTube API
+(case-insensitive contains matching). Keywords search the entire channel history
+(capped at 200 results per keyword). If `since` is also set, recent uploads are
+fetched as an additional source alongside playlists/keywords.
+
+**One-off creators (`enabled: false`):** When a creator posts content you
+occasionally want a transcript or mindmap of, but you do NOT want them in
+the regular `scan` rotation, add them with `enabled: false`. The channel
+stays in config (so `mindmap --url --channel <name>`, `transcript --url
+--channel <name>`, and `concepts --channel <name>` all work) but `scan`
+skips them entirely — including when targeted explicitly via `--channel`.
+To temporarily bulk-scan such a creator, remove the flag rather than
+overriding it on the command line. The flag's purpose is durable
+manual-only routing, not advisory exclusion.
+
+**Headline digest (`headline_digest: true`):** Peripheral vision over YouTube
+creators you do NOT actively follow. Add `headline_digest: true` alongside
+`enabled: false` and a full `scan` ends with an "Other headlines - new in
+channels you're not actively following" section listing their latest uploads.
+This is metadata-only - NO mindmap/transcript/concepts, NO Gemini calls, NO
+corpus artifacts. Items are ranked by title AND description match against the
+same compiled interest model `briefings --unseen` uses (see "Personalization
+profile" above - `_briefings/profile.yaml`): a phrase found only in the
+description counts for half of a title hit, after URLs, chapter lists and
+sponsor boilerplate are stripped, and a concept counts once per video.
+Positive matches first, then a few recent "Other headlines", capped at ~10 per
+run, and a bounded `_headlines/seen.json` means a given upload is surfaced
+once, not every run. The section is skipped on focused `scan --channel X` runs
+(it is a full-scan concept) and on `--dry-run` the seen-set is not advanced.
+Requires a recognizable YouTube url or `UC...` channel id; non-YouTube sources
+(Skool, Vimeo) are ignored for the digest.
+
+The digest also runs on its own, with no scan in front of it: `python scripts/video_intel.py headlines` renders exactly what a full scan would end with and advances the seen-set; `headlines --dry-run` previews without marking anything seen (prefer it when the user is only asking what exists). Metadata-only, no Gemini, no corpus artifacts; needs the plugin `config.yaml` (the channel list IS the digest's input), so it is a curate-side command and not reachable from the globally installed search skill.
+
+Trigger phrases: "any headlines", "what's new in channels I don't follow", "catch me up on the channels I follow loosely", "peripheral headlines", "flip through new uploads", "anything worth pulling from the digest-only channels".
+
+### Prompt files
+
+Prompt templates live at the plugin root, `${CLAUDE_SKILL_DIR}/../../prompts/`:
+- `mindmap-knowledge.md` - Thematic mind map with domain terminology + timestamps (default)
+- `mindmap-light.md` - Fast thematic scan (4-6 branches)
+- `mindmap-heavy.md` - Comprehensive conceptual extraction
+- `transcript.md` - Full diarized transcript with screen content
+- `concepts.md` - Concept extraction + normalization against taxonomy
+- `nugget-brief.md` - Evidence-cited cross-creator synthesis with attributed nuggets
+
+Each prompt is self-contained. Users can modify or add their own.
+
+## Output Structure
+
+```
+~/video-intel/
+├── taxonomy.json                                    # Master vocabulary (derived)
+├── .lancedb/                                        # Vector search index (derived)
+│   └── transcript_chunks.lance
+├── natebjones/
+│   ├── 2026-03-20-building-mcp-agents.mindmap.md
+│   ├── 2026-03-20-building-mcp-agents.transcript.md
+│   ├── 2026-03-20-building-mcp-agents.concepts.json
+│   ├── 2026-03-20-building-mcp-agents.meta.json
+│   └── ...
+└── ramjad/
+    └── ...
+```
+
+- **taxonomy.json** - Master vocabulary at the output root. Read this first for any topic query.
+- **concepts.json** - Per-video normalized concepts with canonical IDs and aliases.
+- **mindmap.md** - Thematic mind map with timestamps. Read for detail after finding via concepts.
+- **transcript.md** - Full diarized transcript. Read for evidence/quotes after finding via concepts.
+
+Files are idempotent. Re-running a scan skips already-processed videos.
+Use `--force` on any command to regenerate.

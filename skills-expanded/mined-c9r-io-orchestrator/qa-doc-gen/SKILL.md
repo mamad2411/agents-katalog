@@ -1,0 +1,226 @@
+---
+name: qa-doc-gen
+description: "Generate or update QA/security/UIUX test documentation after confirmed feature implementation plans or completed refactors. Use this skill AFTER plan approval or code completion to: (1) add new QA test docs for new behavior, (2) generate design docs, and (3) run repo-wide cross-doc impact analysis (docs/qa/, docs/security/, docs/uiux/, docs/guide/ and its translations, docs/design_doc/, docs/showcases/, root Markdown including CHANGELOG.md, and .claude/skills/) to update stale steps, expectations, and assertions. Triggers when users ask to create QA docs, update test docs after implementation, or sync QA/security/UIUX docs after behavior changes."
+---
+
+# QA Doc Gen
+
+After a feature plan is confirmed or a refactor is completed, generate and synchronize test documentation so all QA/security/UIUX docs match real behavior.
+
+## Workflow
+
+```
+1. Extract feature details and behavior deltas from confirmed plan / implemented code
+2. Determine module classification and file naming
+3. Generate design doc(s) under docs/design_doc/ (platform doc, before QA)
+4. Generate QA test document(s) following project format
+5. Run cross-doc impact scan on docs/qa, docs/security, docs/uiux
+6. Patch all impacted existing docs to remove stale steps/assertions
+7. Update docs/qa/README.md index
+8. Update docs/design_doc/README.md index
+9. Update docs/security/README.md and docs/uiux/README.md when changed
+```
+
+## Step 1: Extract from Confirmed Plan
+
+From the confirmed plan and merged implementation, extract:
+
+- **Feature name**: What the feature is called
+- **Module**: Which module it belongs to (used as the folder under `docs/qa/`, e.g. `docs/qa/{module}/`)
+- **Behavior**: Normal flow, error cases, edge cases
+- **Behavior deltas**: What changed compared to old docs (auth rules, token types, permission boundaries, UI routes, API contracts, redirects)
+- **Falsified statements**: Which existing statements anywhere in the repo this change makes *untrue* — a removed config value still documented as available, a mechanism still described as current, a compatibility claim that no longer holds. List these explicitly; they drive Step 5 and are the most common source of doc drift surviving a "closed" change.
+- **UI interactions**: Pages, buttons, forms involved
+- **UI entry points**: Navigation links, quick links, sidebar items, or buttons that lead to the feature
+- **API endpoints**: If applicable, include method, path, request/response
+- **Database changes**: New tables/columns, expected data states
+- **Acceptance criteria**: What constitutes correct behavior
+- **Non-functional requirements**: Security/perf/availability/observability notes if present in the plan
+
+## Step 2: Determine File Naming
+
+### Module mapping
+
+Place the QA doc under the matching `docs/qa/{module}/` directory. If the feature spans multiple modules, create separate documents per module.
+
+For design docs, use the same module mapping under `docs/design_doc/{module}/` so the docs mirror QA structure and are easy to trace.
+
+### File numbering
+
+Check existing files in the target directory:
+
+```
+Glob: docs/qa/{module}/*.md
+```
+
+Use the next available number: `{NN}-{descriptive-name}.md`
+
+Example: If `docs/qa/tenant/` has `01-crud.md`, `02-list-settings.md`, `03-status-lifecycle.md`, the next file is `04-{name}.md`.
+
+### Scenario count rule
+
+Each document has **at most 5 numbered scenarios**. If a feature needs more than 5 scenarios, split into multiple documents.
+
+## Step 3: Generate Design Doc (New)
+
+Generate a design doc from the confirmed plan so future contributors can understand intent and tradeoffs.
+
+Read `references/design-doc-template.md` for the exact format template.
+
+### Placement
+
+- `docs/design_doc/{module}/{NN}-{descriptive-name}.md`
+- If a feature spans multiple modules, create separate design docs per module (same split rule as QA docs).
+
+### Content rules
+
+1. **Language**: Write everything in English. Keep technical identifiers (API paths, field names, SQL, metric names) as-is.
+2. **Traceability**: Must include links (paths) to the generated QA docs and any major code touchpoints if present in the plan.
+3. **Decision capture**: Record assumptions, in-scope/out-of-scope, and the minimal rollback strategy.
+4. **Observability**: If the plan mentions it, include logs/metrics/tracing hooks; otherwise add a brief "Default Recommendations" section.
+
+### Lifecycle frontmatter (mandatory)
+
+Every generated design doc and QA doc opens with lifecycle frontmatter.
+`scripts/qa/doc-lifecycle.rb` enforces it in CI, so a document generated without it fails the build:
+
+```yaml
+---
+lifecycle: active          # active | superseded
+related_fr: FR-132         # optional; omit rather than guess at the attribution
+---
+```
+
+If the cross-doc impact analysis in Step 5 finds a document whose mechanism this change *replaced*
+rather than extended, set that document to `lifecycle: superseded` and add `superseded_by:` naming
+the successor's repo-relative path. Keep its prose banner too — the gate reads the metadata, a
+human reads the banner. A post-release update is not supersession.
+
+Note that `lifecycle` is a different axis from the `**Status**:` header some design docs carry:
+that one records implementation maturity, and a `Released` document can be superseded.
+
+After generating documents, regenerate the reverse index in the same commit:
+
+```bash
+ruby scripts/qa/doc-lifecycle.rb --emit-index --write
+```
+
+## Step 4: Generate QA Document
+
+Read `references/qa-doc-template.md` for the exact format template.
+
+### Content generation rules
+
+1. **Language**: Write everything in English. Keep technical identifiers (SQL, API paths, field names) as-is.
+2. **Scenarios must cover**: Happy path + error/rejection cases + boundary conditions
+3. **UI button/menu names**: Use quoted UI labels, for example "Create", "Save".
+4. **Dynamic values**: Use `{placeholder}` syntax in SQL and curl commands
+5. **curl examples**: Provide complete commands for API-tested scenarios
+6. **SQL verification**: Every scenario with data mutations needs an "Expected Data State" section with verification SQL
+7. **Checklist**: End with a checklist table listing all scenarios (including any optional "General Scenario")
+
+### UI Entry Visibility Rule (Mandatory for UI-facing changes)
+
+If a change adds or modifies user-facing UI behavior, include at least one scenario that verifies users can discover and reach the feature from visible entry points.
+
+Required checks:
+
+1. **New feature entry**: Verify the entry exists and is visible in normal navigation flow (sidebar/tab/menu/button/quick links), not only via direct URL.
+2. **Redirect/navigation changes**: Verify updated routes and redirects from the old and new entry paths.
+3. **Entry consistency**: If entry UI shows counters/status badges, verify they match destination page state.
+4. **Navigation-first UI steps**: Subsequent CRUD scenarios should navigate from visible entry points before performing actions.
+
+### Scenario design guidelines
+
+For each feature behavior in the plan, generate scenarios covering:
+
+| Type | Example |
+|------|---------|
+| Normal flow | Create a resource with valid data |
+| Duplicate/conflict | Create with existing unique key |
+| Invalid input | Missing required fields, bad format |
+| Permission | Unauthorized user attempts action |
+| Boundary | Max length, empty string, special chars |
+| Cascade effects | Delete with dependent data |
+| UI entry point | Verify navigation entry exists and reaches the target page |
+| Retirement parity | A migrated object still produces the same observable result as before migration (terminal state, exit code, output, events) |
+| Downstream link integrity | A page the docs send readers to describes the current mechanism, not the removed one |
+| Negative fixture | An injected violating sample makes the assertion fail, proving the check can fail at all |
+
+Not every type is needed for every feature. UI entry point is mandatory for UI-facing changes. Retirement parity and negative fixture are mandatory whenever a change removes or migrates an existing path.
+
+## Step 5: Run Cross-Doc Impact Analysis (Mandatory)
+
+After creating/updating the primary docs, always scan and classify potential impacts.
+
+### Scope: repo-wide by default, with an explicit exemption list
+
+Scan **every** Markdown surface, not a fixed list of directories:
+
+- `docs/**/*.md` — including `docs/guide/` (and translations such as `docs/guide/zh/`), `docs/design_doc/`, `docs/showcases/`, `docs/qa/`, `docs/security/`, `docs/uiux/`
+- Repo-root Markdown — `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `docs/architecture.md`
+- `.claude/skills/**/*.md` — authoring guidance that tells future contributors how to configure the thing you changed
+
+Then exempt, **and state the reason for each exemption in the report**. Legitimate exemptions are narrow: a historical design record that carries an explicit "superseded / historical context" banner, or a released CHANGELOG section that correctly describes what shipped at the time. An entry still under `[Unreleased]` is never exempt — it has not shipped, so a stale one will ship as a false statement.
+
+A whitelist of known files is not an acceptable scope. Drift concentrates in whatever the whitelist omits, and each iteration only adds the one file just discovered.
+
+Translated documents count as separate surfaces: fixing `docs/guide/x.md` without `docs/guide/zh/x.md` leaves half the readers with the removed mechanism.
+
+Use search patterns based on behavior deltas and the falsified statements from Step 1, for example:
+
+- route changes (`/dashboard`, `/settings`, `/auth/callback`)
+- token model changes (`id_token`, `access_token`, `token exchange`)
+- permission/auth changes (`401`, `403`, `scope`, `audience`, `role`)
+- UI navigation text and expected redirect paths
+
+For each impacted document, do one of:
+
+1. **Patch required**: update steps/expected results/security assertions/UI flow
+2. **Note required**: add prerequisite note or branch-path note to avoid tester confusion
+3. **No change**: explicitly record why unaffected
+
+Never stop at creating only new docs when old docs are stale.
+
+## Step 6: Update QA README Index
+
+After creating the QA document(s), update `docs/qa/README.md`:
+
+1. Add the new document to its module's index table
+2. Keep the README lightweight and project-agnostic (avoid hardcoded totals unless the project explicitly maintains them)
+
+## Step 7: Update Design Doc README Index
+
+After creating the design doc(s), update `docs/design_doc/README.md`:
+
+1. Add the new document to its module's index table
+2. Keep the README lightweight and project-agnostic
+3. Regenerate `config/governance/doc-lifecycle-index.json` with
+   `ruby scripts/qa/doc-lifecycle.rb --emit-index --write` and commit it alongside the documents
+
+## Step 8: Update Other Indexes When Changed
+
+If the cross-doc impact analysis (Step 5) modified files under `docs/security/` or `docs/uiux/`, update their respective `README.md` indexes as well.
+
+## Step 9: Default Coverage Strategy For Semantic Gates
+
+When a doc invariant is worth freezing into an automated check (a script wired into `qa-doc-lint.sh` or a release gate), apply the same scoping rule as Step 5:
+
+1. **Scan the whole surface by default**, then subtract an explicit exemption list. Do not enumerate target files.
+2. A target list that grows by one file per audit round is the symptom to avoid — it means the gate is following discoveries rather than preventing them.
+3. Freeze the invariant in **both directions**: a negative pattern that must be absent, and a positive assertion that the current mechanism is described. Absence checks alone pass on a page that says nothing.
+4. When a governed page links onward, assert the **link target** is governed too. Readers follow the link; the gate should follow it as well.
+5. Ship a **negative fixture** proving the gate fails on a violating sample. An unfalsifiable gate is indistinguishable from no gate.
+6. **Derive the surface's own boundary; declare only the exemptions.** Canonical statement: `fr-governance` SKILL §4.4, shape 2 (enumeration standing in for coverage) — the rationale lives there, do not restate it here. Enumerate the surface from the repository (`git ls-files`, tracked symlinks, a recursive glob); reserve hand-written lists for exemptions that carry reasons.
+7. **Choose the mutation the implementation is least likely to survive.** Canonical statement: `fr-governance` SKILL §4.4 (habits). State which mutation each fixture applies and why that one; when a check matches text, include a fixture where the text is present and the fact is false.
+8. **When the gate verifies a generator, derive the expectation independently of it.** Computing the expected set with the generator's own logic proves only that the generator agrees with itself, and it stays green through exactly the bug worth catching — the generator quietly stopping emitting something. Build the expectation from the inputs (the source tree, the declared policy), run the real generator, and diff the two. Assert the comparison in **both directions**: a source that produces no output, and an output no source declares.
+9. **Check reachability as well as existence.** A page, route or artifact that is produced but that nothing links to is present and unusable; a link to something never produced is the same defect mirrored. Existence checks alone pass on both. FR-131 found twelve published pages with no navigation entry precisely because only the forward direction had ever been asserted.
+
+## Output Requirements
+
+In the final response, always include:
+
+1. New docs created/updated for the feature itself
+2. Cross-doc impact list, covering every surface from Step 5 (guides and their translations, design records, showcases, root Markdown including `CHANGELOG.md`, authoring skills), not only `qa/security/uiux`
+3. Updated files and rationale per file
+4. Remaining docs reviewed but unchanged (with reason), and every exemption with its justification

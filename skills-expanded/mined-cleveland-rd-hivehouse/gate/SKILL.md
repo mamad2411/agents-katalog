@@ -1,0 +1,71 @@
+---
+name: gate
+description: Run the project's gate into a log file, verify every step's result line and the commit rules, and refuse to call anything green without the log. Use before landing or handing back work, and when verifying a builder's gate log.
+when_to_use: When asked to "run the gate", "gate this", "verify the gate log", or before reporting work as done or green.
+allowed-tools: Bash(hh-resolve *) Bash(hh-settings option *) Bash(hh-gate-verify *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-settings resolve *) Read
+---
+
+# hivehouse: gate
+
+Claude Code fills a `${user_config.X}` below only when a value of X was saved; only when one still reads literally, as `${user_config.X}`, run `hh-settings option X` and use what it prints (the value saved in Claude Code's settings, else the plugin's default); a filled value is used as it is.
+
+Run `hh-resolve rules` and read the file it prints first (the project's or the user's own `custom/rules/RULES.md`, else the plugin's). Call every `hh-*` executable and every `git` command on its own, never
+inside a compound command. No git rule is pre-approved, so each `git` call asks; `hh-gate` and `hh-slot run` are not
+pre-approved either and will ask. That is intended.
+
+**Never report green without the log path and the `hh-gate-verify` line.** A last exit code alone proves nothing: a
+gate can skip a step and still exit 0.
+
+## 1. Find the gate
+
+Use the project's recorded gate command (`CLAUDE.md`, `CLAUDE.local.md`, `.hivehouse/`). If none is recorded, ask the
+orchestrator or owner; do not invent one. Commit first: the gate runs on the committed tip. Note the base branch and
+the tip hash being gated (`git rev-parse HEAD`), and that the tree is clean (`git status`): a log vouches only for a
+clean, committed tree.
+
+## 2. Check the slot
+
+`hh-slot status`. If another job holds it, `hh-gate` and `hh-slot run --wait` queue for it in the order asked, so do
+not retry by hand; never run beside the holder, and never release a slot you did not take.
+
+## 3. Run it into a log
+
+Choose the log path (outside the tracked tree, for example `.hivehouse/tmp/<name>-gate.log`).
+
+- A gate made of separate commands: `hh-gate --log <file> -- <name> <command> [<name> <command> ...]`. It takes the
+  slot itself (never wrap it in `hh-slot run`), runs every step even after a failure, and writes `<name> exit <n>`
+  after each. Step names are letters, digits, `_`, `.`, `-` only, and never `..`.
+- A gate that is already one script printing `<step> exit <n>` lines:
+  `hh-slot run --wait gate -- <script>` with its output redirected to the log file, as the project records it.
+
+## 4. Verify the log
+
+For a log `hh-gate` wrote: `hh-gate-verify log <file> --commit <tip>`
+
+It starts with a header naming every step it set out to run, the commit and whether the tree was dirty, so no
+`--expect` is needed: a gate stopped part way is red because a named step has no line. It passes only if the log has
+at least one `<step> exit <n>` line, every one is `exit 0`, no step appears twice, and the header names the commit you
+gave on a clean tree. A log left from an earlier run, or from uncommitted changes, is RED.
+
+For a project's own gate script, which writes no header: `hh-gate-verify log <file> --expect <every step the project's
+gate has, comma-separated>`, **without** `--commit`. With `--commit` such a log is always RED ("vouches for no commit"),
+so never pass it. The report then says that log names no commit: it shows the steps passed, not which commit they ran
+on. On failure the command names the steps; report those, not a summary.
+
+## 5. Verify the commits
+
+Resolve the safety value first, so a project cannot loosen the owner's:
+
+- `hh-settings resolve allow_attribution ${user_config.allow_attribution}`
+
+Then: `hh-gate-verify commits <base>..<tip> --style ${user_config.commit_style} --attribution <deny, or allow when the resolved allow_attribution is true>`
+
+Both flags are required, so nothing is loosened by leaving one out. Add `--no-body` when the rules say one-line
+subjects only (a body is otherwise a warning). It checks the subject style and any attribution trailer; it counts no
+files, because one purpose per commit is read in the diff. An empty range is red: nothing checked is not a pass. Report each violation with its commit.
+
+## 6. Report
+
+Verdict first: `GREEN` or `NOT GREEN`. Then: the log path, the `hh-gate-verify log` line, the `commits` result, the commit
+gated, and what was not run and why. If anything failed, stop; do not re-run hoping for a different result:
+find the cause first (root cause before any fix).

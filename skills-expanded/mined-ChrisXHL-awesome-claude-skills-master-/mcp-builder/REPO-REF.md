@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ChrisXHL/awesome-claude-skills-master- (path: mcp-builder/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 创建高质量 MCP（模型上下文协议）服务器的指南，使 LLM 能够通过精心设计的工具与外部服务交互。在构建 MCP 服务器以集成外部 API 或服务时使用，无论是使用 Python (FastMCP) 还是 Node/TypeScript (MCP SDK)。

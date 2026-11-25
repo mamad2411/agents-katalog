@@ -1,0 +1,131 @@
+---
+name: walnut-markdown-rendering
+description: How Walnut turns model text into rendered output — the two marked instances and the CJK retunes registered on both, why we extend marked through its public API and never patch it, the rich-HTML block chunker's prefix invariant and blank-line content-model rule, DOMPurify policy per surface, and the marked 15 → 18 upgrade path. MUST read before changing anything in web/src/utils/markdown.ts, rich-blocks.ts, or adding a marked extension.
+---
+
+# Markdown & rich-HTML rendering
+
+**Before you plan, build, test or ship anything the user can see, read the `walnut-ui-requirements` skill** ([.claude/skills/walnut-ui-requirements/SKILL.md](../walnut-ui-requirements/SKILL.md)): the rules every UI change must meet, each with its real incident.
+
+Every visible model reply goes through `web/src/utils/markdown.ts`. Rich (HTML) replies additionally go through `web/src/utils/rich-blocks.ts` before rendering. Both files are incident-dense: each rule below is a shipped bug.
+
+## Hard rules
+
+1. **Never patch, fork, or vendor `marked`.** It has a public extension API (`marked.use({ tokenizer }|{ extensions })`); use it. Verify before believing otherwise: both installed copies (`node_modules/marked` and `web/node_modules/marked`, both 15.0.12) are byte-identical to the published tarball, and `patches/` holds exactly one patch, for an unrelated package that has no public switch for what it does. A patched renderer has to be re-applied on every install and blocks every upgrade.
+2. **There are TWO `Marked` instances. A retune must be registered on both.** The global singleton serves chat, the session timeline, the file/diff preview, the context inspector and copy-as-rich-text; `noteMarked` (bottom of the file) serves task notes. `marked.use()` mutates only the instance it is called on, so a fix applied to one silently leaves the other broken. Do NOT unify them: `noteMarked` escapes raw inline HTML, which would turn chat's pre-injected task-ref and file-link anchors into visible escaped text.
+3. **A tokenizer override returns `undefined`, never `false`.** `false` means "fall through to marked's default", which resurrects the exact behavior the override removes. This has been mis-"fixed" before; the comments say so at each site.
+4. **Only ADD, never reinterpret.** marked's emphasis flanking rules are a compiled regex built from its own Unicode punctuation classes. Rebuilding that regex locally is Walnut reinterpreting someone else's grammar. Prefer an extension that hands the decision back the moment marked would have made it (see `cjkStrongExtension`: the first genuinely right-flanking `**` returns `undefined`, so working emphasis can never be lengthened or reshaped).
+5. **Blank-line collapsing is RENDER-TIME only.** The rich chunker must see the model's bytes exactly as they arrive, or its prefix invariant shifts and already-frozen blocks visibly jump. `collapseHtmlBlankLines` runs at the single render call site in `RichBlocks.tsx`, never inside the chunker.
+
+## The CJK retunes (three, and why they keep happening)
+
+marked's defaults assume words are separated by spaces. Chinese and Japanese prose has no such spaces, so three separate GFM/CommonMark rules misfire. All three live at the top of `markdown.ts` and are registered on both instances.
+
+| Retune | Shape that broke | Rule at fault |
+|---|---|---|
+| `doubleTildeDelTokenizer` | `~550K objects … (~20 min rebuild)` struck out the whole span between two unrelated approximations | GFM `del` opens on a SINGLE `~`; GitHub itself needs `~~` |
+| `cjkAwareUrlTokenizer` | `打开 https://a.com/x,个人账户,enroll` put half the sentence inside the anchor | autolinks only stop at whitespace |
+| `cjkStrongExtension` | `**便签的比喻还成立。**之前我说:` printed four literal asterisks | CommonMark closes `**` only on a RIGHT-FLANKING run |
+
+### The flanking rule, in detail (asked about more than once)
+
+A `**` run preceded by punctuation and followed by an alphanumeric is not right-flanking, so it cannot close. English earns that rule (`**a.**b` is genuinely ambiguous). Chinese does not: a bold sentence ends in `。` or `?` and the next sentence starts immediately.
+
+This is the **spec**, not a library bug. `marked` 15 and `markdown-it` (strict `commonmark` preset AND default config) return byte-identical output on `**中文。**后面` (plain), `**中文**后面` (bold) and `**a.**b` (plain). `commonmark/commonmark-spec` issue 650, "Emphasis with CJK punctuation", has been open since 2020-05-26 with 237 comments.
+
+Only ONE shape is refused: `。**` followed by a space, a newline, or more punctuation all close correctly. That is why a broken reply still shows mostly-correct bold and only some clauses fail, which reads like an intermittent regression and is not one.
+
+### The upstream plugin, and why we are not on it yet
+
+`tats-u/markdown-cjk-friendly` (by the person driving the spec change) ships opt-in plugins: `markdown-it-cjk-friendly`, `remark-cjk-friendly`, `micromark-extension-cjk-friendly`, and `marked-cjk-friendly`. Measured 2026-09-02:
+
+- On our **marked 15.0.12 it throws** (`rules.inline.delLDelim` is an internal rule that only exists in later marked; its declared peer range `marked >= 15` is wrong).
+- On **marked 18.0.11 it works** and covers more than our extension does: `*em*`, `__strong__`, `~~del~~`, `***both***`. Ours covers `**` only, which is what models actually write.
+- marked 18 also changed `~~中文。~~后面` from `<del>` (15's behavior) to literal, so **upgrading marked without the plugin regresses CJK strikethrough**. The two changes must land together.
+
+Path if picked up: bump marked 15 → 18, adopt `marked-cjk-friendly`, delete `cjkStrongExtension`, and use `tests/web/markdown/cjk-strong.test.ts` unchanged as the acceptance gate.
+
+## Rich HTML blocks (`rich-blocks.ts`)
+
+- `splitRichChunks` is dependency-free and holds one invariant: the stable chunks of any prefix are an element-wise prefix of the stable chunks of the full text (fuzz-verified). Freezing in `RichBlocks.tsx` works by keeping the `__html` string identical so React skips the DOM write, so any byte change upstream un-freezes a block in the user's face.
+- `collapseHtmlBlankLines` first removes code-level indentation from layout tags inside open markup, then deletes blank lines only directly inside `NO_PARAGRAPH_CHILDREN` (SVG containers plus table/list/select structure). A CommonMark HTML block ends at a blank line, so four-space-indented child cards otherwise become escaped code even inside `div`. Layout normalization keeps prose paragraph gaps, fences, top-level indented samples, disclosure/quote examples and `pre`/`textarea` content. The same HTML structure scan backs splitting; classification examines the render-normalized text so a rescued script still routes to a sandboxed island. The chunker's returned text remains byte-identical. A transparent wrapper normalizes its nested layout before dropping the wrapper, while that HTML context still exists.
+- **A bare whole-reply wrapper is dropped before anything else is asked** (`stripTransparentWrapper`, called once in `RichBlocks.tsx` so the precheck and the split see the same text). Asked for rich output, a model often wraps its whole answer in one attribute-free `<div>`. Measured cost of that single tag pair: the entire reply became ONE html chunk (nothing freezes, every delta re-renders all of it), the heading on the line after `<div>` was swallowed into the raw-HTML block and rendered as literal `## …`, and the chunk was a 4,092px `contain: layout style paint` block holding 26 scrollable `<pre>` children, which is what the user saw painting stale. The decision reads the FIRST LINE ONLY so it can never flip mid-stream; an attribute, content on the same line, or a wrapper that is not first are all left alone.
+- Unfinished markup at an interrupt belongs to the text that will finish it: `splitPendingMarkup` (`src/core/stream/pending-markup.ts`, zero imports, aliased) holds the fragment so a bookkeeping card cannot cut an element in half. Four mirrors share that one rule (browser reducer, `useSessionStream`, `session-cache`, and the server twin `session-stream-buffer`); fixing only the client makes the artifact reappear after a refresh.
+
+## Local-path links: the pre-pass fences, the renderer decides
+
+`filePathsToHtml` runs BEFORE marked and injects `a.file-link` anchors around bare paths. That order is why `[eventprocessor.go:58-75](/repo/pkg/eventprocessor.go#L58)` once rendered as literal `[eventprocessor.go:58-75](` + a bare path link + `#L58))` in both markdown and rich mode (2026-09-15): the pass rewrote the destination inside the parentheses, so marked never saw a link. Even a parsed link would have been a plain `<a href="/repo/…">`, and the click handler (`useEntityClickHandler`) only knows `a.file-link`, so clicking one is a real page navigation.
+
+The fix keeps marked owning its grammar. Do not move either half:
+
+- **The pre-pass only fences.** `markdownLinkSpans` finds the spans marked will read as a link, image, reference definition, or a link still streaming in (no closing parenthesis yet), and no path pass injects inside them. It is a shape test that errs toward fencing too much: the worst case is a path left un-linkified, never a link broken. A half-arrived destination is fenced too, so a click mid-stream cannot open a prefix of the path.
+- **The `link` renderer override converts.** `fileLinkAttrsForDestination` decides what a PARSED destination is (absolute file or directory, `~/`, relative with a cwd) and emits the same `a.file-link` a bare path becomes, with the label as text and `:42` / `#L42` / `#L10-L20` as `data-file-line`. Nested-bracket labels, angle-bracket destinations with spaces, titles and reference-style links all arrive already parsed. The position grammar is `parsePathDestination` in `src/providers/path-ref-parse.ts`, shared with the server's resolver; the prose-only forms (`(42)`, `, line 42`) are deliberately excluded there because in a destination `Report (2024)` is a directory.
+- **The render context is set only by `renderMarkdownWithRefs`** (`fileLinkRenderCtx`, around the synchronous `marked.parse`). Copy-as-rich-text, tool results and note previews go through the same singleton with the context null, so in-app anchors never leave the app.
+- **Declined on purpose:** URLs, `#anchors`, queries, traversals, in-app routes (`/tasks/<id>`, `/apps/<app>~main/inbox`), single-segment relative names (`README.md`: the host resolver would answer with any same-named file), a relative destination with no cwd, and a path inside the LABEL of an external link (nesting anchors makes the HTML parser split them into two links).
+- `linkifyPathsInCode` skips a code span that sits inside a complete `<a>…</a>` pair (`anchorPairRanges`), so `` [`src/x.ts`](…) `` stays one anchor. A running open/close counter was rejected: one self-closing `<a/>` or a stray `</a>` in model-written HTML would latch it and switch off path links for the rest of the message.
+
+Acceptance gate: `tests/web/markdown/link-to-local-path.test.ts` (the report verbatim, every declined shape, ReDoS tripwires for the fence) and `tests/e2e/browser/link-to-local-path.spec.ts` (the seeded `pw-vscode-session` turn, clicked in Chromium and WebKit, opens the file at the line with no page load).
+
+## Bare paths in code and prose: what counts, and line ranges
+
+`linkifyPathsInCode` links paths inside `<code>` (fenced, indented and inline) after marked ran; `filePathsToHtml` does prose. One rule for both, pinned by `tests/web/markdown/code-block-paths.test.ts` (2026-10-27 report: `// /…/object.go:31-34` in a Go block, and `:237-239` in prose linked only up to `:237`):
+
+- **Absolute** (`/a/b.ext`, `~/a/b.ext`; a directory needs 3+ segments), starting at a token boundary (`ABS_START`): not after a word character or `/` (mid-path, a URL's path), not after a `./` or `../` token (a relative path; read as absolute it opened `/lib/x.ts`). In code also not after `word:` (`ABS_START_CODE`: `host:/x`, a `-v src:/dst` volume, `C:/x`, a `PATH=a:b` tail); prose keeps `Output:/tmp/x.md`.
+- Never inside an `https?://` URL; `file:///…` and `s3://…` fail the boundary. Escaped slashes never match, so a regex literal stays text.
+- **Relative** needs the session cwd, a code extension, and start of text, whitespace, `(` or a backtick before it, so a quoted import specifier (`'./a/b.ts'`, `&#39;` once escaped) stays text.
+- **The position is part of the link** (`POS_SUFFIX_SRC`), in exactly the forms `parsePathRef` reads: `:42`, `:42:7`, `:L42`, `:10-20`, `#L42`, `#42`, `#L10-L20`, `(42)`, `(42,7)`. A `#` form must end there (`guide.md#2-setup` is a heading). A range adds `data-file-end-line`; the click passes it as `onFileOpen`'s 4th argument and the viewer flashes (CodeMirror) or highlights (read-only rows) every line of it. `(a,b)` is line and column, so it lands on line a.
+
+**`codeRegions` must agree with marked about fences.** marked lets a fence line interrupt a paragraph only when a newline follows it, so a closing ``` on the LAST line right under prose closes a code span opened mid-line (`did u find it?```go` / path / "```"). Read as a fence, the span was unprotected and the pre-pass anchor came out as escaped `<a class=…>` text. Inside a list item marked ends the item at that fence, so there it IS a fence (`listOpen`).
+
+## Bare loopback addresses (`bareLoopbackUrlExtension`)
+
+Dev servers print `localhost:5173` / `0.0.0.0:8080` / `127.0.0.1:8000/x` without a scheme, and GFM only autolinks `http(s)://` and `www.`. The inline extension links those, registered on BOTH instances. It requires a port and a word start: the previous token's last char must not be one of `\w : / . @ - [`, so an ssh `-L 8080:localhost:8080` spec, `ws://localhost:1`, `user@localhost:22` stay text; `localhost:8080:host:80` is refused by a lookahead. It returns a plain `link` token, so the renderer adds nothing Walnut-specific: which links open in the session's Web view is decided at click time (see `walnut-web-frontend`, "Service links"). Tests: `tests/web/markdown/bare-loopback-url.test.ts`.
+
+## Task mentions become pills (`bare-task-ids.ts`, `task-id-shape.ts`)
+
+Models cite other tasks by id (`` `mpwidref-7c2e` confirmed it ``, "written into task mpwidrf2-9b10's report", "being changed by mvkghc5v", "the Chat order task (2ac88910)") far more often than by `<task-ref/>`, however the prompt asks. The user's rule (2026-10-31): every task a chat names reads as its NAME and is clickable. `linkBareTaskIds` runs on marked's OUTPUT, after `linkifyPathsInCode`, in `renderMarkdownWithRefs`, `renderToolResultWithRefs` and (through `linkTaskMentions`) every renderer of its own (`renderUserMessage`, ChatMessage's `renderMarkdown`/`renderInlineMarkdown`), so it only adds anchors. Rules it encodes:
+
+- Token shapes live in `task-id-shape.ts` (the Board frame and the phone mirror them): a UUID, a short id, or an id's first segment(s). A token links only when `resolveTaskToken` (entity-label-store) names one task: an exact id in the client list, a prefix exactly one listed id starts with `token + '-'`, or the answer of the batched lookup (`/api/tasks/bulk`, registered by `TasksProvider`) for an id the list lacks (the list holds a week of completions). A list-settled prefix is confirmed with the server once (the list is partial). Only a full id or a prefix with a digit is ever looked up; a word of letters alone is matched against the list only. A failed lookup waits 30 s before it is asked again; an all-missing answer re-renders nothing unless a `<task-ref/>` pill waited on it.
+- Prose and a code span holding only the id get the title pill, ALWAYS the title (also when the title is written beside the id: the old "keep the id when the title is beside it" rule is gone). An id inside longer code is linked in place (`a.task-link.task-link-code`, code font kept).
+- A title written beside a mention of the same task is dropped from the SOURCE before rendering, so the pill names the task once (`task-title-absorb.ts`, called as `absorbWrittenTaskTitles` in `renderMarkdownWithRefs` for pills and in ChatMessage's own renderers; the Board frame's `absorbTaskTitles` and the phone's `TaskTitleAbsorb.swift` mirror it). Shapes: `Title (M)`, `"Title"（M）`, `**Title** (M)`, `Title (M, more)` (the pill moves to the title's place), `Title — M`, `M (Title)`, `M "Title"`, `M — Title`. A written phrase counts when it is the title, or its start cut at a word that ends in an ellipsis, has two words and 10 characters, or is 60% of it. Another table cell, an older name, code and data surfaces stay as written. The cases all three share: `tests/fixtures/task-title-absorb.json`.
+- `<task-ref/>` and `[id|title]` (`taskRefAnchor`): the current title when the id names a task; plain text (the label, else the id) when the id is empty or the lookup found nothing; the label as a pill only while undecided.
+- Skips complete anchor pairs plus an unclosed trailing `<a …>`, and button / textarea / svg / style and the like.
+- `taskIds` option: `pills` (default, conversation output), `links` (DATA: tool input/results, injected context, the context inspector; every id keeps its own text), `off` (file surfaces: Files preview, file diffs). Copy-as-rich-text never gets pills.
+- Every pill wears its task's live status: `task-pill-status.ts` (started by `TasksProvider`) stamps `data-user-state` on every `a.task-link` in the document, in place, never in the HTML (a status move would rebuild each message and flush the cache). The Brief's own pass sets only Partial / Not verified.
+- The Board: the host collects the tokens its text, messages and choice answers write (`boardMentionTokens`) and resolves them into the frame's refs (`mentionFrameRefs`); `board-markdown.frame.js` turns them into `<walnut-task>` chips in messages, `board-elements.frame.js` (`linkBodyMentions`, a watcher) in the page text, with `data-wn-text` keeping the written token for the sections' "updated" hash.
+- `useTaskLinkClickFallback` (App.tsx) catches a pill click on any surface that has no `useEntityClickHandler`, so it navigates in-app instead of loading `/tasks/<id>` as a page.
+
+Ratchet: `tests/web/task-mention-surfaces.test.ts` lists every web file that renders text as HTML and fails on a new one until it is classified (a chat surface must render through the pipeline). Tests: `tests/web/markdown/bare-task-id.test.ts`, `tests/web/markdown/task-mention-lookup.test.ts`, `tests/web/markdown/user-message-refs.test.ts`, `tests/web/board-markdown.test.ts`, `tests/e2e/browser/bare-task-id-pills.spec.ts` (seed `pw-idref-session`), `tests/e2e/browser/board-task-mentions.spec.ts`.
+
+## DOMPurify policy per surface
+
+- Sanitize with `FORCE_BODY: true` on the rich path. Default `false` parses a leading `<style>` into `head` and drops it, and models naturally write style first.
+- `<style>` survival is one flag, not a per-surface decision: `FORBID_TAGS: allowStyle ? ['form'] : ['form', 'style']` in `markdown.ts`. Only the rich-chunk path passes `allowStyle`, and only after `rich-css-scope.ts` has rewritten selectors to the message-level `[data-rblk]`. Everything else (plan popup, thinking, tool results, cards, triage, diff) gets `style` stripped. Scoping at BLOCK level is wrong: a `<style>` in chunk 1 must still match markup in chunk 2.
+
+## Tests
+
+`vitest.markdown.config.ts` is the **only** tier where real `marked` and `dompurify` resolve (they live in `web/node_modules`; the config aliases them and installs a linkedom window). Elsewhere they are unavailable or a passthrough, so sanitizer assertions belong in the Playwright layer instead.
+
+| What | Where |
+|---|---|
+| Renderer behavior, CJK shapes, sanitize | `tests/web/markdown/*.test.ts` (`bun run test:focus tests/web/markdown`) |
+| Local-path links, fence and renderer halves | `tests/web/markdown/link-to-local-path.test.ts`, `tests/e2e/browser/link-to-local-path.spec.ts` |
+| Chunker invariants, blank-line collapsing | `tests/web/rich-blocks.test.ts` |
+| Interrupt carry, both sides | `tests/web/session-stream-buffer-pending-markup.test.ts`, `tests/core/stream/*` |
+| Real pipeline, real browser | `tests/e2e/browser/rich-html-streaming.spec.ts` |
+
+Every fix here should carry a negative control: neuter the fix and confirm the browser test fails. Two are recorded in that spec (blank line inside `<svg>`, and a card landing mid-tag).
+
+## File map
+
+| File | Role |
+|---|---|
+| `web/src/utils/markdown.ts` | all markdown rendering; retunes and both `Marked` instances at top and bottom |
+| `web/src/utils/rich-blocks.ts` | chunker, blank-line collapsing, app-block detection |
+| `web/src/utils/bare-task-ids.ts` | task ids in rendered output become task pills |
+| `web/src/utils/task-id-shape.ts` | what a task mention looks like (shared with the Board frame and the phone) |
+| `web/src/utils/task-pill-status.ts` | the live status dot on every task pill |
+| `web/src/utils/rich-css-scope.ts` | `<style>` selector rewriting to message scope |
+| `web/src/components/chat/RichBlocks.tsx` | the single render call site; block freezing |
+| `src/core/stream/pending-markup.ts` | unfinished-markup split, shared by client and server |
+| `src/core/sessions/output-mode.ts` | edge-triggered markdown/rich instruction injection |

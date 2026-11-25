@@ -1,0 +1,155 @@
+---
+name: parallel-planner
+description: Analyze multi-step tasks to identify which steps can run in parallel, build dependency graphs, detect conflicts (write-write, read-write, resource contention), and produce optimized execution plans. Triggers on 3+ independent steps, 'speed up', 'run simultaneously', 'parallelize', 'optimize' or any task where sequential execution wastes time.
+---
+
+# Parallel Planner Protocol
+
+Analyze task steps — which ones must wait for each other, which ones can run simultaneously? Build a dependency graph, form parallel groups, and prevent conflicts.
+
+**Core principle:** Sequential is safe but slow. Parallel is fast but requires care. Making the right distinction is this skill's job.
+
+---
+
+## Parallelization Criteria
+
+A step can run in parallel only if **all** conditions are met:
+- Not dependent on another step's output
+- Does not write to a resource another step reads (no write conflict)
+- Does not modify shared state (global variable, same file)
+- If it fails, it does not block other parallel steps
+
+A step must run sequentially if **any** of these apply:
+- Its input is another step's output
+- It writes to the same file / DB table / API resource
+- Order matters for correctness (e.g., schema before data)
+- Must be atomic (inside a transaction)
+
+---
+
+## Parallelizable Work Types
+
+| Type | Parallel When | Sequential When |
+|------|--------------|-----------------|
+| Web search | Different topics/sources | Result of search A needed for search B |
+| Code generation | Writing to different files | File B imports from file A |
+| API calls | Reading from same or different resources | Auth token needed first |
+| Data processing | Different data slices | Normalization before analysis |
+| Independent subtasks | No shared output/resource | Test depends on module |
+
+---
+
+## Conflict Detection
+
+After identifying parallel candidates, check for conflicts:
+
+### Write-Write Conflict
+Two steps write to the same resource → cannot be parallel.
+Solution: Run sequentially OR write to separate files, then merge.
+
+### Read-Write Conflict
+One step reads while another writes to the same resource → cannot be parallel.
+Solution: Read first, then write (sequential).
+
+### Resource Contention
+Shared rate limits or connection pools → limit parallel count.
+Solution: Cap at 3 parallel, run in batches.
+
+---
+
+## Ecosystem Index
+
+When the steps come from an ecosystem workflow, steps that share a *parallel group* in that workflow are already known to be independent; start from those groups instead of re-deriving them.
+
+<!-- BEGIN GENERATED: ecosystem-index (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+| Ecosystem | Domain | Use for | Workflows |
+|---|---|---|---|
+| `@ecosystem-orchestration` | Agent Orchestration | Plan, execute, recover, remember, and review multi-step agent work; connect external agents safely. | `orch-complex-task`, `orch-code-change`, `orch-resilience`, `orch-agent-connectivity`, `orch-knowledge` |
+| `@ecosystem-reasoning` | Reasoning, Planning Gates & Prompting | Clarify intent, stress-test plans, compare perspectives, and craft prompts, without stacking redundant question gates. | `reason-clarify`, `reason-decision`, `reason-plan-review`, `reason-prompting` |
+| `@ecosystem-api` | API Domain | Design, secure, scale, and evolve REST, GraphQL, gRPC, and event-driven APIs with a contract-first workflow. | `api-design`, `api-security-scale`, `api-evolution`, `api-production-readiness` |
+| `@ecosystem-database` | Database Domain | Model, secure, optimize, migrate, and operate SQL databases (PostgreSQL, MySQL, SQLite) with data integrity first. | `db-new-schema`, `db-performance`, `db-evolution`, `db-compliance`, `db-scaling` |
+| `@ecosystem-mobile` | Mobile App Domain | Architect, audit, release, and monitor iOS, Android, React Native, and Flutter apps. | `mobile-pre-release-audit`, `mobile-release`, `mobile-feature-architecture`, `mobile-post-launch` |
+| `@ecosystem-web` | Web, Design & Delivery | Design product-grade web interfaces, keep design systems consistent, make sites visible to search and AI answer engines, and deploy them. | `web-foundations`, `web-build-page`, `web-visibility`, `web-review`, `web-de-slop`, `web-deploy` |
+| `@ecosystem-product` | Product & Growth | Take a product from focus to market: B2B go-to-market, naming, creative content, and discoverability. | `product-launch`, `product-naming`, `product-content` |
+| `@ecosystem-security` | Security | Audit skills before deployment, guard agent runtimes against injection and exfiltration, and learn from incidents. | `sec-skill-audit`, `sec-runtime-guard`, `sec-full-lifecycle` |
+
+Pick the ecosystem whose domain matches the request and follow its workflow map. If the ecosystem skill is not installed, use the workflow ids above as the plan skeleton and run each member skill directly, or install it with `npx skills add fatih-developer/fth-skills --skill <ecosystem>` after the user agrees. Never invent skills that are not listed.
+<!-- END GENERATED: ecosystem-index -->
+
+## Output Format
+
+```
+PARALLEL PLANNER
+Total steps: N | Parallel groups: N | Sequential steps: N
+Estimated speedup: ~X% faster
+
+## Dependency Graph
+[mermaid or text visualization]
+
+## Execution Plan
+
+### Group 1 — Parallel (N steps)
+- [ ] #A: [step]
+- [ ] #B: [step]
+- [ ] #C: [step]
+-> All complete, then proceed to Group 2
+
+### Group 2 — Sequential
+- [ ] #D: [step]  (requires: #A, #B)
+- [ ] #E: [step]  (requires: #D)
+
+## Conflict Warnings
+[If any — blocked parallel candidates and reason]
+
+## Steps Kept Sequential
+| Step | Reason | Depends On |
+|------|--------|------------|
+| #D | Uses #A output | #A |
+```
+
+---
+
+## Speed Estimate
+
+```
+Sequential total = Sum(all step durations)
+Parallel total   = Sum(longest step per group)
+Speedup          = (Sequential - Parallel) / Sequential * 100
+```
+
+Complexity-based estimates when duration is unknown:
+- Simple (file read, short code): ~1 unit
+- Medium (API call, analysis): ~3 units
+- Heavy (web research, large code): ~5 units
+
+---
+
+## When to Skip
+
+- 2 or fewer steps — parallelization is meaningless
+- All steps are sequentially dependent
+- User said "do it step by step"
+- Transaction-bound operations (must be atomic)
+
+---
+
+## Guardrails
+
+- **Never parallelize write operations to the same resource** — even if it seems safe.
+- **Always show the dependency graph** — the user must see why steps are ordered this way.
+- **Cross-skill**: works with `task-decomposer` (provides the step list) and `tool-selector` (optimizes tool usage within groups).
+
+## References
+
+- `references/EXAMPLES.md` — dependency graphs and parallel execution plans for real tasks. Read it when the expected output format or level of detail is unclear.
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-orchestration` — Agent Orchestration.
+
+**Workflows:**
+- **Complex Task Execution Flow** (`orch-complex-task`, step 2 of 6): next → `@tool-selector` *(optional)*.
+
+**Handoff contract:** pass results to the next skill through an inline *Handoff* block in your reply with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-orchestration`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

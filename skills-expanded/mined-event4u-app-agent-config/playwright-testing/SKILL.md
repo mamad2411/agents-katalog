@@ -1,0 +1,310 @@
+---
+model_tier: medium
+name: playwright-testing
+description: "Use when writing Playwright E2E tests — browser automation, visual regression testing, Page Objects, fixtures, and reliable test patterns."
+domain: quality
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+triggers:
+  - phrase: "playwright spec"
+  - phrase: "playwright test"
+---
+
+# playwright-testing
+
+## When to use
+
+> **Design verification.** When exercising a UI artifact, run the
+> [design-artifact verification checklist](../../../docs/contracts/design-artifact-verification.md#verification-checklist)
+> (open → console/load → viewport → text-fit → assets → interaction) and capture
+> evidence; a design task with browser capability present is not "done" without it.
+
+Use this skill when:
+- Writing end-to-end tests with Playwright
+- Automating browser interactions for testing
+- Setting up visual regression testing
+- Using Playwright MCP for design reviews
+- Debugging flaky E2E tests
+- Configuring Playwright for CI/CD
+
+**Guideline:** `../../../docs/guidelines/e2e/playwright.md` — full conventions, config templates, CI setup.
+**Mobile:** for native iOS/Android or React Native E2E, do NOT reuse Playwright — see the `mobile-e2e-strategy` skill for framework selection.
+
+## Procedure: Write Playwright tests
+
+1. **Read the guideline** — `../../../docs/guidelines/e2e/playwright.md` for detailed conventions.
+2. **Check Playwright config** — `playwright.config.ts` for browsers, base URL, timeouts.
+3. **Check existing tests** — match patterns in `tests/e2e/` or `e2e/`.
+4. **Check test utilities** — look for page objects, fixtures, helpers.
+5. **Check CI setup** — how are E2E tests run in the pipeline?
+6. **Enumerate the cases** — run the [`test-case-discovery`](../test-case-discovery/SKILL.md) funnel per user flow before writing specs; cover the happy flow AND at least one boundary (empty state, max input) and one error path (failed request, validation rejection) per flow — never the happy flow alone.
+
+## Test structure
+
+```ts
+import { test, expect } from '@playwright/test'
+
+test.describe('User Authentication', () => {
+  test('should login with valid credentials', async ({ page }) => {
+    await page.goto('/login')
+    await page.getByLabel('Email').fill('user@example.com')
+    await page.getByLabel('Password').fill('password123')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+
+    await expect(page).toHaveURL('/dashboard')
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  })
+
+  test('should show error for invalid credentials', async ({ page }) => {
+    await page.goto('/login')
+    await page.getByLabel('Email').fill('wrong@example.com')
+    await page.getByLabel('Password').fill('wrong')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+
+    await expect(page.getByText('Invalid credentials')).toBeVisible()
+  })
+})
+```
+
+## Locator strategies (priority order)
+
+| Strategy | Example | When to use |
+|---|---|---|
+| **Role** | `getByRole('button', { name: 'Submit' })` | Default — most accessible |
+| **Label** | `getByLabel('Email')` | Form inputs |
+| **Text** | `getByText('Welcome')` | Visible text content |
+| **Placeholder** | `getByPlaceholder('Search...')` | Input placeholders |
+| **Test ID** | `getByTestId('submit-btn')` | Last resort — when no semantic locator works |
+| **CSS** | `page.locator('.my-class')` | Avoid — brittle |
+
+**Prefer semantic locators** (`getByRole`, `getByLabel`) over CSS selectors.
+
+## Reliable test patterns
+
+### Wait for network idle
+
+```ts
+// Wait for page to fully load
+await page.goto('/dashboard', { waitUntil: 'networkidle' })
+
+// Wait for specific API response
+await page.waitForResponse(resp =>
+  resp.url().includes('/api/users') && resp.status() === 200
+)
+```
+
+### Assertions with auto-retry
+
+```ts
+// ✅ Auto-retrying assertions (Playwright retries until timeout)
+await expect(page.getByText('Success')).toBeVisible()
+await expect(page.getByRole('list')).toHaveCount(5)
+
+// ❌ Non-retrying — can be flaky
+const text = await page.textContent('.message')
+expect(text).toBe('Success')
+```
+
+### Page Object Model
+
+```ts
+// pages/LoginPage.ts
+export class LoginPage {
+  constructor(private page: Page) {}
+
+  async goto() {
+    await this.page.goto('/login')
+  }
+
+  async login(email: string, password: string) {
+    await this.page.getByLabel('Email').fill(email)
+    await this.page.getByLabel('Password').fill(password)
+    await this.page.getByRole('button', { name: 'Sign in' }).click()
+  }
+}
+```
+
+## Visual regression testing
+
+```ts
+test('homepage visual regression', async ({ page }) => {
+  await page.goto('/')
+  await expect(page).toHaveScreenshot('homepage.png', {
+    maxDiffPixelRatio: 0.01,
+  })
+})
+```
+
+- Screenshots are stored in `tests/*.png` (or configured path).
+- First run creates baseline screenshots.
+- Subsequent runs compare against baselines.
+- Update baselines: `npx playwright test --update-snapshots`.
+- Baseline updates are shown as a diff and land in a commit of their own, made on
+  the pinned Docker renderer `playwright-architect` names — never on host Chromium.
+
+## Viewport testing
+
+A viewport loop whose only assertion is an image proves that the page rendered,
+not that the breakpoint did anything: the same picture comes back whether the
+media query fired or silently did not. Assert the layout property the breakpoint
+is supposed to change, then keep the capture and name it for the one thing it
+proves.
+
+```ts
+test.describe('Responsive design', () => {
+  for (const viewport of [
+    { width: 1440, height: 900, name: 'desktop', columns: '1fr 1fr 1fr' },
+    { width: 768, height: 1024, name: 'tablet', columns: '1fr 1fr' },
+    { width: 375, height: 812, name: 'mobile', columns: '1fr' },
+  ]) {
+    test(`lays out correctly on ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await page.goto('/')
+      // Behaviour: the declared breakpoint actually changed the layout.
+      await expect(page.locator('#grid')).toHaveCSS('grid-template-columns', viewport.columns)
+      // Appearance only: presence + sanity that nothing renders broken.
+      await expect(page).toHaveScreenshot(`appearance-${viewport.name}.png`)
+    })
+  }
+})
+```
+
+**Read the probe artifact rather than re-deriving the matrix by hand.**
+`agents/runtime/state/ui-conformance.json` — produced by
+`ui_conformance_probe --target <file> --reference <file>` — carries a
+`viewport_matrix` row per declared width, plus a not-applicable row with its
+reason wherever the host could not cross the breakpoint. A width with no row is
+missing evidence, not a pass, and no dimension reads zero findings because it did
+not run.
+
+**The capture above is appearance-only, and it stays mandatory.** It proves
+presence and sanity — the surface rendered and nothing renders obviously broken —
+and proves nothing about hover, focus, keyboard or a media-preference branch.
+Demoting it from behavioral evidence does not narrow when it runs: it still runs
+at every width in the matrix. Floor and division of labour:
+[`design-review`](../design-review/SKILL.md) § Appearance verification.
+
+## Debugging
+
+```bash
+# Run with headed browser (see what's happening)
+npx playwright test --headed
+
+# Run with Playwright Inspector (step through)
+npx playwright test --debug
+
+# View test report
+npx playwright show-report
+
+# Run specific test
+npx playwright test -g "should login"
+```
+
+### Filter noisy Playwright output
+
+Use `--grep`, `--reporter=json`, plus `jq`/`rg` to keep diagnosis scoped:
+
+```bash
+# Targeted run — only matching specs
+npx playwright test --grep '@smoke'
+
+# JSON report, narrowed to failures via jq
+npx playwright test --reporter=json > pw.json
+jq '.suites[].specs[] | select(.tests[].results[].status=="failed")' pw.json
+
+# Scan trace logs for one selector
+rg --color=never 'getByRole.*Submit' test-results/
+```
+
+**Run verification.** The test run's **exit code** is the pass/fail signal — `0`
+means every spec passed, non-zero means at least one failed. Read the **command
+output** (or the `--reporter=json` above) to **diagnose** the failing spec's
+**root cause**; do not blindly re-run hoping it turns green — a retry-until-pass
+is not a fix, and a flaky green hides the real defect.
+
+## Avoiding flaky tests
+
+| Problem | Solution |
+|---|---|
+| Element not ready | Use auto-retrying assertions (`toBeVisible`, `toHaveText`) |
+| Animation interference | Use `page.evaluate(() => document.body.style.setProperty('--transition-duration', '0s'))` |
+| Network timing | Wait for specific responses, not arbitrary timeouts |
+| Test isolation | Use fresh browser context per test (Playwright default) |
+| Shared state | Reset database/state before each test |
+
+## Authentication pattern
+
+```ts
+// Use storageState to avoid logging in via UI in every test
+// auth.setup.ts
+import { test as setup } from '@playwright/test'
+
+setup('authenticate', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Email').fill(process.env.TEST_USER_EMAIL!)
+  await page.getByLabel('Password').fill(process.env.TEST_USER_PASSWORD!)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.waitForURL('/dashboard')
+  await page.context().storageState({ path: '.auth/user.json' })
+})
+```
+
+```ts
+// playwright.config.ts — use storage state in projects
+projects: [
+  { name: 'setup', testMatch: /.*\.setup\.ts/ },
+  {
+    name: 'chromium',
+    use: { ...devices['Desktop Chrome'], storageState: '.auth/user.json' },
+    dependencies: ['setup'],
+  },
+]
+```
+
+## Network mocking
+
+```ts
+// Mock API responses for isolated testing
+await page.route('**/api/users', route =>
+  route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 1, name: 'Test User' }]),
+  })
+)
+```
+
+## Output format
+
+1. Playwright test file with Page Object pattern
+2. Reliable locators using role/label selectors over CSS
+
+## Auto-trigger keywords
+
+- Playwright
+- E2E test
+- browser automation
+- visual regression
+- end-to-end
+
+## Gotcha
+
+- Don't use `page.waitForTimeout()` as a fix — it masks the real problem and makes tests flaky.
+- The model tends to use CSS selectors instead of semantic locators — always prefer `getByRole`, `getByLabel`.
+- `test.fixme()` is for app bugs, `test.skip()` is for environment constraints — don't confuse them.
+- After 3 failed fix attempts on one test, mark it `test.fixme()` and move on.
+
+## Do NOT
+
+- Do NOT skip assertions — every test must verify something meaningful.
+- Do NOT share state between tests — each test should be independent.
+- Do NOT hardcode URLs — use `baseURL` from config.
+- Do NOT test implementation details — test user-visible behavior.
+- Do NOT put assertions in Page Objects — assertions belong in test files.
+- Do NOT commit `.only` — enforce via `forbidOnly: !!process.env.CI`.
+
+## Anti-bruteforce — diagnose before retry
+
+When a spec fails, do not retry blindly by re-running, swapping locators at random, or bumping timeouts until green. Diagnose the root cause first: open the trace viewer, inspect the failing locator's `aria` tree, identify the real reason (timing, locator, app state), then apply a targeted fix. Trial-and-error locator swaps mask flaky test design.

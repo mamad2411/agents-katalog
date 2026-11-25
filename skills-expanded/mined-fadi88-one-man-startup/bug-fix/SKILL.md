@@ -1,0 +1,37 @@
+---
+name: bug-fix
+description: Fix a bug test first - reproduce it in a failing test, fix, watch the test pass, and stop after three failed attempts to rethink. Use for any reported bug or failing behaviour.
+---
+
+# Bug fix
+
+1. **Find the row.** Which requirement does the bug break? If none, the bug is a missing
+   requirement: write the row first. Then write three lines in the fix's `status.md`: what
+   happens now, what should happen, and what must not change. The third names the rows next to
+   the bug, and their tests run before and after the fix (TPL-126). From Kiro's bugfix specs,
+   which record current, expected and unchanged behaviour (https://kiro.dev/docs/specs/, read
+   2026-10-30).
+2. **Reproduce in a test** that fails for the reason the user saw. Watch it fail. A fix without a
+   failing test first is a guess.
+3. **Measure before theorising.** Read the actual values, logs and inputs. The plausible cause
+   is often not the cause.
+4. **Fix** the smallest thing that makes the test pass without weakening any other test.
+5. **Watch it pass,** then run the sweep.
+6. **Three strikes.** After three fixes that did not work, stop changing code. Write down what you
+   know, what you tried and what each attempt showed, and hand it to the orchestrator, which
+   brings in `debugger`. The fourth blind attempt is the one that breaks something else.
+7. **Grep for siblings.** The same mistake usually lives in more than one place.
+
+## When you catch yourself saying
+
+| The excuse | The answer |
+|---|---|
+| "It's obvious what's wrong, I'll just fix it." | The obvious cause is the first hypothesis, not the last. Reproduce it in a test first; if you are right, that costs two minutes. |
+| "I'll add the test after the fix." | A test written after passes at once and proves nothing. It fails first, for the reason the user saw. |
+| "Let me try this and see if it goes away." | A change that tests no stated idea is a guess. Say the idea, then change one thing. |
+| "One more attempt and I'll have it." | The fourth blind attempt is the one that breaks something else. Three strikes means stop and write up. |
+| "It's probably the environment, or timing, or flaky." | Say what you checked that rules out your code. Most "no root cause" is an unfinished investigation. |
+| "The founder is waiting; no time for the process." | Trial and error is slower than measurement. It only feels faster. |
+
+Red flags: a fix bundled with other changes; "should work now"; a test whose failure you cannot
+explain; a retry or a wider catch added "for safety".

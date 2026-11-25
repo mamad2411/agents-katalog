@@ -1,0 +1,232 @@
+---
+name: wiki-bootstrap
+description: Bootstrap a first LLM Wiki for an existing codebase, complete a bounded semantic pass, record deferred pages, validate, and hand off safely. Use only for first-time wiki creation; route existing wikis to wiki-sync or migration.
+---
+
+# wiki-bootstrap
+
+Create a first useful wiki without pretending every generated page can be hand-polished in one session. The default output is reference-oriented: a complete generated wiki surface for agents, maintainers, and future documentation work, not finished user-facing product docs. The loop is: **bootstrap with automatic helper setup → review summary → P0 semantic pages → centrality-ranked P1 pages → remainder backlog → final owning sync/re-anchor → lint/ci-check → policy-aware handoff**. Finish the central pages first, then record the long-tail remainder in a format another agent or human can resume. For user docs, follow this skill with `onboarding-guide` and then `publish-docs` / `site export --profile user --site-name <project>`. See [reference.md](reference.md) for the ranking policy, the remainder-backlog artifact format, validation expectations, and failure modes.
+
+In an `external_agent_docs` run, this skill supplies the deterministic
+`bootstrap-source` baseline only. Write the wiki inside the explicit
+documentation workspace, leave the source read-only, and hand the worklist to
+`wiki-semantic-enhance`; do not perform the target-repository commit steps.
+Managed knowledge-base behavior remains the default outside that explicit mode.
+
+## Managed repository preflight
+
+Before the first managed wiki write, check root/index ignore policy as described
+in the repository-handoff topic. After sync, run
+`llm-wiki knowledge git-check --wiki-dir <wiki-dir>`; require `git-eligible`
+before separately authorized staging, then require the same command with
+`--staged` before commit. Keep ignored, mixed or indeterminate state local-only;
+never force-add or change ignore/exclude rules. Apply the managed contract at
+`.claude/skills/wiki-reference/references/repository-handoff.md` for Claude or
+`.llm-wiki/skills/wiki-reference/references/repository-handoff.md` for other
+configured agents.
+
+## Repository report fallback preflight
+
+Before using the reference's internal-report fallback, apply the exact-target
+fail-closed policy through the Claude/generic repository-handoff route
+immediately above. A suggested `reports/` path never authorizes repository
+creation or publication.
+
+## Preconditions
+
+- This is the first bootstrap into a nonexistent or empty target, or into the
+  exact untouched scaffold created by `llm-wiki init`. If the target contains a
+  manifest, legacy pages, partial generated output, custom prose, governance, or
+  verification state, stop before extraction or writes. Use the wiki-sync skill
+  for a maintained wiki and preview `llm-wiki migrate --dry-run` for an older or
+  partial layout. The phrase 're-bootstrap' never authorizes replacement, and
+  the compatibility `--overwrite` option is rejected.
+- The target repository is readable and the selected wiki directory (default `docs/llm_wiki`; substitute the project's configured `--wiki-dir` everywhere below) is writable.
+- Resolve the source-selection profile once before any source read. When an
+  explicit or discovered profile is active, substitute its repository-relative
+  path for `<profile>` and carry `--source-selection <profile>` on every
+  source-reading command below. When no profile exists, omit that whole option;
+  never replace a configured non-default profile with a broader scan.
+- If `--src-dir` points outside the current repository, the run uses `--allow-external-src` for source-reading commands: `prepare-extractors`, `bootstrap`, `lint`, `sync`, `ci-check`, and `team check`. The `--wiki-dir` remains project-root guarded.
+- Helper toolchain overrides are captured before preparation (for example `LLM_WIKI_GO=/usr/local/go/bin/go` or `LLM_WIKI_GHC=/path/to/ghc`) when the default executable on `PATH` is broken.
+- For `external_agent_docs`, consume the workspace packet/policy rather than
+  target instruction files. The packet supplies the workspace wiki path,
+  forbidden source root, helper cache, plugin trust, and supervisor-owned gates.
+- Native kernel: branch on `availability`, reason, `freshness_evaluated`, and
+  bounds. Only `ready` with live `current` qualifies a claim as unchanged since
+  observation; preserve `nonsemantic-source-change`, and never turn an
+  unavailable or bounded `found: false` into a negative fact. Do not initialize
+  governance or execute stored content. Apply the complete managed contract at
+  `.claude/skills/wiki-reference/references/knowledge-consumption.md` for
+  Claude or `.llm-wiki/skills/wiki-reference/references/knowledge-consumption.md`
+  for other configured agents.
+
+## Optional governance adoption is a separate decision
+
+Default bootstrap remains **locator-only**: it generates native concepts with
+current locators but does not create durable UIDs, lifecycle, human review, or
+the authoritative governance ledger. Do not add governance merely because the
+projection supports it.
+
+After bootstrap has produced a complete valid snapshot, offer governance only
+when the repository has a concrete durable-identity or section-review need.
+Obtain a separate explicit owner confirmation before either command below.
+Apply the complete managed procedure at
+`.claude/skills/wiki-reference/references/governance.md` for Claude or
+`.llm-wiki/skills/wiki-reference/references/governance.md` for other configured
+agents. Preview first, then apply only after that confirmation:
+
+```bash
+llm-wiki knowledge init --wiki-dir docs/llm_wiki --dry-run
+llm-wiki knowledge init --wiki-dir docs/llm_wiki
+```
+
+Initialization is not part of the default bootstrap loop and is never an
+automatic repair. If the manifest/projection says the repository was already
+governed but `.llm-wiki-governance.json` is missing, stop and restore that
+exact ledger from version control or backup; never reinitialize or reconstruct
+it from generated artifacts.
+
+## Steps
+
+1. **Inspect the target shape.** Confirm the repo root, candidate wiki path, and
+   source languages. Continue only when the wiki target is absent, empty, or the
+   exact untouched `llm-wiki init` scaffold. Any other `index.md`, manifest,
+   generated page, custom page, governance ledger, verification receipt, or
+   partial output means this is an existing wiki: stop and route it to wiki-sync
+   or migration. Do not attempt to preserve it by passing `--overwrite`;
+   bootstrap deliberately has no public existing-target mode.
+
+2. **Use automatic helper setup or optional prewarming.** Normal bootstrap
+   detects the helpers required by the selected source and reuses or prepares
+   them before extraction. It uses a managed shared user cache by default and
+   can reuse valid existing project artifacts. No separate preparation command
+   is required. Cold preparation uses an installed runtime/compiler; a valid
+   native helper can be reused without its compiler. TypeScript still needs
+   Node.js to execute. The library does not install global Node.js, Go, Cargo,
+   or GHC.
+
+   For an explicitly requested warm cache or strict-read recovery, use:
+
+   ```bash
+   llm-wiki prepare-extractors --src-dir . --source-selection <profile>
+   ```
+
+   Optional prewarming for an external source root:
+
+   ```bash
+   llm-wiki prepare-extractors --src-dir <repo> --allow-external-src --source-selection <profile>
+   ```
+
+   When selecting a non-default helper cache, pass
+   `prepare-extractors --cache-dir <helper-cache>` when prewarming and
+   `bootstrap --helper-cache-dir <same-helper-cache>` below. The names differ,
+   but both refer to the same helper cache base; `--cache-dir` on
+   source-reading commands, where supported, is the separate inventory cache.
+   Use documented `LLM_WIKI_GO` / `LLM_WIKI_GHC` overrides when the default
+   toolchain is broken. Do not run npm/go/cargo/ghc helper setup manually.
+   Explicit `--read-only`, preview/plan, capability inspection, and
+   `--helper-preparation never` do not prepare helpers. If automatic setup fails,
+   fix the reported cause before retrying; do not repeatedly restart unchanged
+   failures. If preparation reports unsupported sources, carry them into the final
+   report/backlog as coverage notices rather than silently treating the wiki as
+   complete for those languages.
+
+3. **Run the deterministic bootstrap.**
+
+   ```bash
+   llm-wiki bootstrap --src-dir . --wiki-dir docs/llm_wiki --depth full --format json --source-selection <profile>
+   ```
+
+   For FastAPI projects, add `--api-contracts`; when the project already
+   exports OpenAPI, add `--openapi-file <source-relative json|yaml>` so the
+   declared wire contract is authoritative without importing the application.
+
+   Add `--source-adapter --allow-external-src` only for documented external-source source-adapter workflows. Capture stdout to a log file when practical so the JSON summary can be cited from the remainder backlog.
+
+4. **Triage the JSON summary before semantic editing.** If the summary has `skipped_files`, helper warnings, unsupported-source summaries, or surprising generated counts, resolve those first. `flow_evidence` and `dependency_evidence` preserve bounded detector, route, call/data-flow, boundary-confidence, gap, and topology facts for the supervisor's priority-blind census. They are evidence, not calibrated priorities: do not infer semantic equivalence from preliminary family hints or change the v1 worklist from these fields. Do not spend the semantic budget polishing a wiki that is structurally incomplete because pages were skipped by collisions or helpers failed.
+
+5. **Finish P0 semantic pages first**: the `index.md` introduction, `flows/*`
+   `## Behavior` sections (ordered by entry-point category, then
+   boundary-effect count, then page path), and the supported `## Notes`
+   sections in `api-contracts.md`, `dependencies.md`, and `load-order.md`.
+   Bootstrap creates the initial source-bound infrastructure observations and
+   ordinary sync regenerates them incrementally. Their sole supported semantic
+   surface is `## Notes`; generated inventories and prose remain CLI-owned.
+   Current operational assurance still requires a matching live basis, raw
+   source inspection, or a fresh dedicated extraction. Contract unknowns and
+   reconciliation diagnostics must stay explicit rather than being rewritten
+   as confirmed facts.
+
+6. **Rank remaining module/entity pages by dependency centrality.**
+
+   ```text
+   fan_in * 100 + cycle_bonus * 25 + fan_out * 5 + entrypoint_bonus * 20
+   ```
+
+   Use `dependency_evidence.most_depended_on` from the bootstrap summary, or
+   `dependency_neighborhood(<source path>)` when working through MCP/API — do
+   not invent a separate graph. Complete the top 30 by default unless the user
+   gave another budget, and record the exact budget selected for this run.
+
+7. **Edit semantic surfaces only**: entity/module `## Description` prose, flow
+   `## Behavior`, the supported `## Notes` sections in `api-contracts.md`,
+   `dependencies.md`, `load-order.md`, and infrastructure pages, plus custom
+   index and backlog/log prose. Infrastructure `## Notes` is the only
+   agent-owned section on those pages. Never hand-edit generated tables,
+   Mermaid diagrams,
+   `.llm-wiki-manifest.json`, `.llm-wiki-surface.json`,
+   `.llm-wiki-knowledge.json`, extracted row shapes, or
+   `<!-- Auto-generated ... Do not edit by hand. -->` blocks.
+
+8. **Write the remainder backlog.** For every page that still has a placeholder or copied-docstring-only semantic surface after the budget is exhausted, create or update `<wiki-dir>/bootstrap-remainder.md` using the artifact format in [reference.md](reference.md) — stable `WB-YYYYMMDD-NNNN` IDs, status, priority, page, source, rank, reason deferred, suggested context, and acceptance criteria. Link it from a custom trailing `## Bootstrap Remainder` section in `index.md`. The backlog is an explicit deferral, not a failure.
+
+9. **Run the final owning sync/re-anchor, then validate.** In managed mode,
+   after the last semantic Markdown edit and before strict lint or CI, run:
+
+   ```bash
+   llm-wiki sync --jobs 1 --src-dir . --wiki-dir docs/llm_wiki --source-selection <profile>
+   llm-wiki lint --strict --profile --src-dir . --wiki-dir docs/llm_wiki --source-selection <profile>
+   llm-wiki ci-check --src-dir . --wiki-dir docs/llm_wiki --format json --source-selection <profile>
+   llm-wiki team check --src-dir . --wiki-dir docs/llm_wiki --source-selection <profile>   # if team policy is configured
+   ```
+
+   This second sync preserves supported semantic content while re-anchoring
+   canonical Markdown, `.llm-wiki-surface.json`, `.llm-wiki-knowledge.json`,
+   and the manifest as one persisted snapshot. Run it only when canonical
+   Markdown actually changed; a generated-only no-op proceeds directly to
+   validation and must not create an authoring loop. If a validation fix changes
+   Markdown, restart this sequence at sync. Fix broken links, orphan pages,
+   stale manifests, and team-policy failures, then re-run until clean.
+   Dependency cycle/undeclared/unused warnings and unsupported-source notices
+   are diagnostics to document or backlog, not structural lint failures — do
+   not chase every warning (that is the dep-audit workflow).
+
+   After re-anchor, keep human section review and machine verification
+   independent: report expired human reviews with their existing expiry reasons
+   and stale verification receipts. Do not fabricate replacement review events
+   or receipts.
+
+   In `external_agent_docs`, the semantic worker does not run this refresh.
+   It returns only packet-authorized Markdown/result writes; the supervisor
+   performs the assigned owning sync/re-anchor before strict validation. A
+   wiki-only packet with no source remains snapshot-only and cannot be repaired
+   by initializing governance.
+
+   For external-source validation, pass `--allow-external-src` to the source
+   reader and keep `--wiki-dir` inside the project:
+
+   ```bash
+   llm-wiki team check --src-dir <repo> --allow-external-src --wiki-dir docs/llm_wiki --source-selection <profile>
+   ```
+
+10. **Review, then use the permitted handoff.** Repeat the managed preflight and
+    apply its linked contract. Report changed paths and validation; an
+    authorized repository delivery keeps `<wiki-dir>` separate and may use a
+    `docs(wiki): bootstrap <project>` style message. Never reuse the hook path's
+    literal `auto-update [bot]` message or set `LLM_WIKI_AUTO_COMMIT`. In
+    `external_agent_docs`, return workspace paths and results to the supervisor.
+
+## Context budget
+
+Prefer the bootstrap JSON summary, `index.md`, and the surface index (`.llm-wiki-surface.json`) for sizing the pass and mapping source files and symbols to page paths. Use `dependency_neighborhood` only for the page currently being ranked or edited — never query every source path when `dependency_evidence.most_depended_on` already contains the ranking. Reach for `llm-wiki context --budget 12000 --focus all --format json --source-selection <profile>` only after the deterministic bootstrap, when top central pages need more source context than their generated pages provide. Do not use full source dumps for the long tail — backlog those pages with the minimum context needed for a later focused pass.

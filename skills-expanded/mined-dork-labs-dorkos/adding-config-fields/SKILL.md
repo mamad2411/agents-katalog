@@ -1,0 +1,380 @@
+---
+name: adding-config-fields
+description: Patterns for adding, renaming, removing, or retyping fields in DorkOS user config. Use when editing UserConfigSchema, MarketplacesFileSchema, or any conf-backed store — walks the Zod field → defaults → conf migration → docs → test lifecycle end-to-end.
+allowed-tools: Read, Edit, Write, Grep, Glob, Bash
+---
+
+# Adding Config Fields in DorkOS
+
+## Overview
+
+This skill guides the full lifecycle of changing `~/.dork/config.json` (or, post-refactor, `~/.dork/marketplaces.json`) schema: Zod field → import-time defaults → `conf` migration → docs update → tests → CLI flag wiring if applicable. Use it whenever you touch `UserConfigSchema` so you don't ship a partial change.
+
+DorkOS uses the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0) for persistent user configuration, wrapped at `apps/server/src/services/core/config-manager.ts`. Zod is the authoritative schema and is bridged to conf's Ajv validation via `z.toJSONSchema(UserConfigSchema)`. You do not hand-write JSON Schema; you edit Zod and let the bridge regenerate it.
+
+## When to use
+
+- You're about to edit `packages/shared/src/config-schema.ts` (adding, renaming, removing, or retyping a field in `UserConfigSchema`).
+- You're about to edit the `CONFIG_MIGRATIONS` table or a migration helper in `apps/server/src/services/core/config-migrations/`, or `projectVersion` in `apps/server/src/services/core/config-manager.ts`.
+- (Future) You're about to edit `MarketplacesFileSchema` once `apps/server/src/services/marketplace/sources/marketplace-source-manager.ts` is refactored onto `conf`.
+- A user asks "how do I add a setting to DorkOS?" or "how do config migrations work here?"
+- `/system:release` Phase 2 flags a config schema drift and you need to write the migration.
+
+## Key concepts
+
+### The authoritative files
+
+| File                                                             | Role                                                                                                                    |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/config-schema.ts`                           | **Authoritative.** Zod schema + defaults constant. Change this first.                                                   |
+| `apps/server/src/services/core/config-manager.ts`                | The `conf` wrapper. Holds `projectVersion` and hands `CONFIG_MIGRATIONS` to conf.                                       |
+| `apps/server/src/services/core/config-migrations/`               | The `CONFIG_MIGRATIONS` table (`index.ts`) and the helpers its keys call, grouped by version range. Change this second. |
+| `contributing/configuration.md`                                  | User-facing settings reference. Update the table + narrative.                                                           |
+| `docs/getting-started/configuration.mdx`                         | External Fumadocs mirror of the same reference. Keep in sync.                                                           |
+| `apps/server/src/services/core/__tests__/config-manager.test.ts` | Migration + upgrade-path tests.                                                                                         |
+| `packages/cli/src/cli.ts`                                        | CLI flag wiring (only if the field needs a flag).                                                                       |
+
+### `conf`'s migration model
+
+`conf` tracks migration state **inside the config file itself**, in an internal key at `__internal__.migrations.version`. On every `new Conf(...)` instantiation:
+
+1. `conf` reads the stored `__internal__.migrations.version`.
+2. Compares it against the `projectVersion` you passed to the constructor.
+3. Runs every migration whose semver key is **greater than** the stored version **and less than or equal to** `projectVersion`, in semver order.
+4. After all applicable migrations run, writes `projectVersion` back to `__internal__.migrations.version`.
+5. Each migration runs **at most once per user**.
+
+`projectVersion` is the **app version**, not a schema version. Migration keys are the app versions at or after which each migration should fire. A migration keyed `'0.35.0'` runs on the first launch of DorkOS 0.35.0 (or any later version, if the user skipped 0.35.0 entirely).
+
+### Things to know before you start
+
+1. **`projectVersion` is sourced from `SERVER_VERSION`**, not hardcoded. `config-manager.ts` imports `SERVER_VERSION` from `../../lib/version.js` and hands it to Conf. That resolver honors `DORKOS_VERSION_OVERRIDE` → esbuild-injected `__CLI_VERSION__` → `package.json` dev fallback, in that order. Do not reintroduce a hardcoded `projectVersion` string — migration keys must match real release boundaries. Read that order once more before you edit any migration: it is why a key runs on machines that are not on a release, and why a merged body is frozen even when nothing has been tagged.
+2. **Migrations live in the module-level `CONFIG_MIGRATIONS` constant.** Append new entries there, not inside the constructor. The constructor reuses the same `confOptions` object for both the primary and corrupt-recovery Conf instantiations, so every migration runs equally in both paths.
+3. **`USER_CONFIG_DEFAULTS` at `config-schema.ts:191-193`** is computed from `UserConfigSchema.parse({ version: 1 })` **at import time**. Adding a required field without a default will crash the server on startup for every new install. Always use `.default(...)` unless the field is genuinely optional.
+
+## Step-by-step approach
+
+### 1. Add the field to the Zod schema
+
+Edit `packages/shared/src/config-schema.ts`. Add the field to the appropriate nested object in `UserConfigSchema` with a `.default(...)`.
+
+```typescript
+// Before
+server: z.object({
+  port: z.number().int().min(1024).max(65535).default(4242),
+  // ...
+}).default(() => ({ port: 4242, /* ... */ })),
+
+// After — adding server.timeout
+server: z.object({
+  port: z.number().int().min(1024).max(65535).default(4242),
+  timeout: z.number().int().min(1000).max(300000).default(30000),
+  // ...
+}).default(() => ({ port: 4242, timeout: 30000, /* ... */ })),
+```
+
+**Rule:** if the enclosing object has a `.default(() => ({...}))` factory, you must include the new field's default there too. Otherwise fresh installs get `undefined` at import time and crash.
+
+### 2. Verify `USER_CONFIG_DEFAULTS` still parses
+
+At the bottom of `config-schema.ts`, `USER_CONFIG_DEFAULTS = UserConfigSchema.parse({ version: 1 })` runs at import time. After your edit, typecheck the package:
+
+```bash
+pnpm --filter=@dorkos/shared typecheck
+```
+
+If this fails, your field is required without a default. Fix before proceeding.
+
+### 3. Append a migration to `CONFIG_MIGRATIONS`
+
+Edit `apps/server/src/services/core/config-migrations/index.ts`, and put any helper the new key calls at the bottom of `config-migrations/v0-90-onward.ts` (`config-manager.ts` re-exports every helper, so tests keep importing from `../config-manager.js`). You do **not** need to bump `projectVersion` — it's sourced from `SERVER_VERSION` via `lib/version.ts`, which updates automatically every release. Your only job is to append a new entry to the module-level `CONFIG_MIGRATIONS` constant, keyed to the app version that will ship your change.
+
+**Pick that key as strictly greater than the newest `v*` tag** (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that already exists. `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version — or a body appended to one — never runs for anybody already on it. A guard enforces both (`apps/server/src/services/core/__tests__/migration-safety.ts`), so getting this wrong reddens CI rather than shipping silently.
+
+**Then pin your new key**, in the same pull request, by adding one line to `apps/server/src/services/core/__tests__/merged-migration-hashes.ts`. A second guard fails until you do, and prints the exact line to paste. That pin is what freezes the body from the moment it merges — see [Append-only, from merge](#append-only-from-merge) for why "it is not tagged yet" is not a licence to edit it later.
+
+#### Append-only, from merge
+
+The rule used to be that a key above the newest tag had run for nobody and could be amended freely. It is not true, and correcting it is DOR-1222.
+
+What runs a migration is `projectVersion`, which is `SERVER_VERSION`: the version compiled into a built CLI bundle (`__CLI_VERSION__`) or the desktop app, `DORKOS_VERSION_OVERRIDE` when set, and `0.0.0` only in a raw dev tree. Those versions are bumped in the repository **before** the tag exists. So anyone who builds and runs DorkOS during the merge-to-release window is stamped with the new version, has run whatever the body said that day, and never runs the key again.
+
+The operator's own config was stamped `0.59.0` on 2026-08-12 while `0.59.0` was still "unreleased". Two later amendments to that key skipped him without a word. **The dogfood machine is always somebody.**
+
+So: a merged body is frozen. A change of mind opens a NEW key above the newest tag, written so it can tell a value the earlier body seeded from one a person chose. If it cannot tell them apart, appending overwrites somebody's choice and is the more destructive option — which usually means living with the seed that shipped.
+
+Bumping an existing pin in `merged-migration-hashes.ts` is the only escape hatch. It shows up as one changed line in a file that exists for nothing else, and it needs a justification in the pull request naming the population that could have run the old body and why it is empty. On this repository it never has been — the one bulk repin on record (DOR-1732) changed no body at all; it widened what the pins cover.
+
+**The pins reach into `config-schema.ts` too** (DOR-1732), so editing a schema symbol a migration reads can red the guard even when you never opened `config-manager.ts`. Ten keys reach across that edge — `ONBOARDING_STEPS` (`0.55.0`), `toSidebarItemRef` (`0.57.0`), `ComposerPrefsSchema` (`0.59.0`), `NotificationPrefsSchema` with `NOTIFICATION_PREFS_DEFAULTS` and `EscalationDelaySchema` (`0.64.0`), `claudeAccountId` (`0.65.0`), and `USER_CONFIG_DEFAULTS` for the five keys from `0.69.0` up. That is the guard doing its job: a shipped migration's behavior lives partly in that file. Fields you ADD to `UserConfigSchema` move nothing, because the schema itself is excluded by name — but changing an existing DEFAULT that one of those five keys seeds wholesale is invisible to the pins, so check them by hand.
+
+The shape to match:
+
+```typescript
+const CONFIG_MIGRATIONS = {
+  '1.0.0': (store) => {
+    if (!store.has('version')) {
+      store.set('version', 1);
+    }
+  },
+  '0.35.0': (store) => {
+    // Added server.timeout in v0.35.0. `server` is a section every stored
+    // config already has, so NOTHING else writes this leaf to the file — see
+    // the note below. This body is the mechanism, not an anchor.
+    const server = store.get('server');
+    if (server && typeof server === 'object' && !('timeout' in server)) {
+      store.set('server', { ...server, timeout: 30000 });
+    }
+  },
+} as const;
+```
+
+The target release version is the version of DorkOS that will first ship this change — ask the user, read `VERSION`, or let `/system:release`'s Phase 2 Check 6 detect and scaffold it for you.
+
+#### Does `conf` cover your new field on its own? Only if it is a whole top-level section
+
+This decides whether your migration body is load-bearing or dead code, and getting it backwards is
+what produced a suite of vacuous migration tests (DOR-1496). Measured, not inferred from conf's
+documentation:
+
+- **A whole TOP-LEVEL section** (`a2a`, `notifications`, `approvals`) is covered. Before conf runs
+  its first migration key it merges `Object.assign({}, defaults, fileStore)` and WRITES the result
+  when it differs, so a section the file never carried lands on disk either way. Worse than
+  redundant: an absence-guarded body (`if (store.get('x') == null)`) reads the file conf has
+  _already_ rewritten, sees the section, and returns without ever reaching its `set`. The body is
+  **unreachable**, so if its seeded value ever differed from the object literal in
+  `USER_CONFIG_DEFAULTS` the file would silently take the object literal and your table would
+  document an intent that never runs.
+- **A nested leaf inside a section the file already has** (`ui.composer`, `server.timeout`,
+  `extensions.disabled`) is NOT covered, and your body is the only thing that writes it. That merge
+  is shallow, so a stored `server` object wins wholesale and never gains a member. Ajv's
+  `useDefaults` does fill the leaf — but only into the object conf's `store` GETTER just built from
+  a fresh read and is about to hand back, and that copy is discarded.
+
+Full account: the "Which of these bodies is a real no-op, and which only looks like one" section
+above `CONFIG_MIGRATIONS` in `config-migrations/index.ts`.
+
+For **removed fields**:
+
+```typescript
+'0.35.0': (store) => {
+  if (store.has('mesh.legacyMode')) {
+    store.delete('mesh.legacyMode');
+  }
+},
+```
+
+For **renamed fields**:
+
+```typescript
+'0.35.0': (store) => {
+  if (store.has('server.cwd') && !store.has('server.workingDirectory')) {
+    store.set('server.workingDirectory', store.get('server.cwd'));
+    store.delete('server.cwd');
+  }
+},
+```
+
+For **type changes** (e.g., `number` → `string`):
+
+```typescript
+'0.35.0': (store) => {
+  const current = store.get('server.timeout');
+  if (typeof current === 'number') {
+    store.set('server.timeout', String(current));
+  }
+},
+```
+
+**Every migration must be idempotent.** Guard every `store.set/delete` with `store.has()` or a type check so re-running the same migration (e.g., after corrupt-recovery) is safe.
+
+### 4. Classify the field for agent disclosure
+
+Edit `CONFIG_DISCLOSURE` in `apps/server/src/services/core/operator/config-disclosure.ts` and give the new leaf a verdict: `expose` or `withhold`.
+
+This is not optional bookkeeping. The `config_get` MCP tool carries `readOnlyCarveOut: true`, so on the default login-off posture it answers on `/mcp` with no credential at all, and its snapshot is built by copying only `expose` paths. The drift guard compares the table against every leaf of `UserConfigSchema` in three directions (every leaf is classified, no verdict is stale, and every `expose` verdict resolves to something safe), so it stays red until you decide:
+
+```bash
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-disclosure.test.ts
+```
+
+That reads the schema **source**, not `packages/shared/dist/` — `apps/server/vitest.config.ts` aliases `@dorkos/shared/*` to `src/` precisely so a stale dist cannot turn this guard into a silent pass. No rebuild needed.
+
+```typescript
+// A plain preference: safe to hand to an agent.
+'server.timeout': 'expose',
+
+// A secret, or anything that names where a secret lives (an env var name, a
+// keychain entry, a file path). Withhold it.
+'someService.apiKey': 'withhold',
+```
+
+**Withhold anything that is a credential or points at one.** If callers legitimately need to know whether it is set up, add the path to `PRESENCE_FLAG_PATHS` in the same file: the projection then emits a boolean `<leafName>Configured` sibling instead of the value. Absolute paths are exposed on purpose (they are how the operator surface addresses agents and directories); see that module's doc comment for the reasoning before changing that line.
+
+**Two things about the key you write.** A field nested inside an array of objects gets one verdict per field, with `[]` marking the array hop: a new property on a sidebar group is keyed `'ui.sidebar.groups[].myField'`, not covered by any verdict on `ui.sidebar.groups`. And an `expose` verdict has to resolve to a scalar, an array of scalars, or an open record (`z.record`) listed in `EXPOSED_RECORD_PATHS` — a subtree cannot be exposed wholesale, because that would silently cover whatever anyone adds inside it later. If the guard reports your field as `unsupported`, the schema shape is one the walker will not disclose without being taught it first.
+
+### 5. Classify the field for agent WRITES
+
+Edit `CONFIG_WRITE_POLICY` in `apps/server/src/services/core/operator/config-write-policy.ts` and give the new leaf a verdict: `agent-writable` or `operator-only`.
+
+Same shape as step 4, opposite direction, and it is a separate decision: a field can be perfectly safe to SHOW an agent and still be unsafe to let one CHANGE. The `config_patch` capability is tier `act`, so the tier gate runs it with no approval, which is how an agent could once turn off `auth.enabled` and remove the very posture that makes destructive approvals enforceable (DOR-488). Its drift guard also compares against every leaf of `UserConfigSchema` in both directions and stays red until you decide:
+
+```bash
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-write-policy.test.ts
+```
+
+```typescript
+// A preference: an agent may change it when the user asks.
+'server.timeout': 'agent-writable',
+
+// Changing it removes or widens a security control. Only a person may.
+'someService.requireLogin': 'operator-only',
+```
+
+**Mark it `operator-only` when changing it, on its own, removes or widens a security control**: the login gate, public exposure, the MCP endpoint's own gate, credential material and the hosts it is sent to, code the server loads or spawns, how far DorkOS reaches on disk, or consent about what leaves the machine. Everything else is a preference, even a disruptive one. Read that module's doc comment before adding to the list: it states the line and records what was deliberately left writable, so your entry should either fit the line or extend it on purpose.
+
+A patch touching an `operator-only` path is refused whole, and the person keeps changing it in Settings through `PATCH /api/config`, which is deliberately NOT guarded. If your field needs a UI toggle, that is the path it uses.
+
+### 6. Document the field in `contributing/configuration.md`
+
+Add a row to the Settings Reference table at the top of the file:
+
+```markdown
+| `server.timeout` | integer (1000--300000) | `30000` | Request timeout in milliseconds before aborting a long-running agent call |
+```
+
+If the field warrants per-setting narrative (like `server.port` does), add a `### server.timeout` section with a `dorkos config set` example and any precedence notes.
+
+### 7. Mirror the doc to `docs/getting-started/configuration.mdx`
+
+The `check-docs-changed.sh` hook will remind you at session-stop via the `configuration.md:config-manager|config-schema|packages/cli/` mapping. Do it inline. Find the same settings table in the MDX file and add the matching row.
+
+### 8. Add or update tests
+
+Edit `apps/server/src/services/core/__tests__/config-manager.test.ts`. Add an **upgrade-path test** that exercises the migration against a realistic stale-config blob:
+
+```typescript
+it('migrates pre-0.35.0 configs to include server.timeout', async () => {
+  const dorkHome = await mkdtemp(join(tmpdir(), 'cfg-mig-'));
+  const configPath = join(dorkHome, 'config.json');
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 1,
+      server: { port: 4242, cwd: null, boundary: null, open: true },
+      // ... other required sections ...
+      __internal__: { migrations: { version: '1.0.0' } },
+    })
+  );
+
+  initConfigManager(dorkHome);
+
+  // READ THE FILE, not `getDot`. conf's `store` getter re-reads and re-parses
+  // config.json on every access and validates the copy it is about to hand
+  // back, so Ajv's `useDefaults` fills the leaf into that copy and the copy is
+  // discarded. `expect(configManager.getDot('server.timeout')).toBe(30000)`
+  // passes with the migration body DELETED — measured, DOR-1496.
+  const onDisk = JSON.parse(await readFile(configPath, 'utf-8'));
+  expect(onDisk.server.timeout).toBe(30000);
+  // …and optionally that a running DorkOS reads it back, which is a
+  // different claim and not a substitute for the one above.
+  expect(configManager.getDot('server.timeout')).toBe(30000);
+});
+```
+
+Test both cases:
+
+- Stale config missing the field → migration runs, field is **on disk**.
+- Fresh config → defaults handle it, no migration needed.
+
+**Then prove the assertion discriminates.** Comment out the migration body and watch the on-disk
+assertion go red. If it stays green, either you are seeding a whole top-level section (in which case
+conf's pre-write is the author, your body is unreachable, and the test should say so rather than
+imply otherwise) or the assertion is not reading what you think. Do not skip this: every vacuous
+migration test DOR-1496 found was written by someone who believed the same thing you do right now.
+
+### 9. If it ships OFF, register it as an experiment
+
+A field whose default is `false` because the feature is not finished being proved is a **staged opt-in**, and it needs one more entry: `EXPERIMENTS` in `apps/server/src/services/core/config/experiments-registry.ts`.
+
+Skipping this makes the flag unreachable. `GET /api/config` is a hand-curated DTO, so a flag nobody adds to that curation can only be set by hand-editing `~/.dork/config.json` — nobody turns it on, nothing is learned, and it can never graduate. That is what happened to `runtimes.claudeCode.persistentSession` (DOR-1304).
+
+```typescript
+{
+  path: 'a2a.enabled',
+  title: 'Let outside agents reach yours',
+  description: 'Agents on other systems can send work to the agents here. …',
+  costNote: 'Early alpha, and it opens a door.',
+  // Only when an env var overrules the setting. Its presence is what makes the
+  // row report `lockedByEnv` and render disabled, showing reality.
+  envOverride: 'DORKOS_A2A_ENABLED',
+  graduationIssue: 'DOR-1304',
+}
+```
+
+The prose is read by a person who does not code — follow `writing-for-humans`: benefit first, cost second, no mechanism.
+
+```bash
+pnpm vitest run apps/server/src/services/core/config/__tests__/experiments-registry.test.ts
+```
+
+That guard fails unless the path is a real boolean leaf of `UserConfigSchema` that defaults to `false` and carries a non-empty `graduationIssue`.
+
+**The registry is meant to shrink.** DorkOS ships features on by default (ADR-0054); a flag exists only while its feature is unproven, then graduates and is DELETED (ADR-0062, ADR-0171, ADR-0266 are three that did). So **graduating a flag means deleting its registry entry in the same change that flips the default**. An empty registry is the success state, not a bug. Full write-up: `contributing/configuration.md` → "Experimental fields".
+
+### 10. Wire a CLI flag if applicable
+
+If the new field needs to be controllable from the `dorkos` CLI, edit `packages/cli/src/cli.ts`. Follow the precedence rule documented in `contributing/configuration.md`: **CLI flag > env var > config > default**.
+
+Also add the flag to the `dorkos config set` shell-completion list if one exists for the namespace.
+
+## Best practices
+
+- **Append-only migrations, from the merge and not from the tag.** Never edit a migration body that has already merged. If you need to fix a broken migration, append a new one at a key above the newest tag that reverses the damage and applies the correct change. Editing in place leaves users in divergent states — including the untagged case, where the divergent user is whoever built and ran DorkOS that week.
+- **Semver keys matching real release versions.** If a migration ships in v0.35.0, key it `'0.35.0'`, not `'0.35'` or `'35'`. This makes the release-notes → migration mapping straightforward and lets `/system:release`'s drift check validate the pairing.
+- **Idempotent migrations.** Always guard mutations. Corrupt-recovery or manual `__internal__.migrations.version` edits can cause a migration to re-run; non-idempotent bodies corrupt data.
+- **Flag data-loss changes loudly.** Any migration that deletes a user's data should have a comment explaining why and pointing at the ADR or spec that authorized it.
+- **Test the upgrade path, not just the new shape.** A test that only validates the post-migration schema misses the half of the test surface that's about "the migration actually ran."
+- **Coordinate with the release command.** `/system:release` Phase 2 detects drift between `config-schema.ts`/`config-manager.ts` and the existing migrations. When triggered, it offers to scaffold inline — accepting its draft is fine, but always review before applying.
+
+## Common pitfalls
+
+- **Editing `'1.0.0'` migration body** (or any migration that has merged), released or not. Whoever already ran the old body won't re-run it; you'll have split-brain state, and you cannot see who is in it.
+- **Hardcoding `projectVersion` in the constructor.** It's sourced from `SERVER_VERSION` — never pass a string literal. If the resolver ever breaks (e.g., `DORKOS_VERSION_OVERRIDE` unset, esbuild banner missing, package.json missing), fix `lib/version.ts`, not `config-manager.ts`.
+- **Adding a required field without a default.** Crashes at import time because `USER_CONFIG_DEFAULTS = UserConfigSchema.parse({ version: 1 })` can't satisfy the required field without a value.
+- **Writing non-idempotent migrations** (e.g., `store.set('counter', store.get('counter') + 1)`) — re-running doubles the value. Always check state before mutating.
+- **Relying on field presence inside a migration body.** Use `store.has()` before every read; don't assume the old shape matches your mental model.
+- **Forgetting to update the `.default(() => ({...}))` factory** on a nested object. Zod validates a parsed object against the inner `.default(...)` at the field level, but the factory-level default is what runs when the whole section is missing. If you add a field inside `server: z.object({...}).default(() => ({ port: 4242 }))` without including `timeout` in the factory, fresh installs get an incomplete `server` section.
+- **Updating the Zod schema without updating `contributing/configuration.md` or `docs/getting-started/configuration.mdx`.** Users read docs to discover settings; stale docs are worse than missing docs.
+- **Testing only with a fresh config.** A passing fresh-install test tells you nothing about the upgrade path — you need a stale-config fixture.
+
+## Interaction with `/system:release`
+
+When you run `/system:release`, its Phase 2 pre-flight runs a **config schema migration drift check**:
+
+1. Git-diffs `packages/shared/src/config-schema.ts`, `apps/server/src/services/core/config-manager.ts` and `apps/server/src/services/core/config-migrations/` against the last tag.
+2. If changes exist, analyzes them inline (no subagent) to classify: added-with-default (usually fine) vs removed/renamed/retyped (migration needed).
+3. Checks whether the existing `migrations` block already has an entry keyed to the target release version.
+4. If drift is detected without a matching migration, the release command offers four options:
+   - **Scaffold inline** — drafts the migration, presents it for your review, applies it on approval, stages the file into the release commit.
+   - **Let me write it manually** — exits cleanly; you edit `config-migrations/` using this skill, commit, re-run `/system:release`.
+   - **No migration needed** — for type-only/TSDoc changes. You take responsibility, release continues.
+   - **Cancel release** — exits.
+
+See `.claude/commands/system/release.md` Phase 2 for the full flow. The scaffolder produces a best-guess draft; review it against this skill's guidance before accepting.
+
+## Marketplace follow-up note
+
+`~/.dork/marketplaces.json` is currently owned by a hand-rolled `MarketplaceSourceManager` at `apps/server/src/services/marketplace/sources/marketplace-source-manager.ts`. It has a one-off URL-rewrite map (`LEGACY_SOURCE_MIGRATIONS`) that is **orthogonal** to `conf`'s semver-keyed schema migrations. The rewrite map fixes a known-bad default URL; it is not a schema migration system.
+
+A pending refactor will move `marketplaces.json` onto `conf` with the same wrapper pattern as `ConfigManager`. When that lands, this skill extends to cover `MarketplacesFileSchema` too — same process, same step list. Until then, changes to `marketplace-source-manager.ts` are out of scope for this skill.
+
+## References
+
+- `apps/server/src/services/core/config-manager.ts` — the canonical `conf` wrapper.
+- `apps/server/src/services/core/config-migrations/` — the `CONFIG_MIGRATIONS` table and its helpers.
+- `packages/shared/src/config-schema.ts` — the Zod schema and defaults constant.
+- `contributing/configuration.md` — Schema Migrations section + Settings Reference table.
+- `docs/getting-started/configuration.mdx` — external Fumadocs mirror.
+- `.claude/commands/system/release.md` — Phase 2 drift detection and scaffolding offer.
+- `.claude/rules/agent-storage.md` — adjacent file-first write-through pattern (same philosophy, different domain).
+- [`conf` README](https://github.com/sindresorhus/conf) — library-level documentation.

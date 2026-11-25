@@ -1,0 +1,82 @@
+---
+name: founder-voice
+description: How to word anything the founder reads or answers - questions, grilling rounds, approvals, decisions, summaries, reports - at the technical level saved in project.toml [owner] level (non-technical, basics or technical). Use before writing any message or document for the founder.
+---
+
+# Founder voice
+
+The founder's level is in `project.toml [owner] level`. Read it before you write to them. If it
+is missing or `unset`, the first question you ask is the level itself (below), worded for a
+non-technical reader. Never guess it from how they write.
+
+## The three levels
+
+| Level | Who | How you write |
+|---|---|---|
+| `non-technical` | Has never written code. | No technical words at all. Every choice as what it means for the business, what it costs, what could go wrong, and your recommendation. Say what the founder will see or feel, not how it works. |
+| `basics` | Knows the ideas (a database, a server, a deploy) but does not code. | Plain words first; a technical term is fine when it is the clearest one, explained once in a few words the first time. No code, no commands, no file paths unless they asked. |
+| `technical` | Writes or reads code. | Brief. Technical terms, file paths and diffs are fine; lead with the decision and the diff. |
+
+Asking for the level (setup, or the first grilling when it is unset): "How technical are you?
+1. I've never written code. 2. I know the basic ideas but don't code. 3. I write or read code.
+My suggestion is 1 unless you're sure; you can change it any time."
+
+## Every message, at every level
+
+- One decision per question, with your recommendation, worded so that "yes" accepts it.
+- When more than one question is open, number them and ask for answers by number ("1 yes, 2
+  no"). A bare "yes" with several open is asked back, never read as covering all of them;
+  accepting every recommendation is said outright ("accept all") or marked in the choices file.
+- Screens and pictures are shown, never pointed at: in the chat where the tool can show an
+  image, or as one generated page that opens by itself. Never a file path to open.
+- Facts you can look up, you look up; the founder is asked only for decisions.
+- Numbers keep their units and their source: "about 20 dollars a month (provider's price page)".
+- The founder can change their level any time ("explain less", "I don't follow"). Update
+  `project.toml [owner] level` the same day, with the date in `p1-closed-decisions.md`.
+
+## Words for `non-technical`
+
+Use the plain version, or say the thing it does:
+
+| Instead of | Say |
+|---|---|
+| deploy, release to production | put the new version live for your users |
+| rollback | put the previous version back |
+| repository, repo | your project's folder on GitHub |
+| commit, push, merge | save the change, send it to GitHub, add it to the live version |
+| database, migration | where the data is kept; a change to how it is stored |
+| API, endpoint, integration | a connection to another service |
+| frontend, backend | the part users see; the part behind it |
+| bug, regression | something broken; something that used to work and now doesn't |
+| test, CI, sweep | an automatic check; the checks that run after every change |
+| requirement row, spec | one sentence the product must do; the written plan for a feature |
+| environment variable, secret, API key | a private setting; a password for a service |
+
+When there is no plain word, explain the idea in one sentence and drop the term.
+
+## Approvals
+
+Say what will happen, what it changes for users or money, whether it can be undone and how
+long that takes, then ask.
+
+Every decision the founder is asked for, in chat or in `p1-open-questions.md`, is one card:
+decision, recommendation, what could go wrong, how to undo it, and two replies to copy, the
+recommended one first (TPL-113). The shape, an example and the wording at each level are in
+`skills/founder-voice/card.md`.
+
+## Saying something is done
+
+A report that something is done, fixed or live ends with one thing the founder can check
+themselves in under a minute, without reading code (TPL-116): "Open yourapp.com/signup on your
+phone: the new page has the green button." Or: "Open the sheet: row 14 has today's orders." A
+report with nothing the founder can check yet says what it is waiting on before it can be seen.
+
+## Documents the founder reads
+
+Specs, summaries, QA and legal reports, the dashboard, release notes: write the parts the
+founder must read or decide on at their level, and put the technical detail other agents need
+in a separate section headed for them.
+
+A review reaches the founder as its "For the founder" list (`agents/reviewer.md`), word for
+word, with how many lines block launch and how many can wait; never summarised into "a few
+issues" (TPL-106).

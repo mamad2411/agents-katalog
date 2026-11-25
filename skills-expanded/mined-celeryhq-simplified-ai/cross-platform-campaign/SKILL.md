@@ -1,0 +1,55 @@
+---
+name: cross-platform-campaign
+description: Turn a launch, promotion, event, announcement, or marketing brief into a coordinated campaign of channel-native social posts. Use when the user asks to launch or promote something across multiple platforms, create a campaign sequence, coordinate social messaging, generate campaign visuals, prepare drafts, or schedule a multi-channel rollout.
+---
+
+# Cross-Platform Campaign
+
+Build one coherent campaign while respecting how each social channel works. Compose the `generate-image` and `simplified-social` capabilities when campaign visuals are needed.
+
+## Guardrails
+
+Existing explicit authorization for unchanged content, accounts, timing, media, and comments is sufficient; ask only when that authorization is missing or the proposed effects change.
+
+- Do not publish or schedule without explicit approval of the final campaign matrix.
+- Create safe previews with `action: "draft"` when the user asks to prepare the campaign.
+- Image generation spends credits. Proceed when the image request is explicit; confirm first when visual generation is ambiguous.
+- Carry a generated image's permanent `asset_id` into social `media`; never rely on its expiring signed URL.
+- Pause affected connected operations on authorization failure. Continue planning or requested accountless drafts when no accounts are connected; omit `account_ids`. Scheduling, queueing, and account analytics require suitable connected accounts.
+- Use a native media preview when the client supports it and the user wants to review the result. Otherwise show a usable link. Refresh expired asset URLs; do not download remote media merely to bypass client display restrictions. Review bundles and other web pages remain links.
+
+## Workspace and handoff
+
+Before connected operations, use `simplified-workspace` when the client/workspace/teamspace is named or uncertain. Resolve the exact numeric teamspace and carry its `space_id` on every related account, analytics, asset, generation, draft, tag, review, and continuation call. Re-list scoped resources after switching clients; stop on access failures rather than falling back to another space. Pass the resolved context to every delegated skill.
+
+## Workflow
+
+1. Distill the brief into audience, objective, offer, proof, CTA, dates, channels, tone, constraints, and success metric. State sensible assumptions instead of requesting a long questionnaire.
+2. Call `social_getSocialMediaAccounts` once and map requested channels to returned account IDs.
+3. Define the campaign spine: one promise, supporting proof, CTA, and a sequence such as tease, launch, proof, reminder, and last call.
+4. Create channel-native variants. Change hook, length, CTA, format, and platform settings; do not paste the same caption everywhere.
+5. Plan media by post. If generation is requested, follow `$generate-image`, discover the current model schema, and use `storage: "asset"` for anything that will be attached to a post.
+   For a user-supplied local file, follow `$simplified-social` through signed
+   upload and `api_registerAsset`, wait for `api_getAsset`, and carry the UUID.
+6. Show a campaign matrix containing phase, date, account, copy, media, objective, and CTA.
+7. When drafts are authorized, call `social_createSocialMediaPost` with `action: "draft"` for each post. Pass generated asset UUIDs in `media` and use `../simplified-social/references/platform-settings.md` for `additional` fields.
+8. Offer a stakeholder review package via `$campaign-review` when several drafts need approval.
+9. Schedule or queue only after the user explicitly approves the final matrix. `add_to_queue` requests queueing; report service-returned timing rather than guaranteeing immediate delivery.
+
+## Quality Bar
+
+- Keep the promise and visual identity consistent across the campaign.
+- Make each post useful on its own while advancing the sequence.
+- Match media to platform format requirements; never attach an image to a reel or short that requires video.
+- Do not invent product claims, prices, deadlines, testimonials, or availability.
+- Surface missing landing-page URLs, legal copy, offer terms, or media before publishing.
+
+## Media and write results
+
+Use `manage-assets` to find existing library media before generating copies. Resolve names/tags through exposed asset discovery, preserve pagination and scope, import accessible remote files, and require ready assets before generation or attaching media. Check byte access and HTTP PUT capability before signing a local/chat attachment upload; if unavailable, ask for a Simplified asset ID or downloadable URL. Pass permanent UUIDs into drafts. A missing required visual remains a stated production gap; do not report a media-ready post without it.
+
+For a batch of drafts, retain each successful returned ID and report created, pending, and failed items. Continue only unfinished items; do not recreate successful drafts after a later failure. A plan or test design alone does not authorize remote writes.
+
+## Output
+
+Lead with the campaign idea and rollout. Then show the channel matrix, asset plan, drafts created, and any items blocking approval or scheduling.

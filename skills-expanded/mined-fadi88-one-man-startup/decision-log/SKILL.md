@@ -1,0 +1,42 @@
+---
+name: decision-log
+description: Where decisions live and who makes them - open questions, closed decisions, rejected proposals - so the team never re-argues a settled point or decides something that is the founder's. Use when a decision is needed, taken, deferred or challenged.
+---
+
+# Decision log
+
+Three files in `docs/requirements/`:
+
+- **`p1-open-questions.md`:** what is waiting on the founder. Each entry: the question and the
+  date raised, then the decision card (`skills/founder-voice/`) as indented lines: Recommendation,
+  Could go wrong, Undo, Blocks, and two `Reply:` lines; `tools/checks/card_check.py` refuses an
+  entry without them (TPL-114).
+- **`p1-closed-decisions.md`:** what was decided. Each entry: date, decision, reason, who
+  decided, what would make it worth reopening.
+- **`p1-rejected.md`:** proposals the founder turned down, with why, recorded the day they are
+  turned down, whoever proposed them (an agent, a review, a draft the founder pasted in). Only
+  what was actually put to the founder: an option the template itself rules out (an uncapped free
+  tier, say) is not a founder's rejection. Reopening one needs a new
+  fact, not a fresh opinion.
+
+## When a decision changes
+
+The new decision is a new entry. The old one stays where it is, and its first line gains
+"(Superseded on <date> by <the new entry's title>)", so a reader of either finds the other.
+Never edit an old decision into the new one.
+
+## What is the founder's
+
+Targets, thresholds, prices, scope, the stack, legal positions, risk acceptance, permissions,
+known reds, and anything outward. Agents bring the numbers and a recommendation; the founder
+decides; the decision is written down the same day.
+
+## Before proposing anything
+
+Grep `p1-closed-decisions.md` and `p1-rejected.md`. If it was settled, say so and stop, unless
+you have a new fact; then say what the new fact is.
+
+## One event is not an era
+
+Do not change a rule, a model or a target because of one odd result. Explain the odd result.
+Change the rule when the pattern repeats.

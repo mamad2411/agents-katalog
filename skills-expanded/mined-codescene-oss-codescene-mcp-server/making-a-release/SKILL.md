@@ -1,0 +1,28 @@
+---
+name: making-a-release
+description: Use when a developer wants to cut, publish, or ship a new release of the CodeHealth MCP Server, or asks how to make a release / bump the version.
+---
+
+# Making a Release
+
+To release the CodeHealth MCP Server, create and push an annotated `MCP-<version>`
+tag. That single push is the entire process — CI does everything else (release
+notes, binaries, npm, packaging metadata, and marking it latest). Docker images
+are published separately by manually running the Build and Publish Docker
+Release workflow with the release tag. From October 1 through December 31,
+2026, run that workflow only for releases containing Docker bug fixes. Do not
+publish Docker images after December 31, 2026.
+
+1. Decide the next version following semver. The latest release is the most
+   recent `MCP-<version>` tag.
+2. Make sure the commit you tag (normally the tip of `main`) is exactly what you
+   want to ship.
+3. Create and push the tag (keep the `MCP-` prefix — CI only triggers on
+   `MCP-*` tags):
+   ```sh
+   git tag -a MCP-1.4.3 -m "Release MCP-1.4.3"
+   git push origin MCP-1.4.3
+   ```
+
+Do not bump version files, edit the changelog, draft the release in the GitHub
+UI, or open any PRs — CI handles all of it.

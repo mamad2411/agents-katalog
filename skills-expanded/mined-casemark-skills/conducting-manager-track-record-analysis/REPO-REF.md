@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/casemark/skills (path: skills/capital/conducting-manager-track-record-analysis/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Assesses GP track records for secondary pricing with fund-level attribution, unrealized portfolio assessment, and consistency analysis. Use when evaluating GP track records, analyzing fund performance

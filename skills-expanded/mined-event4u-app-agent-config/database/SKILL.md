@@ -1,0 +1,157 @@
+---
+model_tier: medium
+name: database
+description: "Use when designing schemas and relations, tuning queries or indexes on any SQL engine, or multi-connection patterns — even when the user just says 'this query is slow'."
+personas:
+  - eloquent-tamer
+domain: engineering
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+---
+
+# database
+
+
+> **Grounded corpus (Tier-1 consultation):** symptom → index/strategy
+> decisions come grounded — `node
+> <skills-root>/corpus-grounding/scripts/ground.mjs search --manifest
+> <skills-root>/database/data/manifest.json "<symptom>"` returns root
+> cause, strategy, good-code sketch, anti-pattern, and the verification
+> probe (EXPLAIN expectation). Corpus:
+> [`data/query-tuning.csv`](data/query-tuning.csv); its engine versions and
+> their date live in [`data/manifest.json`](data/manifest.json) `upstream`.
+> Repeating them here is how this line fell two majors behind.
+
+## When to use
+
+Use when designing schemas, optimizing queries, adding indexes, or troubleshooting database performance.
+
+This skill owns relational modeling — invariants, cardinality, keys, junction
+tables, index method, enum representation, referential actions. Designing or
+extending a schema → [`references/relational-modeling.md`](references/relational-modeling.md).
+Dropping or renaming anything → [`references/consumer-census.md`](references/consumer-census.md) first.
+
+Do NOT use when:
+- Writing framework-specific ORM models (use the matching skill — e.g. `eloquent` for Laravel, `symfony-workflow` for Doctrine, framework-native skill for Prisma / TypeORM / SQLAlchemy / GORM / Diesel)
+- Creating migrations only — use the framework-specific migration skill (`laravel-migration` for Laravel, framework-native for others)
+- Reviewing a migration diff → `schema-review`; sequencing a multi-deploy rollout → `migration-architect`
+
+## Procedure: Optimize a query
+
+### Step 0: Inspect
+
+1. Read project docs in `agents/reference/docs/` for database architecture.
+2. Check `config/database.php` for connection definitions.
+3. Detect engine: check `.env` driver and `docker-compose.yml`.
+4. Detect hosting per environment: a `docker-compose.yml` service describes
+   local/dev only; an RDS, Cloud SQL, Azure, PlanetScale or Neon host or
+   Terraform resource marks production as managed and wins; no production marker
+   → production hosting is unknown, never assumed self-hosted.
+   **Managed guardrail:** no `ALTER SYSTEM`, no `postgresql.conf` / `my.cnf`
+   edit, no OS access — server settings go through the provider's parameter
+   group or control-plane CLI.
+
+### Step 1: Diagnose
+
+Run `EXPLAIN` / `EXPLAIN ANALYZE`:
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM projects WHERE customer_id = 42 AND status = 'active';
+```
+
+Check for: full table scans (`type=ALL`), missing indexes (`key=NULL`), filesort, temporary tables.
+
+### Step 2: Fix
+
+- Add missing indexes (composites: equality, then a range, then sort-only; selectivity breaks ties)
+- Fix anti-patterns (`OFFSET` → cursor, `SELECT *` → columns; subqueries: `php/database.md`)
+- Add eager loading for N+1 queries
+- Always paginate list endpoints
+
+### Step 3: Verify
+
+Re-run `EXPLAIN` and confirm improved plan.
+
+## Schema awareness (anti-hallucination)
+
+**Never guess table or column names.** Verify before writing queries/migrations:
+
+1. **Read migrations** — source of truth
+2. **Read models** — `$table`, `$connection`, `$fillable`, `$casts`, relationships
+3. **Run schema queries** — use the project's REPL or a raw introspection query:
+   - Laravel: `php artisan tinker --execute="Schema::getColumnListing('table')"`
+   - Symfony / Doctrine: `bin/console doctrine:mapping:info`
+   - Rails: `bin/rails runner "p ActiveRecord::Base.connection.columns('table').map(&:name)"`
+   - Prisma: `npx prisma db pull --print | grep -A20 "model Table"`
+   - Generic SQL: `psql -d mydb -c "\d table"` / `mysql -e "DESCRIBE table"`
+4. **Check project docs** — `agents/reference/docs/` for conventions
+5. **Map facts** (files only): [`references/map-schema-facts.md`](references/map-schema-facts.md)
+
+| Trap | Reality |
+|---|---|
+| Assuming column exists | Check migration/model first |
+| Wrong table prefix | Customer tables may have prefixes |
+| Wrong connection | `api_database` vs `customer_database` — verify |
+| Inventing pivot tables | Check if they actually exist |
+
+### Dump to the Evidence Report (source-discovery)
+
+When the task touches schema-driven work, this dump **is** the DB surface of the
+[`source-discovery`](../source-discovery/SKILL.md) discipline. Record it to the
+gitignored session cache with provenance, framework-neutral (MySQL / Postgres /
+SQLite; ORM-agnostic):
+
+- Capture **tables, columns, types, primary/foreign/unique keys, indexes,
+  relations**, and the derived **filter/sort/group-ability** — each with
+  `observed_at` / `source` (`migration:line` or the introspection command).
+- **In-codebase = local, read fresh, no card.** A schema defined by repo
+  migrations / models / ORM / app code (including schemaless stores the app
+  controls — Mongoose / Prisma / Firestore rules) is always resolved locally and
+  re-read each task. The **migration is intended truth, the live DB is actual** —
+  surface any divergence as a drift signal.
+- **Only negative facts graduate to a committed card** (`agents/knowledge/`):
+  "searched, column/table does not exist" after an exhausted search. Positive
+  structure stays in the session Evidence Report, re-read fresh — never a card.
+- A **DB-not-in-codebase** (vendor SaaS / partner / legacy, schema not in the
+  repo and not app-controlled) is the only DB that may be card-worthy.
+
+## Conventions
+
+→ See guideline `php/database.md` for indexing, transactions, migrations, multi-connection patterns.
+
+## Output format
+
+1. Migration file or query change with EXPLAIN analysis
+2. Index recommendations with rationale
+
+## Gotcha
+
+**MySQL and MariaDB share a query-syntax world. They never share a migration
+one.** Treat them as one engine for writing a `SELECT`, and as two engines for
+everything that changes a schema or reports on a plan: online-DDL semantics,
+lock behavior under `ALTER`, feature availability, and `EXPLAIN` output all
+diverge. Read the engine and its version from the project before making any
+claim in that second group; where the project does not declare one, say the
+engine is unknown rather than assuming.
+
+- Consider multi-tenant implications — queries may need customer DB scoping.
+- Don't use `TEXT` in WHERE without prefix index.
+
+## Do NOT
+
+- Do NOT guess table/column names — verify against migrations or models first.
+- Do NOT add indexes without checking existing ones — duplicates waste write performance.
+- Do NOT use `float` for money — use `decimal`.
+
+## Auto-trigger keywords
+
+- database
+- MariaDB
+- MySQL
+- PostgreSQL
+- schema design
+- migration
+- indexing
+- query optimization

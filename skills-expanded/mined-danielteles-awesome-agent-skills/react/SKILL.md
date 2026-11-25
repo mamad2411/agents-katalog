@@ -1,0 +1,200 @@
+---
+name: react
+description: >-
+  Modern React conventions for writing, reviewing, refactoring, or migrating
+  React: render purity, the Rules of Hooks, "you might not need an Effect", state
+  placement, refs, context, Suspense data fetching, Actions and form state,
+  Server and Client Components, the React Compiler, testing by role. Builds on
+  `core-typescript` and `architecture-and-design`. Use it when the user mentions
+  React, hooks, useEffect, useState, re-renders, Server Components, "use client",
+  Suspense, the React Compiler, useActionState, context, or forwardRef.
+license: CC-BY-4.0
+metadata:
+  author: danielteles
+  version: "1.0"
+---
+
+# React Conventions — Framework Skill
+
+React-specific rules for modern React: function components, hooks, Server Components, Actions, the
+React Compiler. It gives the React form of rules that `core-typescript` and `architecture-and-design`
+set in general terms.
+
+> **Builds on.** `core-typescript` (language rules) and `architecture-and-design` (design). Load a
+> sibling only when the task turns on its layer; if it is not loaded, apply that layer from
+> general knowledge and do not block.
+
+This SKILL.md is self-sufficient: the **Ruleset** below is the complete, enforceable list. Each
+`references/<topic>.md` holds that group's reasoning and `❌ / ✅` code, and
+`references/worked-example.md` a full review pass; open them for depth when your runtime allows.
+
+---
+
+## How to Use This Skill
+
+Pick the mode that matches the task. Do the steps in order.
+
+| Mode | Steps |
+|---|---|
+| **Generate** — write a new component or hook | 1. Keep render pure; type the props (`purity`). 2. Before you write a `useEffect`, check `effects` — most do not need one. 3. Derive state during render; reset with `key` (`state`). 4. Run the Ruleset as a checklist. Fix each fail before you hand off. |
+| **Review** — check a pull request or a diff | 1. Run the Ruleset against the diff. 2. Write one finding per fail, in the Output Format below. 3. Order the findings: `must-fix` first, then `consider`. 4. If nothing fails, say so in one line. Do not invent findings. |
+| **Migrate** — modernize legacy React | 1. Run the React 19 types codemod, then the `forwardRef` and `<Context.Provider>` codemods. 2. Turn on `eslint-plugin-react-hooks` (v6 or later, `recommended`) and fix every warning. 3. Adopt the React Compiler; then delete hand-written `useMemo` / `useCallback` that only guarded referential identity. 4. One change kind per commit. Keep the tests green. |
+
+### Output Format
+
+Write one finding per line:
+
+```
+<severity> · <topic> · <file>:<line> — <what is wrong>. <the fix as an action>.
+```
+
+- `<severity>` is `must-fix` (breaks a rule in this skill or a lint rule) or `consider` (safe, but a rule prefers another form).
+- `<topic>` is a Ruleset topic slug (`effects`, `state`, `data-fetching`, …).
+
+### Rules for Every Mode
+
+- Name the Ruleset topic when you enforce a rule.
+- Prefer the current API over its predecessor: `ref` as a prop over `forwardRef`, `<Context>` over `<Context.Provider>`, an Action over a manual submit
+  `useEffect`.
+- Before you reach for `useEffect`, ask why the code runs. If the answer is not "because the component is on screen and must sync with an external system", it
+  does not belong in an Effect.
+
+---
+
+## Ruleset
+
+### purity → `references/purity.md`
+
+- [ ] Render is pure: no mutation of props, state, or a prior render's value; no side effect in the render body; the app tree is wrapped in `<StrictMode>`.
+- [ ] Same props, state, and context produce the same JSX.
+- [ ] Props are a `type` or `interface`, not `React.FC`; children typed as `ReactNode`; event handlers typed with their React event type.
+- [ ] `ref` is accepted as a plain prop — no `forwardRef` on a new component.
+- [ ] One component per file, file name matching the component; no `import React` just for JSX (`"jsx": "react-jsx"`).
+- [ ] `useId()` supplies a label / `aria-*` id, never a list key; element choice and accessible names follow `accessibility`.
+- [ ] `eslint-plugin-react` and `eslint-plugin-react-hooks` (v6+, `recommended`) are on and every warning fixed, not disabled.
+
+### hooks → `references/hooks.md`
+
+- [ ] Every hook is called at the top level of a component or another hook, before any early `return` — never in a condition, loop, nested function, event
+      handler, `try`/`catch`, or a function passed to `useMemo` / `useReducer` / `useEffect`.
+- [ ] Hooks are called only from a function component or a custom hook.
+- [ ] Shared stateful logic is a custom hook named `useX` returning a stable, typed value.
+- [ ] `useEffect` / `useMemo` / `useCallback` dependency arrays are complete and not suppressed.
+
+### state → `references/state.md`
+
+- [ ] State is colocated in the component that uses it; lifted only when a second component needs the same value.
+- [ ] A value derivable from props or other state is computed during render, not copied into state.
+- [ ] No prop is mirrored into state; a subtree resets via `key`, not by clearing fields in an Effect.
+- [ ] State is never mutated in place — a new value is built and set.
+- [ ] The updater form (`setX(x => …)`) is used when the next value depends on the previous.
+- [ ] An expensive initial value uses the lazy form `useState(() => build())`.
+- [ ] `useReducer` when several fields change together or the next state depends on an event plus current state.
+- [ ] An external store is read with `useSyncExternalStore`, not `useState` + a subscribe Effect.
+
+### effects → `references/effects.md`
+
+- [ ] No Effect for: transforming data for render, an expensive calc (`useMemo`), resetting state on a prop change (`key`), a user event, a POST, a chain of
+      state updates, notifying the parent, or one-time app init.
+- [ ] An Effect exists only to synchronize with an external system (widget, socket, subscription, document title).
+- [ ] Every Effect has a cleanup that undoes its setup; one Effect per synchronization.
+- [ ] An Effect that fetches guards against a stale response (`AbortController` / ignore flag) — or, better, uses a cache library (see `data-fetching`).
+- [ ] A reusable Effect is extracted into a custom hook.
+- [ ] Reading the latest value without re-subscribing uses an Effect Event (`useEffectEvent`), not a dishonest dependency array.
+
+### refs → `references/refs.md`
+
+- [ ] `useRef` only for values that must survive renders without triggering one (DOM node, timer id, previous value).
+- [ ] No `ref.current` read or write during render — only in an event handler or an Effect.
+- [ ] `ref` is a plain prop; no `forwardRef`.
+- [ ] An imperative API is exposed with `useImperativeHandle` and is small and named (`focus`, `scrollIntoView`).
+- [ ] A `ref` callback that attaches a listener returns a cleanup function that detaches it.
+- [ ] Focus is moved with a ref after navigation, after an async action, and when a dialog opens.
+- [ ] The ref is an escape hatch — state or a prop is tried first.
+
+### context → `references/context.md`
+
+- [ ] Context holds only low-frequency, widely-read data (theme, locale, current user, DI container).
+- [ ] A fast-changing value is in its own context, or in local state / a store with selectors — not a wide context.
+- [ ] The provider is `<Context value={…}>` (React 19), not `<Context.Provider>`.
+- [ ] Context is read with `useContext`; `use(Context)` only where the read must be conditional.
+- [ ] The context `value` is memoized (or the React Compiler is on) — never an inline object literal.
+
+### data-fetching → `references/data-fetching.md`
+
+- [ ] No bare `useEffect` fetch: a framework loader, a cache library (TanStack Query, SWR), or `use(promise)` with a cache-created promise.
+- [ ] Each request has a stable cache key derived from its inputs.
+- [ ] An async read is wrapped in `<Suspense>` with a real fallback and an error boundary around each independent region.
+- [ ] A render error is caught by a class boundary or `react-error-boundary` — there is no hook.
+- [ ] A non-urgent update uses `useTransition` / `useDeferredValue`.
+- [ ] A mutation updates the cache from the response; `useOptimistic` only with a rollback path.
+
+### forms → `references/forms.md`
+
+- [ ] Submit is `<form action={submitAction}>` driven by `useActionState`; child pending state via `useFormStatus`.
+- [ ] An optimistic row uses `useOptimistic` (which reverts on failure), not hand-rolled optimistic state.
+- [ ] An input is never switched between controlled and uncontrolled mid-life; which mode a field defaults to is `component-api-design`,
+      controlled-uncontrolled.
+- [ ] Validators are built from the same schema the server uses, and the server re-validates.
+- [ ] Entered values survive a failed submit; each field error maps back to its field.
+
+### server-client → `references/server-client.md`
+
+- [ ] Components are Server Components by default (no directive); no state, Effects, browser APIs, or handlers in them.
+- [ ] A Server Component that needs data is `async` and `await`s it in render (reads the database or a file directly) — no client round-trip built for its own
+      data.
+- [ ] `'use client'` sits on the smallest interactive leaf, not a page or layout.
+- [ ] A server function is marked `'use server'` and called as an Action; props across the boundary are serializable (no functions except Server Actions, no
+      class instances).
+- [ ] No server-only module (db client, secret, `fs`) is reachable from a `'use client'` file; `server-only` enforces it.
+- [ ] Data fetching happens in the Server Component or loader, and the result is passed down.
+
+### rendering → `references/rendering.md`
+
+- [ ] The React Compiler is on; where it is not, `memo` / `useMemo` / `useCallback` appear only on a path measured with the Profiler.
+- [ ] No fresh object / array / function built in render and passed to a memoized child.
+- [ ] `key` is a stable id from the data, never the array index (`architecture-and-design`, frontend-practices).
+- [ ] Routes are code-split with `lazy()` + `<Suspense>`; a list beyond a few hundred rows is virtualized.
+- [ ] `<title>` / `<meta>` / `<link rel>` are rendered in the component that owns them (React 19 hoists them).
+- [ ] A modal / tooltip / toast renders through `createPortal`, staying in the React tree.
+
+### testing → `references/testing.md`
+
+- [ ] Rendered with React Testing Library; queried by role and accessible name.
+- [ ] Interaction driven by `@testing-library/user-event` (awaited), not `fireEvent`.
+- [ ] No mocked module or hook stands in for data; the boundary rule (MSW) is `test-quality`, test-doubles.
+- [ ] Assertions are on rendered output, not state, props, or call counts; async via `findBy*` / `waitFor`.
+- [ ] A custom hook is tested through a component that uses it; `renderHook` only when there is none.
+- [ ] `createPortal` content is queried through `screen` (document-wide), not the `render()` return value.
+- [ ] No shallow rendering, no Enzyme, no broad snapshot.
+- [ ] Each test also passes the `test-quality` Ruleset — asserts on rendered behavior not internals, has a meaningful assertion, is deterministic. This group is
+      the React mechanics; `test-quality` judges the test itself.
+
+---
+
+## Limits
+
+This skill is React framework rules. It does not cover:
+
+- Language rules (see `core-typescript`) or framework-neutral architecture (see `architecture-and-design`).
+- A specific framework's router, loaders, or metadata API (Next.js, React Router, TanStack Start) — the RSC and data-fetching rules here apply, the framework's
+  own conventions do not.
+- Store libraries (Redux Toolkit, Zustand, Jotai) — use the state tiers in `architecture-and-design` and reach for a store only when they call for one.
+- Accessibility depth — `useId` and focus management are noted where they fit; the full lens lives in `accessibility`.
+- React Native and animation libraries. Styling is `styling-and-design-tokens`; i18n (`react-intl` policy) is `i18n-and-localization`; loading and
+  interaction cost is `web-performance`.
+- Other frameworks — `angular` and `vue` are the sibling skills; every rule here is React-specific.
+
+The React Compiler is stable (1.0). The rules here assume you adopt it; where you have not, the `rendering` rules on manual memoization apply.
+
+---
+
+## References
+
+This skill composes with:
+
+- **`core-typescript`** — the language base; JSX and hooks do not exempt code from it.
+- **`architecture-and-design`** — the design layer. On a conflict it decides the design, this skill decides the React API.
+- **`accessibility`** — the review lens for UI; React's tools are `useId`, ref-based focus, and primitive libraries (Radix, React Aria).
+- **`test-quality`** — judges the individual test this skill's `testing` group produces.
+- **`angular`** / **`vue`** — the sibling framework skills.

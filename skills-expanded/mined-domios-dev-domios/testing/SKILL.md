@@ -1,0 +1,780 @@
+---
+name: testing
+description: "Choose, author, and run Domios unit, integration, REST, and cross-platform tests."
+---
+
+Workers run lightweight deterministic tests and scoped QA autonomously within their assignment, in a Team QA utility shell. Compilation stays centralized under the current owner's decision: do not run Cargo, builds, `tsc` or provider bundles without an explicit dispatch grant. Report exact commands, nonzero discovered/executed counts and raw exits with the task SHA; defer ungranted compilation selectors to the Orchestrator. Batch related edits before focused verification; recheck only failed or newly affected proof. Full and reverse-dependency regressions remain with the Orchestrator. The build guard requires an exact `--authorized-gate "./build.sh <verb> <args>"` dispatch grant in the current persisted attempt, even in canonical. It reads the active plan store beside the host AgentPad, matches task/tab/attempt/session nonce and owner epoch, and refuses missing or unreadable proof. The Orchestrator and its direct utility shells may run these commands in canonical under their bound plan. No environment override exists.
+
+Live QA that needs a signed-in account (Neighbors, mesh, billing, entitlements) uses only the QA account target, never production or personal accounts, and only under an owner QA grant. Where the accounts, the App Check token and the sign-in steps are: `domios mem search "Domios QA test accounts"` on this machine, then [qa-peers](../qa-peers/SKILL.md#automated-qa-sign-in).
+
+Test product behavior directly. Do not add self-tests for QA helpers, test catalogues, discovery inventories or test runners; their successful execution is not product verification. Use the actual selected application scenario and its observable result.
+
+## Domios — Testing Guide
+
+## Test-layer taxonomy
+
+Four families organize the runners below: curated Browser journeys and useful archived scenarios; deterministic unit/contract/API tests; load/performance tests; and agent evals for behavior/quality. Agent evals run operationally beside load benches with explicit environment, model/data/version pins and time/token budgets; quality and load verdicts remain separate. Folder location alone does not determine a family. The [curated preread](../../../evals/qa/REPEATABLE-QA.md) owns reusable Browser mechanics and subset evidence; the runner catalogue remains the index.
+
+For assertion discipline and layer-specific recipes, see `the Writing Tests section of this skill`.
+
+| Layer | Lives in | Runner | Real LLM? | Needs dev daemon? | CI | Budget/test |
+|---|---|---|---|---|---|---|
+| Rust unit | `src-tauri/src/**/tests.rs` | `scripts/test-capped.sh … --lib` | no | no | yes (D7) | <1s |
+| TS unit | `src/**/*.test.ts`, `packages/**` | tsx scripts (`npm run test:unit`) | no | no | yes (D7) | <1s |
+| Plugin | `plugins/*/tests/` | `pnpm test:plugins` | no | no | yes (exists) | <5s |
+| API e2e | `tests/e2e/test_*.py` | pytest (`./build.sh e2e`) | no | yes (7686) | spike (D7) | <30s |
+| Behaviour bench | `evals/<name>/` | `bash run.sh` via `_lib/lib.sh` | yes | yes (dev-locked) | never | unbounded |
+
+Every runner, its tier (`pr`, `release`, `manual`) and the files or tests it owns
+are indexed in `tests/catalogue.json`, rendered as `tests/README.md`; the table
+above is the layer model, the catalogue is the index of runners. A new test file
+must land where some runner's discovery finds it, or
+`node scripts/test-catalogue.mjs validate` fails. `select --tier pr` lists what a
+pull request runs; `tests/catalogue.overlay.json` carries stale, flaky and
+platform-red markers, which never count as healthy (platform-red is red on the
+listed platforms only and is not safe to delete). Real LLM providers run only in
+curated tests and evals: validate refuses `needs_live_agent` on any runner that
+is not `e2e-curated` or `eval` at tier `manual`, so everything else uses stub or
+recorded providers.
+
+Playwright is suspended and is not part of the test plan, agent workflow, local
+aggregate, QA registry, or CI: its catalogue runner `playwright` is `suspended`
+at tier `manual`, and `tests/playwright/README.md`, `QUARANTINE.md` and the
+generated `COVERAGE_MAP.md` open with the same suspended banner. Existing specs
+remain archived for a future explicit run requested by Andrey in the current
+conversation; do not run or modify them during normal development.
+
+### Which layer do I write?
+
+First decide whether a new automated test earns its maintenance cost. Reuse
+existing coverage; concrete visual review is sufficient for cosmetic changes.
+Add automation for important uncovered behavior, authority, data, state, race
+or resource failures. Then choose the lowest layer that proves that failure:
+
+```
+Is it pure logic (parsing, formatting, state machine)?
+├─ yes → unit test next to the code (Rust or TS). STOP — do not write a UI test
+│        for something a unit test can prove.
+└─ no → Does it require the daemon's HTTP/socket surface?
+    ├─ yes, no UI → pytest API e2e
+    └─ needs real rendering/interaction → the existing curated Browser case,
+        with focused unit/API coverage for pure logic; Playwright remains suspended. Behaviour-quality changes
+        use an eval bench, not a pass/fail UI test.
+```
+
+Prefer one focused oracle over duplicate coverage across layers. A parser
+regression usually needs a pure-model test; add UI coverage only when wiring
+has a separate failure mode. No test is required merely because a file changed.
+
+## Runbook
+
+| Layer | Exact command | When required |
+|---|---|---|
+| Canonical Rust or lane TS unit | `scripts/test-capped.sh … <filter>` / `npx tsx <one file>.test.ts` | During work, for the touched area |
+| All implemented layers | `./build.sh test:all` | Orchestrator release run only |
+| PR gate | Focused selectors | Orchestrator in canonical |
+| CI gate | Rust unit + TS unit + plugin tests (+ pytest spike) | CI on PR — task D7 |
+
+## Affected-test map
+
+`./build.sh test-related <file>...` prints the full selection before execution.
+Rust paths select their owning crate and module through nextest; crate roots
+select the crate. TS paths run Vitest related and the existing TS unit runner's
+import-based selection. Each Rust command still requires its own exact attempt
+grant. Use the printed commands when handing verification to canonical.
+
+Use `node scripts/affected-tests.mjs` to print exact commands for the current
+diff. Set the base with `--base <ref>` or `AFFECTED_TESTS_BASE`; it defaults to
+`origin/master`. Use `--rust-mode module-filters` for Rust changes.
+The mapper prints the narrowest module filters for touched crates, marked
+`canonical (Orchestrator)`. Missing module paths require a focused selector
+from the Orchestrator; the mapper never selects reverse dependencies or the
+workspace. `--metadata FILE` accepts saved Cargo metadata for offline mapping.
+Non-Rust commands run in the lane.
+
+Canonical only: `./build.sh nextest <scope> [filterset]` compiles test targets before applying
+the capped execution deadline, and `--no-tests=fail` rejects empty selections.
+TypeScript selections use the existing runner's related-file mode for tsx-runner
+tests and `pnpm exec vitest related <files>` for Vitest-owned tests. Plugin
+selections use `bash scripts/plugin-tests.sh <plugin-dir>`, which runs the
+`plugin-tests` catalogue discovery under `plugins/<plugin-dir>/`.
+
+The canonical `./build.sh nextest mem-postgres` scope selects only
+`codeterm-mem-postgres`. Every database fixture owns a disposable schema and
+requires `DOMIOS_TEST_POSTGRES_URL` from the local pgvector test container.
+When the variable is set, the scope passes `--run-ignored all`; otherwise it
+lists the database cases as ignored by name and runs only its pure unit cases.
+An explicitly forced fixture with no URL fails setup. Runtime results from
+this scope do not establish BlueprintStore or EngineStore parity until their
+explicit refusals have been replaced and those contracts are included.
+
+
+A change that moves Rust tests between modules or crates proves no test was
+lost without compiling: `node scripts/rust-test-inventory.mjs gate --base <ref>`
+statically scans the merge-base and HEAD from git objects and exits 1 on a lost
+or renamed key; crate moves pass. A deliberate rename is listed in a reviewed map,
+`docs/architecture/test-renames/<task>.txt` (`old_key -> new_key` per line),
+passed with `--renames`; a map line that hides nothing fails too.
+
+CI unit timing is advisory. Rust CI runs serially, reports every test's time,
+and emits a warning for each duration at or above one second. Nextest's
+one-second slow notification has no termination count. The timing guard never
+fails a run for slowness and does not consult slow-test allowance files. Missing
+or malformed timing evidence and actual test failures still fail normally.
+Local nextest uses the same warning threshold. The real REST listener lifecycle
+suite remains curated through `evals/rest-api-listeners/run.sh`.
+
+The standalone TS runner compiles each selected test graph into an isolated
+bundle before execution, then times the whole child process, including real
+module initialization, fixture setup, rendering, assertions and cleanup.
+Original source locations are retained for relative corpus/resource reads, and
+all bundled input hashes are validated before cache reuse. React DOM stays
+inside each graph so DOM fixtures precede its feature probes. Compilation time
+is printed separately. CI selects one worker for comparable serial timings;
+local parallel runs label their timing warnings accordingly.
+
+Every TS file at or above 1000ms emits a warning without changing its exit status
+or terminating its process. Vitest has no case/hook duration limit and marks
+slow cases at the same threshold. Preserve every meaningful oracle when
+isolating decisions, mocking a boundary or separating fixture contracts.
+
+### QuickJS frame-mapping performance check
+
+`runtime_quickjs_frame_mapping_benchmark` is ignored in ordinary suites because
+its absolute wall-clock throughput varies with host load. Run it alone in a
+canonical Team QA shell under Orchestrator authority, from the repository root:
+
+```bash
+source build.sh env
+scripts/test-capped.sh --no-default-features --manifest-path src-tauri/Cargo.toml \
+  -p codeterm-plugin --lib \
+  js_runtime::parity_test::runtime::replay::runtime_quickjs_frame_mapping_benchmark \
+  -- --exact --ignored --nocapture
+```
+
+On Windows, open Git Bash in that Team shell for this recipe. `test-one` does
+not forward libtest harness arguments, so use the capped runner explicitly.
+The check retains its 2x measured-stream-rate assertion and prints QuickJS and
+native baseline throughput, p99 latency, first-call latency, and peak headroom.
+A failure is performance evidence to investigate on an otherwise idle host;
+it is not an ordinary correctness gate. The native baseline only maps frames
+and counts them, so it does not justify a relative runtime-reducer threshold.
+
+### Unified entrypoint: `./build.sh test:all`
+
+One command runs every non-LLM layer and prints a per-layer summary table. Layers:
+
+1. `rust-unit` — `cargo test --lib` through `scripts/test-capped.sh` with its 600-second default cap (always runs)
+2. `ts-unit` — `npm run test:unit` → `scripts/ts-unit-tests.sh`, every `src/**` + `packages/**` `*.test.ts` (always runs)
+3. `plugin` — `pnpm test:plugins` (always runs)
+4. `e2e-pytest` — only if dev (7686) is healthy, else a loud `SKIPPED` line
+
+`test:all` exits non-zero **iff an executed layer failed** — a `SKIP` never fails the
+run. Behaviour benches and the suspended Playwright suite are excluded. With dev
+down you still get full unit coverage and a clear record of
+what was skipped.
+
+The canonical dev monitor owns the machine build gateway while port 7686 is
+running. Stop dev with `./build.sh kill` before `test:all`; otherwise the gate
+queues behind dev and cannot start. If its caller exits while queued, cancel the
+orphan with `./build.sh gateway-cancel <job-id>` before retrying.
+
+## Unit tests
+
+Fast, no running instance needed. Test detection logic, state management, parsers.
+
+### Launch-contract harness
+
+The launch-contract harness is a focused Cargo test set. It does not require a
+dev daemon or an app bundle; run each oracle under the capped runner:
+
+```bash
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib service::role_identity::tests::compose_orchestrator_golden -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib service::role_identity::tests::compose_planner_golden -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib service::spawn_params::tests::worker_launch_has_no_manager_bootstrap -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml -p codeterm-plugin --lib js_runtime::parity_test::launch_adapter_matrix_uses_each_installed_descriptor -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib service::launch_delivery::tests::delivery_prefers_system_prompt_when_declared -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib service::launch_delivery::tests::system_prompt_channel_consumes_launch_content_without_a_fallback_turn -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib service::launch_delivery::tests::external_provider_defers_identical_content_to_confirmed_fallback -- -- --exact
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib submission_matrix::claude -- -- --nocapture
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib submission_matrix::codex -- -- --nocapture
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib submission_matrix::opencode -- -- --nocapture
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib submission_matrix::cursor -- -- --nocapture
+```
+
+The matrix reads each provider's `readinessStrategy`, `verifySubmit`, and
+`hasHooks` capabilities from `plugins/provider-*/plugin.json`. Claude, Codex,
+and OpenCode run all sixteen dimensions. Cursor runs readiness plus byte-exact
+ASCII, Unicode, and 5000-character multiline ingestion with zero submit writes;
+every submit-dependent dimension prints a quota-constraint skip reason.
+
+The frontend key and delivery-ledger oracles are focused and bounded:
+
+```bash
+npm run test:unit -- ChatComposer.submission-keys
+npm run test:unit -- chatSendStatus
+npm run test:unit -- TabSessionChat.delivery
+```
+
+The provider-row harness verifies the real `domios` CLI before running those
+focused oracles. Its help and dry-run surface are:
+
+```bash
+bash scripts/submission-matrix.sh --help
+bash scripts/submission-matrix.sh --provider claude --dry-run
+```
+
+```bash
+## Rust: agent detection, multiplexer state, prompt parsing, config
+scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib
+
+## TypeScript: every src/** + packages/** unit test (direct Node scheduler)
+npm run test:unit
+## …or one file through the same scheduler:
+npm run test:unit -- colors.test
+
+## Shortcuts
+./build.sh test       # Rust unit tests only
+./build.sh test:all   # every non-LLM layer (see Runbook)
+```
+
+### Chat attach/hydration lifecycle
+
+Use the deterministic hook oracle for Terminal → Chat activation, tab-owned
+authority, bounded hydration, resync, and subscription cleanup:
+
+```bash
+npx tsx src/components/Terminal/useChatSession.attachHydration.test.tsx
+npx tsx src/components/Terminal/TabContent.chatContinuity.test.tsx
+npx tsx src/components/Terminal/ChatSetupState.test.tsx
+```
+
+The harness starts hidden with null Tab authority, activates into
+`awaiting_session`, and proves a global/foreign candidate cannot create Chat
+authority. It then commits the Tab's own session id and binding nonce while
+hidden, reactivates, and requires the pre-existing transcript exactly once with
+one subscription. Its resync replaces the subscription without duplicating
+rows; wrong-tab, wrong-session, wrong-nonce, cancelled-generation, and
+prior-lifecycle inputs remain rejected. The setup-state oracle proves a
+hydrated current-authority transcript suppresses stale `shell_ready` and earlier
+launch overlays. The `TabContent` oracle refreshes the mux with a new Tab
+snapshot carrying the same provider, model, session id, and binding nonce, then
+drives Terminal → Chat and requires one pre-existing row and one subscription
+without losing the mode switch or identity labels.
+
+### Rust test wrapper preflight
+
+`scripts/test-capped.sh` is the required Rust-test wrapper. Focused invocations
+default to 600 seconds; `build.sh test` and `verify` set 3600 seconds for each
+Cargo test invocation. Cargo first compiles the same targets with `--no-run`,
+outside the execution deadline. `TEST_CAP_SECS=<positive-seconds>` overrides
+either deadline; `TEST_CAP_SECS=0` disables it. On expiry the wrapper kills the
+execution process group, exits 124, and repeats libtest's active case names from
+its captured output. Stable Rust cannot use `--ensure-time`: it is nightly-only
+and reports a long test only after it finishes, so the process deadline owns hang
+recovery. Embedding inference runs in-process; the test wrapper does not stage an
+embedding executable.
+
+The TypeScript scheduler still waits for every file and the full suite by
+default. Set `TS_UNIT_TIMEOUT_SECONDS=<positive-seconds>` or
+`TS_UNIT_SUITE_TIMEOUT_SECONDS=<positive-seconds>` for an explicit diagnostic
+deadline for an explicit local diagnostic run. Ordinary execution has no
+implicit per-file limit; CI reports slow files as warnings.
+
+On Linux, a repository-watcher silence test that reports existing `refs/`
+directories is an inotify access event from recursive watch registration, not
+repository churn. Keep access filtering upstream of the debouncer, then rerun
+`repository_watcher_stays_silent_on_irrelevant_churn`; never add a settle wait.
+
+**Filtered runs fail closed.** A filtered run that executed zero tests exits `97`
+naming the filter and the crate: a filter that ran nothing verified nothing.
+Unfiltered runs are never checked, so an empty target still passes.
+
+**Windows: ConPTY test isolation**
+A test process launched from a Domios tab inherits `CODETERM_CONPTY_DIR` and would sideload the installed host into the user's install. `scripts/test-capped.sh` unsets it and exports `CODETERM_CONPTY_TEST_ISOLATION=1`; `pty-fork/src/win/psuedocon.rs` refuses the variable while that marker is set, and production never sets it. Verify: `./build.sh test-one pty-fork test_isolation_marker_refuses_ambient_production_dir`.
+
+When a fixture requires an exited PTY before attaching its replacement, use
+`begin_kill(...).wait_bounded(...)`, dropping the manager lock before waiting.
+`kill()` only queues reaping, so its return does not establish that precondition.
+Keep the existing failure deadline and ownership assertions; cover dead-claim
+selection separately with pure callbacks on every platform.
+
+**Windows: cargo test target isolation**
+Running the Rust test wrapper against the app crate while a dev build occupies the same
+`target/` directory fails with `Os error 5` — tauri-build cannot overwrite the
+in-use `.exe`. The required wrapper detects a healthy dev instance and
+automatically routes focused tests to the worktree-local
+`target-check` cache and enables machine-level `sccache` before Cargo starts:
+
+```bash
+TEST_CAP_SECS=90 scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib <filter>
+```
+
+### REST generation liveness
+
+Run the listener-exit and worker-starvation fixtures separately:
+
+```bash
+bash scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib startup::rest_api::tests::unexpected_exit_autonomously_replaces_generation_after_health_proof -- --exact
+bash scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib startup::rest_api::tests::diagnostics_distinguish_listener_exit_from_worker_stall -- --exact
+bash scripts/test-capped.sh --manifest-path src-tauri/Cargo.toml --lib startup::rest_api::tests::repeated_same_generation_outages_emit_exactly_one_resync_each -- --exact
+```
+
+The first fixture sends no manual recovery command and observes lifecycle
+events through the replacement's real `/api/health` response. The second uses
+explicit barriers to hold all four REST workers while leaving the listener
+bound, asserts an unanswered health request within a bounded failure deadline,
+and verifies that its diagnostic differs from listener exit without publishing
+a false healthy state. This worker gate is synthetic diagnostic coverage, not
+the incident cause. The third fixture proves two stalls in one generation each
+claim one distinct recovery resync and duplicate observation claims none.
+
+Run the real-load dev oracle separately:
+
+```bash
+bash evals/api-liveness-mesh-load/run.sh
+```
+
+It is locked to dev 7686 through `evals/_lib/lib.sh` and `dc`, has a 15-second
+failure deadline, and issues no readiness poll or delay. One barrier releases
+four sparse 476 MiB Claude transcript reads, health/tab observations, signed
+report/heartbeat-shaped relays, a duplicate relay, and a structured-error
+relay. It requires health/tab within one second, relay/send acknowledgement
+within two seconds, one durable delivery per id, and the original structured
+delivery error. The real load owner is the session parser; the bounded 4 MiB
+tail and blocking-worker route keep it off the four REST runtime workers.
+Neither the fixtures nor the oracle address production port 7685.
+
+## Plugin test launcher troubleshooting
+
+Dispatch creates the Git worktree. Before running JS tests in a fresh Domios
+lane, install its checkout-local dependencies from the shared pnpm store.
+`CI=true pnpm install --frozen-lockfile` runs without interactive prompts.
+In PowerShell, set `$env:CI = 'true'` before running
+`pnpm.cmd install --frozen-lockfile`. A missing `node_modules` or
+`Cannot find module .../node_modules/tsx/dist/cli.mjs` indicates this setup is
+needed. Keep the lane's dependencies local so pnpm resolves workspace packages
+from the lane's own revision.
+
+`npm run test:plugins` uses the repository launcher, which selects Git Bash on
+Windows and `bash` elsewhere. If it reports that Git Bash is missing, install
+Git for Windows at its standard location and rerun the same command.
+
+## Related documents
+
+End-to-end and cross-platform verification: `.agents/skills/testing/SKILL.md`. Prompt detection: `.agents/skills/provider-authoring/prompt-detection.md`. Test design rules: `domios docs TEST-AUTHORING`.
+
+---
+
+## End-to-end testing
+
+E2E, UI, cross-platform, logging, and manual smoke workflows.
+
+## E2E tests
+
+Test full stack via REST API against a running dev instance. Create tabs, send text, check output, verify prompt lifecycle.
+`./build.sh e2e` skips `llm` tests by default; run `./build.sh e2e:llm` deliberately because that tier starts real model agents and spends provider tokens.
+
+**macOS/Linux:**
+```bash
+## Needs running dev instance (./build.sh dev)
+CODETERM_API_URL=http://127.0.0.1:7686 pytest tests/e2e/ -v
+
+## Run specific file
+CODETERM_API_URL=http://127.0.0.1:7686 pytest tests/e2e/test_hooks.py -v
+```
+
+**Windows:**
+```bash
+./build.sh dev --wait       # starts dev on 7686 and leaves production on 7685 alone
+bash dev.local.sh dev       # local fallback: starts dev and waits for API on 7686
+bash dev.local.sh test      # runs pytest against dev instance
+bash dev.local.sh all       # dev + wait + test
+```
+
+**Remote testing:**
+```bash
+CODETERM_API_URL=http://HOST:PORT CODETERM_API_TOKEN=TOKEN pytest tests/e2e/ -v
+```
+
+### E2E test files
+
+| File | What |
+|------|------|
+| `test_health.py` | API health, identify |
+| `test_workspaces.py` | Workspace CRUD |
+| `test_tabs.py` | Tab create, split, close, rename |
+| `test_pty_io.py` | PTY read/write, exec, streaming |
+| `test_env.py` | CODETERM_TAB_ID env injection |
+| `test_notifications.py` | Notification create, list |
+| `test_cron.py` | Cron CRUD |
+| `test_agents.py` | Agent hierarchy |
+| `test_hooks.py` | Hook endpoints, prompt parsing accuracy, full approval flow |
+| `test_multi_tab.py` | Multi-tab prompt isolation |
+| `test_attachments.py` | File attachment via API |
+| `test_logging.py` | Log file, levels |
+| `test_claude_spawn.py` | Real Claude spawn (**slow**, 30-90s each) |
+| `test_hierarchy_scenarios.py` | Multi-level hierarchies (**slow**) |
+
+### E2E dependencies
+```bash
+pip install -r tests/e2e/requirements.txt  # requests, pytest
+```
+
+## UI tests
+
+Automated UI tests are currently suspended. Do not invoke or extend the archived
+Playwright suite. Cover UI logic at the TypeScript unit boundary, cover daemon
+behavior through Rust or API tests, preserve real accessibility semantics, and
+use the existing [curated Browser procedure](../../../evals/qa/REPEATABLE-QA.md) when rendering is the useful oracle.
+
+## Cross-platform test matrix
+
+One command runs the unit layers (rust-unit, cli, ts-unit, plugin) for all three
+OS targets in parallel from a macOS host:
+
+```bash
+./scripts/test-matrix.sh                 # all lanes
+./scripts/test-matrix.sh linux           # single lane
+```
+
+| Lane | Where | What runs | Coverage |
+|------|-------|-----------|----------|
+| `macos` | native host | capped `cargo test --lib` (src-tauri) + cli tests + `pnpm test:unit` + `pnpm test:plugins` | full execution |
+| `linux` | Docker (ubuntu:24.04, aarch64) | same suites | full execution, isolated |
+| `windows-cross` | Docker + cargo-xwin | `cargo check --target x86_64-pc-windows-msvc --lib --tests` (src-tauri + cli) | compile-level only |
+
+Windows containers cannot run on a macOS Docker host, so full Windows test
+**execution** is delegated to a real Windows machine on the Domios mesh
+(cross-compiled binaries built locally via `cargo xwin test --no-run`, test job
+dispatched to the peer) — or to remote E2E (`CODETERM_API_URL=... pytest`). The
+local `windows-cross` lane still catches `#[cfg(windows)]` compile breakage in
+minutes without leaving the machine.
+
+All lanes run cargo with `--locked`: lanes share one checkout via bind-mount, and
+a lane rewriting `Cargo.lock` while another reads it produces torn reads through
+VirtioFS. Keep the lockfile committed up-to-date or the lanes fail loudly.
+
+Logs land in `$TMPDIR/codeterm-test-matrix/<lane>.log`. Containers shadow
+`src-tauri/target`, `cli/target`, and `node_modules` with named Docker volumes
+(`codeterm-linux-*`, `codeterm-xwin-*`) — the host checkout is never dirtied,
+and warm reruns are incremental. To reclaim disk:
+`docker volume rm $(docker volume ls -q | grep '^codeterm-')`.
+
+### Cross-platform CI troubleshooting
+
+- ServiceFixture uses `app_runtime::Runtime`: Wry in production and Tauri's
+  MockRuntime under `cfg(test)`. Unit harnesses construct `app_runtime::builder()`
+  without an OS event loop; fixture-only desktop ignores are forbidden. Real OS
+  window or native API oracles retain a specific platform gate.
+- Real-socket tests that reserve an ephemeral address and then rebind it must
+  serialize that reservation inside the test module. Parallel bind-drop-bind
+  fixtures can claim each other's released ports, especially on Windows.
+- Run `scripts/clippy-gate.sh` before pushing. Toolchain lint changes are release
+  failures even when focused tests and `cargo check` pass.
+
+## Logging
+
+| | Path |
+|---|---|
+| Dev | `~/.domios-dev/logs/domios.log` |
+| Prod | `~/.domios/logs/domios.log` |
+
+- Levels: DEBUG (dev), INFO (prod)
+- Rotation: 50 MiB per file, current log plus 3 rotated generations
+- Live view: `tail -f ~/.domios-dev/logs/domios.log`
+
+## Cross-platform testing
+
+Run E2E tests against remote machines:
+```bash
+## Windows
+CODETERM_API_URL=http://<REMOTE_IP>:<PORT> CODETERM_API_TOKEN=<TOKEN> pytest tests/e2e/ -v
+```
+
+Known platform differences:
+- Shell: PowerShell on Windows (`$env:VAR`), bash/zsh on macOS/Linux (`$VAR`)
+- Paths: `C:\Users\` vs `/Users/`
+- Some PTY I/O tests are bash-specific
+
+## Manual paste smoke matrix
+
+Paste paths must be re-checked manually on each platform where Playwright
+cannot exercise the OS clipboard path directly. All paths route through
+`src/lib/clipboardPaste.ts` — file/image classification is shared,
+so a regression in one path usually means a regression in all.
+
+| Input | macOS (Cmd) | Windows (Ctrl) | Linux (Ctrl) |
+|-------|-------------|----------------|--------------|
+| Plain text via Ctrl+V / Cmd+V | echoed (bracketed) | echoed (bracketed) | echoed (bracketed) |
+| Long text (>1MB) via Ctrl+V | no UI freeze, no truncation | same | same |
+| Ctrl+Shift+V | same as Ctrl+V | same as Ctrl+V | same as Ctrl+V |
+| Right-click → Paste | same as Ctrl+V | same as Ctrl+V | same as Ctrl+V |
+| Drag plain text from another app | bracketed text in PTY | same | same |
+| Drag a single file from Finder/Explorer | quoted absolute path | quoted absolute path | quoted absolute path |
+| Drag multiple files | space-separated quoted paths | same | same |
+| Drag a folder | quoted folder path | same | same |
+| Drag multiple folders | space-separated quoted paths | same | same |
+| PNG image on clipboard via Ctrl+V | temp-file path (`.png`) | same | same |
+
+Behaviour rules locked in code:
+- Plain text is always wrapped in `\x1b[200~...\x1b[201~` (bracketed paste)
+  via `sendPlainTextToPty` — the same envelope on every path so TUIs
+  collapse it to a single `[Pasted text #N]` placeholder.
+- File / folder paths are joined with single space and quoted by
+  `quotePathForPaste` (single quotes by default, double quotes if the
+  path itself contains a single quote, with `"\$\``" escaped).
+- Image bytes are persisted via the `save_clipboard_image` Tauri
+  command, then the saved path is pasted.
+- A non-empty native clipboard file list wins over any plain text on
+  the clipboard — paste behaves "as if you dragged the files".
+
+---
+
+## Writing Tests
+
+This section covers test shape, assertion discipline, and review expectations
+after selecting a layer in the taxonomy above. Plugin parser changes need plugin
+tests and native parity fixtures where available. API end-to-end tests default
+to non-LLM; provider-token cases are marked and run deliberately.
+## Honesty rules
+
+Rule: prove command output with split markers. WHY: a terminal echo of the typed
+line can satisfy a naive substring assert. Example:
+`tests/e2e/test_pty_io.py` builds `echo 'LEFT''RIGHT'`; on Windows use
+`Write-Output ('LEFT' + 'RIGHT')` via `tests/e2e/helpers.py::shell_cmd`.
+
+Rule: never paste bash quoting into PowerShell. WHY: Windows dev Tabs run
+PowerShell; use `shell_cmd(unix, win)` for cross-platform command strings.
+Example: `tests/e2e/test_inject_verify.py`.
+
+Rule: assertions must not be derived from the same variable that built the
+input unless the system under test transforms or transports it. WHY: fixture
+tautologies go green without proving behavior. Example: transcript fixtures in
+`packages/chat-ui/src/providerTranscriptFixtures.testdata.ts` are asserted via
+rendered structure in `MessageBubble.providers.test.tsx`.
+
+Rule: prove payload integrity with length or hash, not marker presence. WHY: a
+truncated paste can still echo the marker. Example:
+`tests/e2e/test_inject_verify.py` echoes payload length proofs for 5k payloads.
+
+Rule: negative assertions poll absence before triggering presence. WHY: a stale
+screen match is not proof. Example: `tests/e2e/test_pty_io.py` enter=false cases
+poll absence, then send raw Enter and require presence.
+
+Rule: missing preconditions must fail the test. WHY: silent pass hides broken
+setup. Example: hierarchy tests now fail when the expected worker Tab is absent
+instead of skipping aggregation checks.
+
+Rule: prefer exact equality for contracts. WHY: presence-only asserts accept
+wrong schemas. Example: `tests/e2e/test_agents.py` asserts concrete
+`role`/`agent_type`/`session` fields for status responses.
+
+Rule: include one real negative path when the contract has rejection behavior.
+WHY: happy paths do not prove gates. Example:
+`src-tauri/src/bridge/manager/tests.rs` rejects unsupported bridge services.
+
+## Harness rules
+
+Rule: headless e2e Tabs should be eager. WHY: lazy Tabs have no PTY until a UI
+mounts them. Example: `tests/e2e/conftest.py::fresh_tab` and
+`tests/e2e/test_eager_tab.py`.
+
+Rule: do not trust inherited env. WHY: tests must target dev 7686, not prod
+7685 or a user shell. Example: `tests/e2e/conftest.py` force-sets the dev API
+environment.
+
+Rule: sweep before and after daemon e2e. WHY: leaked workspaces make later tests
+order-dependent. Example: `tests/e2e/conftest.py::_cleanup_e2e_workspaces`.
+
+Rule: teardown in `try/finally`. WHY: failures must not leak workspaces, Tabs,
+or external stubs. Example: `tests/e2e/test_eager_tab.py`.
+
+Rule: keep shared inputs under `tests/fixtures/` unless a package has a local
+fixture convention. WHY: review can see what is data versus test logic. Example:
+`tests/fixtures/auto-update/README.md`.
+
+Rule: no new `console.*` in QuickJS provider plugin code. WHY: plugin stdout is
+not a stable contract and can mask parser failures; assert outcomes in
+`plugins/*/tests/*.test.ts` instead.
+
+Rule: LLM tests must be visibly marked. WHY: token-spending tests need explicit
+human intent. Example: `pytestmark = pytest.mark.llm` in
+`tests/e2e/test_claude_spawn.py`.
+
+Rule: use the dev-locked harness for benches/evals. WHY: benchmarks must not
+mutate a user's production daemon. Example: `evals/_lib/lib.sh`.
+
+Rule: `.sh` scripts from PowerShell are always run through bash. WHY: bare
+`.sh` opens a Windows "choose an app" dialog. Example:
+`bash scripts/plugin-tests.sh`.
+
+Rule: register what an inventory test watches in the same change. WHY: these
+tests fail on anything unlisted. A new `IS_WEB` / `isTauriEnv` /
+`__TAURI_INTERNALS__` branch in `src/` needs a classified entry in
+`src/lib/webForks.test.ts`; a new prompt file needs the steps in
+`.agents/skills/prompts/SKILL.md`; a new `prod-docs/<NAME>.md` is registered in the
+`domios docs` registry. Stable product behavior belongs in `essences/`; executable procedures belong in `.agents/skills/`.
+
+## Recipes
+
+### Component/unit with tsx and happy-dom
+
+1. Put the test beside the component or package under test.
+2. Use the existing tsx runner pattern; do not add Playwright for pure render
+   assertions.
+3. Mock browser-only renderers such as mermaid.
+4. Assert semantic structure, not pixels.
+5. Prove fail-first by temporarily breaking a selector, fixture field, or
+   expected count before the PR.
+
+WHY: this catches renderer regressions in seconds. Example:
+`packages/chat-ui/src/CodeBlock.test.tsx`,
+
+`packages/chat-ui/src/MessageBubble.providers.test.tsx`.
+
+### Plugin suite
+
+1. Add or extend `plugins/<provider>/tests/*.test.ts`.
+2. Use real provider fixture shapes; do not invent fields.
+3. Include malformed-entry rejection only for genuinely malformed entries.
+4. If Rust native parity exists, keep JS acceptance aligned with parity
+   fixtures.
+5. Prove fail-first by corrupting one fixture entry or expected count.
+
+WHY: provider plugins are a boundary; the contract is accepted transcript shape.
+Example: `plugins/provider-claude/tests/plugin.test.ts` and
+`plugins/provider-codex/tests/provider-helper-parity.test.ts`.
+
+### API e2e with pytest
+
+1. Use `tests/e2e/helpers.py::CodeTermAPI`.
+2. Create tabs with `eager=True` for headless PTY tests.
+3. Use `shell_cmd(unix, win)` for commands that enter a shell.
+4. Use split markers plus length/hash proofs for payload transport.
+5. Wrap created workspaces/resources in `try/finally`.
+6. Run `python -m pytest tests/e2e/<file>.py -m "not llm"` unless the test is
+   explicitly marked `llm`.
+7. Prove fail-first with a sabotage marker, fake length, or rejection input.
+
+WHY: API e2e should prove daemon-visible behavior without relying on UI focus.
+Example: `tests/e2e/test_inject_verify.py` and `tests/e2e/test_eager_tab.py`.
+
+### Playwright smoke
+
+The Playwright suite is suspended. Do not run, repair, migrate, or add Playwright
+tests unless Andrey explicitly requests that run in the current conversation.
+The archived suite command remains `pnpm test:pw:smoke`; keep existing specs and
+manual commands intact. The `tests/playwright` docs carry the same suspended
+banner, and specs known to be stale are markers in `tests/catalogue.overlay.json`.
+Use focused unit or API coverage and manual dev inspection for UI changes.
+### Golden/LLM
+
+1. Mark real-token tests `@golden` or `pytest.mark.llm`.
+2. State the budget and why lower layers cannot prove the behavior.
+3. Assert structural outcomes, not prose exact text.
+4. Avoid mega-tests; one golden should prove one user-critical journey.
+5. Prove fail-first with a controlled prompt/task change where practical.
+
+WHY: model output varies and costs money; use it only for live-agent confidence.
+Example: `tests/playwright/suites/03-agents/agents.spec.ts`.
+
+## Review checklist for new tests
+
+- Lowest viable layer chosen. WHY: faster tests fail closer to the bug.
+- For a new regression test, demonstrate sensitivity to the defect when practical; report limits without mandatory production sabotage or repeated passing runs.
+- Marker cannot match typed echo. WHY: PTYs echo input before execution.
+- Payload length/hash is checked for large transfers. WHY: markers survive
+  truncation.
+- Negative paths wait for absence. WHY: stale output is common in terminal
+  buffers.
+- Preconditions fail loudly. WHY: silent setup skips are false greens.
+- Teardown is in `finally` or fixture cleanup. WHY: shared dev survives test
+  failure.
+- LLM/golden markers are explicit. WHY: reviewers can control token spend.
+
+## Focused billing checks
+
+Workers run `npm run test:unit -- accountPlanModel` in the app lane;
+`pnpm exec tsc --noEmit` requires an explicit compilation grant. Backend checks belong to the private
+[Firebase repository](https://github.com/rollacode/codeterm-firebase): from its
+root run `cd functions && npm test -- getEntitlements`. That test owns Auth,
+Firestore and Functions emulators; it verifies the returned owner record,
+foreign-UID refusal, token verification and free fallback. Backend and admin
+runtime checks are separate from app source removal. Rust remains canonical:
+`./build.sh test-one billing tests::` and `./build.sh test-one app account_plan_routes`.
+
+If the emulator reports `Unable to locate a Java Runtime`, an installed Homebrew
+JDK may be absent from `PATH`. Discover its installed path before running the
+same focused test with `JAVA_HOME` pointing to its JDK home and that JDK's `bin`
+prepended to `PATH`; no system Java registration or emulator bypass is needed.
+
+Ordinary Rust test operations disable default features to omit embeddings. Product DEV and library Clippy retain embeddings. The dedicated CI `rust-embeddings` job runs `./build.sh ci-tests embeddings` once; its receipt is required alongside the full and platform receipts. Use that verb to verify embedding-specific memory changes. The real-model golden-vector oracle (`candle_embedding_matches_fastembed_golden`, ignored by default) never runs in CI; run it by hand or through evals with `./build.sh embedding-parity` when the embedder, its dependencies or the pinned model change.
+
+For each batch, finish related edits, format the owned paths, then run the applicable lightweight tests once. On failure, fix reported errors and recheck only failed or affected proof; list deferred canonical selectors under GATES REQUESTED. Compilation, including `lane-check` and `tsc`, follows the explicit dispatch grant. The lane-check subshell selects `$CODETERM_RUST_CACHE_ROOT/lanes`, otherwise `$CARGO_HOME/codeterm-lanes` (Cargo home defaults to `~/.cargo`), and Cargo owns locking. Targets remain per worktree; canonical/gateway build directories remain separate. This check does not acquire the build gateway.
+
+Worker lanes run assigned lightweight tests and QA, commit and report; compilation stays centralized unless explicitly granted. A fix needing compiled proof requests the exact selector from canonical or one `ci-step` run on its `ci/try-*` branch. An Integrator real-merges ready lanes into a `ci/try-*` branch and runs deferred tests in one batch: canonical `./build.sh test-one` through the gateway and `ci-step` on warm runners for other platforms and feature sets. Failures go back to the owning lane with the exact selector and first error.
+
+Every lane diff also gets an independent read-only review before merge: correctness, the AGENTS.md hard rules (no sleeps, no lock across await, capability not provider id, file size, PTY delivery untouched, hook rules) and junk (dead code, duplication, needless abstraction, narration comments, tests that pass with the bug present). Blockers go back to the Worker before merge.
+
+Build each Rust configuration once per batch: run every focused selector of a crate in one capped invocation (one nextest filter expression), never one build per test. Do not add local builds for other feature sets, other platforms or all-target Clippy when CI covers them; request those as `ci-step` runs on warm runners (`.github/workflows/ci-step.yml`) instead of compiling them in a cold lane.
+
+Prompt templates under `src-tauri/prompts/` are embedded by codeterm-service-core. The affected-test mapper selects `./build.sh nextest codeterm-service-core 'test(/^prompts::tests::/)'`; the shell crate has no such tests, and a zero-test shell selection is a failure rather than coverage.
+
+<!-- revision: 11 -->
+
+## Independent server process oracle
+
+Parent canonical Team QA owns all Rust and native execution for this slice:
+
+```bash
+./build.sh test-one domios-server process_split_contract
+./build.sh process-probe --case server-only --instance split-oracle
+./build.sh process-probe --case arbitration --instance split-oracle
+```
+
+On Windows use the same arguments through `build.ps1`. `test-one domios-server`
+selects only the server library, disables default test features, and the existing
+capped runner refuses zero selected tests. Moved startup preservation selectors
+are `./build.sh test-one domios-server startup::` and core path arbitration is
+`./build.sh test-one app instance_lifetime::path_owner::`.
+
+`process-probe` first builds the exact CLI artifact, stages it at
+`resources/cli/codeterm[.exe]`, hashes its bytes, and passes
+`CODETERM_SERVER_CLI_SHA256` to the server build. It then builds only
+`domios-server --bin domios-server` with
+`--no-default-features --features domios-server/embeddings` and the explicit host
+target. Its Cargo artifact receipt pins the actual executable and digest; the
+matching normal/build dependency closure must exclude Tauri, Wry, WebView and
+codeterm-client-shell. Packaging must record the shipped release artifact's
+own feature/target closure too. Workspace/test feature unions do not establish
+this proof. A server built without the CLI digest refuses actual service startup.
+The resource is copied and reverified into a private lifetime lease before memory
+initialization; process-local CLI selection never falls back to a GUI executable.
+The probe starts a unique disposable named DEV identity beneath split-oracle,
+scrubs inherited connection/display selectors, and never connects to PROD.
+It waits on protected broker replies, listener-ready events and pinned OS exit
+handles, then verifies API/socket and a real disposable PTY after its launcher
+exits. A missing CLI resource must refuse before data initialization. The probe
+also requires the actual existing maintenance spawn, transferred kernel witness
+and separately verified executable/creation provenance; early exit or unavailable
+witness fails that row without spawning a substitute. Focused observer checks:
+`./build.sh test-one mem process_split_contract`.
+The arbitration case races a missing identity and an explicit junction/symlink
+path alias (probe-only DTO, both canonical roots must equal normal roots),
+requires one initialization audit, and rejects identity/build/protocol/epoch/PID
+skew and foreign executable/listener cases. Cleanup requires exact server exit;
+uncertain cleanup retains disposable data and fails.
+
+A Windows breakaway refusal means the launching job forbids server detachment.
+Record the returned infrastructure failure; never disable the PTY kill-on-close
+job or retry behind a deadline. The client launch must originate from a context
+that can create the independent server. Report Windows, Linux and macOS native
+rows separately. An unrun probe, successful source check or fake fixture is never
+a native process PASS. Probe receipts contain no API credential; the credential
+travels only over private inherited pipes or authenticated local IPC.
+
+## Repository harness references
+
+[Embedded-doc references](embedded-doc-references.md) records archived Playwright
+helpers and native profile coverage moved out of product help.

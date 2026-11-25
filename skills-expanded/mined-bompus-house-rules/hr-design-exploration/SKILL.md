@@ -1,0 +1,105 @@
+---
+name: hr-design-exploration
+description: "Explore visual design or redesign alternatives through four ranked directions, top-two feedback and refinement toward one chosen design, or compare variants of one component in place. Use when asked to propose or compare UI design directions or component variants; ordinary UI fixes and implementing a chosen design do not need it."
+---
+
+# Design exploration
+
+Use the user's requested scope and constraints. The default is four initial
+directions, then rounds containing the two selected designs and one variation
+of each. A requested count applies to the initial comparison unless the user
+also specifies refinement rounds. Refinement defaults to four options. Before
+a differently sized refinement round, agree which selected designs to retain
+and how many variations to show. The user's chosen method takes precedence.
+
+## Establish the comparison
+
+Read the brief and current design. Identify the intended users, primary task,
+content, required interactions, brand constraints and target viewports. Use
+existing answers; ask only for missing information that would change the
+alternatives. State the goal used to rank recommendations.
+
+Keep the same real content, states and viewport sizes across previews. Hold
+accessibility and required behavior constant. If content is unavailable, label
+placeholder content and the assumptions it introduces.
+
+## Show the initial directions
+
+Create four meaningfully different approaches by default to the same goal. Differences
+should affect hierarchy, layout, navigation, interaction or density. Color
+swaps alone do not make distinct directions. Stay within the authorized
+prototype scope; keep the current implementation available for comparison.
+
+Show inspectable previews at comparable sizes, using the host's available
+preview or image tools. Include interaction states when they distinguish the
+directions. If rendering is unavailable, label the output as concepts and name
+what remains unverified. Never claim an unseen design was visually checked.
+
+Give each direction a stable ID and a short descriptive name. Present the directions
+in recommendation order, strongest first. Mark the strongest choices
+"(Recommended)" and explain why they fit the stated goal. Recommendations are
+judgments; do not invent usability results, performance gains or scores.
+
+Beside the previews, use a short comparison table with each direction's ID,
+main difference, benefit and tradeoff. Keep IDs stable when rankings change.
+Ask the user to select their top two and give feedback on each, including what
+to retain and what to change. Follow the host's question format. Wait for the
+answer before narrowing or generating the next round.
+
+## One component
+
+When the scope is a single component rather than a screen or flow, build three
+variants by default. When the authorized prototype scope includes the page
+where the component renders, put them behind a switcher there, so the user
+compares them where the component actually lives; otherwise compare them
+within the scope you have. Keep the switcher and variants out of production
+code paths, and remove them once a variant is chosen.
+
+Pick one design axis and give each variant a different position on it:
+structure (grouping, order, what collapses), density (spacing, hit areas),
+emphasis (where strong color and weight go), type (scale and weight contrast)
+or voice (labels and amount of copy). Let secondary choices follow from that
+position. Variants that differ on several axes at once cannot show which
+change made the difference. Name each variant for its direction, not "Option
+A". Before ranking, name the accessibility checks every variant must pass, at
+least keyboard reach, visible focus, accessible names for controls, no
+clipping at the narrowest supported width and no meaning carried by color
+alone, plus `hr-better-accessibility`'s checks when it is available. Check
+each variant against the same list and drop any direction that fails one.
+
+Rank and refine the variants as described below.
+
+## Refine the selected two
+
+Record the chosen IDs and feedback in the task's durable design notes. Keep
+eliminated directions there so later rounds do not revive rejected ideas by
+accident. If the user chooses one as final, move to final selection below.
+
+By default, show four options again:
+
+1. The first selected design, unchanged as a comparison.
+2. The second selected design, unchanged as a comparison.
+3. One variation of the first design responding to its feedback.
+4. One variation of the second design responding to its feedback.
+
+Give variations new IDs and name their parent IDs. Explain what changed and
+which feedback it addresses. Keep the inherited strengths visible and the
+variation distinct enough to assess. Rerank the round against the goal and
+latest feedback, mark recommended choices, and ask for the next top two with
+feedback on each.
+
+Repeat this round only after a new selection. Do not add new unrelated
+concepts unless the user asks to reopen exploration. If feedback leaves no
+meaningful variation to test, offer final selection or ask which unresolved
+tradeoff needs another round instead of inventing cosmetic differences.
+
+## Final selection
+
+An explicit final choice ends exploration; no minimum round count is required.
+Record the chosen ID, accepted refinements, rejected directions and remaining
+uncertainties. Summarize the final design's layout, interactions and relevant
+responsive states so implementation can follow it.
+
+Choosing two for refinement authorizes that comparison, not promotion of a
+winner. Apply the final design within existing implementation authorization;
+when implementation or landing has not been authorized, offer that next step.

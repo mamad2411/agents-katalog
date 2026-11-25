@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/breakingcircuits1337/agent-skills (path: continuous-learning-v2/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents.

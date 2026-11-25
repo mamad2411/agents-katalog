@@ -1,0 +1,1848 @@
+---
+name: pr-review-loop
+description: |
+  Manage the PR review feedback loop: monitor CI checks, fetch review comments, and iterate on fixes.
+  Use when: (1) pushing changes to a PR and waiting for CI/reviews, (2) user says "new reviews available",
+  (3) iterating on PR feedback from Gemini, Cursor, Claude, or other reviewers, (4) monitoring PR status.
+
+  Supports multiple review bots: Gemini Code Assist, Cursor Bugbot, and Claude agent fallback.
+  Agent reviewers can run on non-Claude models (DeepSeek, Gemini, etc.) via Pi in Docker.
+  Also supports custom agent reviewers, one file each in .reviewers/ (legacy: AGENT-REVIEWERS.md), for focused reviews (security, DRY, etc.).
+  Automatically detects priority levels from different bot formats and handles rate limits.
+---
+
+# PR Review Loop
+
+**Contents:** STOP - READ THIS FIRST · Do NOT Run as a Background Task Agent · Supported Review Bots · Comment Formats: Line Comments vs PR Comments · Critical: Be Skeptical of Reviews · Pattern Analysis: Sweep Before Fixing · Convergence · Merge Readiness · Choosing the Roster · Local Mode · Autonomous Loop Workflow · CI Failure Handling · Reply Templates · Out of Scope Suggestions · Triggering Reviews by Bot Type · Agent Reviewers · Suggesting Reviewer Changes · Dream Markers · Rate Limit Detection · Scripts · Permission Setup · Prerequisites
+
+## ⛔ STOP - READ THIS FIRST ⛔
+
+### 1. Locate the scripts directory
+
+The scripts are in `scripts/` under the skill's base directory, which Claude
+Code states when the skill loads ("Base directory for this skill: …"). Failing
+that, Glob `**/skills/pr-review-loop/scripts/discover-agents.sh` under
+`~/.claude`. That search can return several copies: `~/.claude/plugins/cache`
+keeps old versions, so ask which one to use rather than picking one. Call every
+script by its full path. The examples below write `scripts/` for short.
+Permission allowlists match the literal command, so don't route calls through
+variables or `&&` chains.
+
+### 2. Commit only what the round reviewed
+
+Stage the round's files by name, then `git commit` and `git push`. Never
+`git add -A`: it sweeps in edits no reviewer saw. The repo's pre-commit hooks run
+as usual.
+
+### 3. The PR is the system of record — agents RECORD, one script POSTS
+
+Every finding MUST exist on the PR before its fix is committed. Reviewers
+**record** findings with `record-finding.sh` (a local store); the orchestrator
+**posts** them once with `post-findings.sh <PR>`, which merges same-line
+findings, rolls P3s into one thread and sends a single review. A finding that
+lives only in return text, your context or a commit message does NOT count.
+
+| ❌ FORBIDDEN | ✅ USE INSTEAD |
+|--------------|----------------|
+| Reviewers posting with `post-line-comment.sh`, or told "return findings, do not record" | Record, then `post-findings.sh <PR>` posts them in one write |
+| Fixing a finding before `post-findings.sh` ran | Post first, then fix, then `reply-to-comment.sh`. F4 checks with `post-findings.sh <PR> --check` |
+| Silently dropping a validator-refuted finding | Reply + resolve its thread as withdrawn (`reply-to-comment.sh <PR> <id> "Withdrawn — validator refuted: <reason>"`) |
+| Substituting a consolidated "review record" PR comment for line comments | Line comments at the flagged lines; consolidated comments are a supplement, never the record |
+
+Why this is load-bearing, not ceremony:
+- **The threads ARE the user's review.** The operator reviews the PR primarily by reading the problems the reviewers surfaced, in situ on the diff. When findings are absorbed into fixes without comments, the operator is left blind — they see a diff churning across rounds with no visible record of what was wrong, what was contested, or what was withdrawn.
+- **Audit trail**: findings, dispositions, and withdrawals stay attached to the lines they're about, with reopen rights on every thread.
+- **Round-to-round dedup**: each agent's step 1 (`get-agent-comments.sh`) checks its own prior comments — if nothing was posted, every later round re-litigates from scratch and reopen/retirement logic silently breaks.
+- **Cost routing**: the legwork (file/line anchoring, finding bodies) belongs on the cheap per-agent model, not the expensive main-loop model. Merging and posting is a script, so it costs the orchestrator nothing.
+- **One write per round**: GitHub's secondary rate limit is per account, and per-reviewer posting hit it.
+- **Merge-readiness integrity**: the end-of-loop summary counts threads; zero posted threads with nonzero findings is a protocol violation that must be reported, not papered over.
+
+A repo's reviewer files may define an "Output format" / severity
+template for finding BODIES — that styles the comment text. It never
+overrides the posting requirement.
+
+---
+
+## ⚠️ Do NOT Run as a Background Task Agent
+
+**The PR review loop MUST run in the main conversation, NOT as a background Task.**
+
+Tasks cannot spawn sub-Tasks. If the review loop runs as a Task, agent reviewers (from
+AGENT-REVIEWERS.md) will silently fail to spawn — they require the Task tool, which is
+only available in the main conversation.
+
+**What to do instead:** Execute the review loop steps directly in the main conversation.
+This allows you to spawn agent reviewer Tasks in parallel (C3 of each round) while
+keeping Gemini/bot comment handling inline.
+
+Individual agent reviewers (leaf-level Tasks that don't need to spawn further Tasks)
+should still be spawned via the Task tool — that works because they're called from the
+main conversation, not from within another Task.
+
+---
+
+Streamline the push-review-fix cycle for PRs with automated reviewers.
+
+## Supported Review Bots
+
+| Bot | Trigger | Priority Format |
+|-----|---------|-----------------|
+| **Gemini Code Assist** | `/gemini review` comment | `![critical]`, `![high]`, `![medium]`, `![low]` |
+| **Cursor Bugbot** | Auto on push | `<!-- **High Severity** -->`, `### Bug:` |
+| **Claude** | Manual via script | `🚨`, `**Critical**`, `### Critical Issues`, `⚠️` |
+
+Priority detection automatically parses all formats when summarizing and fetching comments.
+
+Gemini is off unless a repo turns it on, and Cursor is on unless a repo turns it off, both via `# Configuration .bots`
+in the root `.reviewers/config.json` (legacy: `# Configuration` in `AGENT-REVIEWERS.md`) — see "Disabling an External Review Bot". A
+disabled bot is never triggered and never waited for.
+
+### Priority to Exit-Condition Mapping
+
+The convergence rule (see Convergence) depends on classifying findings as P1/P2 vs P3/nitpick. Use this table. "Blocks convergence" is about a finding left unfixed: fixing a finding at any level makes the round not clean.
+
+| Source label | P-level | Blocks convergence? |
+|---|---|---|
+| Gemini `![critical]`, `![high]` | P1/P2 | Yes — must be resolved or merged with explicit user sign-off |
+| Gemini `![medium]` | P2 if correctness/security/breaking; else P3 | Yes if correctness/security/breaking; no if style/prose |
+| Gemini `![low]` | P3/nitpick | No |
+| Cursor `**High Severity**`, `### Bug:` | P1/P2 | Yes |
+| Claude `🚨`, `### Critical Issues`, `**Critical**` | P1/P2 | Yes |
+| Claude `⚠️` | P2 if correctness/security/breaking; else P3 | Yes if correctness/security/breaking; no if style/prose |
+| Agent comment, no explicit label | Infer from content: correctness/security/breaking → P1/P2; else P3 | Per inferred level |
+
+**"Won't fix" on a P1/P2 finding does NOT resolve it on its own** — it still blocks convergence unless (i) the finding is reclassified to P3 with explicit justification (drop one P-level with reasoning), (ii) the finding is actually fixed in a later round, or (iii) the user explicitly signs off on the carry-forward, in which case the finding is recorded as an acknowledged unresolved item in the merge-readiness summary.
+
+The (iii) escape valve exists so the model isn't forced to relabel a genuine "won't fix" as a reclassification: surface the finding to the user, they sign off, it's recorded in the merge-readiness summary.
+
+**Comment, docstring and PR-body findings are P3 by default.** They are P2 only if the text is wrong in a way that would lead a reader to write a bug. Fix them by deleting, never by rewording or adding: a comment stays only if it documents something surprising or hard-won, never the history of how the code got here. A reasoned decline on wording or style is final.
+
+**Classifying `![medium]` (Gemini's most-used label) — use these heuristics:**
+
+- P2 (blocking): the comment describes a correctness bug, security concern, breaking change, data loss risk, or incorrect error handling. Example: *"this will return nil for empty input"*, *"missing null check could crash on production data"*, *"env var not validated before use"*.
+- P3 (non-blocking): the comment describes naming, phrasing, formatting, alternative implementations of equivalent behavior, documentation polish, or preference-level style. Example: *"variable name is ambiguous"*, *"consider using map over for-loop"*, *"comment could be clearer"*.
+- When ambiguous: default to P2 on the first round; downgrade to P3 only if the fix is a judgment call, not a correctness improvement.
+
+## Comment Formats: Line Comments vs PR Comments
+
+Different bots use different comment formats:
+
+### Line Comments (Gemini, Cursor)
+- Posted on specific lines of the diff
+- Each issue is a separate comment thread
+- Reply using `reply-to-comment.sh <PR> <comment-id> "Fixed"`
+- Thread auto-resolves when replied to
+
+### PR Comments (Claude)
+- Single large comment on the PR (not on specific lines)
+- Contains multiple issues organized by sections (e.g., "Issues & Concerns")
+- Issues reference file:line locations in prose (e.g., "**Location:** `role_summaries_controller.rb:60`")
+- Reply to the comment addressing multiple issues at once
+
+**Handling Claude's PR comments:**
+
+1. **Fetch the comment** to get the comment ID:
+   ```bash
+   gh pr view <PR> --json comments --jq '.comments[] | select(.author.login == "claude") | {id: .id, body: .body}'
+   ```
+
+2. **Parse issues** from the structured markdown:
+   - Look for numbered headings like `### **1. BREAKING CHANGE: ...**`
+   - Extract file:line references from `**Location:**` lines
+   - Note priority indicators: 🚨 (critical), ⚠️ (warning), etc.
+
+3. **Reply with a consolidated response** addressing each issue:
+   ```bash
+   gh pr comment <PR> --body "## Response to Claude Review
+
+   **Issue 1 (Breaking API change):** Fixed - added deprecation support for old parameter name
+
+   **Issue 2 (Missing validation):** Fixed - added ALLOWED_VIEW_ROLES validation
+
+   **Issue 3 (Logic change):** Won't fix - this is intentional, documented in PR description
+
+   **Issue 4 (Missing tests):** Fixed - added RSpec tests for SystemRoles methods
+   "
+   ```
+
+4. **Individual issues** can also be addressed via separate replies if preferred:
+   ```bash
+   gh pr comment <PR> --body "**Re: Issue #2 (Missing Input Validation):** Fixed in commit abc123 - added validation for view_role parameter"
+   ```
+
+The key difference: Claude comments don't have "threads" to resolve - you reply to the main PR comment referencing which issues you're addressing.
+
+## Critical: Be Skeptical of Reviews
+
+**Not all suggestions are good.** Evaluate each review comment critically:
+
+- Does this actually improve the code, or is it pedantic?
+- Is this suggestion appropriate for the project's context?
+- Would implementing this introduce unnecessary complexity?
+
+**Skip suggestions that are:**
+- Platform-specific when not applicable (Windows comments for Linux-only code)
+- Overly defensive (excessive null checks, unlikely edge cases)
+- Stylistic preferences that don't match project conventions
+- Adding documentation for self-explanatory code
+
+When in doubt, decide or ask the user. Don't apply changes blindly.
+
+### Self-Contradiction Detection
+
+Track changes across rounds. When a fix in round N reverses or conflicts with a fix from a previous round, this signals that the review loop may be degrading the code rather than improving it.
+
+This includes reviewers flapping: two reviewers pulling opposite ways, or a reviewer re-raising a point you already declined.
+
+**When a contradiction is detected, either settle it or ask the user.** Never silently apply the contradicting change.
+
+- **Settle it:** pick one side, using project conventions and the original pre-review-loop code (often the right answer). Reply once on each involved thread with the decision and the reason. Later re-raises are declined by reference to that reply and don't count as findings.
+- **Ask the user:** summarize the original, both changes, and your recommendation. You must ask when the choice changes behaviour or is a product decision.
+
+**Parallel valid findings**: Multiple reviewers may independently flag different aspects of the same code. This is not a contradiction — it's convergent analysis. The key distinction is whether round N is *undoing* round N-K's work (contradiction) vs. addressing a *different concern* in nearby code (parallel findings).
+
+## Pattern Analysis: Sweep Before Fixing
+
+When Gemini (or any reviewer) raises a finding, ask: **is this finding symptomatic of a broader pattern, or is it truly isolated?** Acting on this question before fixing prevents the same pattern from appearing in multiple subsequent rounds.
+
+### Batch Before Acting
+
+**Do not fix comments one-at-a-time.** After collecting all comments for a round (Gemini + other bots + agents), list them together before editing any file:
+
+1. Identify patterns across comments (same issue type, multiple files or lines) — plan one sweep fix, not N individual fixes.
+2. When a comment, docstring or PR-body passage is flagged, prefer deleting it to rewriting it. Don't answer a doc finding with a longer, more defensive comment; that feeds the next round.
+3. Commit once per round, not once per comment. Note deliberate trade-offs in the commit message body so reviewers see the reasoning rather than re-flagging it.
+
+### Indicators of a Broader Pattern
+
+A finding is likely a pattern when:
+- It is about a code/naming style (camelCase vs kebab-case, `.foo[]` vs `.foo[]?`, etc.) — style issues almost always recur across files
+- It is about a consistency rule between files (file A has updated terminology that file B hasn't adopted) — consistency gaps spread
+- It is about a structural anti-pattern in examples (missing error handling, incorrect operator usage) — structural patterns repeat
+- The comment body says "similar to X elsewhere" or "for consistency with Y"
+
+A finding is likely isolated when:
+- It is a specific factual error at one location (e.g., a wrong version number) — unlikely to recur in the same way
+- It is about a single missing detail unique to one code path
+- It is a judgment call about documentation tone
+
+### When a Finding Targets Unchanged Content
+
+If a reviewer flags an issue on content **not modified in recent pushes**, their initial review pass was incomplete:
+
+1. **Widen the sweep to the full original PR diff** — not just recently-changed files.
+2. **Consider an explicit full-diff review trigger**: push-triggered auto-reviews anchor on recently-changed files. Running `trigger-review.sh <PR> --wait` prompts a review of the full PR diff and can surface remaining issues sooner. Use the script, not a hand-written `/gemini review` comment — the script is what honors `# Configuration .bots`, so posting the comment yourself triggers a bot the repo has disabled (and bills the user for it) with nothing to warn you.
+
+### When a Finding Looks Like a Pattern
+
+Before replying to the reviewer or making the fix:
+
+1. **Sweep all changed files** (and closely related files) for the same pattern using grep or a targeted search.
+2. **Fix all occurrences in one commit** rather than one per reviewer round. Multiple rounds for the same pattern means this step was skipped.
+3. **Decide whether to re-run a targeted agent-reviewer**:
+   - Re-run if: the pattern was something the agent was supposed to catch (e.g., code-reviewer for guideline violations, silent-failure-hunter for error handling) AND enough new lines were added or changed that a targeted re-run adds coverage
+   - Skip re-run if: the agent already ran and addressed this area, and the fix is narrow enough that no new review surface was introduced
+
+### Examples
+
+| Reviewer Finding | Pattern Type | Sweep Action |
+|---|---|---|
+| `.items[]` should be `.items[]?` in `config.yaml` | Style/structural | Grep all changed files for `.items[]` without `?` |
+| `userName` should be `user-name` in `api.md:42` | Naming style | Grep all changed files for `userName` |
+| Field added to schema in `models.py` but the docs in `README.md` still show the old shape | Cross-file consistency | Check related diagrams/tables in all files modified by the PR |
+| Wrong version number at one location | Isolated factual | Fix in place; no sweep needed |
+
+## Convergence
+
+**A loop converges on ONE clean round.** Not two consecutive clean rounds. When
+a round is clean, the loop is done.
+
+**There is no round limit.** Run until convergence or an explicit merge
+instruction. Do not cap the loop at N rounds; a stuck loop is a reason to stop
+and ask the user, not a number to count to.
+
+### Escalating Scrutiny Past Round 5
+
+From round 6 on, a round that wasn't clean must justify the next one, and the
+bar rises each round. Answer these in your reasoning and in the round's commit
+message body:
+
+1. **Was the finding that blocked convergence genuinely new?** A finding in code
+   the loop itself wrote, or a re-flag of ground already reviewed, is churn.
+2. **Would it have been a P1/P2 on round 1?** Past round 5, a P2 needs a
+   concrete failure scenario (inputs or state leading to a wrong result).
+   Without one, reclassify it to P3 with that reason. Ticket a P3 rather than
+   fix it: a fix of any severity owes another round.
+3. **Are finding counts falling?** Flat or rising counts at the same severity
+   mean the reviewers are generating findings, not discovering them.
+
+By round 8, only a clear correctness or security P1 justifies another round on
+its own. If you can't justify the next round, stop and ask the user.
+
+### What makes a round clean
+
+Some of these rules are fixed and some are the running agent's judgement. Keep
+that distinction — they are not a flat list of equal-force bullets.
+
+**Fixed — not the agent's call:**
+
+| Rule | Why |
+|---|---|
+| **Any fix means the round was NOT clean.** | A README line or one test case counts. The next round reviews *different code*. A review that passed did not pass on what would actually ship. Push the fix, run another round. To keep a low-priority finding from costing a round, ticket it instead of fixing it (see below). |
+| **Every unfiled note needs a disposition.** | A reviewer that says it noticed something but chose not to file it, or rated it too low to file, has handed you a finding without a thread. Give each note one disposition: fixed (which makes the round not clean), ticketed, or declined with a reason. List them in the round report. Notes that get read past come back later as real findings. |
+| **Every dispatched reviewer must have reported.** | A reviewer you chose to skip is named in the round report, not counted (see Choosing the Roster). A reviewer that never reported looks identical to a reviewer with nothing to say. Never infer it from an empty comment list or a zero exit status — see [`references/reviewer-reported.md`](references/reviewer-reported.md). Consequence is the **A reviewer that will not report** row below. |
+| **Every disposition must have reached its thread.** | A reply you sent is not a reply that landed; a failed POST can leave a resolved thread carrying a finding and no disposition. F4's gate is what checks this — the query is in [`references/round-workflow.md`](references/round-workflow.md). |
+| **At least one reviewer must have run.** | An empty roster — every bot disabled, every default disabled, every agent retired — produces a vacuously clean round. Zero reviewers is not convergence; it is a configuration problem. Stop and ask. |
+| **A P1/P2 disposed of by anything other than a fix blocks convergence.** | Four reply words decline a finding, and **each one needs a path** — a word with no path is a P1/P2 that leaves by a door nobody is watching. **Out of scope** and **Deferred** are resolved by a ticket that carries the finding: file it with the reviewer's own text and the comment id, reply with the ticket id, and confirm the ticket exists **and is open** (`bd show` exits 0 on a closed ticket, so existence alone lets a shut ticket carry a live P1 — the open-ness check is in [`references/round-workflow.md`](references/round-workflow.md)). Out of scope means the fix lives outside this PR's diff, not that you would rather not do it now. **Won't fix** and **Acknowledged** take the other route: (i) reclassified to P3 with explicit justification per the Priority Mapping rule, (ii) fixed in a later round, or (iii) signed off by the user as an acknowledged carry-forward, recorded in the merge-readiness summary. An in-scope P1/P2 always needs (i), (ii) or (iii). Found by the thread's last reply text, never by its resolve state. Query in [`references/round-workflow.md`](references/round-workflow.md). |
+| **A CI fix is a fix.** | A fix pushed at F5 to get CI green changed the code as surely as a review fix did. The round that contained it is not clean. |
+| **A round the branch moved under is INCOMPLETE.** | Reviewers must all read the same commit. Record the head SHA at dispatch, compare it at F7, and if the branch was pushed in between, discard the round and re-dispatch against the new head — the round proves nothing about what would ship. The comparison is the point: an invariant nothing checks is a wish, and this row shipped for one round with no detector anywhere in the skill. Query in [`references/round-workflow.md`](references/round-workflow.md), which also shows how to reconstruct the SHAs of a round you forgot to record, from `original_commit_id`. Working-tree edits are the same hazard one step earlier and take a different remedy: nobody read them either, so the round still stands, but they must not ride along in its F4 commit as though they had been reviewed. `.beads/` is exempt — `bd show` restages its JSONL, so the ticket rule below would otherwise forbid the check it requires. |
+| **A self-contradiction must be settled before the round can be clean.** | A round that reverses a previous round's fix means the loop is oscillating, and more rounds won't fix it. Settle it or ask the user, per Self-Contradiction Detection. |
+| **A reviewer that will not report stops the loop.** | Re-run it inside the same round. Two failures **in that round** stops the loop and asks the user — whether it failed to report or the check for it failed; one counter, both causes, because alternating them would otherwise trip neither. Nothing crosses a round boundary, so nothing has to survive one. See [`references/reviewer-reported.md`](references/reviewer-reported.md). |
+
+**Agent's judgement — explicitly discretionary:**
+
+- **Findings only ticketed, and low priority → the agent may call the round
+  clean.** This is discretion, not a severity cutoff. "All P3" does not
+  automatically mean clean; it means the agent gets to decide. File the tickets
+  with the reviewer's own text so the finding survives the merge.
+
+- **Disagreed with every finding → the round can be clean.** Lean clean. A round
+  you disagree with end to end is usually evidence that the *reviewers* are
+  underperforming, not a license you granted yourself to skip them. The agent may
+  always run another round if that seems prudent. If it keeps happening, that is
+  a roster problem rather than a round problem — run the `dream-reviewers` skill
+  against the roster instead of shrugging it off round after round.
+
+  **This discretion does not reach P1/P2.** Disagreeing with a P1/P2 finding is a
+  Won't-fix on a P1/P2, which the fixed rule above already blocks on — so this
+  bullet covers a round of P3s you disagree with. Unbounded, it would swallow the
+  fixed rule and let a loop converge by overruling its reviewers on precisely the
+  findings that matter most.
+
+**Record it, do not hold it in your head.** Compute `D dispatched / R reported`
+at F7, before applying the convergence rule, and put it in the end-of-round
+report's per-reviewer line.
+
+### Merge Authority
+
+**Two things authorize a merge: the loop converged, or the user said yes.**
+Nothing else. Running low on patience, a long round count, a clean CI run, and a
+round that is clean only in a weaker sense are all not authorization.
+
+Proceed to merge readiness checks.
+
+## Merge Readiness
+
+When the review loop is complete, check CI status and read repo-specific merge guidance before proceeding.
+
+### 1. Check CI Status
+
+```bash
+gh pr checks <PR> --watch
+```
+
+Do not proceed to merge if any checks are still running or failing. If CI is still running or newly failing at this point, fall back to the [CI Fix Loop](#ci-failure-handling) to diagnose and fix before reporting readiness.
+
+### 2. Read Repo-Specific Merge Guidance
+
+Read the repo's `CLAUDE.md` and follow any linked files it references (e.g., `.ai-knowledge/code-review-guidelines.md`). These define the repo's merge policy — what approvals are required, whether auto-merge is permitted, attestation requirements, and any other merge criteria.
+
+Use whatever you find to determine:
+- Whether this PR is ready to merge or needs further action
+- Whether to merge automatically or ask the user
+- What information to include in a merge-readiness summary
+
+### 3. Prepare Merge-Readiness Summary
+
+Always prepare a summary of what the review loop did and observed:
+
+- **Review loop activity**: Rounds completed, total comments addressed (fixed / won't fix / out of scope)
+- **CI status**: All checks passed, any failures, any checks still running
+- **Unresolved items**: Any review comments that remain open or contested
+- **Self-contradictions**: Any detected during the loop and how they were resolved
+- **Beads tickets**: Out-of-scope items captured for follow-up
+- **Branch protection status**: Whether all required checks and approvals are satisfied
+- **Reviewers not dispatched**: every bot and agent that was disabled or retired, and why. A `D dispatched / R reported` of 2/2 reads identically for a two-reviewer roster and a four-reviewer roster with two switched off; naming them is what makes the difference visible
+- **Stale defaults pin bypass** (if `--skip-stale-check` was used): note the config and current plugin versions; recommend running `/pr-review-loop:audit-agents`
+- **Posting integrity**: total agent findings vs posted line-comment threads vs replied threads, per round. These MUST match (every finding posted, every thread replied). Any round where findings were fixed without posted threads is a protocol violation — report it explicitly, never paper over it.
+- **Validator activity** (if `independent_validator.enabled`): per-flagger acceptance rate (`X of Y posted findings survived; Z withdrawn as INVALID; W annotated [validator: uncertain]`). A flagger with persistent low acceptance is a candidate for retirement or prompt refinement.
+
+If repo-specific guidance defines additional merge criteria (attestation requirements, approval types, etc.), include the status of those criteria in the summary as well.
+
+### 4. Merge or Ask
+
+Per Merge Authority above:
+
+- **Converged (or the user said yes)** and the repo's own criteria are met — CI passed, required approvals present, branch protections satisfied: merge, and present the summary alongside it
+- **Not converged**, or a repo criterion is unmet: present the summary and ask the user. Do not merge on a round that is clean only in a weaker sense — ask rather than picking the reading that permits the merge
+
+The review loop should **not** override branch protections or bypass repo-defined merge requirements. Repo policy can withhold a merge that convergence would otherwise authorize; it cannot authorize one on its own.
+
+## Choosing the Roster
+
+Finding count tracks reviewer count almost linearly, so spawn only what the
+diff touches.
+
+- `discover-agents.sh` drops generated files (lockfiles, bundles, source maps,
+  `.beads/` exports) and doesn't dispatch a reviewer left with no files. A diff
+  that is only generated output needs no loop: say so and stop.
+- Decide from each reviewer's `summary` (its header), not its spec. Skip a
+  reviewer whose `Spawn when` the diff doesn't meet.
+- Name every skipped reviewer and why in the spawning summary and the round
+  report's `Roster:` line.
+- Later rounds dispatch the reviewers whose findings drove the fixes, plus any
+  whose focus the fix commit touched.
+- Never skip a mandatory reviewer, or one whose focus the diff plainly touches.
+
+## Local Mode
+
+To review a local branch once before pushing, with nothing posted to GitHub,
+follow [`references/local-mode.md`](references/local-mode.md).
+
+## Autonomous Loop Workflow
+
+**CRITICAL RULES - NEVER VIOLATE THESE:**
+1. **Call scripts by their full path** (see ⛔ rule 1)
+2. **Commit only the round's files** (see ⛔ rule 2)
+3. **ALWAYS reply to EVERY comment**:
+   - Line comments (Gemini, agents): use `reply-to-comment.sh`
+   - PR comments (Claude): use `gh pr comment` with consolidated response
+4. **ALWAYS use `--wait` flag** when checking for comments - this ensures proper 5-minute polling
+5. **PR creation automatically triggers Gemini review** - use `get-review-comments.sh --wait` to wait for the first review
+
+### Pre-Loop Setup (do once, before round 1)
+
+1. **Discover agents.** Run `scripts/discover-agents.sh <PR>` once. Its output includes:
+   - The agent list, each with its `summary` (the header the roster is chosen from)
+   - The `configuration` block, including `layout`: `"reviewers"` (a root `.reviewers/` and no root `AGENT-REVIEWERS.md`) or `"agent-reviewers"` (legacy)
+   - The `language_detection` block (`null` when the repo already has reviewers; otherwise `{matched: [...], same_directory_polyglot: bool}`)
+2. **Offer language templates** (only when `language_detection != null` AND `language_detection.matched` is non-empty). See "Language Template Offer" below for the full flow.
+3. **If `configuration.layout` is `"agent-reviewers"`**, offer once to convert ([`references/reviewers-dir.md`](references/reviewers-dir.md)); on no, run as is. Then check the stale pin ([`references/legacy-layout.md`](references/legacy-layout.md)).
+4. **Choose the roster** (see "Choosing the Roster" below), then **emit the spawning summary**: a one-line summary of which agents will run and which you skipped (see "Spawning Summary" below).
+5. **Track --skip-stale-check usage** (legacy layout) for the merge-readiness summary.
+
+After setup, proceed to The Loop.
+
+### The Loop
+
+**⚠️ CRITICAL: Each round includes ALL reviewer types before triggering the next cycle.**
+
+**DO NOT** run multiple Gemini rounds before checking other reviewers. After addressing Gemini comments, you MUST check for other bot comments and run agent reviewers BEFORE triggering another Gemini review. This interleaving is essential because:
+- Fixes made for Gemini may resolve issues other reviewers would have flagged
+- Running all Gemini rounds first makes other reviewer feedback stale and irrelevant
+
+```
+EACH ROUND — three phases, in order:
+
+  COLLECT PHASE (no edits yet):
+  ┌─────────────────────────────────────────────────────────────┐
+  │ C1. Get Gemini comments (--wait only on first check)        │
+  │ C2. Check for other bot PR comments (Claude, Cursor, etc.)  │
+  │ C3. Run agent reviewers (.reviewers/ files, chosen roster); │
+  │     agents RECORD findings + return manifests; then         │
+  │     post-findings.sh posts them as ONE review (same-line    │
+  │     merged, P3s rolled up); then validate each posted       │
+  │     finding (refuted → withdrawn on-thread)                 │
+  └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+  ⚠️ BATCH POINT — apply "Batch Before Acting" before any edit:
+  list all collected comments together, identify cross-source
+  patterns, plan fixes as a group, self-review each fix through
+  each active agent's lens before staging.
+                              │
+                              ▼
+  FIX PHASE (apply the batched plan):
+  ┌─────────────────────────────────────────────────────────────┐
+  │ F1. Apply + reply to Gemini comments                        │
+  │ F2. Apply + reply to other bot comments                     │
+  │ F3. Apply + reply to agent comments                         │
+  │ F4. Commit and push ONCE (if ANY fixes were made)           │
+  │ F5. Wait for CI checks; fix failures (max 3 CI retries)     │
+  │ F6. Trigger next review (--wait)                            │
+  │ F7. Count D dispatched / R reported, then apply convergence │
+  └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+  If F6 returned new comments → next COLLECT PHASE (new round).
+  Otherwise → apply the convergence rule (see Convergence).
+  Clean round (nothing fixed) → converged. No round cap.
+```
+
+**Phase order is mandatory.** Complete all COLLECT steps (C1, C2, C3) before beginning any FIX step (F1–F7). The BATCH POINT between them is what makes Pattern Analysis (`Sweep Before Fixing`) work.
+
+**For full step-by-step details with commands and example outputs, see [`references/round-workflow.md`](references/round-workflow.md).** The diagram above is the authoritative execution order; the reference file is the operational companion the model can read on demand when actually running a round.
+
+**COMPLETION:**
+When a round is clean under the convergence rule (test it against Convergence —
+do not re-derive it here):
+- Report all beads tickets created during the loop (if any)
+- The loop converged, which authorizes the merge — proceed to Merge Readiness
+
+## CI Failure Handling
+
+### CI Fix Loop
+
+```
+CI FIX SUB-LOOP (max 3 attempts per round):
+┌──────────────────────────────────────────────────┐
+│ 1. Run check-ci.sh <PR> --wait                   │
+│ 2. If passed → continue to trigger next review    │
+│ 3. If failed:                                     │
+│    a. Read the failure logs from check-ci output  │
+│    b. Diagnose the root cause                     │
+│    c. Apply a MINIMAL, TARGETED fix               │
+│    d. Commit the fix (⛔ rule 2) and push         │
+│    e. Go to step 1 (decrement retry counter)      │
+│ 4. If max retries exhausted → STOP and ask user   │
+└──────────────────────────────────────────────────┘
+```
+
+### Rules for CI Fixes
+
+1. **Be conservative** — minimal fixes only; don't change behavior beyond what's needed to pass CI.
+
+2. **Diagnose before fixing** — Read the failure logs carefully. Common CI failures:
+   - **Lint/format errors**: Run the linter/formatter locally, commit the fix
+   - **Test failures**: Read the failing test, understand what broke, fix the regression
+   - **Type errors**: Fix the specific type issue flagged
+   - **Build failures**: Fix the compilation/build error
+
+3. **Don't break the PR to fix CI** — If a CI fix would require significant changes that alter PR behavior, STOP and ask the user. Examples:
+   - A test is failing because the PR intentionally changed behavior (test needs updating, not the code)
+   - A lint rule conflicts with the PR's approach (may need a targeted disable)
+   - CI infrastructure issues (flaky tests, service outages) — not your problem to fix
+
+4. **Max 3 attempts** — If CI still fails after 3 fix-push cycles, stop and escalate to the user.
+
+5. **Exit code 2** — `check-ci.sh` timed out, or could not read the head SHA or its check runs. On a timeout, ask the user whether to wait longer; otherwise re-run it once, and if it fails again, stop and ask.
+
+6. **Exit code 3** — the PR head moved while `check-ci.sh` waited. Its verdict was for an old commit; re-run it against the new head.
+
+### Example CI Fix Flow
+
+```bash
+# After pushing review fixes
+scripts/check-ci.sh <PR> --wait
+
+# Output shows: ✗ CI checks failed (1/4 failed)
+# === FAILED CI CHECKS ===
+# --- lint (FAILURE) ---
+# src/utils.py:42:1: E302 expected 2 blank lines, got 1
+
+# Fix it
+# (edit the file to add the missing blank line)
+
+# Commit and push the fix
+git add src/utils.py
+git commit -m "fix: lint error in utils.py"
+git push
+
+# Check again
+scripts/check-ci.sh <PR> --wait
+# ✓ All CI checks passed (4/4)
+# → Proceed to trigger next review
+```
+
+## Reply Templates
+
+### For Line Comments (Gemini, agent reviewers)
+**ALWAYS reply using `reply-to-comment.sh`.** Templates:
+- Fixed: "Fixed - [description]"
+- Won't fix (bad suggestion): "Won't fix - [reason]"
+- Out of scope (good suggestion): "Out of scope - tracked in BD-XXX" (see below)
+- Deferred: "Deferred - tracking in BD-XXX"
+- Acknowledged: "Acknowledged - [explanation]"
+
+**Lead with the disposition word.** Two checks are anchored on the first word of
+a reply: the one that finds a P1/P2 declined rather than fixed (the four decline
+words) and F4's reply gate, which reads a reply that leads with none of the five
+as a thread still needing an answer. Bury the disposition and the first check
+goes blind while the second nags forever.
+
+### For PR Comments (Claude)
+Reply using `gh pr comment` with a consolidated response:
+```markdown
+## Response to Claude Review
+
+**Issue 1 (Breaking API change):** Fixed - added backward compatibility
+
+**Issue 2 (Missing validation):** Fixed - added input validation in controller
+
+**Issue 3 (Behavior change):** Won't fix - intentional, see PR description
+
+**Issue 4 (Missing tests):** Out of scope - tracked in BD-XXX
+```
+
+## Out of Scope Suggestions (Beads Integration)
+
+When a review suggestion is **good but outside the scope of this PR**, capture it for later rather than losing it.
+
+**Decision tree:**
+1. Is this suggestion valid and would improve the code? → If NO, use "Won't fix"
+2. Does it belong in this PR? → If YES, fix it
+3. It's a good suggestion but out of scope → Create a beads ticket if available
+
+**Check if beads is installed:**
+```bash
+bd --version
+```
+
+**If beads is available, create a ticket:**
+```bash
+bd create
+```
+
+Include in the ticket:
+- **Title**: Brief description of the suggested improvement
+- **Description**: Must include ALL context needed to fix the issue later:
+  - The original review comment text
+  - File path and line number(s) affected
+  - PR number and link for context
+  - The gh command to fetch the exact comment:
+    ```
+    gh api /repos/{owner}/{repo}/pulls/{PR}/comments/{comment-id}
+    ```
+  - Any relevant code snippets or context from the current PR
+
+**Then reply to the comment:**
+```bash
+scripts/reply-to-comment.sh <PR> <comment-id> "Out of scope - tracked in BD-XXX"
+```
+
+**Track the ticket** for reporting at the end of the review loop. Keep a list of all created tickets (ID and title) to include in the completion summary.
+
+**If beads is NOT installed:**
+
+1. Still reply to the comment noting the finding is out of scope:
+   ```bash
+   scripts/reply-to-comment.sh <PR> <comment-id> "Out of scope for this PR - see review loop completion summary"
+   ```
+2. Collect all out-of-scope findings with full context (original comment text, file paths, line numbers, PR number, reviewer, and the `gh api` command to fetch the comment). Track these via `TaskCreate` (one task per finding, with the full context in the task body) so they survive across rounds.
+3. In the completion summary, list all out-of-scope findings and recommend installing beads to track them. Offer to create a follow-up PR that:
+   - Creates a markdown file (e.g., `TODO-beads.md`) with pre-filled `bd create` commands for each out-of-scope finding, using the context collected in step 2
+   - Includes instructions for the user to run `bd init` and execute the commands in the markdown file
+4. If the user agrees, create a follow-up PR containing the generated markdown file and documentation updates explaining how users can install and use beads.
+
+## Triggering Reviews by Bot Type
+
+### Gemini Code Assist (opt-in: `"bots": {"gemini": true}`)
+```bash
+scripts/trigger-review.sh <PR> --gemini --wait
+```
+The script uses two checks to avoid redundant `/gemini review` triggers and conserve quota (33 reviews/day on free tier):
+1. **Commit check**: If Gemini has already reviewed the current HEAD commit, skips the trigger entirely.
+2. **Config check**: If `.gemini/config.yaml` exists with `code_review: true`, the repo has auto-review enabled. When `--wait` is used, the script waits one poll interval for an auto-review before falling back to a manual trigger.
+
+When quota is exceeded, the skill automatically detects this and suggests alternatives.
+
+### Cursor Bugbot
+```bash
+scripts/trigger-review.sh <PR> --cursor --wait
+```
+Cursor auto-reviews on push, so `--cursor` just waits for comments to appear (typically 1-2 minutes).
+
+### Claude Agent (Fallback)
+```bash
+scripts/trigger-review.sh <PR> --claude
+```
+Uses a Claude agent to review the PR and post comments. Useful when:
+- Gemini is rate-limited
+- You want a different perspective
+- Cursor isn't configured on the repo
+
+### Claude Review Workflow
+
+When using Claude fallback:
+
+1. **Run the script to get the prompt:**
+   ```bash
+   scripts/claude-review.sh <PR>
+   ```
+
+2. **Use the Task tool with the generated prompt:**
+   ```
+   Task tool:
+     subagent_type: general-purpose
+     description: Review PR #<PR>
+     prompt: (copy from /tmp/claude_review_prompt_<PR>.txt)
+   ```
+
+3. **The agent will post the review as a PR comment**
+
+4. **Continue the normal review loop** - address comments using `reply-to-comment.sh`
+
+## Agent Reviewers
+
+A repo's reviewers are the files in its `.reviewers/` directories, one file per
+reviewer (see "Reviewer Files" below). Nothing else runs. The plugin ships
+**starter** reviewers and language packs that setup copies in, and
+`convert-reviewers.py` moves a legacy `AGENT-REVIEWERS.md` repo over.
+
+### Starter Reviewers
+
+Located in `plugins/pr-review-loop/agents/`. Each has frontmatter (`name`, `description`, `model`, `spawn_when`, `color`); `convert-reviewers.py starters` turns one into a `.reviewers/<name>.md` whose header comes from that frontmatter:
+
+| Starter | Model | Focus |
+|---------|-------|-------|
+| `code-reviewer` | sonnet | CLAUDE.md compliance + significant bugs; confidence ≥80; quote-the-rule forcing function |
+| `silent-failure-hunter` | sonnet | Empty / broad catches, optional-chain swallowing, fallback masking |
+| `pr-test-analyzer` | sonnet | Behavioral coverage gaps, criticality 1-10 |
+| `comment-analyzer` | sonnet | Factual accuracy, comment rot, value-free comments |
+| `type-design-analyzer` | sonnet | Encapsulation, invariant expression / usefulness / enforcement (4 axes 1-10) |
+| `code-simplifier` | sonnet | Genuine complexity / nested ternaries / dead code; behavior-preserving |
+
+`scripts/convert-reviewers.py starters` lists them and copies them in (see
+[`references/reviewers-dir.md`](references/reviewers-dir.md) step 3). Once
+copied, a starter is the repo's file to edit.
+
+A repo still on `AGENT-REVIEWERS.md` (`configuration.layout` is
+`"agent-reviewers"`) runs the six starters as built-in defaults. Its
+`disabled`, override and stale-pin rules are in
+[`references/legacy-layout.md`](references/legacy-layout.md).
+
+### Configuration
+
+Project-level settings live in the root `.reviewers/config.json`, plain JSON.
+A legacy repo keeps them in a `# Configuration` H1 of the root
+`AGENT-REVIEWERS.md`, as a fenced `json` block. When both exist, `config.json`
+wins and discovery warns. Configuration in a subtree is ignored.
+
+```json
+{
+  "overlap_acknowledged": {
+    "my_pci_auditor": {
+      "overlaps_with": "security-reviewer",
+      "reason": "PCI-compliance-specific scope; we want both running because the default is general security"
+    }
+  },
+  "independent_validator": {
+    "enabled": true,
+    "skip_for": ["code-simplifier"],
+    "uncertain_action": "post_with_annotation"
+  },
+  "bots": {
+    "gemini": false
+  }
+}
+```
+
+Fields:
+
+- **`overlap_acknowledged`** — map from a reviewer name to `{ overlaps_with, reason }`. Both keep running; this entry documents intentional duplication so the audit tool doesn't recommend renaming. **`reason` is REQUIRED** — the parser rejects entries without it.
+- **`independent_validator`** — controls the per-finding validation step (see "Independent Validator Pipeline" below). All three nested fields are optional; defaults are `enabled: false`, `skip_for: []`, `uncertain_action: "post_with_annotation"`.
+- **`bots`** — map of external review bot name (`gemini`, `cursor`) to boolean. Cursor defaults to enabled; an explicit `false` turns it off. Gemini defaults to disabled; an explicit `true` turns it on. See "Disabling an External Review Bot" below.
+- **`pi`** — run reviewers on non-Claude models. See "Pi Engine" below.
+
+### Disabling an External Review Bot
+
+Not every repo has Gemini Code Assist or Cursor installed (or wants to pay for
+them). Gemini is off unless the repo sets `"gemini": true`; turn Cursor off with
+`# Configuration .bots`:
+
+```json
+{ "bots": { "cursor": false } }
+```
+
+A disabled bot means, for the whole loop:
+
+- **Do NOT post `/gemini review`** or any other manual trigger comment for it — not via a script, not via `gh pr comment`.
+- **Do NOT wait for its review.** `trigger-review.sh <PR> --gemini` exits immediately, and `get-review-comments.sh --wait` skips its 5-minute poll when every external bot is disabled.
+- **Skip its COLLECT step.** With Gemini off, C1 stops being a wait on Gemini. Drop `--wait` only when *every* external bot is off — if Cursor is still enabled it auto-reviews on push and C1 must keep waiting for it. With all of them off, C1 is a plain fetch of existing line comments (agent-posted threads from prior rounds) and the round's real reviewers are the C3 agents.
+- **Do not fall back "because Gemini is missing."** Disabled is not rate-limited; there is no quota to wait out and no substitute round to run.
+
+The exit conditions, batching, and reply discipline are unchanged — they just
+operate over the reviewers that are actually enabled.
+
+### Language Template Offer
+
+When pre-loop step 2 sees a non-empty `language_detection` block from `discover-agents.sh`, the loop offers to install language-specific reviewer templates before round 1. Templates live under `plugins/pr-review-loop/agent-reviewer-templates/<language>/`: one reviewer file each, a `README.md` of guidelines, a `config.json` of overlap acknowledgements, and `STARTERS`, the starter reviewers the pack keeps (it leaves out the ones its own reviewers subsume, e.g. its richer `error-handling-reviewer` replaces `silent-failure-hunter`).
+
+#### When the offer fires
+
+Only when ALL of these hold:
+- `language_detection != null` (no `.reviewers/` or `AGENT-REVIEWERS.md` exists at root OR via walk-up from changed files)
+- `language_detection.matched` is non-empty (at least one manifest detected)
+- The user has not declined the offer earlier in this loop invocation
+
+#### Prompt shapes
+
+**Single match (one language, one subtree):**
+
+```
+No reviewers found. Detected: golang in `/` (matched: go.mod).
+
+Available template: golang — adds 8 reviewers (test-coverage,
+error-handling, complexity, concurrency, resource-leak, external-process,
+dead-code, clarity) to .reviewers/, plus the starters code-reviewer,
+pr-test-analyzer and type-design-analyzer.
+
+Install? [y/N]
+```
+
+**Per-subtree polyglot (`same_directory_polyglot == false`):**
+
+```
+No reviewers found. Detected:
+  - golang in `/backend` (matched: go.mod)
+  - python in `/frontend` (matched: pyproject.toml)
+
+Available templates:
+  [1] golang → /backend/.reviewers/
+  [2] python → /frontend/.reviewers/
+
+Each template installs in its detected subtree. The starters they keep and a
+merged config.json go to the root .reviewers/.
+
+Install all? [y/N/select]
+```
+
+**Same-directory polyglot (`same_directory_polyglot == true`):**
+
+```
+No reviewers found. Detected MULTIPLE languages in the same directory:
+  - golang in `/` (matched: go.mod)
+  - python in `/` (matched: pyproject.toml)
+
+The language packs share agent names (test-coverage-reviewer, etc.) and
+cannot both install at the same subtree. Pick ONE to install at the
+detected location, or skip and set up subtree boundaries manually.
+
+Pick one to install: [1=golang, 2=python, N=skip]
+```
+
+#### Invocation
+
+On user accept, run `install-template.sh` with the chosen pairs:
+
+```bash
+# Single match
+scripts/install-template.sh golang:.
+
+# Per-subtree polyglot — install all
+scripts/install-template.sh golang:backend python:frontend
+
+# Same-directory polyglot — user picked golang
+scripts/install-template.sh golang:.
+```
+
+
+
+#### After install: offer repo-tailored recommendations
+
+Once `install-template.sh` succeeds, offer a second prompt for repo-tailored reviewer recommendations:
+
+```
+Template installed. Want recommendations for repo-specific reviewers
+based on the codebase (e.g., migration-safety-reviewer for DB-heavy
+repos, prompt-injection-reviewer for LLM-heavy repos)? [y/N]
+```
+
+On accept, follow the "Project-Specific Reviewer Recommendations" section below — the proposals are presented via `AskUserQuestion` (multi-select), not plan mode. On decline, proceed to step 3 with just the template install in place.
+
+#### When the user declines the install offer
+
+Don't re-prompt within the same invocation. The repo stays in the legacy layout, so the six starters run as built-in defaults.
+
+### Project-Specific Reviewer Recommendations
+
+After `install-template.sh` succeeds and the user accepts the post-install "want recommendations?" prompt, the loop spawns a focused scan of the repo and proposes 3-7 additional reviewers tailored to what it finds (e.g., `migration-safety-reviewer` for a repo with a `/db/migrations/` tree, `prompt-injection-reviewer` for a repo with LLM API calls in the diff).
+
+#### Design rationale: AskUserQuestion, not plan mode
+
+The original sketch for this flow used Claude Code's plan mode. **It doesn't work.** Verified: `EnterPlanMode` exists but `ExitPlanMode` returns no structured data — there's no programmatic way for a skill to read back which items the user approved, rejected, or modified. The right primitive is `AskUserQuestion` with `multiSelect: true`, which returns the user's picks structured.
+
+Proposals are accepted or rejected as written; to change one, accept it and edit the file.
+
+#### Repo scan: orchestrator picks per-repo
+
+The scan that informs proposals is **the orchestrator's call** — there's no fixed list of files to read. Use these guidelines to set scan depth:
+
+| Always read (cheap, high-signal) | Optional (depth-dependent) |
+|----------------------------------|----------------------------|
+| `README.md` at root              | `.beads/issues.jsonl` recent open issues |
+| `CLAUDE.md` at root              | Top 20 commit messages (`git log --oneline -20`) |
+| Top-level dependency manifests (names, not lockfiles) | Sampled source files |
+
+**Scan budget**: keep the total read at ≤10k tokens of repo content. Stop scanning once you have enough signal to propose 3-7 reviewers.
+
+**Source-file sampling**: for repos with <100 source files total, sample 5-10. For larger repos, cap at ~20. Bias toward larger / older files (more likely to encode patterns the team cares about). Skip generated code, tests, and vendored dependencies.
+
+**Don't read the full PR diff** — the PR is just one slice of the repo; proposals should serve the repo broadly, not be PR-specific.
+
+#### Proposal generation: spawn as a Task
+
+Use the Task tool with a focused prompt rather than inlining the scan in the main loop conversation. Keeps main-context tokens low.
+
+```yaml
+Task tool:
+  subagent_type: general-purpose
+  description: Propose repo-specific reviewers for <repo-name>
+  prompt: |
+    The user just installed language-specific code-reviewer templates
+    in this repo via the pr-review-loop skill. They want recommendations
+    for ADDITIONAL repo-specific reviewers that the language packs can't
+    anticipate — things tied to this repo's domain, architecture, or
+    historical pain points.
+
+    ## Already installed (do NOT re-propose these)
+
+    Baked-in defaults: code-reviewer, silent-failure-hunter,
+    pr-test-analyzer, comment-analyzer, type-design-analyzer,
+    code-simplifier.
+
+    Language pack(s) just installed: <pass the list from
+    install-template.sh output, e.g., "golang.md (at /backend)">
+
+    ## What to scan
+
+    Use the scan-budget guidelines from SKILL.md "Repo scan" section.
+    You have ~10k tokens of repo content to read; pick wisely. Always
+    read README.md, CLAUDE.md, and top-level manifests. Sample source
+    files. Skim recent commits and .beads/ if present.
+
+    ## Output
+
+    Return 3-7 proposed reviewers as a JSON array, no other text:
+
+    ```json
+    [
+      {
+        "name": "migration-safety-reviewer",
+        "focus": "One-line description of what this reviewer flags",
+        "scope": "/db/" | "/" | "/backend/" | ...,
+        "rationale": "Why this repo needs it — cite a file or pattern you saw"
+      },
+      ...
+    ]
+    ```
+
+    Scope rules:
+    - "/" means root (applies to all changed files)
+    - "/path/" means only files under that directory
+
+    Don't propose reviewers that overlap with the already-installed
+    ones. Don't propose generic best-practice reviewers ("be careful
+    with secrets") — those add noise. Each proposal should cite a
+    specific repo signal you saw during the scan.
+
+    If you can't find 3 distinct repo-specific patterns worth proposing,
+    return fewer (or even an empty array). Quality over count.
+```
+
+#### Presenting proposals via AskUserQuestion
+
+Parse the proposal JSON. Show proposals in batches of ≤4 via `AskUserQuestion` with `multiSelect: true`. Use a `(1 of N)` indicator in the question header when batching:
+
+```
+Question: "Which proposed reviewers should the loop install? (1 of 2)"
+Header: "Reviewers 1/2"
+multiSelect: true
+Options:
+  - "migration-safety-reviewer" — Flag schema changes without rollback paths in /db/migrations/
+  - "prompt-injection-reviewer" — Flag unbounded string interpolation into LLM API calls
+  - "auth-bypass-reviewer" — Flag controller actions missing the require_auth callback
+  - "race-condition-reviewer" — Flag shared-state writes outside the actor model in /workers/
+```
+
+After the first batch's answers, automatically follow up with batch 2 (no gate question) until all proposals have been presented. Zero picks across all batches is a valid outcome — just don't write anything.
+
+#### Writing accepted proposals
+
+Each accepted proposal has an explicit `scope`. Write it to `.reviewers/<proposal.name>.md` under that scope: `.reviewers/` at the root for scope `/`, `<path>/.reviewers/` for scope `/path/`. Refuse rather than overwrite an existing file.
+
+```markdown
+# <proposal.name>
+verification: judgement
+**Checks:** <one line: what it flags>
+**Spawn when:** <one line decidable from a diff: paths, imports, kinds of change>
+
+<proposal.focus>
+
+<!-- Proposed during install-template setup; rationale: <proposal.rationale> -->
+```
+
+The rationale comment supports future audit-agents (q2h) recommendations.
+
+#### After writing
+
+Emit a one-line summary to the spawning summary surface:
+
+```
+Installed 3 project-specific reviewer(s): migration-safety-reviewer (/db/), prompt-injection-reviewer (/), auth-bypass-reviewer (/).
+```
+
+No re-run of `discover-agents.sh` needed — round 1 picks up the new files naturally.
+
+#### When the user declines the recommendations prompt
+
+Continue to the next pre-loop step; don't re-prompt within the same invocation.
+
+### Spawning Summary
+
+Once the stale check passes (or `--skip-stale-check` is set), the loop emits a one-line summary of which agents are running and why, before any agent spawns:
+
+```
+Spawning 6 of 9 reviewers (.reviewers/): code-reviewer, silent-failure-hunter, store-integrity-reviewer, pci-auditor, test-coverage-reviewer, clarity-reviewer.
+Skipped: concurrency-reviewer (no async/threads in diff). Not dispatched (no files in scope): none.
+Validation: enabled (sonnet validators across all flaggers).
+```
+
+(In a legacy repo, also name the defaults that are disabled or overridden. The validator model is held constant at sonnet, whatever model each flagger runs on, so per-flagger acceptance-rate telemetry isn't confounded by validator strictness.)
+
+Goes to the same task tracking state / pre-round summary surface as other setup state.
+
+When validation is disabled (the default) or partially skipped, the third line reflects that:
+
+```
+Validation: disabled (default).
+Validation: enabled (skip_for: code-simplifier).
+```
+
+### Independent Validator Pipeline
+
+**Opt-in (default off).** Enable via `# Configuration .independent_validator.enabled: true`. Field experience showed a low refutable-finding rate (~1 in 30) that the orchestrator catches anyway at the BATCH POINT — it must read every finding to plan fixes, with more context than a blind validator gets — and the false-positive-fix risk is already double-guarded by tests/CI and next-round review of the fix commit. Per-flagger noise telemetry now comes free from thread dispositions (won't-fix / withdrawn rates), since posting is mandatory. Opt in when an agent pack is noisy/unproven, or when you want an independence check on the orchestrator judging criticism of code it authored itself.
+
+When enabled: after every agent reviewer has recorded its findings and returned its manifest, and `post-findings.sh` has posted them, the loop runs an independent validator subagent per POSTED finding to verify the issue against the diff context alone, BEFORE any FIX-phase edit. Validation runs against the posted comment — posting is never delayed or gated on validation, because the posted thread IS the audit trail (see ⛔ rule 3).
+
+This catches the asymmetric-cost failure mode: a false-positive that gets *applied as a fix* introduces a real regression in once-correct code. Validate-after-post preserves that protection — refuted findings are withdrawn before the BATCH POINT, so they never reach a fix — while keeping every finding (including refuted ones) visible on the PR.
+
+> **History note**: an earlier revision of this pipeline ran validation between agent return and posting ("validated BEFORE posted"). That inverted the original agents-post-directly design and, in practice, licensed orchestrators to skip posting entirely — findings got absorbed into fixes with no PR trail. Do not reintroduce validate-before-post.
+
+**When the validator runs.** After C3's `post-findings.sh`, before the BATCH POINT. Per-finding, in parallel via the Task tool.
+
+**What the validator receives.**
+- The posted finding (severity, location, issue body — as posted on the thread)
+- The relevant PR diff context (touched file or referenced lines)
+
+**What the validator does NOT receive.**
+- The flagging agent's name
+- The flagger's confidence rating
+- Any meta-context that would let the validator rationalize the finding
+
+**Validator output.** Structured: `VERDICT: VALID | INVALID | UNCERTAIN` with a one-line `REASON:`.
+
+**Filter behavior (acts on the posted thread).**
+- **VALID** → no thread action; the finding flows to the BATCH POINT.
+- **INVALID** → withdraw on-thread: `reply-to-comment.sh <PR> <id> "Withdrawn — validator refuted: <reason>"` (this resolves the thread). The finding is excluded from the BATCH POINT; record in telemetry. Never delete the comment — the withdrawal is part of the audit trail.
+- **UNCERTAIN** → behavior depends on `# Configuration .independent_validator.uncertain_action`:
+  - `post_with_annotation` (default) — reply `[validator: uncertain] <reason>` on the thread (without resolving); the finding flows to the BATCH POINT carrying the annotation
+  - `post_silently` — no thread action; flows to the BATCH POINT
+  - `drop` — withdraw like INVALID, with the uncertainty stated in the withdrawal reply
+
+#### Validator model selection
+
+The validator runs on **sonnet uniformly across all flaggers**, regardless of the flagger's own model. This is a deliberate choice for telemetry hygiene: per-flagger acceptance-rate signal stays comparable across agents only when the validator instrument is held constant. Mirroring the flagger's model (e.g., opus-validates-opus) would conflate "this flagger emits false positives" with "opus is more confident than sonnet" — both move the acceptance rate in the same direction.
+
+Sonnet is the right choice for a "second look": cheaper than opus while still strong enough for the validator task.
+
+Per-agent overrides may land later (see `devon-claude-skills-qml`) — when they do, the override is an explicit user opt-in, and the documentation will state that an overridden agent's acceptance rate is no longer directly comparable to others'.
+
+#### Validator Task prompt template
+
+```yaml
+Task tool:
+  subagent_type: general-purpose
+  model: sonnet
+  description: validate review finding on <file>:<line>
+  prompt: |
+    You are an independent validator for a code review finding.
+    Your only job is to verify the finding against the actual code.
+    You do NOT know which agent flagged this, and you do NOT know
+    their confidence rating. Look at the code; decide if the issue
+    is real.
+
+    ## Finding
+
+    Severity: <finding.severity>
+    Location: <file>:<line>
+    Issue: <finding.body>
+
+    ## Diff context
+
+    <PR diff for the touched file, or just the touched range>
+
+    ## Your output
+
+    Output exactly two lines:
+
+      VERDICT: VALID | INVALID | UNCERTAIN
+      REASON: <one-line rationale, plain text, no markdown>
+
+    Use VALID when you can verify the issue exists in the code as
+    described. Use INVALID when the code as written does not have
+    the claimed problem. Use UNCERTAIN when you cannot verify
+    either way from the diff context alone.
+```
+
+#### Configuration
+
+In `# Configuration`:
+
+```json
+{
+  "independent_validator": {
+    "enabled": true,
+    "skip_for": ["code-simplifier"],
+    "uncertain_action": "post_with_annotation"
+  }
+}
+```
+
+- `enabled` (default `false`) — validation is opt-in; see the rationale at the top of this section
+- `skip_for` (default `[]`) — list of flagger agent names whose findings bypass validation
+- `uncertain_action` (default `"post_with_annotation"`) — `post_with_annotation` | `post_silently` | `drop`
+
+The parser **rejects** non-boolean `enabled`, non-array `skip_for`, `uncertain_action` outside the enum, or `independent_validator` itself being a non-object (exit 1). It **warns** (without rejecting) on unknown nested keys, so a typo like `enabld` is surfaced but doesn't block the loop.
+
+#### Telemetry
+
+Each finding's validator outcome is logged to `.beads/pr-review-loop/findings/<pr>-<round>.jsonl` (per the gx4 telemetry framework when it lands). Aggregated at end-of-round and end-of-loop:
+- Per-flagger validation acceptance rate (helps identify reviewers that emit many false positives — comparable across flaggers because the validator model is held constant)
+- Total findings dropped or annotated by the validator
+
+### Reviewer Files
+
+One file per reviewer: `.reviewers/<name>.md`. Helper scripts go in
+`.reviewers/bin/`, orchestrator-only notes in `.reviewers/README.md`, settings
+in `.reviewers/config.json`. The first 12 lines are a header, and it is all the
+orchestrator reads (`summary` in `discover-agents.sh` output):
+
+```markdown
+# store-integrity-reviewer
+model: haiku
+verification: mutation
+**Checks:** writes keep the store's invariants.
+**Spawn when:** the diff writes under `store/`. Skip read-only changes.
+**Contents:** What to flag · Do not flag · Proving findings
+
+## What to flag
+```
+
+- The name matches the file and never changes: dream markers, thread
+  signatures and `.pi.agents` key on it.
+- `model:` is `sonnet`, `haiku`, `opus` or a `claude-*` ID; anything else runs
+  on Sonnet.
+- `Spawn when` must be decidable from a diff alone. Discovery warns when it is
+  missing or `TODO`.
+- `Contents` is required once a file passes 100 lines, since only the first 100
+  are read. Discovery warns when it is missing.
+
+The rest of the file is the reviewer's spec. Put any repo rule a reviewer needs
+in it: README.md reaches only the orchestrator. Legacy `AGENT-REVIEWERS.md`:
+see [`references/legacy-layout.md`](references/legacy-layout.md).
+
+### Hierarchical Scoping
+
+`.reviewers/` directories (and legacy `AGENT-REVIEWERS.md` files) can exist at any directory level. Their reviewers and context are scoped to their directory and below.
+
+**Resolution rules:**
+1. For each changed file, collect `.reviewers/` directories and `AGENT-REVIEWERS.md` files from its directory up to repo root
+2. Resolve sections by H1 name - **lower directory definitions override same-named sections from above**
+3. For `# Agents`: each agent only reviews changes **within its directory scope and below**. A same-named reviewer lower down overrides it **only for files in that subtree**: each changed file goes to the deepest same-named definition whose scope contains it, so in a diff touching `app/models/x.rb` and `app/javascript/y.js` a root and an `app/javascript/` `test-coverage-reviewer` both run, each on its own files
+4. For other H1 sections: winning version of each section (per override rule) is combined and passed to the review loop
+5. Root-level definitions see all changes; subdirectory definitions see only their subtree
+
+**Example structure:**
+```
+/.reviewers/                           # clarity-reviewer, dry-reviewer
+                                       # Guidelines: general repo rules
+/plugins/.reviewers/                   # dry-reviewer (overrides root), plugin-structure-reviewer
+                                       # Guidelines: plugin-specific rules (overrides root)
+/plugins/auth/.reviewers/              # security-reviewer
+                                       # Context: auth-specific context
+```
+
+**Result for a PR touching `plugins/auth/login.py` and `plugins/utils.py`:**
+
+*Agents:*
+- `clarity-reviewer` (from root) → sees all changes
+- `dry-reviewer` (from `/plugins/`, overrides root) → sees all changes under `/plugins/`
+- `plugin-structure-reviewer` (from `/plugins/`) → sees all changes under `/plugins/`
+- `security-reviewer` (from `/plugins/auth/`) → sees only changes under `/plugins/auth/`
+
+*Context for main review loop:*
+- For `plugins/auth/login.py`: combines `# Guidelines` from `/plugins/` + `# Context` from `/plugins/auth/`
+- For `plugins/utils.py`: uses `# Guidelines` from `/plugins/`
+
+**Discovery algorithm** (implemented by `scripts/discover-agents.sh`):
+1. Get changed files via `gh pr diff <PR> --name-only`
+2. For each unique directory containing changed files, walk up to repo root collecting `.reviewers/` directories and `AGENT-REVIEWERS.md` paths
+3. Parse each file, building agent map (lower directory wins on name collision)
+4. Track each agent's scope (directory where it was defined)
+5. Filter changed files per agent to only those within the agent's scope
+
+### Verification: every finding carries its proof
+
+**The obligation is on the finding, not the reviewer.** A reviewer executes when
+there is something to run and judges when there is not, and it does that per
+finding — so the finding is where the proof lives. Three kinds:
+
+| Kind | Proof | When |
+|---|---|---|
+| **mutation** | Change the code, watch the check fail, report what you saw. | There is something to run. |
+| **evidence-query** | Run the query that would produce the evidence a claim depends on; report the n. | The artifact is prose, a prompt, a directive, a policy. A claim that a dataset supports a week-long comparison dies when counting the rows returns one. |
+| **judgement** | None — say so, in the finding, in those words. | "This abstraction is wrong." "These two arguments are swappable." Nothing to mutate, nothing to count. |
+
+**Judgement is legitimate and must be labelled as judgement.** Some of the most
+valuable findings are judgements, and a rule that pushed reviewers away from them
+would buy verifiability with relevance. What the rule forbids is a judgement
+*dressed as a behavioural claim* — "this exits 0 on failure" is checkable and must
+be checked; "this design is confusing" is not and must say so.
+
+"It reviews prose, so it cannot execute" is the reasoning a reviewer uses to
+excuse itself from work it could do: a prose reviewer asserting one sentence
+restates another can grep for both and show them.
+
+Declare the reviewer's usual mode on its header's `verification:` line (in a legacy `AGENT-REVIEWERS.md`, the first line of its section) —
+`verification: mutation` | `evidence-query` | `judgement` | `mixed` — and treat a missing line
+as **undeclared**, a finding about the roster rather than the code. The
+declaration describes what the reviewer typically owes; it never licenses a
+finding to skip its proof. Surface it per round:
+
+```
+Reported: pr-test-analyzer=ok(mutation) comment-analyzer=ok(evidence-query) silent-failure-hunter=ok(mixed) foo=ok(undeclared)
+```
+
+**A charter on `main` does not govern a branch already open.** Reviewer files
+are read from the PR's branch, so a roster committed to `main` after a PR was cut
+reports `override_count: 0` and `defaults_version_checked: null` against that PR.
+Rebase or merge before concluding a roster change took effect.
+
+The mirror of that: `discover-agents.sh` reads the **working tree**, not the
+branch, so an uncommitted roster edit takes effect for reviewers that never saw
+it in the diff. `D dispatched / R reported` will not catch it — an edit that
+drops a reviewer shrinks `D` and `R` together, so `D == R` still holds and the
+round reports a full roster it never had. Commit roster changes before
+dispatching.
+
+**Put it in the spawn prompt, not in shared context.** `discover-agents.sh`
+hands each reviewer *its own file (or section) only* — `.reviewers/README.md`, a
+legacy `# Guidelines`, and anything else outside the reviewer reach the
+orchestrator, never the reviewers
+(measured: this repo's Guidelines section appears in 0 of its agents'
+`instructions`). A "prove your findings" paragraph written once in README.md or at
+the top of `AGENT-REVIEWERS.md` therefore arrives nowhere, while looking like it was
+adopted. The spawning template below carries the requirement instead, so every
+reviewer gets it whether or not its charter repeats it — which is also the only
+version an adopter cannot forget. Do **not** repeat it in an agent definition:
+`instructions` is the whole file body and the template pastes that in before
+appending its own copy, so a charter that repeats the paragraph ships it twice
+to every reviewer it spawns. The shipped defaults did exactly that for two
+rounds. What belongs in the definition is the `verification:` line, which is
+per-agent and says something the template cannot.
+
+**Undeclared on purpose beats a guess.** A roster that declares only the
+reviewers whose findings it has actually read is more honest than one that
+labels all of them. A reviewer becomes declarable the first time it files a
+finding you can point at, and `mixed` should be backed by naming which recent
+findings were mutations and which were evidence-queries — otherwise it is
+undeclared wearing a better word.
+
+**Check the reassuring reading hardest.** A result that says everything is fine
+ends the investigation; a result that says something is broken starts one. So the
+clean answer is the one that has to be earned, and every false clean in this
+skill's own history ran that direction: a reply script reporting 21 posted when 17
+had failed, a gate reporting 0 unanswered when 18 were, an unpaginated query
+reporting 1 unresolved against a true 93, a bot check that would have read a poll
+timeout as "reported". None of them errs toward alarm. When a reviewer reports
+clean, when a check returns empty, when a script exits 0 — that is the moment to
+ask what it would have looked like if it had failed, not the moment to move on.
+
+**A demonstration that could not have failed is not a demonstration.** Before you
+report, ask what result would have refuted you, and check your experiment could
+have produced it. A reviewer published "verified: a failing EXIT trap does not
+mask exit status" and was wrong — under `set -e`, exit 3 becomes 1 and exit 0
+also becomes 1. Six reviewers refuted it. The run had happened; it just could not
+have come out any other way, because both variants ended in `false` and expected
+status 1 either way. They differed on the wrong axis. Running something is not
+the same as testing it: vary the one thing your claim is about, and confirm the
+other branch gives the other answer.
+
+**Record what you measured and what you were told as two separate things.** A
+paragraph that fuses a measurement to a story hands the story the measurement's
+credibility, and a reviewer that checks the cheap half in two seconds will report
+the whole paragraph verified. That is not a lapse in the reviewer; it is what the
+fusion does to anyone reading it.
+
+This skill's own worst instance: round 15 reported "15 SHAs for 15 rounds" as the
+positive control for a new round-validity detector. The measurement was true —
+the reconstruction query really did return that. The claim it was carrying, that
+the detector worked, was false; the detector had never been run, and three
+reviewers proved the next round that it could not have passed on any healthy
+round. The true half carried the false half into a commit message, a status
+report and a merge argument. Split them and the false half has nothing to ride
+on.
+
+**Verify the control positive before it licenses anything.** A control that comes
+back negative has two explanations — your query is broken, or your control is
+wrong — and the result cannot tell you which. Only one of them is informative, so
+an unverified control proves nothing about the instrument it was brought in to
+check. Confirm it fires on a case you *know* is there, then trust its silence.
+The worked example is a reviewer testing this file's own reply gate: the gate is
+non-discriminating against this PR, where all four variants return 0, so it built
+a fixture and confirmed that removing each disjunct loses exactly one case before
+concluding anything from it. That confirmation is the whole difference between a
+fixture and a decoration.
+
+When it does come back negative, **suspect the explanation local to what you just
+wrote before the one with global consequences you have not observed.** "My
+control string was wrong" and "grep is broken" both fit the result, but a broken
+grep would be visible in a hundred other places — so the disconfirming evidence
+is usually already in your scrollback. Preferring the interesting hypothesis is a
+bad prior wearing the clothes of diligence.
+
+**A truncated result looks exactly like a complete one.** Pagination is one form;
+a tool-output preview is another. A reviewer this round read a truncated preview
+of `get-agent-comments.sh`, saw 13 threads where the data had 62, and reported a
+thread as unanswered when its reply was there. Re-run to a file and count rather
+than reading a preview, and treat any capped view as an unknown, not a zero.
+
+**Do not reason about where the defaults live — run the loader.**
+`_load_defaults.sh` resolves its agents directory relative to its own location,
+and `~/.claude/skills/<plugin>` is usually a symlink into a checkout, so the path
+a reviewer infers and the path the loader reads can diverge. A reviewer once filed
+two P0/P1 findings against a different marketplace plugin's agents directory
+entirely. The loader prints what it actually loaded; ask it. The same goes for the
+roster: read `# Configuration` rather than prose describing it — a charter once
+recorded three defaults as "not adopted" while `disabled` was absent and all three
+were spawning, and the finding was written by the reviewer the prose said was off.
+
+**Paginate, then check the total against what you expect.** A page limit is a
+silent truncation: the query succeeds, the shape is right, the number is a
+subset, and nothing anywhere says so. `--paginate` on every list endpoint, and
+`reviewThreads(first: 100)` is not a query, it is a query about the first
+hundred. On this PR a single unpaginated page of review comments returns 30 of
+531 — so a gate reading one page would report clean while missing the overwhelming
+majority of the threads it exists to check. Knowing roughly how many results there should be is
+what turns the truncation from invisible into obvious.
+
+**A fixture that cannot fail is not a test.** Verify every fixture fails against
+the defect it pins — a suite that passed 9/9 with two HIGH bugs live had two cases
+that could not fail at all.
+
+**A fix is new code and gets no pass.** This is the rule's strongest evidence and
+it comes from this file's own history: commits 8 through 16 of the PR that wrote
+this section are nine consecutive fixes, each correcting a defect in the one
+immediately before it — a gate that could not see bot threads, its replacement
+that reported 0 of 18, its replacement that went blind to reopens. The section you
+are reading was itself superseded ten minutes after it was written, because its
+first author declared a reviewer exempt using the exact excuse it warns about.
+Review the fix as suspiciously as the thing it replaced, and review your own most
+suspiciously of all.
+
+The rest of the evidence runs one way. A reviewer claimed a repo's CI gate was
+`ruff format` when it is `black`, without running it; of nine findings it was the
+only one declined, and complying would have broken the build. Two findings in this
+PR were *verified by reading* in one round and proved wrong by running in the next
+— `set -e` not aborting where the doc claimed, and a `$SHA` that was never
+assigned. Reading is how every one of them passed.
+
+**The gap between knowing a rule and being governed by it is not measured in time
+or in care. It is measured in whether something checks.** The tree-dirtying rule
+in this file was broken by its own author four minutes after it shipped, and a
+reviewer caught it. That is the section working.
+
+Audit the roster when adopting this. Aligning the reviewer files to this rule
+may go straight to main — it is roster configuration, and the carve-out is scoped
+to that alignment.
+
+### When to Run Agent Reviewers
+
+Agent reviewers run as **C3** — the last step of the COLLECT phase in each round, after C1 (Gemini) and C2 (other bots), and before any FIX-phase edits.
+
+On the first round (or when new agents are discovered), discover agent reviewers:
+
+```bash
+scripts/discover-agents.sh <PR>
+```
+
+Each agent's `changed_files` list contains only the PR's changed files within that agent's scope. Pass this list to the agent.
+
+Spawn non-retired agents **in parallel** at C3 of each round. Track per-agent state to avoid re-running retired agents.
+
+### Spawning Agent Reviewers
+
+For each agent in the merged list from `discover-agents.sh` (defaults + user agents per C+E), spawn a Task on the agent's `model`. `discover-agents.sh` always sets it: the default's frontmatter, or a `model: <name>` line in the first five lines of a user agent's `AGENT-REVIEWERS.md` section, else `sonnet`. Never leave it out of the Task call: a Task with no model runs on the session's model. Only `sonnet`, `haiku`, `opus` or a full `claude-*` ID is accepted; anything else, including `inherit`, becomes `sonnet`. The `instructions` field is the agent body — same shape for defaults (from `plugins/pr-review-loop/agents/*.md`) and user agents (from `AGENT-REVIEWERS.md`).
+
+> **One Task per reviewer, and the description MUST be exactly
+> `<agent-name> review for PR #<PR>`.** The dream firing-coverage log is mined
+> from these descriptions (`reviews.coverage_from_logs`), so they are the only
+> attribution surface for "this reviewer fired N times". Do NOT bundle several
+> reviewers into one Task (`Spawn the ~15 diff-relevant reviewers (…)`) and do
+> NOT freestyle the wording (`test-coverage review (rework)`) — a bundled or
+> off-shape description is unattributable, and the reviewer silently drops out of
+> its keep/refine/retire scorecard (devon-claude-skills-c6k).
+
+```yaml
+Task tool:
+  subagent_type: general-purpose
+  model: <agent.model>   # always set by discover-agents.sh; "sonnet" unless the agent declares one
+  description: <agent-name> review for PR #<PR>
+  prompt: |
+    You are the "<agent-name>" code reviewer for PR #<PR>.
+
+    Your focus: <agent.instructions>
+
+    **Carry the proof in the finding.** A behavioural claim — it exits 0 on
+    failure, this branch is unreachable, that fixture cannot fail — is
+    checkable, so check it: mutate the code and watch the check fail, or run
+    the query that produces the evidence the claim depends on and report the
+    number. Report what you observed, not what you expect. A finding you could
+    not demonstrate is a hypothesis and must say so. A judgement about design
+    or wording owes no demonstration and must be labelled as judgement. If
+    your check comes back empty, suspect your query before you report a defect
+    in the thing under test, and verify any control you lean on fires on a case
+    you know is there
+    — a control that has not been shown to work proves nothing by staying
+    silent.
+
+    **Comments:** flag a comment for deletion, as P3, unless it documents
+    something surprising or hard-won. Never ask for rewording. Keep findings
+    terse: the defect, the proof, the fix.
+
+    **Never modify the working tree.** You review; you do not revert, stage, or
+    fix. If you find the tree dirty or otherwise inconsistent, report it — do not
+    correct it. Touching live state during a round is how a reviewer becomes a
+    second author of the thing it is reviewing.
+
+    **Your scope: <agent.scope>**
+    You should ONLY review changes to the files listed below. Ignore all other files.
+
+    **Changed files in your scope:**
+    <agent.changed_files from discover-agents.sh output>
+
+    <only when agent.bin is set:>
+    **Helper scripts:** `<agent.bin>/` holds scripts written for this
+    roster. Run them where your spec says to; don't modify them.
+
+    ## Your workflow:
+
+    1. **Check your prior comments** (if any):
+       ```bash
+       scripts/get-agent-comments.sh <PR> <agent-name> --with-replies
+       ```
+
+    2. **Evaluate replies to your prior comments**:
+       - If the response is reasonable (good explanation, valid fix, or acceptable tradeoff), do NOT re-raise
+       - A reasoned decline on wording or style grounds is final. Do NOT reopen it
+       - If the response is UNREASONABLE (dismissive, incorrect, or ignores the issue), reopen:
+         ```bash
+         scripts/reopen-comment.sh <PR> <comment-id> <agent-name> "Reopening - <reason why response is insufficient>"
+         ```
+
+    3. **Review the PR diff** (only your changed_files):
+       Read each file from your changed_files list directly, or filter the diff:
+       ```bash
+       gh pr diff <PR>   # takes no file arguments; read only the hunks for your changed_files
+       ```
+
+    4. **RECORD every new finding** (only issues not already raised, only files in your scope):
+       ```bash
+       scripts/record-finding.sh <PR> <file> <line> <agent-name> <P1|P2|P3> - <<'EOF'
+       Issue description and suggestion
+       EOF
+       ```
+       Run it from the PR's repo, and pass the body on stdin as shown,
+       never through a scratch file: parallel reviewers share a scratchpad
+       and overwrite each other's files. The script prints back what it
+       stored; check that it is your finding. If it refuses a body as
+       already recorded under another label, re-check your body before
+       anything else. On a file the PR deletes, `<line>` is a line of the old file.
+       Do not post to GitHub yourself. The orchestrator posts every
+       reviewer's findings in one review, merging findings on the same line
+       and rolling P3s into one thread. Your `<!-- Agent: <agent-name> -->`
+       signature is added for you, and is what your step 1 finds next round.
+
+       RECORDING IS MANDATORY, NOT OPTIONAL. A finding you only describe in
+       your return text does not exist: it never reaches the PR thread, which
+       is the audit trail, the user's reopen surface, and what your own step 1
+       checks next round.
+
+    5. **Return a manifest** - Do NOT fix anything. Your job is review only.
+       Your final message is a manifest of what you recorded, one line per finding:
+       `<severity> | <file>:<line> | <one-line title>` — nothing else. The
+       orchestrator uses it to dispatch validators and track your round. If you
+       noticed something you chose not to record, add one line for it:
+       `NOTED | <file>:<line> | <note>`. The orchestrator must dispose of it.
+
+    ## Important:
+    - Be thorough but not pedantic - only flag real issues within your focus area
+    - Consider project context - not all best practices apply everywhere
+    - If you have no findings and all prior comments have reasonable responses, return "No issues found", followed by any NOTED lines
+
+    Available scripts: See pr-review-loop skill documentation for full script reference.
+```
+
+**The orchestrator must never rewrite step 4/5 into "return your findings to me".** Findings go through `record-finding.sh` so that `post-findings.sh` posts every one of them; merging is the script's job, not the orchestrator's judgement (see ⛔ rule 3). If you catch yourself about to spawn an agent with "do not record — return findings", stop: that variant destroys the audit trail and breaks every later round's `get-agent-comments.sh` dedup.
+
+**Before spawning, open the round** in the PR's repo:
+
+```bash
+scripts/post-findings.sh <PR> --open
+```
+
+`record-finding.sh` refuses to record for a PR whose round is not open in
+its own repo, so a reviewer working from a parent or sibling repo fails
+loudly instead of filing findings where `post-findings.sh` never looks.
+
+**After the last manifest, post once:**
+
+```bash
+scripts/post-findings.sh <PR>
+```
+
+It prints one `<comment-id> <file>:<line> <header>` line per thread. Those ids are what F3 replies to. If GitHub rejects the review (usually a line outside the diff), the script posts thread by thread. A thread GitHub won't put on its line goes on its file, marked `(on the file)`: a normal thread. One whose file isn't in the PR becomes a plain PR comment, marked `(unanchored PR comment)`: answer it with `gh pr comment`, because `reply-to-comment.sh`, `get-agent-comments.sh` and the F4 gate see review threads only. Then it reads back what GitHub holds and looks for every recorded finding in what posted, by a hidden `<!-- finding: … -->` marker each thread carries (not by its body, which GitHub may store altered). It prints `Posted N of M finding(s)`; any finding it cannot find goes back into the store and the script exits 1. Re-run until `post-findings.sh <PR> --check` is clean.
+
+**Spawn all agents in parallel** - use multiple Task tool calls in a single message.
+
+### Pi Engine (reviewers on non-Claude models)
+
+An agent whose `engine` (from `discover-agents.sh`) is `"pi"` runs its review on
+a non-Claude model through `scripts/pi-review.sh`, which runs
+[Pi](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) once in
+Docker against a throwaway `git archive` export of the dispatch SHA. Pi can edit
+and run code there for mutation proofs. It reports through tools from
+`pi/review-tools.ts`: `report_finding` and `reopen_thread`, each checked as it is
+called (severity, an in-scope file, a positive line, a reopen ID that exists),
+so a bad call goes back to the model to fix, then `finish_review`. A run that
+never calls `finish_review` did not report. The script **posts nothing**. It
+prints the report as JSON, so no GitHub token enters the container.
+
+Turn it on in `# Configuration`, or for every repo in your per-user `models.json` (below):
+
+```json
+{ "pi": { "all": true, "model": ["zai/glm-5.1", "claude"],
+          "agents": { "silent-failure-hunter": false,
+                      "code-reviewer": ["qwen-token-plan/qwen3.8-max", "zai/glm-5.1", "claude"] } } }
+```
+
+- **`all`** (default `false`): route every agent to Pi on `model`.
+- **`model`**: the default chain. Required when `all` or any `true` entry routes an agent to Pi.
+- **`agents`**: per agent. `true` uses `model`, a chain routes the agent on that chain, and `false` keeps it on Claude even under `all`. Default agents can be routed this way too, without overriding their prompts.
+- **A chain** is a model (`provider/id`) or an ordered list of them. The script moves to the next model only when the provider fails: quota or credits used up, rate limit, auth or access denied, unreachable. A model that ran and gave no valid report is a strike, not a reason to try another. `"claude"` in a chain means "from here, use the normal Claude Task", and `"claude:sonnet"`, `"claude:haiku"` or `"claude:opus"` names the Task's model. A chain that starts with a Claude entry is just a Claude agent, so `"code-simplifier": "claude:haiku"` downshifts that agent to Haiku. A provider that reports exhausted quota is skipped by every run for 10 minutes (`PI_REVIEW_EXHAUSTED_TTL`, marker in `~/.cache/pr-review-loop/exhausted/<provider>`). Plan pacing reorders the chain up to its first Claude entry: plans with more quota left than time left in their longest window go first, plans ahead of pace go back, and other models keep their place. No plan is skipped for being near or past its limit; past it the plan bills overage and sorts last. Pacing reads Z.ai (`zai/*`, weekly) from its quota API with `curl` and `ZAI_API_KEY`, and the Qwen Token Plan (`qwen-token-plan/*`, monthly) with `bl usage token-plan`; a plan with no reading keeps its configured place, and the script says so (for Qwen, with the `bl auth login --console` fix).
+- **Per-user chains** live in `~/.config/pr-review-loop/models.json` (`PR_REVIEW_LOOP_MODELS`): `{"agents": {"code-reviewer": [...], "*": [...], "comment-analyzer": false}}`. A chain there routes that agent to Pi in every repo, and `"*"` covers agents the file doesn't name. The repo's `pi` setting for an agent wins over the file. An invalid file stops discovery with an error naming it.
+
+`configuration.pi_agents_unknown` lists `agents` entries that name nothing on the
+roster. Treat it like `disabled_defaults_unknown`.
+
+**Spawn a Haiku recorder Task per Pi agent**, in the same parallel batch as the
+Claude reviewers. Haiku records the report, so Opus spends no context on it.
+It records like any other reviewer, so `post-findings.sh` merges Pi findings
+into the round's one review:
+
+```yaml
+Task tool:
+  subagent_type: general-purpose
+  model: haiku
+  description: <agent-name> review for PR #<PR>
+  prompt: |
+    You record a code review that another model has already written. Do not
+    review, judge, rewrite or drop anything yourself.
+
+    1. Run it with `run_in_background: true` (a review can take well over the
+       Bash tool's 10-minute limit) and wait for the completion notice:
+       scripts/pi-review.sh <PR> <agent-name> <SHA recorded at C3>
+       Its stderr names the run log; mention that path in your answer so the
+       operator can watch it with scripts/pi-watch.sh.
+    2. By exit code:
+       - 0: stdout is JSON. For each `report.reopens` entry run
+         scripts/reopen-comment.sh <PR> <comment_id> <agent-name> "<reason>"
+         For each `report.findings` entry run
+         scripts/record-finding.sh <PR> <file> <line> <agent-name> <severity> - <<'EOF'
+         <body>
+         EOF
+         where <body> is exactly:
+           **<title>**
+
+           <body field, verbatim>
+
+           <sub>engine: pi · model: <model></sub>
+         Do not post to GitHub yourself; the orchestrator posts every
+         recorded finding in one review. Never retry a reopen.
+       - 5: stdout is {"fallback": "claude", "model": "<m>"}. Return exactly
+         `FALLBACK claude:<m>`, or `FALLBACK claude` when <m> is empty.
+       - anything else: return `NOT REPORTED exit <n>: <first line of stderr>`.
+    3. Return the manifest, one line per item, nothing else:
+       `<severity> | <file>:<line> | <title>` per recorded finding,
+       `REOPENED | <comment_id>` per reopen,
+       `FAILED | <file>:<line> | <title>` per record or reopen that failed,
+       `DROPPED | <file>:<line> | <title>` per entry in `dropped`,
+       `NOTED | <file>:<line> | <note>` per thing the report noticed but did not file,
+       or `No issues found` when the report was empty.
+       First line: `model: <model>`.
+```
+
+**What the orchestrator does with the answer:**
+
+| Answer | Meaning |
+|---|---|
+| A manifest with no `FAILED` line | Reported. Its findings go out with `post-findings.sh`. |
+| A manifest with `FAILED` lines | Reported, but an item is missing. Record that finding yourself with `record-finding.sh` (or reopen that thread) under the agent's name. |
+| `FALLBACK claude[:<model>]` | Not a strike. Spawn this agent's normal Claude Task now, in this round, on `<model>` if one is named. |
+| `NOT REPORTED exit 2` | The branch moved. The round is invalid (see Convergence). |
+| `NOT REPORTED` with any other exit | A strike under "A reviewer that will not report". Exit 6 means every provider in the chain failed. |
+
+**Watching a run.** Every Pi run's event stream is kept for 7 days in
+`~/.cache/pr-review-loop/runs/`. `scripts/pi-watch.sh` follows the newest run
+live (or `pi-watch.sh <file>`, `--once` to print and exit): each tool call with
+its arguments, what the model says, and a running token and cost tally. It runs
+in any terminal or a herdr pane.
+
+**Hung, not slow.** A run is stopped only when its log stops growing for
+`PI_REVIEW_IDLE_TIMEOUT` seconds (default 600). Pi streams every token and tool
+call, so a long review that is still working is left alone. `PI_REVIEW_TIMEOUT`
+(default 3600) is the hard cap.
+
+**Container or host.** `PI_REVIEW_SANDBOX=docker` (default) runs Pi in the
+image, with the scratch copy as the only writable mount. `PI_REVIEW_SANDBOX=host`
+runs your installed `pi` directly, with your `~/.pi/agent` config and the host's
+toolchains (Go, Node, … for mutation proofs). Its environment is stripped to
+`HOME`, `PATH`, the Pi config dir and the one model key, but there is no
+container boundary: PR code the reviewer runs can read your files, gh login
+included.
+
+**Telemetry.** The script writes a `reviewer-fired` dream marker naming the
+model that actually ran and the models it tried first.
+
+**Choosing models: `eval-reviewer.sh`.** Run it in each repo, one agent at a
+time. A model can suit one codebase and not another, and each repo has its own
+reviewers. It picks the **cheapest** model that reviews as well as the baseline,
+judged on that agent's own history in that repo:
+
+```bash
+scripts/eval-reviewer.sh harvest silent-failure-hunter          # its PR threads + how each was answered
+scripts/eval-reviewer.sh run silent-failure-hunter \
+    --models zai/glm-5.1,qwen-token-plan/qwen3.8-max,anthropic/claude-haiku-4-5 \
+    --baseline anthropic/claude-sonnet-4-6 --commits 6
+scripts/eval-reviewer.sh assign                                 # all evaluated agents -> one .pi.agents block
+scripts/eval-reviewer.sh assign --user                          # or merge them into your per-user models.json
+```
+
+- **Ground truth** is the agent's signed threads. The first word of the first reply is the verdict: `Fixed`, `Out of scope` and `Deferred` mean real; `Won't fix` and `Withdrawn` mean noise. `Noted` and other replies are not scored.
+- **Replay**: the commits with the most real findings are reviewed again on each model (`pi-review.sh --replay`, which posts nothing). Claude models are tested through Pi as `anthropic/...`, so every candidate runs in the same harness. These bill `ANTHROPIC_API_KEY`.
+- **Judge**: Claude Sonnet (headless `claude -p`, on your subscription, not the API key) matches each model's findings to the originals and calls unmatched ones plausible or not.
+- **Pass**: a failed replay is retried once; the model then fails at most 10% of runs, its severity-weighted catch rate is within 0.10 of the baseline, and its junk rate (declined or implausible findings) is at most 0.10 above the baseline. Without a baseline: catches at least 0.5, junk at most 0.3. Below 8 real findings the result is **inconclusive** and nothing is recommended.
+- **Cost**: measured tokens x price, from `~/.config/pr-review-loop/pi-prices.json` (start from `pi/prices.example.json`). Plan models are priced the same way, at the provider's pay-per-token list price, which is what their quota draw is worth. With no entry, the price the run reported is used (Pi's list price; a Claude replay's API-equivalent cost). Unpriced models rank last.
+- **Ranking**: passing plan models come first, cheapest draw first, then pay-per-token models by cost. Unused plan quota is wasted, so plans rank first.
+- **assign** puts each agent on a passing model whose subscription has the least projected load, follows it with passing models on other subscriptions, and ends with `claude`. Winning Anthropic models become `claude:sonnet` / `claude:haiku`. It prints a block for `# Configuration`; nothing is written until you approve it. `assign --user` instead writes the chains straight into your per-user `models.json`, replacing only the agents this repo evaluated.
+
+Replays and judgements are cached under `~/.cache/pr-review-loop/eval/`, so an
+interrupted run picks up where it stopped. A
+failed grading or judge call stops the run rather than being scored. Large commits can take a model 10+
+minutes each.
+
+**Credentials and settings.**
+- Only the model's provider key enters the container, by name: `<PROVIDER>_API_KEY` as in Pi's provider table (`GEMINI_API_KEY` for `google`). PR code the reviewer runs can read that key, so use a spend-capped one.
+- `PI_REVIEW_ENV_FILE`: a docker env file to pass instead of that one key.
+- **One provider list:** if you use Pi yourself, its `~/.pi/agent/models.json` (or `$PI_CODING_AGENT_DIR/models.json`) is mounted read-only over the image's `pi/models.json`, so host Pi and the reviewers see the same providers, including account-specific endpoints like an Alibaba workspace URL. `auth.json` is never mounted. `PI_REVIEW_MODELS_JSON` points at a different file; with neither, the image's own list is used.
+- `PI_REVIEW_IMAGE` (default: built from `pi/Dockerfile` on first use). The default image has no toolchains beyond Python; point this at one that adds yours if reviewers should run your tests.
+
+### Main Loop Integration
+
+Agent reviewers run as C3 — the last step of the COLLECT phase, after C1 (Gemini) and C2 (other bots). Within C3, the individual agent reviewers spawn in parallel. All COLLECT-phase findings — Gemini + other bots + agents — flow into the BATCH POINT before any FIX-phase action.
+
+1. **After agent Tasks return their manifests** (in C3), run `post-findings.sh <PR>`, then the validator pass against the POSTED threads (withdrawing refuted ones on-thread), then the surviving findings join the C1 + C2 findings at the BATCH POINT. Identify cross-source patterns and plan sweeps before staging any edit.
+
+2. **In F3, address agent comment THREADS** using the same flow as Gemini:
+   - Fix → reply "Fixed - ..."
+   - Won't fix (bad) → reply "Won't fix - ..."
+   - Out of scope (good) → create beads ticket if available, reply "Out of scope - tracked in BD-XXX"
+
+   Every thread gets a reply — same discipline as Gemini comments. A
+   merged thread gets one reply covering every flagger on it. The **P3
+   roll-up** also gets one reply: lead with the disposition that covers most
+   items, then give each item's number and its disposition (`Fixed - 1, 3
+   deleted. Won't fix - 2: <reason>.`). If an agent finding you're fixing has
+   no thread (the agent failed to record it), that's a protocol break: post it
+   yourself via `post-line-comment.sh` with that agent's name BEFORE
+   committing the fix, and tighten the agent's prompt next round.
+
+   **Emit a dream marker for each finding+disposition** (see "Dream Markers"
+   below) — this is the durable, unbiased telemetry that survives even when a
+   finding never gets posted, and the only record of *who* dispositioned it.
+
+3. **Update per-agent tracking** based on results (productive / retirement-candidate / retired)
+
+4. **In F4–F6**, commit + push the batched fixes once, wait for CI, and trigger the next review.
+
+5. **Post the end-of-round report to the PR**, after F7, every round — the block
+   and the query that reads it back are in
+   [`references/round-workflow.md`](references/round-workflow.md). **Do not keep a
+   second copy of the block here**: two copies existed for most of this skill's
+   history, drifted apart once, and a field went missing from one of them.
+   Nothing the convergence rule depends on lives in the report; every such fact is
+   derived from the PR at the moment it is needed.
+
+### Diminishing Returns for Agent Reviewers
+
+**This is reviewer retirement, not loop termination.** It decides whether to keep
+*calling* an individual agent; the convergence rule decides when the loop is
+done. Retiring an agent never converges a round.
+
+**Only rounds where the agent actually reported count toward retirement.** A
+round where it failed to report is evidence of a broken reviewer, not of a
+reviewer with nothing left to say — route that to "A reviewer that will not
+report" under Convergence. Without this, three silent spawn failures retire an
+agent, and retirement then certifies it as "reported", which launders the exact
+failure the convergence rule exists to catch.
+
+Per agent:
+
+- Track each agent's state: productive / retirement-candidate / retired
+- After 2-3 **reported** rounds where an agent produces only nitpicks or "Won't fix" responses, mark it a retirement-candidate and give it one more **reported** round
+- If that reported round produces a real fix, reset it to productive
+- If that reported round produces nothing actionable, **stop calling that agent**
+- **Unless it is the last reviewer standing.** Do not retire it and do not keep calling it in a loop — stop and ask the user, the same resolution as "At least one reviewer must have run" under Convergence. A roster of one exhausted reviewer is a configuration problem, not a converged loop.
+
+Example tracking:
+```
+- "security-reviewer: 2 rounds, still productive" (keep calling)
+- "dry-reviewer: retirement-candidate" (one more round, then retire if nothing actionable)
+- "error-handling-reviewer: retired" (no longer called)
+```
+
+### Selective Agent Execution
+
+As agents reach diminishing returns, stop calling them. The main loop should:
+
+1. Take the agent names from `discover-agents.sh` output
+2. Track per-agent state (productive / retirement-candidate / retired)
+3. Only spawn Tasks for non-retired agents
+4. Update state after each cycle based on results
+
+This keeps the review loop efficient while ensuring all perspectives are heard at least once.
+
+## Suggesting Reviewer Changes
+
+During the review loop, if you identify guidance that would improve review quality for the repo but isn't captured anywhere, suggest a new reviewer file or an edit to an existing one.
+
+**When to suggest a new reviewer:** review comments keep flagging a kind of issue no reviewer owns, or a new area of the codebase (a subdirectory with different conventions) needs its own `<dir>/.reviewers/`.
+
+**When to suggest editing one:** a reviewer's `**Spawn when:**` line keeps spawning it on diffs where it finds nothing, or its spec is missing context that would make its findings accurate.
+
+**What NOT to suggest:** reviewer files just because a repo has none (offer the language templates instead), or guidance that already lives in CLAUDE.md or other repo documentation.
+
+**How to suggest it:** Present the recommendation to the user with the proposed file content. Do not create or modify reviewer files without user approval.
+
+## Dream Markers (reviewer telemetry)
+
+The companion `dream` plugin mines reviewer performance into per-reviewer
+scorecards (acceptance rate, false-positive rate, retire/refine candidates). It
+needs a durable, complete, attributable record of every finding and its
+disposition. The PR threads can't provide that — a finding that's fixed without
+being posted leaves no trace, and every disposition is authored under one GitHub
+token, so the threads can't say whether *you* or the orchestrator made the call.
+
+So **emit one dream marker per finding+disposition**, best-effort, as you
+disposition each thread in F3 (and for Gemini/bot findings too):
+
+```bash
+scripts/emit-dream-marker.sh reviewer-finding \
+  pr=<PR> round=<N> reviewer=<agent-name> severity=<P1|P2|P3> \
+  file=<path> line=<n> disposition=<fixed|addressed|acknowledged|out_of_scope|wont_fix|withdrawn> \
+  disposition_by=<orchestrator|user> finding="<one-line issue>" reason="<why, esp. won't-fix>" \
+  validator=<valid|invalid|uncertain>   # omit if no independent validator ran
+```
+
+Rules:
+- **`disposition` must be one of the seven enum values above**
+  (`fixed | addressed | acknowledged | out_of_scope | wont_fix | withdrawn | unresolved`).
+  Do NOT invent synonyms — a guardian confirm is `acknowledged` (not `verified`/`approved`),
+  a suggestion you took is `fixed` (not `adopted`), a decline-for-parity is `wont_fix`
+  (not `declined`), a filed follow-up is `out_of_scope` (not `deferred`). The emitter
+  now folds these known aliases defensively, but off-contract values that slip past it
+  fall through dream's acceptance math entirely — keep the durable stream clean at the source.
+- **`disposition_by=user`** whenever the operator made the call (overruled a
+  finding, signed off a P1/P2 carry-forward, resolved a self-contradiction). This
+  is the single most valuable signal dream gets — default to `orchestrator`, set
+  `user` only when the human actually weighed in. (Historically this is ~always
+  `orchestrator`; the moment the operator overrides a reviewer, stamp `user` — that
+  lone signal outweighs dozens of orchestrator dispositions in the roster math.)
+- **Best-effort, never blocking.** The script no-ops silently if `jq`/git are
+  absent; a marker write must never interrupt the loop. Emit it alongside the
+  thread reply, not instead of it — the PR thread is still the system of record.
+- Markers append to `~/.dream/<slug>/markers/pr-review-loop.jsonl` (outside the
+  repo). Schema: the dream plugin's `references/MARKER-CONTRACT.md`.
+
+This makes the per-flagger acceptance telemetry the validator section refers to
+real and durable, instead of something reconstructed from lossy logs after the fact.
+
+## Rate Limit Detection
+
+The scripts automatically detect Gemini quota limits by checking for:
+> "You have reached your daily quota limit"
+
+When detected, the script suggests:
+1. Use Cursor if available: `--cursor --wait`
+2. Use Claude fallback: `--claude`
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `reply-to-comment.sh <PR> <id> "msg"` | **ALWAYS USE** - Reply and auto-resolve every comment. Exit 1: not posted, thread left open; fix the cause and re-send. Exit 3: GitHub's secondary rate limit; keep the bodies and re-send later, since retrying at once keeps it triggered |
+| `get-review-comments.sh <PR> [--with-ids] [--wait]` | **USE --wait** - Fetch line comments (Gemini, Cursor), polls 5min if --wait |
+| `get-pr-comments.sh <PR> [--with-ids] [--wait] [--author]` | Fetch PR-level comments (Claude, Copilot) with priority detection |
+| `trigger-review.sh [PR] [--gemini\|--cursor\|--claude] [--wait]` | **USE --wait** - Trigger review and poll for response |
+| `check-ci.sh <PR> [--wait] [--timeout N]` | **USE --wait** - Wait for CI, report failures with logs |
+| `summarize-reviews.sh <PR> [--all]` | Summary of unresolved by priority/file |
+| `watch-pr.sh <PR>` | Background monitor (optional, for long-running watches) |
+| `claude-review.sh <PR>` | Generate Claude agent prompt for code review |
+| `check-gemini-quota.sh <PR>` | Check if Gemini is rate-limited |
+| `bot-enabled.sh <gemini\|cursor>` | Is this bot on for the repo? Exit 0 = enabled, 1 = disabled (explicit false, or gemini with no entry), 2 = undetermined (warns on stderr; callers must treat as enabled, never as the user's choice) |
+| `resolve-comment.sh <node-id> [reason]` | Manually resolve a thread |
+| `record-finding.sh <PR\|local> <file> <line> <agent> <P1\|P2\|P3> - <<'EOF'` | Agents: record a finding for this round, body on stdin (no GitHub write). Refuses without an open round, or a body already recorded |
+| `post-findings.sh <PR> [--open\|--local\|--check]` | Post the round's findings as one review (same-line merged, P3s rolled up) and check each landed; `--open` opens the round; `--local` prints instead; `--check` fails while any are unposted |
+| `post-line-comment.sh <PR> <file> <line> <agent> "msg"` | Post one line comment with agent signature (orchestrator fallback only) |
+| `get-agent-comments.sh <PR> <agent> [--with-replies]` | Fetch agent's own comments and replies |
+| `reopen-comment.sh <PR> <comment-id> <agent> "reason"` | Reply to resolved thread with Claude attribution |
+| `eval-reviewer.sh harvest\|run\|assign [--user] ...` | Pick the cheapest model per agent that reviews as well as a baseline, on this repo's own history; build a `.pi.agents` block that spreads load across subscriptions. See "Pi Engine" |
+| `pi-watch.sh [--latest\|<run.jsonl>] [--once]` | Follow a Pi run live: tool calls, model text, running tokens and cost |
+| `pi-review.sh <PR> <agent> <sha> [--model M] [--replay]` | Run a `pi`-engine agent once in Docker down its model chain. Prints the report as JSON and posts nothing; a Haiku Task posts it. Exit 5 = use the Claude Task. See "Pi Engine" |
+| `emit-dream-marker.sh <kind> key=value ...` | Emit a dream marker (reviewer telemetry) — best-effort, never blocks. See "Dream Markers" |
+| `discover-agents.sh <PR> \| --base <ref>` | Discover reviewers (`.reviewers/` files, or legacy `AGENT-REVIEWERS.md` + defaults), each with its `summary` header; drops generated files from scope and skips reviewers left with nothing; reports `configuration.layout`, and `language_detection` when the repo has no reviewers. `--base` diffs `<ref>...HEAD` for local mode |
+| `convert-reviewers.py repo [--write] \| starters [--into DIR] [NAME...] \| template FILE --into DIR` | Convert a legacy repo to `.reviewers/` (dry run without `--write`), copy starters in, or convert one template file. See `references/reviewers-dir.md` |
+| `detect-language.sh [--repo-root <path>]` | Scan repo for language manifests (go.mod, pyproject.toml, etc.); emits `[{language, subtree, manifest}, ...]`. Deterministic; called by discover-agents.sh |
+| `install-template.sh [--repo-root <path>] <lang>:<subtree> [...]` | Install language packs into `<subtree>/.reviewers/`, their starters and a merged `config.json` into the root `.reviewers/`. Transactional: writes nothing if any file exists or the repo is still on `AGENT-REVIEWERS.md` |
+| `_load_defaults.sh` | Internal helper: load native default subagents from `plugins/pr-review-loop/agents/` |
+| `_parse_configuration.sh <AGENT-REVIEWERS.md>` | Internal helper: parse the `# Configuration` JSON block; validates required `reason` in `overlap_acknowledged` |
+
+## Permission Setup
+
+To enable autonomous loops, user should grant access:
+```
+Bash(git commit:*)
+Bash(git push:*)
+Bash(scripts/reply-to-comment.sh:*)
+Bash(scripts/trigger-review.sh:*)
+Bash(scripts/check-ci.sh:*)
+Bash(scripts/post-line-comment.sh:*)
+Bash(scripts/record-finding.sh:*)
+Bash(scripts/post-findings.sh:*)
+Bash(scripts/convert-reviewers.py:*)
+Bash(scripts/get-agent-comments.sh:*)
+Bash(scripts/reopen-comment.sh:*)
+Bash(scripts/discover-agents.sh:*)
+Bash(scripts/get-pr-comments.sh:*)
+Bash(scripts/install-template.sh:*)
+Bash(scripts/emit-dream-marker.sh:*)
+Bash(scripts/pi-review.sh:*)
+Bash(scripts/eval-reviewer.sh:*)
+Bash(scripts/pi-watch.sh:*)
+```
+
+## Prerequisites
+
+- `gh` CLI authenticated
+- `jq` - JSON processor for parsing GitHub API responses
+  Install with: `apt install jq` (Ubuntu/Debian) or `brew install jq` (macOS)
+- `python3` - `convert-reviewers.py`, `install-template.sh` and `eval-reviewer.sh` (standard library only)
+- `pre-commit` (optional) - its hooks run on `git commit` once installed with `pre-commit install`
+- Docker and a model provider API key (optional) - only for agents routed to the Pi engine (`# Configuration .pi` or your per-user `models.json`).
+  `PI_REVIEW_SANDBOX=host` runs your own `pi` instead: `npm install -g @mariozechner/pi-coding-agent` (the image pins the version in `pi/Dockerfile`).
+- `bl` (optional) - Qwen Token Plan pacing in `pi-review.sh`: `npm install -g bailian-cli`, then `bl auth login --console`.
+- `claude` CLI (optional) - `eval-reviewer.sh` (judge and grader) and `--replay` with a `claude` entry.
+- `bd` (beads) (optional) - Issue tracker for capturing out-of-scope suggestions as tickets.
+  If not installed, out-of-scope suggestions are handled with "Out of scope for this PR" replies.
+  See: https://github.com/steveyegge/beads

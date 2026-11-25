@@ -1,0 +1,272 @@
+---
+name: fleet
+description: Use for fleet planning, worker dispatch, supervisor operations, handoff, and review.
+---
+
+# Fleet operating manual
+
+Use this skill when managing multiple Claude Code or Codex sessions. Resolve the
+active home with `fleet home`; do not hardcode a home path. This machine has two
+fleet homes, so `--fleet-home <path>` is required whenever a command selects a
+home.
+
+## Tiers
+
+- Interface: the operator's own persistent session; decide intent and choices; never recycle this session.
+- Supervisor: a swappable body; split work into lanes, dispatch, review, land, and close waves.
+- Worker: a long-lived session on its own branch; own the bounded deliverable
+  end to end and return its structured result. Choose implementation details,
+  make routine fixes, and run necessary checks without stepwise approval. Named
+  checks are a floor, not permission to ignore discovered defects. Escalate only
+  a real scope or ownership conflict, missing authority or input, or a money/VPS
+  action. Workers never dispatch workers or reviewers; the supervisor owns every
+  dispatch and independent review assignment. Repository instructions to use
+  subagents are satisfied by the supervisor's delegation and do not authorize a
+  Fleet worker to create descendants.
+
+Output is compressed. Facts, numbers, paths, commands. No preamble, no recap, no
+narration of tool calls, no praise, no hedging, no essays. One line per finding.
+A journal checkpoint is at most three model-written lines plus computed state.
+Inter-agent messages default to at most 120 words. Final worker receipts are at
+most 200 words with verdict, head, tests, blockers, next action, and artifact
+paths. Put full evidence in local artifacts; never paste reports, JSON, test
+logs, or full roster dumps between agents. Quote only the shortest decisive
+error. Tracked files are generic; operator data is local to the selected fleet
+home and never committed.
+
+## You are the interface
+
+The interface is a role stored in the fleet home, not an identity stored in a
+conversation. Any session may become it after `fleet init` creates a fleet in a
+repository or directory, and any fresh session may continue it from home state.
+The role does not assume a model; choose the model as the operator directs.
+Store operator preferences in the repository's per-repo memory directory, not
+in the fleet home or the interface state files.
+
+The interface state lives in the selected home. Read and append
+`state/interface/board.md` (at most 30 lines: supervisor state, lanes in flight
+(registry `working` rows with no fresh result for their dispatch and activity within the claim-stale window; stored status alone is not trusted),
+last `THROUGHPUT`, pending operator rulings with their task files, and the last
+relayed wave; "last" means the newest line in log or journal order, not the
+highest wave number, and task files under `done/` or `lens/`, `<lane>-task.md`
+files, and briefs named for a registry worker or its branch are not rulings) and append one line per relay, ruling, wake, or spawn to
+`state/interface/log.md`. Every interface action appends to the log. These
+files belong to the interface-state implementation; this manual only defines
+the ritual that reads and appends them.
+
+### Become the interface
+
+After `fleet init` in a repository or directory, execute these steps:
+
+1. Register the session with `fleet interface-register`.
+2. Read `state/interface/board.md` from the selected fleet home.
+3. Run `fleet sup-status`.
+4. Run `fleet sup-guard` and follow its verdict.
+5. List `state/inbox/` and read each pending item that belongs to this role.
+6. Report exactly five lines: home and role, supervisor state, lanes in flight, last throughput and relayed wave, and pending rulings with the next action.
+
+### Continue as the interface
+
+In a fresh session with no prior conversation, execute these same steps from
+the selected fleet home:
+
+1. Register the session with `fleet interface-register`.
+2. Read `state/interface/board.md` from the selected fleet home.
+3. Run `fleet sup-status`.
+4. Run `fleet sup-guard` and follow its verdict.
+5. List `state/inbox/` and read each pending item that belongs to this role.
+6. Report exactly five lines: home and role, supervisor state, lanes in flight, last throughput and relayed wave, and pending rulings with the next action.
+
+### Interface rules
+
+- Never run `sup-spawn` over a live supervisor body; run `fleet sup-guard --fleet-home <path>` first. Only the interface acts on `DISPATCH` with `sup-spawn`. For `WAKE`, `sup-guard --do` re-verifies and sends `@supervisor/briefs/wake.md`; it never spawns. `PAGE` needs an interface report; `OK` means a fresh heartbeat with a live busy body, or an idle body with no unread mail older than 120 s, and needs no page or wake; an idle body with older unread mail yields `WAKE`.
+- Never tick an operator gate; carry open decisions to the operator and record the ruling with its task file.
+- Ask the operator before every destructive verb, including `kill`, `clean`, `archive`, repair, release, retirement, and home registration changes.
+- When more than one home is listed, pass `--fleet-home <path>` on every mutating verb.
+- Treat a `KEEPER:` page as an observation: read the board, run `fleet status`, `fleet sup-status`, and `fleet sup-guard`, then follow the guard; page the operator on `PAGE` or ambiguity. `supervisor limited` means wait for the recorded roster horizon; do not wake or spawn around that limit. The keeper pages it once until that horizon. `supervisor turn died on an API stream error; N retries exhausted` means the guard already retried the wake: report it and relaunch with `sup-spawn` once the guard says `DISPATCH`, or resume the body by hand. A worker anomaly pages once per death; rows dead for more than 24 h never page.
+- `bin/fleet_keeper.py --once --fleet-home <PATH> ...` accepts repeatable homes; it observes, wakes, and pages each independently, prefixes every page/wake line with that home's statusline tag, and stores dedup state under that home's `state/keeper/last-page.json`.
+- Treat a `SUPERVISOR:` line as a graceful generation handoff: acknowledge it, read `fleet sup-status --json`, record the transfer, and use the guard before any stillborn-successor dispatch.
+- Use `fleet watch` with `run_in_background` for interface watching; do not maintain a hand-written polling loop. Use `fleet relay-ack` to acknowledge and mirror handled mail.
+- Lost supervisor nonce: wait until the holder's registry row is `idle`, then run `fleet send supervisor "recover the lost nonce" --fleet-home <path>`. Fleet wakes the same incarnation on a fresh unforked body with a new wake nonce; that body's fixed bootstrap aborts every pending handoff successor before campaign work. If the holder is roster-busy, a send only queues unread mail: use `sup-guard`'s long-running child-executable diagnostics and do not spawn around it.
+- Relay every `THROUGHPUT` line and offer one idea per wave; record the relay in the interface log.
+
+## Startup
+
+1. Read the local interface board and pending decision tasks; ask the operator about every open decision before dispatching or changing work.
+2. Run `fleet status`, `fleet sup-status`, and `fleet autoclean`.
+3. Read `$(fleet home)/knowledge/INDEX.md` and the relevant project note before touching a project.
+4. If the active campaign has no live supervisor, run `fleet sup-spawn --task @<brief>`; the interface never runs `sup-boot`.
+
+## Dispatch
+
+- Pass `--setting-sources project,local` to worker and supervisor dispatches unless the operator specifies another supported source list.
+- Pass `--fleet-home <path>` on every command that selects a home; never rely on an ambiguous default between the two homes.
+- Select a permission mode from `bypass`, `accept`, `dontask`, `plan`, or `omit`; use the narrowest mode that lets the task complete.
+- Keep at most four implementation or research workers under a supervisor:
+  no more than two Sol/Astra workers plus up to two additional Luna workers.
+  One focused reviewer is separate. Count Claude and Codex workers together.
+- A worker may not spawn descendants without explicit supervisor approval of a
+  bounded independent task. Do not create recursive reviewer chains.
+- Use one focused independent review per change. After two unsuccessful rounds,
+  stop and rebrief from the concrete blockers instead of adding reviewers.
+- Dispatch only when at least 1.5 GB of memory is available.
+- Give each lane a goal, constraints, acceptance criteria, disjoint write set,
+  branch snapshot, and structured result format. Do not prescribe routine
+  implementation steps that the lane can decide safely.
+- A lane works on the snapshot it received; do not assume later changes are present.
+- A Codex worker cannot commit; the supervisor or interface lands its work (see Codex lanes).
+
+## Codex lanes
+
+Dispatch a native Codex lane with `fleet spawn --model codex:<model>`; new rows use the native app-server adapter. `--effort low|medium|high|xhigh` applies only with explicit `--codex-adapter mcx` and is ignored by the native adapter. Persisted rows always keep their recorded adapter.
+Fleet routes `status`, `peek`, `result`, `send`, `interrupt`, `kill`, `respawn`,
+and wave accounting through that recorded adapter. Do not drive app-server or
+mcx by hand for a lane Fleet dispatched. On the explicit mcx route, Fleet maps
+permission modes to mcx approval modes as
+`bypass` → `unrestricted`, `accept` → `auto`, and `dontask`/`plan`/`omit` →
+`never`. The selected approval and effort are persisted on the registry row and
+reused by respawn/steer; a caller's `MCX_APPROVAL` cannot weaken Fleet's mode.
+`status` and `peek` show the approval mode.
+
+- For an explicit mcx lane, run one observer per lane; break its loop when `mcx result` returns anything other than 2 (`2` live, `0` done, `1` stopped or unknown).
+- For an explicit mcx lane, re-arm the observer after every `mcx steer`; steering RESTARTS the run.
+- Use `gpt-5.6-luna` by default; use Astra only by exception and run at most one Astra lane at a time.
+- An explicit mcx worker cannot commit: mcx runs `codex exec` under the default `workspace-write` sandbox, and a worktree's gitdir lives outside the worker's cwd, so `fleet land` commits the dirty worktree on the worker's behalf.
+- Do not use mcx to commit, steer unrelated workers, or create a second worker for a lane without an explicit split.
+
+## pi lanes
+
+Dispatch a free-model lane with `fleet spawn NAME --dir PATH --model pi:<vendor>/<model>:free --task "..."`.
+Fleet refuses any slug that does not end in `:free`. The lane runs the pi coding
+agent through `bin/fleet_pi.py`, which follows mcx's contract, so `status`,
+`peek`, `result`, `send` (resumes the same pi session; a running turn refuses),
+`interrupt`, `kill`, `respawn`, wave accounting and LANE-DONE mail work as for
+an explicit mcx lane. Provider failures and stalls read `dead`, never `idle`:
+the outcome comes from pi's events, not its exit code. Set
+`FLEET_PI_STALL_MINUTES` (default 5) to tune the no-event watchdog. pi runs inside bubblewrap (Linux only; a missing or
+broken `bwrap` refuses the lane) with a scrubbed env, and its commits fail (see SPEC §6.2a); `fleet land` commits its dirty worktree. Default model order for free lanes: `thinkingmachines/inkling-small:free`,
+`nvidia/nemotron-3.5-super-vl:free`, `thinkingmachines/inkling:free`,
+`dots-studio/dots-3-note-preview:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`,
+`poolside/laguna-s-2.1:free`. See SPEC §6.2a for retry, telemetry and
+per-model settings.
+
+## CLI verbs
+
+Each line below is derived from `build_parser()` in `bin/fleet.py`.
+
+- `fleet home [--tag]`: print the resolved home or its statusline tag.
+- `fleet knowledge`: print `knowledge/INDEX.md`.
+- `fleet homes [--add PATH|--retire PATH]`: list registered homes or append one add/retire record.
+- `fleet init [--home PATH] [--statusline] [--chain] [--force]`: initialize a home and optionally register it or install its statusline.
+- `fleet spawn NAME --dir PATH --task TEXT [--force-band]`: dispatch one worker with its mode, model, budget, category, settings, and context options.
+- `fleet status [NAME] [--json] [--stale-ok] [--all]`: show worker state, optionally including archived rows.
+- `fleet peek NAME [-n LINES]`: print a bounded recent event digest.
+- `fleet result NAME`: print the last completed turn's result.
+- `fleet address NAME`: print the exact native session name to pass as `SendMessage` `to` (live sessions only; `supervisor` resolves to the claim holder). A native message steers a live session in place, without a fork. See `docs/specs/peer-messaging.md`.
+- `fleet wait NAME... [--any|--all] [--timeout SECONDS]`: wait for one or more turns to finish.
+- `fleet send NAME MESSAGE [--force-band]`: deliver a worker message or start its next turn.
+- `fleet interrupt NAME`: stop the worker's current turn.
+- `fleet release NAME`: release an attached worker to idle.
+- `fleet abandon NAME --reason TEXT [--force] [--nonce VALUE]`: record lane_state=abandoned for an idle lane with no commits to land; refuses a busy lane or a branch ahead of HEAD (unless `--force`); removes no worktree or branch.
+- `fleet respawn NAME [--task TEXT] [--force] [--yes] [--force-band]`: start a fresh session while retaining the worker identity and recorded brief.
+- `fleet resume-limited [NAME] [--force-now]`: resume workers whose usage horizon permits it.
+- `fleet kill NAME [--yes]`: interrupt a worker and mark it dead.
+- `fleet clean [--dead-only|--tombstones] [--yes]`: remove eligible dead records;
+  newly found evidence is first moved to `logs/archive/<name>/` (the path is
+  printed), and a failed move refuses deletion so the row remains recoverable.
+- `fleet archive [NAME] [--ttl-hours HOURS] [--dry-run]`: tombstone terminal native workers past the TTL, or preview eligibility.
+- `fleet autoclean [--ttl-hours HOURS] [--expire-tombstones-hours HOURS] [--dry-run]`: run archive, daemon-husk, and optional tombstone-expiry maintenance.
+- `fleet index init [--path PATH]`: create and build a project symbol index.
+- `fleet index build [--path PATH] [--force]`: build or rebuild an existing symbol index.
+- `fleet index update [--path PATH] --files PATHS`: refresh named index files.
+- `fleet index status [--path PATH]`: show index counts and stale shards.
+- `fleet q [QUERY] [--outline PATH] [--src] [--path GLOB] [--kind KIND] [--limit N] [--no-refresh]`: query the project symbol index.
+- `fleet doctor [--repair]`: run health checks; use `--repair` only when the operator authorizes repair mutations (quarantining corrupt state and reconciling exact completed native-Codex turns).
+- `fleet brief ITEM`: render a task-file brief with DONE, base, files, tests, structured-result contract and a verified `Serves:` citation; stale or missing product citations refuse.
+- `fleet sup-boot [--sid SID] [--nonce VALUE] [--handoff-inc ID] [--handoff-token TOKEN]`: claim or resume supervisor duty and emit the boot bundle.
+- `fleet sup-spawn --task TEXT [--model MODEL] [--permission-mode MODE] [--setting-sources LIST] [--nonce VALUE] [--force-band]`: dispatch a gen-0 supervisor body.
+- `fleet sup-checkpoint BODY [--kind CHECKPOINT|PROPOSAL] [--nonce VALUE]`: append a supervisor journal checkpoint and refresh its heartbeat; its header reports the caller's context occupancy and band verdict.
+- `fleet journal-roll`: roll older supervisor journal entries into the archive.
+- `fleet interface-register`: register the current tmux pane as the interface.
+- `fleet watch [--fleet-home PATH ...] [--mcx-dir DIR ...] [--mem-floor-mb MB] [--disk-floor-gb GB] [--interval S] [--timeout S]`: wait for the first mail, fleet/mcx lane transition, low-memory, or low-disk event; exits 3 on timeout.
+- `fleet mailman init|run|digest --fleet-home PATH`: seed wake rules, classify inbox mail, file low-signal messages, and wait for interface mail. The seed catches `READY:` and both `do-not-merge` and `do not merge`; missing or invalid config wakes on every mail. Filing checks the same inode and content through the link/unlink boundary. The command remains fail-safe destructive pending an effect-tier ruling.
+- `fleet msg init|send|inbox|ack|status|queue|ids|whois|sync|serve|compact|bind|retire|import --fleet-home PATH`: durable messages to a stable identity. `send TO TEXT` prints `DELIVERED <id>` (or `QUEUED` to another site); `inbox` reads your own queue (`--peek` reads nothing and never syncs, `--all` shows read-unacked with the reader); `ack ID` closes it; `sync [--peer SITE]` syncs fs peer homes and ssh peers (push, pull, receipts; exit 4 once an ssh peer fails `max_failures` times in a row), and a non-peek `inbox` does the fs part first; `serve --peer SITE` is the ssh forced command, never typed by hand. The sender method comes from caller evidence, never from an argument; a `task` from a caller that is neither a lane nor the Interface needs `--nonce`. Sends obey the §11 bounds (size, hop, loop, task budget, rate). A Claude lane gets a one-line notice (id, sender, method, never the body); every lane's next prompt carries a `## MESSAGES` block of unread ids. `bind NAME --binding lane:<worker>|session:<sid>|codex-thread:<id>|pi-job:<id> --nonce N` gives a named role (`ops`, `hub`) a holder (epoch +1; `lane:` follows fork-steer and respawn, the others need a rebind); `retire NAME --nonce N` keeps the record. A worker turn cannot bind. `import --dir DIR --to NAME@SITE [--nonce N]` (live nonce or the registered Interface) sends each mailman-format file as a `legacy-unverified` note and moves it to `DIR/done/`; skipped files stay, and `EMPTY` means the directory can retire. `relay-ack` of a rendered `msg-<id>.mail` also acks message `<id>`; `fleet mail verify` reads the message store first.
+- `fleet relay-ack --fleet-home PATH --mail FILE --line TEXT [--mirror-log PATH ...]`: append one UTC relay line, move the acknowledged mail to `mailbox/done/`, and persist it in the watch cursor.
+- `fleet wave-close --base SHA --changelog TEXT [--alias MERGE_LANE=WORKER] [--nonce VALUE]`: close one wave by reaping, flooring, accounting, landing, pushing, notifying, then stopping each newly landed lane's session and reaping again so its slot frees in the same run.
+- `fleet land <lane>`: validate, commit, rebase and verify one structured lane result.
+  If its local lane report has an exact `Docs: n/a` or `Docs: n/a -- …` line,
+  that line is copied unchanged as the landing commit trailer.
+- `fleet sup-heartbeat [--nonce VALUE]`: refresh the supervisor claim heartbeat without a journal entry.
+- `fleet sup-release [--reason TEXT] [--nonce VALUE]`: release the supervisor claim and stop the releasing body.
+- `fleet sup-status [--json]`: read supervisor claim, handshake, and handoff state; `body` names the holder's registry model and substrate (e.g. `openrouter/<slug>`) when the row records them.
+- `fleet sup-guard [--do] [--json]`: verify the two-live-body guard: fresh heartbeat + live busy PID, or live idle PID with no unread mail older than 120 s → `OK` (no page or wake), fresh heartbeat + live idle PID + unread mail older than 120 s → `WAKE <body>`, stale + live idle PID → `WAKE <body>`, stale + no live PID → `WAKE <body>` when the holder's registry row is idle and unarchived, otherwise `DISPATCH`, fresh + no live PID or unreadable registry/roster → `PAGE`. A stale busy holder pages with up to three long-running descendant executable basenames and their ages, never arguments. Existing ambiguity checks still page, and a live body never permits `DISPATCH`. `--do` re-verifies and sends the wake brief only on `WAKE`; `OK` and `PAGE` perform no action. `DISPATCH` pages the interface, which alone owns `sup-spawn`; neither guard nor keeper spawns.
+- `fleet sup-context [--sid SID] [--json]`: report this session's context occupancy against its tier band.
+- `fleet sup-decision [--raise QUESTION|--answer TEXT|--clear] [--context-ref REF] [--json] [--nonce VALUE]`: route an operator-only decision.
+- `fleet sup-notify TEXT [--tmux-session SESSION] [--window WINDOW] [--dry-run] [--nonce VALUE]`: notify the interface through its tmux window.
+- `fleet sup-handoff-begin [--model MODEL] [--permission-mode MODE] [--setting-sources LIST] [--complete-timeout SECONDS] [--nonce VALUE]`: dispatch the handoff successor; omitted launch settings inherit the validated predecessor, unresolved settings refuse the handoff, and a timeout waits and completes in the same process or aborts it on failure.
+- `fleet sup-handoff-complete --expect-inc ID [--expect-sid SID] [--nonce VALUE]`: verify the successor handshake and transfer the claim.
+- `fleet sup-handoff-abort [--successor-sid SID|--successor-inc ID|--retire-all] [--force] [--nonce VALUE]`: stop or retire a pending successor and resume duty.
+
+## Supervisor guard and generations
+
+Read `supervisor.md` before taking the Supervisor role. Persist each child's
+canonical ID, worktree, brief, and writer/reviewer role; after compaction query
+the full canonical roster, refuse active-writer worktree collisions, and
+reconcile every required nested review before accepting the parent. An allowed worker Stop or observed Codex completion mails `LANE-DONE` to its current claim-holding supervisor and wakes that body when idle. A turn that ends on a transient API error (connection lost, overloaded, 5xx) is retried in the same session up to three times per death with backoff (time never resets the count; an exhausted lane is reported once); a lane that still ends without an outcome mails `LANE-DEAD <name> <reason>` the same way. On `LANE-DEAD`, read `fleet peek`/`fleet result`, then respawn or reassign the lane; never wait on it. Idle lane sessions fleet spawned stop by themselves (the interface and supervisor sessions never do; landed, abandoned, GREEN `fleet land`, or idle past `gc.idle_ttl_minutes`); the row stays, so `fleet send` or `respawn` resumes one. A `spawn` refused over `gc.memory_budget_mb` means reap or wait, not raise the budget. For Codex
+collaboration, `send_message` only queues delivery; use `followup_task` to wake
+an idle or completed agent. This differs from `fleet send supervisor`.
+
+- Present the latest printed `NONCE` to every mutating verb that accepts `--nonce`; do not invent or reuse an earlier generation. The claim-holding verbs that accept it are `sup-boot`, `sup-spawn`, `sup-checkpoint`, `sup-heartbeat`, `sup-release`, `sup-decision`, `sup-notify`, `wave-close`, and the three `sup-handoff-*` verbs; the worker verbs `init`, `spawn`, `send`, `interrupt`, `release`, `respawn`, `resume-limited`, `kill`, `clean` and `archive` accept it too. A placeholder-looking `--nonce` or `--handoff-token` is refused before command dispatch changes state. After a continuity refusal, end that body's turn and follow the exact Interface wake and successor-handle steps printed in the refusal.
+- Treat `sup-boot` exit 0 as a held or transferred claim, exit 2 as refusal, exit 3 as freeze, exit 4=continuity refusal, and exit 5 as handoff refusal.
+- Reconcile `fleet status` outcomes before dispatching; do not treat a limited worker as dead.
+- Context bands are supervisor 350–400k and worker 250–300k; the supervisor enters its band at **350k** and reaches its hard ceiling at **400k**, while the worker enters its band at **250k** and reaches **300k**. Entering the supervisor band REFUSES `spawn`, `send`, `respawn` and `sup-spawn` with a one-line reason; `--force-band` overrides that soft refusal for one call and **cannot** override the 400k hard ceiling. The handoff verbs are never refused.
+- Freeze and page the operator when claim evidence is ambiguous; never seize or mass-respawn on an ambiguous snapshot.
+- Keep journal checkpoints claim-bound and concise; use `sup-checkpoint` for durable working state.
+
+## Wave boundary
+
+Run `fleet wave-close --base <sha> --changelog @<file>` at the wave boundary. Reserve about 12 minutes, configure a git identity, and retry only after inspecting a failure because the operation is not idempotent across failure.
+
+Merge every landing lane with a subject starting `merge(<lane>): <summary>` -- never git's own default `Merge <branch>: ...` subject. `wave-close` attributes lane workers/tokens/external_lines by matching that literal convention against `git log --merges` in the closing range; a merge subject it cannot match is not counted as a zero-lane wave, it makes `wave-close` refuse the close and name the unattributed commit(s). A lane's own sync merges of the base branch into itself (any subject) are recognised structurally and need no convention subject; merging any other branch into a lane does.
+
+The floor runs in a fresh clone of the home. With no config it is the fleet repo's own floor (python3.10 and python3.12, `uv run --no-project --with pytest`, `tests/`, the fleet's expected host failures). Any other home -- its own project, deps, interpreters or failure set -- writes `supervisor/wave-close.json`, read from the home checkout (tracked or git-ignored); every key is optional:
+
+```json
+{
+  "interpreters": ["3.12"],
+  "uv_run_args": ["--no-project", "--python", "{python}", "--with", "pytest", "--with-editable", ".[dev]"],
+  "test_paths": ["tests"],
+  "pytest_args": [],
+  "expected_failures": [],
+  "env": {"UV_CACHE_DIR": null},
+  "uv_offline": true,
+  "gates": []
+}
+```
+
+`{python}` is replaced by each interpreter and must be present. `expected_failures` defaults to empty once a config exists. `env` names must be identifiers; a `null` value unsets that variable (the floor otherwise pins `UV_CACHE_DIR=/tmp/w64-initrepo-uv-cache`). One interpreter skips the cross-interpreter comparison; two or more must agree on totals and failures. Unknown keys or malformed values refuse the close before the claim, as does an interpreter whose uv env cannot import pytest (the refusal names the uv error and the warm command). Only failures outside `expected_failures` refuse; an expected failure that now passes is reported informationally. The floor runs before any reap or session stop.
+
+The same file owns landing gates. With no `supervisor/wave-close.json` (the
+fleet home), `fleet land` runs `docs-currency`, `receipts`, and `citations`,
+plus `registration` (`test_fleet_sources`, `test_index_split`,
+`test_round7_defect_pins`) when the lane adds a `bin/*.py` file or a parser verb.
+The `citations` gate runs `tools/refresh_citations.py --check` only when the
+lane changes `bin/fleet.py`; `--write` refreshes unambiguous line pins before
+landing. A configured home runs no fleet-specific gate by default (`fleet land`
+notes this on stderr); set `gates` to an explicit list of built-in gate names
+(`docs-currency`, `receipts`, `citations`, `registration`) or `{name, command}` objects for that
+home's own checks.
+
+`<lane>` is the lane **branch**, not its short name: `merge(w99/lane-join)`, never `merge(w99)`. `wave-close` resolves that token as a branch to join the lane to its registry record, and the worker record keeps the branch it was dispatched on, so the join survives `git worktree remove`. `fleet land` prints the exact command to run, in that form. A lane that parses but resolves to no record and no worktree is refused with `UNJOINED: N of M`, exactly as an unparsed subject is: a lane it cannot join has no substrate, no session and no token total, and publishing a zero for it is the lie wave 86 told on a 701-line wave. A merge named `merge(hotfix/<name>): ...` is interface/supervisor bookkeeping, not a worker lane: it is listed in the throughput line, contributes workers `0`, and does not require a registry row. A lane merged under its worker name joins that worker's row only when the row records no branch or the default branch, and no `cwd` other than the home root; for any other rename or re-dispatch, or when several rows match, pass `--alias <merge-lane>=<worker>` (repeatable) rather than editing the row.
+
+## Handoff
+
+When approaching a context band, checkpoint, notify the interface with `sup-notify`, and run `sup-handoff-begin --complete-timeout 300 --nonce` followed by the exact most recent `NONCE:` value; it dispatches the successor, waits lock-free for its token-backed handshake, and completes or aborts in one process using that single nonce presentation. Every pre-transfer exception aborts; a changed claim refuses completion but still stops the token/incarnation-proven successor without writing the new claim. The separate `sup-handoff-begin` then `sup-handoff-complete` sequence remains available. Run `sup-release` only when the handoff is stillborn, then stop.
+
+## Safety
+
+Use `env -u CLAUDE_CODE_SESSION_ID` when operating on another home. Confirm
+`fleet home --fleet-home <path>` resolves to the intended initialized home
+before other commands. Keep reports at local, gitignored
+`docs/lanes/<name>.md` and journals at `state/journals/<name>.md`; neither is
+public source.

@@ -1,0 +1,168 @@
+---
+name: ship-loop
+description: Run the full ship loop for a feature or fix — sync and isolate in a worktree, scope with ground-truth sweeps, implement with reality-faithful tests, gate on a multi-angle adversarial review, merge, and close the follow-up loop (promotions ledger, out-of-diff issues). Use when the user says "ship this the usual way", "run the loop", "ship-loop", asks to take a change from idea to merged PR with the standard review gate. The adversarial review is the merge gate — never merge substantive work without it.
+user-invocable: true
+---
+
+# Ship Loop
+
+The end-to-end procedure for shipping substantive work: apply the stages needed to fulfill the authorized task; docs-only or mechanical diffs may run a lean
+review (step 5, one conventions + one accuracy angle) but never zero.
+
+Composition: this skill owns the loop; `/ship` (ship-task plugin), when
+installed, owns the mechanical tail of step 6 (push → PR → CI → squash-merge
+→ base sync). anvil-tracked projects: run the loop inside `anvil claim` /
+`submit` / `apply` so evidence gates apply.
+
+## 1. Sync and isolate
+
+Never reason about, or build on, a stale or shared tree:
+
+- Inspect `git status -sb`, the branch, remotes, worktrees and repository instructions first.
+  Preserve the user's requested branch or working state and other agents' changes.
+- Fetch the relevant remote when available, then discover its default branch with
+  `git symbolic-ref refs/remotes/origin/HEAD` or remote metadata; do not assume `main`.
+- If isolation is needed and no starting state was specified, create a dedicated worktree from
+  that verified ref using the host's branch convention (Codex defaults to `codex/<topic>`).
+  Reuse an already isolated task worktree. Read the configured Git identity; do not invent one.
+- Discover available read, shell, delegation and wait tools. Use only exposed agent types and
+  inherit current model settings. If delegation is unavailable, do the review passes locally
+  and state the absence of an independent reviewer.
+
+## 2. Scope with ground truth
+
+Dispatch read-only Explore agent(s) with PRECISE questions (file:line
+citations required), covering: the existing mechanics you are changing, every
+config/pattern precedent to mirror, existing test fixtures to reuse, and the
+doc surfaces that must track the change. Delegating implementation or review
+to a subagent? Generate its prompt with the `dispatch-packet` skill rather
+than writing one freehand.
+
+**Ground-truth rule**: verify every load-bearing assumption against reality
+before building on it — read the actual on-disk data format, environment-variable presence and redacted structural examples, the actual schema, and compare it with documentation. Never print secret environment values. (The
+`payload_json` incident: a dashboard shipped reading `payload` because both
+the code and its fixture encoded the same wrong guess; one `head` of the real
+file would have caught it.)
+
+## 3. Implement
+
+- Mirror the repo's own precedents (config knob shapes, gate tiers, error
+  codes) — name the precedent in a comment when you introduce a sibling.
+- Fail CLOSED in guards and gates: when safety state cannot be established,
+  refuse with the escape hatches named, never proceed-with-warning.
+- Leave it better: an unrelated break you trip over gets fixed (if small) or
+  recorded as a follow-up (if not) — never routed around silently.
+
+### Windows/platform discipline (hard-won)
+
+- Multi-line patch scripts: write them to a file with the Write tool and run
+  `python3 patch.py` — unquoted bash heredocs can alter backslashes (`\\n` arrives as a
+  real newline) when delimiters are unquoted. Quoted heredocs preserve literal content;
+  use a patch tool or carefully quoted script and verify the result.
+- Every patch-script replacement gets an `assert anchor in text` — silent
+  no-op replaces are how "fixed" bugs survive.
+- ASCII-only in printed CLI output unless the repo reconfigures streams
+  (cp1252 consoles crash on ✎/em-dash); `PYTHONUTF8=1` for tooling runs.
+- Node cannot spawn `.cmd`/`.bat` directly (CVE-2024-27980 throws EINVAL
+  synchronously) and MSYS `/c/...` paths mean nothing to Windows-native
+  processes — convert with `cygpath -m`.
+
+## 4. Test against reality
+
+For features exposed through multiple clients, use the
+[journey parity reference](references/journey-parity.md) to connect user intent,
+native state, CLI/API checks and actual browser observations. Keep fixtures and
+selectors in the product repository.
+
+- Hermetic tests with dependency-injected seams (fake `_run`, frozen clocks,
+  monkeypatched env) — AND fixtures byte-faithful to the real formats they
+  fake. A fixture that mirrors your assumption certifies your bug.
+- When new verification makes old fixed-response fakes fail, the fakes were
+  never testing that behavior — update them to represent the failure mode,
+  and add the missing negative-path test.
+- Scrub ambient env (session ids, actor vars) in conftest when behavior
+  reads the environment — suites run inside harness sessions.
+- Run the FULL suite the repo's own way (check CLAUDE.md — e.g.
+  `cd bin && uv run pytest -q`). All green before review.
+- **Cross-platform gate**: anything shipped must run on Windows AND Linux,
+  under Claude Code AND Codex. Concretely: (a) run shell/script suites on
+  real Linux before merge — WSL via the wsl-linux-check discipline
+  (git-archive export, never /mnt/c copies) or a CI job on ubuntu-latest;
+  (b) ensure the repo's CI actually EXECUTES the new suite on Linux (wire it
+  into the workflow — a merged suite nobody runs on Linux is not coverage);
+  (c) Codex exposure uses a native `.codex-plugin` manifest and skills. Current Codex supports
+  hooks, but verify event schemas, trust and payload compatibility separately. Legacy slash commands
+  and Markdown agent roles need a native skill/tool route.
+
+## 5. Adversarial review — THE merge gate
+
+Fire it yourself; never wait to be asked. Generate each finder's prompt
+with the `dispatch-packet` skill — a review packet must demand a REPRO per
+finding, severity ranking, an explicit SHIP/DO-NOT-SHIP verdict, and
+`SUSPECTED` on anything unreproduced. Launch parallel read-only finder
+agents over the diff from the verified review base to HEAD, covering all eight angles (consolidate
+into ~4 agents when context is tight, but never drop an angle):
+
+1. **Line-by-line** — every hunk + its enclosing function; inputs/state/
+   timing/platform that make each line wrong.
+2. **Removed behavior** — every deleted line's invariant, and where it is
+   re-established (mode-"x" backups lost to `copy2` was caught here).
+3. **Cross-file / boundary tracer** — NON-NEGOTIABLE. Every caller of every
+   changed function, in every OTHER process: MCP servers, hook subprocesses,
+   spawned CLIs, browsers. Ask "who else constructs this, with which env, on
+   which stdin". Three consecutive PRs' worst bugs lived here (payload key
+   mismatch; MCP prompt EOF-aborting; session-env divergence killing leases).
+4. **Reuse** — re-implementations of existing helpers; version-bump tooling
+   that doesn't know new manifests.
+5. **Simplification** — dead knobs, unreachable code, ladder smells.
+6. **Efficiency** — per-request I/O, hidden latency floors, DOM/alloc churn.
+7. **Altitude** — special cases vs the general mechanism; policy living on
+   one surface only; truncation/heuristics that became load-bearing.
+8. **Conventions** — the repo's CLAUDE.md/AGENTS.md/docs rules, quoted
+   rule + violating line; doc surfaces that must track the change.
+
+Then: **verify findings against ground truth** (run the real binary, read the
+real file, check the real env format) — finders may hypothesize wrongly in
+both directions (the `session_01HA` prefix hypothesis was wrong for the
+default env but right for pinned ids). Fix everything CONFIRMED/PLAUSIBLE;
+an intentionally-kept design a finder disliked gets its rationale recorded
+in code comment + PR body, not silence. Out-of-diff findings: record a follow-up with blame refs. Create remote issues only when authorized.
+
+Bind verdicts and actual check results to the reviewed source tree using the
+[delivery evidence reference](references/delivery-evidence.md). Follow the target
+repository's reviewer-count and independence rules; authors are not independent
+reviewers of their own work. After fixes, repeat affected checks/reviews and any
+broader suite required by the repository or unresolved risk.
+
+## 6. Ship
+
+Check the existing task scope: a request to implement or review does not by itself authorize
+publishing, pushing, merging or sending messages. Complete the concrete source change and local
+verification first; carry out each remote action when that action is already authorized. Honor
+an explicit request to stop at a patch or draft PR. `--admin` bypasses and arbitrary post-merge
+commands require their own authorization; do not infer them from "ship".
+
+- CHANGELOG under `[Unreleased]` (Keep-a-Changelog); explicit
+  **BREAKING**/behavior-change callouts for anything automation depends on.
+- Commit message: what + why + the review findings fixed; repo trailer
+  conventions.
+- Push, open the PR with a testing-evidence section (suite counts, live
+  smoke), watch CI (`gh pr checks --watch`), squash-merge, delete branch,
+  confirm the remote merge, and sync the verified default branch. Remove only a clean, task-owned
+  worktree when cleanup is authorized; never force-remove another task's worktree.
+- Refresh the exact head/base and current CI before merge; compare the merged
+  tree to the qualified tree afterward. Retain failed attempts and establish
+  external writer stop separately from client exit. The bundled offline
+  [receipt check](references/delivery-evidence.md#offline-consistency-check)
+  verifies declared bindings and artifact hashes, not remote state or authority.
+
+## 7. Close the loop
+
+- If the work maps to a retro-corpus opportunity: update
+  `post-session-findings/promotions.json` (status/refs/what-remains), re-run
+  both generators, commit and push. The corpus must know what shipped.
+- Record out-of-scope findings locally; file remote issues when authorized.
+- Report source merge, build, installation, live validation, migration and final
+  acceptance separately, including failed performance gates and unknown custody.
+- Promote durable lessons: repo docs/CLAUDE.md for repo-specific rules,
+  agent memory for cross-repo working rules, this skill for process changes.

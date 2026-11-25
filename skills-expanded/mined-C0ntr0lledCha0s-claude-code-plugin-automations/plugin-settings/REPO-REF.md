@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/C0ntr0lledCha0s/claude-code-plugin-automations (path: temp/plugin-dev/skills/plugin-settings/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: This skill should be used when the user asks about "plugin settings", "store plugin configuration", "user-configurable plugin", ".local.md files", "plugin state files", "read YAML frontmatter", "per-p

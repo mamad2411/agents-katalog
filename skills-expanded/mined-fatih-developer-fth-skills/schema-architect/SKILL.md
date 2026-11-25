@@ -1,0 +1,94 @@
+---
+name: schema-architect
+description: "Derive a normalized database schema from business requirements: entities, relationships, normalization level (1NF to BCNF), constraints, and dialect-specific DDL, avoiding god tables. Use when the user designs a new database, models data for a feature, or asks for tables and DDL."
+---
+
+# Schema Architect Protocol
+
+This skill transforms raw business requirements into a robust, normalized, and scalable database schema. It avoids common anti-patterns like "God Tables" or EAV (Entity-Attribute-Value) abuse.
+
+**Core assumption:** A good schema must be extensible, maintainable, and explicitly document your design choices. 
+
+---
+
+## 0. Context Intake
+
+Before designing, make sure you have the inputs below. Read the previous workflow step's artifact first if it exists. Ask only for what is missing, in a single message, and state any assumption you make instead of blocking.
+
+- Business requirements or user stories, and the entities already known.
+- Target engine and ORM or migration tool.
+- Multi-tenancy, audit, soft-delete, and data retention requirements.
+
+## 1. Requirement Analysis & Normalization Phase
+Before writing any SQL, analyze the request:
+- **Identify Entities & Relationships:** What are the root domains? (e.g. Users, Orders, Products). What are the cardinalities?
+- **Normalization Strategy (1NF → 3NF → BCNF):** 
+  - Ensure data is logically divided. 
+  - Stop at 3NF for most OLTP systems. Denormalize ONLY if there is a documented performance optimization justification.
+
+## 2. Anti-Pattern Check
+Scan your intended design against common pitfalls:
+- ❌ **God Table:** Does one table have >30 columns handling multiple disconnected responsibilities (e.g., `Users` having billing, shipping, and auth info in one huge table)? → Split them!
+- ❌ **EAV (Entity-Attribute-Value) Abuse:** Are you using EAV patterns instead of JSONB or proper typed tables? → Rework to standard models where possible!
+- ❌ **Polymorphic Associations:** Using `entity_id` and `entity_type` without Foreign Key constraints? → Use standard associative tables or exclusive arcs!
+
+## 3. Dialect Selection & Output Generation
+Identify the target database (agnostic approach). Generate platform-specific SQL schema.
+
+**Outputs.** In *file mode* — the user wants artifacts, or this skill runs as a step of an ecosystem workflow — write both files below to `docs/database-report/`. In *inline mode* — a quick question — answer in the chat and end with the JSON below as a *Handoff* block instead of creating files.
+
+1. **Human-Readable Markdown (`docs/database-report/schema-architect-report.md`)**
+````markdown
+### 🏗️ Schema Generation Report
+- **Target Dialect:** [PostgreSQL/MySQL/Snowflake]
+- **Normalization Level:** [e.g., 3NF]
+- **Trade-offs made:** [Fast Read vs. Fast Write considerations]
+
+#### 📜 Generated DDL
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+````
+
+2. **Machine-Readable JSON (`docs/database-report/schema-architect-output.json`)**
+```json
+{
+  "skill": "schema-architect",
+  "dialect": "PostgreSQL",
+  "entities": ["users"],
+  "relations": [],
+  "raw_ddl": "CREATE TABLE..."
+}
+```
+
+## 4. Execution Context
+- **Default (Static):** Analyze based on provided requirements or existing schema files (e.g., `schema.prisma` or `.sql` files).
+- **Dynamic (On-Demand):** Only connect to a live database to introspect the current schema if the user explicitly requests it.
+
+---
+
+## When to Skip
+
+- The user only needs a single column added to an existing table with no modeling decision.
+
+## Guardrails
+- **No Vague Types:** Do not use `VARCHAR` without limits unless using PostgreSQL `TEXT`. Use proper types (`JSONB`, `NUMERIC(p,s)`, `TIMESTAMPTZ` vs `TIMESTAMP`).
+- **Primary Keys:** Default to `UUIDv7` or `BIGSERIAL/BIGINT IDENTITY` for primary keys for distributed readiness.
+- **Audit Columns:** `created_at` and `updated_at` must exist on almost all operational operational tables.
+
+---
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-database` — Database Domain.
+
+**Workflows:**
+- **New Schema Design Flow** (`db-new-schema`, step 2 of 4): next → `@access-policy-designer`.
+
+**Handoff contract:** pass results to the next skill through `docs/database-report/schema-architect-output.json` with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-database`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

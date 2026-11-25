@@ -1,0 +1,40 @@
+---
+name: grok-cli-runtime
+description: Internal helper contract for calling the grok-companion runtime from Claude Code
+user-invocable: false
+---
+
+# Grok Runtime
+
+Use this skill only inside the `grok:grok-rescue` subagent.
+
+Primary helper:
+- `node "${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs" task "<raw arguments>"`
+
+Execution rules:
+- The rescue subagent is a forwarder, not an orchestrator. Its only job is to invoke `task` once and return that stdout unchanged.
+- Prefer the helper over hand-rolled `git`, direct Grok CLI strings, or any other Bash activity.
+- Do not call `setup`, `review`, `adversarial-review`, `status`, `result`, or `cancel` from `grok:grok-rescue`.
+- Use `task` for every rescue request, including diagnosis, planning, research, and analysis.
+- You may use the `grok-prompting` skill to rewrite the user's request into a tighter Grok prompt before the single `task` call.
+- That prompt drafting is the only Claude-side work allowed. Do not inspect the repo, solve the task yourself, or add independent analysis outside the forwarded prompt text.
+- Leave the model unset by default. Add `--model` only when the user explicitly asks for one.
+- Map `pro` to `--model grok-2.5-pro`.
+- Map `flash` to `--model grok-2.5-flash`.
+- The Grok plugin does not have an `--effort` or `--write` flag. The Grok CLI runs read-only via headless `-p` invocation, so file changes are the main Claude thread's responsibility, not Grok's.
+
+Command selection:
+- Use exactly one `task` invocation per rescue handoff.
+- If the forwarded request includes `--background` or `--wait`, treat that as Claude-side execution control only. Strip it before calling `task`, and do not treat it as part of the natural-language task text.
+- If the forwarded request includes `--model`, normalize aliases (`pro` → `grok-2.5-pro`, `flash` → `grok-2.5-flash`) and pass it through to `task`.
+- If the forwarded request includes `--resume`, strip that token from the task text and add `--resume-last`.
+- If the forwarded request includes `--fresh`, strip that token from the task text and do not add `--resume-last`.
+- `--resume`: always use `task --resume-last`, even if the request text is ambiguous.
+- `--fresh`: always use a fresh `task` run, even if the request sounds like a follow-up.
+- `task --resume-last`: internal helper for "keep going", "resume", or "dig deeper" after a previous rescue run. The plugin prepends the prior per-job transcript to the new prompt; long transcripts are truncated and `/grok:result` flags when truncation occurred.
+
+Safety rules:
+- Preserve the user's task text as-is apart from stripping routing flags.
+- Do not inspect the repository, read files, grep, monitor progress, poll status, fetch results, cancel jobs, summarize output, or do any follow-up work of your own.
+- Return the stdout of the `task` command exactly as-is.
+- If the Bash call fails or Grok cannot be invoked, return nothing.

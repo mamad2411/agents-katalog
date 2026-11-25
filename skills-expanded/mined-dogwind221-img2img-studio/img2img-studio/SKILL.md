@@ -1,0 +1,287 @@
+---
+name: img2img-studio
+description: >
+  图生图工作室：先识图分析输入图片，再按风格模式生成新图。触发：用户给出/上传图片并要求「生成类似风格的新图」「换个风格重绘」「图生图」「以这张图为基础出图」「做成电商图/套图/主图/详情页」「杂志编辑风/抽象艺术/手绘插画/废片焕新」。
+  不触发：只是「描述/分析图片」而不要求生成新图（那属于 dsh-vision-skill）。
+  模式：photo-art（editorial 编辑杂志风 / revival 白纸手绘风 / 融合风）与 ecommerce（商品主图、卖点图、场景图、详情页、PDP、Amazon/Shopify 图包）。
+  生图通道一级优先 ChatGPT 网页（image 2.5）：免费网页账号先用，额度用尽后自有账号（Codex/Plus）优先，再降级 API（DashScope qwen-image-3.0-pro、OpenAI gpt-image、Z.AI、Seedream、MiniMax）；支持 t2i/i2i、批量并发、质量预设。
+---
+
+# 图生图工作室（img2img-studio）
+
+> **路径约定（基线 DSH 0.1.3+，0.2.x 适配 —— 0.2.0-rc.2 复验）**：本文档相对路径以**本技能资源目录**为基准解析（加载时 harness 给出 `Base directory for this skill`）；跨技能引用写 `..\dsh-vision-skill\...`（三个技能同根安装时成立）。
+
+两层架构：
+
+```
+输入图片（附件/路径/URL）
+   ↓ Layer 1: 识图（复用 dsh-vision-skill）
+  结构化描述（主体/构图/色彩/材质/情绪/文字）
+   ↓ 模式路由（按用户要的风格）
+  photo-art（照片艺术） | ecommerce（电商）   ← 模式注册表，可扩展
+   ↓ Layer 2: 生成
+scripts/generate_image.mjs（多供应商自动降级）
+```
+
+## 模式注册表
+
+| 模式 id | 用途 | 参考文档 | 路由关键词（命中即选） |
+|---|---|---|---|
+| `photo-art` | 照片 → 艺术化新图 | `references/photo-art-mode.md` | 杂志、编辑、editorial、抽象、艺术、手绘、插画、白纸、留白、焕新、revival、诗意、文艺、zine、拾景、拼贴、纸刊、极简海报 |
+| `ecommerce` | 商品图 → 电商视觉 | `references/ecommerce-mode.md` | 主图、套图、卖点图、场景图、详情页、PDP、listing、Amazon、Shopify、TikTok、A+、广告图、社媒图、直播图、包装图、商品图、电商 |
+| `chatgpt-web` | 用 ChatGPT 网页端出图（无 API key） | `references/chatgpt-web-mode.md` | chatgpt 网页、网页出图、用 ChatGPT 账号、gpt-image 网页版 |
+| `image-editor` | 输入框内图片标记/抠图/涂抹擦除/改尺寸后交给供应商 | `references/image-editor.md` | 标记、标注、涂抹、擦除、抠图、移除背景、改尺寸、编辑这张图、局部重绘、image editor |
+
+路由规则：先看用户明确说的风格词；没提时看图片内容（L1 识图判断是商品照还是生活照）；仍不确定就简短问一句（给两个选项）。用户提到的风格不在注册表里 → 按最接近的模式处理并在回复中说明假设。
+
+**新增模式**：在 `references/` 加一个 `<mode>.md`（写清风格规范、Prompt 模板、硬约束、检查清单），再在本表加一行即可，无需改脚本。
+
+## Step 0：路由门（通道 + 风格 + 细化需求）⛔ 必做
+
+**任何生图任务开始前**，先按 `references/routing-gate.md` 执行路由门：用 AskUserQuestion 问清三件事，再进入对应工作流。**禁止不问直接生成。**
+
+1. **Q1 生成通道**：展示可用通道清单，**一级主通道优先**（`node scripts/generate_image.mjs --list-providers` 看实时状态）：
+   - ⭐ **一级主通道 = ChatGPT 网页（image 2.5）**：`chatgpt-web@<账号id>`（订阅额度出图，文字渲染/真实感最稳、不花 API 钱）。**免费网页账号先用**（免费档不设本地上限，用到服务端拒绝为止）→ **额度用尽后自有账号优先**：`chatgpt-web@<自有账号>` 再 `codex-cli`（自有 Plus 订阅，读 `~/.codex/auth.json`）
+   - **二级 = API 通道**（订阅通道都失败/额度用尽才降到这里）：dashscope（默认）· openai · zai · seedream · minimax · local · **direct 直连（12 家官方 API）** · qoder
+   - 用户无偏好 → 按 `GEN_PROVIDER_ORDER`（面板排序）走，一级主通道在前；额度用尽/失败自动降级（额度类错误不重试，直接切下一通道）
+2. **Q2 风格/场景**：展示 photo-art 六子风格（editorial / revival / fusion / zine-gathered / zine-distill / zine-minimal）与 ecommerce 类型清单，用户选；无偏好 → 看图片内容或默认 fusion。
+3. **Q3+ 细化需求**（按需 2-3 个）：画幅比例、质量 1k/2k、图内文字（精确文案）、参考图/主体保留、数量、情绪/变体、平台规范。有合理默认的不追问。
+4. **路由执行**：
+   - 通道 = `chatgpt-web@<账号id>` → 直接 `generate_image.mjs --provider chatgpt-web@<账号id>`（脚本内部用无头浏览器 + 账号表里的 session token；也可走 `references/chatgpt-web-mode.md` 的可见浏览器流程）
+   - 通道 = `codex-cli` → `generate_image.mjs --provider codex-cli`（用 Codex 客户端登录态，无需 API key）
+   - 其他通道 → 选风格后读对应 `references/<mode>.md`，用 `generate_image.mjs --provider <id>` 生成
+5. 在最终交付里注明：**通道、风格、尺寸、模型**，以及实际降级深度 `fallbackDepth` 与尝试次数 `attempts`（`--json` 有输出；`fallbackDepth=0` 表示首选通道一次成功，1/2… 表示降到了第几备选）+ Assumptions / Defaults。
+
+### 订阅制通道（一级主通道）的账号与凭据
+
+三个账号通道由 **Settings → 识图与生图** 面板统一管理（`dsh-img2img-config`），面板保存时同步 `GEN_PROVIDER_ORDER` 与 `IMG_CHATGPT_WEB_ACCOUNTS` 到 `scripts/.env`：
+
+| 通道 id | 账号 | 凭据来源 | 出图方式 |
+|---|---|---|---|
+| `chatgpt-web@<账号id>` ⭐**一级优先** | ChatGPT 网页账号（免费账号先用；用尽切自有账号） | 面板粘贴 `__Secure-next-auth.session-token` | 无头 Edge + 注入 cookie 驱动 chatgpt.com（`playwright-core` 需可解析） |
+| `codex-cli` ⭐**一级（自有账号）** | 自有订阅账号（Plus）——免费网页额度用尽后的优先选择 | 实时读 `~/.codex/auth.json` | `codex exec` + imagegen |
+
+- 额度看板：面板按 ChatGPT 后端返回的实际出图时刻统计 24h 窗口用量（自动探测），Codex 账号额外显示 5h/7d 窗口百分比。
+- **优先级**：免费网页账号 → 自有账号（`codex-cli` / 自有网页账号）→ API 通道；顺序以面板 `GEN_PROVIDER_ORDER` 为准，`node scripts/generate_image.mjs --accounts` 可看各账号档位与剩余额度。
+- 网页通道若报「登录态已失效」→ 面板重新粘贴 token；`chatgpt-web@<id>` 的 token 来自面板账号表，不额外存副本。
+
+## 主流程
+
+1. **解析输入（拿参考图路径）**：按这个顺序取路径——
+   - ① 消息里已有 `Normalized copy (read-only; may be resized or re-encoded): <路径>`（DSH 0.1.5+ 原生给出）→ 可直接当 `--image`（归一化副本，见下方画质警告）
+   - ② 只有 `attachmentId`（`sha256:<hex>`）→ 拼对象路径 `<DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>`，或用 `..\dsh-vision-skill\scripts\resolve_attachment.mjs` 换出路径（`--image` 只吃路径）
+   - ③ 用户给了本地路径/URL → 直接用（**i2i 首选**）
+   与模型是否多模态无关：**当素材喂生图**要的是路径与画质，不是"能不能看见"。
+2. **L1 识图（必做，禁止跳过）**：多模态模型（`read_image`）直接读图，纯文本模型走 dsh-vision-skill 的 `vision.js`（见下）；两种情况都必须拿到结构化描述，不能凭空编造图片内容。**多模态 + 只做文生图（不传参考图）时整个流程不需要 dsh-vision-skill。**
+3. **模式确认**：Step 0 已确定通道与风格；此处读取对应 `references/<mode>.md`（photo-art 含 zine 子风格 / ecommerce / chatgpt-web）。
+4. **构建 Prompt**：按模式文档的模板 + 识图描述注入。**任何 Prompt 都必须独立可生成**（即使图生图失败回退 t2i 也能用）——把主体描述完整写进文字。
+5. **生成**：通道为 chatgpt-web 时走浏览器出图（chatgpt-web-mode.md）；否则调 `scripts/generate_image.mjs --provider <通道>`（用法见下），参考图传原图；供应商自动探测降级。
+6. **QA 检查**：见下方清单；不合格修正后重生成。
+7. **交付**：给生成文件路径 + **通道/风格/尺寸/模型** + `fallbackDepth`/`attempts`（没降级就写 0/1）+ 关键假设；附最终 Prompt 便于用户复现。
+
+## GUI 图像编辑（image-editor 模式）
+
+面板在**输入框上方 dock 的「图片编辑」**条目（`dsh-img2img-config` 插件，`conversation.input.dock`，**输入框里有图片时才出现**）。用户点它打开编辑器做标记/抠图/涂抹擦除/改尺寸（标记行支持 Tab 聚焦 + 方向键微调 + Delete 删除；调整大小的预览会用红色/深色遮罩标出裁切/留白），点「放回输入框」后：编辑结果与 `img2img-manifest.json` 作为**附件**回到输入框，输入框里只多出**一个胶囊**「图片编辑 · N 处标记」——JSON 不进正文，胶囊在发送时展开成说明块（附件清单、标记坐标、请求动作，以及一行 `JSON:` manifest），模型看到的与旧版写块完全一致。胶囊插不进去时退化为正文里 `[img2img] … [/img2img]` 块（不含 `JSON:` 行，清单在附件里），并在 dock 上显示「已切到文本模式」提示（不是静默降级）。清单结构以插件包 `manifest.schema.json`（version 1）为准，`edit_image.mjs manifest` 会先校验再执行。完整参考：`references/image-editor.md`。
+
+| 用户动作 | agent 动作 |
+|---|---|
+| ① 编号标记（每处一个输入框写改法） | 读 `marked-*.png` 核对位置 → `mask-from-markers` 转掩码 → `erase` 局部重绘，或把标记坐标+改法写进 prompt 走 i2i |
+| ② 移除背景（面板内本地预览） | `bg-remove`（`auto` 优先云端 `images/edits background=transparent`，失败降级本地）→ 得透明 PNG 再出图 |
+| ③ 涂抹擦除（白=要处理） | 用面板导出的 `mask-*.png` 直接 `erase`（`auto`：dashscope → openai → i2i） |
+| ④ 调整大小 | 面板已按用户设定导出，通常直接用；确需再改才 `resize`（会与旧掩码失配） |
+| ⑤ 点「放回输入框」 | 收到请求块 → 落地 manifest → 按需补步 → `generate_image.mjs` 出图 |
+
+```powershell
+# 块里的 JSON 落地（附件先按 files.* 原名收拢到一个目录）
+node "scripts\edit_image.mjs" manifest --manifest edit.json --image-dir "附件目录" --out-dir "输出目录"
+# 也可直接把块里 JSON: 那行粘成字符串：--manifest '{"version":1,...}' --image-dir "附件目录"
+# 标记 → 掩码 → 局部重绘（掩码必须与基底同尺寸）
+node "scripts\edit_image.mjs" mask-from-markers --markers markers.json --like "03-erased.png" --out mask.png
+node "scripts\edit_image.mjs" erase --image "03-erased.png" --mask mask.png --prompt "把这块的花换成玫瑰" --out "04-edit.png"
+```
+
+> ⛔ **硬约束：收到编辑请求块时必须先读附件（`read_image` / `vision.js`）确认内容，再动手**——块里 `files.*` 与附件同名，`edited-*` 才是出图基底（`marked-*` 只是位置指引）；掩码必须与基底同尺寸；标记不得画进成图；失败要如实报通道与错误，不静默降级。
+
+## L1 识图
+
+**第一步：判定走哪条路（基线 DSH 0.1.3+；0.2.x 适配 —— 0.2.0-rc.2 复验，禁止无脑调脚本）**
+
+| 当前模型 | L1 做法 |
+|---|---|
+| **多模态**（`read_image` 可用，或模型配置 `inputModalities` 含 `image`） | 直接 `read_image` 读图并自己总结主体/构图/色彩/材质/情绪/文字——**不跑 `vision.js`** |
+| **纯文本**（`read_image` 报 `does not declare image input` 等） | 走下方脚本识别链（多模型降级 + 备用供应商） |
+
+**这是 0.2.x 的原生行为**：调用一次 `read_image` 即知走哪条路；只有**纯文本模型**才需要 dsh-vision-skill 的识别链。需要**强结构化 JSON 契约**（`--schema img2img|ecom|ground`）时，即使多模态也值得调一次脚本；只需粗略理解图片时不要调。
+本技能对 dsh-vision-skill 是**条件依赖**：只有①会话模型是纯文本、或②只剩 `attachmentId` 拿不到路径（需 `resolve_attachment.mjs`）、或③想复用它的识图 key 时才需要装。
+
+### ⚠️ 参考图画质：归一化副本 ≠ 原图
+
+给 `--image` 的路径会影响出图画质，按这个优先级选：
+
+| 优先级 | 来源 | 说明 |
+|---|---|---|
+| 1 | 用户给的**本地原图路径 / URL** | 原始字节，无损，i2i 首选 |
+| 2 | 附件对象路径 `<DSH_HOME>\attachments\v1\objects\<前2位>\<hex>` | 也是**原始字节**（提交时的原样副本） |
+| 3 | 消息里的 `Normalized copy` 路径 | **可能已被重编码/缩放**：GIF、动图、**带 EXIF 的相机/手机 JPEG**、16-bit、非 sRGB、超出预算的图都会被处理；只有干净的 PNG/JPEG/WebP 且在预算内才原样透传 |
+
+归一化副本**适合"看图"**（L1 识图、OCR 判断内容），**不适合"当素材"**——参考图的细节/色彩会被改动，i2i 出来的图跟着走样。要复现用户原图效果时，明确告诉用户「拖入的图会被平台归一化，建议给本地原图路径」。
+
+**纯文本模型 / 需要结构化契约时**（附件先拿到磁盘路径）：
+
+```powershell
+# 附件 → 磁盘路径：先看消息里有没有 Normalized copy 路径；没有则拼对象路径或用脚本
+#   <DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>
+node "..\dsh-vision-skill\scripts\resolve_attachment.mjs" "<attachmentId>"   # 找不到时加 --search 按片段搜
+
+# 识别（本地路径或 URL）
+node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" "<结构化分析问题>"
+node "..\dsh-vision-skill\scripts\vision.js" --url "<图片URL>" "<问题>"
+```
+
+**photo-art 模式**（用 `--schema img2img` 强制结构化 JSON 契约：summary/subject/composition/visual(hex 主色)/semantics，输出损坏自动重试）：
+
+```powershell
+node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema img2img
+```
+
+**ecommerce 模式**（用 `--schema ecom` 输出商品结构化 JSON）：
+
+```powershell
+node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema ecom
+```
+
+识图前可先 `vision.js guard` 检查供应商可用性；`--list-providers` 查看已配置供应商（不泄露密钥）。多图逐张识别后合并。识图失败（配额/网络）时如实告知用户，不要编造图片内容。
+
+## L2 生成（generate_image.mjs v2）
+
+```powershell
+# 探测已配置的供应商（不泄露密钥；含链序 chain 与账号额度 accounts）
+node "scripts\generate_image.mjs" --list-providers
+
+# 各 ChatGPT 账号的档位/额度视图（读「识图与生图」面板库；free 档显示 24h 内探测到的生成数）
+node "scripts\generate_image.mjs" --accounts
+
+# 文生图（质量预设：normal=1K / 2k=2K，默认 2k）
+node "scripts\generate_image.mjs" --prompt "..." --size 1:1 --quality 2k --output-dir "输出目录"
+
+# 图生图（带参考图，1-3 张最佳；长 Prompt 用 --prompt-file / 多文件用 --promptfiles）
+node "scripts\generate_image.mjs" --prompt-file prompt.txt --image "原图路径" --size 3:4 --output-dir "输出目录"
+
+# 批量（电商套图一次出多张；batch.json 为 JSON 数组，字段: prompt/image/size/quality/output）
+node "scripts\generate_image.mjs" --batchfile batch.json --jobs 4 --output-dir "输出目录"
+
+# 强制供应商/模型
+node "scripts\generate_image.mjs" --prompt "..." --provider dashscope --model qwen-image-3.0-pro --output-dir "输出目录"
+
+# 跳过面板探测到「额度已用尽」的网页账号通道（等价 IMG_SKIP_EXHAUSTED=1）
+node "scripts\generate_image.mjs" --prompt "..." --skip-exhausted --output-dir "输出目录"
+```
+
+**尺寸语义**：`--size` 给比例（`1:1` / `16:9` / `2.35:1`）时按 `--quality` 档位换算；给显式像素（`1024x1536`）则**原样透传**，不再被档位放大。
+
+**参数错误**：`--provider` 写了不存在的通道会**直接报错退出**（不会静默回落成整链），避免「以为指定了 A 却跑了 B」。
+
+**降级可观测**：成功时 `--json` 输出带 `provider` / `model` / `fallbackDepth`（0=首选通道成功，1=降到第一个备选…）/ `attempts`（总尝试次数）；失败时输出 `errors[]`（每条含 provider、第几次尝试、错误文本）+ `attempts`。交付时按上一条要求如实汇报，不要只说"生成了"。
+
+供应商优先级（auto）：`openai` → `dashscope`（默认，复用识图 key）→ `zai`（GLM-Image，文本渲染强）→ `seedream`（豆包）→ `minimax`（海螺）→ `local`（chatgpt-web 类）。可 `--provider <id>` 强制；`codex-cli` 需 codex CLI 已登录（用 Codex/ChatGPT 订阅出图，无 API key）。
+
+**Qoder CLI 生图（2026-08-17 已实测）**：`--provider qoder` 直接让 Qoder 的 **ImageGen 工具**出图（不消耗 DashScope 额度）：
+```bash
+node scripts/generate_image.mjs --provider qoder --prompt "柴犬戴飞行员眼镜，赛博朋克" --size 1:1 --output-dir "输出目录"
+# t2i/i2i 均可（i2i 传 --image 参考图，Qoder 视觉理解后按参考生成）；输出自动复制到 --output-dir
+```
+- 依赖：`npm i -g @qodercn-ai/qoderclicn` 已装 + `qoderclicn login` 已登录（浏览器授权一次）
+- 模型：`QODER_IMAGE_MODEL` 可覆盖（默认 Qwen3.8-Max）；尺寸 ImageGen 内部决定，脚本提示尽量接近
+- 注意：CLI 需已登录态；输出文件先落在 `F:\dsh\vibe_images\`，脚本复制到输出目录
+
+### 直连通道 `direct`（12 家官方 API，自有引擎）
+
+第二套生成通道，已并入 `generate_image.mjs` 的供应商链：**12 家官方 API 直连**（OpenAI GPT Image 2 /
+Azure / Google / OpenRouter / DashScope / Z.AI / MiniMax / Jimeng 即梦 / Seedream / Replicate / Agnes /
+codex-cli）。引擎位于本技能自带目录 `engines/direct-api/`，以 **bun** 运行 TypeScript（已装）。
+
+```powershell
+# 走统一入口（推荐）：--provider direct + --direct-provider <子通道>
+node "scripts\generate_image.mjs" --provider direct --direct-provider dashscope --prompt "..." --size 1:1 --output-dir "输出目录"
+node "scripts\generate_image.mjs" --provider direct --direct-provider google --prompt "..." --image "参考图.png" --size 3:4 --output-dir "输出目录"
+
+# 直接调引擎（需要引擎原生能力时：批量、--ar/--quality 细粒度）
+bun "engines\direct-api\scripts\main.ts" --prompt "..." --provider dashscope --image "out.png" --json
+bun "engines\direct-api\scripts\main.ts" --prompt "..." --ref "参考图.png" --provider openai --image "out.png"
+bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
+```
+
+- **子通道**：`openai` / `azure` / `google` / `openrouter` / `dashscope` / `zai` / `minimax` / `jimeng` / `seedream` / `replicate` / `agnes` / `codex-cli`；默认取 `DIRECT_PROVIDER` 环境变量，其次 `dashscope`
+- **配置**：`~/.img2img-studio/direct-api/EXTEND.md`（已预置 dashscope + 质量/并发）；key 与 dsh-img2img-config 面板/现有 .env 同源，`VISION_API_KEY` 会自动桥接为引擎的 `DASHSCOPE_API_KEY`
+- **何时用它**：用户指定 12 家官方 API 中的某个（尤其 Google/Azure/Replicate/即梦）、或需要更细的画幅/批量控制
+- 引擎自身文档：`engines/direct-api/GUIDE.md`（CLI、provider 差异、批量与并发、排障）；DSH 适配见 `references/direct-api-guide.md`
+- ⚠️ DashScope 账号欠费时 qwen-image 返回 400 Arrearage → 换子通道或充值
+
+**生成模式决策**：单张/1-2 张 → 单图模式；多张且 Prompt 已定稿 → `--batchfile`（并发、统一限流）；每张还需单独构思 → 子代理。
+
+**图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）、交付用轻量 JPG 副本（`to-jpeg.ps1 -ImagePath x.png -OutputPath y.jpg [-Quality 88] [-Width 1400]`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。GUI 编辑器交回的编辑请求（标记/抠图/涂抹擦除/改尺寸）走 `scripts/edit_image.mjs`（op：`info`/`resize`/`bg-remove`/`erase`/`markers`/`mask-from-markers`/`local-edit`/`manifest`），像素操作在 `scripts/edit/`（纯 Node PNG 编解码 + 光栅算法，输入只支持 PNG；JPEG 走 `scripts/preprocess/raster.ps1` 备用通道），详见 `references/image-editor.md`。
+
+### 身份保持参考图准则（重要）
+
+用户要「保留参考图中的人物/物体」时，**不要**用长描述替代参考图（"年轻女性、鹅蛋脸…"会导致模型重新合成一个新主体）。改用短促的身份锁定语言：
+
+- "Use the person/object in the reference image(s) as the same identity. Do not redesign it or create a similar-looking new subject."
+- "Only change scene, clothing, pose, lighting, rendering style, and composition. Keep the identity from the references."
+- 多参考图时声明它们是同一主体、共同定义身份。
+- 参考图取 2-4 张精选即可；不要把新生成的图再当参考图（会累积漂移）。
+
+### 模型策略（性能优先 + 发布时间最近优先）
+
+**生图（dashscope 默认链，自动降级）**：
+- t2i：`qwen-image-3.0-pro`（千问图像 3.0 旗舰，文本/小字渲染最强）→ `qwen-image-3.0` → `wan2.7-image-pro` → `wanx2.1-t2i-plus` → `wanx2.1-t2i-turbo`
+- i2i：`qwen-image-3.0-pro` → `wan2.7-image-pro`（多图参考/角色一致性）
+
+**识图（dsh-vision-skill）**：`qwen3.8-max`（最新旗舰）→ `qwen3.7-plus` → `qwen3.7-flash` → `qwen-vl-max` → `qwen-vl-plus`（已同步更新 VISION_MODEL）。
+
+升级模型时按「性能优先 + 发布时间最近」从百炼模型广场筛选，把新旗舰放链首。
+
+**已知限制与回退**：
+- DashScope 的 compatible-mode `/images/generations` 不存在（404）；qwen-image 系列走**同步 multimodal-generation 端点**（messages 格式），wanx 系列走 native 异步任务 API（均已实测）。
+- qwen-image 系列 i2i 已完整可用（content 用 `{image}+{text}`）；个别账号模型不可用时脚本自动降级，全链失败回退「识图描述 + 文生图」（第 4 步保证 Prompt 自带主体描述）。
+- Z.AI 不支持参考图；Jimeng 需火山签名未内置（用 seedream 替代）；codex-cli 依赖本机 codex 登录。
+
+## QA 检查清单（交付前）
+
+- [ ] **已走路由门**：通道、风格、细化需求（尺寸/文字/参考图/数量）都已与用户确认或标注 Default
+- [ ] 识别结果确实来自 vision.js 输出，无凭空编造
+- [ ] Prompt 独立可生成（含完整主体描述），hex 颜色、占比、留白、否定项齐全
+- [ ] 保留人物/物体身份时用了身份保持语言，而非长描述替代
+- [ ] 多图任务：Campaign Style Lock 一致、角度/景别节奏合规、无连续 3 张同角度
+- [ ] 电商详情页 = 信息图结构（`E-commerce infographic` 开头），含强制对比图 + 好评图
+- [ ] 图片内文字短且精确（中文放大核对、复杂字换同义字）；qwen-image 3.0 小字渲染强，仍要核验
+- [ ] 没有虚构认证/数据/销量/评价
+- [ ] 生图失败时按指引回退，不静默降级输出
+- [ ] 批量任务输出含成功/失败统计与每张失败原因
+- [ ] **图像编辑任务**：已先 `read_image`/`vision.js` 读附件再动手，manifest 解析无误，基底用的是 `edited-*`（不是 `marked-*`）
+- [ ] **图像编辑任务**：掩码与基底同尺寸（DashScope 通道宽高在 512–4096），标记只作位置指引、未画进成图
+- [ ] **图像编辑任务**：抠图产物是真透明通道 PNG；本地纯色抠图降级已如实标注（没说成云端抠图）
+- [ ] **图像编辑任务**：`erase` 失败时报出尝试过的通道与错误原文，未静默降级
+- [ ] 输出文件路径、使用的模式/风格/模型、假设清单都已告知用户
+
+## 配置
+
+> **面板优先（DSH 0.1.3+）**：Web 端 **Settings → 识图与生图** 填各通道 API Key / 模型 / 端点 / 优先级，保存后自动同步到 `scripts/.env`（`GEN_PROVIDER_ORDER`、各 key、`IMG_CHATGPT_WEB_ACCOUNTS`）与 `..\dsh-vision-skill\scripts\.env`（`VISION_PROVIDERS` 等），新会话生效；手动改文件会被面板下次保存覆盖。技能根目录可用 `DSH_SKILLS_DIR` 覆盖（默认 `~/.agents/skills`）。
+>
+> 面板随本技能自带的插件 `plugins/dsh-img2img-config` 一起发布（同一个包还提供输入框里的「图片编辑」）——**装了技能再构建 + 装配这个插件就有面板**，构建与装配两步见 `README.md` 的「安装 → 可选：装自带插件」。技能本体不装插件也能纯命令行出图，只是没有 GUI 配置页。
+>
+> **面板排障（0.3.0+）**：每张通道卡片展开后有「测试」（探活不花钱）/「试跑 1 张」（真实出图一张，会花额度）/「复制命令」（复制固定该通道的 `--provider …` 命令）；「＋ 添加通道」弹层会跑 `--list-providers` 标注本机已就绪的通道。ChatGPT 网页账号在下方账号库新增/改名/删除时，会自动投影成 `chatgpt-web@<账号id>` 生图通道（登录态只在账号库存一份）。**升级插件后需重启 DSH 宿主**，客户端 bundle 才会换新。
+
+在 `scripts/.env` 或环境变量（脚本会自动回退读取 `..\dsh-vision-skill\scripts\.env` 的 `VISION_API_KEY`，所以**零配置也能用 DashScope 出图**）：
+
+| 变量 | 说明 |
+|---|---|
+| `IMG_BASE_URL` / `IMG_MODEL` / `IMG_API_KEY` | OpenAI 兼容第三方（gpt-image 等） |
+| `DASHSCOPE_API_KEY` | DashScope（可选，缺省用 VISION_API_KEY） |
+| `ZAI_API_KEY` | Z.AI GLM-Image（open.bigmodel.cn 申请） |
+| `ARK_API_KEY` | Seedream 豆包（火山方舟控制台申请） |
+| `MINIMAX_API_KEY` | MiniMax 海螺 |
+| `IMG_HTTP_URL` | 本地 chatgpt-web 类生图服务地址 |
+| `IMG_MODEL` | 覆盖默认生图模型（dashscope t2i 默认 qwen-image-3.0-pro；i2i 默认 qwen-image-3.0-pro） |
+| `<PROVIDER>_IMAGE_MODEL` / `<PROVIDER>_BASE_URL` | 各供应商模型/端点覆盖（ZAI_IMAGE_MODEL、SEEDREAM_IMAGE_MODEL 等） |
+
+完整说明见 `scripts/.env.example`。诊断用 `--list-providers`。

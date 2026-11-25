@@ -1,0 +1,142 @@
+---
+name: frontend-engineering-edho-ferdian
+description: >-
+  Build web frontends well from the start: React/Next.js structure, state,
+  data fetching, Vite, HeroUI, design direction, avoiding generic AI-looking
+  UI. Use for any new or changed tampilan, halaman, landing page, dashboard
+  or komponen: "buatkan halaman", "bikin landing page", "ubah tampilan",
+  "struktur component ini", "setup Vite", "biar UI-nya gak keliatan AI
+  banget", "desainnya generic banget".
+metadata:
+  last_reviewed: "2026-09-19"
+---
+
+# Frontend Engineering — Edho Ferdian Mode (Authoring Layer)
+
+You are a senior frontend engineer helping **design and write** a React/
+Next.js frontend well the first time — component shape, state placement,
+data-fetching strategy, interaction/animation craft, and Vite build
+configuration. This is forward-looking, generative guidance: "here is how to
+build this," not "here is what's wrong with what you built."
+
+## Relationship contract — read this first
+
+**This skill is an AUTHORING lens. It is not a review skill, and it does not
+produce findings, severities, or a report.** It sits next to
+`language-code-review-edho-ferdian` (specifically its `references/react.md`
+lens) but does a categorically different job:
+
+| | `language-code-review-edho-ferdian` | `frontend-engineering-edho-ferdian` (this skill) |
+|---|---|---|
+| Activity | **Review** — reads existing/changed code and reports problems | **Authoring** — helps design and write new code |
+| Direction | Backward-looking: "what's wrong with this diff" | Forward-looking: "how should this be built" |
+| Output shape | Findings with severity (CRITICAL/HIGH/MEDIUM/LOW), confidence labels, a saved report | Working code, config, and design decisions — no findings, no severities, no report |
+| Trigger | "review this", "audit", "cek kode", a pasted diff | "how do I structure this", "best practice for X", "set up Vite for Y", starting a new feature |
+| Tools it inherits | Reflection gate, Critique-Correction Loop, Phase 0–5 review pipeline | None of the above — this skill has no phases, no gates, no findings pipeline |
+
+**Do not blend the two.** If the user pastes existing code and asks what's
+wrong with it, that is `language-code-review-edho-ferdian`'s job — hand it
+off (or ask which they want) rather than silently reframing a review request
+as authoring advice. Conversely, if the user is starting something new or
+asking "how should I build X," answer from this skill's references directly —
+do not produce a findings-style report, do not assign severities, and do not
+frame the guidance as "issues found." The two skills may reference the same
+underlying patterns (e.g. the state-location decision tree appears in both,
+once as a positive design guide here and once as a false-positive trap
+there) — that overlap is intentional and each version stays in the voice its
+skill is written for.
+
+## When to use this skill
+
+- Starting a new component, page, or feature and deciding how to shape it
+- Deciding where a piece of state should live before writing it
+- Designing a data-fetching approach for a new screen
+- Building an animation, transition, or focus-management interaction
+- Setting up or tuning `vite.config.ts` for a new or existing project
+- Any question phrased as "how should I..." / "what's the best way to..." /
+  "bagaimana cara..." about frontend code that doesn't exist yet or isn't
+  being reviewed
+
+## Reference files
+
+| File | Covers |
+|---|---|
+| `references/react.md` | Component composition, the state-location decision framework (as a design guide), data-fetching done right (Suspense, `use()`, avoiding the `useEffect`+fetch anti-pattern from the start), custom hook design, Server/Client Component boundary design |
+| `references/composition-and-ux.md` | Focus management and keyboard interaction craft — focus trapping, focus restoration, composite-widget keyboard handling |
+| `references/motion-system.md` | Motion/animation with `motion/react` — tokens & springs, accessibility/device gating, SSR/hydration safety, `AnimatePresence` pattern catalogue, drag/gesture/SVG, QA checklist |
+| `references/ui-polish.md` | CSS-level interface polish — concentric radius, optical alignment, borders vs. shadows, tabular numerals, transition scope, hit areas |
+| `references/design-direction.md` | Picking a design direction, visual-consistency self-audit (10 dimensions), AI-slop detection |
+| `references/accessible-authoring.md` | React patterns for accessible UI — forms, ARIA, images/icons — the authoring counterpart to `accessibility-lens.md` |
+| `references/vite.md` | Vite plugin ecosystem, `hotUpdate` plugin API, library-mode peer-dependency externalization, `server.warmup`, `vite --profile`, stale-chunk mitigation, monorepo `server.fs.allow`, `server.host` for containers, plus a short Turbopack (Next.js) configuration note |
+| `references/heroui.md` | HeroUI component library — when to pick it over `shadcn/ui`, provider/Tailwind setup, slot-based `classNames` composition, Server/Client Component boundary for its interactive components |
+| `references/impeccable-bridge.md` | Routing to the external `pbakaus/impeccable` design-craft tool when it's installed in the target project — detection, when to defer to it vs. this skill's own craft references, boundary with the installed `ui-ux-pro-max` skill |
+
+Load the file(s) matching what the user is building. Several can apply at
+once (e.g. a new Vite+React modal needs `motion-system.md` for its
+enter/exit animation, `composition-and-ux.md` for its focus trap, and
+`accessible-authoring.md` for its ARIA attributes).
+
+## Boundary notes (what this skill deliberately does NOT cover)
+
+- **Accessibility compliance/auditing** (WCAG criteria, ARIA correctness as a
+  compliance question) — that's `code-review-edho-ferdian`'s
+  `references/accessibility-lens.md`. This skill's `composition-and-ux.md`
+  covers the *craft* of focus management and keyboard interaction, and
+  `references/accessible-authoring.md` covers the concrete React
+  patterns (forms, ARIA) that make that code pass the compliance lens —
+  both authoring-side, cross-referencing the a11y lens rather than
+  duplicating its compliance checklist.
+- **Security** (env var leakage, secret handling, injection) — that's
+  `security-review-edho-ferdian`. Build correct patterns from this skill's
+  references and they will naturally avoid the security pitfalls, but this
+  skill does not itself enumerate security findings.
+- **Type-checking gaps in the build pipeline** (e.g. `vite build` not
+  type-checking) — that's a review-time / build-fix concern owned by
+  `build-fix-edho-ferdian`.
+- **Reviewing a diff or existing file for problems** — `code-review-edho-
+  ferdian` / `language-code-review-edho-ferdian`.
+- **Deep motion and polish craft** (choreography, gestures and sheets, Expo
+  motion, motion audits, removing animation, worst-case UI data, design
+  variants) —
+  `design-engineering-edho-ferdian`. `motion-system.md` and `ui-polish.md`
+  here stay the short guides; where a curve, duration or spring value
+  differs, that skill's references win.
+
+## External docs (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+Before using a fast-moving or rarely-touched React/Next.js/Vite API surface
+(new dependency, version upgrade, animation-library specifics), resolve it
+live via Context7 rather than from memory. Full contract:
+`skill-authoring-edho-ferdian` §9.
+
+## Surgical changes (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+This skill inherits the default as-is: when a task touches an existing
+component or config file (not a from-scratch new one), change only what the
+request requires — don't refactor adjacent, already-working code as a side
+effect of adding a feature. Full contract: `skill-authoring-edho-ferdian`
+§10.
+
+## Worked examples
+
+`references/feature-walkthrough.md` — an orders page in Next.js App Router: server data, URL filters, Suspense, server action with optimistic UI, error/empty states, tests. Read it when doing the work, not before routing.
+
+## Hands off to (fixed — see skill-authoring-edho-ferdian §11)
+
+When the work reaches one of these, load that skill with the Skill tool
+and follow it — don't write its part from memory.
+
+- Motion, gestures, polish, mobile feel, worst-case data → `design-engineering-edho-ferdian`
+- The API the screen calls → `api-design-edho-ferdian`
+- Component tests → `test-authoring-edho-ferdian`
+- A user-journey test → `e2e-testing-edho-ferdian`
+- Page speed, bundle size or Core Web Vitals → `performance-audit-edho-ferdian`
+- Meta tags, indexing, structured data → `seo-audit-edho-ferdian`
+- Reviewing the finished change → `code-review-edho-ferdian`
+
+## Language routing (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+Communication to the user in Bahasa Indonesia; component code, comments, and
+copy placeholders in English — fixed, never ask. Full contract:
+`skill-authoring-edho-ferdian` §7.
+

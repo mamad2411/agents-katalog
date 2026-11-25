@@ -1,0 +1,123 @@
+---
+name: hr-writing-pr
+description: Write or revise pull request titles and bodies from the final diff, with concrete behavior and relevant proof, and split a branch or set of changes into small reviewable PRs. Use when preparing a PR, improving its description, or when the user asks to divide the changes into several PRs.
+---
+
+# Writing pull requests
+
+Give a reviewer who has not seen the conversation enough context to understand the change and assess its evidence. Follow the target repository's PR template and contribution rules. This skill governs writing; existing rules govern commits, publication, and review gates.
+
+## Dividing work into several PRs
+
+When the user asks to split a branch, chat or set of changes into smaller PRs, read `references/splitting.md` before moving any changes, then come back here for each PR's text.
+
+## Fix scope
+
+For fixes intended for pull requests in any repository, try the simplest
+adequate change first. Keep the diff focused and easy to review, with the fewest
+changed lines and files that solve the problem while preserving correctness,
+readability and required tests. Leave unrelated refactors and speculative
+abstractions out. When performance requires a larger change, show measurements
+explaining why the simpler approach is insufficient and what the added
+complexity achieves.
+
+## Material changes to an existing PR
+
+When an existing PR needs major or material changes, replace it with a new
+PR in any repository. Compare the proposed revision with the published PR.
+A revision is major or material if it changes the scope, fix approach or
+promised behavior.
+Corrections within that scope and approach that preserve the promised behavior
+are routine. Carry forward relevant evidence and unresolved review findings,
+and link the old and new PRs both ways. Publish and verify the replacement
+before closing the old PR as superseded. Recheck its final diff and required
+checks; prior PR review approvals and CI results do not cover the new submission.
+Routine corrections that leave the PR materially unchanged stay in place.
+
+## Read before writing
+
+Before creating a PR, apply the submission search in your loaded agent guidance's "Repository work" section.
+If that section is unavailable, locate the local house-rules checkout and read
+`rules/core.md` there. Report an unavailable local source before submitting.
+
+Inspect the actual diff against the intended target branch, the linked issue or request, and available validation results. For an existing PR, confirm its current base and head. Commit messages can provide context; the final diff determines what the PR claims.
+
+Resolve mismatches between the description and the implementation before calling the description complete. If evidence is unavailable, state the specific gap rather than inventing a result.
+
+## Title and body
+
+Write a title naming the resulting behavior or fixed failure, in the words of the person who feels it ("fork threads open faster"), not the mechanism ("skip hidden ancestor payloads"). Use the repository's title convention when it has one. When the PR title becomes the squash commit line, keep a measured speedup out of it, because the figure goes stale there. A repository whose convention asks for the figure keeps it. Put the qualified result, with the workload it holds for, in the body's opening sentence.
+
+Check the title's type and scope against the diff's dominant change. A `docs:` title on a diff that adds an executable installer misfiles the squash commit. When no PR template exists, the title convention is the only template; default to Conventional Commits `type(scope):` unless the repository's recent history uses another style. Flag a mixed diff as a possible split into separate PRs (`references/splitting.md`) instead of stretching the title to cover it.
+
+Open the body with one sentence that states the benefit, before any problem detail. For a measured change it carries the qualified figure and its workload ("Clean Android builds finish 32% faster, 67.7 s to 46.2 s on a warm Gradle cache"). For a bug fix it says who hit the bug and what now works ("Cursor title generation no longer leaks a SQLite file handle on every call"). The problem and resulting behavior follow. A small change may need only a paragraph and a validation sentence. Expand only where the reviewer needs more context:
+
+- **Bug fix:** trigger, previous behavior, corrected behavior, and regression proof.
+- **Feature:** observable capability, a small usage example, and supported limits.
+- **Refactor:** motivation, the structural change, and evidence that required behavior is preserved.
+
+Explain implementation details only when they clarify a decision or help assess correctness. Include compatibility, dependency, migration, or documentation implications when the diff creates them. When the change has a hard-to-reverse surface (host-level effects such as `sudo install-deps`, migrations, destructive actions), say so in one sentence; never a fixed risk section, and nothing on purely additive changes.
+
+For a change too large to read in the diff's file order, give a reading order. Use a short numbered list where each step says what it accomplishes ("the contract, then the service that implements it, then its callers"), and anchor load-bearing claims with `path:line`. Put mechanical files in a last step that says what you checked and the pattern that holds ("same rename in all nine drivers"). Add a "Decisions for you" list only when the reviewer has a call that tests cannot make: a tradeoff, a compatibility promise, a product or scope choice, or an accepted risk. Leave bugs, missing tests and nits out of it, and omit the list when there is no such call. Name adjacent work you left out on purpose in a "Not covered" line.
+
+In a stack, open with the parent ("Stacked on #123.") and describe only this layer, measured from its parent; that layer is its final combined change. When the body attributes behavior to another layer or describes a dependency on it, name that layer by number ("added in #123", "wired into the UI in #125"). Do not describe or judge its code.
+
+Describe the final combined change. Leave out intermediate attempts, commit reshuffling, conversational history, and file inventories already visible in the diff. Write for the reviewer in plain language: no unexplained jargon, and no narrative about how the change was produced. Review panels, models consulted, harnesses, and agent process never appear in titles, bodies, or PR comments, except for a disclosure the repository's contribution guidelines or PR template ask for, which is given as asked and no further; that detail otherwise lives in plan files and session records. For routine clarifications, update the title and body. Material scope changes follow the replacement rule above.
+
+## Evidence that earns its space
+
+Report relevant checks and their actual outcomes, including material failures and unverified behavior. Name the tests or commands run and their scope, and the head commit they ran against; a suite-wide pass count alone is not evidence for the changed behavior. When generated files dominate the diff, give the authored line count alongside the headline number so the size does not mislead review. Distinguish newly introduced failures from established baseline failures only when a comparison supports that claim. Keep detailed logs in a linked artifact when the short result is sufficient.
+
+Use a small code example when it makes behavior concrete. For visual changes, use comparable before/after images when available. When the change replaces an existing procedure, state the prior and new procedure in one line each. For measured performance claims, follow the installed `hr-benchmarking` skill's
+"Report and decide" guidance for benefit columns, variability and claim limits.
+When that skill is unavailable, identify the baseline and candidate, workload,
+repetitions and variability, and show before/after metrics with percent or times
+benefit. Keep material limitations beside the results.
+
+For reproduction examples, apply the direct-command and material-condition
+guidance in the installed `hr-diagnosing-bugs` skill's `references/reporting.md`.
+When that skill is unavailable, show commands that reproduce the symptom and
+omit incidental scheduling, resource-control and observer wrappers. Keep exact
+executed commands and material conditions in the measurement record. Disclose
+material conditions beside performance results. Retain any control required to
+reproduce the defect and explain its purpose.
+
+When the existing shape is familiar, use a focused diff of calls, components
+or files to show the change. Use a diagram when it explains relationships more
+clearly than prose. Show the whole relevant block when omitted context would
+hide ownership, order or a guard. Keep verification and uncertainty beside
+the view; brevity does not remove required evidence.
+
+Put the measured result table after the change summary and before lengthy
+verification details, within the repository's required template. Explain the
+result without repeating the table's numbers. Keep the relevant checks and
+outcomes visible; collapse long commands or supporting detail when useful.
+Required scope or approval sections stay, with only the justification and links
+the reviewer needs.
+
+A qualified measured change outside the declared variation criterion, with
+identical outputs, gets a
+headline chart directly under the opening sentence, beside the exact result
+table. Render it with `scripts/benefit-chart.py` in this skill's directory. It reads
+a JSON spec and writes a dark PNG with labeled units, zero-based bars and a
+benefit badge per row. Skip the chart only when every row is no clear change,
+or the one row moved by less than 10%. Set the spec's top-level `band`
+(required) to the declared variation criterion as a fraction of the baseline,
+and name it beside the chart. If the criterion cannot be a fraction of the
+baseline, skip the chart and label the result inconclusive.
+
+Show the workload and material limits beside it; a synthetic benchmark is not a
+production or UI speedup. Preview a chart in a different style with the user
+before publishing it. The image is never the only place a value or caveat
+appears. The opening sentence and the result table carry every figure, and `--table`
+prints that table from the chart's spec. The alt text the script prints carries
+them too. An agent or screen reader that cannot read the image loses nothing. Keep the table or equivalent text accessible, and
+attach PR-only graphics without committing them to the product repository.
+
+Scale structure to the change. Omit empty optional sections, placeholder text, guessed risk scores or review times, and coverage percentages that were not measured. Complete a required checklist with this PR's specifics rather than omitting it, and mark non-applicable items N/A with a reason. Preserve required template sections and mark unavailable evidence honestly.
+
+## Completion check
+
+Every factual claim must be supported by inspected code, the originating request, or observed results. The opening explains what changes and why; the remaining text helps review it. Deliver the title and body in the form requested. Apply them to a remote PR only within the user's authorized scope. When the user's rules turn attribution off, include no `Made with` or other host attribution beyond a disclosure the repository asks for. After `gh pr create` or `gh pr edit`, reread the published body and strip any footer a harness appended.
+
+Relevant validation stays in the description; extensive templates and review automation are outside this skill.

@@ -1,0 +1,69 @@
+---
+name: requirement-first
+description: Use when about to change code, copy, config or a document, when a requirement id is mentioned or missing, when a chat answer looks like a requirement, and when deciding whether work is done.
+---
+
+# Requirement first
+
+A row written before the code decides the design. A row written after only records whatever the
+design drifted into. So the row comes first, even for a two-line fix.
+
+## The row
+
+`| ID | What must be true, in one or two sentences a tester can check | STATUS |`
+
+Write a new row as "When <something happens>, the product <does this>" (or "While <state>" or
+"If <unwanted event>, then"), so the founder can confirm it and a test follows from it. This is
+EARS, the form Kiro uses for requirements ("WHEN [condition/event] THE SYSTEM SHALL [expected
+behavior]", https://kiro.dev/docs/specs/feature-specs/, read 2026-10-30). Older rows stay as
+they are (TPL-125).
+
+- **ID** is `AREA-N`: a short area prefix and a number. Ids are never reused or renumbered. To
+  slot a row between two others, add a letter: `AUTH-12a`.
+- One file per area under `docs/requirements/`, listed in `docs/REQUIREMENTS.md` with its prefix.
+- A new area needs a new file and an index line; run `python tools/run_all.py` to check both.
+
+## Status letters
+
+| Letter | Means |
+|---|---|
+| T | A named test asserts it. The test file names the id. |
+| M | Seen working by a person, nothing automatic guards it. |
+| U | Built, never run. |
+| X | Decided, not built yet. |
+| n/a | A standing decision not to build, or `Covered by <ID>.`, a duplicate of another row. |
+
+Rows move X, U, M, T. A row only goes backwards by being rewritten, with the reason in
+`docs/HISTORY.md`. `X` and `n/a` look alike; `p1-closed-decisions.md` says which, unless the row reads
+"Covered by <ID>."
+
+## Duplicates
+
+When two rows specify the same behaviour, the one in the area that owns it stays. The other is
+rewritten as "Covered by <ID>." with status `n/a`, never deleted, so its id still resolves.
+
+## Citing
+
+Code, tests and commits cite the ids they satisfy (`AUTH-12` in a test name or comment, in the
+commit subject). The sweep fails on a cited id with no row.
+
+## Not a requirement
+
+A row moves to `T` only when its tests assert all of it. A test of part of a row leaves the
+status where it was and names the part it covers in the row (TPL-96).
+
+An answer to a question is not a requirement. Do not turn a chat answer into a row unless it
+shows an existing row is wrong; then fix that row in the same change.
+
+## When you catch yourself saying
+
+| The excuse | The answer |
+|---|---|
+| "It's just a typo, no row needed." | A typo fix cites the row it keeps true. If there is none, that is the finding. |
+| "I'll write the row after, once I see how it turns out." | A row written after records the drift, not the intent. Write it first; change it if the work proves it wrong. |
+| "The founder's message is the requirement." | A chat answer is not a row. Turn it into one, or fix the row it contradicts. |
+| "The row would just repeat the code." | Then it is testable, which is the point. A tester reads rows, not code. |
+| "There is a row somewhere that covers it." | Cite it by id. If you cannot find it in a minute, there is not one. |
+
+Red flags: a diff with no row id in its commit; a row written after the code it describes;
+"covered by" with no id; a row's status moved by a test of only part of it.

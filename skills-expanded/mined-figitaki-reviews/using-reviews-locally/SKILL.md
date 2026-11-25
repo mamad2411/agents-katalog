@@ -1,0 +1,165 @@
+---
+name: using-reviews-locally
+description: Run and use the Reviews app locally, including server startup, port checks, local token setup, CLI config, pushing local reviews or new patchsets, and Codex workflow conventions. Use when the user asks to spin up Reviews, push a local review packet or revision, mint/access local API tokens, debug localhost review pushes, or install repo-local Reviews skills by symlink.
+---
+
+# Using Reviews Locally
+
+Use this skill for local Reviews workflows from a checkout of this repo.
+
+## Start the Server
+
+Use the project script:
+
+```bash
+lsof -iTCP:4000 -sTCP:LISTEN
+./bin/server
+```
+
+Do not run `mix phx.server` directly unless you know OAuth/env loading is unnecessary. `./bin/server` sources `.env.local` and runs Phoenix on `http://localhost:4000`.
+
+## Local CLI Config
+
+The CLI reads `~/.config/reviews/config.toml` and currently uses `[default]`.
+
+`reviews login --server <url>` writes it: it shows a code to enter at
+`<url>/device` and saves tokens that refresh themselves under
+`[default.oauth]`. `reviews login --token` reads an API token from stdin
+instead, which suits scripts and agents without a browser. That shape is:
+
+```toml
+[default]
+server_url = "http://localhost:4000"
+api_token = "rev_..."
+```
+
+If the user's real default points to Fly, avoid editing it casually. For one-off local pushes, create a temporary home/config:
+
+```bash
+mkdir -p /private/tmp/reviews-local-home/.config/reviews
+# write /private/tmp/reviews-local-home/.config/reviews/config.toml
+HOME=/private/tmp/reviews-local-home cli/target/release/reviews push --update <slug>
+```
+
+## Mint Local Tokens
+
+Preferred path:
+1. Open `http://localhost:4000/settings`.
+2. Sign in locally.
+3. Generate an API token.
+4. Use it in the CLI config.
+
+Fallback for Codex when the local signed-in user exists and direct DB access is appropriate:
+
+```bash
+POSTGRES_HOST=localhost POSTGRES_PORT=<port> mix run -e 'user = Reviews.Repo.get_by!(Reviews.Accounts.User, username: "local-codex"); {:ok, _token, raw} = Reviews.Accounts.mint_token(user, %{"name" => "codex-local-push"}); IO.puts(raw)'
+```
+
+Find the DB port by inspecting the running BEAM process connections if needed:
+
+```bash
+lsof -nP -iTCP:4000 -sTCP:LISTEN
+lsof -p <beam-pid> | rg "localhost:.*->localhost:"
+```
+
+Local and hosted tokens are not interchangeable.
+
+## Push Reviews and Revisions
+
+Create a new review:
+
+```bash
+cli/target/release/reviews push --packet /path/to/packet.md
+```
+
+Append a patchset:
+
+```bash
+cli/target/release/reviews push --update <slug> --packet /path/to/packet.md
+```
+
+Push current uncommitted work:
+
+```bash
+cli/target/release/reviews push --update <slug> --range HEAD --packet /path/to/packet.md
+```
+
+Check any of these first without contacting the server by adding `--dry-run` (alias `--validate`):
+
+```bash
+cli/target/release/reviews push --dry-run --update <slug> --packet /path/to/packet.md
+```
+
+It prints the target server, the review or slug, the diff files, the packet sections, and every packet problem with `file:line`. It exits 1 if the packet has problems or the review title or slug is empty. Notes, such as a glue-only section placed before the core change, are printed but do not change the exit status. It does not need the server to be running, so it cannot check that the slug exists or that the token works.
+
+Find the slug of an earlier review (you wrote it or took part in it):
+
+```bash
+cli/target/release/reviews list                       # newest first, 25 per page
+cli/target/release/reviews list --role authored -q billing
+cli/target/release/reviews list --status updated      # others' reviews with a patchset newer than your last action
+cli/target/release/reviews list --status open --json  # reviews with open threads, as JSON
+```
+
+Other flags: `--author <handle>`, `--limit <1-100>`, `--offset <n>`. An agent token lists only that agent's reviews.
+
+When the server has code storage on, `reviews push` also uploads the base and head commits. Add `--no-code-storage` to push the diff only; a server that requires code storage rejects that flag. Local servers have code storage off unless `CODE_STORAGE_*` is set.
+
+If the sandbox blocks localhost networking, rerun the CLI with escalation. If the token is rejected, mint a token in the same local database as the running server.
+
+## Inspect and Resolve Threads
+
+List thread IDs for a review:
+
+```bash
+cli/target/release/reviews threads <slug>
+```
+
+Resolve a thread after addressing feedback:
+
+```bash
+cli/target/release/reviews resolve <slug> <thread-id>
+```
+
+Reopen a thread when feedback still needs attention:
+
+```bash
+cli/target/release/reviews reopen <slug> <thread-id>
+```
+
+Say what you changed before resolving, so the reviewer can see the answer next to
+the question:
+
+```bash
+cli/target/release/reviews reply <slug> <thread-id> --body "Switched to Decimal in 4f2a1c9."
+```
+
+Notes:
+- `reviews threads` can run anonymously against public review JSON.
+- `reviews reply`, `reviews resolve`, and `reviews reopen` require `reviews login` (or `reviews login --token` with an API token).
+- `reviews resolve` and `reviews reopen` work only for the review owner or the thread's author; `reviews section` works only for the review owner. Others get HTTP 403.
+- `reviews delete <slug>` permanently deletes a review you own, with its comments. It shows what goes and asks you to type the slug; `--yes` skips the prompt for scripts. Only the review owner can delete; others get HTTP 403.
+- Thread IDs are accepted bare (`7`) or as printed by the listing (`#7`).
+- `reviews reply` appends to the thread. `reviews comment` always opens a new one.
+- `reviews show --format md` also includes thread IDs and status, which can be used as targets for reply/resolve/reopen.
+- Resolved threads remain visible inline on the review page with a resolved status pill, but drop out of the Open threads sidebar.
+
+## Codex Workflow
+
+- Keep local packet files in `/private/tmp` unless the user asks to commit them.
+- After pushing, return the review URL and patchset number.
+- After addressing review feedback, use `reviews threads <slug>` to find thread IDs, `reviews reply <slug> <thread-id>` to record what changed, then `reviews resolve <slug> <thread-id>` to mark the thread handled. Use `reviews reopen` if a thread was closed too early.
+- Use `mix compile --warnings-as-errors`, `mix format --check-formatted`, and `mix assets.build` after relevant code/CSS/JS changes.
+- If `mix test` fails before tests run because DB config points at the wrong local Postgres, report that separately from app failures.
+
+## Install Repo-Local Skills for Testing
+
+From this repo, symlink shared skills into Codex's skill directory:
+
+```bash
+ln -s "$PWD/skills/reviews-overview" "$HOME/.codex/skills/reviews-overview"
+ln -s "$PWD/skills/writing-review-packets" "$HOME/.codex/skills/writing-review-packets"
+ln -s "$PWD/skills/using-reviews-locally" "$HOME/.codex/skills/using-reviews-locally"
+```
+
+If a destination already exists, inspect it before replacing it.

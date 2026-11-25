@@ -1,0 +1,60 @@
+---
+name: pdf
+description: Create, inspect, modify, render, merge, split, fill, watermark, secure, and validate PDF files using Qubicl's pinned local document tools. Use whenever a task substantially involves PDF input or output.
+---
+
+# PDF workflows
+
+Use Qubicl file tools to inspect inputs and save outputs under `/home/qubicl`. Use `exec_command` for the deterministic helpers bundled with this skill. Obtain this package's `resourceRoot` from `skill_view`; do not assume a client-specific skill directory.
+
+The curated browser, computer, and workstation images provide the declared Python libraries plus Poppler. Run helpers through `/opt/qubicl/skills-venv/bin/python`. If a dependency is absent, report that the current preset does not support the operation; do not install packages automatically.
+
+Common helpers beneath `<resourceRoot>/scripts/`:
+
+- `pdf_read.py FILE --text|--tables|--meta|--fields`
+- `pdf_create.py SPEC.json -o OUTPUT.pdf`
+- `pdf_merge.py INPUT... -o OUTPUT.pdf`
+- `pdf_split.py FILE --pages 1-3,5 -o OUTPUT.pdf`
+- `pdf_page_image.py FILE --out-dir DIR`
+- `pdf_make_form.py SPEC.json -o OUTPUT.pdf`
+- `pdf_fill_form.py FILE --fields-json VALUES.json -o OUTPUT.pdf`
+- `pdf_stamp.py`, `pdf_watermark.py`, `pdf_meta.py`, and `pdf_secure.py`
+
+Read `references/forms.md` only for AcroForm work.
+
+`pdf_meta.py --extract-attachments DIR` extracts every payload, including several
+attachments with the same stored name. Safe basenames receive deterministic
+`__2`, `__3` collision suffixes; existing files or symlinks cause failure without
+overwriting them. The receipt maps each `sourceName` and zero-based `payloadIndex`
+to its destination, byte count and SHA-256. Use a new directory for another copy.
+
+Metadata/attachment edits clone the full document, retaining other DocInfo fields,
+forms, outlines, existing attachments and the original encryption/password/permission
+policy (`--password` is required for encrypted input). They stage, reopen and
+verify preservation before atomically replacing the destination. Signed/certified
+PDFs and content or encryption that cannot be preserved fail before replacement;
+these helpers do not re-sign documents. `--clear-meta` removes only DocInfo; XMP
+is retained and may disagree with changed DocInfo. Check the preservation receipt.
+
+Merge and split retain interactive AcroForm field trees, selected-page widgets,
+values and appearance resources. Later inputs with colliding field names receive
+a deterministic `source_N.` namespace; the JSON receipt lists each rename.
+Use `pdf_merge.py --duplicate-fields error` to require unchanged unique names.
+Repeated extracted pages receive independent field copies under that same policy.
+Outputs are staged and reopened to verify field/widget preservation before an
+existing destination is replaced. Inspect or fill using the resulting full names.
+
+For inspection, extract text first and render representative pages when layout matters. Use `take_screenshot` only for the live desktop; use generated page images for document QA. Verify important outputs by reopening them with a read helper and, when visual fidelity matters, by rendering pages. Never overwrite the only input copy unless the user explicitly requests in-place editing.
+
+Use the common rendering receipt for PDF, DOCX, XLSX and PPTX:
+`/opt/qubicl/skills-venv/bin/python /opt/qubicl/artifact-render.py FILE --outdir DIR`.
+Each invocation captures its source, uses an isolated Office profile, and writes a unique
+run directory with PDF, exact numbered PNGs and `manifest.json`. Read `sourceSha256`,
+`pages`, `warnings` and `validation`, then inspect the generated pages. Old previews
+are never returned as this run's outputs. `visuallyInspected: false` is intentional:
+the tool renders; the agent performs visual review. Office rendering needs workstation.
+
+`pdf_fill_form.py --flatten` merges all supported text/choice/button appearances,
+including untouched fields, and removes form widgets. Unsupported widgets fail before
+replacing the destination. Reopen the PDF to verify fields are absent and inspect
+rendered text and checkbox/radio appearances; read-only fields are not flattening.

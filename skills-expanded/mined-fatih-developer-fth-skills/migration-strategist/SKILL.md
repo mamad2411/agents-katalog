@@ -1,0 +1,104 @@
+---
+name: migration-strategist
+description: "Plan zero-downtime database schema migrations with the expand-contract pattern: additive migration, dual-write application release, batched backfill, cutover, contract migration, and rollback. Use when the user renames or splits columns, changes types, restructures tables in a live database, or asks how to migrate without downtime."
+---
+
+# Migration Strategist Protocol
+
+This skill focuses on taking a database from State A to State B without causing downtime, locks, or data loss in production. Direct `ALTER TABLE` operations on large tables are dangerous and often require a multi-step rollout.
+
+**Core assumption:** You cannot lock the table. You cannot break the old version of the application while the new version is deploying.
+
+---
+
+## 0. Context Intake
+
+Before designing, make sure you have the inputs below. Read the previous workflow step's artifact first if it exists. Ask only for what is missing, in a single message, and state any assumption you make instead of blocking.
+
+- Current and target schema, or `schema-diff-output.json`.
+- Table sizes, write traffic, and acceptable lock time.
+- Deployment model (rolling deploys, number of app versions live at once) and migration tool (Prisma, Flyway, Alembic, raw SQL).
+
+## 1. The Zero-Downtime Pipeline
+When asked "How do I rename this column?" or "How do I split this table?", standard `ALTER TABLE RENAME` breaks the app. 
+Always enforce a backward-compatible migration strategy:
+
+### The Expand & Contract Pattern (4 Steps)
+For breaking changes (e.g., renaming a column `name` to `full_name`):
+
+1. **Add (Expand):** Add the new column `full_name` (nullable initially).
+2. **Dual Write:** Deploy application code that writes to BOTH `name` and `full_name`, but reads from `name`.
+3. **Backfill:** Write a script or background job to populate `full_name` using `name` for old rows.
+4. **Switch & Drop (Contract):** Change the app to read/write ONLY `full_name`. After successful deployment, run a final migration to drop `name`.
+
+## 2. Output Format (The Plan)
+
+Provide a numbered timeline mapping Application Code states vs Database changes.
+
+**Outputs.** In *file mode* — the user wants artifacts, or this skill runs as a step of an ecosystem workflow — write both files below to `docs/database-report/`. In *inline mode* — a quick question — answer in the chat and end with the JSON below as a *Handoff* block instead of creating files.
+
+1. **Human-Readable Markdown (`docs/database-report/migration-strategist-report.md`)**
+```markdown
+### 🕰️ Step 1: Database Expand (Migration 1)
+- Add `full_name` column.
+- SQL: `ALTER TABLE users ADD COLUMN full_name VARCHAR(255);`
+
+### 💻 Step 2: Application Release (v1.1)
+- Code updates to write to BOTH `name` and `full_name`.
+- Read from `name`.
+
+### 🔄 Step 3: Data Backfill Script
+- SQL: `UPDATE users SET full_name = name WHERE full_name IS NULL;`
+- Action: Run this out-of-band in batches of 10,000 to avoid long locks.
+
+### 💻 Step 4: Application Release (v1.2)
+- Code updates to read/write ONLY to `full_name`.
+
+### ✂️ Step 5: Database Contract (Migration 2)
+- SQL: `ALTER TABLE users DROP COLUMN name;`
+- Action: Execute only when v1.1 is fully retired from traffic.
+```
+
+2. **Machine-Readable JSON (`docs/database-report/migration-strategist-output.json`)**
+```json
+{
+  "skill": "migration-strategist",
+  "steps": [
+    {"phase": "expand", "target_table": "users", "action": "add_column", "details": "full_name"},
+    {"phase": "app_release_1", "action": "dual_write"},
+    {"phase": "backfill", "query": "UPDATE users SET full_name = name"},
+    {"phase": "app_release_2", "action": "read_write_new_only"},
+    {"phase": "contract", "target_table": "users", "action": "drop_column", "details": "name"}
+  ]
+}
+```
+
+## 3. Rollback Strategy
+Every Migration plan must include a clear rollback path if Step 2 or Step 4 fails. How do we reverse it?
+- "If v1.2 fails, rollback to v1.1. Data is still dual-written to `name`, so reverting the code is safe."
+
+---
+
+## When to Skip
+
+- The database is empty or not yet in production, where a direct migration is acceptable.
+
+## Guardrails
+- **No `DEFAULT` on new columns for large tables:** In some older SQL versions, adding a column with a default value locks and rewrites the entire table. Use nullable + background backfill.
+- **Data Type Casting:** Be explicitly careful about data truncation passing from State A to State B.
+- **Confirm Before Running:** Never execute a migration or backfill against a shared or production database without explicit user approval (`@checkpoint-guardian` when installed). Produce the plan and scripts; let the user trigger them.
+- **Constraints Last:** Add `NOT NULL`, `UNIQUE`, or Foreign Keys only at the very end of the backfill process.
+
+## 🔗 Next Steps & Handoffs
+
+<!-- BEGIN GENERATED: handoffs (generated from the ecosystem workflow map by build_ecosystems.py — do not edit by hand) -->
+**Ecosystem:** `@ecosystem-database` — Database Domain.
+
+**Workflows:**
+- **Database Evolution Flow** (`db-evolution`, step 2 of 3): next → `@checkpoint-guardian`.
+
+**Direct handoffs:**
+- `@breaking-change-detector` — The schema change alters a public API contract.
+
+**Handoff contract:** pass results to the next skill through `docs/database-report/migration-strategist-output.json` with the fields `skill`, `workflow`, `created_at`, `inputs`, `summary`, and `next` (the handoff contract of `@ecosystem-database`). If a next skill is not installed, continue with its step from the ecosystem map, or install it with `npx skills add fatih-developer/fth-skills --skill <name>` after the user agrees.
+<!-- END GENERATED: handoffs -->

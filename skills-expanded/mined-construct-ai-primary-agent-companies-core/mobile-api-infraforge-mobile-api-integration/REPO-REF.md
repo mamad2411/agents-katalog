@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/construct-ai-primary/agent-companies-core (path: skills/infraforge-ai/skills/mobile-api-infraforge-mobile-api-integration/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Mobile Api Infraforge Mobile Api Integration - InfraForge AI Mobile API Integration

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/echovic/blade-code (path: .trae/knowledges/engineering-quality-and-delivery/unit-integration-and-shared-test-harnesses/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: ---

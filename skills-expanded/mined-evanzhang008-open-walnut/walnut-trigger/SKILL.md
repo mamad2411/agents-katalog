@@ -1,0 +1,546 @@
+---
+name: walnut-trigger
+description: >-
+  Watch something with a small script and act when it changes: write a check the
+  daemon runs every few minutes, and get a prompt delivered into this session
+  when it fires. Use when the user says "tell me when", "let me know if",
+  "watch for", "keep an eye on", "as soon as X happens", "poll until", or wants
+  to be pinged on new mail / PR comments / build results / a file appearing.
+  Also when the user says "snooze until", "wait until", "park this until",
+  "come back to this when". Use it on your own, without being asked, whenever
+  the rest of the work waits on something outside the session (a review, a
+  merge, a deploy, CI, a reply); never on this session's own background command
+  or subagent, which wakes it when done. A trigger does not park the task: park it
+  yourself once only that wait is left (never the main agent's task), and the fire brings it back. Check trigger_templates first: a plugin
+  (Slack channel, new mail) may already offer the watch with no script.
+---
+
+# Trigger
+
+A trigger is a **check script + an interval + a prompt + a description**. The daemon on the host
+runs the script; when it says something happened, Walnut delivers the prompt into
+a session (the same conversation, resumed if it has gone quiet; a new session on
+the same task only if none can be resumed). You write the script, test it, arm it.
+Nothing polls inside your session.
+
+## A pull request linked to the task needs no trigger
+
+Walnut watches every GitHub pull request the task links (a `pr:` link tag; a
+`gh pr create` in this session or the Changed tab's Open PR adds it by itself):
+a failed check, a comment or review from someone else, or a conflict wakes this
+session with the details, and a merge completes the task unless the user turned
+that off on the PR pill. To wait on its CI, park with `waiting_on` naming it;
+write a trigger only for what that does not cover (a pull request on another
+forge, a check on a repo you did not open a pull request in).
+
+## Ready-made triggers first
+
+A plugin can offer a trigger that needs no script ("New message in a Slack
+channel", "New mail"). Always look before you write one:
+
+```bash
+walnut tools call trigger_templates '{}'
+# the choices for one param (channels matching "oncall"):
+walnut tools call trigger_templates '{"template":"slack:channel-message","param":"channel","query":"oncall"}'
+walnut tools call trigger_create '{"template":"slack:channel-message","params":{"channel":"#eng-oncall"},"prompt":"...","wait_until":"1d"}'
+```
+
+- The template builds the check, the interval, the description and a default
+  prompt; pass your own `prompt` when the user said what should happen. It runs
+  on this machine's daemon, so `host`/`cwd`/`run` are not used and there is
+  nothing to `trigger_test`.
+- A refused param comes back as a 400 with the plugin's own sentence ("No channel
+  #foo"): look the value up with the options call and try again.
+- The user can also pick one from the composer's **+ › Add a trigger…**. When they
+  hand it to you instead, the message names the template id ("template
+  slack:channel-message"): arm exactly that one.
+- Nothing fits? Write a check script (below). Say in one line what you will
+  watch and with what, before you arm it.
+
+## A start refused because every suitable host is full
+
+An unpinned automatic start already waits for a slot inside Walnut: do not add a
+trigger or retry it. An explicit host or folder start returning `409 hosts_full`
+was not started and is not queued. Keep its id. A lead can watch admission room with the existing `host_load` op, then retry `task_start`.
+Run the check on `host: "__local__"` so it reads the primary's fleet view. Filter
+for the hosts that can run this task (a Mac-only task must not fire for Linux).
+A first check only records a cursor; a later check with room fires once. Example
+for a task that must run on the primary:
+
+```python
+#!/usr/bin/env python3
+import json, subprocess, sys
+inp = json.load(sys.stdin)
+res = subprocess.run(["walnut", "tools", "call", "host_load", "{}"],
+                     check=True, capture_output=True, text=True, timeout=25)
+hosts = json.loads(res.stdout)["hosts"]
+ready = any(h["host"] == "__local__" and h.get("known") and not h.get("full", True)
+            for h in hosts)
+state = inp.get("state") or {}
+fire = bool(state) and not state.get("fired") and ready
+print(json.dumps({"fire": fire,
+                  "state": {"checked": True, "fired": state.get("fired", False) or fire}}))
+```
+
+Test it with `trigger_test`, then arm it at an interval such as `5m`, with a
+prompt naming the failed task id and `task_start`. Delete it with `trigger_delete`
+when it fires. Room can disappear before the retry: another `hosts_full` is an
+error, not a queued start; rearm the watch rather than creating a duplicate task
+or doing the team's work yourself.
+
+## No template: where the data comes from
+
+Pick the source the user is already signed in to, in this order:
+
+1. **A CLI with JSON output**: `gh`, `glab`, `aws`, `kubectl`, `jq` over a file.
+   It handles the login itself.
+2. **Walnut, on this Mac.** A plugin's own routes and ops answer over loopback
+   with no token; use `$WALNUT_SERVER_URL` so a test server talks to itself:
+   `curl -s "${WALNUT_SERVER_URL:-http://127.0.0.1:3456}/api/plugins/<id>/..."`,
+   or one plugin op:
+   `curl -s -X POST "${WALNUT_SERVER_URL:-http://127.0.0.1:3456}/api/plugin-runtime/<plugin>/ops/<op>" -H 'content-type: application/json' -d '{...}'`.
+   Core data (tasks, notes) is `walnut tools call <op>`. A check on another host
+   cannot reach this loopback; arm it with `host: "__local__"` from a session here.
+   A check's `walnut` calls act for its trigger's task, with that task's grants:
+   `host_exec_read` on a job you started, `host_exec`, `host_http` and `host_copy`
+   work from a check as from your session (`trigger_test` from your session too).
+   Never print `fire: false` when such a call fails: let the error show, so a
+   refused call reads as a broken check, not as "nothing yet".
+3. **An MCP server the user has** (`claude mcp list`, `~/.claude.json`, the
+   project's `.mcp.json`): start it from the script and speak JSON-RPC over its
+   stdio, one call per run (template below). Use the same command and env the
+   config names, and keep the whole run under the timeout.
+4. **A web API or page**: `curl` with a token read inside the script (a file only
+   this host has, the keychain); for a page, hash the part that matters.
+
+Whatever the source, the first run (`state: null`) only records a cursor and
+answers `fire: false`, so arming never replays history; give every item the
+source's own id; and run `trigger_test` against the real source until it parses.
+
+```python
+#!/usr/bin/env python3
+# MCP over stdio: call one tool, fire on results not seen before
+import json, signal, subprocess, sys
+signal.alarm(25)                       # stay inside the 30s check timeout
+inp = json.load(sys.stdin)
+proc = subprocess.Popen(["npx", "-y", "<server-package>"], stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+def send(msg): proc.stdin.write(json.dumps(msg) + "\n"); proc.stdin.flush()
+def call(id, method, params):
+    send({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+    for line in proc.stdout:           # skip notifications until our answer
+        msg = json.loads(line)
+        if msg.get("id") == id:
+            if "error" in msg: raise SystemExit(f"{method}: {msg['error']}")
+            return msg["result"]
+    raise SystemExit("server closed before answering")
+call(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "walnut-trigger", "version": "1"}})
+send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+res = call(2, "tools/call", {"name": "<tool>", "arguments": {"query": "..."}})
+proc.terminate()
+rows = json.loads(res["content"][0]["text"])          # the tool's own shape
+cursor = (inp.get("state") or {}).get("cursor")
+if cursor is None:                                     # first run: record, stay quiet
+    print(json.dumps({"fire": False, "state": {"cursor": max((r["ts"] for r in rows), default="")}})); sys.exit()
+new = [r for r in rows if r["ts"] > cursor]
+print(json.dumps({"fire": bool(new), "items": [{"id": r["id"], "title": r["text"][:80]} for r in new],
+                  "state": {"cursor": max([cursor] + [r["ts"] for r in new])}}))
+```
+
+## The contract
+
+The script reads ONE JSON object on stdin and prints ONE JSON object as the
+**LAST line of stdout**. Log freely above that line.
+
+```
+stdin :  {"state": <what you printed last run, or null>, "lastFireAt": "<ISO>|null", "now": "<ISO>"}
+stdout:  {"fire": true, "items": [{"id": "PR-123#c9", "title": "..."}], "input": "...", "state": {"cursor": "..."}}
+         {"fire": false, "state": {"cursor": "..."}}
+         {"fire": false, "idle": true}
+```
+
+- **`items` vs a bare fire.** With `items`, the daemon dedups on `id`: only ids it
+  has never delivered count, so a run whose ids are all known is quiet. Use it
+  whenever the thing you watch has identity (a comment, a message, a file, a
+  build). With **no** `items`, `fire: true` fires EVERY time it is true, so only
+  do that when the script itself decided "this is new".
+  Report an item every run while it stands: an id the script keeps reporting
+  (among its first 2,000 items) is never delivered twice, and one it stopped
+  reporting is forgotten after 30 days. Something that changed gets a new id. In `input`, a line about an already-delivered item is dropped when it
+  holds the item's `id` or its `title` (24+ characters, a leading `[tag]` aside),
+  so write each item's line with its id or its title in it.
+- **`idle` (optional).** `"idle": true` says nothing of what the trigger watches
+  is in flight now: no build, run or request of the task's own is still going,
+  and nothing waits to be read. A `watches:"own"` trigger reads as your work
+  going on (Working) while it is armed; a check that prints `idle` when nothing
+  of yours is queued, running or unread lets the task read as it really is
+  (2026-11-23: a task read Working with its session idle and its queue empty).
+  Only a quiet run counts it (`fire: false`, or every item already delivered): a
+  fire, or one the fire budget holds back, is never idle. Leave it out while the
+  work runs. An older daemon ignores it.
+- **`input` vs `state`.** `input` is the script talking to the AI **this run**
+  (max 8 KB, free text). `state` is the script talking to its **next run** (a
+  cursor, stored verbatim, handed back on stdin). They are never merged, and
+  `state` is never shown to the AI.
+- **Errors.** Non-zero exit, a timeout, no JSON on the last line, or over 64 KB
+  of stdout is a check error. The first error of a run is reported into the
+  trigger's session (the error, the trigger id, the run time, and the
+  `trigger_test` call to try a fix); errors that go on for 3 checks or 30
+  minutes tell the session again; five in a row stop the trigger and tell it
+  once more. When its task is complete or has no session, its lead hears
+  instead. The user is never told: a trigger is its task's work. Fix the
+  script (or its settings in place with `trigger_update`, e.g. a check killed
+  at its limit gets a larger `timeoutSeconds`), then `trigger_resume`.
+- **One bad item never fails a run.** An `id` over 200 characters is
+  shortened to a stable id (its head plus a hash, the same every run, the
+  original kept as `fullId`), and an item that is not an object with a string
+  `id` is dropped; the other items and `state` still go through, the run does
+  not count as an error, and the fire and the History row say what was
+  repaired. Only output with no usable item left is an error. Keep ids short
+  anyway: the warning is there to make you fix the script.
+- **Stale fires say so.** A fire delivered over 5 minutes after its check ran,
+  or a trigger message that sat over an hour in the session's queue, carries a
+  line saying how old it is. Check the current state before you act on it.
+- **Time limit.** The daemon kills a check still running after its
+  `timeoutSeconds` (30 s by default, at most 300). Give every call in the script
+  its own shorter timeout, and keep its timeouts times its retries inside the
+  limit: a `curl --max-time 20 --retry 2` under a 30 s limit is killed before its
+  retry runs. trigger_test says how long the run took against the limit and warns
+  over half of it; trigger_list shows each trigger's `timeLimit` and `lastRun`; a
+  killed run reads "check killed at the N s limit" in History and in the error
+  notice. Test with the `timeoutSeconds` you arm it with. A limit that turns out
+  too short is raised in place: `trigger_update '{"id":"...","timeoutSeconds":120}'`.
+- **Limits.** 30s timeout (max 300), one run at a time, never faster than
+  every 10s, and a fire budget: `maxFiresPerDay` (default 24) fires in a burst,
+  refilling at that many per 24 hours, so a spent budget gives back one fire
+  every 24h / cap (an hour at the default). A fire the budget holds back is late,
+  not lost: the daemon keeps your previous `state` cursor and the next allowed
+  check reports the same items again, in one fire with everything newer. One
+  fire carries at most 200 new items; with more, the cursor is kept too and the
+  next check carries the rest. Keep stdout under 64 KB even after a long hold:
+  print the oldest items first, at most a few hundred, and move the cursor only
+  to the last one you printed.
+- **Pick the budget for the source.** A busy source checked often (a chat
+  channel, a mailbox) can fire on most checks, so set `maxFiresPerDay` to the
+  checks per day it runs: 288 for every 5 minutes, 96 for every 15. Keep the
+  default for things that change a few times a day (a PR, a CI run). `0` = no
+  limit. The user can change it later on the Routines page (Edit, "Fires per
+  day"), and Walnut tells them the first time each day the budget holds a fire.
+
+## Templates
+
+Write the script under `~/.open-walnut/triggers/<slug>/check.sh`, `chmod +x` not
+required (it runs through `sh -c`).
+
+```bash
+#!/usr/bin/env bash
+# bash + jq: new comments on a PR
+set -euo pipefail
+STDIN=$(cat)             # {"state":...,"lastFireAt":...,"now":...}
+CURSOR=$(printf '%s' "$STDIN" | jq -r '.state.cursor // ""')
+gh pr view 123 --json comments \
+  | jq -c --arg cursor "$CURSOR" '
+      [ .comments[] | select(.createdAt > $cursor) ] as $new
+      | { fire: ($new | length > 0),
+          items: [ $new[] | { id: (.url), title: (.author.login + ": " + (.body[0:80])) } ],
+          state: { cursor: ([ $cursor, (.comments[-1].createdAt // $cursor) ] | max) } }'
+```
+
+```javascript
+// node: a file appeared in a directory
+const fs = require('fs');
+const dir = process.env.HOME + '/Downloads';
+let stdin = ''; process.stdin.on('data', (c) => stdin += c).on('end', () => {
+  const seen = new Set((JSON.parse(stdin || '{}').state?.seen) ?? []);
+  const now = fs.readdirSync(dir).filter((f) => f.endsWith('.pdf'));
+  const fresh = now.filter((f) => !seen.has(f));
+  console.log(JSON.stringify({
+    fire: fresh.length > 0,
+    items: fresh.map((f) => ({ id: f, title: f })),
+    state: { seen: now.slice(-500) },
+  }));
+});
+```
+
+## Credentials
+
+Keep tokens out of `run`. The command line is stored with the routine (it syncs
+with the rest of Walnut's data), shows on the Routines card and in
+`trigger_list` (with `full:true`), and a failing `curl -v` echoes headers into the error text.
+Read a token inside the script file instead (from the environment, a keychain,
+or a file only that host has), and never paste one inline as `curl -H
+'Authorization: Bearer ...'` in `run`.
+
+## Order of operations
+
+1. **Write the script** to `~/.open-walnut/triggers/<slug>/check.sh`.
+2. **Test until it parses**: `walnut tools call trigger_test '{"run":"bash ~/.open-walnut/triggers/<slug>/check.sh"}'`.
+   Keep going until `parsed` is non-null. `wouldFire: false` with `parsed` set is a
+   working check with nothing to report: that is a pass, not a failure.
+3. **Tell the user in ONE line** what will be watched and how often, before arming it.
+4. **Arm it**: `walnut tools call trigger_create '{"run":"bash ~/.open-walnut/triggers/<slug>/check.sh","every":"5m","name":"...","prompt":"...","description":"...","wait_until":"4h"}'`.
+   `description` is required and `name` is expected (see below). `wait_until` is when you expect the
+   event, kept short (see below); left out it is 4 hours.
+   `session` defaults to `"this"`, so the fire lands in this conversation (resumed
+   if it has gone quiet by then). `cwd` and `host` default to this session's.
+   It does **not** park this task (see "Parking is your call" below). Pass
+   `"wait":true` only when the rest of the work truly waits on the watched thing
+   and nothing of this turn is for the user to read.
+   Watching your own build, test run, CI run, deploy or land? Add
+   `"watches":"own"`: it never parks the task (your work going on reads Working).
+   Watching something you asked the user (your status's ask, or a letter you
+   sent them)? Add `"watches":"ask"` or `"watches":"<letter id>"`. With `ask`,
+   each run of the check counts as that ask's check, so Walnut's 4-hour re-check
+   stays quiet while the trigger keeps running; with a letter id, that letter's
+   re-check stays quiet while the trigger is armed.
+5. **Report the id and the cadence.** Then stop; do not poll the trigger yourself.
+
+Default cadence when the user gave none: **every 5 minutes**. Never poll faster
+than 10s, and prefer a slower interval for anything hitting a network API.
+
+## Prompt writing
+
+The prompt is what a session receives WITH the items. Write it as an
+instruction, not a notification: "Read each new comment; change the code where it
+asks, then reply on the PR" beats "there are new comments". The fire already
+carries the items as JSON, so do not ask the model to go re-fetch them.
+
+When the user asked to be told ("tell me when X", "let me know if"), say so in
+the prompt: "send the user a letter (human_inbox_send with user_asked: true)
+saying X happened". That letter is one they asked for; without user_asked, a
+task that keeps Threads files it as a thread update instead. Without that ask,
+a fire sends no letter.
+
+## Name writing
+
+The name is a short label, a few plain words for what is watched: "PR 123 review
+comments", "Session cookie watch", "#eng-oncall new messages". Walnut calls the
+trigger by it everywhere: the task's waiting line, its trigger card,
+`trigger_list`, Routines, notices. Never the prompt's opening: "The check fired.
+Never print cookie..." was read as "the cookie was deleted again" (2026-11-06).
+Left out, Walnut makes one from the description's first clause.
+
+## Description writing
+
+The description is for the USER, on the task's trigger card, where the rest is a
+name and `bash …/check.sh @ host`. Without it nobody can tell what fires the
+trigger. One or two plain sentences, 600 characters at most, covering three things:
+
+1. **What is watched**, naming the real source: the PR number, the channel, the
+   folder, the build.
+2. **When it fires**: the condition, and the cadence when it matters.
+3. **What the session does** when it fires.
+
+- Good: "Checks PR 123 for new review comments every 5 minutes. When one arrives,
+  the session makes the requested change and replies on the PR."
+- Good: "Watches ~/Downloads for new PDF invoices. Each new one is filed into the
+  Finance notes with its amount and due date."
+- Bad: "Runs check.sh" (says nothing), "PR watcher" (that is a name), or the
+  script explained line by line.
+
+Write it in the language you use with the user.
+
+## Parking is your call, never the default
+
+A trigger watches; it is no reason by itself to take the task off the user's
+list (2026-10-31, the user: "a trigger does not always mean it goes into wait
+... don't overuse wait"). `trigger_create` parks the task only with
+`"wait":true`; `task_update phase=WAITING` parks it too. Park only when the rest
+of the work truly waits on the outside thing **and nothing of this turn is for
+the user to read**. Never in the turn that answers the user's message: they
+read your answer first, so the task stays Needs you (Walnut also keeps a turn
+that answered them on their list when its report says waiting). A park:
+
+- The task leaves the user's default task list (it keeps its board section; the
+  user reveals it with "Show waiting") and the end of your turn does not hand it
+  back.
+- No letter goes to the user's inbox: a park is not news, and the inbox is
+  only for what needs them. End the turn with one line saying what the task
+  waits on; the user reads it in this session, and the task's trigger card
+  says what is watched.
+- The next message into this session (the fire, the user, a peer task) moves it
+  to In Progress on its own. The fire's turn and the user's end as Need Action
+  like any other, and so do a reply you asked for and a subtask's result; a
+  turn another task's message, a Walnut status notice or your own background
+  work started ends back in Waiting, with the same clock, while this trigger is
+  still armed (that message carries a note saying so). If such a turn finds the
+  user is needed after all, set `task_update` NEED_ACTION yourself.
+- Nothing else in THIS turn moves it: not your further output, a background
+  agent coming back, or the turn's end. So if you find, later in the same turn,
+  that the user is needed after all, take it back yourself:
+  `task_update '{"id":"<this task's id>","phase":"NEED_ACTION"}'`.
+
+**Only for a wait outside Walnut and the user.** Park on a pipeline or CI run,
+a build on CI or another host, a deploy, a CR or PR review, a Slack or mail
+reply, another task. When
+the next move is the user's (they paste a file, review, decide, sign in), the
+task is Needs you: set `task_update` NEED_ACTION and say what you need, never
+Waiting, even with no rush. Walnut enforces it: a park with nothing outside
+armed (no trigger of the task, no unanswered request, no subtask at work, no
+`waiting_on` naming the outside thing) is refused with `409 wait_on_user`, and
+a turn-end report that waits on nothing outside puts the task back on the
+user's list. A trigger with `watches` (the user's ask or a letter) never parks.
+
+**Your own build is still your work.** A build, test run, CI run, deploy or land
+of your own change, which you act on when it ends, is not a wait: the user reads
+the task as Working (2026-11-02, the user: "wait is just actually waiting, if it
+is running it should be in progress"). One that runs in this session (a
+`run_in_background` command, a subagent) needs no trigger and no `wait_until`:
+Claude Code wakes the session when it finishes, so just end the turn with one plain
+sentence on what runs, never the agent-ack line (2026-11-15:
+a 20-minute trigger on a session's own acceptance run woke it four times for
+nothing). When your own work runs outside this session (CI, a deploy or land
+queue, a test run on another host), arm its trigger with `"watches":"own"` and
+no `wait`: it never parks the task, and its fire brings you back. The session
+goes idle by itself; the task stays out of Waiting and reads Working while the
+work is in flight (its check prints `"idle": true` once nothing of yours runs or
+waits to be read, see the contract). Say so in
+your status report, which Walnut asks for in a question of its own right after
+your turn (never write its lines in a reply): working, with what runs now, or
+waiting on your own work (the build of my change), never on something outside.
+Walnut keeps a park out of it too: a report on your own work takes
+a park Walnut restored back to In Progress, and an `"own"` trigger never holds a
+park, keeps a routine parked or counts as an outside wait.
+
+**What is a real outside wait, and what is not** (2026-11-18, the user: Waiting
+only when the task "really waits for something external", and the task puts
+itself there):
+
+| Waiting (park it yourself) | Not Waiting |
+|---|---|
+| A colleague's CR or PR review, an approval by someone else | Work left for you: fixes, edits, the next step (In Progress) |
+| Another team's pipeline or release, a deploy you do not run | Your own build, test run, CI run, deploy or land (Working, `watches:"own"`) |
+| A reply by mail, Slack or a letter from someone else | The user's input, review, decision or sign-in (Needs you) |
+| Another task or your lead, a set date or time | A result the user has not read yet (Needs you) |
+
+Walnut never parks a task for it: only your own `task_update phase=WAITING`
+or `trigger_create` with `"wait":true` does, and Walnut only brings back a park
+you set before (after a message or a fire interrupted it).
+
+**Use it on your own.** When the rest of the work waits on something outside
+this session (a review, a merge, a deploy, a CI run, a reply from a
+person), do not ask the user to watch it or to "make a trigger": write the
+check, arm it, and end the turn. That is what keeps their list short. Ask one
+short question only when you genuinely cannot tell what to watch (which PR,
+which channel).
+
+**But not while work remains.** If you or the user still have work on this
+task (more changes to make, the user is mid-conversation with you about it),
+leave `wait` out: the trigger is armed and the task stays where it is. Park
+it later, once only the wait is left, as the LAST call of that turn:
+
+```
+walnut tools call task_update '{"id":"<this task's id>","phase":"WAITING"}'
+```
+
+**`wait_until`** is the clock, and it is how you find out whether the trigger
+works. A trigger you just wrote may be wrong (the check reads the wrong field,
+the answer lands somewhere it does not look), and from a hidden task the user
+cannot tell, so never let a park run for days on trust:
+
+- **Set it yourself** whenever you can tell when the thing should happen, with a
+  little slack: a CI run or a deploy, minutes to an hour (`"45m"`); a review or a
+  reply, later today or tomorrow morning (`"4h"`, `"1d"`); a release on a known
+  date, that date. Pass an ISO datetime or a duration from now.
+- **Keep it short.** When you cannot tell, a few hours. Left out, it is
+  4 hours. Go longer only when the user named the time ("by Friday either way",
+  "give it a week"). Pass `"wait_until":""` only when the user asked for no time
+  limit.
+- If you named none in `trigger_create`, set one right after it:
+  `task_update '{"id":"<this task's id>","wait_until":"2h"}'`.
+
+**When the clock runs out** (a `Walnut: wait until` message), nothing fired in
+time. The message lists the task's triggers with their state and last check.
+Re-check carefully before anything else:
+
+1. Look at the thing itself (the PR, the build, the page, the inbox): has it
+   happened?
+2. If it has and no fire came, the trigger is wrong. Find out why (run the check
+   with `trigger_test`, read its recent checks with
+   `trigger_list '{"name":"<its id>","full":true}'`), change it to
+   a check that would have caught it (`trigger_update` with the new `run`,
+   `every` or `timeoutSeconds`; it keeps its id and what it has seen), and act
+   on what happened.
+3. If it has not, is the trigger still sound: armed (not paused or stopped),
+   checking without errors, and watching every place and state that would count?
+   Fix what is not.
+
+Then, if it is still to come, park again as your last call with a fresh, short
+`wait_until`; that needs no word to the user. If the wait no longer makes sense
+(long overdue, or the plan changed), tell the user in one line and leave the
+task with them.
+
+- No trigger parks a task, yours or another's, unless you pass `"wait":true`.
+  A completed task is never parked.
+- The main agent's task is never parked either: it stays active and on the
+  user's list, since replies, notices and the user's messages wake it. As the
+  main agent, arm a trigger only for an outside event that sends no notice,
+  and never set your task to WAITING.
+- Make the check fire ONCE per event: give each event an item id (the PR's
+  state + revision, the message id), so an unchanged state is quiet.
+- Write the `prompt` for the moment it fires: "Check what changed on PR 123 and
+  do the next step: make requested changes, merge when approved, tell the user
+  only what needs them."
+- When it fires and the event does not need the user (an acknowledgement, an
+  intermediate stage, a change you can make yourself), handle it, then park
+  again as the last call with `task_update` WAITING, and send no letter. The
+  trigger keeps polling and keeps what it has seen. Write to the user's inbox
+  only when the event needs them (a decision, a blocker) or they asked to hear
+  about it.
+- Every fire is also a check on the trigger. Did it fire for the right reason
+  (a false fire means the check is too loose)? Will it catch what comes next (a
+  reviewer who answers in another place, a second stage)? Fix it before you
+  park again, and give the new park its own short `wait_until`.
+- When the work it watched is done, `trigger_delete` it, so it stops firing.
+- When the user writes to this session meanwhile, the task is In Progress again;
+  answer them. If the plan still holds, park it again as your last call. If the
+  plan changed ("don't wait", "wait for X instead"), `trigger_delete` the old
+  trigger and arm the new one if there is one.
+- The task menu's "Start / Snooze until › Something happens…" starts this for
+  the user as `/walnut-trigger Snooze this task until: X`.
+
+## Managing them
+
+- `trigger_list`: one short row per trigger, newest activity first: its
+  description, interval, host, the task it wakes, state (`armed`, `paused` with
+  `pausedAt`, `stopped` after 5 failed checks in a row), the last check in one
+  line (fired with an item count / quiet with a reason / the error) and the last
+  fire. At most 25 rows unless you pass `limit`; to find one, narrow it with
+  `name` (a piece of its name, id or description), `task` and `state:"armed"`,
+  e.g. `trigger_list '{"name":"reflection","state":"armed"}'`. `full:true` adds
+  the script and the recent check history, for the one you are debugging.
+- `trigger_pause '{"id":"..."}'`: stop checking for now. The trigger stays on
+  its task marked Paused, with a Resume button. Use it for "pause that", "stop
+  for a while"; delete only when the user wants it gone.
+- `trigger_resume '{"id":"..."}'`: turn it back on. It picks up where it left
+  off: whatever appeared while it was paused arrives as ONE fire on the first
+  check (a few seconds after resume; up to 200 items, the rest on the next
+  check), ids it delivered in the last 30 days are not delivered again, and the
+  fire budget still applies (a spent budget delivers the backlog on a later
+  check, never drops it). After about 30 days paused it may have forgotten
+  what it saw and start over like a new trigger. Resuming a stopped trigger
+  starts its error count over; fix the script first (`trigger_test`), or five
+  more failures stop it again.
+- `trigger_update '{"id":"...","timeoutSeconds":120}'`: change a trigger in
+  place: `every`, `timeoutSeconds`, `maxFiresPerDay`, `prompt`, `description`,
+  `name`, `run`, `cwd`; pass only what changes. It keeps its id, the items it
+  has seen and the script's cursor, so nothing already delivered fires again.
+  Never delete and arm it again to change it. Try a new `run` or limit with
+  `trigger_test` first; a paused or stopped trigger stays off until
+  `trigger_resume`. The Routines card's Edit does the same for the user.
+- `trigger_delete '{"id":"..."}'`: remove it for good. The script file stays on
+  disk.
+- When its task completes, Walnut pauses the task's triggers, and a reopen
+  resumes the ones it paused (one you paused yourself stays paused). A
+  trigger resumed by hand on a completed task stays on.
+- The task's TRIGGER pill and the Routines page show the same thing, with Pause
+  and Resume.
+- While the Walnut server is away (an answer says `offline: true`), your host
+  answers these itself for the triggers it checks: list, test, pause, resume
+  (one paused there) and delete take effect at once and reach Walnut when the
+  server is back. `trigger_create` works there too: the host arms the check at
+  once, delivers its fires into your session, and Walnut records it under the
+  same id when the server is back (the answer says `queued`; never create it
+  again). A template trigger, or one for a task or host your host does not
+  hold, still waits for the server.

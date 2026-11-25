@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/builderced/agent-skills (path: skills/metier-fr/fr-comptabilite/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Guide French accounting with Plan Comptable General (PCG), journal entries, TVA declarations, and liasse fiscale preparation.

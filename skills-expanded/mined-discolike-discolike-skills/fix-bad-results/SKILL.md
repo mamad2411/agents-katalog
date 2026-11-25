@@ -1,0 +1,24 @@
+---
+name: fix-bad-results
+description: Use when the user says "these results are wrong", "the counts do not add up", "why did I get fewer contacts?", or asks about verifier disagreements or repeat delivery charges. Follow the discolike skill's access and spend rules.
+allowed-tools: Read, Grep
+---
+
+# When results look wrong
+
+Follow the `discolike` skill's How to work rules first.
+
+Work top to bottom; the first fix usually ends it. Adding more exclusion language is almost never the answer.
+
+1. **Negations inside the ICP text.** "Does not sell apparel, candles, supplements" in `icp_prompt` pulls results toward those words; the text is matched on meaning, not read as rules. Strip every negative clause; describe only what the ideal company is.
+2. **A positive category too broad.** E-Commerce admits every DTC brand. Pick the narrowest positive category that still contains the targets before touching any negation.
+3. **Seeds that bridge into the noise.** Seeds are the strongest signal in the search. Read each seed with `extract-website-text`: a fitness wearable site reads as running and wellness, so sportswear follows. Do not mix sub-verticals in one search; run them separately, net-new billing makes the split free for repeats.
+4. **A seed that is the wrong company.** Guessed domains resolve to the wrong business. Confirm each seed with `extract-website-text` before the first pull.
+5. **Boilerplate phrases.** `phrase_match` is OR, and "shop now", "free shipping", "official store" appear on every storefront, so they pass everything. Drop them; prefix product-specific phrases with `+` to require them, and use `|` for their variants (`+espresso machine|espresso machines`).
+6. **Bleed inside your own categories.** Negating a category or phrase only catches companies classified there or using that word. Recurring offenders go on an exclusion list; that is the backstop, not more text.
+7. **Precision levers.** `relevance` controls how far down the ranked list the search runs before estimated ICP fit drops too low: `MAX_RELEVANCE` stops earliest, `BALANCED` in the middle, `MAX_COVERAGE` runs longest and maps more of the market with a borderline tail. Leaving it out means no automatic stop, so set it on API and SDK calls (`DiscoverParams(relevance="BALANCED")`, CLI `--param relevance=BALANCED`). An empty later page means the market edge was reached, not that something broke. `variance` is deprecated; old values map onto `relevance`. `min_similarity` (0 to 99) drops the tail below a score. `consensus` (1 to 20, default 1) is how many top results are blended into the reference vector; higher is broader. `min_digital_footprint` defaults to 25 on a 0 to 800 scale; lowering it surfaces real companies with thin sites and usually moves the count more than headcount does, so step down gradually and look. `employee_range` "201,+" keeps the 10001+ bucket that "201,10000" drops. The real end of a niche is when results stop looking like fits, not when a count stops falling.
+8. **Counts that do not add up.** A vendor or country badge is a single-criterion worldwide total. Walk the chain with `count`, adding one filter at a time, and the drop becomes visible and explainable.
+9. **Volume mechanics that look like bugs.** Company discovery `max_records` below 20 is a 422, so a short tail page must still ask for 20. Contacts runs start automatically; poll `get-contacts-run` for progress and validated results. Its `rows_offset` and `rows_limit` page companies, keeping contacts together; compare the offset with `companies_total`, not `rows_total`.
+10. **Fewer contacts than requested.** `run.max_companies` counts companies delivering at least one validated contact, and `run.per_company` is a maximum. Companies with no validated contact are omitted and free. Delivery may stop short when candidates or budget run out. Read the run's status and summary, report actual coverage and spend, and use `cancel-contacts-run` to retain validated results when stopping. Reads and cancellation work after quota exhaustion.
+11. **A second verifier disagrees.** Only Validated and Validated (catch-all resolved) contacts are delivered with an email; LinkedIn contacts, when the run set `include_linkedin_only`, carry a LinkedIn profile and no email. Both are already validated; do not re-verify them. Validated (catch-all resolved) means a mailbox was proved on a domain accepting all mail, which another verifier may label catch-all or unknown.
+12. **Repeat delivery charges.** Every contacts delivery is billed, including repeats: 5 records per validated contact with a $10 per 1,000 contacts floor, plus 1 record per company delivering at least one when searching without a supplied company list. Resume by reading the existing run instead of starting another one. Company discovery and enrichment reuse windows do not waive contacts delivery charges.

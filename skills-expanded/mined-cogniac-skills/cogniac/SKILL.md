@@ -1,0 +1,366 @@
+---
+name: cogniac
+description: Query and manage the Cogniac computer vision platform. Use when working with Cogniac tenants, applications, subjects, media, EdgeFlow/CloudFlow appliances, cameras, deployments, or workflows — including uploading media, checking fleet status, reading aggregate stats, or monitoring EdgeFlow/CloudFlow clusters. Triggers on references to Cogniac, CloudCore, EdgeFlow, CloudFlow, visual apps, or cogniac cli/sdk.
+---
+
+# Cogniac SDK & CLI
+
+## Overview
+
+Interact with the Cogniac enterprise AI computer vision platform.
+
+**Pick the right interface:**
+1. **`cogniac` CLI** — JSON output, designed for agent consumption. Use for any task it covers.
+2. **`cogniac` Python SDK** — for anything the CLI doesn't expose. See `references/python-sdk.md`.
+
+## Key Concepts
+
+- **Tenant** — an organization/account. Users may belong to multiple tenants.
+- **Application** — an ML pipeline consuming input subjects and producing output subjects. Types: `classification`, `box_detection`, `point_detection`, `point_count_detection`, `integration`, `http_input`, `camera_capture`.
+- **Subject** — a category or concept (e.g., "defect", "good part"). Media flows through the system via subject associations.
+- **Media** — an image or video with metadata, detections, and subject associations.
+- **CloudCore** — Cogniac's cloud SaaS platform: the API, web app, and core backend services that EdgeFlow and CloudFlow connect back to. Hosted at `api.cogniac.io`.
+- **EdgeFlow** — an on-premise GPU appliance running inference. Hardware models include `RM-ML80` and `IPC-M20`.
+- **CloudFlow** — the cloud-hosted equivalent of EdgeFlow: same inference system, runs in CloudCore (server-side rather than on an EdgeFlow device).
+- **Deployment Group** — a logical grouping of EdgeFlows for coordinated model rollout. A workflow is considered **deployed** if its ID appears as the `target_workflow_id` in any deployment group.
+- **Network camera** — considered **in use** when an app of type `camera_capture` references its `network_camera_id` in `app_type_config.camera_group_list`.
+- **Detection** — a model prediction or human judgment linking media to a subject with a probability (0-1).
+- **Consensus** — the agreed label for a media-subject association: `True`, `False`, `Sidelined`, or `None` (undecided).
+- **Feedback** — user-supplied corrections used to retrain models.
+
+## Setup
+
+The `cogniac` CLI ships in the `cogniac` PyPI package (requires Python >= 3.11). Use **>= 3.4.0** — earlier versions lack some of the commands documented below. Check with `cogniac --version`. If the command is missing or older, install or upgrade:
+
+```bash
+pip install 'cogniac>=3.4.0'
+```
+
+### Authentication
+
+In the common case credentials are already in place, so `cogniac auth` is all you need — it validates the stored credential and confirms you're ready to go. Only if that fails do you need to log in:
+
+```bash
+cogniac auth              # validate credentials
+cogniac auth login        # only if `cogniac auth` fails: opens the browser, authenticates
+                          # via your existing Cogniac web session (password or SAML SSO),
+                          # and stores a per-user API key for subsequent use
+```
+
+After one browser round-trip the credential is stored and picked up automatically by the CLI and SDK on every subsequent run — no manual key handling.
+
+Tenant selection: most commands also need a tenant. Set `COG_TENANT`, or pass the top-level `--tenant <tenant_id>` flag, which overrides `COG_TENANT` for a single invocation (handy when switching tenants without re-exporting env vars): `cogniac --tenant <tenant_id> apps list`. `cogniac tenants` and `cogniac auth` are the exceptions — they don't need a tenant.
+
+> Credential precedence (highest-to-lowest — the CLI/SDK uses the first it finds): explicit args → `COG_API_KEY` → stored login from `cogniac auth login`. So an exported `COG_API_KEY` takes priority over a stored login if both are present.
+
+### First steps for any task
+
+1. **Verify credentials:** `cogniac auth`. If it errors, run `cogniac auth login` and try again.
+2. **Resolve the tenant** if `COG_TENANT` is not set or the user didn't name one. List with `cogniac tenants` and ask which to use; filter by keyword with jq:
+   ```bash
+   cogniac tenants | jq '.tenants[] | select(.name | test("keyword"; "i")) | {tenant_id, name}'
+   ```
+   Then either `export COG_TENANT=<tenant_id>` for the rest of the session, or pass `--tenant <tenant_id>` on each invocation.
+3. **Run the task** using the command reference below.
+
+## CLI Command Reference
+
+All commands output JSON. Pipe into `jq` to filter, project, or aggregate.
+
+### Command surface & conventions (cogniac >= 3.2.0)
+
+The CLI is a **nested noun → sub-noun → verb** tree — e.g. `application consensus release list`, `edgeflow event reboot`, `media detection create`, `deployment target workflow set`. Resource ids are `--<resource>-id` flags (`--application-id`, `--subject-uid`, `--edgeflow-id`, `--media-id`, …); the older **positional** spelling (`apps get <id>`) and the flat/hyphenated spellings still resolve as deprecated aliases, so the examples below remain valid. Singular/plural and synonym tokens are interchangeable in every position (`app`/`apps`/`application`, `edgeflow`/`gateway`, `cert`/`certificate`, `eval`/`evaluation`).
+
+**Discover the whole surface in one call** rather than walking `--help`:
+
+```bash
+cogniac commands        # JSON array of every command: [{command, help, args:[{name, positional, required, type, choices, help}]}]
+cogniac commands | jq -r '.[].command'                                 # list all command paths
+cogniac commands | jq '.[] | select(.command=="application events")'   # exact args for one command
+```
+
+Cross-cutting behavior that applies everywhere:
+
+- **Output format** — `--format json` (default) `| jsonl | table`. `jsonl` emits one object per line for large streams (compose with `--limit`, pipe to `jq`/`head`).
+- **Global flags anywhere** — `--format` and `--tenant` are accepted *before or after* the command (`cogniac application list --format jsonl`).
+- **Request bodies** — verbs that take `--body` accept inline JSON, `@FILE`, or `-` (stdin), so large payloads don't fight shell quoting. Update verbs also accept per-field flags as an alternative to `--body`.
+- **Timestamps** — `--start`/`--end` accept epoch seconds **or** ISO 8601.
+- **Pagination** — list verbs return the **complete result set by default** (the SDK follows the API's pagination automatically). Cap with `--limit N`, resume with `--cursor`. Two expensive reads keep a default cap: `edgeflow status` (`--limit 10`) and `subject media` (`--limit 100`) — pass a larger `--limit` to widen. When `--limit` truncates a result, a `{"truncated": true, …}` notice is written to **stderr** (stdout stays a clean array/stream).
+- **Errors** — failures print a structured envelope to **stderr** and exit non-zero: `{"error": {"type", "status", "message", "hint"}}`, where `type` is one of `auth` / `client` / `server` / `connection` / `rate_limit`. Branch on `type`; `hint` is an optional self-heal suggestion, present only when an action applies (e.g. an `auth` error hints to run `cogniac auth login`) — don't assume it's always there.
+
+Beyond the families documented below, the surface now also covers application sub-resources (`events`, `event types`, `detections pending`, `replay`, `performance`, `feedback`, `consensus history`/`consensus release`, `evaluation metrics`, `model` download/donate/export, `build`, `type`); `edgeflow event` device control (`reboot`/`ping`/`upgrade`/`factory-reset`/`flush-upload-queue`/`time-bound-media-upload`/`trigger-camera-capture`) and `edgeflow certificate`; `media detection`/`embeddings`/`share`; `subject detections`/`consensus history`/`disassociate`; `deployment` (`edgeflows`, `history`, `prepull`, `target workflow set`, `deploy`, `deploy-status`, `capacity`); `workflow` versions, diff/summary, and deployment targets; and `user` + `user api-key` + `tenant user` management. Each name above is a namespace; the leaf commands that appear in `cogniac commands` are its verbs (e.g. `media detection` → `media detection {list,create}`), so filter on a full leaf path. Run `cogniac commands` (or `<noun> --help`) for the exact flags of any of these.
+
+### Auth & Tenants
+
+```bash
+cogniac auth login                              # browser login (preferred); stores a per-user API key
+cogniac auth                                    # validate credentials, show tenant count
+cogniac tenants                                 # list all authorized tenants (no COG_TENANT needed)
+cogniac tenant                                  # current tenant info
+```
+
+### Applications
+
+```bash
+cogniac apps list                               # list all apps in tenant
+cogniac apps get <application_id>               # get app details
+cogniac apps eval-metrics <application_id>      # list active evaluation-metric configs (point_count_F1, etc.) with detection thresholds, subject weights, primary/active flags
+cogniac apps leaderboard <application_id>       # ranked candidate-model snapshot. Flags: --set-assignment {validation,training}, --snapshot-type {regular,int8}, --eval-metrics {primary,all}, --top N, --full
+cogniac apps evaluate --application-id <id> --predictions preds.jsonl [--consensus-release-id R]
+                                                # (cogniac >= 3.4.0) score your own predictions (probability, boxes, points
+                                                # or OCR text) against a consensus release with CloudCore's scorer; stores nothing
+```
+
+Prediction fields by app type: the [SDK README](https://github.com/Cogniac/cogniac-sdk-py#synchronous-api), after the `evaluate` example.
+
+### Evaluation metrics
+
+An app has up to five active evaluation metrics; models are ranked and released by the primary one (cogniac >= 3.5.0):
+
+```bash
+cogniac application evaluation metrics schema [--name box_F1]    # what each metric scores; its parameters, defaults, ranges
+cogniac application evaluation metrics set-primary --application-id <id> --evaluation-metric-hash <hash>
+cogniac application evaluation metrics delete --application-id <id> --evaluation-metric-hash <hash>   # not the primary
+```
+
+Hashes come from `apps eval-metrics`. Read `schema` before choosing or configuring a metric.
+
+### Descriptions
+
+Tenant, app and subject descriptions kept in a `descriptions-<tenant_id>.yaml` file, e.g. under git (cogniac >= 3.4.0):
+
+```bash
+cogniac --tenant <id> descriptions export [--application-id <id>]   # live descriptions -> descriptions-<tenant_id>.yaml
+cogniac descriptions plan descriptions-<tenant_id>.yaml             # file vs live; exit 2 if anything differs
+cogniac descriptions apply descriptions-<tenant_id>.yaml --yes      # write the differences; unlisted entries are untouched
+```
+
+File format: the SDK README's [Descriptions under version control](https://github.com/Cogniac/cogniac-sdk-py#descriptions-under-version-control). `apply` writes to the tenant: run it from a reviewed, merged file.
+
+### Subjects
+
+```bash
+cogniac subjects list                           # list all subjects
+cogniac subjects get <subject_uid>              # get subject details
+cogniac subjects search --name "exact name"     # exact name match
+cogniac subjects media <subject_uid>            # list media associations
+cogniac subjects media <subject_uid> --limit 10 --consensus True
+cogniac subjects create "My Subject" --description "desc"
+cogniac subjects associate <subject_uid> <media_id> --consensus True
+```
+
+### Media
+
+```bash
+cogniac media get <media_id>                    # get media metadata
+cogniac media download <media_id>               # download to <media_id>.<ext>
+cogniac media download <media_id> -o out.jpg    # download to specific path
+cogniac media search --filename "img.jpg"       # search by original filename
+cogniac media search --external-media-id "EXT-001"  # search by customer-supplied external ID
+cogniac media search --domain-unit "SN-123"     # search by domain unit (e.g. serial number / part ID the customer groups media under)
+cogniac media upload /path/to/image.jpg         # upload media
+cogniac media upload /path/to/image.jpg --subject-uid <subject_uid>  # upload and associate
+```
+
+`external_media_id` and `domain_unit` are customer-set fields on the media record. Use them when the user references their own identifier (e.g. a serial number, ticket ID) rather than a Cogniac `media_id`.
+
+### EdgeFlows
+
+```bash
+cogniac edgeflows list                          # list all EdgeFlow devices (note: last_seen/connection_status are null — use `health`)
+cogniac edgeflows get <gateway_id>              # get device details
+cogniac edgeflows health [--stale-minutes N]    # per-device liveness: last_seen + online, derived from latest status record
+cogniac edgeflows status <gateway_id>           # recent status events (all subsystems)
+cogniac edgeflows status <gateway_id> --subsystem gpus --limit 1            # latest GPU sample
+cogniac edgeflows status <gateway_id> --list-subsystems                     # distinct subsystems a device reports
+cogniac edgeflows status <gateway_id> --subsystem http-input-<app_id> --start <ts> --end <ts>   # time-range slice
+cogniac edgeflows metrics names                                            # catalog of host/runtime metric names
+cogniac edgeflows metrics list --metric-name <name> [--edgeflow-id <gateway_id>] [--start <ts> --end <ts>]
+```
+
+`--subsystem` is an exact-match filter. Built-in subsystems include `gpus`, `upload`, per-deployed-model detection counters named `model_detections_<model_instance_id>` (one per model), and `http-input-<application_id>` (one per deployed `http_input` app — see below).
+
+**To discover what a device reports, use `--list-subsystems`** (requires `cogniac >= 3.2.0`): it returns `{subsystem, last_seen, count}` for each distinct subsystem regardless of sample frequency, then query a specific one — e.g. `--subsystem model_detections_<model_instance_id> --limit 5`. Don't page through unfiltered `status` for discovery: on a busy device the default page is entirely high-frequency `model_detections_*`, so low-frequency subsystems (`http-input-*`, `gpus`, `cpu`, `memory`) never appear. `--list-subsystems` scans up to `--scan-limit` records (default 8000); if it hits the cap it writes a `{"scan_capped": true}` notice to **stderr** (stdout stays pure JSON) — raise `--scan-limit` to widen the window.
+
+Use `--start`/`--end` (epoch seconds or ISO 8601; requires `cogniac >= 3.2.0`) to slice a time window instead of paging `--limit`. They filter on the cloud-receipt clock (`cc_timestamp`), not device time — the two can diverge on a skewed or backfilling device.
+
+The `http-input-<application_id>` subsystem carries ingest-side request counts. Its samples have a `status.counters` array of `{path, method, status, count}` entries, where `count` is *cumulative*; differencing the `status == "200"` / `method == "POST"` counts between two samples and dividing by elapsed time gives the ingest request rate (req/s) — the offered load on that input, distinct from model latency. Two things make this the right tool for throughput trends: EdgeFlow status is retained far longer than container logs (days), so you can see a multi-day trend the cluster's rolling logs can't; and the same payload also holds an `http_request_duration_seconds` histogram (whole-request HTTP time, not model inference).
+
+**Computing ingest rate (req/s).** Pull a window with `--start/--end`, then for each `/process` endpoint difference its cumulative `POST`/`200` count across the window (`max − min`, the upper envelope), sum across endpoints, and divide by elapsed time:
+```bash
+cogniac edgeflows status <gateway_id> --subsystem http-input-<app_id> --start <ts> --end <ts> \
+  | jq '[.[] | {t: .gw_timestamp,
+                counters: [.status.counters[]
+                  | select(.method=="POST" and .status=="200" and (.path|test("/process")))
+                  | {path, count}]}]
+        | ((max_by(.t).t) - (min_by(.t).t)) as $dt
+        | ([.[].counters[]] | group_by(.path)
+           | map((max_by(.count).count) - (min_by(.count).count)) | add // 0) as $reqs
+        | if $dt > 0 then $reqs / $dt else error("window needs >= 2 samples with /process traffic") end'
+```
+The `group_by(.path)` matters: an `http_input` app commonly exposes more than one `/process` endpoint, so you must difference **each path independently** and then sum — collapsing all paths into one `max − min` mixes counts across endpoints and gives a wrong rate. The `add // 0` yields `0` for a window with no matching `/process` POST/200 traffic (instead of erroring on `null`), and the `$dt` guard gives a clear message when the window spans fewer than two distinct sample times rather than dividing by zero.
+
+**Multi-replica correctness.** When an `http_input` app runs more than one replica, the cumulative counter jumps or regresses as the agent samples different pods. **Track the per-endpoint cumulative max (upper envelope); never sum positive consecutive deltas** — naive delta-summing overcounts by ~20×. The per-path `max − min` above is envelope-safe.
+
+**Timestamp schema.** Each status record carries up to three clocks: `gw_timestamp` (gateway sample clock, always present — the correct denominator for rate math), `cc_timestamp` (cloud-receipt clock, always present — what `--start/--end` filter on), and `timestamp` (guaranteed present in `cogniac >= 3.2.0`, aliased to `gw_timestamp` when the backend omits it). Sort/diff on `gw_timestamp`; on older builds ~15% of records lack `timestamp`, so `sort(key=lambda s: s["timestamp"])` `KeyError`s partway through a window.
+
+**Counter conventions differ by subsystem** — mixing them silently corrupts results:
+
+| Subsystem | Counter convention |
+|---|---|
+| `http-input-<app_id>` | **cumulative** request counts — difference between samples; use the envelope for multi-replica apps |
+| `model_detections_<id>` | **per-window** counts (`window_start`/`window_end`) — don't difference across windows |
+
+For host/runtime telemetry (cpu/disk/connectivity — hundreds of metric names) use the **`edgeflows metrics`** family (requires `cogniac >= 3.2.0`) rather than hand-differencing status counters: `metrics names` lists the available names; `metrics list --metric-name <name>` returns Grafana-shaped `[timestamp_seconds, value]` series, tenant-wide or scoped to one device with `--edgeflow-id`. `--start/--end` are optional but must be supplied together (epoch seconds or ISO 8601).
+
+For deeper debugging beyond `cogniac edgeflows status` — pod logs, events, deployment state on the cluster itself — fetch a read-only kubeconfig via the SDK + Rancher and drive `kubectl` directly. Works for both EdgeFlow and CloudFlow clusters. See `references/edgeflow-kubectl-access.md`.
+
+**Integration apps run frozen on the appliance.** Apps of `type: integration` deploy via the `/1/builds` endpoint and run on EdgeFlow as part of a **frozen deployment-workflow snapshot**. Two consequences when one looks broken:
+- **A cloud-side `active` toggle generally does NOT reach the running on-appliance process** — it may be a no-op against the actual process while risking a deployment re-sync of the whole appliance. Restarting/redeploying is an appliance-side action owned by the EdgeFlow operators; hand off rather than toggle.
+- **The only reliable liveness signal is media recency on the app's output subjects vs. its input subjects** — `input_queue_count` is always 0 for EdgeFlow apps (processing is local, so the cloud queue number carries no liveness information). Live input + dead output = that app's process is dead; an identically-configured sibling producing on the same appliance proves the appliance itself is healthy.
+
+### Cameras
+
+```bash
+cogniac cameras list                            # list all network cameras
+cogniac cameras get <network_camera_id>         # get camera details
+
+# All camera IDs referenced by camera_capture apps (i.e. cameras in use)
+cogniac apps list | jq '[.[] | select(.type == "camera_capture") | .app_type_config.camera_group_list[]?] | unique'
+
+# Count cameras in use
+cogniac apps list | jq '[.[] | select(.type == "camera_capture") | .app_type_config.camera_group_list[]?] | unique | length'
+```
+
+### Deployments & Workflows
+
+```bash
+cogniac deployments list                        # list all deployment groups
+cogniac deployments get <deployment_group_id>   # get specific deployment group
+cogniac deployment history --deployment-group-id <id>   # per-EdgeFlow deployment events, newest first (--no-reverse for chronological)
+cogniac deployment deploy --deployment-group-id <id> --workflow-id <wf> [--now] [--timeout S]   # DISPATCH a rollout
+cogniac deployment deploy-status --deployment-group-id <id>   # convergence: {target, current, next, deploy_now, converged}
+cogniac workflows get <workflow_id>              # get workflow details (full record incl. app_specs)
+cogniac workflow version list --base-id <BASE>   # enumerate a base's versions, newest first
+cogniac workflow diff <workflow_a> <workflow_b>  # apps added/removed; per-app model-image & threshold changes
+cogniac workflow summary --workflow-id <id>      # model composition: wrapper object {workflow_id, version, app_count, apps: [...]}, NOT a bare array
+```
+
+**Deploying vs. recording a target — these are different operations.** A deployment group tracks a small state machine: `target_workflow_id` (what the group should converge to), `current_workflow_id` (the last workflow actually applied), and `next_workflow_id` / `deploy_now_workflow_id` (a pending dispatch). `cogniac deployment target workflow set` only **records** the target — it does **not** deploy anything (since 3.3.0 it prints a stderr warning saying so). To actually roll out, use `cogniac deployment deploy`, which sets `next_workflow_id` and advances `target_workflow_id` to match on dispatch — so `deploy --workflow-id` supersedes any previously recorded target; you don't need `target workflow set` first. When the group has no schedule the dispatch is immediate; when a cron `scheduled_time` is configured, `next_workflow_id` stays populated until the scheduler's next tick (`--now` uses `deploy_now_workflow_id` and bypasses the scheduler entirely). Verify with `deploy-status`: its response includes a ready-made `converged` boolean (`current == target` with `next` null).
+
+Deploy-dispatch caveats:
+- The server blocks until every EdgeFlow accepts, so large groups can exceed the client read timeout (default 300s; raise with `--timeout`). **A client timeout does not mean the dispatch failed** — it often completed server-side. Check `deploy-status` before retrying; the dispatch is not idempotent and is deliberately not auto-retried.
+- `workflow version list` returns **summary records without `app_specs`** — fetch the full workflow (`workflows get`) before diffing or summarizing via the SDK. (`cogniac workflow diff A B` fetches full records itself.)
+- Attribution gotchas: a deployment group's `created_by` is its **original creator**, not whoever changed it last, and `deployment history` records do not carry the initiating user. Don't attribute recent changes from these fields.
+
+To find what changed between two deployed versions (e.g. investigating an unexpected rollout): get each group's `target_workflow_id` history from `deployment history`, then `cogniac workflow diff <old> <new>` — a single model-image retag across 100+ app specs shows up as one prominent `apps_changed` entry. Note the diff output shows each prominent change twice — as a shorthand key (`model_runtime_image: {old, new}`) and again inside the full `changed` path map; it's one change, not two.
+
+### System
+
+```bash
+cogniac --version                               # CLI/package version (the `cogniac version` subcommand was removed in 3.2.0)
+cogniac commands                                # full machine-readable command catalog (see above)
+```
+
+## Common Agent Workflows
+
+### Find apps using a specific subject
+Substitute the real subject UID for `s1a2b3c4d5`:
+```bash
+cogniac apps list | jq --arg s "s1a2b3c4d5" '[.[] | select(.input_subjects[]? == $s or .output_subjects[]? == $s) | {application_id, name, type}]'
+```
+
+### Check EdgeFlow fleet health
+```bash
+cogniac edgeflows health                                          # whole fleet: {gateway_id, name, deployment_group_id, current_workflow_id, last_seen, online}
+cogniac edgeflows status <gateway_id> --subsystem gpus --limit 1  # latest GPU sample for one device
+```
+`health` derives liveness client-side from each device's newest status record (cloud-receipt clock, one bounded GET per device) — it is not a true heartbeat; a device replaying backlogged status can briefly look online, and `online: null` means "could not determine" (fetch error), distinct from `false` (determined stale). The `last_seen`/`connection_status` fields on `edgeflows list`/`get` records are not populated by the backend.
+
+### Trace media through the pipeline
+```bash
+cogniac media search --domain-unit "SERIAL-001" | jq '.[0].media_id'
+cogniac media get <media_id> | jq '{media_id, filename, status}'
+```
+
+### List deployed workflows
+```bash
+cogniac deployments list | jq -r '[.[].target_workflow_id // empty] | unique | .[]' | while read wid; do cogniac workflows get "$wid"; done
+```
+
+### List / audit every workflow base in the tenant
+The CLI's `workflow` namespace only covers a single base's versions and
+deployment targets — there's no bulk-list subcommand. Reconstructing
+the set from `deployments list` / deployment-group history only
+surfaces bases that were actually deployed to a group; it misses bases
+created but never deployed. To enumerate every workflow base in the
+tenant (e.g. to audit names or find orphaned bases), hit
+`GET /1/tenants/current/workflows?base=True` directly via the SDK's
+authenticated session, paginating on `last_key`:
+```python
+from cogniac import CogniacConnection
+cc = CogniacConnection()  # tenant from COG_TENANT / tenant_id=
+url = cc.url_prefix.rstrip('/') + '/1/tenants/current/workflows'
+bases, last_key = [], None
+while True:
+    params = {'base': True, **({'last_key': last_key} if last_key else {})}
+    d = cc.session.get(url, params=params, timeout=cc.timeout).json()
+    bases.extend(d['data'])
+    last_key = d.get('last_key')
+    if not last_key:
+        break
+```
+See `GET /1/tenants/current/workflows` in
+[ef-app-provisioning](references/api/ef-app-provisioning.md) for the
+full param/response reference.
+
+## Python SDK
+
+For anything the CLI doesn't cover, use the Python SDK. The full reference is in `references/python-sdk.md`.
+
+## Other CLIs shipped with the `cogniac` package
+
+The `cogniac` PyPI package installs additional command-line utilities alongside the `cogniac` CLI:
+
+### Bulk upload (`cogupload`)
+
+For uploading many files in parallel to an input subject:
+
+```bash
+cogupload <subject_uid> <directory_name>
+```
+
+`cogupload` uses sensible defaults for parallelism and retry. It does not set the `consensus` flag, so it is suitable for ingesting raw input data for training or inference, not for labeling correction.
+
+### Aggregate stats (`cogstats`)
+
+```bash
+cogstats -t "$COG_TENANT" [-g <gateway_id>] [-s <start_ts>] [-e <end_ts>]
+```
+
+Reports pixel counts processed and detections emitted in the time window. Default window is the last five minutes. Note: `cogstats` requires the tenant as a `-t` flag — it does not read `COG_TENANT` from the environment automatically. As of `cogniac >= 3.2.0` it sums across all per-model `model_detections_<id>` subsystems, so it reports correct totals for CloudFlow and per-model devices; earlier versions returned `0 detections / 0 pixels` for these even while they were actively processing.
+
+## Common pitfalls
+
+- **Multi-tenant accounts**: omitting `COG_TENANT` (or `tenant_id=` in the SDK) on a user authorized for more than one tenant causes `CogniacConnection()` to raise `ClientError(400): Unauthorized` at construction. Always set it explicitly — via `COG_TENANT`, the CLI's `--tenant` flag, or `tenant_id=` to the SDK. (The CLI's `cogniac auth` and `cogniac tenants` are the exceptions — they don't need a tenant.)
+- **Authentication**: prefer `cogniac auth login` (stored credential). If you also export `COG_API_KEY`, note it takes precedence over the stored login.
+- **Rate limits**: the public API enforces rate limits. As of `cogniac >= 3.2.0` the SDK/CLI retry `429` responses automatically with exponential backoff (honoring `Retry-After`); from the CLI a persistent `429` surfaces as an error envelope with `type: "rate_limit"`. On earlier versions you must handle `429` and back off yourself.
+- **Region / URL prefix**: the default `https://api.cogniac.io` points at Cogniac CloudCore. Override `COG_URL_PREFIX` (or pass `url_prefix=` to `CogniacConnection`) when targeting a different deployment. Either `https://host` or `https://host/` is accepted — the SDK strips trailing slashes and any `/<version>` suffix on load.
+- **Subjects vs. applications**: subjects describe *what* you care about; applications describe *how* media flows between subjects. Don't conflate them.
+- **Uploads are large**: prefer `cogupload` for bulk ingestion over a custom loop; it handles parallelism and retries.
+- **Per-media fields default off**: `media_associations()` defaults to `abridged_media=True`, which omits `domain_unit`, `sequence_ix`, and full `app_data`. Pass `media_associations(abridged_media=False)` to get the full per-media dict (keeps SDK retry) — see the method's entry in `references/python-sdk.md`.
+- **Assertion comment**: feedback, capture and detection submit accept an optional `comment` (at most 4096 characters) that is stored with the assertion and returned on detection reads. From the SDK: `subject.associate_media(..., comment=...)`, or a `comment` key in each `app.post_feedback` subject dict.
+- **Deletion ordering**: deactivate apps before deleting them (`app.active = False`, save, then `.delete()`), and delete subjects only after the apps referencing them are gone. The wrong order returns unhelpful 4xx errors.
+
+## References
+
+- REST API reference: `references/api/README.md` — service catalog, core concepts, and per-service endpoint documentation.
+- Python SDK reference: `references/python-sdk.md`.
+- User guide: `references/user-guide/INDEX.md` — tutorial- and concept-oriented docs (app types, deployments, best practices, FAQ).
+- Read-only kubectl access to EdgeFlow/CloudFlow clusters: `references/edgeflow-kubectl-access.md`.
+- Python SDK source: https://github.com/Cogniac/cogniac-sdk-py
+- PyPI package: https://pypi.org/project/cogniac/
+
+## Feedback
+
+This skill is meant to make Cogniac easy to drive from an agent. If anything got in your way — a command that didn't behave as documented, a field that wasn't explained, a workflow you couldn't accomplish from what's here, or guidance you wish existed — please open an issue at https://github.com/Cogniac/skills with a short note on what you were trying to do and where the skill fell short.

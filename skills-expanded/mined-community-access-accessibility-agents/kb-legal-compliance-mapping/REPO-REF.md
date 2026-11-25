@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/community-access/accessibility-agents (path: skills/kb-legal-compliance-mapping/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Reference data, not a reviewer. Map accessibility audit results to legal frameworks: Section 508, ADA, EN 301 549, EAA, AODA. Generate VPAT 2.5 conformance tables."

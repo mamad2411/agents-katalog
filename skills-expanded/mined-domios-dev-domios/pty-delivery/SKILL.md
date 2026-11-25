@@ -1,0 +1,243 @@
+---
+name: pty-delivery
+description: "Review or change Domios PTY input delivery under its evidence rules."
+---
+
+# PTY input delivery — the contract
+
+PTY delivery is core infrastructure and it is fragile: every provider TUI
+ingests pastes and Enter differently, ConPTY adds its own echo and timing
+quirks, and false-positive *failures* after successful delivery are worse than
+silent success — they teach users to distrust the product and invite duplicate
+sends. This contract exists because the path has been broken repeatedly by
+well-meaning "one more heuristic" changes. Read this before touching
+`service/pty_io/`, `service/chat_send_transaction.rs`,
+`pty/write_queue.rs`, or the delivery ledger.
+
+## The model: optimistic delivery, honest eventual classification
+
+1. **The payload is written at most once.** One bracketed paste to the exact
+   PTY the caller resolved. Nothing may ever re-write the payload — not a
+   retry loop, not a recovery path, not a watchdog.
+2. **Submission uses a bounded key-only schedule.** Write the payload once. A
+   provider capability may declare a bounded first-key offset; elapsed time
+   triggers an attempt and never claims readiness. After a key, exact normalized
+   user-turn evidence in this tab's bound-session append window stops remaining
+   keys. Never use screen/composer text as acknowledgement or branch on provider
+   identity. Each PTY owns one resettable submit cycle; a newer send cancels the
+   previous cycle's remaining keys while preserving its already-queued payload.
+   The explicit user-send exception is a bounded durable queue of never-written
+   originals: 32 unsettled records and 4 MiB prepared/body bytes per tab, with
+   original storage separately bounded. Sends are held only until the current
+   launch's exact PTY generation reaches `AgentReady`, then queued sends flush in
+   admission order. For a provider capability that starts its session on the
+   first user turn, same-attempt structural composer evidence from this tab's
+   own PTY may admit exactly one first user send while nonce binding is pending.
+   The durable send id owns that one-shot permit; after its payload is queued,
+   further sends stay held until the launch binds and reaches `AgentReady`.
+   Composer evidence permits this initial write only; it never confirms delivery.
+   Every later send enters the same ordered PTY write owner,
+   waiting only for earlier preparation or payload enqueue, never agent work or
+   submit recovery. A newer payload cancels the previous cycle's remaining keys. If exact
+   session binding is missing before that readiness,
+   the owner-approved adapter fallback may release a restored head only after two
+   distinct same-launch, same-generation ready-idle verdicts at least 0.90, with
+   composer readiness at least 0.90 and prompt probability at most 0.10, followed
+   by immediate prewrite revalidation. Without an adapter or qualifying evidence,
+   the head stays held with a logged pending reason. Readiness latches for an `AgentReady`
+   launch; later busy state, missing turn evidence, or unsettled recovery never
+   gates another write. Possible handoffs and crashed claims remain held
+   uncertainty; no postwrite replay, reopen adoption, or rebind.
+3. **Exact turn evidence confirms delivery.** Missing evidence remains
+   uncertainty, never a fabricated success or a zero-write claim. Once a paste
+   reaches the write queue, its status becomes `written` immediately. Later
+   status is `delivered` only on exact own-session user-turn evidence, or
+   `submit_unconfirmed` when evidence is absent. Late evidence may upgrade an
+   unconfirmed send. Cancelling the remaining submit keys never fails a queued
+   payload.
+
+## Classification invariants (`DeliveryError`)
+
+- `pty_unavailable` / `tab_busy_refused` mean **nothing was written**. They may
+  only be produced by failures that happen strictly before the paste reaches
+  the write queue (no session, preflight refusal, launch gate).
+- Once the paste has been handed to the PTY write queue, the transaction may
+  only fail as `submit_unconfirmed` (`bytes_written = true`). A submit-key
+  write error, a revoked permit, even a PTY that dies after the paste — all of
+  these are post-write uncertainty, not "no usable PTY".
+- A write-queue **acknowledgement timeout is not a closed PTY**
+  (`write_queue::is_write_ack_timeout`). The request is enqueued on the
+  serialized writer and normally still lands; claiming `pty_unavailable` here
+  is exactly the false-failure incident this contract was written for.
+
+## Durable user admission conserves accepted sends
+
+An admitted USER-initiated send (chat UI, via `start_chat_send`) remains
+conserved or honestly classified. Bounded durable admission can refuse capacity,
+preparation, or persistence before acceptance; clear the composer immediately and retain the message and attachments on one optimistic
+bubble, including rejected or ambiguous RPC completion, without automatic resubmit.
+Acceptance requires payload and index durability off the UI/runtime and outside
+mux/ledger locks. This user backlog is separate from launch/bootstrap replacement.
+The prewrite owner holds sends accepted before the current launch's readiness
+latch or owner-approved restored-session adapter fallback, then writes those held
+sends in admission order. For a lazy-session capability, matching own-PTY composer
+evidence admits only the first user send while binding is pending; the exact send
+id owns that one-shot permit and later sends remain held until binding. A post-latch Chat UI send proceeds directly to its PTY
+write even when the provider is busy or another submit cycle is unsettled. Proven
+zero-write refusal retains that send as held; possible handoff becomes
+`submit_unconfirmed` and never replays. Before first readiness, submitted socket text without a source tab uses the same durable user owner.
+Programmatic agent/mesh sends keep the existing honest typed split. Immediate CLI
+sends exit 1 when `ok:false` or `bytes_written:false`, even for retained input;
+JSON errors retain the daemon receipt in `data`. Inspect retained status and exact
+own-session evidence without replaying the send. A held, never-written queued
+record follows the next launch of the same tab, provider and known bound session,
+including across a daemon restart; identity and admission order are conserved.
+A changed session or provider ends that authority and settles it as `failed`
+with `launch_ended_before_write`. Missing session identity stays held.
+Claimed or uncertain records remain held and are never replayed.
+
+## The Chat send ledger reconciles by exact evidence
+
+`ChatSendLedger` is the authority the UI renders. Its rules:
+
+- The serialized states are `held`, `written`, `submit_unconfirmed`, `delivered`,
+  and `failed`. Transport uncertainty is `submit_unconfirmed` with no user-facing
+  error. A queued, never-written user send resolves to `failed` when its launch
+  ends or reports `SpawnFailed` before first readiness. Provisional launch deadlines
+  keep never-written sends visibly held with a pending reason and dismissal available.
+  Persist queue removal before
+  publishing Retry; late readiness cannot replay that settled original.
+  Programmatic sends may also fail on a proven pre-write refusal.
+- A structured runtime whose declared `turnScopedRequests` include `submitTurn`
+  holds a user send before any write while a turn or turn request is
+  outstanding (`held_active_turn`), and the user drain writes it once, in
+  order, when the turn settles. A written prompt the agent refused while busy
+  stays `submit_unconfirmed` with an `agent_refused_while_busy` reason: no
+  Retry, no replay, late own-session evidence still delivers it.
+- Held input can still reach a busy structured agent, each path write-once and
+  owned by `agent_runtime/inbound.rs`. An agent whose initialize declared
+  `midTurnInput` takes it through a submit aimed at the running turn; the reply
+  to that exact request is the evidence, and a proven decline returns it to the
+  queue. Otherwise a durable claim rides the tab's own host tool result, or the
+  human output of a CLI command whose stdout and stdin are both terminals, so no
+  pipe, capture or redirect can swallow it. Only the writer's acknowledgement
+  after the write confirms it; that proves the write, not that the model read it.
+  Only proof that no byte went out returns a claim; a partial write or missing
+  acknowledgement settles `submit_unconfirmed` when the turn ends and never
+  replays. What remains at turn end folds into one digest prompt whose exact
+  evidence confirms every member, and whose proven zero-write returns them all.
+- A degraded runtime owns no turn: its active turn clears and held sends resolve
+  once. The owner retries readiness and writes them in order when the runtime
+  loads again. If that attempt fails on the published degraded state, each
+  never-written send settles `failed` with `launch_degraded_before_write`;
+  sign-in and a replaced launch keep them held for the launch that follows.
+- Automatic recovery owns the runtime from the moment its exit is observed until
+  it knows the outcome (`runtime_recovery_owns_sends`). Its transient degrade
+  settles nothing: only its own continuation is written, then held sends follow
+  the resumed turn once each, in order. Its completion wakes the owner, and a
+  recovery that really failed settles them as above.
+- A failed user send offers Retry. A routed CLI or agent send (`system_send`)
+  deliberately does not: its frame carries the sender's provenance, which the
+  composer cannot reissue. Its card says to resend with `domios send` instead.
+- A restart continue on a structured runtime enters the same durable owner as a
+  runtime envelope: held behind a running turn, written once, and written means
+  awaiting evidence, never a failed delivery.
+- `written/submit_unconfirmed → delivered` only happens
+  when the tab's **own bound session transcript** appends a user turn whose
+  normalized content equals the send's payload
+  (`confirm_delivered_user_turn`). One turn confirms at most one send,
+  oldest first. Deltas only — history snapshots never feed reconciliation, so
+  stale identical turns can never confirm anything.
+- Every eligible send records a `SendEvidenceAnchor` at start: provider, cwd,
+  the tab's current-launch session identity, and a capability-typed
+  append-window boundary. A temporarily unbound file-backed launch may resolve
+  its session through the provider's bounded, cwd-scoped session detector.
+  Persisted reconciliation always requires the current launch nonce to equal
+  the nonce reported by the provider when it bound that session.
+  JSONL uses a transcript byte offset. If the exact acknowledged bound
+  session's append-only file does not exist yet, its first materialization is
+  the boundary; a generic missing path never defaults to offset zero.
+  Structured stores use the provider's opaque, exclusive
+  `read_structured_chat` cursor
+  (`uses_structured_chat` capability; a cursor-less non-empty store mints no
+  anchor rather than an unbounded window). If the structured session itself is
+  created by the send, its provider-reported creation time must be strictly
+  after the captured millisecond before the current binding can resolve that anchor. If
+  Chat was closed during delivery, the ledger read (`chat_send_status`) runs
+  `scan_transcript_evidence`: it
+  inspects ONLY that exact session's append window past the boundary, counts
+  exact matching user turns, verifies that nested suffix windows can assign one
+  distinct turn to every confirmed same-payload send, and confirms oldest-first. Pre-send
+  history, another/latest session, and already-consumed turns can never
+  confirm.
+- Daemon restart restores queued records and bounded settlement receipts into
+  the ledger before status reconciliation. Claimed and uncertain records restore
+  as uncertainty and never replay. Missing held statuses become uncertainty,
+  not a fabricated zero-write failure; a durable failure receipt allows Retry.
+  The frontend shows a failure
+  only while the CURRENT ledger vouches for it — a reconcile response that no
+  longer contains a tracked failed send removes the record (no false Retry is
+  preserved, and no fabricated `sent` replaces it; the durable transcript is
+  the remaining truth).
+- Evidence wins races: once a send is `sent` by turn evidence, a late
+  transport classification must not downgrade it (`finish` guard).
+- A send with no evidence after the recovery deadline remains `submit_unconfirmed`.
+  Anchored sends can still reconcile from later transcript evidence; a send
+  whose session or bounded window cannot be identified remains honestly
+  live-evidence-only. Chat shows one bubble per send: sending for written input, a quiet uncertain mark without Retry for
+  unconfirmed input, queued while held, normal when delivered, and a quiet
+  not-delivered mark with Retry for proven refusal or failed never-written input.
+  Retry reuses the bubble with a fresh correlation token and transaction; it never
+  replays uncertain or written input. Delete cancels queued input under the same durable
+  lock as claim; a claimed send can only be dismissed. Durable dismissal receipts
+  hide the bubble across restart and later evidence without replay. Delivered
+  bubbles have no Delete. Provider echoes reconcile into that bubble.
+
+## Written to the PTY means Enter, always
+
+After a launch's first readiness (event-based: `AgentReady`, nonce-verified binding)
+the payload is written once and Enter is pressed. The one lazy-session first-turn
+permit is the only earlier write path and requires structural composer evidence from
+the same launch's own PTY. No screen text, classifier, prompt, dialog or composer
+check may acknowledge delivery or gate any other payload write or Enter, busy or not,
+even with a numbered permission prompt on screen. Guards that remain are ownership
+and authority only (PTY owner, launch latch, model-command ownership, session
+authority). Delivery evidence stays exact own-session turn evidence.
+
+A utility command (`tab exec`, `tab new --cmd`, shell restart) targets an idle
+prompt and writes exactly one Enter after its payload, with no recovery keys. A
+later key reaches the started command, and on Windows it returns to the next
+PowerShell prompt as a literal `m` that prefixes the following command.
+
+The `pasted by Domios` marker paste follows the provider capability
+`paste.pasteMarkerWhen`: `multiline` adds it only when the body contains a line
+break (single-line bodies arrive plain); the default `always` keeps old behaviour.
+Expected turn evidence and the Chat reader follow the same rule.
+
+## Hard don'ts
+
+- No sleeps, polling intervals, or timer-driven "success" anywhere in the
+  path — deadlines are failure bounds around event waits only.
+- No provider-id branches; capability descriptors only.
+- Do not use screen/composer content to acknowledge delivery, infer readiness, or
+  admit more than the one capability-authorized lazy first turn. Exact
+  same-attempt structural composer evidence may authorize that first write only.
+  Never add payload retries or provider-id branches. Exact claimed-session transcript evidence
+  classifies a send and may stop its current key schedule; it never gates the
+  next post-ready send.
+- Do not "fix" a delivery bug by adding a retry that re-writes the payload.
+- Launch/bootstrap input never routes through the public post-ready send gate
+  (see AGENTS.md "Agent launch delivery").
+
+## Where the seams are
+
+| Concern | Owner |
+|---|---|
+| Serialized PTY writes + ack | `crates/codeterm-pty/src/pty/write_queue.rs` |
+| Paste/Enter transaction + classification | `service/pty_io/submit_transaction.rs` |
+| Injection error taxonomy | `service/inject_verify.rs`, `service/delivery_error.rs` |
+| Chat send ledger + turn-evidence reconciliation | `service/chat_send_transaction.rs` |
+| Closed-chat append-window evidence scan | `service/chat_send_evidence.rs` |
+| Live transcript deltas (evidence source) | `service/tab_chat/` sinks |
+
+<!-- revision: 15 -->

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bohuyeshan-apb/openagent-labforge-bio (path: resources/bioSkills/imaging-mass-cytometry/data-preprocessing/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Load and preprocess imaging mass cytometry (IMC) and MIBI data. Covers MCD/TIFF handling, hot pixel removal, and image normalization. Use when starting IMC analysis from raw MCD files or preparing ima

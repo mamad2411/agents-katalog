@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dicklesworthstone/pi_agent_rust (path: tests/ext_conformance/artifacts/plugins-community/plugins/performance/throughput-analyzer/skills/analyzing-system-throughput/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Analyze and optimize system throughput including request handling, data processing, and resource utilization. Use when identifying capacity limits or evaluating scaling strategies. Trigger with phrase
