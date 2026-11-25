@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-xyaz1313-xyskill-xy-script-glue/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 【逐字稿衔接】短视频逐字稿衔接检查——找出观众会在哪一秒跟不上：段与段之间断没断、段落里面水不水、句子念不念得动；分 🔴🟡🟢 三级给出位置和改法，报告后主动问要不要「标记式改稿」（原文不抹、改动成对标注、可撤回）。用户说「这稿顺不顺」「哪里会划走」「中间是不是啰嗦了」「逻辑有没有断」「帮我顺一遍稿子」「口播念着别扭」时触发。｜小爷出品

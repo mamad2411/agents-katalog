@@ -1,0 +1,661 @@
+---
+name: effect-concurrency-testing
+description: Test Effect concurrency primitives including PubSub, Deferred, Latch, Fiber coordination, SubscriptionRef, and Stream. Use this skill when testing concurrent effects, event-driven systems, or fiber coordination.
+---
+
+# Effect Concurrency Testing Skill
+
+This skill provides patterns for testing Effect's concurrency primitives: fibers, latches, deferreds, PubSub, SubscriptionRef, and streams.
+
+Baseline: **effect@4.1.0 stable**, with matching `@effect/vitest` (an unstable
+integration). Read exact `packages/vitest/src/index.ts`, `internal/internal.ts`,
+under `packages/vitest/src/`, and `packages/effect/src/testing/TestClock.ts` via
+`git show effect@4.1.0:<path>`. Its Vitest peer range is `>=5.0.0 <6.0.0`.
+Main may describe later behavior.
+
+The `@effect/vitest` examples below are source-reviewed against that tag, but
+are not marked for this repository's documentation typecheck: the companion
+package is intentionally absent and requires Vitest 5 rather than its Vitest 3
+runner. Core-only standalone examples retain their typecheck markers.
+
+## Core Principles
+
+**CRITICAL**: Choose the correct coordination primitive based on what you need to synchronize.
+
+| Need                              | Use                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| Simple fiber yield                | `Effect.yieldNow`                                                                     |
+| Wait for subscriber ready         | `Deferred.make()` + `Deferred.await`                                                  |
+| Wait for stream element           | `Latch.make()` + `Stream.tap(() => latch.open)`                                       |
+| Passive subscription registration | acquire `PubSub.subscribe` before publishing, or expose a readiness signal             |
+| Time-dependent behavior           | `TestClock.adjust`                                                                    |
+| Verify events published           | `PubSub.subscribe` + `PubSub.takeUpTo`                                                |
+| Check fiber status                | `fiber.pollUnsafe()`                                                                  |
+
+For `Stream.fromPubSub` registration, signal readiness after acquiring the actual
+subscription, not merely before starting the stream. A scheduler yield is not a
+general readiness guarantee; a sleep under `it.effect` also needs `TestClock`
+advancement. Prefer a subscription-first test seam to arbitrary delays.
+
+## Fiber Coordination Patterns
+
+### Effect.yieldNow - Simple Fiber Scheduling
+
+Use `Effect.yieldNow` when you need to allow other fibers to execute. This is preferred over `TestClock.adjust` for non-time-dependent code.
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit, Fiber, Latch } from 'effect';
+
+it.effect('fiber polling with yieldNow', () =>
+	Effect.gen(function* () {
+		const latch = yield* Latch.make();
+
+		const fiber = yield* latch.await.pipe(Effect.forkChild);
+
+		yield* Effect.yieldNow;
+
+		expect(fiber.pollUnsafe()).toBeUndefined();
+
+		yield* latch.open;
+
+		expect(yield* Fiber.await(fiber)).toEqual(Exit.void);
+	})
+);
+```
+
+### Latch - Explicit Coordination
+
+`Latch.make()` creates a gate that blocks fibers until opened:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Fiber, Latch } from 'effect';
+
+it.effect('latch coordination', () =>
+	Effect.gen(function* () {
+		const latch = yield* Latch.make();
+
+		const fiber = yield* Effect.gen(function* () {
+			yield* latch.await;
+			return 'completed';
+		}).pipe(Effect.forkChild);
+
+		yield* Effect.yieldNow;
+		expect(fiber.pollUnsafe()).toBeUndefined();
+
+		yield* latch.open;
+
+		const result = yield* Fiber.join(fiber);
+		expect(result).toBe('completed');
+	})
+);
+```
+
+### Latch Operations
+
+<!-- typecheck -->
+```typescript
+import { Latch } from 'effect';
+
+declare const latch: Latch.Latch;
+
+latch.await; // Wait until latch is open
+latch.open; // Open the latch (current and future waiters proceed)
+latch.close; // Close the latch (future waiters suspend again)
+latch.release; // Wake current waiters only; latch stays closed for future waiters
+latch.whenOpen; // Run effect only when latch is open
+```
+
+### Deferred - Signal Readiness Between Fibers
+
+Use `Deferred` when one fiber needs to signal another with a value:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Deferred, Fiber } from 'effect';
+
+it.effect('deferred signaling', () =>
+	Effect.gen(function* () {
+		const signal = yield* Deferred.make<number>();
+
+		const consumer = yield* Effect.gen(function* () {
+			const value = yield* Deferred.await(signal);
+			return value * 2;
+		}).pipe(Effect.forkChild);
+
+		yield* Deferred.succeed(signal, 21);
+
+		const result = yield* Fiber.join(consumer);
+		expect(result).toBe(42);
+	})
+);
+```
+
+### fiber.pollUnsafe() - Check Completion Without Blocking
+
+```typescript
+import { expect } from '@effect/vitest';
+import { Exit, Fiber } from 'effect';
+
+declare const fiber: Fiber.Fiber<string>;
+
+fiber.pollUnsafe();
+// Returns undefined if running
+// Returns Exit<A, E> if completed (success, failure, or interrupted)
+
+// Check if still running
+expect(fiber.pollUnsafe()).toBeUndefined();
+
+// Check if completed
+expect(fiber.pollUnsafe()).toBeDefined();
+
+// Check specific completion
+expect(fiber.pollUnsafe()).toEqual(Exit.succeed('result'));
+```
+
+## PubSub Event Testing
+
+### Direct Event Verification
+
+Use `Effect.scoped` to manage PubSub subscription lifecycle:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, PubSub } from 'effect';
+
+it.effect('verify published events', () =>
+	Effect.gen(function* () {
+		const pubsub = yield* PubSub.unbounded<string>();
+
+		yield* Effect.scoped(
+			Effect.gen(function* () {
+				const sub = yield* PubSub.subscribe(pubsub);
+
+				yield* PubSub.publish(pubsub, 'event-1');
+				yield* PubSub.publish(pubsub, 'event-2');
+
+				const events = yield* PubSub.takeAll(sub);
+
+				expect(events).toEqual(['event-1', 'event-2']);
+			})
+		);
+	})
+);
+```
+
+Both events are published **before** `PubSub.takeAll`, so it returns immediately. `PubSub.takeAll` suspends when the subscription is empty and always returns a `NonEmptyArray`; for non-blocking drains or “no more events” assertions, use `PubSub.takeUpTo(sub, n)` instead, which returns whatever is buffered (possibly an empty array).
+
+### Testing Event Publishers
+
+When testing a service that publishes events:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, PubSub, Context, Layer } from 'effect';
+
+interface UserEvent {
+	readonly type: 'created' | 'deleted';
+	readonly userId: string;
+}
+
+class EventBus extends Context.Service<EventBus, PubSub.PubSub<UserEvent>>()(
+	'EventBus'
+) {}
+
+class UserService extends Context.Service<
+	UserService,
+	{ readonly createUser: (id: string) => Effect.Effect<void> }
+>()('UserService') {}
+
+declare const UserServiceLive: Layer.Layer<UserService, never, EventBus>;
+
+it.effect('should publish user created event', () =>
+	Effect.gen(function* () {
+		const pubsub = yield* PubSub.unbounded<UserEvent>();
+
+		yield* Effect.scoped(
+			Effect.gen(function* () {
+				const sub = yield* PubSub.subscribe(pubsub);
+
+				const service = yield* UserService;
+				yield* service.createUser('user-123');
+
+				const events = yield* PubSub.takeAll(sub);
+
+				expect(events).toHaveLength(1);
+				expect(events[0]).toEqual({
+					type: 'created',
+					userId: 'user-123'
+				});
+			}).pipe(
+				Effect.provide(UserServiceLive),
+				Effect.provide(Layer.succeed(EventBus, pubsub))
+			)
+		);
+	})
+);
+```
+
+### Concurrent Publisher/Subscriber Testing
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Deferred, Effect, PubSub, Fiber, Latch, Array as A } from 'effect';
+
+it.effect('concurrent publishers and subscribers', () =>
+	Effect.gen(function* () {
+		const values = A.range(0, 9);
+		const latch = yield* Latch.make();
+		const ready = yield* Deferred.make<void>();
+		const pubsub = yield* PubSub.bounded<number>(10);
+
+		const subscriber = yield* PubSub.subscribe(pubsub).pipe(
+			Effect.flatMap((sub) =>
+				Effect.gen(function* () {
+					// Signal that the subscription is registered before publishing
+					yield* Deferred.succeed(ready, undefined);
+					yield* latch.await;
+					return yield* Effect.forEach(values, () =>
+						PubSub.take(sub)
+					);
+				})
+			),
+			Effect.scoped,
+			Effect.forkScoped
+		);
+
+		// Wait until the subscriber has actually subscribed (PubSub is not
+		// an event log — publishing before subscription would drop messages)
+		yield* Deferred.await(ready);
+
+		yield* PubSub.publishAll(pubsub, values);
+		yield* latch.open;
+
+		const result = yield* Fiber.join(subscriber);
+		expect(result).toEqual(values);
+	})
+);
+```
+
+## SubscriptionRef Testing
+
+### Testing Stream Changes with Latches
+
+The latch pattern ensures the stream subscription is ready before mutations:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Fiber, Latch, Number } from 'effect';
+import { Stream, SubscriptionRef } from 'effect';
+
+it.effect('multiple subscribers can receive changes', () =>
+	Effect.gen(function* () {
+		const ref = yield* SubscriptionRef.make(0);
+		const latch1 = yield* Latch.make();
+		const latch2 = yield* Latch.make();
+
+		const fiber1 = yield* SubscriptionRef.changes(ref).pipe(
+			Stream.tap(() => latch1.open),
+			Stream.take(3),
+			Stream.runCollect,
+			Effect.forkScoped
+		);
+
+		yield* latch1.await;
+		yield* SubscriptionRef.update(ref, Number.increment);
+
+		const fiber2 = yield* SubscriptionRef.changes(ref).pipe(
+			Stream.tap(() => latch2.open),
+			Stream.take(2),
+			Stream.runCollect,
+			Effect.forkScoped
+		);
+
+		yield* latch2.await;
+		yield* SubscriptionRef.update(ref, Number.increment);
+
+		const result1 = yield* Fiber.join(fiber1);
+		const result2 = yield* Fiber.join(fiber2);
+
+		expect(result1).toEqual([0, 1, 2]);
+		expect(result2).toEqual([1, 2]);
+	})
+);
+```
+
+### Testing Subscription Interruption
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit, Fiber, Latch, Number } from 'effect';
+import { Pull, Stream, SubscriptionRef } from 'effect';
+
+it.effect('subscriptions are interruptible', () =>
+	Effect.gen(function* () {
+		const ref = yield* SubscriptionRef.make(0);
+		const latch = yield* Latch.make();
+
+		const fiber = yield* SubscriptionRef.changes(ref).pipe(
+			Stream.tap(() => latch.open),
+			Stream.take(10),
+			Stream.runCollect,
+			Effect.forkScoped
+		);
+
+		yield* latch.await;
+		yield* SubscriptionRef.update(ref, Number.increment);
+		yield* Fiber.interrupt(fiber);
+
+		const result = yield* Fiber.await(fiber);
+
+		expect(Exit.hasInterrupts(result)).toBe(true);
+	})
+);
+```
+
+## Stream Testing
+
+### Collecting Stream Results
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect } from 'effect';
+import { Stream } from 'effect';
+
+it.effect('should collect stream elements', () =>
+	Effect.gen(function* () {
+		const result = yield* Stream.make(1, 2, 3, 4, 5).pipe(
+			Stream.filter((n) => n % 2 === 0),
+			Stream.runCollect
+		);
+
+		expect(result).toEqual([2, 4]);
+	})
+);
+```
+
+### Testing Stream Side Effects
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Ref } from 'effect';
+import { Stream } from 'effect';
+
+it.effect('should track side effects', () =>
+	Effect.gen(function* () {
+		const log = yield* Ref.make<string[]>([]);
+
+		yield* Stream.make('a', 'b', 'c').pipe(
+			Stream.tap((item) => Ref.update(log, (items) => [...items, item])),
+			Stream.runDrain
+		);
+
+		const logged = yield* Ref.get(log);
+		expect(logged).toEqual(['a', 'b', 'c']);
+	})
+);
+```
+
+### Testing Stream Errors
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit, Schema } from 'effect';
+import { Stream } from 'effect';
+
+class StreamError extends Schema.TaggedError<StreamError>()(
+	'StreamError',
+	{
+		message: Schema.String
+	}
+) {}
+
+it.effect('should handle stream errors', () =>
+	Effect.gen(function* () {
+		const result = yield* Stream.make(1, 2, 3).pipe(
+			Stream.mapEffect((n) =>
+				n === 2
+					? Effect.fail(new StreamError({ message: 'boom' }))
+					: Effect.succeed(n)
+			),
+			Stream.runCollect,
+			Effect.exit
+		);
+
+		expect(Exit.isFailure(result)).toBe(true);
+	})
+);
+```
+
+### Testing Stream Finalization
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Ref } from 'effect';
+import { Stream } from 'effect';
+
+it.effect('should run finalizers', () =>
+	Effect.gen(function* () {
+		const finalized = yield* Ref.make(false);
+
+		yield* Stream.make(1, 2, 3).pipe(
+			Stream.ensuring(Ref.set(finalized, true)),
+			Stream.take(1),
+			Stream.runDrain
+		);
+
+		expect(yield* Ref.get(finalized)).toBe(true);
+	})
+);
+```
+
+## Interruption Testing
+
+Test cancellation at the resource-owning boundary, using a `Deferred` to prove
+work has started before interrupting it:
+
+- Shared `ScopedCache` lookup: cancel one of two waiters and let the other
+  finish; then cancel the last waiter on another pending lookup and verify its
+  resource finalizer ran and a later `get` reacquires.
+- `race` / `raceFirst` / iterable variants: assert loser cleanup is complete when
+  the race returns, including cancellation while contenders are starting.
+- `Scope.close`: gate a finalizer, interrupt the closing fiber, release the gate,
+  and verify remaining finalizers still run.
+- `ManagedRuntime.dispose`: verify request cleanup can use layer services before
+  those services are released.
+- Cache abandonment: gate the old finalizer and prove a new lookup can start
+  before that finalizer completes; interruption is never negatively cached.
+- `FiberHandle` / `FiberMap` replacement: prove replacement starts without waiting
+  for old cleanup, then prove owner shutdown still waits for the replaced fiber.
+- Scope versus runtime close: a second `Scope.close` does not join the first
+  close, but external overlapping `ManagedRuntime.dispose` calls do; runtime-owned
+  finalizers can request disposal without waiting on themselves.
+- Queue batches: offer fewer than `takeN` requests, verify the taker remains
+  pending, then `end` or `fail` and assert the short final batch precedes the
+  terminal outcome. For PubSub, test the `end` value with `take`, not `takeUpTo`,
+  including a late subscriber and a full dropping buffer.
+
+### Testing Fiber Interruption
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit, Fiber, Cause } from 'effect';
+
+it.effect('should handle interruption', () =>
+	Effect.gen(function* () {
+		const fiber = yield* Effect.never.pipe(Effect.forkChild);
+
+		yield* Fiber.interrupt(fiber);
+
+		const result = yield* Fiber.await(fiber);
+
+		expect(Exit.hasInterrupts(result)).toBe(true);
+	})
+);
+```
+
+### Testing Interrupted-Only Cause
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit, Fiber, Cause } from 'effect';
+
+it.effect('should have interrupted-only cause', () =>
+	Effect.gen(function* () {
+		const fiber = yield* Effect.never.pipe(Effect.forkChild);
+
+		yield* Fiber.interrupt(fiber);
+
+		const result = yield* Fiber.await(fiber);
+
+		expect(
+			Exit.isFailure(result) && Cause.hasInterruptsOnly(result.cause)
+		).toBe(true);
+	})
+);
+```
+
+## Time-Dependent Concurrency Testing
+
+Use `TestClock` only when testing time-dependent behavior like delays, timeouts, or schedules.
+
+`adjust` / `setTime` follow sleeps scheduled after multiple scheduler hops;
+avoid adding arbitrary extra yields to compensate for older clock behavior.
+Clock diagnostics remain visible even with `TestConsole`. Still use a readiness
+signal when advancing time depends on a specific operation having begun.
+
+`@effect/vitest`'s `beforeEach` and `beforeAll` accept returned Effects requiring
+only `Scope`: per-test resources close after that test; suite resources close
+after `afterAll` hooks. Timed-out setup is interrupted before scope cleanup;
+Vitest can stop waiting when cleanup exceeds its hook timeout. Return the Effect
+instead of starting an unowned `runPromise` in a hook.
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Fiber, Duration } from 'effect';
+import { TestClock } from 'effect/testing';
+
+it.effect('should handle delayed concurrent operations', () =>
+	Effect.gen(function* () {
+		const fiber = yield* Effect.gen(function* () {
+			yield* Effect.sleep(Duration.seconds(5));
+			return 'done';
+		}).pipe(Effect.forkChild);
+
+		yield* TestClock.adjust(Duration.seconds(5));
+
+		const result = yield* Fiber.join(fiber);
+		expect(result).toBe('done');
+	})
+);
+```
+
+## Anti-Patterns
+
+### DON'T use TestClock for non-time-dependent code
+
+```typescript
+import { Effect, Duration } from 'effect';
+import { TestClock } from 'effect/testing';
+
+// BAD - Using TestClock when not needed
+Effect.gen(function* () {
+	const fiber = yield* someEffect.pipe(Effect.forkChild);
+	yield* TestClock.adjust(Duration.millis(100));
+	yield* Fiber.join(fiber);
+});
+
+// GOOD - Use yieldNow for simple yielding
+Effect.gen(function* () {
+	const fiber = yield* someEffect.pipe(Effect.forkChild);
+	yield* Effect.yieldNow;
+	yield* Fiber.join(fiber);
+});
+```
+
+### DON'T poll in a loop without yieldNow
+
+```typescript
+import { Effect, Fiber } from 'effect';
+
+declare const fiber: Fiber.Fiber<void>;
+
+// BAD - Busy loop
+while (fiber.pollUnsafe() === undefined) {
+	// Spins forever!
+}
+
+// GOOD - Yield between polls or use Fiber.await
+Effect.gen(function* () {
+	while (fiber.pollUnsafe() === undefined) {
+		yield* Effect.yieldNow;
+	}
+});
+
+// BETTER - Just await the fiber
+Effect.gen(function* () {
+	yield* Fiber.await(fiber);
+});
+```
+
+### DON'T forget Effect.scoped for PubSub subscriptions
+
+```typescript
+import { Effect, PubSub } from 'effect';
+
+declare const pubsub: PubSub.PubSub<string>;
+
+// BAD - Subscription leaks
+Effect.gen(function* () {
+	const sub = yield* PubSub.subscribe(pubsub);
+	// Sub is never cleaned up!
+});
+
+// GOOD - Scoped subscription
+Effect.gen(function* () {
+	yield* Effect.scoped(
+		Effect.gen(function* () {
+			const sub = yield* PubSub.subscribe(pubsub);
+			// takeUpTo never suspends; takeAll would hang here (nothing published)
+			const events = yield* PubSub.takeUpTo(sub, 10);
+			// Sub cleaned up when scope closes
+		})
+	);
+});
+```
+
+### DON'T start subscriptions after mutations
+
+```typescript
+import { Effect, Fiber } from 'effect';
+import { Stream, SubscriptionRef } from 'effect';
+
+declare const ref: SubscriptionRef.SubscriptionRef<number>;
+
+// BAD - May miss events: the subscription starts AFTER the first mutation
+Effect.gen(function* () {
+	yield* SubscriptionRef.update(ref, (n) => n + 1);
+
+	const fiber = yield* SubscriptionRef.changes(ref).pipe(
+		Stream.take(1),
+		Stream.runCollect,
+		Effect.forkChild
+	);
+
+	yield* SubscriptionRef.update(ref, (n) => n + 1);
+
+	const result = yield* Fiber.join(fiber);
+});
+```
+
+## Quality Checklist
+
+- [ ] Using correct coordination primitive for the use case
+- [ ] `Effect.scoped` wraps PubSub subscriptions
+- [ ] Latches ensure stream subscriptions are ready before mutations
+- [ ] `Effect.yieldNow` used instead of TestClock for non-time-dependent code
+- [ ] Fiber interruption tested with `Exit.hasInterrupts` or `Cause.hasInterruptsOnly`
+- [ ] Stream finalizers verified with `Stream.ensuring`
+- [ ] No busy polling without yields
+- [ ] Test is deterministic (no race conditions)

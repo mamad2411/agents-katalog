@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/nonparametric-black-holes-analysis/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Nonparametric Black Holes Analysis Skill

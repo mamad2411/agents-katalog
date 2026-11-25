@@ -1,0 +1,60 @@
+---
+name: zuix-component
+description: "在独立 ZUI 扩展项目中设计、实现或修复组件；区分扩展与宿主边界，需求明确时完成必要规划后直接实施。"
+---
+
+# ZUI 扩展组件开发
+
+## 准备
+
+按 [共享工作流](../zuix-standards/references/workflow.md) 解析本次所需上下文、读取适用规则并检查所有权；已有且未变化的发现直接复用。
+
+阅读 [组件规范](../zuix-standards/references/component.md) 的相关部分；运行时加载外部资源再读 external-library 规范，涉及包元数据再读 library 规范，其他领域按需路由。阅读判断本次变更所需的目标源码，架构或契约不清楚时再补充基础设施和相似实现。
+
+新增组件或能力前执行[先查找，再复用](../zuix-standards/references/workflow.md#复用已有能力)，检索当前扩展项目和宿主可组合的已有组件与 helper；设计中说明所复用的真实包名、API 或必须新增的缺口。
+
+## 理解与设计
+
+1. 从请求、目标源码和 package 元数据推断用途、用户、约束及兼容要求。分别判断包角色和实现架构；不要因为 `zui.type` 是 `component` 就默认使用 Preact。
+2. 只询问无法从两个仓库发现且会改变设计的信息。高影响歧义通常包括：
+   - HTML/CSS、Preact、vanilla 构造器、自动创建或 toggle 中哪些是公开消费方式；
+   - 受控/非受控状态、事件、命令式方法、异步与错误行为；
+   - 视觉变体、响应式、键盘、焦点、ARIA 和 i18n 要求。
+3. 定义最小公开 API、状态与数据流、DOM 所有权、生命周期、异步竞态、更新与销毁策略。仅暴露真实需要的入口。
+4. 跨库导入使用被依赖库真实的 `packageName`，不要从目录名拼接 `@zui/<name>`，也不要通过相对路径穿越扩展库、宿主库或符号链接边界。
+5. 主 ZUI 的 `Component`、`ComponentFromReact`、Preact、Cash、注册机制和 `LibLoader` 契约以当前 `zuiRoot` 源码为准；扩展项目局部惯例以 `extensionRoot` 的成熟实现为准。
+
+## 实施计划
+
+按共享工作流完成必要规划后直接实施；计划仅展开本次相关决策：
+
+- 四层上下文、目标库的 `folderName` / `packageName` / `zuiName`、包角色、组件架构及必要参考依据；
+- 目标、非目标、兼容性与可观察验收场景；
+- 公开消费方式、options/props、事件、方法、类型及导出；
+- 渲染、状态/数据流、生命周期、异步行为、清理、无障碍和 i18n；
+- 外部资源（若有）的 loader 所有权、注册名、资源/check/依赖、加载时机、失败重试和销毁竞态；
+- `targetLibRoot` 内的精确文件集、入口、样式及 package 元数据影响；新增第三方依赖时，按[版权与文档规则](../zuix-standards/references/workflow.md#第三方依赖的版权与文档)纳入 `extensionRoot` 的版权文件与依赖说明；
+- 在 `extensionRoot` 执行的依赖、lint、类型或测试，以及在 `zuiRoot` + `extsName` 执行的联合验证；
+- 正式文档和调试页是否纳入、剩余假设及任务范围。
+
+任务范围、已明确决定和必要澄清遵循共享工作流，始终服从当前协作模式。
+
+## 实施
+
+1. 当前模式允许编辑时检查 `gitRoot` 状态，按共享工作流复用或刷新受影响的上下文。
+2. 仅在 `targetLibRoot` 和任务所需的扩展项目文件内实施。依赖安装、lockfile、lint、类型检查和扩展项目测试都从 `extensionRoot` 执行；不修改宿主源码、依赖、lockfile 或注册配置；宿主生成物和缓存写入遵循共享工作流的验证隔离与批准规则。
+3. 使用 Preact 而不是 React，并遵循[状态与副作用规范](../zuix-standards/references/component.md#preact-状态与副作用)：禁止 hooks，响应式状态推荐 signals，按生命周期清理 `effect`。跨库导入使用真实 `packageName`；显式维护局部入口、库入口及必要副作用导入。`zuiName` 只用于宿主发现/构建选择，不能代替模块包名。
+4. 运行时外部依赖统一通过目标库内单例 `LibLoader<T>` 按需加载，落实加载失败、显式重试、异步销毁竞态及第三方实例清理；不要在组件中维护第二份模块缓存。
+5. 按 [布局与样式规范](../zuix-standards/references/component.md#布局与样式) 优先组合 `@zui/utilities` 辅助类，只有无法快捷实现时才补充最少自定义 CSS。使用 `src/style/*.css` 时尽可能采用语义等价的 Tailwind `@apply`，全部 CSS 通过 `src/style/index.ts` 接入真实样式消费入口；前缀和生成效果以当前扩展与宿主配置共同验证。落实语义标签、键盘、焦点和 ARIA。
+6. 若任务范围包含其他领域，按需读取对应技能并传递已有发现和任务范围：
+   - 国际化：`../zuix-i18n/SKILL.md`
+   - 正式文档：`../zuix-doc/SKILL.md`
+   - 调试页：`../zuix-dev/SKILL.md`
+
+   这些子流程在共享任务范围内直接实施。
+
+## 验证与交付
+
+按共享工作流选择本次所需的扩展检查及宿主检查，完成范围内修复和复验。涉及宿主运行时、样式或分发时，使用已确认的 `zuiRoot + extsName` 和准确 `zuiName` 验证；实际执行位置及服务管理遵循共享规则。
+
+新增或改变对应行为时，验证相关消费方式、状态、事件、键盘/焦点、异步竞态和销毁。交付时报告实现文件、公开 API、影响交付的上下文及分层验证结果，不自动提交、推送或发布。

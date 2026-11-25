@@ -1,0 +1,443 @@
+---
+name: payload-snapshot
+description: Snapshot OpenShift payload data (release controller, PR diffs, comments, CI jobs, JUnit results, regression tracking) to a local directory for offline analysis
+---
+
+# Payload Snapshot
+
+This skill downloads all data needed to analyze an OpenShift payload into a local directory tree. The resulting snapshot can be navigated entirely via file reads — no live API calls required during analysis.
+
+## When to Use This Skill
+
+Use this skill when you need to:
+
+- Analyze a rejected payload and want all data available locally before starting
+- Create a reproducible snapshot of payload state at a point in time
+- Track test failure regressions across multiple payloads
+- Work offline or reduce API calls during payload analysis
+
+## Prerequisites
+
+1. **Python 3** (3.10 or later)
+   - Uses only standard library (no external dependencies)
+
+2. **GitHub CLI (`gh`)** — for PR diff, comment, and job data
+   - Install: `brew install gh` (macOS) or see https://cli.github.com
+   - Authenticate: `gh auth login`
+   - Without `gh`, release controller data is still fetched; PR data is skipped
+
+3. **Google Cloud SDK (`gcloud`)** — for JUnit test result download
+   - Install: `brew install google-cloud-sdk` (macOS) or see https://cloud.google.com/sdk
+   - **Authentication is not required** — the CI artifact buckets are public and
+     are read anonymously when no account is configured
+   - Without `gcloud` entirely, JUnit data is skipped and the snapshot is
+     reported as incomplete (see [Data completeness](#data-completeness))
+
+4. **Container runtime (`podman`)** — for RHCOS RPMDB extraction
+   - Install: available in most Linux distributions; `brew install podman` on macOS
+   - Requires access to the release image registry (e.g., `registry.ci.openshift.org`)
+   - Without `podman`, RPMDB data is skipped; all other data is still collected
+
+5. **`rpm` CLI** — for the RPM changelog diffs between payloads
+   - Queries the already-extracted RPMDBs locally; no network, no root
+   - Without `rpm`, changelog diffs are skipped; the RPMDBs themselves are still extracted
+
+6. **Network access** to:
+   - `*.ocp.releases.ci.openshift.org` (release controller)
+   - `sippy.dptools.openshift.org` (historical payload fallback)
+   - `api.github.com` (via `gh` CLI)
+   - `storage.googleapis.com` (via `gcloud` CLI)
+
+## Implementation Steps
+
+### Step 1: Run the Snapshot Script
+
+```bash
+script_path="plugins/ci/skills/payload-snapshot/scripts/payload_snapshot.py"
+
+# Snapshot a specific payload
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806
+
+# Custom output directory
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806 --output-dir .work/snapshot
+
+# Limit chain depth
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806 --max-chain 5
+
+# Skip JUnit download (faster, still generates job structure and summary)
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806 --no-junit
+
+# Skip RPMDB extraction
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806 --no-rpmdb
+
+# Skip the RPM changelog diffs (RPMDBs are still extracted)
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806 --no-rpm-changelogs
+
+# Force Sippy for all payload metadata (normally fallback is automatic)
+python3 "$script_path" 4.22.0-0.nightly-2026-02-25-152806 --sippy
+```
+
+The script will:
+1. Parse the payload tag to determine version, stream, and architecture
+2. Probe all available streams for the version (nightly, ci, across architectures)
+3. Chain backwards through Sippy's time-ordered release tag list until finding one where all blocking jobs passed, restoring tags garbage collected from the release controller
+4. For each payload in the chain, prefer release controller data and changelogs; fall back per historical tag or cross-tag diff to Sippy payload, PR, and job data
+5. Split jobs into blocking/informing directories with metadata and GCS browser links
+6. For each failed blocking job, download and parse JUnit XML test results
+7. For each failed blocking job, download build-log.txt from GCS and extract error/warning lines + log tail
+8. Track test failure regressions — when did each failure first appear?
+9. Track per-job failure streaks — consecutive failures, originating payload, failure pattern
+10. For each unique PR across all changelogs, fetch the git diff, comments, and CI jobs via `gh`
+11. For each payload in the chain, extract the full RPM database from RHCOS images via `podman`
+12. Diff the target payload's RPM changelogs against every older payload in the chain, using the extracted RPMDBs
+13. Generate summary.json with comprehensive triage data, plus AGENTS.md/CLAUDE.md for agent orientation
+
+### Step 2: Navigate the Snapshot
+
+The output directory is structured for easy navigation:
+
+```text
+payload/
+  <version>/
+    <stream>/
+      summary.json                         # START HERE — full triage data
+      CLAUDE.md                            # Imports AGENTS.md for Claude Code
+      AGENTS.md                            # Dynamic snapshot orientation doc
+      streams.json                         # All streams for this version
+      <tag>/                               # Each payload in the chain
+        payload.json                       # Release controller API response
+        changelog.json                     # PRs that changed vs. previous payload
+        regressions.json                   # Test failure regression tracking
+        jobs/
+          blocking/
+            <job-name>/
+              job.json                     # Job metadata (state, URLs, GCS link, retries)
+              build_log.json               # Error/warning lines + log tail (failed only)
+              junit/                       # Only for failed jobs
+                junit_operator.xml         # CI phase results
+                junit-aggregated.xml       # Aggregated jobs only
+                results.json               # Parsed test failures (full output)
+          informing/
+            <job-name>/
+              job.json                     # Job metadata only (no JUnit/build log)
+        <component>/                       # e.g., machine-config-operator
+          prs/
+            <pr_number>/
+              code.diff                    # Git diff of the PR
+              comments.json                # PR comments and reviews
+              jobs.json                    # CI check runs
+        rpmdb/                             # RPMDB from RHCOS images
+          rhel-coreos/                     # queryable with rpm --dbpath
+            rpmdb.sqlite
+          rhel-coreos-10/
+            rpmdb.sqlite
+        rpm-changelogs/                    # Target payload only
+          rhel-coreos-10/                  # One diff per older payload
+            <older-payload-tag>.md
+```
+
+### Step 3: Use the Data
+
+**Find failed blocking jobs (with streaks):**
+```bash
+jq '.blocking_jobs.failed_jobs[] | {name, state, streak: .streak.streak_length, pattern: .streak.failure_pattern}' payload/<version>/<stream>/summary.json
+```
+
+**Check test failures and when they started:**
+```bash
+jq '.[] | {test: .test_name, first_failed: .first_failed_in, payloads: .payloads_failing, jobs: .jobs}' payload/<version>/<stream>/<tag>/regressions.json
+```
+
+**List PRs in a payload:**
+```bash
+jq '.changeLogJson.updatedImages[].commits[] | {component: .name, pr: .pullURL, subject: .subject}' payload/<version>/<stream>/<tag>/changelog.json
+```
+
+**Read a specific PR's diff:**
+```bash
+cat payload/<version>/<stream>/<tag>/<component>/prs/<number>/code.diff
+```
+
+**Check JUnit failures for a specific job:**
+```bash
+jq '.[].name' payload/<version>/<stream>/<tag>/jobs/blocking/<job-name>/junit/results.json
+```
+
+**Query RHCOS RPM packages (using the extracted rpmdb.sqlite):**
+```bash
+rpm -qa --dbpath $(pwd)/payload/<version>/<stream>/<tag>/rpmdb/rhel-coreos
+```
+
+**See what changed in the RHCOS RPMs since the baseline** (inline in summary.json — no file read needed):
+```bash
+jq '.rpm_changelogs[] | select(.diff) | {variant, compared_tag, diff}' payload/<version>/<stream>/summary.json
+```
+
+**Find which payload in the chain introduced a package bump:**
+```bash
+cat payload/<version>/<stream>/<target-tag>/rpm-changelogs/<variant>/<older-tag>.md
+```
+
+## CLI Reference
+
+```text
+python3 payload_snapshot.py <payload_tag> [OPTIONS]
+
+Positional:
+  payload_tag          Payload tag (e.g., 4.22.0-0.nightly-2026-02-25-152806)
+
+Options:
+  --output-dir DIR     Base output directory (default: payload)
+  --max-chain N        Maximum backward chain depth (default: 20)
+  --workers N          Parallel workers for API calls (default: 8)
+  --no-junit           Skip JUnit download and regression tracking
+  --no-rpmdb           Skip RHCOS RPMDB extraction
+  --no-rpm-changelogs  Skip the RPM changelog diffs between the target payload
+                       and the older payloads in the chain
+  --sippy              Force Sippy for all payload metadata instead of using
+                       the automatic release-controller-first fallback
+  --fail-on-incomplete Exit 1 if any requested data could not be collected
+```
+
+## Output Files
+
+### `streams.json`
+
+Lists all available streams for the payload's version.
+
+### `summary.json`
+
+Comprehensive stream-level triage data — start here. Contains:
+- Payload metadata: `payload_tag`, `phase`, `release_url`, `source`, `architecture`, `stream`, `version`
+- Chain data: `chain_length`, `baseline_tag`, `hours_since_baseline`
+- `blocking_jobs.failed_jobs[]` — detailed objects with `name`, `state`, `prow_url`, `gcs_url`, and relative path `job_json`. May include: `rhcos_version`, `streak` (with `streak_length`, `originating_payload`, `is_new_failure`, `failure_pattern`), `build_log_errors`, `test_failure_count`, and relative paths `junit_results`, `build_log`
+- `informing_jobs.failed_jobs[]` — job name strings
+- `test_failures.blocking[]` — **gating** failures only: `test_name`, `jobs`, `first_failed_in`, `payloads_failing`, `failure_message`, `failure_text` (full, not truncated). These are the failures that can fail a job and therefore reject the payload.
+- `test_failures.informing[]` / `test_failures.flakes[]` — `test_name`, `jobs`. Neither can fail a job. No onset is tracked for them, because an onset implies there is a culprit to find.
+- `payloads[]` — per-payload entries with `tag`, `phase`, `source`, `changelog_source`, relative file paths, `prs[]` with component/diff/comments paths, `rhcos_changes[]` with RPM diffs per RHCOS variant (package versions only — no changelog text), and, on every payload but the target, `rpm_changelogs[]` pointing at the report holding that text
+- `rhcos_rpms[]` — RPMDB metadata for the target payload's RHCOS variants: `tag`, `name`, `pullspec`, `rpmdb` (relative path to rpmdb.sqlite)
+- `rpm_changelogs[]` — one RPM diff per (RHCOS variant, older payload in the chain): `variant`, `compared_tag`, `is_baseline`, `changed`/`added`/`removed` counts, and `changelogs` (relative path to the full report). The oldest surviving comparison per variant — normally the chain baseline — also carries `diff` inline, so target-vs-baseline needs no file read: `diff.changed[]` with `package`, `old`, `new` and `changelog` (the entries that version added), plus `diff.added[]` / `diff.removed[]` with `package` and `version`. The intermediate hops are a subset of that diff and stay behind their `changelogs` path; read them to find which hop introduced a given package bump. If the true chain baseline's RPMDB couldn't be read for a variant, the next-oldest readable comparison takes over `is_baseline`/`diff` instead, flagged with `baseline_rpmdb_missing: true` so consumers know the diff doesn't reach all the way back to the chain's actual start.
+- `data_complete` — `true` when all requested data was ultimately collected, including via a fallback after an initial read failed. `false` means some requested data could not be read at all.
+- `collection_errors[]` — every read failure encountered. Each entry has `reason`, `command`, and optionally `detail`, `stage`, `job`, `payload_tag`, `recovered`. Reasons: `auth`, `timeout`, `gcloud_missing`, `command_failed`, `junit_unavailable` (nothing readable), `junit_missing` (nothing discovered), `junit_unparseable` (corrupt XML), `junit_partial` (some files unread), `build_log_unavailable`.
+  - `recovered: true` means a fallback subsequently obtained the data. These entries are diagnostic only (useful for spotting a timeout that needs tuning) and do **not** make `data_complete` false.
+  - `data_complete` is `false` only when at least one error was **not** recovered.
+
+<a id="data-completeness"></a>
+#### Only gating results count as failures
+
+A test result falls into exactly one of three categories, and only the last
+can fail a job or reject a payload:
+
+| Category | Rule | Gates? |
+|---|---|---|
+| flake | the same test, in the same suite, both failed and passed | no |
+| informing | the testcase carries `lifecycle="informing"` | no |
+| failure | failed everywhere, no `informing` lifecycle | **yes** |
+
+Informing tests are run to stabilize them and are not expected to gate. A
+missing `lifecycle` attribute means the test **does** gate — the attribute
+exists only to opt a test out.
+
+`results.json` records all three so nothing is hidden, each entry carrying
+`status` (`failed`, `error`, `flake`) and `test_lifecycle` (`blocking`,
+`informing`).
+
+`test_failure_count` on a failed job counts **only gating** results — it is
+the failure count, and flakes and informing tests are not added to it.
+Those two are listed by name under `test_failures.flakes[]` and
+`test_failures.informing[]`. Regression onset (`first_failed_in`) is derived
+from gating failures alone.
+
+#### "Informing job" vs "informing test" — two unrelated concepts
+
+The word "informing" appears in two places with **completely different
+meanings**. Confusing them produces wrong analysis:
+
+| Concept | Where it lives | What it means |
+|---|---|---|
+| **Informing job** | `informing_jobs.failed_jobs[]` in summary.json | A CI *job* that runs for visibility but does **not** gate the payload. Job-level pass/fail. |
+| **Informing test** | `test_failures.informing[]` in summary.json | An individual *test case* whose `lifecycle="informing"` attribute opts it out of gating. Can appear inside **any** job — blocking or informing. |
+
+An informing *test* can run inside a *blocking* job.
+An informing *job* can contain *blocking* tests.
+They are orthogonal. Never combine them in the same section or count.
+
+#### gcloud credentials are not required
+
+The CI artifact buckets are public. When gcloud has no active account it is
+run in anonymous mode automatically, so an unauthenticated environment still
+produces a complete snapshot. Authenticate only if you also need private
+buckets.
+
+#### Missing data is absent, never empty
+
+When a collection step fails, the affected file is **not written** and the
+corresponding summary field is **omitted** — it is never emitted as an empty
+list or a zero count. Specifically:
+
+- If JUnit could not be read for a job, `results.json` is not created, the
+  job entry has **no** `test_failure_count` and `junit_results`, and instead
+  carries `junit_collection_failed: true`.
+- An absent `test_failure_count` therefore means *unknown*, whereas `0` means
+  *verified clean*.
+
+- If **some** JUnit files were read and others were not, `results.json` holds
+  the real results that were obtained and the job entry adds
+  `junit_collection_partial: true`. `test_failure_count` is then a **lower
+  bound**, not a total.
+- A failed job with **no** readable JUnit at all — none discovered
+  (`junit_missing`), or nothing that parsed (`junit_unparseable`) — is left
+  without a count entirely. A job whose tests may never have run is unknown,
+  not clean. A parse failure alongside other readable files is the partial
+  case above, not this one.
+
+Consumers **must** distinguish these. Treating unreadable data as "no test
+failures" makes a broken job look like it failed for some other reason, which
+misdirects root-cause analysis. Check `data_complete` before drawing any
+conclusion from an absence of test failures. Use `--fail-on-incomplete` in
+automation to exit non-zero rather than emit a partial snapshot.
+
+State is persisted to `collection_errors.json` beside `summary.json`, so a
+later process can tell that an existing `results.json` came from an incomplete
+read.
+
+### `AGENTS.md` / `CLAUDE.md`
+
+Dynamic orientation document generated at snapshot time. Contains the specific payload tag, chain, failed jobs, file layout, key concepts, and summary.json schema. `CLAUDE.md` imports `AGENTS.md` via `@AGENTS.md`.
+
+### `payload.json`
+
+Full release controller response including `blockingJobs`, `informingJobs`, and `asyncJobs` with their states, Prow URLs, and retry attempt URLs.
+
+### `changelog.json`
+
+Release controller diff response with `changeLogJson.updatedImages` listing every PR that changed between this payload and its predecessor. Also contains `nodeImageStreams` at the top level — RPM diffs for each RHCOS variant showing which packages changed between payloads, as package names and versions only.
+
+For the target payload, `_rpm_changelogs[]` is injected alongside `_source`: `variant`, `compared_tag` (the predecessor, the same comparison this file describes) and `changelogs`, a path relative to the payload directory pointing at the report that carries the changelog text `nodeImageStreams` lacks. `payload.json` gets the same key.
+
+### `rhcos_changes[]` (in payloads[] within summary.json)
+
+Per-payload RHCOS RPM diff data extracted from the changelog's `nodeImageStreams`. Each entry contains:
+- `name`: Human-readable RHCOS version name (e.g., "Red Hat Enterprise Linux CoreOS 10.2")
+- `tag`: RHCOS image stream tag (`rhel-coreos` for RHCOS 9, `rhel-coreos-10` for RHCOS 10)
+- `changed`: Dict of `{package_name: {"old": old_version, "new": new_version}}`
+- `added`: Dict of newly added packages `{package_name: new_version}` (when present)
+- `removed`: Dict of removed packages `{package_name: old_version}` (when present)
+
+Only variants with non-empty `rpmDiff` are included. When the snapshot is created from Sippy-based changelogs (which lack `nodeImageStreams`), this field is absent.
+
+### `rpmdb/<variant>/rpmdb.sqlite`
+
+The `rpmdb.sqlite` file extracted from RHCOS images via `podman`. One directory per RHCOS variant (e.g., `rpmdb/rhel-coreos/`, `rpmdb/rhel-coreos-10/`), each containing `rpmdb.sqlite`. Queryable with `rpm -qa --dbpath <absolute-path-to-variant-dir>` or directly with `sqlite3`.
+
+Extracted for every payload in the chain. Skipped when `podman` is unavailable or `--no-rpmdb` is passed.
+
+### `rpm-changelogs/<variant>/<older-payload-tag>.md`
+
+Written for the target payload only, one file per (RHCOS variant, older payload in the chain) — including the baseline. Each file answers "what do this variant's RPMs have in the target that they did not have in that older payload?", by querying both already-extracted RPMDBs with `rpm` locally. No API calls and no image pulls are involved, and `rhcos_changes[]` (which the release controller computes) is not consulted.
+
+Each file has three sections:
+- **Changed packages** — `<old version> -> <new version>` plus only the changelog entries the new version added. RPM changelogs are additive and grow from the top, so the cut is at the first entry the old version already had. (Not a common-suffix subtraction: rpm trims stale entries off the bottom at build time, so two builds of the same package weeks apart routinely disagree about their oldest entries.) A version bump with no new entry is reported as a rebuild.
+- **New packages** — packages the older payload did not have at all, with their full changelog.
+- **Removed packages** — name and version only. Nothing to read a changelog from.
+
+Deliberate simplifications, because the consumer is an LLM that can read a full dump when it has to:
+- **Each older payload is compared against the target independently.** No attempt is made to follow a package's evolution hop by hop. A package removed and later re-added shows up as "no difference" against the baseline and as some difference against an intermediate payload — that is the honest answer to each of those two questions, and no further reconciliation is done.
+- **A changelog whose history was rewritten degrades to a full dump.** When the two versions share no entries, the whole changelog is emitted rather than guessing a cut point from version strings.
+- **A variant missing from the older payload is skipped**, rather than reported as several hundred new packages.
+
+Indexed by `summary.json`'s `rpm_changelogs[]`, whose baseline entry repeats the same content inline under `diff`. Read these files for the intermediate hops, or when the prose layout is easier than the JSON.
+
+Skipped when `rpm` is unavailable, `--no-rpm-changelogs` is passed, the RPMDBs were not extracted, or the chain has no older payload (`chain_length < 2`).
+
+### `regressions.json`
+
+Per-payload regression tracking data. For each failing test in the target payload:
+- `test_name`: the failing test
+- `jobs`: which jobs it fails in
+- `first_failed_in`: the earliest payload in the chain where it was failing
+- `payloads_failing`: how many consecutive payloads it has been failing
+- `failure_message`: the error message
+- `failure_text`: full failure output
+
+### `job.json`
+
+Per-job metadata including name, state, lifecycle (blocking/informing), Prow URL, GCS browser URL (`gcs_url`), retry count, whether it's an aggregated job, GCS bucket path, and `rhcos_version`.
+
+The `rhcos_version` field is determined from the job name and OCP version:
+- `rhcos9_10` — heterogeneous cluster (mixed RHCOS 9 and 10 node pools)
+- `rhcos10` — RHCOS 10 only
+- `rhcos9` — RHCOS 9 (explicit)
+- `rhcos9-default` — no explicit fragment; defaults to RHCOS 9 for OCP 4.x installs (including major upgrades to 5.x)
+- `rhcos10-default` — no explicit fragment; defaults to RHCOS 10 for OCP 5.x fresh installs
+
+### `build_log.json` (failed blocking jobs only)
+
+Extracted from `build-log.txt` in GCS (handles gzip decompression). Contains:
+- `total_lines`: total line count of the build log
+- `error_warning_count`: number of lines matching error/warning patterns
+- `error_warning_lines[]`: each with `line_number` and `text`
+- `tail_start_line`, `tail_lines[]`: last 20% of the log for context
+
+### `results.json` (in junit/ subdirectory)
+
+Parsed JUnit test failures for a specific job. Only includes failed/error tests. For aggregated jobs, includes per-run pass/fail/skip data with Prow URLs for each run.
+
+### `code.diff`, `comments.json`, `jobs.json`
+
+PR artifacts from GitHub (unchanged from previous version).
+
+## Chain Logic
+
+The script chains backwards from the target payload until it finds a payload where **all blocking jobs succeeded**. This is stricter than the `Accepted` phase — a payload can be force-accepted with failed blocking jobs, which does not count as a stop point.
+
+Sippy's release tag list, sorted by `release_time`, is used to identify every
+preceding assembled payload. If a tag is still retained, its payload details
+and changelog come from the release controller. If it has been garbage
+collected, the script constructs compatible `payload.json` and
+`changelog.json` files from Sippy's release tags, pull requests, and job runs
+APIs. A changelog that crosses a garbage-collected tag also comes from Sippy
+because the release controller can no longer compute that diff.
+
+The generated `source` and `changelog_source` fields expose this provenance.
+Sippy-backed data is intentionally partial: RHCOS `nodeImageStreams`, async
+jobs, and `previousAttemptURLs` are unavailable.
+
+For terminal payloads (Accepted/Rejected), jobs showing `Pending` on the release controller are cross-checked against the actual Prow `prowjob.json` artifact to get their real state.
+
+## Aggregated Jobs
+
+Aggregated jobs run the same underlying test multiple times with statistical analysis. The script:
+- Detects aggregated jobs by the `aggregated-` name prefix
+- Downloads `junit-aggregated.xml` which contains per-run pass/fail/skip data
+- Parses the YAML in `<system-out>` to extract individual run URLs
+
+## Error Handling
+
+- **Tag not found**: Exits with code 2 and a descriptive error
+- **Release controller unreachable**: Exits with code 1
+- **Historical tag missing from release controller**: Automatically uses Sippy
+- **`gh` not authenticated**: Prints a warning and continues without PR data
+- **`gcloud` not available**: Warns, skips JUnit download, and records
+  `gcloud_missing` so the snapshot is reported incomplete
+- **`gcloud` not authenticated**: Reads the public buckets anonymously
+- **Individual job/PR fetch failure**: Logs a warning, records a collection
+  error, and continues
+- **Idempotent**: Re-running skips files that already exist — except JUnit
+  output a previous run recorded as incomplete, which is discarded and
+  re-collected so a partial snapshot cannot be inherited as complete
+
+## Notes
+
+- The script uses only Python standard library — no pip dependencies
+- PR data is deduplicated across payloads — each PR is fetched once
+- JUnit and build-log download are scoped to failed blocking jobs only (informing jobs get `job.json` but no JUnit or build log)
+- The `--workers` flag controls parallelism for all subprocess calls (default 8)
+- Summary is always regenerated on re-run (not skipped like other files)
+- Progress is printed to stderr; the script produces no stdout output
+
+## See Also
+
+- Related Skill: `fetch-payloads` (fetches recent payloads from the release controller)
+- Related Skill: `fetch-new-prs-in-payload` (fetches PRs new in a specific payload)
+- Related Skill: `payload-analysis` (analyzes a payload snapshot for revert candidates)

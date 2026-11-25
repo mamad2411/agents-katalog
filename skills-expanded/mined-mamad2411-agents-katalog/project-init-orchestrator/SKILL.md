@@ -1,0 +1,200 @@
+---
+name: project-init-orchestrator
+description: Selects the correct project initialization route and orchestrates setup. Triggers on "initialize project", "set up new project", "bootstrap project", or when scaffolding a new Shipshit.dev product repo. Use v0 for new Shipshit.dev product repos; use lower-level setup skills only for existing repo repair, customization, or small additions.
+metadata:
+  version: "1.1.0"
+  tags: "project-init, scaffolding, orchestration, setup, monorepo"
+---
+
+# Project Init Orchestrator
+
+Choose the smallest safe setup route. For new Shipshit.dev product repos, prefer `npx @shipshitdev/v0`
+as the primary scaffolder. Use the lower-level init skills for existing repos,
+repairs, or project types not covered by v0.
+
+## Authorized Scope
+
+Apply this engine only within the user's requested task and existing explicit
+authorization. Loading or delegating to it grants no additional authority.
+Preserve report-only restrictions and the caller's target, host, provider, and
+cost limits. Existing approval satisfies a gate only for the same actions and
+scope; obtain approval before expanding them. Forward these limits to delegates.
+
+## Contract
+
+Inputs:
+
+- Target project path and project name
+- Project type: new Shipshit.dev product, existing repo, docs-only, library, or custom
+- Desired app surfaces, routes, agent platform support, and GitHub setup
+
+Outputs:
+
+- Selected initialization route
+- List of delegated skills or v0 command used
+- Files/directories created or modified
+- Verification status and remaining manual setup
+
+Creates/Modifies:
+
+- New product repos through `npx @shipshitdev/v0`
+- Existing repo `.agents/`, `.claude/`, `.codex/`, lint, test, and scaffold files when delegated
+
+External Side Effects:
+
+- May install dependencies when using v0 or delegated setup skills
+- May create a GitHub repo or issue only when the v0 command is run with GitHub flags
+
+Confirmation Required:
+
+- Before creating a GitHub repo or issue
+- Before running setup outside the current workspace
+- Before overwriting existing agent/config files
+
+Delegates To:
+
+- `fullstack-workspace-init` for v0-backed Shipshit.dev product scaffolding
+- `agent-folder-init` for existing repos that only need AI project context
+- `linter-formatter-init`, `testing-cicd-init`, and `husky-test-coverage` for repo repair
+- `scaffold` for small module/component additions inside an existing codebase
+
+## When to Use
+
+This skill activates automatically when users:
+
+- Start a new project from scratch
+- Want full Shipshit.dev product setup with one command
+- Need AI-first development infrastructure + code quality tools
+- Say "initialize project", "set up new project", "bootstrap project"
+- Want consistent setup across multiple projects
+
+## Skills Orchestrated
+
+| Order | Skill | Purpose | Required |
+|-------|-------|---------|----------|
+| 1 | `fullstack-workspace-init` / `npx @shipshitdev/v0` | New Shipshit.dev product repo | Conditional |
+| 2 | `agent-folder-init` | AI documentation & standards for existing repos | Conditional |
+| 3 | `linter-formatter-init` | ESLint/Biome + formatter + pre-commit repair | Conditional |
+| 4 | `testing-cicd-init` / `husky-test-coverage` | Test and CI gates | Optional |
+| 5 | `scaffold` | Incremental module/component additions | Optional |
+
+## Route Selection
+
+Use this order:
+
+1. New Shipshit.dev product repo: run `npx @shipshitdev/v0`.
+2. New non-product repo: scaffold only the requested repo structure, then add agent docs and gates.
+3. Existing repo missing AI context: run `agent-folder-init`.
+4. Existing repo with weak quality gates: run linter/test/CI skills only.
+5. Existing repo needing one feature/module: run `scaffold` after finding 3+ examples.
+
+For v0-backed setup, use interactive mode unless the user provides all inputs:
+
+```bash
+npx @shipshitdev/v0 <project-directory>
+```
+
+For non-interactive Shipshit.dev product setup:
+
+```bash
+npx @shipshitdev/v0 <project-directory> \
+  --scope "<product scope>" \
+  --agent codex \
+  --apps web,app,desktop,mobile,extension,cli \
+  --routes overview,new-task,search,inbox,activities \
+  --no-github
+```
+
+## Usage
+
+### Quick Start (Recommended)
+
+When user says "initialize my project" or "set up new project":
+
+```
+1. Ask for project context:
+   - Project path (default: current directory)
+   - New Shipshit.dev product or existing repo repair?
+   - Product scope if using v0
+   - App surfaces and routes if non-default
+   - Agent to hand off to: codex or claude
+   - Need existing-repo repair or incremental scaffolding?
+
+2. Execute phases in order:
+   v0 route OR existing-repo phases → verification
+```
+
+### Existing-Repo Repair
+
+Use lower-level skills only after deciding v0 is not the right route:
+
+1. `agent-folder-init` for AI docs and agent config.
+2. `linter-formatter-init` for lint/format drift.
+3. `testing-cicd-init` or `husky-test-coverage` for test and CI gates.
+4. `scaffold` for a requested module, endpoint, component, or package.
+
+## Route Matrix
+
+| Request | Primary Route | Notes |
+|---------|---------------|-------|
+| New Shipshit.dev product repo | `npx @shipshitdev/v0` | Default route. Includes app surfaces and agent setup. |
+| New non-product repo | Minimal scaffold + `agent-folder-init` | Keep setup proportional to the requested repo. |
+| Existing repo AI context | `agent-folder-init` | No application source generation. |
+| Existing repo quality gates | Linter/test/CI skills | Repair only the missing gates. |
+| Existing repo feature/module | `scaffold` | Find 3+ local examples first. |
+
+## Best Practices
+
+### Sequencing
+
+- For new Shipshit.dev products, run v0 first.
+- For existing repos, add AI docs before repo-specific repair work.
+- Run linter and formatter setup before test hooks when both are missing.
+- Run `scaffold` only after the target codebase patterns are known.
+
+### Customization
+
+- Each phase can be skipped if already configured
+- Phases are idempotent (safe to re-run)
+- Configuration can be customized after orchestration
+
+### Verification Checklist
+
+After orchestration, verify:
+
+- [ ] The selected route matches the user request
+- [ ] New product repos were created through v0 unless explicitly exempted
+- [ ] Existing repo changes are limited to the delegated repair/addition
+- [ ] `bun lint`, `bun test`, or the repo's documented equivalents work when present
+
+## Example Interaction
+
+**User:** "Set up my new product at ~/projects/my-saas"
+
+**Orchestrator Response:**
+
+```
+Route: new Shipshit.dev product repo → v0.
+
+npx @shipshitdev/v0 ~/projects/my-saas --agent codex --no-github
+```
+
+## Troubleshooting
+
+### Phase fails to complete
+
+- Check if dependencies are installed (`node`, `python3`)
+- Verify write permissions to project directory
+- Check if conflicting configs exist
+
+### Linting errors after setup
+
+- Run `bun run lint:fix` to auto-fix
+- Check `.eslintrc.js` matches your stack
+- Verify TypeScript config if using TS
+
+### Pre-commit hook not running
+
+- Run `bunx husky install` manually
+- Check `.husky/pre-commit` exists and is executable
+- Verify `prepare` script in package.json

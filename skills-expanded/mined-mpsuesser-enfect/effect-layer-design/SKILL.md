@@ -1,0 +1,657 @@
+---
+name: effect-layer-design
+description: Design and compose Effect layers for clean dependency management
+---
+
+# Layer Design Skill
+
+Create layers that construct services while managing their dependencies cleanly.
+
+## Effect Source Reference
+
+The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Baseline: **effect@4.1.0 stable**. Use `git show effect@4.1.0:<path>`;
+exact-tag source takes precedence over a newer main checkout.
+
+Reference this for:
+
+- Layer source: `packages/effect/src/Layer.ts`
+- Context source: `packages/effect/src/Context.ts`
+- Migration guide: `MIGRATION.md`
+- Effect source: `packages/effect/src/`
+
+## Layer Structure
+
+```typescript
+import { Layer } from 'effect';
+
+// Layer<RequirementsOut, Error, RequirementsIn>
+//          ▲                ▲           ▲
+//          │                │           └─ What this layer needs
+//          │                └─ Errors during construction
+//          └─ What this layer produces
+```
+
+## Choose the Constructor by Output
+
+```typescript
+Layer.succeed(Service, implementation); // already built
+Layer.sync(Service, () => implementation); // lazy synchronous construction
+Layer.effect(Service, acquisition); // effectful single-service acquisition
+Layer.effectContext(acquisition); // effectful Context with multiple services
+Layer.effectDiscard(initialization); // acquisition that provides no service
+Layer.unwrap(effectProducingLayer); // config or discovery chooses a layer
+```
+
+Default production services with dependencies or resources to `Layer.effect`. Use `Layer.effectContext` when one acquisition intentionally provides multiple tags, especially when the same controllable test implementation backs both a production service and a test-control service.
+
+## Pattern: Simple Layer (No Dependencies)
+
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer } from 'effect';
+
+interface ConfigData {
+	readonly logLevel: string;
+	readonly connection: string;
+}
+
+export class Config extends Context.Service<
+	Config,
+	{
+		readonly getConfig: Effect.Effect<ConfigData>;
+	}
+>()('Config') {}
+
+// Layer<Config, never, never>
+//         ▲      ▲      ▲
+//         │      │      └─ No dependencies
+//         │      └─ Cannot fail
+//         └─ Produces Config
+export const ConfigLive = Layer.succeed(
+	Config,
+	Config.of({
+		getConfig: Effect.succeed({
+			logLevel: 'INFO',
+			connection: 'mysql://localhost/db'
+		})
+	})
+);
+```
+
+## Pattern: Layer with Dependencies
+
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer, Console } from 'effect';
+
+interface ConfigData {
+	readonly logLevel: string;
+	readonly connection: string;
+}
+
+export class Config extends Context.Service<
+	Config,
+	{
+		readonly getConfig: Effect.Effect<ConfigData>;
+	}
+>()('Config') {}
+
+export class Logger extends Context.Service<
+	Logger,
+	{
+		readonly log: (message: string) => Effect.Effect<void>;
+	}
+>()('Logger') {}
+
+// Layer<Logger, never, Config>
+//         ▲      ▲      ▲
+//         │      │      └─ Needs Config
+//         │      └─ Cannot fail
+//         └─ Produces Logger
+export const LoggerLive = Layer.effect(
+	Logger,
+	Effect.gen(function* () {
+		const config = yield* Config; // Access dependency
+		return Logger.of({
+			log: (message) =>
+				Effect.gen(function* () {
+					const { logLevel } = yield* config.getConfig;
+					yield* Console.log(`[${logLevel}] ${message}`);
+				})
+		});
+	})
+);
+```
+
+## Pattern: Layer with Resource Management
+
+Use `Layer.effect` for effectfully acquired services, including resources that need cleanup. In Effect v4, `Layer.effect` automatically handles `Scope` lifecycle — `Layer.scoped` is no longer needed.
+
+Resources are acquired and released using `Effect.acquireRelease` or `Effect.addFinalizer` inside the `Layer.effect` constructor:
+
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer } from 'effect';
+
+interface ConfigData {
+	readonly logLevel: string;
+	readonly connection: string;
+}
+
+interface Connection {
+	readonly close: () => void;
+}
+
+interface DatabaseError {
+	readonly _tag: 'DatabaseError';
+}
+
+export class Config extends Context.Service<
+	Config,
+	{
+		readonly getConfig: Effect.Effect<ConfigData>;
+	}
+>()('Config') {}
+
+export class Database extends Context.Service<
+	Database,
+	{
+		readonly query: (sql: string) => Effect.Effect<unknown, DatabaseError>;
+	}
+>()('Database') {}
+
+declare const connectToDatabase: (
+	config: ConfigData
+) => Effect.Effect<Connection, DatabaseError>;
+declare const executeQuery: (
+	connection: Connection,
+	sql: string
+) => Effect.Effect<unknown, DatabaseError>;
+
+// Layer<Database, DatabaseError, Config>
+export const DatabaseLive = Layer.effect(
+	Database,
+	Effect.gen(function* () {
+		const config = yield* Config;
+		const configData = yield* config.getConfig;
+
+		// Acquire resource with automatic release — Layer.effect handles Scope
+		const connection = yield* Effect.acquireRelease(
+			connectToDatabase(configData),
+			(conn) => Effect.sync(() => conn.close()) // Cleanup
+		);
+
+		return Database.of({
+			query: (sql) => executeQuery(connection, sql)
+		});
+	})
+);
+```
+
+Layer construction must complete. If acquisition starts a listener, stream, subscription, worker, or forever loop, fork it into the layer scope rather than running it inline:
+
+```typescript
+export const WorkerLive = Layer.effectDiscard(
+	Effect.gen(function* () {
+		const events = yield* Events.Service;
+		yield* events.stream.pipe(
+			Stream.runForEach(handleEvent),
+			Effect.forkScoped
+		);
+	})
+);
+```
+
+Use `Effect.forkScoped`, `FiberSet`, or `FiberMap` so closing the layer scope interrupts the background work. `forkScoped` alone is appropriate only for best-effort work that reports its own failures; monitor or supervise failure-significant consumers so their failures remain observable. Never block layer acquisition on a long-lived loop.
+
+## Composing Layers: Merge vs Provide
+
+Start from the service graph, not from whichever combinator makes the types compile:
+
+- `Layer.merge` / `Layer.mergeAll` expose independent outputs; they do not satisfy dependencies between the merged layers.
+- `Layer.provide` satisfies and hides an implementation dependency.
+- `Layer.provideMerge` satisfies a dependency and deliberately keeps that dependency in the output.
+- Name and reuse shared dependency layer values when acquisition must be shared.
+- Do not blindly merge every layer or use `provideMerge` as a make-it-compile tool; both can expose authority and lifecycle services that should remain private.
+
+### Merge (Parallel Composition)
+
+Merge layers when both outputs should remain exposed. This does not wire one output into another layer's requirements:
+
+<!-- typecheck -->
+```typescript
+import { Context, Layer } from 'effect';
+
+declare class Config extends Context.Service<Config, {}>()('Config') {}
+declare class Logger extends Context.Service<Logger, {}>()('Logger') {}
+
+declare const ConfigLive: Layer.Layer<Config, never, never>;
+declare const LoggerLive: Layer.Layer<Logger, never, Config>;
+
+// Layer<Config | Logger, never, Config>
+//         ▲               ▲      ▲
+//         │               │      └─ LoggerLive needs Config
+//         │               └─ No errors
+//         └─ Produces both Config and Logger
+const AppConfigLive = Layer.merge(ConfigLive, LoggerLive);
+```
+
+Result combines:
+
+- **Requirements**: Union (`never | Config = Config`)
+- **Outputs**: Union (`Config | Logger`)
+
+### Provide (Sequential Composition)
+
+Chain dependent layers:
+
+<!-- typecheck -->
+```typescript
+import { Context, Layer } from 'effect';
+
+declare class Config extends Context.Service<Config, {}>()('Config') {}
+declare class Logger extends Context.Service<Logger, {}>()('Logger') {}
+
+declare const ConfigLive: Layer.Layer<Config, never, never>;
+declare const LoggerLive: Layer.Layer<Logger, never, Config>;
+
+// Layer<Logger, never, never>
+//         ▲      ▲      ▲
+//         │      │      └─ ConfigLive satisfies LoggerLive's requirement
+//         │      └─ No errors
+//         └─ Only Logger in output
+const FullLoggerLive = Layer.provide(LoggerLive, ConfigLive);
+```
+
+Result:
+
+- **Requirements**: Outer layer's requirements (`never`)
+- **Output**: Inner layer's output (`Logger`)
+
+## Pattern: Direct Default Composition
+
+Compose `defaultLayer` directly unless you have a real module-evaluation or circular-import problem. Most services do not need deferred composition.
+
+```typescript
+import { Layer } from 'effect';
+
+// Raw layer — declares its dependencies in the type
+export const layer: Layer.Layer<MyService, never, DepA | DepB> = Layer.effect(
+	MyService,
+	Effect.gen(function* () {
+		const depA = yield* DepA;
+		const depB = yield* DepB;
+		return MyService.of({
+			/* ... */
+		});
+	})
+);
+
+// Fully-wired layer — compose directly in the normal case
+export const defaultLayer = layer.pipe(
+	Layer.provide(DepA.defaultLayer),
+	Layer.provide(DepB.defaultLayer)
+);
+```
+
+### Deferred Composition with Layer.suspend
+
+Use `Layer.suspend(() => ...)` when import evaluation order genuinely requires deferral:
+
+```typescript
+import { Layer } from 'effect';
+
+export const defaultLayer = Layer.suspend(() =>
+	layer.pipe(Layer.provide(Dep.defaultLayer))
+);
+```
+
+`Layer.unwrap(Effect.sync(...))` still works, but it is not the universal default. Reach for deferred composition only when the dependency graph actually needs it.
+
+**Naming convention:**
+
+- **`layer`** — exposes the service's true dependency graph in its type signature. Tests compose against `layer` directly, providing mock layers.
+- **`defaultLayer`** — the fully-wired production composition with all dependencies satisfied. Only define `defaultLayer` when `layer` has unsatisfied requirements. Self-contained layers (no external dependencies) export just `layer`.
+
+### When to defer
+
+Use deferred composition only for:
+
+- real circular-import or module-evaluation hazards
+- runtime-selected layer variants that should not be built eagerly
+- recursive layer graphs that must be tied lazily
+
+If none of those apply, compose directly.
+
+## Pattern: Layered Architecture
+
+Build applications in layers:
+
+<!-- typecheck -->
+```typescript
+import { Context, Layer } from 'effect';
+
+declare class Config extends Context.Service<Config, {}>()('Config') {}
+declare class Database extends Context.Service<Database, {}>()('Database') {}
+declare class Cache extends Context.Service<Cache, {}>()('Cache') {}
+declare class PaymentDomain extends Context.Service<PaymentDomain, {}>()(
+	'PaymentDomain'
+) {}
+declare class OrderDomain extends Context.Service<OrderDomain, {}>()(
+	'OrderDomain'
+) {}
+declare class PaymentGateway extends Context.Service<PaymentGateway, {}>()(
+	'PaymentGateway'
+) {}
+declare class NotificationService extends Context.Service<
+	NotificationService,
+	{}
+>()('NotificationService') {}
+
+declare const ConfigLive: Layer.Layer<Config, never, never>;
+declare const DatabaseLive: Layer.Layer<Database, never, Config>;
+declare const CacheLive: Layer.Layer<Cache, never, Config>;
+declare const PaymentDomainLive: Layer.Layer<PaymentDomain, never, Database>;
+declare const OrderDomainLive: Layer.Layer<OrderDomain, never, Database>;
+declare const PaymentGatewayLive: Layer.Layer<
+	PaymentGateway,
+	never,
+	PaymentDomain
+>;
+declare const NotificationServiceLive: Layer.Layer<
+	NotificationService,
+	never,
+	OrderDomain
+>;
+
+// Infrastructure: No dependencies
+const InfrastructureLive = Layer.mergeAll(
+	ConfigLive, // Layer<Config, never, never>
+	DatabaseLive, // Layer<Database, never, Config>
+	CacheLive // Layer<Cache, never, Config>
+).pipe(
+	Layer.provide(ConfigLive) // Satisfy Config requirement
+);
+
+// Domain: Depends on infrastructure
+const DomainLive = Layer.mergeAll(
+	PaymentDomainLive, // Layer<PaymentDomain, never, Database>
+	OrderDomainLive // Layer<OrderDomain, never, Database>
+).pipe(Layer.provide(InfrastructureLive));
+
+// Application: Depends on domain
+const ApplicationLive = Layer.mergeAll(
+	PaymentGatewayLive,
+	NotificationServiceLive
+).pipe(Layer.provide(DomainLive));
+```
+
+## Pattern: Multiple Implementations
+
+Switch implementations for different environments:
+
+```typescript
+import { Context, Effect, Layer } from 'effect';
+
+interface Connection {
+	readonly close: () => void;
+}
+
+export class Database extends Context.Service<
+	Database,
+	{
+		readonly query: (sql: string) => Effect.Effect<{ rows: unknown[] }>;
+	}
+>()('Database') {}
+
+declare const connectToProduction: () => Effect.Effect<Connection>;
+declare const createDatabaseService: (connection: Connection) => {
+	readonly query: (sql: string) => Effect.Effect<{ rows: unknown[] }>;
+};
+
+declare const myProgram: Effect.Effect<void, never, Database>;
+
+// Production
+export const DatabaseLive = Layer.effect(
+	Database,
+	Effect.gen(function* () {
+		const connection = yield* connectToProduction();
+		return createDatabaseService(connection);
+	})
+);
+
+// Test
+export const DatabaseTest = Layer.succeed(
+	Database,
+	Database.of({
+		query: () => Effect.succeed({ rows: [] })
+	})
+);
+
+// Use in application
+const program = Effect.gen(function* () {
+	const nodeEnv = yield* Config.String('NODE_ENV').pipe(
+		Config.withDefault('production')
+	);
+	yield* myProgram.pipe(
+		Effect.provide(nodeEnv === 'test' ? DatabaseTest : DatabaseLive)
+	);
+});
+```
+
+## Pattern: Layer Sharing
+
+Layers share by layer-object identity within a `MemoMap`, not globally across
+all executions or all `Effect.provide` calls:
+
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer } from 'effect';
+
+declare class Config extends Context.Service<
+	Config,
+	{ readonly value: string }
+>()('Config') {}
+declare const ConfigLive: Layer.Layer<Config, never, never>;
+
+// Config is constructed once and shared
+const program = Effect.all([
+	Effect.gen(function* () {
+		const config = yield* Config;
+		// Uses shared instance
+	}),
+	Effect.gen(function* () {
+		const config = yield* Config;
+		// Same instance
+	})
+]).pipe(Effect.provide(ConfigLive));
+```
+
+> **Memo-map fork nuance:** Sharing is mediated by a `MemoMap`. A root memo map (`Layer.makeMemoMapUnsafe()`, used implicitly by `Effect.provide`) shares every layer allocation it builds. A _forked_ memo map (`Layer.forkMemoMap` / `Layer.forkMemoMapUnsafe`) can still see allocations its parent already built, but new allocations it builds stay isolated and are not written back to the parent. This is the mechanism `@effect/vitest` uses to reuse parent layers while isolating nested `it.layer` suites.
+
+An enclosing provide/runtime allocation is reused by nested provides; sibling
+`Effect.provide` calls build separate copies. Use `{ local: true }` to isolate
+the provided subtree explicitly.
+
+In 4.1.0, `Layer.provide`, `provideMerge`, and `mergeAll` also memoize the **whole
+composition**. Reusing that composed layer shares its build even when an inner
+dependency uses `Layer.fresh`. For independent copies, apply `Layer.fresh` to the
+entire composition. The first requester owns a shared in-progress build;
+interrupting it affects other callers waiting for that build.
+
+`Layer.buildWithMemoMap` defers construction until each execution, so retrying
+the returned effect does not eagerly reuse an already-created build operation.
+
+<!-- typecheck -->
+```ts
+import { Context, Effect, Layer } from 'effect';
+
+class Config extends Context.Service<Config, { readonly port: number }>()('demo/Config') {}
+class Server extends Context.Service<Server, { readonly port: number }>()('demo/Server') {}
+
+const config = Layer.sync(Config, () => ({ port: 8080 }));
+const server = Layer.effect(Server, Config.use((value) => Effect.succeed(value)));
+const composed = server.pipe(Layer.provide(Layer.fresh(config)));
+const shared = Layer.mergeAll(composed, composed);
+const isolated = Layer.mergeAll(Layer.fresh(composed), Layer.fresh(composed));
+```
+
+## Error Handling in Layers
+
+`Layer.tapError` and `Layer.tapCause` observers must accept the complete source
+error type. Preloading a LayerMap does not make future resource acquisition
+infallible; its accessors retain the resource error channel.
+
+Construct keyed layers with a lookup function and options:
+`LayerMap.make(lookup, { preloadKeys, idleTimeToLive })`.
+`fromRecord` and `LayerMap.Service` also support preloading. In all forms, keys
+with zero idle TTL are skipped, including when TTL is omitted. Set a non-zero
+`idleTimeToLive` to eagerly acquire and validate preloaded keys during
+construction; otherwise errors surface on first access. Preloaded resources
+remain retained only for that idle TTL, not forever.
+
+Handle construction errors:
+
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer, Schema } from 'effect';
+
+interface Connection {
+	readonly close: () => void;
+}
+
+class ConnectionError extends Schema.TaggedError<ConnectionError>()(
+	'ConnectionError',
+	{
+		message: Schema.String
+	}
+) {}
+
+class DatabaseConstructionError extends Schema.TaggedError<DatabaseConstructionError>()(
+	'DatabaseConstructionError',
+	{ cause: ConnectionError }
+) {}
+
+export class Database extends Context.Service<
+	Database,
+	{
+		readonly query: (sql: string) => Effect.Effect<unknown>;
+	}
+>()('Database') {}
+
+declare const connectToDatabase: () => Effect.Effect<
+	Connection,
+	ConnectionError
+>;
+declare const createDatabaseService: (connection: Connection) => {
+	readonly query: (sql: string) => Effect.Effect<unknown>;
+};
+
+export const DatabaseLive = Layer.effect(
+	Database,
+	Effect.gen(function* () {
+		const connection = yield* connectToDatabase().pipe(
+			Effect.catchTag('ConnectionError', (error) =>
+				Effect.fail(new DatabaseConstructionError({ cause: error }))
+			)
+		);
+		return createDatabaseService(connection);
+	})
+);
+```
+
+## Composing Layers: Deliberate ProvideMerge
+
+`Layer.provideMerge` satisfies dependencies AND passes them through to the output. Use it only when downstream consumers intentionally need both outputs, including carefully designed test stacks.
+
+### Provide vs ProvideMerge
+
+```typescript
+import { Layer } from 'effect';
+
+declare const ConfigLayer: Layer.Layer<Config>;
+declare const DatabaseLayer: Layer.Layer<Database, never, Config>;
+declare const UserServiceLayer: Layer.Layer<UserService, never, Database>;
+
+// Layer.provide — satisfies requirement, REMOVES it from output
+const db = DatabaseLayer.pipe(Layer.provide(ConfigLayer));
+// db: Layer<Database>  — Config is NOT in the output
+
+// Layer.provideMerge — satisfies requirement, KEEPS it in output
+const dbWithConfig = DatabaseLayer.pipe(Layer.provideMerge(ConfigLayer));
+// dbWithConfig: Layer<Database | Config>  — Config remains available
+```
+
+### When to use ProvideMerge
+
+Use `Layer.provideMerge` when downstream test layers intentionally need the upstream services as outputs as well as dependencies:
+
+```typescript
+import { Layer } from 'effect';
+
+// Test layer composition — downstream layers need Config AND Database
+const infra = Layer.mergeAll(ConfigLayer, DatabaseLayer).pipe(
+	Layer.provideMerge(ConfigLayer) // Config stays visible for downstream
+);
+
+// Both UserService and OrderService can access Config and Database
+const services = Layer.mergeAll(UserServiceLayer, OrderServiceLayer).pipe(
+	Layer.provideMerge(infra)
+);
+```
+
+If downstream code does not need the dependency, use `Layer.provide` and keep it hidden. Do not preserve every intermediate service by default.
+
+## Pattern: Share Work With a Cache
+
+For lazy one-shot result sharing, allocate `Effect.cached(work)` once inside the
+service's layer. It shares in-flight work and the completed result (including
+failure). Do not reallocate the cache on each method call.
+
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer } from 'effect';
+
+class Settings extends Context.Service<Settings, {
+	readonly load: Effect.Effect<string>;
+}>()('app/Settings') {}
+
+const layer = Layer.effect(Settings, Effect.gen(function* () {
+	const load = yield* Effect.cached(Effect.succeed('settings'));
+	return Settings.of({ load });
+}));
+```
+
+For refresh use `Effect.cachedInvalidateWithTTL(work, Duration.infinity)` and
+expose the returned invalidation effect. For keyed retention use `Cache`,
+`ScopedCache`, `RcMap`, or `LayerMap` according to resource lifetime (see
+`effect-cache`). `LayerMap.contextEffectOption` atomically retains an
+already-cached layer context without allocating a missing key.
+
+When the requirement is a restartable worker, latest-wins scheduling, or queued
+state transitions, use a dedicated coordinator with explicit states and a
+supervised fiber lifetime (see `effect-fiber`). A cache is not a job scheduler.
+
+## Naming Convention
+
+- `*Live` - Production implementation
+- `*Test` - Test implementation
+- `*Mock` - Mock for testing
+- Descriptive names for specialized implementations
+
+## Quality Checklist
+
+- [ ] Layer type accurately reflects dependencies
+- [ ] `Service.of({...})` used when returning from `Layer.effect`, never a plain object
+- [ ] Resource cleanup using `acquireRelease` or `addFinalizer` if needed
+- [ ] Layer can be tested with mock dependencies
+- [ ] No dependency leakage into service interface
+- [ ] Merge/provide/provideMerge follows the intended exposed service graph, not only type errors
+- [ ] Long-lived acquisition completes and forks background work into the layer scope
+- [ ] `defaultLayer` only present when `layer` has unsatisfied requirements
+- [ ] `defaultLayer` composes directly unless deferred evaluation is truly required
+- [ ] Error handling for construction failures
+- [ ] JSDoc with example usage
+
+Layers should make dependency management explicit while keeping service interfaces clean and focused.

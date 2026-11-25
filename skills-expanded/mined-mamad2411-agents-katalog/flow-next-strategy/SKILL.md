@@ -1,0 +1,180 @@
+---
+name: flow-next-strategy
+description: Create or update repo-root STRATEGY.md (problem, approach, users, metrics, tracks). Use for strategy or roadmap doc requests.
+user-invocable: false
+# Write-only is deliberate: the update path atomic-writes whole sections (references/update.md), so Edit is not needed
+allowed-tools: Read, Write, Bash
+---
+
+# /flow-next:strategy — repo-root STRATEGY.md anchor
+
+`flow-next-strategy` produces and maintains `STRATEGY.md` — a short, durable anchor at the repo root (peer of `README.md` / `GLOSSARY.md`) that captures what the product is, who it serves, how it succeeds, and where the team is investing. Downstream skills (`/flow-next:prospect`, `/flow-next:plan`, `/flow-next:refine`, `/flow-next:capture`, `/flow-next:sync`) read it as grounding when `sections_filled >= 1`.
+
+The document is short and structured on purpose. Good answers to a handful of sharp questions produce a better strategy than any amount of prose. This skill asks those questions, pushes back on weak answers, and writes the doc.
+
+**Date the strategy document from `date -u +%Y-%m-%d`** (run it; never assume the year).
+
+Read [working-rules.md](../../references/working-rules.md) first unless you already have this run; it holds for every step of this skill.
+
+## Preamble
+
+flowctl is **bundled — NOT installed globally.** `which flowctl` will fail (expected). Define once; subsequent blocks use `$FLOWCTL`:
+
+```bash
+FLOWCTL="${CODEX_HOME:-$HOME/.codex}/scripts/flowctl"
+[ -x "$FLOWCTL" ] || FLOWCTL="<plugin-root>/scripts/flowctl"   # <plugin-root> = the directory two levels above this skill's SKILL.md file (the harness gave you that file's absolute path when the skill loaded); substitute it literally
+[ -x "$FLOWCTL" ] || FLOWCTL=".flow/bin/flowctl"
+```
+
+## Interaction Method
+
+**Ask the user via plain text.** Render the options below as a numbered list `1.` … `N.`, followed by a final option `N+1. Other — type your own answer`. Print the question, then the numbered list, then **stop and wait for the user's next message before continuing**. Parse the reply as: a bare number `1`–`N+1` → that option; the literal text of an option label → that option; free text after `Other` → custom answer.
+
+Default to `plain-text numbered prompt`. Never silently skip the question.
+
+**Free-form responses for the substantive sections** (Target problem / Our approach / Who it's for / Key metrics / Tracks). **Single-select with lead-with-recommendation only for routing decisions** (which section to revisit, include this optional section, foreign-file resolution).
+
+## Focus Hint
+
+<focus_hint> #$ARGUMENTS </focus_hint>
+
+Interpret any argument as an optional focus: a section name to revisit (`metrics`, `approach`, `tracks`, `problem`, `persona`, `milestones`, `not-working-on`) or a scope hint. With no argument, proceed open-ended and let the file state decide the path.
+
+## Core Principles
+
+1. **Anchor, not plan.** Strategy is what the product is and why. Features belong in `/flow-next:prospect`; tasks belong in specs and `/flow-next:plan`. Do not let either creep into the doc.
+2. **Rigor in the questions, not the headings.** The section headers are plain English. The interview questions enforce strategy discipline (`references/interview.md`).
+3. **Short is a feature.** The template is constrained. Adding sections costs more than it looks like. Push back on expansion.
+4. **Durable across runs.** This skill is rerunnable. On a second run it updates in place, preserves what is working, and only challenges sections that look stale or weak.
+5. **Survives `.flow/` wipe.** `STRATEGY.md` lives at repo root, never under `.flow/`. The project's strategy belongs to the project, not flow-next.
+
+## Execution Flow
+
+### Phase 0: Route by file state
+
+**0.1 — Read file state**
+
+```bash
+STATUS_JSON=$("$FLOWCTL" strategy status --json 2>/dev/null) || STATUS_JSON=
+if ! printf '%s' "$STATUS_JSON" | jq -e '
+  type == "object"
+  and (.exists | type == "boolean")
+  and (.husk | type == "boolean")
+  and (.sections_filled as $n
+    | ($n | type) == "number"
+    and ($n | floor) == $n
+    and $n >= 0
+    and $n <= 7)
+  and (.total_sections as $n
+    | ($n | type) == "number"
+    and ($n | floor) == $n
+    and $n >= 5
+    and $n <= 7)
+  and (.sections_filled <= .total_sections)
+  and (.last_updated == null or (.last_updated | type == "string"))
+  and (.file_path == null or (.file_path | type == "string"))
+  and (.generator == null or (.generator | type == "string"))
+  and (.generator_match | type == "boolean")
+  and (.husk == ((.exists == true) and (.sections_filled == 0)))
+  and (.generator_match == (.generator == "flow-next-strategy"))
+' >/dev/null 2>&1; then
+  echo "[STRATEGY: unable to classify STRATEGY.md safely — leaving it unchanged]" >&2
+  exit 0
+fi
+EXISTS=$(printf '%s' "$STATUS_JSON" | jq -r '.exists')
+HUSK=$(printf '%s' "$STATUS_JSON" | jq -r '.husk')
+SECTIONS_FILLED=$(printf '%s' "$STATUS_JSON" | jq -r '.sections_filled')
+GENERATOR_MATCH=$(printf '%s' "$STATUS_JSON" | jq -r '.generator_match')
+FILE_PATH=$(printf '%s' "$STATUS_JSON" | jq -r '.file_path // empty')
+```
+
+JSON fields (frozen by Task 1):
+
+- `exists` (bool) — file present
+- `husk` (bool) — `exists: true` AND `sections_filled == 0`
+- `sections_filled` (int) — populated required + included optional-section count (0-7)
+- `total_sections` (int) — 5 required + populated optional sections (5-7)
+- `last_updated` (str|null) — ISO date from frontmatter
+- `file_path` (str|null) — absolute path of resolved STRATEGY.md
+- `generator` (str|null) — frontmatter `generator` value
+- `generator_match` (bool) — `generator == "flow-next-strategy"`
+
+**0.2 — Subdirectory walk-up surfacing**
+
+If `file_path` is set and differs from `${PWD}/STRATEGY.md`, surface one line in chat before any question fires:
+
+```
+Using repo-root STRATEGY.md at <file_path>.
+```
+
+This is the only line printed before routing — keep the noise floor low.
+
+**0.3 — Foreign-file resolution**
+
+If `exists: true` AND `generator_match: false`, do not write: read
+[references/foreign-file.md](references/foreign-file.md) and ask its question before anything else.
+
+**0.4 — Routing**
+
+After walk-up surfacing and foreign-file resolution:
+
+| State | Route |
+|-------|-------|
+| `exists: false` | Phase 1 (first-run interview) |
+| `exists: true` AND `husk: true` AND `generator_match: true` | Phase 1 (first-run; husk was probably an aborted run) |
+| `exists: true` AND `husk: false` AND `generator_match: true` | Phase 2 (section-revisit update) |
+
+Announce the selected path, then load exactly one direct workflow reference:
+
+- First-run: say `Strategy doc not found — let's write it.`, then read and follow `references/first-run.md`.
+- Update: say `Found existing strategy — let's review and update.`, then read and follow `references/update.md`.
+
+Do not read the unselected workflow. A foreign file stays entirely in Phase 0.3
+unless the user confirms `rewrite`; confirmed rewrite selects the first-run
+workflow. Any state not matched by the table is unsafe to classify: leave the
+file unchanged and exit 0 with the same safe-classification stderr line from
+Phase 0.1.
+
+**Done when:** `STATUS_JSON` has validated, the selected path was announced, and exactly one of `references/first-run.md` / `references/update.md` has been read — or the run exited 0 leaving `STRATEGY.md` untouched.
+
+### Phase 3: Downstream handoff
+
+After writing (first-run or update), surface the file's role to the user in one paragraph:
+
+- If `.flow/specs/` is empty (and any legacy `.flow/epics/` is also empty) AND `.flow/prospects/` is empty: `Strategy doc written. Next, /flow-next:prospect [optional focus] generates ranked candidate ideas grounded in the strategy you just captured.`
+- If `.flow/` is populated: `Strategy doc written. Downstream skills (/flow-next:prospect, /flow-next:plan, /flow-next:refine, /flow-next:capture, /flow-next:sync) will read STRATEGY.md as grounding on next invocation.`
+
+One paragraph max. No follow-up questions.
+
+**Done when:** `STRATEGY.md` is on disk at the repo root with the sections the interview filled, and exactly one handoff paragraph has been surfaced — nothing else printed at exit.
+
+## What this skill does not do
+
+- Does not update the issue tracker or reconcile in-flight work. Strategy is the doc; execution lives in specs, tasks, and `/flow-next:plan`.
+- Does not write product requirements or implementation plans — those are `/flow-next:capture` and `/flow-next:plan`.
+- Does not compute metric values. It records *which* metrics matter and where they live, not what they read today.
+- Does not create per-subdirectory STRATEGY.md files. Strategy is repo-wide by Rumelt's definition; cascading strategies re-introduce the "is for everyone, is for no one" problem.
+- Does not migrate hand-written or CE-format STRATEGY.md files. v1 ships sentinel-based foreign-file refusal; multi-format migration is a v2 problem.
+- Does not delete the file when all sections are removed. Last-section deletion leaves a husk (`# <name> Strategy` H1 + frontmatter) on disk — file never deleted.
+
+## Forbidden
+
+- **Setting `context: fork`** — `plain-text numbered prompt` must stay reachable across phases.
+- **Inline cross-platform tool tables** in prose (multi-platform listings naming the tool primitive on each harness).
+- **Lead-with-recommendation on substance questions** — problem / approach / persona / metrics / tracks get free-form, no recommendation, no menu. Recommendation primes the user out of their own language. Routing questions only.
+- **Leaking anti-pattern names** to the user. `vanity` / `fluff` / `feature-list` / `goal-stated-as-problem` are internal labels for formulating sharper follow-ups.
+- **Auto-overwriting a foreign-file STRATEGY.md** — Phase 0.3 always asks. v1's stance is refusal; user can rename or delete to bootstrap.
+- **Writing more than 4 sentences per section** (except Tracks, where each track has its own short block). The post-write checklist in `references/strategy-template.md` catches this.
+- **Adding sections beyond the locked 5 + 2 optional**. CE's `Marketing` section is dropped on purpose; do not re-introduce it. Section order is locked.
+- **Inventing flowctl subcommands** — The supported read surface is `"$FLOWCTL" strategy {status,read}` only. The skill writes the file directly via `Write`; no strategy add/list command exists.
+
+## Output rules
+
+The deliverable is the written `STRATEGY.md` itself. Surface to chat:
+
+- One-line path announcement at Phase 0 (walk-up subdir or file state).
+- Per-section interview Q&A (the agent's questions; user's answers).
+- Final draft read-back in Phase 1.5 / 2.4.
+- One-paragraph downstream handoff at Phase 3.
+
+No internal summary printed at exit beyond the Phase 3 handoff line. The file IS the report.

@@ -1,0 +1,240 @@
+---
+name: plugin-update
+description: Checks, installs, updates Claude Code plugins. Triggers - update plugins, check versions, обнови плагины.
+user-invocable: true
+disable-model-invocation: true
+argument-hint: "[prompt] [check|update|all]"
+allowed-tools: [Read, Bash, AskUserQuestion, Write, WebFetch]
+model: sonnet
+---
+
+# Brewcode Plugin Update
+
+> Check, install, and update the brewcode plugin suite (brewcode, brewdoc, brewtools, brewui). Execute all commands in the current session — never give "you should run" instructions.
+
+## Prompt contract
+
+Position 1 of `$ARGUMENTS` is a **free-form prompt** (RU/EN) — the mode is optional and may
+follow in any order. Nobody types keys: resolve the mode FROM the prompt.
+
+1. Strip flags. An explicit mode token anywhere wins outright, no scoring.
+2. Else score modes by distinct whole-word keyword hits (table below). Highest unique score wins.
+   All zero -> `interactive`.
+3. Empty arguments -> `interactive`; `check` asks nothing (read-only). `interactive` asks its
+   own per-phase `AskUserQuestion` gates — that IS the mode, not an extra clarifying question.
+4. Outcome-changing ambiguity between `update` and `all` -> ONE `AskUserQuestion` BEFORE any work.
+5. Prose that is not a mode is still input: read it for which plugins/scope it names.
+
+Then print this block ONCE, before Phase 3 (the first phase that can mutate). `check` prints it
+immediately before its Phase 2 report instead:
+
+```
+PLAN — brewtools:plugin-update
+INPUT:  <arguments verbatim, or "(empty)">
+MODE:   <resolved> — <explicit | matched keyword: X | default>
+SCOPE:  <resolved plugins / flags>
+DO:     <2-5 imperative bullets>
+RESULT: <what the user ends up holding>
+```
+
+Labels are literal; values follow the conversation language.
+
+## Argument Handling
+
+**Skill arguments received:** `$ARGUMENTS`
+
+| Mode | EN keywords | RU keywords | Mutates? | Behavior |
+|------|-------------|--------------|----------|----------|
+| `interactive` | *(empty)* | *(empty)* | yes (asks first) | all 6 phases with AskUserQuestion gates |
+| `check` | `check`, `status` | `проверь`, `статус` | no | Phases 0-2 only (status table), no prompts |
+| `update` | `update`, `upgrade` | `обнови`, `обновление` | yes | Phases 0-4, non-interactive "Update all" |
+| `all` | `all`, `everything`, `full` | `всё`, `полностью` | yes | Phases 0-6 non-interactive |
+
+Parse first token of `$ARGUMENTS`. Unknown or empty → interactive.
+
+## Critical Rules
+
+- EXECUTE every `claude plugin ...` command via Bash tool. Show full output.
+- NEVER suggest `--plugin-dir` for end users (dev-only).
+- ALWAYS print the reload notice at the end, even on no-op runs.
+- AskUserQuestion: options lists only, no free-text fields.
+
+---
+
+## Phase 0 — Discover Installed Plugins
+
+**PRIMARY** (CC 2.1.163+) — **EXECUTE** using Bash tool:
+```bash
+unset CLAUDECODE && claude plugin list --json && echo "✅ list OK" || echo "❌ list FAILED"
+```
+
+If the command succeeds and returns a non-empty JSON array, parse it directly. Each object has fields: `id` (`<plugin>@<marketplace>`), `version` (string, may be `"unknown"`), `scope`, `enabled` (boolean), `installPath`, `installedAt`, `lastUpdated`, optional `mcpServers`.
+
+**FALLBACK** (CC < 2.1.163 or empty/error output from above) — **EXECUTE** using Bash tool:
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/discover-plugins.sh" && echo "✅ discover OK" || echo "❌ discover FAILED"
+```
+
+> **STOP if both fail** — report to user and continue without installed data (treat everything as missing).
+
+Partition results into: `suite = {brewcode, brewdoc, brewtools, brewui}`, `other = everything else`.
+
+Read [references/discovery.md](references/discovery.md) for details on both discovery paths.
+
+## Phase 1 — Fetch Latest Versions
+
+**EXECUTE** using Bash tool:
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/fetch-latest-versions.sh" && echo "✅ fetch OK" || echo "❌ fetch FAILED"
+```
+
+> **STOP if ❌** — report network issue, mark latest versions as "unknown", continue.
+
+Merge with Phase 0 data.
+
+## Phase 2 — Status Table
+
+Render markdown table to the user:
+
+| Plugin | Installed | Latest | Status |
+|--------|-----------|--------|--------|
+| brewcode | 3.4.51 | 3.4.52 | ⬇️ update |
+| brewdoc | 3.4.51 | 3.4.51 | ✅ current |
+| brewtools | — | 3.4.51 | ❌ missing |
+| brewui | 3.4.51 | 3.4.51 | ✅ current |
+
+Status legend: ✅ current, ⬇️ update available, ❌ missing, ❓ unknown.
+
+Also list `other` plugins below with their versions (informational).
+
+**If arg = `check`** → print the `## Prompt contract` PLAN block (`DO:` reduced to "read
+installed + latest versions, render status"), then STOP here. Skip to Phase 6.
+
+## Phase 2b — Token-Cost Table (Optional)
+
+Precheck:
+```bash
+claude plugin details --help >/dev/null 2>&1 && echo "available" || echo "skip"
+```
+
+If unavailable → SKIP (proceed to Phase 3).
+
+If available, for each installed suite plugin run `claude plugin details <plugin>@claude-brewcode` and render:
+
+| Plugin | Base Tokens | With Skills | Hooks | Total |
+|--------|-------------|-------------|-------|-------|
+| brewcode | ... | ... | ... | ... |
+| brewdoc | ... | ... | ... | ... |
+| brewtools | ... | ... | ... | ... |
+| brewui | ... | ... | ... | ... |
+
+Adapt column names to actual output fields. Missing field → `—`. Command failure for a plugin → `❓` for that row, continue.
+
+Phase is informational only; do not block on errors.
+
+## Phase 3 — Install Missing
+
+Print the `## Prompt contract` PLAN block here — this is the first phase that can mutate — with
+SCOPE naming the missing/outdated plugins found in Phases 0-2, before asking or installing.
+
+For each missing suite plugin, ask via AskUserQuestion (unless arg ∈ {`update`, `all`} — `all` auto-installs, `update` skips install).
+
+**AskUserQuestion** (interactive only, if missing plugins exist):
+
+Question: "Install missing brewcode plugins?"
+Options: "Install all missing" / "Install selected" / "Skip install"
+
+If "Install selected" — ask per plugin with options `["Install", "Skip"]`.
+
+**EXECUTE** (idempotent):
+```bash
+claude plugin marketplace add https://github.com/kochetkov-ma/claude-brewcode && echo "✅ marketplace add OK" || echo "⚠️ marketplace add warning (may already exist)"
+```
+
+Then per plugin:
+```bash
+claude plugin install <plugin>@claude-brewcode && echo "✅ install <plugin> OK" || echo "❌ install <plugin> FAILED"
+```
+
+Show full output of each command.
+
+Reference: [references/install-prompt.md](references/install-prompt.md).
+
+## Phase 4 — Update Outdated
+
+**AskUserQuestion** (interactive only; `update` and `all` auto-pick "Update all"):
+
+Question: "Update brewcode plugin suite?"
+Options: "Update all" / "Update suite only" / "Update selected" / "Skip updates"
+
+If "Update selected" — ask per outdated plugin with options `["Update", "Skip"]`.
+
+Build the update set from that answer, never from a fixed list: "Update all" = every outdated
+plugin incl. `other`, "Update suite only" = outdated suite rows, "Update selected" = the rows
+answered `Update`, "Skip updates" = empty → go to Phase 5. Each row carries its Phase 0 `id` and
+`scope` (`user | project | local | managed`; missing → `user`).
+
+**EXECUTE** marketplace refresh first:
+```bash
+claude plugin marketplace update claude-brewcode && echo "✅ marketplace update OK" || echo "❌ marketplace update FAILED"
+```
+
+Then ONE command per row of the update set, substituting its `<id>` and discovered `<scope>`:
+```bash
+claude plugin update <id> --scope <scope> && echo "✅ update <id> OK" || echo "❌ update <id> FAILED"
+```
+
+`--scope` is mandatory — it defaults to `user`, so omitting it updates the user-scoped instance
+even when the installed one is project/local/managed.
+
+On failure: report exact error and continue. Reference: [references/update-commands.md](references/update-commands.md), [references/update-prompt.md](references/update-prompt.md).
+
+## Phase 5 — Auto-Update Toggle (Optional)
+
+**Skip for arg ∈ {`check`, `update`}.** Interactive or `all` only.
+
+Auto-update for third-party marketplaces is OFF by default. Toggle per-marketplace via `/plugin` UI → Marketplaces → claude-brewcode. Exact settings.json key unverified — see [references/autoupdate-research.md](references/autoupdate-research.md).
+
+**AskUserQuestion** (interactive only):
+
+Question: "Enable auto-update for claude-brewcode marketplace?"
+Options: "Enable via /plugin UI" / "Skip"
+
+Do NOT patch settings.json blindly. Instruct user to toggle via `/plugin` UI.
+
+## Phase 5b — Prune Stale Plugin Caches
+
+Prune removes only auto-installed dependencies no installed plugin still requires — plugins
+installed directly are never touched. Preview first, once per distinct `scope` seen in Phase 0.
+
+**EXECUTE** using Bash tool, substituting `<scope>`:
+```bash
+claude plugin prune --help >/dev/null 2>&1 && claude plugin prune --dry-run --scope <scope> || echo "skipped: claude plugin prune unavailable"
+```
+
+Show the listed orphans. Empty list → nothing to remove, go to Phase 6. Otherwise ask ONCE on that
+exact list (AskUserQuestion, options `["Prune listed", "Skip"]`; `all` auto-picks "Prune listed",
+`update` skips), then:
+
+```bash
+claude plugin prune --scope <scope> -y && echo "✅ prune OK" || echo "❌ prune FAILED"
+```
+
+`-y` is mandatory here: it is required when stdin/stdout is not a TTY, and the Bash tool is not one —
+a bare `claude plugin prune` hangs on its confirmation prompt or fails.
+
+Non-fatal: if CLI lacks `prune`, prints skip notice and continues.
+
+## Phase 6 — Reload Notice & Final Report
+
+**ALWAYS print** the contents of [references/reload-notice.md](references/reload-notice.md):
+
+> ⚠️ **Reload plugins to activate updates.**
+> Preferred: run `/reload-plugins` in this session.
+> Fallback: type `exit`, then run `claude` again.
+
+Final summary:
+- Plugins installed this run: [...]
+- Plugins updated this run: [...]
+- Plugins skipped: [...]
+- Errors encountered: [...]

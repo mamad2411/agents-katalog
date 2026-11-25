@@ -1,0 +1,116 @@
+---
+description: "Pixel-art scenes as one self-contained HTML file (cutscenes, title screens, dialogue, ambient loops), with optional audio. Use when asked for a 'pixel-art scene', 'cutscene', 'title screen', 'animated pixel background', 'pixel-art short', 'make it a little pixel-art movie', 'intro sequence', or 'ambient loop'. One sprite: /pixel-art:sprite; a sprite sheet: /pixel-art:animate; not hand-drawn animation or video."
+argument-hint: "<scene description> [resolution] [duration] [audio file]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: implement
+  summary: Author, render, and review a self-contained HTML pixel-art scene
+---
+
+# Scene
+
+Compose a moving pixel-art scene the user opens in any browser.
+
+## 1. Brief
+
+Follow [`brief.md`](${CLAUDE_PLUGIN_ROOT}/reference/brief.md): the shared fields, the `brief.md`
+file before the first build, one-line defaults, and the presence-gated `/planning:interview`
+offer (planning owns a numbered-question brief; the in-skill brief is the fallback and the
+default). Then add:
+
+- **Beats**: what happens, in order, and how long each lasts; loop or play once.
+- **Cast and set**: characters (existing sprite specs or new ones), location, time of day.
+- **Resolution**: a fixed logical size such as 160x144, 240x160, 320x180; everything is drawn
+  there and integer-scaled.
+- **Audio**: none, or a WAV path / audio artifact from another tool, passed in explicitly.
+
+Mood, palette, style references, and proportions still come from the shared brief and apply to
+the cast. When view does not apply, default it to "scene" in the defaults line.
+
+When a cast member is an existing spec with `brief.md` beside it, read that file and extend it.
+Do not re-ask fields it answers. Write this scene's `brief.md` beside the scene template before
+the first build.
+
+## 2. Author
+
+Follow [`scene-canvas.md`](${CLAUDE_PLUGIN_ROOT}/reference/scene-canvas.md). Write a template HTML
+file beside the output:
+
+- Characters come from sprite specs: embed each with `/*EMBED:relative/path.json*/null` and build
+  one offscreen canvas per frame at load, so sprites stay the same source the engine sheet uses.
+  Author missing characters first with `/pixel-art:sprite` or `/pixel-art:animate`.
+- Beats are a timeline or state machine driven by a fixed 60 Hz step; sprite cadence stays 8 to 12
+  fps; every draw lands on integer coordinates.
+- Light and fades step through palette colors or Bayer-dither patterns; never alpha, gradients or
+  blur.
+- Audio, when given: put `/*WAV:relative/file.wav*/null` in the template, which `embed.py` inlines
+  as a `data:audio/wav;base64,...` URL so the output stays one file. Play it with WebAudio,
+  starting on the first click, and rewind the scene clock on that click so the picture and the
+  loop share a start. Set `window.__pixelScene.audio` to the same URL so `--record` can mux it.
+  Why playback waits for a click: `scene-canvas.md` Audio.
+- Expose `window.__pixelScene` (`seek`, `frameDataURL`, `play`, `duration`) as `scene-canvas.md`
+  Review capture describes, so the review command can land on a timeline point.
+
+A worked example is `${CLAUDE_PLUGIN_ROOT}/examples/campfire/scene.html` (title card, dithered sky,
+parallax, fire particles, walking character, typed dialogue); copy the folder into the working
+directory before adapting it.
+
+Then inline the embeds into one file:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/embed.py" <template.html> <out-dir>/<name>.html
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gallery.py" <out-dir>
+```
+
+## 3. Review loop
+
+Run one command. It serves a copy of the self-contained scene (nothing beside it) and, when a browser is on `PATH`, seeks the
+timeline and writes shots (and a WebM when `--record` is set):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/capture.py" <out-dir>/<name>.html --at 0,1.5,6 --record 4 --out <out-dir>/capture
+```
+
+Exit 0: read each `shot-<n>.png` and, when present, treat `scene.webm` as the shareable
+recording (with the scene's audio when `audio` is set and `ffmpeg` is present, see Deliver). Every
+round, list each done criterion in `brief.md` as pass or fail with a one-line reason, and
+check silhouettes against the background, palette contrast, beat timing, text legibility, stray
+non-integer or smoothed pixels. Fix, rebuild, re-run the same command. Stop when every done
+criterion passes, or after the round budget (typically 2 to 4) with the failing criteria named.
+
+Exit 3 means no Chrome or Chromium on `PATH` (set `CAPTURE_BROWSER` to a browser binary, such as
+Playwright's Chromium, to point it at one). When a browser automation tool is present instead (a
+Playwright CLI or MCP, the built-in browser tools), serve the output directory over
+`http://127.0.0.1:<port>/`, call `window.__pixelScene.seek(t)` at the same timeline points, take
+the screenshots with that tool, and review them as above. With neither, exit 3's
+`visually unreviewed` stands. Say that the scene is visually unreviewed. Do not claim it
+looks right. Check the script parses (`node --check` on the extracted script when Node is
+present), grade whatever criteria the script can speak to, mark the rest fail with the reason
+"not seen", and ask the user to open it and describe what they see.
+
+## 4. Deliver
+
+Report the HTML path, the gallery `index.html`, and when capture wrote one, `scene.webm`, as full
+paths, converted to a host path when the session runs in WSL (`wslpath -w`). A GIF export of a
+scene is not produced here: GIF carries no audio and the scene is code. When the scene sets
+`window.__pixelScene.audio` to its WAV URL, `--record` loops that WAV from scene time 0 under the
+recording with `ffmpeg`, trimmed to the recording length. Without `ffmpeg` the WebM is video only and `capture.py` prints a note.
+`audioStream` is the live `MediaRecorder` path and is not aligned to the seek clock.
+
+## Next
+
+/pixel-art:animate to add or fix a cycle a scene character needs.
+
+## Gotchas
+
+- Browser automation tools may refuse `file:` URLs, which is why review goes through a localhost
+  server. A Linux browser also needs its system libraries; a launch error naming a missing `.so`
+  means those are not installed, not that the scene is broken.
+
+- `image-rendering: pixelated` plus `imageSmoothingEnabled = false` both matter; either alone
+  smooths somewhere.
+- Per-pixel dithered relighting over a whole scene tends to look washed out; flat colors per tile
+  with a highlight and a shadow edge read better.
+- The WebAudio square oscillator is fixed at 50% duty; chip-style duties need a `PeriodicWave` or
+  sample buffers.

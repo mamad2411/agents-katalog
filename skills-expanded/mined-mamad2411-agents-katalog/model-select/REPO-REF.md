@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/model-select/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 为每个 CUMCM 小问选定基准模型、主模型与对照，并写 why_not。在题型已分类、用户说「选模型」「用不用机器学习」时使用。不要在数据未看且题面依赖附件结构时锁死黑箱模型。

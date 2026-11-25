@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-wordflowlab-novelweave-novelweave-workflow/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 使用 NovelWeave 进行小说创作的完整工作流程，包括命令使用、最佳实践和高效创作技巧。适用于规划小说项目、组织创作过程或学习 NovelWeave 功能。

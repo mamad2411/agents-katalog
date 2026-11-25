@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/ghscan-dartway-dartway-dartway-ui-kit/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Build app kit widgets and styles; enforce sizing, assets, localization and shared UI conventions."

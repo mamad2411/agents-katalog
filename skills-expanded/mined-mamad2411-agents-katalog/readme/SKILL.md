@@ -1,0 +1,1820 @@
+---
+name: readme-skill
+description: >
+  生成一份对外可分享、脱敏的 AI-Native 开发者 README。
+  量化展示我对 Claude Code + Codex CLI + Kiro (AWS) + Trae (ByteDance) +
+  Gemini Antigravity (Google) + Cursor 的使用深度、AI 协作风格、
+  项目与领域分布、兴趣主题，以及与 GitHub 提交的产出关联。
+  Trigger when the user says: "生成我的 AI 档案" / "做一份 AI-native README" /
+  "分析我的 Claude / Codex / Kiro / Trae / Antigravity / Cursor 使用情况" /
+  "总结我的 AI 使用" / "生成 AI 月度报告" / "按月份分析我的 AI 编码" /
+  "分析 2026-05 的 AI 使用" / "build my AI usage profile" /
+  "build my monthly AI coding report" / "analyze my AI usage for May 2026" /
+  "summarize my Claude / Codex / Kiro / Trae / Antigravity / Cursor history" /
+  "生成开发者画像".
+  全程本地、只读、默认匿名、不上传任何数据。
+license: MIT
+---
+
+# Readme.skill — AI-Native 开发者档案生成器
+
+You (the AI agent invoking this skill) will read local Claude Code + Codex CLI
++ Kiro (AWS) + Trae (ByteDance) + Gemini Antigravity (Google) + Cursor data,
+compute a fixed set of dimensions, and render both a Markdown profile and a
+validated SVG poster under `./output/` in the user's requested language (Chinese
+by default; English when the user asks in English or explicitly requests
+English). The profile and poster can cover the default history view or an
+explicit month / date range. **You do all of the work** — read the files with
+`Read`, query sqlite via `Bash`, synthesize the prose yourself, then write and
+validate the SVG. Do **not** write helper scripts; the skill is the recipe.
+
+> 支持的 6 个 AI 编程工具（任一缺失都自动降级跳过）：
+> 1. **Claude Code** (`~/.claude/`) — Step 2
+> 2. **Codex CLI** (`~/.codex/`) — Step 3
+> 3. **Kiro CLI / IDE** (`~/.kiro/` + `~/.local/share/kiro-cli/`) — Step 3b
+> 4. **Trae IDE** (`~/Library/Application Support/Trae/` + 项目 `.trae/`) — Step 3c
+> 5. **Gemini Antigravity** (`~/.gemini/antigravity/brain/`) — Step 3d
+> 6. **Cursor** (`~/Library/Application Support/Cursor/` + 项目 `.cursor/`) — Step 3e
+
+> 默认行为：**对外分享版** —— 项目名匿名、敏感信息脱敏。
+> 如果用户明确说"私人版 / 不要脱敏 / show real names"，跳过匿名步骤。
+
+---
+
+## Step 1 — 准备
+
+```bash
+cd <repo-with-this-skill>   # e.g. ~/Projects/Readme.skill
+mkdir -p output
+DATE=$(date +%Y%m%d)
+```
+
+Decide anonymization mode (default = on). Build an in-memory mapping
+`real_path → "项目 A/B/C"` as you encounter project paths in later steps.
+Use the same mapping consistently across all sections.
+
+### 1.1 时间窗口 / 月度报告模式
+
+If the user asks for a month, quarter, stage, date range, "月度报告",
+"按月份分析", "time range", "monthly report", or similar, set a report window
+before reading any data. The window is a half-open local-date interval:
+`[REPORT_START, REPORT_END_EXCL)`.
+
+Supported phrases:
+- Single month: `2026-05`, `2026年5月`, `May 2026` → `REPORT_START=2026-05-01`,
+  `REPORT_END_EXCL=2026-06-01`, `REPORT_LABEL=2026-05`,
+  `REPORT_SLUG=202605`, `REPORT_MODE=monthly`
+- Month range: `2026-04 到 2026-05`, `Apr-May 2026` → start at the first day of
+  the first month, end at the first day after the last month,
+  `REPORT_MODE=range`
+- Explicit dates: `2026-05-03 到 2026-05-19` / `2026-05-03..2026-05-19` →
+  include both named dates by setting `REPORT_END_EXCL` to the day after the
+  final date, `REPORT_MODE=range`
+- Relative range: `最近30天` / `last 30 days` → compute from today's local date,
+  `REPORT_MODE=range`
+
+If no explicit time window is requested, keep the existing default profile
+behavior: AI tool totals may use all available local history, while GitHub and
+local git use their existing 365-day windows. Set `WINDOW_REQUESTED=0`.
+
+If a window is requested, set:
+
+```bash
+WINDOW_REQUESTED=1
+REPORT_START=<YYYY-MM-DD>
+REPORT_END_EXCL=<YYYY-MM-DD>   # exclusive
+REPORT_LABEL=<human-readable label, e.g. "2026-05" or "2026-04..2026-05">
+REPORT_SLUG=<filesystem-safe slug, e.g. "202605" or "202604-202605">
+```
+
+For every source below, include only records whose timestamp is
+`>= REPORT_START 00:00:00` and `< REPORT_END_EXCL 00:00:00` in local time.
+Never mix all-time counts into a windowed report unless the metric is explicitly
+labeled "all-time context" or "fallback, not window-filtered".
+
+For windowed reports, also compute a previous comparison window of the same
+length when possible:
+
+```bash
+# macOS date syntax. Use equivalent date math on other systems.
+window_start_ts=$(date -j -f "%Y-%m-%d" "$REPORT_START" +%s)
+window_end_ts=$(date -j -f "%Y-%m-%d" "$REPORT_END_EXCL" +%s)
+WINDOW_DAYS=$(( (window_end_ts - window_start_ts) / 86400 ))
+PREV_END_EXCL="$REPORT_START"
+PREV_START=$(date -j -v-"${WINDOW_DAYS}"d -f "%Y-%m-%d" "$REPORT_START" +%Y-%m-%d)
+```
+
+---
+
+## Step 2 — 读取 Claude Code 数据 (`~/.claude/` + 项目 `.claude/`)
+
+### 2.1 预聚合统计（最权威，先看这个）
+
+Read `~/.claude/stats-cache.json`. Extract:
+
+| 字段 | 含义 |
+| --- | --- |
+| `totalSessions` | session 总数 |
+| `totalMessages` | 消息总数 |
+| `firstSessionDate` | 首个 session ISO 时间 |
+| `longestSession.{duration,messageCount,timestamp}` | 最长 session |
+| `hourCounts` | `{hour: count}` 24h 热力 |
+| `modelUsage[model].{inputTokens,outputTokens,cacheReadInputTokens,cacheCreationInputTokens}` | 每模型 token 细分 |
+| `dailyActivity[].{date,messageCount,sessionCount,toolCallCount}` | 每日活跃 |
+| `dailyModelTokens[].{date,tokensByModel}` | 每日按模型 token |
+
+**派生量（你来算）**:
+- `claude_tokens_spent = Σ (inputTokens + outputTokens + cacheCreationInputTokens)` —— 真实新付费 token
+- `claude_cache_read = Σ cacheReadInputTokens` —— 缓存复用，反映 prompt-caching 熟练度
+- `cache_to_spent_ratio = claude_cache_read / claude_tokens_spent` —— 比值越大越熟
+
+**时间窗口模式**：如果 `WINDOW_REQUESTED=1`，优先从 `dailyActivity` 与
+`dailyModelTokens` 中按 `REPORT_START <= date < REPORT_END_EXCL` 过滤后汇总
+Claude sessions / messages / tokens / cache。`modelUsage` 是全局聚合；只有默认
+profile 模式才能直接当总量使用。若某个 Claude 字段只有全局聚合、无法按日期切分，
+在月度报告里写 `—` 或标注「仅有 all-time 聚合，未纳入窗口统计」，不要把全局值混进
+月度值。
+
+### 2.2 Slash-command 热度
+
+`~/.claude/history.jsonl` —— 每行 `{display, timestamp, project, sessionId}`。
+
+```bash
+# Top 15 slash commands
+jq -r 'select(.display | startswith("/")) | (.display | split(" ")[0])' \
+   ~/.claude/history.jsonl | sort | uniq -c | sort -rn | head -15
+
+# 总条数 vs 命令条数 vs 直接 prompt 条数
+total=$(wc -l < ~/.claude/history.jsonl)
+cmd=$(jq -r 'select(.display | startswith("/")) | .display' ~/.claude/history.jsonl | wc -l)
+echo "total=$total cmd=$cmd plain=$((total - cmd))"
+```
+
+时间窗口模式下，所有 `history.jsonl` 统计先过滤：
+
+```bash
+jq --arg start "$REPORT_START" --arg end "$REPORT_END_EXCL" '
+  select((.timestamp // "")[0:10] >= $start and (.timestamp // "")[0:10] < $end)
+' ~/.claude/history.jsonl
+```
+
+记录：`/effort`、`/plan`、`/skill*`、`/usage`、`/clear`、`/resume`、`/compact`、`/init` 各自次数。
+
+### 2.3 项目分布 (`~/.claude/projects/`)
+
+Each subdir is one project; per-project `*.jsonl` files = sessions.
+The dir name encodes the absolute path with `/` → `-` (ambiguous when the
+original path itself contains `-`).
+
+```bash
+# Top 15 by session-file count
+for d in ~/.claude/projects/*/; do
+  n=$(ls "$d"*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  echo "$n $(basename "$d")"
+done | sort -rn | head -15
+```
+
+To recover the canonical real path (so you can run `git log` later), read
+the `cwd` field from the first JSONL in each dir:
+
+```bash
+head -1 ~/.claude/projects/<encoded>/*.jsonl 2>/dev/null \
+  | jq -r 'select(.cwd) | .cwd' | head -1
+```
+
+### 2.4 计划与 skill 自研
+
+Claude Code 的 plan 文件目录不是固定值。默认在 `~/.claude/plans`,
+但用户可以通过 `plansDirectory` 改到项目工作目录下，例如
+`"./.claude/plans"`。统计 plans 时必须先解析候选 plan 目录，不能只枚举
+`~/.claude/plans/*.md`。
+
+解析规则：
+- 先从 `~/.claude/projects/*/*.jsonl` 的 `cwd` 字段恢复 Claude Code 访问过的项目根目录。
+- 对每个项目根目录，按 Claude Code settings 优先级读取：
+  `.claude/settings.local.json` > `.claude/settings.json` > `~/.claude/settings.json` > default。
+- 如果有效 settings 中存在 `plansDirectory`：
+  - 绝对路径保持不变；
+  - `~/...` 展开为 `$HOME/...`；
+  - `./...` 或其他相对路径按该项目根目录解析。
+- 如果没有配置，使用默认 `~/.claude/plans`。
+- 把所有候选目录下的 `*.md` 真实路径去重后，再统计 plan 数量和标题。
+
+```bash
+# Plan titles (first # heading of each plan) from all resolved plan dirs.
+# Include ~/.claude/plans plus any per-project plansDirectory targets.
+# Count plan files by file count, not by title extraction success.
+plan_count=<resolved-plan-file-count>
+for f in <resolved-plan-files>; do
+  awk '/^# / { sub(/^# /, ""); print; exit }' "$f"
+done
+
+ls ~/.claude/skills/ | wc -l       # skills installed / authored
+ls ~/.claude/tasks/  | wc -l        # tasks tracked
+ls ~/.claude/todos/  | wc -l
+```
+
+### 2.4b Skill 清单（AI 基础设施采集）
+
+For each `~/.claude/skills/*/SKILL.md` and `~/.codex/skills/*/SKILL.md`,
+**use the `Read` tool to inspect the frontmatter** (top of file, between `---` markers). Extract `name` and the full `description` as YAML semantics dictate.
+
+Support all four YAML scalar styles：
+
+| 写法 | 处理 |
+| --- | --- |
+| 单行: `description: foo bar` | 直接取冒号后内容 |
+| 引号: `description: "foo bar"` 或 `'foo bar'` | 去掉首尾引号 |
+| `>` folded（多行折叠） | join indented continuation lines with spaces |
+| `\|` literal（多行保留） | preserve line breaks |
+
+停止条件：遇到下一个**未缩进的 frontmatter key**（行首无空格且形如 `key:`），或遇到关闭的 `---` 行。如果 `description` 字段缺失，回落到 `<目录名> (no description)`。
+
+**绝不使用 `head \| grep`** —— 那会把 `>`/`\|` 多行风格静默截断到只剩 `>`，这是 v2.2 之前的真实 bug。务必 `Read` 完整 frontmatter 后按 YAML 语义解析。
+
+枚举候选 skill 目录：
+
+```bash
+ls -d ~/.claude/skills/*/ ~/.codex/skills/*/ 2>/dev/null
+```
+
+然后对每个目录：`Read` 它的 `SKILL.md` 头部 ~30 行 → 按上表解析 YAML → 输出 `<source>|<name>|<full_description>`。
+
+记录每个 skill 是「自建」还是「安装」。如果 skill 目录下有 git remote 指向用户自己的 repo，标记为自建；否则标记为安装。
+
+### 2.5 配置深度
+
+Read `~/.claude/settings.json`. Count:
+- `hooks` 个数（结构化自动化能力）
+- `mcpServers` 个数（外部能力接入）
+- `permissions.defaultMode`
+
+---
+
+## Step 3 — 读取 Codex CLI 数据 (`~/.codex/`)
+
+### 3.1 SQLite (read-only)
+
+The primary analytics store is `~/.codex/state_5.sqlite`, table `threads`.
+**Always open with `mode=ro`** so you can never write:
+
+```bash
+SQ='sqlite3 file:'"$HOME"'/.codex/state_5.sqlite?mode=ro&immutable=1'
+
+# If WINDOW_REQUESTED=1, compute unix-second bounds once and add the filter to
+# every threads query below. For queries that already have WHERE, append `AND`.
+FROM_TS=$(date -j -f "%Y-%m-%d" "$REPORT_START" +%s 2>/dev/null || true)
+TO_TS=$(date -j -f "%Y-%m-%d" "$REPORT_END_EXCL" +%s 2>/dev/null || true)
+# created_at >= FROM_TS AND created_at < TO_TS
+
+# Aggregate
+$SQ "SELECT COUNT(*), SUM(tokens_used), MIN(created_at), MAX(created_at) FROM threads;"
+
+# Model breakdown (note: empty/NULL model = older sessions, label as 'Codex (未标注)')
+$SQ "SELECT COALESCE(NULLIF(model,''),'Codex(未标注)'), COUNT(*), SUM(tokens_used) \
+     FROM threads GROUP BY 1 ORDER BY 3 DESC;"
+
+# Reasoning effort distribution (xhigh / high / medium / low / unspecified)
+$SQ "SELECT COALESCE(NULLIF(reasoning_effort,''),'unspecified'), COUNT(*) \
+     FROM threads GROUP BY 1 ORDER BY 2 DESC;"
+
+# Top 15 working dirs
+$SQ "SELECT cwd, COUNT(*), SUM(tokens_used) FROM threads \
+     WHERE cwd != '' GROUP BY cwd ORDER BY 2 DESC LIMIT 15;"
+
+# Hour-of-day heatmap
+$SQ "SELECT strftime('%H', datetime(created_at,'unixepoch')), COUNT(*) \
+     FROM threads GROUP BY 1 ORDER BY 1;"
+
+# Day-of-activity timeseries
+$SQ "SELECT date(created_at,'unixepoch'), COUNT(*) FROM threads GROUP BY 1;"
+
+# Sample titles + first user messages for keyword extraction (titles only — no body)
+$SQ "SELECT title FROM threads WHERE title != '' ORDER BY created_at DESC LIMIT 200;"
+$SQ "SELECT first_user_message FROM threads WHERE first_user_message != '' \
+     ORDER BY created_at DESC LIMIT 200;"
+
+# CLI versions used (Codex evolution signal)
+$SQ "SELECT cli_version, COUNT(*) FROM threads WHERE cli_version != '' \
+     GROUP BY 1 ORDER BY 2 DESC LIMIT 10;"
+
+# --- 以下为 v2.0 新增查询 ---
+
+# 月度聚合（Evolution 曲线用）
+$SQ "SELECT strftime('%Y-%m', datetime(created_at,'unixepoch')), COUNT(*), \
+     SUM(tokens_used), COALESCE(NULLIF(model,''),'unknown') \
+     FROM threads GROUP BY 1,4 ORDER BY 1,3 DESC;"
+
+# CLI 版本时间线（Evolution 曲线用）
+$SQ "SELECT cli_version, MIN(date(created_at,'unixepoch','localtime')), \
+     MAX(date(created_at,'unixepoch','localtime')), COUNT(*) \
+     FROM threads WHERE cli_version != '' GROUP BY 1 ORDER BY 2;"
+
+# 每项目 token 消耗（双工具编排分析用）
+$SQ "SELECT cwd, COALESCE(NULLIF(model,''),'unknown'), COUNT(*), SUM(tokens_used) \
+     FROM threads WHERE cwd != '' GROUP BY 1,2 ORDER BY 1,4 DESC;"
+```
+
+### 3.2 Codex 全局历史
+
+`~/.codex/history.jsonl` — `{session_id, ts, text}`. Sample for keywords:
+
+```bash
+wc -l ~/.codex/history.jsonl                                 # total prompts
+jq -r '.text' ~/.codex/history.jsonl | head -300 > /tmp/codex_text.txt   # corpus
+jq -r '.session_id' ~/.codex/history.jsonl | sort -u | wc -l # distinct sessions
+```
+
+时间窗口模式下，先按 `.ts` 过滤再做计数、关键词采样和 distinct sessions：
+
+```bash
+jq --arg start "$REPORT_START" --arg end "$REPORT_END_EXCL" '
+  select((.ts // "")[0:10] >= $start and (.ts // "")[0:10] < $end)
+' ~/.codex/history.jsonl
+```
+
+### 3.3 自研 artifacts
+
+```bash
+ls ~/.codex/skills/      | wc -l   # codex skills
+ls ~/.codex/automations/ | wc -l   # scheduled automations
+ls ~/.codex/rules/       | wc -l   # custom rules
+```
+
+---
+
+## Step 3b — 读取 Kiro 数据 (`~/.kiro/` + `~/.local/share/kiro-cli/`)
+
+Kiro 是 AWS 出的 agentic IDE / CLI（kirodotdev/Kiro）。Kiro CLI 把 ACP
+session 存到 `~/.kiro/sessions/cli/`（每个 session 两个文件：`<id>.json`
+元数据 + `<id>.jsonl` 事件流），把 token / model / provider 细分存到
+`~/.local/share/kiro-cli/data.sqlite3`。Steering / Agents / Skills / Prompts
+等基础设施在 `~/.kiro/` 下，跟 Claude Code 风格一致。
+
+**所有读取必须只读**：SQLite 用 `mode=ro&immutable=1`；JSON / JSONL 只
+`Read` / `jq`，不要修改。本步骤先检测 `~/.kiro/` 是否存在，不存在直接跳过本节。
+
+### 3b.1 总量与 token 细分 (SQLite, read-only)
+
+```bash
+[ -d "$HOME/.kiro" ] || { echo "Kiro not installed; skip Step 3b"; }
+
+KIRO_DB="$HOME/.local/share/kiro-cli/data.sqlite3"
+if [ -f "$KIRO_DB" ]; then
+  KSQ='sqlite3 file:'"$KIRO_DB"'?mode=ro&immutable=1'
+
+  # 先 dump schema 再决定查询列名 —— Kiro CLI 仍在迭代，表名可能演进
+  $KSQ ".schema" | head -80
+  $KSQ ".tables"
+fi
+```
+
+读 schema 后，按实际表名（常见为 `messages` / `sessions` / `usage` 等）
+**自适应**编写聚合 SQL。期望提取的字段：
+
+| 字段 | 含义 | 来源（按 schema 自适应）|
+| --- | --- | --- |
+| `kiro_sessions` | 总 session 数 | `COUNT(DISTINCT session_id)` |
+| `kiro_messages` | 总消息数 | `COUNT(*)` from message-like 表 |
+| `kiro_input_tokens` / `kiro_output_tokens` | 每模型 token | `SUM(input_tokens)` / `SUM(output_tokens)` |
+| `kiro_model_breakdown` | 按 `model` / `provider` 分组 | `GROUP BY model, provider` |
+| `kiro_by_date` | 按 `date(created_at)` 聚合 | 每日活跃 |
+| `kiro_by_hour` | 按 `strftime('%H', created_at)` | 24h 热力 |
+
+**降级**：如果 schema 找不到 token / model 列，仅按 session 计数即可，并在报告里说明
+「Kiro 早期版本未持久化 token 细分，本节按 session 总量给出」。
+
+时间窗口模式下，所有 Kiro SQL 聚合必须按实际 schema 的 `created_at` /
+`updated_at` / timestamp-like 字段过滤到 `[REPORT_START, REPORT_END_EXCL)`。
+如果 schema 没有可靠时间列，只把该表用于 all-time context，不参与月度指标。
+
+### 3b.2 ACP Session 文件 (JSON + JSONL)
+
+```bash
+KIRO_SESS="$HOME/.kiro/sessions/cli"
+if [ -d "$KIRO_SESS" ]; then
+  # session 总数
+  ls "$KIRO_SESS"/*.json 2>/dev/null | wc -l
+
+  # 每个 session 抽元数据：cwd、agent、起止时间
+  for f in "$KIRO_SESS"/*.json; do
+    jq -r '[.cwd // "", .agent // "", .created_at // "", .updated_at // ""] | @tsv' "$f"
+  done | sort -u
+
+  # 项目分布（按 cwd 聚合）
+  for f in "$KIRO_SESS"/*.json; do
+    jq -r '.cwd // empty' "$f"
+  done | sort | uniq -c | sort -rn | head -15
+fi
+```
+
+`*.jsonl` 是事件流（user/assistant/tool-call 逐条）。**只采样前若干行用于
+关键词语料**（同 Claude `projects/*/*.jsonl` 的处理方式），不要把原文写进
+report：
+
+```bash
+for f in "$KIRO_SESS"/*.jsonl; do
+  head -50 "$f" | jq -r 'select(.role == "user") | .content // empty' 2>/dev/null
+done | head -300 > /tmp/kiro_corpus.txt   # 关键词语料
+```
+
+### 3b.3 Kiro 基础设施层（agents / skills / steering / prompts / mcp）
+
+跟 Claude / Codex 的 skills 体系**一一对应**，扫法一致：
+
+```bash
+# 全局 agents（每个文件是一个 .json，filename 即 agent 名）
+ls ~/.kiro/agents/*.json 2>/dev/null | wc -l
+
+# 全局 skills（每个目录一个，含 SKILL.md，frontmatter 同 Agent Skills 标准）
+ls -d ~/.kiro/skills/*/ 2>/dev/null
+
+# Steering 文件（项目规范 / 架构决策，markdown）
+ls ~/.kiro/steering/*.md 2>/dev/null | wc -l
+
+# Prompts 模板
+ls ~/.kiro/prompts/ 2>/dev/null | wc -l
+
+# Settings & MCP
+[ -f ~/.kiro/settings/cli.json ] && cat ~/.kiro/settings/cli.json | jq 'keys'
+[ -f ~/.kiro/settings/mcp.json ] && cat ~/.kiro/settings/mcp.json | jq '.mcpServers | keys'
+```
+
+对每个 `~/.kiro/skills/*/SKILL.md`，**沿用 Step 2.4b 的 YAML frontmatter 解析逻辑**
+（`Read` 完整 frontmatter，按 `>` / `|` / 引号 / 单行四种 scalar 处理）。
+Kiro skills 用的就是 Agent Skills 开放标准，跟 Claude / Codex 字段完全相同
+（`name` + `description`）。
+
+把 `~/.kiro/skills/` 合并进 Step 2.4b 的 skill 总表，新增一列「来源 = Kiro」。
+
+### 3b.4 Knowledge bases（实验功能，可选）
+
+```bash
+KIRO_KB="$HOME/.local/share/kiro-cli/knowledge_bases"
+if [ -d "$KIRO_KB" ]; then
+  ls -d "$KIRO_KB"/*/ 2>/dev/null   # 每个 agent 一个独立 KB
+fi
+```
+
+知识库属于「AI 基础设施层」高级信号 —— 用户主动给 agent 喂资料。统计有几个
+KB、覆盖哪些 agent 即可，不读 `data.json` 原文。
+
+### 3b.5 工作区 `.kiro/` 配置（按项目）
+
+对 Step 5 候选目录路径列表里的每个项目根，再检查项目内的 workspace-level
+Kiro 配置（这往往是用户日常工作的真实证据）：
+
+```bash
+for path in <candidate-paths>; do
+  for kind in agents skills steering prompts; do
+    if [ -d "$path/.kiro/$kind" ]; then
+      echo "$path::$kind::$(ls "$path/.kiro/$kind" 2>/dev/null | wc -l)"
+    fi
+  done
+done
+```
+
+合并到 6.4 「项目与领域」时，给配置了 `.kiro/` 的项目打 `Kiro+` 标记。
+
+### 3b.6 Kiro 数据来源不可读时的诚实声明
+
+如果 Kiro 安装但 `data.sqlite3` 不存在（用户只用过 IDE 桌面版，未跑 CLI），
+本步骤仅能采集到 Steering / Agents / Skills 配置数，**不要编造 session / token 数字**。
+在最终报告的「Kiro 章节」明确写：「Kiro CLI 数据未生成，本节仅展示 Steering /
+Agents / Skills 配置；如需完整 session/token 统计请先运行 Kiro CLI。」
+
+---
+
+## Step 3c — 读取 Trae 数据 (`~/Library/Application Support/Trae/` + 项目 `.trae/`)
+
+Trae 是字节跳动出的 AI IDE，基于 VS Code fork（Electron）。**chat 对话存在
+本地 SQLite**（`User/workspaceStorage/<hash>/state.vscdb`，与 Cursor 同款机制），
+**但 token 用量统计走云端 API**（`query_user_usage_group_by_session`），
+本机不持久化。所以本步骤只读两类本地数据：
+
+1. 工作区 `state.vscdb` 里的 chat 元数据（数量、cwd、关键词）
+2. 项目 `.trae/` 与 home 配置里的 rules / skills / settings
+
+**所有读取必须只读**：SQLite 强制 `mode=ro&immutable=1`；不要触发任何 Trae
+进程写操作。先检测目录是否存在，不存在直接跳过本节。
+
+### 3c.1 工作区数量与项目分布
+
+```bash
+# macOS 路径（Linux 类似在 ~/.config/Trae/，Windows 在 %APPDATA%\Trae\）
+TRAE_BASE="$HOME/Library/Application Support/Trae"
+TRAE_WS="$TRAE_BASE/User/workspaceStorage"
+
+[ -d "$TRAE_WS" ] || { echo "Trae not installed or no workspaces; skip Step 3c"; }
+
+# 工作区数（每个 hash 目录 = 一个被打开过的项目）
+ls -d "$TRAE_WS"/*/ 2>/dev/null | wc -l
+
+# 每个工作区对应的真实项目路径（workspace.json 里有 folder/uri）
+for d in "$TRAE_WS"/*/; do
+  if [ -f "$d/workspace.json" ]; then
+    jq -r '.folder // .configuration // empty' "$d/workspace.json"
+  fi
+done | sort -u
+```
+
+### 3c.2 Chat 元数据（SQLite, read-only）
+
+每个工作区有自己的 `state.vscdb`；另外 `~/Library/Application Support/Trae/User/globalStorage/state.vscdb` 是全局聚合库。**Trae 的 chat 表名 / key 前缀
+在版本间会变化**（早期沿用 VS Code 的 `ItemTable`，新版本可能新增 Trae 专用表），
+**先 dump 一下结构再下查询**：
+
+```bash
+TRAE_GLOBAL="$TRAE_BASE/User/globalStorage/state.vscdb"
+
+if [ -f "$TRAE_GLOBAL" ]; then
+  TSQ='sqlite3 file:'"$TRAE_GLOBAL"'?mode=ro&immutable=1'
+  $TSQ ".tables"
+  $TSQ "SELECT name FROM sqlite_master WHERE type='table';"
+
+  # 常见结构：ItemTable(key TEXT, value BLOB) —— 类 VS Code KV
+  # Trae 把 chat 存为 key='trae.chat.*' 或 'composer.*' 形式（版本不同前缀不同）
+  $TSQ "SELECT key, length(value) FROM ItemTable \
+        WHERE key LIKE '%chat%' OR key LIKE '%conversation%' OR key LIKE '%composer%' \
+        ORDER BY length(value) DESC LIMIT 30;" 2>/dev/null
+fi
+
+# 工作区级 chat
+for d in "$TRAE_WS"/*/; do
+  db="$d/state.vscdb"
+  [ -f "$db" ] || continue
+  ws_chat_keys=$(sqlite3 "file:$db?mode=ro&immutable=1" \
+    "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%chat%' OR key LIKE '%composer%';" 2>/dev/null)
+  echo "$(basename "$d") chat_keys=$ws_chat_keys"
+done
+```
+
+**期望提取**：
+
+| 字段 | 含义 | 备注 |
+| --- | --- | --- |
+| `trae_workspaces` | 打开过的项目数 | `ls workspaceStorage/*/` 计数 |
+| `trae_chat_session_count` | 估算的 chat session 数 | 按 chat-related key 数估算 |
+| `trae_active_projects` | 有 chat 的项目数 | `ws_chat_keys > 0` 的工作区数 |
+| `trae_corpus` | chat 标题 / 首条 user message | 仅采样若干条，用于关键词，不入报告原文 |
+
+时间窗口模式下，Trae workspace / chat 只能在存在可靠 timestamp 或文件 mtime
+落入窗口时计入窗口活跃。否则只作为「检测到 Trae 配置 / all-time context」展示，
+不要计入月度 sessions、active projects 或关键词。
+
+**强烈降级提示**：
+- Trae chat 的 key 格式**没有公开稳定文档**。如果 `LIKE` 没匹中任何 row，
+  老老实实在报告里写「Trae 本地 chat 仅检测到 workspace 数量 N，对话内容
+  key 命名约定本工具暂不解析」，**不要编造 session 数**。
+- 如果工作区目录为空或 `state.vscdb` 文件不存在，直接跳过该工作区。
+
+### 3c.3 Token 用量 —— 仅云端，本地无法读
+
+Trae 的 token / 模型用量走云端 API。第三方工具（如 tokscale）的做法是：
+用户先 `tokscale trae login`，再调 `query_user_usage_group_by_session` 拉数据
+缓存到 `~/.config/tokscale/trae-cache/sessions/*.json`。
+
+**本 skill 不发起任何网络请求**，所以 Trae 的 token 数字无法被采集。
+最终报告里诚实写：「Trae 的 token 用量数据由 ByteDance 云端 API 持有，
+本 skill 出于『100% 本地 + 只读』原则不接入；如需 Trae token，请使用
+tokscale 等第三方工具单独采集后人工补入。」
+
+可选：如果用户**已经**在 `~/.config/tokscale/trae-cache/sessions/` 里有
+导出的 JSON 缓存，可以读它（只读、本地）：
+
+```bash
+TOKSCALE_TRAE="$HOME/.config/tokscale/trae-cache/sessions"
+if [ -d "$TOKSCALE_TRAE" ]; then
+  jq -s 'map(.token_count // 0) | add' "$TOKSCALE_TRAE"/*.json 2>/dev/null
+  jq -r '.model // empty' "$TOKSCALE_TRAE"/*.json 2>/dev/null | sort | uniq -c
+fi
+```
+
+### 3c.4 项目 `.trae/` 配置（rules / skills / .ignore）
+
+跟 Kiro `.kiro/`、Claude 项目 `.claude/` 一样，Trae 在项目内提供 `.trae/`
+工作区目录。这是「用户给 AI 立规矩」的一手证据。
+
+```bash
+for path in <candidate-paths>; do
+  trae_dir="$path/.trae"
+  [ -d "$trae_dir" ] || continue
+  echo "$path::trae::rules=$(ls "$trae_dir"/rules/*.md 2>/dev/null | wc -l)::skills=$(ls -d "$trae_dir"/skills/*/ 2>/dev/null | wc -l)::ignore=$([ -f "$trae_dir/.ignore" ] && echo 1 || echo 0)"
+done
+```
+
+`.trae/rules/*.md` 与 `.trae/skills/*/SKILL.md` 都是 markdown，
+**继续沿用 Step 2.4b 的 YAML frontmatter 解析逻辑**。把它们合并进 6.2 的
+「AI 基础设施层」总表，新增一列「来源 = Trae」。
+
+### 3c.5 Trae 数据缺失时的诚实声明
+
+- `~/Library/Application Support/Trae/` 不存在 → 完全跳过本节
+- 存在但工作区 chat key 解析失败 → 仅展示「打开过的项目数 + `.trae/` 配置」
+- token 数据永远缺失 → 明确写「本地未持有，需经云端 API 拉取，本 skill 不联网」
+
+---
+
+## Step 3d — 读取 Gemini Antigravity 数据 (`~/.gemini/antigravity/`)
+
+Antigravity is the third local AI tool source. Treat each
+`~/.gemini/antigravity/brain/<uuid>/` directory as one Antigravity task/session.
+Only count directories whose basename is a UUID; ignore non-task directories such
+as `tempmediaStorage`.
+
+**Only read local text data**:
+- `*.metadata.json` for artifact metadata and summaries
+- `task.md`, `implementation_plan.md`, `walkthrough.md`
+- text variants ending in `.resolved`, `.resolved.0`, `.resolved.1`, etc.
+
+**Never read for analytics**:
+- screenshots or images (`*.png`, `*.webp`, `*.jpg`, `*.jpeg`)
+- `~/.gemini/antigravity/annotations/*.pbtxt`
+- `~/.config/Antigravity/*` browser/cache data
+- browser profiles or cache directories
+
+```bash
+AG_BRAIN="$HOME/.gemini/antigravity/brain"
+AG_UUID_RE='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+
+# Count Antigravity task/session directories; exclude temp/media helper dirs
+find "$AG_BRAIN" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+  | grep -E "/$AG_UUID_RE$" | wc -l
+
+# Artifact type breakdown from metadata in task/session directories
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -name '*.metadata.json' -type f 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+\.metadata\.json$" \
+  | xargs -r jq -r '.artifactType // "unknown"' | sort | uniq -c | sort -rn
+
+# Activity by day from metadata updatedAt
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -name '*.metadata.json' -type f 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+\.metadata\.json$" \
+  | xargs -r jq -r '.updatedAt // empty' \
+  | cut -c1-10 | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
+  | sort | uniq -c
+
+# Monthly activity for Evolution curve
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -name '*.metadata.json' -type f 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+\.metadata\.json$" \
+  | xargs -r jq -r '.updatedAt // empty' \
+  | cut -c1-7 | grep -E '^[0-9]{4}-[0-9]{2}$' \
+  | sort | uniq -c
+
+# Summaries for topic extraction; do not quote full text in the README
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -name '*.metadata.json' -type f 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+\.metadata\.json$" \
+  | xargs -r jq -r '.summary // empty' | head -200
+
+# Markdown headings for topic extraction
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -type f \
+  \( -name 'task.md' -o -name 'implementation_plan.md' -o -name 'walkthrough.md' \
+     -o -name 'task.md.resolved*' -o -name 'implementation_plan.md.resolved*' \
+     -o -name 'walkthrough.md.resolved*' \) 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+$" \
+  | xargs -r grep -hE '^#{1,3} ' | head -200
+
+# Checkbox volume, useful for task/planning depth
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -type f \
+  \( -name 'task.md' -o -name 'implementation_plan.md' -o -name 'walkthrough.md' \
+     -o -name 'task.md.resolved*' -o -name 'implementation_plan.md.resolved*' \
+     -o -name 'walkthrough.md.resolved*' \) 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+$" \
+  | xargs -r grep -hE '^- \[[ xX/-]\]' | wc -l
+
+# Antigravity text artifact scale. This is NOT billing usage and MUST NOT be
+# merged into Claude/Codex token totals.
+find "$AG_BRAIN" -mindepth 2 -maxdepth 2 -type f \
+  \( -name 'task.md' -o -name 'implementation_plan.md' -o -name 'walkthrough.md' \
+     -o -name 'task.md.resolved*' -o -name 'implementation_plan.md.resolved*' \
+     -o -name 'walkthrough.md.resolved*' \) 2>/dev/null \
+  | grep -E "/$AG_UUID_RE/[^/]+$" \
+  | xargs -r wc -l -m \
+  | awk '
+      $NF != "total" { files++; lines += $1; chars += $2 }
+      END {
+        printf "antigravity_text_files=%d\n", files + 0
+        printf "antigravity_text_lines=%d\n", lines + 0
+        printf "antigravity_text_chars=%d\n", chars + 0
+        printf "antigravity_estimated_token_equivalent=%d\n", int(chars / 4 + 0.5)
+      }'
+```
+
+Compute:
+- `antigravity_tasks` = count of `brain/<uuid>/` directories.
+- `antigravity_artifacts_by_type` = counts by `artifactType`.
+- `antigravity_active_days` = unique dates from valid `updatedAt` values.
+- `antigravity_first_active` / `antigravity_last_active` = min/max valid `updatedAt` dates.
+- `antigravity_monthly_activity` = monthly counts from valid `updatedAt` values.
+- `antigravity_topics` = metadata summaries + markdown headings + checkbox section labels, used only for keywords and high-level themes.
+- `antigravity_text_files` = count of eligible Antigravity text artifact files.
+- `antigravity_text_chars` = total character count across eligible Antigravity text artifacts.
+- `antigravity_text_lines` = total line count across eligible Antigravity text artifacts.
+- `antigravity_estimated_token_equivalent = round(antigravity_text_chars / 4)` as a rough text-scale proxy only.
+
+时间窗口模式下，Antigravity 只统计 `updatedAt`、文件 mtime 或可解析 metadata 时间
+落入 `[REPORT_START, REPORT_END_EXCL)` 的 task/artifact。没有可靠时间的 artifact
+可以出现在 all-time context 或缺失说明里，不参与月度增量。
+
+Antigravity data does not expose verified billing token counts. Use `—` in token columns or omit token metrics for Antigravity. If reporting `antigravity_estimated_token_equivalent`, label it exactly as **estimated token-equivalent (non-billing)** and keep it outside all real token totals, token economics tables, and billing/paid-token claims.
+
+---
+
+## Step 3e — 读取 Cursor 数据 (`~/Library/Application Support/Cursor/` + 项目 `.cursor/`)
+
+Cursor 是 Anysphere 出的 AI IDE，**基于 VS Code fork**（Electron），存储模型
+跟 Trae / VS Code 同款（`User/workspaceStorage/<hash>/state.vscdb` 的 `ItemTable`
+KV 表，加 `User/globalStorage/state.vscdb` 全局聚合库）。**chat / composer
+数据本地完整缓存**，但 **token 用量统计走云端 dashboard**（Cursor Pro 计费
+依赖云端），本机不持久化精确 token 数字。所以本步骤只读两类本地数据：
+
+1. 工作区 / 全局 `state.vscdb` 里的 chat / composer 元数据（数量、cwd、关键词）
+2. 项目 `.cursor/` 与 home 配置里的 rules / mcp / settings
+
+**所有读取必须只读**：SQLite 强制 `mode=ro&immutable=1`；不要触发任何 Cursor
+进程写操作。先检测目录是否存在，不存在直接跳过本节。
+
+### 3e.1 工作区数量与项目分布
+
+```bash
+# macOS 路径（Linux: ~/.config/Cursor/User/，Windows: %APPDATA%\Cursor\User\）
+CURSOR_BASE="$HOME/Library/Application Support/Cursor"
+CURSOR_WS="$CURSOR_BASE/User/workspaceStorage"
+
+[ -d "$CURSOR_WS" ] || { echo "Cursor not installed or no workspaces; skip Step 3e"; }
+
+# 工作区数（每个 hash 目录 = 一个被打开过的项目）
+ls -d "$CURSOR_WS"/*/ 2>/dev/null | wc -l
+
+# 每个工作区对应的真实项目路径（workspace.json 里有 folder / configuration）
+for d in "$CURSOR_WS"/*/; do
+  if [ -f "$d/workspace.json" ]; then
+    jq -r '.folder // .configuration // empty' "$d/workspace.json"
+  fi
+done | sort -u
+```
+
+### 3e.2 Chat / Composer 元数据（SQLite, read-only）
+
+全局聚合库在 `User/globalStorage/state.vscdb`。Cursor 的 chat / composer
+key 命名比 Trae 略稳定一些（社区有逆向资料）。优先读取
+`composer.composerHeaders`：它通常是 JSON object，内部 `allComposers` 数组包含
+composer 标题、subtitle、创建/更新时间、workspaceIdentifier、trackedGitRepos、
+变更行数等元数据。这些属于「内容线索」但不是完整对话正文，适合用于关键词、
+项目分布和 Cursor 协作强度。常见 prefix 还有 `composer.*`、`aiService.*`、
+`workbench.panel.aichat.*`、`aiCodeBlockDiff.*`。但仍然 **版本会变化**，
+必须先 dump 结构再下查询：
+
+```bash
+CURSOR_GLOBAL="$CURSOR_BASE/User/globalStorage/state.vscdb"
+
+if [ -f "$CURSOR_GLOBAL" ]; then
+  sqlite3 "file:$CURSOR_GLOBAL?mode=ro&immutable=1" ".tables"
+
+  # Composer / chat 类 key 排行（按 value 大小，大的通常是真实对话数据）
+  sqlite3 "file:$CURSOR_GLOBAL?mode=ro&immutable=1" \
+       "SELECT key, length(value) FROM ItemTable \
+        WHERE key LIKE 'composer.%' OR key LIKE 'aiService.%' \
+           OR key LIKE '%aichat%' OR key LIKE '%aiCodeBlockDiff%' \
+        ORDER BY length(value) DESC LIMIT 30;" 2>/dev/null
+
+  # Cursor 新版常见：composer.composerHeaders -> {"allComposers":[...]}。
+  sqlite3 "file:$CURSOR_GLOBAL?mode=ro&immutable=1" \
+    "SELECT value FROM ItemTable WHERE key = 'composer.composerHeaders';" 2>/dev/null \
+    | jq '.allComposers | length' 2>/dev/null
+
+  # 只抽元数据，不输出完整对话正文：name / subtitle / date / workspace /
+  # changed lines / tracked repos. Use this as cursor_corpus and project signal.
+  sqlite3 "file:$CURSOR_GLOBAL?mode=ro&immutable=1" \
+    "SELECT value FROM ItemTable WHERE key = 'composer.composerHeaders';" 2>/dev/null \
+    | jq -r '
+        (.allComposers // [])[]
+        | [
+            (.name // ""),
+            (.subtitle // ""),
+            ((.createdAt // .lastUpdatedAt // 0) / 1000 | strftime("%Y-%m-%d")),
+            (.workspaceIdentifier.uri.fsPath // .workspaceIdentifier.uri.path // ""),
+            (.totalLinesAdded // 0),
+            (.totalLinesRemoved // 0),
+            ((.trackedGitRepos // []) | map(.repoPath // empty) | join(","))
+          ] | @tsv
+      ' 2>/dev/null | head -300
+
+  # Cursor plans/spec-like work, often stored as object keys. Use keys as topic
+  # signals only; do not treat them as exact session counts unless schema is clear.
+  sqlite3 "file:$CURSOR_GLOBAL?mode=ro&immutable=1" \
+    "SELECT value FROM ItemTable WHERE key = 'composer.planRegistry';" 2>/dev/null \
+    | jq -r 'if type=="object" then keys[] else empty end' 2>/dev/null | head -200
+fi
+
+# 工作区级 chat / composer
+for d in "$CURSOR_WS"/*/; do
+  db="$d/state.vscdb"
+  [ -f "$db" ] || continue
+  ws_chat_keys=$(sqlite3 "file:$db?mode=ro&immutable=1" \
+    "SELECT COUNT(*) FROM ItemTable WHERE key LIKE 'composer.%' OR key LIKE '%aichat%' OR key LIKE 'aiService.%';" 2>/dev/null)
+  echo "$(basename "$d") cursor_chat_keys=$ws_chat_keys"
+done
+```
+
+**期望提取**：
+
+| 字段 | 含义 | 备注 |
+| --- | --- | --- |
+| `cursor_workspaces` | 打开过的项目数 | `ls workspaceStorage/*/` 计数 |
+| `cursor_composer_count` | composer 会话估算 | 优先 `composer.composerHeaders.allComposers | length`；降级用 composer-related key 数 |
+| `cursor_chat_session_count` | 估算的 chat session 数 | 按 `aichat`/`aiService` key 数估算 |
+| `cursor_active_projects` | 有 chat / composer 的项目数 | `ws_chat_keys > 0` 的工作区数 |
+| `cursor_corpus` | composer / chat 标题片段 | 从 `name` / `subtitle` / plan key 采样，用于关键词，不入报告原文 |
+| `cursor_projects_from_headers` | Cursor 项目路径 | 从 `workspaceIdentifier.uri.fsPath` / `trackedGitRepos[].repoPath` 提取，最终输出仍按匿名规则处理 |
+| `cursor_lines_changed_hint` | Cursor 辅助改动规模 | `Σ totalLinesAdded/Removed`，仅作为 Cursor 本地元数据参考，不与 git numstat 混为同一口径 |
+
+时间窗口模式下，Cursor composer headers 有 `createdAt` / `lastUpdatedAt`（通常为
+毫秒 epoch）时，按这些字段过滤到 `[REPORT_START, REPORT_END_EXCL)`；workspace
+mtime 只能作为弱信号。无法解析时间时，只作为「检测到 Cursor 配置 / all-time
+context」展示，不参与月度 sessions、active projects 或关键词。
+
+**强烈降级提示**：跟 Trae 一样，Cursor 内部 key 没有官方稳定文档。如果
+`LIKE` 没匹中任何 row，老老实实写「Cursor 本地仅检测到 workspace 数量 N，
+chat / composer 内容 key 命名约定本工具暂不解析」，**不要编造 session 数**。
+
+### 3e.3 Token 用量 —— 本地部分可见，权威数字仅云端
+
+Cursor Pro 的精确 token 用量在云端 dashboard。本机 `ItemTable` 里可能含有
+**部分** token 元数据（比如 `aiService.applyAiHistory` 等 key 内嵌 JSON
+里会有 input/output token 字段），但 schema 不稳定也未公开。
+
+本 skill 的策略：
+1. **不发起任何网络请求**，云端 dashboard 永远不读。
+2. 如果能从 `ItemTable` 里靠 jq 抽出 token 字段 → **作为参考值**展示，明确
+   注明「Cursor 本地估算 token，非云端 dashboard 计费值」。
+3. 抽不出来就老实说「Cursor token 数据由 Anysphere 云端 dashboard 持有，
+   本 skill 出于『100% 本地 + 只读』原则不接入」。
+
+### 3e.4 项目 `.cursor/` 配置（rules / mcp / ignore）
+
+跟 Kiro `.kiro/`、Trae `.trae/` 一样，Cursor 在项目内提供 `.cursor/` 工作区
+目录。这是「用户给 AI 立规矩」的一手证据。
+
+```bash
+for project_path in <candidate-paths>; do
+  cursor_dir="$project_path/.cursor"
+  [ -d "$cursor_dir" ] || continue
+  echo "$project_path::cursor::rules=$(ls "$cursor_dir"/rules/*.{md,mdc} 2>/dev/null | wc -l)::mcp=$([ -f "$cursor_dir/mcp.json" ] && echo 1 || echo 0)::ignore=$([ -f "$cursor_dir/.cursorignore" ] && echo 1 || echo 0)"
+done
+
+# 兼容旧版根目录的 .cursorrules 单文件
+for project_path in <candidate-paths>; do
+  [ -f "$project_path/.cursorrules" ] && echo "$project_path::cursorrules=1"
+done
+```
+
+`.cursor/rules/*.{md,mdc}` 是 markdown / Markdown-with-frontmatter，**继续沿用
+Step 2.4b 的 YAML frontmatter 解析逻辑**。把它们合并进 6.2 的「AI 基础设施层」
+总表，新增一列「来源 = Cursor」。
+
+### 3e.5 Cursor 数据缺失时的诚实声明
+
+- `~/Library/Application Support/Cursor/` 不存在 → 完全跳过 Step 3e
+- 存在但 `composer.composerHeaders` 缺失 → 降级用 composer/chat key 计数与 workspace folder
+- 存在但工作区 chat key 解析失败 → 仅展示「打开过的工作区数 + `.cursor/` 配置」
+- token 数据本地不可信 → 明确写「权威 token 在云端 dashboard，本 skill 不联网；
+  本地估算仅作参考」
+
+---
+
+## Step 4 — GitHub (via `gh`)
+
+```bash
+gh auth status >/dev/null 2>&1 || { echo "gh not auth'd, skipping"; }
+```
+
+If authenticated:
+
+```bash
+# Default profile mode keeps the existing 365-day GitHub window. Windowed /
+# monthly mode uses REPORT_START..REPORT_END_EXCL so GitHub matches local AI
+# metrics.
+if [ "${WINDOW_REQUESTED:-0}" = "1" ]; then
+  GH_FROM="${REPORT_START}T00:00:00Z"
+  GH_TO="${REPORT_END_EXCL}T00:00:00Z"
+else
+  GH_FROM="$(date -u -v -365d +%Y-%m-%dT00:00:00Z)"
+  GH_TO="$(date -u +%Y-%m-%dT00:00:00Z)"
+fi
+
+# GitHub contributions + top repos in the current report window
+gh api graphql -f query='
+query($from: DateTime!, $to: DateTime!) {
+  viewer {
+    login name bio
+    contributionsCollection(from: $from, to: $to) {
+      totalCommitContributions
+      totalPullRequestContributions
+      totalIssueContributions
+      totalRepositoryContributions
+      totalPullRequestReviewContributions
+      restrictedContributionsCount
+      contributionCalendar { totalContributions
+        weeks { contributionDays { date contributionCount } } }
+      commitContributionsByRepository(maxRepositories: 25) {
+        contributions { totalCount }
+        repository { nameWithOwner isPrivate isFork stargazerCount
+                     primaryLanguage { name } }
+      }
+    }
+    repositories(first: 1, ownerAffiliations: OWNER) { totalCount }
+    pullRequests(first: 1) { totalCount }
+    issues(first: 1) { totalCount }
+  }
+}' -F from="$GH_FROM" -F to="$GH_TO"
+```
+
+Then page through repositories for language bytes (up to 5 pages × 100 repos):
+
+```bash
+gh api graphql -f query='
+query($cursor: String) {
+  viewer { repositories(first: 100, after: $cursor, ownerAffiliations: OWNER,
+                         isFork: false, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    pageInfo { hasNextPage endCursor }
+    nodes { nameWithOwner isPrivate stargazerCount
+            languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+              edges { size node { name } } } }
+  } } }' -F cursor=""
+```
+
+Aggregate languages by `Σ size` per language across all repos.
+
+---
+
+## Step 5 — 本地 Git 提交
+
+Build the candidate path set from:
+1. Real `cwd` recovered for each `~/.claude/projects/<encoded>/`
+2. `cwd` column from Codex `threads` table
+3. `cwd` field in Kiro `~/.kiro/sessions/cli/*.json`
+4. `folder` field in Trae `User/workspaceStorage/*/workspace.json`
+
+Dedupe the union before running git checks.
+
+For each path that's a git repo, count the **current user's** commits in the
+current report window. Default profile mode uses the past year; monthly/range
+mode uses `REPORT_START..REPORT_END_EXCL`:
+
+```bash
+me=$(git config --global user.email)
+
+if [ "${WINDOW_REQUESTED:-0}" = "1" ]; then
+  GIT_SINCE="$REPORT_START 00:00:00"
+  GIT_BEFORE="$REPORT_END_EXCL 00:00:00"
+else
+  GIT_SINCE="1.year.ago"
+  GIT_BEFORE="now"
+fi
+
+for path in <candidate-paths>; do
+  [ -d "$path/.git" ] || continue
+  git -C "$path" log --since="$GIT_SINCE" --before="$GIT_BEFORE" --author="$me" \
+      --numstat --no-renames --pretty=format:'COMMIT|%H|%aI'
+done
+```
+
+Aggregate:
+- `commits` (count of `COMMIT|` lines)
+- `additions`, `deletions` (sum the numstat columns)
+- `last_commit_iso`
+- Per-extension LOC (count `+` `-` per file extension → top 10 languages)
+
+---
+
+## Step 6 — 计算 10 个维度（你做推理，不要写脚本）
+
+If `WINDOW_REQUESTED=1`, every number in Step 6 is scoped to
+`REPORT_LABEL` unless explicitly labeled otherwise. Do not silently fall back to
+all-time data. If the selected window has no data, generate a short honest
+report that says the time range has no measurable local activity instead of
+expanding the window.
+
+For windowed reports, add a "阶段变化" interpretation by comparing the current
+window with `PREV_START..PREV_END_EXCL` when enough data exists:
+- activity delta: active days, Claude sessions/messages, Codex threads,
+  Antigravity tasks, Kiro sessions, Trae/Cursor workspace signals
+- output delta: GitHub contributions, local commits, LOC churn, active repos
+- AI investment delta: verified Claude/Codex/Kiro tokens, Claude cache leverage
+- mix shift: top tools, top domains, top projects, model migration, command mix
+- narrative conclusion: 2-4 bullets answering "这个阶段 AI 编码带来了什么效果 /
+  发生了什么变化"
+
+If the previous comparison window has no data, use week-by-week or first-half vs
+second-half changes inside the selected window. If even that is too sparse,
+state that the report is a snapshot, not a trend.
+
+### 6.1 一览
+- 总活跃天数 = unique union of all dates from
+  `dailyActivity` (Claude) + Codex `by_date` + Claude `history by_date`
+  + Kiro `by_date` (3b.1) + `antigravity_active_days` (3d) + Trae / Cursor
+  工作区最后访问日期（如果能从 `workspace.json` 或 `state.vscdb` 的 mtime
+  推断；推不出就略过这两项）
+- 跨度 = `min..max` of those dates
+- 总 sessions / 总消息 / **claude_spent**（Σ input+output+cache_creation）
+  / **claude_cache_read** / 总 codex threads / **codex_tokens** /
+  **kiro_sessions** / **kiro_tokens**（如果 3b.1 拿到了）/
+  **trae_workspaces** / **cursor_workspaces** + **cursor_composer_count** /
+  **antigravity_tasks**（Antigravity task/session 数）
+  —— 这些数字必须出现在「一览」里，缺失项显示 `—`，不要省略行
+- 同期 GitHub: commits, PRs, issues, calendar_total
+- 本地 git: commits / +additions / −deletions / repos
+
+If available, include `antigravity_text_files`, `antigravity_text_chars`, `antigravity_text_lines`, and `antigravity_estimated_token_equivalent` as an Antigravity artifact scale note, not as real token usage.
+
+- **Velocity 指标**（v2.0 新增）:
+  - `commits_per_day = git_local_commits / active_days`
+  - `loc_churn_per_day = (additions + deletions) / active_days`
+  - `simultaneous_repos = count of repos with ≥1 commit`
+  - `cross_stack_langs = count of distinct primary languages across repos`
+
+### 6.2 AI-Native 实践（核心章节）
+- **多工具 / 多模型编排**: 列出每个模型的 spent / cache_read tokens。
+  - **Claude / Codex / Kiro** model breakdown 合并到同一张 token 表（Kiro
+    schema 有 model 列时按 3b.1 抽取）。
+  - **Trae / Cursor** 的 token 数据本地不可信（云端权威），表中标注
+    「Trae: 云端 only」/「Cursor: 云端权威，本地仅参考」。
+  - **Gemini Antigravity** 的 tasks/artifacts 单列展示，token 不可得时显示
+    `—`，不要估算。
+  - **总编排维度** = 同时活跃使用的 AI 工具数（Claude / Codex / Kiro / Trae /
+    Antigravity / Cursor 六选 N）。用过 ≥ 3 个工具 → 报告里强调「多引擎
+    编排者」叙事。
+- **高级能力使用**: plan-mode 次数、effort 调节次数、skill 调用次数、
+  自研 skills 数、hooks/MCP 数、plans/tasks 数、automations 数
+- **Antigravity 任务制协作**: `antigravity_tasks`、artifact type breakdown、
+  walkthrough / implementation_plan / task artifacts，用来描述「从任务 → 计划 → walkthrough」的交付闭环。
+- **Prompt caching 熟练度**: cache_to_spent_ratio
+- **Reasoning effort 分布**: xhigh/high/medium/low 占比
+- **AI 基础设施层**（v2.0 新增 —— 这是最 AI-native 的信号）:
+  列出用户亲手构建的 skills / hooks / automations / rules / steering / agents，
+  每项给 `名称 | 一句话描述 | 来源（Claude/Codex/Kiro/Trae）| 调用次数（如可从 history 统计）`。
+  区分「自建」（用户原创）与「安装」（第三方）。
+  **跨工具复用的 skill**（同名 SKILL.md 同时出现在 `~/.claude/skills/` 和
+  `~/.kiro/skills/`）单独高亮 —— 这是真正的 AI 基础设施互操作信号。
+  这一段的叙事重点：**不只是 AI 的使用者，更是 AI 工作流的建设者**。
+
+### 6.3 协作风格
+- Top 10 slash commands (cmd, count, 简短解读)
+- Plan-to-direct ratio = `/plan count / non-command prompt count`
+- 平均消息/session = `totalMessages / totalSessions`
+- 最长 session: 时长(小时) + 消息数
+- **Session 架构**（v2.0 新增）:
+  从 history.jsonl 中按 sessionId 分组，统计典型 session 内的命令序列模式：
+  - 以 `/plan` 开头的 session 占比 → 说明「先想再做」的习惯有多强
+  - session 内使用 `/compact` 或 `/clear` 的比例 → 上下文管理意识
+  - `/effort` 在 session 内的切换频率 → 是否按阶段调节推理深度
+  - `/resume` 使用率 = resume_count / totalSessions → session 连续性
+  用 2-3 句话总结出用户的 **session 驾驭模式**（例如：
+  「典型流程：/plan 规划 → 迭代 → /compact 回收上下文 → 继续交付」）
+
+### 6.4 项目与领域
+- 合并维度: each project key (real_cwd) accumulates
+  `claude_sessions` + `codex_threads` + `kiro_sessions` (Step 3b.2) +
+  `trae_workspace_hit` (0/1，Step 3c.1) + `antigravity_tasks` (Step 3d) +
+  `cursor_workspace_hit` (0/1，Step 3e.1) + `git_commits` + `git_lines`
+- Antigravity 没有可靠 cwd 时，用 metadata summary / markdown headings 提取
+  topic key；能匹配到已有项目 basename 时并入该项目，否则作为 Antigravity
+  topic bucket。
+- 综合分数 = `claude_sessions*5 + codex_threads*4 + kiro_sessions*4 +
+  trae_workspace_hit*2 + cursor_workspace_hit*2 + antigravity_tasks*4 +
+  git_commits`
+- 排序取 Top 12，匿名化为 "项目 A/B/C..."（按分数顺序）
+- **多工具编排模式**（v2.5 升级 —— Claude + Codex + Kiro + Trae + Antigravity +
+  Cursor）：对每个 Top 12 项目 / topic，按六种工具的活跃度分类：
+  - 计算 `tools_used = ['claude' if claude_sessions>0, 'codex' if codex_threads>0,
+    'kiro' if kiro_sessions>0, 'trae' if trae_workspace_hit>0,
+    'antigravity' if antigravity_tasks>0, 'cursor' if cursor_workspace_hit>0]`
+  - `total_ai_units = claude_sessions + codex_threads + kiro_sessions +
+    trae_workspace_hit + antigravity_tasks + cursor_workspace_hit`
+  - 当只有 1 个工具：标「`<tool>` 主导」
+  - 2 个工具：标「双引擎（`<A>+<B>`）」
+  - 3 个及以上：标「多引擎（`<A>+<B>+<C>...`）」
+  - 在项目表中新增「编排模式」列
+  - 汇总：多引擎项目数 / 双引擎项目数 / 单工具项目数 + 每种主导项目数
+  - 如果某个项目有 `.kiro/` / `.trae/` / `.cursor/` workspace 配置
+    （3b.5 / 3c.4 / 3e.4），在「编排模式」末尾加 `[K]` / `[T]` / `[Cu]` 角标
+- 用证据打分给每个项目打**领域标签**，不要只按第一命中关键词硬归类：
+  1. 分类前使用真实项目信号：`cwd` basename、GitHub repo 描述 / topics / primary language、Codex thread titles、Claude history first prompts、本地文件名提示（如 `package.json` 依赖、`frontend/`、`apps/web/`、`api/`）。匿名化只发生在最终输出阶段。
+  2. 每个领域按命中证据累计分数，选择最高分。若两个领域接近，优先选择更具体的产品领域，而不是泛化到“基础设施 / 部署”。
+  3. 不要因为出现 `deploy`、`router`、`ops`、`docker` 等单个工程词，就把一个有明显用户界面或业务功能的产品项目归到“基础设施 / 部署”。
+  4. 只有证据不足或最高分仍很弱时，才归为“其他”，并在叙事里说明分类信号不足。
+
+| 领域 | 关键词 / 证据（小写匹配 cwd basename + 标题 + 项目信号） |
+| --- | --- |
+| 产品 / 业务前端 | frontend, front-end, web, app, h5, mobile, miniapp, ui, ux, page, route, router, dashboard, console, admin, portal, client, website, next, react, vue, vite, svelte, tailwind, shadcn, electron, extension, 小程序, 前端, 页面, 官网, 管理台, 控制台, 后台 |
+| 产品 / 业务后端 | backend, server, api, service, gateway, worker, queue, job, db, database, prisma, django, fastapi, express, nest, auth, billing, payment, user, backend service, 后端, 服务端, 接口, 鉴权, 支付, 用户 |
+| 产品 / 业务全栈 | product, saas, crm, cms, workspace, studio, platform, marketplace, ecommerce, shop, chat, editor, dashboard + api, web + api, app + server, 产品, 业务, 工作台, 平台, 商城 |
+| AI 工具 / Skill | skill, claude, codex, agent, subagent, mcp, prompt, workflow, plugin, antigravity, easy_claude, vibe-forge, readme.skill |
+| 基础设施 / 部署 | deploy, infra, ops, monitor, observability, k8s, ci-cd, docker, compose, terraform, nginx, ingress, traefik, caddy, api-gateway, gateway infra, healthcheck, log, cron, 自动化部署, 巡检 |
+| 数据 / 分析 | analytics, data, dataset, bi, report, metrics, dashboard analytics, crawler, scrape, readyourusers, bibili, 埋点, 数据, 报表, 分析, 采集 |
+| ML / RL / 论文 | rllunwen, rl-, ml, model, training, eval, paper, thesis, 论文, 实验, 大创 |
+| 文档 / Markdown | readme, doc, docs, documents, markdown, profile, report, handbook, 文档, 手册 |
+| 其他 | 证据不足时的 fallback |
+
+- 领域分布表的「特征」列必须来自证据，不要即兴编标签：
+  - 从该领域 Top 项目的真实 basename / repo topics / primary language / 依赖框架 / 高频 thread title 关键词中抽取 3-6 个短词。
+  - 优先保留能说明项目性质的词，如 `React`、`Next.js`、`dashboard`、`API`、`billing`、`agent`、`deploy`。
+  - 过滤泛词：`project`、`repo`、`test`、`fix`、`update`、`misc`、`code`、`task`。
+  - 如果某领域只有弱证据，写 `信号不足`，不要补想象中的业务特征。
+
+### 6.5 兴趣主题 & 关键词
+
+**Corpus**: 拼接 plan titles + Codex thread titles + first_user_messages
++ Antigravity metadata summaries + Antigravity markdown headings
++ 部分 history.text。
+
+**Tokenize**:
+- 英文：`[A-Za-z][A-Za-z0-9_-]+`，小写化，长度 ≥ 2，去停用词
+- 中文：抽取 `[\u4e00-\u9fff]+` 串，做 2-char 滑窗，每个 chunk 内去重；
+  过滤明显碎片（如"前项""解当""目了"），过滤含纯停用字的二元
+
+英文停用词（精简）：the, a, an, is, are, of, in, on, for, to, by, from, with,
+this, that, it, you, we, they, do, does, please, help, use, used, plan,
+make, get, just, also, will, would, can.
+
+中文停用字：的 了 是 在 和 有 不 就 也 为 以 对 把 被 从 等 都 这 那 个 啊 呢
+吧 呀 之 与 或 及 并 要 做 能 会 上 下 里 们 好 之 吗 一 也 就 都 还 到 去 给
+跟 向 自 什 么 怎 哪 如 何 因 所 然 后 比 例 而 且 但 不 过 或 还 关 通 基 由
+得 着 过 看 想 说 点 种 次 时 年 月 日 中 时 间 现 在.
+
+**输出**：top 30 keywords，过滤掉只剩 1 出现的，过滤包含纯英文 stop-only 字符的。
+用作"标签云"展示：`tag1·N　tag2·M　tag3·K`。
+
+### 6.6 节奏
+- **24h 热力**: 合并 `hourCounts` (claude) + codex `by_hour` + history `by_hour`
+  + kiro `by_hour` (3b.1) + Antigravity `updatedAt` hour (3d) — Trae / Cursor
+  本地无可靠时间戳粒度，不并入
+- **活跃天数**: union of Claude / Codex / Kiro / Antigravity dates；连续活跃
+  streak = 最长连续 1 天间隔的串
+- **峰值日**: max 的 dailyActivity.messageCount
+- **首次/最近**: min/max date
+
+### 6.7 投入 × 产出
+- 每模型 spent / cache_read 表（**降级展示**：放在折叠区或尾部，不再作为核心亮点）
+- GitHub 当前报告窗口贡献日历（求 calendar_total，列出 top 5 高产日）
+- Top GitHub 仓库（窗口内 commits 排序；private 仓库改名为 "Private Repo X"；stars 是当前仓库属性）
+- 主要语言：merge `gh languages.bytes`（当前仓库属性）与本地 `git numstat ext`（窗口内变更）排序
+- **产出密度**（v2.0 重点，替代原来的 tokens_per_commit）:
+  - `commits_per_day = git_local_commits / active_days`
+  - `loc_churn_per_day = (additions + deletions) / active_days`
+  - `github_contribs_per_active_day = calendar_total / active_days`
+  - 贡献爆发日：连续 3+ 天 daily_contributions > 20 的窗口
+- 单位投入产出（`tokens_per_commit` / `tokens_per_loc`）已迁移到 **6.10 Token 经济学**，6.7 只讲 GitHub / 仓库 / 语言
+
+### 6.8 Velocity & Leverage（v2.0 新增 —— AI 让你快了多少、广了多少）
+
+这一维度的目的是回答：**如果没有 AI 协作，这种产出可能吗？**
+
+计算并叙述：
+- **日均产出**: commits/day, LOC churn/day, GitHub contributions/day
+- **跨栈广度**: 同时活跃的仓库数 × 使用的编程语言数。
+  一个人用 Python + TypeScript + Rust + Go + Shell 跨 13 个仓库日均 10 commit，
+  这种广度只有 AI 辅助才现实。
+- **同时在线项目数**: 活跃天数 >= 3 的项目数量
+- **开源影响力**: 总 stars × repos with stars > 0 → 产出不只是 "量"，还被社区认可
+- 用 1-2 句总结性叙事，例如：
+  「AI 让一个人拥有了小团队的交付能力：13 个仓库、5 门语言、日均 10 commit。」
+
+### 6.9 Evolution 曲线（v2.0 新增 —— 你的 AI 用法在进化）
+
+目的：把静态快照变成成长叙事。让读者看到 **AI 使用的成熟度曲线**。
+
+时间窗口模式下，本节改为「阶段 Evolution」：只展示窗口内的周/月变化，并用
+上一等长周期作为 baseline（如可用）。不要把全量人生时间线塞进月度报告；全量里程碑
+最多放 1 句 context。
+
+数据来源：
+- Codex `threads` 的 `created_at` + `model` + `cli_version`
+- Claude `history.jsonl` 的 `timestamp` + `display`（斜杠命令）
+- Claude `projects/` 目录的 JSONL 文件创建时间
+- Antigravity metadata `updatedAt` + `artifactType` + summaries
+
+计算：
+1. **月度活跃量**：每月 Claude sessions + Codex threads
+2. **能力解锁时间线**（从 history.jsonl 提取各能力的首次使用日期）：
+   - 首次 `/plan` 的日期 → Plan-mode 解锁
+   - 首次 `/effort` 的日期 → Reasoning effort 解锁
+   - 首次 `/skill-creator` 或自研 skill 出现的日期 → Skill 自建解锁
+   - 首次 `/vibe-forge` 或 `/ssh-prod` 的日期 → 自建 skill 投入生产
+   - Codex CLI 版本跳跃点（major version changes）
+3. **模型迁移**：从 Codex 月度模型聚合中，标出何时从旧模型迁移到新模型
+
+渲染为 timeline 格式：
+```
+2026-01  Codex 起步，纯 prompt，CLI 0.81.0-alpha
+2026-02  开始日常化，tokens 增长
+2026-03  Claude Code 加入 → plan-mode + effort 调节 → 开始自建 skills
+2026-04  双工具编排成熟，skills 生态完善，日均 10 commit
+```
+
+### 6.10 💎 Token 经济学（v2.1 新增 —— 把 token 投入当成"AI 投资"来叙事）
+
+目的：不只展示"用了多少 token"，而是讲清 **token 投入怎么花、Cache leverage 多深、模型迁移如何省了成本**。把 token 当 AI 时代的"原材料 + 杠杆"来叙事，不是产出的注脚。
+
+数据来源：
+- Claude `stats-cache.json` 的 `modelUsage` + `dailyModelTokens`
+- Codex sqlite `threads` 的 `tokens_used` + 月度聚合（Step 3.1 已查）
+- Antigravity contributes activity and workflow metrics only; exclude it from token economics unless a verified token field exists in allowed local text data.
+
+Antigravity `estimated token-equivalent (non-billing)` is a text-scale proxy from local artifacts. Do not add it to `claude_tokens_spent`, `claude_cache_read`, `codex_tokens`, total token-through, cache leverage, paid/new token totals, or per-model token tables. It may appear only in an Antigravity/local-artifact subsection or a clearly labeled footnote.
+
+计算：
+1. **总投入** = `claude_spent + codex_tokens`（新付费 token 总量）
+2. **总杠杆** = `claude_cache_read`（缓存复用 token 总量）
+3. **Cache leverage 倍率** = `claude_cache_read / claude_spent`（每 1 个新 token 撬动几个缓存 token）
+4. **每模型占比** = `model.spent / Σ all_models.spent`（Claude 与 Codex 合在一起算）
+5. **每模型 leverage** = `model.cache_read / model.spent`（哪个模型 caching 习惯最熟）
+6. **月度 token 趋势** = `dailyModelTokens` + Codex 月度聚合按月汇总，找增长拐点
+7. **模型迁移注解** = 比较相邻两个月每模型 spent 增减，识别"萎缩-接管"事件
+   （例如 `<YYYY-MM>: Opus 4.6 spent ↓ 40%，Sonnet 4.6 spent ↑ 60%`）
+8. **单位投入产出**（从原 6.7 移过来，仅参考）= `claude_spent / git_commits` 与 `claude_spent / (additions + deletions)`
+
+叙事重点：
+- 一句话开场：「**<X>** 新付费 token 撬动 **<Y>** 缓存复用，杠杆比 **1 : <N>**」
+- 月度趋势用文字 sparkline 或表格
+- 模型迁移注解：哪些月份发生了什么、为什么省/费 token
+- 单位投入产出标注为"参考"，提醒不要当 KPI
+
+时间窗口模式下，Token 经济学只统计窗口内 verified token。Claude 只能从
+`dailyModelTokens` 等可按日切分的数据汇总；Codex / Kiro 通过 timestamp SQL 过滤；
+Trae / Cursor 云端 token 仍不读取；Antigravity text-scale 仍是 non-billing context，
+不进入 token totals。
+
+---
+
+## Step 7 — 隐私脱敏（默认开）
+
+Before writing the README, scan all string fields for these regex and replace
+with `<REDACTED:type>`:
+
+| pattern | replacement |
+| --- | --- |
+| `sk-[A-Za-z0-9_-]{20,}` | `<REDACTED:openai-key>` |
+| `sk-ant-[A-Za-z0-9_-]{20,}` | `<REDACTED:anthropic-key>` |
+| `gh[oprs]_[A-Za-z0-9]{20,}` | `<REDACTED:github-token>` |
+| `github_pat_[A-Za-z0-9_]{20,}` | `<REDACTED:github-pat>` |
+| `AKIA[0-9A-Z]{16}` | `<REDACTED:aws-key>` |
+| `xox[baprs]-[A-Za-z0-9-]{10,}` | `<REDACTED:slack-token>` |
+| `https://open.feishu.cn/open-apis/bot/v2/hook/[A-Za-z0-9-]+` | `<REDACTED:feishu-webhook>` |
+| `\b[\w.+-]+@[\w-]+\.[\w.-]+\b` | `<REDACTED:email>` |
+
+Project name handling (anonymize=on):
+- For every real project path you discovered, allocate a stable label `项目 A/B/C/...`
+  in **descending order of comprehensive score** (Step 6.4)
+- Use the label everywhere the project would otherwise appear by name
+- For private GitHub repos, use `Private Repo X`
+- File paths: only show `basename`, never the absolute path
+
+If user said "show real names" / "私人版":
+- Skip the anonymization step (still scrub secrets)
+- Keep tokens / keys redaction always on
+
+---
+
+## Step 8 — 渲染最终 Markdown
+
+Choose the profile language before writing:
+- 用户用中文问或未指定语言 → `output/profile_<YYYYMMDD>.md`，使用中文叙事
+- 用户用英文问或明确要求 English / EN → `output/profile_<YYYYMMDD>_en.md`，使用英文叙事
+- 用户要求 both / bilingual / 两个都要 → 两份都生成
+
+If `WINDOW_REQUESTED=1`, include the window slug in filenames to avoid
+overwriting a same-day default profile:
+- Chinese/default: `output/profile_<REPORT_SLUG>_<YYYYMMDD>.md`
+- English: `output/profile_<REPORT_SLUG>_<YYYYMMDD>_en.md`
+- Private: `output/profile_<REPORT_SLUG>_<YYYYMMDD>_private.md`
+
+The poster is part of the default deliverable, not an optional nice-to-have:
+after writing the Markdown profile, always run Step 8b and produce the matching
+`output/poster_<...>_<lang>.svg` unless the user explicitly says "不要海报" /
+"markdown only" / "no poster". Do not finish with only the Markdown profile in
+the normal path.
+
+Use **exactly** this structure. For English output, translate headings and prose
+to English following `examples/profile_20260508_en.md`; for Chinese output, use
+the structure below. Technical terms stay in English in both versions. **讲故事优先于堆数据**；
+展示「因为 AI 而不同」，而不仅仅是「用了很多 AI」：
+
+```markdown
+# <name or github_login> · AI-Native Developer Profile
+> 基于 <report_label or span_days> 的本地 Claude Code + Codex + Antigravity 数据自动生成 · <generated_at>
+> _个人理念：<github bio if available>_
+
+---
+
+## 一览
+
+- 分析范围：**<REPORT_LABEL or span_days>**（<REPORT_START> 至 <REPORT_END_EXCL 前一天>，指定窗口报告才显示）
+- 在 **<active_days>** 个活跃日里完成 **<claude_sessions>** 次 Claude sessions + **<codex_threads>** 次 Codex threads + **<antigravity_tasks>** 次 Antigravity tasks，共 **<total_messages>** 条 Claude/Codex 消息
+- 日均产出：**<commits_per_day>** commits / **<loc_churn_per_day>** 行代码变动 / **<github_contribs_per_day>** GitHub contributions
+- 同时维护 **<git_repos>** 个仓库，横跨 **<cross_stack_langs>** 门语言
+- 同期 GitHub：**<github_commits>** commits / **<github_prs>** PRs / **<github_issues>** issues / **<calendar_total>** 总贡献
+- AI 投入：**<claude_spent>** Claude 新付费 token + **<codex_tokens>** Codex token；复用 **<claude_cache_read>** 缓存（占 Claude I/O **<cache_pct>%**）
+- 主力工具：Claude Code (Opus / Sonnet) + Codex CLI (GPT) + Gemini Antigravity + Cursor
+
+## 📈 阶段变化（仅指定月份 / 时间范围时插入）
+
+> <2-3 句说明这个阶段相对上一等长周期或窗口内部前后半段的变化。若无 baseline，明确写「暂无可比基线，本节为阶段快照」。>
+
+| 指标 | 本期 | 上期 / 前半段 | 变化 |
+| --- | ---: | ---: | ---: |
+| 活跃天数 | <n> | <n> | <+/-n> |
+| Claude sessions | <n> | <n> | <+/-n%> |
+| Codex threads | <n> | <n> | <+/-n%> |
+| Verified AI tokens | <n> | <n> | <+/-n%> |
+| GitHub contributions | <n> | <n> | <+/-n%> |
+| Local commits | <n> | <n> | <+/-n%> |
+
+- <变化结论 1：AI 编码效率 / 工具组合 / 项目重心>
+- <变化结论 2：token 投入与产出关系>
+- <变化结论 3：下一阶段值得延续或调整的做法>
+
+## 🚀 Velocity & Leverage — AI 让一个人拥有了小团队的交付能力
+
+> <1-2 句叙事，例如：「13 个仓库、5 门语言、日均 10 commit —— 这种跨栈广度和交付密度，只有 AI 协作才现实。」>
+
+| 指标 | 数值 | 说明 |
+| --- | ---: | --- |
+| 日均 commits | <n> | 本地 git commits / 活跃天数 |
+| 日均代码变动 | <n> 行 | (additions + deletions) / 活跃天数 |
+| 同时维护仓库 | <n> 个 | 当前报告窗口内有 commit 的仓库数 |
+| 跨栈语言 | <n> 门 | Python / TypeScript / Rust / Go / … |
+| GitHub 贡献爆发 | <dates> | 连续 3+ 天 daily > 20 的窗口 |
+| 开源影响力 | <total_stars> stars | 跨 <n> 个被 star 的仓库 |
+
+## 🤖 AI-Native 实践
+
+> 不是「偶尔问问 AI」，是把多 LLM 编排、planning、structured workflows 都跑通。
+
+### 多模型编排
+| 工具 / 模型 | sessions / threads / tasks | spent tokens | cache-read | 用途倾向 |
+| --- | ---: | ---: | ---: | --- |
+| Claude Opus / Sonnet | … | … | … | 深度推理、复杂规划、代码修改 |
+| GPT (Codex CLI) | … | … | — | 第二意见、跨工具诊断、命令行实现 |
+| Gemini Antigravity | <antigravity_tasks> | — | — | 任务制规划、walkthrough、UI/实现闭环 |
+| Cursor | <cursor_composer_count> composers / <cursor_workspaces> workspaces | — | — | IDE 内联编辑、composer/spec、项目级上下文 |
+| … | | | | |
+
+### 高级能力深度使用
+- **Plan-mode**: **<n>** 次
+- **Effort 调节**: **<n>** 次
+- **Skills**: 共 **<n>** 个（Claude <n> + Codex <m>）
+- **Plans**: **<n>** 份；Tasks: **<n>** 个
+- **Hooks**: **<n>** 个；Automations: **<n>** 个
+- **Antigravity**: **<antigravity_tasks>** tasks；Artifacts: <artifact_type_breakdown>
+
+### Prompt caching 熟练度
+每花费 1 个新 token，复用 **<ratio>** 个缓存 token（cache-read 占总 IO 的 **<%>**）。
+
+### Reasoning effort 偏好
+xhigh **<n>**（**<%>**）· high **<n>** · medium **<n>** · low **<n>**
+
+## 🔧 AI 基础设施 — 不只用 AI，还在给 AI 造工具
+
+> <1 句叙事：「从 skill 到 hook 到 automation，我在构建让 AI 更好地帮我工作的基础设施。」>
+
+### 自建 Skills
+| 名称 | 描述 | 调用次数 | 工具 |
+| --- | --- | ---: | --- |
+| <skill_name> | <一句话> | <n> | Claude / Codex |
+| … | | | |
+
+### 安装的 Skills
+| 名称 | 描述 | 工具 |
+| --- | --- | --- |
+| … | | |
+
+### 其他基础设施
+- Hooks: <列出>
+- Codex automations: <列出>
+- Codex rules: <列出>
+
+## 🛠️ AI 协作风格
+
+### 最常用的 slash 命令 Top 10
+| # | 命令 | 次数 | 含义 |
+| --- | --- | ---: | --- |
+| 1 | /effort | <n> | 切换推理深度 |
+| 2 | … | … | … |
+
+### Session 架构
+<2-3 句描述用户的 session 驾驭模式，例如：>
+- 典型流程：`/plan` 规划 → 深度迭代 → `/compact` 回收上下文 → 继续交付
+- **<n>%** 的 session 以 `/plan` 开头（先想再做）
+- **<n>%** 的 session 使用过 `/compact` 或 `/clear`（主动管理上下文）
+- `/resume` 恢复率: **<n>%**（session 连续性）
+- 平均会话深度: **<n>** 条消息 / session
+- 最长 session: **<hours>** 小时 / **<msgs>** 条消息
+
+## 📂 项目与领域分布
+
+跨 **<n>** 个项目活跃，按领域分布：
+
+| 领域 | 项目数 | 特征 |
+| --- | ---: | --- |
+| 产品 / 业务前端 | <n> | React、dashboard、管理台 |
+| … | … | … |
+
+### Top 项目（脱敏）
+| 项目 | Claude | Codex | Antigravity | Cursor | Git commits | 编排模式 | 领域 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 项目 A | <n> | <n> | <n> | <n> | <n> | 多引擎 | … |
+| 项目 B | <n> | <n> | <n> | <n> | <n> | Cursor+Codex | … |
+| … | | | | | | |
+
+编排模式统计：多引擎 **<n>** 个 · 双引擎 **<n>** 个 · Claude 主导 **<n>** 个 · Codex 主导 **<n>** 个 · Antigravity 主导 **<n>** 个 · Cursor 主导 **<n>** 个
+
+## 🧬 Evolution 曲线 — AI 用法在进化
+
+```
+<YYYY-MM>  <里程碑事件>
+<YYYY-MM>  <里程碑事件>
+<YYYY-MM>  <里程碑事件>
+<YYYY-MM>  <里程碑事件>
+```
+
+月度活跃趋势：
+| 月份 | Claude sessions | Codex threads | Antigravity tasks | 里程碑 |
+| --- | ---: | ---: | ---: | --- |
+| … | | | | |
+
+## 💡 兴趣主题 & 关键词
+
+> **<tag1>** · <tag2> · <tag3> · … （top 25，已过滤停用词）
+
+## ⏱️ 工作节奏
+
+### 24 小时活跃热力图
+```
+00 …
+01 …
+…
+```
+（峰值时段 / 活跃模式描述）
+
+### 时间跨度
+- 首次 / 最近活跃: …
+- 活跃天数 / 最长连续 / 单日峰值: …
+
+## 💎 Token 经济学
+
+> 一句叙事开场：「**<spent_tokens>** 新付费 token 撬动 **<cache_read>** 缓存复用，杠杆比 **1 : <leverage>**；总通过我手里 **<total_tokens>** token。」
+
+### 每模型 token 明细（按 spent 排序）
+| 模型 | spent | cache-read | leverage | 占总 spent |
+| --- | ---: | ---: | ---: | ---: |
+| Claude Opus 4.6 | … | … | …× | …% |
+| Claude Sonnet 4.6 | … | … | …× | …% |
+| Claude Haiku 4.5 | … | … | …× | …% |
+| GPT-5.4 (Codex) | … | — | — | …% |
+| … | | | | |
+
+### 月度 token 趋势
+| 月份 | Claude spent | Claude cache | Codex tokens | 主力模型 | 注解 |
+| --- | ---: | ---: | ---: | --- | --- |
+| <YYYY-MM> | <n> | <n> | <n> | <model> | <事件 / 迁移> |
+
+### 模型迁移注解
+- <YYYY-MM>: <模型 A 萎缩 −X%>，<模型 B 接管 +Y%>，<推测原因>
+- …
+
+### 单位投入产出（仅参考，勿当 KPI）
+- 每 commit ≈ **<n>** Claude tokens（仅 spent，不含 cache 与 Codex）
+- 每行代码 ≈ **<n>** Claude tokens
+> 提醒：AI 产出还包含大量不直接转化为 commit 的高价值劳动（架构 review / 数据清洗 / plan 推演 / skill 重构）。把"每 commit X tokens"当 KPI 是反激励。
+
+## 💰 产出 & 投入
+
+### GitHub 同期产出
+- <REPORT_LABEL or 默认365天> 总贡献: **<n>** · 拥有仓库: **<n>**
+- 最高产单日: <top 5 dates>
+
+#### Top 仓库
+| 仓库 | language | commits | stars |
+| --- | --- | ---: | ---: |
+| … | | | |
+
+### 主要语言
+<语言列表>
+
+## 📊 数据来源 & 隐私承诺
+
+- 数据 100% 本地：`~/.claude/*` + 项目 `.claude/plans`（如配置）+ `~/.codex/*`
+  + `~/.kiro/*` + `~/.local/share/kiro-cli/*` + `~/Library/Application Support/Trae/*`
+  + `~/Library/Application Support/Cursor/*` + `~/.gemini/antigravity/brain/*`
+  + 项目 `.kiro/`、`.trae/`、`.cursor/`、`.cursorrules` + 本地 `git log`
+  + GitHub via `gh`
+- Claude plans 同时覆盖默认 `~/.claude/plans` 与 settings 中解析出的 `plansDirectory`
+- Kiro / Trae / Antigravity / Cursor 数据自动检测，未安装的工具静默跳过；
+  Trae token 由 ByteDance 云端 API 持有、Cursor token 由 Anysphere 云端
+  dashboard 持有，本 skill 不联网，这两项默认仅本地估算
+- 对话正文仅用于关键词与协作风格分析，原文不会出现在报告中；Antigravity 只
+  读取 metadata summary 与 markdown headings/checkbox，不读取截图、浏览器
+  cache 或 pbtxt annotations
+- 指定月份 / 时间范围时，所有可过滤数据均按 `[REPORT_START, REPORT_END_EXCL)`
+  统计；无法按窗口切分的数据只作为 all-time context 或降级说明
+- 项目名已匿名，API key / token / 邮箱 已正则清洗
+- 报告由 Claude Code / Codex / Kiro / Trae / Antigravity / Cursor 本地数据
+  按 Readme.skill 自动生成，可重复运行
+- 生成时间: **<ISO timestamp>**
+```
+
+---
+
+## Step 8b — 海报渲染（默认必选）
+
+在 markdown profile 完成后，默认必须再渲染 SVG 海报到 `output/poster_<YYYYMMDD>_<lang>.svg`（例如 `_zh.svg` / `_en.svg`）。如果 `WINDOW_REQUESTED=1`，文件名改为 `output/poster_<REPORT_SLUG>_<YYYYMMDD>_<lang>.svg`，海报主标题和 6 个 hero 数字必须基于该窗口而非全量历史。只有用户明确说"不要海报" / "只要 markdown" / "no poster" 时才跳过本步骤。
+
+### 设计原则（来自 v2.4 brief，由 Codex 审校）
+
+1. **3 秒看懂身份 + 6 个可信数字** —— 视觉冲击不靠堆渐变，靠选对 6 个英雄数字。读者扫一眼就知道你是谁、做了什么
+2. **避免 emoji** —— 跨平台字体不一致；emoji 在 svg 里渲染常变方块或被字体替换
+3. **字体用 system-ui fallback** —— 用 `font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"`，不内嵌字体
+4. **hero 数字必须有证据** —— 全部来自前面 10 维度的已算量，缺数据降级显示 `—`，**不补想象指标**
+5. **SVG 是源图，不是社媒直发** —— 在 README / 终端总结里同步给出 PNG 转换命令
+6. **生成后必须可解析** —— SVG 是 XML；只要浏览器顶部出现 XML error，就等于海报没有成功生成
+
+### 标准布局（1080×1920 竖屏）
+
+| 区域 | y 位置 | 内容 |
+| --- | ---: | --- |
+| 顶部品牌条 | 120 | 6px 渐变小条（accent） |
+| 一句叙事标题 | 200–345 | 标签 + 大字标题 + 时间跨度副标题 |
+| 6 hero metric 卡 (2×3) | 440–1140 | 每张卡 465×220 圆角，数字 100-120px，标签 20px letter-spaced |
+| Evolution timeline | 1240–1430 | 横向 4 milestone（圆点 + 月份 + 事件） |
+| 副信息卡（左右两栏） | 1500–1720 | Cache leverage 排行 / Top slash 命令 |
+| 底部 footer | 1790–1825 | 脱敏标识 + repo URL + 日期 |
+
+### 6 个 hero 数字推荐（按显眼度排序）
+
+| 卡 | 数据来源（从 10 维度取） |
+| --- | --- |
+| 1 | `<span_days or REPORT_LABEL> · <active_days> ACTIVE`（一览） |
+| 2 | `<git_total_commits> LOCAL COMMITS`（Velocity） |
+| 3 | `<total_through>` TOKENS THROUGH（Token 经济学，spent + cache_read 总量） |
+| 4 | `1 : <cache_leverage> CACHE LEVERAGE`（Token 经济学） |
+| 5 | `<total_stars> GITHUB STARS`（投入产出） |
+| 6 | `<n_repos> · <n_langs> REPOS · LANGS`（Velocity） |
+
+任一项缺数据时，替换为：总 AI units（`<claude_sessions> + <codex_threads> + <antigravity_tasks>`）/ 自建 skills 数 / Antigravity artifacts 数 / 单日峰值消息数。
+
+### 副信息卡（左右两栏）
+- 左：Cache leverage 排行（top 3 模型，从 Token 经济学）
+- 右：Top slash 命令（top 3，从协作风格）
+
+### 颜色方案
+- 背景渐变：深紫 `#0c0a1f` → 中紫 `#1a1442` → 深绿 `#0d2e1f`
+- 强调渐变：Claude 紫 `#8b5cf6` → Codex 绿 `#10b981`
+- 文字层次：纯白 / 50% 透明度 / 25% 透明度（建立视觉重要性）
+
+### 实现细节
+- 用纯 SVG 文本字符串（无外部资源、无嵌入字体、无 base64 图片）
+- 直接写 `.svg` 文件内容，不要包在 markdown 代码块里，不要在文件开头/结尾写解释文字；第一个非空字符必须是 `<`，最后必须正常闭合 `</svg>`
+- `<linearGradient>` 定义在 `<defs>`，`fill="url(#bg)"` 引用
+- 卡片用 `<rect rx="20">` 圆角；分隔线用 `<line stroke-opacity="0.1">`
+- letter-spacing 在英文标签上加 2-6px 提升设计感
+- 所有写入 `<text>`、属性值、`<title>` 的动态文本都必须先做 XML escaping：
+  - `&` → `&amp;`（必须先替换）
+  - `<` → `&lt;`
+  - `>` → `&gt;`
+  - `"` → `&quot;`（属性值里必须）
+  - `'` → `&apos;`（属性值里必须）
+- Standalone SVG 只安全使用上面 5 个 XML 预定义实体；不要写 `&nbsp;`、`&copy;` 等 HTML 实体
+- 常见会炸浏览器的文本必须转义，例如 `War & Peace` 要写成 `War &amp; Peace`，`A < B` 要写成 `A &lt; B`
+- 动态数据不要用于 `id`、gradient id、filter id 或 `url(#...)` 引用；这些标识符保持静态 ASCII，避免空格、中文或特殊字符破坏引用
+- 长文案先截断 / 换行，再 escape；不要靠浏览器自动换行，也不要生成未闭合的 `<text>` / `<tspan>`
+
+### 生成后强制验证
+
+写完 SVG 后必须做 XML 解析校验。校验失败时，立即修复或重写 SVG 并重新校验；
+不得在校验失败时告诉用户 "Poster generated"。
+
+```bash
+POSTER_PATH="output/poster_<YYYYMMDD>_<lang>.svg"  # 按实际文件名替换
+python3 - "$POSTER_PATH" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path = sys.argv[1]
+tree = ET.parse(path)
+root = tree.getroot()
+if root.tag not in ("svg", "{http://www.w3.org/2000/svg}svg"):
+    raise SystemExit(f"not an SVG root: {root.tag}")
+view_box = root.attrib.get("viewBox", "")
+if view_box != "0 0 1080 1920":
+    raise SystemExit(f"unexpected viewBox: {view_box!r}")
+print(f"SVG XML OK: {path}")
+PY
+
+if command -v rsvg-convert >/dev/null 2>&1; then
+  rsvg-convert -h 1920 "$POSTER_PATH" >/tmp/readme-skill-poster-smoke.png
+fi
+```
+
+### 语言决定（中文 / 英文双版本）
+
+海报有中英两个版本。决定哪种：
+
+1. **默认看用户当次提问的语言**：
+   - 用户用中文问 → 输出 `output/poster_<DATE>_zh.svg`
+   - 用户用英文问 → 输出 `output/poster_<DATE>_en.svg`
+2. **明确指定**: 用户说 "中文版" / "Chinese poster" / "English version" / "EN" / "ZH" 时按指定语言生成
+3. **双语**: 用户说 "两个都要" / "both" / "bilingual" 时，两份都生成
+
+### 翻译规则 — 哪些翻译，哪些保留英文
+
+**保留英文不翻译**（中英版都用英文，因为这是行业标准术语 / 设计感词）：
+- 技术术语：`token` / `tokens` / `through` / `cache` / `leverage` / `commits` / `stars` / `repos` / `langs` / `days` / `active` / `models` / `sessions` / `threads`
+- 模型名：`Opus` / `Sonnet` / `Haiku` / `GPT-5.4` / `GPT-5.5` 等
+- Slash 命令：`/effort` / `/usage` / `/plan` / `/compact` 等
+- 仓库名 / 用户名 / `GitHub` / `Readme.skill` / 版本号
+- 大写 letter-spaced 标签（卡片标签如 `LOCAL COMMITS` / `TOKENS THROUGH` / `EVOLUTION`） —— 设计语言，两版都用英文
+
+**翻译的部分**（中英文版差异点）：
+| 元素 | 中文版 | 英文版 |
+| --- | --- | --- |
+| 主标题（一句叙事） | 「118 天 · 双引擎 · 一个人的小团队」 | "118 Days · Two-Engine · One-Person Team" |
+| Evolution 节点描述 | 「Codex 起步」「tokens ↑6×」「Claude 加入」「双引擎峰值」 | "Codex starts" / "Tokens up 6×" / "Claude joins" / "Two-engine peak" |
+| 副信息卡 section 名 | 「CACHE LEVERAGE 排行」「TOP SLASH 命令」 | "CACHE LEVERAGE RANK" / "TOP SLASH COMMANDS" |
+| Footer | 都用英文（设计感） | 都用英文（设计感） |
+
+### 链式传播 3 件套（v2.4 链式传播版）
+
+为了让海报有"想转发、想晒、看到的人想自己也来一份"的传播力，海报必须包含以下 3 件套：
+
+#### A. AI 自评金句（双行 44-50px 大字标题）
+
+不是堆数据，而是让 AI 看了用户数据后，写一段**有破圈传播力的评语**作为海报副标题。**默认用 Tone A（反差数字 + 通俗类比）—— 把 token 量换算成"等于 N 遍世界名著"**，让圈外人 3 秒被震撼。
+
+##### Tone A（默认，最破圈）：反差数字 + 通俗类比 ⭐
+
+把 `total_through`（spent + cache_read）换算成大众能感知的「读了 N 遍《红楼梦》/ N 倍 War & Peace」。
+
+**换算公式**：
+- `chinese_chars ≈ total_through × 0.7`（1 token ≈ 0.7 个汉字）
+- `dhm_count ≈ chinese_chars / 730_000`（《红楼梦》约 73 万字）
+- `english_words ≈ total_through × 0.75`（1 token ≈ 0.75 个英文 word）
+- `wap_count ≈ english_words / 587_000`（*War & Peace* 约 58.7 万 words）
+
+**样例**（基于 12.9B token through 的 demo）：
+- 中：「<span_days> 天，我和 AI 写下 <X> 亿字 / 等于把《红楼梦》写了 <N> 万遍」
+  - 实填：`117 天，我和 AI 写下 120 亿字 / 等于把《红楼梦》写了 1 万遍`
+- 英 SVG text：「<span_days> days · <total_through> tokens with AI / That's War &amp; Peace × <N> times」
+  - 实填到 SVG 时：`117 days · 12.9B tokens with AI / That's War &amp; Peace × 25,000 times`
+
+**为什么 Tone A 优先**：12.9B 这种数字对圈外人是抽象的；红楼梦/War & Peace 任何受过教育的人都立刻有量感。这是从「圈内炫耀」变「破圈震撼」的关键。
+
+##### Tone B-F（备选，仅当 Tone A 数据真撑不起 或 用户明确要求其他 tone 时启用）
+
+| 画像（命中即触发） | tone | 中文样例 | 英文样例 |
+| --- | --- | --- | --- |
+| 最长 session messages > 1000 | B 拟人化关系 | 跟 AI 吵了 <msgs> 轮 / 没分手 | <msgs>-message marathon / Still together |
+| commits / LOC 极高 + 跨多 repo | C 角色反转 | 我不再写代码 / 我让代码自己长出来 | I don't write code / I grow code from prompts |
+| Cache leverage > 25× | D 自嘲 humble brag | 不是我手快 / 是 Claude 24h 陪我 | I'm not fast / Claude never sleeps |
+| token + commits 都极高（"打工人"） | E 反差悖论 | 老板以为我在摸鱼 / 我和 AI 烧了 <X>B token | Boss thinks I slack / Burned <X>B tokens |
+| plan-first 高 + 多自建 skills | F 哲学/思考 | 我不写代码 / 我编排 AI 替我写 | I don't write code / I orchestrate AI |
+
+**规则**：
+1. **必须基于真实数据画像，禁止编造** —— 数据不支持的金句不要写
+2. **默认 Tone A**：除非 `total_through < 1B`（数字撑不起类比），否则永远先用 Tone A
+3. 中文版每行 ≤ 16 字、英文版每行 ≤ 38 chars，保证视觉冲击
+4. 第二行用 `fill="url(#accent)"` 渐变色填充，制造视觉重音（"红楼梦"那行用渐变）
+5. 金句下面跟一行 monospace 数据浓缩：`<X> tokens · <Y>× cache · <Z> skills · <N> langs`
+
+#### B. 身份徽章（顶部 4 胶囊带）
+
+基于数据自动判定徽章。每个用户最多展示 **4 个最强徽章**（按下表优先级取前 4）：
+
+| 徽章 | 触发条件 | 显示文本 |
+| --- | --- | --- |
+| TWO-ENGINE PILOT | Claude sessions ≥ 50 且 Codex threads ≥ 50 | `TWO-ENGINE PILOT` |
+| THREE-ENGINE PILOT | Claude sessions ≥ 50 且 Codex threads ≥ 50 且 Antigravity tasks ≥ 20 | `THREE-ENGINE PILOT` |
+| CACHE MASTER | claude_cache_leverage ≥ 15× | `CACHE MASTER · <leverage>×` |
+| SKILL BUILDER | 自建 skills + automations + rules ≥ 5 | `SKILL BUILDER · <n>` |
+| POLYGLOT | 跨栈语言 ≥ 5 | `POLYGLOT · <n>` |
+| VELOCITY KING | 日均 commits ≥ 8 | `VELOCITY KING · <n>/d` |
+| PLAN-FIRST | session-first 是 `/plan` 的占比 ≥ 8% | `PLAN-FIRST · <%>` |
+| WALKTHROUGH BUILDER | Antigravity walkthrough artifacts ≥ 10 | `WALKTHROUGH BUILDER · <n>` |
+| TOKEN WHALE | total_through ≥ 10B | `TOKEN WHALE · <total>` |
+| OPEN-SOURCE | total stars ≥ 1000 | `OPEN-SOURCE · <stars>★` |
+| EARLY ADOPTER | 使用过 ≥ 3 个不同模型版本 | `EARLY ADOPTER` |
+| LONG-CONTEXT PRO | 用过 Opus 4.7-1M ≥ 10 次 | `LONG-CONTEXT PRO` |
+
+视觉：圆角胶囊 235×60 (rx=30)，1.5px accent 渐变描边，文字 17px letter-spaced 1.5。
+4 个胶囊一行排列，gap 25px，左 60px 起。徽章文字两版一致（都用英文，都是设计语言）。
+
+#### C. 30 秒安装 CTA（底部，**不放二维码**）
+
+替代单纯 footer，给一个行动召唤区。看到海报的人能直接看到 install 命令。设计：
+
+- 顶部分隔线（1px white 15% opacity）
+- 大字标题 24-26px letter-spaced：`GENERATE YOURS IN 30 SECONDS`（两版都英文，保持设计感）
+- 两行 monospace 命令（第二行用 `fill="url(#accent)"` 突出）：
+  - `/plugin marketplace add study8677/Readme.skill`
+  - `/plugin install readme-skill@study8677`
+- 短分隔线
+- 仓库 URL：`github.com/study8677/Readme.skill`（letter-spaced 2px，20px）
+- 底部脱敏小字：`LOCAL-ONLY · ANONYMIZED · v<version> · <date>`（13px，30% opacity）
+
+**为什么不放二维码**：QR 在小屏幕扫描成功率低；让人看到命令直接复制粘贴更可控；保持视觉简洁。让"想生成自己的"的人主动去 google 搜 repo，反而过滤出真正动机强的种子用户。
+
+### 参考样板
+- 中文版: `examples/example_poster_zh.svg`
+- 英文版: `examples/example_poster_en.svg`
+
+两份对照来看一下"哪些翻译、哪些保留"的具体边界，以及徽章 + 金句 + CTA 在 SVG 里的实现方式。
+优先复用对应样板的 SVG 骨架，只替换已计算且已 escape 的数字和文案；不要自由重写
+XML 结构，除非样板结构无法表达当前数据。
+
+---
+
+## Step 9 — 输出与交接
+
+先确定并复用同一组实际输出路径：
+- `profile_path`: 对应语言的 `output/profile_<YYYYMMDD>.md` 或 `output/profile_<YYYYMMDD>_en.md`
+- `poster_path`: 对应语言的 `output/poster_<YYYYMMDD>_<lang>.svg`
+- 指定窗口时，分别使用 `output/profile_<REPORT_SLUG>_<YYYYMMDD>...` 与
+  `output/poster_<REPORT_SLUG>_<YYYYMMDD>_<lang>.svg`
+
+把 Markdown 写入 `profile_path`，把 SVG 写入 `poster_path` 并完成 Step 8b 校验，
+然后给用户**一句话**总结：
+下面的 `<profile_path>` / `<poster_path>` 是占位符，输出时必须替换为真实文件路径，
+不要原样输出尖括号占位符。
+
+```
+✅ Profile generated: <profile_path>
+🎨 Poster:    <poster_path>
+验证：SVG XML OK
+关键数字：<claude_sessions> Claude sessions / <codex_threads> Codex threads / <antigravity_tasks> Antigravity tasks / <tokens> tokens / <github_commits> commits
+分析范围：<REPORT_LABEL>（指定窗口时显示）
+预览：head -40 <profile_path>
+预览海报：open <poster_path>
+转 PNG：rsvg-convert -h 1920 <poster_path> > poster.png
+       (或 chromium --headless --screenshot=poster.png --window-size=1080,1920 <poster_path>)
+```
+
+如果用户要求"私人版"，再生成一份 `output/profile_<YYYYMMDD>_private.md`
+（指定窗口时为 `output/profile_<REPORT_SLUG>_<YYYYMMDD>_private.md`）
+跳过项目匿名（仍然 scrub 密钥与邮箱）。
+
+---
+
+## 数据缺失时的降级策略
+
+| 缺失项 | 你应该做什么 |
+| --- | --- |
+| `~/.claude/stats-cache.json` 不存在 | 跳过 Claude 总量章节，仅基于 history.jsonl 估算 |
+| `~/.codex/state_5.sqlite` 不存在 | 跳过 Codex 章节；如果 history.jsonl 仍在，至少给个总数 |
+| `~/.kiro/` 不存在 | 完全跳过 Step 3b，不在一览里出现 Kiro 字段 |
+| `~/.kiro/` 存在但 `~/.local/share/kiro-cli/data.sqlite3` 不存在 | 只统计 Steering / Agents / Skills 配置数，session/token 标 `—` 并在报告里说明「Kiro CLI 数据未生成」 |
+| Kiro SQLite schema 找不到 token 列 | 仅按 session 计数，在表里写「token 字段未持久化」 |
+| `~/Library/Application Support/Trae/` 不存在 | 完全跳过 Step 3c |
+| Trae `state.vscdb` 的 chat key 解析失败 | 仅展示「打开过的工作区数 + `.trae/` 配置数」，不编 session/message 数字 |
+| Trae token 数据（永远缺失，云端 only） | 报告里明写「Trae token 在云端，本 skill 不联网」；除非用户手动提供 tokscale 导出 |
+| `~/.gemini/antigravity/brain` 不存在 | 跳过 Step 3d；总览和项目表不显示 Antigravity 列或显示 0 |
+| Antigravity metadata 缺失 | 用 markdown 文件名、标题和文件 mtime 降级；count-based metrics 保留，date-based metrics 跳过无效记录 |
+| Antigravity 只有截图/二进制 | 只计 brain 目录为 task/session，不读取图片，不做 OCR，不编 topic |
+| Antigravity token 不可得 | token 表显示 `—` 或省略 Antigravity token；不要估算 |
+| `~/Library/Application Support/Cursor/` 不存在 | 完全跳过 Step 3e |
+| Cursor `composer.composerHeaders` 缺失 | 降级用 composer/chat key 计数、workspace folder 和 `.cursor/` 配置；不编 session/composer 数字 |
+| Cursor `state.vscdb` 的 composer/chat key 解析失败 | 仅展示「打开过的工作区数 + `.cursor/` 配置数」，不编 session/composer 数字 |
+| Cursor token 数据（云端权威，本地仅参考） | 报告里明写「Cursor token 权威在云端 dashboard，本地只能给参考估算」；不参与 Token 经济学排行 |
+| `gh` 未安装 / 未认证 | 跳过 GitHub 章节，profile 仍可生成 |
+| 候选路径不是 git 仓库 | 该项目从 git 统计中跳过 |
+| 指定时间窗口内全空 | 输出「该时间范围暂无可统计数据」，不要自动扩到全量后伪装成窗口报告 |
+| 数据只有 all-time 聚合、无法按窗口切分 | 只作为 all-time context 或降级说明，不纳入月度 / 阶段指标 |
+| 数据全空 | 报告诚实地说明"暂无可统计的本地数据"，不要编数据 |
+
+## 一些务必遵守的红线
+
+- 可以读取 `~/.claude/projects/*/<id>.jsonl`、`~/.kiro/sessions/cli/*.jsonl`、
+  Trae `state.vscdb` 的 chat 字段、Cursor `state.vscdb` 的 composer/aiService
+  字段、Antigravity `brain/<uuid>/*.metadata.json` 与 markdown 文本，用于
+  关键词提取、协作风格、Session 架构等深度分析（Step 6.3 / 6.5 受益）；但
+  **不要把任何对话原文一字不差地写进 README**——脱敏后的统计、概括、片段化
+  关键词可以
+- **永远不要** 联网（除 `gh` 调用 GitHub 自身）。这意味着 Trae / Cursor 的
+  云端 token API 永远不可调用；如需 Trae token，仅读取用户自己 tokscale 缓存
+- **永远不要** 修改 `~/.claude`、`~/.codex`、`~/.kiro`、`~/.local/share/kiro-cli`、
+  `~/Library/Application Support/Trae`、`~/Library/Application Support/Cursor`、
+  `~/.gemini/antigravity` 下任何文件。所有 SQLite 必须
+  `mode=ro&immutable=1` 打开
+- Antigravity 只允许读取 `~/.gemini/antigravity/brain/*` 下的 metadata 与
+  markdown 文本；不要读取 screenshots、pbtxt annotations、`~/.config/Antigravity`
+  cache，且不要 OCR 图片
+- **永远不要** 写脚本替代本指令；本 skill 的本质就是让 agent 自己读、自己算、自己写
+- 指定小时间窗口时，再识别风险会变高：分享版仍然不要输出原始 prompt、
+  commit subject、绝对路径、私有仓名、唯一请求 ID 或可反查的精确业务细节。
+  GitHub repo stars / language 是当前仓库属性，不是历史窗口属性；如果展示它们，
+  标注为「当前仓库属性」。
+
+## 参考样板（外形上对标这些 skill）
+
+- `~/.claude/skills/deploy/SKILL.md` — 编号步骤 + bash 示例的简洁风格
+- `~/.claude/skills/ops-report/` — 只读 sqlite 查询的范式
+- `~/.claude/skills/log-patrol/` — 跨数据源汇总并出表格的范式

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/marshal-nguyen/skill_claude_agent (path: claude/skills/geo-content/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Content quality and E-E-A-T assessment for AI citability — evaluate experience, expertise, authoritativeness, trustworthiness, and content structure

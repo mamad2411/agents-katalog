@@ -1,0 +1,137 @@
+---
+name: vscode-extension-guide
+description: "Guide for creating VS Code extensions and plugins from scratch through Marketplace publication. Use when developing a VS Code extension/plugin, adding commands or keybindings, building TreeView or Webview UI, publishing to Marketplace, or troubleshooting activation and packaging issues."
+argument-hint: "作りたい拡張機能、追加したい機能、困っている点"
+user-invocable: true
+license: CC BY-NC-SA 4.0
+metadata:
+  author: yamapan (https://github.com/aktsmm)
+---
+
+# VS Code Extension Guide
+
+Create, develop, and publish VS Code extensions.
+
+For extensions with a management UI, default to a dedicated Activity Bar icon
+and sidebar unless another entry point is explicitly chosen. A Marketplace
+`icon` alone does not create that navigation; use the TreeView reference below.
+
+## When to Use
+
+- **VS Code extension**, **extension development**, **vscode plugin**
+- Creating a new VS Code extension from scratch
+- Adding commands, keybindings, or settings to an extension
+- Publishing to VS Code Marketplace
+
+## Quick Start
+
+```bash
+# Scaffold new extension (recommended)
+npm install -g yo generator-code
+yo code
+
+# Or minimal manual setup
+mkdir my-extension && cd my-extension
+npm init -y && npm install -D typescript @types/vscode
+```
+
+## Project Structure
+
+```
+my-extension/
+├── package.json          # Extension manifest (CRITICAL)
+├── src/extension.ts      # Entry point
+├── out/                  # Compiled JS (gitignore)
+├── artifacts/vsix/       # Keep local VSIX archives out of the repo root
+├── images/icon.png       # 128x128 PNG for Marketplace
+└── .vscodeignore         # Exclude files from VSIX
+```
+
+## Building & Packaging
+
+```bash
+npm run compile      # Build once
+npm run watch        # Watch mode (F5 to launch debug)
+mkdir -p artifacts/vsix
+npx @vscode/vsce package --out artifacts/vsix/my-extension-1.0.0.vsix
+```
+
+Keep local `.vsix` archives under `artifacts/vsix/` instead of the repository root, and prune old local builds on a schedule so release artifacts do not pile up.
+
+## Done Criteria
+
+- [ ] Extension activates without errors
+- [ ] Primary sidebar entry and commands work; referenced icons are present in the VSIX
+- [ ] Package size < 5MB (use `.vscodeignore`)
+- [ ] README.md includes Marketplace/GitHub links
+- [ ] Local VSIX artifacts stored outside the repo root and pruned regularly
+
+## Quick Troubleshooting
+
+| Symptom               | Fix                                    |
+| --------------------- | -------------------------------------- |
+| Extension not loading | Add `activationEvents` to package.json |
+| Command not found     | Match command ID in package.json/code  |
+| Shortcut not working  | Remove `when` clause, check conflicts  |
+
+## Reference Map
+
+| Topic               | Reference                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| AI Customization    | [references/ai-customization.md](references/ai-customization.md)                                                    |
+| Code Review Prompts | [references/code-review-prompts.md](references/code-review-prompts.md)                                              |
+| Code Samples        | [references/ai-customization.md](references/ai-customization.md) and [references/webview.md](references/webview.md) |
+| TreeView            | [references/treeview.md](references/treeview.md)                                                                    |
+| Webview             | [references/webview.md](references/webview.md)                                                                      |
+| Testing             | [references/testing.md](references/testing.md)                                                                      |
+| Publishing          | [references/publishing.md](references/publishing.md)                                                                |
+| Troubleshooting     | [references/troubleshooting.md](references/troubleshooting.md)                                                      |
+| Notifications       | [references/notification-normalization.md](references/notification-normalization.md)                               |
+
+## Best Practices
+
+### Extension Host 境界
+
+- Extension Host 上で動く scanner / provider / TreeView は、同じことができるなら Node 固有の `path` / `Buffer` / 生 `fs` より VS Code API を優先する。Problems と実ビルドの環境差を避けやすい。
+- 自分の拡張に同梱したリソースは、ユーザーのホーム配下や VS Code のインストール先を推測せず、`context.extensionUri` と `vscode.Uri.joinPath` など extension context から解決する。
+- 他の installed extension に同梱されたリソースを読む必要がある場合も、`resources/agents|skills|prompts|instructions|hooks|mcp` の既知 root と、manifest の `chatAgents` / `chatPromptFiles` 宣言を優先して見る。built-in resource とは別の read-only resource として扱い、削除や再インストール導線を混ぜない。
+- Runtime の診断ログは `console.log` に散らさず、Output Channel ベースの logger に集約する。ユーザーがログを開ける導線も command / notification / README のどこかに用意する。
+- 大きい入力の parse や集計を Extension Host スレッドで同期実行しない。上限付きの bytes を `node:worker_threads` へ渡し、cancel / opt-out では `await worker.terminate()` と listener 解除を済ませ、世代 ID が一致する結果だけで cache / UI を更新する。
+- transfer するのは専有した非 `SharedArrayBuffer` だけにし、transfer 後は送信側の view を使わない（同じ backing store の view はすべて detach される）。`Buffer` は pool を共有し得るので、offset 付き view や所有が曖昧な buffer は必要範囲だけを別 buffer へ copy して渡す。
+- worker や別プロセスから受け取った結果をそのまま cache / 表示しない。許可キー検査は `Reflect.ownKeys`、必須キーの存在確認は `Object.hasOwn` で行う（`Object.keys` は非列挙の own property を見逃し、`in` や素の property 参照は継承値を通す）。
+- 例外の `Error.name` や `FileSystemError.code` をそのままログ / UI へ出さない。既知 code の allowlist へ正規化し、未知は単一の汎用 code に落とす。path や token が名前に混ざるケースを防げる。
+
+### Manifest / Docs / Localization
+
+- `package.json` の commands、views、configuration、menus を変えたら、コード上の command ID / setting key と同時に確認する。
+- Marketplace 表示や設定説明をローカライズしている拡張では、`package.nls.json` と対象言語の `package.nls.*.json` を同じ変更で更新する。
+- 設定の並び順や説明を変えたら README の設定表、manifest consistency test、release notes の必要有無までまとめて見る。
+
+### Language Model Tools
+
+- Extension-provided LM Tools need strong `modelDescription` intent phrases. Prefer `Use when the user asks to ...` plus natural-language verbs for create/update/delete/toggle paths, and add a manifest/doc guard so future wording changes do not silently weaken agent-mode tool selection.
+- For configuration from VS Code Chat, prefer native LM Tools when no external client is required; do not call them an external MCP server. Share validated domain operations with the GUI, expose only necessary actions, and use explicit enable/disable values rather than retry-sensitive toggles.
+- Keep `prepareInvocation` side-effect free and request confirmation for mutations or sensitive disclosure. Revalidate input, cancellation, trust and the queried revision inside the locked write after confirmation. Host approval UI/policies still apply; custom confirmation text is not a bypass. Never accept secret values through tool arguments or silently widen execution permissions.
+- Page query results and omit prompt, environment and raw-output payloads by default. Make sensitive detail retrieval explicit with disclosure confirmation; describe which metadata reaches the model and treat stored strings as data, not instructions.
+- Return typed outcomes from shared operations; a GUI handler that catches errors and returns nothing cannot prove a tool succeeded. Keep committed IDs/success when only presentation fails, return a sanitized warning and tell the caller to query rather than repeat the mutation. Configuration saved is not work executed.
+- Before publishing an extension with LM Tools, inspect the packaged VSIX rather than trusting source files: confirm `extension/package.json` has the intended version, expected `contributes.languageModelTools` count, and no `src/`, test payloads, or sourcemaps unless intentionally shipped.
+
+### Generated Sections
+
+- `START` / `END` marker で囲む generated section は単一の SSOT として扱う。
+- 重複した marker pair を見つけたら、両方を残して追記せず、内容を統合して marker pair を1つに戻す。
+
+### 命名の一貫性
+
+公開前にパッケージ名・設定キー・コマンド名を統一：
+
+| 項目         | 例                            |
+| ------------ | ----------------------------- |
+| パッケージ名 | `copilot-scheduler`           |
+| 設定キー     | `copilotScheduler.enabled`    |
+| コマンドID   | `copilotScheduler.createTask` |
+| ビューID     | `copilotSchedulerTasks`       |
+
+### 通知の一元管理
+
+通知は共通helperへ集約し、設定値をruntimeで既知enumへ正規化する。重複抑止、ログとの分離、action、securityの設計は [Notification Normalization](references/notification-normalization.md) を参照する。

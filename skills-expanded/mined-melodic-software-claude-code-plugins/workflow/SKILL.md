@@ -1,0 +1,136 @@
+---
+description: "Start-here situation router for songwriting with Pat Pattison's methods: blank page, idea/seed, stuck fragment, co-write, diagnose-only pass or daily habit, with step-by-step coaching, Pat's response filter applied to AI-generated material, and going-deeper resources (Coursera / Berklee / columns / podcasts). Use when: 'I want to write a new song', 'I have nothing, just want to write', 'I have an image but no title', 'this fragment is stuck', 'walk me through writing this', 'guide me', 'where do I start', 'review the rhyme list this AI gave me', 'how do I go deeper'. Craft-specific requests route to the concern skills."
+argument-hint: "[workflow|coach|brainstorm|idea|fragment|filter|beyond-books] [args]"
+user-invocable: true
+disable-model-invocation: false
+---
+
+**Arguments.** `[workflow|coach|brainstorm|idea|fragment|filter|beyond-books] [args]`. e.g., /songwriting:workflow, /songwriting:workflow coach, /songwriting:workflow brainstorm Full actions in body
+
+## Mandatory pre-flight. Response Filter
+
+Every craft output in this plugin runs the applicable section of
+[response-filter](../../context/pat-pattison/research/response-filter.md) before emission, the gate
+that activates the discipline. When this skill coaches or produces material directly, run **§4
+Coaching posture** (and the output-type section for anything emitted). Name each box's pass / fail /
+skip-with-reason (aloud or in reasoning); correct before emission. Skips are valid; silent skips
+are not.
+
+When an action here emits a lyric line, most often `fragment`, the output-type section is §2. §2's
+**Reference:** line is a load list, not a bibliography: §2 has not been run until the files it
+names have been read this session, at minimum
+[meter](../../context/pat-pattison/research/meter.md) and
+[phrasing](../../context/pat-pattison/research/phrasing.md) before the first candidate, plus
+[metaphor](../../context/pat-pattison/research/metaphor.md) when the fragment needs an image or a
+figure. Naming the §2 boxes while those files were never opened attests to the filter instead of
+applying it, per
+[response-filter](../../context/pat-pattison/research/response-filter.md) "§2 Line-writing filter".
+A `Load` cell in the Action Router below is a routing hint; this is a precondition of
+emission. §2's boxes are then cycled inside
+[line-edit-rubric](../../context/pat-pattison/research/line-edit-rubric.md), the full cycle per
+candidate before it is shown. Line emission belongs to `/songwriting:co-write`, and its input gate
+travels with the lines: route there, or check the same gate here. Do not emit lines on the strength
+of having named §2. *(Plugin-authored, not Pat Pattison's.)*
+
+## Purpose
+
+The orchestrator and front door. Turn a situation ("I have half a song", "blank page", "co-write
+tonight") into the right scenario and the right craft skill, and run guided step-by-step dialog when
+the writer wants to be walked through it. When the user names a craft term (rhyme, meter, form,
+image), route straight to that concern skill.
+
+Method content is Pat Pattison's, under the plugin-root `../../context/pat-pattison/`; a future
+author's method plugs in at `context/<author>/` without changing this skill, the author seam per
+the plugin-root `../../README.md` "Method content and the author seam".
+
+## Concern skills. Route craft-term requests here
+
+| The user wants | Skill |
+| --- | --- |
+| rhyme choice, rhyme types, mosaic, rhyme worksheet, syllable/Datamuse lookup | `/songwriting:rhyme` |
+| object writing, metaphor, cliche repair, point of view | `/songwriting:object-writing` |
+| scansion, meter, prosody, phrasing, stability, lyric-melody fit | `/songwriting:meter-prosody` |
+| form, song forms, hook, repetition, verse, bridge, box model | `/songwriting:song-form` |
+| co-write protocol, Title Game, titles, high-volume line/section dumps | `/songwriting:co-write` |
+| diagnose a draft, demo review, pre-lock audit, variations, rewrite | `/songwriting:diagnose` |
+| daily practice curriculum, numbered exercises | `/songwriting:practice` |
+| Suno v5.5 prompt formatting (separate capability) | `/songwriting:suno` |
+
+## Action Router
+
+`/songwriting:workflow <action> [args]`. Parse `$ARGUMENTS`: first token = action when it matches a listed action, remainder = args; otherwise treat all of `$ARGUMENTS` as payload for the default.
+No action → route on conversation context (pick the scenario the situation describes).
+
+| Action | Use when the user describes | Load |
+| --- | --- | --- |
+| `workflow` (default) | brand-new song / existing-song revision / from a title / to a melody / co-write / diagnose-only / daily habit / brainstorm / idea / fragment / demo | [workflows](../../context/pat-pattison/research/workflows.md). Picks the scenario chain (11 scenarios) |
+| `coach` | "guide me", "walk me through", "help me think", "what next". Dynamic step-by-step dialog | [coaching-protocol](../../context/pat-pattison/research/coaching-protocol.md), [workflows](../../context/pat-pattison/research/workflows.md) |
+| `brainstorm` | "blank page", "no idea", "starting cold", "give me anything" | [brainstorm](../../context/pat-pattison/research/brainstorm.md), [templates/brainstorm-opener](../../context/pat-pattison/templates/brainstorm-opener.md) |
+| `idea` | "I have an idea / image / phrase / feeling but no title" | [idea-to-title](../../context/pat-pattison/research/idea-to-title.md), [templates/idea-to-title-prompt](../../context/pat-pattison/templates/idea-to-title-prompt.md), [object-writing](../../context/pat-pattison/research/object-writing.md) |
+| `fragment` | "I have this line / hook / half-verse. Won't grow" | [fragment-development](../../context/pat-pattison/research/fragment-development.md), [templates/fragment-development-prompt](../../context/pat-pattison/templates/fragment-development-prompt.md), [verse-development](../../context/pat-pattison/research/verse-development.md), [meter](../../context/pat-pattison/research/meter.md), [phrasing](../../context/pat-pattison/research/phrasing.md), [line-edit-rubric](../../context/pat-pattison/research/line-edit-rubric.md) |
+| `filter` | "apply Pat's filter to this", "review my AI-generated rhyme list", "is this passing the discipline". Diagnostic mode | [response-filter](../../context/pat-pattison/research/response-filter.md) |
+| `beyond-books` | Coursera / Berklee Online / patpattison.com columns / podcasts / workshops, "how do I go deeper" | [beyond-books](../../context/pat-pattison/research/beyond-books.md) |
+
+Full scenario + craft-term routing tables and the Quick Decision Guide (35+ user-question → route
+mappings across all skills) live in
+[action-routing](../../context/pat-pattison/research/action-routing.md). Load it when routing is
+ambiguous or when surfacing the menu.
+
+## Songwriter Workflow Scenarios
+
+11 scenarios via `workflow` (chains in
+[workflows](../../context/pat-pattison/research/workflows.md)):
+
+1. Brand new song from scratch
+2. Existing song revision
+3. Writing from a title
+4. Writing to an existing melody
+5. Co-write session start
+6. Diagnose without rewrite
+7. Build a daily practice habit
+8. Pure brainstorm (no seed yet)
+9. Idea / seed but no title
+10. Fragment in hand
+11. Demo at any stage
+
+Each scenario lists which context files to load in what order and which concern skill owns the deep
+dive. Every scenario routes through
+[response-filter](../../context/pat-pattison/research/response-filter.md) at emission time.
+
+## Handlers
+
+- If the user describes a situation (not a craft term), route via `workflow` to the matching
+  scenario, then hand the deep dive to the concern skill that owns it.
+- If the user names a craft term, route straight to the concern skill (table above). Do not
+  re-explain here.
+- If the user wants step-by-step guidance, run `coach`: ask one question, wait, apply Pat's tool,
+  surface the next choice point. Never list-and-leave; never monologue 14 steps.
+- If the user gives a draft, that is diagnosis. Invoke `/songwriting:diagnose` via the Skill tool (`demo` for any
+  stage, `diagnose` for near-complete).
+- If the user pastes an incomplete fragment / idea / half-song, route to `fragment` or `idea` here.
+- If a session is heading toward line emission and no writer voiceprint exists, building one is
+  the first step, not a polish step. See
+  [voiceprint](../../context/pat-pattison/research/voiceprint.md).
+- When this skill emits or coaches on candidate lines directly (rather than routing), show them as
+  full section blocks in context. Changed lines marked `►`, one labeled block per variation, 3-4
+  per chat menu, deeper analysis in the song's `variations/` file. See [variations](../../context/pat-pattison/research/variations.md) "Presenting the candidates: chat vs file".
+- Coaching stops generating when execution keeps missing: after the writer rejects the execution in
+  one slot twice, hand the concept back instead of a third batch (`/songwriting:co-write` Handlers
+  specifies what that handoff contains). Two misses in the same slot say the brief is wrong, not
+  that the next batch will land.
+
+## Persistence and template overrides
+
+Write generated files to the paths in
+[artifact-persistence](../../context/pat-pattison/research/artifact-persistence.md)
+"Where generated work persists", and honor a consuming project's own songwriting layout when it
+defines one. Before loading any bundled `templates/<name>.md`, check
+`${CLAUDE_PROJECT_DIR}/songwriting/templates/pat-pattison/<name>.md` first: a project-level
+override wins over the bundled skill default, first match, per that file's "Template override".
+
+## What this plugin does not do
+
+Pat's books cover lyric craft and structure. This plugin does not handle melody writing, chords,
+arrangement, production/mixing, vocal coaching, or music business. For Suno prompt formatting use
+`/songwriting:suno`, a separate capability that formats a finished lyric; it does not load these
+skills, and these skills do not import from it.

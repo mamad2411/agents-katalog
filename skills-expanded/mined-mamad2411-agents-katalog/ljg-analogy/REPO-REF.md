@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/ljg-analogy/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 基于结构映射理论，为场景或两个对象的差异寻找精妙类比与关系隐喻，保留关键关系、解释增量与迁移边界。USE WHEN 用户说「找个类比」「打个比方」「有什么精妙的隐喻」「用类比讲清两者区别」「换个场景理解」或调用 ljg-analogy。NOT FOR 只解释现成比喻、纯修辞润色、理论定义或把类比当作事实证明。

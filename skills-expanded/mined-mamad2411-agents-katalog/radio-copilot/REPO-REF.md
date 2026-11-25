@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/radio-copilot/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Predict satellite passes (NOAA APT, METEOR LRPT, ISS) for a configured latitude/longitude and send WhatsApp alerts with manual dish alignment info (AOS/LOS azimuth+elevation, track direction, inclinat

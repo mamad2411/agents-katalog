@@ -1,0 +1,351 @@
+---
+name: splunk-deployment-server-setup
+description: "Use when the user asks to bootstrap a deployment server, tune Universal Forwarder phoneHome intervals,
+  inspect enrolled clients, set up DS high availability, migrate clients to a new DS, scale to 5000+
+  forwarders, or diagnose DS runtime health. Hand off serverclass.conf and deploymentclient.conf authoring
+  to splunk-agent-management-setup. Render, preflight, bootstrap, validate, and operate the Splunk
+  Enterprise Deployment Server runtime: enable-deploy-server bootstrap, deployment-app layout checks,
+  phoneHome tuning, REST inspection, large-fleet HA pairing, client re-enrollment, staged rollout, Splunk
+  9.4.3+ filterType handling, and failure-mode runbooks for 503 floods, app drift, and unenrolled clients."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "conditional"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Deployment Server Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Bootstrap a deployment server, tune Universal Forwarder phoneHome intervals, inspect enrolled clients, set up DS
+  high availability, migrate clients to a new DS, scale to 5000+ forwarders, or diagnose DS runtime health. Hand
+  off.
+- Preview and review the splunk deployment server setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+This skill owns the **Deployment Server runtime**: bootstrap, performance
+tuning, REST inspection, HA pairing, and client migration.
+[`splunk-agent-management-setup`](../splunk-agent-management-setup/SKILL.md)
+continues to own `serverclass.conf` authoring and `deploymentclient.conf`
+rendering. The two skills compose — run `splunk-agent-management-setup` to
+define server classes and apps, then use this skill for DS runtime health.
+
+## Agent Behavior — Credentials
+
+Never ask for secrets in chat.
+
+- DS admin credentials live in the project-root `credentials` file (chmod 600)
+  or `~/.splunk/credentials`. The shared library loads them automatically.
+- If credentials are not yet configured:
+  ```bash
+  bash skills/shared/scripts/setup_credentials.sh
+  ```
+- Never pass `SPLUNK_PASS` as an env-var prefix or command-line argument.
+- Management REST requires `https://`. `SPLUNK_VERIFY_SSL=false` still uses
+  encrypted HTTPS and does not permit plaintext. Only an isolated, short-lived
+  lab may explicitly set `SPLUNK_ALLOW_INSECURE_HTTP=true`; the renderer and
+  every live call warn when that override is active.
+
+## Quick Start
+
+Bootstrap the DS role on a running Splunk Enterprise host:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh \
+  --phase render \
+  --ds-host ds01.example.com \
+  --ds-uri https://ds01.example.com:8089 \
+  --splunk-home /opt/splunk
+```
+
+Apply the bootstrap (runs `splunk enable deploy-server` on the target host):
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh \
+  --phase bootstrap \
+  --ds-host ds01.example.com \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+Reload `serverclass.conf` without restarting:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh \
+  --phase reload \
+  --ds-uri https://ds01.example.com:8089 \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+Inspect enrolled clients and flag drift:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh \
+  --phase inspect \
+  --ds-uri https://ds01.example.com:8089 \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+Render an HA pair configuration:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh \
+  --phase render \
+  --ds-host ds01.example.com \
+  --ha-pair \
+  --ds-secondary-host ds02.example.com \
+  --lb-uri ds-lb.example.com:8089
+```
+
+Migrate all clients to a new DS:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/setup.sh \
+  --phase migrate-clients \
+  --ds-uri https://ds01.example.com:8089 \
+  --new-ds-uri https://ds02.example.com:8089 \
+  --staged-rollout-pct 10 \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+## What It Renders
+
+Under `splunk-deployment-server-rendered/ds/`:
+
+- `bootstrap/enable-deploy-server.sh` — runs `splunk enable deploy-server`
+  only through a pre-existing local Splunk CLI session. If no session exists,
+  it fails closed with an interactive `splunk login` handoff; it never expands
+  the password file into `-auth`.
+- `bootstrap/deployment-apps-layout.md` — documented `etc/deployment-apps/`
+  directory structure and bundle-hash behavior.
+- `tuning/deploymentclient-scale.conf` — recommended `phoneHome` intervals at
+  1k / 5k / 10k+ UF fleet sizes with rationale.
+- `reload/reload-deploy-server.sh` — `POST /services/deployment/server/_reload`
+  via the REST API (no restart required).
+- `ha/{haproxy.cfg, lb-aws-target-group.json, dns-record-template.txt,
+  sync-deployment-apps.sh}` — HA pair recipes.
+- `inspect/{inspect-fleet.sh, client-drift-report.py}` — live client check-in
+  lag, app version drift, unenrolled client detection.
+- `migrate/{retarget-clients.sh, staged-rollout.sh}` — mass `targetUri` update
+  scripts with a configurable percentage-per-wave guard.
+- `runbook-failure-modes.md` — 503 flood, app version drift, unenrolled client,
+  cascading-DS workaround.
+- `validate.sh` — REST-round-trip health check, client count sanity.
+- `handoffs/{agent-management.txt, monitoring-console.txt}`.
+- `preflight-report.md` — DS role status, `serverclass.conf` syntax check,
+  deployment-apps directory existence.
+
+## Phases
+
+| Phase | Purpose |
+|-------|---------|
+| `render` | Produce all config and script assets; no live changes. |
+| `preflight` | Check DS role, `etc/deployment-apps/` layout, `serverclass.conf` parse. |
+| `bootstrap` | Enable the DS role and validate the initial config. |
+| `reload` | POST `_reload` to pick up `serverclass.conf` changes without restart. |
+| `inspect` | Fetch client list, lag, app version drift; write `fleet-report.json`. |
+| `ha-pair` | Render and (optionally apply) HA pair LB config + sync scripts. |
+| `migrate-clients` | Render the reviewed mass-client `targetUri` migration handoff; exits nonzero because inventory/transport targets are not part of this skill. |
+| `status` | Live `GET /services/deployment/server/clients` snapshot. |
+| `validate` | Static + (with `--live`) REST health check. |
+
+## `phoneHome` Tuning
+
+| Fleet size | Recommended `phoneHomeIntervalInSecs` | Notes |
+|-----------|---------------------------------------|-------|
+| < 1,000 UFs | 60 (default) | Default is fine |
+| 1,000–5,000 UFs | 120–180 | Reduce DS CPU/network I/O |
+| 5,000–10,000 UFs | 300 | Dedicated DS host required |
+| > 10,000 UFs | 600 | DS HA pair behind LB; dedicated host |
+
+All values are set in `$SPLUNK_HOME/etc/apps/system/local/deploymentclient.conf`
+(or via a bootstrap app pushed from the DS itself). The renderer emits a
+commented `deploymentclient.conf` snippet with the recommended value based on
+`--fleet-size` input.
+
+Companion knobs:
+- `handshakeRetryIntervalInSecs` — how often a client retries if the DS is
+  unreachable (default 30 s; increase to 60–120 s for large fleets).
+- `maxNumberOfClientApps` — maximum apps a single client can receive (default
+  100; increase if server classes assign more than 100 apps per host).
+
+## REST Inspection
+
+Key endpoints (all authenticated as DS admin):
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/services/deployment/server/clients` | GET | List enrolled clients, last check-in, app versions |
+| `/services/deployment/server/serverclasses` | GET | List defined server classes and member filters |
+| `/services/deployment/server/applications/local` | GET | List deployed apps |
+| `/services/deployment/server/_reload` | POST | Reload `serverclass.conf` without restart |
+| `/services/server/info` | GET | LB health check endpoint (200 = alive) |
+
+The rendered `inspect-fleet.sh` consolidates the first three into a single
+report sorted by check-in lag, with a drift flag for clients where any app hash
+differs from the DS-side hash.
+
+## Large-Fleet HA
+
+Two DS instances behind a load balancer:
+
+1. Both instances have identical `etc/deployment-apps/` trees. Use
+   `ha/sync-deployment-apps.sh` (rsync-based) or a Git pull hook.
+2. Both instances have identical `serverclass.conf`. Use the same rsync script
+   or deploy from a Git repo.
+3. LB health check: `GET /services/server/info` (HTTP 200 = healthy). The
+   rendered `ha/haproxy.cfg` sets a 5 s interval, 2 s timeout, and 3
+   consecutive failures before marking a backend down.
+4. Clients point to the LB URI. Do NOT use DNS round-robin (clients cache DNS
+   and do not failover quickly within `phoneHomeIntervalInSecs`).
+5. If one DS fails, clients retry the LB on the next `phoneHomeIntervalInSecs`
+   tick. No manual client intervention needed.
+
+AWS ELB alternative: `ha/lb-aws-target-group.json` renders an NLB target group
+JSON with the same health check configuration.
+
+## Anti-Pattern Guards
+
+**Cascading DS (DS feeding DS) — NOT SUPPORTED.** Splunk does not support DS
+chains. The renderer refuses without `--accept-cascading-ds-workaround` and
+emits the documented workaround (dual-tier server classes or Git-based sync).
+
+**SHC deployer as DS for UFs — REFUSED.** The SHC deployer
+(`splunk enable shcluster-deployer`) is for SHC bundle management only. The
+renderer emits a FAIL if the spec sets the DS host to a known SHC deployer.
+
+**filterType default change.** Splunk Enterprise 9.4.3+ changed the implicit
+app-level `filterType` default from `blacklist` to `whitelist`. The renderer
+always emits `filterType = whitelist` (or `blacklist`) explicitly, regardless
+of version, to avoid upgrade surprises. This aligns with
+[`splunk-agent-management-setup`](../splunk-agent-management-setup/SKILL.md).
+
+## Client Migration
+
+Mass migration (moving all clients from DS1 to DS2):
+
+1. Render the new `targetUri` `deploymentclient.conf` snippet on DS2.
+2. Push the snippet as a deployment app from DS1 pointing to DS2. This self-
+   migrates clients on their next `phoneHome` check-in.
+3. Use `migrate/staged-rollout.sh` to roll the migration wave by wave
+   (default 10% of clients per wave with a configurable dwell time).
+4. Monitor DS2 `inspect-fleet.sh` to confirm clients arrive.
+5. Decommission DS1 after all clients are enrolled on DS2.
+
+Alternatively, update `targetUri` centrally via configuration management
+(Ansible, Chef, Puppet) and trigger `splunk reload deploy-client` on each host.
+
+## Failure Mode Runbooks
+
+See `runbook-failure-modes.md` in the rendered tree:
+
+- **503 flood on DS**: too many clients phoning home simultaneously; increase
+  `phoneHomeIntervalInSecs`, add memory, or move to HA pair.
+- **App version drift**: client has a stale app hash; DS has updated; normal
+  re-deploy on next `phoneHome` unless a deployment-apps rsync is broken.
+- **Unenrolled client**: client enrolled but not appearing in client list;
+  check `targetUri` in `deploymentclient.conf`, firewall on port 8089, and
+  `deploymentclient.log` for errors.
+- **Cascading DS workaround**: see `runbook-failure-modes.md` section.
+
+## Hand-off Contracts
+
+- `splunk-agent-management-setup` — authors `serverclass.conf` and
+  `deploymentclient.conf`. This skill calls `setup.sh --phase reload` after
+  AM pushes a new server class to pick it up without a DS restart.
+- `splunk-universal-forwarder-setup` — installs and enrolls the UF binary;
+  sets `targetUri` in `deploymentclient.conf`.
+- `splunk-monitoring-console-setup` — DS health dashboard and fleet monitoring.
+- `splunk-platform-restart-orchestrator` — if a full DS restart is needed
+  (e.g., after a Splunk upgrade).
+- `handoffs/agent-management.txt` carries the AM skill invocation for
+  server-class authoring.
+- `handoffs/monitoring-console.txt` carries the MC skill invocation for
+  fleet visibility.
+
+## Out of Scope
+
+- **`serverclass.conf` and `deploymentclient.conf` authoring** — owned by
+  [`splunk-agent-management-setup`](../splunk-agent-management-setup/SKILL.md).
+- **UF binary install / upgrade** — owned by
+  [`splunk-universal-forwarder-setup`](../splunk-universal-forwarder-setup/SKILL.md).
+- **Splunk Cloud Agent Management** — Splunk-managed cloud DS workflows are out
+  of scope. This skill targets self-managed Splunk Enterprise deployments only.
+- **DS-to-DS federation (cascading DS)** — not supported by Splunk; refused at
+  render time without explicit `--accept-cascading-ds-workaround`.
+
+## Validation
+
+Static validation:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/validate.sh \
+  --output-dir splunk-deployment-server-rendered
+```
+
+Live validation:
+
+```bash
+bash skills/splunk-deployment-server-setup/scripts/validate.sh \
+  --output-dir splunk-deployment-server-rendered \
+  --live \
+  --ds-uri https://ds01.example.com:8089 \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+Live checks: `GET /services/deployment/server/clients` round-trip, enrolled
+client count, last-check-in lag distribution.
+
+See [reference.md](reference.md) and [template.example](template.example).

@@ -1,0 +1,172 @@
+---
+name: plan-mobile-readiness
+description: >
+  Plan-only App Store/Google Play submission audit for Capacitor/React
+  Native: manifests, permissions, privacy forms, signing/config, listing
+  prerequisites. Use when "ready for App Store?", "will Google Play
+  reject this?", or "pre-submission check". Native security →
+  plan-capacitor-hardening.
+license: MIT
+---
+
+# Mobile Store-Readiness Audit + Pre-Submission Plan
+
+**Degree of freedom: HIGH** — inventory A–E, score rejection risk, emit a plan.
+Stay **plan-only**. No manifest, Data Safety, or listing edits until approved.
+
+## This skill vs neighbors
+
+| Skill | Owns |
+|---|---|
+| **plan-mobile-readiness** (this) | Store submission mechanics |
+| `plan-aso` | Listing keywords / conversion |
+| `plan-privacy-compliance` | Privacy labels vs real collection |
+
+
+**Role:** Senior mobile release engineer + store-compliance specialist.
+
+**Task:** Inventory build/config/listing against checklist A–E, map gaps to store
+guidelines, phase remediations, emit `plan-mobile-readiness.md`. **Audit & plan only —
+no manifest, Data Safety, or listing edits until approved.**
+
+**Catch the rejections before the reviewer does. Change nothing until approved.**
+
+## How to reason (every plan item)
+
+1. **Propose** — privacy manifest, usage string, demo account, build, or listing fix
+2. **Risk** — first-pass rejection or Guideline 2.5.2 thin-app block
+3. **Keep-working** — platforms/items that already match store rules
+4. **Phase** — Privacy → Functionality → Payments+build → Listing (do not execute)
+
+## Worked example
+
+> **Propose:** add `PrivacyInfo.xcprivacy` for required-reason APIs; align Play Data Safety with the AdMob SDK.
+> **Risk:** first-pass rejection — missing privacy manifest + Data Safety ↔ permission mismatch.
+> **Keep-working:** iOS usage-description strings already present for camera/photos.
+> **Phase:** Phase 1 — Privacy (blocking).
+> **Store:** iOS 5.1.2 / Play Data Safety; demo account still required in Phase 2 if login-gated.
+
+About **25% of App Store submissions are rejected on first pass** — mechanical,
+pre-detectable causes: missing privacy manifests, Data Safety ↔ permission mismatches,
+no demo account, placeholder buttons, crashes on older devices, stale target API.
+**Apple blocks prompt-to-app builders under Guideline 2.5.2** — the thin web-view
+rejection vibe-coded apps trip constantly.
+
+---
+
+## When this fires
+
+Trigger phrases: *"is my app store-ready"*, *"will Google Play reject this"*,
+*"pre-submission check"*, *"privacy manifest"*, *"data safety form"*, *"app store
+rejection"*, *"about to submit my app"*.
+
+Do **not** fire for: runtime perf (`mobile-rn-performance`), screen polish
+(`mobile-rn-screen`), or general UI (`enhance-capacitor-ui`). This owns *submission
+compliance and rejection-risk*.
+
+---
+
+## The audit  [HIGH freedom]
+
+### A · Privacy (#1 modern rejection class)
+- **iOS privacy manifest** — `PrivacyInfo.xcprivacy`, required-reason APIs, SDK manifests.
+- **Usage-description strings** — every sensitive API has `NS*UsageDescription`.
+- **App Tracking Transparency** — before ad/tracking SDK calls.
+- **Android Data Safety** — matches actual permissions and SDK collection.
+- **Third-party SDK disclosure** — analytics/ad SDKs in Data Safety.
+- **Privacy policy URL** — live, public, matches collection.
+
+### B · Functionality & completeness (2.5.2 / thin-app)
+- **Placeholder / TODO UI** — cross-hand to `plan-stub-checker`.
+- **Too thin / web-view-only** — Guideline 2.5.2 risk; flag honestly.
+- **Demo account** — login-gated apps need working creds in review notes.
+- **Every advertised feature works.**
+
+### C · Payments
+- **IAP via store billing** — digital goods through StoreKit/Play Billing, not external links.
+- **IAP products approved** and tested with sandbox accounts.
+
+### D · Technical / build
+- **Target API level** — meets current store minimum.
+- **Build format & signing** — `.aab`, release-signed, 64-bit, no debuggable.
+- **Crash on older devices** — emulator-only testing isn't enough.
+- **Android closed-testing gate** — 12 testers / 14 days before production.
+
+### E · Listing & metadata
+- **Screenshots/icon match build**; metadata limits; content rating/CSAE.
+
+---
+
+## Procedure  [HIGH freedom — plan only]
+
+1. **Inventory** Capacitor/RN config, manifests, permissions, listing, IAP.
+2. **Run A–E**, map to guidelines. **Blocking** vs **Risk**.
+3. **Score & order** by likelihood × launch-delay cost.
+4. **Phase** — privacy + functionality first.
+5. **Emit `plan-mobile-readiness.md`. End the turn.**
+
+---
+
+## Guardrails
+
+- **Plan only.** No manifest, Data Safety, or listing edits.
+- **Declaration must match reality — both ways.**
+- **Be honest about thin-app / 2.5.2 risk.**
+- **Never advise external payment for digital goods.**
+- **Verify current target-API thresholds at submit time.**
+- **Real devices, not emulators only.**
+
+## Self-critique before the burndown  [LOW freedom — do not skip]
+
+1. **evidenced-not-assumed** — manifests, permissions, and listing fields you actually read
+2. **plan-only** — no PrivacyInfo, Data Safety, or metadata edits
+3. **severity/phase justified** — privacy + 2.5.2 before listing polish
+4. **right-owner** — keywords/screenshots → `plan-aso`; collection-vs-claimed → `plan-privacy-compliance`; receipt/restore → `audit-monetization-iap`; placeholders → `plan-stub-checker`
+5. **no-false-safety** — do not hide Guideline 2.5.2 thin-app risk; declaration must match reality both ways
+
+---
+
+## Report template — `plan-mobile-readiness.md`
+
+```markdown
+# Mobile Store-Readiness Audit — <app>
+
+_Audit-only. Pre-submission. Nothing changes until each phase is approved._
+
+## Scope
+- Platform: iOS ☐ Android ☐  | Framework: Capacitor ☐ RN ☐
+
+## Verdict
+| Area | Blocking | Risk | Worst item |
+|------|----------|------|-----------|
+| Privacy | n | n | Data Safety mismatch |
+| Functionality | n | n | 2.5.2 thin-app |
+
+## Findings
+| # | Item | Store | Guideline | Blocking? | Direction |
+|---|------|-------|-----------|-----------|-----------|
+
+## Phased burndown
+- **Phase 1 — Privacy** → `mobile-capacitor-platform`
+- **Phase 2 — Functionality & 2.5.2** → `plan-stub-checker` / `enhance-capacitor-ui`
+- **Phase 3 — Payments & build** → `mobile-capacitor-platform`
+- **Phase 4 — Listing & testing gate** → metadata, Android closed-test
+
+## Execution handoff
+Real older devices + IAP dry-run before submit.
+```
+
+---
+
+## Chains with
+
+- **Launch gates loop** — mobile submission; pair with `plan-aeo-readiness` for web.
+- **`plan-privacy-compliance`** — collection-vs-claimed + store privacy labels.
+- **`plan-aso`** — listing keywords/screenshots after the app is submittable.
+- **`audit-monetization-iap`** — receipt validation / restore (not just "uses official billing").
+- **`plan-stub-checker`** — placeholders are rejections on mobile.
+- **Execution:** `mobile-capacitor-platform`, `enhance-capacitor-ui`,
+  `mobile-emulator-test` (then real device).
+- **Verify:** real-device crash test + IAP dry-run; Android closed-test gate satisfied.
+
+> Plan with a strong model; execute with `composer-2.5-execution.mdc`.

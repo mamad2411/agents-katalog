@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/11777-weg-beschlusssammlung-formfehler/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Beschlusssammlung: Schriftsatz-, Brief- und Memo-Bausteine in WEG- und Hausverwaltung geht: erstellt den passenden Entwurf aus Sachverhalt, Norm, Beweis und Antrag; liefert einen verwertbar

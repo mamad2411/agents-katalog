@@ -1,0 +1,325 @@
+---
+name: splunk-observability-deep-native-workflows
+description: "Use when the user asks for full native UI/product workflow coverage beyond collection, classic
+  dashboards, or basic detector setup, including emerging Cisco/Splunk Observability routes such as
+  Digital Experience Analytics, DXA, Metrics Pipeline Management, MPM, or telemetry pipeline management.
+  Render and validate Digital Experience Analytics (DXA), Metrics Pipeline Management (MPM), and deep
+  native Splunk Observability Cloud operator workflows for modern dashboards, APM service maps, service
+  views, business transactions, Trace Analyzer and trace waterfalls, AlwaysOn Profiling flame graphs, RUM
+  session replay for browser and mobile, RUM error analysis, RUM URL grouping, Database Monitoring query
+  and explain-plan triage, Synthetic waterfall details and artifacts, SLO creation and burn-rate alerting,
+  Infrastructure/Kubernetes/Network Explorer navigators, Related Content, AI Assistant investigations, and
+  Splunk Observability Cloud for Mobile app workflows."
+compatibility: "No direct Splunk Platform runtime dependency. This workflow can be used alongside Splunk Cloud Platform 10.5.2605 through its documented external APIs or handoffs."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "not-applicable"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Observability Deep Native Workflows
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- The user asks for full native UI/product workflow coverage beyond collection, classic dashboards, or basic
+  detector setup, including emerging Cisco/Splunk Observability routes such as Digital Experience Analytics, DXA,
+  Metrics Pipeline.
+- Preview and review the splunk observability deep native workflows workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-observability-deep-native-workflows/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-observability-deep-native-workflows/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+Use this skill for native Observability Cloud product workflows where the
+operator experience matters as much as the underlying API object. It complements:
+
+- `splunk-observability-otel-collector-setup` for telemetry collection.
+- `splunk-observability-dashboard-builder` for classic dashboard API payloads.
+- `splunk-observability-native-ops` for detectors, teams, muting rules,
+  Synthetics API payloads, APM topology/trace checks, and simple RUM/log handoffs.
+- `splunk-observability-database-monitoring-setup` for DBMon collector wiring.
+- `splunk-observability-k8s-frontend-rum-setup` for Browser RUM and Session
+  Replay instrumentation injection.
+- `splunk-observability-mobile-rum-setup` for native iOS/Android, React
+  Native, and Flutter RUM instrumentation used by Mobile RUM and DXA.
+- `splunk-observability-cloud-integration-setup` for Log Observer Connect,
+  Related Content, Dashboard Studio O11y metrics, and SIM add-on streams.
+- `splunk-observability-otel-collector-setup`, `splunk-edge-processor-setup`,
+  `splunk-ingest-processor-setup`, and `splunk-spl2-pipeline-kit` for
+  collection-side or Splunk Platform pipeline changes behind telemetry pipeline
+  management requests.
+
+The default workflow is render-first and non-mutating. This skill produces a
+reviewable workflow packet: coverage report, deeplinks, UI handoff steps, and
+API action plans for surfaces with documented public APIs.
+
+## Coverage Model
+
+Every rendered item gets a coverage status:
+
+- `api_apply`: a documented public Observability API can create or update the
+  object. This skill renders the action plan and can execute it with `--apply`
+  through the shared native Observability API client.
+- `api_validate`: a documented public API can read, validate, or download data
+  for the workflow.
+- `delegated_apply`: another repo skill owns the apply path.
+- `deeplink`: the skill renders deterministic Observability UI links and
+  preserves filter context.
+- `handoff`: the product surface is UI-guided or app-side; the skill renders
+  exact operator steps.
+- `not_applicable`: the requested workflow does not apply to the selected
+  product, edition, realm, or instrumentation state.
+
+Do not claim `api_apply` for modern dashboard layout, RUM session replay
+playback, DBMon explain-plan UI, Synthetic waterfall detail, Trace Analyzer
+search UI, or the Observability Cloud mobile app unless a public API is verified
+for that exact action.
+
+## Safety Rules
+
+- Never ask for Splunk Observability API tokens, RUM tokens, mobile app
+  credentials, database passwords, session replay consent secrets, or Splunk
+  Platform credentials in conversation.
+- Never pass tokens or passwords on the command line or as environment-variable
+  prefixes.
+- This skill does not need token files for rendering. Live `--apply` requires
+  `--token-file`; downstream owning skills use their own file-backed flags.
+- Reject inline secret fields such as `token`, `api_token`, `access_token`,
+  `password`, `client_secret`, `secret`, and direct `*_token` values. Use
+  file-reference fields in downstream specs instead.
+- Treat session replay as privacy-sensitive. Always include consent, retention,
+  masking/sensitivity, replay enablement, and enterprise-subscription checks in
+  handoffs.
+
+## Primary Workflow
+
+1. Identify product surface and target workflow:
+   - Modern dashboard composition, sections, tabs, logs charts, metrics charts,
+     service-map panels, dashboard templates, or demos.
+   - APM service map, service view, endpoint dashboards, Trace Analyzer, trace
+     waterfall, RUM/log/span links, Tag Spotlight, business transactions,
+     AlwaysOn Profiling, MetricSet prerequisites, or Database Query Performance
+     in APM.
+   - RUM session search, replay playback, browser or mobile replay
+     instrumentation checks, crashes/errors, source maps, URL grouping, mobile
+     app health dashboards, or RUM/APM linking.
+   - Digital Experience Analytics (DXA) projects, event definitions, element
+     picker planning, user segments, conversion funnels, time-series analyses,
+     source mapping, or RUM instrumentation prerequisites.
+   - Splunk Database Monitoring query details, explain plans, query samples,
+     query metrics, trace correlation, infrastructure correlation, or AI
+     Assistant handoff.
+   - Synthetic browser/API/uptime workflows, Try Now/Run Now, waterfall,
+     HAR/video/filmstrip artifacts, or RUM/APM correlation.
+   - SLO creation, validation, targets, compliance windows, breach/error-budget/
+     burn-rate alert rules, or SLO dashboards.
+   - Infrastructure Monitoring, Kubernetes entities, Network Explorer, Related
+     Content pivots, or AI Assistant investigations.
+   - Metrics Pipeline Management (MPM) / telemetry pipeline management planning
+     for metric cardinality, real-time versus archived metrics, dropping,
+     aggregation rules, or downstream collector and SPL2 pipeline handoffs.
+   - Splunk Observability Cloud for Mobile dashboards, alerts, push
+     notifications, sharing, and on-call handoff.
+
+2. Copy `template.example` and fill in non-secret values only.
+
+3. Render and validate:
+
+   ```bash
+   bash skills/splunk-observability-deep-native-workflows/scripts/setup.sh \
+     --render --validate \
+     --spec skills/splunk-observability-deep-native-workflows/template.example \
+     --output-dir splunk-observability-deep-native-rendered
+   ```
+
+4. Review:
+   - `coverage-report.json` for per-surface API-vs-UI status.
+   - `deeplinks.json` for direct Observability UI entry points.
+   - `apply-plan.json` for public API validation or apply actions.
+   - `workflow-handoff.md` for operator steps and downstream skill handoffs.
+   - `payloads/` for SLO API payloads, modern dashboard intents, DB query
+     investigation intents, Synthetic artifact intents, and RUM replay checks.
+
+5. For `api_apply` and `api_validate` actions in the rendered plan, dry-run or
+   apply directly:
+
+   ```bash
+   bash skills/splunk-observability-deep-native-workflows/scripts/setup.sh \
+     --apply --dry-run --spec my-deep-native-workflows.yaml
+
+   bash skills/splunk-observability-deep-native-workflows/scripts/setup.sh \
+     --apply --spec my-deep-native-workflows.yaml \
+     --token-file /path/to/chmod-600-o11y-token
+   ```
+
+6. Use the owning skill for delegated surfaces:
+   - Classic dashboards -> `splunk-observability-dashboard-builder`.
+   - Detectors, teams, muting rules, Synthetics tests -> `splunk-observability-native-ops`.
+   - Browser RUM instrumentation -> `splunk-observability-k8s-frontend-rum-setup`.
+   - DBMon collection -> `splunk-observability-database-monitoring-setup`.
+   - LOC, Dashboard Studio O11y metrics, SIM inputs -> `splunk-observability-cloud-integration-setup`.
+   - On-Call mobile paging and incident response -> `splunk-oncall-setup`.
+
+## Supported Surfaces
+
+Specs use `api_version: splunk-observability-deep-native-workflows/v1` and a
+top-level `workflows` list. Each workflow has `surface`, `name`, and optional
+surface-specific fields.
+
+- `modern_dashboard`: new dashboard experience, sections/subsections, templates,
+  demos, metrics charts, logs charts, service maps, and UI-only layout intent.
+  Delegate classic API charts to `splunk-observability-dashboard-builder`.
+- `apm_service_map`: service map navigation, service groups, endpoint/workflow
+  breakdowns, inferred services, and topology API validation.
+- `apm_service_view`: service SLI, RED metrics, dependency latency, runtime and
+  infrastructure metrics, endpoints, Tag Spotlight, embedded logs, and built-in
+  service dashboard pivots.
+- `apm_business_transaction`: business transaction rule planning, Enterprise
+  and admin-role checks, global span-tag prerequisites, and MetricSet/cardinality
+  handoffs.
+- `apm_trace_waterfall`: Trace Analyzer trace lookup, waterfall filtering,
+  span details, repeated spans, RUM session links, related logs, and trace JSON
+  download actions when `trace_id` is present.
+- `apm_tag_spotlight`: indexed span-tag RED analysis, top contributors, trace
+  drilldowns, and MetricSet prerequisites.
+- `apm_profiling_flamegraph`: AlwaysOn Profiling CPU flame graphs, memory
+  profiling, trace correlation, and instrumentation handoff.
+- `rum_session_replay`: session search, replay player, privacy/masking,
+  browser and mobile replay enablement, RUM/APM trace links, and replay
+  troubleshooting.
+- `rum_error_analysis`: browser JavaScript errors, backend XHR/fetch errors,
+  source-map readiness, Tag Spotlight, related sessions, and replay pivots.
+- `rum_url_grouping`: URL grouping v1/v2 rule planning, path/domain/parameter
+  and hash-fragment patterns, migration impact, and dashboard/detector updates.
+- `rum_mobile`: RUM for Mobile workflows: app summary, crashes, app errors,
+  session timeline, stack-trace symbolication/mapping files, launch and network
+  performance, and mobile app health dashboards.
+- `digital_experience_analytics`: Splunk Digital Experience Analytics (DXA)
+  workflows: RUM agent prerequisites, source mapping, projects, event
+  definitions, element picker, user segments, conversion funnels, time-series
+  analyses, session replay, frustration signals, and Browser/Mobile RUM
+  instrumentation handoffs.
+- `db_query_explain_plan`: DBMon query details, explain plans, query samples,
+  query metrics, traces, dependencies, metadata, AI Assistant, and APM/IM
+  correlation.
+- `synthetic_waterfall`: browser/API/uptime test history, Try Now/Run Now,
+  waterfall, HAR download, video/filmstrip Enterprise checks, resource filters,
+  web vitals, and APM/RUM links.
+- `slo_creation`: SLO API payload intent, `/slo/validate`, `/slo`, `/slo/{id}`,
+  `/slo/search`, request-based or custom-metric SLIs, rolling/calendar windows,
+  and breach/error-budget/burn-rate alert rules.
+- `infrastructure_navigator`: host, cloud, and integration navigator triage,
+  aggregate/instance dashboard review, active alerts, and telemetry freshness.
+- `kubernetes_navigator`: new Kubernetes entities experience, cluster/node/pod/
+  container/workload triage, K8s analyzer, events, dependencies, logs, and APM
+  pivots.
+- `network_explorer`: network map, service dependencies, eBPF telemetry caveats,
+  TCP/DNS/drop/error/retransmit review, and gateway handoff.
+- `metrics_pipeline_management`: Splunk Observability Cloud Metrics Pipeline
+  Management (MPM): metric usage, MTS/cardinality review, keep/archive/drop
+  routing, aggregation rule planning, routing exceptions, limitations, and
+  handoffs to OTel Collector, Edge Processor, Ingest Processor, or the SPL2
+  pipeline kit for broader telemetry pipeline management.
+- `related_content`: APM, Infrastructure, Log Observer Connect, Kubernetes,
+  database, host, trace, and log pivots plus metadata/entity-index checks.
+- `ai_assistant_investigation`: scoped AI Assistant prompt packs for service
+  health, traces, logs, incidents, Kubernetes, SignalFlow, dashboards, alerts,
+  realm availability, SVC quota, and policy guardrails.
+- `observability_mobile_app`: Splunk Observability Cloud for Mobile dashboards,
+  filters, alert visualizations, sharing, and push notification/on-call handoff.
+- `log_observer_chart`: modern logs chart workflow using SPL1, SPL2, or JSON
+  query intent inside the new dashboard experience.
+
+Aliases remain supported for usability: `dxa` and `digital_experience` resolve
+to `digital_experience_analytics`; `mpm`, `metric_pipeline_management`, and
+`telemetry_pipeline_management` resolve to `metrics_pipeline_management`. Older
+surface names such as `rum_session_replay`, `rum_mobile`, `synthetic_waterfall`,
+`infrastructure_navigator`, and `log_observer_chart` remain first-class and are
+not renamed.
+
+For official-source details and the full feature matrix, read
+[reference.md](reference.md).
+
+## Output Contract
+
+Rendered packets must contain:
+
+- `metadata.json`
+- `coverage-report.json`
+- `apply-plan.json`
+- `deeplinks.json`
+- `workflow-handoff.md`
+
+If a workflow includes `payload`, `intent`, `logs`, `privacy`, `slo`, or
+artifact fields, the renderer writes the normalized form under `payloads/`.
+
+## Useful Commands
+
+Validate a spec without writing a new packet:
+
+```bash
+bash skills/splunk-observability-deep-native-workflows/scripts/setup.sh \
+  --validate \
+  --spec skills/splunk-observability-deep-native-workflows/template.example
+```
+
+Render with an explicit realm:
+
+```bash
+bash skills/splunk-observability-deep-native-workflows/scripts/setup.sh \
+  --render --validate \
+  --realm us1 \
+  --spec my-deep-native-workflows.yaml \
+  --output-dir splunk-observability-deep-native-rendered
+```
+
+Use `--json` in CI to emit machine-readable validation or render summaries.

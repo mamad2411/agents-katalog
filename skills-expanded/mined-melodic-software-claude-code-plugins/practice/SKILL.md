@@ -1,0 +1,56 @@
+---
+description: "Build a songwriting practice habit with Pat Pattison's curriculum, the daily object-writing/craft routine and numbered exercises drawn from all four books (Essential Guide to Lyric Form and Structure structural exercises, Songwriting Without Boundaries 56-day curriculum, Essential Guide to Rhyming worksheets). Use when: 'daily practice plan', 'build a writing habit', 'give me a 90-second writing prompt', 'run me a numbered exercise', 'exercise 4.6', 'daily craft prompt'. For a one-off object-writing prompt use /songwriting:object-writing."
+argument-hint: "[daily|exercise] [args]"
+user-invocable: true
+disable-model-invocation: false
+---
+
+**Arguments.** `[daily|exercise] [args]`. e.g., /songwriting:practice, /songwriting:practice
+exercise 4.6. Full actions in body.
+
+## Mandatory pre-flight. Response Filter
+
+When a practice run produces sample lines, images, or rhymes, run the applicable section of
+[response-filter](../../context/pat-pattison/research/response-filter.md) (§1 rhyme, §2 line,
+§7 image) before emitting them. Name each box's pass / fail / skip-with-reason (aloud or in
+reasoning); correct before emission. Skips are valid; silent skips are not. Prompt-only runs
+(assigning an exercise) need no filter pass.
+
+## Purpose
+
+The habit layer: a daily craft routine and a numbered-exercise index across all four books. This
+skill hands out prompts and curricula; the craft skills coach the output in the moment.
+
+Method content is Pat Pattison's, under the plugin-root `../../context/pat-pattison/`; a future
+author's method plugs in at `context/<author>/` without changing this skill, the author seam per
+the plugin-root `../../README.md` "Method content and the author seam".
+
+## Action Router
+
+`/songwriting:practice <action> [args]`. Parse `$ARGUMENTS`: first token = action when it matches
+a listed action, remainder = args; otherwise treat all of `$ARGUMENTS` as payload for the default.
+No action → issue one daily craft prompt immediately (default a 90-second object-writing dive).
+
+| Action | Use when the user asks for | Load |
+| --- | --- | --- |
+| `daily` (default) | a daily craft prompt or practice curriculum | [daily-practice](../../context/pat-pattison/research/daily-practice.md), [templates/object-writing-prompt](../../context/pat-pattison/templates/object-writing-prompt.md), [templates/metaphor-collision-prompt](../../context/pat-pattison/templates/metaphor-collision-prompt.md) |
+| `exercise` | a numbered exercise from any of the four books (structural / 56-day / rhyme worksheets) | [exercises](../../context/pat-pattison/research/exercises.md) |
+
+## Handlers
+
+- Give one usable prompt or a bounded sequence. Do not assign the full curriculum unless asked.
+
+## Persistence and template overrides
+
+Write generated files to the paths in
+[artifact-persistence](../../context/pat-pattison/research/artifact-persistence.md) "Where
+generated work persists", and honor a consuming project's own songwriting layout when it defines
+one. All practice output, daily or not, goes to `songwriting/practice/<YYYY>/<date>.md`. Before
+loading any bundled `templates/<name>.md`, check
+`${CLAUDE_PROJECT_DIR}/songwriting/templates/pat-pattison/<name>.md` first: a project-level
+override wins over the bundled default, first match, per that file's "Template override".
+
+## Related skills
+
+- A single in-session object-writing or metaphor prompt → `/songwriting:object-writing`
+- Rhyme worksheets specifically → `/songwriting:rhyme worksheet`

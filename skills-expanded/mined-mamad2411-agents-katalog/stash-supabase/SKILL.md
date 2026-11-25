@@ -1,0 +1,1044 @@
+---
+name: stash-supabase
+description: Integrate CipherStash encryption with Supabase using @cipherstash/stack-supabase. Covers the encryptedSupabase wrapper over native EQL v3 column domains, transparent encryption/decryption on insert/update/select, encrypted scalar filters (eq, gt/gte/lt/lte, in, or), ordering on encrypted columns, EQL 3.0.5 PostgREST query-domain limitations, identity-aware encryption, and the complete query builder API. Use when adding encryption to a Supabase project, querying encrypted columns, or building secure Supabase applications.
+---
+
+# CipherStash Stack - Supabase Integration
+
+Guide for integrating CipherStash field-level encryption with Supabase using
+the `encryptedSupabase` wrapper over native EQL v3 column domains. The
+wrapper provides transparent encryption on mutations and decryption on
+selects, with support for equality, range, and ordering.
+
+> **Naming note.** `encryptedSupabase` is the current EQL v3 factory.
+> `encryptedSupabaseV3` remains as a `@deprecated`, type-identical alias, so
+> existing imports keep working — prefer `encryptedSupabase` in new code. The
+> old EQL v2 authoring wrapper (`encryptedSupabase({ encryptionClient,
+> supabaseClient }).from(table, schema)`) has been **removed** — see
+> "Legacy: EQL v2" at the end.
+
+## When to Use This Skill
+
+- Adding field-level encryption to a Supabase project
+- Querying encrypted data with Supabase's query builder (eq, gt, in, or, etc.)
+- Understanding encrypted JSON query limitations in PostgREST
+- Inserting, updating, or upserting encrypted data
+- Using identity-aware encryption (lock contexts) with Supabase
+- Building applications where sensitive columns need encryption at rest and in transit
+
+> **On a managed AI platform — Lovable, v0, Bolt, Replit — read `stash-managed-platforms` first.** Two things there are decided before anything on this page applies: server code runs on an edge runtime, so it needs `@cipherstash/stack/wasm-inline` (`@cipherstash/protect` is the deprecated predecessor and its native module will not load — that dead end has cost an agent a whole turn), and the database role is not `postgres`, which changes how EQL gets installed. `encryptedSupabase` can be constructed inside an edge runtime, but only from the `@cipherstash/stack-supabase/wasm-inline` entry and only with declared `schemas` — introspection is what needs a Postgres connection, and declaring your tables is what skips it. Step 5 of Setup has the call shape.
+
+> **What survives PostgREST, in one line** (the full treatment is under [Query behaviour on encrypted columns](#query-behaviour-on-encrypted-columns), a long way down): `eq` / `neq` / `in` / `match()` and the range filters `gt` / `gte` / `lt` / `lte` **do** work on capable domains, and so does `order()` on OPE-backed ordering columns. Encrypted free-text `matches()` and encrypted-JSON `contains()` / `selectorEq()` / `selectorNe()` **do not** — they need `eql_v3.query_*` casts PostgREST cannot emit, and the wrapper fails fast rather than returning wrong rows. Agents guess wrong in both directions on this, so don't infer it; for the predicates that don't survive, use Drizzle, Prisma Next, or SQL in an RPC.
+
+## Installation
+
+```bash
+npm install @cipherstash/stack @cipherstash/stack-supabase @supabase/supabase-js
+```
+
+> **Version note:** `npx stash init` is the preferred install path — it pins
+> every `@cipherstash/*` package to the versions matching your CLI release.
+> If you install manually as above, verify what actually resolved
+> (`node -p "require('@cipherstash/stack/package.json').version"`): bare
+> dist-tag installs can lag behind a release, and `stash init` will warn on
+> the version skew.
+
+The Supabase integration ships as its own first-party package,
+`@cipherstash/stack-supabase`, which depends on `@cipherstash/stack`. Install both.
+
+## Setup
+
+**Credentials first:** for local development run `npx stash init` (the
+agent-assisted flow — auth, schema, and database end to end) or
+`npx stash auth login` (device code flow; no environment variables needed).
+CI and production use the `CS_*` machine-credential environment variables —
+see the `stash-encryption` skill's Configuration section. Mint them from your
+device session with `npx stash env --name <name>` (no dashboard copy-paste);
+this is also how **Supabase Edge Functions** get credentials in local dev —
+`supabase functions serve` runs in a container that cannot see
+`~/.cipherstash`, so write the vars to a file with
+`stash env --name edge-dev --write` and pass `--env-file`, or
+`supabase secrets set` them for deploys.
+
+> **One credential set per environment — but what must match between writers
+> and query readers is the keyset, not the credential string.** Index terms
+> come from a per-*keyset* key, so any client bound to the keyset produces
+> matching terms. Decrypt is looser — it follows each payload's keyset and
+> needs only a grant — so a reader granted the writer's keyset but bound to
+> a different one decrypts fine while its searches silently return zero
+> rows. `stash-zerokms` is canonical for keyset scoping, `stash-auth` for
+> credentials. Inside an
+> Edge Function (Deno, no native modules) the wrapper comes from
+> `@cipherstash/stack-supabase/wasm-inline` — step 5 below. For encryption
+> without the Supabase wrapper it is `@cipherstash/stack/wasm-inline`, see the
+> `stash-edge` skill; SQL written by hand in a migration or RPC is covered by
+> `stash-postgres`.
+
+### 1. Install EQL v3 on the database
+
+Install it as a **migration**, not directly:
+
+```bash
+stash eql migration --supabase   # writes supabase/migrations/<timestamp>_cipherstash_eql.sql
+supabase db reset                # local — replays every migration
+supabase db push                 # remote/linked project
+```
+
+> A bare `supabase migration up` applies to the **local** database. The remote
+> forms are `supabase db push` and `supabase migration up --linked`.
+
+> ⚠️ **Do not use `stash eql install --supabase` on a project with a local
+> `supabase/` directory.** It applies the SQL straight to the running database,
+> and `supabase db reset` — the ordinary local development loop — drops that
+> database and replays `supabase/migrations/`. EQL is not in there, so it is
+> gone, and the next query fails with `type "eql_v3_encrypted" does not exist`.
+> `stash eql install --supabase` is for a **hosted** project you administer
+> without the Supabase CLI, where there is no migrations directory to write to.
+
+> **Connecting as a role that is not `postgres` (or a member of it)** — common
+> on managed AI platforms such as Lovable — is fine: the install proceeds and
+> is complete. Only the three owner-scoped `ALTER DEFAULT PRIVILEGES FOR ROLE
+> postgres` statements are skipped, and they are **optional**: they cover EQL
+> objects `postgres` might later create outside stash tooling, and every
+> `stash eql install`/`eql upgrade` re-grants all objects anyway. The CLI
+> prints them as "Optional SQL — requires postgres" for operators who want
+> them (Supabase SQL editor / migration tool); on platforms where nobody can
+> act as `postgres`, nothing is lost. Check ahead of time with `stash eql
+> preflight` (`--json` for agents), which reports membership of `postgres`
+> alongside the other role capabilities.
+
+> **TLS:** the CLI bundles the Supabase root CA, so `sslmode=verify-full`
+> against Supabase hosts (direct and pooler) verifies out of the box — no
+> certificate download, and never `NODE_TLS_REJECT_UNAUTHORIZED=0` (it is
+> process-wide and would also disable verification for CipherStash credential
+> traffic). A supplied `sslrootcert=<path>` or `PGSSLROOTCERT` still wins.
+
+The generated file carries three things, in order: the EQL v3 bundle, the role
+grants, and the `cipherstash.cs_migrations` tracking schema that `stash
+encrypt` records per-column progress in. One `supabase db reset` therefore
+provisions everything — no out-of-band `stash eql install` afterwards.
+
+It refuses to write a second install migration; pass `--force` to regenerate
+the existing one in place (same version, so an applied ledger stays consistent).
+Because the version is unchanged, `supabase db push` will **not** re-apply it —
+the Supabase CLI decides what is pending by version, never by file content, so a
+version already in the ledger is never re-run and push reports `Remote database
+is up to date.` Re-apply with `supabase db reset` locally; on a remote, clear
+the ledger row first with `supabase migration repair --status reverted
+<version>` (tracking table only — it applies no SQL) and then `supabase db
+push`. Add `--include-all` to that push only if it aborts with `Found local
+migration files to be inserted before the last migration on remote database.`,
+which happens when migrations sort after the install; reverting the newest
+version leaves it at the tail, where a plain push applies it. The flag applies
+every out-of-order migration you have, so don't reach for it pre-emptively.
+⚠️ On a populated database, weigh it first: the EQL
+bundle opens with `DROP SCHEMA IF EXISTS eql_v3 CASCADE` (and
+`eql_v3_internal`), so re-applying also drops every index, constraint, and RLS
+policy that references those schemas.
+
+**If you already have encrypted-column migrations**, note that the generated
+install is stamped with the current time and therefore sorts *after* them. A
+reset replays in version order with no dependency awareness, so those migrations
+run before EQL exists and `supabase db reset` fails with `type
+"eql_v3_text_search" does not exist`. The command detects this and warns, naming
+the files; the fix is to rename the install migration to a version below the
+earliest of them. How that back-dated version reaches a remote depends on what
+that remote actually has. This case only arises on a project that ran `stash eql
+install` directly, so the remote usually has EQL already — but "usually" is not
+what you want to bet a ledger row on, so check it:
+
+```bash
+psql "$REMOTE_DATABASE_URL" -Atc "select eql_v3.version()"
+```
+
+`eql_v3.version()` is created by the bundle's last statements, so it answers "is
+the whole install there". A probe for the `eql_v3` schema does not: that schema
+is created by the bundle's first statements and survives an install that aborted
+partway.
+
+If it prints a version, only the ledger row is missing — mark it applied with
+`supabase migration repair --status applied <version>`, which writes the row and
+runs no SQL. ⚠️ Do not push the file there instead: that re-runs the bundle's
+opening `DROP SCHEMA IF EXISTS eql_v3 CASCADE` (and `eql_v3_internal`), dropping
+every index, constraint, and RLS policy that references those schemas.
+
+If it errors, that remote genuinely still needs the SQL applied: `supabase db
+push --include-all`, the flag being required because the back-dated version is a
+gap in the middle of that history. ⚠️ Never mark it applied there. Every other
+remedy on this page fails loudly and can be retried; this one fails silently —
+the ledger row claims SQL that never ran, so no later push installs EQL, and the
+first query against an encrypted column fails with nothing pointing at the
+cause.
+
+There is no `--out` to reach for here: the Supabase CLI's migrations directory
+is not configurable. `supabase db reset` and `supabase db push` read
+`<project>/supabase/migrations` and nothing else, `config.toml` has no key for
+it, and `--workdir` / `SUPABASE_WORKDIR` moves the whole `supabase/` directory
+rather than this subdirectory. `stash eql migration --supabase --out <dir>`
+still writes the file, and warns, because a project may have its own step that
+applies that directory — but the Supabase CLI will not, so EQL is gone again
+after the next reset.
+
+Since eql-3.0.0 there is **one** v3 SQL artifact for every target — there is
+no separate Supabase variant. The bundle's only superuser-requiring
+statements (the ORE operator class/family) skip themselves when the install
+role lacks the privilege, and the bundle then disables the ORE-opclass-backed
+domains it cannot support. `--supabase` adds the role grants for `anon` /
+`authenticated` / `service_role` on the two schemas the bundle creates —
+`eql_v3` (the operator-backing functions) and `eql_v3_internal` (SEM
+internals). Without the grants, encrypted queries fail loudly with a
+permission error (e.g. `permission denied for schema eql_v3_internal`).
+
+No **Exposed schemas** change is needed: the column domains and their
+operators live in `public`, so bare `col = term` filters resolve under
+Supabase's default PostgREST configuration. Do not expose `eql_v3_internal`.
+
+### Indexing encrypted columns (no superuser needed)
+
+Encrypted columns can and should be **indexed** on Supabase. Index creation
+needs no superuser — only the ORE opclass behind the `_ord_ore` domains is
+restricted (and those domains are disabled on non-superuser installs anyway);
+the default equality / ordering / match / containment indexes all install as
+a normal role. Do not read the ORE warning as "encrypted columns can't be
+indexed on Supabase."
+
+Put the `CREATE INDEX` statements in a `supabase/migrations/` file, one index
+per capability the column's domain carries:
+
+```sql
+-- eql_v3_text_eq / eql_v3_text_search: equality
+CREATE INDEX users_email_eq ON users USING btree (eql_v3.eq_term(email));
+-- eql_v3_<t>_ord / eql_v3_text_search: ordering + range (on numeric/date/
+-- timestamp _ord domains this one index serves = too; text_ord needs the
+-- eq_term index above as well)
+CREATE INDEX users_created_at_ord ON users USING btree (eql_v3.ord_term(created_at));
+-- eql_v3_text_match / eql_v3_text_search: free-text match
+CREATE INDEX users_bio_match ON users USING gin (eql_v3.match_term(bio));
+-- eql_v3_json_search: containment
+CREATE INDEX users_profile_json
+  ON users USING gin ((eql_v3.to_ste_vec_query(profile)::jsonb) jsonb_path_ops);
+
+ANALYZE users;
+```
+
+The `ANALYZE` is part of the recipe — an expression index has no statistics
+until it runs. For the full model (which domains take which index, engagement
+rules, `EXPLAIN` verification, rollout timing), see the `stash-indexing` skill.
+
+### 2. Database schema (per-domain columns)
+
+Each encrypted column is declared with a concrete `public.eql_v3_*` domain —
+the domain encodes both the plaintext type and the column's query
+capabilities. There is no extension to enable and no generic `jsonb` column:
+
+```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  email public.eql_v3_text_search,        -- eq + range + free-text search
+  amount public.eql_v3_integer_ord,       -- eq + range
+  joined_at public.eql_v3_timestamp_ord,  -- eq + range, decrypts to Date
+  payload public.eql_v3_json_search,             -- encrypted JSON document
+  role VARCHAR(50),                       -- regular plaintext column
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+The `types.*` member name (see declared schemas below) maps to the flat
+`public.eql_v3_<name>` domain — strip the `eql_v3_` prefix and PascalCase
+each `_`-separated segment: `types.TextEq` → `public.eql_v3_text_eq`,
+`types.IntegerOrd` → `public.eql_v3_integer_ord`. The domains use
+SQL-standard type names (`integer`, `smallint`, `real`, `double`, `boolean`,
+`timestamp`).
+
+### 3. Initialize the wrapper
+
+```typescript
+import { encryptedSupabase } from "@cipherstash/stack-supabase"
+
+// Introspects the database via options.databaseUrl or DATABASE_URL
+const es = await encryptedSupabase(supabaseUrl, supabaseKey)
+// or wrap an existing client: await encryptedSupabase(supabaseClient, options)
+
+await es.from("users").insert({ email: "a@b.com", amount: 30 })
+await es.from("users").select("id, email, amount").eq("email", "a@b.com")
+```
+
+`encryptedSupabase` **introspects the database at connect time**: it
+detects EQL v3 columns by their Postgres domain, derives each column's
+encryption config from the domain, and builds the encryption client
+internally — there is no client-side schema to hand-maintain. Introspection
+needs a direct Postgres connection (`options.databaseUrl`, defaulting to
+`DATABASE_URL`). The engine is a native module, so **this entry runs on
+Node only**. On an edge runtime, import the `wasm-inline` entry instead —
+step 5 below.
+
+The native engine and `pg` are not the only things keeping this out of a
+browser. On the WASM entry, `config.clientKey` is a workspace secret and is
+required on *every* auth path — supplying a per-user `config.authStrategy`
+does not remove it ([#804](https://github.com/cipherstash/stack/issues/804)).
+Dropping the native engine and the `pg` dependency is what unblocks Deno,
+Supabase Edge Functions and Cloudflare Workers; nothing unblocks a browser.
+
+Options: `{ schemas?, databaseUrl?, config? }` — `config` is the encryption
+client config (e.g. `config.authStrategy`, see Authentication below).
+
+`from(tableName)` takes only the table name — no schema argument. Column
+capabilities come from the introspected domains.
+
+### 4. Optional declared schemas (compile-time types)
+
+Declaring tables is optional. Passing `schemas` — a record whose keys must
+equal each table's name — adds compile-time types, and, when introspection
+also runs, verifies the declared tables against the database at construction:
+
+```typescript
+import { encryptedTable, types } from "@cipherstash/stack/eql/v3"
+import { encryptedSupabase } from "@cipherstash/stack-supabase"
+
+const users = encryptedTable("users", {
+  email:  types.TextSearch("email"),      // public.eql_v3_text_search — eq + range + free-text
+  amount: types.IntegerOrd("amount"),     // public.eql_v3_integer_ord — eq + range
+  joined: types.TimestampOrd("joined_at") // public.eql_v3_timestamp_ord — eq + range, decrypts to Date
+})
+
+const es = await encryptedSupabase(supabaseUrl, supabaseKey, {
+  schemas: { users },
+})
+
+const { data } = await es.from("users").select("id, email, joined").eq("email", "a@b.com")
+```
+
+A declared table gets a typed builder: rows infer each column's plaintext
+type (`types.IntegerOrd` → `number`, `types.TimestampOrd` → `Date`),
+storage-only columns are excluded from every filter method, and `order()` is
+narrowed to orderable columns.
+
+Whether undeclared tables still work turns on `databaseUrl`, **not** on the
+absence of `schemas`. Introspection is gated on a resolved database URL, so
+passing `databaseUrl` alongside `schemas` gets you both — declared tables keep
+their types and are drift-checked, undeclared ones behave exactly as with no
+`schemas` at all. Pass `schemas` on their own, as above, and even the native
+entry is in declared mode: an ambient `DATABASE_URL` is deliberately ignored,
+because declaring your tables says this client needs no connection, and
+`from("orders")` on an undeclared table throws.
+
+Every v3 column is fully described by its `types.*` factory — there are no
+capability or tuning chains on v3 columns.
+
+A JS property may map to a different DB column name
+(`joined: types.TimestampOrd("joined_at")`) — filters, selects, and results
+are translated automatically, and `date`/`timestamp` columns decrypt to real
+`Date` objects.
+
+### 5. Edge runtimes — the `wasm-inline` entry
+
+Deno, Supabase Edge Functions and Cloudflare Workers cannot load a native
+module and cannot open a raw Postgres socket. Both of those are properties of
+the entry above, not of the wrapper, so the package ships a second entry that
+has neither:
+
+| Entry | Engine | Schema | Runs on |
+|---|---|---|---|
+| `@cipherstash/stack-supabase` | native | introspected | Node |
+| `@cipherstash/stack-supabase/wasm-inline` | WASM, inlined into the bundle | declared — `schemas` is required | Deno, Supabase Edge Functions, Cloudflare Workers |
+
+After construction the wrapper behaves the same — the filters, the transforms
+and the response shape are identical — with two exceptions, both of them
+declared mode rather than the engine. `select('*')` and bare `select()` are
+refused, so name the columns you want; that refusal is not a read backstop,
+because a query awaited with no `.select()` at all still returns every column
+undecrypted. And `from()` on a table you did not declare throws, because there
+is no introspected table list to fall back on. Both are expanded in the bullets
+below.
+
+```typescript
+import { encryptedTable, types } from "@cipherstash/stack/eql/v3"
+import { encryptedSupabase } from "@cipherstash/stack-supabase/wasm-inline"
+
+const users = encryptedTable("users", {
+  email:  types.TextSearch("email"),
+  amount: types.IntegerOrd("amount"),
+})
+
+const es = await encryptedSupabase(supabaseUrl, supabaseKey, {
+  schemas: { users },
+  config: {
+    workspaceCrn: Deno.env.get("CS_WORKSPACE_CRN")!,
+    accessKey:    Deno.env.get("CS_CLIENT_ACCESS_KEY")!,
+    clientId:     Deno.env.get("CS_CLIENT_ID")!,
+    clientKey:    Deno.env.get("CS_CLIENT_KEY")!,
+  },
+})
+
+await es.from("users").select("id, email").eq("email", "a@b.com")
+```
+
+**Either entry may author the table.** `encryptedTable`/`types` from
+`@cipherstash/stack/wasm-inline` produce tables `schemas` accepts exactly as the
+`@cipherstash/stack/eql/v3` ones above do — same types, same runtime. Use the
+wasm-inline entry when the schema module is shared with an Edge Function, so one
+table definition serves both sides instead of two that can drift.
+
+> If `tsc` rejects a wasm-inline-authored table with *"Types have separate
+> declarations of a private property 'columnName'"*, the installed
+> `@cipherstash/stack` predates this fix — its two entries shipped
+> separately-emitted declarations of the column class, and TypeScript compares
+> classes with `private` members by declaration origin. Upgrade, or author the
+> table from `@cipherstash/stack/eql/v3` on that version. The runtime was never
+> affected.
+
+Four differences from the native entry, three of them enforced by the type
+checker:
+
+- **`schemas` is required** — by the type, and by a construction-time throw
+  for callers who reach it from plain JS. Nothing introspects here, so there
+  is no other way to discover your encrypted columns, and `from()` on an
+  undeclared table throws for the same reason. The real hazard is one level
+  down: an undeclared **column** on a declared table never enters the encrypt
+  config and is treated as plaintext, so a filter on it sends your plaintext
+  value to PostgREST and a select on it hands back the raw EQL payload. Writes
+  have a backstop — a plaintext write to a real `eql_v3_*` column fails that
+  domain's CHECK constraint, though a NULL still passes. **Reads have none.**
+  `select('*')` is refused in declared mode, but that is not a safety net: a
+  query awaited with no `.select()` call at all sends a raw `*`, and every
+  column comes back undecrypted, declared or not. Name the columns you want.
+  Do not wait for a warning: the native entry logs one about
+  unverified declarations, but it is gated on the introspector, so on this
+  entry it never fires. Declare every encrypted column of every table you
+  query.
+- **`config` is required.** There is no `~/.cipherstash` on an edge runtime to
+  discover credentials from, so authentication is passed in. `clientId` and
+  `clientKey` are always needed; past those the type is a union, with two
+  supported paths.
+  The **access-key path** adds `workspaceCrn` + `accessKey` — the four `CS_*`
+  values shown above. Mint them with `stash env --name <name>` and set them
+  with `supabase secrets set`, or pass `--env-file` for `supabase functions
+  serve`. The **strategy path** takes a pre-built `config.authStrategy`
+  instead — `AccessKeyStrategy` or `OidcFederationStrategy`, both re-exported
+  from `@cipherstash/stack/wasm-inline` — and makes `workspaceCrn` optional,
+  since a built strategy already carries the CRN. So authenticating *as the
+  end user* over OIDC federation does work on the edge; what does not is
+  binding data to that user, two bullets below.
+- **`databaseUrl` is not accepted.** The options type declares it
+  `databaseUrl?: never`, so passing one is a type error whether you write the
+  options inline or build them as a `const` first, and a construction-time
+  throw for callers arriving from plain JS.
+- **`.withLockContext()` and `.audit()` throw.** Identity-bound encryption is
+  not implemented on the WASM engine (cipherstash/stack#797); the entry fails
+  loudly rather than dropping the identity claim and writing a value any
+  keyset holder could decrypt. If you need lock contexts, that path stays on
+  Node.
+
+The entry is ESM-only. It is server-side, not browser-safe — the WASM client
+requires a workspace `clientKey` on every authentication path, so shipping one
+to a browser would ship the key with it (cipherstash/stack#804).
+
+## Insert (Encrypted Automatically)
+
+```typescript
+// Single insert
+const { data, error } = await es
+  .from("users")
+  .insert({
+    email: "alice@example.com",  // encrypted automatically
+    amount: 30,                  // encrypted automatically
+    role: "admin",               // plaintext column, passed through
+  })
+  .select("id")
+
+// Bulk insert
+const { data, error } = await es
+  .from("users")
+  .insert([
+    { email: "alice@example.com", amount: 30, role: "admin" },
+    { email: "bob@example.com", amount: 25, role: "user" },
+  ])
+  .select("id")
+```
+
+## Update (Encrypted Automatically)
+
+```typescript
+const { data, error } = await es
+  .from("users")
+  .update({ email: "alice@new.example.com" })  // encrypted automatically
+  .eq("id", 1)
+  .select("id, email")
+```
+
+## Upsert
+
+```typescript
+const { data, error } = await es
+  .from("users")
+  .upsert(
+    { id: 1, email: "alice@example.com", role: "admin" },
+    { onConflict: "id" },
+  )
+  .select("id, email")
+```
+
+## Select (Decrypted Automatically)
+
+```typescript
+// All columns — select('*') (and bare select()) expands to the
+// introspected column list
+const { data, error } = await es.from("users").select("*")
+
+// Explicit columns
+const { data, error } = await es
+  .from("users")
+  .select("id, email, amount, role")
+// data: [{ id: 1, email: "alice@example.com", amount: 30, role: "admin" }]
+
+// Single result
+const { data, error } = await es
+  .from("users")
+  .select("id, email")
+  .eq("id", 1)
+  .single()
+
+// Maybe single (returns null if no match)
+const { data, error } = await es
+  .from("users")
+  .select("id, email")
+  .eq("email", "nobody@example.com")
+  .maybeSingle()
+// data: null
+```
+
+`select()` also accepts an optional second parameter: `select(columns, { head?: boolean, count?: 'exact' | 'planned' | 'estimated' })`.
+
+## Query Filters
+
+All filter values for encrypted columns are automatically encrypted before
+the query executes. Filter operands are grouped by column and each column
+group takes one `bulkEncrypt` crossing — a query filtering N distinct
+encrypted columns makes N ZeroKMS calls, run in parallel.
+
+### Equality Filters
+
+```typescript
+// Exact match (requires an equality-capable domain)
+.eq("email", "alice@example.com")
+
+// Not equal
+.neq("email", "alice@example.com")
+
+// IN array
+.in("email", ["alice@example.com", "bob@example.com"])
+
+// NULL check (no encryption needed). Use this for genuine null checks — a
+// null operand passed to eq/neq is not rejected; it is forwarded unencrypted.
+.is("email", null)
+```
+
+### Free-Text Search (`matches`)
+
+The current EQL 3.0.5 release requires a typed `eql_v3.query_*` right operand
+for encrypted free-text matching. PostgREST cannot express that cast, so
+Supabase v3 `matches()` fails fast. This requirement began in EQL 3.0.2 and
+remains in 3.0.5. Use the Drizzle or Prisma Next adapter, or expose a carefully
+scoped SQL/RPC path. Plaintext `like`/`ilike` queries remain native PostgREST
+operations.
+
+### Range/Comparison Filters
+
+```typescript
+// Requires a range-capable domain (e.g. *_ord, text_search)
+.gt("amount", 21)
+.gte("amount", 18)
+.lt("amount", 65)
+.lte("amount", 100)
+```
+
+### Match (Multi-Column Equality)
+
+```typescript
+.match({ email: "alice@example.com", amount: 30 })
+```
+
+### OR Conditions
+
+```typescript
+// String format
+.or("email.eq.alice@example.com,email.eq.bob@example.com")
+
+// Structured format (more type-safe)
+.or([
+  { column: "email", op: "eq", value: "alice@example.com" },
+  { column: "email", op: "eq", value: "bob@example.com" },
+])
+```
+
+Both forms encrypt values for encrypted columns automatically.
+
+### NOT Filter
+
+```typescript
+.not("email", "eq", "alice@example.com")
+```
+
+### Raw Filter
+
+```typescript
+.filter("email", "eq", "alice@example.com")
+```
+
+## Delete
+
+```typescript
+const { data, error } = await es
+  .from("users")
+  .delete()
+  .eq("id", 1)
+```
+
+## Transforms
+
+These are passed through to Supabase directly:
+
+```typescript
+.order("email", { ascending: true })  // encrypted columns: see behaviour below
+.limit(10)
+.range(0, 9)
+.abortSignal(signal)
+.throwOnError()
+.returns<U>()
+```
+
+`csv()` is the exception — it **throws**. PostgREST serializes rows
+server-side, so a CSV response would carry ciphertext the wrapper never gets
+to decrypt. Select rows normally and serialize the decrypted data yourself:
+
+```typescript
+const { data } = await es.from("users").select("id, email")
+const csv = data!.map((r) => `${r.id},${r.email}`).join("\n")
+```
+
+`order()` works on plaintext columns and on OPE-backed encrypted ordering
+columns — see the `order()` bullet in the next section for exactly which
+domains qualify.
+
+## Query behaviour on encrypted columns
+
+All envelopes (stored payloads and filter operands) are versioned `v: 3`.
+
+- **`select('*')` (and bare `select()`) works** — it expands to the
+  introspected column list.
+- **Encrypted free-text search is unavailable through PostgREST on the current
+  EQL 3.0.5 release.**
+  The SQL surface uses `@@` with an `eql_v3.query_*` right operand. PostgREST's
+  filter grammar cannot express that cast; its `cs` operator is SQL `@>`, which
+  EQL deliberately rejects for text-search domains. Do not use `matches()`,
+  encrypted `like`/`ilike`, or raw `cs` as substitutes. `contains()` remains
+  native exact jsonb/array containment on plaintext columns.
+- **INTERIM — filter operands are full storage envelopes.** EQL ships
+  term-only query domains (`eql_v3.query_<name>`, which accept envelopes with
+  no ciphertext) and the encryption client can mint those narrowed terms, but
+  PostgREST has no syntax to cast a filter value — an uncast operand can only
+  reach the `jsonb` operator overload, which coerces it into the storage
+  domain, whose CHECK requires ciphertext. So the adapter still encrypts each
+  filter value with the full storage path. The call shape is unchanged.
+
+  **Security caveat:** query terms are meant to be index-terms-only by
+  design, but a full-envelope operand carries a real decryptable ciphertext
+  `c` plus **all** of the column's index terms, and PostgREST filters travel
+  in GET query strings — so these envelopes can land in URL logs,
+  intermediate proxies, and Supabase request logs. The remaining gap is
+  PostgREST operand casting; an adapter-side fix is tracked.
+- **`order()` works on OPE-backed encrypted ordering columns** (every plain
+  `*_ord` domain, plus `text_ord` and `text_search`). PostgREST cannot emit
+  `ORDER BY eql_v3.ord_term(col)`, and a bare `ORDER BY` would silently sort
+  the raw ciphertext envelope — so the builder instead emits `order=col->op`,
+  sorting by the OPE term inside the envelope, which reproduces plaintext
+  order (the term is fixed-width lowercase hex, so string comparison agrees
+  with the bytea btree; pinned by `ope-term.integration.test.ts`). ORE-flavour
+  columns (`*_ord_ore`) are rejected at compile time and runtime — their `ob`
+  term needs the superuser-only operator class no jsonb path can reach — and
+  columns with no ordering term (storage-only, equality-only, match-only)
+  reject `order()` with a clear error. For those, order by a plaintext column
+  or sort application-side after decrypting.
+- **Storage-only domains are not filterable** (e.g. `types.Boolean`,
+  `types.Text`): a filter (including `.match()`) on one is a type error on a
+  declared table, and always a clear runtime error. `.is(column, null)`
+  remains available.
+- **Null filter operands are forwarded unencrypted, not rejected.** A null
+  cannot be encrypted into an operand, so the builder skips encryption and
+  passes the null through to PostgREST as-is (e.g. a `col=eq.null` filter),
+  which is rarely what you want. Use `.is(column, null)` for genuine null
+  checks — the builder does not throw.
+
+## Encrypted JSON querying (`types.Json`)
+
+A `types.Json("payload")` column (`public.eql_v3_json_search`) can be stored and
+decrypted through Supabase, but EQL 3.0.5 requires an explicit
+`eql_v3.query_json` cast for containment and value-selector equality.
+PostgREST cannot express that cast. The wrapper therefore fails fast for
+encrypted `contains()`, `selectorEq()`, and `selectorNe()` before encrypting a
+query operand; it never places a decryptable JSON storage envelope in the GET
+query string. Use Drizzle or Prisma Next for containment and selector equality
+or ordering, or expose a carefully scoped SQL/RPC function.
+
+Plaintext jsonb/array `contains()` remains a native PostgREST operation.
+
+## Authentication
+
+The encryption client authenticates to ZeroKMS through `config.authStrategy`.
+Unset, it uses the default **auto** strategy — the `npx stash auth login`
+profile in local development (preferred), `CS_*` environment variables in
+CI/production — which is fine for service-level encryption. To authenticate **as the end user**, federate their
+third-party OIDC JWT (Clerk, Supabase, Auth0, ...) with
+`OidcFederationStrategy`:
+
+```typescript
+import { OidcFederationStrategy } from "@cipherstash/stack"
+import { encryptedSupabase } from "@cipherstash/stack-supabase"
+
+const strategy = OidcFederationStrategy.create(
+  process.env.CS_WORKSPACE_CRN!,
+  () => getUserJwt(req), // the current request's user — see stash-auth, "Client lifetime"
+)
+if (strategy.failure) throw new Error(strategy.failure.error.message)
+
+const es = await encryptedSupabase(supabaseUrl, supabaseKey, {
+  config: { authStrategy: strategy.data },
+})
+```
+
+Authentication stands on its own — an OIDC-authenticated client runs every
+query normally. Binding *data* to the authenticated user is the optional next
+step: the lock context.
+
+## Identity-Aware Encryption (Lock Contexts)
+
+Bind the data key to a claim from the end user's JWT by chaining
+`.withLockContext({ identityClaim })` on a query. This **requires** an
+`OidcFederationStrategy`-authenticated client (above) — the claim's value
+resolves from the federated JWT; auto/access-key auth has no user JWT to
+resolve claims from. Plain authentication never requires a lock context.
+
+```typescript
+const { data, error } = await es
+  .from("users")
+  .insert({ email: "alice@example.com" })
+  .withLockContext({ identityClaim: ["sub"] })
+  .select("id")
+```
+
+`identityClaim` is an array of JWT claim *names* (`["sub"]`), not values; the same
+claim must be presented to decrypt — the claim gates retrieval of the value's
+data key at ZeroKMS. `.withLockContext()` also accepts a `LockContext`
+instance. `stash-auth` is the canonical skill for the lock-context model and
+the auth strategies.
+
+> **Deprecated: `LockContext.identify()`.** Older code did
+> `new LockContext().identify(userJwt)` to fetch a per-operation CTS token. Those
+> tokens were removed in `protect-ffi` 0.25 and the fetched token is no longer
+> used by encryption. Authenticate with `OidcFederationStrategy` and pass the
+> claim directly, as above.
+
+## Audit Logging
+
+Chain `.audit()` to attach metadata for ZeroKMS audit logging:
+
+```typescript
+const { data, error } = await es
+  .from("users")
+  .select("id, email")
+  .eq("email", "alice@example.com")
+  .audit({ metadata: { action: "user-lookup", requestId: "abc-123" } })
+```
+
+## Complete Example
+
+```typescript
+import { encryptedTable, types } from "@cipherstash/stack/eql/v3"
+import { encryptedSupabase } from "@cipherstash/stack-supabase"
+
+// Optional declared schema — compile-time types. Introspection alone
+// (no `schemas`) also works.
+const users = encryptedTable("users", {
+  email:  types.TextSearch("email"),
+  amount: types.IntegerOrd("amount"),
+})
+
+const es = await encryptedSupabase(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!,
+  { schemas: { users } }, // databaseUrl defaults to DATABASE_URL
+)
+
+// Insert — values encrypted automatically
+await es.from("users").insert([
+  { email: "alice@example.com", amount: 30 },
+  { email: "bob@example.com", amount: 25 },
+])
+
+// Query with multiple filters — operands encrypted automatically
+const { data } = await es
+  .from("users")
+  .select("id, email, amount")
+  .gte("amount", 18)
+  .lte("amount", 35)
+  .eq("email", "alice@example.com")
+
+// data is fully decrypted:
+// [{ id: 1, email: "alice@example.com", amount: 30 }]
+```
+
+## Response Type
+
+```typescript
+type EncryptedSupabaseResponse<T> = {
+  data: T | null                     // Decrypted rows
+  error: EncryptedSupabaseError | null
+  count: number | null
+  status: number
+  statusText: string
+}
+```
+
+Errors can come from Supabase (API errors) or from encryption operations. Check `error.encryptionError` for encryption-specific failures.
+
+The full `EncryptedSupabaseError` type:
+
+```typescript
+type EncryptedSupabaseError = {
+  message: string
+  details?: string       // Supabase error details
+  hint?: string          // Supabase error hint
+  code?: string          // Supabase/PostgreSQL error code
+  encryptionError?: EncryptionError  // CipherStash encryption-specific error
+}
+```
+
+## Filter to Domain Capability Mapping
+
+The column's `public.eql_v3_*` domain determines which filters it accepts:
+
+| Filter Method | Works On |
+|---|---|
+| `eq`, `neq`, `in`, `match()` | Equality-capable domains (`*_eq`, `*_ord`, `text_search`) |
+| `matches()` / encrypted `contains()` / `selectorEq()` / `selectorNe()` | Unavailable through PostgREST on EQL 3.0.5; use Drizzle, Prisma Next, or scoped SQL/RPC |
+| `gt`, `gte`, `lt`, `lte` | Range-capable domains (`*_ord`, `text_search`) |
+| `contains()` | Plaintext jsonb/array columns (native containment) |
+| `order()` | OPE-backed ordering domains (plain `*_ord`, `text_ord`, `text_search`) — never `*_ord_ore` |
+| `is` | Any column (no encryption; NULL check) |
+
+Storage-only domains (e.g. `eql_v3_text`, `eql_v3_boolean`) accept no filters
+at all — only `.is(column, null)`.
+
+## Exported Types
+
+`@cipherstash/stack-supabase` also exports the following types:
+
+- `EncryptedSupabaseOptions`, `EncryptedSupabaseInstance`, `TypedEncryptedSupabaseInstance`, `EncryptedQueryBuilder`, `EncryptedQueryBuilderUntyped`, `EncryptedQueryBuilderCore`, `V3Schemas`
+- `FilterableKeys`, `FreeTextSearchableKeys`
+- `EncryptedSupabaseResponse`, `EncryptedSupabaseError`, `PendingOrCondition`, `SupabaseClientLike`
+
+Each `*V3`-suffixed name from earlier releases (`EncryptedSupabaseV3Options`,
+`EncryptedSupabaseV3Instance`, `TypedEncryptedSupabaseV3Instance`,
+`EncryptedQueryBuilderV3`, `EncryptedQueryBuilderV3Untyped`, `V3FilterableKeys`,
+`V3FreeTextSearchableKeys`) is still exported as a `@deprecated`, type-identical
+alias of its unsuffixed counterpart above.
+
+## Migrating an Existing Column to Encrypted
+
+The hard case: a Supabase table that already exists with live data in a plaintext column you want to encrypt. You can't just change the column type — that would drop the data.
+
+CipherStash splits this into two named steps with a hard production-deploy gate between them: an **encryption rollout** (schema-add + dual-write code) and an **encryption cutover** (backfill + switch reads to the encrypted column by name + drop). The `stash-encryption` skill is the canonical reference for the lifecycle; this section walks the Supabase-specific shape.
+
+> **EQL version note.** The `stash encrypt *` tooling now mutates **EQL v3 only**. A `public.eql_v3_*` target is required for backfill and drop. Legacy `eql_v2_encrypted` columns and migration history remain visible in status, but mutation commands reject them. The v3 lifecycle is `rollout → deploy gate → backfill → switch the app to the encrypted column by name → drop`, with no rename.
+
+> **Runner note.** `stash init` adds `stash` to the project as a dev dependency, so `stash <command>` runs through whichever package manager the project uses (Bun, pnpm, Yarn, or npm) — examples below show this bare form. Before init has run, prefix with your package manager's one-shot runner: `bunx`, `pnpm dlx`, `yarn dlx`, or `npx`. The CLI's behaviour is identical across all of them.
+
+> **Where am I?** Run `stash status` first (substitute the runner per the note above). It shows you which tables/columns are mid-rollout, which are post-deploy, and what the next move is. Re-run after every transition.
+
+### Starting state
+
+You have:
+
+```sql
+-- supabase/migrations/<timestamp>_initial.sql (already applied)
+CREATE TABLE users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text NOT NULL,             -- plaintext, populated, NOT NULL
+  created_at timestamptz DEFAULT now()
+);
+```
+
+…and an `await supabase.from('users').insert({ email })` somewhere in your app code.
+
+### Step 1 — Encryption rollout (one PR, one deploy)
+
+Everything below lands in one PR. The deploy of that PR is the gate.
+
+#### Schema-add: declare the encrypted twin
+
+Generate a Supabase migration:
+
+```bash
+supabase migration new add_users_email_encrypted
+```
+
+Edit the generated file to add an `email_encrypted` column **alongside** `email`. The encrypted column must be **nullable** at creation — never `NOT NULL`, because rows that already exist will have NULL in this column until backfill catches them.
+
+```sql
+-- supabase/migrations/<timestamp>_add_users_email_encrypted.sql
+ALTER TABLE users
+  ADD COLUMN email_encrypted public.eql_v3_text_search;  -- nullable
+```
+
+Apply with `supabase db reset` locally or `supabase db push` against the
+remote project. The reset is safe here because the EQL install is itself a
+migration (step 1) — it is replayed before this one, so the `eql_v3_text_search`
+domain exists by the time this `ALTER TABLE` runs.
+
+No client-side schema change is required — `encryptedSupabase` introspects
+the new column's domain at the next client startup. If you use declared
+`schemas`, add the column so it is typed:
+
+```typescript
+// src/encryption/schema.ts (optional — compile-time types)
+import { encryptedTable, types } from '@cipherstash/stack/eql/v3'
+
+export const users = encryptedTable('users', {
+  email_encrypted: types.TextSearch('email_encrypted'),
+})
+```
+
+#### Dual-writing: write to both columns from app code
+
+Find **every** code path that writes to `users.email` and update it to also write the encrypted twin. With the v3 wrapper this is a single insert: `email` is a plaintext column and passes through unchanged, while `email_encrypted` is a v3 domain column the wrapper encrypts automatically. Wrap it in one function so callers can't forget one half:
+
+```typescript
+// src/db/users.ts
+import { es } from './clients' // encryptedSupabase instance
+
+export async function insertUser(email: string) {
+  return es.from('users').insert({
+    email,                   // plaintext — keep writing
+    email_encrypted: email,  // encrypted twin — new, encrypted automatically
+  })
+}
+```
+
+Same shape for UPDATE: every site that updates `email` must also update `email_encrypted` in the same statement.
+
+**The dual-write rule.** Every persistence path that mutates this row writes both columns, in the same transaction, on every code branch. Insert sites, update sites, upserts, ON CONFLICT clauses, seeders, fixtures, edge functions, RPC functions, admin actions, background jobs, third-party webhooks — all of them. A single missed branch means rows inserted in production after deploy land in plaintext only, and backfill won't catch them. Grep for every site that touches `users.email` before declaring this step done.
+
+After this phase, existing rows still have `email_encrypted = NULL`. Reads still come from `email`. Nothing has broken.
+
+### ⛔ Deploy gate
+
+Stop. Ship this PR to production. The deployed environment must be running the dual-write code before any cutover-step work is safe.
+
+When the deploy is live:
+
+```bash
+stash status        # verify the rollout is recorded
+stash plan          # detects dual-writes are live; drafts the cutover plan
+```
+
+`stash impl` will refuse to run a cutover-step plan if `cs_migrations` has no `dual_writing` event for `users.email`. That refusal is the safety net for cases where someone runs cutover work locally before the code is actually live.
+
+### Step 2 — Encryption cutover
+
+Once dual-writes are live in production and `cs_migrations` records `dual_writing`:
+
+#### Backfill: encrypt the historical rows
+
+```bash
+stash encrypt backfill --table users --column email
+# (Interactive: answer 'yes' to the dual-write confirmation prompt.)
+# (CI: pass --confirm-dual-writes-deployed instead.)
+```
+
+Resumable, idempotent, chunked. The CLI walks the table in keyset-pagination order, encrypts each chunk via the encryption client, and writes the ciphertext into `email_encrypted` inside transactions that also checkpoint to `cs_migrations`. SIGINT-safe. It requires a `public.eql_v3_*` target and records EQL version 3; a legacy `eql_v2_encrypted` target is rejected before encryption begins.
+
+If something goes wrong (e.g. you discover the dual-write code wasn't actually live when backfill ran), re-run with `--force` to re-encrypt every row regardless of current state.
+
+#### Switch reads to the encrypted column
+
+The EQL v3 encrypted column keeps its own name. Point the application at
+`email_encrypted` through the `encryptedSupabase` wrapper, deploy, verify reads
+decrypt correctly, then continue to the drop step. There is no rename command.
+
+#### Drop: remove the plaintext column
+
+Once read paths are routing through the wrapper and you're confident reads are decrypting correctly:
+
+```bash
+stash encrypt drop --table users --column email
+```
+
+The CLI emits an EQL v3 drop migration for the original plaintext column,
+`email`. There was no rename, so no `email_plaintext` exists. The SQL is not a
+bare `ALTER TABLE`: it is a `DO $stash_drop$` block that takes `LOCK TABLE users
+IN ACCESS EXCLUSIVE MODE`, re-counts rows where `email IS NOT NULL AND
+email_encrypted IS NULL` at apply time, raises if any remain, and only then
+drops the column. It requires the `backfilled` phase plus a live coverage check
+at generation time. Legacy v2 state is rejected.
+
+Review and apply with `supabase db reset` locally, or `supabase db push` against the remote project. Then remove the dual-write code from app paths — the plaintext column is gone; only the encrypted column is written now, through the wrapper.
+
+### Inspecting progress at any time
+
+```bash
+stash status         # quest log: where each rollout is, what to do next
+stash encrypt status # raw per-column phase, EQL state, backfill progress
+stash encrypt plan   # diffs your migrations.json intent vs observed state
+```
+
+All three are read-only.
+
+## Legacy: EQL v2
+
+Earlier versions of this integration stored ciphertext in composite
+`eql_v2_encrypted` columns (enabled via `CREATE EXTENSION eql_v2` or the v2 EQL
+bundle) and both wrote and read them through the `encryptedSupabase({
+supabaseClient, encryptionClient })` factory — a hand-written client-side schema
+and a two-argument `from(tableName, schema)`.
+
+**That v2 wrapper has been removed.** `@cipherstash/stack-supabase` now authors
+and queries EQL v3 only, via the introspecting `encryptedSupabase(url, key)` /
+`encryptedSupabase(client, options)` factory described above. There is no longer
+a code path in this package that emits or reads `eql_v2_encrypted` columns.
+
+Passing a v2 table in `schemas` is rejected by name:
+
+```
+[supabase v3]: schemas entry "users" is an EQL v2 table — it has no
+buildColumnKeyMap(), the marker every v3 table carries. This adapter is EQL v3
+only. Author the table with `encryptedTable`/`types` from
+`@cipherstash/stack/eql/v3` or `@cipherstash/stack/wasm-inline`.
+```
+
+A v2 `encryptedTable` is structurally identical to a v3 one apart from that
+marker, so TypeScript alone will not always catch the swap.
+
+A related error names a single column rather than the table:
+
+```
+[supabase v3]: column "email" on table "users" is not a recognised EQL v3
+column builder. Its filter operands would otherwise be sent to PostgREST
+unencrypted, so construction is refused.
+```
+
+That one means the table itself looks like v3 but one of its column builders
+does not present the v3 surface — a v2 `encryptedColumn(...)` left behind in an
+otherwise-migrated table, or a hand-rolled stub. The adapter **fails closed**
+and throws at construction rather than treating the column as plaintext, because
+an unrecognised column would send its filter operands to PostgREST in the clear.
+Re-author that column with the matching `types.*` factory.
+
+Existing v2 deployments should add an `eql_v3_*` twin column and run the rollout
+in "Migrating an Existing Column to Encrypted" above. Current `stash` releases
+do not install EQL v2 or mutate its Proxy configuration, backfill, rename, or
+drop lifecycle. They retain read-only status and manifest diagnostics so the
+legacy state remains visible. For dump recovery, use the upstream EQL 2.3.1 SQL
+release; do not treat it as a supported new-install path.
+
+For the removed v2 wrapper's historical API and semantics, see the docs at
+https://cipherstash.com/docs.

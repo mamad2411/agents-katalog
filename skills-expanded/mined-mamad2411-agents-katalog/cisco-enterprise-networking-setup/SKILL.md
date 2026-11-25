@@ -1,0 +1,326 @@
+---
+name: cisco-enterprise-networking-setup
+description: "Use when the user asks about Cisco Enterprise Networking app, cisco-catalyst-app, Catalyst dashboards,
+  ISE dashboards, SD-WAN dashboards, or Cyber Vision dashboards. Automate Cisco Enterprise Networking for
+  Splunk Platform (cisco-catalyst-app) setup. Configures index macros, sourcetype macros, saved searches,
+  data model acceleration, and validates dashboards."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Cisco Enterprise Networking App Setup Automation
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Cisco Enterprise Networking app, cisco-catalyst-app, Catalyst dashboards, ISE dashboards, SD-WAN dashboards, or
+  Cyber Vision dashboards.
+- Preview and review the cisco enterprise networking setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/cisco-enterprise-networking-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/cisco-enterprise-networking-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+## TA Completion Gate
+
+For every TA/add-on or dashboard companion run, satisfy the shared
+[TA completion gate](../shared/ta_completion_gate.md): configure and enable the
+data ingest path owned by this skill or its required companion, validate events
+or metrics in the target indexes/source types, and verify any
+pre-built/package-shipped dashboards are visible, macro-aligned, and returning
+data. If the package ships no dashboards, record that evidence explicitly and
+hand off dashboard use to the consuming app, ES/ITSI/ARI content, or readiness
+doctor.
+
+Automates the **Cisco Enterprise Networking for Splunk Platform**
+(`cisco-catalyst-app`).
+
+## Package Model
+
+**Pull from Splunkbase first, fall back to `splunk-ta/`.** Use
+`splunk-app-install` with `--source splunkbase --app-id 7539`; the shared
+installer defaults to the repository-verified package. If Splunkbase is
+unavailable, fall back to the local package in `splunk-ta/`.
+The repo-verified `3.2.20` release is also the current public listing, advertises
+`10.5`, and is Cloud-compatible, so the default install path works on a `10.5`
+stack with no review override. Do not downgrade below `3.2.20` on a `10.5`
+stack: `3.1.0`, `3.2.0`, and `3.2.10` do not advertise that train. The setup
+wrapper reads the actual installed version before any REST mutation and refuses
+an unverified selection unless `--accept-unsupported-platform` is backed by
+documented vendor approval for the exact package and stack; the override is not
+compatibility certification.
+The shared installer enforces the required Cisco Catalyst Add-on dependency and
+installs `TA_cisco_catalyst` (Splunkbase ID `7538`) first when it is missing,
+so the visualization app is not deployed by itself. The Cisco Catalyst
+Enhanced Netflow Add-on (`splunk_app_stream_ipfix_cisco_hsl`, Splunkbase ID
+`6872`) is optional and should only be installed when the user wants the extra
+NetFlow-focused dashboards.
+
+After installation, use this skill to configure macros, saved searches,
+acceleration, and validation over search-tier REST. Any `splunk-ta/_unpacked/`
+tree is review-only.
+
+This is a **visualization app** — it provides dashboards and saved searches but
+does not collect data. The dashboards visualize data collected by the companion
+**Cisco Catalyst Add-on** (`TA_cisco_catalyst`). Some additional dashboards
+also use the optional **Cisco Catalyst Enhanced Netflow Add-on**
+(`splunk_app_stream_ipfix_cisco_hsl`). Use the `cisco-catalyst-ta-setup` skill
+for Cisco Catalyst TA configuration and the
+`cisco-catalyst-enhanced-netflow-setup` skill when the user wants the optional
+NetFlow-focused dashboards.
+
+## Agent Behavior — Credentials
+
+**The agent must NEVER ask for passwords or secrets in chat.**
+
+Splunk credentials are read automatically from the project-root `credentials` file
+(falls back to `~/.splunk/credentials`). If neither exists, guide the user to create it:
+
+```bash
+bash skills/shared/scripts/setup_credentials.sh
+```
+
+The agent may freely ask for non-secret values: index names, macro settings, etc.
+
+### Optional NetFlow Prompt
+
+Before planning optional NetFlow dashboard coverage, the agent should ask the
+user whether they want the additional NetFlow-focused dashboards enabled.
+
+If the user says yes:
+
+1. Use the `cisco-catalyst-enhanced-netflow-setup` skill to install and validate
+   the optional Cisco Catalyst Enhanced Netflow Add-on.
+2. Confirm whether a NetFlow/IPFIX ingestion path already exists.
+3. If NetFlow ingestion is not already in place, guide the user to the
+   `splunk-stream-setup` workflow so the receiver path can be installed and
+   configured before expecting those dashboards to populate.
+
+## Environment
+
+Setup and validation use the Splunk search-tier REST API and can run from any
+host with network access to the Splunk management port (`8089`). In Splunk
+Cloud, stack-level restarts are handled through ACS instead of the search-tier
+REST endpoints.
+
+| Item | Value |
+|------|-------|
+| Search-tier API | `SPLUNK_SEARCH_API_URI` env var (legacy alias: `SPLUNK_URI`) |
+| Cloud stack | `SPLUNK_CLOUD_STACK` for Cloud installs (`SPLUNK_PLATFORM` is only an override for hybrid runs) |
+| App name | `cisco-catalyst-app` |
+| Credentials | Project-root `credentials` file (falls back to `~/.splunk/credentials`) |
+| Skill scripts | `skills/cisco-enterprise-networking-setup/scripts/` (relative to repo root) |
+
+### Remote Splunk Connection
+
+To run against a remote Splunk instance:
+
+```bash
+export SPLUNK_SEARCH_API_URI="https://splunk-host:8089"
+```
+
+## Prerequisites
+
+The Cisco Catalyst Add-on (`TA_cisco_catalyst`) must be installed and
+configured before this app can display data. A `splunk-app-install` run for app
+ID `7539` auto-installs app ID `7538` when needed. The Cisco Catalyst Enhanced
+Netflow Add-on (`splunk_app_stream_ipfix_cisco_hsl`) is optional for additional
+NetFlow-focused dashboards and should be offered to the user explicitly rather
+than installed by default.
+
+## Setup Workflow
+
+### Step 1: Update Index Scopes
+
+The app uses the `cisco_catalyst_app_index` macro to know which indexes to
+search. This must match the indexes configured in the TA.
+
+```bash
+bash skills/cisco-enterprise-networking-setup/scripts/setup.sh
+```
+
+This updates `cisco_catalyst_app_index` to include all four product indexes:
+`catalyst`, `ise`, `sdwan`, `cybervision`. It also scopes the app's
+`cisco_catalyst_sdwan_index` macro and writes the identical scope to the
+companion TA's `cisco_sdwan_index` eventtype. That eventtype must not retain its
+package-default `()` placeholder because the SD-WAN firewall, ACL, and SGACL
+transition eventtypes depend on it.
+
+Partial runs: `--macros-only`, `--custom-indexes "idx1,idx2,idx3"`.
+
+### Step 2: Enable Saved Searches
+
+The app has 5 saved searches that build lookup tables. The setup script enables
+them by default:
+
+| Saved Search | Schedule | Lookup Built |
+|---|---|---|
+| `cisco_catalyst_location` | Hourly | `cisco_catalyst_ise_location.csv` |
+| `cisco_catalyst_sdwan_netflow` | Daily | `cisco_catalyst_sdwan_application_tag` (KV) |
+| `cisco_catalyst_sdwan_policy` | Daily | `cisco_catalyst_sdwan_policy_mapping` (KV) |
+| `cisco_catalyst_meraki_organization_mapping` | Daily | `meraki_org_id_name_lookup.csv` |
+| `cisco_catalyst_meraki_devices_serial_mapping` | Daily | `cisco_catalyst_meraki_device_serial_mapping.csv` |
+
+### Step 3: Offer Optional Enhanced Netflow Support
+
+Ask the user whether they want the optional NetFlow-focused dashboards. If they
+do, use the `cisco-catalyst-enhanced-netflow-setup` skill to install and
+validate `splunk_app_stream_ipfix_cisco_hsl` (Splunkbase ID `6872`), and make
+sure the NetFlow/IPFIX ingestion path is configured, typically via the
+`splunk-stream-setup` workflow.
+
+### Step 4: Enable Data Model Acceleration (Optional)
+
+```bash
+bash skills/cisco-enterprise-networking-setup/scripts/setup.sh --accelerate
+```
+
+Enables acceleration on the `Cisco_Catalyst_App` data model for faster
+dashboard loading.
+
+If Splunk Cloud later reports `restartRequired=true`, use
+`acs restart current-stack` instead of trying to restart the deployment through
+the search-tier REST API.
+
+### Step 5: Validate
+
+```bash
+bash skills/cisco-enterprise-networking-setup/scripts/validate.sh --completion
+```
+
+Checks: app installation, macros, saved searches, data model, data presence.
+
+## Macros
+
+| Macro | Default | Purpose |
+|---|---|---|
+| `cisco_catalyst_app_index` | `index IN (*)` | Tells shared dashboards and the data model which indexes to search; setup replaces the wildcard with an explicit list |
+| `cisco_catalyst_sdwan_index` | `index IN (*)` | Tells SD-WAN raw dashboards which indexes to search; setup replaces the wildcard with an explicit list |
+| `cisco_catalyst_app_sourcetypes` | Exact `3.2.20` package families, including `cisco:thousandeyes:metric`, `cisco:sgacl:logs`, `cisco:catalyst:center:*`, `cisco:ise:analytics*`, and `tenable:sc*` | Filters to the source types shipped with the app contract |
+| `summariesonly` | `summariesonly=false` | Controls data model acceleration usage |
+
+The setup script updates all three dashboard filter macros. The shared index
+definition is:
+```
+index IN ("catalyst", "ise", "sdwan", "cybervision")
+```
+
+The default SD-WAN-only scope is `index IN ("sdwan")`. When custom indexes are
+provided, setup uses the explicit custom list for both app index macros and the
+TA `cisco_sdwan_index` eventtype so the three scopes cannot silently diverge.
+The managed sourcetype definition mirrors the exact `3.2.20` package contract;
+`cisco:thousandeyes:test` is not part of that contract.
+
+## Dashboards
+
+The app ships all dashboards in the package. No import or manual activation
+step is required — they appear in Splunk Web automatically after installation.
+
+To access them: **Apps → Cisco Enterprise Networking for Splunk Platform**
+
+| Dashboard | Description |
+|---|---|
+| Overview | High-level summary across all products |
+| Network Insights | Network health and topology |
+| Security Insights | ISE and security posture |
+| Events And Incident Viewer | Event timeline and drill-down |
+| Endpoints (Clients) | Client/endpoint details |
+| Users And Applications | User and application activity |
+| Performance | Network performance metrics |
+| Sensors | Sensor and device telemetry |
+
+**Prerequisites for dashboards to show data:**
+
+1. `cisco_catalyst_app_index` macro must be updated (Step 1 in the setup workflow).
+2. At least one of `catalyst`, `ise`, `sdwan`, or `cybervision` indexes must
+   be receiving data from the companion `TA_cisco_catalyst`.
+3. The 5 lookup-building saved searches (Step 2) must have run at least once.
+4. For NetFlow-focused dashboards, the optional Enhanced Netflow Add-on must
+   be installed and Splunk Stream must be configured as a NetFlow receiver.
+
+On **Splunk Cloud**, dashboards are immediately available after ACS installs
+the app. The macro update and saved search enablement happen over search-tier
+REST and require no additional Cloud-specific steps.
+
+Dashboard forms use the `cisco_catalyst_app_index` macro for index selection.
+If data is present but dashboards show no results, verify the macro value
+includes all data-bearing indexes.
+
+## MCP Server Integration
+
+```bash
+bash skills/cisco-enterprise-networking-setup/scripts/load_mcp_tools.sh
+```
+
+## Key Learnings / Known Issues
+
+1. **Macro alignment**: The `cisco_catalyst_app_index` macro MUST include all
+   indexes configured in the TA, or dashboards will show no data. The app
+   `cisco_catalyst_sdwan_index` macro and TA `cisco_sdwan_index` eventtype must
+   use the same explicit SD-WAN index scope.
+2. **Data model acceleration**: Enable for production; keep disabled during
+   initial setup/testing.
+3. **Saved searches**: The lookup-building saved searches should run at least
+   once before dashboards referencing those lookups will populate.
+4. **No inputs here**: This app only visualizes. Base data collection belongs
+   in `TA_cisco_catalyst`, and optional NetFlow parsing belongs in
+   `splunk_app_stream_ipfix_cisco_hsl` when that path is enabled.
+5. **No `configure_account.sh`**: Unlike the TA skills, this app does not
+   collect data and has no add-on accounts to configure. Account and input
+   setup belongs in the companion TA workflow, especially the
+   `cisco-catalyst-ta-setup` skill for `TA_cisco_catalyst`.
+
+## Additional Resources
+
+- [reference.md](reference.md) — Macro definitions, saved searches, dashboards
+- [mcp_tools.json](mcp_tools.json) — MCP tool definitions
+
+## Validation Modes
+
+Run `scripts/validate.sh` for diagnostics. Use `--completion` (alias `--strict`)
+to require safe explicit custom-or-default index scopes, exact package
+sourcetype coverage, TA SD-WAN eventtype alignment, shipped views, required
+saved searches, and data in at least one configured Cisco networking index.

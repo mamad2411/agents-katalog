@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-Postpartum-genushyacinthus29-dotnet-skills-dotnet-code-analysis/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use the free built-in .NET SDK analyzers and analysis levels with gradual Roslyn warning promotion. Use when a .NET repo needs first-party code analysis, `EnableNETAnalyzers`, `AnalysisLevel`, or warn

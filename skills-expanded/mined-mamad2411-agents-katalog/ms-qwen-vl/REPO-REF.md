@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/ms-qwen-vl/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 调用魔搭社区（ModelScope）Qwen3-VL 多模态 API 进行视觉解析。使用 OpenAI SDK 兼容方式调用，支持图片内容描述、OCR 文字提取、视觉问答、对象检测等功能。用户提到\"魔搭\"、\"ModelScope\"、\"Qwen-VL\"、\"多模态视觉\"、\"解析图片\"等关键词时应触发。"

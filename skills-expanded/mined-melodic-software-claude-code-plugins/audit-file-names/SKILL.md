@@ -1,0 +1,198 @@
+---
+description: "Read-only audit of a docs tree's file names against a configured casing rule: proposes a name per offender, classifies every reference to it, refuses case-only collisions, and writes the plan realign-file-names applies. Use when: 'audit file names', 'are our doc filenames consistent', 'plan a docs rename', 'which files break the naming rule', 'find every reference to this doc', 'rename the docs tree', 'lower-kebab the docs folder', 'what would a docs rename touch'. Renames nothing."
+argument-hint: "[audit] [root ...] [--repo <repo> ...]"
+user-invocable: true
+disable-model-invocation: false
+allowed-tools: ["Bash(${CLAUDE_SKILL_DIR}/scripts/inventory.sh:*)", "Bash(${CLAUDE_SKILL_DIR}/scripts/sweep.sh:*)", "Bash(${CLAUDE_SKILL_DIR}/scripts/emit-findings.sh:*)", "Bash(git branch --show-current:*)", "Bash(git rev-parse:*)", "Bash(git check-ignore:*)", "Read", "Write", "Grep"]
+shell: bash
+metadata:
+  workflow-stage: anytime
+  summary: Inventory a doc tree's file names and plan the renames with their references
+---
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+- Working tree status (empty = clean), `git status --porcelain | head -20`
+- Repository root, `git rev-parse --show-toplevel`
+
+## Purpose
+
+A documentation tree drifts one file at a time, and by the time anyone notices,
+the cost of fixing it is not the renames. It is finding every citation of every
+renamed file, deciding which of them may be rewritten, and not corrupting a
+generated record or a released changelog entry on the way through.
+
+This skill does the finding and the deciding, and writes the result down. It
+renames nothing. `/docs-naming:realign-file-names` executes the plan, one
+acceptance at a time.
+
+## Over several repositories
+
+With no target form, the run covers this checkout, as it always has. A target
+form selects several repositories, resolved, counted and listed as
+[`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md)
+"Target forms" and "Resolving repositories" say. What differs here:
+
+- **Audit in the worktree the realign will use.** The plan is checkout-local and
+  keyed by branch, so a plan written in another checkout is one the realign never
+  finds. Per repository, the audit's worktree is the one on the branch
+  `docs-naming/file-names`, found in `git -C <root> worktree list --porcelain`.
+  Reuse it when it exists, so a re-audit merges into the earlier plan and keeps
+  every decision ("Where the artifact goes"). Only when none exists, create one
+  on that branch by that repository's convention: from the local branch when it
+  is left without a worktree, else from `origin/HEAD`. Run "Facts before
+  judgment" there with `--root` set to it, one subagent per repository
+  ("Fan-out" there). A detached worktree would key the plan by a short SHA that
+  the realign's first commit changes. This worktree and branch are the only
+  thing the audit adds to another repository; the contract's read-only rule
+  holds for every tracked file.
+- **One plan per repository.** Each plan lives in the home "Where the artifact
+  goes" names, inside that repository's worktree, never in the invoking
+  checkout. A finding id is unique within its repository only, so the report
+  writes every finding as `owner/name FN-xxxxxxxx`.
+- **One merged report.** Merge as "Merging findings" says, ranking a rename
+  planned in several repositories by its total sites across them. Name each
+  repository's worktree path and plan path, which the realign starts from.
+
+## Read these before presenting anything
+
+| Read | For |
+|---|---|
+| [`context/tiers.md`](context/tiers.md) | the form table to print before any plan, and why a historical tier keeps its links while a released tier is frozen |
+| [`../../context/file-name-findings.md`](../../context/file-name-findings.md) | where the artifact goes, its shape, its stable ids, its status arcs, and the re-audit merge |
+| [`../../reference/config.md`](../../reference/config.md) | every configuration key, its default, and which layer may supply it |
+
+## Facts before judgment
+
+Three scripts produce the facts. Run them in order and build the plan on what
+they emit.
+
+The inventory and the sweep each take `--user-config` with this plugin's
+`file_names` option, `${user_config.file_names}`, on every call, as one
+single-quoted argument (escape any single quote in it). An empty value or the
+literal `${user_config.…}` placeholder means unset.
+
+- **Pointer**: when checking where a saved option value reaches, fetch
+  [plugins manifest reference § Reference a saved value](https://code.claude.com/docs/en/plugins/manifest-reference#reference-a-saved-value)
+  live.
+
+1. **Inventory** the tree:
+
+   ```bash
+   ${CLAUDE_SKILL_DIR}/scripts/inventory.sh --root <repo> --user-config '<option>'
+   ```
+
+   It emits `OFFENDER`, `COLLISION`, `EXEMPT`, and `SCANNED` rows. A `COLLISION`
+   row means the plan would put two paths differing only by case into one tree.
+   **Stop there.** Report the pair and the reason, and propose nothing: on a
+   case-insensitive checkout the second file overwrites the first, so this is a
+   corrupted tree rather than a plan to review.
+   A `SCANNED 0` row, with its stderr warning, means nothing is tracked under
+   the roots. Report that and stop: it is an empty root, not a clean tree.
+   *Done when:* a `SCANNED` row with a nonzero count is present and the
+   `COLLISION` count is zero, or the run reported an empty root and stopped.
+
+2. **Sweep** for references, feeding it the offender pairs:
+
+   ```bash
+   ${CLAUDE_SKILL_DIR}/scripts/sweep.sh --root <repo> --pairs <pairs.tsv> --user-config '<option>'
+   ```
+
+   Each `REF` row carries the citing file, the line, the form, the tier, the
+   action, and an excerpt. The actions are `edit`, `report`, `review`, `skip`,
+   and `regenerate`; `context/tiers.md` owns what each means.
+   *Done when:* a `SITES` row is present and every offender pair appears in at
+   least one `REF` row or is reported as having no site at all.
+
+3. **Compose** the plan into the resolved home:
+
+   ```bash
+   ${CLAUDE_SKILL_DIR}/scripts/emit-findings.sh --root <repo> \
+     --inventory <inv.tsv> --sweep <sweep.tsv> --out <resolved>/file-names.md
+   ```
+
+   A zero-offender run over a non-empty root still runs the sweep with an empty
+   pairs file and the emit, and leaves a `findings: 0` plan.
+   *Done when:* the script reports the path it wrote and a finding count equal
+   to the inventory's offender count.
+
+**Cite the scripts' rows verbatim.** The realign applies the action each site
+carries, so a form or a tier you inferred by reading is a guess that edits the
+wrong shape. If a site does not correspond to a `REF` row, say so rather than
+inventing one.
+
+## Where the artifact goes
+
+Write under the home `../../context/file-name-findings.md` "Where it lives"
+defines. A plan written anywhere else is one the realign never finds, and that
+failure reads exactly like "no audit has been run".
+
+If a plan already exists at the resolved home, the emitter merges into it by
+finding id and carries every decision forward. Do not delete it to get a clean
+run; a declined finding that reappears as pending is a decision the operator
+made being asked again.
+
+## Present the result
+
+1. The form table for every tier the plan touched, from `context/tiers.md`.
+2. One line per finding, most-cited first: the old and new path, the site count,
+   the tier breakdown, and whether a generated file is involved.
+3. Every `review` site, individually, with its line and excerpt. These are the
+   ambiguous bare stems, and no script can settle them.
+4. The artifact's path, and the next step: `/docs-naming:realign-file-names`
+   with the ids to accept.
+
+Say the count of `report` sites plainly. A maintainer who expected a frozen tier
+to change needs to see that it did not.
+
+## Completion criteria
+
+The run is done when the artifact exists at the resolved home, its finding count
+equals the inventory's offender count, the tree is byte-identical to how it
+started (`git status --porcelain` unchanged), and every `review` site has been
+surfaced to the operator rather than folded into a total.
+
+## What this skill does NOT do
+
+- Rename anything, edit any reference, or run any regenerator. It is read-only
+  on every file it inspects.
+- Re-judge a plan it already wrote. A stale plan is re-audited, not patched.
+- Decide whether a `review` site names the file. It escalates them.
+- Bump a version, write a changelog entry, or commit.
+- Sweep a tree the configuration excludes, or a file a tier freezes.
+
+## Next
+
+`/docs-naming:realign-file-names`
+
+## Gotchas
+
+- **A collision refuses the plan, not just one finding.** Two paths differing
+  only by case cannot coexist on macOS or Windows checkouts. The whole run stops
+  so nobody applies half of it.
+- **`SCANNED 0` is an empty root, not a clean tree.** A `roots` entry that
+  matches no tracked file inventories nothing and finds nothing. The emitter
+  exits 3 rather than overwrite an existing plan that holds findings with an
+  empty one; pass `--replace` only when the plan is meant to be discarded.
+- **Existence is asked of the git index, never the filesystem.** On a
+  case-insensitive checkout a filesystem test answers for the wrong spelling,
+  which would refuse every case-only rename on exactly the platforms the rule
+  protects.
+- **A `review` site is not a smaller `edit`.** It is a bare stem that is also an
+  ordinary word. Rewriting one on a text match is how a rename edits a sentence
+  that had nothing to do with the file.
+- **A generated record is never text-edited.** Its sites are marked
+  `regenerate`, because a substitution that looks right leaves a stale derived
+  value no reader would notice.
+- **The plan is checkout-local.** It lives in the memory tier, keyed by branch,
+  and a sibling worktree never sees it. A decision that must outlive the branch
+  goes into the tracked concern file, which the realign offers and never takes.
+- **Run it from the tree you mean.** Every script takes `--root`; inside a second
+  worktree, pass it, or run from that worktree.

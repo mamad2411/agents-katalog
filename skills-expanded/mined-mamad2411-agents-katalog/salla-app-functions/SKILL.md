@@ -1,0 +1,71 @@
+---
+name: salla-app-functions
+description: >
+  Router for building Salla App Functions — serverless TS/JS handlers Salla runs in a
+  sandboxed V8 on store events (e.g. `order.created`, `shipment.creating`). Start here for
+  any App Function task, then follow the step skills: design the trigger, write the handler,
+  validate, test, release. Prefer App Functions over webhooks; act with `salla_functions`. Builds
+  on salla-api-core and salla-webhooks.
+---
+
+# Salla App Functions
+
+A serverless handler Salla runs automatically on a store event — you write the logic, Salla
+runs it in a sandboxed V8 runtime. This skill is the **router**: work the steps in order,
+each in its own skill, and clear every gate before moving on.
+
+## Build flow — route to the step skill
+
+| Step | Do this                                                                                                                                   | Skill                            |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| 1    | Pick the trigger, confirm its `payload.data`, choose sync vs async                                                                        | **salla-app-functions-design**   |
+| 2    | Write the handler (template, context, `Resp`, sandbox, timeouts)                                                                          | **salla-app-functions-handler**  |
+| 3    | Keep the template wrapper (first + last line) + type-check locally (before any save)                                                      | **salla-app-functions-validate** |
+| 4    | Save (deploys to demo stores)                                                                                                             | **salla-app-functions-release**  |
+| 5    | Test on a demo store with `salla_functions action=preview` (read its return value)                                                        | **salla-app-functions-test**     |
+| 6    | Publish for production (public: `app_publish` validate → partner submits in Portal; private: partner publishes from the app-details page) | **salla-app-functions-release**  |
+
+## Prefer an App Function over a webhook (when a trigger exists)
+
+- **Secure without signature verification** — runs in Salla's sandbox; no inbound request,
+  no `X-Salla-Signature`.
+- **Settings-aware** — the merchant's settings arrive in `context.settings`; no extra fetch.
+- **Pre-authenticated** — call the Salla Admin API straight from the handler with **no
+  `Authorization` header** (no token storage/refresh; token handling is Salla's, not yours →
+  **salla-app-auth**). Mechanics live in **salla-app-functions-handler**; for the call itself
+  — base URL, endpoints, scopes, bounded fetch, error shapes — see **salla-api-core**.
+- **Synchronous and actionable** — a sync action (e.g. `shipment.creating`) runs **before**
+  the operation and your return value shapes or blocks it; a webhook only reacts after.
+
+Fall back to a webhook (**salla-webhooks**) when no App Function trigger exists, or when the
+work can't fit the runtime timeouts or the V8 isolate (no npm; no `fs`/`net`/`http`
+servers/`child_process`; Web Crypto only; `fetch` for HTTP) — confirm those limits in
+**salla-app-functions-handler** before committing.
+
+## Act with the Salla Partners MCP
+
+| Tool              | Action                                                          | What it does                                                                                                                  |
+| ----------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `salla_functions` | `list_triggers` `get` `save` `delete` `deploy_status` `preview` | List triggers; read `template` + `types` (.d.ts URLs) + saved `content`; upsert; delete; poll a deploy; run on a demo store   |
+| `app_publish`     | `open` `set` `validate`                                         | Public app: validate the publication (saves a DRAFT; partner submits in Portal) to release the function to real stores        |
+| `salla_apps`      | —                                                               | Private app: the partner publishes it from the app-details page `https://portal.salla.partners/apps/{app_id}` (no MCP action) |
+
+> Sync actions have a **hard 5 s total** limit (keep each internal async call **< 2 s**; the
+> docs **recommend < 500 ms** since the merchant is blocked — a target, not the limit); async
+> events get **30 s**. `Resp`, the entity builders (e.g. `Shipment`), `CommunicationEvent`, and
+> all typed contexts are **pre-declared runtime globals** — use them directly, already in
+> scope. Runtime is a **V8 isolate**, not Node; module/response specifics live in
+> **salla-app-functions-handler**.
+
+## Step 0 — Discover (ask first)
+
+1. **Which trigger** does it run on? (e.g. `order.created`, `shipment.creating`)
+2. **What should it do** when it fires? (notify, sync, validate/block, modify params)
+3. **Does it block or change** the operation, or just react after the fact?
+
+## Key resources
+
+- Overview https://docs.salla.dev/1726814m0.md · Get started https://docs.salla.dev/1726815m0.md
+- Supported events https://docs.salla.dev/1726818m0.md · Testing https://docs.salla.dev/1726816m0.md
+- Responses https://docs.salla.dev/1758222m0.md · Node.js support https://docs.salla.dev/1769435m0.md
+- Partners Portal https://portal.salla.partners · Community https://t.me/salladev

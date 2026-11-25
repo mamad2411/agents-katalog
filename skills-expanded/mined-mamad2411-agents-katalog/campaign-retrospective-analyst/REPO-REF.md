@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/campaign-retrospective-analyst/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Run retrospective analysis for campaigns on Meta (Facebook/Instagram), Google Ads, TikTok Ads, YouTube Ads, Amazon Ads, and DSP/programmatic channels."

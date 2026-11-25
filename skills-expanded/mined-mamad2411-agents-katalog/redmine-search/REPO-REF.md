@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/redmine-search/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Redmine 访问 Skill，仅查询指派给我的工单，提供通过 API Token 认证方式访问 Redmine 系统的功能。

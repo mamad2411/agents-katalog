@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/freelance/coaching-business-plan/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: coaching-business-plan

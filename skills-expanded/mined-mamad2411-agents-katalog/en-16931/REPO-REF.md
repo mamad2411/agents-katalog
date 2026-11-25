@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-scaledockhq-scaledock-skills/en-16931/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: EN 16931

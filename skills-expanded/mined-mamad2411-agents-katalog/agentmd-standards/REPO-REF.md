@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-Aaditya1273-Agent.md-agentmd-standards/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Follow and review against the engineering standards installed from the Agent.md registry. Use whenever writing, changing or reviewing code in a repo that has Agent.md standards installed — a `.agentmd

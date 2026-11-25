@@ -1,0 +1,179 @@
+# Staleness Checker — SKILL.md
+
+**Role**: Step 0 — Evaluate whether existing snapshot data is fresh enough to reuse, or whether new data collection is required.
+**Triggered by**: CLAUDE.md at the start of Workflow 1 (Single Stock Analysis) and Workflow 3 (Watchlist Scan)
+**Reads**: `output/data/{ticker}/latest.json`, staleness rules from this file
+**Writes**: Nothing (read-only evaluation; result is reported inline to orchestrator)
+**References**: `references/staleness-rules.md`
+
+---
+
+## Instructions
+
+### Step 0.1 — Check for Existing Snapshot
+
+Check if `output/data/{ticker}/latest.json` exists. New files are pointer-only documents; legacy full-snapshot files may still appear and must remain readable.
+
+```
+IF file does not exist:
+    → Routing decision: FRESH_COLLECTION (no cached data)
+    → Proceed to Step 1 (query-interpreter)
+```
+
+If file exists, read it and extract:
+- `analysis_date` (YYYY-MM-DD)
+- `expires_at` and `refs.analysis_result` when `kind` is `stock-analysis.latest-snapshot-pointer`
+- `data_mode` (enhanced / standard)
+- `output_mode` (A / B / C / D)
+- `rr_score`
+- `verdict`
+
+If `latest.json` is a pointer, verify that `refs.analysis_result` exists before routing to REUSE or DELTA_FAST. If the pointer is missing, expired, or points to a missing file, route to FRESH_COLLECTION.
+
+### Step 0.2 — Calculate Staleness
+
+Calculate `days_since_analysis = today - analysis_date`. For pointer files, treat `expires_at` as the primary 24-hour reuse boundary; `analysis_date` remains the coarser fallback for older files and user-facing explanations.
+
+**Mode E hard override (OD-F1)**: When the orchestrator has set
+`pipeline_state.mode_override == "E"` (because earnings-window-detector
+returned `window in {preview, review}` at CLAUDE.md Step 0.5, or the
+user passed `--mode E` / `--earnings-mode preview|review`), **skip the
+staleness table entirely and route to FRESH_COLLECTION**. Mode E should
+never reuse a stale snapshot — implied moves, options chains, and
+consensus EPS shift fast in the D-7~D+3 window.
+
+```
+IF pipeline_state.mode_override == "E":
+    → Routing decision: FRESH_COLLECTION
+    → Reason: Mode E (earnings window) per OD-F1
+    → Skip Step 0.2 / 0.3 / 0.4 staleness rules
+    → Proceed to Step 1 (query-interpreter)
+```
+
+Otherwise apply the standard staleness rules:
+
+| Days Since Analysis | Data Mode | Routing Decision |
+|--------------------|-----------|-----------------|
+| ≤ 1 day (same day) | Any | REUSE — skip Steps 1–5, proceed directly to output generation |
+| 2–6 days | Enhanced | DELTA_FAST — re-collect price only (Step 3 minimal), regenerate output |
+| 2–6 days | Standard | DELTA_FAST — run web search Step 4 only (skip full re-research) |
+| 7–29 days | Any | STALE — full re-collection required (Steps 1–9) |
+| ≥ 30 days | Any | VERY_STALE — full re-collection + flag STALE_30D in watchlist |
+
+### Step 0.3 — Earnings Detection (Override Staleness Rules)
+
+Regardless of staleness, check if an earnings event occurred since `analysis_date`:
+
+**Enhanced Mode check**: Call `get_company_news(ticker, limit=5)`. If any news title contains earnings keywords, flag EARNINGS_OVERRIDE.
+
+**Standard Mode check**: Search `"{ticker}" earnings results Q{N} 2026`. If results dated after `analysis_date` contain earnings data, flag EARNINGS_OVERRIDE.
+
+Earnings keywords: `earnings`, `quarterly results`, `Q1`, `Q2`, `Q3`, `Q4`, `revenue beat`, `EPS beat`, `revenue miss`, `실적`, `분기`, `매출`, `영업이익`
+
+```
+IF EARNINGS_OVERRIDE:
+    → Routing decision: FULL_COLLECTION regardless of days_since_analysis
+    → Reason: earnings data fundamentally changes valuation inputs
+```
+
+### Step 0.4 — Delta Analysis Detection (Auto Delta Mode, default ON)
+
+Auto Delta Mode (Phase B) defaults ON. Whenever a previous snapshot exists for
+the ticker the orchestrator must auto-run the delta comparator regardless of
+keyword detection. Keyword detection is retained only as a manual fallback for
+older single-snapshot states (treat it as advisory, not gating).
+
+**Auto trigger rule**:
+
+```
+IF previous snapshot exists for {ticker} (latest pointer or snapshots dir):
+    → Set auto_delta = true (unless orchestrator received --no-delta)
+    → After Step 10 persists the new snapshot, the prior snapshot becomes the
+      "old" side and the new one becomes the "new" side.
+    → Run:
+      python .claude/skills/data-manager/scripts/delta-comparator.py compare \
+          --ticker {ticker} --old-date latest --new-date latest --format html
+    → Capture stdout into pipeline state as `auto_delta_payload.html`.
+      Also capture --format markdown into `auto_delta_payload.markdown` for
+      Mode D / chat-summary surfaces.
+    → Renderers (Mode A/B/C/D) prepend the banner above their first content
+      section. Empty stdout = no banner (graceful skip / single snapshot /
+      --no-delta).
+```
+
+Keyword triggers (manual fallback only):
+
+**English**: "compare", "vs last time", "since last analysis", "what changed", "update", "delta", "difference from before", "how has it changed"
+
+**Korean**: "이전이랑", "지난번이랑", "비교해줘", "달라진 것", "바뀐 것", "업데이트", "뭐가 달라졌어", "전이랑 비교"
+
+When `--no-delta` is passed by the orchestrator (CLAUDE.md Workflow 1 Step 0),
+set `auto_delta = false` and skip the comparator call. The renderers must
+still tolerate a missing banner (no fallback content required).
+
+### Step 0.5 — Session Context Check
+
+Before any file checks, verify session context:
+
+```
+IF ticker was analyzed in the current session:
+    → Use session-cached validated data (skip Steps 3–5)
+    → Only regenerate output if different output_mode requested
+    → Log: "Using session-cached data for {ticker} from {session_time}"
+```
+
+Session context keywords: "same stock", "same company", "just analyzed", 같은 종목", "방금 분석한"
+
+### Step 0.6 — Report Routing Decision
+
+Output a concise routing decision block:
+
+```
+=== Staleness Check: {TICKER} ===
+Snapshot found: {YES/NO}
+Analysis date: {date or N/A}
+Days since: {N or N/A}
+Earnings override: {YES/NO}
+Mode E override: {YES/NO}        # set when CLAUDE.md Step 0.5 detected window
+Earnings window: {preview/review/none/—}
+Delta mode: {YES/NO}
+
+→ Routing: {REUSE / DELTA_FAST / STALE / FRESH_COLLECTION / EARNINGS_OVERRIDE}
+→ Action: {brief description of what will happen next}
+```
+
+When `Mode E override = YES`, the routing block must always read
+`Routing: FRESH_COLLECTION` and the action must mention "Mode E
+(earnings preview/review) — fresh collection per OD-F1". Auto-delta is
+also applicable to Mode E (Section 0.4 still runs after Step 10) so
+that Review reports can show the price/EPS delta against the prior Mode
+C snapshot — but the staleness table itself is bypassed.
+
+---
+
+## Watchlist Scan Mode
+
+When called from Workflow 3 (watchlist scan), apply these rules per ticker:
+
+| Condition | Action |
+|-----------|--------|
+| Pointer `expires_at` still valid, or legacy `latest.json` age < 24 hours | SKIP — reuse existing data |
+| Pointer expired but `analysis_date` < 7 days, or legacy `latest.json` age 24h–7 days | QUICK_UPDATE — price + news only |
+| `latest.json` age > 7 days | FULL_SCAN — abbreviated pipeline (Steps 3+4+simplified 5) |
+| No `latest.json` | FRESH — full pipeline |
+
+For watchlist scan, do NOT run full Steps 6–9 (analysis generation). Only collect data and update alert flags.
+
+---
+
+## Completion Check
+
+- [ ] Confirmed whether `output/data/{ticker}/latest.json` exists
+- [ ] If pointer format, confirmed `refs.analysis_result` exists
+- [ ] **If `mode_override=="E"`: forced FRESH_COLLECTION (OD-F1) and skipped staleness table**
+- [ ] Calculated days_since_analysis if snapshot exists (skipped for Mode E)
+- [ ] Applied staleness rules to determine routing (skipped for Mode E)
+- [ ] Checked for earnings override condition
+- [ ] Checked for delta analysis trigger in user query
+- [ ] Checked session context for recently analyzed tickers
+- [ ] Reported routing decision with clear action statement

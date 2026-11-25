@@ -1,0 +1,142 @@
+---
+name: litellm-api
+description: |-
+  Administer a LiteLLM proxy via its management REST API (keys, teams, users, orgs, models, budgets, spend) — a 447-path control plane where ~63% of paths are undocumented, 91 are hidden from /openapi.json, and the OpenAPI schema documents wrong field names. Centerpiece: four "empty means UNLIMITED" footguns (`models: []`, `allowed_routes: []`, additive access groups, team-member `[]`) where the natural reading is the opposite. Covers the real auth model (no-master-key = fully open, admin-viewer default-allow on GETs, /v1/mcp/* RBAC bypass), budget semantics (can't unset, update≠reset, the team-key-vs-personal-budget rule that was reverted in v1.96.0), presence-sensitive updates that trigger spurious enterprise 403s, config-vs-DB precedence, and lazy-loaded families that 404 until warmed.
+when_to_use: |-
+  Trigger on "litellm api", "litellm management api", "/key/generate", "/team/new", "/user/new", "litellm virtual key", "litellm budget", "max_budget", "budget_duration", "litellm spend", "model access group", "no-default-models", "team_member_permissions", "STORE_MODEL_IN_DB", "litellm openapi", "litellm enterprise 403", "allowed_routes", or any task scripting a LiteLLM proxy (provision keys/teams/users, reconcile models, read usage) rather than clicking the Admin UI. Also on symptoms: "key can access everything", "budget never resets", "update returns 200 but nothing changed", "deleted team's keys still work". NOT for the inference endpoints (chat-completions-api / messages-api / responses-api) or Redis/multi-pod coordination (litellm-valkey).
+---
+
+# LiteLLM proxy management API — operator reference
+
+Target: operators scripting a LiteLLM proxy's control plane — key/team/user/org lifecycle, model management, budgets, spend — instead of clicking the Admin UI. Grounded in source @ `4d543245` (v1.95.0-dev, 2026-07-29) + docs corpus + issue-tracker sweep of 2026-07-30. **Latest stable is v1.103.2 (2026-10-01)** — nine minors past the grounding tag, so re-verify file:line claims against the deployed tag; LiteLLM ships weekly.
+
+Siblings: multi-pod Redis/Valkey coordination is **`litellm-valkey`**; the inference protocols are `chat-completions-api` / `messages-api` / `responses-api`. BerriAI's official `litellm-skills` repo (add-key, add-team, …) is a set of thin curl templates — several of which emit exactly the dangerous values documented here (`"models": []`); treat them as UI sugar, not as a semantics reference.
+
+**Neither the docs nor `/openapi.json` is ground truth.** Measured: 746 route decorators, 624 unique paths, 447 non-inference; **225 of 359 management paths appear nowhere in the docs**; **91 endpoints set `include_in_schema=False`** (all of `/config/*`, `/global/spend/*`, `/invitation/*`, `/sso/*`, most `/customer/*` …); the OpenAPI schema for `budget_limits` documents field names the API rejects (#32695). The only complete live inventory is **`GET /routes`** — which is unauthenticated (it's in `public_routes`, so its auth dependency short-circuits).
+
+## Security floor — run **≥ v1.100.4** (1.101.3 / 1.102.2 / 1.103.1 on those lines), and know why before auditing auth
+
+This skill's subject *is* the auth model, so the version matters before any of it
+is worth reasoning about: **below the floor the proxy is inside at least one
+published advisory; three bypass authentication outright and one turns any
+`internal_user` into proxy admin.** Auditing
+`allowed_routes` on a build where auth can be skipped entirely is wasted work.
+
+| CVE | Sev | Affected | Floor | What it defeats |
+|-----|-----|----------|-------|-----------------|
+| CVE-2026-35030 | **critical** | `< 1.83.0` | 1.83.0 | Auth bypass — OIDC userinfo **cache-key collision** |
+| CVE-2026-42208 | **critical** | `>= 1.81.16, < 1.83.7` | 1.83.7 | **SQL injection in proxy API-key verification** |
+| CVE-2026-49468 | **critical** | `< 1.84.0` | 1.84.0 | Auth bypass via **`Host:` header injection** |
+| (no CVE id) | high | `< 1.83.0` | 1.83.0 | Password-hash exposure → **pass-the-hash** bypass |
+| CVE-2026-59822 | high | `< 1.84.0` | 1.84.0 | **MCP auth bypass** via OAuth2 passthrough fallback |
+| CVE-2026-42271 | high | `>= 1.74.2, < 1.83.7` | 1.83.7 | Authenticated **command execution** via MCP stdio test endpoints |
+| CVE-2026-84377 | medium | `< 1.96.2` except the patched per-line releases | **1.96.2**; per line 1.88.6 / 1.89.7 / 1.90.7 / 1.91.5 / 1.92.2 / 1.93.2 / 1.94.3 / 1.95.1 | Authenticated SSRF + **provider-credential exfiltration** via request-body routing params |
+| CVE-2026-59823 | medium | `<= 1.83.8` | 1.83.9 | SSRF via the `user_config` request parameter |
+| GHSA-7hp6-4w63-5g45 | **critical** | `>= 1.91.0, < 1.100.4`; 1.101.0–1.101.2; 1.102.0–1.102.1; 1.103.0 | **1.100.4** / 1.101.3 / 1.102.2 / 1.103.1 | `internal_user` → **proxy admin** + command execution: one key both seals secrets and mints session tokens (1.87–1.90 only with `EXPERIMENTAL_UI_LOGIN=true`) |
+| GHSA-g5ff-637f-6q2m | high | `< 1.95.0` | 1.95.0 | `internal_user_viewer` arbitrary local file read via `vertex_ai_credentials` |
+| GHSA-hhww-mrg2-969h | medium | `>= 1.65.5, < 1.85.0` | 1.85.0 | Reflected XSS in `/sso/debug/callback` |
+
+**All ranges are bounded, so each upper bound is the floor directly.** Two are
+fixed per release line — the salt-key escalation (GHSA-7hp6) and the SSRF
+(CVE-2026-84377; 1.94.0 is still vulnerable): take the floor on the line you
+run, never "any newer minor".
+
+Two of these compound documented behaviour rather than sitting beside it. The
+**MCP auth bypass** lands on the same surface as the `/v1/mcp/*` RBAC bypass
+below — one defeats authentication, the other authorisation, and a proxy under
+both has no MCP access control at all. And **CVE-2026-84377 exfiltrates provider
+credentials**, so remediation on an exposed build is rotating the upstream
+provider keys, not only upgrading.
+
+Check the running version first — `GET /health/readiness` returns
+`litellm_version` and needs only a valid key:
+
+```bash
+curl -s -H "Authorization: Bearer $K" $B/health/readiness | jq -r .litellm_version
+```
+
+## Recon-first protocol (before scripting anything)
+
+```bash
+B=https://proxy.example.com; K=sk-...
+curl -s $B/routes | jq '.routes | length'            # full inventory, no auth needed
+curl -s -H "Authorization: Bearer $K" $B/key/info | jq '.info | {key_alias, user_id, team_id, models}'  # own key (omitted ?key= = self); response is {"key", "info"}
+curl -s -H "Authorization: Bearer $K" $B/health/readiness | jq '{status, litellm_version, db}'
+```
+
+Then remember three structural facts about the surface:
+
+1. **Lazy loading**: 33 feature families (`guardrails`, `policies`, `vector_store*`, `mcp_management`, `scim`, `tag`, `access_groups`, …) register routes on first matching request. Import failure = **permanent 404 until restart** (logged as a warning only). `POST /lazy/warm/{name}` force-loads (undocumented, hidden from schema).
+2. **Enterprise gating is inconsistent**: enterprise-only routers that aren't installed **404** (not 402): `/audit`, `/project/*`, `/user/available_users`, `/email/event_settings*`. Premium-gated *features* inside OSS endpoints raise the "LiteLLM Enterprise" error — see the 403 trap below. `DISABLE_ADMIN_ENDPOINTS` blocks only 51 of ~315 admin paths (`/organization/*`, `/customer/*`, `/budget/*`, `/config/*`, `/guardrails/*` etc. all stay reachable) and returns **500**, not 403.
+3. **No master key set = the entire management API is open**: any request is treated as `INTERNAL_USER` and `common_checks` is skipped entirely (`user_api_key_auth.py:1406-1417`, `:2160-2165`). No doc page states this.
+
+## The dangerous-defaults table (memorize)
+
+| Field | Empty/omitted means | The safe deny value |
+|---|---|---|
+| `models` on key/team/user | **ALL models** (`auth_checks.py:2948-2951`; default is `[]`) | `["no-default-models"]` — hard deny (but see its sharp edges in `references/access-model.md`) |
+| `allowed_routes` on a key | **ALL routes** — `None`, non-list, and `[]` all pass (`route_checks.py:99-104`); no deny-all exists | scope to named route groups (any `LiteLLMRoutes` enum name is accepted, e.g. `["management_routes"]`) — and it's **prefix-matched**: `"/key"` grants `/key/delete` |
+| `access_group_ids` + empty `models` | access groups are **additive grants, not allow-lists** → key can call **everything** (open #34296) | set `models: ["no-default-models"]` alongside the groups |
+| `team_member_permissions: []` | baseline permissions still union in (`/key/info`, `/key/health`) — `[]` ≠ deny | there is no full-deny; baseline is the floor |
+| `mcp_servers` empty | all servers | `["no-mcp-servers"]` (documented, `docs/mcp_control.md:100`) |
+
+Also: `litellm.default_key_generate_params` silently replaces `None`/`[]`/`{}` request values on `/key/generate` — on a proxy with defaults configured, `"models": []` yields the default list, not all-models. Same request, different proxy, different meaning.
+
+## Budget semantics — the minefield
+
+Full detail in `references/budgets-spend.md`. The load-bearing rules:
+
+- **Budgets can't be cleanly unset**: `budget_limits: []` is silently ignored (200, no-op), `null` → 400, omission ignored (#28021 closed unfixed; `null`-clear family #27734). `max_budget`+`budget_duration` and `budget_limits` (concurrent windows) are two separate mechanisms.
+- **Adding `budget_duration` to an existing entity via update does NOT reset carried spend** — the entity 429s instantly on its "fresh" window (open #34492). Pre-zero spend explicitly (`/key/{key}/reset_spend`, enterprise-gated regenerate not required) or create anew.
+- **Team-key budgets: the ~v1.94 behaviour was REVERTED in v1.96.0. Check your version before planning budgets.**
+  - **v1.94–v1.95:** team-key spend also counted against each member's personal budget (#32005), and the opt-out `skip_user_budget_on_team_key` was broken (#35076).
+  - **v1.96.0+ (PR #35271, merged 2026-07-30, `revert(proxy)!:`):** team keys are governed by **team budgets only**. The opt-out flag was **deleted outright**, not deprecated — config referencing it is dead.
+  - **v1.97.0+ (PR #36102, merged 2026-08-07):** a deliberate opt-*in*, `general_settings.apply_user_budget_to_team_keys`, **default off**, restores the old coupling if you actually wanted it.
+  - Practical effect: on ≥1.96.0, modelling personal budgets as "personal + team spend" **over-provisions**. That advice was correct for one minor and is now wrong.
+- **Boundary inconsistency**: team check uses `>`, key/org use `>=` (`_team_max_budget_check`, #28020 closed unfixed) — budgets admit at exact limit for some entity types (#33321).
+- **Resets historically skip entity types**: org budgets never reset (#25495, stale-closed unfixed), tag budgets (#27481 closed unfixed), auto-created end-users (#25386 open; #24675 closed unfixed). `soft_budget` only alerts, never blocks; on `/team/new` it must be strictly < `max_budget` or 400.
+- **Never send `max_budget_in_team: null` on `/team/member_update`** — it leaves a null budget row that 401s every subsequent request from the whole team's members (#29066/#30437 closed unfixed). Member-budget edits are clone-on-write from the team default; per-member budget rows auto-disconnect when no meaningful limit remains.
+- **Spend numbers are eventually consistent in both directions**: enforcement can 429 on stale-high spend while `/key/info` shows under-budget (#27735), or admit despite over-budget (#26672). Spend-log writes are silently lost on shutdown/GC races (#34805 open, #31059 closed unfixed); DB-write-failure and cancelled-flush loss are fixed in v1.101.0 / v1.98.0 (#33873/#34820). Rate limits and budgets across scopes are **AND-composition** — every applicable scope (key, team, member, user, org, customer, tag, model-within-key) enforces independently; effective limit = the minimum; a 429/BudgetExceeded doesn't say which scope tripped.
+
+## Update calls: minimal-diff PATCH bodies only
+
+The single most recurrent bug class (≥8 versions of duplicates): update endpoints are **presence-sensitive, not diff-sensitive**. Round-tripping a full object — as the Admin UI does — breaks:
+
+- Including enterprise-only fields (`guardrails`, `policies`, `tags`, …) **even as empty arrays** triggers "This feature is only available for LiteLLM Enterprise users" 403s (#15230 open since 2025-10 with 38 comments; closed dupes #11552 #14934 #20304 #20476 #20534 #21037 #21570 #22201 #30285). Workaround: **omit every field not being deliberately changed**.
+- Non-admin `/key/update` 403s if the body merely *includes* `allowed_routes` or `permissions` — presence-checked, not change-checked (v1.92.0 regression, open #33277; dashboard's `budget_limits: []` variant #33246).
+- `key_type: "management"` silently **overwrites** any caller-supplied `allowed_routes` (`key_management_endpoints.py:470-485`).
+- Unknown fields are **silently dropped** (`extra="ignore"`) on every management model except `PATCH /v2/organization/{id}` (`extra="forbid"` → 422) — a typo'd field name is a 200 that did nothing. Verify with a follow-up GET, not the status code.
+- Verb/semantics are inconsistent per family (POST-merge vs RFC-7386 PATCH where `null` deletes vs raw-json PATCH; `page`+`size` vs `page`+`page_size` vs unpaginated) — per-family cheatsheet in `references/endpoint-map.md`.
+
+## Config-vs-DB duality (`STORE_MODEL_IN_DB`)
+
+With it on, DB rows deep-merge **over** YAML for `general_settings`/`router_settings`/`litellm_settings` (DB wins; DB `None`/`[]` treated as no-value) — editing YAML and restarting won't change a UI-written key. `POST /model/new` can return 200 with `db_model: false` meaning **the write was skipped** (#30771 closed unfixed); a stale DB row `store_model_in_db: false` overrides the env var (open #31968); config-YAML models can't be edited via API at all ("Cannot edit config-based model"); with the flag off, model-management endpoints return **500** (not 400). There is no export of UI/DB state back to declarative config (#28168). `GET /config/yaml` is a **mock** returning `{"hello": "world"}` — and it's a public route. Details: `references/config-db.md`.
+
+## Destructive ops don't propagate
+
+`/team/delete` leaves the team's virtual keys **auth-valid in cache** until TTL (open #34217); customer mutations don't invalidate Redis end-user counters (#31838/#31839). After any destructive op, verify with a live auth attempt, not the 200. `/team/member_add` is a read-modify-write race — serialize concurrent membership calls (open #25951).
+
+## Task → reference routing
+
+| Task | Read |
+|---|---|
+| Find an endpoint, verb/pagination/identifier quirks, hidden + lazy families | `references/endpoint-map.md` |
+| Roles, route groups, who-can-what, no-master-key mode, enterprise/OSS gating | `references/auth-model.md` |
+| Key/model access semantics: sentinels, access groups, wildcards, `/v1/models` lies | `references/access-model.md` |
+| Budgets, spend tracking, rate-limit scope composition | `references/budgets-spend.md` |
+| STORE_MODEL_IN_DB, config precedence, `/config/*` surface | `references/config-db.md` |
+| "Is this a known bug on my version?" | `references/known-issues.md` |
+| Verify a claim / freshen | `references/sources.md` |
+
+### Scripts
+
+- **`${CLAUDE_SKILL_DIR}/scripts/litellm-key-audit.sh <base-url> <admin-key>`** — lists keys whose effective model access is "everything" (empty `models` without team inheritance, or access-groups-with-empty-models — the pattern #34296 makes dangerous). Fields verified against `LiteLLM_VerificationToken` in schema.prisma; execution-tested against a mock `/key/list`.
+
+## Gotchas that cost hours
+
+- `/v1/models` **is not an access-policy oracle**: it does not reliably resolve `access_group_ids` (#31438 open; the #31966 case fixed in v1.97.0), ignores user-level restrictions (#26420), and can show the literal string `no-default-models` as a model. Don't verify access policy by listing models; verify with a live completion attempt.
+- Key identifiers differ per endpoint: `/key/info?key=` takes plaintext or hash (omitted = the caller's own key); `/key/delete` takes `keys` or `key_aliases` (never both); regenerate/reset_spend take the key **in the path**; `/key/list` filter `key_hash=` is hash-only, and its `size` caps at 100.
+- `/user/new` **auto-creates and returns a live key** unless `auto_create_key: false`; a keyless request with a `models`-bearing user record makes later empty-`models` keys inherit the user's list.
+- The three master-key-only routes (`/global/spend/reset`, 2 memory-usage routes) reject even proxy-admin virtual keys with a confusing error.
+- `metadata.service_account_id` is immutable once set and requires `team_id`. `allowed_routes` and `allowed_passthrough_routes` are mutually exclusive (the former wins silently).
+- `/spend/logs` is deprecated in favor of `/spend/logs/v2` — but it's the one the docs still show. `spend_logs_metadata` on an **organization** is silently ignored (only key/team merge, #33663). `store_prompts_in_spend_logs: true` can still persist `messages` as `{}` (#34747) while `false` still stores full embedding vectors (#24928). When docs and behavior disagree, behavior wins — test against the live proxy (tracker-health caveats: `references/known-issues.md`).

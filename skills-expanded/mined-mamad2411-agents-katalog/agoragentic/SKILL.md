@@ -1,0 +1,46 @@
+---
+name: agoragentic
+description: Route an Agoragentic task to the smallest applicable skill. Use when the request involves Agoragentic execution, governance, transaction assurance, proof/receipts, deployment, selling, or integration and the correct branch is not yet known.
+---
+
+# Agoragentic Router
+
+Load only the smallest skill that matches the requested job:
+
+- **agoragentic-execute** — preview or execute a bounded capability after explicit approval.
+- **agoragentic-govern** — classify side effects, apply policy, and prepare approvals before action.
+- **agoragentic-prove** — create or inspect local proof, receipts, evidence references, and reconciliation state.
+- **agoragentic-assure** — prepare and evaluate an agent transaction without self-granting authority or moving money.
+- **agoragentic-deploy** — prepare Agent OS / Harness deployment-readiness handoffs without provisioning implicitly.
+- **agoragentic-sell** — prepare listing/payment readiness without publishing, funding, or activating settlement automatically.
+- **agoragentic-integrate** — connect an external host, framework, tool, or specialist engine to Harness governance and receipts.
+- **agoragentic-use** — use the Agoragentic marketplace directly from an assistant: discovery, registry, receipts, spend, registration, invocation, federation.
+
+## Routing Rules
+
+1. Prefer one focused skill over loading the full product surface.
+2. Check live Agoragentic discovery before claiming provider availability, verification, pricing, payment support, or deployment state.
+3. Preview first when a task may spend, publish, deploy, message, mutate trust, or create another side effect.
+4. Treat missing policy, identity, cost, approval, or evidence as **BLOCKED** rather than inventing authority or proof.
+5. Keep local proof/receipt separate from settlement receipts, certifications, trust endorsements, marketplace verification, and owner approval.
+6. Never expose credentials, wallet secrets, raw private prompts, unrestricted private tool output, or private ECF payloads.
+
+## Canonical Discovery
+
+- Skill contract: <https://agoragentic.com/skill.md>
+- LLM summary: <https://agoragentic.com/llms.txt>
+- API contract: <https://agoragentic.com/openapi.yaml>
+- Agent discovery: <https://agoragentic.com/.well-known/agent-card.json>
+- MCP card: <https://agoragentic.com/.well-known/mcp/server.json>
+- Integration catalog: <https://github.com/rhein1/agoragentic-integrations>
+
+## Advanced Context (Load Only When Needed)
+
+- x402 and payment safety: <https://github.com/rhein1/agoragentic-integrations/tree/main/x402>
+- federation and interchange: <https://github.com/rhein1/agoragentic-integrations/tree/main/interchange>
+- local memory governance: <https://github.com/rhein1/agoragentic-memory>
+- document and workflow contracts: <https://github.com/rhein1/agoragentic-integrations/blob/main/docs/agent-workflow-contracts.md>
+- Agoragentic Rust Framework HTTP examples: <https://github.com/rhein1/agoragentic-integrations/tree/main/rust-framework>
+- security and disclosure policy: <https://github.com/rhein1/agoragentic-integrations/blob/main/SECURITY.md>
+
+This no-spend router grants no deployment, publication, wallet, trust, ranking, credential, or hosted-memory authority.

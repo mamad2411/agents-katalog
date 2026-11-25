@@ -1,0 +1,161 @@
+---
+name: archive-milestone
+description: Archive completed roadmap work packages or iteration/phase/version/period snapshots while preserving milestone event evidence and unfinished work.
+version: 1.9.1
+license: MIT
+---
+
+# Archive Roadmap History
+
+## Purpose and boundaries
+
+Produce a lean, source-backed snapshot and fold historical roadmap detail. The
+historical invocation name remains `archive-milestone`. Under the
+[Roadmap Spec](../../specs/roadmap-modeling.md), a milestone is an event, a phase is
+a work span and a version groups delivery scope. Archiving history does not change
+those meanings or establish completion.
+
+Use the general snapshot route for a phase, version, year/period or a milestone's
+associated work. Use the legacy route only for an existing
+`milestones/{slug}/tasks.md` work package. Do not invent or migrate directories.
+Both routes load [roadmap-quality](../../rules/roadmap-quality.md) and project norms.
+Preserve event identity, criterion, state, timing and evidence. An approval/release
+point is not a task group to delete; task completion is not acceptance or release.
+
+## Inputs
+
+- Named phase, version, period or legacy work-package slug.
+- Existing source records, closure evidence, project archive location and policy.
+- `apply`, default `false`: preview without writes. Respect explicit existing user
+  authorization to apply; do not ask for the same authorization again.
+
+## General snapshot route
+
+1. Resolve target, selected roadmap views and project archive policy. Report an
+   undefined eligibility policy rather than inventing numeric thresholds. An
+   explicit request to archive a named period can establish selection/eligibility,
+   but cannot establish completion of unfinished work.
+2. Read authoritative scope, acceptance and release evidence. Preserve separate
+   approval and execution states. A reached, missed or cancelled event needs its
+   evidence; do not infer occurrence from dates or completed tasks.
+3. Draft a dated snapshot: scope, planned versus actual timing, outcomes (at most
+   five key deliverables), linked evidence, decisions/ADRs, retained events and
+   unresolved work with continuing destinations. Freeze snapshot facts; ongoing
+   records remain authoritative. Do not mark unfinished year-end work completed.
+4. Preview exact file changes, roadmap folding, incoming links and carryover.
+   With `apply=false`, change no files. With authorized `apply=true`, create the
+   snapshot and update active-view references while preserving source evidence.
+   No directory removal occurs on this route.
+5. Verify snapshot/source agreement, incoming/outgoing links and visibility of all
+   unfinished work. Report changes and unverified evidence.
+
+## Legacy work-package route
+
+This compatibility route preserves the established maturity and cleanup behavior;
+its `milestones/` name does not define the domain model.
+
+1. Read `milestones/{slug}/tasks.md`. Every task must be done (the project's
+   `status=done` or completed-checkmark convention). In addition, at least one
+   maturity condition must hold:
+   - At least 60 days since the source `completed_at` date.
+   - The current in-progress **legacy work-package** numeric index is at least
+     the target slug's index plus two.
+   If neither holds, report the specific reason and stop without changes. These
+   thresholds do not apply to independent events or the general snapshot route.
+2. Check source closure criteria and acceptance/release evidence before folding
+   anything as completed. All tasks done is only an archive prerequisite. If closure
+   evidence is missing, leave the completion claim unresolved and report the gap.
+3. Produce `milestones/_archive/{slug}-summary.md` containing completion date,
+   at most five deliverables, evidence, decisions/ADRs, event history and gaps with
+   continuing destinations. Retain key source facts needed after task cleanup.
+4. Find every incoming task-path reference and the historical roadmap section.
+   Preview the summary, a folded reference of at most three lines, each reference
+   update and exact directory cleanup. `apply=false` changes nothing.
+5. Before authorized `apply=true`, require a clean Git worktree under the legacy
+   contract. Do not commit unrelated work to satisfy this check. Preserve required
+   evidence outside the directory before cleanup; an incomplete summary or dangling
+   reference blocks removal. Update references before removing the stale directory.
+6. Verify the summary exists, roadmap folding agrees, old task-path references
+   are gone, the selected stale directory is removed, and event evidence plus
+   unfinished-item destinations still resolve.
+
+## Anti-patterns
+
+- Treating a milestone event as a phase or a release group.
+- Applying legacy maturity thresholds or directory deletion to every event.
+- Inferring production release or approval from completed tasks or a target date.
+- Removing source evidence with stale task files.
+- Dropping deferred work or retaining a false completion claim in an archive.
+- Writing files during preview or requiring duplicate authorization.
+
+## Self-Check
+
+- [ ] Target and route match the actual project structure; required resources loaded.
+- [ ] General eligibility or legacy maturity/task checks pass as applicable.
+- [ ] Completion and event states agree with source evidence; unknowns remain explicit.
+- [ ] Summary retains scope, timing, deliverables, evidence, ADRs, event history and gaps.
+- [ ] Every unfinished item has a visible continuing destination.
+- [ ] Preview/apply scope and the legacy clean-worktree requirement are respected.
+- [ ] Applied changes preserve links/evidence and satisfy the selected route's cleanup checks.
+
+## Examples
+
+- `/archive-milestone m3`: preview an existing legacy work package. If all tasks
+  are done and it completed 60 days ago, maturity passes even if only m4 is active.
+- A legacy m5 completed 14 days ago with m5 active fails maturity; retry after
+  60 days or when m7 is active. Do not create a snapshot or change the roadmap.
+- Archive V1 after search moves to V2: retain V1's actual scope and continuing
+  assignments, including its acceptance/release events. See the
+  [filled version archive](../define-roadmap/references/service-desk/version-archive.md).
+
+## Revision history maintenance
+
+Both archive routes preserve revision IDs, dates, reasons, impacts and linked
+source evidence under the [revision contract](../../specs/roadmap-modeling.md#54-revision-records).
+Include the relevant history or a resolving retained-history link in the snapshot.
+Update incoming/outgoing history links before legacy directory cleanup. A broken
+history destination blocks cleanup. If archival changes active scope or commitments,
+record that planning decision once; moving historical files alone need not create
+another planning revision. Never silently prune older decisions or backfill unknowns.
+
+Self-check: material changes are traceable, retained links resolve, and repeated execution adds no duplicate revision.
+
+## Iteration snapshots and document navigation
+
+An iteration uses the general period-snapshot route, never the legacy maturity
+thresholds. A finished timebox may contain unfinished requirements: retain goals,
+source-backed results or unknowns, actual observations and explicit carry-over
+links without claiming completion or release. Keep the active main roadmap useful;
+refresh main/detail/back links and preserve full revision evidence before folding
+history. Archiving a generated view never deletes its source board or decisions.
+
+Self-check: iteration closure is separate from requirement/version closure; carry-over,
+source evidence and main/detail navigation survive archival.
+
+## Preserve scenario evidence
+
+Retain the chosen combination, rationale and source context in snapshots or a
+resolving decision link. Reuse active views/layout/destination when folding history;
+archival does not select a new recipe or require a new intake interview. Preserve
+flow policy/measurement evidence when archiving a flow period; do not infer completed
+work from the calendar or impose legacy milestone maturity on a flow period.
+
+Self-check: selection evidence, continuing work and navigation survive archival.
+
+## Deliverable language
+
+Before writing roadmap-chain deliverables, apply the [language contract](../../specs/roadmap-modeling.md#57-deliverable-language-schema-15).
+Read the user instruction, consuming-project policy and existing artifact first;
+retain a settled choice across handoffs. For a new artifact infer only from consistent
+reader/document evidence; ask only unresolved gaps or winning-level conflicts.
+Conversation language and English templates alone do not select artifact language.
+Record the choice and source in existing norms/planning decisions; no new mandatory
+configuration. Localize all new prose and display labels consistently while preserving
+IDs, machine fields, canonical enums, source links and historical originals.
+
+Keep archived originals in their historical language. Apply the retained language
+to newly written archive summaries, disposition reports and navigation; a translation
+is an aligned summary, never a replacement for original evidence.
+
+Self-check: language evidence and retained choice are explicit; all new display prose
+is consistent, machine contracts are unchanged, and unavailable checks are reported.

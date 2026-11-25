@@ -1,0 +1,97 @@
+---
+name: fetch-sitemap
+description: Extract URLs from an XML sitemap with optional regex filtering
+allowed-tools: Bash(curl *), Write
+argument-hint: <url> [pattern]
+disable-model-invocation: true
+---
+
+# Fetch Sitemap URLs
+
+Extract URLs from an XML sitemap with optional regex filtering.
+
+## Arguments
+
+- `$0`: URL (required, must start with `http://` or `https://`)
+  - If the URL ends with `.xml`, use it directly as the sitemap URL (backward compatible)
+  - Otherwise, run the auto-discovery logic below
+- `$1`: an extended regex pattern for filtering (optional)
+
+If `$0` is empty, display the usage below and stop:
+
+```
+Usage: /fetch-sitemap <url> [pattern]
+
+Examples:
+  /fetch-sitemap https://kotlinlang.org/docs
+  /fetch-sitemap https://example.com/sitemap.xml
+  /fetch-sitemap https://example.com docs
+  /fetch-sitemap https://example.com/sitemap.xml 'skills|hooks'
+```
+
+If `$0` does not start with `http://` or `https://`, inform the user that a valid URL is required and stop.
+
+## Sitemap Auto-Discovery
+
+When the URL does **not** end with `.xml`, automatically discover the sitemap by probing the following locations **one at a time, stopping as soon as one produces output** (do NOT run probes in parallel):
+
+**Probes 1–2** — fetch and extract in a single curl:
+
+1. `{url}/sitemap.xml` — path-specific (e.g., `https://kotlinlang.org/docs/sitemap.xml`)
+2. `{origin}/sitemap.xml` — site root (e.g., `https://kotlinlang.org/sitemap.xml`), where `{origin}` is the scheme + host of the URL
+
+```bash
+curl -sfL --compressed --connect-timeout 5 --max-time 10 <probe-url> | grep -oE '<loc>[^<]+</loc>' | sed 's/<loc>//;s/<\/loc>//'
+```
+
+If the output is non-empty, the sitemap is found **and the URLs are already extracted** — skip the Extraction section entirely and go straight to Output. If empty, try the next probe.
+
+**Probe 3** — robots.txt (different format, two-step):
+
+3. `{origin}/robots.txt` — fetch and parse for `Sitemap:` lines, use the first match
+
+```bash
+curl -sfL --compressed --connect-timeout 5 --max-time 10 <origin>/robots.txt
+```
+
+If a `Sitemap:` line is found, use that URL and proceed to the Extraction section.
+
+If none of the probes succeed, report an error to the user and stop:
+
+```
+Could not auto-discover a sitemap for <url>. Try providing the direct sitemap XML URL instead.
+```
+
+When a sitemap is discovered (not passed directly), print which URL was found before proceeding:
+
+```
+Sitemap found: <discovered-url>
+```
+
+## Extraction
+
+**If URLs were already extracted during auto-discovery, skip this entire section.** If a filter pattern (`$1`) is provided, apply it to the already-extracted URLs in memory — do not re-fetch.
+
+Run the following bash command to extract URLs from the sitemap:
+
+```bash
+curl -sfL --compressed --connect-timeout 10 --max-time 30 <sitemap-url> | grep -oE '<loc>[^<]+</loc>' | sed 's/<loc>//;s/<\/loc>//'
+```
+
+If a pattern is provided, pipe the result through `grep -E '<pattern>'` to filter:
+
+```bash
+curl -sfL --compressed --connect-timeout 10 --max-time 30 <sitemap-url> | grep -oE '<loc>[^<]+</loc>' | sed 's/<loc>//;s/<\/loc>//' | grep -E '<pattern>'
+```
+
+If the curl command fails (non-zero exit code), report the error clearly to the user (e.g., "Failed to fetch sitemap: connection timed out" or "Failed to fetch sitemap: HTTP 404").
+
+## Output
+
+1. Count the extracted URLs to determine the total count
+   - Report: "Found 47 URLs" or "Found 12 URLs matching pattern `en`"
+2. Display the URL list in a fenced code block. If there are more than 100 URLs, show only the first 50 and note the total count
+3. If no URLs matched, inform the user that no results were found
+4. If curl failed, report the error clearly (do not silently show "no results")
+
+**Never re-fetch:** All URLs have already been fetched. If the user later asks to save the results to a file, use the Write tool with the already-displayed output. Never run curl again for the same sitemap.

@@ -1,0 +1,176 @@
+---
+name: flow-next
+description: Manage .flow/ tasks and specs. Use for show or list tasks, task status, what is ready, show fn-N. NOT for planning or executing (use the plan and work skills).
+---
+
+# Flow-Next Task Management
+
+Quick task operations in `.flow/`. For planning features use `/flow-next:plan`, for executing use `/flow-next:work`.
+
+## Preamble
+
+**CRITICAL: flowctl is BUNDLED — NOT installed globally.** `which flowctl` will fail (expected). Define once; subsequent blocks use `$FLOWCTL`:
+
+```bash
+FLOWCTL="${CODEX_HOME:-$HOME/.codex}/scripts/flowctl"
+[ -x "$FLOWCTL" ] || FLOWCTL="<plugin-root>/scripts/flowctl"   # <plugin-root> = the directory two levels above this skill's SKILL.md file (the harness gave you that file's absolute path when the skill loaded); substitute it literally
+[ -x "$FLOWCTL" ] || FLOWCTL=".flow/bin/flowctl"
+```
+
+**Discover all commands/options:**
+```bash
+$FLOWCTL --help
+$FLOWCTL <command> --help   # e.g., $FLOWCTL task --help
+```
+
+## Quick Reference
+
+```bash
+# Check if .flow exists
+$FLOWCTL detect --json
+
+# Initialize (if needed)
+$FLOWCTL init --json
+
+# List everything (specs + tasks grouped)
+$FLOWCTL list --json
+
+# List all specs
+$FLOWCTL specs --json
+
+# List all tasks (or filter by spec/status)
+$FLOWCTL tasks --json
+$FLOWCTL tasks --spec fn-1-add-oauth --json
+$FLOWCTL tasks --status todo --json
+
+# View spec with all tasks
+$FLOWCTL show fn-1-add-oauth --json
+$FLOWCTL cat fn-1-add-oauth              # Spec markdown
+
+# View single task
+$FLOWCTL show fn-1-add-oauth.2 --json
+$FLOWCTL cat fn-1-add-oauth.2            # Task spec
+
+# What's ready to work on?
+$FLOWCTL ready --spec fn-1-add-oauth --json
+
+# Create task under existing spec
+$FLOWCTL task create --spec fn-1-add-oauth --title "Fix bug X" --json
+
+# Set task description and acceptance (combined, fewer writes; unique per-task temp paths)
+$FLOWCTL task set-spec fn-1-add-oauth.2 --description "${TMPDIR:-/tmp}/flow-desc-fn-1-add-oauth.2.md" --acceptance "${TMPDIR:-/tmp}/flow-accept-fn-1-add-oauth.2.md" --json
+
+# Or use stdin with heredoc (no temp file):
+$FLOWCTL task set-description fn-1-add-oauth.2 --file - --json <<'EOF'
+Description here
+EOF
+
+# Start working on task
+$FLOWCTL start fn-1-add-oauth.2 --json
+
+# Mark task done (unique per-task temp paths)
+echo "What was done" > "${TMPDIR:-/tmp}/flow-summary-fn-1-add-oauth.2.md"
+echo '{"commits":["abc123"],"tests":["npm test"],"prs":[]}' > "${TMPDIR:-/tmp}/flow-evidence-fn-1-add-oauth.2.json"
+$FLOWCTL done fn-1-add-oauth.2 --summary-file "${TMPDIR:-/tmp}/flow-summary-fn-1-add-oauth.2.md" --evidence-json "${TMPDIR:-/tmp}/flow-evidence-fn-1-add-oauth.2.json" --json
+
+# Validate structure (one spec; repo-wide through a counts-and-errors projection)
+$FLOWCTL validate --spec fn-1-add-oauth --json
+$FLOWCTL validate --all --json | jq '{valid, total_specs, total_tasks, total_errors, total_warnings, root_errors, failing: [.specs[] | select(.errors | length > 0) | {spec, errors}]}'
+```
+
+## Common Patterns
+
+### "Add a task for X"
+
+1. Find relevant spec:
+   ```bash
+   # List all specs
+   $FLOWCTL specs --json
+
+   # Or show a specific spec to check its scope
+   $FLOWCTL show fn-1 --json
+   ```
+
+2. Create task:
+   ```bash
+   $FLOWCTL task create --spec fn-N --title "Short title" --json
+   ```
+
+3. Add description + acceptance (combined):
+   ```bash
+   # Unique per-task temp paths — written + consumed in this one block
+   cat > "${TMPDIR:-/tmp}/flow-desc-fn-N.M.md" << 'EOF'
+   **Bug/Feature:** Brief description
+
+   **Details:**
+   - Point 1
+   - Point 2
+   EOF
+   cat > "${TMPDIR:-/tmp}/flow-accept-fn-N.M.md" << 'EOF'
+   - [ ] Criterion 1
+   - [ ] Criterion 2
+   EOF
+   $FLOWCTL task set-spec fn-N.M --description "${TMPDIR:-/tmp}/flow-desc-fn-N.M.md" --acceptance "${TMPDIR:-/tmp}/flow-accept-fn-N.M.md" --json
+   ```
+
+### "What tasks are there?"
+
+```bash
+# All tasks, projected (add --spec fn-1-add-oauth for one spec)
+$FLOWCTL tasks --json | jq -c '[.tasks[] | {id, title, status, spec}]'
+
+# Ready tasks for a spec
+$FLOWCTL ready --spec fn-1-add-oauth --json
+```
+
+### "What's next?"
+
+```bash
+$FLOWCTL brief
+```
+
+`brief` is orientation only: it omits blocked and dependency-waiting tasks, so never answer a task listing from it.
+
+### "Show me task X"
+
+```bash
+$FLOWCTL show fn-1-add-oauth.2 --json   # Metadata
+$FLOWCTL cat fn-1-add-oauth.2           # Full spec
+```
+
+(Legacy `fn-1.2` / `fn-1-xxx.2` still works.)
+
+### Create new spec (rare - usually via /flow-next:plan)
+
+```bash
+$FLOWCTL spec create --title "Spec title" --json
+# Returns: {"success": true, "id": "fn-N-spec-title", ...}
+```
+
+### Close a spec as won't-do
+
+```bash
+$FLOWCTL spec close fn-1-add-oauth --retire superseded --by fn-2-sso --json
+```
+
+Pick the reason that is true: `superseded` (another spec replaced it), `delivered-elsewhere` (it shipped
+under another spec or pull request) or `moot` (it is no longer needed, including a decision not to build
+it). Name each successor with `--by`. Its never-run tasks read `retired`, not `done`.
+
+Before closing any spec: read [references/declined.md](references/declined.md); it decides whether the
+close earns a `.flow/memory/declined/` file.
+
+## ID Format
+
+- Spec: `fn-N-slug` where slug is derived from title (e.g., `fn-1-add-oauth`, `fn-2-fix-login-bug`)
+- Task: `fn-N-slug.M` (e.g., `fn-1-add-oauth.1`, `fn-2-fix-login-bug.2`)
+
+Legacy formats `fn-N` and `fn-N-xxx` (random 3-char suffix) are still supported.
+
+## Notes
+
+- Run `$FLOWCTL --help` to discover all commands and options
+- **Every write goes through a flowctl subcommand**, except the `.flow/memory/declined/*.md` file above, which has no flowctl verb. A session that edits `.flow/` JSON or task markdown by hand has broken this.
+- **Every read comes from `.flow/` state**, via `--json` (`detect`, `list`, `specs`, `tasks`, `show`, `ready`) or `cat` for markdown. An answer assembled from files skimmed by hand has broken this.
+- **A task marked complete is closed with `flowctl done` carrying both `--summary-file` and `--evidence-json`.** A bare status flip has broken this.
+- **Requests that need real planning or execution are handed off**, to `$flow-next-plan` and `$flow-next-work`. Improvising them here has broken this.

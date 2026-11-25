@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-bytedance-agentkit-samples/byted-ind-ecom-prompt-to-video/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 使用 Seedance 2.0 根据提示词与参考素材生成视频。用户要把文本/参考图/参考视频变成视频时使用。"

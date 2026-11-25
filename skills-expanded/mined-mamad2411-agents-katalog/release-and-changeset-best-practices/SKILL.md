@@ -1,0 +1,93 @@
+---
+name: release-and-changeset-best-practices
+description: 面向 weapp-vite monorepo 的 repoctl release、pnpm change intent 与 issue 交付工作流。适用于 `weapp-vite`、`wevu`、`@weapp-vite/react`、mpcore、模板、公开 skills 或 AI 合约变更，判断 change intent、`create-weapp-vite` 联动、跨平台验证，以及从 issue worktree 到中文 PR/CI 的交付闭环。
+---
+
+# release-and-changeset-best-practices
+
+## 用途
+
+统一 pnpm change intent、提交、版本联动和 repoctl 发布前检查，避免漏掉用户可见改动和脚手架联动。
+
+## 何时使用
+
+- 用户问“这个改动要不要加 change intent / changeset”。
+- 用户要补 `.changeset/*.md`。
+- 用户准备发布。
+- 用户改了 `weapp-vite` / `wevu` / `@weapp-vite/react` / mpcore / `templates/*` / `skills/*` / `dist/docs` / `AGENTS.md` / website。
+- 用户改了 AI 使用路径，如 screenshot / compare / MCP / logs / skills 安装。
+- 用户要求按仓库流程修 GitHub issue，包括 worktree、最小复现、PR、中文变更说明与 CI 收尾。
+
+## 不适用场景
+
+本 skill 聚焦仓库交付流程，包括 repoctl release 判定、pnpm change-intent 治理和 issue 修复闭环。
+
+- 文档同步：使用 `docs-and-website-sync`。
+- 构建或运行时设计：使用对应 best-practices skill。
+
+## 核心流程
+
+1. 先判断改动是否用户可见；源码 bug fix、功能新增、行为变化、模板行为变化默认要通过 `pnpm change` 补 change intent。
+2. 下列改动不要轻易归类为“纯内部维护”：
+   - `skills/*`
+   - `dist/docs`
+   - 脚手架生成 `AGENTS.md`
+   - AI skills 安装行为
+   - `prepare` / `mcp init|print|doctor` / `forwardConsole`
+   - `wv screenshot` / `wv compare` / `wv ide logs`
+   - `web` runtime / `lib` mode
+   - React runtime、React 模板、mpcore provider parity 与多平台构建合约
+3. 若 release 涉及 `weapp-vite`、`wevu` 或 `templates/*`，默认联动补 `create-weapp-vite` bump。
+4. `.changeset/*.md` 是 pnpm change-intent 存储格式，不代表使用 Changesets CLI；summary 用中文，描述用户感知结果，不写成内部重构流水账。
+5. 若任务来自 GitHub issue：
+   - 先在仓库可写目录创建 `git worktree`
+   - 优先在 `e2e-apps/github-issues` 或最小入口稳定复现
+   - 先补根因相关 unit / e2e，再做 PR 收尾
+6. 交付遵循 Conventional Commits；默认 commit-only，issue 修复走 PR 流程。
+   - 平台敏感改动先定位最早 OS 分歧，检查 command launch、path normalization、line endings 和 filesystem assumptions。
+   - touched DevTools parity 场景同时核对 mpcore unit/integration、browser e2e 和必要的 type tests。
+7. 发布前优先跑仓库脚本：
+   - `pnpm change status`
+   - `node --import tsx scripts/check-create-weapp-vite-changeset.ts`
+   - `node --import tsx scripts/check-catalog-changeset.ts`
+   - stable：`repo release stable prepare` / `repo release stable publish`
+   - prerelease：`repo release pre enter <alpha|beta|rc|next>` / `repo release pre publish` / `repo release pre exit`
+   - 恢复单包发布：`repo release ci --mode publish-unpublished --package <name> --version <version>`
+
+## Skills 改动判定
+
+- skill 正文、触发元数据、脚手架 AGENTS 或网站 AI 路由变化属于用户可见的 AI 工作流变化，不应按纯注释维护处理。
+- 只要改动影响 `create-weapp-vite` 生成的默认指引，默认同时检查 `create-weapp-vite` bump 和模板输出回归。
+- change-intent summary 说明用户获得的 AI 工作流、验证路径或命令路由变化，不罗列内部文案重排。
+
+## 约束
+
+- 不要漏掉源码 bug fix 的 pnpm change intent。
+- 不要忘记 `create-weapp-vite` 联动。
+- 不要写英文或空泛的 summary。
+- 不要把用户可见的 AI / docs / template 合约误判成纯内部改动。
+- 不要在复现不稳定时直接修源码并开 PR。
+- 不要把仅某个 OS、DevTools 登录、端口或 automator 连接失败当作产品行为回归。
+
+## 输出
+
+应用本 skill 时，输出必须包含：
+
+- 是否需要 pnpm change intent 及理由。
+- 是否需要 `create-weapp-vite` 联动。
+- 推荐提交类型。
+- 推荐检查命令。
+- 若来自 issue，补充复现路径与 PR 交付状态。
+
+## 完成标记
+
+- change-intent 需求已判断清楚。
+- 需要时已补中文 change intent。
+- 需要时已补 `create-weapp-vite` bump。
+- 提交方式和交付方式符合仓库规则。
+- issue 修复时已完成 worktree、复现、回归与 PR 闭环。
+
+## 参考资料
+
+- `references/release-checklist.md`
+- `references/issue-fix-checklist.md`

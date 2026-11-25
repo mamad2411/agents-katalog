@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/openclaw-memory-enhancer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Edge-optimized RAG memory system for OpenClaw with semantic search. Automatically loads memory files, provides intelligent recall, and enhances conversations with relevant context. Perfect for Jetson 

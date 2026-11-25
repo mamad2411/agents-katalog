@@ -1,0 +1,85 @@
+---
+name: ai-engineering
+description: Diagnose or improve reliability of a structured, multi-request, rate-limited, or cost-sensitive AI workflow. Use for malformed or truncated outputs, retry/rate-limit failures, unreliable fan-out, cache/resume bugs, or missing run telemetry. Do not use for ordinary prompt edits or simple one-shot model calls.
+---
+
+# AI Engineering
+
+Use enough structure to make a model workflow explainable and recoverable without
+turning every prototype into an operations project. This skill owns request
+validation, retry/cache behavior, rate-aware fan-out, and measurement. Pair it
+with `live-ai-pipelines` only when a run needs live progress or durable resume.
+
+For provider-specific API behavior, read [provider operation notes](references/provider-operation-notes.md) when the adapter is OpenAI, Anthropic, or OpenRouter, then verify volatile details in current provider docs. For image/video generation or FAL model fan-outs, read [image, video, and FAL operation notes](references/image-video-fal.md).
+
+## Useful defaults
+
+- Improve the established workflow before introducing another path. Do not turn implementation choices or temporary exceptions into user requirements.
+- Do not publish a malformed, partial, or schema-invalid result as complete.
+- For a machine-consumed structured artifact, use the selected model provider's documented native structured-output API with an explicit schema. Do **not** treat a free-form completion prompted with “return JSON” plus local `JSON.parse` as structured output.
+- Prefer the official provider API for schema-critical work. A router is acceptable only when its exact pinned endpoint advertises native structured-output support and a canary has verified the complete request/stream/validation path; otherwise call the provider directly.
+- Prompted JSON is acceptable only as a human-readable/debug artifact. It is not an input contract for a canonical graph, database write, workflow transition, or published page.
+- Keep observed source data, generated prose, inferred claims, and repair output distinct when downstream consumers need that distinction.
+- Treat workers as an in-flight limit, not as a request-rate setting.
+- When a fallback changes coverage or semantics, record that difference rather than silently treating it as the richer result.
+- Keep provider delivery separate from domain or human acceptance; a valid artifact URL does not establish that an image, video, or other subjective output is usable.
+- Match validation to the deliverable. A machine-consumed article envelope may need a schema; illustrative code inside it is reader-facing text, not software to compile or certify unless the user explicitly requests that.
+- Keep enough redacted telemetry to answer what happened, what it cost, and what may safely resume.
+
+## Workflow
+
+### 1. Inspect the boundary
+
+Find the first boundary that changed or rejected the artifact: provider delivery, local redaction, parsing, validation or rendering. Do not assume malformed local output means the model failed. Inspect the relevant wrapper and retained evidence before changing prompts or retrying; preserve valid work and keep sensitive source text out of logs.
+
+### 2. Shape the request before scaling it
+
+Normalize source material into a usable representation before model admission, preserving originals and required coverage. Repair unreadable or oversized inputs locally rather than silently truncating them.
+
+Budget each request so the model can finish; split or continue long work while preserving required coverage. Do not turn token budgets into arbitrary section/item ceilings that omit substantive source material. Validate schema, source references and domain invariants; native structured output does not establish semantic completeness.
+
+Before broad admission, run cheap deterministic checks across all selected packets:
+identity, required fields, canonical links, source locators and alias consistency.
+Do not spend model calls discovering a malformed packet. Calibrate unfamiliar
+request classes on a small sparse/typical/dense sample; reuse comparable successful
+calibration when its relevant inputs have not changed. Use the result to tune per-class input and output budgets. Long-form requests benefit from a bounded evidence packet: deduplicate, rank representative support, preserve conflicts, and keep stable locators. Global synthesis should receive normalized IDs and compact summaries rather than the raw corpus plus every intermediate artifact.
+
+For heterogeneous model fan-outs, define endpoint-specific capability and payload profiles. Include reference topology and ordering, supported parameters, safety-control fields, output schema, and fallback policy in the effective request. Do not send a universal parameter bundle or guessed provider controls.
+
+### 3. Scale deliberately
+
+For an unmeasured request class, start with modest in-flight concurrency. Preserve
+a measured healthy setting on resume rather than restarting its ramp. Pace requests and tokens separately, honor `Retry-After`, and use provider headers when available. Raise concurrency only after measuring throughput, latency, retries, 429s, context size, and remaining headroom; high latency can be a context or generation bottleneck rather than a rate-limit problem.
+
+### 4. Repair by failure class
+
+After a repair, rerun only work whose inputs or acceptance were affected; reuse valid independent results.
+
+Recover a completed response before considering another request. Retry genuinely incomplete transient failures through the same limiter; distinguish provider failure from host interruption, controller deadline and explicit cancellation. Fix validator/redactor/renderer mistakes locally, without asking the model to satisfy a broken check. For genuine truncation, compact intermediate detail or continue without dropping required coverage. For a content repair, request only the affected fields or blocks and assemble them against the saved base; do not regenerate the whole artifact for a small edit. Record any fallback's coverage loss.
+
+See [failure matrix](references/failure-matrix.md) for practical actions and lightweight attempt fields.
+
+### 5. Persist proportionately
+
+For a significant run, write complete artifacts atomically and maintain a status snapshot plus attempt history. A success cache can resume results but cannot explain failed attempts, waits, headers, or interruption. Record the logical item, effective request, outcome, latency, usage/cost when available, and redacted provider identifiers.
+
+For subjective artifacts, persist provider completion and human adjudication independently. Support blind evaluation when requested: store artifact references and operational metadata without fetching, opening, classifying, or scoring the artifact, and leave acceptance to the named reviewer.
+
+If workers can outlive their caller or another runner may resume work, add explicit ownership, heartbeats, and cancellation behavior. A simple in-process job does not need a lease protocol.
+
+For publishing workflows, measure accepted changes delivered live per elapsed hour,
+not active slots or provider completions. Separate queue waits, useful execution,
+retry cooldowns, release waits and duplicated work; overlapping worker durations
+are not additive wall time. Missing timing or cost remains unavailable.
+
+### 6. Verify the relevant unhappy paths
+
+When changing a multi-item runner, test dependency readiness: hold one item deliberately and verify that an independent ready item advances through its eligible downstream stages before the held item settles. Also verify that genuinely dependent work and publication remain blocked until their prerequisites pass. Successful concurrent calls alone do not prove effective overlap.
+
+Exercise the failures that the chosen provider and artifact contract make material: rate limits, timeouts, malformed/length-limited output, duplicate delivery, cancellation, restart, and cache reuse. Hand off the result coverage, notable fallbacks, cost/latency, and output/telemetry locations for significant runs.
+
+## References
+
+- [Failure matrix and attempt record](references/failure-matrix.md) — choose a failure response, cache identity, and minimal telemetry.
+- [Provider operation notes](references/provider-operation-notes.md) — conditional OpenAI, Anthropic, and OpenRouter quirks.
+- [Image, video, and FAL operation notes](references/image-video-fal.md) — artifact-generation contracts, blind evaluation, reference topology, asynchronous queues, and exact-model comparisons.

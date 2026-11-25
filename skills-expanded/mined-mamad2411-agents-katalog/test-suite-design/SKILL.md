@@ -1,0 +1,194 @@
+---
+name: test-suite-design
+description: "Design comprehensive test suites for existing code — strategy across unit/integration/e2e, fixtures, factories, helpers. Triggers: add tests, write tests for, increase coverage, test this module, testing strategy, test plan, what tests do I need, test infrastructure, test helpers, this has no tests. Not for TDD — use tdd-workflow."
+---
+
+# Test Suite Design
+
+Design and implement test suites for existing code. This is different from TDD: TDD drives *new* implementation through tests. This skill adds *meaningful test coverage* to code that already exists, designs test architecture, and builds test infrastructure.
+
+## When to Use This vs TDD
+
+| Situation | Use This Skill | Use tdd-workflow |
+|-----------|---------------|-----------------|
+| Existing module with no tests | ✓ | |
+| Building a new feature from scratch | | ✓ |
+| Planning overall test strategy for a project | ✓ | |
+| Increasing coverage on legacy code | ✓ | |
+| Fixing a bug (write regression test + fix) | | ✓ |
+| Designing test fixtures and factories | ✓ | |
+
+## Workflow
+
+### Step 1: Assess the Current State
+
+Before writing any tests, understand what you're working with:
+
+- **What code needs testing?** A single function, a module, or a whole layer?
+- **What does the code do?** Read it and identify the behaviors (inputs → outputs, side effects, state changes)
+- **What's the risk profile?** Business-critical logic, data transformations, auth/security, and integrations deserve tests first. Glue code and configuration deserve tests last.
+- **What test infrastructure exists?** Test runner, assertion library, mocking framework, fixtures, CI pipeline?
+- **What's the dependency situation?** Does the code have hard dependencies that make it difficult to test in isolation?
+
+If there's no test infrastructure at all, start with Step 2. Otherwise, skip to Step 3.
+
+### Step 2: Set Up Test Infrastructure
+
+Establish the foundation before writing individual tests:
+
+1. **Test runner and framework** — Choose based on the stack (Jest/Vitest for JS/TS, pytest for Python, Go's built-in testing, JUnit for Java)
+2. **Directory structure** — Co-located (`foo.test.ts` next to `foo.ts`) or separate (`tests/` directory). Recommend co-located for unit tests, separate directory for integration/e2e.
+3. **Shared helpers** — Create a `tests/helpers/` or `tests/fixtures/` directory for reusable setup
+4. **CI integration** — Tests should run on every PR at minimum
+
+See [references/test-infrastructure.md](references/test-infrastructure.md) for framework-specific setup patterns.
+
+These four are choices to *state*, not questions to ask back. Pick the stack's conventional
+answer, note it in a line, and keep going to Step 3 in the same response — infrastructure
+decisions are cheap for the user to correct and expensive to wait for.
+
+### Step 3: Map Behaviors to Test
+
+For each piece of code to test, create a behavior map — not a line-by-line mirror of the implementation, but a list of *what the code is supposed to do*:
+
+**For a function/method:**
+- What does it return for valid inputs? (happy path)
+- What happens with boundary values? (empty, zero, max, null)
+- What happens with invalid inputs? (wrong type, missing required fields)
+- What side effects does it produce? (database writes, API calls, events emitted)
+- What errors can it throw/return? Under what conditions?
+
+**For a class/module:**
+- What are the key public methods and their contracts?
+- What state transitions are possible?
+- What invariants should always hold?
+- How do methods interact (does calling A affect the result of B)?
+
+**For an API endpoint:**
+- What responses for valid requests? (status codes, response shape)
+- What responses for invalid requests? (validation errors, 400/401/403/404)
+- What auth/permission checks exist?
+- What database state changes occur?
+
+When mapping behaviors, exclude behaviors that belong to a dependency — map *your* code's use of it (the inputs it passes, how it handles the library's outputs and errors), not the library's internals. "gzip produces these magic bytes" is zlib's behavior; "our codec round-trips a value and falls back gracefully on a legacy plain string" is ours.
+
+**Cover the failure branch you can see in the code.** The most common coverage hole in
+AI-assisted suites is a repair/parse/error branch that's fully written but never tested,
+because every fixture feeds valid input so the branch never runs — and it's usually the
+riskiest branch (a fail-open handler that returns "clean" on parse failure ships
+unexercised). If the code has an `except`, a fallback, or a "couldn't do it" path, the
+behavior map needs an entry that forces it.
+
+Present the behavior map to the user and refine before writing tests.
+
+### Step 4: Choose the Testing Layer
+
+Apply the testing pyramid — see [references/testing-pyramid.md](references/testing-pyramid.md):
+
+- **Unit tests**: Pure functions, business logic, transformations, validators. Fast, isolated, many of them.
+- **Integration tests**: Database queries, API endpoints, service interactions. Slower, need setup/teardown, fewer of them.
+- **E2E tests**: Critical user journeys only. Slowest, most brittle, fewest of them.
+
+**70/20/10 is a starting point, not the answer.** It assumes most behavior lives in
+code you can call directly. Where the framework owns the behavior — an ORM-heavy
+Django or Rails app whose logic is queries and view wiring — the honest split shifts
+toward integration, because a unit test of a mocked queryset proves nothing. State the
+distribution you are targeting **for this codebase** and say what about the codebase
+moved it off the default.
+
+For each behavior from Step 3, assign it to the appropriate layer. Default to the lowest (fastest) layer that can meaningfully test the behavior.
+
+### Step 5: Handle Untestable Code
+
+Existing code is often hard to test because of tight coupling. Common patterns and solutions:
+
+**Hard-coded dependencies** → Inject dependencies through constructor or function parameters. Refactor minimally to enable testing — just enough to inject a mock, not a full redesign.
+
+**Global state** → Isolate in a module you can mock. Or reset state in beforeEach/setUp.
+
+**Side effects mixed with logic** → Extract the pure logic into a separate testable function. Test the logic directly, test the side effects at the integration level.
+
+**External API calls** → Wrap in a client class/module. Mock the wrapper in unit tests. Test the wrapper itself in integration tests.
+
+If refactoring is needed to make code testable, keep changes minimal. The goal is test coverage now, not architectural perfection. Deeper structural work belongs to the `refactoring` skill — see Cross-Skill References.
+
+### Step 6: Write the Tests
+
+Write tests grouped by behavior, not by function. Use descriptive `describe`/`context` blocks:
+
+```
+describe('OrderService')
+  describe('calculateTotal')
+    it('sums item prices for a standard order')
+    it('applies percentage discount when coupon is valid')
+    it('returns zero for an empty cart')
+    it('throws when item has negative price')
+  describe('placeOrder')
+    it('creates order record in database')
+    it('sends confirmation email')
+    it('rejects when inventory is insufficient')
+```
+
+For each test, follow Arrange-Act-Assert. Keep tests focused — one behavior per test.
+
+**Write the tests out, in this same response.** Steps 1-5 are preparation, not a gate on
+delivering — none of them is a reason to stop at a plan. A behavior map, a list of describe
+blocks, an `it.each` table shape, or "tell me your runner and I'll write them" is not a test
+suite. If the runner is unknown, pick the stack's default (Jest/Vitest for JS/TS, pytest for
+Python), say in one line that you assumed it, and write the tests anyway — the user can
+correct a framework far more cheaply than they can answer four questions to get anything at all.
+
+Exit condition for this step: **runnable test bodies exist in your reply**, one per behavior
+mapped in Step 3, each with a name that reads as a specification (`it('returns 0 when the
+order has no items')`, not `it('test calculateShippingCost')` or `it('edge case 3')`) — so a
+failure report names the broken behavior without anyone opening the file.
+
+### Step 7: Evaluate Coverage Quality
+
+After writing the suite, assess quality (not just line coverage percentage):
+
+- [ ] Are the critical paths tested? (payments, auth, data mutations)
+- [ ] Are error paths tested? (not just happy paths)
+- [ ] Do tests document behavior? (can you understand the module by reading only the tests?)
+- [ ] Are tests independent? (can run in any order)
+- [ ] Are tests deterministic? (no flakiness from timing, randomness, or external state)
+- [ ] Is the test-to-implementation coupling low? (can you refactor internals without breaking tests?)
+
+Coverage percentage is a floor, not a ceiling. 80% meaningful coverage beats 100% shallow coverage.
+
+## Pruning Test Slop
+
+Suites accumulate tests that cost maintenance without buying protection — common in AI-assisted codebases, where generated tests pad coverage. Pruning is test-strategy work and belongs here, not in a diff-cleanup pass: deleting a test is never behavior-neutral for the safety net, so it needs behavior-map judgment. A test is a removal candidate when it:
+
+- **Asserts nothing meaningful** — `expect(true).toBe(true)` filler, or assertions that cannot fail
+- **Hedged or non-falsifiable** — `assert x is None or x == []` (covers both, so nothing can fail it), `assert x in ("skills", "work")` when only one is reachable, or a test whose *name* claims more than its assertion checks (`test_multi_word_goes_to_work` that never asserts "work")
+- **Brittle on cosmetics** — pinned to CSS class strings, emoji, exact copy, or rendered-prompt prose, so a harmless reword reds the suite; assert a stable data attribute or the DOM/structure instead
+- **Duplicates another test's coverage of the same behavior** — same arrange/act/assert in substance, differing only cosmetically
+- **Asserts on the mock rather than the code** — verifying that the mock returned what it was configured to return tests the mock, not the unit
+- **Mirrors the implementation line-for-line** — breaks on every refactor, catches no behavior change
+
+Separately, watch for **setup/fixture duplication across files** — the same on-disk
+scaffold or `_make_x` builder copy-pasted into 5–19 test files because there's no
+`conftest.py` / shared factory. That's not a pruning candidate (the tests are real); it's
+a consolidation candidate — extract the shared fixture (Step 2), then have each file use
+it. Left alone, the copies drift and a setup change becomes an N-file edit.
+
+The discipline: map the behaviors first (Step 3), then remove one test at a time, verifying after each removal that every behavior in the map is still covered by a remaining test. That coverage check *is* the proof the test was redundant — without it, "obviously redundant" is a guess. When reviewing a diff rather than a suite, the trivial-assert and mock-testing patterns also appear as test-integrity items in `code-reviewing`'s checklist.
+
+## Cross-Skill References
+
+- `refactoring` — **name this handoff whenever the goal of the coverage is a refactor.** The
+  suite is what makes the refactor safe: it pins current behavior so a structural change that
+  breaks something fails a test instead of reaching production. Say which tests have to be
+  green before the refactor starts, and that untested code should not be restructured.
+- `tdd-workflow` — for code that does not exist yet; this skill is for covering code that does
+- `test-data-strategy` — factories, fixtures, and synthetic data for the suite designed here
+- `code-archaeology` — when the current behavior is unclear, characterize it before pinning it
+
+## Principles Applied
+
+- **DRY in tests**: Share setup through fixtures/factories, but keep each test readable on its own. A little repetition in tests is better than obscure shared state.
+- **KISS**: Test behavior, not implementation. Don't mirror the code structure 1:1 in tests.
+- **YAGNI**: Don't test trivial code (getters, delegating wrappers). Focus coverage where bugs hide.
+- **Test your code, not your dependencies**: Assert what *your* code does with a library, not what the library does. A round-trip through your own `pack`/`unpack` wrapper is your logic; asserting a compression lib's magic bytes or its compression ratio is re-testing zlib — the vendor's job, already covered by the vendor's tests. Verify third-party *integration* at the integration layer, not by re-testing the library.
+- **Functional Independence**: Each test should set up its own state and clean up after itself.

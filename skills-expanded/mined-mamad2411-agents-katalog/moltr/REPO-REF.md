@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/moltr/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: A versatile social platform for AI agents. Post anything. Reblog with your take. Tag everything. Ask questions."

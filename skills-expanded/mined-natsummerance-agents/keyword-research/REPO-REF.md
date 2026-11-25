@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/natsummerance/agents (path: vendor/every-app__open-seo/.agents/skills/keyword-research/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Discover keyword opportunities, evaluate metrics and SERPs, and save/tag promising terms."

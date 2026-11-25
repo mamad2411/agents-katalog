@@ -1,0 +1,154 @@
+---
+name: wicked-garden-workflow
+description: |
+  Reference for how the wicked-crew workflow engine operates — phase catalog, gate enforcement,
+  rigor tiers, and facilitator rubric. Use when understanding or troubleshooting crew phase
+  mechanics (gate config, CONDITIONAL resolution, phase dependencies).
+  NOT for starting a project (use crew:start) or proposing a process plan (use propose-process).
+metadata:
+  role: worker
+  phases: "*"
+  archetypes: "*"
+---
+
+# Workflow Skill (v6)
+
+**Plain:** wicked-crew v6 — propose-process rubric picks phases and rigor tier;
+gates are hard enforcement; two interaction modes (normal / yolo).
+
+Facilitator-rubric orchestration with hard quality gates.
+
+## Runtime
+Script-backed steps use the `wicked-garden` launcher: `wicked-garden run <plugin-root-relative path, e.g. scripts/…> [args]`. It is on PATH after `npm i -g wicked-garden`; otherwise use `npx wicked-garden run …`; inside a wicked-crew run it is `"$WICKED_GARDEN_ROOT/scripts/wicked-garden"`.
+If none of these is available, or Python 3 is missing, skip the script-backed step, say so, and follow the manual alternative where one is given next to it — never invent the script's output.
+Relative paths in this skill are relative to the directory that contains this SKILL.md.
+
+## Decision Engine — `propose-process`
+
+```
+User project description
+        │
+        ▼
+propose-process facilitator
+  ├── Score 9 risk factors (0-3 each)
+  ├── Read skills/**/SKILL.md (context:fork) frontmatter → pick specialists
+  ├── Pick phases per the workflow definition (crew WorkflowDef — workflows-as-data)
+  ├── Set rigor_tier (minimal / standard / full)
+  └── Emit process-plan.md + full task chain
+```
+
+All phase selection is judgment-driven by the facilitator, not rule-based.
+
+## Interaction Modes
+
+| Mode | How | Effect |
+|------|-----|--------|
+| **normal** | Default | Each phase gate requires explicit user approval before advancing |
+| **yolo** | the `auto-approve` run operation (see Operations Reference) | Auto-advance through gates; gates still run, findings still logged |
+
+## Rigor Tiers
+
+| Tier | Complexity | Gates | Reviewers |
+|------|-----------|-------|-----------|
+| **minimal** | 0-2 | Advisory — gate findings logged but do not block | Single reviewer |
+| **standard** | 3-5 | Enforced — REJECT blocks advancement | Single reviewer |
+| **full** | 6-7 | Enforced — REJECT blocks; multi-reviewer | 2+ reviewers |
+
+Security or compliance signals override to **full** regardless of complexity.
+
+## Phase Plan
+
+```
+clarify → design → [challenge?] → [test-strategy?] → build → test → review
+```
+
+Brackets = optional phases. The facilitator picks which phases apply based on
+factor readings. Per-phase gate config and ordering are **workflows-as-data**:
+crew's `WorkflowDef` (id + ordered `PhaseDef[]` with `gate`, `depends_on`,
+`skill_ref`) is the engine contract; garden-side hard gates mirror
+`.claude-plugin/archetypes.json` via `scripts/crew/phase_manager.py`
+(`wicked-garden path .claude-plugin/archetypes.json` prints where the catalog is on any host).
+
+> **Drift-guard**: `tests/test_workflow_drift.py` pins this skill to the
+> engine's data — verdict vocabulary to `scripts/_event_schema.py` and the
+> contract terms to crew's `WorkflowDef` (when a wicked-crew checkout is
+> resolvable; canonical source is the contract package published as
+> `wicked-crew-api-types` — `packages/crew-api-types/index.d.ts` in the crew
+> repo — with the legacy `packages/crew/src/core/types.ts` as fallback).
+> Update this reference and the data together, never one side.
+
+### Phase Summary
+
+| Phase | Goal | Key deliverable |
+|-------|------|-----------------|
+| **clarify** | Define success criteria | Outcome statement + success criteria |
+| **design** | Architect solution | Architecture docs + approach |
+| **challenge** | Adversarial stress-test | Challenge findings + revised design |
+| **test-strategy** | Define test approach pre-build | Test scenarios + risk assessment |
+| **build** | Implement | Working implementation |
+| **test** | Verify | Test results + convergence evidence |
+| **review** | Multi-perspective validation | Review findings + sign-off |
+
+## Gate Enforcement (v2.5.0+)
+
+Gates are hard enforcement — not advisory — at standard and full rigor.
+
+| Verdict | Effect |
+|---------|--------|
+| **APPROVE** | Phase advances |
+| **CONDITIONAL** | `conditions-manifest.json` written; verify before next phase |
+| **REJECT** | Blocks advancement; mandatory rework |
+
+CONDITIONAL auto-resolution (AC-4.4): spec gap conditions → fixed inline.
+Intent-changing conditions → escalate to user or council.
+
+Gate reviewer assignment happens at approve time, not at phase start. Banned
+reviewer values: `just-finish-auto`, `fast-pass`, `auto-approve-*`.
+
+Build depends on design (`depends_on: ["clarify", "design"]`). To migrate
+legacy beta.3 projects: the `adopt-legacy` migration guide was removed in v9 — v6 is the baseline.
+
+## Specialist Discovery
+
+Crew discovers specialists by reading `skills/**/SKILL.md` frontmatter directly
+at runtime — only skills declaring `context: fork` are dispatchable workers
+(resolved by `scripts/crew/specialist_resolver.py`). No static `enhances` map.
+Fallback fork skills (facilitator, researcher, implementer, reviewer) handle
+phases when no specialist matches.
+
+## Convergence Tracking (build/test phases)
+
+Artifact states: `Designed → Built → Wired → Tested → Integrated → Verified`.
+The `convergence-verify` gate flips REJECT → APPROVE only when every tracked
+artifact reaches `Integrated`. Stalls at threshold 3 sessions surface as findings.
+
+## Operations Reference
+
+Run-lifecycle operations of the wicked-crew engine — driven from wicked-studio
+or crew's `/api/v1` (they are not slash commands on any CLI):
+
+| Operation | Purpose |
+|-----------|---------|
+| `start` | Begin project — invokes propose-process |
+| `status` | View current phase and engaged specialists |
+| `execute` | Run current phase |
+| `approve` | Advance phase after gate |
+| `just-finish` | Autonomous completion (yolo-equivalent) |
+| `gate` | Run a specific quality gate |
+| `evidence` | Query evidence for a task |
+| `auto-approve` | Switch to auto-advance mode |
+
+## Storage
+
+| Store | What |
+|-------|------|
+| Native tasks | the harness's task list with validated `metadata` (see `scripts/_event_schema.py`; `refs/integration.md`) |
+| `wicked-garden-mem` | Cross-session learning at project completion and gate failures |
+| Local JSON | DomainStore fallback; always available |
+
+## Refs (load on demand)
+
+- [Evidence Tracking](refs/evidence.md) — evidence tiers L1-L4, artifact naming
+- [Integration Details](refs/integration.md) — mem, search, wicked-bus usage
+- [Scoring Rubric](refs/scoring-rubric.md) — **HISTORICAL v5 only**; see propose-process for v6
+- [Risk Dimension Signals](refs/risk-dimension-signals.md) — signal keywords per factor

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-Habitat-Thinking-ai-literacy-superpowers/model-cards/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when authoring or interpreting Mitchell-extended model cards in this plugin. Covers when each of the 10 sections applies, the citation discipline, the honesty rules (claim-level and card-level), a

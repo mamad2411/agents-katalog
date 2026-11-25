@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/x402-agent-tools-node_modules-@x402-evm-readme/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: @x402/evm

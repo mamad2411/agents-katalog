@@ -1,0 +1,463 @@
+---
+name: implement-widget-tests
+description: "Write TDD tests for a widget type: structural tests (borders, dividers), alignment tests (icon centering), and scaling tests (proportional sizing). Uses test helpers from tests/helpers.py."
+when_to_use: "When writing tests for a new widget type. Always run BEFORE implementing the renderer (TDD red phase)."
+argument-hint: "[widget-type]"
+arguments: widget-type
+allowed-tools: Read, Edit, Write, Bash(uv *)
+---
+
+# Write Widget Tests: $widget-type
+
+Write comprehensive tests for the **$widget-type** widget. This is the
+TDD red phase — tests must FAIL until the SVG renderer is implemented.
+
+## Before you start
+
+1. Read the task description / spec doc for the new widget.
+2. Read `tests/helpers.py` for available test helpers.
+3. Read existing per-widget test files in `tests/test_render_*.py`
+   for patterns. The SEPARATOR tests (`TestRenderSeparator`) in
+   `tests/test_render_separator.py` are the reference for
+   structural/pixel assertions. The weather tests
+   (`TestRenderWeather`) in `tests/test_render_weather.py` show
+   the `_DEFAULTS` + `_config()` pattern.
+4. Read `custom_components/eink_dashboard/templates/_macros.svg.j2` for
+   macro signatures (`card_container`, `card_row`, `chip`) so you know
+   the card container insets to use in pixel region calculations.
+5. Read `const.py` for `COLOR_BLACK=0`, `COLOR_WHITE=255`,
+   `COLOR_GRAY=120`, `PADDING=24`.
+
+## Existing test classes
+
+!`grep -rn "^class Test" tests/test_render_*.py`
+
+## Current test helper signatures
+
+!`grep -n "^def " tests/helpers.py`
+
+## Current WidgetMetrics sizing ratios
+
+Call `_compute_metrics(row_h)` in tests to derive expected pixel regions
+from the same ratios the renderer uses — no hardcoded magic numbers.
+
+!`grep -n "def _compute_metrics" -A 12 custom_components/eink_dashboard/render.py`
+
+## SVG macro signatures (from _macros.svg.j2)
+
+!`grep -n "macro card_container\|macro card_row\|macro chip" custom_components/eink_dashboard/templates/_macros.svg.j2`
+
+## Icon resolver (in render.py)
+
+!`grep -n "def _device_class_icon" -A 5 custom_components/eink_dashboard/render.py`
+
+## SVG renderer registry
+
+!`grep -n "_SVG_RENDERERS" -A 12 custom_components/eink_dashboard/svg_render.py`
+
+## Imports
+
+```python
+import re
+
+from custom_components.eink_dashboard.const import (
+    COLOR_BLACK, COLOR_GRAY, PADDING, DEFAULT_CARD_STYLE,
+    DEFAULT_ROW_H,
+)
+from custom_components.eink_dashboard.render import (
+    WidgetMetrics, _compute_metrics, DEFAULT_METRICS,
+    _device_class_icon, render_dashboard,
+)
+from custom_components.eink_dashboard.svg_render import (
+    render_widget_svg,
+)
+from custom_components.eink_dashboard.widgets._helpers import (
+    _card_insets, _metrics_context, _auto_row_height,
+)
+from tests.helpers import (
+    assert_all_white, assert_card_border, assert_has_dark_pixels,
+    assert_has_gray_pixels,
+    assert_scales_proportionally, assert_vertically_centered,
+    content_bbox, make_config, pixel, render_to_image,
+)
+```
+
+## Test structure
+
+Create a test class `TestRender{WidgetName}` (PascalCase) in a
+dedicated file `tests/test_render_{widget_type}.py`. When
+redesigning an existing widget, replace the old test class in its
+existing file.
+
+### 1. Structural tests — verify visual elements exist
+
+- **Card border/container**: dark pixels along edges for
+  `card_style="border"`, gray pixels on left edge for
+  `card_style="left_bar"`, all white for `"none"`
+- **Default == none**: rendering without `card_style` must be
+  byte-identical to `card_style="none"`. Add this test for every
+  card-style widget:
+
+  ```python
+  def test_card_style_none_is_default(self) -> None:
+      # Omitting card_style must produce the same output as "none".
+      base = {"type": "$widget-type", "x": 0, "y": 0, "w": 400,
+              "h": 56, "entities": ["sensor.temperature"]}
+      with_none = render_dashboard(
+          [{**base, "card_style": "none"}], self._config()
+      )
+      without = render_dashboard([base], self._config())
+      assert with_none == without
+  ```
+- **Row dividers**: light-gray pixels at row boundaries (between
+  entries) on 16-level displays; the divider color is
+  `COLOR_LIGHT_GRAY=180`, so pass explicit bounds to the helper:
+  `assert_has_gray_pixels(img, ..., low=COLOR_LIGHT_GRAY - 20,
+  high=COLOR_LIGHT_GRAY + 20)`.  On 2-level displays both gray
+  values dither identically, so the 2-level test path is unchanged.
+- **Chip shape**: rounded corners (corner pixels white, nearby edge
+  pixels dark)
+- **Icon circle**: dark/gray pixels in the icon area
+
+Use `assert_card_border(img, w, h, m)` for the four-edge border check
+(default `bottom_margin=1` accommodates PIL stroke rounding).
+Use `assert_has_dark_pixels()`, `assert_all_white()`,
+`assert_has_gray_pixels()` for everything else.
+
+### 2. Alignment tests — verify layout relationships
+
+- **Icon ↔ text vertical centering**: icon center Y matches text
+  center Y
+- **Right-aligned values**: value text near the right edge of the
+  widget
+
+Use `assert_vertically_centered(img, icon_region, text_region,
+tolerance=2.0)`. Each region is `(x1, y1, x2, y2)` absolute
+coordinates.
+
+### 3. Scaling tests — verify proportional sizing
+
+- Render at `h=56` and `h=112`, compare `content_bbox` heights via
+  `assert_scales_proportionally(..., expected_ratio=2.0,
+  tolerance=0.25)`.
+
+### 4. Data tests — verify state handling
+
+- Missing entity: widget doesn't crash; missing state is skipped
+  silently
+- Missing attributes: handles absent `device_class`, `friendly_name`
+- Edge cases: empty entity list, single entity
+
+### 5. Locale formatting test — numeric-state widgets only
+
+If the widget displays numeric entity states (via `_fmt()`), add a
+test to the existing `TestLocaleFormattingInWidgets` class in
+`tests/test_render_cross_widget.py`.  Do NOT create a separate
+class.
+
+```python
+def test_{widget_type}_decimal_comma(self) -> None:
+    # {WidgetName} secondary text must use comma decimal for
+    # German locale.
+    widget = {
+        "type": "$widget-type",
+        "entity": "sensor.humidity",
+    }
+    config = self._config(
+        states={
+            "sensor.humidity": {
+                "state": "8.41",
+                "attributes": {"unit_of_measurement": "g/m³"},
+            }
+        },
+        number_format="decimal_comma",
+        language="de",
+    )
+    svg = render_widget_svg(widget, config)
+    assert "8,41" in svg
+    assert "8.41" not in svg
+```
+
+Widgets that display only non-numeric states (on/off, binary sensors,
+labels) do not need this test.
+
+### 7. Auto-sizing tests — row-based widgets only
+
+For row-based widgets (height derived from content rows), verify the
+auto-sizing fallback.  Use `render_widget_svg` directly — a
+full-canvas PNG from `render_dashboard` cannot reveal the widget's
+own height attribute.
+
+- **No `h`, one row**: `SVG height == DEFAULT_ROW_H`
+- **No `h`, N rows**: `SVG height == N * DEFAULT_ROW_H`
+- **Explicit `h` preserved**: widget with explicit `h` produces that
+  exact height regardless of row count
+
+```python
+def test_{widget}_auto_height_single_row(self) -> None:
+    # Without explicit h, one row produces height DEFAULT_ROW_H.
+    w = {
+        "type": "$widget-type",
+        "x": 0, "y": 0, "w": 400,
+        "entities": ["sensor.temperature"],
+    }
+    svg = render_widget_svg(w, self._config())
+    m = re.search(r'height="(\d+)"', svg)
+    assert m is not None
+    assert int(m.group(1)) == DEFAULT_ROW_H
+
+def test_{widget}_explicit_h_preserved(self) -> None:
+    # An explicit h overrides auto-sizing.
+    w = {
+        "type": "$widget-type",
+        "x": 0, "y": 0, "w": 400, "h": 200,
+        "entities": ["sensor.temperature"],
+    }
+    svg = render_widget_svg(w, self._config())
+    m = re.search(r'height="(\d+)"', svg)
+    assert m is not None
+    assert int(m.group(1)) == 200
+```
+
+## Mock state setup
+
+Define mock states at **module level** (not pytest fixtures —
+conftest.py only has HA stubs). Include `device_class` in attributes
+(required for icon resolution in redesigned widgets). For binary
+sensors, define separate entries for `on` and `off` states to test
+state-dependent icon resolution:
+
+```python
+MOCK_{WIDGET}_STATES = {
+    "sensor.temperature": {
+        "state": "22.5",
+        "attributes": {
+            "friendly_name": "Living Room",
+            "device_class": "temperature",
+            "unit_of_measurement": "°C",
+        },
+    },
+    "binary_sensor.front_door": {
+        "state": "off",
+        "attributes": {
+            "friendly_name": "Front Door",
+            "device_class": "door",
+        },
+    },
+}
+```
+
+**Lesson from completed cycles:** The old `MOCK_SENSOR_STATES` lacked
+`device_class`, which caused icon resolution to fall back to letter
+labels. Always include `device_class` in mock attributes.
+
+## Widget config shape (redesigned widgets)
+
+Redesigned widgets use `w` and `h` instead of `font_size`. The `w`
+parameter defines the card/chip boundary width, and `h` defines the
+total widget height. All internal dimensions derive from `h`.
+
+```python
+# Card-style widget (tile, waste_schedule, person, alarm)
+# "h" is optional: omit it for auto-sizing (height =
+# num_rows * DEFAULT_ROW_H).  Include it to test explicit override.
+widget = {
+    "type": "$widget-type",
+    "x": PADDING, "y": 0, "w": 350, "h": 112,
+    "entities": ["sensor.temperature", "sensor.humidity"],
+    "card_style": "border",  # or "left_bar" or "none"
+}
+
+# Chip-style widget (lock)
+widget = {
+    "type": "$widget-type",
+    "x": PADDING, "y": 0, "w": 350, "h": 28,
+    "entities": ["binary_sensor.front_door"],
+}
+```
+
+**Do NOT use `font_size`** in redesigned widget configs. The TEXT
+widget is the only widget that keeps `font_size`.
+
+## Test class pattern
+
+```python
+class TestRender{WidgetName}:
+    # Verify rendering of $widget-type widgets.
+    _DEFAULTS: dict[str, object] = {
+        "width": 400,
+        "height": 300,
+        "states": MOCK_{WIDGET}_STATES,
+    }
+
+    def _config(self, **overrides: object) -> dict[str, object]:
+        return make_config(self._DEFAULTS, **overrides)
+
+    def test_{widget}_draws_content(self) -> None:
+        # Verify that content is rendered in the expected region.
+        widgets = [{
+            "type": "$widget-type",
+            "x": PADDING, "y": 0, "w": 350, "h": 56,
+            "entities": ["sensor.temperature"],
+        }]
+        img = render_to_image(widgets, self._config())
+        assert_has_dark_pixels(img, PADDING, 0, 350, 56)
+
+    def test_{widget}_empty_entities_white(self) -> None:
+        # Empty entity list produces blank output.
+        widgets = [{
+            "type": "$widget-type",
+            "x": PADDING, "y": 0, "w": 350, "h": 56,
+            "entities": [],
+        }]
+        img = render_to_image(widgets, self._config())
+        assert_all_white(img, PADDING, 0, 350, 56)
+
+    def test_{widget}_icon_centered_with_text(self) -> None:
+        # Verify icon circle is vertically centered with text block.
+        m = _compute_metrics(56)
+        widgets = [{
+            "type": "$widget-type",
+            "x": 0, "y": 0, "w": 400, "h": 56,
+            "entities": ["sensor.temperature"],
+        }]
+        img = render_to_image(widgets, self._config())
+        assert_vertically_centered(
+            img,
+            icon_region=(m.padding, 0, m.padding + m.icon_dia, 56),
+            text_region=(
+                m.padding + m.icon_dia + m.inner_gap, 0, 380, 56
+            ),
+        )
+```
+
+## Computing expected pixel regions
+
+Derive regions from `_compute_metrics(row_h)` so tests stay in sync
+with the renderer's own layout:
+
+```python
+m = _compute_metrics(56)  # row_h = widget h / number of rows
+# Card border:
+#   x in [0, m.border] and [w - m.border, w]
+# Icon circle:
+#   x in [x_off + m.padding, x_off + m.padding + m.icon_dia]
+# Icon glyph size (inside the circle):
+#   m.icon_inner  (do NOT compute as m.icon_dia * 6 // 10)
+# Text start:
+#   x = x_off + m.padding + m.icon_dia + m.inner_gap
+# Row divider:
+#   y = row_y + row_h  (height = m.divider)
+# card_container macro passes (x_off, right_inset) to caller:
+#   "border"   -> (m.padding, m.padding)
+#   "left_bar" -> (bar_w + m.padding, 0)
+#   "none"     -> (0, 0)
+# Content width (cw):
+#   cw = w - x_off - right_inset
+# _card_insets(m, card_style, display_levels) returns
+# (x_off, r_inset, bar_width). Derive lpad/rpad from the result:
+#   x_off, r_inset, _ = _card_insets(m, card_style, display_levels)
+#   lpad = m.padding if x_off == 0 else 0
+#   rpad = m.padding if r_inset == 0 else 0
+# Icon circle left arc lands at x_off + lpad, NOT x_off + m.padding.
+# Divider lines span x_off + lpad .. w - r_inset - rpad.
+```
+
+## Lessons from completed TDD cycles
+
+1. **Pixel-level assertions for borders**: The SEPARATOR tests use
+   exact `pixel()` checks (e.g. `pixel(img, x, 50) == COLOR_BLACK`)
+   for precise structural verification. Use these when the exact
+   position is known.
+
+2. **Region-based assertions for content**: Use
+   `assert_has_dark_pixels()` for areas where content location is
+   approximate (text rendering varies by font backend).
+
+3. **`content_bbox()` for measuring**: Use it to find actual rendered
+   content size for scaling and alignment tests. It returns the tight
+   bounding box of non-white pixels.
+
+4. **2-level display tests**: When the widget uses gray elements
+   (dividers, bars, left_bar), test the `display_levels=2` path
+   that widens them. Pass it via config:
+   `config = {**self._CONFIG, "display_levels": 2}`.
+
+5. **Test each `card_style` variant**: For card-style widgets, test
+   all three styles (`"border"`, `"left_bar"`, `"none"`) in separate
+   test methods. The SEPARATOR tests show this pattern well.
+
+6. **2-level icon ring bounds**: When a helper computes the ring
+   check area inside an icon circle (the region above the glyph),
+   it must account for the wider stroke on 2-level displays.
+   Mirror the context builder's `icon_stroke_w` formula so the
+   check region stays inside the stroke inner edge:
+
+   ```python
+   icon_stroke_w = (
+       m.border * 3 if display_levels <= 2 else m.border
+   )
+   ring_y1 = icon_cy - icon_r + icon_stroke_w // 2 + 3
+   ring_y2 = icon_cy - m.icon_inner // 2 - 1
+   ```
+
+   Without this adjustment, the wider stroke's antialiased inner
+   edge bleeds into the ring region, producing false gray-pixel
+   hits in the 2-level test path.
+
+6. **Missing entity = no crash**: Always include a test that passes a
+   nonexistent entity ID and verifies the widget doesn't crash.
+   Also test empty entity list → all white canvas.
+
+7. **Each test needs a comment**: Every test function must start with
+   a short comment explaining what it verifies.
+
+8. **Engine-agnostic tests only**: Tests call `render_dashboard()` and
+   inspect PNG output. Do NOT import or call internal drawing helpers
+   from tests. The entry point (`render_dashboard`) dispatches
+   transparently to the SVG pipeline in `svg_render.py`.
+   **Exception**: auto-sizing tests (§5) call `render_widget_svg`
+   directly to read the SVG `height` attribute — it cannot be inferred
+   from a full-canvas PNG.
+
+## Font metric tolerance
+
+The SVG pipeline uses resvg for text rendering, which may produce
+slightly different glyph metrics than PIL. Keep the following in mind:
+
+- Use region-based assertions (`assert_has_dark_pixels`,
+  `assert_has_gray_pixels`) rather than exact pixel checks for text
+  content. Text position may shift by 1-3 pixels between engines.
+- Use `tolerance=3.0` (instead of 2.0) for
+  `assert_vertically_centered` when testing icon-text alignment.
+  resvg's `dominant-baseline="central"` differs slightly from PIL's
+  ascender-based centering.
+- `assert_scales_proportionally` tolerance of 0.25 remains sufficient
+  — proportional scaling is engine-agnostic.
+- Exact `pixel()` checks are fine for geometry (borders, dividers,
+  chip corners) — these are SVG shapes, not text.
+
+## Verification
+
+Run tests — they should FAIL at this point (TDD red phase):
+
+```bash
+uv run --group test pytest \
+    tests/test_render_{widget_type}.py::TestRender{WidgetName} -v
+```
+
+The tests define the expected behavior. The renderer implementation
+(via `/implement-widget`) makes them pass.
+
+## Key references
+
+- Widget behavior source: task description / spec doc for the new widget
+- Test helpers: `tests/helpers.py`
+- Reference structural tests: `TestRenderSeparator` in
+  `tests/test_render_separator.py`
+- Reference `_DEFAULTS` + `_config()` pattern: `TestRenderWeather`
+  in `tests/test_render_weather.py`
+- Sizing ratios: `_compute_metrics()` in `render.py`
+- SVG macros: `templates/_macros.svg.j2`
+- Colors: `COLOR_BLACK=0`, `COLOR_WHITE=255`, `COLOR_GRAY=120` in
+  `const.py`

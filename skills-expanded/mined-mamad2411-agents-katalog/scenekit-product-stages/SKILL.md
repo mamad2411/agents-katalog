@@ -1,0 +1,368 @@
+---
+name: scenekit-product-stages
+description: Build and debug SceneKit scenes where one 3D object (a product, badge, coin, wheel) performs on a transparent stage inside a SwiftUI app - studio lighting, real shadows, baked keyframe choreography, hand-rolled physics, gestures and haptics, multi-scene sequencing. Use when working with SCNView or SceneView in SwiftUI, UIViewRepresentable 3D scenes, product or hero-object animation, roll or spin entrances, a first-frame hitch when a scene appears, shadows missing or wrong, metal rendering black, choreographed 3D motion that must stay interruptible, a continuous vapor stream (vent air, steam, mist) drawn as a shader-driven sheet, a liquid-metal or jelly blob (noise-deformed surface with mirror reflections and tap ripples), chrome or gold that looks cartoon-flat instead of real, HDRI image-based lighting, free trackball rotation of an actor, deterministic screenshot testing of shader-driven scenes, cutting an actor in two with a finger swipe (runtime mesh slicing with sealed cross-sections and a falling piece), a die-struck relief object (badge, coin, medallion) built from a heightfield with multiple finishes on one mesh, an actor crumbling into debris that falls and rests on the floor, reproducing a real object's motion from photos or video, or keyframed motion that stutters at its own keyframes. Not for RealityKit, ARKit, visionOS, or full game worlds.
+license: MIT
+metadata:
+  author: Mateusz Dembek
+  version: 1.9.0
+---
+
+# PropMotion
+
+Make one 3D object perform in your SwiftUI app. Production patterns for a
+specific, common job: a polished product actor on a transparent SceneKit
+stage - entrances, exits, throws, shadows, haptics, and the silent traps
+that cost days.
+
+## When to use SceneKit at all
+
+Be honest about the framework's position:
+
+- SceneKit is in maintenance mode. For new apps with heavy 3D needs (asset
+  pipelines, USD/USDZ, AR, large worlds) prefer RealityKit.
+- SceneKit is still the fastest path to a decorative 3D actor inside a SwiftUI
+  app: a transparent `SCNView` composites over any SwiftUI layout, geometry
+  shader modifiers are a single MSL string, CoreAnimation interop is mature,
+  and everything here runs on plain UIKit views with no session setup.
+- If the 3D element is one hero object with choreographed motion, this skill's
+  recipes apply directly. If it is a full interactive world, stop and consider
+  RealityKit first.
+
+## The core stage recipe
+
+A stage is: transparent `SCNView`, a `@MainActor` coordinator that owns the
+scene graph, a camera at standing eye height, a three-light rig plus a
+dedicated shadow light, a contact blob, and a shadow catcher. The actor
+performs via baked keyframe animations.
+
+```swift
+struct ProductStage: UIViewRepresentable {
+    let item: Item
+
+    // The key must change ONLY when the scene must visibly change.
+    private var stateKey: String { "\(item.id)" }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.backgroundColor = .clear   // the stage composites over SwiftUI
+        view.isOpaque = false
+        view.antialiasingMode = .multisampling4X
+        view.scene = context.coordinator.buildScene()
+        view.pointOfView = context.coordinator.cameraNode
+        context.coordinator.install(item)
+        context.coordinator.markState(stateKey)
+        // First-frame warm-up, two-key ignition: compile shaders off
+        // the critical path, park the actor offstage, and gate the first
+        // entrance on BOTH a minimum delay and prepare's completion.
+        context.coordinator.parkOffstage()
+        if let scene = view.scene {
+            view.prepare([scene]) { _ in
+                DispatchQueue.main.async { context.coordinator.markPipelinesWarm() }
+            }
+        }
+        context.coordinator.scheduleFirstEntrance()
+        return view
+    }
+
+    func updateUIView(_ view: SCNView, context: Context) {
+        // State-key diffing: SwiftUI re-renders must never replay entrances.
+        guard context.coordinator.stateKey != stateKey else { return }
+        context.coordinator.markState(stateKey)
+        context.coordinator.transition(to: item)
+    }
+}
+```
+
+The pieces, in build order:
+
+1. Transparent view flags (`backgroundColor = .clear`, `isOpaque = false`),
+   MSAA 4x. The host screen provides the backdrop; the scene has no box.
+2. Coordinator owns the node hierarchy, decomposed one node per motion
+   concern (travel, lift, yaw, spin), so independent animations never fight
+   over a single transform.
+3. Camera: `projectionDirection = .horizontal` so the actor's size follows
+   stage width; raised position with a slight downward pitch reads like a
+   standing observer. Keep it static; a moving camera reads synthetic.
+4. Lights: warm key, cool low fill, hard rim, ambient only as a floor value,
+   plus a separate shadow-casting directional light aimed from behind-above
+   the actor so it never disturbs the visible sculpt.
+5. Ground contact: a soft dark gradient plane (the contact blob) under the
+   actor plus an invisible `.shadowOnly` catcher plane for the real shadow.
+6. Reflective materials sample a small programmatic environment map, not a
+   photo. Keep the zone behind the camera dark.
+7. All choreography is baked `CAKeyframeAnimation`, guarded by generation
+   tokens so any new beat supersedes pending work.
+
+Full detail with code: [references/stage-recipe.md](references/stage-recipe.md)
+
+## The traps that cost the most time
+
+| Trap | Fix |
+| --- | --- |
+| Deferred shadows never render when MSAA is on, with zero console errors | Use `shadowMode = .forward` plus a `.shadowOnly` catcher. Debug any missing shadow by first giving the scene a visible gray lambert floor. |
+| The first frame of a fresh `SCNView` compiles Metal pipelines in the middle of your entrance animation | `prepare([scene])` in the background, park the actor offstage, delay the first entrance. Never start an animation on frame one. |
+| `fillMode = .forwards` + `isRemovedOnCompletion = false` pins the presentation, and removal is per object | One central `clearAnimations` that sweeps the node, every child geometry, the lights, and running actions, called from every entry point. |
+| Face-on real metal renders as a gray or black hole | A mirror viewed head-on reflects the environment zone behind the camera. Keep the approved painted base and add a thin additive layer with its own reflection map. |
+| Toggling `castsShadow` pops a blurred penumbra in one frame; `shadowBias` and the light's `categoryBitMask` are ignored for forward directional shadows | Keep `castsShadow` on permanently and animate `shadowColor` alpha, synchronized with the motion. |
+| A fixed warm-up delay still hitches on cold devices and the Simulator; a particle effect's first frame compiles its own pipeline and drops exactly when it fires | Two-key ignition: gate the entrance on the minimum delay AND `prepare`'s completion handler. Warm particle pipelines with a zero-opacity burst matching the real effect's flags. |
+| The default `UIGraphicsImageRenderer` format inherits screen scale, inflating every generated texture 9x in pixels - deadly for textures re-rendered live (per-keystroke engraving) | Pin the renderer format's scale to 1 and size the canvas to the actor's on-screen projection; coalesce multi-input retargets to one render per update pass. |
+| Reproducing a real object's motion from photos yields confident rigs that fail sideways - each fix reveals a new wrong | Stills carry poses, not paths or mechanisms; end-pose fits do not determine the trajectory. Model the path: a calibration rig with direct pose controls, the owner authoring keyframes against the physical object. |
+| A keyframed motion stutters rhythmically at its keyframes and survives every rendering and timing fix | The jerks are baked into the curve: the uniform Catmull-Rom basis on unevenly spaced keyframes steps velocity at every knot. Interpolate with span-weighted Hermite tangents (or a natural cubic) over distance-based phases, and gate on a numeric continuity check. |
+| A sub-mesh cut from a larger model measures as if it were the whole object, with no error anywhere | The cut trimmed only the index buffer; the vertex buffer still holds every vertex of the original. Measure only vertices referenced by the submesh indices. |
+| A square image assigned to `scene.lightingEnvironment` is silently ignored - zero reflections, every mirror material renders black, no console output | Paint the environment map in a recognized cube-map layout, easiest a 2:1 spherical canvas (1024x512). Only `material.reflective` accepts a square sphere map. |
+| A scene animated only by the shader clock draws one frame and freezes; two screenshots seconds apart are pixel-identical | The on-demand render loop cannot see shader time: set `rendersContinuously = true`, and verify motion with a pixel-diff, never by eye. |
+| A speed dial on a shader-time pattern teleports the pattern when snapped - and tweening the dial makes the stream visibly race, or flow BACKWARD when slowing | Phase must be the integral of speed, never `speed * absoluteTime`: accumulate a clock in the renderer delegate, ease the speed toward its target, and let the clock only advance. |
+| A translucent sheet waved by a geometry modifier prints a bright hairline along every fold silhouette; banded grazing fades either keep the razor or paint straight dark stripes | Modifiers move vertices, not normals: tilt the normal by the wave's analytic slope, then scale alpha by thickness compensation `(1+k)*facing/(facing+k)` - smooth, zero at tangency, face-on fog untouched. |
+| Chrome lit by a hand-painted environment renders as cartoon metal: one flat paper-white highlight with a hard edge, reflections posterized into gray bands | The painted map's ceiling is 1.0 - there is no dynamic range to roll off. Use a photographic `.hdr` HDRI passed as a FILE URL (a `UIImage` re-encode silently clamps it back to LDR) plus `wantsHDR` on the camera. |
+| `lightingEnvironment` has no orientation control, and the panorama's frontal lamp prints one big blob dead ahead in the reflection | Rotate the CAMERA RIG instead: with a symmetric actor and radial floor the framing is identical, only the reflection layout moves. Build screen-space gestures rig-aware (lift axes through `pointOfView`). |
+| A full `clearCoat` on a white dielectric turns pearl into chrome with a white core; two finishes collapse into one look | `clearCoat` is a mirror layer. Pearl wants ~0.3-0.4 with roughness ~0.2 - gloss over cream, not silver. |
+| A tap on a shader-deformed actor misses exactly on the bulges - `hitTest` sees only the undisplaced mesh | Give the actor an oversized invisible collider (`colorBufferWriteMask = []`), hit-test with `.all`, filter by node name. |
+| Frozen-clock snapshots that should be identical diff nonzero with no visible difference | Adaptive exposure renders the same instant differently depending on scene history: `wantsExposureAdaptation = false`, fix exposure by hand. |
+| Particle debris slides forever or never comes to rest, and every friction tweak makes it worse | `particleFriction` is INVERTED from physical intuition: 1.0 slides freely, 0.0 sticks. A low value (~0.25) is what parks a grain after its last hop. |
+| A surface a mechanic creates at runtime (a cut face, a toppled underside) renders near-black while the rest of the actor looks fine | Faces standing nearly parallel to the view axis graze off the key and the shadow sun. Give the scene a real ambient floor and judge lighting in EVERY orientation the mechanic can produce, not just the authored pose. |
+| A stage is silently empty - no errors, no scene, nothing to debug | A narrowing init (`Int32(...)`) after 64-bit hash arithmetic traps at runtime, and inside an async task the crash is invisible. Do hash math in the target width via `truncatingIfNeeded`, and check the system crash reports before debugging scene logic. |
+
+## Reference map
+
+- [references/stage-recipe.md](references/stage-recipe.md): the full stage,
+  view setup, coordinator, node hierarchy, camera, lighting rig, contact blob
+  and catcher, programmatic environment maps and textures, impact particles
+  on a stage, shader modifiers on stage actors (the linear-space uniform
+  trap), keeping the stage's SwiftUI identity (remount and update-storm
+  traps).
+- [references/first-frame-and-warmup.md](references/first-frame-and-warmup.md):
+  the Metal pipeline-compile hitch at first draw and both cures, warm-up
+  with a delayed entrance (upgraded to two-key ignition gated on prepare's
+  completion), or keeping the scene mounted warm and retargeting it;
+  particle pipeline warm-up; proving the cure with signposts and on-device
+  hitch traces.
+- [references/shadows-and-lights.md](references/shadows-and-lights.md): every
+  silent shadow trap, the reliable forward + shadowOnly combo, animating
+  shadow visibility, the neutral light budget, face-on metal.
+- [references/baked-animation.md](references/baked-animation.md): why baked
+  keyframes beat timers, the cue sheet for designing multi-phase beats
+  before baking them, seam classification (C1 vs contact impulses),
+  designing weight, dense sampling, cleanup bookkeeping, generation
+  tokens, stealing a node mid-animation, rolling without sliding, rolling
+  along floor paths (steering, screen-space staging, debug trails), channels
+  beyond transforms (morpher weights, lens values, shader uniforms), springs
+  as authoring material, one property one owner.
+- [references/motion-from-reference.md](references/motion-from-reference.md):
+  reproducing a real object's motion - what stills and video can and cannot
+  tell you, modeling the path instead of the mechanism, the calibration rig
+  (the owner poses the actor and saves keyframes), distance parametrization
+  and span-weighted interpolation of hand-saved poses, the uniform
+  Catmull-Rom trap, numeric continuity gates, seamless cosine state loops
+  with exits from the current phase, measuring trimmed sub-meshes.
+- [references/physics-without-engine.md](references/physics-without-engine.md):
+  the hand-rolled fixed-step integrator baked to keyframes, walls and floor as
+  plain numbers, contact-driven haptics, a rim-pivot topple, and why this
+  beats SCNPhysics for choreographed scenes.
+- [references/mesh-surgery.md](references/mesh-surgery.md): cutting an
+  actor apart at runtime - the mesh as plain arrays, a swipe lifted into
+  a cut plane through the camera, triangle clipping into two SEALED
+  halves, the convexity argument that makes the cap trivial, planar cap
+  UVs serving one radial artwork, closed-mesh volume and center-of-mass
+  integrals deciding which piece falls, the support-point fall integrator
+  for an arbitrary chunk, hold-to-aim commit-on-release, scripted cuts
+  that survive re-slicing.
+- [references/relief-actors.md](references/relief-actors.md): die-struck
+  relief objects from CPU heightfields - height and class map painted
+  together (several finishes on one mesh), parabolic feature profiles,
+  the silhouette's three simultaneous guarantees, normals from a blurrier
+  copy of the field, judging flat mirrors front-on and frozen, the
+  narrowing-init hash trap, naming the raster ceiling before polishing
+  toward offline renders.
+- [references/gestures-and-haptics.md](references/gestures-and-haptics.md):
+  pan-to-grab without hit testing, the trackball (screen axes lifted to
+  world space through the camera, quaternion composed over authored
+  motion, flick inertia on the stage clock, tap/pan coexistence), soft
+  clamps while held, release velocity, impact haptics, scripted beats
+  surviving live fingers (bounded retries, tokened polls, hidden-actor
+  gesture guards, steal closes the hold contract), Reduce Motion as a
+  taxonomy, VoiceOver access to an invisible stage, coexisting with
+  SwiftUI gestures.
+- [references/sequencing-stages.md](references/sequencing-stages.md):
+  directing several stages as one film - a master clock with beats as
+  data, wall-time drift traps, cuts on motion after the exit clears,
+  pre-mounting the next stage for warmup, a stage outliving its own cut
+  (lingering smoke), re-basing the timeline on a user interaction, a
+  recording lead, verifying cuts frame by frame.
+- [references/modeling-actors.md](references/modeling-actors.md): building
+  believable hero objects from primitives - real-world ratios before
+  eyeballing, annuli for recessed faces, tube-plus-torus silhouettes, radial
+  pattern legibility, per-instance tilt for concave faces, open gaps, relief
+  features as geometry (never paint), satin metal albedo on dark stages,
+  gating actors that arrive as files.
+- [references/camera-choreography.md](references/camera-choreography.md):
+  the camera as the performer - the orbit rig, baked reveal flights, focus
+  riding the dolly, drag-orbit with inertia and fly-home, SCNFloor
+  reflections as grounding, matte staging under downlights, constraints for
+  tracking rigs (and why they never go on the actor).
+- [references/instancing-and-swarms.md](references/instancing-and-swarms.md):
+  dozens of actors at once - one geometry for the swarm, slot-based piles
+  instead of physics, parabolas solved backward from the landing spot,
+  tumble blended to a rest pose, seeded randomness, stagger by
+  scheduling, destruction bursts (the one place engine particles beat
+  baking, and the determinism exemption that comes with them), budget
+  notes.
+- [references/fog-and-mist-sheets.md](references/fog-and-mist-sheets.md):
+  a continuous vapor stream (vent air, steam, mist) as ONE translucent
+  sheet - geometry-modifier wave plus fragment-modifier fog, domain-warped
+  noise vs stripes, quintic fades vs Mach bands, jittered envelopes,
+  downstream brightness for direction, the integrated phase clock that
+  survives a speed dial, wave-tilted normals and thickness compensation
+  for fold silhouettes, camera-relative dial envelopes, measuring flow
+  direction by profile correlation.
+- [references/multi-actor-physics.md](references/multi-actor-physics.md):
+  several actors in one baked simulation - N state vectors on one clock,
+  pairwise collisions (separate, then exchange when approaching), the
+  freeze-the-world grab, hit-testing which actor the finger picked,
+  per-actor contact lists for squash and haptics.
+- [references/hdr-environments.md](references/hdr-environments.md):
+  believable metal - the LDR ceiling behind cartoon highlights, real
+  `.hdr` HDRIs by file URL (the UIImage clamp trap), `wantsHDR` with
+  bloom thresholds above 1.0, exposure adaptation vs snapshots, rotating
+  the camera rig because the environment cannot rotate, clearcoat and
+  dark-finish notes, light themes needing dark furniture, purpose-built
+  environments for flat mirrors (finite gaussian cards, never
+  full-sphere rings), classifying the three kinds of lines on chrome,
+  CC0 sourcing and bundling.
+- [references/deformable-surfaces.md](references/deformable-surfaces.md):
+  a closed surface that breathes - fbm displacement on the unit
+  direction, the octave budget separating liquid from rock,
+  finite-difference normal reconstruction (mirror finishes die without
+  it), tap ripples as float4 uniform slots with a travelling front, mesh
+  density vs ring wavelength, the oversized invisible tap collider,
+  amplitude as an animatable KVC dial.
+- [references/rendering-contract.md](references/rendering-contract.md):
+  the deterministic stage - one injectable dt-integrated clock owning
+  shader uniforms, node poses, and gesture inertia; the freeze launch
+  hook and back-dated events; the determinism checklist (exposure
+  adaptation, wall clocks, Reduce Motion as pause); the proof kit
+  (motion diff, bit-identical frozen pairs, frozen-clock interaction
+  diff); synthetic CGEvent gestures and their traps (stale window
+  frames, the human in the loop).
+
+## Review checklist
+
+Before shipping a stage, verify:
+
+- [ ] `backgroundColor = .clear` and `isOpaque = false` on the SCNView; the
+      stage composites with no visible box or seam.
+- [ ] No animation starts on the view's first frame; `prepare` runs and the
+      first entrance is delayed or the scene is kept mounted warm.
+- [ ] Shadows use forward mode with a `.shadowOnly` catcher; nothing relies on
+      deferred shadows, `shadowBias`, or light `categoryBitMask` gating.
+- [ ] Alpha-textured planes (labels, decals) have `castsShadow = false`, or
+      they will cast square shadows.
+- [ ] Shadow visibility changes ramp `shadowColor` alpha; `castsShadow` is
+      never toggled at runtime.
+- [ ] If the scene must render a texture color-faithfully, ambient plus
+      directional times cos(incidence) sums to neutral (1000) for a flat
+      surface; no clipped light grays.
+- [ ] Any image on `lightingEnvironment` (or `background`) uses a
+      recognized cube-map layout - 2:1 spherical, 6:1 or 1:6 strip, or six
+      images; a square image there is silently ignored and reflective
+      materials render black.
+- [ ] Every async continuation (delayed entrances, scheduled haptics, chained
+      transitions) captures a generation token and re-checks it before acting.
+- [ ] Any code that steals an animating node snapshots `.presentation` values
+      into the model before calling `removeAllAnimations`.
+- [ ] Baked animations set the model to the final pose before `addAnimation`;
+      nothing depends on `fillMode = .forwards` without a cleanup sweep.
+- [ ] Multi-phase beats have a cue sheet comment above the pose function
+      that matches the phase-boundary struct; phase and cue times live in
+      that one struct, never as literals in the sample loop or in scheduled
+      haptics. Every seam is classified: design seams are C1, impulse seams
+      occur only at contact events and each lands a cue.
+- [ ] Rolling objects slave spin to distance divided by radius; nothing slides.
+- [ ] Motion copied from a real object is authored as keyframes through a
+      calibration rig (direct pose controls, saved poses, the owner's eye),
+      never as a mechanism inferred from photographs.
+- [ ] Hand-authored keyframes are parametrized by pose-space distance and
+      interpolated with span-weighted tangents (or a natural cubic); a dense
+      sampling passes a numeric max-acceleration-step check before the bake.
+- [ ] Looping states drive their phase with a cosine over the state's actual
+      sweep range (start equals end, zero-velocity reversals) and repeat via
+      the engine; exits read the current phase from the animation clock and
+      leave along the same path with duration scaled by remaining travel.
+- [ ] Eases on paths that enter or leave the frame keep a nonzero arc-rate
+      at both edges of the VISIBLE window; a path appended to a resting
+      actor starts with its tangent dead on the actor's roll axis (actor
+      length amplifies any first-frame heading snap).
+- [ ] Any scripted beat that can meet a live finger uses a bounded,
+      token-guarded retry, never a single shot behind a silent guard; every
+      gesture entry point refuses a hidden or unmounted actor before
+      bumping tokens.
+- [ ] When a motion bug is reported, the path is drawn as a ~4pt flat
+      ribbon (the bake's own points, unlit, depth-test off) BEFORE tuning
+      anything - and the ribbon is removed once the shape is approved.
+- [ ] In a multi-scene sequence: the script clock advances by wall-time
+      deltas from a static publisher, every cut lands after the outgoing
+      exit clears the frame, and the next stage pre-mounts parked offstage.
+- [ ] Haptics respect the app's haptics preference; motion-driven extras
+      (gyro parallax, shake) respect Reduce Motion.
+- [ ] 60 Hz work (motion callbacks, per-frame updates) stops when the view
+      leaves the window and restarts on reattach.
+- [ ] `updateUIView` diffs a state key; a pure SwiftUI re-render replays
+      nothing.
+- [ ] The stage's SwiftUI identity is stable: never conditionally present
+      (hide with opacity), no closure parameters on the representable, and
+      `.id` used only as a deliberate remount lever.
+- [ ] The stage exists for VoiceOver: one accessibility element with a label
+      and value, gestures mirrored as adjustable or named actions, and
+      looping ambient motion removed (not slowed) under Reduce Motion.
+- [ ] Textures are capped well under the GPU's texture size limit (16384 px
+      on modern iPhones, 8192 px on older GPUs) and any texture cache is
+      released when the stage leaves for good.
+- [ ] Generated textures render at format scale 1, sized to the actor's
+      on-screen projection; live-retargeted textures coalesce to one render
+      per update pass.
+- [ ] The first entrance is gated on `prepare`'s completion handler, not a
+      fixed delay alone; particle pipelines are warmed (zero-opacity burst,
+      flags matching the real effect) before their first real frame.
+- [ ] Impact particles are alpha-blended, distance-sorted, unlit with a
+      per-rig flat color, and their emitter shapes never intersect the actor.
+- [ ] Haptic generators are prepared and reused per style, never built
+      inline inside scheduled closures.
+- [ ] Any stage animated only by the shader clock sets
+      `rendersContinuously`; motion is verified by pixel-diffing two
+      captures, direction/pace claims by frame-to-frame profile
+      correlation, not by eye.
+- [ ] Every speed-driven shader pattern advances by an accumulated clock
+      (integral of speed), never by `speed * absoluteTime`; the speed
+      eases toward its target and the clock only moves forward.
+- [ ] View-angle fades on deformed sheets read wave-tilted normals (the
+      modifier updates `_geometry.normal`, not just position), and fold
+      silhouettes are handled by thickness compensation, not a banded
+      softstep with a floor.
+- [ ] Each motion channel owns its envelope: a calm or taper on one
+      channel (the wave) never rides a ramp another channel (a swing
+      bend) depends on.
+- [ ] A ported effect's dials are re-blocked for the new camera in screen
+      space first; every envelope-coupled constant is re-derived from the
+      new visible run before detail tuning.
+- [ ] Mirror-finish actors are lit by a photographic `.hdr` environment
+      passed as a file URL, with `wantsHDR` on the camera and bloom
+      thresholded above 1.0; nothing hand-painted in LDR feeds a chrome
+      or gold material.
+- [ ] Shader-deformed geometry rebuilds `_geometry.normal` from the
+      deformation (finite differences for composite displacement), and
+      taps are hit-tested against an oversized invisible collider, not
+      the base mesh.
+- [ ] Every motion source - shader uniforms, node poses, gesture
+      inertia - rides one dt-integrated clock with a freeze launch hook;
+      exposure adaptation is off; determinism is proven by bit-identical
+      frozen screenshots across launches, and interaction by a
+      frozen-clock diff bounded to the actor. A stage that hands motion
+      to the engine's particle simulation declares its exemption in a
+      comment and proves itself by motion pixel-diff instead.
+- [ ] Lighting is verified in every orientation the stage's mechanics
+      can produce (cut faces, toppled undersides, mid-tumble poses) -
+      not only the authored resting pose.
+- [ ] Linework in generated textures (stripes, bands, outlines) is drawn
+      as filled vector paths, never as stacks of per-row rectangles -
+      row stacks print staircase edges at any resolution.

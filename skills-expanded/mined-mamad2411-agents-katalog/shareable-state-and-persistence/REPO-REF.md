@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/shareable-state-and-persistence/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Shareable State and Persistence

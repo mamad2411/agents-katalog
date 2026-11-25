@@ -1,0 +1,215 @@
+---
+created: 2025-12-16
+modified: 2026-09-06
+reviewed: 2025-12-16
+description: Check and configure Justfiles with standard recipes. Use when setting up a Justfile, auditing for missing recipes, or migrating from Makefile to Justfile.
+allowed-tools: Glob, Grep, Read, Write, Edit, Bash, AskUserQuestion, TodoWrite
+args: "[--check-only] [--fix]"
+argument-hint: "[--check-only] [--fix]"
+name: configure-justfile
+---
+
+# /configure:justfile
+
+Check and configure project Justfile against project standards.
+
+## When to Use This Skill
+
+| Use this skill when... | Use another approach when... |
+|------------------------|------------------------------|
+| Setting up a new Justfile for a project | Project already uses Make exclusively and migration is not desired — use `/configure:makefile` |
+| Auditing existing Justfile for missing standard recipes | Writing complex custom recipes — use `justfile-expert` skill |
+| Migrating from Makefile to Justfile | Project has no task runner needs (single-file scripts) |
+| Ensuring Justfile follows team conventions (groups, comments, settings) | Debugging a specific recipe failure — use direct `just` commands |
+| Running CI/CD compliance checks on project task runners | Only need to list available recipes — run `just --list` directly |
+
+## Context
+
+- Project root: !`pwd`
+- Justfile: !`find . -maxdepth 1 \( -name 'justfile' -o -name 'Justfile' \)`
+- Makefile: !`find . -maxdepth 1 -name 'Makefile'`
+- Package files: !`find . -maxdepth 1 \( -name 'package.json' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'go.mod' \)`
+- Docker files: !`find . -maxdepth 1 \( -name 'Dockerfile' -o -name 'docker-compose.yml' \)`
+- Env file: !`find . -maxdepth 1 -name '.env'`
+- Project standards: !`find . -maxdepth 1 -name '.project-standards.yaml'`
+
+## Parameters
+
+Parse from command arguments:
+
+- `--check-only`: Report compliance status without modifications (CI/CD mode)
+- `--fix`: Apply fixes automatically without prompting
+
+## Execution
+
+Execute this Justfile compliance check:
+
+### Step 1: Detect Justfile and project type
+
+1. Check for `justfile` or `Justfile` in project root
+2. If exists, read and analyze current recipes and settings
+3. Detect project type from file indicators:
+
+| Indicator | Project Type |
+|-----------|--------------|
+| `pyproject.toml` or `requirements.txt` | Python |
+| `package.json` | Node.js |
+| `Cargo.toml` | Rust |
+| `go.mod` | Go |
+| None of the above | Generic |
+
+### Step 2: Analyze required and optional recipes
+
+Check for required recipes:
+
+| Recipe | Purpose | Severity |
+|--------|---------|----------|
+| `default` | Alias to help (first recipe) | FAIL if missing |
+| `help` | Display available recipes | FAIL if missing |
+| `test` | Run test suite | FAIL if missing |
+| `lint` | Run linters | FAIL if missing |
+| `build` | Build project artifacts | WARN if missing |
+| `clean` | Remove temporary files | WARN if missing |
+
+Check for context-dependent recipes:
+
+| Recipe | When Required | Severity |
+|--------|---------------|----------|
+| `format` | If project uses auto-formatters | WARN |
+| `start` | If project has runnable service | INFO |
+| `stop` | If project has background service | INFO |
+| `dev` | If project supports watch mode | INFO |
+
+### Step 3: Check compliance settings
+
+Validate Justfile settings:
+
+| Check | Standard | Severity |
+|-------|----------|----------|
+| File exists | justfile present | FAIL if missing |
+| Default recipe | First recipe is `default` | WARN if missing |
+| Dotenv loading | `set dotenv-load` present | INFO |
+| Help recipe | Lists all recipes | FAIL if missing |
+| Language-specific | Commands match project type | FAIL if mismatched |
+| Recipe descriptions | What `just --list` actually renders is usable | WARN if any are fragments |
+
+**Check what `--list` RENDERS, not whether a comment exists.** `just` shows one
+line per recipe, and with no `[doc("...")]` attribute that line is the **last
+line** of the comment block above the recipe. A block that ends in an example
+or a wrapped clause — the normal way to write one — therefore lists as a
+fragment, while the recipe looks fully documented in the file.
+
+Prefer the deterministic check over eyeballing it. It reports only recipes
+whose rendered line is a fragment, so a justfile using one-line comments
+correctly comes back clean:
+
+```bash
+python3 "$TOOLS_PLUGIN/scripts/just-recipe-help.py" --audit
+```
+
+That script ships with a **different plugin** — `tools-plugin`, whose
+`justfile-expert` skill documents the `--list` contract behind it — so there is
+no path from here that is guaranteed to resolve. Locate it with
+`find ~/.claude/plugins -name just-recipe-help.py`, or fall back to the manual
+check: for each recipe whose comment block is more than one line, read its
+**last** line alone and add a `[doc("one line")]` wherever that line is an
+example, an indented sub-item, or a clause continuing the line above.
+
+### Step 4: Generate compliance report
+
+Print a formatted compliance report:
+
+```
+Justfile Compliance Report
+==============================
+Project Type: python (detected)
+Justfile: Found
+
+Recipe Status:
+  default ✅ PASS
+  help    ✅ PASS (just --list)
+  test    ✅ PASS (uv run pytest)
+  lint    ✅ PASS (uv run ruff check)
+  build   ✅ PASS (docker build)
+  clean   ✅ PASS
+  format  ✅ PASS (uv run ruff format)
+  start   ⚠️  INFO (not applicable)
+  stop    ⚠️  INFO (not applicable)
+  dev     ✅ PASS (uv run uvicorn --reload)
+
+Settings Status:
+  dotenv-load         ✅ PASS
+  positional-arguments ℹ️  INFO (not set)
+
+Descriptions (what `just --list` renders):
+  4 recipes list a fragment rather than a description
+    caption-audit   last line continues a sentence from the line above
+    comfy-matrix    last line is a command example
+
+Missing Recipes: none
+Issues: 0 found
+```
+
+If `--check-only`, stop here.
+
+### Step 5: Create or update Justfile (if --fix or user confirms)
+
+If `--fix` flag or user confirms:
+
+1. **Missing Justfile**: Create from standard template based on project type
+2. **Missing recipes**: Add recipes with appropriate commands
+3. **Missing settings**: Add `set dotenv-load` if `.env` exists
+4. **Missing help**: Add help recipe with `just --list`
+
+Use language-specific commands from the template section in [REFERENCE.md](REFERENCE.md).
+
+### Step 6: Update standards tracking
+
+Update `.project-standards.yaml`:
+
+```yaml
+components:
+  justfile: "2025.1"
+```
+
+## Agentic Optimizations
+
+| Context | Command |
+|---------|---------|
+| Quick compliance check | `/configure:justfile --check-only` |
+| Auto-fix all issues | `/configure:justfile --fix` |
+| List existing recipes | `just --list` |
+| Verify specific recipe exists | `just --summary` |
+| Check Justfile syntax | `just --evaluate 2>&1` |
+| Audit what `--list` renders | `just-recipe-help.py --audit` (ships with `tools-plugin`) |
+| Read one recipe's notes + flags | `just-recipe-help.py <recipe>` |
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--check-only` | Report status without offering fixes |
+| `--fix` | Apply fixes automatically |
+
+## Examples
+
+```bash
+# Check current Justfile compliance
+/configure:justfile --check-only
+
+# Create/update Justfile for Python project
+/configure:justfile --fix
+
+# Check compliance and prompt for fixes
+/configure:justfile
+```
+
+## See Also
+
+- `/configure:makefile` - Makefile configuration (legacy)
+- `/configure:all` - Run all compliance checks
+- `/configure:workflows` - GitHub Actions workflows
+- `/configure:dockerfile` - Docker configuration
+- `justfile-expert` skill - Comprehensive Just expertise
+
+For the full Justfile template, language-specific recipe bodies, project-type detection logic, and Makefile migration guidance, see [REFERENCE.md](REFERENCE.md).

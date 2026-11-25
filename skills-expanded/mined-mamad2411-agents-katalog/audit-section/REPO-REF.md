@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-alexander-m-dickerson-ai-asset-pricing/audit-section/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Deep audit of a single section -- style, factual accuracy, citations, logical flow

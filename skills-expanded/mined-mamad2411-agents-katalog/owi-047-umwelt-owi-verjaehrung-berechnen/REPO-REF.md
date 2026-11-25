@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/16787-owi-047-umwelt-owi-verjaehrung-berechnen/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Umwelt Owi Verjaehrung Berechnen in Ordnungswidrigkeitenrecht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritte

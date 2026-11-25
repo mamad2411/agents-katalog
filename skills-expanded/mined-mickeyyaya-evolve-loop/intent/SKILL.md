@@ -1,0 +1,79 @@
+---
+name: intent
+description: Pre-Scout intent capture phase. Structures vague user goals into intent.md before any subagent budget is spent. Opt-in via policy.json workflow.phase_enables.intent=on.
+---
+
+# intent
+
+> Sprint 4 composable skill (v8.19.0+). Wraps the new Intent phase that runs between Calibrate and Research when `workflow.phase_enables.intent=1`. Single-persona, autonomy-preserving — no human checkpoint mid-cycle.
+
+## When to invoke
+
+- **Autonomous**: orchestrator advances to phase=intent when `cycle-state.intent_required==true` (set at cycle init from `workflow.phase_enables.intent=1`)
+- **User-driven**: `/evo:intent`, before `/evo:loop`, to lock in structured intent
+- **Re-run**: re-invoke to replace prior intent.md within the same cycle (kernel accepts latest ledger entry)
+
+## When NOT to invoke
+
+- After Scout has already run for this cycle (intent must precede research)
+- For pure-execution cycles where the goal is fully specified (e.g., "fix typo at file.md:42") — but in practice, even those benefit from the explicit `non_goals` and `acceptance_checks`
+- When `workflow.phase_enables.intent` is unset and the user has not explicitly invoked `/evo:intent` — default flow skips this phase
+
+## Workflow
+
+| Step | Action | Exit criteria |
+|---|---|---|
+| 1 | Read user goal + workspace + priorIntent (if re-run) | Inputs gathered |
+| 2 | Classify input via AwN framework (IMKI/IMR/IwE/IBTC/CLEAR) | Single class chosen |
+| 3 | If awn_class == IBTC: emit short scope-rejection intent.md | gate_intent_to_research will short-circuit cycle |
+| 4 | Otherwise: produce 8-field structured intent.md | Frontmatter complete + body written |
+| 5 | Surface ≥1 challenged_premise — assumption to actively question | premise/challenge/alternative populated |
+| 6 | Write `$workspace/intent.md` | File present, parseable |
+| 7 | Subagent runner writes ledger entry binding intent.md SHA to cycle | `kind: "agent_subprocess"`, `role: "intent"` ledger entry |
+
+## Autonomy invariant
+
+This skill MUST NOT block on human approval. The intent persona produces intent.md. The Go intent phase (`go/internal/phases/intent`) passes it when it declares `goal:` and `acceptance_checks:`, and the cycle proceeds. There is no `accept-intent` operator command — a new run of `/evo:intent` replaces the prior file, and the kernel uses the latest ledger entry. This is the difference between an autonomy-preserving filter and a checkpoint.
+
+## Cycle-binding
+
+Like every other agent, intent.md gets a ledger entry with `(artifact_sha256, git_head, tree_state_sha, challenge_token)`. The tree-state check of `evolve ship` (`go/internal/phases/ship/audit.go`) uses the same SHA binding as the auditor.
+
+<!-- GENERATED:phase-facts BEGIN — do not edit; run `evolve skills generate`. Sources: docs/architecture/phase-registry.json · go/internal/phasecontract · .evolve/profiles/intent.json -->
+## Phase facts
+
+| Fact | Value |
+|---|---|
+| Phase | `intent` (plan archetype, optional, gated by `workflow.phase_enables.intent=on`) |
+| Persona | `agents/evolve-intent.md` |
+| Profile | `.evolve/profiles/intent.json` — CLI `codex-tmux`, tier `deep`, single-writer |
+| Artifact | `intent.md` (cycle workspace) |
+
+## Output contract
+
+`intent.md` must declare:
+
+- `goal:`
+- `acceptance_checks:`
+
+<!-- GENERATED:phase-facts END -->
+
+## Composition
+
+Invoked by:
+- `/evo:intent` (user-driven)
+- `evolve-orchestrator` macro when `cycle-state.intent_required==true`
+
+Cannot be:
+- Invoked by another persona (Anti-pattern B per `docs/architecture/tri-layer.md`)
+- Fanned out (single perspective; no `parallel_subtasks` in profile for v0.1)
+- Substituted via `evolve guard phase --bypass` (CRITICAL violation per CLAUDE.md)
+
+## Reference
+
+- `agents/evolve-intent.md` (persona)
+- `.evolve/profiles/intent.json` (permission profile)
+- `go/internal/phases/intent/intent.go` (the intent verdict)
+- `go/internal/core` (the phase order)
+- `.evolve/research/intent-capture-patterns.md` (5-source research grounding)
+- `docs/architecture/intent-phase.md` (full architecture)

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-undermybelt-hermes-skills/bndwdt-thrttl-attack-sml/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Simulates bandwidth throttling and network degradation attacks using tc, iperf3, and Scapy in authorized environments

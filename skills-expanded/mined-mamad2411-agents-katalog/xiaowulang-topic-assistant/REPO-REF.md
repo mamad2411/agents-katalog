@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/xiaowulang-topic-assistant/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 基于小五狼 543 条短视频选题及互动数据提炼的选题诊断与生成助手。用于用户提到“小五狼”“小五狼选题助手”，或希望按其知识型短视频思路评估一个想法、优化标题、寻找选题角度、批量生成选题、规划选题矩阵时；尤其适合 AI 智能体、流量获客、个人 IP、商业认知、老板经营和职场提效内容。

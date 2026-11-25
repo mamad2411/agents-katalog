@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/19049-gf-haftung-69-ao-nicht-abgefuehrte-steuern/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um GF-Haftung Paragraf 69 AO für nicht abgeführte Lohn-/Umsatzsteuer in Steuerrecht – Steuerberater und Anwälte geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert e

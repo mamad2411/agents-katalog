@@ -1,0 +1,24 @@
+---
+name: v392-praxisraster-richter-landgericht-strafkammer
+description: "Wenn es um Praxisraster Landgericht Strafkammer in Strafkammer am Landgericht geht: ordnet Sachverhalt, Norm, Beweislast, Gegenargumente und nächsten Schritt; liefert eine Beweislast- und Substantiierungsmatrix."
+---
+
+# Praxisraster Landgericht Strafkammer
+
+## Einsatz
+
+Nutze diesen Skill, wenn aus Akte, Antrag, Anklage, Bescheid, Klage, Einspruch oder Ermittlungsstand ein gerichtliches oder staatsanwaltschaftliches Arbeitsprodukt entstehen soll.
+
+## Raster
+
+1. Verfahrensstand und Zuständigkeit bestimmen.
+2. Prozess- oder Verfahrensvoraussetzungen prüfen.
+3. Entscheidungserhebliche Tatsachen von Randstoff trennen.
+4. Vortrag, Ermittlungsstand, Beweisangebote und Beweislast ordnen.
+5. Tragende Normen und Gegenposition knapp würdigen.
+6. Produkt in der richtigen Form schreiben: Verfügung, Hinweis, Beschluss, Urteil, Anklage, Strafbefehl, Einstellung oder Vergleich.
+7. Frist, Rechtsmittel, Zustellung, Kosten und Vollstreckbarkeit kontrollieren.
+
+## Pflichtanker
+
+StPO Paragraf 199, 203, 207, 244, 257c, 261 und 267. Schwerpunkt sind Eröffnungsbeschluss, Besetzung, Verständigung, Beweisaufnahme, umfangreiche Beweiswürdigung, Strafzumessung und revisionsfeste Gründe.

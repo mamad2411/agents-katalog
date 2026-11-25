@@ -1,0 +1,114 @@
+---
+name: flux-profile
+description: Use when exporting, publishing, importing, or tombstoning Flux SDLC profiles for reusable setup links, team replication, or immutable environment snapshots. Triggers on literal `/flux:profile`.
+user-invocable: false
+---
+
+# Flux Profile
+
+Create and consume shareable SDLC profiles (`/flux:profile`).
+
+## Session Phase Tracking
+
+On entry, set the session phase:
+```bash
+PLUGIN_ROOT="${DROID_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ ! -d "$PLUGIN_ROOT/scripts" ] && PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/nairon-flux/flux/*/ 2>/dev/null | head -1)
+FLUXCTL="${PLUGIN_ROOT}/scripts/fluxctl"
+$FLUXCTL session-phase set profile
+```
+
+On completion, reset:
+```bash
+$FLUXCTL session-phase set idle
+```
+
+## What this skill does
+
+1. Detects machine setup (MCPs, CLI tools, skills, apps, patterns, model prefs)
+2. Asks skill scope each export: global, project, or both with de-dup (name + hash)
+3. Applies application curation memory (saved apps, new apps, optional re-include missing)
+4. Builds public-anonymous immutable snapshot payload with auto-redaction
+5. Publishes to Flux profile link service
+6. Imports with compatibility checks and per-item consent before install
+7. Supports owner tombstone for immutable links
+
+## Product constraints
+
+- Secret handling: auto-redact and publish
+- Visibility: public anonymous, minimal metadata only
+- Link policy: immutable, non-expiring snapshots
+- Owner control: tombstone supported
+- Import defaults: skip already-installed, compatible-only OS filtering
+- Manual-only entries: allowed with setup notes + verification guidance
+- Priority tags: every item supports `required` or `optional`
+
+## Input
+
+`$ARGUMENTS`
+
+Supported modes:
+- `export` (default)
+- `view <url|id>`
+- `import <url|id>`
+- `tombstone <url|id>`
+
+Supported options:
+- `--skills=global|project|both`
+- `--required=<csv>`
+
+## Workflow
+
+Follow `workflow.md` exactly.
+
+## Future: Universe Sync
+
+When cloud component launches, `/flux:profile` will gain a `sync` mode:
+
+```bash
+/flux:profile sync              # Push profile to Universe portal
+/flux:profile sync --public     # Include public metrics
+```
+
+**Public data (opt-in):**
+- Session count, token usage
+- Tools and MCPs in use
+- Activity timestamps
+
+**Private data (dashboard only):**
+- AI-native score (5 dimensions)
+- Detailed radar chart
+- Improvement trends
+
+Auth will use Universe accounts. ETA: Q2 2026.
+
+## Gotchas
+
+- Public profile links are meant to be shareable and durable. Verify what becomes public before publishing.
+- Importing a profile should replicate setup, not blindly override a repo's local context or preferences without user intent.
+- Treat tombstoning as permanent public removal, not a reversible hide toggle.
+
+
+---
+
+## Update Check (End of Command)
+
+**ALWAYS run at the very end of command execution:**
+
+```bash
+PLUGIN_ROOT="${DROID_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ ! -d "$PLUGIN_ROOT/scripts" ] && PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/nairon-flux/flux/*/ 2>/dev/null | head -1)
+UPDATE_JSON=$("$PLUGIN_ROOT/scripts/version-check.sh" 2>/dev/null || echo '{"update_available":false}')
+UPDATE_AVAILABLE=$(echo "$UPDATE_JSON" | jq -r '.update_available')
+LOCAL_VER=$(echo "$UPDATE_JSON" | jq -r '.local_version')
+REMOTE_VER=$(echo "$UPDATE_JSON" | jq -r '.remote_version')
+```
+
+**If update available**, append to output:
+
+```
+---
+Flux update available: v${LOCAL_VER} → v${REMOTE_VER}
+Update Flux from the same source you installed it from, then restart your agent session.
+---
+```

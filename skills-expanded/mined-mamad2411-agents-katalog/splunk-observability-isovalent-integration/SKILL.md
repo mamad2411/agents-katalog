@@ -1,0 +1,191 @@
+---
+name: splunk-observability-isovalent-integration
+description: "Use when wiring Cilium, Tetragon, or Hubble metrics into Splunk Observability Cloud, shipping Tetragon
+  logs to Splunk Platform, or validating Isovalent telemetry after platform install. Wire an installed
+  Isovalent stack (Cilium, Hubble, Tetragon, optional Hubble Enterprise or cilium-dnsproxy) to Splunk
+  Observability Cloud and Splunk Platform. Renders Splunk OTel Collector scrape overlays, metric filters,
+  Tetragon filelog ingestion defaults, stdout and legacy fluentd alternatives, dashboards, detectors, and
+  handoff scripts for base collector, HEC, and Cisco Security Cloud ingestion."
+compatibility: "No direct Splunk Platform runtime dependency. This workflow can be used alongside Splunk Cloud Platform 10.5.2605 through its documented external APIs or handoffs."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "not-applicable"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Observability Isovalent Integration
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Wiring Cilium, Tetragon, or Hubble metrics into Splunk Observability Cloud, shipping Tetragon logs to Splunk
+  Platform, or validating Isovalent telemetry after platform install.
+- Preview and review the splunk observability isovalent integration workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-observability-isovalent-integration/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-observability-isovalent-integration/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+This skill wires an installed Isovalent stack to Splunk Observability Cloud and Splunk Platform. It **depends on** the platform install completed by [cisco-isovalent-platform-setup](../cisco-isovalent-platform-setup/SKILL.md). Run that first, then this.
+
+## What it renders
+
+- `splunk-otel-overlay/values.overlay.yaml` — Splunk OTel collector agent.config overlay with seven Prometheus scrape jobs and the `filter/includemetrics` allow-list. Designed to merge with the base values produced by [splunk-observability-otel-collector-setup](../splunk-observability-otel-collector-setup/SKILL.md) via `yq` deep-merge.
+- Splunk Platform logs path (DEFAULT — file-based via OTel filelog receiver):
+  - `agent.extraVolumes` + `agent.extraVolumeMounts` hostPath mount of `/var/run/cilium/tetragon`.
+  - `logsCollection.extraFileLogs.filelog/tetragon` block with sourcetype `cisco:isovalent`, index `cisco_isovalent`.
+  - `splunkPlatform.logsEnabled: true`.
+  - Coordinates with `cisco-isovalent-platform-setup`'s default Tetragon `export.mode: file` + `exportDirectory: /var/run/cilium/tetragon`.
+- Hubble flow logs (opt-in, `hubble_flow_export.enabled: true`):
+  - A second hostPath mount, `hubble-flows`, of `/var/run/cilium/hubble`.
+  - `logsCollection.extraFileLogs.file_log/hubble-flows` tailing `events*.log` from the end, with sourcetype `cilium:hubble:flow` and index `cilium_hubble`.
+  - Coordinates with `cisco-isovalent-platform-setup`'s `hubble_flow_export` block, which renders Cilium's `hubble.export.static` file exporter. Requires Tetragon `export.mode: file`; the renderer rejects Hubble flow export with `stdout` or legacy fluentd mode because the flow receiver needs the file based Splunk Platform path.
+- Alternative paths (behind explicit flags):
+  - `--export-mode stdout` — Tetragon stdout + container log collection (no hostPath mount; useful when SCC/PSP blocks). Use only when Hubble flow export is disabled.
+  - `--legacy-fluentd-hec` — fluentd `splunk_hec` block. **DEPRECATED** (`fluent-plugin-splunk-hec` archived 2025-06-24).
+- `dashboards/cilium-by-isovalent.json` and `dashboards/hubble-by-isovalent.json` — token-scrubbed re-exports (sourced from the Isovalent_Splunk_o11y reference repo's `examples/*.json` only after `scripts/scrub-tokens.py` confirms zero `accessToken` material).
+- `detectors/*.yaml` — starter detectors for `cilium_*`, `hubble_*`, `tetragon_*` series.
+- `scripts/setup.sh`, `render_assets.py`, `validate.sh`, `handoff-base-collector.sh`, `handoff-hec-token.sh`, `handoff-cisco-security-cloud.sh`, `handoff-dashboards.sh`, `handoff-detectors.sh`, `scrub-tokens.py`.
+- `metadata.json`.
+
+## Safety Rules
+
+- Never ask for the Splunk Observability ingest token or Splunk Platform HEC token in conversation.
+- File-backed token flags only:
+  - `--o11y-token-file` (Splunk Observability Org access token; passed through to base collector).
+  - `--platform-hec-token-file` (Splunk Platform HEC token; or `--render-platform-hec-helper` to delegate to `splunk-hec-service-setup`).
+- Reject direct token flags (`--access-token`, `--token`, `--bearer-token`, `--api-token`, `--o11y-token`, `--sf-token`, `--platform-hec-token`, `--hec-token`).
+- Token files must be `chmod 600`; the wrapper aborts otherwise (override with `--allow-loose-token-perms`, emits WARN). The actual apply happens via the rendered handoff-*.sh scripts, which inherit the same chmod 600 enforcement when they re-invoke the base collector / HEC / dashboard / native-ops setups.
+- The renderer scrubs every dashboard JSON it ships against an `accessToken` regex before writing. Render aborts if the source JSON contains plaintext token material.
+
+## Primary Workflow
+
+1. Confirm the Isovalent stack is installed (run `cisco-isovalent-platform-setup` first).
+
+2. Render:
+
+   ```bash
+   bash skills/splunk-observability-isovalent-integration/scripts/setup.sh \
+     --render \
+     --validate \
+     --realm us0 \
+     --cluster-name lab-cluster \
+     --output-dir splunk-observability-isovalent-rendered
+   ```
+
+3. Review `splunk-observability-isovalent-rendered/`:
+   - `splunk-otel-overlay/values.overlay.yaml` — the overlay; merge into the base collector values.
+   - `dashboards/*.json` — token-scrubbed dashboard exports.
+   - `detectors/*.yaml` — starter detectors.
+   - `scripts/handoff-*.sh` — hand-off drivers for the four downstream skills.
+
+4. Apply the overlay onto the existing Splunk OTel collector helm release
+   (recommended one-shot path). Merges this overlay onto current release
+   values via `yq`, normalizes legacy `otlphttp` exporter names to
+   `otlp_http`, preserves the live OBI eBPF ConfigMap data when OBI is
+   installed, runs `helm upgrade --atomic --force-conflicts`, and rolls the agent +
+   cluster-receiver. The helper preserves existing gateway/operator topology
+   unless `collector.disable_gateway` or `collector.disable_operator` is set,
+   auto-discovers the collector namespace, and pins the installed chart version
+   unless `collector.namespace` or `collector.chart_version` is set in the spec.
+   Refuses without
+   `--accept-k8s-apply`, refuses if no Cilium/Tetragon install is detected,
+   and prints the active kube-context first:
+
+   ```bash
+   bash skills/splunk-observability-isovalent-integration/scripts/setup.sh \
+     --apply --accept-k8s-apply
+   ```
+
+   `--apply --accept-k8s-apply --dry-run` runs `helm upgrade --dry-run`
+   without mutating the cluster.
+
+   Then provision HEC and route Tetragon logs to Splunk Platform via Cisco
+   Security Cloud:
+
+   ```bash
+   bash splunk-observability-isovalent-rendered/scripts/handoff-hec-token.sh
+   bash splunk-observability-isovalent-rendered/scripts/handoff-cisco-security-cloud.sh
+   bash splunk-observability-isovalent-rendered/scripts/handoff-dashboards.sh
+   bash splunk-observability-isovalent-rendered/scripts/handoff-detectors.sh
+   ```
+
+## Hand-offs
+
+- Splunk OTel Collector base install: [splunk-observability-otel-collector-setup](../splunk-observability-otel-collector-setup/SKILL.md). Render the base values, then merge our overlay via `yq` deep-merge.
+- Splunk Platform HEC token: [splunk-hec-service-setup](../splunk-hec-service-setup/SKILL.md).
+- Splunk Platform Tetragon log ingestion: [cisco-security-cloud-setup](../cisco-security-cloud-setup/SKILL.md) with `PRODUCT=isovalent` (sourcetype `cisco:isovalent:processExec`, index `cisco_isovalent`); confirmed in [skills/cisco-security-cloud-setup/products.json](../cisco-security-cloud-setup/products.json) lines 200-219.
+- Dashboards: [splunk-observability-dashboard-builder](../splunk-observability-dashboard-builder/SKILL.md).
+- Detectors: [splunk-observability-native-ops](../splunk-observability-native-ops/SKILL.md).
+
+## Out of scope
+
+- Cilium / Tetragon / Hubble install lifecycle — handled by [cisco-isovalent-platform-setup](../cisco-isovalent-platform-setup/SKILL.md).
+- Splunk OTel collector base install — handled by [splunk-observability-otel-collector-setup](../splunk-observability-otel-collector-setup/SKILL.md).
+
+## Validation
+
+```bash
+bash skills/splunk-observability-isovalent-integration/scripts/validate.sh
+```
+
+Static checks: overlay shape, token-scrub assertion, dashboard JSON validity, sourcetype/index match. With `--live`:
+
+- `helm status` for the OTel collector release.
+- Per-pod Prometheus endpoint probes for every selected Isovalent pod (uses Kubernetes pod proxies, never `kubectl exec`).
+- Live receiver and ordered pipeline checks that accept the native `hostmetrics`, `kubeletstats`, and `resourcedetection` names used by the Helm chart when the rendered overlay uses their underscore aliases.
+- Tetragon filelog checks that accept cluster-name enrichment on the receiver or in the downstream logs `resource` processor.
+- Optional SignalFlow probe for `cilium_*`, `hubble_*`, `tetragon_*` series presence.
+- Optional Splunk Platform search check: `index=cisco_isovalent sourcetype=cisco:isovalent` returns events. With Hubble flow export enabled, it also requires a `sourcetype=cilium:hubble:flow` event in its index whose JSON contains a `flow` object.
+
+Kubernetes checks prove that scrape targets are reachable and return metrics; they do not prove that the backend accepted or indexed telemetry. Use the SignalFlow and Splunk search checks with protected file-based credentials for end-to-end delivery evidence.
+
+See `reference.md` and the `references/` annexes for collector-overlay details, Splunk Platform paths, Tetragon hostPath coordination, sourcetype reference, dashboards catalog, and troubleshooting.

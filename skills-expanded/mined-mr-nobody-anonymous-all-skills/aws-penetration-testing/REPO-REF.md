@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/cloud/aws-penetration-testing/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Provide comprehensive techniques for penetration testing AWS cloud environments. Covers IAM enumeration, privilege escalation, SSRF to metadata endpoint, S3 bucket exploitation, Lambda code extraction

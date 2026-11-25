@@ -1,0 +1,137 @@
+---
+name: editing-skills
+audience: swarm-plugin
+description: >
+  Contract for adding, editing, moving, or removing skills in this repository
+  (.claude/skills, .opencode/skills, .agents/skills, any SKILL.md): mirror
+  classifications in src/config/skill-mirrors.ts, dual-tree byte-identical
+  edits, bun run drift:check, bundling via BUNDLED_PROJECT_SKILLS, frontmatter
+  conventions, and how to write trigger descriptions. Load before touching any
+  SKILL.md file.
+---
+
+# Editing Skills in opencode-swarm
+
+Skills in this repo exist across parallel trees (`.opencode/skills/`,
+`.claude/skills/`, `.agents/skills/`) governed by explicit mirror contracts.
+Editing a SKILL.md without knowing its contract silently desynchronizes the
+OpenCode and Claude Code surfaces. Classify first, then edit.
+
+## Step 1 — Classify the skill
+
+Look the slug up in `src/config/skill-mirrors.ts`:
+
+- **MIRRORED_ARCHITECT_MODE_SKILLS** (brainstorm, specify, clarify-spec,
+  swarm-resume, clarify, discover, consult, pre-phase-briefing, council, deep-dive,
+  deep-research, issue-ingest, plan, critic-gate, design-docs): `.opencode`
+  and `.claude` copies must stay **byte-identical**.
+  Any edit is a dual-tree edit — apply the identical change to both files.
+- **ADAPTER** (execute, phase-wrap, swarm-pr-review, swarm-pr-feedback,
+  swarm-pr-subscribe, swarm-ci-monitor): `.opencode` is canonical; `.claude`
+  and `.agents` where present are thin shims that must keep the exact relative
+  reference `../../../.opencode/skills/<slug>/SKILL.md` (drift-check verifies
+  the string). `swarm-implement` follows the same operational adapter pattern,
+  but is currently classified as an additional divergent contract because the
+  additional-contract registry does not yet model non-architect adapter shims.
+- **DIVERGENT**: both trees exist, content intentionally differs — a
+  single-tree edit is fine. `codebase-review-swarm` is in
+  `DIVERGENT_ARCHITECT_MODE_SKILLS`; `engineering-conventions` is a divergent
+  entry in `ADDITIONAL_SKILL_MIRROR_CONTRACTS`. `swarm-implement` and
+  `writing-tests` are classified divergent only because the additional-contract
+  model does not yet have an adapter kind; operationally, `.opencode` is
+  canonical and `.claude` delegates to it.
+- **OPENCODE-ONLY**: `loop` (`OPENCODE_ONLY_ARCHITECT_MODE_SKILLS`) and
+  `running-tests` (an `opencode-only` ADDITIONAL contract) — do **not**
+  create `.claude` mirrors (a `.claude/skills/loop` would shadow Claude
+  Code's built-in `/loop`).
+- **ADDITIONAL contracts**: `commit-pr` is `divergent` (#1692). The `.claude`
+  copy is the repo-INTERNAL publication protocol (CI's pr-standards workflow
+  declares it the source of truth); the `.opencode` copy is the PORTABLE,
+  project-agnostic version bundled into end-user projects, so the two trees
+  intentionally differ — do **not** sync them byte-for-byte. The discovery
+  shims in `.agents/skills/commit-pr/` and `.github/skills/commit-pr/` point
+  at the repo-internal `.claude` file as canonical.
+- **Adapter skills** (issue-tracer): `.opencode/skills/<slug>/SKILL.md` is the
+  canonical protocol; `.claude/skills/<slug>/SKILL.md` and `.agents/skills/<slug>/SKILL.md`
+  are thin shims that reference it via the relative path. See
+  `src/config/skill-mirrors.ts` for the `kind: adapter` contract.
+- **No skill-mirrors.ts entry** (qa-sweep, research-first, swarm, unswarm,
+  tech-debt-ci-review, rust-crate-ci, orchestrating-subagents, durable-session-state,
+  editing-skills, …): the `.claude` file is the source protocol and there is
+  no `.opencode` copy, no CI gate, and no npm shipment. **But most are not
+  single-file**: many have a Codex adapter shim in `.agents/skills/<slug>/`
+  that reads "`.claude/skills/<slug>/SKILL.md` is the source protocol"
+  (check `ls .agents/skills/`). Content edits to the `.claude` file are safe
+  — shims delegate — but **renaming, moving, or removing** one of these
+  skills silently orphans its `.agents` shim with zero drift-check coverage.
+  Update or remove the shim in the same change.
+- **Pre-flight for new skills** (blocking): Before authoring any SKILL.md
+  content for a skill that should reach npm users, the slug MUST be registered
+  in all three places: `src/config/skill-mirrors.ts` (classification),
+  `src/config/bundled-skills.ts` (`BUNDLED_PROJECT_SKILLS`), and
+  `package.json#files`. Creating content first and registering later is a
+  common source of drift-check failures and missing shipments.
+
+## Step 2 — Know what ships where
+
+- Only canonical package sources under `.opencode/skills/` are published:
+  `package.json#files` lists the bundled source directories and
+  `BUNDLED_PROJECT_SKILLS` (`src/config/bundled-skills.ts`) drives a private
+  runtime sync to `.swarm/bundled-skills/<slug>/` at plugin init. Never sync
+  into a target project's native skill roots.
+- `.claude/skills/` is repo-internal — it configures Claude Code sessions in
+  *this* repository only.
+- A new skill that should reach npm users must be added to **all three**:
+  `.opencode/skills/<slug>/`, `BUNDLED_PROJECT_SKILLS`, and
+  `package.json#files` — the drift checker flags incomplete combinations.
+- A new cross-tree pair (same slug in both trees) must be classified in
+  `src/config/skill-mirrors.ts`, or drift-check reports it "unclassified".
+
+## Step 3 — MODE skills are not triggered by descriptions
+
+The mirrored architect skills carry descriptions like "Full execution
+protocol for MODE: PLAN". These are loaded on demand by the architect stubs
+in `src/agents/architect.ts` when a `[MODE: …]` signal fires — they are
+**not** meant to match natural user language, and in a plain Claude Code
+session (no swarm runtime tools) they are protocol documentation, not
+executable workflows. Do not "fix" their descriptions to natural language,
+and do not expect them to auto-trigger.
+
+## Step 4 — Frontmatter and description conventions
+
+- Every tracked static skill declares `audience: swarm-plugin`. Consumer repos
+  may instead use a domain tag such as `ragappv3` and optionally add a runner
+  constraint (`runner:opencode`, `runner:claude`, or `runner:codex`). Keep
+  byte-identical mirrors' audience lines byte-identical. Runtime-generated
+  skills are intentionally allowed to omit the field (legacy match-all).
+- `description` is how Claude Code auto-selects skills: third person, the
+  core use case and concrete trigger keywords first, under ~1024 chars.
+  Vague descriptions ("helps with X") never trigger.
+- `disable-model-invocation: true` for slash-command-style skills the model
+  must not self-invoke (swarm, unswarm, tech-debt-ci-review).
+- Supported optional fields used in this repo: `effort` (low…max),
+  `context: fork` + `agent: Explore|Plan|general-purpose|<custom>` (runs the
+  skill body in an isolated subagent — the body then cannot rely on
+  conversation history or on spawning further subagents), `allowed-tools`
+  (space- or comma-separated), `argument-hint`.
+- Keep SKILL.md under ~500 lines; move deep material into `references/`
+  files linked one level from the SKILL.md (see issue-tracer for the
+  pattern).
+
+## Step 5 — Validate and publish
+
+1. If the edit changed content wording (not just whitespace/formatting), read
+   `file:.swarm/bundled-skills/skill-edit-validation/SKILL.md` and run its
+   content-assertion sweep to catch stale test assertions before proceeding.
+2. `bun run drift:check --enforce` — CI runs the same enforcement mode; blocking
+   drift findings fail the job, while the full report is posted as a PR comment.
+3. If you touched a byte-identical pair, `diff` the two files to prove
+   identity.
+4. Skill-only diffs (no `src/`, `scripts/`, or test changes) count as
+   docs/meta-only for PR gating — no release-notes fragment required. The
+   moment you also touch `src/config/skill-mirrors.ts`,
+   `bundled-skills.ts`, or `package.json`, a
+   `docs/releases/pending/<slug>.md` fragment becomes mandatory
+   (see commit-pr skill, Step 2).
+5. Skill edits are still "changed work" under the swarm-mode contract:
+   independent reviewer + critic gates apply before completion.

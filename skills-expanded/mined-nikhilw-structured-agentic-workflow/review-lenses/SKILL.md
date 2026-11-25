@@ -1,0 +1,255 @@
+---
+name: review-lenses
+description: The perspectives every review in this workflow looks through, one question each (impact, removal, logic, behaviour, business sense, proof, coherence), the checklist each lens walks, the defect kinds that keep coming back, the table of which gate runs which lens at what depth, and the brief for handing a review to an outside model. Shared reference loaded by brainstorm, write-plan and 3p-review. It is a reference, not a step of its own.
+user-invocable: false
+allowed-tools: Read, Grep, Glob
+---
+
+# Review Lenses
+
+This file holds the perspectives the workflow reviews through: what each lens asks, what it catches,
+and the checklist it walks. `/brainstorm` looks through them at an approach, `/write-plan` at a
+plan, and `/3p-review` at built code. The gate table at the end says which gate runs which lens and
+how deep. A gate names its column there and keeps a short binding copy of each checklist inline; it
+does not restate the checklist, because two copies drift and the weaker one wins.
+
+**Why lenses, and why one at a time.** Asked by hand, each of these questions has turned up a real,
+usually critical defect in work that had already been reviewed: a plan, a decision, a finished build.
+A review that carries several questions at once answers whichever is easiest and reports clean on
+the rest, and nothing on the page shows which ones it skipped. So each lens is run on its own, with
+its own question in front of you. What it finds is settled before the next lens looks: fixed, or put to the owner where it is theirs to decide.
+
+## Rules for every lens
+
+*Cited as **RL-N**, here and from other skills. The tag is the rule's name, not its position: a rule that is retired keeps its number and is marked retired.*
+
+- **RL-1 · One question per lens, run separately.** Do not merge two lenses into one read, and do not skip one because an earlier lens "already looked at it". They start from different places and see different things.
+- **RL-2 · Change the angle, not the effort.** Repeating a lens with the same method returns what it returned before, and that empty delta reads exactly like a clean result. When a lens is run again, it searches on something new: a different spelling, the rendered form instead of the identifier, the code inward instead of the document outward, what the change *creates* instead of what it changes.
+- **RL-3 · Report a lens exactly as far as it went.** If a tool it needed was unavailable, if it covered part of the artifact, or if it checked the original code instead of the changed copy, say so, along with what you did instead. A lens reported as done when it was half done is worse than one reported as skipped, because nobody goes back to it.
+- **RL-4 · A "nothing found" needs a control.** Before you trust an empty search, a clean type check or "no callers", run the same method against something you know is there and watch it find it. A check that cannot see what it is looking for returns the same empty result as one that looked and found nothing.
+- **RL-5 · Reject a finding only on evidence that would have shown it.** That means a run, a probe, or a query against real data. An empty grep is not disproof, because the finding may describe a path your search did not spell. Neither is local development data: a dev fixture that lacks a condition only shows that the fixture lacks it. Without disproof, the finding stands. This is AW-16 and BS-11 (an outside review is evidence, never a verdict) applied in the other direction: evidence is also what it takes to dismiss one.
+- **RL-6 · A review ends on a round that changed nothing; a document review can also close from round 3 under its end rule.** Settling a lens's findings changes the artifact, and the lenses that already ran never saw that change. So when a round of lenses ends having changed what the artifact contains or how it works (a file, caller, phase, step, rule or mechanism added, removed or reshaped), run another round: every lens again, in order, each starting from what the last round changed and what that reaches, and each on a new angle (RL-2). In a document review, reworded text, corrected counts and fixed names do not start a round. A fix is a change like any other, so the next round reviews it as new work; a fix written as a general rule ("today's code wins") is checked against every decision it would now overrule, because it reaches further than the finding that produced it. A rule widened mid-review is written out in full at once, every case it now covers named, never widened one example per round. A round that changed nothing ends the review. That is the only way `/3p-review` on code ends: every section re-run each round until zero findings, with no other end rule and no early stop. **A review of a document (a decision document, a plan) also closes on the first round, from the third on, where either holds: no new kind of finding (one no earlier round of this review found), or nothing major or worse.** A kind is the defect's shape, not where it sits: the same defect at a new site is an instance, and each round notes its kinds so the next can tell. Say in one line which condition closed the review. Major or worse means the document would give the wrong result if followed as written: a decision or requirement dropped, a mechanism that cannot work, a caller or flow broken, the user getting something other than what was agreed. The rest is minor. Fix the closing round's findings in one pass with no further round (an RL-7 ask among them goes first), and read only coherence over what those fixes changed (for a plan, executability too); what that read finds is fixed in place and does not reopen the review. An end rule the owner states for a document review replaces this one. **A third round that meets neither condition is the signal to stop:** tell the owner in those words that the work is larger than the artifact describes, and that it is theirs to decide. For a plan, recommend splitting it into parts that are each reviewed and built on their own, and propose where to cut: a plan too large to converge under review is too large to review, and more whole-plan rounds will not change that. For a decision document, name what keeps moving and propose narrowing the decision. Rounds of outside review on the same plan whose finding count does not fall after the second, or whose findings land mostly on the last round's own fixes, are the same signal and get the same recommendation: change the size or the approach, not the round count. If the owner keeps the document whole, the rounds go on under the same end rule, each reporting its new kinds and its major findings in one line so the owner can call a stop.
+- **RL-7 · A fix that needs rethinking goes to the owner before the next round.** A round can find a defect, major or worse, that an earlier fix in this review created. A slip put right within the fix's own approach is an ordinary finding. It goes to the owner, before it is fixed, when fixing it means changing the fix's approach, or when it is the second major-or-worse defect that fixes have created in this review: the fix, what it broke, and whether to fix it again or change the approach. Fixes that create defects are how a review stops converging, and the owner has to see that early enough to change course. One ask per round, all such defects in it, and the review waits for the answer as a build waits on a halt. This changes how the review proceeds, never how it ends: `/3p-review` still ends at zero findings.
+- **RL-8 · A finding is a kind: settle it across the whole body of work, once.** A finding is one instance of a defect's shape, and if only that instance is fixed, the next review finds the same shape at one more site. So settling a verified finding has two halves, and the next lens or round does not start until both are done. **Find every site.** Name the kind. List the whole set it can live in from the thing itself, never from a list the artifact already holds, which is where the misses are. For built code, that is the code or the schema (every writer, caller, foreign key, surface), across the whole change. For a plan, every phase read through, plus the code each phase will touch where it exists yet. For a decision document, every section and approach still in play, above the implementation (BS-15). Search with a method that can see that kind (RL-4). **Fix the kind once.** Where the sites repeat the same logic, write one shared mechanism and have them call it, plus a guard that refuses the old shape where a cheap one can. Editing each such site by hand finds the sites and leaves the duplication, which is the next kind. Sites that only share a slip, such as a misnamed field, need no abstraction: correct them together. In a document, state the rule once where every later part reads it, and correct each part that contradicts it. A list someone must keep complete becomes a check that runs, and a check says which paths it sees, counted: one that sees a fraction of them reads as enforced and is not. **Record** the kind, the search and its count where the gate keeps its findings. A kind with one possible site costs one search and one line. A site outside the body of work is reported to the owner as a follow-up, not absorbed, unless this work depends on it or exposes it. A site this search finds is an instance, not a new kind (RL-6).
+- **RL-9 · Run reviewers in sequence; their capacity is a budget.** Start the next reviewer only when the last has reported and you have read its findings. Several reviews means more of them in sequence: reviewers on one quota hit its limits together and can burn the budget with nothing to show. The one exception is two at once, when their reviews are unrelated and they draw on unrelated quotas, such as two providers; never more than two. Leave about five minutes between reviewers on the same quota. Stop at the first quota error and switch to another reviewer, rather than retry or wait on a rate-limited one. This binds however many reviews the owner asks for.
+
+## The lenses
+
+### Impact: *what does this break that nobody mentioned?*
+
+The method is `/existing-mechanisms`' **impact trace**, all three axes (structural, functional,
+consolidation); it lives there and is not restated here. Three additions every gate uses:
+
+- **Count with types, not names.** A graph index links symbols by name, so it misses calls made
+  through an instance and merges symbols that share a name. In typed code, take every structural
+  count from the language server's *find references* or the type checker, and use the graph only to
+  find where to look (`/knowledge-graph`, *Counting in typed code*).
+- **Let the compiler do the structural axis for removals and signature changes.** In an isolated copy of the tree (a worktree or scratch checkout, never the working tree), apply every deletion, rename and signature change, then run the project's type checkers over it. Prove it sees the change first by feeding it a deliberate break (RL-4). Empty a deleted module rather than removing it, so every use fails at its own line instead of one unresolved import per file. Point it at everything, not just the source package: scripts, tests, frontend, tooling. Then search for the names as strings, because mocks, patch targets, dispatch tables and config keys are invisible to a type checker.
+- **Follow coupling through storage to both ends.** One piece of code writes a value to a table, file, queue or cache, and another acts on it. No call graph and no type checker connects them. For every value this change writes, find every reader; for every value it reads, find every writer. Check that both ends agree on what the value means. A reader with no writer is a feature that never shows anything. A writer whose value nothing reads is work thrown away. A flag that is set but never cleared makes something run forever.
+
+### Removal: *is every removal justified, and is its job still done?*
+
+A scalpel, not a butcher's knife. Removing working code is the one change whose damage never shows
+as a failing test: what it did stops happening, and nothing asserts that it ever did. For each
+removal:
+
+- **What it was there for**, in terms of the job it did, read from the code and its history. Code that looks dead often has one caller, or guards a case that is simply rare.
+- **Wire before deleting.** Code nothing calls is not always dead. Sometimes it is the right thing with its call missing. Before removing an uncalled method, ask where it *should* be called from, and whether the defect you are fixing is that missing call.
+- **What does that job afterwards**, and the test on the new path that proves it. A replacement with no test proving it is an assumption.
+- **What reaches it today**, from the impact lens, scripts and strings included. A removal with a live caller is a break, not a cleanup. A removed file is also reached by everything that reads the file itself, not only by callers of its code: tests, build and packaging files, checks that open it by path.
+- **One removal, one step.** "Delete the old module" covering four jobs, one of them still live, is how a whole behaviour disappears in a single line of diff.
+- **A port is a removal and an addition: compare the two side by side.** When the change rewrites something that exists (a query, a handler, a calculation moved to a new layer), put today's version next to the new one and compare inputs, filters, columns, ordering, return value, side effects and every error raised. Each difference is either a decision on record or a defect. A rewrite that quietly drops a filter or stops raising an error removes a job as surely as a deletion does. A cited line range stands for the whole operation it quotes, every effect included, not only the lines shown. A replacement write keeps what the statement it replaces did: its conditions, the fields it sets, and an upsert stays an upsert. When the port covers a whole module, list the methods that touch data from the source itself, so none is left unnamed.
+- **No replacement goes to the owner.** If the job simply stops being done, it is a lost capability, and only the owner can agree to it. Put it to them in those words.
+
+### Logic: *does it work when it actually runs?*
+
+Stop reading and run it. Pick concrete inputs and step the mechanism through one write at a time,
+noting the state after each. Reading checks whether it sounds right; stepping it through shows what
+it does. Walk every one of these:
+
+- **The main case, end to end, with real values.** Most of the cases below come from one detail of this walk being different.
+- **Zero, one, many, and the edge.** Empty collection, absent target, first run, last item removed, exactly at a limit, over a budget, a page boundary. Watch for an empty value that falls through to a *different meaning* rather than to nothing.
+- **Rules that overlap.** Look for an input that satisfies two conditions. If order decides, the order is stated and pinned. Anything evaluated in declaration order says that the order is load-bearing.
+- **Time.** What is written before what, and what a reader sees in between. A value copied at write time freezes; one worked out at read time moves. Caches, polls and stale windows show the old answer for their whole length. Timers stop when a screen is hidden.
+- **Crash and retry.** Kill the process between every pair of writes. Does the retry repeat the work, skip it, or do it twice? A progress marker written before the work it records makes a crash skip that work for good.
+- **Two at once.** Parallel jobs, two tabs, a worker and a route. A load-edit-save of a whole object puts back a field another copy just changed. Anything shared rather than copied is visible to both at once.
+- **Work reported but never cleared.** For every scheduler, sweeper, retry or queue, find what makes it stop. If the work it does never clears the report that started it, it runs forever. Once you find one path into the loop, look for a second.
+- **Values against each other.** Put every threshold, weight, limit, timeout and budget next to the ones it interacts with. A name weight of 0.85 against a grouping threshold of 0.85 means a name match alone groups two different people. No single value is wrong; together they are.
+- **Can the mechanism express the rule?** Read the rule as decided, then the reducer, scorer, key or query meant to implement it. Averaging can never let a second reason raise a score. A unique key on name alone can never express "same name, different type".
+- **Where each promise is enforced.** Name the layer that makes each rule impossible to break. A rule enforced only by the UI, a prompt or a comment is not enforced. When something is deleted, ask what it was the *only* enforcement of.
+- **Reuse across a contract.** A helper built for unpaged, ordered, single-threaded or trusted input, reused where those do not hold, spreads its defect to the new caller.
+- **Hostile input.** None, empty, unicode, a budget of 0 or -1, a duplicate. Does it terminate, is it idempotent, does it leave the caller's data alone? Does one bad value fail alone, or break a whole read?
+- **The round trip.** State the exact body a request sends and the server's answer to it. For each value a user can edit: load, save, save again, and it holds. This is the concrete form, so a plan and a build walk it; a brainstorm, having decided what the user does and sees, asks it only where it decides the approach.
+
+**Probe it rather than reasoning about it.** When a conclusion rests on how existing code behaves at
+runtime, and a read-only local probe costs minutes, run the probe. A table worked out by reading can
+be wrong four times in a row where one call with real inputs is right the first time.
+
+### Behaviour: *does a human user get what they expect, on every surface?*
+
+The logic lens asks whether the mechanism is correct. This one asks whether the product is. Sit in
+the user's seat: the person who opens the screen, reads the report, clicks the button.
+
+- **The goal, as the owner will see it.** Name what the owner will see, on which screen or in which output, once this ships. A design can honour every decision and still produce something the owner looks at and says was not the point, such as "retain what extraction returns" built as a log table nothing reads.
+- **Every surface that shows the changed data.** Screens, reports, exports, dossiers, notifications, and the prompts that feed a model. Walk the changed data onto each one. A field that is blank on three of them, or a link that opens nothing, is invisible to the mechanism's tests.
+- **Similar actions behave the same.** Re-read and delete, archive and remove, retry and resume, bulk and single. If one cleans up after itself and the other does not, the user sees an inconsistency no single code path shows.
+- **The second caller, and the late one.** What does the second tab, second worker or resumed job get when the first already did the work? Do "already done" and "nothing there" look the same? Is a cache keyed on what the user typed rather than on what they meant?
+- **The expectation, in the user's words.** For the two or three main actions, write one sentence as the user would say it ("I delete the document and its entities go with it"). Check the design does exactly that, or says plainly where and why it does not.
+
+### Business sense: *would this make sense to the business, and to a typical user who never heard the reasoning?*
+
+This lens questions the *decisions*, including the owner's own. The behaviour lens checks that the
+design delivers what was intended. This lens checks whether what was intended is sensible for the
+business and unsurprising to its users. It catches the design that is internally consistent,
+correctly built, and odd: a rule no user would guess, a step that exists only because of how the
+code is shaped, a term that means something different in the user's domain, an outcome that is
+technically right and commercially wrong.
+
+- **Read it cold.** The defects this lens exists for look reasonable to anyone who knows why they were decided, and you usually do. So work from the outcomes alone: what the user does, sees and gets, not the rationale. If you can hand this lens to a reader with fresh context (a subagent started without this conversation, or another model; see the outside-review brief below), do. The value comes from not knowing the reasons.
+- **Walk it as a typical user of this domain**, not as its builder. Name the user (an analyst on a case, a shopper at checkout, an operator at 3 a.m.), then take them through the main journeys. At each step, ask: would they expect this? Would they need to be told? Would they be annoyed, confused, or wrong about what just happened?
+- **Ask the business questions directly.** Does it serve the requirement it was built for, or a proxy that is easier to build? Does it cost the user time, money or trust in a way the business would not sign off on? Would a competitor's user find this normal? Does anything contradict what the product tells users elsewhere?
+- **Challenge the owner's steer as well.** Where a decision came from the owner, and a typical user would find the result odd, say so. Put it as a question with the user's-eye view attached, not as a correction. The owner may have a reason; the point is that they choose with it in view.
+- **Each finding says who is surprised, by what, and what they would have expected.** "Odd" alone is not actionable.
+- **A defect or a question: decide which before you report it.** It is a **defect** when the user's expectation is plain and no decision chose the odd outcome: the artifact simply does something nobody asked for, such as a run over one aspect of a pending item marking the whole item done. Fix it as you would any other finding, and tell the owner in one line what changed. It is a **question** only when a recorded decision or the owner's steer produced the odd outcome, or when typical users could reasonably expect two different things. **If you cannot tell which it is, it is a question.** Asking the owner whether to fix a plain defect hands them a decision nobody needed to make.
+- **Once the owner has ruled on a point, it stays ruled.** Their answer is recorded under the decision document's *Would find odd*. A later gate does not raise it again unless something new changes it: a surface nobody had considered, or a build that behaves differently from what they ruled on. Then say what is new.
+
+### Proof: *would the tests fail if this were built wrong?*
+
+A test is worth only the defect it rejects.
+
+- **Name the defect each test exists to catch, then break it that way and check that it fails.** Watch for these shapes: a fixture too small to reach the path; an assertion on a symptom that holds while the defect is live; a substring check that passes on reworded or re-wrapped leftovers; an assertion true in every mode; "exits 0" with nothing asserted; data that cannot show the defect (an ordering test with one row, ties whose stored order already equals the expected order, a filter test with no row the filter excludes); a comparison of the code with itself; a test of a copy of the code rather than the code; a check that a value is present rather than what it is; a test that skips silently when unsure of its own input; one direction of an authority rule tested and not the other; values that only look equal (`True == 1`); a path around the function that applies the rule; a fake the real path never calls; a filter on what the test observes that drops exactly the regression; a fixture written from what the code expects rather than from the real format; a guard checked twice, so breaking one changes nothing; a partial match on a body a client sends.
+- **Every guard has a mutation check**: the exact revert, and the failure it must produce. **A mutation is witnessed only when the test fails on its assertion.** A test that errors, hangs or fails to collect under the mutation proves nothing about the guard.
+- **A red run is the first proof; a mutation is for what red cannot show.** A test that went red on its assertion, one test at a time, with only enough code written to pass it, has shown it can fail, and every line behind it exists because a test demanded it. A mutation is required for what that cannot prove: an absence or negative assertion, which can pass when its subject never existed; an authority or filtering check; a test that could not go red because the behaviour already existed, as in a port or a refactor; and anything the plan names. It is made once, when the test is written: break what it guards, watch it fail on its assertion, restore. From then on the regular suite is the guarantee. Run one again only when that test or the code it guards changes. Never sweep past work again: a re-run proves nothing new, it grows into hours, and its specs go stale as the code moves.
+- **A mutation check asserts its own precondition first.** A check that cannot fail looks exactly like one that passed. Before trusting it, assert that the break is observable at all: that the two values really do sort differently, that the repeated text is not compressed away before it is compared, that no other guard already stops the same thing. Then break it and watch it fail (RL-4).
+- **A concurrency test forces the interleaving.** A test that fails only when two threads happen to overlap proves nothing on the run where they did not. Hold the first one after its read (a barrier, an event, a patched step), start the second, and assert that it waits on the lock or sees the state the rule promises.
+- **Old and new side by side get a parity test.** While a replacement runs beside what it replaces, feed both the same inputs and compare every read. It is the cheapest net for a port that changed behaviour without anyone deciding it should.
+- **Existing tests, in three kinds.** Tests that will break are updated to assert the new truth, never loosened to accept it. Tests that keep passing and stop meaning anything are rewritten or retired. Tests that reach the code indirectly (patched factories, captured arguments, module mocks) are named, because they break in ways that look nothing like the cause.
+- **Tests run the path production runs.** A test that builds through a shortcut, calls an internal step production never takes, or stubs the layer the defect lives in proves the shortcut.
+- **Test what the code owns.** The code owns that a lookup can use an index, how many statements a read issues, and that its results are right. It does not own a query planner's choice on given data, physical row order, or timing. Force the choice, then check the code's part. A test that needs huge seeds or an hour to run is fighting something it does not own: read what it is doing rather than waiting.
+- **A check that runs beats a check that reads.** A guard that parses source text sees the cases its author thought of. One that observes real behaviour (counting the statements actually issued, refusing a wrong call when it is built) sees every real case. A "before" count comes from the code before the step, never from mutating the new code. A guard's allow-list entry stays while the defect it lists remains.
+- **A test of what a client sends** asserts the whole body, waits for the save before asserting that nothing was sent, and stubs only data the real server produces.
+- **Anything held constant and relied on gets a pin**: a byte-identity fixture or a golden output, because prose does not stop a reword.
+
+### Coherence: *does the document still agree with itself?*
+
+Every lens edits the artifact in one place against its own question. Read the result once, top to
+bottom, as the next reader will.
+
+- **Contradictions** between sections, steps, criteria, scope and risks.
+- **Orphans**: anything whose reason a later decision removed.
+- **Stale summaries**: counts, lists, mappings and headlines that no longer match the body.
+- **One name per thing**, and no new name that collides with an existing one.
+- **Sequence**: if it is built in order, does each step stand on what came before?
+- **One story**: would someone who did only the steps end up where the summary says?
+
+## Kinds of defect that keep coming back
+
+Mined from reviews of finished builds. A lens is a way of looking; this is what it most often finds. Nobody should wait for review to look. `/write-plan`'s logic pass reads them against the design, and `/build-phase`'s self-review keeps a copy of those its other checks do not cover.
+
+- **Screen truth:** what a screen shows is not what is stored or what would be sent.
+- **A bad value:** one malformed or hostile value is accepted, or breaks a whole read rather than failing alone.
+- **One value, several shapes:** stored, shown and sent forms disagree, and no document says which is which.
+- **Stale edit state:** a refetch overwrites an edit, a second save differs from the first, unsaved edits follow you to another record.
+- **A storage contract:** the writer and the reader of a value disagree on what it means.
+- **Half a batch:** one failure leaves part of a batch applied, with nothing saying which part.
+- **After the commit:** an error once the write has landed, so the user is told it failed, and a retry does it twice.
+- **Cleanup:** what a failure, a delete or a retired setting leaves behind.
+- **Cost:** one query per row, or a whole set held in memory.
+- **A silence filled:** something the plan left open that the build decided without saying.
+- **Duplication:** the second way to do a job, or the same logic at several sites.
+- **Tests that cannot fail:** the shapes in the proof lens.
+
+## Which gate runs which lens
+
+Each gate is a column. Depth is the gate's, and so is what happens to a finding.
+
+| Lens | `/brainstorm`: on the approaches and the recommendation | `/write-plan`: on the finished plan | `/3p-review`: on the built code |
+|---|---|---|---|
+| impact | every approach at survey depth; the recommendation in full, in the decision audit | the **impact pass** (structural and functional), then the **consolidation pass** (the trace's third axis and the self-duplication inventory, as a pass of its own under RL-1) | *Consumer authority*, *Coupling through storage, both ends*, and the plan's Impact Analysis block checked against the code |
+| removal | what each approach removes and what does that job after; a job with no replacement is a cost in the comparison, and it goes to the owner | the **removal pass** | *Retirement actually happened*, plus the new-path test for each removal |
+| logic | every approach through the main case and its edges, enough to rank them; the recommendation in full, especially *values against each other* and *can the mechanism express the rule*, which are cheapest to fix here | the **logic pass** | *Correctness*, walking the built code with concrete values rather than reading it |
+| behaviour | what the user sees under each approach; the recommendation's user-facing sentences go into the decision document's **What the User Sees** | the **behaviour pass**, checked against those sentences | the *Behaviour* section: drive the built thing on each surface and compare with the sentences |
+| business sense | every approach, and the owner's own steer, read cold | the **business-sense pass** | the *Business Sense* section: the plan does not matter on its own; the built thing has to work the way the business needs. A defect is graded and fixed like any finding; a question goes to the owner and does not hold the gate |
+| proof | for each load-bearing claim, what would prove it (BS-9, BS-10) | the **proof pass** | *Tests*, with the mutation checks run |
+| coherence | the decision document once written, before `/write-plan`: Decision against Consequences, the scenario table and What the User Sees | the **coherence pass** | not run on code; *Codebase Consistency* covers the equivalent |
+
+**A decision-document review stays above the implementation.** It judges the business decisions, the functional behaviour, the approach and the consequences: whether the direction is right, what it breaks, what the user gets. Those are what a brainstorm decides, and the plan makes them concrete. Code is evidence there. A review opens it to check a claim the document makes about today's system, or to find a caller or flow the decision breaks, and cites it for that. Code-level form (method names, signatures, file layout, which class holds what) belongs to the plan and is not a finding against a decision document. A plan review does go down to those names, and its executability pass confirms each one.
+
+## Handing a review to an outside model
+
+An outside reviewer, whether another vendor's model or a fresh-context agent, finds what you cannot:
+it does not know why anything was decided, so it sees the result the way a newcomer does. A
+different model from yours also misses different things. Every gate that finishes a reviewable
+artifact (a decision document, a plan, a build) offers the owner an outside review in one line,
+once per artifact, in one of two forms. `/3p-review` skips the offer in the cases its *Fresh
+readers* section names, such as when its own deep read already ran.
+
+- **A reviewer started here**, when your harness can start a subagent with none of this
+  conversation on a model you name. The offer asks which model; suggest one other than yours. The
+  subagent gets the brief below, filled in, and nothing else from this session.
+- **The brief, written out and ready to paste** into another tool. This is the only form when the
+  harness cannot start such a subagent.
+
+Start a reviewer fresh each time; never resume one. Reviewers run in sequence (RL-9). A reviewer that remembers its last review
+anchors on its own earlier view.
+
+What goes wrong without a brief: the reviewer starts fixing things, filing tickets, and proposing
+edits; it answers "do the plan and the code match?" when the question was "are they both right?";
+and it pads the answer with everything that is fine.
+
+```markdown
+You are reviewing, not changing. Do not edit files, run anything that writes, or file tickets.
+Read-only commands only, one simple command per call. Changes are another model's job; yours is to
+find what is wrong.
+
+**What to review:** [the decision document / plan / commits, by path or hash] in [repo path].
+[If the tree is changing while you read: read every file as of commit [hash], not from the working tree. Delete this line when the tree is still.]
+**What it is for:** [the business requirement, in one or two sentences, in the owner's words].
+
+**The question is whether it is right, not whether its parts agree with each other.** Is the logic
+correct? Does it deliver the business requirement? Does it make business sense? Two documents can
+agree and both be wrong, so agreement alone is never the answer.
+[For a plan: also check that it implements every decision in the decision document; a decision
+with no phase is a finding. For code: do not check that it matches the plan; check that it works.
+For a decision document: judge the business decisions, the functional behaviour, the approach and
+the consequences. Code is evidence for or against what the document claims, or for a caller or flow
+it breaks. Code-level form (method names, signatures, file layout) is the plan's job, not a finding
+here.]
+
+Look through each of these separately:
+1. Impact: trace callers, call sites and dependants both ways. Count them with the type checker
+   or language server this repo uses [e.g. tsc, pyright, go build]; a name-based index misses calls made
+   through an instance. Include values one component writes to storage and another reads; no tool
+   links those, so check that both ends agree.
+2. Removals: a scalpel, not a butcher's knife. Each removal is justified line by line, its job
+   still done. If something is uncalled, ask whether it should be wired in rather than deleted.
+3. Logic: walk it with concrete inputs, edge cases, crashes between writes, two copies running at
+   once, loops that never stop, settings that defeat each other.
+4. Behaviour: every screen, report and prompt that shows the changed data. What does the user
+   actually see?
+5. Business sense: as [the typical user, named], would anything here be odd, surprising or
+   pointless, including things that were decided on purpose?
+
+**Report only what is broken, possibly broken, or doubtful, and whether there is a better
+approach.** Do not tell me what is fine. For each finding, give the file and line you opened and
+confirmed (for a decision document, the passage, plus code only where it is the evidence), who or
+what is affected, and why. Do not repeat points already answered unless new code
+changes the answer. Put every finding in your final message, as a numbered list: not in a tool, a
+file or a summary of a longer list.
+
+**Already settled; do not spend turns on these:** [what the owner has ruled, and what is already
+proven first-party, such as runs or mutation checks witnessed. "None." if nothing is.]
+[On a follow-up round: here is what was rejected and why; weigh it and say if the rejection holds.]
+```
+
+When its findings come back, they are evidence, not instructions: verify each against the code, settle
+what holds as a kind (RL-8), and reject only under RL-5. **First check that a review happened at all.** An agent run
+headless can stop on a command its tool refused and still report success, with an empty or partial
+answer. An empty answer, or one that never reached the parts it was asked to read, is no review.
+If you launched it, fix what it was refused and run it once more. If that fails too, or the owner
+ran it, tell the owner in one line that the outside review did not happen, and go on without it.
+What a review that did happen says it did not check stays open: another pass checks it, or it goes to
+the owner before this gate closes.
+If the working tree is changing while it reads (a build running, mutations being applied), point
+it at the commit the work is already in. Never commit to create one; if the work is uncommitted,
+wait until the tree is still.

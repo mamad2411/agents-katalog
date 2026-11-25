@@ -1,0 +1,133 @@
+---
+name: "release-process"
+description: "Operate Squad's automated insider, preview, and stable release channels safely"
+domain: "release-management"
+confidence: "high"
+source: "team-decision"
+---
+
+# Squad Release Process
+
+Read `.squad/skills/release-process/SKILL.md` for the canonical runbook and
+recovery commands. The operational model is:
+
+| Release | Trigger | Required version | Result |
+|---------|---------|------------------|--------|
+| Insider | Manual `squad-insider-publish.yml` dispatch from `dev` | Generated `X.Y.Z-insider.N` | GitHub prerelease, npm `insider`, standalone archives, Homebrew, WinGet |
+| Preview | Manual `squad-release.yml` dispatch from `dev` | `X.Y.Z-preview.N` | GitHub prerelease, npm `preview`, standalone archives, Homebrew, WinGet |
+| Stable | Manual `squad-promote.yml` dispatch from `dev` | `X.Y.Z` | Sanitized `main` push, GitHub stable release, npm `latest`, standalone archives, Homebrew, WinGet |
+
+There is no staging `preview` branch. Do not create tags or GitHub Releases
+manually.
+
+Human release-trigger boundary: use the canonical runbook for exact commands. Agents may prepare, validate, and present commands, but agents must never execute or dispatch any live publication, promotion, or recovery workflow: `squad-release.yml`, `squad-agents-ai-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with `dry_run=false`, `squad-version-promote.yml`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`. Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: it has `actions: write` and `contents: write`, checks out `dev` with the workflow token, installs dependencies, and runs build and test steps. Do not describe any GitHub Actions release workflow as agent-safe once it has write-capable credentials or a dispatch path. Only a human executes those triggers; human approval alone does not authorize an agent to fire them.
+
+## Preconditions
+
+Before either channel:
+
+```bash
+git fetch origin dev main
+git merge-base origin/dev origin/main
+grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']"
+grep -F "## [$VERSION]" CHANGELOG.md
+SKIP_BUILD_BUMP=1 npm run build
+npx vitest run
+```
+
+The validation build must not mutate package versions or the lockfile; check
+`git diff -- package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+package-lock.json` afterward and stop if any version-only change appears.
+
+The ancestry command must return a commit, all three versions must match, the
+CLI SDK dependency floor must be `>=VERSION`, and the changelog must contain
+the exact release version.
+
+Required Actions secrets:
+
+- `NPM_TOKEN`: automation-capable npm publish token.
+- `HOMEBREW_TAP_TOKEN`: classic PAT with `public_repo` from a collaborator with
+  write access to `bradygaster/homebrew-squad`.
+- `WINGET_CREATE_GITHUB_TOKEN`: classic PAT with `public_repo` for
+  `tamirdresher/winget-pkgs`.
+
+## Preview
+
+After a PR sets an immutable prerelease version on `dev` and CI passes:
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
+```bash
+VERSION=0.14.0-preview.1
+gh workflow run squad-release.yml --ref dev -f confirm_tag="v$VERSION"
+gh run watch
+```
+
+The release workflow rejects stable versions on manual dispatch, creates a
+GitHub prerelease, publishes npm `preview`, and uploads standalone bundles.
+It also updates the `squad-preview` Homebrew cask and
+`bradygaster.Squad.Preview` WinGet package. The activation pin and insider-tag
+promotion remain stable-only.
+
+## Insider
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
+```bash
+gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
+gh run watch
+```
+
+The workflow computes the next `X.Y.Z-insider.N` version, publishes npm
+`insider`, creates the GitHub prerelease and standalone archives, updates
+`squad-insider` in Homebrew, and opens or reuses the
+`bradygaster.Squad.Insider` WinGet PR.
+
+## Stable
+
+After a PR replaces the preview version with `X.Y.Z` on `dev` and CI passes:
+
+Human-only validation dispatch: this workflow still checks out `dev` with repo/workflow credentials and runs build and test logic. Agents must stop and hand off; only a human should fire it.
+
+```bash
+gh workflow run squad-promote.yml --ref dev -f dry_run=true
+gh run watch
+```
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
+```bash
+gh workflow run squad-promote.yml --ref dev -f dry_run=false
+gh run watch
+```
+
+Promotion merges `dev` directly into `main`, strips internal team state,
+validates the release tree, builds it, runs tests, and pushes `main`. It then
+explicitly dispatches `squad-release.yml` because `GITHUB_TOKEN` pushes do not
+start another workflow. The release creates the tag and stable GitHub Release
+and directly invokes npm and standalone publication.
+
+## Verify
+
+```bash
+npm view @bradygaster/squad-sdk dist-tags.preview
+npm view @bradygaster/squad-cli dist-tags.preview
+npm view @bradygaster/squad-sdk dist-tags.latest
+npm view @bradygaster/squad-cli dist-tags.latest
+gh release view "v$VERSION"
+```
+
+Use the tag for the channel being released. Verify the GitHub Release contains
+all six OS/architecture archives and `SHA256SUMS.txt`. Every release must update
+its channel-specific Homebrew cask and create or reuse a WinGet PR.
+
+## Recovery
+
+Do not recreate or overwrite the tag. Rerun a failed child job, or dispatch the
+reusable npm/standalone workflow with `source_ref=v$VERSION`. Use `--ref dev`
+for previews and `--ref main` for stable releases. The canonical runbook
+contains the exact commands.
+
+After a stable release, prepare the next `X.Y.Z-preview.1` version in a normal
+PR to `dev`.

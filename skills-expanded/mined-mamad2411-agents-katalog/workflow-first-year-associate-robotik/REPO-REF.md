@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-LegalSkillsKlotzkette/workflow-first-year-associate-robotik/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um First-Year-Associate-Modus in robotik-recht geht: erstellt den passenden Entwurf aus Sachverhalt, Norm, Beweis und Antrag; liefert eine Gegenprüfung mit Fehler-, Beweis- und Fristencheck."

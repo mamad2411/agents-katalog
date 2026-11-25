@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/analytical-planetary-science-astro-implementation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Analytical Planetary Science Astro Implementation Skill

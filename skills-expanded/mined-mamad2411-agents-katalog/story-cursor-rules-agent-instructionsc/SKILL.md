@@ -1,0 +1,80 @@
+---
+description: STORY master's and doctoral thesis-workflow agent instructions
+alwaysApply: true
+---
+
+# STORY Agent Instructions
+
+This repository uses STORY — **Systematic Toolchain for Organizing Research over Years** — to turn a body of graduate research into a coherent, defensible, and deposit-ready master's thesis or doctoral dissertation.
+
+## 1. Scope and authority
+
+- One repository represents one master's thesis or doctoral dissertation.
+- `degree/profile.tex` records `degree_level: master|doctoral`. Treat a missing or invalid value as unknown, never infer it from a title or degree name, and apply only the confirmed level's standards and milestones.
+- `degree/` contains user-confirmed institutional facts. Never invent a deadline, formatting rule, committee decision, authorship statement, or deposit requirement.
+- `mates/` is the evidence store. It is read-only except through `execs/scpts/import.sh` and `$story-evid-curator`.
+- `manus/` is the thesis source. Write manuscript prose in the language recorded in `degree/profile.tex`; structural keys, IDs, paths, and statuses remain English.
+- Ask before a choice that changes the thesis-wide argument, chapter boundaries, attribution, publication reuse, or a degree requirement. Make safe local choices without interrupting the user.
+
+## 2. Evidence before prose
+
+- Every quantitative or comparative claim in `manus/` must trace to a fingerprinted `mates/` file through a nearby `% src:` comment or a claim-ledger entry.
+- Write missing evidence visibly as `\todo{...}`. A plausible invented value is never acceptable.
+- Assertions about cited work must be checkable against `notes/refs/` or imported reference material.
+- Fix incorrect evidence at its source and re-import it. Never silently edit a snapshot under `mates/`.
+- A published paper is evidence, not automatically the thesis's final wording. Reconcile terminology, scope, attribution, and overlap before reuse.
+- Drafting and copy-editing follow `docs/mds/story-workflow/human-writing-guide.md`: preserve author-confirmed voice, diagnose formulaic prose from pattern clusters rather than isolated words, and never add facts or personality merely to sound human.
+
+## 3. Thesis-level coherence
+
+- `notes/story.md` owns the thesis-level problem, central argument, research arc, and synthesis.
+- `notes/contributions.md` maps degree contributions to evidence, publications, chapters, and candidate examination claims. Doctoral and master's contributions are judged against different confirmed degree expectations.
+- `notes/publications.md` records authorship, chapter reuse, permissions, and overlap. Do not imply sole authorship when work was collaborative.
+- `notes/outline.md` owns chapter order and chapter briefs. A chapter draft must serve the thesis-wide argument, not merely reproduce a paper.
+- `notes/claims.md` is the claim ledger. Update it in the same change that introduces, moves, weakens, or verifies a claim.
+
+## 4. Degree milestones
+
+- Each applicable proposal, review, pre-defense, defense, correction round, or deposit attempt lives under `milestones/<slug>/`; do not require a milestone merely because another degree level uses it.
+- `milestone.yml` contains user-confirmed facts; `feedback/` preserves received comments; `response/` records dispositions; `RECORD_<date>.md` freezes an outcome.
+- Committee feedback is never edited in place. Responses distinguish completed changes, planned changes, reasoned disagreements, and questions requiring the author.
+- A deposit package cannot be declared ready while required checks in `degree/requirements.md` or open promises in `tasks/` remain unresolved.
+
+## 5. File ownership
+
+- `manus/fronts/`: abstract, acknowledgements, declarations, and other front matter.
+- `manus/chaps/`: numbered chapters `<n>_<slug>.tex`.
+- `manus/backs/`: appendices and other back matter.
+- `manus/figs/`, `manus/tabs/`, `manus/bibs/`, `manus/stys/`: figures, tables, bibliography, and template layers.
+- `degree/`: profile, committee record, and institutional checklist.
+- `notes/`: narrative, outline, claims, contribution/publication maps, notation, style, adoption record, and reading notes.
+- A fresh clone keeps only `notes/.gitkeep` and `notes/refs/.gitkeep`; the owning workflow skill creates each `notes/*.md` artifact on first use. Treat absence as an uninitialized stage and route consumers to the skill that creates it.
+- `wkdrs/`: builds and regenerable reports; never treat it as durable project state.
+- `tasks/`: durable unresolved work and feedback promises.
+
+## 6. Runtime
+
+- Build only with `bash execs/run.sh`; output belongs under `wkdrs/builds/`.
+- Run deterministic checks with `bash execs/scpts/lint.sh`.
+- Use `bash execs/scpts/fmt.sh` to preserve one sentence per line without changing typeset text.
+- Runtime configuration comes from `.env`, copied from `.env.example`; do not hardcode machine paths.
+- `.env` `STORY_MAIN` selects the default manuscript entry point for both build and lint; `--main` overrides it for one command.
+- Use the actual system date whenever a dated artifact is created.
+
+## 7. Workflow
+
+- When the repository state is unclear, run `$story-flow-status` first.
+- Every workflow skill loads `docs/mds/story-workflow/writing-workflow-conventions.md` before acting.
+- Prefer the smallest applicable skill. Do not let a drafting request mutate evidence, degree requirements, or received feedback.
+- Build after changing `manus/`; run lint when references, claims, metadata, or finalization state may have changed.
+- Report what was verified: build path and page count, lint result, changed ledger rows, and any remaining gate.
+- After every completed workflow step, end the handoff with exactly one `Next action:` line. Name the owning `story-*` skill and a concrete target or command, or name the author action that clears the earliest remaining gate. A recommendation is not authorization to start another skill; ask first when the next action changes the thesis-wide argument, chapter boundaries, attribution, publication reuse, or a degree requirement. If no work remains, say so explicitly instead of inventing a task.
+
+## 8. Language and project memory
+
+- `.env` `STORY_LANG=en|zh` controls replies and newly written Markdown, following the conversation when unset; it never silently translates existing files.
+- Pair every English Markdown file with a Simplified Chinese counterpart: use `*.zh-CN.md` for ordinary documents and `SKILL_zh.md` for skill instructions. Because `mates/` is read-only, the counterpart of `mates/MANIFEST.md` lives at `docs/mds/story-workflow/mates-MANIFEST.zh-CN.md`.
+- `degree/profile.tex` controls the manuscript language.
+- Store session knowledge in `.story/memory/` only when no repository file already owns it. Machine-local facts go under `.story/memory/local/`.
+- Offer, never assume: make at most two memory offers per session and write only after the author agrees. `INVOLVE=low` records without asking and says so.
+- Memory is never evidence and cannot override `degree/`, `mates/`, `notes/`, or `milestones/`.

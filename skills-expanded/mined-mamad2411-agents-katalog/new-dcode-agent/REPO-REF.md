@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-EliaAlberti-dcode-agent-kit-new-dcode-agent/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Scaffold a new Deep Agents (LangChain) agent, a dcode CLI agent, or both, from one command. Use ONLY when the user explicitly runs /new-dcode-agent; never auto-trigger. It interviews the user (form, n

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-wind-alice-alicemarket/sec-filing-question-answer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 从10-K、10-Q、招股书等监管文件中定位依据并回答具体问题。适用于长文档快读、条款核验、经营细节查询与研究答疑等场景。

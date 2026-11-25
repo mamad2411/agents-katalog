@@ -1,0 +1,49 @@
+---
+name: sachstandsanfrage-und-untaetigkeitsbeschwerde
+description: "Wenn es um Sachstandsanfrage Und Untaetigkeitsbeschwerde in selbstvertreter-sozialgericht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# Sachstandsanfrage Und Untaetigkeitsbeschwerde
+
+## Fachlicher Anker
+
+- **Normen:** § 7, § 7a, §§ 20.
+- **Entscheidungs-/Quellenanker:** Tragende Rechtsprechung nur mit Gericht, Datum, Aktenzeichen und frei prüfbarer Quelle einsetzen; keine Entscheidung aus Modellwissen erzwingen.
+- **Quellenhygiene:** `references/quellenhygiene.md` und `references/zitierweise.md` beachten.
+
+## Stufenfolge
+
+### 1. Sachstandsanfrage
+- Schriftliche freundliche Erinnerung nach 4-6 Wochen.
+- Hinweis auf Frist.
+
+### 2. Mahnung mit Fristsetzung
+- Nach weiteren 4 Wochen.
+- Konkrete Frist von 14 Tagen mit Hinweis auf Untaetigkeitsklage.
+
+### 3. Dienstaufsichtsbeschwerde
+- An die uebergeordnete Stelle.
+- Bei Krankenkassen: Aufsichtsbehoerde des Landes.
+- Bei Jobcenter: Bundesagentur für Arbeit / Geschäftsführung.
+- Bei DRV: Bundesversicherungsamt.
+
+### 4. Untaetigkeitsklage § 88 SGG
+- Frist: 6 Monate nach Antragstellung (im Widerspruch 3 Monate).
+- Beim Sozialgericht ohne Kosten.
+- Antrag: "Den Beklagten zur Bescheidung des Antrags vom [...] zu verurteilen."
+
+## Vorlage Sachstandsanfrage
+
+"In dem Verwaltungsverfahren zu Aktenzeichen [...] bitte ich um Mitteilung des Sachstands. Mein Antrag vom [Datum] ist seit [Wochen] anhaengig. Bitte teilen Sie mir mit ob noch Unterlagen fehlen und wann mit einer Entscheidung zu rechnen ist."
+
+## Vorlage Mahnung
+
+"Trotz meiner Sachstandsanfrage vom [Datum] ist bisher keine Entscheidung ergangen. Ich setze hiermit Frist bis zum [Datum 14 Tage später]. Andernfalls werde ich Untaetigkeitsklage erheben."
+
+## Prüfraster
+
+1. Wartezeit seit Antrag?
+2. Sachstandsanfrage erfolgt?
+3. Mahnung mit Fristsetzung?
+4. Dienstaufsichtsbeschwerde sinnvoll?
+5. Untaetigkeitsklage Voraussetzungen?

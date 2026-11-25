@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/genetic-algorithm/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 选择交叉变异求解非凸组合优化 `GA`。调度选址路径等非光滑组合问题时用；目标约束可线性表达见 optimization-lp-milp。"

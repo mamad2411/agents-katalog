@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/ai-ml/ai-rollback-plan/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Design rollback plans for AI deployments. TRIGGERS - Use when user needs help with ai-rollback-plan related tasks."

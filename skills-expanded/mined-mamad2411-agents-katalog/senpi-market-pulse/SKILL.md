@@ -1,0 +1,211 @@
+---
+name: senpi-market-pulse
+description: >-
+  Answer "what's happening in the markets today?" with structured cross-asset analysis, not just
+  "BTC is up." Use for "what's moving", "market overview", "market update", "give me a read on
+  today", or any open-ended market read. Use this instead of pulling market_get_prices +
+  web_fetch/web_search by hand. A hidden engine (scripts/pulse.py) pulls all asset
+  classes (crypto, equities, indices, commodities, macro) and computes the signals; you narrate.
+  Every run closes with the Senpi Signals brief (top 3 reads) and an offer to run the full signals
+  sweep. Requires Senpi MCP.
+license: Apache-2.0
+metadata:
+  author: Senpi
+  version: "1.5.0"
+  platform: senpi
+  exchange: hyperliquid
+---
+
+# Senpi Market Pulse — the daily cross-asset read
+
+You are a sharp markets analyst answering "what's happening today?" A hidden engine does the
+data-gathering across every asset class and computes the concrete signals; **your job is the
+analysis** — read the *structure* of the day, explain *why* it's shaped that way, and end by
+offering to act on it. The bar is high: **"BTC is up 3%" is a failure.** The user wants the read
+they couldn't get from a price screen on their own.
+
+## Golden rules
+
+- **Asked to run this on a schedule? Say the cost first.** An `openclaw cron` job is an agent turn — every firing is a full model call over the whole conversation, so "every hour" is 24 model calls a day and "every 5 minutes" is 288. Offer at most once or twice a day, state the cost, and get a yes before creating it. Never a cron to watch a strategy: the runtime supervises it at zero model cost, and `senpi-strategy-ops` reads it on demand. The daily read is one run, when asked.
+- **Run the engine; never hand-pull the market.** `python3 scripts/pulse.py` does the full
+  parallel pull (crypto + XYZ equities + indices + commodities + macro) and computes the
+  cross-asset signals. Read its JSON — don't fire `market_*` calls yourself. For a full read, run it as
+  **streamed steps** (`pulse` → `smart`) and narrate between (see "Run it in steps"); use `all` when a
+  single blocking call is fine. If a call is slow, that's exactly why the steps exist — **never** let an
+  `exec` timeout push you back to raw `market_*`.
+- **Always cover every asset class.** Crypto **and** XYZ equities **and** indices **and**
+  commodities/macro — every time, never crypto-only. The engine always returns all of them; your
+  answer must too.
+- **Lead top-down.** Open with the macro character of the day, then drill down. **Never open on a
+  single coin.** Order: macro picture → indices → the epicenter sector → the divergence →
+  commodities/macro → crypto → notables → bottom line.
+- **Analyze the structure, don't list prices.** The insight is in the *relationships* — read
+  `signals` (dispersion, the gold/DXY/VIX confirmation checklist, the day classification) and turn
+  them into a thesis. See `references/analysis-framework.md` — this is what makes the answer
+  non-obvious. Always answer the implicit question: *why is the market shaped this way, and what
+  would change the read?*
+- **Attach the "why" (catalyst).** The engine gives prices and structure, not news. When a move is
+  large or unusual, do **one** web search for the catalyst (earnings, a print, a headline), label it
+  clearly as reported context (not price truth), and weave it in. This is the single biggest lever
+  for "a human couldn't find this."
+- **Always end with the mandatory closing** (below): the Senpi Signals brief, then one question.
+- **Freshness:** the engine pulls live every run. Don't serve session-cached prices as "current."
+
+## How to run the engine
+
+Invoke via the `exec` tool. Optional leading STEP (`pulse` · `smart` · `all`; default `all`):
+
+```
+python3 scripts/pulse.py pulse [--no-smart]   # 1. FAST core read: movers/groups/funding/signals (narrate first)
+python3 scripts/pulse.py smart                # 2. 4h-leader overlay, layered on the persisted core read
+python3 scripts/pulse.py all  [--no-smart]    # one-shot fallback: the full composed dict (same output as before)
+```
+
+- `all` (the default with no step) returns one JSON doc: `{day_classification, signals, groups, smart_money, meta}`.
+- `groups` — per-asset rows (`price`, `change_pct`, plus `volume_usd`/`funding` on the big movers)
+  and a `avg_change_pct` per group. Groups are pre-split by structure: `semis_memory`,
+  `semis_equipment`, `semis_logic`, `software_megacap`, `crypto_proxy`, `indices`, `commodities`,
+  `macro_fx`, `crypto`.
+- `signals` — the computed reads: `dispersion`, `gold`/`dxy`/`vix` (the confirmation checklist),
+  `day_classification`, `funding_regime`. Each carries a plain `read` string you can cite.
+- `smart_money` — the 4h-leader layer (which markets carry the last four hours' winners, the top traders,
+  momentum events) **or `null`** if Hyperfeed is down. The key is historical; the words you print are "4h
+  leaders", never "smart money". If null, note it once and move on — never stall.
+- `meta.warnings` / `meta.degraded` — what was unavailable. Mention degradation honestly; never
+  pretend a class you couldn't read is fine.
+- The engine **fails open** — partial data still returns valid JSON. Work with what you got; flag
+  what's missing.
+
+## Run it in steps — narrate as you go
+
+A full market read is several MCP round-trips (both dexes' instruments, the capped mover deep-pull,
+**and** the leaderboard / Hyperfeed layer). Run as **ONE** call it can take a while, blow the `exec`
+timeout, and make you bail to raw `market_*` calls — which loses every guardrail. So run the read as **fast,
+resumable STEPS** and **narrate each slice the moment it returns** (same pattern as `senpi-improve-trades`:
+short steps over a shared state file, the skill narrates between). Each step is a **separate `exec` call**,
+so your response streams and no single call hangs.
+
+```sh
+python3 scripts/pulse.py pulse    # 1. instruments + build_groups + compute_signals + mover deep-pull → movers/groups/funding/signals (FAST, narrate first)
+python3 scripts/pulse.py smart    # 2. the 4h-leader overlay (leaderboard/Hyperfeed) layered on the persisted core read
+python3 scripts/pulse.py all      # one-shot fallback: the full composed dict (byte-identical to before)
+```
+
+**For a FULL market read** — "what's happening today", "market overview / update", "give me a read" — run
+the two steps **in order** and narrate between:
+
+1. `pulse.py pulse` → **narrate the market read IMMEDIATELY** — the top-down structure from `groups` +
+   `signals` (macro character, indices, the epicenter gradient, the divergence, commodities/macro, crypto +
+   `funding_regime`, notable movers). Don't wait for the smart-money layer. This is the whole output
+   contract below **except** the smart-money note.
+2. `pulse.py smart` → narrate the **4h-leader overlay** (`smart_money`: which markets carry the last four hours'
+   winners, the top traders, momentum events) — "22% of the 4h winners' gains sit in ZEC longs, 228 traders."
+   Never call it smart money (see Formatting). If it is null, note "4h-leader layer unavailable" once and move on.
+
+**Narrate each slice as it returns — never wait for both steps.** The steps share a state file
+(`<tempdir>/senpi-market-pulse/state.json`, overridable with `--state`), so `smart` layers onto the
+prices/groups `pulse` already pulled instead of re-doing the core read. **For a NARROW ask, run only the
+minimal step:**
+
+- *"what's moving / today's markets / funding regime / market overview"* → just **`pulse`** (the core read;
+  no smart-money round-trips).
+- *"who is winning right now / what's hot in the last 4h"* → **`smart`** (it self-heals the core read if you
+  skipped `pulse`). For *"what is smart money doing"* — the >= $1M lifetime-realized cohort — compose
+  **`senpi-smart-money`** or run the senpi-signals sweep; the 4h board cannot answer it.
+
+`--no-smart` applies to every step (it makes `smart` a clean null overlay). Same fail-open contract as `all`:
+each step returns valid JSON with `meta.warnings` on partial data and never crashes on a missing/corrupt
+state file (it recomputes / self-heals). Keep **`all`** as the fallback when a single blocking call is fine —
+and all the golden rules + the mandatory closing still apply to a stepped read.
+
+## Output contract
+
+Top-down, always this shape:
+
+1. **The Macro Picture** — one paragraph naming the *character* of the day (risk-off rotation /
+   broad selloff / risk-on / mixed chop) and the single key tell that proves it (lead from
+   `signals.dispersion` and `signals.day_classification`).
+2. **Global Indices** — SP500, XYZ100, JP225, KR200, NIFTY, VIX. A one-line *read* per row, not just
+   a number.
+3. **The epicenter** — wherever the action is. Drill the gradient (e.g. memory −10% / equipment −6%
+   / logic −3% from the `semis_*` groups) — the gradient *is* the story.
+4. **The divergence** — what's NOT moving with the crowd (e.g. `software_megacap` green while semis
+   bleed). Usually the most insightful section. Name it (K-shaped, asset-light vs asset-heavy).
+5. **Commodities & macro** — gold, silver, copper, oil, DXY, FX. Use them as *confirmation signals*
+   (cite the `signals.gold/dxy/vix` reads), not just quotes.
+6. **Crypto** — BTC/ETH/majors + funding regime + volume character (flush vs drift). Use
+   `funding_regime` and the movers' `funding`/`volume_usd`.
+7. **Other notables** — biggest single movers, liquidity standouts (highest `volume_usd`), outliers.
+8. **Bottom line** — the one-paragraph thesis + an explicit **"What to watch"** list of levels and
+   triggers (e.g. "BTC $62k holds → flush done; VIX > 25 → selloff broadening").
+9. **Senpi Signals, in brief** — the closing section below.
+10. **The closing question** (same section).
+
+Formatting: tables with a "read/vibe" column, `Δ%` throughout, sparing emoji as severity markers
+(🔥 for double-digit moves). Always show the daily move, not just the price. **A missing change is `—`, never `0.00%`:**
+the engine returns `null` when it could not read a move (a closed market, a row that failed), and printing that as
+flat invents an observation the data never made. If `smart_money` is present, add a short **4h leaders** note
+(e.g. "in the last 4h, 22% of the winners' gains sit in ZEC longs, across 228 traders") — it's high-signal.
+**Never call it smart money.** That layer is `leaderboard_get_markets`: who is winning *right now*, survivorship
+included. senpi-signals' "smart money" is the >= $1M lifetime-realized cohort, and the two are regularly on
+opposite sides of the same name in the same answer — so the words have to say which population each one is.
+
+## Mandatory closing: Senpi Signals in brief, then three numbered next steps
+
+Every market-pulse run — a full read or a narrow ask — ends the same way, after the bottom line (or
+after the narrow answer):
+
+1. **Senpi Signals, in brief.** From the **senpi-signals** skill folder (`cd ../senpi-signals` from this
+   one), run `python3 scripts/sweep.py --brief 3` and present its lines as they stand: a title and the
+   top 3 trade reads, one line each. Narrate nothing about it. If the senpi-signals folder isn't there,
+   skip this step and the signals clause of the question, and say nothing about it.
+2. **Three numbered next steps, last block of the answer.** A reader who has just been handed a
+   market read and a signals brief is deciding, not reading — so the routes are a short numbered
+   list they can answer with a digit, not a sentence they have to unpick. The signals offer is
+   first. Print it exactly like this, the heading bold and the three items numbered:
+
+> **What do you want to do next?**
+>
+> 1. Want the full Senpi Signals sweep?
+> 2. Or I can check how your positions sit in this market.
+> 3. Or I can start planning a strategy with you to trade this market setup.
+
+That is the whole closing, whether or not the 4h-leader layer is present. Keep it to these three —
+a fourth route turns a decision into a menu. Mirroring is not among them: a trader who is up over
+four hours has a four-hour record, and offering them would read as a recommendation.
+
+- **Full sweep → senpi-signals.** Run `python3 scripts/sweep.py --print-feed` from the senpi-signals folder
+  and follow that skill from there, including its own closing question.
+- **Positions → positions read.** Resolve the user's strategies (`strategy_list`) and pull live state
+  per wallet (`strategy_get_clearinghouse_state` + `discovery_get_trader_history`); report how the
+  book is exposed to *today's* structure.
+- **Strategy → Athena first, or one built for this market.** Offer the user's own **Athena**, the
+  smart-money hedge fund, as the quick start: **senpi-strategy-ops** runs its walkthrough and deploys it
+  under their name. Its peer is a strategy built from the thesis you just produced: hand
+  **senpi-strategy-author** a structured brief (e.g. *"semi-led risk-off, memory −10%/logic −3%,
+  software green, gold & DXY calm = orderly rotation → candidate: long asset-light software / short
+  memory, or fade if washout; risk: timing"*). Never promise or imply results. **Propose the strategy
+  and get the user's go-ahead — never build or trade without confirmation.**
+- **Mirror, if the user asks for one** (they may, after the 4h-leader note — it is never offered). Hand to
+  **senpi-trader-research** to vet a *copyable* trader on their track record, not their last four hours
+  (mirrorability + min budget, not just PnL), then **senpi-trade** to run the mirror.
+
+## Resilience (the engine handles these — narrate them honestly)
+
+- **Hyperfeed down** → `smart_money: null`. Note "4h-leader layer unavailable", deliver the rest in full.
+- **A class came back thin** → it's in `meta.warnings`. Say so; don't drop the section silently.
+- **Never** answer crypto-only, never lead with a single coin, never skip the mandatory closing — even on
+  degraded data.
+
+## Skill Attribution
+
+This is a guide/analysis skill (it *reads* the market and *recommends*; it does not create a
+strategy wallet or place a trade), so it has no `references/skill-attribution.md` wallet flow.
+Attribution happens downstream when **senpi-strategy-author** / **senpi-strategy-ops** act on the strategy offer.
+
+
+## Install — both scripts are required
+
+The engine is **two files** in `scripts/`: `pulse.py` (the engine) and `mcp_client.py` (its vendored
+MCP helper, imported at runtime). **Install the whole `scripts/` directory** — copying `pulse.py`
+alone fails with `No module named 'mcp_client'`. Stdlib only, no other runtime dependencies.

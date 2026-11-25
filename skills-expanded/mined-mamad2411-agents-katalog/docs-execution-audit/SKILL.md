@@ -1,0 +1,54 @@
+---
+name: docs-execution-audit
+description: 'Use when you need this Cognitive OS skill: Classify documentation items
+  as done, weak-proof, planned, proposed, stale, or unknown using repository evidence.;
+  do not use when a narrower skill directly matches the task.'
+invoke: /docs-execution-audit
+tag: os-only
+model: haiku
+audience: os-dev
+effort: haiku
+summary_line: Audit what the docs say is done vs what repo evidence proves.
+version: 1.0.0
+platforms:
+- claude-code
+- codex
+prerequisites: []
+routing_patterns:
+- pattern: \bdocs[- ]?execution[- ]?audit\b
+  confidence: 0.95
+- pattern: \bclassify\s+documentation\s+items?\b
+  confidence: 0.8
+- pattern: \bdoc\s+evidence\s+audit\b
+  confidence: 0.75
+routing_intents:
+- intent: audit_documentation_claims_against_repo
+  description: User wants documentation statements classified by repository evidence
+    as done, weak-proof, planned, proposed, stale, or unknown.
+  confidence: 0.88
+- intent: verify_docs_execution_status
+  description: User asks whether docs accurately reflect implemented work, distinct
+    from reviewing clarity, tone, or stakeholder usefulness.
+  confidence: 0.84
+triggers:
+- docs-execution-audit
+- /docs-execution-audit
+- Documentation Execution Audit
+- Audit what the docs say is done vs what repo evidence proves
+---
+<!-- SCOPE: os-only -->
+# Documentation Execution Audit
+
+Run:
+
+```bash
+python3 scripts/docs_execution_audit.py \
+  --json-out docs/06-Daily/reports/docs-execution-latest.json \
+  --md-out docs/06-Daily/reports/docs-execution-latest.md
+```
+
+Use this when asking what remains across all documentation, what is stale, or what is marked done without enough proof.
+
+## Contextual Trigger
+
+Use when the user asks: what is done, what is missing, docs stale, pending documentation, roadmap reality, docs execution coverage.

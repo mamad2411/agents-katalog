@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/revops-stack-rationalization/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Run a macro, periodic review of the full RevOps/GTM tool stack against the revenue workflows it serves and decide, tool by tool, what to keep, consolidate, replace, or cut - four-channel inventory, fu

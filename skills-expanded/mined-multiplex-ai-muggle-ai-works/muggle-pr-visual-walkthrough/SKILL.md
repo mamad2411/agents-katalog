@@ -1,0 +1,56 @@
+---
+name: muggle-pr-visual-walkthrough
+model: sonnet
+description: "Post a visual walkthrough of Muggle AI E2E acceptance results to a pull request — pass/fail summary, step-by-step screenshots, and per-test-case dashboard links — rendered by the `muggle build-pr-section` CLI. Use whenever tests already ran and the user wants that evidence on the PR for reviewers: 'post results to the PR', 'attach the screenshots and pass/fail summary', 'give reviewers visual proof the flows passed', 'stick the Muggle E2E results on my PR'. Invoke it before inspecting anything — it finds the PR and gathers the run's results itself, so looking up the PR or the run by hand duplicates its first step, and a hand-written PR comment skips the CLI's formatting. Use at the end of any Muggle Test run, local or remote. Boundary: it posts existing results and never runs tests; to test changes, use muggle-test."
+---
+
+# Muggle Test PR Visual Walkthrough
+
+> Telemetry first step: see [`_shared/telemetry-emit.md`](../_shared/telemetry-emit.md). Use `skillName: "muggle-pr-visual-walkthrough"`.
+
+> Running outside Claude Code (in Codex, for one)? Read [`../_shared/host-tool-equivalents.md`](../_shared/host-tool-equivalents.md) first — it maps the tools and paths this skill names to your host's.
+
+Renders a visual walkthrough of Muggle AI E2E acceptance test results and posts it to a PR. Each test case links to its detail page on the Muggle AI dashboard, so reviewers can click through to step-by-step screenshots — not just a pass/fail flag.
+
+This skill is a **dispatcher**: it resolves the mode and any user interaction, then hands execution to the `visual-walkthrough-builder` agent (`plugin/agents/visual-walkthrough-builder.md`), which renders and delivers per its own contract.
+
+This is the **canonical PR-walkthrough workflow** shared across every Muggle Test entry point:
+
+| Caller | Mode | When to invoke |
+| :--- | :--- | :--- |
+| `muggle-test` | **Mode A** (post to existing PR) | After publishing results, user opts in via `AskUserQuestion` |
+| `muggle-test-feature-local` | **Mode A** (post to existing PR) | After publishing the run, user opts in via `AskUserQuestion` |
+| `muggle-do` / `open-prs.md` | **Mode A** (settle the designated comment) | Right after PR creation — the walkthrough fills the comment the PR reserved for it, and `comment` posts as follow-up |
+| `muggle-test` Mode C / `acceptance-tester` agent | **Mode C** (embed in verdict comment) | Inside an open-PR sweep orchestrator — caller folds the rendered body into a single per-PR verdict comment |
+| `muggle-do` repair and re-run cycles | **Mode D** (cycle status, in the background) | After each job of a cycle on a PR whose walkthrough is red or being re-run — see [Cycle progress](#cycle-progress) |
+
+## Preferences
+
+Callers consult the `postPRVisualWalkthrough` gate **before** invoking this skill — by the time it runs, posting is already approved. Per-key gate definitions live in `plugin/skills/muggle-preferences/preference-gates/`.
+
+## Procedure
+
+1. **Resolve the mode.** Chosen by the caller, never the user: top-level `muggle-test`/`muggle-test-feature-local` and `muggle-do` PR creation → `post` (Mode A); a caller that needs the block rendered without posting → `render-for-new-pr` (Mode B); an orchestrator passing `mode: "embed"` → Mode C; a cycle reporting progress → `status` (Mode D).
+2. **Mode A only — find the PR** with `gh pr view --json number,url,title`. No PR on the branch → `AskUserQuestion`: create a new PR with the walkthrough in the body (switch to Mode B and hand the rendered block back to the caller), or skip posting. `gh` missing/unauthenticated → tell the user, suggest `gh auth login`, stop. This is the skill's only interactive branch — resolve it **before** dispatching.
+3. **Gather the inputs.** The `E2eReport` JSON if the caller already assembled it (see [`e2e-report-assembly.md`](e2e-report-assembly.md)), else the run identifiers (`projectId`, per-test `runId`/`testCaseId`) the agent needs to assemble it.
+4. **Dispatch** the `visual-walkthrough-builder` agent (subagent type `muggle:visual-walkthrough-builder`; bare `visual-walkthrough-builder` where the plugin namespace is absent), synchronously — Mode D in the background — passing: mode, PR number + repo (Mode A), and the report JSON or identifiers. In a harness with no agent/subagent facility, execute `plugin/agents/visual-walkthrough-builder.md` inline instead.
+5. **Relay the result.** Mode A → confirm to the user with the PR URL. Modes B/C → return the agent's `{body, comment}` to the caller verbatim; the caller owns PR creation (Mode B) or the single verdict comment (Mode C). A `needs-input:` line from the agent names a missing report field — surface it to the caller; never fabricate the field.
+
+## Cycle progress
+
+While a cycle repairs or re-runs a PR's E2E, the walkthrough shows where it is, not only the last verdict. After each job of the cycle — a root cause found, a repair commit pushed, a re-run started, a re-run finished, the cycle left blocked or waiting — dispatch the builder in Mode D **in the background** (`run_in_background: true`), fire and forget, passing the PR, repo and the status:
+
+- `headSha` — the head under test.
+- `changes` — the commits the cycle pushed so far, one `{sha, subject}` each.
+- `running` — what is running now, one line; empty when nothing is.
+- `lastVerdict` — the last verdict and the head it ran on, e.g. `0/6 passed on 1a2b3c4`.
+
+The cycle never waits on it, never retries it, never reports it. Mode D edits the existing walkthrough comment in place and never posts a new one; with no walkthrough comment on the PR it does nothing. A run's per-case rows come from the dev loop's own progress table (`muggle e2e-plan`), not from here, and the final settle is still Mode A with the full report, which replaces the status.
+
+## Guardrails
+
+- The rendered markdown is CLI-owned end to end — this skill never writes, edits, or post-processes it; those rules ride with the agent.
+- Mode is chosen by the caller, not the user.
+- Never create a PR without confirmation in Mode A.
+- Don't run tests — this skill only dispatches rendering/posting of existing results. No report and no run identifiers in context → redirect the caller to `muggle-test`, `muggle-test-feature-local`, or `muggle-do`.
+- The designated comment carries a real Muggle run or a verified `MUGGLE_E2E_SKIP` code, and nothing else. Never put another tool's findings — puppeteer output, a unit-test summary, a manual check — under the walkthrough heading or the slot marker: that heading is Muggle vouching for a run, and a PreToolUse guard denies the post outright when no run was recorded. Supplemental evidence is welcome as its own comment, without the heading or marker.

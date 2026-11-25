@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-basicmachines-co-basic-memory/memory-notes/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: How to write well-structured Basic Memory notes: frontmatter, observations with semantic categories, relations with wiki-links, and best practices for building a rich knowledge graph. Use when creatin

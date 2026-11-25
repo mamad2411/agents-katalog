@@ -1,0 +1,332 @@
+---
+name: effect-path
+description: Use effect Path for platform-abstract file path operations including joining, resolving, and URL conversion.
+---
+
+# path
+
+Use effect Path abstraction for platform-abstract file path operations. Apply this skill when working with file paths, joining segments, resolving absolute paths, or converting between file URLs and paths. `Path.layer` supplies POSIX semantics from `effect`; Node.js and Bun platform layers provide host-specific path semantics. `@effect/platform-browser` does not provide a `BrowserPath` layer, so browser code should provide `Path.layer` or a custom layer explicitly.
+
+Targets **Effect 4.1.0** (`effect@4.1.0` source tag). In browsers without `process.cwd()`, supply an absolute POSIX base to `resolve`/`toFileUrl` when using `Path.layer`; it does not invent a browser working directory.
+
+## Import Pattern
+
+```typescript
+import { Path } from 'effect';
+```
+
+## Service Injection
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+});
+```
+
+## Path Separator
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+// Get platform-specific separator
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const separator = path.sep; // "/" on Unix, "\" on Windows
+});
+```
+
+## Path Operations
+
+### join - Combine path segments
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const fullPath = path.join('src', 'components', 'Button.tsx');
+	// "src/components/Button.tsx" on Unix
+	// "src\components\Button.tsx" on Windows
+});
+```
+
+### resolve - Convert to absolute path
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const absolutePath = path.resolve('src', 'index.ts');
+	// "/Users/username/project/src/index.ts" on Unix
+	// "C:\Users\username\project\src\index.ts" on Windows
+});
+```
+
+### resolveWithin - Lexical containment
+
+`path.resolveWithin(root, input)` returns `Option<string>`: `Some` for a relative
+input resolving inside the root (including the root itself), `None` for rooted
+inputs or lexical escapes such as `../outside`. Semantics follow the supplied
+platform Path implementation; do not emulate containment with string prefixes.
+
+<!-- typecheck -->
+```ts
+import { Effect, Path } from 'effect';
+
+const resolveUpload = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	return path.resolveWithin('/srv/uploads', 'images/avatar.png');
+}).pipe(Effect.provide(Path.layer));
+```
+
+This is **lexical**, not filesystem containment: symlinks can escape the root.
+Use an appropriate filesystem security boundary for untrusted file access.
+Custom implementations should use `Path.make(operations)`, which supplies the
+service marker and derives `resolveWithin` from the supplied path operations.
+
+### normalize - Clean up path
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const clean = path.normalize('/foo/bar//baz/asdf/quux/..');
+	// "/foo/bar/baz/asdf"
+});
+```
+
+### dirname - Get directory portion
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const dir = path.dirname('/foo/bar/baz.txt');
+	// "/foo/bar"
+});
+```
+
+### basename - Get file name
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const name = path.basename('/foo/bar/baz.txt');
+	// "baz.txt"
+
+	const nameWithoutExt = path.basename('/foo/bar/baz.txt', '.txt');
+	// "baz"
+});
+```
+
+### extname - Get file extension
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const ext = path.extname('/foo/bar/baz.txt');
+	// ".txt"
+});
+```
+
+### parse - Decompose path into components
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const parsed = path.parse('/home/user/dir/file.txt');
+	// {
+	//   root: "/",
+	//   dir: "/home/user/dir",
+	//   base: "file.txt",
+	//   ext: ".txt",
+	//   name: "file"
+	// }
+});
+```
+
+### format - Construct path from components
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const fullPath = path.format({
+		root: '/',
+		dir: '/home/user/dir',
+		base: 'file.txt'
+	});
+	// "/home/user/dir/file.txt"
+});
+```
+
+### isAbsolute - Check if path is absolute
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const isAbs = path.isAbsolute('/foo/bar');
+	// true on Unix
+	const isRel = path.isAbsolute('foo/bar');
+	// false
+});
+```
+
+### relative - Get relative path
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const relPath = path.relative(
+		'/data/orandea/test/aaa',
+		'/data/orandea/impl/bbb'
+	);
+	// "../../impl/bbb"
+});
+```
+
+## URL Conversions (Effectful)
+
+Both operations can fail with `BadArgument` error.
+
+Core `Path.layer` now maps malformed file-URL percent encoding to `BadArgument`
+instead of throwing `URIError`. Native adapters wrap their runtime's URL
+conversion; acceptance can differ (Bun may accept malformed escapes). Do not
+treat adapter conversion as a strict URL-validation policy. Constructing a
+`URL` from arbitrary text is a separate throwable boundary—capture that before
+calling `fromFileUrl`.
+
+### fromFileUrl - Convert file URL to path
+
+<!-- typecheck -->
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const filePath = yield* path.fromFileUrl(
+		new URL('file:///home/user/file.txt')
+	);
+	// "/home/user/file.txt" on Unix
+	// On Windows, use a drive-qualified URL such as file:///C:/home/user/file.txt.
+});
+```
+
+### toFileUrl - Convert path to file URL
+
+<!-- typecheck -->
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	const fileUrl = yield* path.toFileUrl('/home/user/file.txt');
+	// URL object with href "file:///home/user/file.txt"
+});
+```
+
+## Complete Example
+
+<!-- typecheck -->
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const buildOutputPath = Effect.gen(function* () {
+	const path = yield* Path.Path;
+
+	// Join segments
+	const srcPath = path.join('src', 'index.ts');
+
+	// Resolve to absolute
+	const absoluteSrc = path.resolve(srcPath);
+
+	// Get directory and basename
+	const dir = path.dirname(absoluteSrc);
+	const base = path.basename(absoluteSrc, '.ts');
+
+	// Build output path
+	const outputPath = path.join(dir, '..', 'dist', `${base}.js`);
+
+	// Normalize
+	return path.normalize(outputPath);
+});
+```
+
+## File-System Migration Loaders
+
+In Effect v4, `MigratorFileSystem.fromFileSystem(directory)` requires both `FileSystem.FileSystem` and `Path.Path`. Migration modules are imported through `path.toFileUrl(path.join(directory, file))` so absolute Windows paths are valid ESM specifiers.
+
+<!-- typecheck -->
+```typescript
+import { FileSystem, Path } from 'effect';
+import * as Migrator from 'effect/sql/Migrator';
+import * as MigratorFileSystem from 'effect/sql/MigratorFileSystem';
+
+const loader: Migrator.Loader<FileSystem.FileSystem | Path.Path> =
+	MigratorFileSystem.fromFileSystem('./migrations');
+```
+
+Aggregate layers such as `NodeServices.layer` and `BunServices.layer` already provide both requirements. If wiring individual layers, provide both the file-system layer and the host-aware path layer. On Windows, do not use the core POSIX `Path.layer` for a Windows migration directory; use the runtime platform's path layer so drive letters and separators are converted correctly.
+
+### toNamespacedPath - Convert to namespaced path
+
+```typescript
+import { Path } from 'effect';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	// On POSIX, returns the path unchanged.
+	// On Windows, converts to a \\?\-prefixed namespaced path
+	// that allows longer path lengths.
+	const namespaced = path.toNamespacedPath('/foo/bar/baz.txt');
+});
+```
+
+## DO
+
+- Import Path from effect
+- Use `path.sep` for platform-specific separators
+- Use `path.join()` to combine path segments
+- Use `path.resolve()` to get absolute paths
+- Handle errors from `fromFileUrl` and `toFileUrl` with Effect error handling
+- Pass a `URL` object (not a string) to `fromFileUrl`
+
+## DON'T
+
+- Import `node:path` directly (breaks portability)
+- Hardcode "/" or "\\" separators
+- Manually concatenate paths with string operations
+- Assume file URL format without using conversion utilities
+- Pass a string to `fromFileUrl` — it requires a `URL` object

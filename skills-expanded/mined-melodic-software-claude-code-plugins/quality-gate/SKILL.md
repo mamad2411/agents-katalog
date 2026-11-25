@@ -1,0 +1,175 @@
+---
+description: "Single-lens review checkpoint between 'code works' and 'code is ready': self, code, code-design, architecture, security, spec, close-out, downstream, pr, criteria, slice or restatement mode, each delegated to its reviewer. Use when asked to 'review this', for a 'self-review' or 'quality gate', a code, architecture or security review, whether the change 'matches the spec/issue/plan', a 'close-out review' of a shipped spec container, 'what could this break' or the 'blast radius' of a written change, or after implementation completes."
+argument-hint: "[self|code|code-design|architecture|security|spec|close-out|downstream|pr|criteria|slice…]"
+user-invocable: true
+disable-model-invocation: false
+allowed-tools: ["Bash(git branch --show-current)", "Bash(git status --porcelain | head -20)", "Bash(git rev-parse:*)", "Bash(git merge-base:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git ls-files --others --exclude-standard)", "Bash(git ls-remote --symref origin)", "Bash(git ls-remote --symref origin:*)", "Bash(git fetch origin)", "Bash(git fetch origin:*)", "Bash(git remote get-url:*)", "Bash(node \"${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/setup-apply.mjs\" --check:*)", "Bash(node \"${CLAUDE_PLUGIN_ROOT}/scripts/loosened-check-settings.mjs\":*)", "Bash(node ${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/setup-apply.mjs --check:*)"]
+shell: bash
+metadata:
+  workflow-stage: review
+  summary: Single-lens review checkpoint routed to the matching reviewer
+---
+
+**Arguments.** `[self|code|code-design|architecture|security|spec|close-out|downstream|pr|criteria|slice…]`; the full set ends `slice|restatement]`. `spec` takes `[--spec <path|id>]`, `close-out` takes `[--container <id>] [--dry-run]`, and `slice` takes `<name>`. Every mode also takes the phase-boundary inputs `[--worktree <path>] [--base <sha>] [--quality-bar <prototype|internal|production>] [--report-only]` ("Shared inputs").
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+- Working tree status (empty = clean), `git status --porcelain | head -20`
+
+With `--worktree <path>`, run both as `git -C <path> ...` ("Shared inputs").
+
+## Purpose
+
+Review is the quality checkpoint between "code works" and "code is ready." This skill structures that step so changes are inspected for consistency, correctness, and alignment with the project's conventions before verification or PR creation. Self-review catches errors tests miss. Inconsistencies, loose ends, convention drift, design shortcuts. Delegated reviews (code, architecture, security) bring specialized scrutiny the implementer's tunnel vision would miss.
+
+**Depth, not breadth.** This skill picks one lens per invocation. For a multi-surface fan-out that runs many reviewers at once and ranks their combined findings, use this plugin's `fanout` skill instead.
+
+## Shared inputs
+
+- **Phase-boundary inputs**. `--worktree`, `--base`, `--quality-bar` and `--report-only` let an
+  orchestrator review a phase diff in a worker's worktree. Their table, the base-SHA pre-flight and
+  the reviewer's brief are in [context/phase-boundary.md](context/phase-boundary.md); read it
+  whenever any of them is passed. **A base SHA overrides the ladder below: with `--base`, no
+  pull-request lookup, fetch or remote read runs.**
+- **Review diff base**. **mode-scoped override first:** `close-out` does not use this base at all.
+  A spec container is not a branch, so that mode derives a container-scoped basis of its own, per
+  execution shape ([context/close-out.md](context/close-out.md) "Why it needs its own diff basis").
+  Every other mode uses the base below. When an open PR exists for the branch, its `baseRefName` is the base: dispatched reviewers diff `git merge-base origin/<baseRefName> HEAD`. Find it with `/source-control:pull-request list --head <current-branch>`, invoked via the Skill tool when the `source-control` plugin is enabled, or the forge's own list of open PRs by head branch otherwise. One row gives the base; an empty array means no open PR. A failed read is not "no PR": the base is unresolved, so stop and report it rather than substitute another base. With no PR, `git merge-base origin/HEAD HEAD` (falling back to the remote's resolved default branch via `git ls-remote --symref`, then `origin/main`; when none yields a merge-base the base is unresolved, never `HEAD`) so committed-clean branches still show their changes; untracked files come from `git ls-files --others --exclude-standard`.
+- **Severity vocabulary**, the project's own review docs when present; else `${CLAUDE_PLUGIN_ROOT}/context/severity.md`.
+- **Criteria resolution**. Review criteria resolve through the standards index per the plugin binding [`${CLAUDE_PLUGIN_ROOT}/reference/standards-contract.md`](${CLAUDE_PLUGIN_ROOT}/reference/standards-contract.md) (its "Resolution ladder" section owns the procedure), detailed in [context/criteria.md](context/criteria.md).
+- **Loosened checks**. Every mode that reviews a diff (`self`, `code`, `code-design`, `pr`, `slice`, and `criteria` given `--base` or `--worktree`) applies the bundled criterion [context/loosened-check.md](context/loosened-check.md). It always applies; consumer criteria apply in addition. Before the first dispatch, resolve its settings with `node "${CLAUDE_PLUGIN_ROOT}/scripts/loosened-check-settings.mjs" --root <repository root> --ref origin/<default> --verdict-option '${user_config.loosened_check_verdict}' --patterns-file <memory_dir>/reviews/<branch-slug>/loosened-check-patterns.json --spec-issue <number of the issue the change resolves>` (first write that file, in the "Findings location" below, with the Write tool, its content exactly `${user_config.loosened_check_patterns}`, so the free-form value never passes through a shell; omit `--spec-issue` when no issue is known; when the run fails and the patterns option is not empty, run it once more without `--patterns-file` so the repository's entries still apply, and say the user's entries were dropped), the default branch checked and fetched as for `downstream_probe` ([context/downstream.md](context/downstream.md)), and put its three value lines in every brief. The `code-reviewer` agent reads the criterion on its own; a `review:brief-reviewer` brief lists it as a file to read. Every brief hands the reviewer the two texts that can give a loosening its reason, each quoted as data: the text of the issue the change resolves as the spec, only when the run's `loosened_check_spec:` line says `counts` (a trusted person wrote the issue), otherwise no spec; and, when the change has a pull request, the `## Loosened checks` section of its body (`gh pr view <number> --json body`), which gives a reason for an ordinary check only. Never the rest of the body, and never a plan the change's author wrote.
+- **Finding class**. Every reviewer brief this skill writes names the class of finding it wants (for example correctness gaps) and what to leave out (for example style). Pointer: [best practices: review against your spec](https://code.claude.com/docs/en/best-practices#review-against-your-spec).
+- **Findings location**. `<memory_dir>/reviews/<branch-slug>/`, never committed. `<memory_dir>` is `.work/` unless the project's instructions declare another memory root. `<branch-slug>` is the branch name lowercased, with `/` and every other non-`[a-z0-9._-]` character replaced by `-`. `<UTC-timestamp>` is `date -u +%Y%m%dT%H%M%SZ`. The session's first write verifies the memory root contains a `.gitignore` with `*`, creating it (announced) when absent; never edit the consumer's root `.gitignore`. Durable findings are `<UTC-timestamp>-<mode>.md` in that directory. Write repo-relative paths only, never absolute machine paths. Under `--report-only` no artifact is written.
+- **Reviewer handback**. Every dispatch of `review:code-reviewer` or `review:security-reviewer` follows [`${CLAUDE_PLUGIN_ROOT}/reference/reviewer-handback.md`](${CLAUDE_PLUGIN_ROOT}/reference/reviewer-handback.md): pass a findings path under the findings location, then read the report from that file, not from the reply. Under `--report-only` pass no path. That path is the reviewer's own file, not the gate's artifact: name it `<UTC-timestamp>-<agent>.md` (`code-reviewer` or `security-reviewer`, never the mode; `<UTC-timestamp>-<agent>-<n>.md` when that name is taken) and pass it absolute in the dispatch prompt, as that file says; the reviewer refuses a file name of any other shape.
+
+## Step 0: Detect review mode
+
+`$ARGUMENTS`, optional mode selector. When given, use it directly; otherwise infer:
+
+| Signal | Mode | Context file |
+|--------|------|-------------|
+| Just finished implementing, "review my work", bare invocation with uncommitted changes | **self** | [context/self.md](context/self.md) |
+| "review the code", "code review" | **code** | [context/code.md](context/code.md) |
+| "code-design review", one fact copied into several files, one change cascading across files, a plan phase tagged `Review: code-design` | **code-design** | [context/code-design.md](context/code-design.md) |
+| "architecture review", new modules, cross-cutting structure | **architecture** | [context/architecture.md](context/architecture.md) |
+| "security review", auth/input handling, API endpoints | **security** | [context/security.md](context/security.md) |
+| "does this match the spec/issue/plan", "did we build what was asked", scope-creep check, `spec [--spec <path\|id>]` | **spec** | [context/spec.md](context/spec.md) |
+| "close-out review", "review the container", "did the whole spec ship", a spec container whose last sub-item just closed, `close-out [--container <id>] [--dry-run]` | **close-out** | [context/close-out.md](context/close-out.md) |
+| "what could this break", "blast radius", "what else does this touch", "who calls this", a contract/signature/serialization change | **downstream** | [context/downstream.md](context/downstream.md) |
+| "review the PR", a PR exists for the branch (unchecked with `--base`) | **pr** | [context/pr.md](context/pr.md) |
+| "review criteria", "what should I check" | **criteria** | [context/criteria.md](context/criteria.md) |
+| `slice <name>`, "review testing", "review concurrency" | **slice** | [context/per-slice.md](context/per-slice.md) |
+| "restatement review", "SSOT drift", markdown-heavy diff | **restatement** | [context/restatement.md](context/restatement.md) |
+
+Ambiguous → present the modes and ask. **Read the matching context file before proceeding.**
+
+**Downstream probe setting.** `downstream` mode reads one setting, `downstream_probe` (`run` or
+`report`, default `run`). The user's option is `${user_config.downstream_probe}`; a literal,
+unexpanded placeholder means unset. It is a policy floor: `report` from the user option or from
+the repository's `docs/conventions/review.yaml`, read from the default branch, wins. The resolution
+steps and the probe are in [context/downstream.md](context/downstream.md) ("Resolve
+`downstream_probe`" and Step 2); keys and level rule:
+[`${CLAUDE_PLUGIN_ROOT}/reference/config.md`](${CLAUDE_PLUGIN_ROOT}/reference/config.md).
+
+## Step 0.5: Pre-flight gate (diff-consuming modes only)
+
+**Mode-scoped by design.** `criteria` is a reference mode that loads criteria and runs on a clean tree,
+so it is **exempt**, except under `--base` or `--worktree` ([context/phase-boundary.md](context/phase-boundary.md)).
+`close-out` is gated, but **on its own basis, not this one**: it runs the same two checks below
+against the container-scoped basis it derives, plus a rollup check that the container is actually
+finished ([context/close-out.md](context/close-out.md) "Step 4"). Every remaining mode consumes the
+branch review diff, so for those: resolve the review diff base ("Shared inputs") and confirm it
+yields a non-empty diff before dispatching any reviewer. With `--base`, the checks run against that
+SHA as [context/phase-boundary.md](context/phase-boundary.md) "Pre-flight with a base SHA" says.
+
+- **Unresolvable base**, an open PR's `origin/<baseRefName>` fails `git rev-parse --verify` even
+  after a fetch (do not silently substitute a different base. That reviews the wrong diff), or no
+  ladder ref resolves at all → report which ref failed and stop.
+- **Nothing to review**. No tracked diff against the base and no untracked files → say so and
+  stop; never stage files to manufacture a diff.
+
+**Untracked-only is reviewable here, and this is a deliberate divergence from `fanout`.** This
+skill's Shared inputs hand untracked files to the dispatched reviewer directly ("Shared inputs";
+the `self` and `slice` worker templates both read them), so a branch whose whole change is new
+files has a real change set. Stopping on it would make a new-module or new-test review report
+"nothing to review" about work that is plainly there. `fanout` stops on that case because its
+surfaces receive only the merge-base diff, which cannot show an unstaged file. Review the untracked
+files in place; still never `git add` them.
+
+Either outcome dispatches zero reviewers: a lens run against an empty or wrong change set produces
+noise, not a verdict. Two modes add a gate of their own on top of this one: an explicitly passed
+`--spec` ref that does not resolve is a stop ([context/spec.md](context/spec.md) "Rung 1"), and so
+is an explicitly passed `--container` ref that does not resolve
+([context/close-out.md](context/close-out.md) "Step 1").
+
+## Step 1: Gather context
+
+1. **What changed?**. The repository context above + the review diff base
+2. **What was the goal?**, the original task, approved plan, or user intent from conversation. In every mode but `spec` and `close-out` this is background for judging the change; making the goal the thing under judgment is `spec` mode, which owns the spec-source discovery ladder and the fidelity finding classes. `close-out` is that same lens at container scale, reusing both and resolving its spec from the container instead of the branch
+3. **What conventions apply?**. Resolve the project's standards for the changed surfaces through the standards index per the Shared-inputs criteria-resolution binding, so every review mode grounds in the same rows plan formulation loaded
+
+## Step 2: Execute the review
+
+Follow the selected context file. Two hard rules:
+
+- **Self mode never runs the checklist on the producing thread.** Dispatch a fresh-context read-only subagent; the thread that wrote the code rubber-stamps its own recap.
+- **Delegated modes synthesize, never substitute.** After the delegated reviewer returns, verify each finding against the actual diff (a subagent's report is synthesis, not evidence) before presenting.
+
+## Step 3: Report findings
+
+```markdown
+## Review: [mode] — [branch or task name]
+
+### Findings
+
+| # | Severity | Confidence | Category | Finding | File:Line | Action |
+|---|----------|------------|----------|---------|-----------|--------|
+
+### Strengths
+
+- What is done well — review should validate, not only criticize
+
+### Verdict
+
+- [ ] Ready to proceed — no blocking findings
+- [ ] Needs fixes — N findings require attention
+```
+
+## Step 4: Handoff
+
+- **All clear**. Suggest the project's next verification step (build/test, outcome verification, PR creation)
+- **Fixes needed**. List specific actions; after fixes, suggest a quick re-run of `self` mode. In a review-fix round, change exactly the lines each finding names (a finding that names a class names every instance of it in the diff); any other edit needs its own finding first. Unscoped edits made while fixing are where later rounds' defects come from, so the round stays bounded by its findings
+- **Design fundamentally flawed**. Suggest revisiting the plan/design before more code lands
+
+## What this skill does NOT do
+
+- **Does not run builds or tests**. Use the project's build/test tooling (or this plugin's `ecosystem-specialist` agent) separately. One exception: `downstream` mode, under `downstream_probe: run`, runs the single probe it writes for its safety fact ([context/downstream.md](context/downstream.md) Step 2). That probe runs none of the reviewed code; the shared rule for running reviewed code, and why the probe sits outside it, is [`run-reviewed-code.md`](../../reference/run-reviewed-code.md) "The downstream probe is outside this rule"
+- **Does not write or fix code**. It identifies issues; the implementer fixes them
+- **Does not fan out across many surfaces**. That is this plugin's `fanout` skill
+
+## Spoke paths
+
+The `context/` files write the plugin's root directory as `<plugin-root>`, which is
+`${CLAUDE_PLUGIN_ROOT}`. Put that path in place of the placeholder before running a command or
+writing it into a brief. Those files arrive through the Read tool as plain bytes, so a `${…}` token
+in them would reach the Bash tool unsubstituted, and the Bash tool's environment has no
+`CLAUDE_PLUGIN_ROOT` to expand it from. Basis: the plugins reference,
+<https://code.claude.com/docs/en/plugins/manifest-reference#where-each-variable-resolves>, verified
+2026-10-07; recheck when that table adds supporting files to where a `${…}` reference resolves.
+
+## Next
+
+`/verification:confirm`, when it is among the available skills, after an all-clear verdict, then
+PR creation; after fixes, a `self` re-run of this skill (Step 4).
+
+## Gotchas
+
+- **Don't skip self-review for "small" changes**. Small changes have the highest ratio of "obviously fine" to "actually had a bug."
+- **`criteria` mode is a reference, not an action**. It loads review criteria so you can see what to check; combine with `self` mode for an informed review.

@@ -1,0 +1,353 @@
+---
+name: migrate-wpbakery-to-bricks
+description: "Use when the user says 'migrate wpbakery to bricks', 'convert visual composer to bricks', or wants to modernize a WPBakery site onto Bricks. Parses WPBakery shortcodes, maps elements to their Bricks equivalents, and creates draft duplicates for review."
+license: MIT
+metadata:
+  author: Respira for WordPress
+  author_url: https://respira.press
+  version: 2.1.0
+  mcp-server: respira-wordpress
+  category: migration
+---
+
+# Migrate WPBakery to Bricks
+
+**Version:** 2.1.0
+**Updated:** 2026-08-04
+**Freshly updated:** v2.1.0 adds design-token awareness: conversion writes now register the colors and typography they carry as named design tokens in Bricks' own global styles, and converted pages reference those tokens instead of carrying value copies. Reuse registered tokens instead of re-inlining raw values, and report the registration in the migration summary.
+
+Converts WPBakery Page Builder pages to Bricks Builder. Parses WPBakery's shortcode-based content from post_content, maps each element to its Bricks equivalent, generates a migration plan for approval, and writes clean Bricks JSON to the target pages. Use this skill whenever someone wants to move from WPBakery to Bricks, modernize an older WPBakery site with Bricks, or switch page builders from WPBakery/Visual Composer to Bricks.
+
+## What This Skill Does
+
+WPBakery is one of the most common legacy page builders — it comes bundled with thousands of ThemeForest themes and millions of sites still use it. Moving to Bricks is a significant modernization: from shortcode-based content in `post_content` to clean JSON in `_bricks_page_content_2`, from heavy frontend CSS/JS to Bricks' lightweight rendering, and from an aging interface to a modern visual editor.
+
+This skill handles the format translation — parsing WPBakery's `[vc_*]` shortcodes, decoding its URL encoding and Design Options CSS, and generating proper Bricks JSON with correct element hierarchies and settings.
+
+**Handles:**
+- vc_row/vc_column → Bricks Section/Container elements
+- vc_column_text → Bricks Text Basic element (parsed for headings, paragraphs)
+- vc_single_image → Bricks Image element
+- vc_btn/vc_button → Bricks Button element
+- vc_video → Bricks Video element
+- vc_separator → Bricks Divider element
+- vc_empty_space → Bricks spacing (via container padding or dedicated spacer)
+- vc_custom_heading → Bricks Heading element
+- vc_gallery/vc_images_carousel → Bricks Gallery/Carousel element
+- vc_toggle → Bricks Accordion item
+- vc_accordion → Bricks Accordion element
+- vc_tabs → Bricks Tabs element
+- vc_raw_html/vc_raw_js → Bricks Code element
+- vc_icon → Bricks Icon element
+- vc_gmaps → Bricks Map element
+- vc_progress_bar → Bricks Progress Bar element
+- vc_row_inner/vc_column_inner → nested Bricks containers
+- Design Options CSS → Bricks settings (background, padding, border)
+- el_class/el_id → Bricks custom CSS classes and attributes
+
+**Preserves:**
+- All text content and HTML formatting
+- Image URLs, alt text, captions
+- Typography where explicitly set
+- Color values from Design Options
+- Spacing from Design Options
+- Background colors and images
+- Button labels, URLs, targets
+- Video embed URLs
+- Gallery image sets
+- CSS classes (el_class) and IDs (el_id)
+
+## What This Skill Does NOT Do
+
+- **Theme-bundled custom elements** — Many ThemeForest themes add custom WPBakery elements (team member, portfolio, testimonial, pricing, etc.). These are theme-specific shortcodes with no Bricks equivalent. They are flagged for manual recreation.
+- **WPBakery addons** — Ultimate Addons for WPBakery, Starter Templates, Starter Sites, and other addon plugins add proprietary elements that cannot be auto-mapped.
+- **vc_grid/vc_masonry_grid** — Post grid elements with complex queries. These need Bricks' Query Loop or posts element configured manually.
+- **Revolution Slider / Layer Slider** — Often bundled with WPBakery themes but are separate plugins outside migration scope.
+- **Complex Design Options** — WPBakery encodes CSS in a single attribute string. Background gradients, complex border configurations, and CSS filters may be partially extracted.
+- **Frontend editor positioning** — Pixel-precise layouts from WPBakery's frontend editor may need spacing adjustment.
+- **Templates** — WPBakery saved templates are not auto-converted to Bricks templates.
+
+## Requirements
+
+- Respira for WordPress plugin installed and connected
+- MCP connection active (desktop or WebMCP)
+- WPBakery Page Builder plugin active (to ensure shortcodes are parseable)
+- Bricks theme installed and active (to write target content)
+- Read access to scan WPBakery content
+- Write access to create duplicates with Bricks content
+
+## Trigger Phrase
+
+- "migrate wpbakery to bricks"
+
+## Alternative Triggers
+
+- "convert wpbakery to bricks"
+- "switch from wpbakery to bricks"
+- "migrate visual composer to bricks"
+- "rebuild wpbakery pages in bricks"
+- "move from wpbakery to bricks"
+- "replace wpbakery with bricks"
+- "modernize visual composer site"
+
+## Source Builder: WPBakery
+
+WPBakery stores content as shortcodes in `post_content`:
+
+```
+[vc_row full_width="stretch_row" css=".vc_custom_123{padding:40px;background:#f5f5f5}"]
+  [vc_column width="1/2" el_class="custom-class"]
+    [vc_column_text]
+      <h2>Heading</h2>
+      <p>Paragraph content.</p>
+    [/vc_column_text]
+    [vc_single_image image="456" img_size="large"]
+  [/vc_column]
+  [vc_column width="1/2"]
+    [vc_btn title="Click" style="flat" link="url:https%3A%2F%2Fexample.com||target:_blank"]
+  [/vc_column]
+[/vc_row]
+```
+
+Key WPBakery specifics:
+- **Column widths as fractions**: `1/1`, `1/2`, `1/3`, `2/3`, `1/4`, `3/4`, `1/6`, `5/6`
+- **Inner rows**: `[vc_row_inner][vc_column_inner]` for nesting
+- **CSS attribute**: Encoded Design Options — `.vc_custom_XXXXX{property:value;...}`
+- **Link encoding**: `url:https%3A%2F%2F...|title:...|target:_blank|rel:nofollow`
+- **Full-width**: `full_width` attribute controls row stretching
+- **el_class / el_id**: Custom CSS class and ID attributes
+- **Image references**: By attachment ID (not URL)
+
+Read WPBakery content via `respira_extract_builder_content` with `builder=wpbakery`.
+
+## Target Builder: Bricks
+
+Bricks stores content in `_bricks_page_content_2` as a JSON array:
+
+```json
+[
+  { "id": "abc123", "name": "section", "parent": 0, "settings": {...} },
+  { "id": "def456", "name": "container", "parent": "abc123", "settings": {...} },
+  { "id": "ghi789", "name": "text-basic", "parent": "def456", "settings": { "text": "<p>...</p>" } }
+]
+```
+
+Key Bricks specifics:
+- Elements: `section`, `container`, `heading`, `text-basic`, `image`, `button`, `video`, `icon`
+- Parent-child via `parent` field
+- IDs are short alphanumeric strings
+- Responsive via `_breakpoints`
+
+Write Bricks content via `respira_inject_builder_content` with `builder=bricks`.
+
+## Execution Workflow
+
+### Phase 1: Pre-Migration Audit
+
+1. Verify Respira + MCP connection via `respira_get_site_context`. If unavailable, stop and show setup guidance.
+2. Confirm WPBakery is active via `respira_list_plugins`.
+3. Confirm Bricks theme is installed via `respira_get_site_context`.
+4. Identify active theme — note if it bundles WPBakery and adds custom elements.
+5. Inventory and scope the source pages with `respira_find_builder_targets` (builder=wpbakery) — this gives a fast, ranked list of every WPBakery-built page/post before you touch anything. Fall back to `respira_list_pages` / `respira_list_posts` + `respira_get_builder_info` to confirm builder per item where needed.
+6. Extract content via `respira_extract_builder_content` with `builder=wpbakery`
+7. Build inventory:
+   - Total WPBakery pages/posts
+   - Element types (frequency count)
+   - Theme-bundled custom elements (flagged)
+   - Addon elements (flagged)
+   - Grid/masonry elements (flagged)
+   - Design Options complexity
+   - Inner row nesting depth
+   - Complexity per page
+
+### Phase 2: Migration Plan
+
+```
+## WPBakery → Bricks Migration Plan
+
+### Modernization Context
+This migration moves your site from legacy shortcode-based content to Bricks'
+modern JSON format. Expect significantly faster page loads and a much better
+editing experience. Bricks also means switching your theme — plan for header,
+footer, and template setup.
+
+### Theme-Bundled Elements
+[If applicable]: Your theme ([name]) bundles WPBakery and adds X custom
+elements. These cannot be auto-migrated and are flagged below.
+
+### Site Inventory
+- Total WPBakery pages: X
+- Total elements to convert: X
+- Auto-convertible: X (Y%)
+- Manual attention: X (Y%)
+
+### Element → Bricks Mapping
+| WPBakery Element    | Bricks Element | Status |
+|--------------------|---------------|--------|
+| vc_column_text     | text-basic    | Auto   |
+| vc_single_image    | image         | Auto   |
+| vc_custom_heading  | heading       | Auto   |
+| vc_btn             | button        | Auto   |
+| vc_gallery         | gallery       | Auto   |
+| vc_accordion       | accordion     | Auto   |
+| vc_tabs            | tabs          | Auto   |
+| vc_toggle          | accordion     | Auto   |
+| vc_grid            | —             | Manual |
+| [theme element]    | —             | Manual |
+
+### Design Options Extraction
+- Simple Design Options (color + padding): X pages — fully extracted
+- Complex Design Options (gradients, borders): X pages — partially extracted
+
+### Page-by-Page Plan
+1. **[Page Title]** — X elements, [complexity]
+2. ...
+```
+
+Ask for confirmation:
+> Ready to modernize? Your WPBakery pages stay untouched — I'll create Bricks duplicates.
+> 1. Migrate all pages
+> 2. Migrate specific pages
+> 3. Start with a test page (recommended for theme-bundled WPBakery sites)
+> 4. Just keep this plan
+
+### Phase 3: Page-by-Page Migration
+
+For each approved page:
+
+1. Read WPBakery content via `respira_extract_builder_content` with `builder=wpbakery`
+2. Parse the shortcode tree:
+   - Build vc_row → vc_column → element hierarchy
+   - Handle vc_row_inner/vc_column_inner nesting
+   - Decode Design Options CSS from `css` attribute
+   - Decode link URLs from WPBakery's encoding format
+   - Resolve image attachment IDs
+3. Generate Bricks JSON array:
+   - `vc_row` → `section` element (check `full_width` for layout mode)
+   - `vc_column` → `container` element with flex width
+     - Convert fractions: `1/2`→50%, `1/3`→33.33%, `2/3`→66.66%, `1/4`→25%, etc.
+   - Map each element:
+     - `vc_column_text` → `text-basic` (preserve HTML, or split into heading + text-basic)
+     - `vc_single_image` → `image` (resolve attachment ID to URL, map alt, size)
+     - `vc_btn` → `button` (decode URL, map label, style, color)
+     - `vc_custom_heading` → `heading` (map text, tag, alignment)
+     - `vc_gallery` → `gallery` (resolve image IDs)
+     - `vc_accordion` → `accordion` (map items with titles and content)
+     - `vc_tabs` → `tabs` (map tab titles and content)
+   - Apply Design Options: background → settings background, padding → settings padding
+   - Apply el_class → Bricks CSS classes setting
+   - Generate unique IDs and proper parent references
+   - Flag unmappable elements
+4. Create duplicate via `respira_create_page_duplicate` or `respira_create_post_duplicate`
+5. Before writing, take a snapshot with `respira_get_snapshot` so the duplicate's pre-write state can be restored if anything goes wrong
+6. Write Bricks JSON via `respira_inject_builder_content` with `builder=bricks`
+7. Surgical fix pass — if the injected page has validation issues (column widths that collapsed during fraction conversion, broken parent refs, an element whose Design Options decoded wrong), do not re-inject the whole page. Locate the specific element with `respira_find_element` and correct it with `respira_update_element`. For repeated fixes across many elements or several pages, batch them with `respira_batch_update`
+8. Report status
+
+### Phase 4: Post-Migration Verification
+
+1. Summarize migrations:
+   - Design tokens registered in Bricks' global styles (token names and counts)
+   - Pages migrated, elements created, items flagged
+2. For each migrated page:
+   - Link to Bricks editor
+   - Flagged items
+   - Design Options notes (what was extracted vs. simplified)
+3. Post-migration checklist:
+   - [ ] Open each duplicate in Bricks editor
+   - [ ] Verify section/container layout structure
+   - [ ] Check column widths match intended proportions
+   - [ ] Verify images load (attachment ID resolution)
+   - [ ] Test button links (URL decoding)
+   - [ ] Check responsive views
+   - [ ] Recreate theme-bundled custom elements
+   - [ ] Set up Bricks templates for header/footer/archive
+   - [ ] Review gallery and carousel elements
+   - [ ] Compare with WPBakery original
+   - [ ] Celebrate the speed improvement
+
+## Design Tokens
+
+Conversion writes now register the colors and typography they carry as named design tokens in Bricks' own global styles, and the converted pages reference those tokens instead of carrying value copies. When fixing or extending a migrated page, reuse the registered tokens (`respira_list_design_tokens` shows them) rather than re-inlining raw hex values or font stacks. And say so when you finish: the migration summary should name the tokens that were registered and note that migrated pages reference them.
+
+## Safety Model
+
+- Read-only analysis first — full content scan before any changes
+- Explicit user confirmation required before creating duplicates
+- Original WPBakery pages are never modified or deleted
+- All migrated content goes to draft duplicates only
+- Never auto-publishes migrated pages
+- Snapshot before every write — `respira_get_snapshot` captures the duplicate's pre-write state, and `respira_restore_snapshot` rolls it back if an injection goes wrong
+- Two explicit rollback paths: restore the snapshot to revert a bad write, or delete the draft duplicates entirely to undo the migration
+- Warns about theme-bundled element dependencies
+
+## Honest Disclaimer
+
+This skill converts WPBakery page content to Bricks format and creates draft duplicates for review.
+
+It cannot:
+- Convert theme-bundled custom WPBakery elements
+- Migrate WPBakery addon plugin elements
+- Perfectly extract all Design Options CSS
+- Convert post grids to Bricks Query Loop automatically
+- Handle Revolution Slider or other bundled plugins
+- Replace visual QA and manual review
+
+It can:
+- Convert 75-90% of standard WPBakery elements to Bricks equivalents
+- Parse and decode WPBakery's CSS and URL encoding
+- Handle nested inner row/column structures
+- Resolve image attachment IDs to proper URLs
+- Modernize legacy content to Bricks' clean JSON format
+- Dramatically improve page load performance
+- Keep original pages completely safe
+
+## Tooling
+
+**Core WordPress tools**
+- `respira_get_site_context`
+- `respira_list_plugins`
+- `respira_list_pages`
+- `respira_list_posts`
+- `respira_read_page`
+- `respira_read_post`
+- `respira_get_builder_info`
+- `respira_extract_builder_content`
+- `respira_inject_builder_content`
+- `respira_find_builder_targets`
+- `respira_create_page_duplicate`
+- `respira_create_post_duplicate`
+
+**Safety and surgical-fix tools**
+- `respira_get_snapshot`
+- `respira_restore_snapshot`
+- `respira_find_element`
+- `respira_update_element`
+- `respira_batch_update`
+
+## Telemetry
+
+After run completion, send fire-and-forget usage tracking to:
+
+- `POST https://www.respira.press/api/skills/track-usage`
+
+Include:
+- `skill_slug = migrate-wpbakery-to-bricks`
+- site/version context
+- duration and success
+- pages migrated, elements created, elements flagged counts
+- tools used
+
+Never block user flow on telemetry failure.
+
+## Related Skills
+
+- WordPress Site DNA (audit site structure and theme dependencies before migrating)
+- Internal Link Builder (verify links post-migration)
+- SEO & AEO Amplifier (verify SEO post-migration)
+- Technical Debt Audit (find WPBakery shortcode remnants and legacy theme code)
+
+---
+
+Built by Respira Team
+https://respira.press/skills/migrate-wpbakery-to-bricks

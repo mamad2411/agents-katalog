@@ -1,0 +1,156 @@
+---
+name: hephaestus-build
+description: "Use when the user types /prompts:hep-build or /agentlas-build, mentions @Hephaestus for build work, asks to create a single Agentlas agent, create a multi-agent team, or package an existing local/external agent into Agentlas architecture."
+---
+
+# Hephaestus Build
+
+## Procedure
+
+1. Treat this as the public Codex build surface. Do not expose or ask the user
+   to invoke the older internal support skill names.
+2. Resolve the trusted engine root before reading any build contract:
+
+   ```bash
+   ENGINE=""
+   for candidate in \
+     "${CODEX_PLUGIN_ROOT:-}" \
+     "${CLAUDE_PLUGIN_ROOT:-}" \
+     "${PLUGIN_ROOT:-}" \
+     "$HOME/.agentlas/runtime/current/host_adapters/codex/plugins/agentlas-core-engine-meta-agent" \
+     "$HOME/.agentlas/runtime/current/host_adapters/claude/plugins/agentlas-core-engine-meta-agent" \
+     "$HOME/.agentlas/runtime/current" \
+     "."
+   do
+     if [ -n "$candidate" ] && [ -f "$candidate/AGENTS.md" ] && [ -f "$candidate/package-contract.json" ] && [ -f "$candidate/contracts/builder-interview-research-gate.md" ]; then
+       ENGINE="$candidate"
+       break
+     fi
+   done
+   [ -n "$ENGINE" ] || { echo "Hephaestus engine not found. Run the installer first." >&2; exit 1; }
+   RUNNER=""
+   for candidate in "$HOME/.agentlas/runtime/current/bin/hephaestus" "$ENGINE/bin/hephaestus"; do
+     if [ -x "$candidate" ]; then RUNNER="$candidate"; break; fi
+   done
+   [ -n "$RUNNER" ] || { echo "Hephaestus runner not found." >&2; exit 1; }
+   ```
+
+   For an interactive request whose first argument is `session`, do not resolve
+   a generic `PACKAGE_TARGET` and do not ask for a JSON/JSONL export. Ask first:
+   "이 세션에서 만든 에이전트를 기본 전역 Agentlas 에이전트 폴더에 만들까요? 다른 위치를 원하면 경로를 알려주세요. 별도 위치를 지정하지 않으면 전역 폴더에 만듭니다."
+   If no alternate location is named, use `AGENTLAS_AGENT_HOME` or
+   `~/.agentlas/agentlas-agent` and create a new safe-slug child package. If a
+   destination is supplied, validate that exact folder. Never overwrite an
+   existing child. The current conversation is the source; do not inspect
+   recent sessions or host databases.
+
+   For every other build request, take exactly one folder explicitly named or
+   confirmed by the user as `PACKAGE_TARGET`. If none was named, or multiple
+   candidates exist, stop and ask. Never default to `.`, the cwd, or `$ENGINE`.
+   Run `"$RUNNER" contract resolve-target "$PACKAGE_TARGET" --base "$PWD"`
+   and set `PACKAGE_ROOT` only to the status-`ok` receipt's exact
+   `package_root`. Nonzero or error receipts are blockers.
+
+   Read `$ENGINE/AGENTS.md`, `$ENGINE/.agentlas/mode-map.json`, the selected
+   mode contract under `$ENGINE/modes/`, and
+   `$ENGINE/contracts/builder-interview-research-gate.md`. Do not substitute files
+   from the user's package workspace.
+3. Run the public mode classifier by independent ownership boundaries, not by
+   keywords such as "team":
+   - package or repair existing material -> `30-agentlas-packager`;
+   - current interactive conversation invoked with `session`, or an explicitly
+     exported session in a terminal/headless run -> `40-session-agent-builder`;
+   - one independently owned context/tools/success standard ->
+     `10-single-agent-builder`;
+   - two or more roles with separate context, permissions, success standards,
+     handoff, or synthesis needs -> `20-multi-agent-team-builder`.
+   If the shape is unclear, ask before generating. The user-facing question
+   must be plain language, for example: "이 일을 한 명의 전문가가 처음부터 끝까지
+   맡으면 되나요, 아니면 조사/분석/검토처럼 여러 전문가가 나눠 맡고 마지막에
+   합쳐야 하나요?" Do not expose internal labels such as `single-agent`,
+   `team-builder`, ownership boundary, memory/context, synthesis, or
+   produces/consumes.
+4. Run the Builder Interview and Research Gate from
+   `$ENGINE/contracts/builder-interview-research-gate.md` before writing substantial package
+   files:
+   - for an interactive `session` request, treat the current conversation as
+     the source interview and ask only the destination question plus focused
+     gaps that would change scope, permissions, output, or safety;
+   - for other builds, ask an 8-12 question first batch when the request is vague;
+   - continue follow-ups until target user, tasks, inputs, outputs, examples,
+     role count, separated tools or permissions, final merge needs, execution
+     order, memory, failure modes, and evals are clear;
+   - phrase shape questions in everyday language. Ask who handles which part,
+     whether each role needs different files/accounts/tools, whether someone
+     must merge the result, and whether work can run at the same time or must
+     pass from one person to the next;
+   - research official or primary docs, similar agent repositories or
+     comparables, GitHub examples, academic/professional theory, and
+     tool/plugin docs;
+   - compare selected and rejected tools/plugins with permission, secret,
+     fallback, and smoke-test notes;
+   - synthesize domain-expert behavior from interview answers, comparable
+     agents/repos, theory, and tool choices;
+   - write `docs/builder-interview.md`, `docs/research-sources.md`,
+     `docs/tool-selection.md`, `docs/domain-expert-synthesis.md`,
+     `docs/prompt-performance-contract.md`, and
+     `.agentlas/capability-eval-plan.json`.
+5. If missing narrow details still change files, adapters, or public/private
+   boundaries, ask one to five clarify questions before generating.
+6. Pick one:
+   - `10-single-agent-builder`;
+   - `20-multi-agent-team-builder`;
+   - `30-agentlas-packager`;
+   - `40-session-agent-builder`.
+   For `40-session-agent-builder`, run the current-session two-pass flow: first
+   show a `Generalized Session Report` that extracts reusable intent,
+   procedures, corrections, failed approaches, validation, and conditional
+   `IF / THEN / BECAUSE / AVOID / INSTEAD` rules; then offer `Build Agent` or
+   `Edit`. Only the approved report is converted into the standalone agent
+   prompt and package. Do not present JSON/JSONL as an interactive input.
+7. Load matching support skills.
+8. Write all generated or repaired runtime agent instructions in English:
+   `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `agent.md`, skills, workflow/command
+   adapters, runtime prompts, handoff contracts, return contracts, and
+   operating docs. Translate Korean or other-language source material into
+   English agent behavior. Localized public copy, routing trigger examples, and
+   sample user inputs may use the target user language.
+9. Before writing package files, run
+   `"$RUNNER" contract scaffold "$PACKAGE_ROOT" --mode <single|team|package>`.
+   After the routing card is authored, run
+   `"$RUNNER" contract complete "$PACKAGE_ROOT" --mode <single|team|package>`.
+   Emit or repair Agentlas contracts, including `.agentlas` activation seed
+   files and `.agentlas/global-commands.json` when local continuity is part of
+   the output.
+10. Add the generated command to Claude Code, Codex, Gemini CLI, generic
+   AGENTS.md, and terminal adapters. For teams, expose the orchestrator/HQ
+   command and route workers through HQ unless direct worker commands were
+   requested.
+11. For team mode, run
+    `"$ENGINE/scripts/verify-team-package.sh" "$PACKAGE_ROOT"` when that focused
+    gate exists. If it fails, do not report completion; collapse the output to
+    a single-agent package or add the required orchestrator/HQ and team
+    contracts.
+12. Run
+    `"$RUNNER" contract verify "$PACKAGE_ROOT" --mode <single|team|package>`.
+    A non-zero exit or non-empty blocker list means `blocked`, never
+    `completed`. Do not use the engine repository's `scripts/verify-package.sh`
+    as generated-package evidence; that script verifies the engine repository
+    itself.
+13. Once verification and local registration have succeeded, ask one final
+    two-choice storage question using structured controls when available:
+    **Cloud에 올리기** or **로컬에만 저장**. Cloud means owner-private Agent
+    Cloud storage, restorable on another signed-in Desktop. Mobile can use the
+    package only after a paired Desktop restores/installs it; Cloud is not a
+    hosted LLM runtime. Local-only performs no network mutation.
+14. Never upload by default. Missing input and non-interactive execution are
+    local-only. Only after explicit Cloud consent, run the trusted Hephaestus
+    runner with `upload <exact-verified-package-root> --visibility
+    private-link`. Keep the local package on every auth/offline/CAS/quota/scan
+    failure and report an exact retry command. Public Hub publication remains
+    a separate explicit action.
+
+## Output
+
+Return `status`, `evidence`, `output`, `global_commands`, `interview_research`,
+and `blockers`.

@@ -1,0 +1,806 @@
+---
+name: web-search-neo
+description: Use the Web Search Neo MCP server for free web search without API keys, resilient multi-engine fallback, HTTP page fetching, the user's current signed-in Chrome with AI-group tabs, isolated browser profiles, accessibility-level page inspection, form filling and upload, page console and network diagnostics, screenshots, deterministic canvas/WebGL game testing (also as an RL environment for models that output action probabilities), and reusable macro scripts kept as JSON files in the calling project (variables, conditions, loops, waits on the page or network, background jobs, schedules, questions to the user). Trigger when a task needs current web results, visible work in existing Chrome tabs, authorized browser state, reading or driving a rendered page, diagnosing a broken page, writing or replaying a repeated browser flow, or frame-exact keyboard, mouse, and touch input through the two-tool web_info/web_action contract. Also drives the Chrome of other computers on the LAN with node="<name>" after a one-click pairing.
+---
+
+# Web Search Neo
+
+This file is optional: the server describes itself. Four calls answer everything, and
+they are meant to be used in this order.
+
+| Call | Answers |
+| --- | --- |
+| `web_info(topic="actions")` | What can I call? Every action with its summary and required parameters. `params={"group": "macro"}` narrows it to one group (`search`, `fetch`, `session`, `page`, `game`, `macro`, `audit`). |
+| `web_info(topic="skill")` | How do I work? The compact inspect → act → verify playbook, plus the names of its detailed sections. |
+| `web_info(topic="skill", params={"section": "<name>"})` | The full section: when it applies, the calls in order, the rules that cannot be guessed, and what to avoid. Sections are `start`, `loop`, `locators`, `forms`, `macros`, `macro_scripts`, `guarded`, `parallel`, `search`, `diagnostics`, `games`, `audit`, `testing`, `computers`, `troubleshooting`. |
+| `web_info(topic="action_schema", params={"action": "<name>"})` | Exactly what one action or one observation topic accepts: optional names, types, defaults. |
+
+`web_info()` with no arguments returns the whole contract at once — action index, topics,
+recipes, pitfalls, limits, examples — and is worth one call at the start of a long task.
+Optional parameter names live only in `action_schema`. Ask before guessing: an action or a
+topic refuses any key it does not publish, and the refusal names the allowed list.
+
+When something has already gone wrong, `web_info(topic="skill", params={"section":
+"troubleshooting"})` maps the exact error text to the call that fixes it.
+
+Two tools only. `web_info` reads state; `web_action` performs 1-32 ordered operations.
+One `session_id` controls one page. Reuse it to continue on that page; use a different id
+when a second reference page must remain open. It is also the only boundary between agents
+working at once: subagents share one MCP server, so two that both leave `session_id` at its
+default drive the same tab and navigate each other's page. Pick your own id, and pass
+`agent_label` on `open` so `browser_status` can show who is where. In the user's own
+Chrome (`profile_mode="current"`) the tab strip shows the same owner as an
+`[agent_label] ` title prefix; `label_tab=false` opts out. `close_all` closes only
+your own labelled sessions; `scope="all"` ends every agent's work in that server.
+
+For reliable small-model automation, repeat one rigid loop: inspect fresh DOM, act once,
+then verify fresh DOM/text. Tool success proves an event was dispatched, not that the user
+outcome happened. After navigation or rerender, discard old selectors, refs, and images.
+
+## Observation topics
+
+- `page_outline`: roles, accessible names, states, `ref:<epoch>:N` handles, and boxes. Start
+  here.
+- `page_text`: readable rendered text. `mode="full"` is the whole body; `mode="main"` drops
+  navigation and chrome. On a page that is one big form, `main` would be empty, so the reader
+  falls back to the full page and says so with `fallback_used` and `mode_used`. `excluded_chars`
+  and `excluded` say what is missing from the answer and why.
+- `element_text`: the whole content of one element, not a clipped slice of the page. Pass
+  `params.selector` (CSS, a fresh `ref:`, or a `a >>> b` piercing path); `params.full_text=true`
+  reads `textContent`, which no rendering filter may drop, so a scrolled-out code block or a
+  collapsed panel gives up its tail. `params.mode="html"|"outer"|"both"` returns markup
+  (innerHTML / outerHTML / both plus text).
+- `find`: `params.query="submit request"` returns ranked refs instead of a whole page.
+  `low_confidence: true` means nothing on the page answers the query - the matches are
+  guesses, so read the page instead of clicking one. `ambiguous: true` means two matched
+  equally and order alone chose; say which you mean. `role` filters. Ask the way you would
+  say it: filler words drop out, a role word ("link to Unreal Engine", "search field") becomes
+  a role hint, and `terms` shows how the query was read. Facts are findable: a table row
+  header or definition term that matches ("release date") carries `answer`, the value beside it.
+- `page_elements`: flat selectors — CSS, a piercing path inside a shadow root or frame, or
+  `""` when none is unique — plus `<select>` options, form metadata, and
+  `visible`/`hidden_reason` per entry. It has no selector filter and takes no
+  `frame_selector`: it always counts the whole existing DOM, including rendered controls
+  below the viewport. Paginate each category with `limit` plus `offset` until
+  `range.<category>.next_offset` is null. Scroll only to materialize lazy/infinite content,
+  then reread from `offset=0`. Its `fields` list looks for `[contenteditable="true"]`
+  literally, so a bare `<div contenteditable>` shows up in `page_outline` and here only
+  under `category="interactive"`.
+- `console`: console output and uncaught errors with stack frames. Pages through history
+  with `since_seq` and `limit`, and keeps its own place, so it never competes with
+  `game_probe` for entries.
+- `network`: requests with status, type, ms, and size; `only_errors=true` to triage. Use
+  `output="json"` to get the `id` that `network_body` needs. Capture is armed when the
+  session takes its tab, so the first navigation is in the buffer; a tab claimed with
+  `attach_tab` is recorded only from the claim onwards. `dropped` counts what the 500-entry
+  buffer evicted, so an empty list plus a high `dropped` is not a quiet page.
+- `screenshot`, `game_probe`, `browser_status`, `browser_tabs`, `search_status`.
+- `nodes`: this computer's LAN/public IP and location, whether its firewall lets the LAN
+  in, and every other computer running Web Search Neo (online / unpaired / offline;
+  `discover=true` scans the LAN). See [Other computers](#other-computers).
+- `execute_js`: run a JavaScript snippet in a session's page and read its JSON-serialisable
+  return value. The escape hatch for state the DOM reads do not expose — `localStorage`,
+  virtualised rows, framework stores — and for mutations without an input-shaped
+  equivalent. `args` arrive as `arguments[0..n]`; long strings are clipped at 200k chars and
+  reported as `{clipped, length, head}`.
+- Every `web_info` result (dict payloads) also carries the current local date/time and
+  UTC-offset region under the top-level `now` key — there is no separate time topic.
+
+The outline, `find` and (since 1.20) `click_text` cross open shadow roots and same-origin
+iframes; a cross-origin frame is a stub, so pass its selector as `frame_selector` to read it.
+
+## Locators
+
+Plain CSS works everywhere and stays the default. In companion `current` Chrome, treat it
+as the only action locator: that mode has no element handles, so a `ref:` or a `>>>`
+piercing path sent to `click`, `fill`, `wait`, `upload` or `submit.form_selector` is found
+again by script, from the top document, on every call. It resolves for an element of the
+top document; a ref read inside a frame is refused, and CSS with `frame_selector` is the
+way to an element in a frame. Outline refs and piercing paths stay useful for observation
+there.
+
+In `isolated`, `temporary`, `persistent`, and `attach` sessions, `fill`, `upload`, `click`,
+`wait`, `scroll` and `submit.form_selector` also accept a fresh ref such as
+`ref:3f9a1c04b7e25d18:12` or a piercing path such as `#host >>> .inner`, and follow it into
+whichever frame holds the element. `submit_selector` always needs plain CSS.
+
+A `frame_selector` always names exactly one frame: CSS matching two is refused with the
+count, everywhere. The accepted *forms* differ. `fill`, `click`, `wait`, `submit`, `upload`,
+`render` and the `page_outline`/`page_text`/`find` topics take all three. The input actions
+— `press_keys`, `pointer`, `touch`, `game_probe`, `input` and every `pointer_lock`
+operation — take plain CSS only: they aim by coordinate and need the
+frame's box in the top-level page, so a ref or a `>>>` path is refused before any event. Do
+not copy the outline's `#host >>> #frame` path into `game_probe` or `input`; give those a
+CSS selector that is unique by itself.
+
+Pass a ref back exactly as it was returned: the first field is the document it came from, so
+a handle from a page you have since navigated away from resolves to nothing and the action
+tells you to read `page_outline` again, instead of silently acting on a different element.
+Re-read after any navigation or re-render.
+
+Repeated visible text is not identity. Compare the exact `href`, control `value`, or a
+stable returned attribute from a fresh `page_elements` read. Never choose by array index,
+`nth-child`, or an old long CSS path alone.
+
+## Search and fetch
+
+Send a `search` action. Leave `engine` at its default (`brave`), keep `fallback=true` and
+`challenge_mode="fallback"` unless the user asks otherwise. Use `challenge_mode="manual"`
+only when a visible three-minute human handoff is useful, and never claim the server solves
+CAPTCHA. Use `fetch_text`, `fetch_links`, or `fetch_many` when the URLs are already known.
+`http_request` sends any method without a browser and keeps no cookies between calls; give
+it `http_session: "<name>"` (with your `agent_label`) to keep a cookie jar across calls, e.g.
+log in once and call the API after. Values stay redacted unless `show_values=true`.
+
+Plain `http://` to public hosts is refused; use `https://`. Loopback and private addresses
+stay reachable, so local services work unchanged.
+
+## Browser profiles
+
+- A new session opened without `profile_mode` is `isolated` (since 1.20): a clean, headless,
+  disposable browser that sees none of the user's logins. Ask for `current` explicitly when
+  the task needs the user's own Chrome (`current_tab_id` implies it).
+- `current` drives the user's signed-in Chrome through the companion extension.
+  New tabs enter group `🟢 AI`; `attach_tab` claims an existing `tab_id` without moving it.
+  `open` on a claimed session does not navigate the user's tab - it takes a new one in the
+  group and reports the tab it gave back as `left_claimed_tab`. `close` removes a tab the
+  agent opened and leaves a claimed tab open; `close_all` follows the same rule for every
+  session you own, and reports the other agents' sessions it left running.
+  The MCP never launches or quits the user's own Chrome process. To open and close a
+  browser yourself, use an owned profile: `temporary`, `isolated`, or `persistent`
+  starts its own Chrome and `close` quits it; `attach` only detaches from a Chrome
+  the user started.
+- `persist: true` on `open` (explicit `session_id`) keeps a session past this MCP server:
+  a tab of `current`, or since 1.20 the whole `temporary`/`isolated` browser. A new session
+  must name that `profile_mode` (without one the call is refused). Continue it with
+  `reattach`; `close` ends it for good. Read `persist_warning` in the answer.
+- In Selenium sessions a page's new tab or popup comes back as `new_tabs` on the action
+  that opened it; the session stays on its tab. Move with `tabs {op:"switch", handle}` or
+  `follow_new_tab=true` on `click`/`click_text`; `tabs` also lists and closes them.
+- Another agent may be driving the same Chrome: `attach_tab` on a tab it already holds is
+  refused with who holds it. Pick a different tab or open your own; do not retry. Any
+  number of MCP servers and sessions share one Chrome through one bridge daemon, a tab
+  each; since 1.30 an agent that hangs delays only itself, so a timeout of yours is about
+  Chrome or the page, not about the other agents.
+- On a busy machine (a build, a render, a local model on the CPU) Chrome answers late, and
+  the server waits for it on its own: a `current` session's debugger attach gets up to
+  `WSN_ATTACH_TIMEOUT` seconds (default 60), and built-in timeouts go on waiting while
+  Chrome answers slowly or the CPU is above 80 %. A limit you pass yourself is never
+  extended. If a call still ends in `timed out`: retry once - after the other work has
+  finished when the message names the CPU load; `the page did not finish loading` means a
+  larger `timeout_seconds` on `open` (the message says whether the page was still
+  `'interactive'`, i.e. fetching, or left the question unanswered, i.e. starved of CPU, and
+  `open` never waits longer than you asked); a slow script of your own means `timeout_seconds` on
+  `run_script`; `Chrome did not attach its debugger` means the user should raise
+  `WSN_ATTACH_TIMEOUT`. `python scripts/bridge_probe.py` in the server's checkout times
+  each bridge step and tells a broken bridge from a slow Chrome. A timeout is not a reason
+  to reinstall the companion, switch browsers, or assume another session is in the way.
+- Tabs open in the background and nothing steals the user's focus, so they keep working
+  while you do. Hidden-tab throttling is compensated, so frames, timers and input behave.
+  A session whose Chrome restarted (or whose companion self-updated) is dropped with an
+  error saying to open again: reopen it, do not retry the action.
+- If the companion is disconnected, read `browser_status` and call `setup_current_chrome`.
+  It opens no page and touches no browsing data; a connected companion older than the
+  bundled build is reloaded automatically, reported as `self_update`. When it does return
+  `manual_steps`, show them to the user word for word and wait: nothing can install the
+  extension, or reload a build older than 1.3.1, on their behalf.
+- When this checkout is behind and nobody is driving a tab, `update_companion` pulls it,
+  reinstalls if the pull changed an install spec, replaces the bridge daemon when Python code
+  changed, and reloads the companion onto the new files. It refuses rather than forcing -
+  uncommitted tracked work, a branch that diverged from its upstream, a tab an agent is
+  driving, a server installed from a wheel - and `refused` names which. It moves the user's
+  checkout, so ask first; after it runs, read `server_restart_note` before assuming this
+  process picked the new code up (it does not).
+- A tab an agent is driving keeps its own favicon with a state dot in the top-left corner
+  (a background macro job's tab also a padlock bottom-left): green while acting and for a
+  minute after, yellow for the next five minutes, grey for up to an hour; it survives
+  reloads and navigation. A small panel in the page's bottom-left corner names the agent
+  and its state, and a click opens its stats (last action, counts, an env's step and
+  reward); it lets clicks through while the agent acts and is never in your screenshots. The
+  companion closes tabs the agent opened and left idle for an hour (popup Settings, Idle AI
+  tabs; never a pinned, audible or watched tab). A
+  ghost cursor glides between the agent's pointer points with its name tag and a caption
+  of what it does ("Click · Sign in", "Typing…"), and lands a fading ring on every press
+  (red when refused); its tab group turns green, then yellow, then grey, and the toolbar icon spins
+  while commands arrive. Such a tab is
+  agent-held: observe it read-only
+  (`page_text`/`page_outline`/`screenshot`) or open your own session — acting on it
+  collides mid-run, and claiming it is refused with the holder named. Pointer input is
+  synthetic CDP events: no OS mouse moves, tabs cannot disturb each other, and the
+  cursor is hidden from every screenshot the agent reads back. The signals are on by
+  default; the user can turn them off for their Chrome in the popup (**Agent presence**),
+  or everywhere with `WEB_SEARCH_NEO_AGENT_PRESENCE=0` in the server environment.
+- The user can press **Take over** (or Alt+Shift+P): every page- or tab-changing command is
+  then refused with a sentence saying the user took over, reads keep working, and the tab
+  groups turn orange. Stop and wait for **Resume**; do not retry in a loop, and do not open
+  a different browser to get around it.
+- One server holds 30 browser sessions at once by default (`WEB_SEARCH_NEO_MAX_SESSIONS`,
+  or the popup's setting; `0` means no cap). The refusal at the cap names every holder;
+  close your own sessions when done instead of waiting for the idle reaper.
+- Chrome's "started debugging this browser" banner on driven tabs is mandatory platform
+  UI and cannot be dismissed while the tab is driven; its Cancel only detaches until the
+  next action. Silence it by relaunching Chrome once with `--silent-debugger-extension-api`,
+  or drive Selenium modes, which show no banner. Steps live in
+  `browser_status` → `current_chrome.debug_banner`.
+- `auto` falls back to a headless temporary browser; `temporary` and `persistent` also
+  default headless. `isolated` is a disposable browser with separate profile storage —
+  one account, one isolated session — with per-session `user_agent`/`timezone`/`locale`/
+  `geolocation` overrides (owned browsers only; `current`/`attach` share one real profile
+  and refuse overrides). The live `context` action retargets a session without reopening
+  it. Isolation does not guarantee an unlinkable network or hardware fingerprint.
+  `headless=false` explicitly permits a visible MCP-owned window.
+  `attach` uses a Chrome you started with a DevTools port and preserves its window mode.
+- No normal action should steal focus. `show` is the sole foreground opt-in; call it only
+  when the user explicitly asks to see the controlled tab. It never changes window state.
+
+## Other computers
+
+`node="<name or IP>"` on `web_action` or `web_info` runs the whole call on another
+computer: its Chrome, its sessions, its files, its network. The answer carries `via_node`.
+
+1. `web_info(topic="nodes", params={"discover": true})` lists them: `online` (paired and
+   answering), `unpaired` (answering, key missing or different), `offline`.
+2. Pair an unpaired one with no key: `web_action nodes op="pair"` with `address` (or a
+   name). The first call returns `code`; tell the user that code. The other computer shows
+   it in a Chrome notification with Allow / Deny. When they have pressed Allow, call
+   `op="pair"` again with the same address: it waits up to 90 s and returns
+   `state: "paired"`. `denied` means they said no - do not ask again unprompted.
+3. Use `node="<saved name>"` from then on. `session_id`, `agent_label` and
+   `profile_mode` rules apply there exactly as here; `current` is that user's own Chrome.
+
+- `offline`: the computer is off, its bridge is not running, or its firewall keeps the LAN
+  out. Its popup (Share this computer) says which and has the fix; say so to the user
+  rather than retrying.
+- A node does not relay to a third computer, and refuses `update_companion`.
+- Traffic between computers is signed but not encrypted: say so before moving anything
+  sensitive across an untrusted network.
+- `op="add"` with `key` saves a computer whose key the user copied by hand; `op="ping"`,
+  `op="list"` and `op="remove"` do what they say.
+
+## Forms
+
+`fill` reads every value back off the control, so `filled` means the field holds what you
+asked for and `field_values` says what it actually holds; a rejected value is an error, not
+a success, and `success` is false whenever the `errors` map is non-empty. `field_values`
+answers for every selector you sent, failures included, so a control refused before anything
+was typed — disabled, readonly, no such `<option>` — still shows what it holds; `null` means
+nothing could be read back, i.e. the selector matched nothing or the control is gone. The
+browser's own tidying is not a refusal: trimmed whitespace on `email`/`url`, `\r\n`, and a
+handler's case folding all count as filled, while `maxlength` truncation and a rewritten
+value still fail. Checkboxes take `true/1/yes/y/on/check/checked` or
+`false/0/no/n/off/uncheck/unchecked`. Only a `<select multiple>` takes a list, reads back as one,
+and has its whole selection replaced by a scalar. Date, time, range and colour controls are
+set rather than typed, so an unparseable value is refused without touching the control and
+the error names the format. `upload`, and `fill`'s `files` key, *replace* an input's
+selection instead of adding to it. Rich-text editors (`contenteditable`, e.g. TipTap,
+ProseMirror, Slate, Quill) are written as a real edit — the content is
+selected and typed in through the browser's input channel, a line at a time with a soft
+break (Shift+Enter, never Enter, which sends in a chat composer) between the lines, so
+paragraphs survive; the read-back is `innerText`. An editor that folds the breaks away
+anyway is named as such in `errors`, and the way through is a real paste: `run_script` with
+`user_gesture=true` and `navigator.clipboard.writeText(text)`, then `Ctrl+V` through
+`input`. Some chat composers (Teact-based ones included) never update their own state from a
+write — the send button stays a microphone — so paste there always.
+`upload` reports `upload_state`: `attached` (the input holds the files), `taken_by_widget`
+(a Dropzone-style widget emptied the input, and the page names the file or posted it) or
+`unconfirmed` (nothing vouches either way — read `note`, check the page and the `network`
+topic, and do not re-attach on this evidence alone). `success` is false only when the attach
+itself failed; `fill`'s `files` says the same in `upload_states`.
+When `frame_selector` is provided, file-input lookup and assignment use that
+frame's execution context too: same-origin frames are scoped inside the tab
+target, while cross-origin frames use their child debugger target. This prevents
+a top-level decoy input from being selected and avoids the opaque Chrome
+`Uncaught` error that otherwise occurs for a valid same-origin iframe upload.
+`fill`, `click`, `submit`, `upload` and `wait` accept `frame_selector`; `wait`'s
+`timeout_seconds` defaults to 10 and is respected as passed up to 300 s (a larger
+value is cut to that, and `timeout_note` says so). `wait` also takes `script` instead of `selector`: a JS
+expression polled atomically server-side until truthy, for SPA hydration and
+framework flags (`window.__hydrated === true`) that no selector expresses.
+`challenge_detected` means a challenge is *blocking* — a widget, or a positioned ancestor of
+it, covering at least half the viewport over the centre, so a dismissible modal with a
+captcha in it does not count. `captcha_widgets` lists captchas that are merely present,
+which you can ignore, and `captcha_scan_incomplete: true` means the walk stopped early, so
+an empty list is not proof of absence. `invisible_challenge_pending: true` is the captcha
+with no box — an invisible Turnstile whose token field is still empty. It blocks the *form*,
+not the page, so `challenge_detected` stays false while the submit button sits on
+"Submitting…" and nothing is ever sent; `invisible_challenge` names the vendor and the
+evidence, a `click` that made no request while it is pending answers with
+`submit_blocked_by_challenge`, and only the `captcha` action clears it — retrying, `stealth`
+and a fresh session do not. All ride on page summaries — `open`, `fill`, `click`,
+`submit`, `upload`, `wait_challenge` and the `page_elements` topic — and not on
+`page_outline`, `page_text` or `find`, which build no summary.
+
+`fill` blurs every control it writes, which is how the last field fires its `change` event.
+Focus therefore ends on the body: a following `press_keys(["ENTER"])` needs `target_selector`
+to reach a field, and `submit` needs no focus at all. Pass `blur_after=false` to leave
+focus in the last control, and `typing=true` for keystroke-by-keystroke input where a
+masked input or autocomplete only advances per input event.
+
+For a choice widget, do not trust its remembered/default value. Open it, reread the options,
+match exact visible text/value, click the visible option row instead of its hidden
+radio/input, then reread the collapsed control after the rerender. A heading such as
+"answer questions" is boilerplate, not proof of a question: only live enabled form
+controls are questions.
+
+For any consequential submit use this low-freedom guard:
+
+1. Keep a local state `submit_attempted=false`.
+2. From a fresh DOM, confirm the exact target (`href` where available) and every critical
+   live choice: attached file or document, account, price, recipient, consent, or irreversible option.
+3. If anything is ambiguous, stop. Otherwise set `submit_attempted=true` as the terminal
+   submit is clicked exactly once.
+4. After any result or timeout, never click the same submit again. Inspect fresh URL, text,
+   elements, console, and network; the first click may already have succeeded.
+5. Stop immediately on terminal success text. Only a clearly separate intermediate
+   questionnaire may have its own later final submit, after its live controls are inspected.
+
+Inspect every batch result: `success=false`, validation error, or `challenge_detected` means
+the step is not complete. Use DOM/text to prove labels and selected values. If submission
+silently fails, check `console` and `network`.
+
+## When the page tells you what it wants
+
+`auto_fix {session_id}` applies what the page already asked for, in the open session, and
+names every thing it touched: a consent checkbox by its own label, a field format taken from
+the hint beside that field (`Expected format: DD.MM.YYYY`), and a wait when a live region says
+"please wait"/"processing". It reads only what the DOM named itself - no guessed selectors - so
+it refuses rather than pick: `several_consent_labels` when the page offers two things to agree
+to, `several_formats_named` when a field has two candidate formats, `no_field_named` when a hint
+exists but its control does not. Those refusals are your decision, not its guess, and each one is
+reported with the candidates it saw. It never submits, clicks a button, or solves a captcha - that
+stays yours. `consent=false`, `format_hint=false`, `wait=false` turn a family of fixes off;
+`selector` limits it to one control.
+
+An observing step (`wait`, `screenshot`, the `fetch_*` and observation topics) that fails while the
+page itself asked to wait is retried once by the harness, with the pause the page implied; a step
+that changes the page (`submit`, `click`, `fill`) is never repeated, because its first attempt may
+already have gone through. When repeats stop, the answer says why in `retry_stopped`. Set
+`WEB_SEARCH_NEO_RETRY=0` to switch the repeat off, or a number 1-5 to allow that many repeats.
+
+## Page scripts and trusted clicks
+
+When a page ignores a synthetic `click` (its handler checks `event.isTrusted`, or it reads
+pointer position), retry the same target with `click.trusted=true`: a real trusted mouse
+sequence is dispatched at the element's centre after scrolling it into view, exactly as a
+human pointer would land. The click hits whatever is at that point, so re-read the DOM to
+confirm the result; an element with no visible box is refused with a clear error instead of
+silently falling back.
+
+For state only the page holds — virtualised rows, framework stores — and for mutations with
+no input-shaped equivalent, use `run_script` (web_action) or the `execute_js` topic
+(web_info). Both run in the session's top document, or in the frame `frame_selector`
+names; `args` arrive as `arguments[0..n]` and a
+JSON-serialisable return value comes back as itself. Prefer `fill`/`click`/`pointer` for
+anything a user gesture should do, and never use a script where a form control read is
+enough.
+
+`run_script` takes `user_gesture=true` when the page gates what you need behind a real
+click — clipboard writes, fullscreen, audible autoplay. It runs the same snippet as though a
+person had just clicked; use it only for those APIs, because it bypasses the WebDriver route
+that reports errors most precisely. A script racing a fresh navigation sometimes fails with
+`Uncaught`: this may follow a completed mutation, so execution is single-shot by default.
+Only enable `retry_on_uncaught=true` for a script safe to repeat (`retries=2`,
+`retry_delay_ms=300`); the answer reports `attempts`.
+
+Web Storage has its own action: `local_storage` reads the whole store as a map, or one
+`key`, and writes or deletes one key, in `local` or `session` `kind`. Reach for it before
+writing a script for the same thing.
+
+`cookies` reads every cookie as a full object — `secure`, `httpOnly`, `sameSite` and
+`expires` included, which is what makes a site's session handling auditable rather than just
+readable — and also sets and clears them. Filter with `domain` (that domain and its
+subdomains, never a substring) and `name` (exact); `op=clear` needs a `domain`, or
+`confirm_clear_all=true` to wipe every cookie of the profile.
+
+`inject_script` registers code that runs *before* every document's own scripts, which is the
+only way to patch an API a page captures on load. It survives navigation for the life of the
+session; `op=list` shows what is registered and `op=remove` forgets one.
+
+To stub a third-party endpoint rather than re-send a request, use `mock`: `op=add` answers
+every matching fetch/XHR with your status/headers/body (`url_pattern` is a wildcard, `*`
+matches anything, first match wins, everything else reaches the network untouched),
+`op=list` shows live stubs, `op=clear` drops one pattern or all. `replay_request` re-sends
+on demand; `mock` keeps answering until cleared.
+
+## Repeating a task: macros
+
+A task you will do more than once — an application form, a login, a search-and-filter — is
+worth writing down instead of re-deriving. A macro is one JSON file holding an ordered list
+of `web_action` steps, replayed by name.
+
+### Where macros live
+
+There are two stores, and telling them apart is the single most common macro mistake.
+
+| `project_root` | Store used |
+| --- | --- |
+| omitted | The per-user store, unless `WEB_SEARCH_NEO_PROJECT_ROOT` names a project. |
+| `"auto"` | The project found by walking up from the working directory: `WEB_SEARCH_NEO_PROJECT_ROOT` first, then the nearest `.web-search-neo` directory, then the nearest repository root. |
+| an absolute path | Exactly that project. |
+
+A project's macros are files in `<project_root>/.web-search-neo/macros/`, one `.json` per
+macro, meant to be committed with the project and edited by hand. Every macro answer
+reports `scope`, `project_root`, and `storage`, so a macro that seems to have vanished is
+usually a macro written into the other store — compare those three fields before writing it
+again. `op=list` also reports `other_store`, so the answer is in the result you already
+have.
+
+### The file format
+
+The shortest valid file is the step list itself, `open-docs.json`:
+
+```json
+[{"action": "open", "url": "{{url}}", "session_id": "docs"}]
+```
+
+The full form adds a description and the placeholder defaults:
+
+```json
+{
+  "name": "open-docs",
+  "description": "Open one documentation page",
+  "steps": [{"action": "open", "url": "{{url}}", "session_id": "docs"}],
+  "variables": {"url": "https://example.com"}
+}
+```
+
+Each step is exactly one `web_action` action object, so
+`web_info(topic="action_schema", params={"action": "<name>"})` is the reference for what a
+step may contain. A `README.md` written into every store repeats this next to the files.
+
+Declare every placeholder under `variables`; the value is its default, and `null` means the
+run must supply it. A file with no `variables` at all still works — the placeholders are read
+from the steps — but `op=validate` warns about it, because then nothing but the steps says
+what the macro wants.
+
+### Writing, checking, and replaying
+
+Write the file yourself. There is no operation that writes a macro: `<name>.json` in the
+store's `macros/` directory is the whole interface, and a file dropped there by any means is
+a macro as soon as it parses. Renaming, copying and deleting are file operations too.
+
+Put `{{placeholders}}` where values change between runs and declare each one under
+`variables`, where its value is the default. A placeholder that fills a whole value keeps its
+type, so a number in the file replays as a number, and a run missing values names all of them
+at once rather than failing on the first.
+
+**Never put a placeholder inside a `run_script` script.** It is substituted as raw text, so a
+value with a newline, a quote or a backslash breaks the JavaScript and the step dies with an
+opaque `Uncaught` from inside the page. Pass it through `args` and read `arguments[0]`.
+
+`macro op=validate name=<name> project_root=auto` reads the file and dispatches nothing. It
+reports, per step: unknown action names, missing required parameters, parameters that are not
+part of that action, and placeholders inside a script. As warnings, which never make a macro
+invalid: a declared variable no step uses, steps that drift between two `session_id` values,
+and a macro whose last meaningful step neither waits nor reads anything back. Run it after
+every edit — each of these otherwise surfaces mid-replay, once the steps before it have
+already clicked something.
+
+Then `macro op=preview name=<name>` with the same `variables` planned for `run`. It resolves
+every placeholder and returns the exact steps with `executed=false`, without dispatching an
+action or changing browser state. This is the review point for a final URL, form values, an
+upload path, or a submit step. Replay with `macro op=run name=<name> variables={...}`.
+
+A macro carries the `session_id` its steps name. Pass `session_id` to `run` or `preview` to
+point the whole replay at another tab — a second agent, a second account — without editing the
+file. A macro that already drives two sessions is refused instead of being collapsed into one
+tab, because that would change what it does; give those steps a `{{placeholder}}` session
+instead.
+
+Macros are files and outlive the server; `op=list` summarises them and `op=show` prints one. A
+macro reuses another with the script step `call` (a step of action `macro` is refused). A plain
+replay reports like any batch, so check `failure_count` and each `results[i].success`: a saved
+click path is exactly as fragile as the page it was written against, and a site redesign
+invalidates it silently.
+
+### Scripts: logic, loops, waits, background jobs
+
+When a flow has a decision in it, write the decision into the macro instead of making it
+between calls. On any step: `when` (run only if an expression holds), `save_as` (keep the
+result: a `run_script` value, JSON text decoded, else the action's data), `assert` (an
+expression over `result`/`value`), `expect` (test_run's page checks: `text`, `selector`,
+`url_contains`...), `retry`/`retry_delay`, `on_error: "continue"`, `label`. Control steps:
+`if {test, then, else}`, `repeat {times | while | until, as, max_iterations}`,
+`for_each {items, as}`, `wait_until {test, steps, timeout_seconds, interval_seconds}`,
+`try {steps, catch, finally}`, `set {values}`, `sleep`, `log`, `fail`, `return {value}`,
+`break`, `continue`, `call {name, variables}`, `read {topic, params}` (any web_info topic;
+`network` gives the page's HTTP traffic with `output: json`).
+
+Expressions are a safe Python-like language: `and/or/not` (also `&&`, `||`, `!`),
+comparisons, `a.b`/`a[0]` (missing gives null), and functions such as `len`, `contains`,
+`matches(text, regex)`, `search`, `number`, `json`, `find(items, method="POST",
+url="~/api/x")`, `filter`, `count`, `pluck`, `default`, `empty`. In parameters write
+`{{expression}}`; a whole-string template keeps its type. `last` is always the previous step's
+`{ok, value, error}`.
+
+```json
+{"action":"macro","op":"run_steps","steps":[
+  {"action":"click","selector":"#save","session_id":"s","expect":{"text":"Saved"},"retry":2},
+  {"action":"wait_until","timeout_seconds":60,"steps":[
+    {"action":"read","topic":"network","params":{"session_id":"s"},"save_as":"net"}],
+   "test":"find(net, method='POST', url='~/api/save').status == 200"},
+  {"action":"return","value":"{{find(net, method='POST').status}}"}]}
+```
+
+- `op=run_steps` runs inline steps and saves nothing; `op=validate` with `steps` checks them.
+- Every script run is a job. `background: true` on `run`/`run_steps` answers at once with a
+  `job_id`; read it with `op=job job_id=<id> wait_seconds=60`, list with `op=jobs` (other
+  servers' jobs too: state is saved to disk), stop with `op=cancel`. A job needs its own
+  `session_id`. Use it for anything that waits minutes (a generation, an upload, a watcher) —
+  other calls keep working meanwhile. The user sees jobs in the companion popup (Macros card,
+  with Stop) and gets a notification when a background job ends.
+- `ask {message, options, default, timeout_seconds, save_as}` pauses the job for the user
+  (popup or notification buttons) or `op=answer job_id=<id> answer=<value>` — put one before an
+  irreversible step. `parallel {branches: [[...], [...]], fail_fast}` runs branches at once,
+  one `session_id` each.
+- `op=schedule` with `name` or `steps` and `every_seconds` (>= 10) or `times: ["09:00"]`,
+  `max_runs`, runs it as background jobs on a clock; `op=schedules` lists, `op=unschedule
+  schedule_id=<id>` removes. Schedules survive restarts; an overlapping run is skipped.
+- The answer of a script run: `success`, `error` + `failed_step` (a path like `2.then.0`),
+  `returned`, `outputs`, `log`, `results[]`, and `trace` (one line per step, kept by
+  `summary: "min"`).
+- `op=validate` also finds bad expressions, loops that cannot stop, `break` outside a loop and
+  undeclared inputs; its `inputs` field says what a caller must pass.
+- Loops are capped (1000 by default), a run at 20000 steps, `call` 5 deep; a guarded macro
+  must stay a plain list. Full reference: docs/macro-scripts.md.
+
+### Keeping domain rules out of the engine
+
+The macro engine is universal and domain-neutral. Never add any business-domain
+policy to core. Put domain rules in project-owned saved macros and
+configuration; only neutral, broadly useful examples belong in the engine repository. Always
+pass the same project root to `guarded_stage` and `guarded_commit`, because the idempotency
+ledger is project-local too.
+
+### Guarded consequential replays
+
+For a consequential flow, keep exactly one consequential last step: explicit `submit`, or a
+safe `click`. A guarded selector click uses plain CSS and is required to match exactly one live
+element at commit. A semantic click requires exact text plus an explicit role and refuses zero
+or multiple matches. Never guard coordinates, `trusted=true`, substring text, ref handles, or
+piercing paths; those target forms fail closed.
+
+Then use:
+
+1. `op=guarded_stage` with `guard.target_url`, equal `canonical_url`, optional domain-defined
+   `identity_key`, explicit `allowed_hosts`, optional `denied_hosts`, a unique idempotency
+   token, an existing absolute `resource_path` uploaded by that run, and the exact 64-hex
+   `resource_sha256` of its current bytes. The server recomputes the digest, refuses missing or
+   mismatched values, normalizes it to lowercase, and persists it with the checkpoint.
+   Query parameters remain part of canonical target identity; only URL fragments are ignored.
+2. Live semantic assertions such as
+   `{"result_index":2,"path":"data.text","contains":"Request 42"}`. Stage executes
+   everything except the terminal consequential action and returns no checkpoint if an action
+   or assertion fails.
+3. Review the staged result. Only then call `op=guarded_commit` once with its checkpoint.
+
+Core has no built-in host categories: allow/deny policy is supplied by the macro or caller.
+The project ledger reserves canonical target/identity, resource path, and token, and consumes
+the checkpoint before terminal dispatch, so an ambiguous timeout cannot cause an automatic
+retry. Inspect the destination response separately; the guard proves one attempt, not remote
+acceptance.
+
+## Captchas
+
+`captcha` handles the widget that stops everything else. `mode=detect` only reports.
+`mode=wait` hands the visible browser to the user and returns the moment the challenge
+clears — the default when no solving service is configured, and the honest answer, because a
+person clicking the box always works. `mode=solve` sends the sitekey to a configured service
+and writes the returned token into the page; it needs `WEB_SEARCH_NEO_CAPTCHA_KEY`
+(`WEB_SEARCH_NEO_CAPTCHA_HOST` picks the provider, 2captcha by default) and costs money per
+solve. `mode=auto` waits for the user; it solves only if the operator also set
+`WEB_SEARCH_NEO_CAPTCHA_AUTO_SOLVE=1`. A token is applied only if the page URL is unchanged.
+
+A slider captcha — Tencent TCaptcha (`#tcaptcha_transform_dy`, `tencent-captcha-dy__*`),
+Geetest — has no sitekey, so there is nothing to buy: `mode=solve` and `mode=auto` capture
+its picture, find the hole in it and drag the handle along a human-shaped path, free and
+locally (`WEB_SEARCH_NEO_CAPTCHA_LOCAL_SOLVE=0` turns that off). That drag is dispatched as
+in-page PointerEvents, not the DevTools pointer: TCaptcha ignores rapid CDP mouse moves (a 100 px
+CDP drag moved its groove 22 px), so the path is replayed inside the page where the widget
+actually listens; the CDP pointer is the fallback for cross-origin frames. If the measurement is not
+confident nothing is dragged and `slider_solve` says why; then it waits for a person.
+
+The same drag happens unasked where a captcha blocks the agent's own work: a click that sent
+nothing while an unsolved widget sat on the page tries it before reporting
+`submit_blocked_by_challenge` (a cleared one comes back as `challenge_cleared_by` - nothing was
+sent, so click once more), and `wait_for_challenge_resolution` solves before it waits for a
+human. Plain reads never drag anything; `WEB_SEARCH_NEO_CAPTCHA_AUTO_ON_TAB=0` stops this too.
+
+A solved token is not a submitted form: some sites submit from the widget's own callback and
+some wait for the button, so re-read the page and submit if it did not. A captcha with no
+sitekey — an image or a behavioural check — cannot be sent to a service at all and has to be
+cleared in the page. `mode=detect` also reports the invisible widget that shows no box, and
+`mode=wait` no longer calls it cleared while its token field is empty.
+
+## Requests, headers, and staying unremarkable
+
+`set_extra_headers` adds headers to *every* request the session makes until cleared — an
+`Authorization` token, a custom `User-Agent`, an A/B cookie — without touching each call.
+The set is replaced whole each time, so `set_extra_headers` with no `headers` clears it;
+there is no per-header removal.
+
+`replay_request` re-sends a request from inside the page, so it carries the page's cookies
+and origin. Pass a `request_id` from `network` (read it with `output=json` for ids) to repeat
+a captured request, or spell out `url`/`method`/`headers`/`body`. The response comes back with
+status, headers and a clipped body — enough to check whether a session token still works, an
+endpoint is rate-limited, or what a form's POST returns, without driving the form again.
+Captured POST bodies are not retained, so pass `body` explicitly to resend one.
+
+`vary` turns one replay into a bounded A/B sweep: `{"headers": [{"x-role": "admin"}], "query":
+[{"uid": "61808"}], "body": ["{\"role\": \"admin\"}"]}` sends the baseline once plus one request
+per single change - twelve at most, `variants_dropped` names what did not fit - and answers with
+each delta: status change, size change, JSON paths added, removed or changed, response header
+names. Values are shapes (`string(24)`, `list(3)`), never the values themselves, so a diff cannot
+carry a token out of the answer; a body mutation is asked as a POST, because a GET with a body is
+a body most servers ignore. It is a question about one endpoint, not a fuzzer.
+
+`stealth op=on` hides the usual automation tells (`navigator.webdriver`, plugin/language
+shape) before the page's own scripts read them, which lowers how often a site *shows* a
+challenge. It is not a solve: a serious anti-bot service fingerprints far more, and the
+override cannot undo the `--enable-automation` switch Chrome launched with. Pair it with a
+real profile (`profile_mode=current`), human-paced input, and `captcha` for what gets
+through. `op=off` forgets it for future documents.
+
+## Visual coordinate clicks
+
+Screenshot modes are `viewport` (default), `full_page`, and `region`. Omit viewport
+`width`/`height` to keep the actual window; current Chrome refuses explicit resize.
+`region` requires page-CSS `x/y/width/height`; `full_page` errors above 3840x10000 instead
+of silently returning a partial capture.
+
+Yes: take a fresh viewport `screenshot`, then send, for example,
+`{"action":"pointer","pointer_action":"click","x":640,"y":360}`. Coordinates are
+viewport CSS pixels (or frame-local CSS pixels with `frame_selector`), not arbitrary
+full-page image coordinates.
+
+Only a viewport screenshot maps directly. Compare its PNG width/height with the reported
+`viewport_width`/`viewport_height`; if they differ, scale each image axis proportionally.
+A full-page or region image can contain offscreen pixels, so first scroll the target into
+view and take a new viewport screenshot. After scroll, zoom, resize, navigation, animation,
+or rerender, discard the old image and recapture. Verify the click from fresh DOM/text.
+
+In background `current` Chrome, screenshots can be slow or unavailable while Chrome is not
+painting an obscured window. DOM inspection and pointer actions still work; do not treat a
+screenshot timeout as page failure or call `show` unless foreground was explicitly requested.
+
+## Scrolling
+
+`scroll` takes positive `delta_y` down and negative up. Omit `x`/`y` for the viewport
+centre, provide both to pick the container painted under that point, or pass `selector`
+(CSS, a fresh `ref:`, or an `a >>> b` piercing path): the element is brought into view,
+then the wheel lands on its centre, so the *container* holding the element scrolls — the
+way to reach the tail of a tall chat answer or code block. `selector` and `frame_selector`
+are mutually exclusive; pierce the frame instead. `before`/`after` are the selected
+document's window metrics, so an inner container can move while they stay unchanged.
+
+## Input and games
+
+Read `game_probe` first and reuse its `frame_selector` for input and render actions.
+
+A model that outputs probabilities over actions (an RL policy, a JEPA-style world model, a
+classifier) plays through the `env` action: `op=define` (named actions that hold/tap keys or
+click, `frames_per_step`, `observe` pixels and/or a state script, `reward`/`done` expressions),
+`op=reset {url}`, then `op=step` with `act` (a name or index) or `probs` (sampled or argmax
+here); or define `keys` and step with `key_probs` (one per key) or `pressed`, plus `frames` for
+how long; the page waits between steps. `scripts/wsn_env.py` wraps it as a Gymnasium-style env.
+See docs/playing-games.md.
+
+Use one `input` action for everything that must land in the same frame. Key entries take
+`tap`, `hold`, or `release`; pointer entries take `click`, `double_click`, `hover`, `move`,
+`drag`, `press`, `release`, or `wheel` with `delta_x`/`delta_y`, up to 16 of each kind in one
+call. Coordinates are viewport- or frame-local, and a point that maps outside the window is
+refused rather than dropped; `coordinate_mode="delta"` moves relatively and `"relative"` is
+the unclamped mode for pointer lock. A held modifier reaches later mouse and touch events.
+Keys include
+`F1`-`F12`, `NUMPAD0`-`NUMPAD9`, `META`, arrows, and any printable character; releasing `w`
+lifts a key held as `W`.
+
+```json
+{
+  "actions": [{
+    "action": "input",
+    "session_id": "game",
+    "key_actions": [
+      {"key": "W", "action": "hold"},
+      {"key": "S", "action": "release"},
+      {"key": "SPACE", "action": "tap"}
+    ],
+    "pointer_actions": [
+      {"action": "hover", "x": 640, "y": 360},
+      {"action": "wheel", "x": 640, "y": 360, "delta_y": -240},
+      {"action": "move", "x": 15, "y": -5, "coordinate_mode": "delta"}
+    ]
+  }]
+}
+```
+
+Other input actions: `press_keys` for keyboard-only work — 1-8 `keys` plus `key_action`
+(`tap|hold|release`), with `repeat`, `hold_seconds`, `focus_mode`, and `hold_frames`, which
+keeps a tap down across N released frames in step mode — so one tap call releases
+`hold_frames` frames per `repeat`, not one; `touch` for tap, swipe, and
+multi-finger press/move/release; `touch_emulation` so a game's mobile code path runs at all;
+`pointer_lock` for first-person controls. `CapsLock`, `NumLock` and `ScrollLock` are sent
+through CDP since 1.20; the session tracks the lock (CapsLock upper-cases later letters,
+`type_text` always types as written). The keyboard verb is `key_action`, the pointer
+verb `pointer_action`, the touch verb `touch_action`, and pointer lock's is `operation`,
+because the dispatcher itself owns `action`.
+
+`input`, `press_keys`, `pointer`, `touch`, and `step` all accept `include_summary=false`,
+which skips the page read and returns only the action result. Use it while driving a game
+frame by frame, and read the page explicitly when you actually want to look at it. The four
+input actions also take `wait_seconds`, which already defaults to `0`; `step` does not take
+it at all and rejects the call if you send it.
+
+Three refusals arrive before anything reaches the page, so treat them as a fix to make, not
+a retry: tapping a key the session already holds (release it first — a tap's release would
+lift a key the session still counts down), pressing a touch id that is already down (`move`
+or `release` that finger instead), and a point that maps outside the window or onto whatever
+covers the frame there, which is named for you. After a *failed* `input` batch `held_keys`
+over-reports on purpose, because any event in it may have landed — call `release_inputs`
+rather than reading the list.
+
+Render modes:
+
+- `normal`: native page timing.
+- `throttled`: continuous slow motion at `target_fps`, such as 10.
+- `step`: nothing advances until `step {frames}` or an `input` action releases a frame.
+
+Both gated modes freeze page time: `performance.now()` and `Date.now()` advance one fixed
+frame delta per released frame and page timers are queued against that clock, so the game
+never measures your thinking time as its `deltaTime`. A tapped key is held for the whole
+released frame, which is what engines that poll key state per frame need.
+
+Always `release_inputs` after holding input and restore `render` to `normal` before handoff
+or close. Take a screenshot or read `game_probe` between batches; in step mode a screenshot
+taken before the first frame still shows the old frame, and `game_probe` reports
+`animation.animation_suspended` with `animation.fps: null` instead of measuring a gate you
+are driving by hand.
+
+A probe's `console_messages` holds only the warnings and errors new since the previous
+`game_probe` call — the result says so in `console_scope` — so polling it in a loop is cheap
+and its output never grows with the run. Each entry is delivered once: read
+`console_messages` on every probe you make, because a result you drop takes them with it.
+Use the `console` topic when you need history, `log`/`info` levels, or stack frames.
+
+## Checking your own site
+
+- `security_report {url}` grades a site's configuration A+-F with Mozilla HTTP
+  Observatory's tests and modifiers (own extra checks go to `extended`): headers (CSP, HSTS, framing, Referrer-Policy, Permissions-Policy, COOP/COEP/CORP,
+  version disclosure), cookies, https and its redirect, the certificate, CORS on the page
+  response, third-party scripts and SRI, mixed content, forms and password fields, and
+  security.txt / robots.txt. Every finding has a `fix`; `priority` is the order to fix them.
+  `scope: "site"` crawls links and the sitemap (`max_pages` <= 50, `robots.txt` honoured),
+  `scope: "hosts"` checks up to 10 named origins, `paths` adds the user's own routes; the
+  weakest page decides the grade. localhost and private addresses are graded in development
+  mode (https/HSTS/redirect/certificate not applicable) with a `production_forecast`.
+  It is passive - `requests_made` lists what the report sends (only to hosts in scope; no path
+  guessing, port scanning or fuzzing), `browser_requests` the ordinary page load - and only
+  for sites the user owns or may test.
+- `api_report {session_id}` reads what the backend already answered to the page and what that
+  says about the API itself. `errors[]` groups 4xx/5xx by method, path template and status with
+  the body's *shape* (`object(2)`), its header names and the error code/message; `error_meanings[]`
+  names what the response publishes: `access_scope` (a role guarding a group of routes - the API
+  admitted it exists), `balance_or_plan` (a billing wall, not a credential problem), `rate_limited`
+  with the headers carrying the window, `validation` with the parameter it named. `contract_drift`
+  compares the traffic with the specification the site publishes itself: paths in use that are not
+  published, published paths nothing calls, query names accepted but undocumented. Start an audit
+  of an API here - it costs no new requests to routes and guesses no paths (its only GETs read
+  documents the site publishes, listed in `requests_made`). Then aim `replay_request` with `vary`
+  at whatever it named.
+- `perf_report {url}` reads the Performance API after a cold isolated load: TTFB, FCP, LCP,
+  CLS with Web Vitals ratings, resources, render-blocking files, recommendations.
+- `har_export {session_id}` saves the network journal as a HAR file; `network
+  {third_party_only: true}` lists the other sites a page talks to.
+- `test_run {url, steps}` runs a regression scenario: each step is an ordinary action plus
+  optional `step_name` and `expect` (`selector`, `text`, `url_contains`, `script`, `no_console_errors`, ...), and the
+  answer says which step failed and why. Details: `docs/site-checks.md`.
+- `summary: "min"` on `web_action` (or in one action) returns the short form of every
+  result; `summary_omitted` names what it left out.
+
+## Batch results
+
+`web_action` runs up to 32 ordered actions and stops at the first failure. Check top-level
+`success`, `failure_count`, `stopped_early`, and every entry in `results`. Use
+`continue_on_error=true` when later actions are independent or cleanup must still run — a
+game batch ending in `release_inputs` and `render mode=normal` skips both if an earlier
+action fails, leaving the page frozen with keys held.

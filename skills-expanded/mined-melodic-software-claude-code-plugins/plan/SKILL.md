@@ -1,0 +1,140 @@
+---
+description: "Analyze code changes and produce a test plan. Classify changed files by required test type, identify coverage gaps, and prioritize by regression risk. Use when: 'test plan', 'what needs testing', 'where are the coverage gaps', 'what should I test here', after /implementation:implement completes, or for PR-prep coverage verification; for writing the tests use /testing:write, for running them /toolchain:check."
+argument-hint: "[range or scope]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: test
+  summary: Classify changes by required test type and coverage gaps
+---
+
+## Purpose
+
+Coverage-gap analysis: what needs testing, at what level, in what priority. Per-ecosystem test
+structure (frameworks, locations, architecture-test project) comes from the consuming project's
+testing conventions; infer it from existing test projects when undocumented.
+
+## Arguments
+
+`$ARGUMENTS`, optional diff range or scope description. Default: uncommitted changes plus the
+current branch's commits vs the default branch.
+
+Examples: /testing:plan, /testing:plan HEAD~3, /testing:plan the auth module.
+
+## Process
+
+### 1. Analyze the diff
+
+```bash
+git diff --stat HEAD~N   # or appropriate range
+git diff --name-only HEAD~N
+```
+
+Classify each changed file:
+
+| File type | Testing implication |
+|-----------|-------------------|
+| Domain entity / value object | Unit tests (behavior, invariants, state transitions) |
+| Command/query handler | Unit tests (logic) + integration tests (DI, pipeline) |
+| API endpoint | Integration tests (HTTP round-trip, status codes, response shape) |
+| Middleware / filter | Integration tests via the ecosystem's HTTP-test harness |
+| Infrastructure (external services, DB clients) | Integration tests with real infrastructure |
+| Configuration / DI registration | Integration tests (verify resolution, no runtime errors) |
+| Project file / build infrastructure changes | Architecture tests (when the project has an architecture-test project) |
+| UI components | E2E testing via browser automation (see `/testing:run-e2e`) |
+| Analyzer / lint rules | Analyzer tests (verify diagnostic output) |
+| Parser, serializer, pure transform, collection or stateful class | Property tests beside examples (invariants from the spec, a model or metamorphic relation; see `/testing:write`) |
+| Replace, rewrite, migrate or port of existing behavior | Characterization or differential tests first (old output as a pin, intentional differences in a ledger; see `/testing:write`), then the usual rows for the new code |
+| Parser, decoder or handler whose input is untrusted (request bodies, uploaded files, hook or webhook payloads, CLI arguments from another process) | Fuzz target: generated and mutated inputs fed to the entry point, asserting no crash, hang, unbounded resource use or failure other than the documented rejection, with a seed corpus of valid inputs; a parser matching the property row too gets both |
+| Client of a service whose provider will run the verification, or an endpoint another service consumes | Consumer-driven contract test: the consumer records the requests it sends and the responses it relies on, and the provider's build verifies it still meets them. A public third-party API's provider runs none: plan its canned responses per `testing:test-value` (if enabled) instead |
+
+### 2. Generate the test plan
+
+When step 1 found no changed file in the range, nothing is planned: say there is nothing to
+classify and end there, skipping the rest of this process and the Output suggestions, with no
+template section and no test type named as considered or skipped.
+
+For each change area, produce the plan below. Omit a fuzz-target or contract-test section when no
+changed code matches its row: do not print it empty, write it as "none", or list it under "Not
+testing".
+
+Every planned test's entry names where its expected value comes from and cites
+`testing:test-value` (if enabled) for that choice, canned responses for a third-party client
+included.
+
+Test names follow the project's documented pattern; when undocumented, mirror the ecosystem's
+idiom:
+
+```markdown
+## Test Plan for [branch/PR description]
+
+### Unit tests
+- [ ] `{test name}` — {why this matters}; expected value: {source}, per `testing:test-value`
+- [ ] ...
+
+### Integration tests
+- [ ] `{test name}` — {what this validates}; expected value: {source}, per `testing:test-value`
+- [ ] ...
+
+### Architecture tests
+- [ ] {rule the structure must keep} — {if project structure changed}
+
+### Property tests (if parsers, serializers, transforms or stateful classes changed)
+- [ ] {Property stated from the spec} — {pattern: model, metamorphic, round trip}
+
+### Pins (if replacing or migrating behavior)
+- [ ] {Behavior pinned} — {recorded corpus, comparator, intentional-differences ledger}
+
+### Fuzz targets (only if code whose input is untrusted changed; otherwise omit this section)
+- [ ] {Entry point} — {input shape, seed corpus, what must not happen: crash, hang, unbounded memory}
+
+### Contract tests (only if a service client or consumed endpoint changed; otherwise omit this section)
+- [ ] {Consumer} → {provider interaction} — {requests sent, response fields relied on, where the provider verifies it}
+
+### E2E verification (if UI/API changes; an API endpoint change counts even when no served app exists)
+- [ ] Navigate to {endpoint}, verify {behavior}
+- [ ] Submit {form}, confirm {response}
+- [ ] Screenshot: {page} showing {expected state}
+
+### Not testing (with rationale)
+- {File}: pure contract, no behavior to test
+- {File}: covered transitively by {consumer test}
+```
+
+### 3. Gap analysis
+
+Check existing tests against the plan:
+
+- Are there test files covering the changed code?
+- Do existing tests cover the new behavior, or only the old?
+- Are architecture tests needed (project structure changes)?
+- Would E2E testing catch something automated tests can't?
+
+### 4. Prioritize
+
+Prioritize gaps by:
+
+1. **Regression risk**. Changes to existing behavior that could break silently
+2. **Business criticality**. Core domain logic > utility helpers
+3. **Complexity**. Conditional logic, state machines, error paths
+4. **Integration points**. Boundaries where components meet
+
+## Output
+
+Present the test plan to the user. Then suggest:
+
+- `/testing:write` for identified unit/integration gaps. **For HIGH/CRITICAL coverage gaps**, the `advisor`-tool checkpoint (when available in the session) applies after the new tests land
+- `/testing:run-e2e` for UI/API verification scenarios, an API endpoint change included even when
+  no served app exists (`/testing:run-e2e non-ui` then covers it)
+- `/testing:write organize` if new test projects are needed
+
+## Next
+
+/testing:write
+
+Writes the tests the plan names.
+
+## What this skill does NOT do
+
+- **Does not write tests**. `/testing:write`
+- **Does not run tests**. `/toolchain:check` (SSOT for CLI invocation)

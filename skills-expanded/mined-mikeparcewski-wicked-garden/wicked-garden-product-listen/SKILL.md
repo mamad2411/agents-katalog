@@ -1,0 +1,184 @@
+---
+name: wicked-garden-product-listen
+description: |
+  Aggregate customer feedback from discovered sources across support, surveys,
+  social, and direct channels. This skill should be used when the user needs to
+  gather customer voice data to inform product decisions or understand sentiment.
+
+  Use when: aggregating customer feedback from discovered sources, gathering
+  voice-of-customer data, or surveying sentiment across channels.
+metadata:
+  role: module
+  phases: "clarify,design,review"
+  archetypes: "*"
+---
+
+# Listen Skill
+
+Aggregate customer feedback from multiple channels with automatic source discovery.
+
+> Tier-3 knowledge module behind the **`listen`** action of the
+> `wicked-garden-product` domain skill (`skills/product/SKILL.md`). Canonical
+> invocation: `/wicked-garden-product listen [args]` or plain natural language —
+> the examples below use that form.
+
+## Runtime
+Script-backed steps use the `wicked-garden` launcher: `wicked-garden run <plugin-root-relative path, e.g. scripts/…> [args]`. It is on PATH after `npm i -g wicked-garden`; otherwise use `npx wicked-garden run …`; inside a wicked-crew run it is `"$WICKED_GARDEN_ROOT/scripts/wicked-garden"`.
+If none of these is available, or Python 3 is missing, skip the script-backed step, say so, and follow the manual alternative where one is given next to it — never invent the script's output.
+Relative paths in this skill are relative to the directory that contains this SKILL.md.
+
+## When to Use
+
+- Starting product requirements (gather customer needs)
+- Investigating customer pain points
+- Reviewing recent feedback
+- User asks to "listen to customers" or "what are customers saying"
+
+## Capability Discovery
+
+The skill automatically discovers available feedback capabilities and routes to whichever are present:
+
+| Capability | Discovers | Examples |
+|------------|-----------|----------|
+| `support-tickets` | CLI tools, APIs, exports providing ticket data | Ticket system CLIs, support platform exports, help desk APIs |
+| `customer-feedback` | Feedback platforms, voting systems, feature request tools | Feedback exports, product board files, customer labels in issue trackers |
+| `surveys` | Survey response exports (CSV, JSON) | Survey platform exports, NPS data files, form responses |
+| `conversations` | Chat and messaging data sources | Chat exports, messaging platform data |
+| `issue-tracking` | Bug/issue trackers with customer-reported items | Issue tracker CLIs with customer labels or tags |
+
+## Usage
+
+```bash
+# Listen to all available capabilities (auto-discovers sources)
+/wicked-garden-product listen
+
+# Specific capability type
+/wicked-garden-product listen --capability support-tickets
+
+# Time window
+/wicked-garden-product listen --days 30
+/wicked-garden-product listen --since "2026-01-01"
+
+# Filter by tags
+/wicked-garden-product listen --tags bug,feature-request
+
+# Limit results
+/wicked-garden-product listen --limit 50
+```
+
+## Aggregation Strategy
+
+1. **Discover Available Capabilities**
+   - Check for support-tickets capability (CLI tools, APIs)
+   - Check for customer-feedback capability (exports, voting systems)
+   - Check for surveys capability (CSV/JSON exports)
+   - Check for conversations capability (chat/messaging data)
+   - Check for issue-tracking capability (customer-labeled issues)
+   - Look for saved feedback in voice store
+
+2. **Fetch Recent Feedback**
+   - Default: Last 30 days
+   - Configurable timeframe
+   - Filter by source, tag, or keyword
+
+3. **Normalize Format**
+   - Extract: ID, source, date, author, content, sentiment
+   - Tag with categories (bug, feature, praise, complaint)
+   - Store in unified format
+
+4. **Store for Analysis**
+   ```
+   # Resolved via: wicked-garden run scripts/resolve_path.py wicked-garden:product
+   {local_root}/wicked-garden:product/voice/feedback/{source}/{date}/{id}.md
+   ```
+
+## Unified Feedback Format
+
+```yaml
+---
+id: fb_abc123
+capability: support-tickets
+source_tool: detected-cli-tool
+source_id: ticket_456
+date: 2026-01-20T10:30:00Z
+author: customer@example.com
+segment: enterprise
+tags: [bug, mobile, performance]
+sentiment: negative
+priority: high
+---
+
+# {Title/Subject}
+
+## Original Feedback
+{Raw customer quote}
+
+## Context
+- Platform: iOS 16
+- Plan: Enterprise
+- User since: 2025-06-01
+```
+
+## Output
+
+Concise summary of aggregated feedback:
+
+```markdown
+## Listening Report: {Timeframe}
+
+### Capabilities Discovered
+- support-tickets: {X} items from {N} source(s)
+- customer-feedback: {Y} items from {N} source(s)
+- surveys: {Z} responses from {N} source(s)
+- Total: {N} feedback items across {M} capabilities
+
+### Quick Stats
+- Sentiment: {%pos} positive, {%neg} negative, {%neu} neutral
+- Top tags: {tag1} ({count}), {tag2} ({count})
+- Critical items: {count}
+
+### Recent Highlights
+1. **{Title}** - {source} - {date}
+   - Sentiment: {sentiment}
+   - Quote: "{excerpt}"
+
+{Top 5-10 items}
+
+### Next Steps
+Run /wicked-garden-product analyze to extract themes and trends.
+```
+
+See [channels.md](refs/channels.md) for detailed capability integration patterns.
+
+## Integration
+
+### With the memory layer (wicked-garden-mem)
+
+**Hand-off** — open the `wicked-garden-mem` skill and run its `recall` action with `customer feedback about {topic}` as the query to recall past customer insights for historical context; on Claude Code this is the Skill tool, on any other seat open the named skill from your catalog and carry it out inline, then continue here.
+
+### With wicked-crew
+```python
+# Auto-trigger during product:requirements phase
+if event == "product:requirements:started":
+    feedback = listen(days=30, tags=["feature-request"])
+    inject_context(feedback)
+```
+
+## Storage
+
+Feedback stored at: `{local_root}/wicked-garden:product/voice/feedback/{source}/{YYYY-MM}/{id}.md` (resolve via `resolve_path.py wicked-garden:product`)
+
+## Error Handling
+
+- Source unavailable: Skip gracefully, report in summary
+- No recent feedback: Report "No feedback found in timeframe"
+- API rate limits: Cache and resume
+- Invalid format: Log warning, continue with valid items
+
+## Rules
+
+- Never expose customer PII beyond what's already in feedback
+- Respect source rate limits
+- Cache API responses when possible
+- Report source availability in output
+- Keep summaries concise (top 10 items max)

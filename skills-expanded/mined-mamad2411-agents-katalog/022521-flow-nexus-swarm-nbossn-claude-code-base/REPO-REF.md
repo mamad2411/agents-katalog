@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-maji-fast/022521-flow-nexus-swarm-nbossn-claude-code-base/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: flow-nexus-swarm-nbossn-claude-code-base

@@ -1,0 +1,153 @@
+---
+name: wicked-garden-platform-gh-cli
+description: |
+  Use when you need gh CLI patterns beyond the basics — debugging failed workflow runs, bulk PR operations,
+  release automation, or repo health checks. Provides composable gh invocations for power users.
+  NOT for simple git commands (use Bash) or GitLab (use the glab-cli skill).
+
+  Use when: "debug the failed workflow run", "bulk PR management", "release
+  automation with gh", "gh operations", or any former
+  /wicked-garden:platform:gh invocation (operations: workflows | prs |
+  releases | repo).
+metadata:
+  role: module
+  phases: "build,review,operate"
+  archetypes: "*"
+---
+
+# GitHub CLI Power Utilities
+
+Skill-local scripts (`scripts/gh_ops.py`) are stdlib-only and run base-directory-relative with `python3` (`py -3` on Windows).
+
+Intelligent wrappers and patterns for GitHub CLI that go beyond basic commands.
+
+## When to Use
+
+- Debugging failed GitHub Actions (get actionable errors, not walls of logs)
+- Managing PRs across multiple repos
+- Automating releases with proper changelogs
+- Bulk operations on issues/PRs
+- Repository health checks
+
+## Inventories a later step acts on
+
+When you list issues or PRs for another step to act on (triage, adjudication, a sweep), end your
+reply with the `wicked-inventory` block that says whether the list is complete. The format is in
+wicked-garden-core's `core/refs/inventory-report.md`. If `gh` fails and you fall back to another
+source, say so in the block; never present a fallback's list as complete.
+
+## Prerequisites
+
+```bash
+brew install gh && gh auth login  # macOS
+```
+
+## Operations rubric
+
+Invoked as `<operation> [args]` (operation = `workflows | prs | releases | repo`):
+
+1. Parse the operation and its args.
+2. Read `refs/operations.md` (relative to this skill's base directory) —
+   the command reference for each operation category, multi-step patterns,
+   and output format.
+3. Execute the gh commands directly and deliver:
+   - **workflows**: for workflow failures — root cause + fix + re-run command.
+   - **prs**: status summary + recommended action.
+   - **releases**: release URL when created.
+   - **repo**: findings summary + actionable next steps.
+
+For multi-step workflow generation from scratch, also load the github-actions
+skill's rubric: the `wicked-garden-platform-github-actions` skill's `refs/actions-rubric.md`.
+
+## Core Capabilities
+
+### 1. Smart Failure Analysis
+
+Don't wade through logs - get the actual errors.
+
+```bash
+# Get actionable error summary
+python3 scripts/gh_ops.py diagnose
+
+# Specific repo
+python3 scripts/gh_ops.py diagnose --repo owner/repo
+
+# With suggested fixes
+python3 scripts/gh_ops.py diagnose --suggest-fixes
+```
+
+**Output:** Structured error summary with job timelines, extracted failures, and fix suggestions based on common patterns.
+
+### 2. PR Operations
+
+Bulk PR management that scales.
+
+```bash
+# List PRs needing review across your repos
+python3 scripts/gh_ops.py pr-review-queue
+
+# Merge all approved PRs (with safety checks)
+python3 scripts/gh_ops.py pr-merge-ready --dry-run
+
+# PR health check (conflicts, checks, reviews)
+python3 scripts/gh_ops.py pr-status 123
+```
+
+### 3. Release Automation
+
+Generate releases with proper changelogs.
+
+```bash
+# Create release from unreleased commits
+python3 scripts/gh_ops.py release --bump minor
+
+# Preview changelog without releasing
+python3 scripts/gh_ops.py release --dry-run
+
+# Release with custom notes
+python3 scripts/gh_ops.py release --notes "Breaking: API v2"
+```
+
+### 4. Repo Health
+
+Quick health check for repositories.
+
+```bash
+python3 scripts/gh_ops.py health
+```
+
+**Checks:** Branch protection, required reviews, CI status, security advisories, dependency alerts.
+
+## Quick Patterns
+
+```bash
+# Watch CI and notify on completion
+gh run watch && osascript -e 'display notification "CI Done"'
+
+# Open PR for current branch
+gh pr create --fill --web
+
+# Checkout PR locally
+gh pr checkout 123
+
+# View PR diff in terminal
+gh pr diff 123
+
+# Re-run failed jobs only
+gh run rerun --failed
+
+# List your open PRs across all repos
+gh search prs --author=@me --state=open
+```
+
+## Integration with Other Tools
+
+Works well with:
+- **`wicked-garden-search`**: Find code patterns, then use gh to create issues
+- **Native tasks**: Track PR status alongside tasks via TaskUpdate description appends
+
+## References
+
+- `refs/gh-ops.md` - Full script documentation
+- `refs/patterns.md` - Common workflow patterns
+- `refs/automation.md` - CI/CD integration examples

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-spbreed-cyber-commons/appsec-vuln-audit/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: AppSec pipeline · Phase 3 — Analysis and filtering

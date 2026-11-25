@@ -1,0 +1,290 @@
+---
+name: coding-python-layered-config
+description: Use when building or designing configuration for a Python app or CLI with lib_layered_config - deciding where config files live on Linux, macOS, or Windows, choosing the environment-variable override names, adding environment profiles (test/staging/production), loading config in code or from the shell, redacting secrets, or working out which layer and file a setting actually came from (provenance).
+---
+
+# lib_layered_config
+
+Load one immutable configuration object by deep-merging six layers, and be able to say
+where every value came from. `lib_layered_config` is a cross-platform config loader for
+Python 3.10+ with a matching CLI. It is designed to be driven by an LLM/agent as well as a
+human - this skill is that agent guide.
+
+## The core model
+
+Six layers are merged in a fixed precedence, **lowest to highest**:
+
+```
+defaults -> app -> host -> user -> dotenv -> env
+```
+
+Later layers override earlier ones key-by-key (unrelated keys are kept, not dropped). The
+result is a frozen `Config`. Every value records the layer and file that produced it.
+
+Do not forget `defaults` (the lowest layer, seeded from an explicit `default_file`) or that
+`env` (process environment variables) wins over everything.
+
+## Install
+
+```bash
+pip install lib_layered_config          # TOML + JSON (via rtoml / orjson)
+pip install "lib_layered_config[yaml]"  # add optional YAML support
+```
+
+Requires Python 3.10+. Install the `yaml` extra only if you ship `.yml` files.
+
+## Load config (Python)
+
+```python
+from lib_layered_config import read_config
+
+config = read_config(
+    vendor="Acme Corp",
+    app="My App",
+    slug="my-app",
+    default_file="defaults.toml",  # seeds the `defaults` layer (the lowest one)
+)
+config.get("service.timeout", default=30)  # dotted-path access
+config["database"]["host"]  # mapping access
+config.origin("service.timeout")  # -> which layer + file set it (provenance)
+```
+
+- `vendor` and `app` are used **verbatim** (spaces and case preserved) in the macOS and
+  Windows paths.
+- `slug` (lowercase-with-hyphens) is the Linux directory name AND the environment-variable
+  prefix.
+- `default_file` seeds the `defaults` layer. It is the ONLY way to supply that layer - omit it
+  and there are no defaults at all, whatever the precedence chain says.
+- `read_config` returns a frozen `Config`; `read_config_raw(...)` returns `.data` plus
+  `.provenance`; `read_config_json(...)` returns a JSON string of config + provenance.
+
+## Where a setting comes from (provenance)
+
+The whole point of the library. To answer "why is this value what it is":
+
+- **Python:** `config.origin("database.host")` returns the layer and file path. Or
+  `read_config_raw(...).provenance["database.host"]` -> `{"layer": ..., "path": ..., "key": ...}`.
+- **CLI:** `lib_layered_config read-json --vendor "Acme Corp" --app "My App" --slug my-app`
+  prints the merged config **and** the provenance map. `read --format json` does the same;
+  human output (`read`) prints a `# source:` comment above each value.
+
+**A `--set` style override names itself as the source (5.7.0 and later).** Every key
+`with_overrides` supplies reads back from `origin()` as layer `override` (the exported
+`OVERRIDE_LAYER`), path `None`, so a caller content with that label needs no provenance code of
+its own. Keys it did not touch keep their file. When a scalar replaces a table, the scalar's key
+(`db`) reads as `override` and the keys it removed (`db.host`) have no source at all:
+
+```python
+from lib_layered_config import Config
+
+cfg = Config({"db": {"host": "a"}}, {"db.host": {"layer": "app", "path": "/etc/app.toml", "key": "db.host"}})
+cfg.with_overrides({"db": {"host": "b"}}).origin("db.host")
+# {'layer': 'override', 'path': None, 'key': 'db.host'}
+```
+
+Before 5.7.0 it returned the ORIGINAL provenance map, so a `--set` value was shown beside the file
+it replaced: the value right, the answer to "where did this come from" wrong, and no test of the
+value catches it. Check the floor in `pyproject.toml` before relying on the new behaviour.
+
+To label the layer `cli` instead, or to support a floor below 5.7.0, rebuild provenance for exactly
+the keys the override supplied - layer `cli`, path `None` - and leave every other key's source
+alone. Two details decide whether that lands:
+
+- the dotted key is the SECTION plus the key path, because a parsed override's key path EXCLUDES
+  its section; joining only the key path matches nothing and silently changes no entry.
+- overriding a key that no file defined must still record a source, or the key appears with a
+  value and no origin at all.
+
+Assert it end to end, by running the command and reading the printed source, not by unit-testing
+the merge: the merge is correct in isolation, and the defect only exists in what is displayed.
+
+## Environment-variable overrides (the trap)
+
+An env var overriding a config key is built as:
+
+```
+<SLUG_UPPERCASED_WITH_DASHES_AS_UNDERSCORES> + "___" + <SECTION>__<SUBSECTION>__<KEY>
+```
+
+- Prefix ends in a **TRIPLE** underscore `___` (separates the app prefix from the key path).
+- Key-path segments are joined by a **DOUBLE** underscore `__`.
+
+So for `slug="my-app"`, the key `database.host` is set by **`MY_APP___DATABASE__HOST`**
+(not `MY_APP_DATABASE__HOST`, not `MYAPP___...`). Compute the prefix with
+`lib_layered_config env-prefix my-app` (the slug is POSITIONAL; prints `MY_APP___`) or
+`default_env_prefix("my-app")` in Python.
+
+- Values coerce: `true`/`false` -> bool, `null`/`none` -> None, ints/floats, else string. A sensitive key
+  (one `redact=True` masks: `password`, `token`, `secret`, `*_key`) keeps `null`/`none` as text
+  unless declared with `read_config(not_sensitive=[...])`.
+- A value starting with `[` or `{` is parsed as JSON, in the environment AND unquoted in `.env`
+  (`REPLICAS='["a","b"]'` in a shell, `REPLICAS=["a","b"]` in `.env`); a quoted `.env` value is always literal
+  text; a comma list is never split.
+- A number converts only when it reads back as the same text: `5` and `3.5` do, `007123`, `0640` and `1.50`
+  stay strings.
+- A `.env` key is the key path WITHOUT the prefix: `DATABASE__HOST=db1`. A `MY_APP___DATABASE__HOST` line in
+  `.env` does not override `database.host`; it creates a separate `my_app` section.
+- An unquoted `.env` value converts exactly like an environment value; a quoted one stays literal text.
+- A numeric segment overrides one element of a file-defined array:
+  `MY_APP___DATASET__0__DSN=...` overrides element 0's `dsn`, leaving the rest of the array.
+
+## Per-OS config paths
+
+Each layer resolves to a `config.toml` (with an optional companion `config.d/` directory,
+and `.yaml`/`.json` also accepted). `<Vendor>`/`<App>` are verbatim; `<slug>` is the slug.
+
+| Layer  | Linux                                   | macOS                                                      | Windows                                    |
+|--------|-----------------------------------------|------------------------------------------------------------|--------------------------------------------|
+| app    | `/etc/xdg/<slug>/config.toml`           | `/Library/Application Support/<Vendor>/<App>/config.toml`  | `%ProgramData%\<Vendor>\<App>\config.toml` |
+| host   | `/etc/xdg/<slug>/hosts/<hostname>.toml` | `.../<Vendor>/<App>/hosts/<hostname>.toml`                 | `...\<Vendor>\<App>\hosts\<hostname>.toml` |
+| user   | `~/.config/<slug>/config.toml`          | `~/Library/Application Support/<Vendor>/<App>/config.toml` | `%APPDATA%\<Vendor>\<App>\config.toml`     |
+| dotenv | `~/.config/<slug>/.env`                 | `~/Library/Application Support/<Vendor>/<App>/.env`        | user `%APPDATA%\<Vendor>\<App>\.env`       |
+| env    | process environment, prefix `<SLUG>___` | same                                                       | same                                       |
+
+Notes: Linux `app`/`host` also read `/etc/<slug>/...`, after `/etc/xdg/<slug>/...`, so a key set in both
+takes the `/etc/<slug>` value; Linux honours
+`$XDG_CONFIG_HOME` for the user layer; Windows also checks `%LOCALAPPDATA%` for the user
+layer. Roots are overridable for tests (`LIB_LAYERED_CONFIG_ETC`,
+`LIB_LAYERED_CONFIG_MAC_APP_ROOT`, etc.).
+
+## Profiles (per-environment config)
+
+A profile keeps test/staging/production in separate trees. Pass `profile=`:
+
+```python
+config = read_config(vendor="Acme Corp", app="My App", slug="my-app", profile="production")
+```
+
+This inserts a `profile/<name>/` segment into every layer path, e.g.
+`/etc/xdg/my-app/profile/production/config.toml`. Without a profile you get the base paths.
+Profile names are validated (no path traversal, control chars, reserved names, non-ASCII;
+max 64 chars). `--profile` is an OPTION on `deploy`, not a command on its own - the required
+flags come too: `deploy --source cfg.toml --vendor acme --app my-app --slug my-app --target user
+--profile production`.
+
+## CLI commands
+
+Same engine as the library. Run any command with `-h` for full flags.
+
+| Command             | Purpose                                                                                                                                                                         |
+|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `read`              | Load and print config (human by default; `--format json`, `--redact`).                                                                                                          |
+| `read-json`         | Print merged config + provenance as JSON.                                                                                                                                       |
+| `deploy`            | Copy a config file into app/host/user layers (`--target`, `--profile`, `--force`/`--batch`, `--dir-mode`/`--file-mode`, `.bak`/`.ucf` conflict handling, permission hardening). |
+| `generate-examples` | Scaffold an example config tree to bootstrap a project.                                                                                                                         |
+| `env-prefix`        | Print the `<SLUG>___` env-var prefix for a slug.                                                                                                                                |
+| `info`              | Print resolved package metadata.                                                                                                                                                |
+| `fail`              | Raise a deliberate `RuntimeError`, to test how a harness reports a failing command.                                                                                             |
+
+Flags are PER-SUBCOMMAND, not CLI-wide - run `<cmd> -h` before composing a call:
+
+| Flag                                          | read | read-json | deploy | generate-examples | env-prefix | info |
+|-----------------------------------------------|------|-----------|--------|-------------------|------------|------|
+| `--vendor` / `--app` / `--slug`               | yes  | yes       | yes    | yes               | no         | no   |
+| `--profile`                                   | yes  | yes       | yes    | no                | no         | no   |
+| `--env-file <path>` (load an explicit `.env`) | yes  | yes       | no     | no                | no         | no   |
+| `--redact` (mask secrets in output)           | yes  | yes       | no     | no                | no         | no   |
+
+`env-prefix`, `info` and `fail` accept no options at all beyond `--help` (`env-prefix` takes a
+positional SLUG). Passing one of the others raises `NoSuchOption`.
+
+## Designing config files
+
+- **Structure maps to access and to env vars.** A `[database]` section with `host = "..."`
+  is read as `config.get("database.host")` and overridden by `MY_APP___DATABASE__HOST`. A
+  `[database.pool]` subtable's `size` is `database.pool.size` / `MY_APP___DATABASE__POOL__SIZE`.
+- **Keep secrets OUT of committed files.** Put passwords/tokens in the `env` layer or a
+  `.env` file (both outrank the committed config); use `--redact` / `Config.to_json(redact=True)`
+  when printing or logging. A key whose name only LOOKS secret (`max_token_bytes`) is declared with
+  `read_config(..., not_sensitive=["performance.max_token_bytes"])`; the returned Config shows it
+  under `redact=True` and in `display_config`.
+- **Split large config with `.d/`.** `config.toml` may have a companion `config.d/` whose
+  files (`10-db.toml`, `20-cache.yaml`, ...) load in lexicographic order and can mix formats.
+- **Quote YAML keys that look like numbers or booleans** (`'1':`, `'true':`): an unquoted one is not a
+  string key, and the loader refuses the whole file.
+- **Write ordered YAML as a plain mapping, never `!!omap` or `!!pairs`**: a plain mapping keeps the
+  file's key order through `read_config` and `as_dict()`, while those two tags load as `(key, value)`
+  tuples whose keys redaction cannot see, so the loader refuses the whole file.
+- **Write a set as a list and binary data as a base64 string, never `!!set` or `!!binary`**: those
+  load as a Python `set` and `bytes`, which no JSON view can carry, so the loader refuses the whole file.
+- **Use profiles for environments**, not copy-pasted files.
+- **Scaffold** a starting tree with `generate-examples` rather than hand-building paths.
+
+## Python API beyond read_config
+
+Everything below is importable from `lib_layered_config`.
+
+**Errors.** Catch `ConfigError`, the base of every library error. Its subclasses:
+
+- `LayerLoadError` - `read_config*` could not decode or parse a layer file (broken TOML, invalid
+  UTF-8, a malformed `.env` line).
+- `InvalidFormatError` - a source cannot be parsed. `read_config*` re-raises it as `LayerLoadError`,
+  so you meet it directly only from lower-level calls (nesting deeper than the limit in
+  `redact_mapping`, for example).
+- `NotFoundError` - an optional source is unavailable, e.g. a `.yaml` file without the `yaml` extra.
+- `ValidationError` (also a `ValueError`) - an identifier or profile name is refused. Its subclasses
+  `DeployModeError` (an unsafe or malformed mode, or `dir_mode`/`file_mode` given together with
+  `set_permissions=False`) and `DeployPermissionsError` (unusable permission settings, one line per
+  problem) come from deploy.
+
+**Redaction helpers.** `is_sensitive("smtp_password")` -> `True` checks one key NAME against the
+built-in patterns (a field named just `key` is not sensitive). `is_sensitive_at(("performance",
+"max_token_bytes"), not_sensitive=NotSensitiveKeys.of([...]))` checks a key PATH and honours a
+declaration; pass a tuple of segments, never a dotted `str` (refused with `TypeError`).
+`redact_mapping(data, not_sensitive=["performance.max_token_bytes"])` returns a masked deep copy
+of a plain dict; `not_sensitive` takes dotted paths or a `NotSensitiveKeys`. Use it on
+`read_config_raw(...).data`, which does not carry the declaration.
+
+**Profiles.** `validate_profile_name("production")` returns the name or raises `ValidationError`;
+`is_valid_profile_name(name)` answers `True`/`False` instead. Both take `max_length=` (default 64).
+
+**Deploying and scaffolding.** `deploy_config("app.toml", vendor=..., app=..., slug=..., targets=["user"])`
+is the `deploy` command in Python (`source` is the path of the file to copy). It returns a list
+with one `DeployResult` per destination: `.destination`, `.backup_path`, `.ucf_path`, and `.action`,
+an enum - compare `.action.value == "created"` (or `"overwritten"`, `"kept"`, `"skipped"`), since
+`.action == "created"` is always `False`. Permission keywords: `set_permissions`, `dir_mode`,
+`file_mode`, `permissions=` (a whole `DeployPermissions`) and `permission_overrides={"user_file": "0o640"}`. `deploy_permissions_from_config(config)` builds a
+`DeployPermissions` from a merged config's `[lib_layered_config.default_permissions]`.
+`ModeKind.DIRECTORY` / `ModeKind.FILE` names which kind of mode a `DeployModeError` is about.
+A missing source raises `FileNotFoundError`; a source or a file in its `.d` directory behind a
+permission wall raises `PermissionError` on every Python, before anything is written.
+`generate_examples(destination, slug=..., vendor=..., app=...)` is `generate-examples` and returns
+the list of written paths.
+
+**Display and logging.** `display_config(config, output_format=OutputFormat.HUMAN)` prints a config
+section by section, each key under a `# layer:<layer> profile:<profile> (<path>)` comment and
+TOML-quoted where it needs it (`OutputFormat.JSON` for plain JSON). The `read` command has its own
+renderer, `# source: layer=<layer>, path=<path>` above each key, so one parser does not fit both;
+both quote keys, headers and strings the same way, so a key named `"a.b"` reads back as one key.
+`get_logger()` returns the stdlib `logging.Logger` named `lib_layered_config`; attach handlers to
+it. Each record carries a `context` dict: always `record.context["trace_id"]`, plus the event's
+own fields (often `layer` and `path`). `bind_trace_id("abc123")` sets that trace id for the current
+context (a `ContextVar`); `read_config*` and `deploy_config` tag their events with it and leave it
+bound, and with nothing bound the id is `None`. `i_should_fail()` raises a `RuntimeError` on
+purpose, for testing failure paths.
+
+## Common mistakes
+
+| Mistake                                                                              | Fix                                                                                                                                                    |
+|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Env prefix with a single/double underscore (`MY_APP_...`)                            | The prefix ends in a **triple** underscore: `MY_APP___`. Run `env-prefix`.                                                                             |
+| Forgetting the `defaults` layer or the `env`-wins ordering                           | Precedence is `defaults -> app -> host -> user -> dotenv -> env`.                                                                                      |
+| Slugifying vendor/app for macOS/Windows paths                                        | `vendor`/`app` are used verbatim (spaces kept); only `slug` is normalized.                                                                             |
+| Hunting for "why is this value X" by hand                                            | Use `config.origin(key)` or `read-json` - provenance is built in.                                                                                      |
+| Committing a `.env` with secrets                                                     | `.env` is for local secrets only; never commit it; keep mode `0o600`.                                                                                  |
+| Writing `user_file = 640` (a TOML int is decimal)                                    | Quote it: `user_file = "0o640"`; deploy refuses a bare integer and any group-writable, world-writable mode, or an execute bit on a file.               |
+| Reaching for `--no-permissions` when deploy refuses a broken config                  | Give both `--dir-mode` and `--file-mode`; `--no-permissions` leaves a secrets file to the umask.                                                       |
+| Building `permissions=` from the application's `read_config(...)` to carry a `--set` | Pass `permission_overrides={"user_file": "0o640"}`: the application's read includes `.env` and the deployed files, which deploy leaves out on purpose. |
+
+## Full detail
+
+This skill is the self-contained agent guide; the repository docs are not shipped with the
+installed package, so use these web links for exhaustive detail:
+
+- Project (GitHub): https://github.com/bitranox/lib_layered_config
+- Package (PyPI): https://pypi.org/project/lib-layered-config/
+- README: https://github.com/bitranox/lib_layered_config/blob/master/README.md
+- Identifiers, profiles, per-OS paths: https://github.com/bitranox/lib_layered_config/blob/master/docs/identifiers.md
+- Configuration file structure: https://github.com/bitranox/lib_layered_config/blob/master/docs/config-file-structure.md
+- CLI reference: https://github.com/bitranox/lib_layered_config/blob/master/docs/cli-reference.md
+- Python API reference: https://github.com/bitranox/lib_layered_config/blob/master/docs/python-api.md

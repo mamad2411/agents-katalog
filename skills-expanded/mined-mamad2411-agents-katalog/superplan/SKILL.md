@@ -1,0 +1,400 @@
+---
+name: superplan
+description: "Produce higher-quality code by breaking a feature into small, focused tasks the coding agent can nail one at a time. Works like an engineering team: feature → milestones (product deliverables) → ~30-min tasks with specific files, acceptance criteria, and dependencies. Each task runs in a fresh context — narrow scope, full attention, one git commit per task. Use when starting any non-trivial feature, complex refactor, or whenever you want the agent focused on one small thing at a time instead of juggling an entire feature in one session. Supports /loop for autonomous execution."
+when_to_use: "create a plan, plan this feature, break this down, I want higher quality code, plan before implementing, ship this feature, superplan, /sp"
+allowed-tools: Bash(git:* ls:* cat:*) Read Glob Grep Edit Write Agent Task
+argument-hint: <description or ticket_id> | status | next [M<N>] [<plan_file>] [--yes] | review <plan_file>
+---
+
+# SuperPlan Command
+
+When user runs `/superplan` or `/sp`, route to the appropriate subcommand based on the argument.
+
+## Routing
+
+| Argument | Action |
+|----------|--------|
+| `status` | Show progress across all active plans |
+| `next` or `next <plan_file>` | Execute next unchecked task |
+| `next --yes` or `next <plan_file> --yes` | Execute next unchecked task without confirmation prompt |
+| `next M<N>` or `next M<N> <plan_file>` | Execute all tasks in milestone N without stopping |
+| `review` or `review <plan_file>` | Re-evaluate plan against current code state |
+| Anything else | Create a new plan (treat argument as feature description or ticket ID) |
+
+---
+
+## Subcommand: Create (Default)
+
+**Trigger:** `/superplan <feature description>` or `/superplan <TICKET-ID>` (or `/sp` as shorthand)
+
+### Steps
+
+#### 1. Gather Context
+
+- If argument looks like a ticket ID or issue tracker URL:
+  - Fetch ticket details using whatever issue tracker tools are available (Linear, GitHub Issues, Jira, etc.)
+  - Extract title, description, attachments, acceptance criteria
+- If argument is a free-text description:
+  - Use it as the feature description directly
+
+#### 2. Research the Codebase
+
+Use **parallel Explore agents** to understand what exists:
+
+- **Agent 1:** Search for related code, patterns, and existing implementations
+- **Agent 2:** Identify files that will likely need changes
+- **Agent 3:** Check for database schema implications, API routes, shared types
+
+Synthesize findings into a clear understanding of what needs to change.
+
+#### 2.5. Define Product Intent
+
+Before breaking work into milestones, articulate the product reasoning:
+
+- **For each potential milestone**, answer: Who benefits from this? What can they do after it ships that they couldn't before? Why this approach over alternatives?
+- **For milestones involving user-facing choices** (which examples to build, which defaults to set, which APIs to expose), document the selection criteria and reasoning — not just the final pick.
+- **For milestones that are primarily technical** (refactoring, infra, CI), connect them to the user outcome they enable: "Users can't install via pip until we have a publish workflow."
+
+This step prevents the plan from becoming a file-change checklist disconnected from user value. If you can't articulate who benefits from a milestone, it may not belong in the plan — or it should be folded into another milestone that has a clear user outcome.
+
+#### 3. Design the Plan
+
+Break the feature into **milestones** (product deliverables) and **tasks** (developer work items):
+
+**Milestones** are product deliverables, not task groups. Each should read as if a PM wrote it:
+- **Independently valuable** — each delivers something a user can see, use, or benefit from
+- **Ordered from most foundational to most advanced** — early milestones unblock later ones
+- **Testable end-to-end** — not just "code compiles" but "a user can do X"
+- **Product-justified** — the description explains *who benefits* and *why this matters*, not just *what gets built*. If a milestone is purely technical (infra, CI, refactoring), connect it to the user outcome it enables.
+
+**Tasks** should be:
+- Small enough to complete in one conversation (~30 min of Claude work)
+- Written as **instructions for the developer** — describe what needs to happen, expected behavior, and constraints (not step-by-step implementation code)
+- Fully working and testable after completion
+- Have clear acceptance criteria
+- List specific files to create/modify
+- Declare dependencies on other tasks
+
+**Deliverable Spec (when applicable):** If this milestone produces a concrete artifact that can be exhaustively listed — CLI commands, API endpoints, UI screens, config keys, data schema — add a **"### Deliverable Spec"** section immediately before the task list. Format by domain:
+- **CLI:** `command | required args | optional args | description` table
+- **REST API:** `endpoint | method | params | response shape` table
+- **UI:** key screens, actions, states
+- **Config/schema:** key, type, default, description
+
+For milestones whose output is a code quality improvement (refactor, perf, test coverage, bug fix), skip the table and add a **"### Before/After"** section instead — one or two sentences: "Currently X happens; after this milestone Y happens instead." This is the minimum that makes the deliverable unambiguous.
+
+Every milestone needs either a Deliverable Spec table OR a Before/After statement. Never just narrative.
+
+**Diagrams:** When the feature involves architecture, data flow, or multi-component interactions, include **mermaid diagrams** in the plan (e.g., flowcharts for data flow, sequence diagrams for API interactions, component diagrams for architecture). Add these in a `## Diagrams` section or inline within the relevant milestone.
+
+#### 4. Generate Plan File
+
+- Derive a kebab-case name from the feature (e.g., `user-api-keys`, `slack-integration`)
+- Create the file at `plans/<name>.plan.md`
+
+**Use this exact template:**
+
+```markdown
+# Plan: <Feature Title>
+
+| Field | Value |
+|-------|-------|
+| Status | draft |
+| Created | <YYYY-MM-DD> |
+| Ticket | <ticket ID or N/A> |
+| Branch | <branch name or TBD> |
+
+## Context
+
+<2-3 sentences: what we're building, why, and key constraints>
+
+## Architecture Decisions
+
+<Key technical decisions made during planning. Update as implementation progresses.>
+
+- **Decision 1:** <description> — <rationale>
+
+## Diagrams
+
+<Include mermaid diagrams when relevant — architecture, data flow, component interactions, sequences, etc. Omit this section if diagrams aren't helpful for the feature.>
+
+```mermaid
+<diagram here>
+```
+
+## Milestones Overview
+
+<High-level numbered list of all milestones for quick scanning>
+
+1. **<Milestone 1 Name>** — <one-line description of what it delivers>
+2. **<Milestone 2 Name>** — <one-line description of what it delivers>
+
+---
+
+## Milestone 1: <Product Deliverable Name>
+
+**Why this matters:** <Who benefits and what they can do after this ships. Write as if a PM is justifying this to stakeholders — not "add 3 templates" but "developers evaluating Canopy can see immediately how to build agents for their own use cases, reducing time-to-first-agent from hours to minutes.">
+
+**Success criteria:** <Observable user outcome, not just "tests pass." Example: "A developer who has never seen Canopy can `canopy create` from an example template, connect to it, and have a useful conversation within 5 minutes.">
+
+**Key decisions:** <If this milestone involves choices (which templates, which API design, which defaults), state what was chosen and why. This prevents the implementing agent from second-guessing or making different choices.>
+
+### Deliverable Spec
+
+<Include ONE of the following — never omit both:>
+
+<**Option A — Concrete artifact** (CLI commands, API endpoints, UI screens, config schema): a structured table the implementing developer can use as a checklist. Example for a CLI milestone:>
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx slos list` | — | `--order-by` | List all SLOs |
+| `cx slos get <ID>` | `ID` | — | Get SLO details |
+
+<**Option B — Before/After** (refactors, bug fixes, perf, test coverage): one or two sentences that state what changes.>
+<Example: "Currently `cx --help` shows 37 commands in a flat alphabetical list. After this milestone it shows commands organized under labeled domain headings.">
+
+### 1.1 [ ] <Task Title>
+- **Files:** `path/to/file1`, `path/to/file2`
+- **What:** <Instructions for the developer — describe what needs to happen, expected behavior, and any constraints>
+- **Acceptance:** <How to verify it works>
+- **Dependencies:** None
+
+### 1.2 [ ] <Task Title>
+- **Files:** `path/to/file`
+- **What:** <Instructions for the developer — describe what needs to happen, expected behavior, and any constraints>
+- **Acceptance:** <How to verify>
+- **Dependencies:** 1.1
+
+---
+
+## Milestone 2: <Product Deliverable Name>
+
+**Why this matters:** <Who benefits and what changes for them>
+
+**Success criteria:** <Observable user outcome>
+
+**Key decisions:** <Choices made and why>
+
+### 2.1 [ ] <Task Title>
+- **Files:** `path/to/file`
+- **What:** <Instructions for the developer — describe what needs to happen, expected behavior, and any constraints>
+- **Acceptance:** <How to verify>
+- **Dependencies:** 1.2
+
+...
+```
+
+#### 5. Present to User
+
+Show the user:
+- Milestones overview (the high-level list)
+- Total task count
+- Estimated complexity per milestone
+- Ask: "Review and edit `plans/<name>.plan.md`, then run `/plan next` to start executing."
+
+**Do NOT start implementing.** The plan is a draft for user review.
+
+---
+
+## Subcommand: Status
+
+**Trigger:** `/superplan status` or `/sp status`
+
+### Steps
+
+1. Glob for `plans/*.plan.md` files
+2. For each plan file, parse:
+   - Plan title (from `# Plan:` heading)
+   - Status field
+   - Count of `[x]` (completed) vs `[ ]` (pending) tasks
+   - Current milestone (first milestone with incomplete tasks)
+3. Display summary table:
+
+```
+## Active Plans
+
+| Plan | Status | Progress | Current Milestone |
+|------|--------|----------|-------------------|
+| User API Keys | in-progress | 5/12 (42%) | Milestone 2: Key Management UI |
+| Slack Integration | draft | 0/8 (0%) | Milestone 1: Webhook Setup |
+```
+
+If no plan files found, show: "No plans found. Create one with `/superplan <feature description>` or `/sp <description>`"
+
+---
+
+## Subcommand: Next
+
+**Trigger:** `/superplan next` or `/superplan next plans/<name>.plan.md` (or `/sp` as shorthand) or either with `--yes` flag, or `next M<N>` for milestone mode
+
+### Milestone Mode (`next M<N>`)
+
+When a milestone number is provided (e.g., `next M3` or `next M3 plans/foo.plan.md`):
+
+1. Find the plan (same logic as below)
+2. Locate all tasks whose IDs start with `3.` (i.e., belong to Milestone 3)
+3. Execute each task in order, **without any confirmation prompt** (milestone mode is always auto-yes)
+4. After each task: mark complete, commit, show progress
+5. **Stop after the last task in that milestone** — do not continue into the next milestone
+6. Show a milestone completion summary:
+   ```
+   Milestone 3 complete: 4/4 tasks done
+   Next milestone: Milestone 4 — <name>
+   Run `/sp next M4` to continue.
+   ```
+7. If some tasks in the milestone are already `[x]`, skip them and only run remaining `[ ]` tasks
+8. If all tasks in the milestone are already complete, report that and exit
+
+### Steps
+
+#### 1. Find the Plan
+
+- If plan file specified, use it
+- If not specified:
+  - Glob for `plans/*.plan.md`
+  - If exactly one `in-progress` plan exists, use it
+  - If multiple exist, ask the user which one
+  - If none exist, show error: "No active plans. Create one with `/superplan <feature description>` or `/sp <description>`"
+
+#### 2. Find Next Task
+
+- Parse the plan file for the first unchecked task (`[ ]`)
+- Verify its dependencies are all completed (`[x]`)
+- If dependencies are not met, find the next task whose dependencies ARE met
+- If no executable task found, report: "All tasks complete!" or "Blocked — remaining tasks have unmet dependencies"
+
+#### 3. Update Plan Status
+
+- If plan status is `draft`, update it to `in-progress`
+
+#### 4. Display Task Context
+
+Show the user:
+- Task ID and title (e.g., "Task 2.1: Add API endpoint for key creation")
+- Files to modify
+- Changes description
+- Acceptance criteria
+- Dependencies status
+
+If the `--yes` flag was passed, skip the confirmation prompt and proceed directly to implementation. Otherwise ask: "Ready to implement this task? (y/n)"
+
+#### 5. Implement the Task
+
+After user confirms (or immediately if `--yes` was passed):
+
+1. **Read the full plan** for context (understand what was built before and what comes next)
+2. **Implement the changes** described in the task spec
+3. **Verify acceptance criteria** — run relevant tests, make API calls, or take screenshots
+4. **Run code quality checks** if the project has them (e.g., linting, type checking, tests)
+5. **Mark the task complete** — update the plan file:
+   - Change `[ ]` to `[x]`
+   - Add completion timestamp: `[x] <Task Title> *(completed YYYY-MM-DD)*`
+6. **Commit the work** with message: `Plan <N.M>: <Task Title>`
+   - Include the plan file update in the commit
+
+#### 6. Show Progress
+
+After completing the task, display:
+```
+Completed: 2.1 - Add API endpoint for key creation
+Progress: 6/12 tasks (50%)
+Next up: 2.2 - Add key validation middleware
+```
+
+---
+
+## Subcommand: Review
+
+**Trigger:** `/superplan review` or `/superplan review plans/<name>.plan.md` (or `/sp review`)
+
+### Steps
+
+#### 1. Find the Plan
+
+Same logic as `next` subcommand for finding the plan file.
+
+#### 2. Analyze Current State
+
+Use parallel agents to:
+- **Agent 1:** Read the plan file and understand what was planned vs. completed
+- **Agent 2:** Read the actual code changes (git diff from branch base) to understand what was built
+- **Agent 3:** Check if remaining tasks are still accurate (files may have moved, APIs changed)
+
+#### 3. Generate Review Report
+
+```
+## Plan Review: <Feature Name>
+
+### Progress
+- Completed: X/Y tasks
+- Current milestone: <name>
+
+### Drift Analysis
+<List any discrepancies between plan and reality>
+- Task 2.1 specified `users_route.py` but implementation went in `api_keys_route.py`
+- New dependency discovered: need migration before task 3.1
+
+### Recommended Changes
+- [ ] Update task 2.3 files list (route was renamed)
+- [ ] Add new task 2.5 for migration
+- [ ] Remove task 3.2 (handled by task 2.1 already)
+
+### Updated Remaining Tasks
+<Show the remaining tasks with any suggested modifications>
+```
+
+#### 4. Apply Updates
+
+Ask user: "Apply these plan updates? (y/n)"
+
+If yes, update the plan file with corrections.
+
+---
+
+## Plan File Conventions
+
+- **Location:** Always in `plans/` directory at project root
+- **Naming:** `<kebab-case-feature>.plan.md`
+- **Status values:** `draft` -> `in-progress` -> `complete`
+- **Task format:** `### <N.M> [ ] <Title>` for pending, `### <N.M> [x] <Title> *(completed YYYY-MM-DD)*` for done
+- **Gitignore:** Plans are committed to git (useful for team visibility). Add to `.gitignore` only if user prefers.
+
+---
+
+## Integration with Project Workflow
+
+The plan system is designed to work alongside any project's existing workflow:
+
+- `/plan` handles the planning phase for large features
+- Individual tasks follow the same implementation patterns as any dev task
+- Run project-specific code quality checks after each task implementation
+- When all tasks complete, create a PR for the full feature (or per milestone)
+- `/plan review` can be run anytime to check plan health
+
+If the project has specific commands for code checks, PR creation, or ticket management, use those as part of task execution.
+
+---
+
+## Anti-Patterns
+
+- Starting implementation before user reviews the plan
+- Creating tasks that are too large (>1 hour of work)
+- Creating tasks that aren't independently testable
+- Skipping acceptance criteria
+- Not updating the plan file after completing tasks
+- Ignoring dependency ordering
+- Creating a plan for a trivial task (just do it directly)
+- Writing milestone descriptions that only say what to build, not who benefits or why
+- Making user-facing choices (which examples, which defaults, which names) without documenting the reasoning in the milestone
+- Writing a milestone with only narrative ("users can manage SLOs") and no Deliverable Spec table or Before/After statement — the developer should never have to infer what concretely ships
+
+## Good Practices
+
+- Keep tasks small and focused (~30 min each)
+- Make each task independently verifiable
+- Update architecture decisions as you learn things during implementation
+- Commit after each task (not after each milestone)
+- Review the plan periodically with `/plan review`
+- Edit the plan file directly when scope changes
+- Write milestone descriptions as if a PM is justifying them — who benefits, what changes for the user
+- Document the "why" behind choices so the implementing agent doesn't second-guess them
+- Every milestone has a Deliverable Spec table (for features with enumerable artifacts) OR a Before/After statement (for refactors/fixes) — pick whichever fits, never omit both

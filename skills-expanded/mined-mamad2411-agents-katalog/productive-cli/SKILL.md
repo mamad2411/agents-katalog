@@ -1,0 +1,601 @@
+---
+name: productive-cli
+description: CLI tool for Productive.io - time tracking, projects, tasks, and more. Use for AI agents and automation.
+---
+
+# Productive CLI
+
+CLI tool for interacting with the Productive.io API. Optimized for AI agents with structured JSON output.
+
+## Installation
+
+```bash
+# Global install
+npm install -g @studiometa/productive-cli
+
+# Or run directly with npx (no install needed)
+npx @studiometa/productive-cli --help
+npx @studiometa/productive-cli projects list
+```
+
+## Authentication
+
+Three methods (in priority order):
+
+1. **CLI arguments** (highest priority):
+
+   ```bash
+   productive projects list --token "TOKEN" --org-id "ORG_ID"
+   ```
+
+2. **Environment variables**:
+
+   ```bash
+   export PRODUCTIVE_API_TOKEN="your-token"
+   export PRODUCTIVE_ORG_ID="your-org-id"
+   export PRODUCTIVE_USER_ID="your-user-id"
+   ```
+
+3. **Config file** (persistent):
+   ```bash
+   productive config set apiToken YOUR_TOKEN
+   productive config set organizationId YOUR_ORG_ID
+   productive config set userId YOUR_USER_ID
+   ```
+
+## Output Formats
+
+```bash
+--format json    # Structured JSON (recommended for agents)
+--format human   # Human-readable (default)
+--format csv     # CSV export
+--format table   # ASCII table
+```
+
+Always use `--format json` for parsing and automation.
+
+## Smart ID Resolution
+
+Use human-friendly identifiers instead of numeric IDs in any command:
+
+### Auto-Resolution in Filters
+
+```bash
+# Email → Person ID
+productive tasks list --assignee "user@example.com"
+productive time list --person "john@company.com"
+
+# Project number → Project ID
+productive tasks list --project "PRJ-123"
+productive time list --project "P-456"
+
+# Company/deal names
+productive deals list --company "Studio Meta"
+productive tasks list --company "Acme Corp"
+```
+
+### Resolve Command
+
+Lookup resources by human-friendly identifiers:
+
+```bash
+# Resolve email to person ID
+productive resolve "user@example.com"
+# Output: 500521  John Doe  (person)  [exact]
+
+# Resolve project number
+productive resolve "PRJ-123"
+# Output: 777332  My Project  (project)  [exact]
+
+# Quiet mode for scripting
+productive resolve "user@example.com" -q
+# Output: 500521
+
+# Detect pattern type
+productive resolve detect "user@example.com"
+# Output: person
+
+# JSON output
+productive resolve "PRJ-123" --format json
+```
+
+### Use in Scripts
+
+```bash
+# Get person ID and use in filter
+PERSON_ID=$(productive resolve "user@example.com" -q)
+productive time list --person "$PERSON_ID"
+
+# Or use auto-resolution directly (simpler)
+productive time list --person "user@example.com"
+```
+
+### Supported Patterns
+
+| Pattern             | Example             | Resolves To        |
+| ------------------- | ------------------- | ------------------ |
+| Email               | `user@example.com`  | Person ID          |
+| Project number      | `PRJ-123`, `P-123`  | Project ID         |
+| Deal number         | `D-456`, `DEAL-456` | Deal ID            |
+| Name (with context) | `"Studio Meta"`     | Company/Service ID |
+
+## Commands
+
+### Projects
+
+```bash
+productive projects list              # List all projects
+productive p ls                       # Alias
+productive projects get <id>          # Get project details
+productive projects list --format json
+```
+
+### Time Entries
+
+```bash
+# List
+productive time list                  # All entries
+productive t ls                       # Alias
+productive time list --date today
+productive time list --date yesterday
+productive time list --from 2024-01-01 --to 2024-01-31
+productive time list --mine           # Current user only
+productive time list --project <id>
+
+# Create (time in MINUTES)
+productive time add \
+  --service <service_id> \
+  --time 480 \
+  --date 2024-01-15 \
+  --note "Description"
+
+# Update
+productive time update <id> --time 240
+productive time update <id> --note "Updated note"
+
+# Delete
+productive time delete <id>
+productive time rm <id>               # Alias
+```
+
+### Tasks
+
+```bash
+productive tasks list
+productive tasks list --project <id>
+productive tasks list --mine          # Assigned to current user
+productive tasks list --status open   # open, completed, all
+productive tasks get <id>
+```
+
+### People
+
+```bash
+productive people list
+productive people get <id>
+```
+
+### Discovering Filters with `help`
+
+Each resource supports a `help` subcommand that shows all available filters, fields, and examples:
+
+```bash
+# Show all filters for a resource
+productive tasks help
+productive projects help
+productive time help
+productive deals help
+productive bookings help
+```
+
+### Text Search with `--filter query=<text>`
+
+Many resources support a `query` filter for text search. Use `--filter query=<text>` to search by name/title:
+
+```bash
+# Search projects by name
+productive projects list --filter query="website redesign"
+
+# Search tasks by title
+productive tasks list --filter query="bug fix"
+
+# Search people by name or email
+productive people list --filter query="john"
+
+# Search companies by name
+productive companies list --filter query="acme"
+
+# Search deals by name
+productive deals list --filter query="redesign"
+```
+
+Resources that support `query`: **projects**, **tasks**, **people**, **companies**, **deals**
+
+### Services (Budget Line Items)
+
+```bash
+productive services list
+productive svc ls                     # Alias
+productive services list --filter deal_id=<id>
+```
+
+### Companies
+
+```bash
+productive companies list
+productive companies get <id>
+```
+
+### Comments
+
+```bash
+# List comments on a task
+productive comments list --filter task_id=<id>
+
+# Or use the api command with query params
+productive api '/comments?filter[task_id]=12345' --format json
+
+# List comments on a deal/budget
+productive api '/comments?filter[deal_id]=12345' --format json
+
+# Get a single comment
+productive comments get <id>
+
+# Add a comment hidden from client
+productive comments add --task 12345 --body "Internal note" --hidden
+
+# Make a hidden comment visible again
+productive comments update 67890 --no-hidden
+```
+
+### Getting Task Context (Comments, Attachments)
+
+To get full context for a task:
+
+```bash
+# 1. Get task details
+productive tasks get <id> --format json
+
+# 2. Get comments on the task
+productive api '/comments?filter[task_id]=<id>' --format json
+
+# 3. Get time entries for the task
+productive time list --filter task_id=<id> --format json
+```
+
+**Common mistakes to avoid:**
+
+```bash
+# ❌ Wrong: These endpoints don't exist
+productive api /activities
+productive api /notes
+productive api /task_comments
+productive api /tasks/<id>/comments
+
+# ✅ Right: Use the comments endpoint with task_id filter
+productive api '/comments?filter[task_id]=<id>'
+```
+
+### Timers
+
+```bash
+productive timers list
+productive timers start --service <id>
+productive timers stop <id>
+```
+
+### Bookings
+
+```bash
+productive bookings list
+productive bookings list --filter person_id=<id>
+```
+
+### Activities (Audit Feed)
+
+```bash
+productive activities list
+productive activities list --event create
+productive activities list --after 2026-02-01T00:00:00Z
+productive activities list --person <id>
+productive activities list --project <id>
+```
+
+### Custom Fields
+
+```bash
+productive custom-fields list
+productive custom-fields list --type Task
+productive custom-fields list --type Deal --format json
+productive custom-fields get <id>
+productive custom-fields get <id> --include options
+```
+
+### Reports
+
+```bash
+productive reports time --from 2024-01-01 --to 2024-01-31 --group person
+productive reports budget --project <id>
+```
+
+### Run Custom Scripts
+
+`productive run` executes a JavaScript or TypeScript script with a pre-configured Productive SDK client. Credentials are loaded from the usual sources (keychain, config file, env vars, CLI flags).
+
+Use a `--` separator to split run-options from script args. Everything **before** `--` configures `run` (script path, credentials, `--dry-run`, `--list`); everything **after** `--` is forwarded to the script verbatim and parsed into `args` (positionals) and `flags` (named). Without a `--`, all flags are treated as run-options.
+
+```bash
+# Run a TypeScript script
+productive run ./scripts/weekly-report.ts
+
+# Alias: productive script
+productive script ./scripts/export-time.ts
+
+# Pass arguments to the script after -- (available as flags.from, flags.to, flags.mine)
+productive run ./scripts/audit.ts -- --from 2025-01-01 --to 2025-01-31 --mine
+
+# Override credentials for this run (run-options go before --)
+productive run ./scripts/audit.ts --token $TOKEN --org-id $ORG_ID -- --verbose
+
+# Dry-run: record mutating calls without executing them
+productive run --dry-run ./scripts/bulk-update.ts
+
+# List all scripts in ./scripts/ with metadata
+productive run --list
+
+# List scripts in a custom directory
+productive run --list ./automation
+```
+
+Scripts can use two patterns:
+
+**Pattern A — helpers (recommended, full type inference)**:
+
+Use `defineMeta` and `createScript` — no explicit type annotations needed, the editor infers everything:
+
+```typescript
+import { defineMeta, createScript } from '@studiometa/productive-cli/script';
+
+export const meta = defineMeta({
+  name: 'My Report',
+  description: 'Short description shown by productive run --list.',
+  usage: '--from <date> --to <date>',
+});
+
+export default createScript(async ({ client, output, flags }) => {
+  const from = flags.from as string | undefined;
+  // .all() returns AsyncPaginatedIterator with .toArray() — use this for paginated results
+  // SDK types are FlattenResource<T>: attributes are merged flat (p.name, not p.attributes.name)
+  const projects = await client.projects.all().toArray();
+  output.table(projects.map((p) => ({ id: p.id, name: p.name })));
+});
+```
+
+**Pattern A (alt) — explicit type annotations**:
+
+```typescript
+import type { ScriptContext, ScriptMeta } from '@studiometa/productive-cli/script';
+
+export const meta: ScriptMeta = { name: 'My Report' };
+
+export default async function ({ client, output }: ScriptContext) {
+  const projects = await client.projects.all().toArray();
+  output.table(projects.map((p) => ({ id: p.id, name: p.name })));
+}
+```
+
+**Pattern B — globals (quick scripts, no imports)**:
+
+```typescript
+// .all() returns AsyncPaginatedIterator; .list() is single-page only (returns Promise, no .toArray())
+const tasks = await productive.tasks.all().toArray();
+output.json(tasks);
+```
+
+**Output utilities** available as `output.*`:
+
+| Method                         | Description                                              |
+| ------------------------------ | -------------------------------------------------------- |
+| `output.table(data)`           | ASCII table                                              |
+| `output.json(data)`            | Formatted JSON                                           |
+| `output.csv(data)`             | CSV output                                               |
+| `output.print(text)`           | Plain text                                               |
+| `output.success(msg)`          | Green ✓ message                                          |
+| `output.error(msg)`            | Red ✗ message (stderr)                                   |
+| `output.warn(msg)`             | Yellow ⚠ message                                         |
+| `output.info(msg)`             | Blue info message                                        |
+| `output.spinner(msg)`          | Start a spinner → `{ update, stop, fail }`               |
+| `output.spinner(msg, asyncFn)` | Wrap an async task — spinner auto-stops; returns Promise |
+
+TypeScript files (`.ts`, `.mts`) use Node.js built-in type stripping — no extra tools needed.
+
+### Custom API Requests
+
+> **Prefer named commands** (`tasks list`, `time list`, etc.) over raw `api` calls — they handle filtering, formatting, and pagination automatically.
+
+For endpoints not covered by built-in commands:
+
+```bash
+# GET request
+productive api /companies
+```
+
+#### Filtering and Includes (recommended)
+
+Use `--filter` and `--include` flags instead of hand-crafting query strings:
+
+```bash
+# ✅ Recommended: --filter builds filter[key]=value automatically
+productive api /tasks --filter project_id=123 --filter status=1
+productive api /comments --filter task_id=12345
+
+# ✅ --include adds the include query param
+productive api /tasks --filter project_id=123 --include project,assignee
+
+# ✅ Mix with URL params for sort/pagination
+productive api '/tasks?sort=-created_at' --filter project_id=123 --include project
+```
+
+`--filter` and `--include` only work with GET requests (the default).
+
+#### Request Body (POST/PATCH/DELETE)
+
+Use `--field` or `--raw-field` for request body parameters:
+
+```bash
+# POST (auto-detected when --field is used)
+productive api /comments \
+  --field task_id=12345 \
+  --raw-field body="Comment text"
+
+# PATCH
+productive api /tasks/12345 \
+  --method PATCH \
+  --raw-field title="Updated title"
+
+# DELETE
+productive api /time_entries/12345 --method DELETE
+
+# Fetch all pages
+productive api /time_entries --paginate --filter person_id=12345
+```
+
+### Cache
+
+```bash
+productive cache status
+productive cache clear
+productive cache clear projects       # Clear specific pattern
+
+# Bypass cache
+productive projects list --no-cache
+productive projects list --refresh    # Force refresh
+```
+
+## Common Options
+
+| Option           | Alias | Description                            |
+| ---------------- | ----- | -------------------------------------- |
+| `--format <fmt>` | `-f`  | Output format: json, human, csv, table |
+| `--page <num>`   | `-p`  | Page number                            |
+| `--size <num>`   | `-s`  | Items per page (default: 100)          |
+| `--sort <field>` |       | Sort field (prefix `-` for descending) |
+| `--mine`         |       | Filter by current user                 |
+| `--no-cache`     |       | Bypass cache                           |
+| `--refresh`      |       | Force cache refresh                    |
+
+## Date Formats
+
+The CLI accepts flexible date inputs:
+
+- **ISO format**: `2024-01-15`
+- **Keywords**: `today`, `yesterday`, `tomorrow`
+- **Ranges**: `"this week"`, `"last week"`, `"this month"`, `"last month"`
+- **Relative**: `"2 days ago"`, `"1 week ago"`, `"3 months ago"`
+
+## Time Values
+
+**Time is always in MINUTES:**
+
+- 60 = 1 hour
+- 480 = 8 hours (full day)
+- 240 = 4 hours (half day)
+- 30 = 30 minutes
+
+## JSON Response Structure
+
+```json
+{
+  "data": [...],
+  "meta": {
+    "page": 1,
+    "per_page": 100,
+    "total": 358
+  }
+}
+```
+
+## Error Response
+
+```json
+{
+  "error": "ProductiveApiError",
+  "message": "API request failed: 401 Unauthorized",
+  "statusCode": 401
+}
+```
+
+Exit codes: `0` = success, `1` = error
+
+---
+
+## Best Practices for AI Agents
+
+### Data Integrity
+
+1. **Never modify text content** - Use exact titles, descriptions, and notes from the API. Do not rephrase, summarize, or "improve" user content.
+
+2. **Never invent IDs** - Always fetch resources first to get valid IDs. Don't guess or make up project_id, service_id, person_id, etc.
+
+3. **Preserve formatting** - Task descriptions and comments may contain HTML or Markdown. Preserve it as-is.
+
+### Confirmation Before Mutations
+
+**Always ask for user confirmation before:**
+
+- Creating time entries
+- Updating tasks or time entries
+- Deleting any resource
+- Posting comments
+
+**Example confirmation prompt:**
+
+```
+I'll create the following time entry:
+- Service: #12345 "Development"
+- Duration: 2h (120 minutes)
+- Date: 2024-01-15
+- Note: "Feature implementation"
+
+Confirm? (yes/no)
+```
+
+### Fetching Strategy
+
+1. **Fetch before referencing** - Get the list of services/projects before creating time entries
+2. **Use filters** - Don't fetch all data, filter by project_id, date range, etc.
+3. **Paginate large results** - Use --page and --size for large datasets
+4. **Cache awareness** - Use --refresh when you need fresh data
+
+### Error Handling
+
+1. Check exit code (`$?`) after commands
+2. Parse error JSON for details when using `--format json`
+3. Handle 401 (auth), 404 (not found), 422 (validation) appropriately
+
+### Common Workflows
+
+**Log time for today:**
+
+```bash
+# 1. Get services for the project
+productive services list --filter project_id=12345 --format json
+
+# 2. User confirms service and duration
+# 3. Create entry
+productive time add --service <id> --time 480 --note "Work done"
+```
+
+**Review time entries:**
+
+```bash
+# Get this week's entries
+productive time list --date "this week" --mine --format json
+```
+
+**Find a task:**
+
+```bash
+# Search in a project
+productive tasks list --project <id> --status open --format json
+```

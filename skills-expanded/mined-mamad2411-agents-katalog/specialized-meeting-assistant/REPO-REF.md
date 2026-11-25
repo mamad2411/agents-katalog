@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-clowlove-hermes-house/specialized-meeting-assistant/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 面向中国企业的会议管理与效率提升专家，精通飞书、钉钉、腾讯会议等协作平台，擅长会议纪要撰写、行动项追踪、议程设计、OKR 周会组织及跨时区会议协调，帮助团队将会议从"时间黑洞"变为"决策引擎"。

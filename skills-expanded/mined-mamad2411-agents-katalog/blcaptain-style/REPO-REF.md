@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-dososo-blcaptain-style-skill-root/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 当用户需要把内容（文章、笔记、截图、数据、产品说明）做成中文图文卡片组图时使用——小红书 / Rednote 3:4 竖图、公众号封面、社交卡。提供三套独家视觉语言（静纸 Still Paper本手记 / Signal Proof 证据层 / Bridge Canvas 跨平台桥），由 Claude 读懂内容、自己撰写 brief.json，交给确定性引擎渲染出第一眼惊艳、一眼可辨、国内开箱即用的

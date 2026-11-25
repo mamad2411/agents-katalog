@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/skill-optimizer-yashu/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 分析并优化其他 Skill 的文档质量问题，包括 frontmatter 格式、渐进式披露结构、文件引用完整性、AI 友好性等检查。何时使用：当用户说"优化这个 skill"、"检查 skill 质量"、"review skill"、"skill 有问题"、"帮我看看这个 skill"、"诊断 skill"时。

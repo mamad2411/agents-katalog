@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/tuzi-slide-deck/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 从内容生成专业幻灯片图片。创建带风格说明的大纲，然后逐张生成幻灯片图片。当用户要求"创建幻灯片"、"做PPT"、"生成演示文稿"、"slide deck"时使用。

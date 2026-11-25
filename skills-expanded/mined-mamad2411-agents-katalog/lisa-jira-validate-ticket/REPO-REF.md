@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-codyswanngt-lisa/lisa-jira-validate-ticket/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Validates a proposed JIRA ticket spec (or an existing ticket) against the organizational quality gates without writing anything. Returns a structured PASS/FAIL report per gate with concrete remediatio

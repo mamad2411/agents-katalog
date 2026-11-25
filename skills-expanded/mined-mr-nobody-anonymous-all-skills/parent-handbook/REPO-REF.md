@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/parenting/parent-handbook/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Write parent handbooks for childcare centers. TRIGGERS - Use when user needs help with parent-handbook related tasks."

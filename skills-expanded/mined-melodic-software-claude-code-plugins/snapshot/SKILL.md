@@ -1,0 +1,323 @@
+---
+description: "Capture a baseline or post-change snapshot with the host qualified first: refuse a wall-clock claim from a bimodal-contention host and name the drift-immune counter instead. Interleaves before/after arms in one run. Use when: 'capture a baseline', 'take a post snapshot', 'run the A/B', 'can I even measure here'. Runs after /performance:goal; hands off to /performance:verify. Skip when no goal with a computed floor exists, or when the claim is code shape (/verification:measure)."
+user-invocable: true
+argument-hint: "[baseline|post] [<target>]"
+disable-model-invocation: false
+metadata:
+  workflow-stage: verify
+  summary: Capture a snapshot only from a host proven measurable
+---
+
+**Arguments.** `[baseline|post] [<target>]`. e.g. /performance:snapshot baseline, /performance:snapshot post
+
+## Purpose
+
+Answers **"what does this cost, and is this machine even able to tell me?"**
+
+Read [`${CLAUDE_PLUGIN_ROOT}/reference/harness-integrity.md`](${CLAUDE_PLUGIN_ROOT}/reference/harness-integrity.md) before writing any harness
+here, including a check written to avoid being fooled: a harness that returns a confident wrong
+answer looks exactly like one that works.
+
+## Phase order, and why it is this order
+
+### 1. Qualify the host, before measuring anything
+
+The lib is plugin-bundled, not installed: put its directory on `sys.path` before the import, or a
+bare `from spawn_noise import ...` raises `ModuleNotFoundError`. Anchor to the plugin root this
+body names (substituted with the installed version's directory at load), never to the working
+directory, a `__file__` level count, or a hardcoded cache path:
+
+```python
+import sys
+
+sys.path.insert(0, r"${CLAUDE_PLUGIN_ROOT}/lib")
+
+from spawn_noise import spawn_probe, is_measurable  # noqa: E402
+
+summary = spawn_probe()
+measurable, why = is_measurable(summary)
+```
+
+`is_measurable()` returns a verdict and its basis. A `False` is a **hard refusal to report a
+wall-clock number**, subject only to the recorded override below.
+
+The refusal names what it can still report, since an unexplained refusal gets overridden
+reflexively: on a host that fails `is_measurable()`, the durable result is a deterministic spawn
+count of 4 -> 1, not a duration.
+
+**Say plainly that this refusal is a house rule, not consensus**, so nobody takes it for common
+benchmarking practice: this plugin chose to refuse, and no benchmarking tool is the source of
+that choice.
+
+- **Pointer**: when you need to say how a benchmarking tool handles an unstable run, fetch its own
+  docs live: [pyperf check](https://pyperf.readthedocs.io/en/latest/cli.html#check-cmd),
+  [Criterion command-line output](https://bheisler.github.io/criterion.rs/book/user_guide/command_line_output.html)
+  and [benchstat: Tips](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat#hdr-Tips).
+
+### 1b. Measuring-tool integrity (before timing)
+
+Before any timed arm runs, record the **measuring tool's identity** for every executable the goal's
+metric command names (harness scripts, summarizers, census wrappers): resolved path, `git rev-parse
+HEAD` or content hash when the tree is a checkout, and `--version` output when the tool provides it.
+Check that **every flag** the goal's metric command uses appears in that copy's `--help` (or is
+exercised in a dry run). Check whether the checkout is behind its upstream, when determinable from
+local refs (`git rev-list --count HEAD..@{u}`, never a fetch); with no upstream ref, report `not
+determinable`. Check that the output column or field the goal's metric names is produced (a dry run
+or sample output contains it). A stale checkout, wrong plugin root, missing flag support, a copy
+behind its upstream, or a missing output column **stops the run**, names both fixes (update the
+tool, point at the installed plugin copy, or change the goal's metric command), and reports no
+partial numbers. Carry the record in the report:
+
+```text
+Tool: <path> @ <rev|hash> (<version>) flags-ok: <yes|no — list missing> behind-upstream: <n|not determinable> column-ok: <yes|no — name missing>
+```
+
+### 2. Capture the drift-immune counter first
+
+Spawns, syscalls, queries, allocations, round trips. The counter is the headline; the duration is
+context. A counter also catches harness bugs immediately, because a counter that does not move when
+it should is an unambiguous signal, while a duration that does not move is ambiguous. Re-measure it
+after **every** change.
+
+For a process-spawn count, run the bundled census rather than writing one:
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-spawn-census.sh" --shim-dir <stable-dir> --before <cmd>
+--after <cmd>`. It takes the rule 1 two-run proof itself and refuses a temporary shim directory.
+`spawn-census.sh` beside it counts one arm.
+Report the census as **`spawns=` (PATH-shim accounting)** in the snapshot; when the goal instead
+tracks a Windows Job Object or other host counter, state that label explicitly and cite the MSYS
++2-per-external-command rule from
+[harness-integrity.md](../../reference/harness-integrity.md#process-counting-on-msyscygwin-git-bash)
+so a +2 delta is not chased as a mystery third process.
+
+A deterministic counter needs one run and no statistics; sample counts apply to durations. Under
+fixed-tick stepping, the number of units that miss the budget is a counter too, and it beats an
+average. See [lab rigs](../../reference/techniques.md#c-lab-measurement-and-rigs).
+
+### 2b. Code path under test (before each arm)
+
+The goal names which **code path(s)** the metric is meant to exercise, and the observable that
+identifies each (for example skip with no interpreter versus interpreter run path, cold cache
+versus warm). A goal with no `Path:` line goes back to `/performance:goal`. Before **each** arm,
+either **reset** the state files that select the path (markers, sentinel files, cache keys) or **record**
+their values and carry them in the report; say which was done. After the arm, report which path
+actually ran, with evidence (a marker file, exit code, or the set of processes spawned). A path
+that cannot be observed is reported `unobserved`, never assumed. One line per arm, required in the
+report beside the step 3 rig line:
+
+```text
+Path (<arm>): <intended path from goal> -> <observed path | unobserved> (evidence: <marker | exit | processes>; state: reset | recorded <values>)
+```
+
+An arm whose observed path does not match the goal's named path, or is `unobserved`, is
+**flagged**; its duration is not reported as the goal's headline metric. A harness that always
+exercised the rare path while the common session path stayed unmeasured is exactly the failure
+this step prevents.
+
+### 3. Capture durations, only if step 1 allowed it
+
+The goal's percentile list (default p50 and p95) over at least 20 samples, passed to `ab.sh` as
+`--percentiles`. A vendored `ab.sh` from before plugin 0.5.0 exits 2 on that flag: re-copy
+`ratchet.py`, `ab.sh` and `summarize.py` from `${CLAUDE_PLUGIN_ROOT}/scripts/` before using it.
+Enforce the arithmetic floor: a percentile `p`
+needs `1/(1-p)` samples to be expressible at all (`percentile_floor()` in `lib/spawn_noise.py`).
+Report **no** percentile the sample count cannot support; report the raw samples instead.
+`${CLAUDE_PLUGIN_ROOT}/scripts/summarize.py` enforces that floor and is what `ab.sh` summarizes
+with, so a duration taken through `ab.sh` below already carries it.
+
+Never a single sample. Never a bare mean.
+
+Run every size the goal's `Scaling:` line records, and capture the event-level metric its `Event:`
+line names as well as the unit metric; carry the per-size results into the report, so
+`/performance:verify` can check the bound at each size.
+
+Every duration carries a rig line, because a number without its rig cannot be reproduced:
+
+```text
+Rig:  <hardware>, <runtime mode>, <throttling>, <run count>, <timestamp>
+```
+
+Every arm's `Path (<arm>):` line from step 2b sits beside its rig line; a duration without both is
+not reported.
+
+### 4. Evidence for the goal's `Correlation:` line
+
+Run the same benchmark on two rigs: the counter under the deterministic rig, the duration under
+the normal warm runtime. Drive the counter down on at least two independent hot paths (two is this
+plugin's judgment) and check that the duration moved with it. A count cut and a time cut differ in
+size, so report both and never infer one from the other. No evidence yet means `unproven`, not a
+guess. See [prove the proxy](../../reference/techniques.md#d-prove-the-proxy).
+
+### 5. Freeze the harness, when the goal plans a loop
+
+A goal with a `Min attempts:` value will run under `/performance:climb`, which re-runs this
+harness on every attempt and may not change it. Freeze it at baseline time, in this order:
+
+1. **Counts on every run.** Besides the goal's counter, each run prints how many operations
+   failed and how many units of work finished (requests served, files converted, pages built).
+   Without both tallies, a run that failed fast or skipped work reads as a speedup, so a harness
+   missing either one is not frozen.
+2. **Sensitivity.** Prove the harness notices a real change before freezing it:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/discriminate.py" --config <json>`, given a patch
+   known to change the measured path, the harness as the check and the counter line as the
+   signal. On exit 1 the change does not show: change the counter or the workload and rerun. Exit
+   2 says the harness never ran. Exit 0 says the change shows, and only exit 0 permits freezing.
+3. **Record the frozen harness** in the baseline report: the command, the commit it was frozen
+   at, and the discrimination exit code.
+
+```text
+Frozen:  <harness command> @ <sha>  discriminate: exit <0|1|2>  counts: errors=<n> work=<n>
+```
+
+## Comparing before and after
+
+A post snapshot records the same `Tool:` line and flags any difference in path, revision or hash,
+or version from the baseline's recorded line. A pair measured with two tool copies is not a
+comparison of the change alone, so its ratio is not reported.
+
+**Never compare two separate passes on a drifting host.** A bare `bash -c true` can cost 1825 ms and
+283 ms in the same hour on the same machine at ~10% CPU. Any two-pass comparison attributes that 6x
+to the change.
+
+Two valid modes:
+
+### Sequential interleaving (default)
+
+Run the bundled harness from the Bash tool; do not hand-roll a timing loop:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/ab.sh" --a '<baseline command>' --b '<candidate command>' --iterations 20 --percentiles 50,95
+```
+
+It alternates the arms within one run, randomizes the order each iteration, and reports the median of
+per-pair ratios (`ratio.py`) alongside per-arm percentiles (`summarize.py`). It also refuses what a
+hand-rolled loop gets wrong: an arm whose probe exits 127 (a command that never ran, which a loop
+records as a fast clean sample), a drive-letter path in an arm, a ratio from too few pairs, and a
+clock it cannot read. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/ab.sh" --help` lists the options.
+
+The paired-ratio median carries its own floor beside the percentile floor: at least 20 pairs, the
+default of `${CLAUDE_PLUGIN_ROOT}/scripts/ratio.py`. Below it, report the raw per-pair ratios and no
+median, since six repeats of two identical arms at five pairs gave medians from 0.78x to 1.00x and
+one run reported 17.12x. A lowered `BENCH_MIN_PAIRS` prints itself on the line; carry it into the
+report.
+
+Interleaving is grounded at Tier 1 in `benchstat`'s own documentation.
+
+- **Pointer**: when citing that grounding, fetch
+  [benchstat: Tips](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat#hdr-Tips) live.
+
+**Under uncontrolled concurrent load, suppress the paired ratio** and report per-arm percentiles
+only. The arms are no longer load-matched, and pairing by index compares samples that never shared
+conditions.
+
+Do not describe this as "paired statistics, per benchstat": the per-pair ratio is this plugin's own
+analysis (`ratio.py`), not benchstat's.
+
+- **Pointer**: when naming the test benchstat compares the arms with, fetch
+  [benchstat: Units](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat#hdr-Units) live.
+
+### Simultaneous duet (for a genuinely shared machine)
+
+Run both arms **at the same time** and report only their relative performance.
+
+Grounded, Tier 2: Bulej, Horký, Tůma, Farquet & Prokopec, ["Duet Benchmarking: Improving Measurement
+Accuracy in the Cloud"](https://arxiv.org/abs/2001.05811) (ICPE 2020) measured accuracy improvements
+of **5.03x** (ScalaBench/DaCapo) and **37.4x** (SPEC CPU 2017) on shared machines from running arms
+in parallel, because both arms absorb the same interference.
+
+This is the reverse of the sequential rule and it is not a contradiction: sequential interleaving is
+vulnerable to bursty load precisely because the arms run at different moments. **The reconciliation
+"only the sequential form is vulnerable" is this plugin's reading, not a sourced claim.** Duet costs
+2x the resources and needs the arms to be genuinely independent.
+
+## Warmup
+
+Discard N warmup iterations if the target has a warm path. Do **not** claim this establishes steady
+state: Barrett et al. (OOPSLA 2017) found *"at most 43.5% of ⟨VM, benchmark⟩ pairs consistently
+reach a steady state of peak performance."* No source justifies any particular N.
+
+Report the first pass and later passes as separate numbers. A cold first execution folded into warm
+repeats hides the cost a first-time user pays.
+
+## The override
+
+Gates here hard-block. A named per-gate override exists for each gate, and using it **records itself
+in the report**:
+
+```text
+OVERRIDE: unmeasurable-host  reason: <stated by the human>  gate: is_measurable
+OVERRIDE: tool-identity  reason: <stated by the human>  gate: tool-identity
+```
+
+The second gate is the step 1b stop and the post-versus-baseline tool comparison. An override
+without a recorded reason is not available, for either gate. A report carrying an override says so at
+the top, not in a footnote.
+
+## Storage
+
+Baselines live in the memory tier, `.work/<topic-slug>/baselines/`, machine-bound, **never
+committed**.
+
+That layout matches `/verification:measure`, which owns baseline capture and storage mechanics, so
+the two never keep two different baseline stores. Before capturing, in order:
+
+1. **Check for the seam.** Look for `/verification:measure` in this session's skill list. Record
+   whether it resolves; do not assume either answer.
+2. **Invoke it, or name why not.** When it resolves, invoke it via the Skill tool. When it resolves
+   and you capture directly anyway, the reason goes in the report.
+3. **Land the capture under `.work/<topic-slug>/baselines/`.** The path is the gate: a capture
+   written anywhere else says so at the top of the report, with the path it used, because a second
+   store is the outcome this seam exists to prevent.
+
+The report's header carries exactly one of these lines, so a reader can tell a missing dependency
+from a deliberate skip:
+
+```text
+Capture: assisted by /verification:measure
+Capture: unassisted, verification absent
+Capture: unassisted, verification present and skipped because <reason>
+```
+
+The dependency is a preference for reuse, not a requirement: never refuse to measure because
+`/verification:measure` is missing; this skill's own gates (host qualification, interleaving, the
+counter, the refusal) work either way.
+
+A counter ceiling that `/performance:protect` checks in is not a baseline: it is a limit on a
+deterministic count, and no duration is ever committed.
+
+A committed baseline is a number that outlives the conditions that made it true. No source states
+"a stored baseline is invalid on another machine" outright, but four independent Tier 1/2 strands
+converge on it; the practical rule is to always re-measure both arms rather than compare against a
+stored one.
+
+## Boundary
+
+- **Does not own baseline/compare mechanics.** `/verification:measure` does. This adds host
+  qualification, interleaving, counters, and the refusal.
+- **Does not implement the change.** `/implementation:implement` does.
+- **Does not decide whether the goal was met.** That is `/performance:verify`.
+
+## Next
+
+- After a baseline capture: `/implementation:implement` for the change, then
+  `/performance:snapshot post`.
+- After a baseline capture with a frozen harness, when the goal plans a loop: `/performance:climb`.
+- After a post capture: `/performance:verify`.
+
+## Gotchas
+
+- **The refusal must always name the counter it can still report.** A dead-end refusal gets
+  overridden reflexively and teaches nothing.
+- **`is_measurable()` reads the findings list, never `spread_ratio` alone.** The bimodal predicate is
+  two-part: a wide spread whose slow mode is *also* slow. A bare ratio check fires on a healthy
+  cold-then-warm host.
+- **`$(...)` is a process spawn on MSYS.** A "builtins-only" hot path that reports through stdout
+  still costs a full process, and a spawn census that ignores its own substitutions undercounts.
+- **A `PATH` shim directory from `mktemp -d` invalidates a `PATH`-keyed cache every run.** The
+  harness then measures its own randomization and reports "no improvement".
+- **A stale harness copy produces plausible wrong numbers.** Record path, revision, and flag support
+  before timing; a missing column in the output is too late to catch a nine-commit drift.
+- **Report the counter even when the duration is allowed.** The counter is what an independent
+  verifier can reproduce tomorrow.
+- **Stale markers send every sample down the wrong path.** Reset or record path-selecting state
+  before each arm, and report observed path with evidence; a mismatch, or a path that could not be
+  observed (`unobserved`), is flagged, not folded into the headline metric.

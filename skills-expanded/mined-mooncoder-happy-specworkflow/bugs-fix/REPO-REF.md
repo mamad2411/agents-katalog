@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mooncoder-happy/specworkflow (path: skill-package/bugs-fix/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", invokes /bugs-fix or $bugs-fix, or reports something broken/throwing/failing/slow.

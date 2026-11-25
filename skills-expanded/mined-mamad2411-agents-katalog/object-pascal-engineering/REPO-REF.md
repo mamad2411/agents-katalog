@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-nledford-engineering-review-board/object-pascal-engineering/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Object Pascal and Delphi engineering guidance. Use when adding, changing, reviewing, testing, packaging, or refactoring Object Pascal or Delphi source, .pas/.dpr/.dpk/.inc files, Delphi or Free Pascal

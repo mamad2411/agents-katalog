@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/language-detector-api/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Implements and debugs browser Language Detector API integrations in JavaScript or TypeScript web apps. Use when adding LanguageDetector support checks, availability and model download flows, session c

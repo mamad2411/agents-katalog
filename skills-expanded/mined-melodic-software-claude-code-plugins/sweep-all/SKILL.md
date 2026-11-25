@@ -1,0 +1,193 @@
+---
+description: "Batches this plugin's discipline correctors into ONE pass; needs fork subagents (`subagent_type: fork`), else (and at conversation start) reports only a posture digest and audits nothing. Use when: 'sweep all disciplines', 'ground ourselves', 're-anchor everything', 'run the whole re-anchor bundle', 'posture batch', 'set our posture before we start', 'batch the correctors', or at conversation start to set posture across every discipline at once. For one discipline, invoke that corrector."
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Batch every discipline corrector into one audited re-anchor pass
+---
+
+# Sweep all disciplines
+
+A **declared second species** in this plugin: not a corrector. It carries no
+discipline of its own; it is a pure router that composes the correctors into a
+single batched re-anchor pass. The disciplines live in the correctors, the
+shared method lives in
+[`${CLAUDE_PLUGIN_ROOT}/context/re-anchor-audit-correct.md`](../../context/re-anchor-audit-correct.md),
+and membership + order live in each corrector's own tier metadata. This skill
+names no members: it globs and reads them.
+
+## Two modes
+
+1. **Session-start digest (cheap, default when nothing has happened yet).**
+   Derive the posture from the skill listing and each corrector's tier
+   metadata. No corrector bodies load, no audit runs. Report which
+   correctors are core (run every session), which are situational
+   (relevance-gated), and which are never-batched. This is the
+   conversation-start case: set posture, audit nothing.
+2. **Full batch pass (mid-session, or on explicit request).** Preflight that
+   the fan-out can inherit this conversation (mandatory. See Preflight), then
+   fan out an audit-only subagent per in-scope corrector and apply their
+   corrections once, on the main thread, in a fixed order (below). A failed
+   preflight degrades to mode 1 with the exact degrade token as the report's
+   first line (see Preflight).
+
+## Resolving membership (never named inline)
+
+Glob the sibling corrector directories and read each one's
+`metadata.discipline-batch` (`core` / `situational` / `never`) and
+`metadata.discipline-batch-rank`.
+
+- **core**. In scope every session.
+- **situational**. In scope only when relevant to this conversation. Route
+  from the corrector's own listing description (its trigger phrases and
+  "at conversation start on …" clause), not from a guess. Report which
+  situational correctors were included and which were skipped and why. A
+  skip is always reported, never silent.
+- **never**. Excluded from the batch by execution or interaction class
+  (correctors that need a non-fork fresh context or stop to remediate with
+  the user). Membership is whichever correctors declare
+  `discipline-batch: never`. Report that they exist (from the glob) and are
+  invoked directly, not batched.
+
+**A batched member never runs its fan-out tier.** A corrector that carries a
+subagent fan-out tier behind an argument or trigger (`do-your-research`,
+`recheck-against-upstream`) runs only its inline audit inside an audit fork,
+and its ledger recommends a direct fan-out run where one would fit. The fork
+brief says so (step 1 of the batched pass), and each such corrector states the
+same rule in its own body.
+
+The **userConfig override** (see Configuration below) applies after tier
+resolution and can change the resolved set; report the net effect when it does.
+
+## Preflight: prove the fan-out can inherit (before step 1)
+
+The batched pass is only meaningful if its subagents actually inherit this conversation, and its
+step 4 writes their remedies to the working tree. Establish inheritance before dispatching, never
+by assuming it. Read [reference/inheritance-preflight.md](reference/inheritance-preflight.md) now,
+before the first dispatch of a full-batch pass: it owns the three stages, the canary, the
+fail-closed verify, the degrade path when inheritance cannot be proved, and what is gated on the
+result. Session-start digest mode never runs the preflight and never reads that file.
+
+## The batched pass, a declared delta from the shared loop
+
+Read [reference/batched-pass.md](reference/batched-pass.md) once the preflight has proved
+inheritance, and before beginning step 1: it owns the five steps, the declared delta from the
+shared loop's correct-forward-now step, the per-member ledger contract, the root-cause dedup, the
+rank-ordered single correction pass, and the consolidated report. Do not begin step 1 from the
+preflight's output alone. Session-start digest mode never reaches it.
+
+Before step 2, resolve the verification level once with
+`bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin discipline --skill sweep-all --file docs/conventions/discipline.yaml` and
+report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)).
+It governs step 2's fresh-context confirmations of clean ledgers and step 4's fresh-context
+escalation: `light` and `off` skip both subagents as the shared method doc says, and the fork audit
+is unaffected.
+
+## Member human-gates survive batching
+
+The batch never converts a member's human gate into an autonomous action.
+The shared method's outward-artifact carve-out (no PR, issue, or published
+comment without explicit opt-in) holds, as do `follow-our-standards`'
+upstream-divergence routing (draft and route, do not file),
+`pick-for-the-problem`'s incumbent-replacement decisions, and
+`recheck-against-upstream`'s undocumented-divergence calls. The batch
+surfaces these for the user; it does not resolve them unasked.
+
+## Configuration
+
+The override reads three personal-scalar `userConfig` options (configured
+through Claude Code's native plugin-config flow, see the plugin README, never a hand-edited member), substituted here at load:
+
+- Excluded correctors: `${user_config.batch_exclude}`
+- Promoted to always-run: `${user_config.batch_promote}`
+- Demoted to relevance-gated: `${user_config.batch_demote}`
+
+Each is a comma-separated list of corrector names. Treat both an empty value
+and a surviving literal `${user_config.…}` placeholder as unset, no override
+from that key, and never read the literal token as a corrector name. Substitution is documented at
+[plugin manifest reference: reference a saved value](https://code.claude.com/docs/en/plugins/manifest-reference#reference-a-saved-value),
+which does not say what an unset option renders. Apply
+after tier resolution: `batch_exclude` drops a member, `batch_promote` lifts a
+situational corrector to always-run, `batch_demote` drops a core corrector to
+relevance-gated. **`batch_promote` accepts situational names only.** For each
+promote entry, resolve the name against the globbed correctors' tier metadata:
+
+- **situational**. Promote to always-run (the only successful case).
+- **never**. Visible warning; do not promote; leave excluded from the batch.
+- **core**. Visible warning; do not promote; leave as always-run core (a
+  no-op that must not look like a successful promote).
+- **unknown** (matches no installed corrector). Visible warning; ignore.
+
+Report the net effect whenever the override changes the set, and surface every
+never/core/unknown promote warning in that report, never silently drop them.
+
+## What this skill does not do
+
+- **Not `use-your-skills`.** That corrector routes to the one skill fitting a
+  task; this composes the whole posture bundle.
+- **Not a session or SDLC orchestrator.** Staged navigation and session
+  lifecycle belong to the `session-flow` plugin; this only sequences the
+  re-anchor correctors.
+- **Does not define membership by inline names**. Inline names elsewhere in
+  this file illustrate rank-order intent or override examples, never the
+  member set.
+
+## Gotchas
+
+- **Fork, not fresh/typed, and not skill-level `context: fork`.** The audit
+  needs this conversation, so it dispatches the Agent tool's
+  `subagent_type: "fork"` and never a fresh or typed subagent or a skill run
+  with `context: fork`.
+  - **Pointer**: when choosing which subagent kind carries the audit, fetch
+    <https://code.claude.com/docs/en/sub-agents#how-forks-differ-from-other-subagents>
+    live, and for skills run with `context: fork`, the Note under
+    <https://code.claude.com/docs/en/sub-agents#preload-skills-into-subagents>.
+- **Audit in the forks, correct on the main thread.** Parallel forks that
+  wrote would race and re-dilute salience; the value is one ordered
+  correction pass.
+- **The forks' no-writes rule is trusted, not enforced. Say so.** This skill
+  does not narrow a fork's tools; it treats every audit fork as holding every
+  write-capable tool the main session holds, and only *asked* not to use them.
+  - **Pointer**: when deciding whether a fork's tools can be restricted, fetch
+    <https://code.claude.com/docs/en/sub-agents#how-forks-differ-from-other-subagents>
+    and <https://code.claude.com/docs/en/sub-agents#available-tools> live.
+
+  Never present the audit fan-out's read-only posture as harness-enforced. If you
+  want assurance that the fan-out honored it, capture the working tree's state
+  before the first dispatch (the canary included) and compare afterwards, and
+  treat any difference as a fork that wrote. Untrusted output, stop rather
+  than correct on top of it. That is detection after the fact, not prevention,
+  and a robust comparison is more than a `git status` diff; this skill does not
+  specify one.
+- **Do not pass `isolation: "worktree"` on the audit forks.** The audit must
+  read the working tree as it is now, uncommitted work included, so the forks
+  run in this checkout. Inherited history is full of absolute paths into this
+  checkout; how much of that a worktree would contain is the second pointer's to
+  say, while the loss of audit fidelity is certain, so the forks stay here.
+  - **Pointer**: when deciding whether a subagent worktree would show the
+    uncommitted work, fetch
+    <https://code.claude.com/docs/en/worktrees#choose-the-base-branch> live;
+    for which writes into this checkout a worktree refuses, fetch
+    <https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation>
+    live.
+- **The preflight is the guard, not an optimization.** Skipping it does not
+  make the sweep cheaper. It makes every ledger unfalsifiable, and the
+  batched pass's step 4 writes those ledgers' remedies to the working tree.
+- **Budget each fork as a main-session run over the whole transcript.** Plan
+  each in-scope corrector's audit that way; the wave cap bounds burst, not
+  per-fork cost. For how usage is measured, see
+  <https://code.claude.com/docs/en/costs#track-your-costs>.
+  - **Pointer**: when estimating a fork's model, context and cache reuse, fetch
+    <https://code.claude.com/docs/en/sub-agents#how-forks-differ-from-other-subagents>
+    live.
+
+  Keeping the `never` tier and every member's fan-out tier out, and
+  relevance-gating the situational tier, are what hold the fan-out small.
+  Each fork's cost scales with the transcript it starts from, so the audit
+  phase grows with every in-scope corrector, plus one more fork for the
+  proof-only canary. Budget the sweep as a deliberate spend, not a reflex.
+- **`tighten-your-output` stays last**. Tightening before the other
+  corrections would tighten text they then rewrite.
+- **A situational skip is reported, not silent**, the user sees what was
+  left out and why.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/21698-spezial-unterhalt-internationaler-bezug-und-schnittstellen/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Unterhalt: Internationaler Bezug und Schnittstellen in Fachanwalt Familienrecht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel 

@@ -1,0 +1,172 @@
+---
+name: vllm-configuration
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob
+description: |-
+  Configure vLLM completely — YAML config file format, CLI arg precedence, full VLLM_*/HF_*/TRANSFORMERS_* env-var catalog, end-to-end recipe for air-gapped environments (internal HF mirrors, hf-mirror.com, ModelScope, HF_HUB_OFFLINE with pre-seeded cache, gated models offline, trust_remote_code supply-chain implications). VLLM_HOST_IP vs API-host confusion, Kubernetes-service-named-`vllm` env-var poisoning, usage-stats triple opt-out, YAML precedence surprises.
+when_to_use: |-
+  Trigger on "vllm config", "vllm yaml config", "vllm env vars", "env vars for vllm", "env catalog", "VLLM_USE_MODELSCOPE", "VLLM_HOST_IP", "HF_HUB_OFFLINE", "HF_ENDPOINT", "TRANSFORMERS_OFFLINE", "vllm air-gapped", "vllm offline", "hf-mirror", "ModelScope", "pre-seed HF cache", "vllm trust remote code", "stats.vllm.ai", "--config yaml", "gated model offline", "HF_TOKEN offline". Where settings live (CLI flag vs YAML vs env var), precedence, pinning model revisions, internal HF reverse proxy / Artifactory mirror. Also first-boot network errors, mirror setup, "why does vLLM hit huggingface.co when I gave it a local path". Also implicit-vllm contexts — "audit model X", "audit open-weight", "deploy-memo", "serve args", "serve_args", "`vllm serve` args", "required_deploy", "check prior configs", "cross-check flags", "flag drift", "env config for {model}", "spec-study vllm" — authoring/reviewing per-model deploy recipes whose fields map to vLLM flags/env vars.
+---
+
+# vLLM configuration
+
+Target audience: operators deploying vLLM in production — datacenter GPUs, containerized, often inside networks that can't reach `huggingface.co` directly and need to use internal mirrors or fully offline caches.
+
+## Precedence, in one sentence
+
+**CLI arg > `--config FILE.yaml` > `VLLM_*` env var > library default.**
+
+So `vllm serve /models/llama --config prod.yaml` uses `/models/llama` even if `prod.yaml` sets `model: meta-llama/Llama-3.1-8B`. And `VLLM_LOGGING_LEVEL=DEBUG` is overridden by `--log-level=INFO`.
+
+One non-obvious case: env vars that *vLLM reads directly* (like `HF_HUB_OFFLINE`) are consumed by the library layer, not the arg parser, so they aren't subject to this precedence — they gate behaviour unconditionally.
+
+## The YAML config file
+
+Every CLI flag has a YAML equivalent. Keys use the same name, hyphens allowed or underscored. Booleans must be explicit (`true`/`false`, not YAML's loose `yes`/`on`).
+
+```yaml
+# prod.yaml
+model: /mnt/models/Llama-3.1-70B-Instruct
+tensor-parallel-size: 4
+gpu-memory-utilization: 0.9
+max-model-len: 32768
+dtype: bfloat16
+enable-prefix-caching: true
+served-model-name: llama-70b
+
+# Nested composite configs — YAML dict becomes a JSON string on the CLI
+speculative-config:
+  model: nvidia/Llama-3.1-70B-Instruct-Eagle3
+  num_speculative_tokens: 3
+compilation-config:
+  pass_config:
+    fuse_allreduce_rms: true
+```
+
+```bash
+vllm serve --config prod.yaml
+```
+
+**Gotchas:**
+- `list` args become YAML sequences (`served-model-name: [a, b]` → `--served-model-name a b`). **Except** `allowed-origins` / `allowed-methods` / `allowed-headers`, which parse JSON: write `allowed-origins: '["https://app.example.com"]'` — a YAML sequence fails with `invalid loads value`.
+- `false` emits `--no-<key>` where that flag exists (`enable-prefix-caching: false` turns the default-on cache off); otherwise the key is dropped.
+- Dict args (`--kv-transfer-config`, `--speculative-config`, `--compilation-config`) can be written as YAML dicts; the parser serializes to JSON before handing to the CLI layer.
+- Older versions had a key-order bug (issue #8947) where `served-model-name` placed last could break parsing. Fixed in v0.10.1; only pre-v0.10.1 images are affected.
+- `trust_remote_code` in YAML: `trust-remote-code: true` (explicit boolean).
+
+For the full per-section catalog (ModelConfig, CacheConfig, ParallelConfig, SchedulerConfig, LoadConfig, LoRAConfig, SpeculativeConfig, ObservabilityConfig, FrontendArgs), see `references/config-file.md`.
+
+## Environment variables — the operator-facing subset
+
+Full catalog in `references/env-vars.md`. The ones that matter most in production:
+
+**Storage / cache (persist these):**
+- `VLLM_CACHE_ROOT` (default `~/.cache/vllm`) — Torch compile, Triton, XLA, assets. Mount on PVC; otherwise the compile tax is paid every pod restart.
+- `HF_HOME` (default `~/.cache/huggingface`) — HuggingFace hub cache. Preferred over the deprecated `TRANSFORMERS_CACHE`.
+- `HF_HUB_CACHE` — subdir under `HF_HOME`, rarely set directly.
+
+**Air-gap control:**
+- `HF_HUB_OFFLINE=1` — **required** in air-gapped mode. Without it, vLLM hits HF on every startup to check for newer revisions, even with a warm cache. (vLLM CI itself adopted `HF_HUB_OFFLINE=1` to avoid this — issue #23451, closed 2025-11-26.)
+- `TRANSFORMERS_OFFLINE=1` — set both; some transformers-layer code paths honour only this one.
+- `HF_ENDPOINT=https://hf-mirror.com` — redirect all HF traffic to a mirror. **No trailing slash** or it breaks.
+- `VLLM_USE_MODELSCOPE=true` — route base-model downloads to ModelScope. Known gap: LoRA adapters still try HuggingFace. PR #13220 attempted the fix but was closed unmerged (2025-06-20); no upstream fix has landed. Workaround: download LoRA adapters manually, pass `--lora-modules name=/local/path`.
+- `HF_TOKEN` — **still required offline for gated repos** (meta-llama/*, google/gemma*). vLLM validates access through the hub config layer before weight loading even when weights are local (issue #9255).
+
+**Upgrades (v0.28.0 – v0.32.0):**
+- Stage the new dependency floors in the mirror **before** the image bump. v0.32.0 needs Python `>= 3.11, < 3.15` and `transformers >= 5.16.1, < 5.20.0` — an upper bound, so a mirror holding only the newest `transformers` fails. Read ranges from `requirements/common.txt`, never from release-note "bumps". Full table: `references/air-gapped.md` §Mirror dependency floors.
+- Delete removed env vars from manifests — vLLM ignores them silently, so the feature they controlled is simply off. Table with replacements: `references/env-vars.md` §Removed and renamed.
+
+**Telemetry (disable in air-gap):**
+- `VLLM_NO_USAGE_STATS=1` **or** `VLLM_DO_NOT_TRACK=1` **or** `DO_NOT_TRACK=1` **or** touch `$HOME/.config/vllm/do_not_track`. Default endpoint is `https://stats.vllm.ai`. In air-gap, connection errors in logs result otherwise.
+
+**Networking (internal — read the warning below):**
+- `VLLM_HOST_IP` — **internal inter-worker bind IP for distributed (TP/PP/DP) init**. NOT the API server host. Use `--host` on the CLI for the API server.
+- `VLLM_PORT` — internal base port for distributed; auto-increments for each worker. NOT the API server port. Use `--port`.
+
+**Server auth — `VLLM_API_KEY` (= `--api-key`) is not an authentication boundary:**
+- Run v0.22.0+ — before it, a crafted `Host:` header bypasses the key on `/v1` (CVE-2026-48746, CRITICAL).
+- The key gates only `/v1`, `/v2`, `/inference` and `/cohere`; `/invocations` stays open.
+- Put an authenticating proxy that validates `Host:` in front; treat the key as client wiring.
+- Video models below v0.14.1 have a pre-auth RCE via `/invocations` even with the key set (CVE-2026-22778). Not a fleet-wide floor — check what the model consumes.
+- Advisory detail and how to read an unbounded affected range: `references/security.md`.
+
+**CORS defaults to no origins from v0.32.0** (#61009; was `*`). Browser clients
+fail until `--allowed-origins '["https://app.example.com"]'` is set. Do not
+restore `["*"]` to make them work.
+
+**Long-context / safety overrides:**
+- `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` — bypasses the model's `max_position_embeddings` sanity check. Footgun — usually means the rope scaling config doesn't match the served weights.
+- `VLLM_ALLOW_INSECURE_SERIALIZATION=1` — permits unsafe serialization formats over the wire. Never enable on multi-tenant.
+
+**Logging:**
+- `VLLM_LOGGING_LEVEL=DEBUG|INFO|WARNING|ERROR`, `VLLM_LOGGING_PREFIX="rank0: "`, `VLLM_CONFIGURE_LOGGING=0` (let the host app own config).
+- v0.31.0+: the env vars only seed `LoggingConfig` defaults. `--log-level` and `--logging-config '{"formatter": "json"}'` override them; `--log-config-file` is deprecated (removal v0.33.0) → `--logging-config.pylogging_config_file`.
+
+## Air-gapped operation
+
+Stage on a connected host (`HF_HOME=/export/hf hf download <repo>`, or `snapshot_download(<repo>, local_dir=...)`), transfer the directory into the enclave, then pick one pattern. Full commands, the staged-file checklist and offline failure modes: `references/air-gapped.md`.
+
+| Pattern | Use when | Set |
+|---|---|---|
+| **A — fully offline, local path** (default) | zero egress | `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `VLLM_NO_USAGE_STATS=1`; `vllm serve /mnt/models/<dir>` |
+| **B — internal HF mirror** | a reverse proxy or Artifactory HF repository exists | `HF_ENDPOINT=https://hf.internal.example.com` (no trailing slash), `HF_TOKEN` if the mirror gates; serve by repo id |
+| **C — ModelScope** | `modelscope.cn` reachable, `huggingface.co` not; Qwen / DeepSeek / Yi / GLM families | `VLLM_USE_MODELSCOPE=true`, usually `--trust-remote-code`; stage LoRA adapters locally |
+
+Gated repos need `HF_TOKEN` in the runtime env in every pattern, even with local weights.
+
+## Critical pitfalls
+
+1. **Kubernetes Service named `vllm` poisons `VLLM_PORT`.** Kubernetes injects service-link env vars into every pod started in the namespace after the Service exists, including `VLLM_PORT=tcp://<cluster-ip>:<port>`. vLLM parses `VLLM_PORT` as an integer and fails startup with `ValueError: VLLM_PORT 'tcp://…' appears to be a URI`. Name the Service without a `vllm` prefix (`inference`, `llm-api`) or set `enableServiceLinks: false` in the pod spec. `vllm-api` still injects `VLLM_API_*` names, which vLLM warns about as unknown and rejects under `--fail-on-environ-validation`.
+
+2. **`HF_HUB_OFFLINE=1` needs the cache fully populated or first-request fails.** Include `config.json`, `tokenizer*`, `special_tokens_map.json`, `generation_config.json`, and any `modeling_*.py` referenced by `auto_map` — not just weights.
+
+3. **`trust_remote_code` executes arbitrary Python from the model repo.** Any model not in vLLM's hard-coded architecture registry falls through to `AutoConfig` + `auto_map`, which only runs with the flag. In air-gap this runs pre-staged code — treat model directory provenance as equivalent to running arbitrary binaries. Verify checksums.
+
+   **And `trust_remote_code=False` is not a guarantee.** GHSA-3c86-2m5g-59q7
+   (**HIGH**, 2026-08-28, affected `< 0.28.0`): the LlavaOnevision2 processor
+   loader passed an **inert** `trust_remote_code` kwarg to
+   `transformers.get_class_from_dynamic_module`, so a malicious model achieved
+   RCE **with the flag set to False**. The flag is a policy expressed in code,
+   and a loader that forgets to honour it silently removes the control. Provenance
+   of the model directory is the real boundary; the flag is a second line, not
+   the first.
+
+4. **`TRANSFORMERS_CACHE` is deprecated.** Rename legacy scripts to use `HF_HOME` (and let `HF_HUB_CACHE` default). Setting the old var still works but emits `FutureWarning`.
+
+5. **YAML CLI positional beats config `model:`.** `vllm serve /local/path --config prod.yaml` uses `/local/path` regardless of what `prod.yaml` says. Intentional but surprising.
+
+6. **Revision pinning: `--revision` applies to model weights; `--tokenizer-revision` is separate.** Pinning the model to a commit but leaving the tokenizer floating lets it drift, and token counts change subtly. Pin both.
+
+7. **`load-format dummy` for profiling.** Skips weight download entirely, materializes random weights. Useful for measuring startup / attention kernel perf in air-gap before weights arrive. Don't ship with this. Sibling flag `--load-format fastsafetensors` accelerates safetensors load via batched pread + NUMA-aware buffers (requires `fastsafetensors>=0.3.3` — the `vllm[fastsafetensors]` extra — + `libnuma-dev`; no env-var toggle exists in vLLM source).
+
+8. **Torch compile cache misses cost minutes per startup.** Persist `VLLM_CACHE_ROOT` across pod restarts (PVC, hostPath, or a shared NFS mount). First warmup of a new model config rebuilds CUDA graphs and torch.compile artifacts; subsequent starts hit cache.
+
+For more failure modes and the fuller troubleshooting flow (first-boot hang, revision-check failure detection, tokenizer mismatch diagnosis), see `references/troubleshooting.md`.
+
+## Verifying a configuration
+
+Before shipping, sanity-check the effective config:
+
+```bash
+# Grep the startup log — vLLM prints the resolved EngineConfig in the first 200 lines
+kubectl logs <pod> --tail=400 | grep -A 40 'EngineConfig\|EngineArgs'
+
+# Hit /metrics to confirm prefix caching, block size, KV dtype are live
+curl -s http://localhost:8000/metrics | grep -E 'prefix_cache|gpu_cache|kv_cache'
+
+# Confirm the model path that was actually loaded
+curl -s http://localhost:8000/v1/models | jq '.data[].id'
+```
+
+`${CLAUDE_SKILL_DIR}/scripts/check-config.sh` bundles these checks — run it against a staged server to verify the config landed as intended.
+
+## External references
+
+- Env vars (authoritative): https://docs.vllm.ai/en/stable/configuration/env_vars/
+- Engine args: https://docs.vllm.ai/en/latest/configuration/engine_args/
+- Serve args + YAML config: https://docs.vllm.ai/en/latest/configuration/serve_args/
+- CLI: https://docs.vllm.ai/en/stable/cli/
+- HF integration design: https://github.com/vllm-project/vllm/blob/main/docs/design/huggingface_integration.md
+- Air-gapped thread: https://discuss.vllm.ai/t/setting-up-vllm-in-an-airgapped-environment/916
+- Offline discussion: https://github.com/vllm-project/vllm/discussions/1405
+- Blog — Anatomy of vLLM: https://vllm.ai/blog/anatomy-of-vllm
+- Sibling skills: `vllm-caching` (KV tiering + offload config), `vllm-benchmarking` (bench methodology + output JSON)

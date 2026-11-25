@@ -1,0 +1,171 @@
+---
+name: launch-all
+description: "Use when someone asks whether a website or web app is ready to launch, or wants a pre-launch review of a vibe-coded or AI-generated site. It inspects the real product, decides which of the 40 launch checks apply, routes only to the specialists that can help, fixes what is safe, verifies the result, and reports what still needs a human. Do not use it to run every ReadyVibe skill, to certify legal compliance, or for a single-topic request that one specialist already covers."
+license: Apache-2.0
+metadata:
+  kind: bundle
+  launch-checks: "1-40"
+  helpers: "inspect-metadata,check-links,audit-markup,audit-assets,scan-secrets,observe-runtime"
+  references: "legal-templates/README,legal-templates/01-terms-of-service,legal-templates/02-privacy-policy,legal-templates/03-cookie-policy,legal-templates/04-returns-refunds-cancellations"
+  companions: "site-reconnaissance,design-system-reconnaissance,launch-verification,compliance-all,discoverability-all,trust-all,quality-all,production-all,regulated-domain-triggers,consumer-protection-readiness,payments-readiness,subscription-readiness,admin-authorization,admin-audit-log,admin-dashboard"
+---
+
+# launch-all
+
+"It looks done. Can I launch it?" This skill answers that by looking at the product, not by ticking a list.
+
+**Consider broadly. Activate selectively. Verify deeply.**
+
+The canonical scope is the 40-check launch model in [references/launch-model.md](references/launch-model.md), plus the 12 conditional compliance domains handled through `compliance-all`. Read the model once at the start. Every check gets a disposition; not every check gets work. **It never runs all 55 skills.** A typical run is recon, one shared sweep, and only the handful of lanes that apply and show a real concern; everything else is recorded as not applicable (with the reason) or unknown.
+
+The drafting references for applicable Terms, Privacy, Cookie, and Returns/Refunds documents travel with this skill under `references/legal-templates/`. They are conditional source material, not four required pages. Read only the template that fits the observed product, then route drafting and implementation to its owning specialist. Never publish template markers, drafting notes, or unresolved owner/legal decisions.
+
+## Activate when
+
+- The user asks "is this ready to launch / ship / go live?", wants a pre-launch pass, or has just built a site with an AI tool and wants the gaps found.
+- Do not activate for one narrow request ("fix my sitemap"). Use `seo-readiness` directly.
+- Do not activate for "make us GDPR/CCPA compliant". Use `compliance-all`, and expect it to refuse that framing (see Escalate).
+
+## Working alone
+
+This skill is self-contained. Its **companions** (declared in its metadata) are skills whose method it may need to do its own promised work. Use of a companion can be conditional: declaring one does not mean running it. When a companion's lane applies, use the skill if it is installed; if not, follow its short entry in [references/companion-methods.md](references/companion-methods.md) and say in your report which lanes ran inline at reduced depth. Never skip an applicable lane silently. The lanes this bundle can activate are companions because it promises to run them when they apply: consider them all, activate only the ones that fit. Skills mentioned here only for escalation, referral, documentation, or optional deeper follow-up are not dependencies: report the hand-off and finish honestly.
+
+Companions: `site-reconnaissance`, `design-system-reconnaissance`, `launch-verification`, `compliance-all`, `discoverability-all`, `trust-all`, `quality-all`, `production-all`, `regulated-domain-triggers`, `consumer-protection-readiness`, `payments-readiness`, `subscription-readiness`, `admin-authorization`, `admin-audit-log`, `admin-dashboard`.
+
+## Flow
+
+```
+1. Recon        establish what this product is (site-reconnaissance)
+2. Consider     walk the 40 checks; mark each APPLIES / NOT APPLICABLE (with reason) / UNKNOWN
+3. Sweep        one cheap baseline of deterministic helpers (below), so specialists do not each rediscover the site
+4. Route        activate only specialists whose checks apply and whose evidence shows a real concern
+5. Repair       let specialists fix what is safe; collect questions for what is not
+6. Verify       re-run the evidence that found each problem; confirm the fix changed behavior
+7. Report       READY / FIXED / BLOCKERS / REVIEW REQUIRED / UNVERIFIED / NEXT ACTION
+```
+
+### 1. Recon: context, without a questionnaire
+
+Run `site-reconnaissance` if installed; otherwise follow its entry in [references/companion-methods.md](references/companion-methods.md). Infer from the repository, config, routes, dependencies, environment templates, network behavior, and project docs. Establish:
+
+- public vs internal; deployment target and production host if known
+- audience, languages, apparent markets (documented ones only; do not guess a jurisdiction from a domain name)
+- accounts/authentication, payments, email/newsletters, user-generated content
+- analytics, advertising, cookies/storage, third-party services and embeds
+- forms and what data they collect; age handling; SEO intent (should it be found?)
+
+Ask the user only when an unresolved fact would change what you do. Good questions: "Is this meant to be indexed?", "Which countries do you sell to?", "What is the production URL?". Bad questions: anything you can read from the repo. Ask at most three at once, and keep working on everything that does not depend on the answer.
+
+Write what you established (with its evidence label) to `.readyvibe/context.md`, so specialists can reuse it rather than re-deriving it. This is an optional working note: no skill requires it, and if it is missing you simply re-establish the facts. Keep it short and human-readable.
+
+### 2. Consider: dispositions
+
+For each of the 40 checks record one of:
+
+| Disposition | Meaning |
+|---|---|
+| APPLIES | Evidence shows the surface exists (a form, a tracker, a public route) |
+| NOT APPLICABLE | Evidence shows it does not, with a reason a reviewer can check ("no `<form>` in 12 crawled pages and none in `src/`"). "I did not look" is UNKNOWN, not not-applicable |
+| UNKNOWN | Could not be determined; say what would resolve it |
+
+Recheck triggers matter: "no marketing email" is valid only until an email vendor or newsletter form appears.
+
+### 3. Sweep: the baseline
+
+If a site is reachable (local dev server, preview, or production), run these once. Paths are relative to this skill's folder. Serve a build locally if none is running. For client-rendered apps add `--render`.
+
+```bash
+node scripts/inspect-metadata.mjs --url <site> --render     # titles, canonicals, robots, sitemap, noindex, social, favicon
+node scripts/check-links.mjs      --url <site> --render     # broken links, dead CTAs, sitemap/canonical targets
+node scripts/audit-markup.mjs     --url <site> --render     # labels, alt text, landmarks, viewport, form basics
+node scripts/audit-assets.mjs     --url <site> --render     # oversized assets, blocking scripts
+node scripts/scan-secrets.mjs     --root .                  # secrets, client env mistakes, source maps, localhost in output
+node scripts/observe-runtime.mjs  --url <site> --block-third-party   # cookies, storage, third parties on load
+```
+
+If only source exists and no server can be started, run `scan-secrets` and the `--dir` mode against a build directory, and mark runtime-dependent checks UNKNOWN. If Playwright is unavailable, `observe-runtime` will say so; do not pretend it ran.
+
+Helper output is evidence, not a verdict. Read the findings, discard the ones the context explains, and route the rest. If a helper reports `SITE_NOT_READ`, it read nothing (server down, wrong URL, empty build): that is UNKNOWN, never a clean result. Fix the URL or start the server and run it again.
+
+### 4. Route: selective activation
+
+Activate a specialist when **both** hold: its check applies, and the sweep or recon shows a concrete concern (or the check is UNKNOWN and worth resolving). Do not run a specialist to confirm that nothing exists.
+
+| Signal from recon/sweep | Route to |
+|---|---|
+| Any personal-data, tracker, cookie, email, age, deletion, vendor, or market question | `compliance-all` (it applies the 12 domains) |
+| Metadata, robots, sitemap, canonical, social, favicon, indexing findings | `discoverability-all` |
+| CTA, placeholders, fake proof, dead controls, 404, contact path, states | `trust-all` |
+| Alt text, headings, keyboard, contrast, motion, mobile layout | `quality-all` |
+| Forms, unsubscribe, secrets, headers, staging artifacts, performance | `production-all` |
+| Money changes hands (prices, checkout, subscriptions) | `compliance-all` (its consumer-protection domain runs `consumer-protection-readiness`, `payments-readiness`, and `subscription-readiness` as they apply) |
+| A privacy, terms, cookie, or returns/refunds page is missing, inaccurate, outdated, or linked from a real flow | Route selectively through `compliance-all`: `privacy-policy` for verified personal-data flows; `terms-of-service` for actual accounts, user content, paid access, or service commitments; `cookie-and-storage-audit` and then `consent-management` only when actual technologies or controls warrant it; `consumer-protection-readiness` for real sales, with `subscription-readiness` only for recurring billing. Use `legal-navigation` after the applicable page exists. |
+| Admin or operator routes exist | `admin-authorization` (and `admin-audit-log` if destructive actions exist) |
+| Operators have tasks nobody can perform (submissions, privacy requests, moderation, users, refunds) and the owner wants an admin | `admin-dashboard` (builds or improves one from the real app) |
+| Health, finance, education, minors, legal, crypto, gambling, AI features | `regulated-domain-triggers` first; it may stop ordinary work |
+
+Prefer the family bundles over invoking many specialists yourself: a bundle runs one shared sweep for its family and selects within it. **Installed skills are preferred over inline fallbacks**, because they are deeper.
+
+#### Legal-page decisions and selective routing
+
+Use recon, repository evidence, and the exercised site to establish the product name/canonical URL, actual features and controls, configured providers, languages, and observed storage or network behavior. Source presence alone is SOURCE-INDICATED; it does not prove a feature operates in production. A browser test that sees no event does not establish that servers, hosting, a CDN, or a processor collect nothing.
+
+Classify remaining inputs before drafting:
+
+- **AUTO:** discoverable from reliable project or runtime evidence, such as routes, authentication and account actions, checkout and configured billing, forms, analytics, AI calls, cookie/storage behavior, and third-party integrations.
+- **AUTO → OWNER CONFIRMATION:** product promises and purposes; retention/deletion practices; provider roles and contractual arrangements; renewal, cancellation, fulfillment, and refund commitments.
+- **OWNER REQUIRED:** actual legal operator identity, working legal/privacy/support contacts, relevant business location, intended audience, voluntary commercial commitments, and approval/publication date. Never infer the operator from a domain, username, repository owner, or brand.
+- **LEGAL REVIEW WHEN RELEVANT:** applicable requirements, transfer safeguards, children's privacy, consumer cancellation rights, arbitration, governing law, liability limits, and other jurisdiction-sensitive terms. Consult current official sources; do not resolve applicability from memory.
+
+For a static informational site with no meaningful commitments, do not invent account, purchase, subscription, advertising, or arbitration clauses. Do not create a refund page for a site that sells nothing. A separate Cookie Policy is conditional on observed technologies and whether a separate notice is appropriate; its existence never justifies a cookie banner. If consequential inputs remain unresolved, prepare a private draft and review report, ask only for the missing owner decision, and keep the public page unpublished until resolved. Preserve existing owner-approved text unless the owner authorizes a reviewed change.
+
+When a legal page is appropriate, the owner specialist must implement it using the site's existing routes, design system, typography, components, spacing, navigation, accessibility, and responsive conventions. Verify the actual page, internal links, contact destinations, acceptance controls, account/privacy actions, and relevant checkout or consent behavior against the published wording. On multilingual sites, verify the corresponding policy routes and links in each supported language; do not ship unapproved machine-translated legal text.
+
+**If a bundle or specialist is not installed, do not stop and do not skip the lane.** Every skill has a minimum method in [references/companion-methods.md](references/companion-methods.md). Follow that entry, use the helpers in this skill's `scripts/`, and label the lane *inline, reduced depth* in the report. A launch review with only `launch-all` installed is real but shallower than one with the specialists: say which lanes ran inline, and suggest installing the full set (`npx skills add moh-obaida/ReadyVibe-Skills --all`) when depth matters (privacy, consent, admin, accessibility).
+
+### 5. Repair
+
+Fix what is **clear and low-risk**, in the project's own design system and conventions (`design-system-reconnaissance` before any visible change). Safe examples: favicon, localhost canonical, private sitemap route, broken internal link, basic metadata, derivable alt text, custom 404, form labels, obvious mobile overflow, robots reference, client-exposed env reference.
+
+Do **not** fabricate: legal terms, privacy promises, retention periods, company addresses or contact details, age requirements, refund terms, jurisdiction claims, testimonials, or metrics. If a needed fact is missing, ask for it or leave a clearly marked placeholder that fails loudly, not a plausible invention.
+
+Respect user edits. Do not overwrite hand-written copy without saying so. Prefer small, reviewable changes; note each in the report.
+
+### 6. Verify
+
+For every HIGH finding and every fix, re-run the same evidence that produced it and confirm the behavior changed (see `launch-verification`). "I edited the file" is not verification. If verification is impossible in this environment, the item moves to UNVERIFIED with what would settle it.
+
+### 7. Report
+
+Follow [references/report-format.md](references/report-format.md). Keep it concise: no 100-line check dump unless the user asks. Lead with the verdict and the single highest-value next action.
+
+## Evidence discipline
+
+Label each claim OBSERVED (directly verified), SOURCE-INDICATED (in code/config, runtime not proven), DECLARED (stated by docs or the user), INFERRED (reasonable, unverified), UNKNOWN, or REVIEW REQUIRED (needs human/legal/security judgment). UNKNOWN is never a pass and never a failure.
+
+- "Analytics vendor appears in source" is not "analytics loaded before consent". Prove timing at runtime or say it is unproven.
+- "Delete sets `active=false`" is not "data is deleted".
+- "Unsubscribe link exists" is not "future marketing is suppressed".
+- "Privacy page says X" is not "runtime behavior matches X".
+
+## May change
+
+Project files inside the family specialists' owned areas: metadata, icons, robots/sitemap, error pages, form markup, styling fixes, env references, missing (non-legal) navigation. It creates `.readyvibe/context.md`. It never edits history, deploys, or sends anything.
+
+## Must not claim
+
+"Launch-ready", "compliant", "GDPR/CCPA/ADA compliant", "secure", "accessible", "will rank/index", or "no issues" as unqualified statements. The strongest allowed verdict names its scope: "No launch blockers found in the areas verified (listed); items X, Y are unverified; items Z need human review."
+
+## Verify
+
+See step 6. Additionally, before reporting: re-run the sweep for any area you changed, and confirm nothing regressed (a fixed canonical must not have broken the sitemap agreement).
+
+## Escalate
+
+- Any regulated-domain trigger, child-directed signal, payment/auth flow that cannot be exercised, or exposed credential: stop ordinary work on that item and surface it first. An exposed credential needs rotation by the owner, not just deletion.
+- Legal applicability (which laws, what wording, what retention): REVIEW REQUIRED, never resolved from memory. If the user says "make us compliant", say what can be inspected and fixed technically, and define the remaining review boundary.
+- User instructions that would create compliance theater (a cookie banner with nothing to gate, a boilerplate policy with invented facts, a "GDPR compliant" badge): explain why, offer the honest alternative, and proceed only with what is supportable.
+
+## No change is valid when
+
+The evidence shows the site is fine in an area, or the check does not apply, or the only "fix" would invent facts. A report that says "no change; not applicable because X" is a good outcome. Do not add a FAQ, a banner, or a policy section to make a check look done.

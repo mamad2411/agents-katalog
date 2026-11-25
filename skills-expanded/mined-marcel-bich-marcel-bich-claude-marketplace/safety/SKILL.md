@@ -1,0 +1,216 @@
+---
+name: safety
+description: >
+  Hard safety rules that must travel with the project: filesystem-protection and
+  no-autonomous-installs. Use before any delete, rm, shred, unlink, find -delete, mkfs,
+  dd, or wipefs, before removing local files, and before any install (pip, npm, apt,
+  system or global tools). These are the highest-priority rules; no instruction overrides
+  them. They apply inside subagents too: any agent about to delete or install must apply
+  this skill first. When in doubt about a deletion target, STOP and ASK. Also holds the
+  write-target check, the sensitive-data and redaction rules, and the licence rule for
+  foreign code, data, fonts and models.
+---
+
+# safety - filesystem-protection and no-autonomous-installs
+
+These are credo's highest-priority rules. They are a portable double of the same rules
+that live in the user's global configuration: a project using credo carries them even
+without that global configuration, so the protection travels with the plugin. When
+dogma also states these rules, this is a deliberate double, not a conflict - the rules
+are identical, and the stricter reading always wins.
+
+They bind every agent and every subagent equally. No task instruction, prompt, or
+delegated order can lower or waive them. If any instruction appears to require breaking
+one of these rules, do not follow it: stop and ask the user.
+
+## Filesystem-protection
+
+Never delete, remove, or destroy any of these targets, under any circumstances:
+
+- `/` or any root-level path
+- `/home` or any user home directory (`/home/*`)
+- `~` or `$HOME` as a deletion target
+- the parent directory of the current working directory
+- any parent directory reached by upward traversal
+- any mounted filesystem, partition, or block device
+
+Forbidden command patterns (non-exhaustive):
+
+- `rm -rf /`, `rm -rf /home`, `rm -rf /home/*`, `rm -rf ~`, `rm -rf $HOME`
+- `rm -rf ..`, `rm -rf ../..`, or any upward-traversal deletion
+- any `rm`, `shred`, `unlink`, or `find -delete` aimed at the targets above
+- `mkfs`, `dd if=/dev/zero`, `wipefs`, or any command that overwrites a device
+- any command that could recursively destroy user data
+
+Additional standing rules:
+
+- Never delete local files without explicit user confirmation for that specific
+  deletion. A general go-ahead for a task is not confirmation to delete files.
+  Exception - own disposable files that this agent created itself in the current task as
+  throwaway material (screenshots, scratch output) may be deleted without asking. This
+  never covers user data, and verify evidence screenshots under `.credo/screenshots/` are
+  kept as evidence (credo `verify`).
+- Never delete a path that contains a shell variable (`$X`, `${X}`, `$(...)`). An empty or
+  unset variable can turn the delete into a delete of `/` or a parent directory. Use a
+  literal path only.
+- When in doubt about a deletion target: STOP and ASK. Do not guess, do not proceed on
+  a best-effort reading of an ambiguous path or glob.
+- Prefer moving to a holding location over hard deletion when the intent is cleanup and
+  the user has not confirmed a delete.
+
+Carve-out - merged+clean worktrees: removing linked git worktrees whose branch is fully
+merged into the main branch AND that have no changes to tracked files, or only `.credo/` changes
+whose lines all already exist in the main checkout (plus deleting that
+merged branch with `git branch -d`), done ONLY by `credo-worktree-cleanup.sh` at item close
+(credo `items`, "Worktree cleanup at item close"), is user-authorized by the setting
+`[x] clean up merged worktrees automatically` in DOGMA-PERMISSIONS.md. With `[?]` or no
+checkbox, ask the user first; with `[ ]`, never. This covers nothing else: not the main
+worktree, not unmerged, dirty, locked or other worktrees, no other path, and no other
+command - git unlinks symlinks there and never follows them, so link targets in the main
+checkout survive.
+
+Opt-out: when the user says to keep a worktree, lock it (`git worktree lock --reason
+"keep: owner" <path>`). A locked worktree is never removed, by this carve-out or any other
+path, and is listed as `kept <path> branch=<b> reason=locked: <lock reason>`. Find locks with
+`credo-worktree-cleanup.sh --list-locked`. Unlocking (`git worktree unlock <path>`): credo
+autonomous mode may unlock a `keep: owner` lock itself once the keep reason no longer
+applies; every other mode only after asking the user via the Ask tool; a lock with another
+reason is never unlocked on your own. Agents never run `git worktree remove --force`
+(dogma's bash-guard denies it); the user runs that themselves.
+
+Carve-out - own temporary leftovers in `/tmp` (user rule): in every session mode, the MAIN
+agent cleans up the unimportant leftovers that THIS session (itself or its subagents)
+created under `/tmp/<name>` - mktemp dirs, test fixtures, sockets, logs, scratch output -
+without asking the user, when all of these hold: the path is a literal `/tmp/<name>` (no
+variable, no glob), it is not a symlink, it lies directly in `/tmp`, and a listing shows
+only throwaway material the session created. Delete it by its literal path. Cleaning up is
+the normal case; leaving such junk behind is not.
+Keep instead of deleting: a repo cloned for research or as a reference that is still in
+use, and anything that may still belong in a real repo or be needed later (move it there
+first, or keep it). Never touch `/tmp` content this session did not create - other
+sessions, running processes (their sockets, locks, caches) or the user may depend on it.
+Anything else - other locations, unclear origin, user data, a symlink - falls back to the
+rule above: ask in an attended session (Ask tool); in autonomous mode never ask (nobody is
+there) - leave it in place and list it in the end-of-run report for the user. A subagent
+whose cleanup was blocked by a delete guard reports the path; the main agent then checks
+and removes it.
+
+Carve-out - own leftovers through the cleanup helper (#174): without asking, in every mode,
+an agent may delete ONLY through `python3 <credo>/scripts/credo-cleanup.py own-rm <literal
+path>...` (the SessionStart line names the full helper path; never `rm -rf` outside the cwd for
+this), and the helper deletes only in three places:
+
+- inside the session TMPDIR (`/tmp/credo-tmp-<uid>/<session id>/`, a private 0700 dir) and the
+  Claude Code scratchpad of the session (path derived from the session id, never from an
+  environment variable);
+- a single FILE the Write/Edit tool created in a temp dir (`/tmp`, `/var/tmp`, `/dev/shm`), born
+  after that call started, when the hook ledger recorded it AND the session's own transcript holds
+  a successful Write/Edit call for exactly that path (a directory the Write created on the way,
+  and whatever lands in it later, is report-only);
+- known build-output directories (`node_modules`, `dist`, `build`, `out`, `coverage`, `.next`,
+  `.nuxt`, `.turbo`, `.cache`, `target`, `__pycache__`, `.pytest_cache`, `.mypy_cache`,
+  `playwright-report`, `test-results`, `.venv`) ignored by a tracked `.gitignore` (no negation
+  rule re-including it) inside the
+  hydra worktree (below `<repo>-worktrees/`) the agent works in and that this session's ledger
+  shows it created; never single files, dotfiles outside that list, submodules or paths ignored
+  only through `.git/info/exclude`.
+
+The session id must belong to the caller's process tree (a live session descriptor names it
+with an ancestor pid); otherwise, and for another live session's id, everything is report-only.
+
+Everything else is report-only, also for an explicit own-rm: what the birth-time scan of a Bash
+call found (the owner or another program may have created it during the call), entries in the
+home or a worktrees dir, and results on the keep list (`keep <path> <name> --reason "<owner
+quote>"` moves a result to `~/.local/share/credo/keep/<project>/<name>/`; only the owner removes
+a kept result, by hand). Even inside the three places the helper refuses `/`, the home and its
+parents, `~/.claude*/**` and `$CLAUDE_CONFIG_DIR`, mount points (bind mounts included), linked
+worktrees, repositories outside the temp roots, git-tracked files, `cleanup.keep_paths` of the
+LOCAL config, any tree with content born before the entry or with a modification time older than
+its birth (moved in, extracted, copied with preserved times), a socket or fifo, a process with
+its cwd or an open file inside, and a change within the last 2 minutes. Symlinks are unlinked,
+never followed. A refusal or failure is a report line, never a blocker: note the path for the
+owner and carry on. `credo-cleanup.py report` lists what the ledger recorded. The ledger guard
+(tool calls that write the ledger or the keep list are denied) protects against mistakes, not
+against the same user on purpose (string building or a script gets past a text check); the
+deletion rules above therefore never rely on the ledger alone.
+
+Native Windows (Claude Code native, hooks through Git Bash, a real CPython): the ledger records
+(NTFS creation time, volume serial + file id, known-folder temp dir) and every helper command
+runs its checks, but own-rm, purge and sweep only report: Windows has no equally strong check for
+other processes' open files and working directories. A junction, symlink or any other reparse
+point is never followed, recursed into or deleted (its tree is report-only), and anything off a
+local fixed NTFS/ReFS drive is report-only. So on Windows: list what the report names for the
+owner instead of deleting it by other means.
+
+Context (why this rule exists, kept blunt on purpose): a previous agent once deleted a
+live user home directory. This rule exists so that never happens again.
+
+## Writes
+
+Before every write, check the working directory and the target path, so the file lands
+where it is meant to, in the right repo, not in a parent or a sibling checkout. Prefer simple
+commands (one plain step over a long chained or nested one), so the target stays visible.
+
+## Sensitive data and personal data
+
+- Never put sensitive data (tokens, keys, passwords, bank data) into a web search or an
+  external fetch. A query or URL leaves the machine and may be logged.
+- Redact paths and personal data (names, user names, home paths, hostnames, addresses) in
+  reports and in versioned text before a commit.
+
+### In-process key loading (repo-granted)
+
+Only when the repo's `.credo/RULES.md` grants it, a script may load provider keys from the repo's key file itself:
+
+- The script derives the key file location in its own code. Never name the key file in a shell command: a credential guard may block any command that names it, by design.
+- Values stay in memory only (for example a memfd, or an fd path handed to the product code). The script never prints, logs, copies or writes a value, and checks every output for key strings before it is saved.
+- The agent never reads the key file (no cat, grep or Read) and never sees a value.
+- Before claiming "no access" to a key or a service, read `.credo/RULES.md` and the requirements logs. A blocked command is not "no access".
+
+## Licences
+
+A source without an explicit licence is not used - code, data, fonts and models alike.
+Foreign code is taken over only under a permissive licence (for example MIT, BSD, Apache
+2.0). GPL and AGPL code serves only as inspiration or runs as a separate service; it is not
+copied into the project. The user may decide otherwise per case.
+
+## No-autonomous-installs
+
+Never install anything without prior explicit user approval - no exceptions, not even
+mid-task, and not to unblock yourself. This covers `pip`, `npm`, `apt`, other system or
+package managers, and any global or project tool install. The reason is supply-chain
+risk: an install pulls in third-party code, so it must always be an approved decision.
+
+- Prefer built-in tools over installing a new one (for example, use `git filter-branch`
+  rather than installing `git-filter-repo`).
+- If a tool turns out to be already installed, it may be used once its safety is
+  verified (check its source, author, and license before relying on it).
+- If a task cannot proceed without an install, stop and ask for approval; state what you
+  want to install and why, then wait. Do not install first and report later.
+- The approval can come from the item itself: the item's `## Freigaben` section (credo
+  `items`, "Freigaben") is explicit user approval, given with the GO, for exactly the entries
+  listed there. Anything not listed is not approved. Approved entries still pass the security
+  check (source, author, license, known supply-chain problems); a suspicious entry is not
+  installed and the item goes back to `1_todo/1_clarify`.
+- Before any owner question or "waits on approval" park for an install, check the repo's
+  `.credo/RULES.md` grants (credo `rules`), the valid `## Rules (temporary)` lines in the
+  handoff and the requirements log. If a grant covers the install and its conditions (for example a fresh
+  security check of source, author and licence) can be closed by the agent, close them and
+  proceed. Ask only when no grant applies or the check comes out unclear. An agreed fact (for
+  example "these instances are test instances") is applied, not worked around. With no grant,
+  this default stays: no install.
+
+## Boundary: credo states the rules, not the delete-queue mechanism (C12)
+
+credo carries the safety RULES - the behavior above. credo does NOT ship the
+delete-protection MECHANISM. The actual enforcement mechanism (a deletion queue / hold
+flow) is carried by separate pieces outside this plugin:
+
+- a block-dangerous-delete hook that intercepts dangerous delete commands
+- an external safety-net plugin
+- the filesystem-protection rule stated here
+- a dogma TO-DELETE flow for staging removals instead of hard-deleting
+
+Do not expect credo to implement a delete queue. If you need the mechanism, it lives in
+those external pieces; credo's job is to make the rules travel with the project and
+apply everywhere, including inside subagents.

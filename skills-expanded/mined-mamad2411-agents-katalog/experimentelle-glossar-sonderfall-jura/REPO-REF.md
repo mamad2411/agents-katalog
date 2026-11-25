@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/11667-experimentelle-glossar-sonderfall-jura/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Experimentelle: Schriftsatz-, Brief- und Memo-Bausteine in Einfache und Leichte Sprache für juristische Texte geht: erstellt den passenden Entwurf aus Sachverhalt, Norm, Beweis und Antrag; 

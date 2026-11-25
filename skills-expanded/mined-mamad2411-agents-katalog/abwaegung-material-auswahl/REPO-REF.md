@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/18390-abwaegung-material-auswahl/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Abwägung: Materialauswahl und Abwägungsgrundlagen in Methodenlehre bürgerliches Recht geht: zerlegt Ergebnis, Frist, Zuständigkeit, Beweislast und Gegenposition; liefert eine Fristen- und R

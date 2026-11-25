@@ -1,0 +1,151 @@
+---
+description: "Check a session's working assumptions for drift: PRs, issues and branches a handoff or plan cites, base-branch moves, renamed skills. Use when resuming an old plan or handoff: 'is this still current', 'has main moved since'. To resume: /session-flow:keep-going."
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: session
+  summary: Verify working assumptions are still true before building on them
+---
+
+# Reanchor
+
+## Purpose
+
+Long-lived and resumed sessions act on stale premises: main has moved, a
+referenced PR merged or changed shape, a cited skill was renamed, an installed
+plugin shipped a new version, a locked plan references work that has since
+landed. This skill checks each premise the session's inputs depend on against
+the current state, reports what drifted, and hands back a corrected picture to
+plan from.
+
+It verifies premises; it does not resume the work. Run it before continuing on
+old inputs, then hand off by invoking `/session-flow:keep-going` via the Skill tool to actually pick the work
+back up.
+
+## What it re-anchors
+
+Read a handoff's premises section by section with
+`python3 -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/save_point.py" read <file> --section "<name>"`:
+every section but Prior sessions and Resume prompt can hold one (Decisions in force, Current rules,
+Observations, Environment to re-establish and the rest), and a section moved to the hop file is
+read from there.
+
+1. **Handoff / plan premises.** For every PR, issue, or branch a handoff or
+   locked plan references, confirm it is still in the state the document claims:
+   open vs merged/closed, same head, same base, not renamed. A plan that
+   assumes an in-flight PR is often built on one that already landed.
+2. **Base-branch drift.** Check whether the working branch is now behind its
+   base. Derive the base from the base branch of the PR whose head is the current
+   working branch (or, absent such a PR, the remote's default HEAD), not another
+   referenced PR's base and not an assumed `main`, and mark the check
+   unverifiable if the base cannot be resolved. Fetch that resolved base ref
+   explicitly and count against the just-fetched tip: `git fetch <remote>
+   <base-branch>`, then measure against `FETCH_HEAD`
+   (e.g. `git rev-list --count HEAD..FETCH_HEAD`). A bare `git fetch`, or a count
+   against a local `origin/<base>` tracking ref, can read falsely clean in a
+   single-branch or shallow checkout where that ref was never updated.
+   `FETCH_HEAD` always holds what this fetch actually retrieved. If the fetch
+   cannot run, report the check as unverifiable rather than assuming none. Unless the inputs record a base-tip
+   or merge-base baseline, report the *current* divergence rather than claiming
+   it all accrued since the inputs were written, the branch may already have
+   been behind.
+3. **Renamed / retired / version-drifted surfaces.** For the skills, plugins,
+   and commands the session's inputs name, confirm they still exist under that
+   name and, when the session is working inside a plugin's source tree, that
+   the version effective in the current project's scope (honoring install-scope
+   precedence, not merely the highest installed version a plugin listing
+   reports; pointer: <https://code.claude.com/docs/en/plugins/install#choose-an-install-scope>)
+   matches that source manifest; a rename or version bump
+   silently invalidates cited invocations and assumed behavior. When a cited plugin's source manifest is not
+   locatable in the working tree, report the version comparison as unverifiable
+   rather than guessing Claude Code's internal cache layout.
+4. **Stale memory-tier files.** For the session's handoff / todo / working-memory
+   files, flag entries whose subjects have since merged or landed, so the next
+   step neither re-does settled work nor chases a closed thread.
+5. **The recorded goal, and whether the planned work still serves it.** A
+   handoff's `Original goal` is a premise like any other, a documented claim
+   about what the work is for, and the cross-link comparison below is the one
+   test only reanchor performs (the other resume-path checks read a single
+   document). Confirm it is present; confirm a document that chains from another
+   carries the prior link's quote **unchanged**, read from that file rather than
+   from the current document's own wording; then confirm the planned next
+   actions still connect to it, stated in one sentence. A quote that was
+   re-derived instead of copied is reported as drift between the links, the
+   paraphrase is the drift, and it is invisible at any single hop because each
+   rewording is individually plausible. List the links with
+   `python3 -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/save_point.py" chain <file> --json`
+   (`python` when `python3` is absent, 3.10+): each link's file, shape and status.
+   For a shape-3 or shape-4 link that comparison is `save_point.py validate <link>`:
+   an exit 0 means that link's goal section starts with its predecessor's verbatim,
+   and a FAIL line naming `Original goal` is the drift finding, so the links' text
+   never needs reading. A link `chain` reports `missing` or `unreadable` ends the
+   comparison there; name it in the report. For a shape-1 or shape-2 link, or when
+   `validate` cannot run, read the goal with
+   `save_point.py read <link> --section "Original goal"`. An absent `Original goal` is itself a
+   defect: never infer the goal from the process the document describes, because
+   that process is the thing that drifted. Ask for it in the user's own words.
+   Where the next actions cannot be tied to the goal in a sentence, that is the
+   finding, not a wording problem.
+6. **Inherited security and design decisions.** For each `Decisions in force`
+   entry tagged `[security]` or `[design]` after its id, print its id with its
+   `buys:`, `surface:` and `cost:` values as the handoff records them. Then apply
+   the rule: when `cost` exceeds `buys`, or `surface` is `none` for a
+   `[security]` decision, bring the decision back to the owner before building
+   on it. An inherited decision is a premise like any other; executing it on its
+   id alone is how a reversed decision wastes a session's work. A tagged entry
+   missing a field is that `validate` FAIL; report it as the decision's finding.
+
+## Flow
+
+1. Gather the session's inputs, the handoff / plan / memory files, the
+   `Original goal` they record, the tagged decisions they carry, and any PRs, issues, branches, skills, or plugin
+   versions they name, reading a handoff's sections with `save_point.py read`.
+   When an input chains from a prior handoff, the goal check compares links,
+   which a single document cannot do: list them with `save_point.py chain`,
+   validate each shape-3 or shape-4 link, and read `Original goal` with
+   `save_point.py read` for a shape-1 or shape-2 link or when `validate`
+   cannot run (check 5).
+2. Run the six checks above against live reality. Fetch/read the live source
+   (`git fetch` the base, query `gh`, read installed vs repo-source manifests).
+   When a check cannot reach what it needs (no network, no `gh`, no fetch),
+   report that premise as **unverifiable** rather than assuming it is unchanged;
+   a silent "no drift" from stale local state is the exact failure this skill
+   exists to prevent.
+3. Report drift as a short list, premise → claimed state → actual state, plus
+   the re-anchored picture. Surface it; do not silently rewrite the plan or
+   auto-fix. The session re-plans on the corrected reality.
+
+## What this skill does not do
+
+- **Does not inventory worktrees.** Enumerating every worktree by
+  path / branch / PR / commit-age staleness is `/source-control:worktree`
+  status's job when that plugin is enabled (it reports no behind-base or
+  dirty-tree signal); reanchor does its own base-drift check (a `git`
+  behind-count on the working branch) and never reimplements that
+  cross-worktree inventory.
+- **Does not classify PR feedback or run the PR loop.** Per-PR fresh-evidence
+  discipline and feedback triage are `/source-control:babysit-prs`'s job when
+  it is enabled; reanchor never performs them. It only checks whether a
+  *referenced* PR is still in its claimed state.
+- **Does not re-anchor a standing rule or discipline.** Correcting behavioral
+  doctrine mid-session (a standing-rule re-anchor) is a separate concern; this
+  skill re-anchors factual assumptions against live reality, not rules.
+- **Does not solely own the goal check.** Reanchor is opt-in, so a check living
+  only here fires only once staleness is already suspected, which is exactly
+  when a drifted chain looks healthiest. The resume-prompt directive carries it
+  on every resume and `/session-flow:keep-going` carries it on the interrupted
+  one; this copy serves the deliberate "is this still current" pass over an old
+  plan, where the other two never run.
+- **Does not auto-fix drift.** It reports; the session decides. On a goal
+  misalignment that means naming it and handing off by invoking
+  `/session-flow:keep-going` via the Skill tool,
+  reanchor never re-derives the next action or amends a recorded goal, which
+  changes only on an explicit statement from whoever set it.
+
+## Gotchas
+
+- A premise that "looks" current is the failure mode: a PR cited as open may
+  have merged minutes ago; a plugin cited by version may have bumped. Check the
+  live source, never the input's own claim.
+- Scope to what the session's inputs actually reference. Re-anchoring is bounded
+  by the premises in play, not a full-repo audit.

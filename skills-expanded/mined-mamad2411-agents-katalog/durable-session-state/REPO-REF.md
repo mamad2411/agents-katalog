@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-ZaxbyHub-opencode-swarm-durable-session-state/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Durable Session State

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-bytesagain-ai-skills/freeport/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Free-port and free-trade zone reference — FTZ regulations, bonded logistics, duty deferral, re-export procedures. Use when planning warehouse operations in free-trade zones or managing customs-exempt 

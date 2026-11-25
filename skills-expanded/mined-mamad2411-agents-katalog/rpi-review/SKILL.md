@@ -1,0 +1,93 @@
+---
+name: rpi-review
+description: "Compare RPI planning and implementation evidence, record review findings, and route follow-up work. Use when an implementation needs acceptance review."
+argument-hint: "[task=...] [plan=...] [changes=...] [depth={standard|deep}]"
+license: MIT
+user-invocable: true
+---
+
+# RPI Review
+
+## Goal
+
+Produce one complete, human-readable, evidence-based review record after implementation finishes. Lead with the scoped assessment and material findings, keep evidence and resolution conditions with each finding, and make the final decisions easy to distinguish from the assessment.
+
+Compare the complete supplied acceptance boundary once, as quickly as the evidence permits. The review parent authors the record and owns the final outcome, every route disposition, continuation, and user conversation.
+
+Read [references/review.md](references/review.md) for the review document contract, method, optional helpers, outcome vocabulary, routing, and conversation protocol. Use [templates/review-log.md](templates/review-log.md) as the canonical record skeleton.
+
+## Flow
+
+1. Resolve one task artifact set: current task-centered plan, latest plan critique, changes record, and relevant research. Use supplied paths or the stable task slug and date. Stop if multiple unrelated sets remain ambiguous.
+2. Resolve review depth. Use `standard` by default. Use `deep` only when the user explicitly requests a deep review; do not infer it from task size, complexity, uncertainty, or risk. Record depth and provenance.
+3. Resolve candidate decision participation: `user-owned` for standalone and manual RPI, `agent-owned` by default for confirmed automatic RPI Agent, and `user-retained` only when an automatic-session user explicitly keeps Review decisions. If the review record already exists, use only its latest Parent Decision Record participation event and ignore pre-record preference state. Record provenance.
+4. Confirm plan markers and task-local Goals, Requirements, Details, References, changes evidence, handoff prose, blockers, remaining work, and follow-up items are reconciled enough to form a credible review boundary. Inspect the review path and parent state when present. An existing review execution of `started`, Complete, Partial, or Blocked consumes the task's one Review; reconcile that record and do not start another. If an existing review execution has no canonical participation event, stop final Review execution Blocked and outcome Not accepted rather than restoring a stale preference.
+5. When no review execution exists, create the canonical record skeleton at `.copilot-tracking/reviews/logs/{{YYYY-MM-DD}}/{{task_slug}}-review.md` using [templates/review-log.md](templates/review-log.md). Persist Scope and Evidence and Opening Review State with review execution `started`, append one stable participation event to Parent Decision Record, then, when parent state exists, require one successful state write that removes pre-record preference and stores only the record pointer/revision. Do not continue if any write fails. Send the opening message defined in the reference.
+6. Compare the evidence yourself in one marker-driven pass using the review method in the reference. Activate skills whose descriptions say they are used during review and fit the task as scoped review criteria; exclude this skill and other RPI lifecycle phase entrypoints. A subagent is optional; assign one a bounded, context-heavy portion of the comparison only when isolating it would help, and treat its candidates as suggestions to verify at the cited evidence, or investigate further yourself, before recording a finding. Optional helpers in [references/review.md](references/review.md) defines the assignment and return.
+   * In standard depth, cover every material contract in the supplied boundary once while minimizing elapsed work: all directly relevant supplied evidence, concise findings, and no restatement, cosmetic feedback, exhaustive strengths, low-impact suggestions, or continual narration.
+   * In deep depth, trace cross-evidence more broadly, stress-test alternatives and boundaries, and include substantive lower-severity concerns within the same supplied boundary. Deep does not permit open-ended research or a second review pass.
+7. Write the evidence body: acceptance and change coverage, one complete `RV-xxx` finding set with proposed routes, assessed execution status and outcome, validation coverage, limitations, and the reviewer self-check. Update review execution from `started` to Complete, Partial, or Blocked. A Partial or Blocked review is terminal and names the unassessed boundary or blocker. On recovery, a stranded `started` is also terminal: record final Review execution Blocked and outcome Not accepted, preserve the evidence, and name the exact condition for a later new Review.
+8. Resolve every actionable `RV-xxx` according to decision participation. Treat Decision History within `## Parent Decision Record` as the append-only canonical decision log. Append a stable event for each participation, walkthrough, execution, outcome, and route decision; never rewrite an earlier event. Refresh the section's Current Disposition from those events as a reader-facing projection, not an independent decision authority.
+   * For `user-owned` or `user-retained`, present one finding at a time. Before asking, link the review record and cited evidence, then explain in plain language what was found, why it matters, the proposed route, consequences, uncertainty, and a suggested answer.
+   * Use `vscode_askQuestions` when available. Offer `Use suggested action: [plain-language action]` as the recommended option, `Gather more information`, `Skip this item`, and `Finish review decisions`; allow freeform input so the user also has an empty response box. When unavailable, present the same choices in chat and wait.
+   * Append each answer and its finding, route, owner, rationale, evidence need, and outcome effect before asking about the next item. `Gather more information` defers or changes the route to the appropriate evidence owner. `Skip this item` rejects the proposed route without erasing the finding. `Finish review decisions` stops questions and appends deferred events for every undecided item. Material skipped or deferred findings prevent a conformant final outcome.
+   * For `agent-owned`, skip all per-item questions, record the walkthrough as `skipped-auto`, and decide every proposal from evidence. Do not treat the later automatic follow-up selection as this walkthrough.
+9. Decide final execution and outcome from the evidence body and resolved or deferred findings. Append those events only to `## Parent Decision Record`; preserve the evidence body and findings as written. When parent state exists, store only the record path and revision plus derived `next_action` and follow-up projections.
+10. Route each accepted gap once: implementation defects to later `rpi-implement`, decision gaps to `rpi-plan`, evidence gaps to `rpi-research`, and residual work to a distinct follow-up. A later implementation does not require another Review.
+11. Return the record, final review execution and outcome, validation evidence, findings, decision participation and walkthrough status, route dispositions, and next action.
+
+## Inputs
+
+* Stable task identity and requested review scope: full task, `Pxx`, or `Pxx-Txx`
+* Current task-centered plan, latest plan critique, changes record, relevant research, validation, blockers, remaining work, and follow-up items
+* Review depth and provenance: `standard` by default or `deep` only from explicit user direction
+* Decision participation: `user-owned`, `agent-owned`, or `user-retained`, with orchestration context and provenance
+* Canonical review-record path and parent orchestration context when present
+
+## Success criteria
+
+* One review record exists at the canonical path and includes all compared artifacts, review depth and provenance, review execution, and parent decisions.
+* The review parent compares the evidence once and authors the record; helper candidates become `RV-xxx` findings only after verification at the cited evidence.
+* Review execution `started` is persisted before comparison; started and terminal records prevent a second Review of the same task boundary on resume.
+* A stranded `started` record resolves to final Review execution Blocked and outcome Not accepted with a later-new-review condition and never causes a second comparison.
+* Standard depth is the default and completely assesses the material acceptance boundary while omitting low-value review work. Deep occurs only from explicit user direction.
+* The record separates execution state from outcome verdict.
+* Findings are substantive, evidence-grounded, severity-graded `RV-xxx` records with expected versus observed behavior, a checkable resolution condition, and an explicit destination. Supporting detail stays with its finding rather than becoming a separate implementation recipe.
+* The document leads with its scoped assessment, material findings, and parent decisions; acceptance coverage is recorded once and missing evidence is not reported as a demonstrated defect.
+* Defects, decision gaps, research gaps, and residual work are routed to distinct destinations.
+* Descriptive implementation-time plan updates, their rationale and evidence, material revision readiness, and plan follow-up items are explicitly assessed.
+* Validation evidence is recorded or explicitly unavailable or skipped with a reason.
+* Findings are routed clearly without creating closure, correction, full, targeted, or amended review modes.
+* The review parent records the final outcome and each accepted, rejected, deferred, or changed route in Parent Decision Record without rewriting the evidence body.
+* Decision History within Parent Decision Record is append-only and canonical. Its Current Disposition is a synchronized reader-facing projection. Parent state stores only the record's path/revision pointer and derived active-route and follow-up projections; recovery rebuilds projections from the events.
+* User-owned and user-retained Review present each actionable finding separately with linked, plain-language context and the required suggested, gather, skip, finish, and freeform choices. Agent-owned automatic Review records decisions without the walkthrough.
+
+## Constraints
+
+* Do not implement fixes or mutate the plan, critique, research, or changes record in this stage. Review may create or update only its one canonical review record.
+* Compare the evidence once. Do not run a second comparison or a second Review for the same task boundary; later remediation is ordinary implementation work.
+* The review parent owns findings, final decisions, parent state, user conversation, continuation, and follow-up selection.
+* Use plain-text workspace-relative paths in the review record.
+* Use [references/review.md](references/review.md) for the review method, optional helpers, outcome vocabulary, routing detail, and conversation protocol.
+
+## Conversation guidance
+
+Use [references/review.md](references/review.md) as the authority for the state-first opening, materiality gate, continual-update template, marker meanings, pre-question context, and closeout behavior. Persist review-owned state before an opening or potential material update; chat is a concise projection, never a second history or delivery log. Preserve the read-only boundary, separate execution status from outcome, standalone versus parent continuation, conditional compaction, and linked Markdown table. For every relevant existing artifact, use the two-cell row `| [actual/workspace-relative/path.ext](actual/workspace-relative/path.ext) | Short description |`, using that artifact's actual workspace-relative path as both link text and destination; omit unavailable files and render the table immediately before the final `## Next Steps` section. End with `## Next Steps`: state the exact eligible user command, active-parent action, blocker-clearing action, follow-up choice, or that no user action is required. When compaction is warranted, tell the user to run `/compact` before the next RPI command; otherwise omit compaction guidance.
+
+## Stop rules
+
+* Stop as Blocked if a reviewable artifact set cannot be formed or evidence is insufficient for a credible verdict. Use final outcome Not accepted for Blocked Review execution.
+* Do not use Conformant or Conformant with justified divergence while material skipped, deferred, or unresolved findings remain. Use Defects found for a credible review with implementation defects, Residual work for distinct non-blocking work, and Not accepted when blocked evidence or unresolved critical boundaries prevent acceptance.
+* Complete a partial review only when the record names the evidence boundary and routes the missing work.
+* Do not compare again after Complete, Partial, or Blocked. Parent decisions and later remediation do not create a review loop.
+* Do not restart a stranded `started` Review. End the current Review as Blocked and state the exact condition for a later new Review.
+
+## Handoff
+
+Return the review record, final review execution status, final outcome, severity summary, validation coverage, parent route dispositions, and next RPI stage or distinct follow-up. A standalone review advises the exact `/rpi-*` command only when an accepted finding needs that destination and does not invoke it. In confirmed automatic RPI Agent mode, return the record and parent decisions to the orchestrator.
+
+## Final response
+
+Return review execution status separately from outcome, findings, validation coverage, blockers or open items, routed follow-up, and conditional compaction advice when warranted. Follow Conversation guidance for standalone or parent-orchestrated continuation, the linked artifact table, and final next steps.
+
+

@@ -1,0 +1,139 @@
+---
+name: sdlc-test
+description: "Orchestrates AI testing: dev-complete verification (compile/boot/smoke), case generation, static consistency checks, browser-based functional testing, and reports. Subcommands (cases/dev/static/exec/spec/report) are independently re-runnable with two human checkpoints; passing cases can be assetized into Playwright specs so regression rounds run with zero agent tokens. AI 测试智能体编排：开发完成验证 → 用例生成 → 静态一致性检测 → test 环境浏览器功能测试 → 报告生成。子命令（cases/dev/static/exec/spec/report）独立可重跑，两道人工关卡；通过用例可资产化为 Playwright spec，回归轮跑 runner 零 agent token。Use when 用户要求 AI 测试、生成测试用例、开发完成验证、冒烟自测、执行测试、提测验证、回归测试、生成回归脚本、spec 资产化，或说 AI testing、test generation、browser E2E、playwright spec。用法：/sdlc-test cases|dev|static|exec|spec|report 需求名"
+---
+
+# AI 测试智能体
+
+方案全文见开源仓库 `docs/sdlc-test-design.md`（设计决策记录，位于仓库 docs/，不随 skill 单独分发；以本 SKILL.md 与 references/ 为准继续执行）。测试对象是 test 环境的 Web 前端（Java DDD 后端 + MySQL）。
+
+**栈适配**：方法论栈无关；栈绑定面的盘点与换栈入口见 `references/stack-profile.md`（换栈/新项目接入时读，日常执行不加载）。
+
+产物目录（相对当前项目根）：`sdlc/<需求名>/test/` 下放 `cases.md` 与 `reports/<日期>-r<N>/`；共享环境配置在 `sdlc/env/`。
+
+**前置依赖**：`python3`；`chrome-devtools` MCP（exec 浏览器操作）；`codegraph` / `mysql` MCP（static 与落库核验，缺失可降级）；Playwright / Node / npm（spec 回归档，模板见 `templates/`）。
+
+## 路由
+
+| 子命令 | 阶段 | 产物 | 前置条件 |
+|---|---|---|---|
+| `cases <需求名或文档路径>` | 1 用例生成 | `sdlc/<需求名>/test/cases.md` | 无 |
+| `dev <需求名>` | 1.5 开发完成验证 | `sdlc/<需求名>/dev/smoke.md` + `verify-<日期>-r<N>.md`（脚本生成） | 开发已完成；A/B 级须 env/dev.md 与 smoke.md 就绪 |
+| `static <需求名>` | 2 静态代码检测 | `sdlc/<需求名>/test/reports/<日期>-r<N>/static.md` + 用例文件重点验证项 | 关卡1 已过 |
+| `exec <需求名> [--from TC-xx \| --all]` | 3 前端功能测试 | 本轮目录 `exec-log.md` + 用例回填/缺陷跟踪 + 截图 | 关卡1 已过 |
+| `spec <需求名>` | 3.5 spec 资产化 | `sdlc/<需求名>/test/specs/*.spec.ts` | 关卡1 已过；目标用例已通过且口径拍板；风险分级 A 级强制 / B 级默认 / C 级跳过 |
+| `report <需求名>` | 4 报告生成 | 本轮目录 `report.md` | 阶段3 有结果 |
+
+未带子命令时询问用户执行哪个阶段；无 `sdlc/<需求名>/test/cases.md` 时引导从 `cases` 开始。
+
+## 轮次（round）规则
+
+- **轮次目录**：`sdlc/<需求名>/test/reports/<日期>-r<N>/`，同轮 static / exec-log / report / screenshots 聚合一处；目录名用小写 `r<N>`，用例结果/缺陷状态/修复轮次用大写 `R<N>`，N = 已有最大轮次 +1（不存在从 r1 起）
+- **回归轮（r2+）默认只复检上轮问题项**：static 只复检 ⚠️ 疑似偏差与 🤔 未确认项，exec 只重跑失败/疑似/阻塞 + 缺陷未闭环关联用例（存在 specs/ 时回归轮两步，见阶段3）；`--all` 全量重比/重跑
+- **用例文件是当前状态快照**（结果字段只反映最新轮次，历史判定在各轮 exec-log 留档）；**缺陷生命周期只在用例文件「缺陷跟踪」表维护**，各轮 report 摘引该表当轮子集
+
+轮次含义与回归范围细则见 [references/round-rules.md](references/round-rules.md)。
+
+**关卡强制**：执行 `static`/`exec` 前读用例文件头部，`审核状态 ≠ 已确认` 时拒绝并提示用户先完成关卡1（人工审核用例后，将头部状态改为 `已确认（日期）`，或让用户口头确认后代改）。若 `sdlc/<需求名>/review/` 存在，关卡1 以 sdlc-gate 状态为准：`评审状态 = 已放行` 视同关卡1 通过（代改时引用 issues 文件），`≠ 已放行` 时拒绝并提示先完成 sdlc-gate 裁决；review 目录不存在则维持本条原行为。
+**本条已机械化**：由 `scripts/guard_exec.py` 承载——关卡1 判定（含 gate 互认，锚定最新一份 issues）、风险分级三口径、轮次目录命名、spec ✓ 标注与 specs/ 资产一致性（防 R3 型失真）、**开发完成验证留档反查与交叉校验**（一律拦，老需求补跑一次即过）均由脚本校验，入口命令见阶段2/3 第一步；脚本拒绝时停止并呈现缺失清单，禁止绕过。
+
+## 阶段 1 cases：用例生成
+
+```text
+Cases 进度：
+- [ ] 定位输入（sdlc/<需求名>/intake/ 三件套优先，退回原始 PRD）
+- [ ] 信息摄入（梳理文档/YApi/CodeGraph/MySQL 只读）
+- [ ] 按七种设计技术生成用例并标注技术（生成范围按 FR 级裁剪，见 design-techniques.md「分级生成范围」）
+- [ ] 填双向追踪表，未覆盖条目显式列出
+- [ ] 写 sdlc/<需求名>/test/cases.md（模板：references/cases/case-template.md）
+- [ ] 🔒 关卡1：暂停等人审核
+```
+
+- 输入优先级：`sdlc/<需求名>/intake/digest-*.md` 三件套 > 原始需求文档。梳理文档的角色权限矩阵、状态机图、流程图、规则口径清单是设计直接输入；体检报告疑似问题转重点用例；PM 清单已澄清口径回填预期
+- **独立性纪律（红线）**：生成过程禁止读技术设计文档（`sdlc/<需求名>/design/design.md`、任务系统/协作工具中的设计文档等）——用例必须与设计从 intake 三件套独立推导，sdlc-gate 交叉审查才有价值。用户坚持要读时先说明后果并征得明确确认，且在 cases.md 头部注明「已读设计，交叉独立性破坏」
+- 设计技术清单、优先级口径与分级生成范围见 `references/cases/design-techniques.md`，必须先读；用例文件头部「风险分级」取自 digest 头（缺失按 A 级），生成范围按 §7 规则表 FR 级逐条裁剪
+- 关卡1 措辞：「用例已生成于 <路径>，请审核；确认后我继续，需修改请直接说」。迭代直至用户确认，然后把头部 `审核状态` 改为 `已确认（日期）`
+
+## 阶段 1.5 dev：开发完成验证
+
+> 开发阶段验「能不能跑」，测试阶段验「跑得对不对」——compile/boot/冒烟是开发的完成定义（DoD），后置到 exec 才发现则修复要换上下文重来。冒烟清单是「计划-验证-执行」的中间产物：agent 推导落盘，脚本确定性校验并执行；复杂业务断言（落库/权限）留 exec 四类证据。
+
+```text
+Dev 进度：
+- [ ] 环境三问开场（见下）——服务供给 / 新代码加载 / DB·鉴权通道，避免自作主张起服务或修基建
+- [ ] 读 cases.md 筛 P0/核心链路用例；smoke.md 缺失或口径过期 → 按 [smoke-template.md](references/dev/smoke-template.md) 生成/更新落盘
+- [ ] 运行 `python3 <skill 目录>/scripts/verify_dev.py <项目根> <需求名>`（环境配置按 [env-template.md](references/env-template.md)「开发验证档」）
+- [ ] 失败 → 按留档失败步定向修复，同上下文重跑（新轮次留档）
+```
+
+- **环境三问（动手前开场纪律）**：① 服务谁供给——已有本地服务（unmanaged 优先，看启动命令与端口）或需验证器起（local）；② 已有服务是否加载新代码——进程启动时间 vs 最近提交时间，或查服务日志含新代码特征（新 SQL 列名/新接口路径）为证；③ DB/鉴权通道——DDL 与 token 类凭据操作第一选项是请用户出手（harness 权限也会拦），非自行提取
+- **smoke.md 重生成口径**：P0/核心用例集合变化，或可适用集合变化（child（任务框架的子任务/切片）交付让「不适用」变可适用）才重生成；用例结果回填不算。清单缺失/断言语法非法/来源引用不在 cases.md → 脚本前置拒（构建前快失败）
+- **分级**：读 cases 头「风险分级」——C 级 compile+boot；A/B 级全量（+冒烟）。启动模式 local | unmanaged（本地起不了服务时 unmanaged 仍是机器验证，非人工声明）
+- **留档反查**：最新留档头部「验证状态」= 通过才可进 static/exec（guard_exec 检查5，含 HEAD 比对/boot 日志/冒烟条数交叉校验，防伪造留档）；「通过(人工降级,日期)」形态会被显式 ⚠️ 警示
+- **降级边界**：脚本不可得（无 python3）时人工跑 compile/boot/冒烟三件套，留档头部手写「验证状态：通过(人工降级,日期)」——guard_exec 会警示降级形态
+
+## 阶段 2 static：静态代码检测（前后端）
+
+0. 入口守卫：`python3 <skill 目录>/scripts/guard_exec.py <项目根> <需求名> static`（skill 目录 = 本 SKILL.md 所在目录：项目级安装为 `<项目根>/.claude/skills/sdlc-test`，全局安装为 `~/.claude/skills/sdlc-test`）——exit≠0 时停止并向用户呈现缺失清单（关卡1 未过/轮次命名违规/spec 资产失真），禁止绕过
+1. 读 `sdlc/env/repos.local.md` 获取前后端仓库路径（缺失则按 `references/env-template.md` 引导创建）；后端默认当前项目
+2. 按梳理文档 §7「关键规则与口径」的 需求.FR-xx 编号逐条提取业务规则（三件套缺失时回退原始 PRD 的规则/口径章节，并在 static.md 注明证据降级），并标注检测端：后端（接口校验/权限/状态流转/排序 SQL）或前端（按钮显隐/页面校验/提示文案/页签隐藏）
+3. 后端：用 `codegraph:codegraph_context`/`codegraph:codegraph_explore` 定位每条规则的 Controller → Service → Mapper/XML 链路；`mysql:mysql_query` 核对表结构。前端：`codegraph:codegraph_search`/`codegraph:codegraph_context` 传 `projectPath` 指向前端仓库索引定位页面/组件；无索引则降级定向 grep + 读文件，结果注明证据降级
+4. 按 `references/static/static-check-template.md` 产出三态结论留档至本轮目录 `static.md`：✅符合 / ⚠️疑似偏差（附代码位置，前后端位置分别标注仓库）/ 🤔静态无法确认
+5. ⚠️ 项写入用例文件「重点验证项」区块，阶段3 优先执行；重大偏差立即报告用户
+
+## 阶段 3 exec：前端功能测试
+
+> 执行≠验证：跑通创建流程≠验证了业务规则；页面表现正常≠无缺陷（接口/落库/console 必查）；用例预期与实现冲突时**禁止静默按实现校正**。首次执行参考 `references/exec/exec-example.md` 完整范例
+
+```text
+Exec 进度：
+- [ ] 入口守卫：`python3 <skill 目录>/scripts/guard_exec.py <项目根> <需求名> exec`——exit≠0 时停止并向用户呈现缺失清单，禁止绕过
+- [ ] 读 sdlc/env/test.md 与 accounts.local.md（缺失则按 references/env-template.md 引导创建）
+- [ ] 前置健康检查：chrome-devtools:list_pages 确认浏览器/页面存活、目标路由可达、MySQL 连通（SELECT 1）、上传目录就绪；失败项先按 ui-recipe「环境检查」的恢复动作处置（仍失败再报告，不空等人工）；读 sdlc/env/ui-recipe.md（无则首条用例侦察后按 env-template 沉淀）
+- [ ] 读用例头部进度，确定本轮目录与用例范围（--from TC-xx 断点续跑；回归轮默认重跑上轮失败/疑似/阻塞+缺陷未闭环项；--all 全量）；回归轮且存在 specs/ 时先走 runner 批量回归（见下「回归轮两步」）
+- [ ] 按 `references/exec/exec-dispatch.md` 切批派发子 agent（每批 3-5 条，批间串行；证据采集/判定/exec-log 留档在子 agent 上下文完成）
+- [ ] 每批回传后：主 agent 按压缩结论回填 cases.md（结果字段 + 证据摘要 + 缺陷跟踪表 + 头部进度——新格式：总览表结果列与 TC 小节证据行；存量表格：结果列与证据列）；P0 缺陷立即快报
+- [ ] 全部完成，更新用例头部阶段进度
+```
+
+- **派发执行**：主 agent 不在自身上下文逐用例操作浏览器；按 exec-dispatch.md 组装自包含 prompt（批内用例条目原文 + 红线原文 + 最小挂载姿势），子 agent 完成侦察/执行/四类证据/截图查看/exec-log 留档，只回传每用例一行压缩结论。本节全部纪律与反合理化表**对子 agent 同样强制**，回传里禁止出现截图/报文/快照原文
+- **回归轮两步（存在 specs/ 时）**：① 以绝对路径形态跑 runner：`<项目根>/sdlc/node_modules/.bin/playwright test --config <项目根>/sdlc/playwright.config.ts <需求名>`（禁 `cd`+`npx` 形态，cwd 无关——详见 spec-guide「runner 执行纪律」）——绿色项直接回填 cases.md，红色项按 `references/spec/spec-guide.md`「失败三向」诊断（trace/截图在 runner test-results/）；② 其余范围（新用例/失败现场/无 spec 用例）照常按 exec-dispatch 派发。登录态重采（capture-login.mjs）、DB 抽查衔接见 spec-guide；runner 基础设施缺失时先按 `references/env-template.md`「回归档 Playwright runner」接入表引导搭建
+- **交互姿势**：浏览器/数据库操作按 `references/exec/exec-interaction.md` 执行（浮层失明降级、日期键盘路径、evaluate 同步返回等）；新控件姿势 ≤3 次试错后回写该手册
+- **分组合并执行**：同 G-xx 组（见用例文件「执行分组」区块）拦截类用例在同一表单会话内连续验证（改字段→断言→复原），每条用例仍独立留档判定；涉及提交/落库的用例不合并
+- **执行红线摘要**（全量纪律随批由 exec-dispatch prompt 原文携带，对子 agent 同样强制；借口拦截见反合理化表）：四类证据（页面表现/接口响应/落库核验/console）缺一即标"疑似"，**error 级必查**（无法解释的 error 不判通过，warning 记档不阻断）；操作后等待稳定再取证（`chrome-devtools:wait_for` 或确认网络请求已完成，禁止轮询快照等稳定），等待超时本身是证据写入备注；口径冲突先以需求/拍板口径判定，三去向：实现偏离=BUG / 需求未定=转 Q / 用例写错=修用例留档，仅确认实现正确后才按实际口径校正预期；疑似偶发失败 retry-once 上限 1 次/用例/轮（详见 exec-dispatch.md「anti-flake」）
+- **取证要点**（工具用法与降级姿势以 exec-interaction.md 为准）：接口响应按 URL 定向取证（定位不到才列表扫）；bigint 主键用业务键定位；判"通过"前视觉复核全页截图——视觉异常即使接口与落库正确也降"疑似"；截图先落本轮 `screenshots/` 再按需查看；a11y 失明/工具失效按手册降级，降级一律注明「证据降级」
+- **留档与缺陷**：按 `references/exec/exec-log-template.md` 逐用例即时追加 exec-log（当日志而非汇总写；本轮开始先按范围预填「结果总览」表，执行期只更新对应行；备注记任何让你停顿的观察，不预筛"是不是缺陷"）；新失败在用例文件「缺陷跟踪」表登记 BUG-xx（四要素详见 report-template），回归通过后更新状态/修复轮次；P0 缺陷立即快报，不等整批执行完
+- **造数纪律：探索档允许通过前端页面操作（点击触发后端接口）生成前置数据；spec 档允许 API 直调造前置（走后端完整校验，鉴权头见 ui-recipe）；两档均禁止改库/任何 DB 直写**；MySQL MCP 只读仅做核验
+- **阻塞前穷尽解锁**：标阻塞前先依次确认 ui-recipe 路由清单、Playwright skill 降级、接口直调（鉴权头见 ui-recipe）三条路径均不可行
+
+## 阶段 3.5 spec：资产化（回归档）
+
+> 通过且口径拍板的用例 → Playwright spec；此后回归轮该部分由 runner 执行（零 agent token），agent 只诊断红色项。完整规则（粒度/前置复用/选择器/证据映射/失败三向/生命周期）见 `references/spec/spec-guide.md`，必须先读。
+> **分级控制**：风险分级 A 级强制资产化 / B 级默认做 / C 级跳过（不产 spec，回归轮全量走 agent 执行）。
+> **前置（首次）**：runner 基础设施（`sdlc/` 根两件 + `env/runner/` 三件）缺失时，按 `references/env-template.md`「回归档 Playwright runner」接入表引导搭建——复制模板 → 替换占位符 → sdlc/ 根 npm install → spike 全绿即就绪。模板直接位于 [templates/run_regression.sh](templates/run_regression.sh) 与 [templates/runner/](templates/runner/)（`package.json` / `playwright.config.ts` / `capture-login.mjs` / `spike.spec.ts`）。
+
+1. 准入：默认范围 = BUG 关联用例 + P0/P1 稳定流；用例条目手标可扩围
+2. 读 cases.md + exec-log「复现锚点」翻译为 spec：`test()` = 一用例、按 G-xx 组/模块归档、前置 API 直调优先 / flows/ UI 函数兜底（≥2 用例用到才抽）
+3. **生成后立即 runner 验证，全绿才算资产化完成**；红色按失败三向处置（实现坏=BUG / 页面变=修 spec 留档 / 环境=备注重跑）
+4. cases.md 用例条目标注 `spec ✓（日期）`（新格式=总览表 spec 列；存量表格文件=行内标注）；DB 断言不进 spec，出过 DB BUG 的用例在 spec 头部挂 SQL 清单（回归轮 agent 抽查）
+
+## 阶段 4 report：报告生成
+
+1. 按 `references/report/report-template.md` 汇总产出本轮目录 `report.md`（回归轮为回归报告：重跑范围+缺陷闭环情况）；含 runner 执行时按模板「回归档」口径呈现 runner 执行子集与 DB 抽查结果
+2. 🔒 关卡2 措辞：「报告已生成于 <路径>，请复验缺陷真伪；确认后的缺陷由你转达开发」。缺陷不自动推送任何外部系统。用户复验确认后，勾选用例头部「🔒 关卡2 报告复验」并注明轮次（如 `已复验（R2，YYYY-MM-DD）`）——与关卡1 代改口径对称，多轮场景可从用例文件看出各轮报告复验状态
+
+## 通用纪律
+
+- 源码只读、数据库只读；写操作仅限 test 环境前端页面与 `sdlc/` 目录
+- 拿不准的判定标"疑似"并附证据，不硬下结论
+- **汇报自解释**：向用户输出阶段小结/汇报时，统计须含端分布（前端/后端/前后端）；每条问题明细自解释（编号+现象+预期差异），禁缩写引用；「详 exec-log」等深挖入口只能附在完整陈述之后
+- 每阶段结束更新用例文件头部阶段进度 checklist
+- 术语统一：用例 ID 记作 TC-xx；角色名、状态名沿用梳理文档口径；**跨产物引用统一 `命名空间.编号`**（需求.FR-03 / 需求.A3 / 体检.P04 / 设计.D11 / 评审.T-12），禁止裸写他产物编号
+
+### 反合理化
+
+高频三条（全表 11 条见 [references/anti-rationalization.md](references/anti-rationalization.md)；exec 派发时全表随 prompt 原文携带）：
+
+- "console 有 error 但页面表现正常，算通过" → error 是缺陷线索，必查；无法解释就标"疑似"，不判通过
+- "四类证据差一类，其余都对，直接下结论" → 缺一即标"疑似"，证据底线不因多数通过而放松
+- "chrome-devtools 坏了，这条用例跳过" → 降级 Playwright skill 继续执行，工具故障不是跳过理由

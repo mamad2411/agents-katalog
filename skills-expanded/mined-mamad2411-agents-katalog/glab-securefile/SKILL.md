@@ -1,0 +1,61 @@
+---
+name: glab-securefile
+description: Manage secure files for CI/CD including upload, download, list, and delete operations. Use when storing sensitive files for pipelines, managing certificates, or handling secure configuration files. Triggers on secure file, CI secrets, certificates, secure config.
+---
+
+# glab securefile
+
+## Overview
+
+```
+
+  Store up to 100 files for secure use in CI/CD pipelines. Secure files are                                             
+  stored outside of your project's repository, not in version control.                                                  
+  It is safe to store sensitive information in these files. Both plain text                                             
+  and binary files are supported, but they must be smaller than 5 MB.                                                   
+                                                                                                                        
+         
+  USAGE  
+         
+    glab securefile <command> [command] [--flags]  
+            
+  COMMANDS  
+            
+    create <fileName> <inputFilePath>  Create a new project secure file.
+    download <fileID> [--flags]        Download a secure file for a project.
+    get <fileID>                       Get details of a project secure file. (GitLab 18.0 and later)
+    list [--flags]                     List secure files for a project.
+    remove [<fileID> | --id <id> | --name <name>] [--flags]
+                                       Remove a secure file.
+         
+  FLAGS  
+         
+    -h --help                          Show help for this command.
+    -R --repo                          Select another repository. Can use either `OWNER/REPO` or `GROUP/NAMESPACE/REPO` format. Also accepts full URL or Git URL.
+```
+
+## Quick start
+
+```bash
+glab securefile --help
+```
+
+## Removing secure files
+
+Secure-file deletion accepts a positional numeric ID, `--id`, or an exact file name via `--name`:
+
+```bash
+# Interactive confirmation
+glab securefile remove 1
+glab securefile remove --id 1
+glab securefile remove --name signing-certificate.p12
+
+# Approved non-interactive deletion
+glab securefile remove --name signing-certificate.p12 --yes
+```
+
+Deletion is permanent. In non-interactive environments, `--yes` / `-y` is required. Resolve and verify the intended project with `-R/--repo` before deleting, and prefer an ID when duplicate or ambiguous naming is possible.
+
+## Subcommands
+
+See [references/commands.md](references/commands.md) for full `--help` output.

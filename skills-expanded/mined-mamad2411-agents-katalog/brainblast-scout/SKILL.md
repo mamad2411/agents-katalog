@@ -1,0 +1,192 @@
+---
+name: brainblast-scout
+version: 0.1.0
+description: Sends an agent on a scouting mission to find real-world coding traps (footguns in popular SDKs/protocols), synthesize the finding into a proven brainblast rule pack, and submit it to the pack registry. Staking $BRAIN on the pack is an optional, opt-in bond (Phase 5) — never required to produce or sell the data.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - WebFetch
+  - WebSearch
+triggers:
+  - scouting mission
+  - find a new pack
+  - brainblast scout
+  - submit a pack
+---
+
+# Brainblast Scout
+
+End-to-end pipeline for an agent to go find a new "silent footgun" in some
+external SDK/protocol, turn it into a proven brainblast knowledge pack, and
+submit it — the same workflow used to produce
+`packs/jupiter-quote-zero-slippage` and `packs/spl-transfer-not-checked-in-payout`.
+
+**Default scope is Phases 1–4 — they are entirely no-spend** (research → prove →
+package → submit). They are all you need to *produce and sell* the data: a pack
+that lands in `packs/` flows straight into the corpus and the storefront via
+`npm run intake` (`gen:vti → pack:dataset → corpus → catalog`), no `$BRAIN`
+required. **Phase 5 (stake) is OPTIONAL and opt-in** — a quality bond layered on
+top, run only when the operator has set up the capped ops-wallet + caps. This is
+a core marketplace invariant (`ROADMAP.md`, Lane 4): data intake never blocks on spend.
+
+Each phase fails closed: if a phase doesn't produce a clean result, stop and
+surface a draft for human review rather than forcing it through.
+
+> **Stop after Phase 4 by default.** Only proceed to Phase 5 if the user has
+> explicitly asked to stake AND the ops-wallet env (`AGENT_OPS_WALLET_SECRET` +
+> caps) is configured. Producing the data does not require it.
+
+## Fleet mode (the fast path — prefer this)
+
+The **fleet** (`fleet/`, `npm run fleet`) automates prove → promote → intake →
+score, so a scout run is just: **pick a work-order, drop a candidate, run the
+fleet.**
+
+1. **Target a work-order.** Run `npm run fleet -- --dry-run` (or read
+   `datasets/COVERAGE.md`) and pick an **uncovered class** or **thin cell** from
+   the scoreboard — that's where a new trap is worth most.
+2. **Write a candidate** `fleet/candidates/<id>.json` (a Finding — see
+   `fleet/README.md` for the template). Prefer the vetted
+   `object-arg-property-forbidden-literal` checker (flags an options-object
+   property set to a forbidden string/number/**boolean** literal — the shape of
+   most insecure-default footguns); no new checker code needed.
+3. **Run the fleet.** `npm run fleet` proves every candidate RED→GREEN,
+   auto-promotes the proven ones to `packs/`, regenerates the corpus + storefront,
+   and prints what landed + the next work-orders. A candidate that doesn't
+   reproduce is reported DRAFT and never lands.
+
+That's the whole no-spend loop. The detailed Phases below are the reference for
+*how* a Finding is shaped and what the gate checks; **for routine sourcing, use
+fleet mode.** (Phases 2b/3 — manual synth + `cp` into `packs/` — are what the
+fleet now does for you.)
+
+## Phase 1 — Scout
+
+Research one external SDK/protocol (Solana programs, payment SDKs, etc.) for
+a pattern where the *happy path compiles and runs* but silently does the
+wrong thing — wrong constant, missing check, unchecked return value,
+misordered calls. Good sources: official docs changelog, GitHub issues
+tagged "footgun"/"gotcha", postmortems, audit reports.
+
+Use `/browse` for any web research (per the user's global gstack
+instructions — never drive Chrome directly).
+
+Output: a candidate description in plain English — the SDK, the call/shape
+that's wrong, why it's wrong, and what the fixed version looks like. This is
+NOT yet a Finding JSON; it's the raw idea.
+
+## Phase 2 — Synthesize into a Finding
+
+Turn the candidate into a `Finding` (see
+`packages/core/src/synth/types.ts`) and write it to
+`packages/core/findings/<id>.json`. Required:
+
+- `binding.check.kind` MUST be one of `checkerKinds` in
+  `packages/core/src/checkers/index.ts` — if your pattern needs a *new*
+  checker kind, that's a separate, larger task (see how
+  `literal-multiplier-wrong-constant` and `fee-allocation-shape` were added
+  historically); don't invent an unvetted kind here.
+- `binding.test.kind` similarly must be in `testKinds`.
+- `fixtures.vulnerable` / `fixtures.fixed` are full file contents — write
+  real, minimal, compilable-looking code demonstrating the trap and its fix.
+
+Then run, from `packages/core/`:
+
+```bash
+npm run synth -- findings/<id>.json
+```
+
+- **exit 0 (PROVEN)**: rule + fixtures staged in `.synth/`, ready to promote.
+  Continue to Phase 3.
+- **exit 2 (DRAFT)**: written to `packages/core/drafts/<id>/` for human
+  review. STOP here — do not proceed to packaging or staking on a draft.
+- **exit 1**: bad input, fix the Finding JSON and retry.
+
+## Phase 3 — Package as a pack
+
+Create the standalone pack directory:
+
+```bash
+npx brainblast pack init packs/<pack-id> --id <pack-id> --name "<name>" \
+  --author <your-handle> --version 0.1.0 --description "<one-line>"
+```
+
+Copy the PROVEN rule YAML and `vulnerable`/`fixed` fixtures from `.synth/`
+into `packs/<pack-id>/rules/` and `packs/<pack-id>/fixtures/<pack-id>/...`
+(mirror the layout of `packs/jupiter-quote-zero-slippage`). Write a short
+README covering: what the trap is, why it's silent, the fix.
+
+Validate:
+
+```bash
+npx brainblast pack validate packs/<pack-id>
+```
+
+Must pass before continuing.
+
+## Phase 4 — Submit
+
+1. Push `packs/<pack-id>` as its own repo (or a subdirectory PR to this repo,
+   matching how the existing packs were added).
+2. Open a PR against `brainblast-pack-registry` adding an entry to
+   `packs.json` (`pack_id`, `name`, `repo_url`, `author`, `description`,
+   `latest_version`) — same shape `lib/sync.ts`'s `syncPackRegistry()`
+   expects.
+3. The registry's daily cron (`/api/cron/sync`) will pick it up automatically
+   once the PR merges — no manual sync call needed.
+
+4. **Run intake so the pack becomes sellable data (no-spend).** Once the pack is
+   in `packs/`, from `packages/core/`:
+
+   ```bash
+   npm run intake -- --pack ../../packs/<pack-id>
+   ```
+
+   This validates the pack RED→GREEN, then runs the conveyor
+   (`gen:vti → pack:dataset → corpus → catalog`) so the new trap lands in the
+   seed lot, the packaged/sellable lots, the corpus index, and the storefront
+   (`datasets/CATALOG.md`) in one step. Confirm `npm run sla` still passes.
+   **This is the end of the no-spend default path — the data is now produced and
+   sellable.**
+
+## Phase 5 — Stake $BRAIN (OPTIONAL — opt-in bond, spends funds)
+
+**Skip this unless the user explicitly asked to stake and the ops-wallet is
+configured.** Staking is a *quality bond*, not a requirement: the data is already
+produced and sellable after Phase 4's intake. The reproduction gate intake just
+ran is the same RED→GREEN check a stake would be slashed against.
+
+**Security model**: staking is paid from a small, dedicated "ops wallet" —
+*not* the user's main wallet. The user funds this wallet periodically (e.g.
+$20-50 of $BRAIN/SOL). `scripts/agent-stake/stake.ts` enforces a
+per-transaction cap (`AGENT_STAKE_MAX_USD`, default $25) and a cumulative
+session cap (`AGENT_STAKE_SESSION_CAP_USD`, default $50) before sending
+anything. The secret key is read only from `AGENT_OPS_WALLET_SECRET` (env
+var) and is never logged or written to disk. Worst case if this wallet is
+compromised: whatever it currently holds — never the user's main holdings.
+
+1. Decide `stake_usd` for the pack (reasonable default: $10-25).
+2. Determine `brain-amount` — the $BRAIN token amount equivalent to
+   `stake_usd` (with the 10% $BRAIN discount), via a price lookup (e.g.
+   Jupiter price API for `BRAIN_MINT`). This script does not fetch prices
+   itself — compute it first.
+3. Run:
+
+```bash
+cd scripts/agent-stake
+npm install   # first time only
+AGENT_OPS_WALLET_SECRET=*** AGENT_STAKE_MAX_USD=25 AGENT_STAKE_SESSION_CAP_USD=50 \
+  npx tsx stake.ts --pack-id <pack-id> --rule-id <rule-id> \
+  --stake-usd <usd> --brain-amount <amount>
+```
+
+If either cap would be exceeded, the script refuses and exits 1 — do not
+raise the caps from inside this skill; that's a human decision (the caps are
+read from env vars the user sets when funding the wallet).
+
+## Done
+
+Report: pack id, PROVEN/DRAFT status, PR URL(s) opened, stake tx signature
+(if Phase 5 ran), and current session spend vs. cap.

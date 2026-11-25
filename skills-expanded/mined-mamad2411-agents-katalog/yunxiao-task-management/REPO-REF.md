@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/yunxiao-task-management/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 云效任务管理 Skill

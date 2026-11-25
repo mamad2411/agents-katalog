@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/stp/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 结构化任务规划与分步执行 V2（异步子代理架构）。支持将每个步骤通过 session_spawn 创建子代理异步执行，主会话保持非阻塞。功能包括：步骤分解、子代理执行、子代理检验（LLM判断）、状态跟踪、Heartbeat 监控、任务中断。触发词：/stp、任务规划、步骤执行。"

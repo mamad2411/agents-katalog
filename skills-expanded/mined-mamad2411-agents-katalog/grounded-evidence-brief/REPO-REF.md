@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-atrislabs-atris/grounded-evidence-brief/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Answer open technical or product questions using primary sources, exact file:line citations, and one actionable recommendation.

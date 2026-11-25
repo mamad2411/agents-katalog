@@ -1,0 +1,193 @@
+---
+name: crowi-docs-refresh
+description: |
+  直近の main の変更(integrate 済み feature・fix)を踏まえて apps/crowi-site/ の
+  ドキュメント(content/docs/{ja,en})を更新し、既存ページに陳腐化した記述が
+  ないかを実コード照合で調査・修正する定期メンテ skill。integrate が数本たまった
+  とき・release pre-flight の前・「ドキュメント古くない?」と言われたときに回す。
+  キーワード: docs, ドキュメント, 陳腐化, stale, 古い, site, crowi-site, mdx,
+  ja/en, ドキュメント更新, docs-refresh, doc rot
+---
+
+# Crowi Docs Refresh (site ドキュメントの追随 + 陳腐化掃除)
+
+> 標準の呼び出し元: 手動の `/crowi-docs-refresh` に加えて、**integrate-worktree の
+> Step 10** が統合完了時の drain point(他に READY_TO_INTEGRATE が残っていない時)に
+> 自動で呼ぶ。どちらの経路でも本 skill の動作は同一(watermark 駆動)。
+
+`apps/crowi-site/`(crowi.wiki の LP + docs・Fumadocs)を main の実装に追随させる。
+2 つの仕事を 1 回で行う: **①未文書化の user-visible 変更を書き足す**(前回実行以降の
+delta 駆動)、**②既存ページの陳腐化を実コード照合で見つけて直す**(claim 検証)。
+site は push で Cloudflare Pages に deploy されるため、main に merge 済みの機能は
+文書化してよい(未 merge・未実装は書かない)。
+
+## 対象 / 非対象
+
+- 対象: `apps/crowi-site/content/docs/{ja,en}/`(読者別の 3 タブ = `guide/` 利用者 / `operations/` 管理者・運用者 / `develop/` 開発者・コントリビュータ)+ 必要なら LP 側の feature 記述。
+- 非対象: wiki(`/crowi/spec/...`)— spec の publish は crowi-design の領分。
+  `docs/rfcs/` — RFC は設計文書であり user docs ではない。README 群。
+
+## ワークフロー
+
+### Step 0: scope 解決(1 回だけ確定)
+
+1. 引数に git range(`abc..def`)があればそれ。
+2. なければ `.feature-state/docs-sync-state.json` の `lastDocsSyncSha..HEAD`。
+3. state が無い初回は self-bootstrap: `git log -1 --format=%H -- apps/crowi-site/content`
+   (site docs を最後に触った commit)を起点にする。docs はそこまでは同期して
+   いたはず、という近似 — 実行後は state が引き継ぐ。
+
+### Step 1: delta 抽出(何が user-visible に変わったか)
+
+range 内から docs 影響候補を集める:
+
+```bash
+# 主信号: user-visible 変更は changeset として積まれている(CLAUDE.md の運用)
+git diff --name-only --diff-filter=A <range> -- .changeset | grep -v README
+# 副信号: feat/fix commit と merge summary
+git log --oneline --no-merges <range> | grep -E "^[0-9a-f]+ (feat|fix)"
+git log --merges --format="%h %s%n%b" <range>
+```
+
+各候補を仕分ける:
+- **docs 済み**: range 内で対応する `content/docs` 変更が既に入っている
+  (`git log <range> -- apps/crowi-site/content` と突き合わせ)→ skip。
+  feature pipeline は docs 同梱が多いので、これが最頻ケース。
+- **docs 必要**: 新しい記法 / config / env / UI 挙動 / 運用手順の変化 → Step 2 へ。
+- **docs 不要**: 内部 refactor・test・CI のみ → skip(判断を 1 行残す)。
+
+### モデル割り当て(Codex/Claude の分担 — 2026-07-18 user 合意)
+
+制御・glue・ゲート・commit は Claude(本 session)、分析・批評・長文は Codex。
+Codex は必ず `.claude/scripts/codex-run.sh` 経由(exec + strict schema。
+`--tier astra|sol|terra|luna` — astra=最上位 (ステージの既定にしない)/sol=最難関/terra=標準/luna=軽作業)。再実行前に
+stale 成果物を掃除する(codex-runs の invocation 跨ぎ再利用に注意)。
+
+| 仕事 | 担当 |
+|---|---|
+| scope 解決・delta 抽出・parity/build ゲート・commit | Claude(session) |
+| 陳腐化 sweep(docs↔code の敵対照合) | Codex **terra** |
+| 難所の挙動解明(cache 意味論・並行・security — 誤記述が実害になる箇所) | Codex **sol**(単発・難所限定) |
+| en ページの draft(長文) | Codex **terra** |
+| ja ページの draft(既存 docs の文体との一貫性) | Claude |
+| 最終照合 | **書き手と逆のモデル**(Claude 執筆分は Codex が事実照合、Codex 執筆分は Claude が照合) |
+
+### Step 2: 書き足し(実コードから書く)
+
+- **commit message や changeset の文面だけから書かない**。該当の実コード
+  (handler / plugin / component)と、あればテストの AC を読んでから書く —
+  message は意図であり、docs は挙動の記述。spec ファイルは integrate 後に
+  消えているのが正常なので、頼らない。挙動が非自明な難所(上表)は先に
+  Codex sol へ「file:line 根拠付きで正確な挙動を説明せよ」を単発で投げ、
+  その出力を下敷きにする。
+- **en は Codex terra に draft させ、ja は Claude が書く**(en の翻訳ではなく
+  既存 ja docs の文体で書き直す)。書き上がったら逆モデルで事実照合。
+- **置き場所は 2 段階で決める**。まず読者(利用者 → `guide/`、管理者・運用者 → `operations/`、開発者・コントリビュータ → `develop/`、全員 → `reference/`)、次に文書タイプ(導入 / 手順 / 参照 / 解説)。1 ページには 1 タイプだけを書く。新ページより既存ページへの追記を優先。
+- 4 つのフォルダは Fumadocs の root フォルダ(= サイドバーのタブ)。ページを足したら該当 `meta.json` の `pages` に登録する(未登録ページはサイドバーに出ない)。タブ内のグループはセパレータ(`"---名前---"`)で分ける。
+- **新しい環境変数・設定キー・CLI オプションは `reference/` の該当表に行を足すのが第一**。`reference/` は参照タイプだけを置く場所で、表と 1 行の説明だけを書く。手順ページには「なぜ・いつ使うか」だけを書き、表は `reference/` の該当ページへリンクする(表を 2 か所に置かない)。
+- `reference/` にも SDK の識別子(`register*` / `CrowiPlugin` / `PluginContext` / `configSchema` / `adminPlacement` / `StateCell` / `modelAccess` など)は書かない。これらは `develop/plugin-api` に置く。
+- 版固有の移行手順は `operations/upgrade` の該当バージョン節に書く。トポロジや設定の説明ページには書かない。
+- 利用者・運用者向けページ(`guide/` `operations/` `reference/`)に RFC 番号・spec id(`feature-*`)・ファイルパス・関数名・ミドルウェア名・CSS トークン・モデルのフィールド名を書かない。書けるのは `develop/` のみ。
+- 概念の呼び名は `reference/glossary` に登録した語を使い、リンク文言はリンク先ページの `title` に揃える。呼び名を増やす・変えるときは `scripts/docs-glossary.json` を先に直す(用語 lint はこのファイルからルールを起こす)。
+- 経緯を書かない(「以前は」「旧バージョンでは」)。例外は `operations/upgrading-from-v1` の v1 との差分説明。
+- ページを移動・改名したら `public/_redirects` に 301 を足し、リンク元の相対リンクを張り替える(検知は Step 4 の `check:links`)。
+- **ja / en を同時に書く**。片方だけの commit を作らない。
+
+### Step 3: 陳腐化調査(claim 検証)
+
+2 層で行う。大きい範囲なら層 b は subagent に fan-out してよい:
+
+a. **delta 隣接ページの精読**: Step 1 の変更が触れた領域の既存ページを読み、
+   今回の変更で古くなった記述(挙動・制限・既定値)を直す。
+b. **機械照合 sweep(Codex terra へ offload)**: 「以下の docs の claim 群を
+   実コードに当てて反証せよ」を `codex-run.sh --sandbox read-only --tier terra`
+   に exec + strict FINDINGS schema(crowi-review と同形)で投げる。照合先の正:
+   - env 変数 → `.env.example` + `packages/api/src/util/env-schema.ts`
+   - config キー → `apps/crowi-runner/crowi.config.json` + 各 plugin の config schema
+   - 記法・embed tag → renderer 登録(`addEmbedTag` / `addCodeBlockRenderer` 等の呼び出し)
+   - コマンド・scripts → 各 `package.json` / `crowi-admin` / `@crowi/cli`
+   - ポート・URL → `scripts/dev-ports.mjs` / `Caddyfile`
+   findings は Claude が **verification-on-action** で裁く(直すものだけ実コードで
+   裏取り)— **fix or drop**(修正するか、誤検出として 1 行報告)。terra の指摘の
+   うち確信が持てず裏取りも難しい claim だけ **sol にエスカレーション**して正否を
+   確定する(sweep 全体を sol で回すのは過剰)。codex 不可(exit 2)なら Claude
+   subagent で代替し、報告に明記。
+   なお「docs が正しく code が退行」の可能性が残る claim は直さず報告して
+   ユーザー判断(docs 側を勝手に実装へ合わせない)。
+
+### Step 4: ゲート
+
+```bash
+# ja/en parity: 変更した docs ページに ja/en の対応があるか(片翼更新の検知)。
+# sed は 2 式で書く — BSD sed の BRE は \| 非対応で、1 式のグループ交替だと
+# 正常ペアまで PARITY MISS に化ける(実測済み)。
+git diff --name-only HEAD -- apps/crowi-site/content \
+  | sed -e 's|/docs/ja/|/docs/*/|' -e 's|/docs/en/|/docs/*/|' \
+  | sort | uniq -c | awk '$1 == 1 {print "PARITY MISS:", $2}'
+pnpm --filter @crowi/site build    # Fumadocs は壊れた mdx でビルドが落ちる(壊れたリンクは落ちない)
+# ページ間の相対リンクと、JSX の href 属性 (`<Card href="/ja/docs/...">`) が
+# 解決するか(静的エクスポートは壊れたリンクを素のアンカーとして出力するので、
+# ビルドでは検知できない)。JSX の href は locale 込みの絶対パスでなければ
+# 落ちる — Card は href をそのままリンクコンポーネントへ渡すため、相対パスや
+# locale 落ちのパスは 404 になる。リポジトリルートの pnpm lint と pre-push、
+# それに docs.yml (ci.yml が docs だけの push を skip するため) からも走る。
+pnpm --filter @crowi/site check:links
+# 2 種類の禁止語を見る。(1) 内部識別子 (RFC 番号・spec id・リポジトリのパス・
+# 関数名・CSS トークン・モデルのフィールド名) — guide/ operations/ reference/ のみ。
+# (2) canonical 用語の揺れ — develop/ と locale 直下の index も含む全ページ。
+# (2) のルールは scripts/docs-glossary.json から起こされる。呼び名を増やす・
+# 変えるときはこのファイルを先に直す(canonical 語が reference/glossary.mdx に
+# 現れることは pnpm test:scripts のテストが assert する)。
+# 正当な出現は scripts/docs-vocabulary-allow.json に {path, pattern, why} を足す。
+node scripts/check-docs-vocabulary.mjs
+# チェッカ自身のテスト。Card の href 検証 (locale 落ち / 別 locale / 存在しない
+# ページ) と、用語集とデータの乖離を見る。
+pnpm test:scripts
+pnpm --filter @crowi/site lint && pnpm --filter @crowi/site type-check
+```
+
+parity 検知は構造が対称なページのみの近似(LP 等の片側限定ファイルは除外して
+判断)。build が通らない mdx は commit しない。
+
+### Step 5: commit + watermark
+
+- `docs(site): ...`(英語)。main-direct なら **main write lock を取得**して
+  commit 後に解放(CLAUDE.md「main write lock」)。changeset は不要(docs のみ)。
+  **push しない**(ユーザー指示待ち)。
+- watermark を atomic に更新:
+
+```bash
+printf '{ "lastDocsSyncSha": "%s", "at": "%s" }\n' "$(git rev-parse HEAD)" \
+  "$(date -u +%FT%TZ)" > .feature-state/docs-sync-state.json.tmp \
+  && mv .feature-state/docs-sync-state.json.tmp .feature-state/docs-sync-state.json
+```
+
+- 報告: 書き足したページ / 直した stale 記述 / drop した候補(各 1 行)。
+
+## 鉄則
+
+- **実コードを読まずに docs を書かない**(commit message は意図、docs は挙動)。
+- **main に merge されていないものを書かない**(worktree 進行中の機能は次回)。
+- **ja / en の片翼更新をしない**。
+- 見つけた stale は **fix or drop** — 退避先は存在しない(全 skill 共通)。
+- **push しない**。site の deploy は push に紐づくので、公開タイミングはユーザーが握る。
+- `guide/` `operations/` `reference/` に **RFC 番号・spec id (`feature-*`)・ファイルパス・関数名・ミドルウェア名・CSS トークン・モデルのフィールド名を書かない**。書けるのは `develop/` のみ(検知は Step 4 の禁止語 lint)。
+- `reference/` は **参照タイプだけ**。表と 1 行の説明で構成し、手順と理由は元の手順・解説ページに残す。SDK の識別子は `reference/` にも書かず `develop/plugin-api` に置く。
+- **同じ一覧表を 2 か所に置かない**。実体は `reference/` の 1 ページに置き、手順ページは該当ページへのリンクだけを持つ。
+- **経緯を書かない**。「以前は」「旧バージョンでは」「この変更は意図的な整理です」は削る。例外は `operations/upgrading-from-v1` の v1 との差分説明。
+- **未リリースの機能・「進行中」「予定」を書かない**。予定は LP と GitHub Releases に任せる。
+- **alpha 注意書きをページごとに書かない**(グローバルバナーが担う)。
+- Callout は Fumadocs `<Callout>` に統一し **1 ページ 3 個まで**。6 行を超える注記は節に昇格する。
+- **手順ページの本文が 6,000 字を超えたら分割を検討する**。
+- **リンク文言はリンク先ページのタイトルと一致させる**。概念の呼び名は `reference/glossary` に登録した語を使う。**この統一は `develop/` にも効く** — 内部識別子と違って呼び名の揺れに例外フォルダは無い。lint のルールは `scripts/docs-glossary.json` から起こされるので、呼び名を増やす・変えるときはそのファイルと `reference/glossary` の両方を直す(片方だけだと `pnpm test:scripts` が落ちる)。
+- **RFC 索引 (`develop/rfcs`) は repo `docs/rfcs/` の全ファイルを載せる。** `guide/` と `operations/` からは RFC へ直リンクしない(RFC は設計文書であって利用者・運用者向けではない)。`develop/` 内からの直リンクは許可する — 読者がコントリビュータで、RFC 本文そのものが目的地だから。
+- **索引に RFC の実装状況を書かない。** 23 本の進捗を docs 側で維持すると必ず陳腐化する。状態は各 RFC 自身のメタデータブロックが持つ。
+
+## エッジケース
+
+| ケース | 挙動 |
+|---|---|
+| range 内の docs 影響変更がゼロ | 陳腐化 sweep(Step 3b)だけ回して watermark を進める |
+| docs が正しく code が退行して見える | docs を触らず報告(修正は crowi-fix の領分) |
+| 大型 feature で docs が丸ごと新章になる規模 | 本 skill で書かず、planner への docs spec 依頼を提案(1 ページ超の新章は設計判断を含む) |
+| `pnpm --filter @crowi/site build` が既存ページ起因で落ちる | 自分の変更と切り分け、既存起因なら別 fix として報告(黙って直してよいのは自明な壊れリンク程度) |

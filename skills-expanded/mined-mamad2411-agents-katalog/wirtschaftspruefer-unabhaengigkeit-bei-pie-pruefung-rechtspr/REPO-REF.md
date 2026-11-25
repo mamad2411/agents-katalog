@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-LegalSkillsKlotzkette/wirtschaftspruefer-unabhaengigkeit-bei-pie-pruefung-rechtspr/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Wirtschaftspruefer Unabhaengigkeit Bei Pie Prüfung Rechtsprech in Berufsrecht Wirtschaftsprüfer geht: zerlegt Ergebnis, Frist, Zuständigkeit, Beweislast und Gegenposition; liefert eine Gege

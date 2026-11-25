@@ -1,0 +1,186 @@
+---
+name: add-ecosystem
+description: Add a new ecosystem and base model to basemodel.constants.ts. Use when onboarding a new model family from providers like Baidu, ByteDance, Google, etc. Handles ECO constants, BM constants, ecosystem record, family (creates new if needed), license (creates new if needed), and base model record. Optionally triggers add-generation-support at the end.
+---
+
+# Add Ecosystem
+
+Adds a new ecosystem and base model entry to [basemodel.constants.ts](src/shared/constants/basemodel.constants.ts). Everything else downstream (generation support, graph, handler, workflow wiring) is handled by the **add-generation-support** skill.
+
+## When to use
+
+Use when a new model provider or variant is being added to Civitai — e.g., new provider (Baidu's Ernie), new architecture (Flux's Kontext), or a variant of an existing family whose resources aren't interchangeable with its siblings.
+
+This skill has two modes, and you should only be here if one of them applies:
+
+- **New ecosystem**: a new line, or a checkpoint that existing resources in its ecosystem won't run on (for example `LTXV` → `LTXV2`).
+- **Base model only**: a hosted-weights checkpoint that existing resources in its ecosystem *do* run on (for example `SDXL 0.9` → `SDXL 1.0`). Skip the `ECO`, family and ecosystem steps. Add only the `BM` constant and the `baseModelRecords` entry, pointing at the existing ecosystem.
+
+**A new release of an API-only model that already has an ecosystem needs neither.** It becomes a new model version under the existing base model, with no constants change. Stop and say so. `onboard-generator-model` Phase 0 has the full decision.
+
+## The test: does this need its own ecosystem?
+
+Answer this **before** picking IDs. The ecosystem is the **compatibility** key, not a UI grouping and not a media label:
+
+> **A variant needs its own ecosystem when a LoRA (or other addon) trained for it would NOT work on every model carrying the sibling's baseModel.**
+
+That is the whole test. [getGenerationSupport](src/shared/constants/basemodel.constants.ts) returns `'full'` unconditionally for same-ecosystem pairs — there is no media dimension and no per-model nuance in it. Putting two things in one ecosystem asserts "resources cross freely between these," so only do it when that's true.
+
+**Architecture is not weights.** The most common way to get this wrong is reading a vendor's "one unified model" marketing as "one checkpoint." Providers routinely ship a shared architecture as separate weight releases, and a LoRA is trained against *weights*. Check what actually ships — distinct releases, distinct sizes, distinct endpoints — not what the announcement calls the family.
+
+**Do not split on output media.** "Image vs video" is not the question; "do resources cross" is. If one checkpoint does both, that's one ecosystem with a `type: ['image', 'video']` base model (Grok). If they're separate checkpoints that happen to differ in output media, that's two ecosystems (Wan Image 2.7 / Wan Video 2.7 — note there are deliberately no `crossEcosystemRules` between them).
+
+**When genuinely unsure, split.** The two mistakes are not symmetric:
+
+| Choice | If wrong | Cost to fix |
+| --- | --- | --- |
+| Split, but they're compatible | Resources don't cross | Add `crossEcosystemRules` entries — additive, that's what the mechanism is for |
+| Merged, but they're incompatible | Incompatible resources offered as compatible | Change the ecosystem key → **changes the AIR URN namespace on already-published resources** |
+
+Splitting is reversible; merging is not. This is doubly true when you're creating the first ecosystem for an API-only line: no community resources exist yet, so the split costs nothing today and keeps the option open. This doesn't apply to a later release in that line, which gets no new records at all (see "When to use").
+
+Media-specific *labelling* for creators is a `BaseModelRecord` concern, not an ecosystem one — several base models can share one ecosystem, each with its own `name` and `type`.
+
+## Workflow (interactive after research)
+
+Do research first, then ask the user only for what can't be inferred.
+
+### 1. Gather model info
+
+Ask the user for the model name and a reference link (HuggingFace page, official repo, announcement). Then research before asking anything else:
+
+- **WebFetch** the reference link to extract:
+  - Provider/company (drives family selection)
+  - License (match against existing `licenses` array or flag as new)
+  - Model type (`image` vs `video` — sometimes both)
+  - **How it actually ships** — one checkpoint or several separate weight releases? This decides the ecosystem split (see "The test" above), so read for distinct releases/sizes/endpoints rather than trusting the family name.
+  - Short description for the base model record
+- Search the codebase for prior patterns: `Grep` for the provider name to see if a family already exists
+
+### 2. Pick IDs
+
+Read the current state of [basemodel.constants.ts](src/shared/constants/basemodel.constants.ts) to determine the next available IDs. Use Read with offsets — don't load the whole file.
+
+- **`ECO.<Name>`**: next available ecosystem ID. Groupings in `ECO`:
+  - Image models: 1-50 range (first come, first served; find next gap)
+  - Video models: 47-66 range
+  - Utility: 66+
+  - Child ecosystems (`parentEcosystemId` set): 100+ for SDXL children, 200+ for AuraFlow children
+  - Pick the next unused number within the appropriate block
+- **`BM.<Name>`**: next available base model ID. Read the `BM` constant block, find the next unused number.
+- **Family ID**: try to match an existing family in `ecosystemFamilies`. If none match, propose creating a new one (confirm with user).
+- **License ID**: try to match an existing license in `licenses` by name/URL. If none match, create a new entry (confirm with user).
+- **`sortOrder`**: follow the pattern of the family. Image family numbers are usually sequential starting from an offset tied to the family. If the family has existing ecosystems, use the next number in its block. If new family, start at a round number (10, 20, 30, etc. — match surrounding patterns).
+
+### 3. Confirm the plan with the user
+
+Before editing, present a summary:
+
+```
+Adding ecosystem: <DisplayName>
+- ECO.<Name> = <id>
+- BM.<Name> = <id>
+- Family: <existing family name> (familyId: <id>) OR [new: <name>]
+- License: <existing license name> (licenseId: <id>) OR [new: <name>, <url>]
+- Type: image | video
+- sortOrder: <n>
+- Description: "<short description>"
+```
+
+Wait for user confirmation. Accept corrections.
+
+### 4. Make the edits
+
+Apply all changes in one pass:
+
+1. **`ECO` constant**: add the new key under the appropriate section comment (e.g., `// Baidu` for Ernie). Keep sections grouped.
+2. **`BM` constant**: add the new key in the matching block.
+3. **`ecosystemFamilies`** (only if creating new): append at the end. Use the next family ID.
+4. **`licenses`** (only if creating new): append at the end. Use the next license ID.
+5. **`ecosystems`**: add the new `EcosystemRecord` under the right family's section comment. Include `parentEcosystemId` only if it's a child ecosystem (rare).
+6. **`baseModelRecords`**: add the new `BaseModelRecord` in alphabetical or thematic position (scan existing entries for the pattern).
+
+### 5. Typecheck
+
+```bash
+pnpm run typecheck
+```
+
+If it fails, fix the error and re-run. Don't continue until clean.
+
+### 6. Offer generation support
+
+After the ecosystem is added and typecheck passes, ask:
+
+> Do you want to add generation support now? This wires the ecosystem into the generation form with a graph, handler, and workflow config. (Runs the `add-generation-support` skill.)
+
+If yes, invoke the `add-generation-support` skill. If no, stop — the ecosystem record alone is enough for it to appear in model listings.
+
+**Skip this offer when you were invoked by `onboard-generator-model`.** Generation support hardcodes the version ID of the official checkpoint. That version can't be created until this change is deployed, because `modelVersion.upsert` rejects base-model names the running server doesn't know.
+
+Note: making a new ecosystem **generatable** (`GenerationBaseModel`) and **featurable in auctions** (`AuctionBase`) are manual DB steps that the constants do **not** handle automatically — miss them and the feature silently half-works (this bit Anima and Krea 2). Those steps are documented in the `add-generation-support` skill under "Post-onboarding: generation coverage & auction featurability."
+
+## Record structures
+
+### `EcosystemRecord`
+```ts
+{
+  id: ECO.<Name>,
+  key: '<Name>',                // Stable identifier (e.g., 'Ernie')
+  name: '<name>',               // lowercase (e.g., 'ernie')
+  displayName: '<Display Name>', // UI (e.g., 'Ernie')
+  familyId: <id>,
+  sortOrder: <n>,
+  parentEcosystemId?: <id>,     // Only for child ecosystems
+  description?: string,         // Rarely needed
+}
+```
+
+### `BaseModelRecord`
+```ts
+{
+  id: BM.<Name>,
+  name: '<Name>',
+  description: "<Provider>'s <type> generation model",
+  type: 'image' | 'video' | ['image', 'video'],
+  ecosystemId: ECO.<Name>,
+  licenseId: <id>,
+  hidden?: boolean,      // true if not user-facing yet
+  experimental?: boolean,
+  disabled?: boolean,
+}
+```
+
+### `BaseModelFamilyRecord` (create only if needed)
+```ts
+{
+  id: <next id>,
+  name: '<Provider Name>',
+  description: "<Provider>'s <description of product lineup>",
+}
+```
+
+### `LicenseRecord` (create only if needed)
+```ts
+{
+  id: <next id>,
+  name: '<License Name>',       // Exact name from the source
+  url: '<canonical license URL>',
+  notice?: string,              // Only if the license requires a copyright notice
+  poweredBy?: string,           // Only if attribution is required
+  disableMature?: boolean,      // Only if the license prohibits NSFW
+}
+```
+
+## Notes
+
+- **Do not** add to `ecosystemSupport`, `ecosystemSettings`, workflows, graph, or handler files in this skill — those are generation-support concerns and belong to the `add-generation-support` skill.
+- **Do not** skip the typecheck step. The base model records are validated against ecosystem IDs, and a mismatch breaks the entire constants file.
+- If a new ecosystem is a child of an existing one (e.g., fine-tunes of SDXL), set `parentEcosystemId` and use a sort order from the child range (100+, 200+).
+- `name` (lowercase) is used for matching against orchestrator responses — keep it consistent with what the orchestrator returns.
+
+## Examples of past additions
+
+- **Ernie** (Baidu, image): new family, new license; ECO.Ernie = 67, BM.Ernie = 83, familyId 17, licenseId 13 (Apache 2.0 — matched existing).
+- **Seedance** (ByteDance, video): family 12 (ByteDance — existed), licenseId 23 (Seedream — shared with Seedream since ByteDance uses the same agreement).
+- **Flux 3 Video** (BFL, video): ECO.Flux3Video = 79, BM.Flux3Video = 98, family 1, new licenseId 39. A worked example of the split test — BFL announced FLUX-3 as one multimodal model, which reads like a single ecosystem, but it ships as separate weight releases (Video, Image, the open-weight Dev backbone). Shared architecture, different checkpoints ⇒ separate ecosystems, named for the modality so the siblings land without a rename. Same reasoning as the Flux.2 Klein variants, which share `parentEcosystemId: ECO.Flux2` purely for AIR identity while their LoRAs do not cross.

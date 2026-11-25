@@ -1,0 +1,309 @@
+---
+name: skill-auto-router
+description: Also known as Skill Auto Router, Skill_auto_router, or legacy skill-router-cartographer. Use before substantial work when installed skills should be selected, audited, mapped, reflected into project instructions, or reviewed for routing mistakes. Scans local Codex-compatible skills, extracts descriptions/triggers/scenarios/overlaps, routes the current task to a short list of best-fit skills, shows visible skill usage/conflict/correction notices, records local feedback traces, and safely suggests or applies project-instruction guidance.
+metadata:
+  short-description: Route work to installed skills
+---
+
+# Skill Auto Router
+
+Name policy:
+
+- Public name: `Skill Auto Router`.
+- Repository slug: `Skill_auto_router`.
+- Canonical skill id in traces and instructions: `skill-auto-router`.
+- Legacy alias: `skill-router-cartographer`.
+
+Normalize old aliases to `skill-auto-router` in feedback traces so health reports do not split the same skill into multiple names.
+
+Use this skill as a lightweight router before substantial work, especially when many skills are installed or when the user asks why a skill did or did not trigger. It can be used from Codex, Claude Code, Kiro, Antigravity, OpenCode, OpenClaw, Hermes, and other agents that can read Markdown instruction files.
+
+Do not wait for the user to explicitly mention or `@` a skill. Infer likely skills from the user's intent, especially when the user describes a workflow in ordinary language.
+
+Beginner-friendly trigger mode: assume the user may not know coding or skill names. Convert plain-language goals into skill choices. "查一下/研究一下/找资料" means research. "写文章/公众号/润色/排版" means writing/content. "做图/封面/PPT/视觉/UI" means design/media. "做个网站/修报错/跑不起来" means coding/debugging. "看不懂项目/代码地图/审查代码" means codebase onboarding/review. "上传 GitHub/提交/PR/issue" means Git/GitHub workflow. "整理表格/数据分析/PDF/网页转资料" means data/document/local-corpus workflow.
+
+No-skill gate: before routing, decide whether opening a skill is worth the overhead. Do not use a skill for simple direct-answer tasks such as single-sentence rewriting, basic concept explanation, short keyword brainstorming, translation, or lightweight naming unless the user asks for a workflow, source verification, files, code, tools, or a concrete deliverable.
+
+## Workflow
+
+1. Understand the user's task.
+2. Decide the route level: `none`, `light`, `workflow`, or `heavy`.
+3. If route level is `none`, answer directly and show why no skill is needed.
+4. Refresh the local skill map when missing, stale, or after new skill installs.
+5. Route the task to:
+   - one primary workflow skill
+   - zero to three supporting domain/tool skills
+   - one verification or review skill when useful
+6. Load only the selected skills' full `SKILL.md` files.
+7. If project instructions need routing guidance, propose a patch first. Apply only after user approval.
+
+## Post-Install Onboarding
+
+After this skill is installed, after new skills are installed, or on first use in a project, check whether the project or user instructions already have skill-routing guidance:
+
+```bash
+python scripts/onboarding_check.py --project <path> --host all --scope both
+```
+
+If guidance is missing, show the user why this matters and ask before changing anything. The key reason is simple: installing a skill makes it available, but many IDEs/agents will not proactively call it unless their project or user-level instructions tell them to route work through installed skills.
+
+Use this exact prompt shape:
+
+```text
+Setup Notice: skill-auto-router is installed, but this project/user profile does not yet ask agents to route work through installed skills.
+Why: without a short instruction block, the skill may be installed but rarely triggered.
+Recommended: add it to the project instruction file first so it only affects this workspace. Add it globally only if you want skill routing across all projects on this machine.
+Apply project-level guidance, global guidance, both, or skip?
+```
+
+Prefer project instructions first because they affect only the current project. Offer global instructions only when the user wants the behavior across all projects. Never silently edit global or project instructions. If the user says yes, use `scripts/project_instruction_router.py --apply`; it writes a backup when updating an existing instruction file.
+
+## Host Profiles
+
+Use `--host` to target a specific IDE or agent:
+
+- `codex` - project `AGENTS.md`, global `~/.codex/AGENTS.md`, skills in `~/.codex/skills`.
+- `claude-code` - project `CLAUDE.md` or `.claude/CLAUDE.md`, global `~/.claude/CLAUDE.md`, skills in `~/.claude/skills`.
+- `kiro` - project `.kiro/steering/skill-routing.md` with always-on steering frontmatter, global `~/.kiro/steering/AGENTS.md`.
+- `antigravity` - project `AGENTS.md` first, with `GEMINI.md` and `.agents/rules/skill-routing.md` as existing-file fallbacks.
+- `opencode` - project `AGENTS.md`, global `~/.config/opencode/AGENTS.md`, with Claude Code fallbacks.
+- `openclaw` - project `AGENTS.md`; keep `SOUL.md` and other persona files for identity instead of routing rules.
+- `hermes` - project `AGENTS.md` or `HERMES.md`, global `~/.hermes/AGENTS.md`; Hermes can use `skills_list` and `skill_view` when available.
+- `universal` - portable `AGENTS.md` profile for unknown or mixed hosts.
+
+Use `--host all` only for audits and scans. Apply instruction patches one host at a time so the user can approve the exact file being changed.
+
+## Required Visibility
+
+For every non-trivial response, show a compact skill-routing note before doing the work:
+
+```text
+Skill Route: <primary skill> + <supporting skills> + <verification skill>
+Route Level: none | light | workflow | heavy
+Why: <one short reason>
+```
+
+If no skill is useful, say:
+
+```text
+Skill Route: none
+Why: task is trivial / no installed skill adds value
+```
+
+During a non-trivial task, re-check routing whenever the work enters a materially new phase. Do not wait until the final review if the route has clearly changed. Show a compact update:
+
+```text
+Skill Route Update: <old route> -> <new route>
+Route Level: none | light | workflow | heavy
+Why: <what changed>
+Action: <continue/add/replace/verify>
+```
+
+Reroute checkpoints are required when the task shifts into research, source verification, code/debugging, tests, visuals, document/data extraction, GitHub/open-source work, deployment, privacy/security review, or business/product workflow. Also reroute when the user corrects the direction, a needed skill was missed, the agent gets stuck, or the work reveals a new deliverable.
+
+At completion, include a short visible review only when it adds useful accountability, such as after a correction, conflict, verification decision, or substantial workflow task:
+
+```text
+Skill Usage Review: used <skills>; fit was <good/partial>; missed/next <skill or none>.
+```
+
+Keep this brief. The visibility note should make routing understandable without turning every answer into a skill catalog or a logging exercise.
+
+## Usage Notices
+
+Show notices immediately when routing quality affects the task:
+
+```text
+Skill Usage Notice: <info|warning|correction|blocker> - <what went wrong or changed>; action: <what happens next>
+```
+
+Use these levels:
+
+- `info` - useful visibility only.
+- `warning` - a skill may have been missed, overused, or in tension with another skill.
+- `correction` - the route was wrong or incomplete and has been corrected during the task.
+- `blocker` - do not claim completion until the missing verification, source check, or conflict decision is handled.
+
+When multiple skills conflict, show the conflict and the chosen order:
+
+```text
+Skill Conflict Notice: <skill-a> conflicts with <skill-b>; chosen order: <primary workflow> -> <domain/tool support> -> <verification>.
+```
+
+If a verification skill was missed before completion, stop and verify, or clearly state why verification cannot be completed. If the same missed skill appears three or more times in the feedback history, recommend updating project instructions.
+
+## Optional Diagnostics
+
+Default behavior is routing, not logging. Do not spend extra model effort writing trace events during ordinary work. The core value of this skill is deciding whether to use a skill, which skill to use, and when not to use any skill.
+
+Trace files and health reports are optional diagnostics for debugging the router itself. They are useful when the user explicitly asks to audit routing behavior, when maintaining this skill, or when investigating repeated missed/overused/conflicting routes.
+
+Health reports are only meaningful if the trace pipeline is intentionally enabled. Do not treat `skill-trace.jsonl` as a hidden automatic counter for every skill invocation. If tracing is enabled, the intended flow is:
+
+1. At task start, record the route decision.
+2. During the task, re-check routing at phase changes and record a `correction` event when the route materially changes.
+3. At task completion, record the actual usage review with the same `route_id`.
+
+Record the route decision:
+
+```bash
+python scripts/route_task.py "<short task summary>" --trace
+```
+
+The command prints a `route_id`. Keep that id for mid-task corrections and the completion review.
+
+When a mid-task checkpoint changes the route, show `Skill Route Update` and record it as a correction:
+
+```bash
+python scripts/record_trace.py --event-type correction --route-id "<same route_id>" --task "<short summary>" --recommended "new-skill-a,new-skill-b" --used "skill-a" --missed "new-skill-a" --fit partial --severity correction --notice-shown --correction-taken --note "<short non-sensitive reason>"
+```
+
+When the user asks to audit skill use, or when you are intentionally debugging routing telemetry, record a compact local review:
+
+```bash
+python scripts/record_trace.py --event-type usage_review --route-id "<same route_id>" --task "<short summary>" --recommended "skill-a,skill-b" --used "skill-a" --missed "skill-b" --fit partial --severity warning --notice-shown --note "<short non-sensitive note>"
+```
+
+If no route decision was recorded, you may still record a `manual_feedback` event, but health reports must treat it as review-only evidence rather than real usage telemetry. Do not present optional trace output as full usage analytics.
+
+Use `--required` for skills that were mandatory and `--optional` for candidates. Leave empty lists empty; do not record `none`, `n/a`, or status phrases inside skill-name fields. Put route state in `--status`, for example `--status pending`.
+
+Use `fit` values:
+
+- `good` - route matched the task.
+- `partial` - useful but missed or overused something.
+- `wrong` - route was clearly bad.
+- `unknown` - worth recording but not enough evidence.
+
+Summarize feedback history:
+
+```bash
+python scripts/summarize_traces.py
+```
+
+Create a health report only when the user asks how routing telemetry is performing, when maintaining this router, or after several recorded routing corrections:
+
+```bash
+python scripts/skill_health_report.py --project <path> --host codex --scope project
+```
+
+Health reports include trace coverage, paired route decisions and completion reviews, sample-size confidence, invalid JSONL rows, normalized trace pollution, onboarding status, route-level distribution, repeated misses, overuse patterns, conflicts, and instruction recommendations. Treat them as optional diagnostic evidence, not product telemetry or a statistically valid accuracy score. If the report says `insufficient_data`, do not draw product conclusions from it.
+
+This writes:
+
+```text
+~/.codex/skill-router/skill-trace.jsonl
+~/.codex/skill-router/skill-trace-summary.md
+~/.codex/skill-router/skill-health-report.md
+```
+
+Privacy rule: record short task summaries and skill names, not full user prompts, secrets, raw files, or private conversation text.
+
+## Commands
+
+Refresh the local route map:
+
+```bash
+python scripts/scan_skills.py
+```
+
+Refresh a route map across known host skill roots:
+
+```bash
+python scripts/scan_skills.py --host all --project <path>
+```
+
+Check onboarding state:
+
+```bash
+python scripts/onboarding_check.py --project <path> --host all --scope both
+```
+
+If the check reports missing guidance, ask the user whether to install project-level or user/global instructions before doing substantial work.
+
+Route a task:
+
+```bash
+python scripts/route_task.py "make a cited Philippines HVAC spec-in market report"
+```
+
+Route a task and record the route decision:
+
+```bash
+python scripts/route_task.py "make a cited Philippines HVAC spec-in market report" --trace
+```
+
+Route using another host's skill roots:
+
+```bash
+python scripts/route_task.py "debug a failing build" --host claude-code --refresh
+```
+
+Record routing feedback:
+
+```bash
+python scripts/record_trace.py --event-type usage_review --route-id "<same route_id>" --task "HVAC market report" --recommended "spec-driven-vibe-coding,market-research" --used "market-research" --missed "verification-loop" --fit partial --severity warning --notice-shown
+```
+
+Summarize routing feedback:
+
+```bash
+python scripts/summarize_traces.py
+```
+
+Create routing health report:
+
+```bash
+python scripts/skill_health_report.py
+```
+
+Suggest project instruction guidance:
+
+```bash
+python scripts/project_instruction_router.py --host codex --project <path>
+```
+
+Apply the project instruction guidance only after approval:
+
+```bash
+python scripts/project_instruction_router.py --host codex --project <path> --apply
+```
+
+## Output Files
+
+By default scripts write private local outputs to:
+
+```text
+~/.codex/skill-router/
+```
+
+- `skill-map.json` - machine-readable inventory.
+- `skill-roadmap.md` - human-readable route map.
+- `overlaps.md` - likely exact and topic-level overlaps.
+- `skill-trace.jsonl` - compact private route decisions and completion reviews.
+- `skill-trace-summary.md` - aggregate feedback summary.
+- `skill-health-report.md` - user-facing attention items, conflicts, and instruction recommendations.
+
+## Routing Hints
+
+- Market research, competitive intelligence, cited reports: `market-research`, `deep-research`, `research-ops`.
+- Product definition, spec-in, PRD, implementation packages: `spec-driven-vibe-coding`, `product-lens`, `product-capability`.
+- Business building, 一人企业, 一人公司, side business, personal commercialization, business validation, MVP validation, conversion loops, asset ops, and operating reviews: route to the OPC skill family. Prefer `opc-orchestrator` for broad or first-time workflows; use a specific OPC stage skill only when the user clearly asks for that stage.
+- Writing, WeChat drafts, article shaping, copywriting, and polishing: `article-writing`, `writing-shape`, `content-engine`, `copywriting`, and WeChat-specific skills when installed.
+- Local source capture, PDFs, webpages, and reusable research packs: `anything-to-local-data`, document/PDF skills, and data-report skills.
+- GitHub, commits, branches, issues, PRs, and open-source publishing: `git-workflow`, `github-ops`, `opensource-pipeline`.
+- Design, prototypes, slides, artifacts, visual direction: Open Design skills such as `creative-director`, `design-brief`, `artifacts-builder`.
+- Codebase context and repo packing: `repomix`, `repo-scan`, `codebase-onboarding`.
+- Reusable code review memory, code indexes, or "avoid reading the whole repo every time": route to locally installed codebase scanning, onboarding, knowledge/memory, note-taking, review, and verification skills. Do not assume those exact skills exist on every machine.
+- Debugging, TDD, completion checks: `systematic-debugging`, `tdd-workflow`, `verification-loop`, `verification-before-completion`.
+- Local Codex state maintenance: `keep-codex-fast`.
+- Information tracking and digests: `follow-builders`.
+- Unknown ECC component choice: `ecc-guide`.
+- Unknown Superpowers workflow choice: `using-superpowers`.
+
+## Safety
+
+- Do not force skill use for trivial tasks.
+- Do not paste a giant skill catalog into project instructions.
+- Do not overwrite instructions without a backup.
+- Treat generated maps as local/private unless the user chooses to share them.

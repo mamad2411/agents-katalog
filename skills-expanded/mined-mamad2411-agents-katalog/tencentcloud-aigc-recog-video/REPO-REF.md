@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/tencentcloud-aigc-recog-video/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 腾讯云 AI 生成视频识别。调用腾讯云视频内容安全（VM）的 CreateVideoModerationTask 接口，设置 Type=VIDEO_AIGC 创建视频审核任务，再通过 DescribeTaskDetail 接口轮询获取结果，判定视频是否为 AI 生成。适用于 AI 生成视频检测、视频真伪鉴别、AI 合成视频检测、Deepfake 视频检测等场景。"

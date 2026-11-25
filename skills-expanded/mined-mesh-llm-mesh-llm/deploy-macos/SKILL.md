@@ -1,0 +1,223 @@
+---
+name: deploy-macos
+description: Use this skill when deploying, installing, launching, or serving mesh-llm on a macOS machine (local or remote over SSH), including installing a release, shipping a dev build bundle, codesign/quarantine fixes, choosing a model, and verifying it serves.
+metadata:
+  short-description: Deploy mesh-llm on a macOS node
+---
+
+# deploy-macos
+
+Use this when standing up mesh-llm on a macOS machine — either installing a
+release or shipping a locally built dev binary to a remote Mac for testing.
+
+This is the macOS counterpart to `deploy-linux-gpu`. The product bundle contains
+the backend-neutral `mesh-llm` host, product metadata, bundled plugins, and an
+adjacent `native-runtimes/` tree with the selected runtime's manifest and dynamic
+libraries. Transfer and retain the complete bundle; copying only the host does
+not install its inference runtime. Standalone Skippy has a separate CLI archive
+and uses the same native runtime format.
+
+Related skills/docs:
+
+- `deploy-linux-gpu` — remote Linux/CUDA nodes
+- `deploy-windows` — Windows nodes
+- `mesh-join` — creating/joining private and public meshes (tokens, NAT, multi-node)
+- `connect-agents` — pointing Goose/Claude Code/OpenCode/Pi at a running mesh
+- `mesh/docs/USAGE.md` — install details, service mode, model storage
+- `mesh/docs/CLI.md` — full command and model-ref reference
+
+## The one rule that matters most
+
+**mesh-llm resolves and downloads the model itself.** Pass `--model <ref>` and
+it fetches the GGUF into the standard Hugging Face cache on first use. Do NOT
+pre-download with `hf`/`huggingface-cli`, do NOT scp GGUFs around. (Only
+`--gguf` takes a local file path you manage yourself.)
+
+## Install path A: official release (most cases)
+
+```bash
+curl -fsSL https://meshllm.cloud/install.sh | bash
+```
+
+The binary lands at `~/.local/bin/mesh-llm` (may not be on a non-interactive
+SSH `PATH` — use the full path or `bash -lc`). The installer also installs the
+selected native runtime. Metal is the macOS backend; the installer picks it
+automatically.
+
+To install as a per-user background service (launchd agent) in the same step:
+
+```bash
+curl -fsSL https://meshllm.cloud/install.sh | bash -s -- --service
+```
+
+Service files: `~/Library/LaunchAgents/com.mesh-llm.mesh-llm.plist`, shared env
+in `~/.config/mesh-llm/service.env`, startup models in `~/.mesh-llm/config.toml`.
+
+## Install path B: dev build to a remote Mac
+
+Build and bundle locally (from the repo):
+
+```bash
+just bundle          # builds release products, then packages host + default runtime
+                     # /tmp/mesh-llm-bundle.tar.gz and its checksum sidecar
+```
+
+`just bundle` depends on `just release-build` and uses the canonical product
+packager. These development checks prepare a candidate. Final release
+qualification under `release-validation` builds each candidate locally on every
+validation host with `just release-bundle`. Record each build's exact source,
+archive SHA-256, host identity, runtime manifests, and binary version.
+
+Ship and unpack:
+
+```bash
+scp -P <SSH_PORT> /tmp/mesh-llm-bundle.tar.gz user@host:
+ssh -p <SSH_PORT> user@host 'mkdir -p ~/bin && tar xzf mesh-llm-bundle.tar.gz -C ~/bin --strip-components=1'
+```
+
+### Check quarantine xattrs when another transfer path was used
+
+This `scp` and `tar` path does not normally add or propagate
+`com.apple.quarantine`. If the binary came through another transfer path and
+the attribute is present, remove it before retrying:
+
+```bash
+if xattr -p com.apple.quarantine ~/bin/mesh-llm >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine ~/bin/mesh-llm
+fi
+codesign --verify --verbose=2 ~/bin/mesh-llm   # re-sign ad-hoc only if this fails
+```
+
+No Apple-issued identity is needed for SSH/interactive-shell launches.
+
+Verify the version on the remote matches what you built:
+
+```bash
+~/bin/mesh-llm --version
+```
+
+### Troubleshooting: macOS Local Network privacy (same-LAN join/split failures, relay-only peers)
+
+**This is not a deploy precondition.** Launching an ad-hoc/linker-signed binary
+from SSH or an interactive shell is the normal lab path and has worked across
+our Macs repeatedly. Use this section when a same-LAN join or split fails, two
+Macs on the same LAN connect via relay instead of directly, or a GUI app /
+launch agent shows a Local Network alert — check this before diagnosing iroh.
+
+macOS Local Network privacy is keyed to the **responsible code** and its code
+signature. Replacing or ad-hoc re-signing a development binary can therefore
+change the identity whose decision macOS remembers. A GUI app or launch agent
+may show a blocking Local Network alert on the logged-in desktop even though
+the same network is reachable from an interactive shell.
+
+If that happens, for the affected app/binary identity:
+
+1. Avoid re-signing it between attempts (a new signature can reset the
+   remembered decision); for GUI apps/launch agents prefer a stable identity. Verify with
+   `codesign --verify --verbose=2 <path>` and record
+   `codesign -dv --verbose=4 <path> 2>&1` in the lab evidence.
+2. Launch it once from the same responsible app/service context intended for
+   the test while a user is logged in at the Mac. Trigger a mesh join or mDNS
+   operation, then accept the Local Network alert on that Mac. Repeat on every
+   Mac participating in the test.
+3. Check **System Settings > Privacy & Security > Local Network**. If the
+   responsible app is listed, make sure access is enabled. macOS offers no
+   supported command to query or reset an individual program from the
+   undetermined state, so scripts must not claim this check passed merely
+   because a raw UDP probe worked.
+4. Authorize the exact launch context that will run the test. For a
+   CLI-launched repro over SSH, use the held foreground TTY described by
+   `remote-observable-process`. If a per-user launchd agent or GUI app will run
+   the workload, launch that exact agent/app while a user is logged in and
+   accept its prompt before diagnosis; an SSH TTY does not authorize a
+   different responsible app.
+5. Treat the network preflight as passed only after both nodes report an iroh
+   **direct** path, `observed_via_relay=false`, and an
+   `observed_direct_remote_addr` whose IP matches the intended LAN address of
+   the peer. `direct_addr_available=true` alone only proves that some direct
+   address was observed. An invitation containing a LAN candidate, a raw UDP
+   probe, or a working relay path does not prove the deployed process has Local
+   Network access.
+
+If no alert appears, keep the process alive after its first failed LAN
+operation: macOS can fail to display the alert for very short-lived processes.
+Rule this out before debugging iroh candidate selection. See Apple
+TN3179, [Understanding local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
+
+## Launch
+
+Serve a model and join the public mesh:
+
+```bash
+mesh-llm serve --model unsloth/Qwen3.6-27B-GGUF:UD-Q4_K_XL --auto
+```
+
+- `--auto` discovers and joins the community mesh; local serving and mesh
+  joining happen together.
+- Without `--auto` (and without `--join`/`--discover`) you create a private
+  mesh and an invite token is emitted — see the `mesh-join` skill.
+- `--model` accepts catalog names, `repo:QUANT`, `repo/file.gguf`, or a full HF
+  URL. `--gguf /path/file.gguf` serves a local file directly.
+- API on `:9337`, management console on `:3131` (override with `--port` /
+  `--console`).
+
+Notes / gotchas:
+
+- **Do NOT use `--headless` to "go quiet"** — it only disables the embedded web
+  UI and does nothing for backgrounding. For machine-readable output use
+  `--log-format json`.
+- **Model load takes time.** Poll `/v1/models` until your model appears before
+  concluding anything is broken.
+- For background test runs from an agent:
+  `bash -c 'nohup mesh-llm serve --model <ref> --auto > /tmp/mesh.log 2>&1 & disown'`.
+  For persistence across reboots, prefer the `--service` install.
+
+## Verify it's actually serving
+
+```bash
+# Ports bound
+lsof -nP -iTCP:9337 -iTCP:3131 -sTCP:LISTEN
+
+# Models (union of local + mesh peers)
+curl -s http://localhost:9337/v1/models
+
+# Status / peers
+curl -s http://localhost:3131/api/status
+
+# Inference — the returned "model" field tells you which node/model answered
+curl -s http://localhost:9337/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+```
+
+To force your local model specifically, pass its exact id from `/v1/models`
+instead of `auto`.
+
+## Logs and state
+
+- `~/.mesh-llm/runtime/<pid>/logs/skippy-native.log` — embedded llama.cpp/skippy
+  native logs. Check here first if a model fails to load.
+- `~/.mesh-llm/key` — persistent node identity.
+- `~/.mesh-llm/config.toml` — startup models and defaults for bare `mesh-llm serve`.
+- HF cache (`~/.cache/huggingface/...`) — downloaded GGUFs; you generally never
+  need to touch this.
+
+## Stop / clean up
+
+```bash
+mesh-llm stop        # scoped stop of tracked instances (preferred)
+# emergency only: use the PID for the specific instance being validated
+kill -9 <mesh-llm-pid>
+```
+
+A clean stop removes the instance runtime dir under `~/.mesh-llm/runtime/`.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Exit 137 (SIGKILL) after launch | Quarantine xattr possible if another transfer path was used | Check `xattr -p com.apple.quarantine`; if present remove it, then verify the signature as above |
+| `mesh-llm: command not found` over SSH | `~/.local/bin` not on non-interactive PATH | Full path or `bash -lc` |
+| Empty `/v1/models` | Model still downloading/loading | Wait; watch skippy-native.log |
+| "No inference server available" | Election in progress or load failed | Check stderr + skippy-native.log |
+| Stale runtime dir after crash | Unclean exit | `rm -rf ~/.mesh-llm/runtime/<stale_pid>/` (auto-GC'd after 1h too) |

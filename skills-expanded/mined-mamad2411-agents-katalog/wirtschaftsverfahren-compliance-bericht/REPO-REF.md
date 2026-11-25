@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/20138-wirtschaftsverfahren-compliance-bericht/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Wirtschaftsverfahren Compliance Bericht in Juristische Presseberichterstattung geht: bereitet komplexe Wirtschafts-, Insolvenz-, Aufsichts- und Compliance-Verfahren als verständlichen Beric

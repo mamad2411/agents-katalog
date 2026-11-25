@@ -1,0 +1,43 @@
+---
+name: travel-insurance-guide
+description: |
+  Create travel insurance comparison guides.
+  TRIGGERS - Use when user needs help with travel-insurance-guide related tasks.
+category: Travel
+version: 1.0
+source: "https://github.com/Winbda/claude-skills-collection"
+source_repository: "Winbda/claude-skills-collection"
+source_path: "skills/travel-insurance-guide/SKILL.md"
+license: "MIT"
+imported_at: "2026-09-20"
+---
+# travel-insurance-guide
+## Workflow
+1. **Understand Requirements** - Context, audience, goals, constraints
+2. **Research & Analyze** - Best practices, frameworks, background
+3. **Create Draft** - Structured, actionable, tailored output
+4. **Review & Refine** - Quality check, consistency, completeness
+
+## Output Format
+**Context:** [Situation] | **Objective:** [Goal] | **Audience:** [Who]
+
+### Key Components
+| Component | Details | Owner | Timeline |
+|-----------|---------|-------|----------|
+| [Item] | [Specifics] | [Who] | [When] |
+
+### Action Plan
+1. **Immediate:** [First steps]
+2. **Short-term:** [Build momentum]
+3. **Medium-term:** [Scale]
+
+### Success Metrics
+| Metric | Target | Method |
+|--------|--------|--------|
+| [KPI] | [Goal] | [Track] |
+
+## Quality Checklist
+- [ ] Tailored to context
+- [ ] Actionable steps
+- [ ] Measurable criteria
+- [ ] Professional format

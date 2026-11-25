@@ -1,0 +1,196 @@
+---
+name: lidguard-cli-runtime
+description: "LidGuard CLI, settings, permission commands, examples, and failure modes reference. Use when working on command routing/help, settings defaults and validation, linux-permission or macos-permission commands, CLI examples, suspend history, or user-facing operational failures."
+---
+
+# LidGuard CLI Runtime
+
+## Command Routing
+
+- Parse `help`, `start`, `stop`, `remove-pre-suspend-webhook`, `remove-post-session-end-webhook`, `remove-closed-lid-stop-follow-up-webhook`, `remove-session`, `status`, `live-status`, `settings`, `cleanup-orphans`, `current-lid-state`, `current-monitor-count`, `current-temperature`, `suspend-history`, `claude-hook`, `claude-hooks`, `copilot-hook`, `copilot-hooks`, `codex-hook`, `codex-hooks`, `opencode-hook`, `opencode-hooks`, `hook-status`, `hook-install`, `hook-remove`, `hook-events`, `mcp-status`, `mcp-install`, `mcp-remove`, `provider-mcp-status`, `provider-mcp-install`, `provider-mcp-remove`, `preview-system-sound`, `preview-current-sound`, `mcp-server`, and `provider-mcp-server`.
+- In Windows builds, additionally parse `wsl-hook-status`, `wsl-hook-install`, `wsl-hook-remove`, `wsl-codex-hooks`, `wsl-claude-hooks`, `wsl-copilot-hooks`, `wsl-opencode-hooks`, `wsl-mcp-status`, `wsl-mcp-install`, `wsl-mcp-remove`, `wsl-codex-mcp-status`, `wsl-codex-mcp-install`, `wsl-codex-mcp-remove`, `wsl-claude-mcp-status`, `wsl-claude-mcp-install`, `wsl-claude-mcp-remove`, `wsl-copilot-mcp-status`, `wsl-copilot-mcp-install`, `wsl-copilot-mcp-remove`, `wsl-opencode-mcp-status`, `wsl-opencode-mcp-install`, `wsl-opencode-mcp-remove`, `wsl-provider-mcp-status`, `wsl-provider-mcp-install`, and `wsl-provider-mcp-remove`.
+- WSL management commands are Windows-only and must not appear in Linux or macOS routing or help output.
+- WSL management commands accept optional `--distro <name>`. When present, pass the distro through to `wsl.exe --distribution <name>`; when absent, do not pass a distro so WSL uses its default distro.
+- Before any WSL management command does provider work, verify that `wsl.exe` is usable and that the selected/default distro can execute a trivial command.
+- In Linux builds, additionally parse `linux-permission status`, `linux-permission check`, `linux-permission install`, and `linux-permission remove`.
+- Do not include Linux permission commands in Windows routing or help output.
+- In macOS builds, additionally parse `macos-permission status`, `macos-permission check`, `macos-permission install`, and `macos-permission remove`.
+- Do not include macOS permission commands in Windows or Linux routing or help output.
+- Make `help` print a categorized command overview with short descriptions.
+- Make `help <command>` print focused detailed help for one command or recognized command alias.
+- Make `<command> --help` use the same help metadata and return before target command validation or command-specific work.
+- Include `opencode` anywhere help text lists supported first-party providers for `start`, `stop`, `remove-session`, hook management, MCP management, and WSL management.
+- Load persisted default settings and send them with the start IPC request for `start`, the `UserPromptSubmit` path in `codex-hook` and `claude-hook`, the `userPromptSubmitted` path in `copilot-hook`, and the `chat.message` path in `opencode-hook`.
+- Use the named-pipe runtime client for `start`, `stop`, `remove-session`, `status`, `settings`, and `cleanup-orphans` requests.
+
+## Session Management Commands
+
+- `remove-session --all` manually removes every active session currently tracked by the runtime.
+- `remove-session --session <id>` removes a specific session identifier.
+- `remove-session --provider <provider>` narrows manual removal to a provider.
+- Provider MCP removal may also narrow by MCP provider name where supported.
+- `status` should report active sessions, runtime lid state, visible display monitor count, settings summary, soft-lock state, pending provider work state, and runtime cleanup state.
+- `live-status` should keep refreshing status every second until interrupted. Runtime events may refresh the dashboard sooner, but lid state display must not depend on a dedicated live-status lid-state event.
+- `cleanup-orphans` should remove sessions whose watched processes have exited or whose safe provider-specific cleanup criteria match.
+
+## Linux Permission Command
+
+- Compile `linux-permission` only into Linux builds.
+- `linux-permission status` reports the current user, managed polkit rule state, `systemd-inhibit` availability, `systemctl` availability, and logind `CanSuspend` / `CanHibernate` capability values when queryable.
+- `linux-permission check` non-destructively verifies inhibitor acquire/release, `systemctl --version`, and logind suspend/hibernate capability queries. It must not request an actual suspend or hibernate.
+- `linux-permission install` writes `/etc/polkit-1/rules.d/49-lidguard.rules` using root privileges or one-time `sudo`, and grants only the current target user the logind actions LidGuard needs.
+- The managed polkit rule allows only `org.freedesktop.login1.suspend`, `suspend-multiple-sessions`, `hibernate`, `hibernate-multiple-sessions`, `inhibit-block-sleep`, `inhibit-block-idle`, and `inhibit-handle-lid-switch`.
+- `linux-permission remove` deletes the rule only when the file contains LidGuard's managed markers. It must refuse to delete unmanaged files.
+- Do not add a `sudo -v` prepare command; sudo credential caches are tty/timeout scoped and are not a reliable basis for long-running agent protection.
+
+## macOS Permission Command
+
+- Compile `macos-permission` only into macOS builds.
+- `macos-permission status` reports the current user, managed sudoers rule state when directly inspectable, privileged same-value `pmset` usability, `caffeinate`, `pmset`, `powermetrics`, `ioreg`, and `system_profiler` availability, plus current `SleepDisabled` and `hibernatemode` values when queryable.
+- Do not use `sudo cat` or any command outside the managed sudoers allowlist to inspect sudoers content.
+- `macos-permission check` non-destructively verifies `caffeinate` acquire/release, `pmset -g`, same-value privileged `pmset disablesleep`, same-value privileged `pmset hibernatemode`, and one privileged `powermetrics --samplers smc` sample. It must not request an actual sleep or hibernate.
+- `macos-permission install` writes `/private/etc/sudoers.d/lidguard` using root privileges or one-time `sudo`, validates the generated rule with `visudo -cf`, and grants only the current target user the exact privileged commands LidGuard needs.
+- The managed sudoers rule allows only `/usr/bin/pmset -a disablesleep 0`, `/usr/bin/pmset -a disablesleep 1`, `/usr/bin/pmset -a hibernatemode 0`, `/usr/bin/pmset -a hibernatemode 3`, `/usr/bin/pmset -a hibernatemode 25`, and `/usr/bin/powermetrics --samplers smc -n 1 -i 1000`.
+- `macos-permission remove` deletes the sudoers file only when the file contains LidGuard's managed markers. It must refuse to delete unmanaged files.
+- Do not add a `sudo -v` prepare command; sudo credential caches are tty/timeout scoped and are not a reliable basis for long-running agent protection.
+
+## Settings Defaults
+
+- Normal idle sleep prevention: enabled.
+- Away-mode sleep prevention: enabled on Windows only; Linux and macOS builds do not expose this setting and normalize it to disabled.
+- Display sleep prevention: disabled.
+- Temporary lid close action change: enabled for the headless CLI runtime and applied to AC/DC together.
+- Skip suspend when the active lid close action is Do Nothing: enabled by default on Windows and macOS; Linux builds do not expose this setting and normalize it to disabled.
+- Post-stop suspend delay: 10 seconds by default, `0` for immediate suspend.
+- Post-stop suspend mode: Sleep by default, Hibernate optional.
+- Post-stop suspend sound: off by default.
+- Post-stop suspend sound volume override: off by default, accepts 1 through 100 percent, and is rejected rather than clamped when out of range.
+- Suspend history recording: on by default, keeps the latest 10 entries, and accepts `off` or an enabled count of at least 1.
+- Inactive session timeout: 12 minutes by default, accepts `off` or an enabled minute count of at least 1, and has no product-level maximum. Sessions deferred for pending provider work follow the same timeout; deferred stops refresh last activity, so live work keeps waiting, while pending work silent for the configured minutes is abandoned and soft-locks the session.
+- Server runtime cleanup delay after all sessions are gone: 10 minutes by default, accepts `off` to disable automatic runtime exit, `0` for immediate exit, or a positive minute count to wait, and has no product-level maximum.
+- Pre-suspend webhook URL: off by default.
+- Post-session-end webhook URL: off by default.
+- Ask-before-sleep reply webhook URL: off by default.
+- Ask-before-sleep reply wait: `closedLidStopFollowUpDelaySeconds`, default `180`; `0` disables reply waiting, and values `1` through `19` are configuration errors when a reply URL is configured because the user may not have enough time to notice the push notification and reply.
+- Ask-before-sleep reply wait sound: off by default, accepts `off`, supported system sound names, or a playable `.wav` path. It is separate from the post-stop suspend sound.
+- Ask-before-sleep reply wait sound volume override: off by default, accepts `off` or 1 through 100 percent, is rejected rather than clamped when out of range, and is exposed in the CLI as `--closed-lid-stop-follow-up-sound-volume-override-percent`. `--override` is a CLI alias for this value; when both are present, the long option wins.
+- Repeat ask-before-sleep replies: enabled by default. In user-facing text, explain this simply as "after a reply keeps the work going, ask again the next time that work tries to finish."
+- Emergency Hibernation on high temperature: enabled by default.
+- Emergency Hibernation temperature mode: Average by default, with Low and High optional.
+- Emergency Hibernation temperature threshold: 93 Celsius by default, clamped to 70 through 110.
+- Closed-lid PermissionRequest decision: Deny by default, with Allow and Ask optional. Ask marks the active session soft-locked with reason `closed_lid_permission_request_ask` and returns empty stdout so the provider's normal permission flow continues.
+- Ask-before-sleep reply feature state is `off` when the reply URL is empty or `closedLidStopFollowUpDelaySeconds` is `0`, `configuration error` when the saved URL is invalid, `closedLidStopFollowUpDelaySeconds` is `1` through `19`, or `postStopSuspendDelaySeconds` is below `10` while reply waiting is enabled, and `on` only when the URL is valid, reply wait is at least `20`, and post-stop delay is at least `10`.
+- Managed hook timeout is `30` seconds when ask-before-sleep replies are off or in configuration error and `max(30, postStopSuspendDelaySeconds + closedLidStopFollowUpDelaySeconds + 15)` when they are on; changing either delay or the reply URL refreshes installed managed hook timeouts for current-OS managed providers and best-effort WSL managed hook configs on Windows.
+- User interface culture: `auto` by default, with `en`, `ko`, or any `CultureInfo`-resolvable BCP 47 culture name optional.
+- Parent process watchdog: enabled.
+
+## Provider Permission Hooks
+
+- PermissionRequest hooks only emit a structured allow/deny decision when the runtime reports `LidSwitchState = Closed`, `VisibleDisplayMonitorCount = 0`, and Closed-lid PermissionRequest decision is Deny or Allow; otherwise they return empty stdout so the provider's default permission flow continues.
+- When Closed-lid PermissionRequest decision is Ask and the closed-lid policy is active, mark the session soft-locked with reason `closed_lid_permission_request_ask` before returning empty stdout. If soft-lock recording fails, keep stdout empty and rely on hook/runtime logs for diagnostics.
+- Claude and GitHub Copilot CLI structured closed-lid `PermissionRequest` allow/deny outputs also set `interrupt: true`; OpenCode `permission.ask` uses only `status` values of `allow` or `deny` because the OpenCode 1 plugin output type exposes no message field, while the OpenCode 2 permission evaluate hook receives the same decision as `effect` plus `message`.
+- Keep hook DTOs separate per provider even when another provider later uses a similar JSON shape.
+- Claude `Elicitation` hooks emit a structured `cancel` only when the runtime reports `LidSwitchState = Closed` and `VisibleDisplayMonitorCount = 0`; otherwise they return empty stdout so Claude's default elicitation flow continues.
+
+## CLI Examples
+
+```powershell
+lidguard start --provider codex --session "<session-id>" --parent-pid 1234
+lidguard stop --provider codex --session "<session-id>"
+lidguard remove-pre-suspend-webhook
+lidguard remove-post-session-end-webhook
+lidguard remove-session --all
+lidguard remove-session --session "<session-id>"
+lidguard remove-session --session "<session-id>" --provider codex
+lidguard start --provider claude --session "<session-id>"
+lidguard stop --provider claude --session "<session-id>"
+lidguard claude-hook
+lidguard claude-hooks settings-json
+lidguard start --provider copilot --session "<session-id>"
+lidguard stop --provider copilot --session "<session-id>"
+lidguard copilot-hook --event userPromptSubmitted
+lidguard copilot-hooks config-json
+lidguard codex-hook
+lidguard codex-hooks config-toml
+lidguard opencode-hook --event chat.message
+lidguard opencode-hooks plugin-js
+lidguard hook-status --provider copilot
+lidguard hook-install --provider copilot
+lidguard hook-remove --provider copilot
+lidguard hook-events --provider copilot --count 50
+lidguard wsl-hook-status --provider codex --distro Ubuntu
+lidguard wsl-hook-install --provider claude
+lidguard wsl-hook-remove --provider copilot --distro Ubuntu
+lidguard wsl-codex-hooks config-toml --distro Ubuntu
+lidguard wsl-claude-hooks settings-json
+lidguard wsl-copilot-hooks config-json
+lidguard wsl-opencode-hooks plugin-js
+lidguard mcp-status all
+lidguard mcp-install all
+lidguard mcp-remove all
+lidguard wsl-mcp-status codex --distro Ubuntu
+lidguard wsl-codex-mcp-install
+lidguard wsl-claude-mcp-remove --distro Ubuntu
+lidguard wsl-opencode-mcp-install --distro Ubuntu
+lidguard provider-mcp-status --config "C:\path\to\mcp.json"
+lidguard provider-mcp-install --config "C:\path\to\mcp.json" --provider-name "ExampleProvider"
+lidguard provider-mcp-remove --config "C:\path\to\mcp.json"
+lidguard wsl-provider-mcp-status --config "~/.example/mcp.json" --distro Ubuntu
+lidguard wsl-provider-mcp-install --config "~/.example/mcp.json" --provider-name "ExampleProvider"
+lidguard wsl-provider-mcp-remove --config "~/.example/mcp.json"
+lidguard provider-mcp-server --provider-name "ExampleProvider"
+lidguard current-lid-state
+lidguard current-monitor-count
+lidguard current-temperature
+lidguard current-temperature high
+lidguard linux-permission status
+lidguard linux-permission check
+lidguard linux-permission install
+lidguard linux-permission remove
+lidguard macos-permission status
+lidguard macos-permission check
+lidguard macos-permission install
+lidguard macos-permission remove
+lidguard suspend-history
+lidguard suspend-history 20
+lidguard preview-system-sound Asterisk
+lidguard preview-current-sound
+lidguard settings
+lidguard settings --emergency-hibernation-temperature-mode average
+lidguard settings --change-lid-action true
+lidguard settings --skip-suspend-when-lid-close-does-nothing true
+lidguard settings --post-stop-suspend-delay-seconds 0
+lidguard settings --post-stop-suspend-sound Asterisk
+lidguard settings --post-stop-suspend-sound-volume-override-percent 75
+lidguard settings --post-stop-suspend-sound-volume-override-percent off
+lidguard settings --suspend-history-count 10
+lidguard settings --suspend-history-count off
+lidguard settings --session-timeout-minutes 12
+lidguard settings --session-timeout-minutes off
+lidguard settings --server-runtime-cleanup-delay-minutes 10
+lidguard settings --server-runtime-cleanup-delay-minutes 0
+lidguard settings --server-runtime-cleanup-delay-minutes off
+lidguard settings --pre-suspend-webhook-url https://example.com/lidguard-webhook
+lidguard settings --post-session-end-webhook-url https://example.com/lidguard-session-ended
+lidguard settings --closed-lid-stop-follow-up-webhook-url https://example.com/lidguard-follow-up
+lidguard settings --closed-lid-stop-follow-up-delay-seconds 180
+lidguard settings --closed-lid-stop-follow-up-sound Asterisk --override 75
+lidguard settings --closed-lid-stop-follow-up-sound off --override off
+lidguard settings --repeat-closed-lid-stop-follow-up true
+lidguard settings --closed-lid-permission-request-decision allow
+lidguard settings --closed-lid-permission-request-decision ask
+lidguard remove-closed-lid-stop-follow-up-webhook
+lidguard settings --prevent-system-sleep true --prevent-display-sleep true --power-request-reason "LidGuard keeps agent sessions awake"
+lidguard status
+lidguard live-status
+lidguard cleanup-orphans
+```
+
+## Failure Modes
+
+- Hook start succeeds but stop is missed: parent process watcher should clean up when safe.
+- Runtime crashes after a temporary lid policy change: recovery paths should restore pending backup state before normal command execution when a backup exists.
+- Power setting changes are denied by policy: keep normal power requests and surface the failure.
+- Hibernate is unsupported or disabled: Emergency Hibernation falls back to Sleep after recording the hibernate failure; other Hibernate requests should fail clearly unless a safe fallback is intentionally added.
+- Multiple providers run at once: ref-count active sessions and restore only after the last session stops.
+- Active power scheme changes during a session: restore the originally backed-up scheme.

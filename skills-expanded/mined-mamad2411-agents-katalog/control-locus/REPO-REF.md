@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-hashgraph-online-awesome-codex-plugins/control-locus/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Apply locus of control — the design choice between making the system appear to act on the user''s behalf (external locus) and making the user appear to direct the system (internal locus). Use when des

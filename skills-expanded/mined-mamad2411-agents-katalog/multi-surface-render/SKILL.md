@@ -1,0 +1,385 @@
+---
+name: multi-surface-render
+compatibility: "Claude Code 2.1.251+"
+description: "Multi-surface rendering with json-render — one JSON spec produces React web, Next.js, React Native, Ink terminal UIs, PDFs, emails, Remotion videos, OG images, and 3D scenes. Covers renderer target selection, registry mapping, and platform APIs (renderToBuffer, renderToStream, renderToFile). Use when generating output for several platforms or creating PDF reports, email templates, demo videos, or social images from one component spec."
+tags: [json-render, multi-surface, pdf, email, remotion, video, image, react, rendering, ink, nextjs]
+version: 1.1.0
+author: OrchestKit
+user-invocable: false
+disable-model-invocation: false
+complexity: medium
+context: inherit
+persuasion-type: reference
+metadata:
+  category: frontend
+  upstream-package: "@json-render/core"
+  upstream-version-tested: "0.20.0"
+---
+
+# Multi-Surface Rendering with json-render
+
+Define once, render everywhere. A single json-render catalog and spec can produce React web UIs, PDF reports, HTML emails, Remotion demo videos, and OG images — each surface gets its own registry that maps catalog types to platform-native components.
+
+## Quick Reference
+
+| Category | Rules | Impact | When to Use |
+|----------|-------|--------|-------------|
+| [Target Selection](#target-selection) | 1 | HIGH | Choosing which renderer for your use case |
+| [React Renderer](#react-renderer) | 1 | MEDIUM | Web apps, SPAs, dashboards |
+| [PDF & Email Renderer](#pdf--email-renderer) | 1 | HIGH | Reports, documents, notifications |
+| [Video & Image Renderer](#video--image-renderer) | 1 | MEDIUM | Demo videos, OG images, social cards |
+| [Registry Mapping](#registry-mapping) | 1 | HIGH | Platform-specific component implementations |
+
+**Total: 5 rules across 5 categories**
+
+## How Multi-Surface Rendering Works
+
+1. **One catalog** — Zod-typed component definitions shared across all surfaces
+2. **One spec** — flat-tree JSON/YAML describing the UI structure
+3. **Many registries** — each surface maps catalog types to its own component implementations
+4. **Many renderers** — each package renders the spec using its registry
+
+The catalog is the contract. The spec is the data. The registry is the platform-specific implementation.
+
+## Quick Start — Same Catalog, Different Renderers
+
+### Shared Catalog (used by all surfaces)
+
+```typescript
+import { defineCatalog } from '@json-render/core'
+import { schema } from '@json-render/react/schema'
+import { z } from 'zod'
+
+export const catalog = defineCatalog(schema, {
+  components: {
+    Heading: {
+      props: z.object({
+        text: z.string(),
+        level: z.enum(['h1', 'h2', 'h3']),
+      }),
+      children: false,
+    },
+    Paragraph: {
+      props: z.object({ text: z.string() }),
+      children: false,
+    },
+    StatCard: {
+      props: z.object({
+        label: z.string(),
+        value: z.string(),
+        trend: z.enum(['up', 'down', 'flat']).optional(),
+      }),
+      children: false,
+    },
+  },
+})
+```
+
+### Render to Web (React)
+
+```tsx
+import { Renderer } from '@json-render/react'
+import { webRegistry } from './registries/web'
+
+// webRegistry comes from `defineRegistry(catalog, { components })`.
+// RendererProps is { spec, registry, loading?, fallback? } — no catalog prop.
+export const Dashboard = ({ spec }) => (
+  <Renderer spec={spec} registry={webRegistry} />
+)
+```
+
+### Render to PDF
+
+```typescript
+import { renderToBuffer, renderToFile } from '@json-render/react-pdf'
+import { pdfRegistry } from './registries/pdf'
+
+// Buffer for HTTP response. PDF options are { registry?, state?, handlers? }.
+// includeStandard is an EMAIL option, not a PDF one (see references/upstream-pdf.md).
+const buffer = await renderToBuffer(spec, { registry: pdfRegistry })
+
+// Direct file output — renderToFile(spec, filePath, options?)
+await renderToFile(spec, './output/report.pdf', { registry: pdfRegistry })
+```
+
+### Render to Email
+
+```typescript
+import { renderToHtml } from '@json-render/react-email'
+import { emailRegistry } from './registries/email'
+
+const html = await renderToHtml(spec, { registry: emailRegistry })
+await sendEmail({ to: user.email, subject: 'Weekly Report', html })
+```
+
+### Render to OG Image (Satori)
+
+```typescript
+import { renderToSvg, renderToPng } from '@json-render/image'
+import { imageRegistry } from './registries/image'
+
+const png = await renderToPng(spec, {
+  registry: imageRegistry,
+  width: 1200,
+  height: 630,
+})
+```
+
+### Render to Video (Remotion)
+
+```tsx
+// Verified 2026-07-31 against @json-render/remotion@0.19.0: the export is
+// `Renderer` and its props are { spec, components }. fps and durationInFrames
+// belong on Remotion's own Composition, not on this renderer.
+import { Renderer } from '@json-render/remotion'
+import { remotionComponents } from './registries/remotion'
+
+export const DemoVideo = () => (
+  <Renderer spec={spec} components={remotionComponents} />
+)
+```
+
+### Render to Terminal (Ink, 0.15+)
+
+```tsx
+import { render } from 'ink'
+import { Renderer } from '@json-render/ink'
+import { catalog } from './catalog'
+import { inkRegistry } from './registries/ink'
+
+render(<Renderer spec={spec} catalog={catalog} registry={inkRegistry} />)
+```
+
+Useful for `/ork:*` CLI dashboards and streaming agent chat interfaces — ships 20+ Ink-native components (Box, Text, Spinner, Table, Markdown, Progress, etc.).
+
+### Render to Next.js App (0.16+)
+
+```typescript
+// createNextApp lives on the /server subpath, not the package root.
+import { createNextApp } from '@json-render/next/server'
+
+const { getPageData, generateMetadata, generateStaticParams } = createNextApp({
+  spec,                        // NextAppSpec: routes keyed by Next.js URL patterns
+  loaders: { getPost },        // server-side data loaders referenced by route.loader
+})
+```
+
+It does **not** scaffold a project on disk. `createNextApp` returns the server-side pieces you
+re-export from a catch-all route, and the page itself renders through `PageRenderer`:
+
+```tsx
+// app/[[...slug]]/page.tsx
+export { generateMetadata, generateStaticParams }
+
+export default async function Page({ params }) {
+  const data = await getPageData(params)
+  if (!data) notFound()
+  return <PageRenderer {...data} registry={webRegistry} />
+}
+```
+
+A spec describes a route tree (pages, layouts, metadata, loading and error states), not just a
+component tree.
+
+## Decision Matrix — When to Use Each Target
+
+| Target | Package | When to Use | Output |
+|--------|---------|-------------|--------|
+| React | `@json-render/react` | Web apps, SPAs | JSX |
+| Next.js | `@json-render/next` *(0.16+)* | Full apps: routes, layouts, SSR, metadata | Next.js app |
+| Vue | `@json-render/vue` | Vue projects | Vue components |
+| Svelte | `@json-render/svelte` | Svelte projects | Svelte components |
+| Svelte+shadcn | `@json-render/shadcn-svelte` *(0.16+)* | 36-component Svelte 5 catalog | Svelte + Tailwind |
+| React Native | `@json-render/react-native` | Mobile apps (25+ components) | Native views |
+| Terminal | `@json-render/ink` *(0.15+)* | CLI UIs, TUIs, streaming chat | Ink (terminal) |
+| PDF | `@json-render/react-pdf` | Reports, documents | PDF buffer/file |
+| Email | `@json-render/react-email` | Notifications, digests | HTML string |
+| Remotion | `@json-render/remotion` | Demo videos, marketing | MP4/WebM |
+| Image | `@json-render/image` | OG images, social cards | SVG/PNG (Satori) |
+| YAML | `@json-render/yaml` *(0.14+)* | Token optimization, streaming parser | YAML string |
+| MCP | `@json-render/mcp` | Claude/Cursor/ChatGPT conversations | Sandboxed iframe |
+| 3D | `@json-render/react-three-fiber` | 3D scenes (19 components, verified 2026-07-31; roster lives upstream) | Three.js canvas |
+| Codegen | `@json-render/codegen` | Source code from specs | TypeScript/JSX |
+
+All `@json-render/*` renderers are verified against **0.20.0** (`@json-render/core`).
+The 0.19.0 to 0.20.0 export surface went 84 to 87 symbols with zero removals, so every
+API documented here still resolves. 0.20.0 adds named slots (`slots?: Record<string,
+string[]>` on `UIElement`, with catalogs declaring `slots: ["default", "header", ...]`),
+nested repeats via an item-relative `repeat.statePath` of the form `{"$item": "employees"}`,
+and item-scoped visibility so a `repeat` plus `visible: {"$item": ...}` on the same element
+filters items instead of failing. One breaking change, which no rule in this skill uses:
+`ActionExecutionContext.executeAction` now takes an `ActionBinding` rather than a bare
+action name, which only affects hand-written custom renderer bridges.
+
+Load `rules/target-selection.md` for detailed selection criteria and trade-offs.
+
+## Upstream coverage (do not restate)
+
+This skill wraps `@json-render/*`. Vendor documentation is fetched, not repeated. What survives here
+is the house delta: `references/ork-delta.md` plus the five rules.
+
+| Topic | Source |
+|-------|--------|
+| Full renderer signatures and option objects (`renderToBuffer` / `renderToFile` / `renderToStream`, `renderToHtml` / `renderToPlainText`, `renderToSvg` / `renderToPng`, Remotion exports) | `references/upstream-pdf.md`, `upstream-email.md`, `upstream-image.md`, `upstream-remotion.md` (vendored verbatim; re-sync with `bash scripts/sync-vercel-skills.sh`) |
+| Standard component rosters per target (`Document`, `Page`, `Table`, email `Section` / `Row` / `Column`, Remotion transitions and effects) | the same four vendored `references/upstream-*.md` files |
+| `<Renderer>` props, `defineRegistry`, `useUIStream` | https://github.com/vercel-labs/json-render/tree/main/packages/react. The 0.19 prop-shape correction (no `catalog` prop, no top-level `onError`) is a house finding and stays in `rules/react-renderer.md` |
+| Email client constraints: 600px container, table layout, inline styles, absolute image URLs | `references/upstream-email.md` ("Email Best Practices") |
+| Satori CSS support matrix | https://github.com/vercel/satori. The working subset this skill designs image registries against stays in `rules/video-image-renderer.md` |
+| react-pdf style property support (flexbox set, no grid) | https://react-pdf.org/styling |
+| Remotion render cost and cloud rendering | https://www.remotion.dev/docs/lambda |
+| Per-package capability and output matrix | the house target picks stay in the Decision Matrix above and in `rules/target-selection.md`; per-package detail at https://github.com/vercel-labs/json-render |
+
+Read `references/ork-delta.md` before writing renderer code: it carries the API-drift rule, the
+Remotion and PDF latency budgets, and the PDF / React Native registry layout ceiling.
+
+## PDF Renderer — Reports and Documents
+
+The `@json-render/react-pdf` package renders specs to PDF using react-pdf under the hood. Three output modes: buffer, file, and stream.
+
+```typescript
+import { renderToBuffer, renderToFile, renderToStream } from '@json-render/react-pdf'
+
+// In-memory buffer (for HTTP responses, S3 upload)
+// PDF options are { registry?, state?, handlers? }, no catalog field
+const buffer = await renderToBuffer(spec, { registry: pdfRegistry })
+res.setHeader('Content-Type', 'application/pdf')
+res.send(buffer)
+
+// Direct file write — renderToFile(spec, filePath, options?)
+await renderToFile(spec, './output/report.pdf', { registry: pdfRegistry })
+
+// Streaming (for large documents)
+const stream = await renderToStream(spec, { registry: pdfRegistry })
+stream.pipe(res)
+```
+
+Load `rules/pdf-email-renderer.md` for PDF registry patterns and email rendering.
+
+## Image Renderer — OG Images and Social Cards
+
+The `@json-render/image` package uses Satori to convert specs to SVG, then optionally to PNG. Designed for server-side generation of social media images.
+
+```typescript
+import { renderToSvg, renderToPng } from '@json-render/image'
+
+// SVG output (smaller, scalable)
+const svg = await renderToSvg(spec, {
+  registry: imageRegistry,
+  width: 1200,
+  height: 630,
+})
+
+// PNG output (universal compatibility)
+const png = await renderToPng(spec, {
+  registry: imageRegistry,
+  width: 1200,
+  height: 630,
+})
+```
+
+Load `rules/video-image-renderer.md` for Satori constraints and Remotion composition patterns.
+
+## Registry Mapping — Same Catalog, Platform-Specific Components
+
+Each surface needs its own registry. The registry maps catalog types to platform-specific component implementations while the catalog and spec stay identical.
+
+```typescript
+// Web registry — uses HTML elements
+const webRegistry = {
+  Heading: ({ text, level }) => {
+    const Tag = level // h1, h2, h3
+    return <Tag className="font-bold">{text}</Tag>
+  },
+  StatCard: ({ label, value, trend }) => (
+    <div className="rounded border p-4">
+      <span className="text-sm text-gray-500">{label}</span>
+      <strong className="text-2xl">{value}</strong>
+    </div>
+  ),
+}
+
+// PDF registry — uses react-pdf primitives
+import { Text, View } from '@react-pdf/renderer'
+const pdfRegistry = {
+  Heading: ({ text, level }) => (
+    <Text style={{ fontSize: level === 'h1' ? 24 : level === 'h2' ? 18 : 14 }}>
+      {text}
+    </Text>
+  ),
+  StatCard: ({ label, value }) => (
+    <View style={{ border: '1pt solid #ccc', padding: 8 }}>
+      <Text style={{ fontSize: 10, color: '#666' }}>{label}</Text>
+      <Text style={{ fontSize: 18, fontWeight: 'bold' }}>{value}</Text>
+    </View>
+  ),
+}
+```
+
+Load `rules/registry-mapping.md` for registry creation patterns and type safety.
+
+## Rule Details
+
+### Target Selection
+
+Decision criteria for choosing the right renderer target.
+
+| Rule | File | Key Pattern |
+|------|------|-------------|
+| Target Selection | `rules/target-selection.md` | Use case mapping, output format constraints |
+
+### React Renderer
+
+Web rendering with the `<Renderer>` component.
+
+| Rule | File | Key Pattern |
+|------|------|-------------|
+| React Renderer | `rules/react-renderer.md` | `<Renderer>` component, streaming, error boundaries |
+
+### PDF & Email Renderer
+
+Server-side rendering to PDF buffers/files and HTML email strings.
+
+| Rule | File | Key Pattern |
+|------|------|-------------|
+| PDF & Email | `rules/pdf-email-renderer.md` | renderToBuffer, renderToFile, renderToHtml |
+
+### Video & Image Renderer
+
+Remotion compositions and Satori image generation.
+
+| Rule | File | Key Pattern |
+|------|------|-------------|
+| Video & Image | `rules/video-image-renderer.md` | Renderer (Remotion), renderToPng, renderToSvg |
+
+### Registry Mapping
+
+Creating platform-specific registries for a shared catalog.
+
+| Rule | File | Key Pattern |
+|------|------|-------------|
+| Registry Mapping | `rules/registry-mapping.md` | Per-platform registries, type-safe mapping |
+
+## Key Decisions
+
+| Decision | Recommendation |
+|----------|----------------|
+| PDF library | Use `@json-render/react-pdf` (react-pdf), not Puppeteer screenshots |
+| Email rendering | Use `@json-render/react-email` (react-email), not MJML or custom HTML |
+| OG images | Use `@json-render/image` (Satori), not Puppeteer or canvas |
+| Video | Use `@json-render/remotion` (Remotion), not FFmpeg scripts |
+| Registry per platform | Always separate registries; never one registry for all surfaces |
+| Catalog sharing | One catalog definition shared via import across all registries |
+
+## Common Mistakes
+
+1. Building separate component trees for each surface — defeats the purpose; share the catalog and spec
+2. Using Puppeteer to screenshot React for PDF generation — slow, fragile; use native react-pdf rendering
+3. One giant registry covering all platforms — impossible since PDF uses `<View>`/`<Text>`, web uses `<div>`/`<span>`
+4. Forgetting Satori limitations — no CSS grid, limited flexbox; design image registries with these constraints
+5. Duplicating catalog definitions per surface — one catalog, many registries; the catalog is the contract
+
+## Related Skills
+
+- `ork:json-render-catalog` — Catalog definition patterns with Zod, shadcn components
+- `ork:demo-producer` — Video production pipeline using Remotion
+- `ork:mcp-visual-output` — Rendering specs in Claude/Cursor via MCP

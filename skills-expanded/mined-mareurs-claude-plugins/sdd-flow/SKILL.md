@@ -1,0 +1,95 @@
+---
+name: sdd-flow
+description: Use when starting, resuming or finishing a feature in a project that has `.sdd/config.json` (strict spec-driven development). Walks the nine-step flow from spec to merge and says which steps the user must approve by typing a command.
+---
+
+# sdd-flow
+
+`sdd` makes the superpowers flow strict. It does not replace superpowers skills; it adds gates
+that the user opens. This skill is the map: which skill to call at each step, and where the
+user has to act.
+
+## The rule
+
+**Enforcement comes from the hooks, not from this guide.** You ask the user to type
+`/sdd:approve ...`; you never edit status fields (`status: approved`, `approved:`,
+`implemented`, `done`) and you never write the approval record yourself. A tool write to
+those fields is denied, and a typed command is the only thing that opens a gate.
+
+You may write `status: draft`, `feature:`, `kind:` and `branch:` in frontmatter.
+
+**Which harness.** If your native tools are named in lower case (`read`, `edit`, `shell`) and
+codescout's as `codescout_<tool>`, you run in OpenCode: read `references/opencode.md` before
+step 1. Otherwise (Claude Code) the command names below are exact.
+
+## The nine steps
+
+1. **Resume.** Find the feature's spec and plan before starting anything new. Query the
+   catalog; the calls are in `references/artifacts.md`. Re-enter at the first step whose
+   gate is not yet open.
+2. **Design.** Call `superpowers:brainstorming`. Its design doc is the spec, saved under
+   `docs/superpowers/specs/`. Give it `kind: spec`, `status: draft`, `feature: <slug>` and
+   the tag `sdd`.
+3. **Gate 1.** Stop and ask the user to type `/sdd:approve spec <feature>`. Do not go on to
+   planning before they have.
+4. **Plan.** Call `superpowers:writing-plans`. Its template line `**Spec:** [path ...]` must
+   be filled with the plain root-relative path, optionally in backticks:
+   `**Spec:** docs/superpowers/specs/2026-11-05-x-design.md`. A Markdown link is not
+   followed, and the plan then never becomes active. Give the plan `kind: plan`,
+   `status: draft`, `feature: <slug>` and the tag `sdd`.
+5. **Gate 2.** In this order:
+   1. Commit the spec and the plan while the plan is still `draft`. This feature's plan is
+      not active yet, so a commit on the base branch passes the review guard, as long as no
+      other feature is in flight: while another feature's plan is active and not yet
+      review-approved, the guard refuses commits on the base branch, and this commit must
+      wait until that feature is reviewed. The worktree starts from HEAD and would not
+      contain them otherwise.
+   2. Ask the user to type `/sdd:approve plan <feature>`.
+   3. Write `branch: <name>` into the plan's frontmatter (an allowed field).
+   4. Create the worktree and the feature branch.
+
+   The approval frontmatter that `/sdd:approve` writes after the commit stays an uncommitted
+   change in the main checkout; the hooks read it there. It is committed at step 9, after
+   `/sdd:approve review`. Do not try to commit it on the base branch before that: the
+   review guard refuses.
+6. **Execute.** Call `superpowers:subagent-driven-development`, or
+   `superpowers:executing-plans` for inline work. Source writes are denied until the plan is
+   active; stay inside the spec.
+7. **Drift.** Call `codescout-companion:spec-drift`. It compares the spec's acceptance
+   criteria with the code and records a verdict on the spec. A Missing or Divergent
+   criterion is a NO-GO: stop, and change the code or the spec before going on.
+8. **Review.** Run the `review` command. It checks the constitution and the drift verdict
+   and writes a GO or NO-GO report. On GO, ask the user to type
+   `/sdd:approve review <feature>`, and tell them to read the report first: that typed
+   command is the real gate.
+9. **Finish.** After `/sdd:approve review` and before any merge, on the base branch, commit the spec and plan frontmatter
+   (the main checkout). The review guard lets that commit through because the review record
+   names the feature branch's current tip. Then merge: call
+   `superpowers:finishing-a-development-branch`; the merge or PR it produces is what the
+   review gate guards. In the other order `git merge` refuses ("Your local changes ... would
+   be overwritten by merge") whenever the branch touched the plan, such as a ticked
+   checkbox. For a PR, commit the frontmatter on the base branch the same way before
+   `git pull` brings in the merged PR; pushing that commit is gated, and the review record
+   satisfies the gate. Any commit added to the feature branch after `/sdd:approve review`
+   needs a new review and a new `/sdd:approve review <feature>`.
+   Then ask the user to type `/sdd:approve done <feature>`.
+   Commit the `implemented`/`done` frontmatter it writes; the plan is no longer active, so
+   that commit on the base branch is not gated. Record the merge commit or PR as a note on
+   the spec. The calls are in `references/artifacts.md`.
+
+## After each approval
+
+The hook confirms in one line. Record it as an event on the spec (see
+`references/artifacts.md`), then continue with the next step.
+
+## Where the detail lives
+
+- `references/gates.md`: what each gate denies, when, and what to do when a tool call is
+  denied. Read it when a write or a git command is refused.
+- `references/artifacts.md`: frontmatter fields, the plan-is-active rule, the catalog and
+  event calls, the git common directory. Read it at step 1 and after any approval.
+- `references/opencode.md`: the OpenCode command names and what differs there. Read it
+  first when you run in OpenCode.
+
+Without `.sdd/config.json` none of this applies: the hooks stay silent and superpowers runs
+as usual.

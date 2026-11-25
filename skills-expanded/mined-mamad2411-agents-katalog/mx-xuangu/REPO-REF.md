@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-datawhalechina-hello-agents-mx-xuangu/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 本 Skill 支持基于股票选股条件，如行情指标、财务指标等，筛选满足条件的股票；可查询指定行业 / 板块内的股票、上市公司，以及板块指数的成分股；同时支持股票、上市公司、板块 / 指数推荐等相关任务，采用此skill可避免大模型在选股时使用了过时信息。

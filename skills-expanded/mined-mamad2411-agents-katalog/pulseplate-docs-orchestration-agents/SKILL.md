@@ -1,0 +1,163 @@
+# Orchestration Docs Scope
+
+Scope: `docs/orchestration/**`
+
+- Root [`AGENTS.md`](../../AGENTS.md) owns repo-global workflow, merge gates, and cross-repo agent policy. Keep this scope file focused on orchestration-doc specifics only.
+- [`docs/orchestration/AUTOMATION_READINESS_MATRIX.md`](./AUTOMATION_READINESS_MATRIX.md) is the scope-level SoT for what is policy-only vs launcher-enforced vs host-runtime-constrained automation.
+- When a PR changes workflow or agent behavior only for an orchestration/docs lane, update this scoped file instead of broadcasting initiative-specific routing into root `AGENTS.md`.
+- PR-local orchestration packets are the canonical field-level contract for their lane. Higher-level chain docs should keep only the invariant and link back to the packet.
+- The optional L1 explicit-family relation projection is governed only by [`contracts/REVIEW_INVARIANT_FAMILY_RELATIONS_SHADOW_CONTRACT.md`](./contracts/REVIEW_INVARIANT_FAMILY_RELATIONS_SHADOW_CONTRACT.md); it is a derived offline view with no runtime, learning, reflection, mapping, oracle, routing, review, or merge authority.
+- The optional L2 repeated-family consumer is governed only by [`contracts/REPEATED_INVARIANT_FAMILY_ABSTRACTION_REVIEW_CONTRACT.md`](./contracts/REPEATED_INVARIANT_FAMILY_ABSTRACTION_REVIEW_CONTRACT.md): `task_bootstrap.py` may consume the canonical L1 artifact only as a `post_open_review` opt-in; a repeated explicit family produces one joint `agent-coordinator -> logic-agent -> philosophy-agent -> qa-engineer-agent -> bug-hunter -> security-auditor` pass, adds no parser or semantic inference, and grants no implementation or merge authority.
+- Repo-global post-open review gates supersede historical scoped lane shorthand:
+  every current non-trivial PR must run
+  `qa-engineer-agent -> bug-hunter -> security-auditor`
+  unless the coordinator records an explicit evidence-backed disposition.
+
+- Final-material closeout is repo-global and owned by root
+  [`AGENTS.md`](../../AGENTS.md). Follow its exact-material
+  `pulseplate-pr-review` self-review, provider-neutral no-claim, and hard-gate
+  contract without adding a scoped orchestration variant here.
+
+- For the design-agent runtime realignment bridge:
+  - primary: `agent-coordinator`
+  - secondary: `cursor-specialist-agent`
+  - reviewer: `qa-engineer-agent`
+  - advisory: `architecture-specialist`
+  - optional consult: `creative-designer`, `frontend-engineer`
+  - mandatory post-open lane: repo-global post-open review gates
+- For the design-bridge operationalization lane (`PR21` evidence pipeline):
+  - primary: `agent-coordinator`
+  - execution order:
+    - `creative-designer`
+    - `frontend-engineer`
+    - `qa-engineer-agent`
+  - advisory: `cursor-specialist-agent`
+  - optional consult: `architecture-specialist`
+  - mandatory post-open lane: repo-global post-open review gates
+  - canonical packet:
+    - [`docs/orchestration/DESIGN_BRIDGE_OPERATIONALIZATION_PACKET_2026-04-11.md`](./DESIGN_BRIDGE_OPERATIONALIZATION_PACKET_2026-04-11.md)
+- For the design runtime system web+iOS PR series:
+  - primary: `agent-coordinator`
+  - execution order:
+    - `creative-designer`
+    - `frontend-engineer`
+  - advisory: `cursor-specialist-agent`
+  - reviewer: `architecture-specialist`
+  - mandatory post-open lane: repo-global post-open review gates
+  - invariants:
+    - `PR-0` is docs-only governance and must not widen runtime/API/UI behavior
+    - the lane stays downstream of merged design-runtime, design-bridge, and
+      UI-epic baselines
+    - overlapping `Home`, `Plate`, `Progress`, `Weekly Plan`, `Profile`, and
+      `Paywall` ownership requires an explicit handoff or supersede record
+      before later slices claim those surfaces
+  - canonical packet/runbook:
+    - [`docs/orchestration/DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR0_BOOTSTRAP_PACKET_2026-04-22.md`](./DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR0_BOOTSTRAP_PACKET_2026-04-22.md)
+    - [`docs/orchestration/DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR1_MISSING_GOVERNED_PRIMITIVES_PACKET_2026-04-23.md`](./DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR1_MISSING_GOVERNED_PRIMITIVES_PACKET_2026-04-23.md)
+    - [`docs/orchestration/DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR_SERIES_RUNBOOK.md`](./DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR_SERIES_RUNBOOK.md)
+- For the PR-9 token/runtime parity boundary lane:
+  - primary: `agent-coordinator`
+  - execution order:
+    - `creative-designer`
+    - `frontend-engineer`
+    - `ios-engineer`
+    - `cursor-specialist-agent`
+    - `architecture-specialist`
+    - `security-auditor`
+    - `qa-engineer-agent`
+    - `bug-hunter`
+  - invariants:
+    - token/runtime parity boundary is the final design-governance gate before the first bounded frontend MVP product slice
+    - no web runtime, iOS runtime, token value, generated mirror, Storybook, external-write, screenshot, binary, backend, OpenAPI, auth, billing, or deploy changes are authorized by this lane
+    - generated mirrors remain derived runtime evidence and are not token authoring truth
+    - missing visual, accessibility, or token/runtime parity evidence remains fail-closed and cannot be converted into implementation permission by `DEFERRED`
+  - canonical packet/runbook:
+    - [`docs/orchestration/DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR9_DESIGN_SYSTEM_AUTOMATION_PACKET_2026-05-08.md`](./DESIGN_RUNTIME_SYSTEM_WEB_IOS_PR9_DESIGN_SYSTEM_AUTOMATION_PACKET_2026-05-08.md)
+- For the Kimi prototype intake modernization bridge lane:
+  - primary: `agent-coordinator`
+  - execution order:
+    - `creative-designer`
+    - `cursor-specialist-agent`
+    - `architecture-specialist`
+    - `security-auditor`
+    - `qa-engineer-agent`
+    - `frontend-engineer`
+    - `bug-hunter`
+  - mandatory post-open lane: repo-global post-open review gates
+  - invariants:
+    - Kimi page, Google Drive folder, desktop code bundle, Figma, Canva, screenshots, and generated code remain read-only evidence/reference inputs only
+    - Kimi evidence must normalize into repo vocabulary, component contracts, bridge coverage, fail-closed visual/accessibility decisions, and token/runtime parity boundaries before any web or iOS implementation
+    - no Kimi-generated code, assets, layouts, copy, token values, generated bundles, screenshots, or binaries may be copied into runtime in this lane
+    - start from an isolated clean worktree based on `origin/main`; do not switch or edit the root checkout or unrelated `worktrees/...` lanes in place
+  - canonical protocol:
+    - [`docs/orchestration/KIMI_PROTOTYPE_INTAKE_MODERNIZATION_BRIDGE_PROTOCOL.md`](./KIMI_PROTOTYPE_INTAKE_MODERNIZATION_BRIDGE_PROTOCOL.md)
+- For the Tier 1 CI/CD consolidation wave:
+  - primary: `agent-coordinator`
+  - secondary: `backend-engineer`
+  - reviewer: `security-auditor`
+  - execution helper: `dev-operator`
+  - mandatory post-open lane: repo-global post-open review gates
+  - canonical packet/runbook:
+    - [`docs/orchestration/TIER1_CI_CD_TASK_PACKET_2026-03-26.md`](./TIER1_CI_CD_TASK_PACKET_2026-03-26.md)
+    - [`docs/orchestration/TIER1_CI_CD_PR_SERIES_RUNBOOK.md`](./TIER1_CI_CD_PR_SERIES_RUNBOOK.md)
+- For the Tier 4 scientific / creative cell lane (org tier; maps to `creative_research` / `experiment` classifiers only):
+  - primary: `agent-coordinator`
+  - execution model: phased role order is required; field-level phase contract, optional consults, and execution-record links live in the Tier 4 canonical packet (not duplicated here).
+  - mandatory post-open lane: repo-global post-open review gates
+  - invariants:
+    - no new `task_classification` label; Tier 4 is an organizational name over existing `creative_research` / `experiment` labels per `AGENT_SKILL_ROUTING_POLICY.md` §2a
+    - no runtime autonomy, no autonomous merge, no merge-readiness claims from skills alone
+    - brainstorm and web intake follow `RESEARCH_BRAINSTORMING_PROTOCOL.md` / `RESEARCH_TRACK_PROTOCOL.md`; eval work follows `AGENT_EXPERIMENTATION_PROTOCOL.md`
+  - canonical packet:
+    - [`docs/orchestration/TIER4_SCIENTIFIC_CREATIVE_CELL_PR0_PACKET_2026-04-27.md`](./TIER4_SCIENTIFIC_CREATIVE_CELL_PR0_PACKET_2026-04-27.md)
+  - workforce design reference:
+    - [`docs/orchestration/PulsePlate_Local_Agent_Workforce_System_Design_Packet_v1_2.md`](./PulsePlate_Local_Agent_Workforce_System_Design_Packet_v1_2.md) §8 Tier 4
+- For the Docker / CI discipline PR series:
+  - primary: `agent-coordinator`
+  - execution order:
+    - `architecture-specialist`
+    - `security-auditor`
+    - `backend-engineer`
+    - `dev-operator`
+  - mandatory post-open lane: repo-global post-open review gates
+  - invariants:
+    - root `.dockerignore` remains a strict allowlist unless a narrower documented correction is required
+    - production topology stays split: backend image via `IMAGE_REF`, frontend/Caddy via `frontend/Dockerfile.caddy-spa`
+    - signed provenance restoration is active only for pushed-image lanes; `load: true` jobs stay on `provenance: false`
+    - build-path consolidation may reduce duplicate GitHub Actions image builds but must not change the Docker base image or requirements profile
+    - no Dagger or alternate control-plane pilot before image-budget telemetry, hard-budget, provenance, and build-path consolidation lanes stabilize
+  - canonical packet:
+    - [`docs/orchestration/DOCKER_CI_DISCIPLINE_PR_SERIES_PACKET_2026-04-16.md`](./DOCKER_CI_DISCIPLINE_PR_SERIES_PACKET_2026-04-16.md)
+    - [`docs/orchestration/DOCKER_WORKFLOW_BUILD_PATH_CONSOLIDATION_TASK_PACKET_2026-04-25.md`](./DOCKER_WORKFLOW_BUILD_PATH_CONSOLIDATION_TASK_PACKET_2026-04-25.md)
+- For the METATRON Track A lane (offensive lab **out-of-band**; no product runtime):
+  - primary: `agent-coordinator`
+  - reviewers: `security-auditor`, `bug-hunter`, `architecture-specialist`
+  - acceptance: `qa-engineer-agent` (docs/deploy-only PRs: confirm no `app/` pentest surface)
+  - execution helper: `dev-operator`
+  - optional consult: `data-scientist-agent`, `epistemology-discovery-agent`, `tutor-mentor-agent`, `cursor-specialist-agent` (only if `.cursor/**` edits)
+  - backend: `backend-engineer` only on explicit non-user ingest ticket (not Epic 1 default)
+  - mandatory post-open lane: repo-global post-open review gates
+  - canonical packet:
+    - [`docs/orchestration/METATRON_TRACK_A_EPIC1_TASK_PACKET_2026-04-06.md`](./METATRON_TRACK_A_EPIC1_TASK_PACKET_2026-04-06.md)
+  - related runbook: [`docs/orchestration/METATRON_SECURITY_ASSESSMENT_WAVE_RUNBOOK.md`](./METATRON_SECURITY_ASSESSMENT_WAVE_RUNBOOK.md)
+- For Apple/provider modernization follow-on lanes that preserve the public billing transport contract:
+  - primary: `agent-coordinator`
+  - secondary: `backend-engineer`
+  - reviewer: `security-auditor`
+  - advisory context reviewer: `app-store-release-agent`
+  - PR-open context pack:
+    - `agent-coordinator`
+    - `backend-engineer`
+    - `security-auditor`
+    - `qa-engineer-agent`
+    - `bug-hunter`
+    - `app-store-release-agent`
+  - mandatory post-open lane: repo-global post-open review gates
+  - invariant: preserve the public endpoint, DTO/wire schema, and client transport contract unless a versioned migration packet explicitly changes them
+  - canonical references:
+    - root `AGENTS.md` provider migration wire-compatibility rule is the repo-global invariant
+    - `docs/roadmap/BACKLOG_LEDGER.md#ledger-p1-apple-server-api-migration` owns the lane-specific precondition and temporary-fallback contract
+- Any PR that updates `docs/review/PR_<N>_FIXED_MAPPING.md` in this scope must refresh the PR body mirror after the canonical artifact changes.
+- Detailed governance procedure lives in:
+  - [`docs/orchestration/PR_ORCHESTRATION_CONTRACT_MATRIX.md`](./PR_ORCHESTRATION_CONTRACT_MATRIX.md)
+  - [`RUNBOOK_AGENT.md`](../../RUNBOOK_AGENT.md)

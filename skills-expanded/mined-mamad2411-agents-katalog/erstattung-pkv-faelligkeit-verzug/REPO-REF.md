@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/16129-erstattung-pkv-faelligkeit-verzug/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Erstattung PKV vs Honoraranspruch Patient in GOÄ Gebührenordnung für Ärzte geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit S

@@ -1,0 +1,169 @@
+---
+name: rules
+description: >
+  Per-repo credo special rules (project-local grants) that live in the target repo's
+  `.credo/RULES.md` and travel with the repo. Load and honor these at the start of every
+  session and inside every subagent, so a project can widen credo's autonomy for itself -
+  for example "in this debug-only repo, restarting local services is always allowed without
+  asking". Use whenever a session starts (read the rules), whenever the user asks to set,
+  change, add, or remove a per-repo credo rule ("can we set a credo rule here that ...",
+  "for this repo, always ...", "make it a project rule that ..."), and whenever you delegate
+  to a subagent (pass the rules along). This is credo's per-repo policy layer, independent of
+  dogma. It can only WIDEN latitude, never lower the safety floor.
+---
+
+# rules - per-repo credo special rules
+
+A project can carry its own credo **special rules** in `<target>/.credo/RULES.md`: a
+free-form Markdown file of project-local grants that widen credo's autonomy for that one
+repo. Example: a debug-only repo declaring that restarting local services is always fine
+without asking. These rules are credo-native and independent of dogma; they travel with the
+repo (the file is versioned by default).
+
+## Resolve the file via the project layer (never cwd)
+
+RULES.md lives in the RESOLVED target `.credo/`, not necessarily the cwd. Resolve it with
+the shared project-layer resolver so it also works when you start from a launch hub:
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" rules
+```
+
+- Prints `<target>/.credo/RULES.md` plus `(present)` / `(missing)`.
+- Exit 4 = no target resolved (cwd is a hub or has no credo project). Then the rules cannot
+  be located here - the user pins the target with `/credo:project <path>` (or sets
+  `CREDO_DIR`), and you retry. Do NOT fall back to reading a cwd-relative file.
+
+When it prints a `(present)` path, Read that file. Resolution precedence is the same as for
+config and items: `CREDO_DIR` env > session pin (`/credo:project`) > repo-root `.credo/`.
+
+## Config values live in the cascade, not the repo folder
+
+All config and personal values (ntfy topic/server, sleep, identities, viewports) live in the
+credo config cascade (builtin < global < profile < project). Resolve them ONLY via
+`credo-config.sh get <dotted.key>` - never grep the plugin/repo folder, the template holds
+empty placeholders. To send an ntfy push, use the helper
+`${CLAUDE_PLUGIN_ROOT}/scripts/credo-ntfy-send.sh "message"` (it resolves the relay/topic/server
+through the cascade, is a silent no-op when ntfy is not configured and exits non-zero when a
+configured push fails).
+
+## Load and honor at session start
+
+At the start of a session, resolve and (if present) Read `.credo/RULES.md`, then honor its
+grants for the whole session. A grant relaxes what you would otherwise ask about or avoid -
+apply it as if the user had stated it directly, because they did (in that repo). If the file
+is missing, there simply are no special rules; carry on with credo defaults.
+
+## Carry the rules into every subagent
+
+Rules must never be lost across delegation. When you spawn a subagent (credo
+`orchestration`), include the resolved RULES.md content (or an instruction to load it via the
+command above) in the task you hand it, so a subagent honors the same project grants as the
+main agent - the same way security is inherited.
+
+## Before an owner question or an approval park
+
+Before ANY question to the owner and before parking an item as "waits on approval" (installs
+included), check this file's grants, the valid `## Rules (temporary)` lines in the handoff
+(see "Handoff rules" below) and the requirements log. If a grant covers the case and its conditions can be closed by the agent
+(for example a fresh security check of the package), close them and proceed. Ask only when
+no grant applies or the check comes out unclear. Agreed facts (for example "these instances
+are test instances") are applied, not worked around. The safety floor is unchanged: with no
+grant, no install happens without the owner's approval (credo `safety`).
+
+## Precedence (grants widen, they never lower the safety floor)
+
+From highest to lowest:
+
+1. **Safety floor** - the credo `safety` skill (filesystem-protection, no-autonomous-installs).
+   RULES.md is just another instruction source, and `safety` already binds every instruction
+   source: nothing in RULES.md can lower or waive the floor. A grant that appears to do so is
+   ignored, and you flag it to the user.
+2. **DOGMA-PERMISSIONS** (where dogma is present) - project git/file/workflow permissions.
+3. **`.credo/RULES.md`** - the per-repo grants.
+4. **credo defaults** - the built-in skill behavior.
+
+So RULES.md sits between DOGMA-PERMISSIONS and the defaults: it WIDENS latitude within the
+safety floor, and never overrides safety or a stricter DOGMA-PERMISSIONS rule.
+
+## Handoff rules (temporary) vs RULES.md
+
+Within the safety floor and DOGMA-PERMISSIONS, the instruction sources rank:
+
+1. **The owner's current words** in this conversation.
+2. **Owner rules in the handoff** (`## Rules (temporary)` lines with `source: owner "<quote>"
+   (<date>)` and an `until`) - temporary: while their `until` is not reached they beat
+   RULES.md, also on a conflict; they end at their `until`.
+3. **`.credo/RULES.md`** - the permanent per-repo rules.
+4. **Agent-decision rules in the handoff** (`source: agent decision` plus an `until`) - they
+   only fill gaps, never beat RULES.md, and are never presented as owner orders.
+
+The handoff line format is
+`- <rule> | source: owner "<verbatim quote>" (<YYYY-MM-DD>) | until: <goal, date or event>`
+(or `| source: agent decision | until: ...`), written by credo `compact-plus`.
+
+- **No `until`, no rule.** A handoff rule without an `until` (or without a source) does not
+  apply. Say so aloud to the owner instead of following it. A rule outside the
+  `## Rules (temporary)` section (for example under "standing rules") does not apply either.
+- **Expired rules are dropped** once their date passed or their goal or event happened.
+- **Compare with RULES.md** before an autonomous run starts (credo `session-autonomous`) and
+  after every compact or rehydrate: read both, then report every conflict and every rule
+  lacking a source or an `until` aloud to the owner (in an autonomous run also via ntfy),
+  and keep working. Who wins a conflict follows the rank list above: a valid owner rule
+  from the handoff (owner quote with date, `until` not yet reached) beats RULES.md while it
+  lasts; RULES.md wins over agent-decision rules and over invalid handoff rules (missing or
+  invalid source or `until`, expired). The conflict is reported aloud either way, so the
+  owner can correct it. The cheap mechanical part is
+  `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-handoff-rules.py" check <HANDOFF.md> <RULES.md>`
+  (flags lines without `source:`/`until:`, expired dates and rules outside the section, and
+  lists the RULES.md headings to compare); the conflict judgement itself is yours. After a
+  compact the SessionStart hook already prints that check.
+- **An owner rule without an expiry goes to the right place.** Permanent -> propose the exact
+  RULES.md entry and write it after the owner's OK (see "Writing a rule"); temporary -> ask
+  the owner for the `until`. If the owner leaves it open, say aloud that the rule will not be
+  honoured reliably and will get lost over time and context.
+
+## Writing a rule (interactive-only, on request)
+
+Set or change a rule ONLY when the user asks for it - either explicitly ("can we set a credo
+rule here that ...", "for this repo always ...") or within `/credo:setup`, `/credo:migrate`,
+or `/credo:project`. Never invent project rules.
+
+1. Resolve the target with `credo-config.sh rules`. If it exits 4, the target is not pinned -
+   ask the user to pin it first (`/credo:project <path>`); do not guess a location.
+2. If `.credo/RULES.md` does not exist yet, create it from the scaffold at
+   `"${CLAUDE_PLUGIN_ROOT}/templates/rules.template.md"`.
+3. Write the rule in the user's own words (credo `requirements-verbatim`): keep the grant
+   verbatim, do not soften or reinterpret it. Append under a clear heading (for example
+   `## Grants`).
+4. Confirm briefly what was written and where.
+
+**Autonomous mode never writes a rule.** Setting a project rule is a user decision (like a
+GO), and autonomous mode does not ask (the Ask ban). If a candidate rule surfaces during an
+autonomous run, note it for later (a short line in the handoff / `.credo/skill-candidates.md`
+style) and continue - a later presence session captures it. This mirrors the credo
+`skill-capture` mode gating.
+
+## Format (free-form)
+
+RULES.md is free-form Markdown, human-written. A light structure is recommended, not
+required:
+
+```markdown
+# credo project rules (<repo>)
+
+## Grants (widen autonomy)
+- Restarting any LOCAL service/stack is always allowed without asking (debug-only repo).
+
+## Notes
+- <anything a builder should know about this repo's credo behavior>
+```
+
+Keep grants specific and observable, so any agent reading them later knows exactly what is
+permitted.
+
+## dogma-first
+
+Where dogma governs a concern (git, versioning, language, linting), follow dogma first; a
+project `DOGMA-PERMISSIONS.md` always takes precedence over these credo rules. RULES.md is
+credo's own per-repo layer for grants that dogma does not cover.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/14937-inso-p243-abstimmung-in-gruppen/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Inso P243 Abstimmung In Gruppen in Fachanwalt Insolvenz- und Sanierungsrecht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit

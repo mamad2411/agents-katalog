@@ -1,0 +1,758 @@
+---
+name: design
+description: Design screen mockups, UI prototypes, wireframes and landing pages as real HTML screens in design/<canvas>/, following the project design system, validated with design/validate.mjs and shown side by side in the local design/viewer.html canvas. Use when the user asks for screens, telas, mockups, layouts, wireframes, landing pages, prototypes or visual variations, or invokes /design.
+---
+
+# Design canvas
+
+## Documentação gerada
+Regenerar as especificações, catálogo, fluxos Mermaid, tokens W3C e regras de
+interação diretamente dos artefatos reais com `npm run docs:design`. A saída é
+determinística; timestamps de auditorias não fazem parte dos documentos.
+Antes de declarar uma tela pronta, execute `npm run done:check -- --screen <id>`;
+o comando exige aprovação por hash, relatório visual atual, spec gerada e zero blockers.
+
+## Exploração comparável (três direções)
+Quando o brief pedir exploração, gere exatamente três pastas em
+`design/explorations/<NN>/`, cada uma com `direction.json` declarando `brief`,
+`reference`, `palette`, `typePair`, `layout`, `density` e uma tela piloto HTML.
+As direções devem divergir em pelo menos dois eixos entre `palette`, `typePair` e
+`density` (não são variações cosméticas). Valide deterministicamente com:
+`node skills/design/scripts/direction-check.mjs skills/design/assets/example/explorations`.
+O check nomeia a direção duplicada e falha para JSON corrompido ou brief ausente.
+Registre a escolha final como DEC usando `scripts/decisions.mjs add`; a tela
+escolhida deve apontar para o mesmo brief. No viewer, use o modo 3-up para
+comparar as telas lado a lado antes de aceitar.
+
+You design screens as real HTML files inside the project and show them in the
+local design viewer. The user sees every screen side by side, switches device
+size and light/dark theme, exports PNG and comments on a screen; comments come
+back to you as chat messages with an exact prefix.
+
+## Files (the contract)
+
+```
+design/
+  tokens.json            the single source of truth for every design token
+                         (both themes); the only place brand values live
+  design-system.css      GENERATED from tokens.json: design tokens for
+                         [data-theme="light"] and [data-theme="dark"] (never edit)
+  utilities.css          GENERATED from tokens.json: the closed utilities
+                         vocabulary (never edit)
+  tokens.contract.md     GENERATED from tokens.json: the token values table
+                         (never edit — regenerate with gen-tokens.mjs --contract)
+  design-system.md       brand decisions in words (short)
+  validate.mjs           the validator (copied once per project — see Setup)
+  serve.mjs              tiny static server for the viewer (copied once per project)
+  viewer.html            the viewer (copied once per project)
+  mock.js                mock runtime for interactive screens (copied once per project)
+  mock.css              static styles for the mock runtime classes (copied once
+                         per project) — toast/overlay/enter-transition states;
+                         screens link it as `../mock.css`; mock.js only toggles
+                         these classes and never injects CSS
+  scripts/               copied once per project (see Setup)
+    gen-tokens.mjs       regenerates design-system.css + utilities.css from
+                         tokens.json
+    sync-components.mjs  rematerializes every component marker region from its
+                         partial (copied once per project)
+    marker-parser.mjs    the shared marker grammar parser sync imports at
+                         runtime (copied once per project)
+  components/            component registry + partials seed (copied once per
+                         project): components.json + one partial per component
+  data/                  shared mock datasets — ONE JSON object per file, only
+                         what a <canvas>/data.json binds via
+                         {"$ref": "file.json#key"} (key = one top-level key of
+                         data/<file>.json); nothing else reads this folder
+  vendor/html-to-image.js  PNG export library (copied once per project)
+  index.json             {"canvases": ["login", ...]} so the viewer can list them
+  <canvas>/              one folder per canvas, kebab-case (login, dashboard)
+    canvas.json
+    data.json            optional fictitious data: inline values, or bindings
+                         {"$ref": "file.json#key"} to ../data/<file>.json (a
+                         dataset value may itself be a $ref — chains end in
+                         inline data); optional "scenarios" object with named
+                         top-level overrides (empty, critical…)
+    01-<screen>.html     one complete HTML document per screen
+    assets/              optional local images/scripts
+```
+
+`canvas.json` (screens appear in this order):
+
+```json
+{
+  "title": "Login do app",
+  "screens": [
+    { "id": "login", "name": "Login", "file": "01-login.html", "device": "mobile", "width": 390, "height": 844 },
+    { "id": "cadastro", "name": "Cadastro", "file": "02-cadastro.html", "device": "mobile", "width": 390, "height": 844 }
+  ]
+}
+```
+
+- `device`: `mobile`, `tablet` or `desktop`; `width`/`height` (integers
+  100–10000) are required alongside it and must match it — mobile width
+  ≤ 640, tablet 640–900, desktop ≥ 900 (`canvasMeta.breakpoints`); canonical
+  viewports 390×844 / 834×1112 / 1440×900.
+- `group` (optional): label that clusters the screens into titled blocks in
+  the viewer strip — complex projects stay readable (e.g. `"group": "Checkout"`).
+- `transition` (optional): `fade`, `slide-left` or `none` (default). It is the
+  screen's enter animation after `Mock.go` — see Workflow step 3 for the
+  same-canvas/cross-canvas rule.
+- `id` unique and non-empty; `name` non-empty; `title` optional.
+- `file` is relative to the canvas folder: never `..`, leading `/`, `\` or a
+  scheme (`http:`, `file:` …).
+
+## One-time setup per project
+
+The complete payload that ships into a project's `design/` is inventoried in
+ONE file — `scripts/copy-list.json` in this skill's folder — consumed by
+`scripts/setup-design.mjs`:
+
+```
+node skills/design/scripts/setup-design.mjs --target <project>/design
+node skills/design/scripts/setup-design.mjs --target <project>/design --update
+```
+
+- **setup** (no flag): copies every file of the copy list into `design/`,
+  seeds `validate.config.json` (its `toolchainScripts` rewritten to the
+  project layout) and creates the empty scaffolding dirs. An existing
+  `validate.config.json` is never overwritten.
+- **`--update`**: re-copies the toolchain (config-driven scripts carry the
+  `mockbird:config-driven:v2` marker and are safe to replace — their config
+  lives in `validate.config.json`; a pre-config legacy script is replaced,
+  which is the fix), merges NEW keys of the shipped config into your config
+  (your values win, your keys are never removed), and never touches screens
+  (`canvas.json` + `*.html`), `data/`, `actions/`, `spec/` or `snapshots/`.
+  A file you patched is kept with the new version at `<nome>.new` (`--force`
+  replaces it too, your previous bytes kept at `<nome>.bak`). `--with-smoke`
+  writes `design/package.json` (the zero-dep exception — see the README).
+  Full policy in `setup-design.mjs --help`. Existing client projects
+  migrating a corpus follow `docs/migration-guide.md` (the client migration
+  guide: update path + corpus steps).
+
+The copy list is the strict JSON contract `{"version": 1, "dirs": [...],
+"files": [{"from": …, "to": …}]}` — `from` relative to this skill's folder,
+`to` relative to the project's `design/`. The loader refuses a listed source
+that does not exist (the rule "só entra no copy list arquivo que já existe"
+is enforced, not advisory) and the manual list below mirrors the JSON 1:1.
+The `actions/` wiring and the whole action vocabulary are the contract in
+"Ações e acessibilidade" at the end of this file.
+
+Manual equivalent — every file `copy-list.json` ships and where it lands:
+
+- `scripts/validate.mjs` → `design/validate.mjs`
+- `assets/viewer.html` → `design/viewer.html`
+- `assets/serve.mjs` → `design/serve.mjs`
+- `assets/mock.js` → `design/mock.js`
+- `assets/mock.css` → `design/mock.css` (styles for the mock runtime classes;
+  screens link `../mock.css`)
+- `assets/docs.html` → `design/docs.html` (usage guide, linked from the viewer's 📘 Docs button)
+- `assets/vendor/html-to-image.js` → `design/vendor/html-to-image.js`
+- `assets/components/` → `design/components/` (registry + partials seed)
+- `scripts/gen-tokens.mjs` → `design/scripts/gen-tokens.mjs`
+- `scripts/sync-components.mjs` → `design/scripts/sync-components.mjs`
+- `scripts/codegen.mjs` → `design/scripts/codegen.mjs` (React data-*↔props
+  codegen; imported by sync-components.mjs at runtime — stays its sibling)
+- `scripts/marker-parser.mjs` → `design/scripts/marker-parser.mjs` (the shared
+  parser module sync imports, required at runtime)
+- `scripts/export-spec.mjs` → `design/scripts/export-spec.mjs` (per-screen
+  `spec/<telaId>.md` + `.json` export; imported by rules/spec-undeclared.mjs
+  as `../export-spec.mjs` — stays next to rules/)
+- `scripts/qa.mjs` → `design/scripts/qa.mjs` (validator QA wrapper: config
+  marker, R1–R4 probes, output stability)
+- `scripts/fixtures/ok/config-driven/` → `design/scripts/fixtures/ok/config-driven/`
+  (qa.mjs's R1 selftest probe: the `.history/` snapshot whose remote URL the
+  config must hide (exemptDirs) or expose — qa validates it under config A
+  vs config B)
+- `scripts/smoke.mjs` → `design/scripts/smoke.mjs` (real-browser pixel smoke
+  against snapshots/; needs playwright-core — the zero-dep exception)
+- `scripts/setup-design.mjs` → `design/scripts/setup-design.mjs` (this
+  installer/updater)
+- `scripts/lib/token-groups.mjs` → `design/scripts/lib/token-groups.mjs` (the
+  contract token groups — motion/density/breakpoints/layers — that
+  gen-tokens.mjs writes into tokens.json and export-tokens.mjs emits into
+  tokens.w3c.json; imported by both at runtime)
+- `scripts/lib/viewport.mjs` → `design/scripts/lib/viewport.mjs` (device
+  viewport derivation; imported by smoke.mjs at runtime)
+- `scripts/rules/a11y.mjs` → `design/scripts/rules/a11y.mjs` (overlay focus +
+  toast live-region contract)
+- `scripts/rules/action-contract.mjs` → `design/scripts/rules/action-contract.mjs`
+  (action naming, allowlist, on* mixing, JS line length)
+- `scripts/rules/action-module.mjs` → `design/scripts/rules/action-module.mjs`
+  (actions/<telaId>.js module contract)
+- `scripts/rules/canvas-meta.mjs` → `design/scripts/rules/canvas-meta.mjs`
+  (canvas.json device/dimensions coherence)
+- `scripts/rules/contract-doc-sync.mjs` → `design/scripts/rules/contract-doc-sync.mjs`
+  (tokens.contract.md drift vs tokens.json)
+- `scripts/rules/data-ref.mjs` → `design/scripts/rules/data-ref.mjs`
+  (data.json `{"$ref": …}` resolution)
+- `scripts/rules/encoding.mjs` → `design/scripts/rules/encoding.mjs`
+  (mojibake pairs + C1 controls, cited by codepoint)
+- `scripts/rules/instance-divergence.mjs` → `design/scripts/rules/instance-divergence.mjs`
+  (zero divergent `m-*` on component instances)
+- `scripts/rules/metrics.mjs` → `design/scripts/rules/metrics.mjs` (metrics
+  baseline + regression)
+- `scripts/rules/spec-undeclared.mjs` → `design/scripts/rules/spec-undeclared.mjs`
+  (every screen declares ≥ 1 state)
+- `scripts/export-tokens.mjs` → `design/scripts/export-tokens.mjs` (the W3C/DTCG
+  interchange export: tokens.json → tokens.w3c.json; derived artifact, never
+  edited by hand)
+- `assets/tokens.contract.md` → `design/tokens.contract.md` (the generated
+  token values table — regenerate with `gen-tokens.mjs --contract`; see Token
+  contract)
+- `assets/validate.config.json` → `design/validate.config.json` (the validator's external config — its `toolchainScripts` must match the layout above when copied: `validate.mjs`, `scripts/sync-components.mjs`, `scripts/marker-parser.mjs`, `scripts/gen-tokens.mjs`, `scripts/export-tokens.mjs`, `mock.js`)
+
+Created empty (the `dirs` of `copy-list.json`): `data/`, `actions/`, `spec/`,
+`snapshots/` — conventions:
+
+- `data/`: shared mock datasets — ONE JSON object per file, bound from
+  `<canvas>/data.json` via `{"$ref": "file.json#key"}` (see Files above).
+- `actions/`: per-screen action modules `actions/<telaId>.js` — see
+  "Ações e acessibilidade".
+- `spec/`: generated per-screen specs (`spec/<telaId>.md` + `.json`) from
+  `scripts/export-spec.mjs`.
+- `snapshots/`: frozen smoke baselines (`<tela>-<w>x<h>.png` + `manifest.json`),
+  regenerated only through `scripts/smoke.mjs --update-snapshots`.
+
+Whenever `tokens.json` changes, regenerate the two generated files from the
+project root:
+
+```
+node design/scripts/gen-tokens.mjs
+```
+
+Create `design/index.json` (`{"canvases": []}`) and add every new canvas name
+to it as you create canvases. A complete, valid example lives in this skill's
+`assets/example/` — a working stock-app system across two canvases:
+`login/` (login, sign-up, and a delete-account confirm modal opened as an
+overlay from a plain link) and `dashboard/` (interactive overview with a long
+item list, a same-canvas "Atualizar lista" refresh that demos the `fade`
+transition and scroll restore), where login and sign-up navigate across
+canvases into the overview, which reads its fictitious items, supports named
+scenarios, and logs out back to the login canvas. Read it before starting a new design system or canvas and
+adapt it. The seed `example/components/` is a byte-identical copy of
+`assets/components/` ("example/components/ é cópia byte-idêntica de
+assets/components/ (fonte única)"): edit partials only in `assets/components/`,
+never in the example copy.
+
+## Token contract
+
+`tokens.json` is the single source of truth for every token value; the table
+below is GENERATED from it — never edit it or `design/tokens.contract.md` by
+hand. After any `tokens.json` change, regenerate the table and re-paste its
+content between the two markers below (file and block stay byte-identical):
+
+```
+node design/scripts/gen-tokens.mjs --contract
+```
+
+The validator rule `contract-doc-sync` regenerates the table from `tokens.json`
+in-memory and diffs both copies against it: drift fails validation with the
+drifted token paths (e.g. `motion.duration.fast`).
+
+<!-- contract:begin -->
+<!-- GENERATED by gen-tokens.mjs --contract — do not edit; source: tokens.json -->
+| token | light | dark |
+| --- | --- | --- |
+| borderRadius.lg | 16px | 16px |
+| borderRadius.md | 10px | 10px |
+| borderRadius.sm | 6px | 6px |
+| breakpoints.md | 900 | 900 |
+| breakpoints.sm | 640 | 640 |
+| color.accent | #0f766e | #2dd4bf |
+| color.bg | #f8fafc | #0b1220 |
+| color.border | #e2e8f0 | #1e293b |
+| color.danger | #b91c1c | #f87171 |
+| color.muted | #475569 | #94a3b8 |
+| color.primary | #0f766e | #2dd4bf |
+| color.primary-contrast | #ffffff | #042f2e |
+| color.surface | #ffffff | #111a2e |
+| color.text | #0f172a | #e2e8f0 |
+| color.text-muted | #475569 | #94a3b8 |
+| density.space-1 | 2px | 2px |
+| density.space-2 | 4px | 4px |
+| density.space-3 | 8px | 8px |
+| density.space-4 | 12px | 12px |
+| density.space-5 | 16px | 16px |
+| density.space-6 | 24px | 24px |
+| density.space-7 | 32px | 32px |
+| density.space-8 | 48px | 48px |
+| dimension.max-width | 1200px | 1200px |
+| dimension.space-1 | 4px | 4px |
+| dimension.space-2 | 8px | 8px |
+| dimension.space-3 | 16px | 16px |
+| dimension.space-4 | 24px | 24px |
+| font.body | system-ui, -apple-system, "Segoe UI", Roboto, sans-serif | system-ui, -apple-system, "Segoe UI", Roboto, sans-serif |
+| fontSize.lg | 20px | 20px |
+| fontSize.md | 16px | 16px |
+| fontSize.sm | 14px | 14px |
+| fontSize.xl | 28px | 28px |
+| layers.base | 0 | 0 |
+| layers.dropdown | 100 | 100 |
+| layers.modal | 300 | 300 |
+| layers.overlay | 200 | 200 |
+| layers.toast | 400 | 400 |
+| motion.duration.base | 200ms | 200ms |
+| motion.duration.fast | 120ms | 120ms |
+| motion.duration.slow | 320ms | 320ms |
+| motion.easing.accelerate | cubic-bezier(0.3,0,1,1) | cubic-bezier(0.3,0,1,1) |
+| motion.easing.decelerate | cubic-bezier(0,0,0,1) | cubic-bezier(0,0,0,1) |
+| motion.easing.standard | cubic-bezier(0.2,0,0,1) | cubic-bezier(0.2,0,0,1) |
+| radius.lg | 16px | 16px |
+| radius.md | 10px | 10px |
+| radius.sm | 6px | 6px |
+| shadow.card | {"color":"#0f172a1a","offsetX":"0px","offsetY":"2px","blur":"8px","spread":"0px"} | {"color":"#00000066","offsetX":"0px","offsetY":"2px","blur":"8px","spread":"0px"} |
+| space.1 | 4px | 4px |
+| space.2 | 8px | 8px |
+| space.3 | 12px | 12px |
+| space.4 | 16px | 16px |
+| space.6 | 24px | 24px |
+| space.8 | 32px | 32px |
+| typography.body | {"fontFamily":"system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif","fontSize":"16px","fontWeight":400,"lineHeight":1.5} | {"fontFamily":"system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif","fontSize":"16px","fontWeight":400,"lineHeight":1.5} |
+| typography.heading | {"fontFamily":"system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif","fontSize":"28px","fontWeight":700,"lineHeight":1.2} | {"fontFamily":"system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif","fontSize":"28px","fontWeight":700,"lineHeight":1.2} |
+<!-- contract:end -->
+
+## Design brief (required before building screens)
+
+When the brief flow is active — `design/brief.json` exists or the user asks for
+the brief flow — NO screen may be created or edited before the brief validates
+clean. The brief is one JSON file (`design/brief.json`) with exactly
+`{schemaVersion, audience, goal, visualDirection, constraints, tone, platform,
+must, mustNot}` (schema: `assets/design-brief.schema.json`; `schemaVersion` is
+mandatory and unknown fields are flagged with a warning issue, never accepted
+silently). Validate it with:
+
+    node design/scripts/validate-brief.mjs design/brief.json
+
+(`npm run brief:check` validates `./design/brief.json`.) Exit 0 = coherent
+brief. Exit 1 lists issues with severity: schema problems plus cross-field
+contradictions — e.g. tone "sóbrio" vs visualDirection "neon maximalista", an
+elderly audience vs a data-dense dashboard, "sem libs" vs a direction that
+needs GSAP, or the same requirement in `must` and `mustNot`. Fix every issue
+and re-run until exit 0. A contradiction is resolved by rewriting the brief
+WITH the user — never by picking a side silently. While the flow is active,
+building a screen over a non-validating brief is prohibited.
+
+## Design decisions (design memory)
+
+Every design decision is registered in `design/decisions.json` with a stable
+`DEC-xxx` id — `{schemaVersion, decisions: [{id, category, decision, reason,
+status, scope, screens, createdAt, supersedes}]}` (schema:
+`assets/design-decisions.schema.json`). Two rules are hard: a decision without
+`reason` is rejected, and a decision is NEVER deleted — it is superseded (the
+new record carries `supersedes: "DEC-xxx"` and the old one flips to
+`status: "superseded"`). DEC-ids are the join key with approvals and evolution
+logs: "qual decisão causou esta mudança?" is answered by crossing a screen or a
+DEC-id with the register.
+
+MANDATORY before creating or changing ANY screen — consult the memory first:
+
+    node design/scripts/decisions.mjs impact <screen>     # what governs this screen + blast radius
+    node design/scripts/decisions.mjs query <screen|DEC-id|text>
+    node design/scripts/decisions.mjs add --category <c> --decision <d> --reason <r> [--screens a.html,b.html] [--supersedes DEC-xxx]
+    node design/scripts/decisions.mjs list
+
+`impact` lists the screens a decision affects and the decisions governing them
+(both directions). `add` assigns the next DEC-id; `--supersedes` replaces an
+older decision. All output is escaped — register text is untrusted. Exit 0 =
+recorded/found; nonzero = rejected (missing `reason`, stale supersede state,
+empty result) or usage error. While this flow is active, creating or editing a
+screen without a governing decision in the register is prohibited.
+
+## Workflow
+
+### Consultar lições entre projetos
+Antes de registrar uma nova decisão, consulte lições exportadas de outros projetos:
+`node design/scripts/decisions.mjs import --source lessons.json --origin projeto`.
+O import é manual, prefixa os DEC-ids e nunca sobrescreve decisões existentes.
+
+1. **Design system first.** Read `design/design-system.css` and
+   `design/design-system.md`. If they do not exist, ask the user for the brand
+   (primary color, typeface feel, tone; offer a neutral palette as one option),
+   then create both. Later canvases reuse them. Change the tokens only after
+   asking.
+2. **Ask only what is missing.** If the request is vague (which screens, which
+   platform, what data), ask once; if it is clear, start.
+3. **Build the canvas.** Brief gate first: when the brief flow is active (see
+   *Design brief* above), no screen is built before `validate-brief.mjs`
+   exits 0 on the project brief. Design memory gate: before creating or
+   changing any screen, consult `design/decisions.json` and register the
+   governing decision (see *Design decisions* above). Read `assets/craft.md` from this skill's folder first
+   (it fuses the sibling craft skills — taste, emil-design-eng, impeccable —
+   into rules for canvas screens) and apply it to every screen. Then create
+   `canvas.json` and the screens. Rules for every screen:
+    - Styling policy: the utilities vocabulary is the vocabulary. Anything
+      token-backed (colors, type, spacing, radius) goes through the generated
+      utilities: link `<link rel="stylesheet" href="../design-system.css">` and
+      `<link rel="stylesheet" href="../utilities.css">`, then use classes like
+      `bg-accent`, `p-2`, `text-heading`, `rounded-md`. Interactive screens
+      also link `<link rel="stylesheet" href="../mock.css">` (the mock runtime
+      classes: toast, overlay, enter transitions). Semantic classes carry
+      structure and layout only. `var(--…)` stays allowed where no utility fits,
+      and an inline `<style>` block is allowed but must hold ZERO literal
+      colors. The ban sweep scans literal colors in `<style>`, `style=""` and
+      the VALUE positions of SVG `fill=`/`stroke=`; it also bans `http(s)://`
+      anywhere in screens, Tailwind palette classes like `bg-zinc-900`, and
+      arbitrary values like `text-[13px]`. Arbitrary values are banned here
+      without exception — the declared exception list for real Tailwind
+      consumer projects lives in `assets/craft.md` §3 (ADR-0006) and never
+      applies to canvas screens.
+   - Work in both themes through the tokens; the theme arrives as
+     `data-theme` on `<html>` (`light` by default — include the attribute).
+   - No CDN or remote URL of any kind (the canvas is offline and sandboxed):
+     inline SVG icons, system fonts or font files under `design/`, local images.
+   - Real copy in the user's language (Brazilian Portuguese by default) and
+     plausible sample data — no lorem ipsum.
+   - Cover empty, loading and error states when they matter, as extra screens.
+   - Accessible basics: labels on inputs, visible focus, sufficient contrast,
+     tap targets ≥ 44px on mobile.
+    - The layout must hold at the screen's device width.
+    - **Components are instances of partials, never loose component markup**
+      ("instância usa partial, nunca markup solto de componente"). Wrap every
+      instance in the marker pair
+      `<!-- component:id size=md tone=primary state=default -->…<!-- /component:id -->`
+      with the THREE required args `size=`, `tone=`, `state=` (values must be
+      in the registry enums of `design/components/components.json`), and fill
+      its slots as paired markers `<!-- slot:name -->…<!-- /slot:name -->`.
+      Precedence: marker args are the source of truth (marker-args-win). The
+      sync re-emits `data-size`/`data-tone`/`data-state` and the variant
+      classes from the marker on every run; slot contents and user extra
+      `data-*` attributes on the root survive.
+    - **Make it a system preview, not a poster.** When the request implies a
+     working product, wire the screens with the mock runtime
+     (`<script src="../mock.js"></script>`, copied by Setup): forms validate
+     and submit, buttons give feedback, screens navigate with
+     `Mock.go('03-dashboard.html')`, fictitious data lives in the canvas's
+     `data.json` (`await Mock.data('items')`) — inline, or bound to shared
+     datasets in `design/data/` with `{"$ref": "file.json#key"}` so several
+     canvases read the same data (a broken ref guides on the console and
+     degrades to `undefined`; the `data-ref` validator rule fails it at
+     validate time), flow state (logged-in user,
+     items created along the way) lives in `Mock.state` (session, namespaced
+     per canvas), and simulated actions confirm with `Mock.toast('…')`.
+     Every screen must still render as a static composition if JS fails.
+     The viewer shows a ↺ início button on cards that navigated and
+     "⟲ Reset fluxo" to start the whole flow over. Cover the states that
+     matter as named `scenarios` in `data.json` (top-level overrides, e.g.
+     `"vazio": {"items": []}`) — the viewer gains a selector for them, the
+     choice survives navigation, and each scenario must compose well
+     (empty list, all items below minimum, API failure). A system may span
+      canvases (one per flow): navigate across with
+      `Mock.go('../<canvas>/<screen>.html')` — flow state is shared
+      project-wide, so the login canvas sets the user and the dashboard
+      canvas reads it. The viewer's canvas selector jumps between canvases
+      (each canvas keeps its own scenario, theme and device). Modals and
+      confirm dialogs are full canvas screens too (one source of truth): the
+      trigger is a plain screen link, `<a href="03-modal.html">`, which the
+      mock runtime intercepts into `Mock.overlay('03-modal.html')` — without
+      JS the untouched href navigates to the modal screen itself (the JS-off
+      fallback). Persistent navigation (sidebar, top menu, tabs) must switch
+      screens for real: put `data-go="02-cadastro.html"` on each item (keep a
+      real `href="02-cadastro.html"` on the same link as the JS-off fallback —
+      the runtime routes `data-go` to `Mock.go`, preserving `?scenario=` and
+      the enter transition). Plain links stay reserved for overlay triggers
+      (modals/details — a plain screen link always opens an overlay); repeat
+      the same navigation block on every screen of the canvas and mark the
+      active item. Screens may declare `"transition": "fade"|"slide-left"|"none"`
+      in `canvas.json`: `Mock.go` hands an enter class to the destination
+      (`mock-enter-fade`/`mock-enter-slide-left`, self-removed within 300 ms).
+      The handoff reads the CURRENT canvas's `canvas.json` matched by the
+      destination filename, so it works for same-canvas hops (a self-nav like
+      `Mock.go('01-overview.html')` is the refresh pattern) — a cross-canvas
+      `Mock.go('../<canvas>/<screen>.html')` is a plain navigation without
+      enter class. Scroll position is preserved per screen
+      (`scroll.<canvas>.<file>` in sessionStorage, restored when the screen
+      returns and surviving ⟲ Reset fluxo, which clears only `mock.*`).
+4. **Validate and fix.** MANDATORY sync first: after editing any partial in
+   `design/components/` (or any marker's args), run
+   `node design/scripts/sync-components.mjs` from the project root before
+   presenting anything; it rematerializes every instance from its partial
+   (marker-args-win). `--check` is the dry-run form: it prints a
+   `file:line` diff per divergent region and exits 1 on divergence (0 clean),
+   never writing. Then run from the project root:
+   `node design/validate.mjs design/<canvas>`. Fix every issue it lists and run
+   again until only the summary line remains — the loop runs until clean,
+   capped at 4 rounds for the whole cycle; at the cap, stop and hand off with
+   the explicit pending-issues list instead of presenting it as clean. Never
+   present a canvas that has issues as if it were clean. The validator's argument is a design-root (project mode) or a single
+   canvas folder (canvas mode); with no argument it defaults to `./design`.
+   Structural checks cover only the screens listed in `canvas.json`; project
+   mode additionally checks tokens/generated-CSS staleness, components and
+   comments. Component rules are scanned on every non-exempt `.html`,
+   independent of `canvas.json`, with the codes `component-unknown`,
+   `component-variant`, `component-marker`, `component-divergence` and
+   `slot-marker`. `--allow-stale` skips ONLY the staleness check;
+   `--mark-stale` is the validator's only write (it marks comment pins whose
+   anchor is gone); `--example-inventory` is the example contract check (exact
+   file list of `inventory.json` + `"_demo": true` on every pin; no
+   `inventory.json` = skip, exit 0). **Registry gate (§13.2 criterion 4):**
+   `sync-components.mjs --check` clean AND the validator reporting zero
+   unknown `.m-*` classes TOGETHER are the gate — every `.m-*` class used in
+   screens/instances must exist in the registry templates (`components/`), or
+   be listed in the `classes.allow` allowlist in `validate.config.json`
+   (`{ "name": …, "justification": … }` — an item without justification fails
+   on its own, `m-allowlist-nojust`; an unknown class fails as `m-unknown`,
+   citing the class and the file). `classes.allow` migration status: CLOSED
+   (2026-11-04) — the shipped `validate.config.json` lists `classes.allow: []`
+   and the corpus needs no entries (ADR-0006). The mechanism stays as a
+   justification-gated escape hatch: each entry must carry
+   `{ name, justification }`, and any new entry is exceptional and must state
+   in its justification when it can be removed.
+4b. **Impeccable audit.** After validating, run the sibling `impeccable`
+   skill's technical audit on the canvas (installed layout, win32):
+   `<skill-impeccable>/scripts/impeccable.cmd audit design/<canvas>` - the
+   path is resolved from the installed skill dir (`scripts/impeccable` on
+   other platforms). If the engine is absent or the run fails, follow the
+   `impeccable` skill's `reference/degraded/` guidance and note the
+   degradation in the delivery output - the workflow never stalls or throws
+   on the engine, and the validated canvas is delivered the same.
+5. **Show it.** Start the viewer server in the background
+   (`node design/serve.mjs --open=<canvas>`, default port 8765 — `--open[=canvas]`
+   opens the default browser straight at that canvas, `--no-open` suppresses
+   it, `BROWSER` env picks a specific browser; without flags the browser opens
+   only from an interactive terminal; if the port is busy a server is
+   probably already running — reuse it) and give the user the link:
+   `http://localhost:8765/viewer.html?canvas=<canvas>`. Point out the tools
+   for complex projects: `group` blocks in `canvas.json`, ▦ Grid (wrap
+   view), the search box (`/` focuses it), 📱 Frame (device frames) and
+   screen-vs-screen in `Compare` (A/B accepts "Screens in this canvas").
+   The viewer UI is English by default and follows the browser language
+   (`?lang=pt` / `?lang=en` forces it; the 🌐 button switches).
+   Mention that 🎯
+   Element lets them click any element to comment on it specifically.
+   Snapshots are review material: `Save snapshot` freezes a canvas state
+   (`src/` + flat `render/`) for later review, `Compare` shows any two
+   states side by side or as onion skin, and `Revert to this snapshot`
+   restores a snapshot.
+   Then summarize in one or two sentences what you created.
+6. **Comments.** The `[Design: …]` chat message format below is
+UNCHANGED — persistent pins are an extra channel, never a grammar change.
+A message starting with
+`[Design: design/<canvas> › <name> (<file>)]` is a request about that exact
+screen: edit only that file. A message whose bracket ends with
+`› <selector> "<snippet>"` (the viewer's 🎯 Element mode) targets one
+element inside it: locate the element by the selector first, then by the
+snippet text, and change only that element (and the tokens only if the
+user agrees). Element comments are dual-channel 🎯: besides the chat
+message the viewer persists a numbered pin in `design/comments.json`
+(schema `{id, canvas, file, selector?, snippet?, rect?, status, replies,
+createdAt, _demo?}`, `status` `open`|`resolved`|`stale`, written only by
+the server) — the pin is the persistent record (pending panel, toolbar
+count); the chat message is the channel that instructs you. `stale` has
+exactly two writers: `validate.mjs --mark-stale` (step 4) and the revert
+API. Never edit `comments.json` by hand. Validate again after any edit.
+   A message
+   `[Design-Reset: design/<canvas> — snapshot "<label>" restaurado]` is a
+   state confirmation only — the agent does NOT edit anything: acknowledge
+   and continue. (The bracket is the whole message — em-dash between canvas
+   and snapshot, no `› <arquivo>` part.) It means the snapshot was already
+   restored (the viewer's "Reverter para este snapshot" button) and the
+   regen pipeline (gen → sync → validate) already ran. You may proactively
+   offer to revert to a saved snapshot when one exists, but only revert on
+   explicit user request.
+7. **Variations.** "2 options" means separate screens in the same canvas
+   (`Login A`, `Login B`), not separate canvases.
+8. **Handoff.** "Extract section as production component": when the user wants
+   a screen section handed to production, select the section (ideally a
+   component region - the `<!-- component:id -->..<!-- /component:id -->`
+   marker pair) and extract it into `design/handoff/` (installed layout) as
+   EXACTLY three files named after the section: `<nome>.jsx`, `<nome>.html`
+   and `tokens-used.json` - nothing else ever: `design/handoff/` holds exactly
+   the three files of the current extraction (drop a previous extraction's
+   output first). The variants note is
+   a header comment INSIDE each generated file, NEVER a separate file:
+   the first line of the `.jsx` (`// ..`) and of
+   the `.html` (`<!-- .. -->`), and - where JSON cannot hold comments - the
+   top-level `"variants"` string of `tokens-used.json`. The note records the
+   instance's `size=/tone=/state=` args and the registry enums.
+   `<nome>.html` is the extracted markup (sync markers stripped, root `data-*`
+   kept); `<nome>.jsx` is the same markup as a production JSX component
+   (`className`, no markers). `tokens-used.json` is
+   `{"variants": <note>, "tokens": [<token path>, ..]}` - exactly the tokens
+   the extracted markup references: every class resolves through the generated
+   utilities to a `var(--.)` and each var maps to its token path in
+   `tokens.json` (a composite token - `typography.*`, `shadow.*` - counts once
+   at its own path); the list equals the tokens of the classes in the
+   generated files, no more and no less.
+   `handoff/` is not a canvas: it gets NO structural checks, but the BANS
+   still apply - the bans walker covers `handoff/` and includes `.jsx`, so a
+   literal color in generated JSX is flagged `hard-coded-color` like anywhere
+   else; extract with utilities/`var(--.)` only, never literal colors.
+   Impeccable hook: if the `impeccable` engine is available (the `impeccable`
+   skill's launcher - `scripts/impeccable.cmd` on win32, `scripts/impeccable`
+   elsewhere - resolves an engine binary), run `impeccable extract` on the
+   output. ALWAYS when the engine is absent or the run fails - never blocking
+   or throwing - follow `skills/impeccable/reference/degraded/asset-producer.md`
+   (production cleanup by hand: preserve the reference, no redesign) and note
+   the degradation in the output - the generated files' header notes
+   (`tokens-used.json` as its top-level `"degraded"` string) and the delivery
+   message. Fallback for a section WITHOUT a component (plain markup, no
+   marker pair): plain markup + token list, the SAME three-file form
+   (`<nome>.jsx`, `<nome>.html`, `tokens-used.json`); the variants note then
+   records "no component registry entry" instead of variant enums.
+
+### Regra: discovery obrigatório antes de criar componente novo
+Antes de criar um componente novo, execute `node design/scripts/component-discovery.mjs --markup <arquivo>`; a decisão deve ficar registrada em `design/components/discovery-log.json`.
+
+## Ações e acessibilidade
+
+Interactive screens act through ONE closed vocabulary dispatched at a single
+click-delegation point in `mock.js` (it works standalone and inside overlay
+layers). This section is the written contract for that surface: the
+validator's rules (`action-contract`, with its checks `action-both`,
+`action-flat`, `action-allowlist-nojust` and `action-js-line`;
+`action-module`; `a11y`, with the codes `a11y-no-autofocus` and
+`a11y-toast-no-live`) enforce its static half and `scripts/mock-check.mjs`
+its behavioral half. A third action
+mechanism is forbidden — everything goes through the one dispatch point.
+
+1. **Naming.** An action attribute reads `data-action="<telaId>.<acao>"` — the
+   namespace, one dot, then the handler name. The full value must match
+   `actions.namespacePattern` in `validate.config.json`
+   (`^[a-z0-9_-]+\.[a-z0-9_-]+$` — lowercase letters, digits, `_` and `-`
+   per part) and the namespace registered via
+   `Mock.registerActions('<telaId>', { acao(event, el) { … } })` must match
+   `^[a-z0-9_-]+$` (the runtime rejects anything else with a warning). A flat
+   value like `data-action="salvar"` never matches the pattern — such names
+   are only possible through the escape-hatch allowlist (item 2). Clicks run
+   `handler(event, el)`; the handler owns `event.preventDefault()` if it
+   needs it. A name with no registered handler warns on the console and never
+   throws (guided degrade).
+
+2. **Allowlist policy (escape hatch).** Flat `data-action` names (no dot) fail
+   `action-contract` unless listed in `actions.allowLegacy`, a list of
+   `{ "name": …, "justification": … }` items — an item without a non-empty
+   justification fails on its own (`action-allowlist-nojust`) and a listed
+   name is rescued regardless of its justification. The client corpus
+   migration is CLOSED (2026-11-04): `actions.allowLegacy` and
+   `handlers.allowLegacy` ship empty in `validate.config.json`, new work is
+   namespaced-only, and any new entry is exceptional and must state in its
+   justification when it can be removed. The `on*` + `data-action` detector
+   (`action-both`) is PERMANENT and outlives the allowlist.
+
+3. **The unification table.** The complete action surface, dispatched by one
+   click router:
+
+   | attribute | runs | note |
+   |---|---|---|
+   | `data-toast="<msg>"` | `Mock.toast(msg)` | the message is also announced to `#mock-live` |
+   | `data-close` | `Mock.close()` | closes the topmost overlay layer |
+   | `data-go="<file>"` | `Mock.go(file)` | keep a real `href` on the same link as the JS-off fallback |
+   | `data-overlay="<url>"` | `Mock.overlay(url)` | opens the canvas screen as a modal layer |
+   | `data-action="tela.acao"` | registered `handler(event, el)` | naming per item 1 |
+
+   An element carrying several of these runs every verb present. The `onclick`
+   precedence guard in `mock.js` is TRANSITIONAL and retained on purpose: on an
+   element that carries an inline `onclick`, the inline handler WINS and every
+   `data-*` verb on that element is ignored. Never combine `on*` with
+   `data-action` on one element — rule `action-both` fails it — and the guard
+   is deleted together with the last inline handler. In a file that carries
+   `data-action`, a JS line over 80 chars inside an `on*` attribute also fails
+   (`action-js-line`).
+
+4. **Per-screen action modules.** `actions/<telaId>.js` (at the design root,
+   next to `mock.js`) is a plain script that calls
+   `Mock.registerActions('<telaId>', { … })`; its FIRST argument must be the
+   literal file stem — rule `action-module` fails a dynamic id or a
+   stem/literal mismatch. The module id of a screen reference is its file
+   stem (`"05-modal.html"` → `"05-modal"`, which must match `^[a-z0-9_-]+$`).
+   Loading semantics:
+    - the module URL anchors at `mock.js`'s own folder (the design root),
+      falling back to page-relative `actions/<id>.js` when no base resolves;
+    - overlay: the module is loaded and awaited BEFORE the fetched `<body>`
+      is injected — the `<script>` tags inside the injected innerHTML stay
+      dead; the module is the layer's live action surface;
+    - standalone: loaded on boot (and again at `DOMContentLoaded`, so a
+      mid-body include still sees `[data-action]`) and only when the screen
+      carries `[data-action]` — screens without actions never request a
+      module (no 404 noise);
+    - idempotent: one load per id (the cached promise is reused), so
+      reopening an overlay never injects twice and `registerActions` merges
+      handlers name by name;
+    - a missing module resolves `false` with a guided console warning and
+      zero throw — its `data-action` clicks degrade to the unregistered
+      handler warn. Content that gains `data-action` after boot must call
+      `Mock.loadActions('<telaId>')` explicitly.
+
+5. **Accessibility contract.**
+    - Overlay screens declare `[data-autofocus]` — the initial focus target
+      when `Mock.overlay` opens the screen (fallback: the first heading, then
+      the layer itself; a non-focusable target gets `tabindex="-1"`). Rule
+      `a11y-no-autofocus` fails an overlay/dialog template without it.
+    - Focus stays trapped inside the layer (Tab wraps over its focusables),
+      ESC always closes the topmost layer (`Mock.close()` does the same), and
+      closing restores focus to the opener.
+    - Toasts mirror their message into one `aria-live="polite"` `#mock-live`
+      region per document. The region is created on demand, so a screen
+      reader may miss the very first announcement. A toast template must
+      reference a live region (`data-live` or `aria-live`) — rule
+      `a11y-toast-no-live`; `role="status"` alone does NOT satisfy the
+      contract.
+    - Menus (`[role="menu"]`, `[data-menu]`, or a bare
+      `[role="menuitem"]`/`menu-row` list) move focus with the arrow keys
+      (wrapping) and activate the focused row with Enter. Escape closes:
+      inside an overlay the menu closes with its layer; standalone it
+      collapses back to its `[aria-controls]` opener (`aria-expanded="false"`,
+      focus restored). Opening/toggling a menu is NOT part of this contract.
+
+6. **Verification.** The three QA surfaces, run from the skill repo:
+
+   ```
+   node scripts/mock-check.mjs
+   node skills/design/scripts/qa.mjs --config skills/design/assets/validate.config.json --target skills/design/assets/example
+   node skills/design/scripts/smoke.mjs --config skills/design/assets/validate.config.json --design skills/design/assets/example
+   ```
+
+   `mock-check.mjs` is the vm behavior suite (navigation, overlay, action and
+   a11y contracts of `mock.js`); `qa.mjs` is the validator QA wrapper (config
+   marker, R1–R4 probes, 10-run output stability); `smoke.mjs` renders every
+   screen in a real browser and matches the frozen pixel baseline. In user
+   projects the static contract runs through `node design/validate.mjs
+   design/<canvas>` (Workflow step 4).
+
+## Simulação de tarefas (usabilidade por fluxo)
+
+Um fluxo não está pronto porque as telas renderizam — ele está pronto quando
+cliques REAIS percorrem as tarefas de usuário e o relatório de usabilidade
+confirma. A regra é uma só: **consulte o relatório de simulação antes de
+declarar fluxo pronto.** `scripts/ux-simulate.mjs` executa cada tarefa
+declarada em `design/tasks.json` com Playwright — cliques verdadeiros no
+vocabulário declarativo do `mock.js` (`data-toast`/`data-close`/`data-go`/
+`data-overlay`/`data-action` + `Mock.registerActions`/`loadActions`), nunca
+simulação — e grava `design/.visual/ux/<tarefa>.json` com os passos executados,
+os estados encontrados/faltantes, as fricções e o timing.
+
+1. **Entrada.** `design/tasks.json` (`{"schemaVersion": 1, "tasks": [...]}`).
+   Cada tarefa tem `id`, `start` (tela inicial do design root) e `steps`; cada
+   passo declara `click` (seletor real — obrigatório) e `expect` opcional com a
+   saída esperada (`url`, `toast`, `overlay`, `text`, `state`, `confirmation`).
+
+2. **Fricções (lista fechada).** Por passo, o relatório reporta:
+   `click-no-action` "botão sem ação" (clique real sem efeito — botão morto ou
+   `data-action` sem handler registrado), `return-no-confirmation` "retorno sem
+   confirmação" (passo de retorno sem toast/estado/texto de confirmação) e
+   `step-no-feedback` "etapa sem feedback" (houve efeito, mas a saída declarada
+   em `expect` não apareceu). Sem `--gate` a fricção é report-only (exit 0);
+   com `--gate` qualquer fricção bloqueia (exit != 0).
+
+3. **Invariante dura.** Um relatório NUNCA conclui com passo não executado:
+   `concluded` só é `true` quando todo passo foi executado, e um passo não
+   executado sempre sai exit != 0 mesmo sem `--gate`.
+
+4. **Uso.** Na raiz do skill (alvo = o design root com `tasks.json`):
+
+   ```
+   node skills/design/scripts/ux-simulate.mjs --target design [--task <id>] [--gate]
+   ```
+
+   Exit codes: `0` relatório gravado; `1` `--gate` com fricção ou passo não
+   executado; `2` erro guiado de entrada (`tasks.json` ausente/malformado,
+   `schemaVersion` não suportado, tarefa desconhecida, tela inicial ausente,
+   seletor malformado); `5` `playwright-core` ausente. Os artefatos em
+   `design/.visual/ux/` são transitórios (evidência de simulação — não se
+   commita).
+
+## Progressive references and schemas
+Load long guidance only when the task needs it: `skills/design/reference/workflows.md`.
+The schemas are contracts, not prose: `skills/design/assets/critic-report.schema.json`,
+`skills/design/assets/design-brief.schema.json`, `skills/design/assets/design-decisions.schema.json`,
+`design/approvals.json`, and `design/components/catalog.json`.

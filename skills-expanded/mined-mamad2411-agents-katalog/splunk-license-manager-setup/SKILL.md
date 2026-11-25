@@ -1,0 +1,190 @@
+---
+name: splunk-license-manager-setup
+description: "Use when the user asks about configuring a Splunk Enterprise license manager, license master, license
+  peer, License-Master-URI, license slave, license pool, license group, or license usage reporting.
+  Render, preflight, apply, validate, and audit a Splunk Enterprise license manager and its license peers,
+  including license install, license group activation (Enterprise, Forwarder, Free, Trial), license
+  stacks, license pools (with byte or MAX quota and per-peer slave lists), license peer configuration via
+  splunk edit licenser-localpeer, license messages and violations, and license usage reporting."
+compatibility: "Splunk Cloud Platform 10.5.2605: not applicable. This self-managed runtime workflow is not a Cloud runtime; see the separate Enterprise 10.6 matrix for self-managed compatibility."
+metadata:
+  splunk_enterprise_10_6: "conditional"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "self-managed-10.4"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk License Manager Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Configuring a Splunk Enterprise license manager, license master, license peer, License-Master-URI, license slave,
+  license pool, license group, or license usage reporting.
+- Preview and review the splunk license manager setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-license-manager-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-license-manager-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+This skill is the dedicated counterpart to
+[`skills/splunk-enterprise-host-setup`](../../skills/splunk-enterprise-host-setup/SKILL.md),
+which explicitly leaves license-manager bootstrap out of scope. It owns every
+documented Splunk Enterprise licensing surface (REST + CLI) so a single skill
+covers install, peers, pools, group activation, messages, and validation.
+
+## Architecture First
+
+- A license manager is normally **co-located** with another control-plane
+  component (Monitoring Console, deployment server, **cluster manager**,
+  search-head-cluster deployer, search head, or even an indexer). Splunk does
+  not natively cluster license managers; HA is achieved with DNS-based
+  failover to a cold-standby manager.
+- License manager Splunk version must be **>= license peer** Splunk version
+  at the major/minor level (significant at major/minor only — patch level is
+  irrelevant).
+- Volume-based and infrastructure (vCPU) Enterprise licenses cannot stack
+  with each other. Free / Trial / Developer / Dev-Test cannot stack with
+  anything.
+
+## Agent Behavior — Credentials
+
+Never paste passwords or secret values into chat.
+
+- Use `template.example` for non-secret values (manager URI, peer hostnames,
+  pool definitions).
+- Keep secrets in temporary files only:
+
+```bash
+bash skills/shared/scripts/write_secret_file.sh /tmp/splunk_admin_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/splunk_license_pass4symmkey
+```
+
+The license manager `pass4SymmKey` is **distinct** from the indexer cluster
+`pass4SymmKey` and any SHC `pass4SymmKey`. Keep them in separate files.
+
+## Quick Start
+
+Render assets that install one or more `.lic` files on the manager and
+configure peers to point at it:
+
+```bash
+bash skills/splunk-license-manager-setup/scripts/setup.sh \
+  --phase render \
+  --license-manager-uri https://lm01.example.com:8089 \
+  --license-files /etc/splunk/enterprise.lic \
+  --pool-spec name=ent_main,stack_id=enterprise,quota=MAX \
+  --peer-hosts idx01.example.com,idx02.example.com
+```
+
+Apply on the manager (install license, activate group, create pools):
+
+```bash
+bash skills/splunk-license-manager-setup/scripts/setup.sh \
+  --phase apply \
+  --apply-target manager \
+  --license-manager-uri https://lm01.example.com:8089 \
+  --license-files /etc/splunk/enterprise.lic \
+  --pool-spec name=ent_main,stack_id=enterprise,quota=MAX \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+Apply on each peer (configure localpeer to point at the manager):
+
+```bash
+bash skills/splunk-license-manager-setup/scripts/setup.sh \
+  --phase apply \
+  --apply-target peers \
+  --license-manager-uri https://lm01.example.com:8089 \
+  --peer-hosts idx01.example.com,idx02.example.com \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+Validate live state (peer membership, usage, messages):
+
+```bash
+bash skills/splunk-license-manager-setup/scripts/validate.sh \
+  --license-manager-uri https://lm01.example.com:8089 \
+  --admin-password-file /tmp/splunk_admin_password
+```
+
+## What It Renders
+
+Under `splunk-license-manager-rendered/license/`:
+
+- `manager/install-licenses.sh` — installs license files and uses the shared
+  restart orchestrator for the manager restart.
+- `manager/activate-group.sh` — `POST /services/licenser/groups/<group>`.
+- `manager/pools/<name>.json` — desired-state pool definition.
+- `manager/apply-pools.sh` — POST/PUT/DELETE to converge pool list.
+- `peers/<host>/peer-server.conf` — `[license] manager_uri = ...` snippet.
+- `peers/<host>/configure-peer.sh` — runs locally on the operator workstation
+  and POSTs `manager_uri` to the peer's own
+  `https://<host>:8089/services/licenser/localpeer` REST endpoint using a
+  password file (`get_session_key_from_password_file`); no SSH and no
+  `splunk -auth admin:<pw>` argv on either host. Peer configuration exits
+  nonzero with a topology-aware restart handoff instead of defaulting to a
+  remote REST restart. Override the peer URL with `PEER_MANAGEMENT_URL` (or
+  just the port via `PEER_MANAGEMENT_PORT`) for non-default deployments.
+- `validate.sh` — peers, usage, messages, version-compat checks.
+- `audit/<timestamp>/{groups,stacks,pools,licenses,messages,localpeer,usage,peers}.json`
+  snapshots.
+
+## Out of Scope
+
+- Splunk Cloud licensing (Splunk-managed; cannot be configured by customers).
+- Commercial license procurement / renewal.
+
+## References
+
+- [reference.md](reference.md) for license-type matrix, terminology shift
+  (`license master` → `license manager`), HA via DNS, message categories,
+  and squash-threshold guidance.
+- [template.example](template.example) for the non-secret intake worksheet.

@@ -1,0 +1,355 @@
+---
+description: "When the bundled simplify skill resolves in this session, prefer it for single-file cleanup; this skill for batch sweeps. Runs simplification over a time window, a branch, or the whole repository, grouped by ecosystem in dependency order. Use when asked to 'batch simplify' or simplify recent changes, to catch up on simplify after a multi-session sprint, or to sweep a branch, directory or repo."
+user-invocable: true
+disable-model-invocation: false
+argument-hint: "[time-window|branch|repo] [--unattended] [path...] [in-place[=commit]] [--repo <repo> ...]"
+metadata:
+  workflow-stage: review
+  summary: Batch-run simplification across changed files, or a whole repository, by ecosystem
+---
+## Native step: simplify (bundled skill)
+
+When the bundled `simplify` skill resolves in this session, Phase 6 step 2 invokes it with each
+group's file list as its target, in place of spawning the simplifier agent. This skill keeps the
+discovery, filtering, grouping, ordering, verification, and report around it. One mutating pass
+runs per group, never both. `docs` mode keeps the simplifier agent, since `simplify` has no
+factual-staleness pass, and records `State: skipped (docs mode)`. Repo mode never invokes
+`simplify` ([context/repo-mode.md](context/repo-mode.md) gives the reasons). Pointer for how an invoked skill's body stays in context:
+[Skill content lifecycle](https://code.claude.com/docs/en/skills#skill-content-lifecycle).
+
+**Identity check.** The name is in the skill listing; the description is advisory. A description
+that reads as a different surface is a likely user or project shadow: skip with a warning and
+spawn the agent. A name listed with no description is invoked with the warning "identity
+confirmed by name alone". Pointer for when the listing drops a description:
+[Skill descriptions are cut short](https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short).
+
+**Mutation.** Groups the step runs over go one at a time, never in a parallel wave. Before each
+invocation, fingerprint the tracked files outside that group; any change there right after it is
+**mutation detected after a scoped invocation**, and the run exits degraded.
+
+**Skip report.** When the step does not run, the state names why: `did not resolve in this
+session`, invocation refused (the reason, never retried), or identity mismatch; those three name the axis
+line: settings or environment, plan, platform or provider, host surface; and the enable path,
+read live from [Bundled skills](https://code.claude.com/docs/en/skills#bundled-skills).
+ The matching row is in
+[context/bundled-simplify.md](context/bundled-simplify.md#decision-records). When `simplify` runs but
+says it ran a weaker procedure, the state is resolved but degraded, and the report relays its disclosure instead of
+calling the group fully simplified.
+
+**Result block.** The Phase 8 report opens with this block, whichever state the step ended in:
+
+```text
+Native step: simplify
+State: ran | resolved but degraded (<disclosure>) | did not resolve in this session (<axis>) | invocation refused (<reason>) | identity mismatch | skipped (docs mode | unattended) | mutation detected after a scoped invocation
+Scope: <file groups the step ran over, or none>
+Outside-scope changes: none | <paths>
+```
+
+**`--unattended`:** never invoke `simplify`; the simplifier agent runs every group, and the result
+block records `State: skipped (unattended)` without asking.
+
+**Arguments.** `[time-window|branch|repo] [--unattended] [path...] [in-place[=commit]] [--repo <repo> ...]`, plus `docs` and `override`, which the hint leaves out to stay within its length budget. e.g., /batch-simplify 72h, /batch-simplify branch docs, /batch-simplify repo plugins/foo, /batch-simplify 72h --unattended. Default: 48h
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+
+## Variables
+
+HARD path exclusions: `${user_config.hard_exclusions}` (unexpanded, empty, or any value outside
+`enforce` and `advisory` means `enforce`).
+
+## Purpose
+
+Automate running simplification across changed code files, or every code file in the repository, grouped so each pass has tight focus and ecosystem-appropriate context. Replaces the manual process of remembering to run `/simplify` after each task.
+
+## Emit checklist
+
+For any batch run (Phases 1-8), copy `templates/checklist.md` into your project's working-notes location (or track the phases inline if it has none). Tick each phase as completed. Phase 6.5 SKIPPED when no deferred items surface; Phase 5 task tracking SKIPPED for single-group changes.
+
+## Arguments
+
+`$ARGUMENTS`, optional scope for the file scan: `[<scope>] [<path>...] [docs]`. The scope picks a *universe* (three modes below); a path narrows it to a *region*. They are independent, so any scope takes any path.
+
+### Mode 1: Time window (default)
+
+Supported formats: `24h`, `48h`, `72h`, `7d`, `2d`, `1w`. Default: `48h`.
+
+**Normalize before use:** convert to long units before passing the window to `git log --since` (the option's entry is under [Commit Limiting](https://git-scm.com/docs/git-log#_commit_limiting); recheck when that entry documents the short `h`, `d` and `w` forms):
+
+- `<N>h` → `<N> hours` (e.g., `48h` → `48 hours`)
+- `<N>d` → `<N> days` (e.g., `7d` → `7 days`)
+- `<N>w` → `<N> weeks` (e.g., `1w` → `1 weeks`)
+
+### Mode 2: Branch diff
+
+Trigger: the remaining argument, lowercased and whitespace-normalized, **equals** one of `branch`, `feature branch`, or `all commits`. Uses `git diff --name-only <default-branch>...HEAD` (three-dot. Diff from the merge base, so files changed only on the default branch since the branch point are not swept in) to find files this branch changed. Requires being on a non-default branch.
+
+Match the whole argument, never a substring: an argument that merely *contains* "branch", a path, a filename, a future scope value, is not a branch-mode request, and routing it there silently sweeps the wrong file set.
+
+**Detection heuristic** (after stripping the `docs`, `override`, `--unattended`, and `in-place` flags): read the **first** remaining token as the scope. Matches `^\d+[hdw]$` → time-window mode; equals a branch trigger phrase → branch mode; equals `repo` → repo mode. Empty argument → default `48h`. Every token after the scope is a path.
+
+Decide the scope **before** testing any token as a path, never after. Stripping paths first lets a repository that happens to contain a directory named `repo` or `branch` swallow the scope keyword. `/code-tidying:batch-simplify repo` would resolve `repo` as a path, find no scope left, and silently run the 48-hour default narrowed to that directory instead of the whole-repository sweep that was asked for. If the first token is not a scope, the scope defaults to `48h` and *every* token is a path; a token that resolves to nothing is neither a scope nor a path, so it falls through to asking the user rather than guessing. To sweep a directory genuinely named `repo`, spell it `./repo`.
+
+### Mode 3: Whole repository
+
+Trigger: the remaining argument, lowercased and whitespace-normalized, **equals** `repo`. Sweeps every non-excluded file in the repository rather than a diff, including untracked files that are not ignored, so newly added work is swept too. Explicit entry only: it never auto-escalates from another mode, and it confirms the inventory with the user after Phase 4, once grouping and wave planning have produced the numbers that gate reports, and before any group is dispatched. A trailing path narrows the sweep (see **Narrowing to a path**) without changing any of the above, the confirmation gate still fires, on the narrowed inventory. Repo-scale machinery, grouping, waves, concurrency, resume, delivery, lives in [context/repo-mode.md](context/repo-mode.md), loaded only when this mode fires.
+
+### Narrowing to a path
+
+Any scope accepts one or more trailing paths: `48h plugins/knowledge`, `branch src/`, `repo plugins/code-tidying`. Narrowing is orthogonal to scope because the two answer different questions, the scope decides *which universe* (changed recently, changed on this branch, everything), the path decides *which region of it*. Binding paths to one mode would assert that only that universe may be narrowed, which nothing supports.
+
+Apply the path as a native pathspec on that mode's own discovery command (`-- <path>`), never as a filter over the results: the pathspec is what makes the mode's own semantics hold over the narrowed set. That means merge-base for branch and `--since` for a window.
+
+Resolve each path against the **invocation directory**, then express it **repo-root-relative** before handing it to a root-anchored command. Repo mode runs `git -C <repo-root>`, and `-C` changes directory before the pathspec is applied: a bare `code-tidying` typed from inside `plugins/` resolves locally but would be read at the root as a top-level `code-tidying`, sweeping the wrong set or nothing at all while reporting a clean run.
+
+A token counts as a path only if it **resolves** to an existing file or directory. A token that resolves to nothing is neither a path nor a scope, so it falls through to the ask-the-user rule, which is what keeps a mistyped scope or path an explicit question instead of a silent sweep of nothing.
+
+`repo <lane>` is deliberately **not** accepted; use a path. Rationale in [context/reference.md](context/reference.md) "Why narrowing is a path, not a lane".
+
+### Over several repositories
+
+With no target form, the sweep covers this checkout, as it always has. A target form (`--repo`,
+`--repos-from`, `--owner`, `--fleet`, `--skip`, or the same request in words) selects several
+repositories, which resolve, count, fan out and merge as
+[`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md) "Target
+forms", "Resolving repositories", "Fan-out" and "Merging findings" say. Strip the target-form
+tokens with the flags, before the detection heuristic reads the scope, so `--repo <repo>` is never
+read as the `repo` scope or a path. What differs here:
+
+- **Repo mode only.** A target form runs with an explicit `repo` scope, which then runs in each
+  repository. A time window, `branch`, or no scope token with a target form stops and names
+  `repo`, since those scopes read one checkout's recent history and repo mode is never entered
+  without being asked for. `in-place` with a target form stops too, since
+  it names the session's current branch. A trailing path narrows each repository's sweep and
+  resolves under its root; a repository where it does not exist is reported skipped.
+- **One branch and one pull request per repository.** Each repository runs Phases 1 to 7 with its
+  root anchored, one repository's writes at a time, as target-scope.md "Writes stay per
+  repository" says: for a repository other than the session's own, in a worktree that
+  repository's convention creates, never its main checkout. [context/repo-mode.md](context/repo-mode.md)
+  "Delivery" applies inside each repository. The confirmation gate lists every repository's
+  inventory and takes one answer per repository.
+- **Run state per repository.** Each repository's checklist and repo-mode run state go in that
+  repository's working-notes location, so a resume reads only its own groups.
+- **One report.** Phase 8 merges the per-repository reports: one results table with a repository
+  column, the remaining deferrals each carrying its repository, and the repositories that failed
+  or were skipped with the reason.
+
+### Flag: `docs`
+
+Append `docs` to any mode to include `.md` files in the sweep. By default, `.md` files are excluded because they're prose, not code. The `docs` flag tells the simplifier to review documentation for consistency. Stale references, outdated library names, incorrect API examples, or references to renamed/removed code. Boundary with the sibling `/code-tidying:tidy`: batch-simplify owns factual staleness across the whole doc set in one pass; tidy's `docs-prose` lane owns incremental structural prose work under a scope budget.
+
+**When to use `docs`:**
+
+- After a library migration. Docs may reference old library names or patterns
+- After a large refactoring. Docs may reference old file paths, class names, or API shapes
+- After renaming or reorganizing modules. Docs may have stale cross-references
+
+**Examples:** `/code-tidying:batch-simplify branch docs`, `/code-tidying:batch-simplify 72h docs`
+
+**Detection:** split `$ARGUMENTS` into whitespace-separated tokens. If any token **equals** `docs` (case-insensitive), set the docs flag and drop that token; rejoin the rest as the remaining argument, which determines the mode.
+
+Strip token-wise, never by substring: a substring strip mutates any argument that happens to contain those four letters, including a path such as `docs/`. Leaving a corrupted remainder for the mode parser to read.
+
+### Flag: `--unattended`
+
+The caller declares that nobody is present. Skips the Native step: the simplifier agent runs every
+group (see **Native step: simplify** above). Detected and stripped like `docs`, token-wise and
+anywhere in the arguments, though the token is `--unattended`. The bare word `unattended` is not
+this flag, nor a scope or path: stop and name `--unattended`.
+
+### Flag: `override`
+
+Append `override` to any mode to lift the **GLOBAL HARD path list** for this sweep, so the agent-and-enforcement-configuration class in Phase 2 becomes a reported class rather than an excluded one. Detected and stripped exactly like `docs`: token-wise equality, case-insensitive, dropped before the mode parser reads the remainder, with `./override` spelling the directory of that name.
+
+It reaches path entries only. The append-only / historical-record protection in Phase 2 is a separate contract that no channel lifts (a bulk edit there rewrites history), and so are the behavioral guards, the work-tracking entries, and SELF-UPDATE EXTRA HARD. Every lifted path is named in the Phase 8 report with the channel that lifted it.
+
+Two standing channels lift the same list without the flag: a root-relative glob in the repo's tracked `.claude/code-tidying/exclusion-overrides.md`, and the `hard_exclusions: advisory` userConfig posture. Precedence per path is argument, then repository file, then userConfig, then enforced. Full contract: the tidy skill's [exclusions reference](${CLAUDE_PLUGIN_ROOT}/skills/tidy/reference/exclusions.md) section 4.
+
+### Flag: `in-place`
+
+Append `in-place` or `in-place=commit` to repo mode to run on the current branch with no new branch and no PR. Detected and stripped exactly like `docs`. `in-place` leaves the run's changes staged; `in-place=commit` makes one commit of them. The diff-scoped modes already leave uncommitted working-tree edits, so the flag changes nothing there. Rules: [context/repo-mode.md](context/repo-mode.md) "Delivery".
+
+## Workflow
+
+### Phase 1: Discover changed code files
+
+Both modes union committed history with uncommitted changes (staged + unstaged) so nothing is missed. When a path was given, append `-- <path>...` to every git command in this phase, including the working-tree `git diff`, so the narrowing holds over both halves of the union.
+
+**Branch mode** (argument matches the branch/feature-branch/all-commits pattern):
+
+```bash
+# Committed on branch (vs merge base) + uncommitted working tree changes
+{ git diff --diff-filter=ACDMR --name-only <default-branch>...HEAD; git diff --diff-filter=ACDMR --name-only HEAD; } | sort -u
+```
+
+Requires being on a non-default branch. If on the default branch, report the error and exit.
+
+**Time-window mode** (default):
+
+```bash
+# Normalize shorthand: 48h → "48 hours", 7d → "7 days", 1w → "1 weeks"
+# Committed in window + uncommitted working tree changes
+{ git log --since="${NORMALIZED_TIME_WINDOW} ago" --diff-filter=ACDMR --name-only --pretty=format:""; git diff --diff-filter=ACDMR --name-only HEAD; } | sort -u | grep -v '^$'
+```
+
+**Repo mode**, the file universe is `git -C "$(git rev-parse --show-toplevel)" ls-files --cached --others --exclude-standard [-- <path>...]`, with any `<path>` converted to repo-root-relative first (the `-C` makes the pathspec root-anchored, so a path typed relative to a subdirectory would otherwise be read against the wrong base), anchored to the repo root so a run started in a subdirectory still sweeps the whole tree. Refuse to start if any file in that universe carries tracked modifications, naming them; scope that check to the swept universe and exclude the working-notes location from both the check and the sweep, a whole-tree refusal would block the checklist this skill writes as its own first step, and would block every resume.
+
+### Phase 2: Filter to code files
+
+Exclude non-code files. Keep only files that benefit from code simplification:
+
+**Include** (code and code-like config):
+
+- `.cs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.py`, `.sh`, `.bash`, `.ps1`, `.psm1`, and any other source-code extensions the project uses
+- Build-system config (`.csproj`, `.props`, `.targets`, `package.json`, `pyproject.toml`, and equivalents)
+- Project config `.json` / `.jsonc` / `.toml` (e.g. `tsconfig.json`, `biome.json`, not data files)
+- Linter/format config (`.editorconfig`, `.gitattributes`, `.gitignore`, `.dockerignore`, `.shellcheckrc`)
+
+**Exclude** (not useful for code simplification):
+
+- `.md` files (documentation. Prose, not code). **Exception:** when the `docs` flag is set, include `.md` files that are not in the protected list below. The simplifier reviews docs for stale references, outdated library names, incorrect API examples, or references to renamed/removed code, not for prose quality
+- `.lock` files (`uv.lock`, `package-lock.json`. Auto-generated)
+- **Agent & enforcement configuration**. `.claude/hooks/**`, `.claude/settings*.json`, `.claude/agents/**`, `.mcp.json`, `.github/workflows/**`, git-hook manager config (`lefthook.yml`, `.husky/**`, `.pre-commit-config.yaml`): not handed to an autonomous simplifier by default (same safety model as this plugin's tidy skill). If they changed in the window, list them as read-only deferred items instead. This is the one class here that the HARD list gates, so it is the class the three override channels lift; a lifted path is swept like any other file and reported with its channel in Phase 8. Lint and format config is **not** in this class for this skill (it is in the Include list above)
+- Data files (fixtures, datasets, exported records. Anything that is content rather than logic)
+- Skill/agent definition prose (`SKILL.md`, agent markdown), `README.md`, `CLAUDE.md`
+- Generated or vendored code, and any directory the consuming repo documents as externally managed or sync-generated, a local edit there is silently overwritten on the next sync, so it is a read-only deferred class rather than a sweep target ([context/repo-mode.md](context/repo-mode.md))
+
+**Append-only / historical-record protection** (applies even when the `docs` flag is set):
+
+- **Filename patterns** (case-insensitive): `CHANGELOG.md`, `CHANGELOG.txt`, `HISTORY.md`, `RELEASES.md`, `NEWS.md`. ADR filenames matching `[0-9]{3,4}-*.md` under any `decisions/` or `adr/` directory (immutable post-acceptance by convention. Supersede, do not edit the body).
+- **Body-text declaration**: any file whose first 20 lines contain a case-insensitive match for `append-only`, `append only`, `historical record`, `do not edit historical entries`, or `immutable`. The declaration is the file declaring its own policy. Honor it.
+- **Why hard-excluded** (not a default-with-flag-override): a bulk find-replace on a changelog or accepted ADR rewrites history. Readers diffing the file later see what entries say now, not what they said when written. If a genuine update is needed, make a manual edit with explicit user authorization. Do not bulk-include via the simplifier.
+
+### Phase 3: Verify existence
+
+Check each file exists on disk. Files may have been deleted or renamed since the commit. Drop any that don't exist.
+
+If no code files remain after filtering, report "No code files changed in {scope}" and exit (where scope is the time window or "branch vs default"). When the scope was a diff, name repo mode in that same report. *"nothing changed in {scope}; `/code-tidying:batch-simplify repo` sweeps the whole repository instead"*, and stop. Offering is not entering: run repo mode only if the user asks for it.
+
+### Phase 4: Group files
+
+Group files by project/ecosystem relatedness. Each group should contain files that share enough context for the simplifier to reason about them together.
+
+**Grouping rules** and **dependency ordering** (root config → agent infra → scripts → shared libs → app code → cross-cutting tests → polyglot services): full priority lists in [context/reference.md](context/reference.md) "Grouping & dependency order (Phase 4)".
+
+### Phase 5: Track groups
+
+Track one entry per group, each with:
+
+- Group number and name
+- File list
+- Ecosystem (for verification)
+- Dependency notes
+
+When the task tools (`TaskCreate`, `TaskUpdate`) are present in this session, create each entry with `TaskCreate`. When they are not, write the entries as a per-group list in the run's copied checklist (or inline, when it has no working-notes copy) and tick them there; never fail or stop the run for want of the tools. Decide by whether the tools are present, not by the model: which sessions get them is upstream's call and changes by release.
+
+- **Pointer**: when deciding whether this session should have the task tools, fetch [tools-reference: Task tool availability](https://code.claude.com/docs/en/tools-reference#task-tool-availability) live.
+
+### Phase 6: Run simplification waves
+
+**The verification level** decides the Phase 6.1 refutation verifier; it never changes Phase 7. Resolve it before the first spawn with `bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin code-tidying --skill batch-simplify` and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)). `standard` is repo mode's mandatory verifier and the diff-scoped exemption under Phase 7. `strict` drops that exemption: in the time-window and branch modes too, each group, the Phase 6.5 wave's included, gets the refutation verifier with the brief and verifier tier of [context/repo-mode.md](context/repo-mode.md) "Refutation verifier". Under `light`, and `off`, which acts as `light` here, repo mode dispatches no refutation verifier and none is replaced by a self-check: each group's `Verification` cell reads `verification: skipped (<level>)`. The diff-scoped modes, which run no verifier at `standard`, are unchanged, and Phase 7 still runs and gates in every mode.
+
+**Before spawning any agents**, ground the run: if the `discovery` plugin is enabled, invoke `/discovery:explore` via the Skill tool on the batch scope and `/discovery:research` via the Skill tool covering idioms relevant to the dominant ecosystems in the wave; otherwise read representative files per group and do a focused inline research pass on the ecosystems' current idioms.
+
+Waves can run in parallel when groups touch non-overlapping files and ecosystems. Launch independent groups in a single message with multiple Agent tool calls; serialize only when groups have direct dependencies. Groups the Native step runs over are always serialized.
+
+For each group:
+
+1. **Mark the group's entry in progress**: `TaskUpdate` when the task tools are present, else the checklist entry
+
+2. **Spawn a simplifier agent** via the `Agent` tool, or, when the Native step applies (see **Native step: simplify** above), invoke `simplify` on the group's file list instead. Pick `subagent_type` from this ladder (first match wins): `code-simplifier:code-simplifier` when the `code-simplifier` plugin is enabled; else `pr-review-toolkit:code-simplifier` when `pr-review-toolkit` is enabled; else any other available agent whose leaf name is `code-simplifier`; else `general-purpose`. Ladder record: the first two ids match the `name` field of each plugin's `agents/code-simplifier.md` (`code-simplifier` in `claude-plugins-official`, and `pr-review-toolkit` in the same marketplace), read in the local plugin caches and marketplace clone on 2026-09-29; upstream: [`code-simplifier`](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/code-simplifier/agents/code-simplifier.md) and [`pr-review-toolkit`](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/pr-review-toolkit/agents/code-simplifier.md); recheck when either plugin is renamed or a marketplace lists another simplifier. The third rung is a fallback, not a sourced fact. **Model and effort:** a named rung keeps the model and effort its own definition sets, unless that definition inherits the model and pins no effort; such a rung, and `general-purpose`, are routed. When `/multi-agent:route` resolves in this session, run `/multi-agent:route all session=<this session's model alias>` once per run and pass the `worker` role's `fanout` variant: its model unless `omit_model` is true, and its effort always. When it does not resolve, omit the model so the agent inherits the session's, except when the session model is frontier or unknown, where pass `opus`; pass effort `medium`. That fallback is this skill's stand-in for the `worker` role map and fan-out guard in `/multi-agent:route`, not an upstream default; say once in the report that enabling the multi-agent plugin makes this routing configurable. The prompt includes:
+   - The complete list of files in the group (absolute paths)
+   - The ecosystem and the consuming project's relevant convention files (its `CLAUDE.md` / `.claude/rules` paths), when they exist
+   - Instructions to read each file and check for redundancy/inconsistency/dead code/simplification opportunities
+   - Instructions to preserve every observable behavior: exit codes, output format, public API, CLI args
+   - The ecosystem-specific verification commands to run after changes (see context/reference.md)
+   - A stopping point: *"You are done when every file in your list has been read, each simplification you found is applied or recorded under `## Deferred`, and the verification commands pass."*
+   - An escalation clause: *"If you discover mid-task that the requested change is wrong, conflicts with project conventions, or requires touching files outside your file list, stop and report back instead of improvising."*
+   - **Fix-first deferral contract (required):** *"Apply every simplification you identify. Deferral is the exception, and each deferral must name one of these grounds: (a) HUMAN-DECISION, the change turns on a judgment only a human can make (a behavior or public-API question, an ambiguous contract, product intent); (b) TOO-LARGE, a genuinely huge refactor whose scope would dwarf this sweep (a redesign spanning ecosystems, a breaking API migration); (c) CROSS-GROUP, the change requires editing files outside your file list (a later resolution wave in this same run will take it); (d) PROTECTED, the target is in a Phase 2 excluded class. 'Out of scope', 'would dilute the diff', or 'could be a follow-up' are not grounds; if you can do it safely and verify it, do it now. Record each deferral in a `## Deferred` section of your final report with this shape per item: `- <path>:<line or range> — <one-line description>. Ground: <HUMAN-DECISION|TOO-LARGE|CROSS-GROUP|PROTECTED>. Reason: <why that ground applies>. Scope: <trivial|small|medium|large>. Category: <refactor|dedup|modernize|perf|cleanup>.` Do not silently skip, if you noticed it, list it. 'Already idiomatic' or 'preserves documented contract' do not need to appear. Only candidates you considered actionable but set aside."*
+
+3. **Collect deferred items**, when the agent returns, extract the `## Deferred` section verbatim into a running list keyed by group number. Do not lose or paraphrase these items. A group `simplify` ran records "no `## Deferred` (simplify ran)".
+
+4. **Report results**. Summarize what the agent changed (or didn't) for that group, plus a count of deferred items.
+
+5. **Mark the group's entry completed**, the same way
+
+### Phase 6.5: Resolve deferred items in-run
+
+After all groups complete, consolidate the deferred items collected in Phase 6 and resolve them in this same run. The default is fix, not file: a filed issue is deferred work that piles into a backlog, so filing is reserved for items a fix genuinely cannot absorb. If you notice something and choose not to fix it now, say so and capture it rather than dropping it.
+
+1. **Dedupe and group**. Multiple agents may flag the same cross-cutting concern. Merge into single items spanning all identified sites.
+
+2. **Triage each item, fix-first.** Re-examine the recorded ground; agents defer conservatively, so many deferrals are fixable here where the whole run's context is visible:
+   - **Fix-now** (the default). Everything else: CROSS-GROUP refactors (the wave boundary that forced the deferral is gone now), dedups, modernizations, mechanical large changes. If it can be done safely and verified, it belongs here regardless of size.
+   - **Needs-human**. HUMAN-DECISION and PROTECTED items: a behavior or public-API question, product judgment, or an excluded class this skill must not edit.
+   - **Too-large**. A genuinely huge refactor whose scope would dwarf the sweep itself. Be skeptical before granting this: "large" is not "too large"; the bar is work that would need its own planned effort, not just many edits.
+
+3. **Run a resolution wave** for the Fix-now items: spawn agents with the same Phase 6 spawn contract (same verification, and in repo mode the same refutation verifier). The wave's edits land exactly like the primary wave's: uncommitted working-tree changes in the diff-scoped modes, commits on the run's single branch in repo mode (staged, under `in-place`). Give each agent the complete file set its concern spans, every consolidated site plus every file a CROSS-GROUP ground named, so the wave boundary that forced the deferral is actually gone and CROSS-GROUP cannot legitimately recur. If an agent still discovers a genuinely new file mid-task, fold it into that item's file list and re-dispatch the item once. One resolution wave plus that single re-dispatch, no further recursion: an item still deferred after it goes to the Phase 8 report carrying its recorded ground, whatever that ground is.
+
+4. **Report the remainder, do not file it.** Needs-human items, Too-large items, and anything the resolution wave still could not finish go in the Phase 8 summary with their grounds and the agent's recorded rationale, so the user decides their fate. Each reported item carries a `Basis:` for its recommended disposition, `verified` with the `file:line` or tool output, or `judgment` (never for a consequential item: cross-repo, shared infrastructure, irreversible, or security). A consequential disposition that cannot be settled is withheld: report the open question and the evidence that would settle it instead of a recommendation. Contract: [`${CLAUDE_PLUGIN_ROOT}/context/recommendation-basis.md`](../../context/recommendation-basis.md); full convention: [recommendation-basis](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/recommendation-basis/README.md#basis-label). Do not file work items by default in any mode. Only when the user explicitly asks to file, invoke `/work-items:track add` via the Skill tool when that plugin is enabled, else `gh issue create`, one item per concern (not per site), titled per the house style (`${CLAUDE_PLUGIN_ROOT}/reference/issue-house-style.md`, read and applied before the write), body carrying the recorded rationale, files/lines, and scope estimate.
+
+### Phase 7: Final cross-ecosystem verification
+
+After all groups complete, run final verification across all affected ecosystems using the consuming project's canonical build/test/lint commands (its `CLAUDE.md` usually names them; generic fallbacks per ecosystem in [context/reference.md](context/reference.md) "Ecosystem verification commands (Phase 7)").
+
+In the diff-scoped modes, time window and branch, simplification is behavior-preserving and this objective cross-ecosystem pass is verification enough: a fresh-context verifier is the rule only where a verdict is subjective, not where the check is a mechanical pass/fail. A `strict` verification level lifts that exemption (Phase 6, "The verification level"). That exemption is scoped to those modes and does not carry into repo mode, where no human reads the diff before it merges; there a per-group refutation verifier is mandatory at the `standard` and `strict` levels, and `light` and `off` skip it ([context/repo-mode.md](context/repo-mode.md); Phase 6, "The verification level"). A change that passes only because it altered behavior is a regression this final verification exists to catch (Gotchas). Files with no mapped test suite are common in any repository: report them as unmapped rather than as passing. In repo mode they fall through to the per-group refutation verifier plus this end-of-run pass, which are then the only checks behind them.
+
+Report the final verification results as a summary table.
+
+### Phase 8: Summary report
+
+Present a final report. It opens with the Native step result block, then the remaining deferrals, the items waiting on the user; then scope + files-scanned + a per-group results table (`# | Group | Files | Changes | Deferred | Verification`) + final cross-ecosystem verdict + the resolved-in-run section. Full template in [context/reference.md](context/reference.md) "Summary report template (Phase 8)".
+
+When any HARD path was lifted, add a `## Lifted HARD exclusions` section naming each path and the channel that lifted it (`override` flag, overrides file, or `hard_exclusions=advisory`). Omit the section when nothing was lifted; never print it empty.
+
+If zero items were deferred across all groups, state explicitly: *"No items deferred. All identified simplifications were applied or determined to be no-ops."*
+
+## Boundary, the bundled `simplify` skill
+
+One native Claude Code surface does this skill's job at single-target scale, and the two get
+conflated whenever the request is "run simplify":
+
+- **`simplify` (bundled skill)**: a single-target cleanup pass that edits the code it reviews.
+  What it reviews and which targets it takes are in the pointer records in
+  [context/bundled-simplify.md](context/bundled-simplify.md#decision-records).
+- **This skill (marketplace plugin).** Sweeps a time window, a branch, or the whole repository in
+  waves, grouped by ecosystem in dependency order, with a checklist, a deferred-items contract,
+  and a docs mode for factual staleness.
+
+**Routing.** When the bundled `simplify` skill resolves in this session, prefer it for a single
+file or one diff. Prefer this skill when the scope is a window of sessions, a whole branch, or a
+repository, or when the passes need grouping and tracking.
+
+**Mutation gate.** Both edit the working tree. Each group gets one mutating pass, `simplify`
+through the Native step or this skill's simplifier agent, never both; two passes over one file in
+one sweep would mix their diffs.
+
+**Availability is never assumed.** This section states what to do when a bundled surface
+resolves, never that it is present. The pointer records, including what can turn a bundled skill
+off, live in
+[context/bundled-simplify.md](context/bundled-simplify.md#decision-records).
+
+## Next
+
+/verification:confirm
+
+A simplification pass sits at review; verify proves the swept change still meets its intent.
+
+## Edge cases
+
+- **No changes in time window**: report and exit cleanly
+- **Single file changed**: still run the simplifier (skip grouping, just one group)
+- **Agent reports no changes needed**: mark as "reviewed, no changes". Valid outcome. Still inspect the agent's output for a `## Deferred` section; zero applied changes does not mean zero deferrals
+- **Agent reports deferrals**: non-optional path. Run Phase 6.5 and resolve them in-run; only items with a surviving ground (Needs-human, Too-large, or a deferral the resolution wave could not finish) reach the report. Never paraphrase or collapse deferred items without presenting them to the user
+- **Verification fails after simplification**: report the failure prominently, the agent should have caught this, but the final verification is the safety net
+- **Very large groups (>25 files)**: split into sub-groups by subdirectory to keep the simplifier focused
+- **Files that span multiple ecosystems**: group by the primary ecosystem
+- **A consumer hook blocks subagent edits**: some projects gate edits behind precondition hooks (e.g., explore/research-first gates). Comply. Satisfy the hook's precondition in the main session, then re-spawn the blocked groups. Do not bypass the hook via Bash workarounds and do not negotiate with it
+- **Commits appear mid-run that this skill didn't make**: parallel sessions or auto-snapshot mechanisms may commit concurrently. `git log --oneline -5` reveals what was captured; treat those commits as authoritative for the changed state and proceed

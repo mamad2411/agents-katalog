@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-AdrianV101-obsidian-pkm-plugin-tackle-task/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when starting work on a specific vault task, when a task title or path is mentioned, or when coming from triage output.

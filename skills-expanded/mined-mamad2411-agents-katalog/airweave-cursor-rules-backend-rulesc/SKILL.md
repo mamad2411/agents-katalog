@@ -1,0 +1,85 @@
+---
+globs: **/backend/**
+alwaysApply: false
+---
+# Airweave Backend Architecture
+
+## Core Layers
+
+### API Layer
+- **FastAPI Application** (`main.py`): Entry point for HTTP requests
+- **API Routes** (`api/v1/endpoints/`): RESTful endpoints organized by resource
+- **Dependencies** (`api/deps.py`): Authentication and request validation
+
+### Service Layer
+- **Sync Service**: Orchestrates data synchronization between sources and destinations
+- **DAG Service**: Manages directed acyclic graphs for data transformations
+- **OAuth2 Service**: Handles authentication for (white-labeled) integrations
+
+### Data Access Layer
+- **CRUD Modules** (`crud/`): Database operations for each entity
+- **Unit of Work**: Transaction management with atomic operations
+- **Database Session**: Async SQLAlchemy session management. This extra care must be applied with lazy objects and sessions.
+
+### Domain Layer
+- **Models** (`models/`): Database models (SQLAlchemy ORM)
+- **Schemas** (`schemas/`): API data validation models (Pydantic)
+
+Detail: `short_name` is a globally unique identifier used throughout the system, e.g. `slack`, `outlook` or `hubspot_crm`
+
+## Key Components
+
+### Platform Components
+- **Sources** (`platform/sources/`): Connectors to external data sources (APIs, DBs)
+- **Destinations** (`platform/destinations/`): Vector database adapters
+- **Embedding Models** (`platform/embedding_models/`): Text vectorization services
+- **Transformers** (`platform/transformers/`): Data transformation processors
+- **Entities** (`platform/entities/`): Core search objects that flow through the system
+
+### Sync Architecture
+If necessary (like editing ), refer [sync-architecture.mdc](mdc:.cursor/rules/sync-architecture.mdc).
+
+### Infrastructure
+- **Config** (`core/config.py`): Environment-based configuration
+- **Logging** (`core/logging.py`): Structured logging system
+- **Exceptions** (`core/exceptions.py`): Centralized error handling
+- **Migrations** (`alembic/`): Database schema versioning
+
+## Data Flow
+
+1. **Request Processing**: API request → Authentication → Schema Validation → Handler (often CRUD, otherwise service)
+2. **Sync Flow**: Source → Transformation (DAG) → Embedding → Destination
+3. **Database Operations**: CRUD with Unit of Work pattern for transactions
+
+
+## Rules
+
+### Style & Structure
+- Python 3.11+, FastAPI, SQLAlchemy async ORM
+- Black (100 char), isort, Ruff with Google docstrings including arg and return type annotation
+- Models → `models/`, Pydantic schemas → `schemas/`
+- Domain logic → `platform/` modules by function
+- Sync handlers → `platform/sync/`
+
+### Code Principles
+- Descriptive names over comments
+- Async for all I/O operations
+- Typed parameters and returns
+- Keep functions under 50 lines
+
+### Architecture
+- SQLAlchemy models with UUID primary keys
+- FastAPI dependency injection for services
+- Error responses via custom exceptions
+- Background processing with Redis workers (upcoming)
+
+### API Convention
+- RESTful endpoints in `api/v1/endpoints/` -> the version is not part of the endpoint. It's just host.com/{endpoint}!
+- Consistent response structures
+- One router per resource type
+- Logger injected via `ctx` dependency for contextual logging
+
+
+### Logging convention
+- Stick to log level standards
+- Always try to use logger from ctx (in case of API) or sync_context (if during sync)

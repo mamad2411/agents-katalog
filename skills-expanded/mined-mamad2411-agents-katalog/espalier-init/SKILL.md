@@ -1,0 +1,619 @@
+---
+name: espalier-init
+description: Analyze any existing codebase, discover its patterns and best practices, and generate an Espalier structure (rules, skills, wiki, pipeline) so AI coders produce code matching that project's language and conventions. Greenfield repos take the two-pass Decide-Then-Bind path (/espalier-map charts the conventions, init binds them); boilerplate repos run init normally, then map the product. Wires into Claude Code, Codex, and/or GitHub Copilot (.claude/, .agents/skills/ + .codex/, .github/).
+---
+
+# Espalier Init
+
+Discover the actual patterns, conventions, and architecture of an existing codebase, then generate a structured constraint system that ensures AI agents produce code matching those standards.
+
+## When to Use
+
+- "Set up Espalier for this project"
+- "Create Espalier structure for my codebase"
+- "Make AI code production-ready for this repo"
+- "Build agent constraints for this project"
+- "/espalier-init"
+
+## Philosophy
+
+> When an agent makes an error, engineer its elimination — not with prompt tweaks, but with files, rules, automated checks, and system structure.
+
+**Core insight:** The problem isn't model intelligence. It's that models don't know the unwritten rules — patterns every experienced developer on the team knows but nobody documented.
+
+This skill **discovers** those rules from the code itself, then encodes them as machine-enforceable constraints. Like an espalier trains a fruit tree to grow along a wall, this skill trains your AI coder to grow along the patterns already in your codebase.
+
+## File Layout of This Skill
+
+```
+espalier-init/
+├── SKILL.md                       # this file — overview + phase index
+├── templates/                     # markdown templates emitted into target project
+│   ├── rules/                     # → espalier/rules/ in target
+│   ├── skills/                    # → espalier/skills/<name>/SKILL.md
+│   ├── agents/                    # → espalier/agents/ in target
+│   ├── agent.md                   # → espalier/agent.md (orchestrator)
+│   └── pipeline.md                # → espalier/pipeline.md
+├── hook-templates/                # shell scripts emitted into espalier/hooks/
+└── references/                    # deep-dive content read on demand
+    ├── discovery-checklist.md     # Phase 1 detail
+    ├── wiring.md                  # Phase 10 detail
+    ├── validation.md              # Phase 11 detail
+    └── wiki-templates.md          # Phase 6 wiki stubs
+```
+
+**Rule:** Every phase below tells you which template/reference to read. Open them with the Read tool when the phase fires — do NOT invent template content from memory.
+
+## Output Structure in Target Project (after full setup)
+
+```
+project-root/
+├── .claude/                        # [claude platform]
+│   ├── rules/                     # symlinks to espalier/rules/*.md
+│   ├── skills/                    # symlinks to espalier/skills/*
+│   ├── agents/                    # symlinks to espalier/agents/*.md
+│   └── settings.json              # hooks for quality gates
+├── .agents/                        # [codex platform]
+│   └── skills/                    # symlinks to espalier/skills/* (Codex repo-skill discovery)
+├── .codex/                         # [codex platform]
+│   ├── config.toml                # PreToolUse/PostToolUse hook block (marker-guarded)
+│   └── agents/                    # harness-{coder,reviewer,security}.toml sub-agents
+├── .github/                        # [copilot platform]
+│   ├── skills/                    # symlinks to espalier/skills/* (Copilot Agent Skills — VS Code/CLI/cloud agent)
+│   ├── agents/                    # harness-*.agent.md custom agents (@harness-coder …)
+│   ├── hooks/espalier-gates.json  # preToolUse/postToolUse gates via copilot-hook-adapter.sh
+│   └── copilot-instructions.md    # Espalier section + platform mapping (bootstrap-appended)
+├── AGENTS.md                       # [codex] Espalier section + platform mapping (bootstrap-appended)
+├── CLAUDE.md                       # [claude] references espalier/agent.md
+├── espalier/
+│   ├── agent.md                    # orchestrator definition
+│   ├── rules/                      # engineering-structure, coding-standards, development-process, security-standards, production-standards
+│   ├── skills/                     # folder name MUST equal SKILL.md `name:` frontmatter
+│   │   ├── espalier-coding/
+│   │   │   ├── SKILL.md
+│   │   │   ├── specs/{layer}.md
+│   │   │   └── references/platform-native.md   # ladder rung-4 lookup (v0.28; pure copy)
+│   │   ├── espalier-review/SKILL.md
+│   │   ├── espalier-security/SKILL.md            # trust-boundary audit checklist (harness-security)
+│   │   ├── espalier-testing/SKILL.md
+│   │   ├── espalier-requirements/SKILL.md
+│   │   ├── espalier-grill/SKILL.md             # Stage 1 interrogation (invoked by espalier + espalier-fix)
+│   │   ├── espalier/SKILL.md                   # main pipeline orchestrator — the ROUTER (slash: /espalier)
+│   │   ├── espalier/stages/*.md                # per-stage procedure files, read at stage entry (v0.25; pure copies)
+│   │   ├── espalier-fix/SKILL.md               # bug-fix lane, 7 stages (0–7, no Stage 2); slash: /espalier-fix
+│   │   ├── espalier-prune/SKILL.md             # stale-artifact refresh (slash: /espalier-prune)
+│   │   ├── espalier-doctor/SKILL.md            # periodic drift scan (slash: /espalier-doctor)
+│   │   ├── espalier-ask/SKILL.md               # read-only Q&A lane (slash: /espalier-ask)
+│   │   ├── espalier-audit/SKILL.md             # repo-wide security audit (slash: /espalier-audit)
+│   │   ├── espalier-map/SKILL.md               # multi-session planning lane (slash: /espalier-map)
+│   │   ├── espalier-maprun/SKILL.md               # map batch executor (slash: /espalier-maprun)
+│   │   └── espalier-simplify/SKILL.md             # simplification survey lane (slash: /espalier-simplify)
+│   ├── agents/                     # harness-coder.md, harness-reviewer.md, harness-security.md (agent names kept for stability)
+│   │   └── modes/                  # fix-round, simplification, re-review, repo-audit, stage6-abuse-coverage — mode text read when a prompt names it (v0.25; pure copies)
+│   ├── wiki/                       # architecture, data-models, critical-paths, external-services
+│   ├── hooks/                      # check-layer-boundaries.sh, pre-push-gate.sh, map-guard.sh, espalier-stats.sh, maprun.py + maprun-*.sh (run-lane engine)
+│   ├── pipeline.md
+│   ├── maps/                       # decision maps ({slug}/map.md + tickets/ + assets/) — /espalier-map
+│   └── changes/                    # typed: feat/, fix/, refactor/, …
+│       ├── _template/              # requirements.md, task-breakdown.md, coding-report.md, review-record.md, pipeline-state.md, ci-result.md
+│       ├── feat/{slug}/            # full pipeline outputs   ({slug} = YYYY-MM-DD-<name>, sorts chronologically)
+│       ├── fix/{slug}/             # fix-lane outputs (with caused_by frontmatter)
+│       └── refactor/{slug}/        # refactor outputs (simplify-filed cuts carry simplify_from frontmatter)
+└── src/  (existing code)
+```
+
+---
+
+## Skill Naming Invariant (CRITICAL — read before creating any skill)
+
+Claude Code's skill loader compares the **folder name** against the SKILL.md `name:` frontmatter. If they differ, the skill emits a warning and may fail to register.
+
+**Rule:** every skill folder MUST be named identically to its `name:` frontmatter value.
+
+```
+✅ CORRECT
+espalier/skills/espalier-coding/SKILL.md         (name: espalier-coding)
+espalier/skills/espalier-review/SKILL.md         (name: espalier-review)
+espalier/skills/espalier/SKILL.md                (name: espalier)            ← main pipeline
+
+❌ WRONG (will warn / break)
+espalier/skills/coding/SKILL.md                  (name: espalier-coding)
+espalier/skills/review/SKILL.md                  (name: espalier-review)
+```
+
+When you generate a skill:
+1. Choose the `name:` value first (must be globally unique, kebab-case, descriptive — prefix with `espalier-` for child skills inside this install; the main pipeline owns the bare name `espalier`).
+2. Use the SAME string as the folder name.
+3. Symlinks in `.claude/skills/<name>` then resolve to a same-named source folder — no mismatch possible.
+
+This applies to **all** skill folders generated by this skill: espalier-coding, espalier-review, espalier-security, espalier-testing, espalier-requirements, espalier-grill, espalier (main), espalier-fix, espalier-prune, espalier-doctor, espalier-ask, espalier-audit, espalier-map, espalier-maprun, espalier-simplify, and any additional ones added later.
+
+---
+
+## Phase Dependency Note (parallel execution)
+
+Phases 0-2 are sequential by necessity (Phase 0 prompt blocks; Phase 1 produces DISCOVERY blob consumed by Phase 2). Within Phase 1 and Phase 2, work is parallel. Phases 3+ are bundled into a single `bootstrap-espalier.sh` invocation.
+
+**Rule:** run Phases 0 → 1 → 2 → 3 in order. Each step batches parallel work to minimize sequential tool calls (~5-7 batched turns total).
+
+---
+
+## Phase 0: Setup Decisions (front-loaded)
+
+Issue ONE `AskUserQuestion` with FOUR questions in the multi-question form
+(under Codex there is no AskUserQuestion tool — ask the same questions in chat
+and wait for answers; see "Running under Codex" below):
+
+### Q1 — Squash-merge strategy
+
+ONE question, EXACTLY these 4 options (AskUserQuestion caps options at 4; the
+two overflow values are reachable by typing them into Other):
+
+```
+How does this repo merge PRs? Choice affects how /espalier-fix links bug
+fixes to causing commits. (Two more accepted values — type skip-only or
+never-ask via Other if you want those: skip-only = no hook, no fuzzy, fix
+proceeds without causal link when the SHA misses; never-ask = same but
+suppresses future prompts.)
+
+  1. Rebase-merge / true merge-commit                   → not-needed
+       SHAs preserved; no special handling needed.
+  2. Squash + install post-merge hook (recommended)     → installed
+       Hook records original→squashed SHA so fix lane finds origin via O(1) lookup.
+  3. Squash + allow fuzzy match at fix-time             → fuzzy-allowed
+       No hook. Fix lane falls back to file-overlap heuristic. Less safe.
+  4. Decide later                                       → ask-later
+       Defer. Fix lane will prompt the first time SHA resolution fails.
+```
+
+(Bootstrap accepts all six values per its `--merge-decision` validation.)
+
+### Q2 — Sub-agent tool access
+
+```
+Generated sub-agents (harness-coder, harness-reviewer, harness-security) declare
+a `tools:` field in their frontmatter that restricts what they can call. Pick the
+scope for this install:
+
+  1. Restricted (recommended, default)                  → AGENT_TOOLS = restricted
+       Templates' minimal tool list:
+         harness-coder    → Read, Write, Edit, Bash, Glob, Grep
+         harness-reviewer → Read, Grep, Glob, Bash, Write (record file only)
+         harness-security → Read, Grep, Glob, Bash, Write (record file only)
+       Safest. Sub-agents can't reach MCPs, plugins, web search, Task spawning.
+  2. Inherit from parent session                        → AGENT_TOOLS = inherit
+       Drop the `tools:` frontmatter field entirely. Sub-agents inherit
+       every tool available to the calling Claude Code session — MCPs,
+       plugins, custom skills, WebFetch, etc.
+       Useful when target project relies on MCPs (e.g., database query,
+       internal API access) and review/coding needs them. Broader blast
+       radius — reviewer could in principle make external calls.
+```
+
+### Q3 — Doctor cadence
+
+```
+How often should /espalier-doctor re-scout the codebase for artifact drift?
+A doctor scan is activity-gated — an idle repo never triggers one.
+
+  1. Every change                          → DOCTOR_CADENCE = every-change
+       Checked at every pipeline Stage 0. Thorough; noisiest.
+  2. Weekly (recommended)                  → DOCTOR_CADENCE = weekly
+       First pipeline activity after 7 days triggers a scan.
+  3. Monthly                               → DOCTOR_CADENCE = monthly
+       First pipeline activity after 30 days triggers a scan.
+  4. On-demand only                        → DOCTOR_CADENCE = manual
+       Never automatic; runs only when you invoke /espalier-doctor.
+```
+
+### Q4 — Agent platform(s) (multiSelect: true — any subset)
+
+```
+Which agent platform(s) should Espalier wire into this repo? (pick every one
+your team uses; PLATFORMS = the comma list of selections)
+
+  1. Claude Code (default)                 → claude
+       .claude/{rules,skills,agents} symlinks + CLAUDE.md + settings.json hooks.
+  2. Codex                                 → codex
+       .agents/skills/ symlinks + AGENTS.md section + .codex/config.toml hooks
+       + .codex/agents/harness-*.toml sub-agents.
+  3. GitHub Copilot                        → copilot
+       .github/skills/ symlinks + .github/copilot-instructions.md section
+       + .github/agents/harness-*.agent.md sub-agents
+       + .github/hooks/espalier-gates.json gates (CLI + cloud agent).
+```
+
+Default intelligently: `AGENTS.md` or a `.codex/` dir present → suggest adding
+codex; `.github/copilot-instructions.md` or the repo living on github.com with
+Copilot reviews → suggest adding copilot; RUNNING inside Codex/Copilot →
+include that platform. The espalier/ content is identical regardless — only
+the wiring differs, and later additions are one `--wire-only` run.
+
+### Q5 — CODEOWNERS ownership routing (separate, skippable question)
+
+AskUserQuestion caps one call at four questions, so ask this as its OWN quick
+question after Q1-Q4 (skip it entirely for a solo repo — no teammates means no
+review routing):
+
+```
+Should rule/wiki changes be routed to owners for review via CODEOWNERS?
+(Team repos: promotion PRs touching espalier/rules/ then auto-request the rule
+owner's review — the rule-canon gate once branch protection requires
+code-owner review. Solo repos: skip.)
+
+  1. Skip (default)            → no CODEOWNERS block; add later via --wire-only
+  2. Yes — I'll give handles   → collect TWO GitHub handles (user or team),
+       one owning espalier/rules/, one owning espalier/wiki/ (either may be
+       blank; blank → that line omitted). Free text via Other, e.g.
+       "@platform-team @docs-team".
+```
+
+Cache the answers as `CODEOWNERS_RULES` / `CODEOWNERS_WIKI` (empty when
+skipped). Bootstrap normalizes a missing `@` prefix; both empty → the
+CODEOWNERS sub-step no-ops. The generated block is advisory until the repo
+turns on "Require review from Code Owners" branch protection.
+
+### Post-discovery confirm — parallel push-gate sections (conditional)
+
+This one is asked AFTER Phase 1, not in Phase 0 — it depends on what
+discovery finds. If DISCOVERY.ci_checks' three commands (build / lint /
+test) are plainly INDEPENDENT (each runs standalone; tests do not consume a
+prebuilt artifact — most test runners self-build), ask ONE quick
+`AskUserQuestion` (fold it into the no-evidence follow-up batch when one
+fires; otherwise its own quick question):
+
+```
+Discovery judged your build, lint, and test commands independent. Run them
+CONCURRENTLY inside the pre-push gate (sum → max wall-clock per push)?
+Every check still runs and still blocks on failure — only the overlap
+changes.
+
+  1. Yes (recommended for independent commands)  → HOOK_PARALLEL = yes
+  2. No — keep them serial (default)             → HOOK_PARALLEL = no
+```
+
+Commands NOT plainly independent, or any doubt → do not ask; serial is the
+default and needs no key. On yes, pass `--hook-parallel=yes` to
+`bootstrap-espalier.sh` in Phase 3 (it appends `hook-parallel-gates: yes`
+to `espalier/.espalier-config`).
+
+> Why agent identifiers stay `harness-coder` / `harness-reviewer`: these are internal sub-agent names baked into pipeline orchestration. Renaming them mid-pipeline would break any in-flight changes. The plugin name and slash commands rebranded to Espalier in v0.4.0; agent identifiers remain frozen.
+
+Note the answers; you will substitute them literally in Phase 3 — shell
+variables do NOT persist between Bash calls, so never stash an answer in one.
+Phase 2's Write batch reads the Q2 answer (AGENT_TOOLS) when emitting `espalier/agents/harness-coder.md`, `espalier/agents/harness-reviewer.md`, and `espalier/agents/harness-security.md`:
+
+- `restricted` → keep the `tools:` frontmatter line from the template verbatim
+- `inherit` → omit the `tools:` line entirely (Claude Code interprets missing `tools:` as "inherit from parent")
+
+Pass the Q1, Q3, and Q4 answers to `bootstrap-espalier.sh` in Phase 3 as literal flag values (`--merge-decision=<answer from Q1> --doctor-cadence=<answer from Q3> --platforms=<answer from Q4>`). The Q2 answer only affects Phase 2 LLM writes, no bootstrap flag needed (the `.codex/agents/*.toml` and `.github/agents/*.agent.md` sub-agents bootstrap emits for the codex/copilot platforms always carry their contractual restrictions in their instruction bodies — Q2 only shapes the Claude `tools:` frontmatter).
+
+---
+
+## Greenfield Path (Decide, Then Bind) — check BEFORE Phase 1
+
+Brownfield rules cite observed patterns (`file:line`). A greenfield repo has
+nothing to observe — its rules must cite **decisions**. Detection, at the very
+start (before any scout fires):
+
+- No dependency manifest (`package.json`, `go.mod`, `pyproject.toml`,
+  `Cargo.toml`, `Gemfile`, `pom.xml`) AND fewer than 5 source files — or the
+  user says the repo is new. Then ask (`AskUserQuestion`):
+
+```
+This repo is (near-)empty — there are no patterns to discover yet.
+  1. Chart first (recommended) — install the espalier skeleton now, then run
+     /espalier-map to DECIDE stack, architecture, and conventions; init binds
+     them in a second pass once the map clears.
+  2. Proceed anyway — run normal discovery on what little exists (only useful
+     if the code that exists is representative).
+  3. Abort.
+```
+
+**Pass 1 (chart first):**
+1. Run Phase 0's questions as normal (merge strategy, tool scope, cadence,
+   platforms, CODEOWNERS).
+2. SKIP Phase 1 scouts and Phase 2 writes entirely.
+3. Run Phase 3's bootstrap with the extra flag and the unsupported lang:
+   `--greenfield --lang=unsupported` (+ the Phase 0 flag values as usual).
+   Bootstrap wires everything (all lane skills including espalier-map, hooks,
+   config), writes a placeholder `pre-push-gate.sh`, records
+   `espalier/.greenfield`, and validation renders every Phase-2-artifact
+   check (5, 9, 15–16, 30–32, 34–36, 38–45) as a "pending greenfield Pass 2"
+   skip.
+4. End by telling the user the next step, verbatim:
+   `Run /espalier-map greenfield: <one-line product idea> — when the map
+   clears, run /espalier-init again to bind the decisions.`
+
+**Pass 2 (re-run after the map clears):** trigger = `espalier/.greenfield`
+exists AND some `espalier/maps/*/map.md` has `status: CLEARED` with the
+greenfield destination. Then:
+1. Synthesize the DISCOVERY blob **from the map**: read every closed ticket's
+   `## Resolution` — stack, layers, error handling, naming, testing strategy,
+   data model — into the same DISCOVERY keys the scouts would have produced.
+2. If the map's scaffold task produced code, ALSO run the normal Phase 1
+   scouts over it and MERGE: **decisions win conflicts; scouts fill gaps.**
+3. Run the standard Phase 2 Write batch with ONE citation change: a rule
+   sourced from a decision cites `decided_in: maps/{slug}/tickets/NNN` where
+   a brownfield rule would cite `file:line`. (Both forms satisfy "Every Rule
+   Has a Reason".) Write the real `pre-push-gate.sh` (from the decided
+   build/lint/test commands — a not-yet-decided command follows the normal
+   null-substitution rule) and the lang-specific
+   `check-layer-boundaries.sh`, overwriting the Pass 1 placeholders.
+4. Remove `espalier/.greenfield`, then run bootstrap `--validate-only` —
+   all checks now live, including 38–45.
+
+**Boilerplate repos are NOT greenfield:** a boilerplate has code, so run init
+NORMALLY — the scouts discover the boilerplate's real conventions. THEN chart
+the product with `/espalier-map`: init-first makes the grill's Step 1.5
+cross-check live, so product decisions collide with the boilerplate's own
+discovered rules/wiki instead of being decided blind.
+
+The maintenance loop stays coherent after either path: the decided rules
+bootstrap the first code, then the code becomes ground truth and
+drift/doctor/prune/conventions operate exactly as on brownfield. Early
+convention-promotion prompts while the first features land are expected —
+that is the system converging, not a defect.
+
+---
+
+## Phase 1: Discovery (parallel — single message)
+
+Issue ONE message with up to 11 parallel tool calls:
+
+1. **Bash batch (1.1 + 1.5):** `tldr tree && tldr arch && tldr structure && ls package.json go.mod pyproject.toml Cargo.toml Gemfile pom.xml 2>/dev/null && ls .github/workflows Jenkinsfile Makefile justfile 2>/dev/null && git log --oneline -20`
+2. **scout (1.2 — architecture):** layers, dep directions, boundary table
+3. **scout (1.3 — coding patterns):** read 5-8 source files; naming/errors/async/types/logging/validation/comments
+4. **scout (1.4 — testing):** read 2-3 test files; framework + mock pattern
+5. **scout (1.5 — git + CI):** branch strategy, commit conventions, CI checks (build/lint/test commands)
+6. **scout (1.6 — unwritten rules):** compare 3+ files of same type per layer; invariants + anti-patterns
+7. **oracle (1.7 — best practices):** ctx7 lookup AND web search fired in parallel for the detected stack. Synthesize both results. Divergence notes.
+8. **scout (1.8 — data models, wiki):** schemas, migrations, model classes, relationships
+9. **scout (1.9 — critical paths, wiki):** entry points, primary flows, modification hotspots
+10. **scout (1.10 — external services, wiki):** SDK imports, env vars, services, timeout/retry patterns
+11. **scout (1.11 — security surface):** entry points / trust boundary, how caller identity + object ownership + request validation are done today (pattern + `file:line`), and project-specific sensitive fields on the money/identity/permission/owner/state axes → DISCOVERY.security
+
+**Read first:** `references/discovery-checklist.md` — exact scout prompts to paste.
+
+Each scout returns:
+```json
+{ "scout_id": "1.N", "status": "ok"|"no_evidence", "summary": "≤200w", "structured": {...}, "evidence_files": [...] }
+```
+
+After all scouts return:
+- If any returned `status: no_evidence`, batch into ONE follow-up `AskUserQuestion` (per layer/scout: skip / provide files / mark not-applicable). Don't ask N times.
+- Merge all `status: ok` outputs into in-context `DISCOVERY` blob (no disk write).
+
+---
+
+## Phase 2: Substitution Writes (parallel — single message)
+
+Issue ONE message with parallel Write calls, all sourcing from `DISCOVERY`:
+
+**Rules** (5 files):
+- `espalier/rules/engineering-structure.md`  ← `templates/rules/engineering-structure.md` + DISCOVERY.layers/.naming
+- `espalier/rules/coding-standards.md`       ← `templates/rules/coding-standards.md` + DISCOVERY.{naming,error_handling,…}
+- `espalier/rules/development-process.md`    ← `templates/rules/development-process.md` + DISCOVERY.{branch_strategy,commit_conventions,ci_checks,deploy}
+- `espalier/rules/security-standards.md`     ← `templates/rules/security-standards.md` + DISCOVERY.security. Fill all three discovered targets: the trust-boundary bullets (from `entry_points`/`identity_pattern`/`ownership_pattern`/`validation`), the per-axis taxonomy `{discovered}` cells (from `sensitive_fields`), AND the Project-Specific Security Conventions section (from `project_conventions`). Leave the fixed taxonomy/controls verbatim.
+- `espalier/rules/production-standards.md`   ← `templates/rules/production-standards.md` + the NFR-relevant discoveries. Fill the `{discovered}` mechanism cells from DISCOVERY.{logging,error_handling,validation} (scout 1.3), `timeout_retry_patterns` (scout 1.10), `migration_pattern` (scout 1.8), and the Project-Specific Production Conventions section from whatever resilience/observability patterns scouts 1.3/1.6/1.10 evidenced (each with `file:line`). Leave the universal seeds + severity tiers verbatim. A cell with no discovered mechanism reads "none found — seed binds as written".
+
+**Orchestrator + per-stack skills** (5 files):
+- `espalier/agent.md`                          ← `templates/agent.md` + project_name + DISCOVERY.{lang,framework,layers}. Fill EVERY placeholder in the template: `{project_name}`, `{lang}`, `{framework}`, `{discovered pattern}` (the architecture pattern from DISCOVERY.architecture, e.g. "layered MVC"), and `{2-3 sentences about what this project does}` (from DISCOVERY.critical_paths / the repo README).
+- `espalier/skills/espalier-coding/SKILL.md`   ← `templates/skills/espalier-coding.md` + DISCOVERY
+- `espalier/skills/espalier-testing/SKILL.md`  ← `templates/skills/espalier-testing.md` + DISCOVERY.testing
+- `espalier/skills/espalier-review/SKILL.md`   ← `templates/skills/espalier-review.md` (swap `{project}` → project_name)
+- `espalier/skills/espalier-security/SKILL.md` ← `templates/skills/espalier-security.md` (swap `{project}` → project_name)
+
+**Sub-agents** (3 files — `tools:` field branches on `$AGENT_TOOLS` from Phase 0 Q2):
+- `espalier/agents/harness-coder.md`          ← `templates/agents/harness-coder.md` + project_name. If `$AGENT_TOOLS == restricted` (default): keep `tools: Read, Write, Edit, Bash, Glob, Grep` line. If `$AGENT_TOOLS == inherit`: omit the `tools:` line entirely so the agent inherits from parent session.
+- `espalier/agents/harness-reviewer.md`       ← `templates/agents/harness-reviewer.md` + project_name. Same branching: keep `tools: Read, Grep, Glob, Bash, Write` for restricted (Write is for its record file only — the agent body states the restriction); omit for inherit.
+- `espalier/agents/harness-security.md`       ← `templates/agents/harness-security.md` + project_name. Same branching: keep `tools: Read, Grep, Glob, Bash, Write` for restricted (Write is for security-record.md only); omit for inherit.
+
+**Wiki** (4 files — all populated from DISCOVERY scouts 1.2/1.8/1.9/1.10, never stubs):
+- `espalier/wiki/architecture.md`             ← DISCOVERY.architecture (scout 1.2)
+- `espalier/wiki/data-models.md`              ← DISCOVERY.data_models (scout 1.8)
+- `espalier/wiki/critical-paths.md`           ← DISCOVERY.critical_paths (scout 1.9)
+- `espalier/wiki/external-services.md`        ← DISCOVERY.external_services (scout 1.10)
+
+**Hooks with placeholders** (2 files):
+- `espalier/hooks/pre-push-gate.sh`           ← `hook-templates/pre-push-gate.sh`, swap `{build_command}`/`{lint_command}`/`{test_command}` from DISCOVERY.ci_checks. Each is substituted into a FUNCTION BODY (`run_build`/`run_lint`/`run_tests`), so a value may be a single command OR a multi-line block — a repo needing several suites (one per container in a Docker-first stack, one per workspace in a monorepo) writes them all here. A block MUST return non-zero if ANY step fails: join with `&&`, or end each step with `|| return 1`. A `null` ci_checks key is substituted, never guessed: build/lint → `true  # no <kind> command discovered at init` (the gate skips that check cleanly); test → `echo 'no test command discovered at init — refresh espalier/hooks/pre-push-gate.sh via /espalier-prune once tests exist' && false` (the tests-required gate fails closed with an actionable message instead of an invented command's confusing error)
+- `espalier/hooks/check-layer-boundaries.sh`  ← `hook-templates/check-layer-boundaries-<LANG_CHOICE>.sh` (LANG_CHOICE is the Phase 1 language token — one of `typescript|python|go|unsupported`; recorded once at discovery, substituted literally, never a live shell variable). Rewrite the `case` block from DISCOVERY.layers. The adapted script MUST keep the PostToolUse exit-code contract from the template: violations exit 2 with the message on stderr; exit 0 otherwise (exit 1 would be invisible to Claude Code). If LANG_CHOICE = `unsupported`, skip this Write — bootstrap emits a no-op hook itself.
+
+**Then per-layer specs (parallel scout batch + Write batch):**
+
+For each layer in DISCOVERY.layers where a spec is warranted (non-trivial file template, distinct import rules, or layer-specific anti-patterns):
+
+Issue ONE message with N parallel scout calls:
+```
+scout("Read 2-3 representative files in <layer.dir>. Return JSON:
+       { layer_name, template_skeleton: <10-15 line code skeleton>,
+         allowed_imports: [...], forbidden_imports: [...], example_file_path }")
+```
+
+After all scouts return, issue ONE parallel Write batch for `espalier/skills/espalier-coding/specs/{layer}.md` files. Skip layers flagged trivial (e.g., bare `index.ts` re-export barrel).
+
+Spec template (`templates/skills/espalier-coding-spec.md`) has **no frontmatter** — specs are sub-pages of `espalier-coding`, not registered skills.
+
+---
+
+## Phase 3: Bootstrap (one bash invocation)
+
+Run:
+```bash
+# ${CLAUDE_SKILL_DIR} is this skill's directory (<plugin>/skills/espalier-init).
+# bootstrap-espalier.sh sits at the plugin root (../../scripts/); its
+# --plugin-dir wants the dir holding hook-templates/ + templates/ — which is
+# this skill's own directory. Resolves the installed plugin in any layout.
+bash "${CLAUDE_SKILL_DIR}/../../scripts/bootstrap-espalier.sh" \
+  --project-dir=. \
+  --plugin-dir="${CLAUDE_SKILL_DIR}" \
+  --lang=<LANG_CHOICE from Phase 1 discovery: typescript|python|go|unsupported> \
+  --merge-decision=<answer from Q1> \
+  --doctor-cadence=<answer from Q3> \
+  --platforms=<answer from Q4: comma list of claude|codex|copilot>
+# ONLY when the post-discovery confirm answered yes: also append
+#   --hook-parallel=yes
+# Greenfield Pass 1 ONLY (see Greenfield Path above): also append --greenfield
+# Append ONLY when Q5 collected handles (omit the flags entirely when skipped):
+#   --codeowners-rules=<Q5 rules handle> --codeowners-wiki=<Q5 wiki handle>
+```
+
+Shell variables do NOT persist between Bash calls — substitute literal values
+into this command before running (the `<...>` tokens are placeholders YOU fill
+verbatim, never live shell variables; `${CLAUDE_SKILL_DIR}` is the one
+exception — the harness sets it for the invocation itself).
+
+**Under Codex** `CLAUDE_SKILL_DIR` is NOT set: substitute the absolute
+directory of THIS SKILL.md (you know it — you were invoked with its path) for
+both `--plugin-dir=` and the script path. If the skill dir is a symlink into a
+clone of espalier-engineering (the documented Codex install), resolve it first
+so `../../scripts/` lands in the clone:
+`SKILL_DIR=$(cd <this skill dir> && pwd -P)`.
+
+Bootstrap runs all 11 internal stages in one shell process:
+
+- **Stages 1-2:** preflight + `mkdir -p` (idempotent — Phase 2 Writes already created some dirs).
+- **Stage 3:** `cp` pure-copy templates → `espalier/pipeline.md`, `espalier/skills/{espalier,espalier-fix,espalier-requirements,espalier-grill,espalier-prune,espalier-doctor,espalier-ask,espalier-audit,espalier-map,espalier-maprun,espalier-simplify}/SKILL.md`. (No conflict with Phase 2 outputs — different files.)
+- **Stage 4:** `cp` non-substitution hooks (post-edit-wrapper, pre-push-gate-wrapper, post-merge-backlink, lookup-helpers, rebuild-commit-index, drift-detect, drift-helpers, parse-drift-blocks.py, plus the run-lane engine maprun.py + maprun-{dispatch,merge,integration,verify}.sh — engine files are write-if-absent so a locally-adapted engine survives) + `chmod +x espalier/hooks/*.sh` (also chmods Phase 2's pre-push-gate.sh + check-layer-boundaries.sh).
+- **Stage 5:** safe symlinks `.claude/{rules,skills,agents}/*` → `espalier/...` (refuses if target is regular file; uses portable `abspath`).
+- **Stage 6:** heredoc `espalier/changes/_template/pipeline-state.md`.
+- **Stage 7:** append `## Espalier` to `CLAUDE.md` (grep-guarded).
+- **Stage 8:** merge `.claude/settings.json` hooks (additive by `(matcher, command)` tuple — never clobbers user hooks; atomic temp-file write + backup).
+- **Stage 9:** persist the merge decision (the literal Q1 answer passed via `--merge-decision`) to `espalier/.merge-hook-decision` and the Phase 0 Q3 cadence to `espalier/.doctor-cadence` (written once, never auto-rewritten). Install the post-merge dispatcher (`.husky/post-merge` or `.git/hooks/post-merge`) unconditionally — it runs `drift-detect.sh` on every merge and `post-merge-backlink.sh` only when the decision is `installed`.
+- **Stage 10:** append `espalier/.commit-index.tsv` + the drift sidecars (`.drift-state.tsv*`, `.drift.log`, `.drift-report.md`, `.doctor-last-run`, `.drift-overrides.log`) to `.gitignore`; append `espalier/.ask-gaps.tsv merge=union` to `.gitattributes` (the one union attribute); write the CODEOWNERS marker block when Q5 supplied handles (GitHub search order; replace-within-markers on re-run). All newline-guarded.
+- **Stage 11:** run the validation checks — 53 when only claude is targeted, 58 with codex, 63 with copilot (all but #25 in parallel, #25 serial for its tier table; a greenfield Pass 1 renders the Phase-2-artifact checks as pending-skips); print sorted output; non-zero exit if any failed.
+
+**Re-run safety:** if `espalier/.merge-hook-decision` exists, bootstrap auto-runs Stage 11 only (idempotent re-run = health check). `--force` overrides.
+
+**Debug flags** (NOT used by normal flow): `--copy-only`, `--wire-only`, `--validate-only`, `--dry-run`.
+
+**Read first (only if debugging):** `references/wiring.md`, `references/validation.md`. Bootstrap subsumes both in normal flow.
+
+---
+
+## Phase 4: Completion message (always print, last thing you say)
+
+After Phase 3's bootstrap exits 0, your final response to the user MUST end with the block below — verbatim, no rewording, no summary above replacing it. If bootstrap exited non-zero, skip this block and surface the failure instead.
+
+```
+Espalier installed. Wired N skills, M rules, K agents.
+
+If this saved you time, a ⭐ helps the next person find it:
+  https://github.com/Junhanliu-dev/espalier-engineering
+
+Hit a snag or have a suggestion? An issue is the most useful thing you can send:
+  https://github.com/Junhanliu-dev/espalier-engineering/issues/new
+
+Either way — thanks for trying it.
+```
+
+Fill `N`, `M`, `K` from the `WIRED: skills=<n> rules=<n> agents=<n>` line bootstrap Stage 5 printed. If the line is absent, drop that clause rather than guess.
+
+**If the codex platform was wired** (codex in Q4), insert this block
+IMMEDIATELY BEFORE the message above (verbatim, it is part of the final reply):
+
+```
+Codex wiring is in place. Three one-time steps inside Codex:
+  1. Restart Codex in this repo (skills + config load at startup).
+  2. Trust the project when prompted (project .codex/ layers only load when trusted).
+  3. Run /hooks and trust the two Espalier hook commands (the quality gates).
+Then invoke the pipeline with $espalier <requirement> ($espalier-fix, $espalier-ask, $espalier-audit, $espalier-simplify likewise).
+```
+
+**If the copilot platform was wired** (copilot in Q4), also insert:
+
+```
+Copilot wiring is in place. Notes:
+  - Reload VS Code (or restart Copilot CLI) so the Agent Skills register; invoke with /espalier <requirement>.
+  - The quality gates (.github/hooks/espalier-gates.json) run in Copilot CLI and the cloud coding agent; VS Code chat does not execute hooks — the pipeline's in-skill gates still apply there.
+  - Sub-agents are @harness-coder / @harness-reviewer / @harness-security (.github/agents/).
+```
+
+**Rule:** this is the ONLY end-of-install ask. No telemetry, no follow-up nag, no second prompt on re-runs — bootstrap's idempotent re-run path (`espalier/.merge-hook-decision` already present → validate-only) skips Phase 4 entirely.
+
+---
+
+## Running under Codex or Copilot (platform fallbacks)
+
+This skill was written for Claude Code but runs under Codex (installed per the
+README: clone espalier-engineering, symlink `skills/espalier-init` into
+`~/.agents/skills/`, invoke `$espalier-init`) or Copilot (symlink into
+`~/.copilot/skills/` — or rely on `~/.agents/skills/`, which VS Code also
+reads — invoke `/espalier-init`). Every phase works — substitute these
+mechanics:
+
+| Claude Code mechanic | Codex substitute |
+|---|---|
+| `AskUserQuestion` (Phase 0, no-evidence follow-ups) | Ask the same questions in chat, numbered, and WAIT for the reply. Never guess an answer to proceed. |
+| `scout` / `oracle` sub-agent calls (Phase 1/2) | Spawn platform subagents (Codex subagents / Copilot custom agents) with the same prompt text if available; otherwise run each scout's instructions yourself, inline, one at a time (read the named files, produce the same JSON shape). Sequential is fine — correctness beats parallelism. |
+| `${CLAUDE_SKILL_DIR}` (Phase 3) | The absolute directory of this SKILL.md, physically resolved (`pwd -P`) so the `../../scripts/` hop works through the install symlink. |
+| `AskUserQuestion` availability as the interactivity test | "Can I ask the user in chat" is the same test. |
+
+Phase 2's Write batch and Phase 3's bootstrap are already platform-neutral
+(plain file writes + one bash script). Include the platform you are running
+on in the Q4 answer — you are the proof the user uses it.
+
+---
+
+## Key Principles
+
+### 1. Discover, Don't Prescribe
+Read the code. Extract patterns. Don't impose templates from other projects.
+
+### 2. Quality Gates Must Be Programmatic
+```
+BAD:  "Check if CI passes"
+GOOD: "ci_status == 'success' AND total_tests > 0 AND tests_passed == total_tests"
+```
+If a constraint can't be machine-verified, the agent WILL drift from it.
+
+### 3. Separate Execution from Judgment
+The agent that writes code NEVER reviews its own code. Different `.claude/agents/` with different tool sets (coder has Write/Edit on source; reviewer and security have Read, Grep, Glob, Bash plus a Write that is contractually restricted to their own record file — they never write source, tests, or any other file).
+
+### 4. Context Layering
+| Layer | Content | Mechanism | When |
+|-------|---------|-----------|------|
+| Always | rules/ | `.claude/rules/` symlinks | Every session |
+| Stage | skills/ | `/espalier-*` invocation | During that phase |
+| Delegated | agents/ | Agent tool prompt | Sub-agent scope |
+| On-demand | wiki/ | Read tool | Agent queries as needed |
+
+### 5. Every Rule Has a Reason
+Don't add rules speculatively. Each rule should either:
+- Reflect an observed consistent pattern in the codebase, OR
+- Prevent a known failure mode
+
+### 6. Living System
+After each real task:
+1. Did the agent make a new kind of error? → Add rule/constraint
+2. Is a rule blocking valid code? → Remove or refine it
+3. Did the pipeline get stuck? → Adjust stage gates or limits
+
+---
+
+## Quick Start (Minimum Viable Espalier)
+
+If the full structure is too much, start with 3 files + wiring:
+
+```bash
+# 1. Create minimum espalier
+mkdir -p espalier
+# Write coding-standards.md (Phase 2 output)
+# Write review-skill.md (Phase 3 review output)
+# Write ci-gates.md (programmatic conditions)
+
+# 2. Wire it
+mkdir -p .claude/rules
+ln -sfn "$(pwd)/espalier/coding-standards.md" .claude/rules/espalier-standards.md
+
+# 3. Reference in CLAUDE.md
+cat >> CLAUDE.md << 'EOF'
+
+## Espalier (Minimum)
+Before writing code: Read espalier/coding-standards.md
+Before marking done: Run review checklist in espalier/review-skill.md
+Before pushing: Verify conditions in espalier/ci-gates.md
+EOF
+```
+
+This alone reduces rework cycles from 3-5 rounds to typically 1.

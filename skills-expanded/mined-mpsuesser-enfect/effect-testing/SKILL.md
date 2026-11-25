@@ -1,0 +1,1517 @@
+---
+name: effect-testing
+description: Write comprehensive tests using @effect/vitest for Effect code and vitest for pure functions. Use this skill when implementing tests for Effect-based applications, including services, layers, time-dependent effects, error handling, and property-based testing.
+---
+
+# Effect Testing Skill
+
+This skill provides comprehensive guidance for testing Effect-based applications using `@effect/vitest` and standard `vitest`.
+
+## Effect Source Reference
+
+The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+This skill targets **Effect 4.1.0**. Inspect `git show effect@4.1.0:<path>` there
+for APIs, types, and implementations; unreleased main may be ahead. Keep
+`@effect/vitest` and all Effect-family packages on that exact release.
+
+Reference this for:
+
+- Testing utilities: `packages/effect/src/testing/`
+- @effect/vitest source: `packages/vitest/`
+- Migration guide: `MIGRATION.md`
+- Effect source: `packages/effect/src/`
+
+## Framework Selection
+
+Keep `@effect/vitest` aligned with the Effect release. Its
+Vitest peer range is `>=5.0.0 <6.0.0`; do not install it into a Vitest 3 or 4 project
+without migrating that project's test framework. Plain compiler/inventory tests
+can keep using their existing Vitest runner without the adapter.
+
+The adapter requires Node.js `^22.12.0 || ^24.0.0 || >=26.0.0`. Use
+`{ concurrent: false }` for sequential suites, including named `layer` / `it.layer`
+suites. Await asynchronous assertions and finalizers. Define custom matchers
+through `vitest.Matchers` and import reporter types from `vitest/node`.
+
+**CRITICAL**: Choose the correct testing framework based on the code being tested.
+
+### Use @effect/vitest for Effect Code
+
+Use `@effect/vitest` when testing:
+
+- Functions that return `Effect<A, E, R>`
+- Code that uses services and layers
+- Time-dependent operations with `TestClock`
+- Asynchronous operations coordinated with Effect
+- STM (Software Transactional Memory) operations
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const fetchUser: (id: string) => Effect.Effect<{ id: string }, Error>;
+
+it.effect('should fetch user', () =>
+	Effect.gen(function* () {
+		const user = yield* fetchUser('123');
+		expect(user.id).toBe('123');
+	})
+);
+```
+
+### Use Regular vitest for Pure Functions
+
+Use standard `vitest` for:
+
+- Pure functions with no Effect wrapper
+- Simple data transformations
+- Helper utilities
+- Type constructors (brands, newtypes)
+
+```typescript
+import { describe, expect, it } from 'vitest';
+
+declare const Cents: {
+	make: (value: bigint) => bigint;
+	add: (a: bigint, b: bigint) => bigint;
+};
+
+describe('Cents', () => {
+	it('should add cents correctly', () => {
+		const result = Cents.add(Cents.make(100n), Cents.make(50n));
+		expect(result).toBe(150n);
+	});
+});
+```
+
+## Test Variants
+
+### it.effect - Default Test Environment
+
+Use `it.effect` by default. It scopes the test and installs Effect's `TestClock` and `TestConsole` services. Other services are not automatically test implementations and must be provided explicitly.
+
+The callback argument is Vitest's `TestContext` (task metadata, cancellation signal, fixtures), not Effect's service context. Access Effect test services by yielding them, for example with `TestClock.adjust`.
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const someEffect: Effect.Effect<number>;
+declare const expected: number;
+
+it.effect('test name', (context) =>
+	Effect.gen(function* () {
+		// context is Vitest's TestContext; TestClock is in the Effect context.
+		const result = yield* someEffect;
+		expect(result).toBe(expected);
+	})
+);
+```
+
+### it.live - Explicit Live Environment
+
+Uses real services (real clock, real random, etc.).
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect, Clock } from 'effect';
+
+it.live('test with real time', () =>
+	Effect.gen(function* () {
+		const now = yield* Clock.currentTimeMillis;
+		// Uses actual system time
+	})
+);
+```
+
+Use `it.live` only when real time or live runtime services are behavior under test. It scopes the test without installing `TestClock` or `TestConsole`. Real databases, HTTP clients, and filesystems still require their explicit layers; `it.live` does not provide them.
+
+### Vitest Fixtures
+
+Build helpers with `makeMethods(test.extend(...))` when using Vitest fixtures.
+Destructure the fixtures in the callback: Vitest reads those names to select
+setup and rejects a plain `(ctx) =>` parameter once fixtures are defined.
+
+```typescript
+import { expect, makeMethods, test } from '@effect/vitest';
+import { Effect } from 'effect';
+
+const it = makeMethods(
+	test.extend('config', { scope: 'file' }, () => ({ port: 3000 }))
+);
+
+it.effect('reads the config fixture', ({ config }) =>
+	Effect.sync(() => {
+		expect(config.port).toBe(3000);
+	})
+);
+
+it.effect.each([3000])('uses port %s', (port, { config }) =>
+	Effect.sync(() => {
+		expect(config.port).toBe(port);
+	})
+);
+```
+
+`it.effect.each` passes the test case first and context second. Named and
+anonymous `it.layer` suites preserve fixtures; fixture teardown follows the
+Effect test scope's closure. Property tests cannot request fixtures, though auto
+fixtures still run. Build `makeMethods` from `test` or `test.extend(...)`, not
+the suite-bound test passed to a `describe` callback, which can register nested
+layer tests outside their intended suite. In concurrent tests, destructure and
+use the callback's `expect` for per-test snapshots and assertion counts.
+
+### Resource Management in Tests
+
+`it.effect` already handles scoping internally — there is no separate `it.scoped` or `it.scopedLive` variant. Use `Effect.acquireRelease` or `Effect.scoped` directly within `it.effect`:
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const acquire: Effect.Effect<unknown>;
+declare const release: Effect.Effect<void>;
+
+it.effect('test with resources', () =>
+	Effect.gen(function* () {
+		const resource = yield* Effect.acquireRelease(acquire, () => release);
+		// Resource automatically cleaned up when the test's scope closes
+	})
+);
+```
+
+### Effect-returning setup hooks
+
+Import `beforeAll` / `beforeEach` from `@effect/vitest`, not directly from
+Vitest, when the callback returns an Effect. In 4.1.0 the adapter runs and awaits
+that Effect with a Scope. Other required services must be explicitly provided;
+the hooks do not automatically inherit an `it.effect` test environment or suite
+service context.
+
+`beforeAll`'s Scope closes after the suite's `afterAll` hooks; `beforeEach`'s
+closes when its test finishes. Timed-out setup is interrupted as cancellation
+and cleanup proceed; do not assume interruption happens at the exact deadline.
+As with Vitest hooks generally, a cleanup exceeding the hook timeout is reported
+and Vitest stops waiting—this is not a guarantee that an uninterruptible
+finalizer can finish within any configured timeout.
+
+## Assertions
+
+### Use expect from vitest
+
+For all assertions, use the standard `expect` from vitest:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const computation: Effect.Effect<number>;
+declare const array: unknown[];
+
+it.effect('assertions', () =>
+	Effect.gen(function* () {
+		const result = yield* computation;
+		expect(result).toBe(42);
+		expect(result).toBeGreaterThan(0);
+		expect(array).toHaveLength(3);
+	})
+);
+```
+
+### Effect-Specific Utilities
+
+`@effect/vitest` provides additional assertion utilities in `utils`:
+
+```typescript
+import { it } from '@effect/vitest';
+import {
+	assertEquals, // Uses Effect's Equal.equals
+	assertTrue,
+	assertFalse,
+	assertSome, // For Option.Some
+	assertNone, // For Option.None
+	assertSuccess, // For Result.Success / Exit.Success
+	assertFailure // For Result.Failure / Exit.Failure
+} from '@effect/vitest/utils';
+import { Effect, Option, Result } from 'effect';
+
+declare const someOptionalEffect: Effect.Effect<Option.Option<number>>;
+declare const someResultEffect: Effect.Effect<Result.Result<number, Error>>;
+declare const expectedValue: number;
+
+it.effect('with effect assertions', () =>
+	Effect.gen(function* () {
+		const option = yield* someOptionalEffect;
+		assertSome(option, expectedValue);
+
+		const result = yield* someResultEffect;
+		assertSuccess(result, expectedValue);
+	})
+);
+```
+
+## Testing with Services and Layers
+
+### Providing Services to Tests
+
+Use `Effect.provide` to supply test implementations:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Context, Layer } from 'effect';
+
+class UserService extends Context.Service<
+	UserService,
+	{
+		getUser: (id: string) => Effect.Effect<{ name: string }>;
+	}
+>()('UserService') {}
+
+declare const TestUserServiceLayer: Layer.Layer<UserService>;
+
+it.effect('should work with dependencies', () =>
+	Effect.gen(function* () {
+		const userService = yield* UserService;
+		const result = yield* userService.getUser('123');
+		expect(result.name).toBe('John');
+	}).pipe(Effect.provide(TestUserServiceLayer))
+);
+```
+
+```typescript
+// Concise alternative using Layer.mock (v4)
+const TestUserService = Layer.mock(UserService)({
+	getUser: (id) => Effect.succeed({ name: 'John' })
+});
+```
+
+`Layer.mock` accepts a partial implementation and supplies defecting stubs for
+omitted methods. It is not equivalent to a complete, compiler-checked
+`Layer.succeed(Service, Service.of({...}))`. Prefer complete fakes for reusable
+test services; use partial mocks only when omitted operations should defect.
+
+### First-Class Controllable Test Services
+
+For reusable stateful fakes, define file-local `TestInterface extends Interface`, a separate `TestService` tag, and a `testLayer` that provides one implementation under both tags. Production code depends only on `Service`; tests yield `TestService` to inspect calls and trigger failures or lifecycle transitions. The owning leaf self-exports its canonical identity at the bottom; sibling modules import that identity from the leaf, while folder/package barrels only relay it. This intentional self-reference requires toolchain and runtime support, so preserve an established project convention when it differs.
+
+```typescript
+// notifier.ts
+import { Context, Effect, Layer, Option, Ref } from 'effect';
+import * as Arr from 'effect/Array';
+
+export interface Interface {
+	readonly send: (message: Message) => Effect.Effect<void, SendError>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+	'@app/Notifier'
+) {}
+
+export interface TestInterface extends Interface {
+	readonly sentMessages: () => Effect.Effect<ReadonlyArray<Message>>;
+	readonly failNextSend: (error: SendError) => Effect.Effect<void>;
+}
+
+export class TestService extends Context.Service<TestService, TestInterface>()(
+	'@app/Notifier/Test'
+) {}
+
+export const testLayer = Layer.effectContext(
+	Effect.gen(function* () {
+		const sent = yield* Ref.make<ReadonlyArray<Message>>([]);
+		const nextFailure = yield* Ref.make<Option.Option<SendError>>(
+			Option.none()
+		);
+		const service = TestService.of({
+			send: Effect.fn('Notifier.Test.send')(function* (message) {
+				const failure = yield* Ref.getAndSet(nextFailure, Option.none());
+				if (Option.isSome(failure)) return yield* Effect.fail(failure.value);
+				yield* Ref.update(sent, Arr.append(message));
+			}),
+			sentMessages: () => Ref.get(sent),
+			failNextSend: (error) => Ref.set(nextFailure, Option.some(error))
+		});
+
+		return Context.empty().pipe(
+			Context.add(Service, service),
+			Context.add(TestService, service)
+		);
+	})
+);
+
+export * as Notifier from './notifier.js';
+```
+
+Use `Layer.succeed` for complete static fakes. Reserve `Layer.mock` for tiny local partial mocks where omitted methods should fail loudly.
+
+### Using layer Helper
+
+Share a layer across multiple tests with the `layer` function:
+
+This shares **service state**, not just construction cost. Mutable fakes must
+reset explicitly between tests or use `{ buildPerTest: true }` on `layer` /
+`it.layer` to rebuild selected services per test; enclosing services stay shared.
+Do not write independent initial-state assertions against one shared counter.
+
+```typescript
+import { layer, it, expect } from '@effect/vitest';
+import { Effect, Context, Layer } from 'effect';
+
+class Database extends Context.Service<
+	Database,
+	{
+		query: (sql: string) => Effect.Effect<Array<unknown>>;
+	}
+>()('Database') {
+	static Test = Layer.succeed(Database, {
+		query: (sql) => Effect.succeed([])
+	});
+}
+
+layer(Database.Test)((it) => {
+	it.effect('test 1', () =>
+		Effect.gen(function* () {
+			const db = yield* Database;
+			const results = yield* db.query('SELECT *');
+			expect(results).toEqual([]);
+		})
+	);
+
+	it.effect('test 2', () =>
+		Effect.gen(function* () {
+			const db = yield* Database;
+			// Database available in all tests
+		})
+	);
+});
+
+// With name for describe block
+layer(Database.Test)('Database tests', (it) => {
+	it.effect('query test', () => Effect.succeed(true));
+});
+```
+
+### Nested Layers
+
+Compose layers for complex dependencies:
+
+```typescript
+import { layer, it } from '@effect/vitest';
+import { Effect, Context, Layer } from 'effect';
+
+class Database extends Context.Service<
+	Database,
+	{
+		query: (sql: string) => Effect.Effect<Array<unknown>>;
+	}
+>()('Database') {}
+
+class UserService extends Context.Service<
+	UserService,
+	{
+		getUser: (id: string) => Effect.Effect<unknown>;
+	}
+>()('UserService') {}
+
+declare const DatabaseLayer: Layer.Layer<Database>;
+declare const UserServiceLayer: Layer.Layer<UserService, never, Database>;
+
+layer(DatabaseLayer)((it) => {
+	it.layer(UserServiceLayer)('user tests', (it) => {
+		it.effect('has both dependencies', () =>
+			Effect.gen(function* () {
+				const db = yield* Database;
+				const userService = yield* UserService;
+				// Both available
+			})
+		);
+	});
+});
+```
+
+A nested `it.layer` suite **reuses** the parent's memoized allocations and **forks its own memo map**. Parent layers are built once; local allocations are isolated from sibling suites and released when their suite finishes, including concurrent suites.
+
+### Excluding Test Services
+
+Use live services instead of test services:
+
+```typescript
+import { layer, it } from '@effect/vitest';
+import { Effect, Layer } from 'effect';
+
+declare const MyServiceLayer: Layer.Layer<never>;
+
+layer(MyServiceLayer, { excludeTestServices: true })((it) => {
+	it.effect('uses real clock', () =>
+		Effect.gen(function* () {
+			// Uses actual Clock, not TestClock
+		})
+	);
+});
+```
+
+## Time-Dependent Testing with TestClock
+
+### Basic TestClock Usage
+
+`TestClock` allows controlling time without waiting:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
+
+it.effect('should handle delays', () =>
+	Effect.gen(function* () {
+		const fiber = yield* Effect.forkChild(
+			Effect.sleep('5 seconds').pipe(Effect.as('done'))
+		);
+
+		// Advance time by 5 seconds instantly
+		yield* TestClock.adjust('5 seconds');
+
+		const result = yield* Fiber.join(fiber);
+		expect(result).toBe('done');
+	})
+);
+```
+
+### Testing Recurring Effects
+
+Test periodic operations efficiently:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Queue, Option } from 'effect';
+import { TestClock } from 'effect/testing';
+
+it.effect('should execute every minute', () =>
+	Effect.gen(function* () {
+		const queue = yield* Queue.unbounded<number>();
+
+		// Fork effect that repeats every minute
+		yield* Effect.forkChild(
+			Queue.offer(queue, 1).pipe(
+				Effect.delay('60 seconds'),
+				Effect.forever
+			)
+		);
+
+		// No effect before time passes
+		const empty = yield* Queue.poll(queue);
+		expect(Option.isNone(empty)).toBe(true);
+
+		// Advance time
+		yield* TestClock.adjust('60 seconds');
+
+		// Effect executed once
+		const value = yield* Queue.take(queue);
+		expect(value).toBe(1);
+
+		// Verify only one execution
+		const stillEmpty = yield* Queue.poll(queue);
+		expect(Option.isNone(stillEmpty)).toBe(true);
+	})
+);
+```
+
+### Testing Clock Methods
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Clock } from 'effect';
+import { TestClock } from 'effect/testing';
+
+it.effect('should track time correctly', () =>
+	Effect.gen(function* () {
+		const start = yield* Clock.currentTimeMillis;
+
+		yield* TestClock.adjust('1 minute');
+
+		const end = yield* Clock.currentTimeMillis;
+
+		expect(end - start).toBeGreaterThanOrEqual(60_000);
+	})
+);
+```
+
+The clock separates Unix wall time (`Clock.currentTimeMillis` / `currentTimeNanos`) from monotonic elapsed time (`Clock.monotonicTimeNanos`). `TestClock.adjust` advances both, while `TestClock.setTime` may move wall time backward without decreasing monotonic time. Duration measurements such as `Effect.timed` therefore remain stable across wall-clock corrections. Nanosecond wall time also remains precise for large finite timestamps, and reads stay total after an infinite adjustment.
+
+`TestClock.layer()` installs a tracking scheduler in 4.1.0: adjustment also
+observes sleeps reached after multiple scheduler hops. A clock from
+`TestClock.make` manually provided without that layer has only the one-hop
+guarantee. Interrupted sleeps are removed from pending sleeps. Busy fibers can
+delay adjustment; `warningDelay` bounds the wait before warning rather than
+making arbitrary CPU work deterministic. Diagnostics use the live console even
+when normal test output is captured. Synchronize protocol milestones with
+Deferred/Latch rather than relying on time advancement to prove external I/O.
+
+### Deterministic cryptographic randomness
+
+Mock the crypto family a test uses with `Layer.mock`. Supply fixture values for
+required methods; unimplemented methods fail as defects if called. `TestCrypto`
+was removed in 4.1.0. Tests of real UUIDv7/ULID ordering also need clock control.
+
+<!-- typecheck -->
+```ts
+import { Effect, Layer } from 'effect';
+import { SecureRandom } from 'effect/crypto';
+
+const cryptoLayer = Layer.mock(SecureRandom.SecureRandom, {
+	uuidV7: () => Effect.succeed('01932f24-1000-7000-8000-000000000001')
+});
+const deterministicUuid = Effect.gen(function* () {
+	const random = yield* SecureRandom.SecureRandom;
+	return yield* random.uuidV7();
+}).pipe(Effect.provide(cryptoLayer));
+```
+
+These deterministic values are test fixtures, never security-sensitive tokens.
+
+### TestClock with Deferred
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Deferred } from 'effect';
+import { TestClock } from 'effect/testing';
+
+it.effect('should handle deferred with delays', () =>
+	Effect.gen(function* () {
+		const deferred = yield* Deferred.make<number>();
+
+		yield* Effect.forkChild(
+			Effect.gen(function* () {
+				yield* Effect.sleep('60 seconds');
+				yield* Deferred.succeed(deferred, 42);
+			})
+		);
+
+		yield* TestClock.adjust('60 seconds');
+
+		const result = yield* Deferred.await(deferred);
+		expect(result).toBe(42);
+	})
+);
+```
+
+## Error Testing
+
+### Testing Expected Failures
+
+Use `Effect.flip` to convert failures to successes:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Schema } from 'effect';
+
+class UserNotFoundError extends Schema.TaggedError<UserNotFoundError>()(
+	'UserNotFoundError',
+	{
+		userId: Schema.String
+	}
+) {}
+
+declare const failingOperation: () => Effect.Effect<never, UserNotFoundError>;
+
+it.effect('should fail with error', () =>
+	Effect.gen(function* () {
+		const error = yield* Effect.flip(failingOperation());
+		expect(error).toBeInstanceOf(UserNotFoundError);
+		expect(error.userId).toBe('123');
+	})
+);
+```
+
+### Testing with Exit
+
+Use `Effect.exit` to capture both success and failure:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit } from 'effect';
+
+declare const divide: (a: number, b: number) => Effect.Effect<number, string>;
+
+it.effect('should handle success', () =>
+	Effect.gen(function* () {
+		const exit = yield* Effect.exit(divide(4, 2));
+		expect(exit).toEqual(Exit.succeed(2));
+	})
+);
+
+it.effect('should handle failure', () =>
+	Effect.gen(function* () {
+		const exit = yield* Effect.exit(divide(4, 0));
+		expect(exit).toEqual(Exit.fail('Cannot divide by zero'));
+	})
+);
+```
+
+### Testing Error Types
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Exit, Cause, Context, Schema } from 'effect';
+import * as Option from 'effect/Option';
+
+class NotFoundError extends Schema.TaggedError<NotFoundError>()(
+	'NotFoundError',
+	{
+		id: Schema.String
+	}
+) {}
+
+class UserService extends Context.Service<
+	UserService,
+	{
+		getUser: (id: string) => Effect.Effect<unknown, NotFoundError>;
+	}
+>()('UserService') {}
+
+declare const userService: {
+	getUser: (id: string) => Effect.Effect<unknown, NotFoundError>;
+};
+
+it.effect('should fail with specific error', () =>
+	Effect.gen(function* () {
+		const exit = yield* Effect.exit(userService.getUser('nonexistent'));
+
+		if (Exit.isFailure(exit)) {
+			const cause = exit.cause;
+			// v4: use hasFails (not isFailType) and findErrorOption (not failureOrCause)
+			expect(Cause.hasFails(cause)).toBe(true);
+			const errorOpt = Cause.findErrorOption(cause);
+			expect(Option.isSome(errorOpt)).toBe(true);
+			if (Option.isSome(errorOpt)) {
+				expect(errorOpt.value).toBeInstanceOf(NotFoundError);
+			}
+		} else {
+			throw new Error('Expected failure');
+		}
+	})
+);
+```
+
+## Property-Based Testing
+
+Native `Arbitrary` is exported from `effect/Arbitrary` or the `effect` root;
+it does not use fast-check. It remains marked `@stability unstable`, so preserve
+important failing inputs rather than relying on replay compatibility across
+releases.
+
+### Using it.prop for Pure Properties
+
+Callbacks must synchronously return `boolean | void`: `false` or a throw
+falsifies; `true` or `undefined` passes. Other values, including Promises and
+Effects, are rejected. Use `it.effect.prop` with an Effect callback and lift
+Promise work into that Effect rather than returning it directly from `it.prop`.
+
+```typescript
+import * as Schema from 'effect/Schema';
+import { it } from '@effect/vitest';
+
+it.prop(
+	'addition is commutative',
+	[Schema.Int, Schema.Int],
+	([a, b]) => a + b === b + a
+);
+
+// With object syntax
+it.prop(
+	'multiplication distributes',
+	{ a: Schema.Int.check(Schema.isBetween({ minimum: -100, maximum: 100 })),
+	  b: Schema.Int.check(Schema.isBetween({ minimum: -100, maximum: 100 })),
+	  c: Schema.Int.check(Schema.isBetween({ minimum: -100, maximum: 100 })) },
+	({ a, b, c }) => a * (b + c) === a * b + a * c
+);
+```
+
+### Using it.effect.prop for Effect Properties
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect, Context } from 'effect';
+import * as Schema from 'effect/Schema';
+
+class Database extends Context.Service<
+	Database,
+	{
+		set: (key: string, value: number) => Effect.Effect<void>;
+		get: (key: string) => Effect.Effect<number>;
+	}
+>()('Database') {}
+
+it.effect.prop(
+	'database operations are idempotent',
+	[Schema.String, Schema.Int],
+	([key, value]) =>
+		Effect.gen(function* () {
+			const db = yield* Database;
+
+			yield* db.set(key, value);
+			const result1 = yield* db.get(key);
+
+			yield* db.set(key, value);
+			const result2 = yield* db.get(key);
+
+			return result1 === result2;
+		})
+);
+```
+
+### With Schema Arbitraries
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Schema } from 'effect';
+
+const User = Schema.Struct({
+	id: Schema.String,
+	age: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 120 }))
+});
+
+it.effect.prop('user validation works', { user: User }, ({ user }) =>
+	Effect.gen(function* () {
+		expect(user.age).toBeGreaterThanOrEqual(0);
+		expect(user.age).toBeLessThanOrEqual(120);
+		return true;
+	})
+);
+```
+
+`it.prop` and `it.effect.prop` accept schemas and native Arbitraries, composed
+with `Arbitrary.all`. For manual sampling use the interruptible native runner:
+
+```typescript
+import * as Arbitrary from 'effect/Arbitrary';
+
+const userArbitrary = Arbitrary.schema(User);
+const samples = Arbitrary.sampleEffect(userArbitrary, { count: 10, seed: 'users' });
+```
+
+Generation is from the decoded schema Type. Compose with `map`, `flatMap`,
+`filter`, `filterMap`, `all`, and `array(item, { minLength, maxLength })`.
+Prefer constructive schemas over filters that exhaust the discard budget.
+`checkEffect` returns `Passed`, `Falsified`, `Exhausted`, or an invalid-replay
+result; inspect the outcome rather than treating completion as success. Preserve
+seeds, replay tokens, and important failing inputs. Replay paths can change when
+the generator/shrinker changes. In the Vitest adapter, thrown exceptions, typed
+failures, and defects are shrinkable falsifications; interruption stays interruption.
+The direct `Arbitrary.checkEffect` runner instead propagates defects and
+interruption; only `false` and typed Effect failures become falsifications.
+Generated values are not cloned. Keep properties deterministic and immutable,
+and acquire/reset stateful fixtures inside each evaluation: shrinking and replay
+run the property repeatedly without resetting shared services for you.
+
+### Concurrent property evaluations
+
+`Arbitrary.checkEffect` accepts `concurrency`, also available in global check
+configuration. The default is `1`; independent evaluations may run concurrently,
+while shrinking and replay stay sequential. Repeatable properties and
+deterministic generators retain deterministic results.
+
+### Configuring native property checks
+
+Set suite-wide defaults before concurrent tests start with
+`Arbitrary.configureGlobal({ check: { runs: 1000 }, sample: { count: 10 } })`.
+This replaces the previous configuration; `{}` restores built-in defaults.
+Non-`undefined` per-call options win. Defaults are read when an execution starts,
+including for Effects created earlier, and do not change active runs. Replay
+tokens still control replayed checks. Vitest's `arbitrary` options use these
+same defaults.
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect } from 'effect';
+import * as Schema from 'effect/Schema';
+
+it.effect.prop(
+	'property test',
+	[Schema.Int],
+	([n]) => Effect.succeed(n >= 0 || n < 0),
+	{
+		timeout: 10000,
+		arbitrary: {
+			runs: 1000,
+			seed: 42
+		}
+	}
+);
+```
+
+## Schema Assertions
+
+`TestSchema` from `effect/testing` is marked `@stability unstable`.
+`new TestSchema.Asserts(schema)` provides `make()`, `decoding()`, and `encoding()`
+assertions. Their `succeedEffect` and `failEffect` methods are lazy Effects;
+decoding/encoding assertions use the caller's services, test clock, and
+interruption. Prefer them inside `it.effect` over starting a separate runtime
+through Promise helpers.
+
+<!-- typecheck -->
+```typescript
+import { Effect } from 'effect';
+import * as Schema from 'effect/Schema';
+import { TestSchema } from 'effect/testing';
+
+const asserts = new TestSchema.Asserts(Schema.FiniteFromString);
+const verify = Effect.gen(function* () {
+	yield* asserts.decoding().succeedEffect('42', 42);
+	yield* asserts.encoding().succeedEffect(42, '42');
+	yield* asserts.verifyRoundTripEffect({ seed: 1, runs: 20 });
+});
+```
+
+`verifyRoundTripEffect` generates decoded values and checks encode-then-decode
+with `Schema.toEquivalence(schema)`, including custom equivalence annotations;
+it requires both encoding and decoding services. This is not strict deep equality.
+It does not promise to preserve arbitrary original wire spellings. The Promise
+counterpart is `verifyRoundTrip`, replacing `verifyLosslessTransformation`.
+Promise `succeed` / `fail` remain available for any test runner after satisfying
+their services with the assertion object's `.provide(...)` method.
+
+Success assertions compare against the input when only one argument is supplied;
+pass an explicit expected value for transformations. Failure assertions compare
+the formatted schema issue, not arbitrary failures. Assertion mismatches are
+defects. Schema defects and interruption propagate, even when combined with
+validation failures, rather than satisfying a failure assertion.
+
+## Test Control
+
+### Skipping Tests
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const condition: boolean;
+
+it.effect.skip('not ready yet', () =>
+	Effect.gen(function* () {
+		// Will not run
+	})
+);
+
+it.effect.skipIf(condition)('conditional skip', () =>
+	Effect.gen(function* () {
+		// Only runs if condition is false
+	})
+);
+```
+
+### Running Single Tests
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect } from 'effect';
+
+it.effect.only('debug this test', () =>
+	Effect.gen(function* () {
+		// Only this test runs
+	})
+);
+```
+
+### Running Conditionally
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect } from 'effect';
+
+it.effect.runIf(process.env.INTEGRATION_TESTS)('integration test', () =>
+	Effect.gen(function* () {
+		// Only runs if condition is true
+	})
+);
+```
+
+### Expecting Failures
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect } from 'effect';
+
+it.effect.fails('known failing test', () =>
+	Effect.gen(function* () {
+		// This test is expected to fail
+		// Will pass if it fails, fail if it passes
+		expect(1).toBe(2);
+	})
+);
+```
+
+## Testing Flaky Operations
+
+Use `it.flakyTest` for operations that may fail intermittently:
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect, Random } from 'effect';
+
+it.effect('retrying flaky operation', () =>
+	it.flakyTest(
+		Effect.gen(function* () {
+			const random = yield* Random.nextBoolean;
+			if (random) {
+				yield* Effect.fail('Random failure');
+			}
+		}),
+		'5 seconds' // Retry timeout
+	)
+);
+```
+
+## Logging in Tests
+
+### Default Behavior (Suppressed)
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect } from 'effect';
+
+it.effect('logs are suppressed', () =>
+	Effect.gen(function* () {
+		yield* Effect.log("This won't appear");
+	})
+);
+```
+
+### Enabling Logs
+
+```typescript
+import { it } from '@effect/vitest';
+import { Console, Effect, Logger } from 'effect';
+
+it.effect('logs visible', () =>
+	Effect.gen(function* () {
+		yield* Effect.log('This will appear');
+	}).pipe(
+		Effect.provide(Logger.layer([Logger.consolePretty()])),
+		Effect.provideService(Console.Console, globalThis.console)
+	)
+);
+
+// Use it.live only when the live console itself is under test.
+it.live('logs visible', () =>
+	Effect.gen(function* () {
+		yield* Effect.log('This will appear');
+	})
+);
+```
+
+Installing a pretty logger alone still writes into the captured Console service
+under `it.effect`. Override Console explicitly as above for diagnostics. To
+assert output, keep capture and read `TestConsole.logLines` / `errorLines` from
+`effect/testing`. Metrics use a shared registry by default; supply a fresh
+`Metric.MetricRegistry` per independent test when asserting exact counts.
+
+## Testing Patterns
+
+### Arrange-Act-Assert Pattern
+
+```typescript
+import { describe, it, expect } from '@effect/vitest';
+import { Effect, Context, Layer } from 'effect';
+
+class UserService extends Context.Service<
+	UserService,
+	{
+		getUser: (id: string) => Effect.Effect<{ id: string; name: string }>;
+	}
+>()('UserService') {}
+
+declare const TestUserServiceLayer: Layer.Layer<UserService>;
+
+describe('UserService', () => {
+	describe('getUser', () => {
+		it.effect('should return user by id', () =>
+			Effect.gen(function* () {
+				// Arrange
+				const userId = 'user-123';
+				const expectedUser = { id: userId, name: 'Alice' };
+
+				// Act
+				const service = yield* UserService;
+				const user = yield* service.getUser(userId);
+
+				// Assert
+				expect(user).toEqual(expectedUser);
+			}).pipe(Effect.provide(TestUserServiceLayer))
+		);
+	});
+});
+```
+
+### Testing Transactions
+
+In v4, transactional collections use `TxRef` and `Effect.tx`; there is no
+separate `STM` effect type or `STM.commit`. Test rollback as well as success:
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, TxRef } from 'effect';
+
+it.effect('rolls back a failed transaction', () =>
+	Effect.gen(function* () {
+		const counter = yield* TxRef.make(0);
+		yield* Effect.gen(function* () {
+			yield* TxRef.set(counter, 1);
+			return yield* Effect.fail('cancel');
+		}).pipe(Effect.tx, Effect.flip);
+		expect(yield* TxRef.get(counter)).toBe(0);
+	})
+);
+```
+
+### Testing CRDT Operations
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const GCounter: {
+	make: (id: string) => Effect.Effect<unknown>;
+	increment: (counter: unknown, value: number) => Effect.Effect<void>;
+	query: (counter: unknown) => Effect.Effect<unknown>;
+	merge: (counter: unknown, state: unknown) => Effect.Effect<void>;
+	value: (counter: unknown) => Effect.Effect<number>;
+};
+
+declare const ReplicaId: (id: string) => string;
+
+it.effect('should merge states correctly', () =>
+	Effect.gen(function* () {
+		const counter1 = yield* GCounter.make(ReplicaId('replica-1'));
+		const counter2 = yield* GCounter.make(ReplicaId('replica-2'));
+
+		yield* Effect.tx(GCounter.increment(counter1, 10));
+		yield* Effect.tx(GCounter.increment(counter2, 20));
+
+		const state2 = yield* Effect.tx(GCounter.query(counter2));
+		yield* Effect.tx(GCounter.merge(counter1, state2));
+
+		const result = yield* Effect.tx(GCounter.value(counter1));
+		expect(result).toBe(30);
+	})
+);
+```
+
+## HTTP Mock Server Testing
+
+For services that speak HTTP protocols (REST, SSE, streaming), **prefer HTTP mock server testing over service-level fakes**. This approach tests the full HTTP integration path — serialization, status codes, retries, SSE framing — and catches bugs that service fakes miss.
+
+**When to use HTTP mock servers vs service fakes:**
+
+- **HTTP mock server** (preferred): when the service communicates over HTTP/SSE and transport-level correctness matters. The real service layer (`MyService.defaultLayer`) is used, backed by a mock HTTP server at port 0.
+- **Service fake** (`Layer.succeed`): when the service is a pure domain abstraction with no protocol-level concerns.
+
+The pattern:
+
+1. **Define a `TestServer` service** as a `Context.Service` with semantic helper methods (not raw `push(reply)`). For an LLM server, expose `text(content)`, `tool(call)`, `fail(error)`, `hang`, `hold(promise)`. Each method pushes a typed Step onto a queue.
+2. **Implement with `Layer.effect`** — build an `HttpRouter` that dequeues steps on each request, use `HttpServerResponse.stream` for SSE endpoints, and bind to a random port with `NodeHttpServer.layer(() => Http.createServer(), { port: 0 })`.
+3. **Use `Deferred`-based request counting** for `wait(count)` — the server increments a counter on each request and completes a `Deferred` when the count is reached, letting the test block until the expected number of calls arrive. This eliminates all `setTimeout`/polling from tests.
+4. **Wire the mock URL into test config** via a callback: `config: (url) => ({ baseUrl: url })`.
+
+### Typed Step ADT for Mock Responses
+
+Define mock response types as a discriminated union so test intent is readable:
+
+```typescript
+type Step =
+	| { readonly kind: 'text'; readonly content: string }
+	| { readonly kind: 'tool'; readonly call: ToolCall }
+	| { readonly kind: 'fail'; readonly error: string }
+	| { readonly kind: 'hang' } // Keeps connection open indefinitely
+	| { readonly kind: 'hold'; readonly wait: Promise<void> }; // Blocks until resolved
+
+// Semantic helpers on the TestServer service:
+// yield* server.text("hello")   — enqueue a text response
+// yield* server.tool(toolCall)  — enqueue a tool call response
+// yield* server.fail("error")   — enqueue a mid-stream SSE failure
+// server.hang                   — enqueue a response that never completes
+```
+
+### SSE Response Patterns
+
+For SSE endpoints, use `HttpServerResponse.stream` with different `Stream` constructors per step type:
+
+```typescript
+import { Effect, Stream } from 'effect';
+import { HttpServerResponse } from 'effect/http';
+
+// Normal SSE response — stream JSON lines, then [DONE]
+const sse = (lines: ReadonlyArray<unknown>) =>
+	HttpServerResponse.stream(
+		Stream.fromIterable([
+			[
+				...lines.map((line) => `data: ${JSON.stringify(line)}`),
+				'data: [DONE]'
+			].join('\n\n') + '\n\n'
+		]).pipe(Stream.encodeText),
+		{ contentType: 'text/event-stream' }
+	);
+
+// Hang — connection stays open forever (for testing cancellation)
+const hang = HttpServerResponse.stream(Stream.never, {
+	contentType: 'text/event-stream'
+});
+
+// Mid-stream failure — partial data then error
+const fail = (error: string) =>
+	HttpServerResponse.stream(
+		Stream.concat(
+			Stream.fromIterable([`data: {"partial": true}\n\n`]),
+			Stream.fail(new Error(error))
+		).pipe(Stream.encodeText),
+		{ contentType: 'text/event-stream' }
+	);
+
+// Hold — blocks until a promise resolves (for testing timing)
+const hold = (wait: Promise<void>) =>
+	HttpServerResponse.stream(
+		Stream.fromEffect(Effect.promise(() => wait)).pipe(
+			Stream.flatMap(() => Stream.fromIterable(['data: [DONE]\n\n'])),
+			Stream.encodeText
+		),
+		{ contentType: 'text/event-stream' }
+	);
+```
+
+### Test Fixture Composition
+
+```typescript
+// Test fixture composition
+const withMockServer = <A, E, R>(
+	self: (server: TestApiServer) => Effect.Effect<A, E, R>
+) =>
+	Effect.gen(function* () {
+		const server = yield* TestApiServer;
+		return yield* self(server);
+	});
+
+// In test — uses the REAL service layer, backed by mock HTTP
+it.live('calls API correctly', () =>
+	withMockServer((server) =>
+		Effect.gen(function* () {
+			yield* server.text('hello world');
+			const result = yield* MyService.use((svc) => svc.callApi());
+			expect(result).toEqual('hello world');
+		})
+	).pipe(
+		Effect.provide(MyService.defaultLayer), // Real service, not a fake
+		Effect.provide(TestApiServer.layer)
+	)
+);
+```
+
+### Test Fake Factories
+
+When providing fake service layers in tests, return the test data alongside the layer to avoid duplicating constants between setup and assertions:
+
+```typescript
+export function fakeUserRepo(overrides?: { user?: User }) {
+	const user = overrides?.user ?? new User({ id: '1', name: 'Test' });
+	return {
+		user,
+		layer: Layer.succeed(
+			UserRepo,
+			UserRepo.of({
+				findById: Effect.fn('TestUserRepo.findById')(function* (
+					id: string
+				) {
+					if (id === user.id) return user;
+					return yield* Effect.die(
+						new Error(`Unknown test user: ${id}`)
+					);
+				})
+			})
+		)
+	};
+}
+
+// Usage in test:
+const { user, layer } = fakeUserRepo();
+// assert against `user` values, provide `layer`
+```
+
+> Returning test data alongside the layer avoids duplicating constants between test setup and assertions.
+
+## Lifecycle State-Machine Fakes
+
+For long-lived services such as connection managers, runners, registries, or background sync loops, prefer explicit controllable test doubles over broad end-to-end flows when transport-level correctness is not the thing under test.
+
+Model the fake as a small state machine with semantic controls:
+
+- counters for call counts
+- explicit transition methods like `disconnect()`, `reloadTools()`, `failNext()`
+- `Deferred` values for blocking and release points
+- direct assertions against cache/status transitions after each step
+
+This keeps race and lifecycle tests fast, deterministic, and reviewable.
+
+## Instance-Scoped Harness Tests
+
+When testing tools or services that depend on instance-local context or `InstanceState`, prefer the real layer graph and a real instance/test harness over ad hoc module wrappers.
+
+```typescript
+const layer = Layer.mergeAll(
+	MyTool.defaultLayer,
+	Instruction.defaultLayer,
+	OtherDependency.defaultLayer
+);
+
+it.live('runs with the real harness', () =>
+	withTestInstance((dir) =>
+		Effect.gen(function* () {
+			const tool = yield* MyTool.Service;
+			yield* tool.run(dir);
+		})
+	).pipe(Effect.provide(layer))
+);
+```
+
+Use fake services when you are isolating pure domain behavior. Use the real harness when correctness depends on instance context, layer composition, or production orchestration.
+
+## Interrupt Tests Should Prove Cleanup
+
+If interruption is part of the contract, do not stop at asserting that the fiber was interrupted. Assert the cleanup effect too:
+
+- busy/idle status reset
+- pending work marked aborted/cancelled
+- finalizers or teardown callbacks ran
+- replacement work can start without a second manual cleanup call
+
+## Testing with Non-Vitest Runners (bun:test)
+
+When using `bun:test` or other non-vitest runners, `@effect/vitest`'s `it.effect`,
+`it.live`, and `layer()` helpers are unavailable. This minimal convenience
+harness scopes callbacks and supplies test services, but does **not** replicate
+Vitest cancellation, hook timeouts, fixtures, or shared-suite layer lifetimes:
+
+```typescript
+import { Effect, Layer, Scope } from 'effect';
+import { TestClock, TestConsole } from 'effect/testing';
+import { describe, it as bunIt } from 'bun:test';
+
+// Test environment captures Console and controls time; live adds neither.
+const testEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer());
+
+export const testEffect = <R, E>(layer: Layer.Layer<R, E>) => {
+	const testLayer = Layer.provideMerge(layer, testEnv);
+
+	return {
+		effect: (name: string, fn: () => Effect.Effect<void, unknown, R | Scope.Scope>) =>
+			bunIt(name, () =>
+				Effect.runPromise(fn().pipe(Effect.scoped, Effect.provide(testLayer)))
+			),
+
+		live: (name: string, fn: () => Effect.Effect<void, unknown, R | Scope.Scope>) =>
+			bunIt(name, () =>
+				Effect.runPromise(fn().pipe(Effect.scoped, Effect.provide(layer)))
+			)
+	};
+};
+
+// Usage:
+const deps = Layer.mergeAll(MyService.defaultLayer, OtherService.defaultLayer);
+const it = testEffect(deps);
+
+describe('MyService', () => {
+	it.live('handles request', () =>
+		Effect.gen(function* () {
+			const svc = yield* MyService.Service;
+			const result = yield* svc.handle('input');
+			expect(result).toBe('expected');
+		})
+	);
+});
+```
+
+Key differences from `@effect/vitest`:
+
+- Use `Effect.runPromise` manually — bun:test expects `Promise<void>` from async tests
+- Layer composition uses `Layer.provideMerge` here because the harness intentionally exposes both application and test services; do not use it blindly
+- Keep `effect` as the default; use `live` only when real time or live runtime services are under test
+- A runner timeout does not automatically interrupt these `runPromise` fibers.
+  Add an explicit runner-to-Effect cancellation bridge before using this for
+  tests that can hang; the convenience wrapper alone is not a full adapter.
+
+`TestClock.layer()` works when provided directly to a program executed with `Effect.runPromise`, without an ambient Scope. The harness above merges that layer into the test stack so `TestClock.adjust` controls time.
+
+## Testing Checklist
+
+Before completing a testing task, verify:
+
+- [ ] Correct framework chosen (@effect/vitest vs vitest vs bun:test harness)
+- [ ] Test variant appropriate — `it.effect` by default; `it.live` only for explicitly live runtime behavior
+- [ ] Services provided via layers when needed
+- [ ] HTTP-speaking services tested with HTTP mock server, not service fakes
+- [ ] TestClock used only for tests that explicitly need time simulation
+- [ ] Errors tested with Effect.flip or Effect.exit
+- [ ] Edge cases covered
+- [ ] Property-based tests for general properties
+- [ ] Tests are deterministic (no polling/setTimeout — use Deferred-based synchronization)
+- [ ] Interrupt tests assert resulting cleanup state, not just interruption itself
+- [ ] Test names describe behavior clearly
+- [ ] Resources properly scoped and cleaned up
+- [ ] All tests pass
+
+## Common Pitfalls
+
+### Assertion Style
+
+Effect v4 canonically uses `import { assert } from "@effect/vitest"` with methods like `assert.deepStrictEqual`, `assert.strictEqual`, and `assert.isTrue`. The `expect` API from vitest is still available and works fine. Pick one style and stay consistent within a test file.
+
+```typescript
+// ✅ Option A - assert style (canonical v4)
+import { it, assert } from '@effect/vitest';
+import { Effect } from 'effect';
+
+declare const result: unknown;
+declare const expected: unknown;
+
+it.effect('test', () =>
+	Effect.gen(function* () {
+		assert.strictEqual(result, expected);
+		assert.deepStrictEqual(result, { id: '123' });
+		assert.isTrue(true);
+	})
+);
+
+// ✅ Option B - expect style (still works)
+import { it, expect } from '@effect/vitest';
+
+it.effect('test', () =>
+	Effect.gen(function* () {
+		expect(result).toBe(expected);
+	})
+);
+```
+
+### Don't Forget to Fork for TestClock
+
+```typescript
+import { it } from '@effect/vitest';
+import { Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
+
+// ❌ Wrong - will hang waiting for real time
+it.effect('test', () =>
+	Effect.gen(function* () {
+		yield* Effect.sleep('5 seconds'); // Blocks!
+		yield* TestClock.adjust('5 seconds');
+	})
+);
+
+// ✅ Correct - fork the effect
+it.effect('test', () =>
+	Effect.gen(function* () {
+		const fiber = yield* Effect.forkChild(Effect.sleep('5 seconds'));
+		yield* TestClock.adjust('5 seconds');
+		yield* Fiber.join(fiber);
+	})
+);
+```
+
+### Provide Layers to Effect, Not Test
+
+```typescript
+import { it, expect } from '@effect/vitest';
+import { Effect, Layer } from 'effect';
+
+declare const someEffect: Effect.Effect<number>;
+declare const expected: number;
+declare const layer: Layer.Layer<never>;
+
+// ❌ Wrong - providing to wrong level
+it.effect('test', () =>
+	Effect.gen(function* () {
+		const result = yield* someEffect;
+		expect(result).toBe(expected);
+	})
+); // ❌ Can't provide to test function
+// .pipe(Effect.provide(layer))
+
+// ✅ Correct - provide to Effect
+it.effect(
+	'test',
+	() =>
+		Effect.gen(function* () {
+			const result = yield* someEffect;
+			expect(result).toBe(expected);
+		}).pipe(Effect.provide(layer)) // ✅ Provide to Effect
+);
+```
+
+## Running Tests
+
+```bash
+# Run all tests
+bun run test
+
+# Run specific file
+bunx vitest run path/to/file.test.ts
+
+# Full check (format + lint + typecheck + test)
+bun run check && bun run test
+```
+
+## Example: Complete Test Suite
+
+```typescript
+import { describe, expect, it } from '@effect/vitest';
+import { Effect, Context, Layer, Ref } from 'effect';
+
+// Service definition
+class Counter extends Context.Service<
+	Counter,
+	{
+		increment: () => Effect.Effect<void>;
+		value: () => Effect.Effect<number>;
+	}
+>()('Counter') {
+	static Live = Layer.effect(
+		Counter,
+		Effect.gen(function* () {
+			const count = yield* Ref.make(0);
+			return {
+				increment: () => Ref.update(count, (n) => n + 1),
+				value: () => Ref.get(count)
+			};
+		})
+	);
+}
+
+// Each test provides its own layer build and starts with an independent Ref.
+describe('Counter', () => {
+	it.effect('should start at 0', () =>
+		Effect.gen(function* () {
+			const counter = yield* Counter;
+			const value = yield* counter.value();
+			expect(value).toBe(0);
+		}).pipe(Effect.provide(Counter.Live))
+	);
+
+	it.effect('should increment', () =>
+		Effect.gen(function* () {
+			const counter = yield* Counter;
+			yield* counter.increment();
+			const value = yield* counter.value();
+			expect(value).toBe(1);
+		}).pipe(Effect.provide(Counter.Live))
+	);
+
+	it.effect('should handle multiple increments', () =>
+		Effect.gen(function* () {
+			const counter = yield* Counter;
+			yield* counter.increment();
+			yield* counter.increment();
+			yield* counter.increment();
+			const value = yield* counter.value();
+			expect(value).toBe(3);
+		}).pipe(Effect.provide(Counter.Live))
+	);
+});
+```
+
+This skill ensures comprehensive, reliable testing of Effect-based applications following best practices.

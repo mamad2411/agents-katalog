@@ -1,0 +1,218 @@
+---
+created: 2025-12-16
+modified: 2026-09-02
+reviewed: 2026-09-02
+allowed-tools: Read, Bash(git *), mcp__github__get_pull_request, mcp__github__list_issues, TodoWrite
+args: "[resource-name] [deployment-type]"
+argument-hint: "[resource-name] [deployment-type]"
+disable-model-invocation: true
+description: "Generate deployment handoff docs — tech stack, access URLs, config, monitoring, dev checklist. Use when handing off a service, documenting deployments, or creating client-facing summaries."
+name: deploy-handoff
+---
+
+# Deployment Handoff Command
+
+Generate professional handoff messages for deployed resources and services with all necessary information for developer handoff.
+
+## When to Use This Skill
+
+| Use this skill when... | Use `deploy-release` instead when... |
+|---|---|
+| Handing off an already-deployed service to another developer or client | Cutting a new release tag or driving release-please automation |
+| Documenting deployment details (URLs, env vars, monitoring) on a ticket | Publishing a draft, pre-release, or manual GitHub release |
+| Onboarding a new team member with access information for a running service | Setting up `release-please-config.json` / `.release-please-manifest.json` |
+| Composing a client-facing deployment summary | Writing the Dockerfile (`container-development`) or Skaffold config (`skaffold-orbstack`) |
+
+## Context
+
+- Git remotes: !`git remote -v`
+- Branch: !`git branch --show-current`
+- Last commit: !`git log --oneline --max-count=1`
+- README: !`find . -maxdepth 1 -name \'README.md\'`
+- Docker: !`find . -maxdepth 1 \( -name "Dockerfile" -o -name "docker-compose*.yml" \)`
+- CI/CD: !`find . -path '*/.github/workflows/*' -maxdepth 3 -name '*.yml'`
+- Config files: !`find . -maxdepth 1 \( -name ".env.example" -o -name "*.config.*" \)`
+
+## Parameters
+
+- `$1` (RESOURCE_NAME, optional): Name of the deployed resource/service
+- `$2` (DEPLOYMENT_TYPE, optional): Type of deployment (web-app, api, database, infrastructure, etc.)
+
+## Execution
+
+Execute this deployment handoff documentation workflow:
+
+### Step 1: Discover resource details
+
+Gather deployment details from current repository context. Identify relevant documentation and configuration files. Extract repository information and branch details.
+
+### Step 2: Collect technical information
+
+Collect:
+- Service/resource name and purpose
+- Deployment environment details
+- Access URLs and endpoints
+- Configuration and environment variables
+- Dependencies and prerequisites
+- Monitoring and logging information
+
+### Step 3: Gather documentation links
+
+Find and compile:
+- Repository URL and relevant branches
+- Deployment documentation
+- API documentation (if applicable)
+- Configuration guides
+- Troubleshooting resources
+
+### Step 4: Compile access information
+
+Assemble:
+- Service URLs and endpoints
+- Database connection details (without credentials)
+- Admin/management interfaces
+- Monitoring dashboards
+- Log locations and access methods
+
+### Step 5: Generate handoff message
+
+Create a professionally formatted handoff message with clear sections, action items for the receiving developer, and contact information for follow-up questions.
+
+## Template Structure
+
+### Service Overview
+- **Name**: Resource/service identifier
+- **Purpose**: Brief description of functionality
+- **Environment**: Production/staging/development
+- **Deployment Date**: When the deployment occurred
+- **Deployed By**: Who performed the deployment
+
+### Technical Details
+- **Technology Stack**: Languages, frameworks, databases used
+- **Architecture**: High-level system design
+- **Dependencies**: External services and libraries
+- **Configuration**: Key settings and environment variables
+
+### Access Information
+- **Service URL**: Primary access point
+- **Admin Interface**: Management dashboard (if applicable)
+- **Database**: Connection information (non-sensitive)
+- **File Storage**: Asset/file locations
+- **Monitoring**: Health check endpoints and dashboards
+
+### Documentation
+- **Repository**: GitHub/GitLab repository URL
+- **Branch**: Deployed branch/tag
+- **API Docs**: API documentation location
+- **Setup Guide**: Installation/configuration instructions
+- **Troubleshooting**: Known issues and solutions
+
+### Developer Handoff Checklist
+- [ ] Review service functionality and purpose
+- [ ] Access all provided URLs and interfaces
+- [ ] Verify monitoring and alerting setup
+- [ ] Check backup and recovery procedures
+- [ ] Review security configurations
+- [ ] Test deployment process
+- [ ] Document any additional findings
+
+## Output Format
+
+The command generates a structured message with:
+- **Professional tone** suitable for client communications
+- **Clear structure** with headers and bullet points
+- **Actionable information** for immediate developer productivity
+- **Complete context** for understanding the deployment
+
+## Configuration Options
+
+```yaml
+format: markdown            # slack, email, markdown
+include_sensitive: false   # Include sensitive config info
+detail_level: standard     # minimal, standard, comprehensive
+template_style: professional # professional, technical, brief
+```
+
+## Integration Points
+
+- **Repository Detection**: Automatically detects git repository information
+- **Environment Variables**: Reads from `.env` files and configuration
+- **Documentation Scanning**: Searches for README, docs, and API specifications
+- **CI/CD Integration**: Extracts deployment pipeline information
+- **Monitoring Integration**: Links to observability tools and dashboards
+
+## Success Criteria
+- Handoff message contains all necessary information for developer productivity
+- Format is suitable for ticket comments
+- Message includes clear next steps and action items
+- All links and references are accurate and accessible
+- Professional tone appropriate for client-facing communications
+
+## Agentic Optimizations
+
+| Context | Command |
+|---------|---------|
+| Git remote URL | `git remote get-url origin` |
+| Current branch | `git branch --show-current` |
+| Recent commits | `git log --oneline --max-count=5` |
+| Find config files | `find . -maxdepth 1 -name '*.config.*' -o -name '.env.example'` |
+| Find Dockerfiles | `find . -maxdepth 1 -name 'Dockerfile' -o -name 'docker-compose*.yml'` |
+| Find CI workflows | `find .github/workflows -maxdepth 1 -name '*.yml'` |
+| PR details | `gh pr view --json title,url,state,mergedAt` |
+
+## Example Usage
+
+```bash
+# Basic handoff for current project
+/container:deploy-handoff
+
+# Specific service handoff
+/container:deploy-handoff "User API" "web-service"
+
+# Comprehensive handoff — request the detail level in prose
+/container:deploy-handoff "Payment System" "microservice"
+# then: use comprehensive detail level
+```
+
+## Sample Output Format
+
+```
+## 🚀 Deployment Handoff: [Service Name]
+
+**Service**: [Service Name]
+**Environment**: [Production/Staging/Development]
+**Deployment Date**: [Date]
+**Deployed By**: [Developer Name]
+
+### 📋 Service Overview
+- **Purpose**: [Brief description of functionality]
+- **Technology Stack**: [Languages/frameworks used]
+- **Status**: ✅ Active and operational
+
+### 🔗 Access Information
+- **Service URL**: [Primary access point]
+- **Admin Dashboard**: [Management interface]
+- **API Documentation**: [API docs location]
+- **Health Check**: [Monitoring endpoint]
+
+### 📚 Documentation & Resources
+- **Repository**: [GitHub repository URL]
+- **Branch/Tag**: [Deployed version]
+- **Setup Guide**: [Configuration instructions]
+- **Troubleshooting**: [Known issues and solutions]
+
+### ✅ Developer Handoff Checklist
+- [ ] Review service functionality and purpose
+- [ ] Access all provided URLs and interfaces
+- [ ] Verify monitoring and alerting setup
+- [ ] Test basic functionality
+- [ ] Review configuration and environment variables
+
+### 📞 Support & Contact
+For questions or issues with this deployment, please:
+1. Check the troubleshooting guide first
+2. Review logs at [log location]
+3. Contact [deployer] for immediate assistance
+
+*Generated on [date] for [project/client]*
+```

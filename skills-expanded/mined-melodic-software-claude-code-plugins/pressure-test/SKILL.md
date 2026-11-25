@@ -1,0 +1,321 @@
+---
+description: "Builds a throwaway interactive terminal app to pressure-test business logic, a state machine, a data model, or an API surface before committing to it. Use when nobody can say yet what the rules do with an awkward sequence of events or an odd record: 'what happens if a refund arrives after the order ships', 'is this transition allowed from that status', 'will this schema fit our odd records', 'which arguments should this call take', 'prototype this reducer', 'does this third-party API do X for us' (vendor-fit mode: an adapter checks it against a sandbox). A pure logic module, liftable into production, sits behind a disposable shell: the terminal app, or a self-contained click-through HTML demo for someone outside engineering. Records the validated answer in a durable note. Visual or design questions: /prototype:explore-directions."
+argument-hint: "[observe|vendor-fit] [--medium <value>] [scope]"
+user-invocable: true
+disable-model-invocation: false
+allowed-tools: ["Bash(git branch:*)", "Bash(git status:*)", "Bash(head:*)", "Bash(echo:*)", "Bash(${CLAUDE_SKILL_DIR}/scripts/detect-ecosystems.sh:*)"]
+shell: bash
+metadata:
+  workflow-stage: plan
+  summary: Throwaway terminal app or shareable HTML demo pressure-testing logic or a data model
+---
+
+**Arguments.** `[observe|vendor-fit] [--medium <value>] [scope]`. e.g., /prototype:pressure-test scheduling state machine,
+/prototype:pressure-test observe reservation check in renew or in a guard, or
+/prototype:pressure-test vendor-fit can the SMS service send due-date reminders. A leading `observe`
+selects [Observe](#observe-the-agent-runs-the-fork); a leading `vendor-fit`, or a question whether
+an outside service does something for us, selects
+[Vendor-fit](#vendor-fit-does-an-outside-service-do-it). `--medium` picks the shell
+([Two shells](#two-shells-tui-default)) and is not part of the scope.
+
+## Pre-computed context
+
+Project ecosystems: !`${CLAUDE_SKILL_DIR}/scripts/detect-ecosystems.sh 2>/dev/null || echo "none detected"`
+
+## Variables
+
+Arguments: `$ARGUMENTS`
+
+## Purpose
+
+This skill checks a set of rules by running them. It puts the logic in question into a small pure
+module, wraps that module in a disposable shell a person drives one action at a time, and shows
+the whole state after every action. The shell is a terminal app by default, or one HTML file for
+a driver who does not use a terminal. With `observe`, the agent runs the variants of a fork itself
+and recommends one.
+
+The examples in this file follow one case: a library's loan rules. A copy can be on the shelf, on
+loan, overdue or reserved, and the events are borrow, renew, return, reserve and a day passing. A
+rule such as "a loan can be renewed twice" fits on one line and still says nothing about the
+patron waiting on a reservation for that copy; the gap appears when someone renews such a copy and
+reads the resulting state.
+
+Read [`${CLAUDE_PLUGIN_ROOT}/context/discipline.md`](../../context/discipline.md) first. It holds
+the rules every prototype follows, the auto-invoke gate, and where the answer gets written down.
+This file adds only what is specific to the logic facet.
+
+A question about how a screen should look ("what should this look like") is a visual/appearance
+question, not a logic/state question, and belongs to the other facet: invoke
+`/prototype:explore-directions` via the Skill tool instead.
+
+## Does the question need a running model?
+
+Use this skill when acting on a running model would settle the question sooner than reading code or
+arguing about it. It raises fidelity (how concrete the artifact is) for a question discussion
+cannot settle; the cheapest artifact that answers the question wins. In the loans case:
+
+| What is in doubt | Loans example | Use this skill? |
+|---|---|---|
+| How the rules treat events in an awkward order, including the ones they should refuse | A reserved copy comes back late and its borrower then tries to renew it | Yes |
+| Whether the record shape can hold a case the library really has | One patron borrows two copies of the same title | Yes |
+| What the calls should take and return | Renew by loan id or by copy id | Yes; the module's interface is the draft |
+| Whether an outside service does what the rules need | Can the SMS service send a due-date reminder and report whether it was delivered? | Yes, in [vendor-fit](#vendor-fit-does-an-outside-service-do-it) mode |
+| What today's code already does | Does the current `renew()` check reservations? | No; read the code |
+
+## Two shells. TUI default
+
+Two disposable shells can front the same portable logic module (step 2 below), the **terminal
+app** (the default) and a **self-contained HTML demo**. Both run the same process; only the shell
+swaps. Route by audience:
+
+- **Vendor-fit always takes the terminal shell**, ahead of every rule below and without running
+  the medium resolver: the HTML demo's CSP blocks the vendor call, and a key in a page would leave
+  the machine with it. When an HTML demo or a page medium was asked for, say so in one line and
+  build the terminal shell.
+- **The driver is a developer with a terminal** → the TUI (the default below).
+- **The driver works outside engineering** (design, product, or the business side) and will press
+  the buttons, or **no terminal fits the handoff** → the HTML demo shell (next section): one file,
+  nothing to install, opened by double-click.
+- **Explicit override wins both ways**. Ask for a TUI or an HTML demo directly and that beats
+  the default routing.
+- **Then the resolved medium.** With no such request, run the shared medium resolver. This plugin
+  has no `medium` option, so `--option` is empty; add `--argument` only when the reader passed
+  `--medium`, with the value they gave:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/lib/view-settings.mjs" resolve --lane prototype:pressure-test --option "" [--argument <the --medium value>]
+  ```
+
+  It prints one JSON line, then the report line naming the medium and what decided it, then one
+  line per notice. Print the report line and each notice in the handoff as they stand. Leave every
+  settings file to the resolver. A usage error (exit 2) means the argument named no medium: say so
+  in one line and run it again without `--argument`. When the JSON's `page` is `false`, the medium
+  shows no page: build the TUI. Any other result, a `null` medium, or a resolver that fails (say so in one line) overrides nothing:
+  the medium says where a view goes, not which shell an audience needs, so the audience routing
+  above still decides, and when it picks the HTML demo the page stays a local file, since this
+  skill publishes nothing. Name the source of the shell choice in the handoff: the request, the
+  report line, or "shipped default".
+
+## HTML demo shell
+
+When the audience routing selects it, the shell is one self-contained `file://` HTML page. This
+shell takes the place of step 3 below; every other step holds (in step 4, the run command is the
+page's `file://` path). The step 2 module goes into the page unchanged as its own inline
+`<script>` block, and step 2's one-way dependency rule applies to the page exactly as it does to
+a terminal shell.
+
+The person driving the page does not read code, so the page speaks the library's language: buttons
+say "Renew loan", fields say "Days overdue" with a value beside them, and nothing shows `RENEW`,
+`state.loans[0].due` or a JSON dump. The page has these regions, top to bottom:
+
+| Region | What the driver does there (loans case) |
+|---|---|
+| Header | Reads the title and the step 1 question in one sentence |
+| State panel and free-play buttons | Presses Borrow, Renew, Return, Reserve or Next day in any order, at any time, and watches the copy's status, due date, reservation holder and fine change after each press |
+| Guided walkthroughs | Runs scripted scenarios. Each opens on the same fresh library, says in a sentence what to watch, and lists its presses in order. Include one the rules must refuse (borrowing a copy someone else reserved), one awkward case (renewing on the due date) and one ordinary run (borrow, then return on time) |
+| Validation answer set | The questions this demo exists to answer, each as a forced choice with a small authored option set, every option naming its cost in plain language (what picking it gives up), plus a free-text escape hatch for the answer the options missed. The driver's picks are the demo's real output; pair the set with a copy-out control that lifts the filled answers back out as text to paste into the session |
+| Fake-data disclosure footer | One visible line stating the page is synthetic end to end, that nothing on it reads from or writes to the real app, and, when decided, where the real wiring lives (or will live) and behind which flag; when integration is not yet decided, or no flag is planned, the footer says so explicitly rather than inventing production details. The driver is not reading code; the footer is what keeps a convincing mock from being mistaken for the wired feature |
+
+Constraints (the same set as explore-directions' HTML mockup substrate):
+
+- **Synthetic data only.** A throwaway prototype binds synthetic data, never real or captured
+  values.
+- **No remote fetch by construction.** Vendor everything inline so the page opens straight from
+  `file://`. No external scripts, fonts, or data fetches. Enforce this rather than trusting it:
+  emit a restrictive CSP meta tag in the page `<head>` so the browser blocks any remote resource:
+  `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">`.
+  Inline `<style>` and inline `<script>` stay allowed (the logic module and the button handlers
+  need inline script); only remote origins, CDNs, web fonts, `fetch`/XHR, are forbidden.
+- **Ephemeral placement.** Generate the page via the platform's temp primitive, never a tracked
+  path and never inside the repo. On Unix/Linux/Git Bash, create a private run directory and
+  write the page inside it, echoing the directory in the same call:
+  `d=$(mktemp -d "${TMPDIR:-/tmp}/pressure-test-XXXXXX"); echo "$d"`, then write to
+  `<echoed dir>/pressure-test.html`. Echo it: whether a shell variable carries to the next Bash
+  call is [Tools reference § What persists between commands](https://code.claude.com/docs/en/tools-reference#what-persists-between-commands).
+  Keep the temp root in the positional template with the `XXXXXX` trailing, and give the
+  page a fixed name inside the generated directory, the mktemp dialect traps behind those two
+  rules (GNU vs BSD `-p`/`-t` divergence, trailing-X-only substitution on BSD/macOS) are unpacked
+  in [`explore-directions`](../explore-directions/SKILL.md)'s HTML mockup substrate section; the
+  same rules apply verbatim here. On Windows, a user-scoped temp under `%LOCALAPPDATA%\Temp`. One
+  file per run. The path is handed to the user to open from `file://`, so do not delete it. It
+  must still be readable when they open it.
+- **Markdown captures the answer.** Copy what the demo taught into your durable answer (per the
+  shared discipline), then discard the page like any other shell, the validated logic module is
+  the only artifact that outlives the prototype (lifted into production per step 5).
+
+## Observe: the agent runs the fork
+
+With `observe`, the agent drives instead of a person. Use it for a fork: two or more variants of
+the same logic, where running each one on the same inputs settles which to keep. In the loans
+case: the reservation check sits inside `renew()` in one variant and in a guard before it in the
+other, and the question is whether both refuse a renewal of a reserved copy.
+
+1. **Write the question down**, as step 1 below, naming each variant and the inputs that tell
+   them apart.
+2. **Build and run each variant.** Write each one as its own logic module (step 2's rules hold),
+   and drive all of them from one disposable harness script in place of the step 3 shell. The
+   harness feeds every variant the same inputs in the same order. It starts with one command and
+   prints every variant's state after each event.
+3. **Record, per variant:**
+   - **Behavior**: what it accepted and refused, and the state it ended in.
+   - **Output**: what it printed or returned for each input, copied from the run.
+   - **Timing**: the wall-clock time of that variant's own calls, measured separately for each
+     variant and labeled `timing (unqualified)`. It is one run on this machine, with no warm-up,
+     repeats or load control, so it ranks nothing on its own. Qualified timing is
+     `/performance:snapshot`'s job.
+4. **Recommend.** Give a recommendation that names the variant to keep and the observed evidence
+   behind it: the input, and what each variant did with it. When the runs do not tell the
+   variants apart, say so and recommend nothing.
+5. **Capture and delete**, as step 5 below: write the per-variant record and the recommendation
+   into the durable answer per the shared discipline, with the variants that lost and why. Delete
+   the harness and the losing modules once the run alone settled the fork or the person accepted
+   the recommendation. While a call is still the person's, or no variant won, leave the
+   placeholder note the shared discipline names and keep the variants.
+
+**Product and preference calls stay with the person.** When the variants differ in what users
+should get, what reads better or which trade-off the team accepts, record the evidence and ask;
+the recommendation covers only what the run settled. When the fork is itself a performance target
+(the question is which variant meets a speed or resource goal), hand off to `/performance:goal`
+(if the `performance` plugin is enabled; otherwise say once that the `performance` plugin would qualify the timing, record it as unqualified, and ask)
+instead of recommending from unqualified timing.
+
+The model auto-invoke gate in the shared discipline holds for `observe` too: when nobody asked
+for a prototype, stop and confirm scope before writing any variant.
+
+## Vendor-fit: does an outside service do it
+
+With `vendor-fit`, the question is whether an outside service (payments, messaging, search, a
+carrier) does what the rules need. In the loans case: can the SMS service send a due-date reminder
+and report whether it was delivered? The process below holds, with these changes:
+
+1. **The question names the checks.** Step 1's paragraph lists each thing the rules need from the
+   service as one check with its expected result: "1. A reminder to a valid number is accepted.
+   2. A delivery report comes back for it. 3. An invalid number is refused, not silently dropped."
+2. **The module stays pure.** It decides what to ask the service and judges each answer, plain
+   values in and out. The app's own port sits beside it: an interface in the app's terms
+   (`sendReminder(patron, loan)`), never the vendor's.
+3. **A thin adapter implements the port** and is the only file that calls the vendor, translating
+   between the port and the vendor's API and nothing more. The shell wires the adapter in; the
+   module imports neither.
+4. **Sandbox keys only.** The adapter reads the vendor's sandbox or test-mode key from an
+   environment variable and refuses a key the vendor marks as production. No key is written into a
+   prototype file, a production credential is never used, and no real data (personal,
+   payment or health records) is sent: every record is synthetic. With no sandbox key, or a vendor
+   with no sandbox, stop before any call, mark each live step `not driven: no sandbox key`, and
+   ask for one; never fall back to production.
+5. **The shell shows each check passing or failing**, with what the service returned beside it.
+   The shell is the terminal app, or one script for a check with no input
+   ([Two shells](#two-shells-tui-default) says why it is never the HTML demo).
+6. **Clean state includes the sandbox.** Remove or reset what the run created there before the
+   handover, and again after the person's run.
+7. **The note records the verdict**: fits, fits with a workaround, or does not fit, with each
+   check's result, the date of the run (sandbox behavior changes) and any documented difference
+   between the vendor's sandbox and production. The module and the port are the liftable part;
+   the adapter goes with the shell.
+
+## Process
+
+### 1. Write the question down
+
+For the loans case the paragraph reads: "State model: one copy's loan record. Question: can the
+current borrower renew a copy that someone else has reserved, and if so, what happens to the
+reservation?" Write a paragraph like that before any code, as the opening comment of the module
+file (for the HTML demo shell, also in the page header). Without it, the build drifts toward
+whatever question is easiest to answer.
+
+### 2. Build the logic module
+
+Write it in the host project's language with its existing tooling; a prototype never brings in a
+new runtime.
+
+Decide what belongs on each side of the split before writing either side:
+
+| | Module | Shell (TUI or HTML page) |
+|---|---|---|
+| After the answer is recorded | Committed to production unchanged | Deleted |
+| Loans contents | The loan record, the borrow/renew/return/reserve rules, the fine | Key or click handling, drawing the state, the sample patrons |
+| Allowed inside | Plain values in, plain values out | Terminal codes, DOM access, printing, reading input |
+| Imports | Nothing from the shell | The module (the one-way dependency rule) |
+| Outside services | None | In vendor-fit mode, the adapter that calls the vendor's sandbox |
+
+Before the shell exists, search the module for terminal codes, DOM access, I/O and any console
+output that decides a branch, and read its import list. A hit on either means the module cannot
+be committed unchanged.
+
+Then pick the module's form by asking who holds the loan state between two calls:
+
+| Who holds it | Form | Loans example |
+|---|---|---|
+| Nobody; each call computes from its arguments | Separate pure functions over plain values | `fineFor(daysLate)` |
+| The caller, who passes it in each time | One function from the current record and an event to the next record. When the doubt is which events a status refuses, give it an explicit table of statuses and the events each accepts, which makes it a state machine | `next(loan, "renew")`; `overdue` accepts `return`, refuses `renew` |
+| The module itself | An object with a few methods, used only when the caller cannot reasonably carry the state | a `Ledger` with `borrow()` and `history()` |
+
+### 3. Build the TUI shell
+
+(Terminal default. When the audience routing selected the HTML demo shell, that section replaces
+this step.)
+
+Redraw the whole screen after every action: clear it and print the full frame again, so the user
+watches one view change in place instead of a log growing down the terminal. The frame fits on one
+screen and has two parts:
+
+1. **State**, one field per line, with field names in bold and secondary details (timestamps, ids,
+   computed values) dimmed.
+2. **Keys**, listed at the bottom: `[b] borrow  [w] renew  [r] return  [d] next day  [q] quit`.
+
+The loop: create the state as one in-memory value and draw the first frame; read one key (or one
+line); pass it to a handler that updates the state through the logic module; draw the full frame
+again, replacing the old one; repeat until quit.
+
+Make it start with one command. Add an entry to the project's existing task runner, so the user
+types one short command and never has to remember a file path. With no task runner, write the
+command at the top of a prototype README.
+
+### 4. Hand it over
+
+Before the handover, run the shared discipline's
+[clean-state proof](../../context/discipline.md#clean-state-proof-and-check-list): start the
+prototype from a clean state, drive it yourself through an ordered check list, and leave it clean.
+For the loans case the list opens: "1. Start it with the one command. Expect: one copy, on
+the shelf, no loans. 2. Press `b` to borrow. Expect: on loan, due in 14 days." For the HTML demo
+shell, the guided walkthroughs supply the list's steps, in the order the person should run them.
+
+Give the user the run command (for the HTML demo shell, the page's `file://` path; open the page
+for them or pass them the file), the check list and what your own run showed, then ask for the
+verdict once they have worked through the list.
+
+Sort each remark the user makes while driving into one of two piles:
+
+- **A finding about the rules.** Write down the presses that led to it, in order, and the state
+  the user expected instead. For the loans case: borrow, reserve as a second patron, renew; the
+  renewal went through and the user expected a refusal. These lists feed step 5.
+- **A state the prototype cannot reach yet**, such as a reservation that lapses unclaimed. Add the
+  event to the module, give it a key or button in the shell, and hand the prototype back.
+
+### 5. Capture the answer
+
+Write down what the prototype showed, per the shared discipline. For the HTML demo shell, carry
+the filled validation answer set into the durable answer verbatim: the chosen option per question,
+with the cost the driver accepted, is the record of what was actually decided. Then run the
+shared discipline's [evidence step](../../context/discipline.md#evidence-step) over the prototype
+files, which writes either a pushed branch and commit SHA or the local path and
+`not pushed: <reason>` into the note. Then move the validated module into production and delete
+the shell, terminal app or page alike; the module is often worth keeping, the shell never is.
+
+## Next
+
+- The model holds and it settles a type, contract, or boundary: `/planning:design`, to record it.
+- The model holds and no design question is open: `/planning:plan`, which schedules the logic module's lift.
+- The prototype invalidates the model: `/planning:design`.
+
+## Anti-patterns
+
+| Mistake | Why it fails | Instead |
+|---|---|---|
+| Shell code inside the module | A `renew()` that prints to the terminal or reads a form field runs only inside that one shell, so it cannot be copied into production | Let `renew()` take a loan and return a loan; the shell, TUI or page, does all printing and reading around it |
+| Connecting the real database | Every click becomes a real write to the loans table, and storage was not the thing under test | Hold the loans in a plain in-process map that disappears on exit, unless persistence is the question itself |
+| A production key in the vendor-fit adapter | The SMS check texts real patrons and bills the library, and the key sits in a file that may be pushed | Read a sandbox key from the environment; stop and ask when there is none |
+| Writing a test suite for the prototype | The renewal rules are meant to change after each answer the driver gives; once it needs a test suite it has stopped being a prototype, and tests would freeze rules still being decided, and the effort belongs to the module that survives | Write tests for the module once it is lifted into production |
+| Building for cases nobody asked about | Interlibrary loans or e-books added "for later" blur the answer to the one question asked | Answer the step 1 question and stop |
+| A build step, bundler, framework or server behind the HTML demo shell | The librarian who drives the demo gets a file by email and has no toolchain; a page that must be built or served never opens for them | One HTML file with every script and style inlined |
+| Shipping the shell | The loan screen hard-codes sample patrons and skips every failure case, so the library would run on demo scaffolding | Ship the module; delete the shell |

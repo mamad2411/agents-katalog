@@ -1,0 +1,145 @@
+---
+description: "Reach Anthropic's first-party playground capability in one step: verify the upstream playground plugin is installed, invoke its skill for interactive single-file HTML explorers (controls beside a live preview, output is a prompt to paste back), or emit the exact install commands when it is absent. Use when: 'make me a playground', 'interactive explorer for X', 'install the playground plugin', 'critique this document with approve/reject controls', or any ask to tune a parameter space visually and see the result (sliders, balancing, exploring parameters). Also carries field-tested prompt recipes, delivery guidance for cloud and remote sessions where a local browser cannot open, and known-limitation notes. This wrapper generates nothing itself; the upstream skill owns generation. Not for choosing a visual form for conversation content (a visualization capability owns that) or for throwaway variations of the project's own UI (a prototyping capability owns that)."
+argument-hint: "[what to explore]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Route playground requests to the first-party plugin, or install it, with recipes and guidance
+---
+
+# Use playgrounds
+
+## Purpose
+
+Connect a playground-shaped request (an interactive parameter space the user wants to
+manipulate visually, with the result flowing back as a prompt) to the maintained
+first-party implementation: the `playground` skill from the `playground` plugin on the
+`claude-plugins-official` marketplace. This skill routes, installs, and advises. It
+never builds a playground itself.
+
+## Step 1: Presence check (provenance, not prose)
+
+Determine whether the upstream plugin is installed by its identity, not its wording:
+
+- Run `claude plugin list` and look for the `playground` plugin sourced from
+  `claude-plugins-official`. That marketplace-qualified install record is the
+  authoritative signal.
+- Where the CLI is unavailable to the session, fall back to the session's skill
+  listing: a bare `playground` skill whose description says it creates interactive
+  HTML playgrounds. Treat the description comparison as advisory only; upstream may
+  reword it at any time. Never conclude "absent" from wording alone when the name is
+  present.
+- A local skill can shadow the upstream name. When the listed `playground` skill's
+  description clearly describes something other than an interactive-explorer builder,
+  say a shadow is likely, then let provenance decide: with the install record
+  confirming `playground@claude-plugins-official`, warn about the shadow and invoke
+  the namespaced `playground:playground` form; with no install record confirming it,
+  take the install/guidance path, and never invoke the shadowing skill.
+
+How a plugin skill's namespaced name and a same-named local skill resolve is
+Claude Code's to define; this skill always addresses the upstream skill by its
+namespaced form.
+
+- **Pointer**: when a shadow is suspected or the bare name resolves unexpectedly,
+  fetch [Skills: Resolve skills that share a name](https://code.claude.com/docs/en/skills#resolve-skills-that-share-a-name)
+  live.
+
+## Step 2: Present, so invoke
+
+When the upstream skill is present, invoke it via the Skill tool with the user's
+brief as arguments, using the namespaced form `playground:playground`
+([Step 1](#step-1-presence-check-provenance-not-prose)'s pointer covers why). Pass the request
+as stated; the upstream skill owns template choice and generation. When the user names
+styles to leave out (italic accent words, pill-shaped buttons), carry that list in the
+brief; when they dislike a choice in the generated page, add it to the list and invoke
+again. A general "make it look less generic" only swaps one default for another. If
+the invocation is refused, do not retry blind: tell the user the skill is installed but this session
+could not invoke it, and suggest they run it themselves by asking for a playground in
+their own words.
+
+## Step 3: Absent, so uplift
+
+This plugin declares the upstream dependency in its manifest, so where Claude Code
+resolves plugin dependencies it handles the install itself. In contexts where
+resolution does not run (a synced or cloud session, a manual setup), emit the
+commands directly:
+
+```shell
+/plugin marketplace add anthropics/claude-plugins-official
+/plugin install playground@claude-plugins-official
+```
+
+Scope guidance: `user` scope makes the capability available everywhere; `project`
+scope pins it to one repository. Include the marketplace-add step only when the
+install command reports the marketplace is unknown. If the install is blocked by
+organization policy, say so plainly and stop; there is no workaround to offer.
+
+- **Pointer**: when an install did not resolve the dependency, or reports why it
+  could not, fetch [Plugin dependencies: How dependencies behave for your users](https://code.claude.com/docs/en/plugins/dependencies#how-dependencies-behave-for-your-users)
+  and [Install plugins: Plugins with dependencies](https://code.claude.com/docs/en/plugins/install#plugins-with-dependencies)
+  live.
+
+## Step 4: Delivery, especially off the desktop
+
+How the upstream skill writes and opens its HTML file is that skill's to define.
+Feature-detect the delivery path instead of assuming its opening step reaches the
+user:
+
+1. A desktop session with a local browser: let the upstream flow open the file.
+2. A session that can publish an Artifact: offer to publish the generated HTML so the
+   user gets a link. State that the page runs under the artifact sandbox, and confirm
+   the copy-prompt button works there before promising the round trip.
+3. A session with a file-send surface (remote control, managed cloud): send the HTML
+   file to the user to open locally.
+4. None of the above: report the file's absolute path and say how to open it.
+
+Degrade visibly at every tier; never name a delivery surface as guaranteed.
+
+- **Pointer**: when deciding whether the upstream flow can open the file in this
+  session, fetch [the playground skill § How to use this skill](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/playground/skills/playground/SKILL.md#how-to-use-this-skill)
+  live.
+
+## Recipes (field-tested)
+
+From the plugin author's published examples, verbatim shapes to adapt:
+
+- "Use the playground skill to create a playground that helps me explore new layout
+  changes to the AskUserQuestion Tool"
+- "Use the playground skill to review my SKILL.md and give me inline suggestions I
+  can approve, reject or comment"
+- "Use the playground skill to tweak my intro screen to be more interesting and
+  delightful"
+- "Use the playground skill to show how this email agent codebase works and let me
+  comment on particular nodes in the architecture to ask questions, make edits, etc"
+- "Use the playground skill to help me balance the 'Inferno' hero's deck"
+
+Repo-native recipe for this marketplace: "Use the playground skill to review
+plugins/<name>/skills/<skill>/SKILL.md and give me inline suggestions I can approve,
+reject or comment" turns skill-file review into an interactive pass.
+
+## Known limitations
+
+Consumer guidance for the generated playgrounds lives in
+[`context/consumer-notes.md`](context/consumer-notes.md); read it before relying on a
+generated playground for anything beyond personal exploration.
+
+## Gotchas
+
+- A listed `playground` skill name proves presence of a skill, not of the upstream one, which
+  is why Step 1 judges by install record and treats wording as advisory.
+- The copy-prompt button is the product; a sandboxed page (an Artifact) can restrict
+  clipboard access, so confirm the round trip once before a long exploration.
+- A summarizing fetch of the upstream marketplace can misreport its contents;
+  verify upstream facts against raw files or the install record, never a summary.
+
+## Boundary
+
+- Choosing the best visual form for conversation content is the visualization
+  capability's job; this skill fires only when the user wants an interactive,
+  manipulable explorer whose output returns as a prompt.
+- Throwaway visual variations of your own project's UI are the prototyping
+  capability's job; a playground explores a parameter space, not your codebase's
+  routes.
+- Generation, templates, and the playground page's own design belong to the upstream
+  skill; nothing here overrides them.

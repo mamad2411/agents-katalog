@@ -1,0 +1,76 @@
+---
+name: revit-failure-handling
+description: >
+  Suppress expected Autodesk Revit warnings and failures during a bounded API operation with Nice3point.Revit.Toolkit RevitApiContext.
+  USE FOR: auto-resolving or auto-cancelling a known failure that would otherwise block opening a document, loading a family, or committing a transaction.
+  DO NOT USE FOR: suppressing UI dialogs that are not failures (use RevitContext.BeginDialogSuppressionScope), or running API work from outside the Revit API context (use a Toolkit external event).
+license: MIT
+---
+
+# Revit Failure Handling
+
+`RevitApiContext.BeginFailureSuppressionScope` returns a disposable scope that resolves or cancels Revit failures.
+Use it only for a known failure the operation can safely handle — never to make an unknown failure appear successful.
+
+## When to use
+
+- A predictable warning or recoverable error blocks a headless operation (opening, family load, transaction commit).
+- Reviewing that suppression is bounded to the operation that raises the failure.
+
+## When not to use
+
+- The interruption is a UI dialog, not a failure — use `RevitContext.BeginDialogSuppressionScope`.
+- The API is being called from outside the API context — dispatch the work through a Toolkit external event.
+
+## Workflow
+
+### Step 1: Bound the suppression scope
+
+Wrap only the operation that raises the expected failure, and run unrelated work outside the scope.
+The scope subscribes to the application-level `FailuresProcessing` event, and it applies to both a transaction commit and a document open.
+
+```csharp
+using (RevitApiContext.BeginFailureSuppressionScope())
+{
+    using var transaction = new Transaction(document, "Operation");
+    transaction.Start();
+    // ... operation that raises the expected failure
+    transaction.Commit();
+}
+```
+
+Opening a file can raise the same recoverable warnings.
+In an unattended or headless host, for example Autodesk Design Automation, no user can dismiss the warning.
+Open the document inside the scope:
+
+```csharp
+using (RevitApiContext.BeginFailureSuppressionScope())
+{
+    var document = RevitApiContext.Application.OpenDocumentFile(path);
+}
+```
+
+### Step 2: Choose resolve or cancel
+
+The default resolves resolvable failures.
+Pass `resolveErrors: false` when the caller must observe unresolved errors, not auto-resolve them.
+
+### Step 3: Verify
+
+Assert the resulting document or artifact is valid, and confirm the normal error boundary still receives an unrelated failure.
+
+## Validation
+
+- [ ] The suppressed failure is known and expected.
+- [ ] The scope covers one bounded operation, not unrelated work.
+- [ ] The resulting model or file remains valid.
+- [ ] Unrelated failures remain observable.
+
+## Common Pitfalls
+
+| Pitfall                                                  | Correct approach                                                      |
+|----------------------------------------------------------|-----------------------------------------------------------------------|
+| Wrapping a whole pipeline to hide any failure            | Scope suppression to the one operation that raises the known failure. |
+| Suppressing a UI dialog with a failure scope             | Use `RevitContext.BeginDialogSuppressionScope`.                       |
+| Auto-resolving errors the caller must process manually   | Pass `resolveErrors: false`.                                          |
+| `RevitApiContext` not found                              | The `Nice3point.Revit.Toolkit` package is not referenced.             |

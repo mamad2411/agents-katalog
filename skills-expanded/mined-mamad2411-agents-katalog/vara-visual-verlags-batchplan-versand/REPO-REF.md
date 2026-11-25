@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/13401-vara-visual-verlags-batchplan-versand/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um VARA Visual Artists Rights in US Copyright Act und Registrierung für deutsche Verlage geht: ordnet Sachverhalt, Norm, Beweislast, Gegenargumente und nächsten Schritt; liefert ein direkt nut

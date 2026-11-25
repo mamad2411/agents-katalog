@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/ios-base/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: iOS/Swift 核心开发技能。当编写或修改 Swift/SwiftUI/UIKit 代码、设计 UI 架构、优化性能、创建组件、处理导航时使用。覆盖 Swift 编码规范、SwiftUI 最佳实践、UIKit 开发、导航架构（Coordinator/NavigationStack）、动画、组件设计、性能优化。

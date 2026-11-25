@@ -1,0 +1,529 @@
+---
+name: monetization-strategist
+description: Use when turn content into revenue — newsletter businesses, YouTube automation,
+  affiliate sites, digital product creation, funnel design, audience building. Use
+  when building content-based revenue streams.
+domain: content
+license: Apache-2.0
+tags:
+- content-creation
+- digital-content
+- media
+- monetization
+- strategist
+- money
+- passive-income
+version: 2.0.0
+author: oyi77
+subdomain: ''
+type: content
+category: content
+---
+
+
+
+# Money-Making Overview
+
+This skill orchestrates 5+ revenue streams from a single content engine. Newsletter ($500-10K/mo from paid subs + sponsors), YouTube ($1K-20K/mo ads + affiliate), digital products ($500-50K/mo), affiliate commissions ($200-5K/mo), community ($500-5K/mo memberships). Combined: $3K-90K/mo potential.
+
+Monetization orchestration layer that turns content creation skills into revenue-generating businesses. Covers newsletter businesses (Beehiiv/Substack), YouTube automation channels, affiliate content sites, digital product creation, and full funnel design. The content skills handle creation — this skill handles the money.
+
+## Revenue Streams
+1. **Newsletter** — free + paid tiers + sponsors ($500-10K/mo)
+2. **YouTube** — ads + affiliate + sponsors ($1K-20K/mo)
+3. **Digital Products** — Gumroad/Lemon Squeezy ($500-50K/mo)
+4. **Affiliate Programs** — Amazon, ShareASale, CJ ($200-5K/mo)
+5. **Community Memberships** — recurring ($500-5K/mo)
+
+## First Action in 60 Minutes
+```bash
+#!/usr/bin/env bash
+# Niche validation + first revenue stream setup
+mkdir -p ~/monetization/{newsletter,youtube,products,affiliate,community}
+echo "=== 60-Min Revenue Setup ==="
+echo "Step 1 (10m): Pick niche — 3 interests, check search volume"
+echo "Step 2 (10m): Validate — exist. communities? people paying?"
+echo "Step 3 (15m): Pick first stream — newsletter (fastest) or products"
+echo "Step 4 (15m): Create one piece of content for chosen stream"
+echo "Step 5 (10m): Publish + share on 2 platforms"
+echo ""
+echo "First dollar target: This week"
+echo "First $1K/mo target: 90 days"
+```
+
+## Required Tools
+
+- **Newsletter Platforms**: Beehiiv API, Substack API, Ghost API
+- **YouTube**: YouTube Data API, yt-dlp, ffmpeg
+- **Affiliate Networks**: Amazon Associates API, ShareASale, Impact, CJ Affiliate
+- **Digital Products**: Gumroad API, Lemon Squeezy API, Stripe API
+- **Analytics**: Google Analytics API, Plausible API, Beehiiv analytics
+- **SEO**: Ahrefs API, SEMrush API, Google Search Console API
+- **Email**: ConvertKit API, Beehiiv built-in, SendGrid
+
+## Capabilities
+
+- Select optimal monetization model based on niche, audience size, and content type
+- Build newsletter businesses with paid tiers, sponsorships, and affiliate integration
+- Automate YouTube channels with AI-generated scripts, thumbnails, and scheduling
+- Create and sell digital products (courses, templates, tools, ebooks)
+- Design and optimize conversion funnels from content to purchase
+- Track revenue across all channels with unified reporting
+
+## When to Use
+
+- You have content creation skills but no monetization strategy
+- Want to turn a newsletter into a revenue stream
+- Building a YouTube automation channel (faceless/AI-generated)
+- Creating digital products to sell alongside content
+- Need a unified view of content revenue across platforms
+- Scaling from hobby content to content business
+
+## When NOT to Use
+
+- Task is about content strategy, not creation (use strategy skills)
+- Task is about content distribution (use distribution skills)
+- You need to analyze content performance (use analytics skills)
+- Task is about content moderation (use moderation tools)
+- You don't have content guidelines
+- Task requires domain expertise (consult experts)
+
+## Niche Selection & Validation (Money-First Approach)
+
+```python
+import requests
+
+def validate_niche(niche_keyword):
+    """Check if a niche has monetization potential."""
+    scores = {}
+
+    # 1. Search volume (via Google Trends or Ahrefs)
+    trends = requests.get(f"https://trends.google.com/trends/api/widgetdata/multiline?req=%7B%22keyword%22:%22{niche_keyword}%22%7D")
+    scores["search_demand"] = analyze_trend(trends.json())
+
+    # 2. Affiliate programs available
+    amazon_results = requests.get(f"https://webservices.amazon.com/paapi5/searchitems?Keywords={niche_keyword}")
+    scores["affiliate_potential"] = len(amazon_results.json()["SearchResult"]["Items"])
+
+    # 3. Existing monetization (are others making money?)
+    # Check Substack/Beehiiv top newsletters in niche
+    scores["proven_market"] = check_competitor_revenue(niche_keyword)
+
+    # 4. Content gap analysis
+    scores["content_gaps"] = find_underserved_topics(niche_keyword)
+
+    total = sum(scores.values()) / len(scores)
+    return {
+        "niche": niche_keyword,
+        "score": total,
+        "viable": total >= 60,
+        "breakdown": scores,
+        "recommendation": "GO" if total >= 70 else "MAYBE" if total >= 50 else "SKIP"
+    }
+```
+
+## Newsletter Business Setup (Direct-to-Inbox Revenue)
+
+```bash
+# Create newsletter on Beehiiv
+curl -X POST "https://api.beehiiv.com/v2/publications" \
+  -H "Authorization: Bearer $BEEHIIV_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "AI Business Weekly",
+    "referral_program_enabled": true,
+    "custom_domain": "aibusiness.co"
+  }'
+
+# Set up paid tiers
+curl -X POST "https://api.beehiiv.com/v2/publications/$PUB_ID/premium_tiers" \
+  -H "Authorization: Bearer $BEEHIIV_TOKEN" \
+  -d '{
+    "name": "Pro",
+    "price_monthly": 15,
+    "price_yearly": 120,
+    "benefits": ["Deep dives", "Templates", "Private community"]
+  }'
+
+# Schedule automated content
+python3 <<'PY'
+import beehiiv
+
+publication = beehiiv.Publication(pub_id)
+
+# Monday: Curated industry news (free tier)
+publication.create_post(
+    title="This Week in AI Business",
+    content=curate_weekly_news(),
+    tier="free",
+    schedule="next_monday_9am"
+)
+
+# Thursday: Deep dive analysis (paid tier)
+publication.create_post(
+    title="Deep Dive: " + get_trending_topic(),
+    content=generate_deep_dive(),
+    tier="premium",
+    schedule="next_thursday_9am"
+)
+PY
+```
+
+## YouTube Automation Channel (Ad + Affiliate Revenue)
+
+```python
+def create_automated_video(topic, niche):
+    """Full pipeline: research → script → voiceover → edit → upload."""
+
+    # 1. Research trending topics in niche
+    trending = youtube_search(f"{niche} trending", order="viewCount", days=7)
+    competitor_analysis = analyze_top_videos(trending[:10])
+
+    # 2. Generate script with AI
+    script = generate_script(
+        topic=topic,
+        style="educational",
+        length="8-12 minutes",
+        hooks=competitor_analysis["winning_hooks"],
+        structure=competitor_analysis["common_structure"]
+    )
+
+    # 3. Generate voiceover (ElevenLabs / PlayHT)
+    audio = elevenlabs_generate(
+        text=script["narration"],
+        voice_id="professional_male_01",
+        stability=0.7
+    )
+
+    # 4. Generate visuals (stock footage + AI images)
+    visuals = match_visuals_to_script(
+        script["scenes"],
+        sources=["pexels", "pixabay", "dalle"]
+    )
+
+    # 5. Edit video (ffmpeg)
+    final_video = ffmpeg_compose(
+        audio=audio,
+        visuals=visuals,
+        transitions="smooth",
+        background_music="lo-fi_ambient",
+        subtitles=True
+    )
+
+    # 6. Generate thumbnail (AI)
+    thumbnail = generate_thumbnail(
+        title=script["title"],
+        style="high_contrast_face",
+        a_b_test=True
+    )
+
+    # 7. Upload to YouTube
+    youtube_upload(
+        file=final_video,
+        title=script["title"],
+        description=script["description"],
+        tags=script["tags"],
+        thumbnail=thumbnail,
+        schedule="optimal_time",
+        category="Education"
+    )
+
+    return {"video_id": video_id, "scheduled_for": schedule_time}
+```
+
+## Digital Product Creation (Scalable Revenue)
+
+```python
+def create_digital_product(product_type, topic, audience):
+    """Create and list a digital product for sale."""
+
+    products = {
+        "template": {
+            "format": "Notion/Google Sheets/Cursor",
+            "price_range": (9, 49),
+            "creation_time": "2-4 hours"
+        },
+        "ebook": {
+            "format": "PDF + EPUB",
+            "price_range": (19, 49),
+            "creation_time": "1-2 days"
+        },
+        "course": {
+            "format": "Video + PDF + Community",
+            "price_range": (49, 299),
+            "creation_time": "1-2 weeks"
+        },
+        "tool": {
+            "format": "Web app / CLI / Spreadsheet",
+            "price_range": (29, 99),
+            "creation_time": "3-5 days"
+        }
+    }
+
+    config = products[product_type]
+
+    # Generate product content
+    content = generate_product_content(product_type, topic, audience)
+
+    # Create product on Gumroad/Lemon Squeezy
+    product = gumroad_create_product(
+        name=f"{topic} {product_type.title()}",
+        description=content["description"],
+        price=config["price_range"][1],
+        files=content["files"],
+        preview=content["preview"]
+    )
+
+    # Create landing page
+    landing_page = create_landing_page(
+        product=product,
+        testimonials=generate_testimonial_placeholder(),
+        faq=content["faq"]
+    )
+
+    # Set up payment
+    stripe_create_product(
+        name=product["name"],
+        price=config["price_range"][1],
+        payment_link=True
+    )
+
+    return {
+        "product_id": product["id"],
+        "url": product["url"],
+        "landing_page": landing_page["url"],
+        "price": config["price_range"][1]
+    }
+```
+
+## Funnel Design & Optimization (Conversion Engineering)
+
+```
+Content Funnel Architecture:
+
+[AWARENESS]
+├── Blog posts / YouTube videos (free, SEO-optimized)
+├── Social media content (Twitter threads, LinkedIn posts)
+└── Guest posts / Podcast appearances
+         │
+         ▼
+[INTEREST]
+├── Lead magnet (free template, checklist, mini-course)
+├── Newsletter signup (free tier)
+└── Webinar / Live workshop
+         │
+         ▼
+[CONSIDERATION]
+├── Paid newsletter (low ticket: $5-15/mo)
+├── Digital product (mid ticket: $29-99)
+└── Free trial of premium content
+         │
+         ▼
+[PURCHASE]
+├── Course / Program (high ticket: $99-499)
+├── Community membership (recurring: $29-99/mo)
+└── Done-for-you service (premium: $500+)
+         │
+         ▼
+[RETENTION]
+├── Exclusive content for buyers
+├── Community access
+└── Upsell to higher tiers
+```
+
+```python
+def optimize_funnel(funnel_id):
+    """Analyze and optimize conversion at each funnel stage."""
+    metrics = get_funnel_metrics(funnel_id)
+
+    for stage in ["awareness", "interest", "consideration", "purchase", "retention"]:
+        conversion = metrics[stage]["conversion_rate"]
+
+        if conversion < BENCHMARKS[stage]:
+            # Identify bottleneck
+            analysis = analyze_bottleneck(stage, metrics)
+
+            # Generate optimization suggestions
+            suggestions = generate_optimization_plan(stage, analysis)
+
+            # A/B test top suggestion
+            ab_test = setup_ab_test(
+                stage=stage,
+                variant=suggestions[0],
+                traffic_split=0.5,
+                duration_days=7
+            )
+
+            print(f"Stage {stage}: {conversion:.1f}% → testing: {suggestions[0]}")
+```
+
+## Revenue Dashboard (Track the Money)
+
+```bash
+#!/bin/bash
+# Generate unified revenue report across all channels
+
+python3 <<'PY'
+from datetime import datetime, timedelta
+import sqlite3
+
+db = sqlite3.connect("revenue.db")
+week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+
+# Revenue by channel
+channels = db.execute("""
+    SELECT source, SUM(amount) as revenue, COUNT(*) as transactions
+    FROM transactions
+    WHERE created_at > ?
+    GROUP BY source
+    ORDER BY revenue DESC
+""", [week_ago]).fetchall()
+
+print("=" * 50)
+print(f"Weekly Revenue Report ({week_ago[:10]} to now)")
+print("=" * 50)
+
+total = 0
+for source, revenue, count in channels:
+    print(f"  {source:20s} ${revenue:>8,.2f}  ({count} txns)")
+    total += revenue
+
+print("-" * 50)
+print(f"  {'TOTAL':20s} ${total:>8,.2f}")
+
+# Top products
+print("\nTop Products:")
+for product, revenue in db.execute("""
+    SELECT product_name, SUM(amount) as revenue
+    FROM transactions WHERE created_at > ?
+    GROUP BY product_name ORDER BY revenue LIMIT 5
+""", [week_ago]):
+    print(f"  {product:30s} ${revenue:>8,.2f}")
+PY
+```
+
+## Multi-Revenue Stream Setup
+
+```yaml
+revenue_streams:
+  newsletter:
+    platform: beehiiv
+    free_tier: true
+    paid_tier: $15/month
+    sponsorship_rate: $50 CPM
+    affiliate_integration: true
+
+  youtube:
+    type: automation
+    frequency: 2x/week
+    monetization: ads + affiliate + sponsors
+    estimated_rpm: $5-15
+
+  digital_products:
+    templates:
+      price: $29
+      platform: gumroad
+    course:
+      price: $199
+      platform: teachable
+    community:
+      price: $49/month
+      platform: circle
+
+  affiliate:
+    programs: [amazon, impact, shareasale]
+    integration: content_links + dedicated_reviews
+    tracking: utm_parameters
+```
+
+## Content-to-Revenue Pipeline
+
+```bash
+#!/bin/bash
+# Weekly content monetization pipeline
+
+# 1. Create content
+python3 create_content.py --type newsletter --topic "weekly_roundup"
+
+# 2. Cross-post to platforms
+python3 distribute.py --source newsletter --targets "twitter,linkedin,blog"
+
+# 3. Add affiliate links where relevant
+python3 inject_affiliates.py --content newsletter --niche "saas_tools"
+
+# 4. Schedule social promotion
+python3 schedule_social.py --promote newsletter --platforms "twitter,linkedin"
+
+# 5. Track revenue attribution
+python3 track_revenue.py --source newsletter --period weekly
+```
+
+## Anti-Rationalization Table
+
+| Excuse | Truth |
+|---|---|
+| "I need more audience first" | Start monetizing at 0 subscribers today |
+| "Free content should come first" | Charging filters to people who actually value it |
+| "I need the perfect niche" | Your first 3 niches will fail. Iterate. |
+
+## Error Handling
+
+| Error | Cause | Recovery |
+|---|---|---|
+| Platform API rate limit | Too many API calls to Beehiiv/YouTube/Gumroad | Implement request queuing with backoff, batch operations |
+| Content rejection | Platform policy violation (YouTube, Substack) | Review guidelines before publishing, have backup content ready |
+| Low conversion rate | Poor funnel design or weak offer | A/B test landing pages, survey audience for feedback |
+| Payment failure | Stripe/Gumroad webhook issues | Implement idempotent payment processing, retry logic |
+| Email deliverability | Cold domain, spam triggers | Warm up domain gradually, authenticate SPF/DKIM/DMARC |
+| Affiliate link expiration | Programs change terms or expire | Monitor link health weekly, have backup programs ready |
+
+## Common Patterns
+
+- **Batch processing**: Process multiple items in parallel for throughput
+- **Retry with backoff**: Handle transient failures gracefully
+- **Rate limiting**: Respect API limits with configurable delays
+- **Logging**: Structured logging for debugging and audit trails
+
+## How to Use
+
+1. Define content goal (traffic, engagement, conversion, brand awareness)
+2. Research target audience pain points and search intent
+3. Generate content using appropriate AI tools
+4. Edit and humanize output for authenticity
+5. Optimize for target platform (SEO, hashtags, format)
+6. Schedule and distribute across channels
+7. Measure performance and iterate
+
+## Red Flags
+
+- **AI-generated content sounds robotic**: Always run through humanizer before publishing
+- **Engagement dropping week-over-week**: Content fatigue or algorithm change — vary formats
+- **Duplicate content across platforms**: Adapt content per platform, don't just cross-post
+- **No content calendar**: Sporadic posting kills audience retention
+- **Ignoring analytics**: Content without measurement is just publishing, not marketing
+
+## Verification
+
+- [ ] Skill output matches expected behavior
+
+## Process
+
+1. Analyze the task requirements
+2. Apply domain expertise
+3. Verify output quality
+
+## Output Format
+
+On completion: "[N] revenue streams activated, first dollar earned in [N] days, $[N]/mo projected at scale"
+## Overview
+
+Systematic approach to building multiple revenue streams from content: newsletter, YouTube automation, digital products, and funnel optimization. Money-first validation before building.
+
+## Verification Checklist
+
+- [ ] Niche validated with paying customers before build
+- [ ] Newsletter funnel converts > 2% subscribers to buyers
+- [ ] YouTube channel monetized within 90 days
+- [ ] Digital product margins > 80%
+- [ ] Funnel conversion tracked at each stage
+- [ ] Revenue dashboard updates daily

@@ -1,0 +1,177 @@
+---
+name: wicked-garden-platform-github-actions
+description: |
+  Write secure, optimized GitHub Actions workflows. Security-first approach
+  with performance optimization.
+
+  Use when: "GitHub Actions", "CI/CD pipeline", "workflow YAML", "deploy pipeline",
+  "automate deployment", "debug workflow", "Actions security", "generate a
+  workflow", "optimize this workflow", "troubleshoot the failing workflow",
+  or any former /wicked-garden:platform:actions invocation.
+metadata:
+  role: module
+  phases: "build,review,operate"
+  archetypes: "*"
+---
+
+Skill-local scripts (`scripts/workflow_gen.py`) are stdlib-only and run base-directory-relative with `python3` (`py -3` on Windows).
+
+# GitHub Actions Workflow Writing
+
+Write production-ready GitHub Actions workflows with security and performance built in.
+
+## When to Use
+
+- Creating new CI/CD workflows
+- Optimizing slow or expensive workflows
+- Adding deployment pipelines
+- Security scanning and compliance
+- Debugging workflow issues
+
+## Run modes
+
+Invoked as `<generate|optimize|troubleshoot> [workflow file]`. For the full
+rubric per mode, read `refs/actions-rubric.md` (relative to this skill's base directory)
+— security/performance checklists, stack detection, and output format. Then
+apply it directly:
+
+- **generate**: detect the project stack first
+  (`ls package.json pyproject.toml Cargo.toml go.mod pom.xml 2>/dev/null`),
+  then produce complete workflow YAML.
+- **optimize**: read the target workflow file, apply the optimization
+  checklist, return annotated diff.
+- **troubleshoot**: run `gh run list --status failure --limit 1`, fetch logs
+  (`gh run view {id} --log-failed`), diagnose root cause inline.
+
+## Security-First Principles
+
+Every workflow should follow these rules:
+
+### 1. Explicit Permissions
+
+```yaml
+# ALWAYS declare permissions explicitly
+permissions:
+  contents: read  # Minimum needed
+
+# NEVER use write-all or leave permissions implicit
+```
+
+### 2. Pin Action Versions
+
+```yaml
+# Good - pinned to SHA
+uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608  # v4.1.0
+
+# Acceptable - pinned to major version
+uses: actions/checkout@v4
+
+# Bad - unpinned
+uses: actions/checkout@main
+```
+
+### 3. Sanitize Inputs
+
+```yaml
+# NEVER interpolate untrusted input directly
+run: echo "${{ github.event.issue.title }}"  # DANGEROUS
+
+# Use environment variables instead
+env:
+  TITLE: ${{ github.event.issue.title }}
+run: echo "$TITLE"  # Safe
+```
+
+## Core Patterns
+
+Full copy-paste templates live in `refs/templates.md`. Quick reference:
+
+| Template | Key shape | See |
+|----------|-----------|-----|
+| **Minimal CI** | `permissions: contents: read` + concurrency + `actions/setup-node@v4` cache | refs/templates.md § Node.js CI |
+| **Multi-Environment Deploy** | Deploy job with `environment:` approval gates + OIDC-based AWS auth | refs/templates.md § Deploy to AWS (OIDC) |
+| **OIDC for Cloud (No Secrets)** | `permissions: id-token: write` + `aws-actions/configure-aws-credentials@v4` | refs/templates.md § Deploy to AWS (OIDC) |
+| **Docker build/push** | `docker/setup-buildx-action` + `docker/build-push-action` with GHA cache | refs/templates.md § Docker Build and Push |
+| **Security scanning** | CodeQL on schedule + push, `security-events: write` permission | refs/templates.md § Security Scanning |
+
+## Performance Optimization
+
+### 1. Caching
+
+```yaml
+# Node.js (built into setup-node)
+- uses: actions/setup-node@v4
+  with:
+    cache: 'npm'
+
+# Python
+- uses: actions/setup-python@v5
+  with:
+    cache: 'pip'
+
+# Custom cache
+- uses: actions/cache@v4
+  with:
+    path: ~/.cache/my-tool
+    key: ${{ runner.os }}-my-tool-${{ hashFiles('**/lockfile') }}
+```
+
+### 2. Concurrency Control
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true  # Cancel stale runs
+```
+
+### 3. Path Filtering
+
+```yaml
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'package.json'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+```
+
+### 4. Matrix Strategy
+
+```yaml
+strategy:
+  matrix:
+    node: [18, 20, 22]
+    os: [ubuntu-latest, windows-latest]
+  fail-fast: false  # Don't cancel others on failure
+```
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| No timeout | Add `timeout-minutes: 15` |
+| No concurrency | Add concurrency group |
+| Implicit permissions | Declare explicitly |
+| `pull_request_target` misuse | Use `pull_request` unless you need write access |
+| Unpinned actions | Pin to SHA or major version |
+| Direct input interpolation | Use env vars |
+
+## Workflow Generation
+
+When generating workflows, follow this checklist:
+
+1. **Detect stack** - Check for package.json, requirements.txt, Cargo.toml, etc.
+2. **Set permissions** - Start with `contents: read`, add only what's needed
+3. **Add caching** - Use built-in cache options when available
+4. **Set timeout** - Default 10-15 min for CI, 30 for deploys
+5. **Add concurrency** - Cancel stale runs
+6. **Document secrets** - Comment required secrets at top
+
+## References
+
+- `refs/actions-rubric.md` - Generate/optimize/troubleshoot rubric with checklists
+- `refs/security.md` - Detailed security practices
+- `refs/templates.md` - Copy-paste templates
+- `refs/troubleshooting.md` - Common errors and fixes

@@ -1,0 +1,295 @@
+---
+name: nautilus-nrp
+description: "Help create and manage Kubernetes jobs, pods, and persistent storage on the Nautilus NRP research cluster. Includes templates for jobs, interactive pods, and PVC-based persistent storage."
+category: semiconductor
+domain: semiconductor
+subdomain: general
+version: 1.0.0
+license: Apache-2.0
+risk: low
+source:
+  repository: "VLSIDA/vlsida-skills"
+  commit: "51ee200aae"
+  imported_at: "2026-09-20"
+  license: "Apache-2.0"
+platforms:
+  - claude-code
+  - cursor
+  - codex
+  - gemini
+  - antigravity
+  - copilot
+---
+
+# Nautilus Nrp
+
+
+
+You help the user create and manage workloads on the [National Research Platform (NRP) Nautilus](https://nrp.ai/) Kubernetes cluster.
+
+## Overview
+
+Nautilus is a shared, NSF-funded Kubernetes cluster for research. Users get a namespace and can run batch Jobs, interactive Pods, and use persistent storage. Access is via `kubectl` after registering at the NRP portal.
+
+## Prerequisites
+
+- `kubectl` configured with Nautilus cluster access
+- A namespace allocated to the user's research group
+- NRP portal account: https://portal.nrp-nautilus.io/
+
+See [NRP Nautilus docs](https://docs.nrp-nautilus.io/) for initial setup.
+
+## Example Templates
+
+This skill includes example scripts and templates in `~/.claude/skills/nautilus-nrp/examples/`:
+
+- **`job-template.yaml`** — Batch Job template (from HighTide project)
+- **`run.sh`** — Job submission/management script (from HighTide project)
+- **`interactive-pod.yaml`** — Template for an interactive development pod
+- **`pvc-template.yaml`** — PersistentVolumeClaim template for shared storage
+- **`monitor-job.sh`** — Stream milestones from a running Job into the Claude Code `Monitor` tool (see below)
+
+When the user asks you to create K8s manifests for Nautilus, use these as starting points and adapt them to the user's needs.
+
+## Monitoring Long-Running Jobs with the Monitor Tool
+
+Nautilus batch jobs often run for 30+ minutes (long builds, training runs, RTL-to-GDSII flows). Polling with `kubectl logs -f` ties up the conversation; a one-shot `kubectl wait` hides progress. The Claude Code `Monitor` tool is the right fit: you arm it once with a watcher script, and each emitted line becomes a chat notification while you keep working.
+
+`examples/monitor-job.sh` is a ready-made watcher. Key properties:
+
+- Emits on pod **phase changes** (`Pending` → `Running` → terminal).
+- Emits on **stage milestones** matched by a caller-supplied regex, de-duplicated so the same line isn't spammed.
+- Emits on **terminal job condition** (`Complete` / `Failed`) with a tail of the last 40 log lines, then exits — this is the hand-off back to Claude.
+- Tolerant of transient `kubectl` failures (no `set -e`, `|| true`-style fallbacks via `2>/dev/null`).
+
+### Typical invocation (inline Monitor call)
+
+Don't try to make the script fit every workflow — copy its body into a Monitor call and tune `PATTERN` to the stages/errors you actually care about for that job. Example for a multi-stage hardware build:
+
+```bash
+Monitor(
+  description="coralnpu k8s job milestones",
+  timeout_ms=3600000,
+  persistent=false,
+  command="""
+set +e
+JOB=$CRUZID-hightide-asap7-coralnpu
+NS=vlsida
+PATTERN='synth|floorplan|place|cts|route|final|ERROR|FAILED|Traceback|Killed|OOM|Aborted|INFO: Build completed|Elapsed time'
+# ... body of examples/monitor-job.sh ...
+"""
+)
+```
+
+### Guidance when arming the watcher
+
+- **Cover the failure tail, not just success.** Include `ERROR|FAILED|Traceback|Killed|OOM|Aborted` in the regex. A filter that only matches the happy-path milestones stays silent through a crashloop.
+- **Sleep interval.** Default 60s is right for long jobs on a shared cluster — tighter polling wastes kube-apiserver calls and emits redundant "still running" events. Drop to 10–15s only if you genuinely need fine-grained progress.
+- **Timeout.** Monitor tops out at 1h. For longer runs, let it time out, check job state with `kubectl get job ... -o jsonpath='{.status.conditions[*]}'`, and re-arm. This is normal.
+- **Pod label.** The script selects pods via `-l job-name=$JOB`. If you use a different selector (e.g., `app=hightide,design=X`), update the `kubectl get pod` line.
+- **Never `tail -f` raw logs into Monitor.** Every stdout line becomes a notification — unfiltered logs will auto-stop the monitor for emitting too much. Always grep.
+
+## Key Nautilus Concepts
+
+### Naming Convention
+**All Jobs and Pods must be named with the user's CruzID as a prefix** (e.g., `jdoe-build-sram`, `jdoe-train-run-3`). The cluster is shared, so the prefix is how anyone — including the user — can tell at a glance who owns a running workload. If you don't know the user's CruzID, ask before creating the manifest. Also set a `user: <cruzid>` label on the resource for label-based filtering (`kubectl get jobs -l user=<cruzid>`).
+
+### Resource Requests
+Nautilus is a shared cluster. Always set both `requests` and `limits`:
+- Set limits to ~2x requests for burst capacity
+- Be conservative — the scheduler is cluster-wide and over-requesting blocks others
+- GPU requests: use `nvidia.com/gpu: N` in both requests and limits (must be equal)
+
+### Namespaces
+All resources must target the user's namespace. Use `-n <namespace>` on every `kubectl` command, or set a default:
+```bash
+kubectl config set-context --current --namespace=<namespace>
+```
+
+### Node Affinity (Optional)
+Nautilus spans many sites. To target specific hardware or locations, use node selectors or affinity rules:
+```yaml
+nodeSelector:
+  nvidia.com/gpu.product: "NVIDIA-A100-SXM4-80GB"
+```
+
+### Job Best Practices on Nautilus
+- **Do NOT force one-pod-per-node** (`podAntiAffinity` on `kubernetes.io/hostname`) unless a job
+  genuinely needs a whole node — it strands the node's other cores (CPU-only NRP nodes have
+  44–380 cores; an 8-core pod would waste the rest). Let the scheduler bin-pack multiple pods per
+  node up to capacity; throughput is then bound by the namespace pod quota, not 1-per-node. Keep
+  resource *requests* honest so the scheduler packs safely.
+- **Never use an idle `sleep` "parking" pod** (e.g. a busybox reader that just mounts a PVC and
+  sleeps) — NRP's admission webhook rejects it: *"pods resources utilization is too low"*. To read
+  a shared PVC, instead `kubectl exec`/`kubectl cp` through an **already-running workload pod** that
+  mounts the same PVC, or run a **short Job that does real work and exits** (e.g. tar the results to
+  stdout). Idle low-usage pods get blocked; working pods don't.
+- Set `ttlSecondsAfterFinished` to auto-cleanup completed jobs (e.g., 3600 for 1 hour)
+- Set `backoffLimit` to control retries (1-2 is typical)
+- Use `restartPolicy: Never` for jobs
+- Use init containers for repo cloning or setup steps
+- Label everything (`app`, `project`, `user`) for easy bulk management
+
+## Container Images: the NRP GitLab registry
+
+Every time a pod starts it **pulls its container image from a registry**, so your image must live somewhere the cluster can reach. NRP hosts its own GitLab with an integrated **container registry** at `gitlab-registry.nrp-nautilus.io` — it's free for NRP users, pulls fast from inside the cluster, and keeps private images off Docker Hub (whose pull-rate limits bite hard on a shared cluster where hundreds of pods pull at once). **This is the recommended place to store images for Nautilus.**
+
+### One-time setup
+1. Sign in to the NRP GitLab at **https://gitlab.nrp-nautilus.io** (same NRP credentials).
+2. Create a project (e.g. `myproject`). Your image path is then:
+   ```
+   gitlab-registry.nrp-nautilus.io/<gitlab-username-or-group>/<project>[:tag]
+   ```
+   e.g. `gitlab-registry.nrp-nautilus.io/<cruzid>/orfs-fork:latest`.
+3. Create an access token so `docker` (push) and the cluster (pull) can authenticate — a private registry needs auth for **both**:
+   - **Project → Settings → Repository → Deploy tokens** is cleanest (scoped to one project, revocable independently of your account). For least privilege create **two**: one with `write_registry` (push from your workstation) and one with only `read_registry` (the cluster's pull secret).
+   - Or a **personal access token** with `read_registry` + `write_registry` scopes (works across all your projects).
+
+### Push an image
+```bash
+docker login gitlab-registry.nrp-nautilus.io        # username + token (from above)
+
+IMG=gitlab-registry.nrp-nautilus.io/<user>/<project>:latest
+docker build -t "$IMG" .
+docker push "$IMG"
+```
+Tip — avoid shipping your whole working tree as build context by **streaming a minimal context** to `docker build`:
+```bash
+tar cz --exclude=.git --exclude='*/results' Dockerfile src/ | docker build -f Dockerfile -t "$IMG" -
+```
+
+### Let cluster jobs pull a PRIVATE image
+Pods can't use your workstation's `docker login` — they authenticate via an **imagePullSecret** in the namespace. Create a `docker-registry` secret from a **read** token:
+```bash
+kubectl create secret docker-registry nrp-gitlab-pull \
+  --docker-server=gitlab-registry.nrp-nautilus.io \
+  --docker-username=<read-token-username> \
+  --docker-password=<read-token> \
+  -n <namespace>
+```
+Then reference it in every Job/Pod spec (alongside the image):
+```yaml
+spec:
+  imagePullSecrets:
+  - name: nrp-gitlab-pull
+  containers:
+  - name: worker
+    image: gitlab-registry.nrp-nautilus.io/<user>/<project>:latest
+```
+(A **public** project's registry needs no secret — but private is the default and the safer choice.)
+
+### Tips
+- **Give the cluster a read-only token.** It only needs to pull; never put a `write_registry` credential in the pull secret.
+- **`imagePullPolicy: Always` when you reuse a tag.** K8s caches by tag, so if you keep pushing to `:latest`, pods on a warm node may run a stale image. Either set `imagePullPolicy: Always` or push a **unique tag per build** (e.g. a git SHA).
+- **Keep images lean.** Every pod pull moves the whole image over the network; a fat image slows every cold start, and pulls count toward pod-startup time under the namespace pod quota. Multi-stage builds + stripping build tools help a lot.
+- **Secrets are per-namespace.** If you run in multiple namespaces, create the pull secret in each.
+
+## Persistent Storage on Nautilus
+
+Nautilus provides **CephFS**-backed persistent storage via PersistentVolumeClaims (PVCs). This is the recommended way to keep data across job runs.
+
+### Creating a PVC
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-project-data
+  namespace: <namespace>
+spec:
+  storageClassName: rook-cephfs   # CephFS for shared/multi-read-write
+  accessModes:
+    - ReadWriteMany               # Multiple pods can mount simultaneously
+  resources:
+    requests:
+      storage: 100Gi
+```
+
+Key storage classes on Nautilus:
+| StorageClass | Backend | Access Modes | Use Case |
+|---|---|---|---|
+| `rook-cephfs` | CephFS | ReadWriteMany | Shared data, multi-pod access, home dirs |
+| `rook-ceph-block` | Ceph RBD | ReadWriteOnce | Single-pod databases, high-IOPS workloads |
+
+### Mounting a PVC in a Pod/Job
+```yaml
+containers:
+- name: worker
+  volumeMounts:
+  - name: data
+    mountPath: /data
+volumes:
+- name: data
+  persistentVolumeClaim:
+    claimName: my-project-data
+```
+
+### Persistent Storage Tips
+1. **Use `rook-cephfs` with `ReadWriteMany`** for most research workloads — it lets multiple pods (or jobs) share the same data simultaneously.
+2. **Don't store ephemeral build artifacts on PVCs** — use `emptyDir` volumes for scratch space that doesn't need to persist.
+3. **Pre-populate data with a one-off pod**: Create a simple pod that mounts the PVC, download/copy your dataset, then delete the pod.
+4. **Size generously** — CephFS quotas are soft on Nautilus, but request what you expect to use.
+5. **Back up important data externally** — PVCs are durable but not backed up. Use `gsutil`, `rclone`, or `rsync` to keep copies elsewhere.
+6. **Use subPath** to share one PVC across multiple purposes:
+   ```yaml
+   volumeMounts:
+   - name: data
+     mountPath: /datasets
+     subPath: datasets
+   - name: data
+     mountPath: /results
+     subPath: results
+   ```
+
+### Other Storage Options
+- **GCS / S3 buckets**: Upload results to cloud storage from within jobs (as the HighTide example does with `gcloud storage rsync`). Good for sharing across clusters or with external collaborators.
+- **ConfigMaps / Secrets**: For small config files or credentials (< 1 MiB).
+- **hostPath**: Avoid on Nautilus — pods can land on any node.
+
+## Common Workflows
+
+### Submit a batch job
+```bash
+kubectl apply -n <namespace> -f job.yaml
+```
+
+### Monitor jobs
+```bash
+kubectl get jobs -n <namespace>
+kubectl get pods -n <namespace>
+kubectl logs -f job/<job-name> -n <namespace>
+```
+
+### Start an interactive session
+```bash
+kubectl apply -n <namespace> -f interactive-pod.yaml
+kubectl exec -it -n <namespace> <pod-name> -- /bin/bash
+```
+
+### Clean up
+```bash
+# Delete specific job
+kubectl delete job <job-name> -n <namespace>
+
+# Delete all jobs with a label
+kubectl delete jobs -n <namespace> -l app=myproject
+
+# Delete completed jobs
+kubectl delete jobs -n <namespace> --field-selector status.successful=1
+```
+
+### Check PVC usage
+```bash
+kubectl get pvc -n <namespace>
+kubectl exec -n <namespace> <pod-name> -- df -h /data
+```
+
+## Adapting the HighTide Example
+
+The `examples/run.sh` and `examples/job-template.yaml` show a production pattern for batch job submission:
+- Templated YAML with placeholder substitution
+- Label-based job management (status, delete by filter)
+- Init container for repo cloning
+- Secret mounting for credentials
+- Remote cache integration
+
+When creating new job scripts, adapt this pattern to the user's specific project, replacing the HighTide-specific parts (repo URL, Bazel build commands, GCS cache) with the user's build system and workflow.

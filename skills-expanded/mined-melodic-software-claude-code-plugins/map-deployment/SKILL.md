@@ -1,0 +1,490 @@
+---
+description: "C4 deployment view of committed infrastructure: which containers sit on which declared nodes, per environment, and what differs between two environments. Use when 'map deployment', 'deployment diagram', 'what is different in production', 'IaC topology', or 'where does this container run'. Skip when the question is a live cloud inventory, cost, or runtime health."
+argument-hint: "[environment] [--diff <env-a> <env-b>] [--dialect likec4|c4-plantuml] [--out <dir>]"
+user-invocable: true
+disable-model-invocation: false
+shell: bash
+metadata:
+  workflow-stage: explore
+  summary: Chart IaC deployment topology per environment, with a diff
+---
+
+## Repository context
+
+The current repository is both the consumer, whose convention home declares where artifacts land,
+and the default subject, whose tracked IaC declares the topology.
+
+Collect with an **individual** Bash call, one command per call: the project root,
+`git rev-parse --show-toplevel`. Treat a failure (not a repository, git unavailable) as an unknown
+value and carry on; `${CLAUDE_PROJECT_DIR}` is the resolver's `--root` either way.
+
+## Purpose
+
+Answer "where does this run, and what is different about that environment" from committed
+infrastructure as code. Every node traces to a named file. The scripts collect and render. Do not
+draw a node the script did not emit, and do not describe a live cloud. This is the C4 deployment
+view; each environment is its own deployment environment in the diagram.
+
+## Resolve home and dialect
+
+Read `${CLAUDE_PLUGIN_ROOT}/reference/config.md` first. This skill writes into `architecture_dir`.
+It does not read `landscape_dialect` and adds no dialect key: the diagram dialect is
+`diagram_dialect.system` from the authoring-formats topic doc. `likec4` writes `deployment.md` with
+one fenced `likec4` block, `c4-plantuml` with one fenced `plantuml` block. Mermaid is not offered.
+
+Run `bash "${CLAUDE_PLUGIN_ROOT}/lib/resolve-convention-home.sh" --root "${CLAUDE_PROJECT_DIR}"` and
+follow the exit code; never parse the root instruction file yourself. Exit 0: read
+`<home>/architecture/README.md` for `architecture_dir`. Exit 1, 2, or 3: no declared home.
+
+Per key, in order: `--out <dir>` wins for this run alone, then a declared `architecture_dir`, then
+one question. `architecture_dir` has no default. An undeclared and unconfirmed home, including
+every non-interactive run, stops and points at `/architecture:setup`. Do not invent a directory.
+
+Resolve `diagram_dialect.system` by restating this ladder, then running the resolver rather than
+parsing the topic doc yourself. The ladder is a resolution order, not a task list:
+
+```markdown
+1. Anchor at the repository root: `${CLAUDE_PROJECT_DIR}` when set, otherwise
+   `git rev-parse --show-toplevel`. Never a CWD-relative read.
+2. Resolve the convention home `<home>` with the bundled resolver above. Never hand-parse the root
+   file.
+3. The printed home is repo-relative: join it to the root, then pass
+   `<root>/<home>/authoring-formats/README.md` to the resolver.
+4. Layer order is one layer deep: an explicit `--dialect` argument, then the team convention doc.
+   There is no personal override.
+5. `diagram_dialect.system` has no default. Allowed values are `likec4` and `c4-plantuml`. When it
+   is unset, emit no C4 deployment view. The record is still written.
+6. Degrade soft, and say so. No pointer, no doc, no key, or an unrecognized value (mermaid
+   included) each resolve to emitting nothing. The resolver names the cause on stderr. Do not
+   hard-fail and do not ask the operator to create the surface mid-task.
+7. Report provenance: the key, the value, and the layer (`argument`,
+   `team convention doc <path>`, or `unset (no C4 view emitted)`).
+```
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/lib/resolve-diagram-dialect.sh" --kind system \
+  --formats "<root>/<home>/authoring-formats/README.md"
+```
+
+Omit `--formats` when no convention home resolved. Stdout is `likec4`, `c4-plantuml`, or `none`.
+An explicit `--dialect likec4|c4-plantuml` on the invocation wins and the resolver is not required.
+
+This skill never writes the consumer's root instruction file or its topic doc.
+
+## Build the record
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/collect-deployment.sh" \
+  --repo "<subject-repo>" --out "<architecture_dir>/deployment.json" \
+  --generated-on "<YYYY-MM-DD|unknown>" \
+  --containers "<architecture_dir>/containers.json"
+```
+
+Pass `--generated-on` from `git -C <root> log -1 --format=%cs`, or `unknown` when that fails.
+Omit `--containers` when `containers.json` is not already in the architecture directory; when
+present it must be schema_version 1, and an unreadable catalog refuses the run. Pass `--live` only
+when the invocation asked for live state. The script does not call a cloud API.
+
+Shipped readers, every one that is present:
+
+- **Docker Compose** (`compose.yaml`, `docker-compose.yml`, and `compose.<env>.yaml`). The
+  environment is the filename suffix of `compose.<env>.yaml`, otherwise the parent directory name
+  (`deploy/<env>/compose.yaml`), and `default` for a file at the repository root. A base file and
+  its `compose.override.yaml`, or the files a tracked `.env` `COMPOSE_FILE` lists, merge in Compose
+  merge order into one environment named for the directory: scalars (`image`, `replicas`) are
+  overridden, `ports` and `networks` append without duplicates, `environment` merges by key. Any
+  other file beside them (a variant with no listed order, an override with no base, a second base)
+  or a `!reset` or `!override` tag is refused by name as `compose-not-mergeable:<file>`, never
+  guessed. Environment-per-directory layouts are unaffected. Each service is a compute node, and
+  its placement names it in `compute`.
+- **Kubernetes** manifests whose `kind` is Deployment, StatefulSet, DaemonSet, Service, or Ingress.
+  Each container of a workload, a sidecar included, is its own placement, and every container of a
+  workload runs on that workload's one compute node. The environment is the namespace, otherwise
+  the parent directory. A Service selects the containers of each workload in its namespace whose
+  pod template labels hold the whole selector; an Ingress routes to the containers behind each
+  Service its backends name. Each is a `relationships` entry from the Service or Ingress node to a
+  container. A selector that matches no pod template labels draws nothing.
+- **Terraform** (`.tf`, `.tf.json`, `.tfvars`, `.tfvars.json`), read as text: no `terraform`
+  binary, state, or credentials. A root is a directory of configuration that no local module source
+  names. Its environments are the `<env>` of an `envs/<env>/` or `environments/<env>/` path, else
+  one per `<env>.tfvars` at or above it, else the directory name (`default` at the repository
+  root). `terraform.tfvars` and `*.auto.tfvars` apply to every environment of their root and are
+  not environments themselves. Containers come from `aws_ecs_task_definition`
+  `container_definitions` (`jsonencode([...])` or heredoc JSON), `azurerm_container_app`,
+  `google_cloud_run_v2_service`, and `kubernetes_deployment`, `kubernetes_stateful_set`, and
+  `kubernetes_daemonset` (with or without `_v1`). Compute nodes are `aws_ecs_cluster`,
+  `aws_eks_cluster`, `azurerm_container_app_environment`, `azurerm_kubernetes_cluster`,
+  `google_container_cluster`, and each Kubernetes workload. An ECS container runs on the cluster
+  its `aws_ecs_service` names, with the service's `desired_count`. A container app runs on the
+  environment its `container_app_environment_id` names. A Cloud Run container sits directly in the
+  environment. A module-only root follows local module sources, each resource addressed
+  `module.<name>.<type>.<name>`. A remote module source, or a local one with no tracked
+  configuration, refuses the record as `terraform-module-unread:<file>:module.<name>`, and the
+  source itself is never printed. A file that does not parse is `terraform-unreadable:<file>`. A
+  tfvars file with no configuration at or above it is `terraform-orphan-tfvars:<file>`.
+- **Bicep** (`.bicep`, `.bicepparam`) and **ARM** templates (JSON whose `$schema` names
+  `deploymentTemplate`, any scope), read as text: no `bicep` or `az` binary, no registry restore.
+  A root is a template that no module names, or one a parameters file names. Its environments are
+  one per `.bicepparam` whose `using` names it (`main.prod.bicepparam` is `prod`) and one per JSON
+  parameters file (`$schema` names `deploymentParameters`): `<name>.parameters.<env>.json` beside
+  `<name>.bicep` or `<name>.json`, or `parameters.<env>.json` beside the directory's only template.
+  With none, the environment is the directory name (`default` at the repository root). Containers
+  come from `Microsoft.App/containerApps` (`template.containers`, `scale.minReplicas`,
+  `ingress.targetPort`), `Microsoft.ContainerInstance/containerGroups` (each group is the compute
+  node of its containers), and `Microsoft.Web/sites` whose `linuxFxVersion` or `windowsFxVersion`
+  is `DOCKER|<image>` (`appSettings` are its parameters). Compute nodes are
+  `Microsoft.App/managedEnvironments` and `connectedEnvironments`, `Microsoft.Web/serverfarms`,
+  and `Microsoft.ContainerService/managedClusters`. A container app runs on the environment its
+  `managedEnvironmentId` or `environmentId` names, a site on its `serverFarmId`: a Bicep
+  `<symbol>.id`, or an ARM `resourceId('<type>', <name>)` whose name matches a declared resource.
+  A local module (Bicep or ARM) is followed, each resource addressed `module.<name>.<symbol>`. A
+  registry or template-spec module, or a local one that is not a tracked template, refuses the
+  record as `bicep-module-unread:<file>:module.<name>`, and the source is never printed. A file
+  that does not parse is `bicep-unreadable:<file>` or `arm-unreadable:<file>`. A `.bicepparam`
+  with `using none`, `extends`, or an untracked `using` target is `bicep-param-unread:<file>`. A
+  JSON parameters file with no template to pair is `arm-parameters-unpaired:<file>`. A nested
+  `Microsoft.Resources/deployments` resource is `<bicep|arm>-deployment-unread:<file>:<symbol>`.
+- **CloudFormation** (YAML or JSON), read as text: no `aws` binary, stack, or credentials. A
+  template names `AWSTemplateFormatVersion`, or holds a top-level `Resources` section with `AWS::`
+  types (`Resources` at the left margin in YAML). The short tags (`!Ref`, `!Sub`, `!GetAtt`,
+  `!Join`, `!If`) read the same as `Ref` and `Fn::*` in JSON. Containers come from
+  `AWS::ECS::TaskDefinition` `ContainerDefinitions` (`Name`, `Image`, `PortMappings`,
+  `Environment`, `Secrets`), and compute nodes from `AWS::ECS::Cluster`. An `AWS::ECS::Service`
+  names the task definition and cluster it runs (`!Ref` or `!GetAtt`) and gives `DesiredCount`.
+  Environments come from parameter files, one per environment, in either JSON shape (the
+  `ParameterKey`/`ParameterValue` array, or `{"Parameters": {}}`): `<stem>.<env>.json` or
+  `<stem>.parameters.<env>.json` beside `<stem>.<ext>`, else, when the repository holds exactly
+  one template, `<env>.json` or `parameters.<env>.json` anywhere. With no parameter
+  file the environment is the directory name (`default` at the repository root). A `Ref` to a
+  template parameter and a `Sub` over parameters resolve, from the parameter file and then the
+  parameter `Default`. A `Transform` (SAM, a macro) refuses as
+  `cloudformation-transform-unread:<file>`, a nested `AWS::CloudFormation::Stack` as
+  `cloudformation-stack-unread:<file>:<id>` (its `TemplateURL` is never printed), a parameter file
+  that pairs with no template as `cloudformation-parameters-unpaired:<file>`, and a file that does
+  not parse as `cloudformation-unreadable:<file>`.
+- **Pulumi YAML**: a `Pulumi.yaml` whose `runtime` is `yaml` and that holds its own program (no
+  `main`, no runtime options). Its environments are the `Pulumi.<stack>.yaml` files beside it, else
+  the directory name. The mapped resources are `aws:ecs:Cluster`, `aws:ecs:TaskDefinition` (with
+  `containerDefinitions` as `fn::toJSON`), and `aws:ecs:Service`, in the short or the
+  `aws:ecs/<type>:<Type>` form. `${pulumi.stack}` and `${pulumi.project}` resolve. `${key}`
+  resolves from the stack file's `config` (`<project>:<key>` or `<key>`), then the project's
+  `config` default. `${resource.attr}` links a service to its cluster and task definition. A file
+  that does not parse is `pulumi-unreadable:<file>`.
+- Both YAML readers refuse anchors, aliases, the `<<` merge key, duplicate keys, a tab in the
+  indentation, and more than one document. Their `containerDefinitions` given as anything but a
+  non-empty list (absent, empty, a JSON string, a function) places one container whose image is
+  `unresolved:containerDefinitions`.
+- A task definition that two or more ECS services run, in the Terraform, CloudFormation or Pulumi
+  YAML reader, is placed once per service: each service puts every container on its own cluster
+  with its own desired count, named `<container>@<service>`. The service part is the resource's
+  address in the file (the Terraform label, the CloudFormation logical ID, the Pulumi resource
+  name), not its `name` property, so the placement keeps one name in every environment and is
+  diffed like any other container. A task definition one service runs keeps the plain container
+  name. A `containers.json` name matches its `@<service>` placements.
+
+A Pulumi project of any other runtime (`nodejs`, `python`, `go`, `dotnet`, ...), Helm (a
+`Chart.yaml`, a Terraform `helm_release`, or a `kubernetes:helm.sh/` resource in a Pulumi YAML
+program), and Kustomize are recognized and named, never read. If any of them is present, the
+record is refused, including when a shipped reader also matches, because a diagram of only the
+shipped tool would be a partial read. Shipped readers beside each other (Terraform, Bicep,
+CloudFormation, or Pulumi YAML beside Compose) are all read. A repository whose only IaC is a
+declined tool is refused as `adapter-not-shipped`, not drawn empty. The declined Pulumi projects are
+the tool `pulumi` with the runtime in the evidence (`Pulumi.yaml (runtime nodejs)`); the shipped
+reader is the tool `pulumi-yaml`. Files under CI directories such as `.github/` are not IaC and are
+skipped.
+
+A resource the Terraform, Bicep, ARM, CloudFormation, or Pulumi YAML reader parses and has no
+mapping for is listed in the record's `unmapped` array (tool, resource type, file) and in the
+`## Unmapped resources` table of `deployment.md`, never dropped without a trace. When no container
+is placed and `unmapped` is not empty (a Terraform root of only `aws_lambda_function` and
+`aws_s3_bucket`), the record is refused as `no-mapped-container` and keeps the list, rather than
+drawn as an empty environment. A repository that also places containers is drawn with the list
+beside it. The Compose reader adds nothing to the list. The Kubernetes reader lists a `CronJob` and
+a `Job` (tool `kubernetes`, the kind, the file) and places none of their containers or parameters,
+so a repository of only those is refused as `no-mapped-container`. They add no environment, and
+their `kind:` must come before `spec:` for their `env` entries to stay out of the record. A double-brace expression in
+a Compose or Kubernetes value (a Go template in a healthcheck) reads normally; one in a name,
+image, namespace, replicas, or kind field refuses the file as unreadable.
+
+Every value the collector writes and the renderer prints passes through
+`${CLAUDE_PLUGIN_ROOT}/lib/redact-connection.awk`. A parameter whose key names a credential, or
+whose value carries one (a connection-string password or key, a SAS signature, a GitHub token, a
+cloud access key, a private key, URL userinfo, or an HTTP Basic or Bearer credential), is recorded
+with an empty value and `"redacted":"yes"`. So is a value resolved from a Terraform variable, a
+Bicep, ARM or CloudFormation parameter, or a Pulumi config key whose name names a credential,
+whatever the name of the env var it lands in and with or without a native secret marker. Any other
+emitted field that carries one prints as `[redacted]`. A secret must not appear in the record, the
+diagram, the diff, or stdout. A diff of two secret values says that the parameter differs and
+prints neither value.
+
+A diff compares two environments of one tool over these kinds, for every shipped reader: a
+container present in one environment only, image, replicas, ports, a parameter present in one
+environment only, a plain parameter value, a secret parameter that differs, a network (a Compose
+network or a Kubernetes Service) or an Ingress present in one environment only, and a network
+exposure or port or an Ingress host that differs. A compute node (a cluster, service plan or node
+pool) of the Terraform, Bicep, ARM, CloudFormation and Pulumi readers is compared too: present in
+one environment only (`compute-added`, `compute-removed`), or, for Bicep, CloudFormation and
+Pulumi, at one address with a different resource type (`compute`). It is matched by resource
+address, not name, since a name usually differs per environment, so a changed name alone is not a
+difference. An ARM resource has no stable address, so it is matched by type and its order among
+nodes of that type. A Terraform Kubernetes workload and an Azure container group are compute nodes
+too. A Kubernetes
+container port (`containerPort`) is the placement's ports. A Kubernetes `valueFrom` reference
+counts as a secret parameter whose presence is compared; `envFrom` is not read. The report's diff
+section lists these kinds, and an empty diff reads `No differences of these kinds: ...` so a clean
+diff is never mistaken for a full comparison.
+
+When `<architecture_dir>/containers.json` exists, container names that the IaC does not place are
+listed. When it does not exist, the artifact says container names came from the IaC.
+
+## Render
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/render-deployment.sh" \
+  --record "<architecture_dir>/deployment.json" --out "<architecture_dir>" \
+  --dialect "<likec4|c4-plantuml|none>" --env "<environment>" --diff "<env-a>" "<env-b>"
+```
+
+Pass the resolved dialect. With `none` the script still writes `deployment.md` with the tools,
+environments, diff, and container tables, and draws no diagram block. Omit `--env` to draw every
+collected environment, one deployment environment each inside the one fenced block. Omit `--diff`
+when the invocation did not ask for a comparison. The unmapped resources, when there are any, and
+then the diff table follow the tools. An unknown `--env` or `--diff` name writes a refusal that
+lists the environments and exits 3. In a non-interactive run, stop there.
+
+The script prints one summary line. Keep it:
+
+`deployment: status=<drawn|refused> reason=<reason|none> tools=<list> environments=<n> placements=<n> diffs=<n> dialect=<likec4|c4-plantuml|none> unmapped=<n>`
+
+Exit 1 means the record is unreadable or not schema_version 1 in the one-object-per-line layout;
+nothing was written. Do not reformat the record by hand.
+
+## Close with the report
+
+End every run with this block, in this order:
+
+- **Artifacts**: each path written, or `none written` when the run stopped before a home existed.
+- **Status**: `drawn` or `refused`, and the reason when it is a refusal.
+- **Tools**: which IaC tools were shipped readers and which were recognized and declined.
+- **Not drawn**: the summary's `unmapped=` count and each resource type listed under
+  `## Unmapped resources` with its file, or that none were listed.
+- **Environment**: the one drawn, or each environment, and the file that declared it.
+- **Diff**: the summary's `diffs=` count, or that `--diff` was not requested.
+- **Dialect**: `diagram_dialect.system`, the value, and the layer (`argument`,
+  `team convention doc <path>`, or `unset (no C4 view emitted)`).
+- **Containers**: `map-containers` output was used, or it was absent and names came from the IaC.
+- **Secrets**: redacted. No secret value was written.
+- **Live**: not requested, or requested and refused. No cloud API was called.
+
+## Interactive view
+
+After the report, offer an interactive view of `deployment.json` in one sentence. The markdown and
+the record stay authoritative. Build it only with
+`${CLAUDE_PLUGIN_ROOT}/scripts/build-view.mjs deployment`, never hand-written; the shared medium
+resolver decides the destination, with this plugin's `medium` option `${user_config.medium}`, or `""`
+when that reads empty or unsubstituted (never put a `${user_config.*}` string in a shell command), and
+its report line is printed. Procedure:
+[`${CLAUDE_PLUGIN_ROOT}/reference/rendered-view.md`](${CLAUDE_PLUGIN_ROOT}/reference/rendered-view.md).
+
+## What this skill does not do
+
+- Call a cloud API, use credentials, or compare live state to the declaration.
+- Run `terraform`, read Terraform state, or fetch a remote module.
+- Run `bicep` or `az`, restore a registry module, or evaluate an ARM function.
+- Run `aws` or `pulumi`, expand a CloudFormation `Transform`, or evaluate `Fn::If`, `Fn::FindInMap`,
+  `Fn::Join`, or a Pulumi `fn::*` function.
+- Cost, scaling, capacity, or runtime health.
+- Apply Helm templates or Kustomize. Those tools are a refusal, not a guessed render.
+- Add a dialect key, read `landscape_dialect`, or emit mermaid. The dialect is the existing
+  `diagram_dialect.system`.
+- Invent a home, a network, or a node the script did not emit.
+
+## Next
+
+- The topology settles a decision worth keeping: `/architecture:adr`.
+- The topology needs a deployment change decided: `/planning:design system`.
+- The question is which systems the repository sits among: `/architecture:map-landscape`.
+
+## Gotchas
+
+- **C4 scopes a deployment diagram to one environment.** This skill writes one fenced block with
+  every environment inside it as its own deployment environment; `--env` narrows the block to
+  one. The diff is a table, not a picture. Pointer: when checking a deployment view's scope or
+  elements, fetch [C4 deployment diagram § Scope](https://c4model.com/diagrams/deployment#scope) and [§ Primary and supporting elements](https://c4model.com/diagrams/deployment#primary-and-supporting-elements)
+  live.
+- **C4-PlantUML deployment syntax: read against the README, never run.** The renderer writes the
+  macros. The `C4_Deployment` include name is our inference from the README's container
+  example. No PlantUML run has parsed this output. `Rel` is drawn from a container to a network
+  node its placement names, and from a Kubernetes Service or Ingress node to a container in the
+  record's `relationships`. Pointer: when checking the macros or the include the renderer
+  writes, fetch [C4-PlantUML README § Deployment diagram](https://github.com/plantuml-stdlib/C4-PlantUML/blob/master/README.md#deployment-diagram) and
+  [§ Including the C4-PlantUML library](https://github.com/plantuml-stdlib/C4-PlantUML/blob/master/README.md#including-the-c4-plantuml-library) live.
+- **LikeC4 deployment syntax: parsed by the CLI.** The record is a probe: `likec4@1.59.4
+  validate` exits 0 on the golden blocks in `${CLAUDE_PLUGIN_ROOT}/lib/likec4-golden/`
+  (`deployment-compose.c4`, `deployment-kubernetes.c4`, `deployment-ecs-shared.c4`), which
+  `collect-deployment.test.sh` diffs against. Pointer: when checking the syntax the collector
+  writes, fetch [LikeC4 deployment model § Deployment nodes](https://likec4.dev/dsl/deployment/model/#deployment-nodes),
+  [§ Deployed instances](https://likec4.dev/dsl/deployment/model/#deployed-instances), [§ Deployment relationships](https://likec4.dev/dsl/deployment/model/#deployment-relationships)
+  and [deployment views § View definition](https://likec4.dev/dsl/deployment/views/#view-definition) live. As of: 2026-11-10. Recheck trigger: any of those sections changes that syntax, or a
+  newer `likec4` release ships: set `LIKEC4_VALIDATE=1` when running the test to re-run the CLI.
+- **Labels cannot leave the block.** Quotes, backticks, backslashes, and line breaks are stripped
+  from labels, `@` prints as `(at)`, and every identifier is prefixed and numbered, so a hostile
+  name cannot close the fence, end the diagram, or collide with a keyword.
+- **Compose without a `networks` entry joins the default network.** A service that declares none
+  is recorded on `default`; a service that names a network is recorded on that network.
+- **A required secret is not a topology fact.** The value is dropped. The diff can say the
+  parameter differs. It cannot show the value.
+- **CloudFormation and Pulumi values are resolved, never evaluated.** A parameter or config value
+  resolves only through the sources listed above. Every other function (`Fn::If`, `Fn::FindInMap`,
+  `Fn::Join`, `GetAtt`, a pseudo parameter such as `AWS::Region`, `fn::join`, a Pulumi variable) is
+  recorded as `unresolved:<text>`. A resource `Condition`, `Mappings`, and `Fn::ForEach` are not
+  applied, so a conditional resource is drawn in every environment. Only the ECS types above are
+  mapped: an EKS cluster, a Lambda, or an `aws:eks` or `kubernetes:` Pulumi resource is not drawn,
+  and its type is listed under `## Unmapped resources`. A service whose task definition is not
+  declared in the same template is placed as one container whose image is
+  `unresolved:taskDefinition`. YAML parameter files and CloudFormation git-sync deployment files
+  are not read.
+- **CloudFormation and Pulumi secrets.** A parameter with `NoEcho: true`, any value holding a
+  `{{resolve:...}}` dynamic reference, every container `Secrets` entry, a Pulumi `config` key with
+  `secret: true`, a `secure:` stack value, a `fn::secret` wrapper, and a parameter or config key
+  whose name names a credential are redacted wherever they land, including in a name, image or
+  port. A secret that differs between two environments is reported as differing, and neither value
+  is printed.
+- **CloudFormation template shape.** The reader takes a YAML short-form tag (`!Ref`, `!Sub`,
+  `!GetAtt`) as its long form (`Ref`, `Fn::Sub`, `Fn::GetAtt`), so a YAML and a JSON template
+  record the same values, and resolves a `Ref` to a parameter from the sources listed above. A
+  service is read from the `AWS::ECS::Service` properties `Cluster`, `DesiredCount`, `ServiceName`
+  and `TaskDefinition`. Pointer: when checking those forms or property names, fetch
+  [`Ref` § Declaration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-ref.html#ref-declaration),
+  [§ Return value](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-ref.html#ref-return-value),
+  [`Fn::Sub` § Declaration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-sub.html#intrinsic-function-reference-sub-declaration),
+  [`Fn::GetAtt` § Declaration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getatt.html#getatt-declaration)
+  and `AWS::ECS::Service` [§ Cluster](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html#cfn-ecs-service-cluster),
+  [§ DesiredCount](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html#cfn-ecs-service-desiredcount),
+  [§ ServiceName](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html#cfn-ecs-service-servicename)
+  and [§ TaskDefinition](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html#cfn-ecs-service-taskdefinition)
+  live.
+- **CloudFormation parameters and secrets.** The redaction and resolution rules above read
+  `NoEcho`, `Default` and the `{{resolve:...}}` forms. Pointer: when checking what those mean or
+  how a dynamic reference is written, fetch
+  [Parameters § Properties](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html#parameters-section-structure-properties)
+  and
+  [Dynamic references](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/dynamic-references.html#dynamic-references)
+  live. The reader takes a JSON file as a parameter file when it is a
+  `ParameterKey`/`ParameterValue` array, or an object whose first key is `Parameters` with no
+  `Resources`. The pairing rules above that tie a parameter file to an environment are this
+  skill's own.
+- **Pulumi YAML program and stack shape.** The reader maps the project file's `runtime`, the
+  program's `resources`, `variables` and `outputs`, `config` items, `${...}` interpolation and the
+  `fn::toJSON`, `fn::secret` and `fn::join` forms. Pointer: when checking those forms, fetch
+  [project file § Attributes](https://www.pulumi.com/docs/concepts/projects/project-file/#attributes), [§ Runtime options](https://www.pulumi.com/docs/concepts/projects/project-file/#runtime-options),
+  and the YAML language reference's [§ Config](https://www.pulumi.com/docs/iac/languages-sdks/yaml/yaml-language-reference/#config), [§ Interpolation](https://www.pulumi.com/docs/iac/languages-sdks/yaml/yaml-language-reference/#interpolation),
+  [§ Built-in variables](https://www.pulumi.com/docs/iac/languages-sdks/yaml/yaml-language-reference/#built-in-variables), [§ fn::toJSON](https://www.pulumi.com/docs/iac/languages-sdks/yaml/yaml-language-reference/#fntojson),
+  [§ fn::secret](https://www.pulumi.com/docs/iac/languages-sdks/yaml/yaml-language-reference/#fnsecret) and [§ fn::join](https://www.pulumi.com/docs/iac/languages-sdks/yaml/yaml-language-reference/#fnjoin) live.
+  The reader takes each `Pulumi.<stack>.yaml` as one environment, resolves a `${key}` from
+  `<project>:<key>`, then `<key>`, and treats a `secure:` value as a secret. It reads an
+  `aws:ecs:Service`'s `cluster`, `taskDefinition`, `desiredCount` and `name`, and an
+  `aws:ecs:TaskDefinition`'s `containerDefinitions` as `fn::toJSON` over a list of containers with
+  `name`, `image` and `portMappings` (`containerPort`). The `<project>:<key>`-then-`<key>` lookup
+  is this skill's own rule: it reads the project's namespace first so a key the stack file
+  writes under the project wins over a bare one. Pointer: when checking the `secure:` form, fetch
+  [secrets § Encrypted secrets in configuration data](https://www.pulumi.com/docs/iac/concepts/secrets/#secrets)
+  live; when checking an ECS input, fetch the
+  [`aws.ecs.Service` § Inputs](https://www.pulumi.com/registry/packages/aws/api-docs/ecs/service/#inputs)
+  and [`aws.ecs.TaskDefinition` § Inputs](https://www.pulumi.com/registry/packages/aws/api-docs/ecs/taskdefinition/#inputs)
+  live.
+- **Bicep and ARM values are resolved, never evaluated.** A parameter resolves from a module
+  `params` argument, then the environment's parameters file, then its default, and `${name}` inside
+  a Bicep string the same way. An ARM value resolves only when it is exactly
+  `[parameters('<name>')]`; `[[` opens a literal. A parameter marked `@secure()`, typed
+  `securestring` or `secureobject`, given a Key Vault `reference`, or named for a credential is
+  redacted wherever it lands, as is a `secretRef` or `secureValue` env entry. Every var, function, and conditional is recorded
+  as `unresolved:<expression>`. A `for` or `copy` loop is placed once, an `if` or `condition` is
+  ignored, a `resourceId` with scope arguments matches nothing, and `Microsoft.App/jobs` is not
+  mapped. A child resource nested in its parent (a Bicep `resource` inside a body, an ARM
+  `resources` array inside a resource) is listed under its full type, such as
+  `Microsoft.Storage/storageAccounts/blobServices`. A `Microsoft.Web/sites/slots` nested in its site,
+  or naming it as its Bicep `parent`, whose fx version reads `DOCKER|` is the exception: it places
+  the container `<site>/<slot>`, its full resource name, on the site's `serverFarmId`, with its own
+  `appSettings`. Any other slot, including a top-level ARM one, is listed. A container app or container
+  group whose containers are an expression, an empty list, or absent places one container named for
+  the resource, its image `unresolved:<expression>` or `unresolved:containers`. Every other resource
+  type, and a site whose fx version does not read `DOCKER|` (listed as `Microsoft.Web/sites`), is
+  listed under `## Unmapped resources`.
+- **Bicep module and parameter file forms.** The reader tells a local module path from a registry
+  or template-spec source, and pairs a `.bicepparam` file with its template through its `using`
+  line. Pointer: when checking which module paths are local or how a parameters file names
+  its template, fetch [Bicep modules § Path to a module](https://learn.microsoft.com/azure/azure-resource-manager/bicep/modules#path-to-a-module)
+  ([§ Local file](https://learn.microsoft.com/azure/azure-resource-manager/bicep/modules#local-file), [§ File in registry](https://learn.microsoft.com/azure/azure-resource-manager/bicep/modules#file-in-registry), [§ File in template spec](https://learn.microsoft.com/azure/azure-resource-manager/bicep/modules#file-in-template-spec))
+  and [parameter files § Define parameters file](https://learn.microsoft.com/azure/azure-resource-manager/bicep/parameter-files#define-parameters-file) and [§ Extendable parameters file](https://learn.microsoft.com/azure/azure-resource-manager/bicep/parameter-files#extendable-parameters-file)
+  live.
+- **ARM expressions are bracketed strings.** The reader resolves only `[parameters('<name>')]`
+  and reads `[[` as a literal. Pointer: when checking the expression and escape rules, fetch
+  [template expressions § Escape characters](https://learn.microsoft.com/azure/azure-resource-manager/templates/template-expressions#escape-characters)
+  live.
+- **A nested child resource carries one type segment.** The reader lists a child nested in its
+  parent under the parent's full type plus the child's segment (`Microsoft.Web/sites/slots`).
+  Pointer: when checking how a nested child writes its type, fetch
+  [Bicep child resource name and type § Within parent resource](https://learn.microsoft.com/azure/azure-resource-manager/bicep/child-resource-name-type#within-parent-resource) and
+  [ARM child resource name and type § Within parent resource](https://learn.microsoft.com/azure/azure-resource-manager/templates/child-resource-name-type#within-parent-resource)
+  live.
+- **A slot with its own image is placed on its site's plan.** A `DOCKER|` slot places as
+  `<site>/<slot>` on the site's App Service plan, naming it by its full resource name, whether it is
+  nested in the site or names it with a Bicep `parent`. **Pointer**: when deciding how a child's full
+  name is written, or where a slot runs, fetch
+  [Bicep child resource name and type § Full resource name outside parent](https://learn.microsoft.com/azure/azure-resource-manager/bicep/child-resource-name-type#full-resource-name-outside-parent),
+  [ARM child resource name and type § Outside parent resource](https://learn.microsoft.com/azure/azure-resource-manager/templates/child-resource-name-type#outside-parent-resource) and
+  [App Service plans § Considerations for running and scaling an app](https://learn.microsoft.com/azure/app-service/overview-hosting-plans#considerations-for-running-and-scaling-an-app)
+  live.
+- **Terraform values are resolved, never evaluated.** `var.X` resolves from a module call argument,
+  then the root's tfvars files, then the variable `default`, and `${var.X}` inside a string the
+  same way. A variable declared `sensitive = true`, or named for a credential, is redacted wherever
+  it lands. Everything else, such as locals, functions other than `jsonencode`, conditionals,
+  for-expressions, `file()`, and `templatefile()`, is recorded as `unresolved:<expression>`. `count`
+  and `for_each` are not expanded (the resource is placed once), a `dynamic` block is not read, and
+  an env list built by an expression records no parameters. A container app, Cloud Run service, or
+  Kubernetes workload whose containers are a `dynamic` block or an expression places one container
+  named for the resource, its image `unresolved:dynamic container` (`containers` for Cloud Run) or
+  `unresolved:container`; a `dynamic` block beside plain ones adds a second, `<name>.dynamic`. An
+  ECS task definition with no `container_definitions` places one container, its image
+  `unresolved:container_definitions`. A resource with an empty body (`resource "aws_s3_bucket" "b" {}`)
+  is placed or listed as unmapped like any other. A `.tf.json` block type or label written as an
+  array of objects (`"resource": [{...}]`) reads like the object form.
+- **Only `./` and `../` sources are local.** The reader treats only those module sources as
+  local. Pointer: when checking how a local module path is written, fetch
+  [module block § Local paths](https://developer.hashicorp.com/terraform/language/block/module#local-paths)
+  live.
+- **Auto-loaded tfvars rank below the environment's file.** The reader ranks the environment's
+  `<env>.tfvars` above the auto-loaded tfvars files, and a variable `default` lowest. Pointer:
+  when checking Terraform's precedence, fetch
+  [input variables § Assign values to variables](https://developer.hashicorp.com/terraform/language/values/variables#assign-values-to-variables)
+  live.
+- **A `.tf.json` block may be an array of objects at any level.** The reader takes each label
+  level of a block (a resource's type and name) and its body as either a JSON object or a JSON
+  array of objects, so `"resource": [{"aws_s3_bucket": {"b": {}}}]` places the same resource as the
+  object form. Pointer: when checking where an array may stand in for an object, fetch
+  [HCL JSON syntax § Blocks](https://github.com/hashicorp/hcl/blob/main/json/spec.md#blocks) live.
+- **One task definition, several services.** Each service that runs a shared task definition places
+  the task definition's containers on its own cluster with its own desired count, named
+  `<container>@<service>`. The `@` separates the two parts, and a label prints it as `(at)`, like
+  any other. **Pointer**: when deciding whether the cluster and the count belong to the service, or
+  whether `@` can appear in a container or service name, fetch
+  [task definitions](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definitions.html),
+  [services](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html),
+  [`name`](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ContainerDefinition.html#ECS-Type-ContainerDefinition-name)
+  and [`serviceName`](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateService.html#ECS-CreateService-request-serviceName)
+  live.
+- **Helm reached through IaC is still Helm.** The collector declines Helm when a Terraform file
+  declares a `helm_release` resource or a Pulumi program a `kubernetes:helm.sh` type, which refuses
+  the whole record as `partial-read`, because the chart's workloads are not read. Pointer: when
+  checking either type name, fetch the Terraform Helm provider's
+  [`helm_release`](https://raw.githubusercontent.com/hashicorp/terraform-provider-helm/main/docs/resources/release.md)
+  and the Pulumi Kubernetes provider's
+  [`helm.sh/v3.Release`](https://www.pulumi.com/registry/packages/kubernetes/api-docs/helm/v3/release/)
+  pages live. `kubernetes_manifest`
+  and the `kubernetes_*` types the Terraform reader does not map appear under `## Unmapped
+  resources`, since the Kubernetes tool itself is a shipped reader.
+- **`--live` is a refusal.** Committed files are not silently substituted for a live comparison.
+- **A reformatted record is refused.** Render exits 1 and writes nothing.
+- **Tracked files only.** `git ls-files` is the source list. A tracked symlink is skipped, so it
+  cannot pull in an untracked file.

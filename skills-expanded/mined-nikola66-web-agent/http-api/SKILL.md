@@ -1,0 +1,391 @@
+---
+name: HTTP API
+description: Use when calling REST or GraphQL APIs with web_fetch/web_post — auth headers, query params, GraphQL shape, Directus GraphQL mutations/relations, discovery order, and reading error bodies.
+version: 1.0.0
+category: bundled
+primary-tools: [web_fetch, web_post, web_upload]
+tags: [rest, graphql, api, web_fetch, web_post, web_upload, bearer, cms, headers, discovery, multipart, file upload]
+triggers: [graphql, REST API, bearer token, web_post, authenticated fetch, api call, authorization header, CMS, list collections, resource count, metadata endpoint, directus, Blog_Posts, graphql mutation, create_*_item, directus cms]
+---
+
+## When web_post vs web_upload (read first)
+
+**Invariant:** bytes move runtime → proxy → upstream. You see metadata (`bytes`, `path`, `file_id`) — never base64 blobs in tool arguments or chat.
+
+| Situation | Tool |
+|-----------|------|
+| JSON/GraphQL REST write | `web_post` (`body`/`json`/`form`) |
+| CMS `/files` or single file upload | `web_upload` (`source_url` **or** `file_path`) |
+| Mixed form fields + file(s) | `web_post` with `multipart` array |
+| Download binary to workspace | `web_fetch` with `save_to` |
+| Python script file upload | `webagent.http.upload_file` inside `run_python` |
+
+**Anti-pattern (causes 240s timeouts):** `web_fetch` binary → base64 in `web_post` body → `read_file` snapshot loop. Stop and use `web_upload.file_path` or `source_url` instead.
+
+**Spilled list APIs:** When compact tool output includes `list_digest`, answer from that — do not `read_file` `memory/snapshots/`. If the summary says the body is HTML, add `Authorization` and rerun `web_fetch` (do not parse the spill as JSON).
+
+### Directus-style publish (3 steps)
+
+1. **Upload file** — `web_upload` to `/files` with `source_url` or `file_path` (Telegram inbox paths work as `file_path`).
+2. **Link record** — `web_post` PATCH the item with returned file id (`data.id`).
+3. **Publish** (if needed) — `web_post` PATCH status field per imported skill.
+
+## Tool contract
+
+Canonical procedure for **REST GET** (`web_fetch`) and **HTTP writes** (`web_post`: POST/PATCH/PUT/DELETE). Do not use `run_shell` + axios for one-off API calls.
+
+| Need | Tool | Required args |
+|------|------|----------------|
+| Public or authenticated **GET** | `web_fetch` | `url`; optional `headers`, `params`, `response_format` (`api` for REST/GraphQL) |
+| **POST** JSON / GraphQL | `web_post` | `url`, `body` or `json`; optional `headers`, `params`, `timeout_ms` |
+| **PATCH/PUT** REST update | `web_post` | `url`, `body`/`json`, `method` (`"PATCH"` or `"PUT"`); optional `headers`, `params` |
+| **DELETE** REST resource | `web_post` | `url`, `method`: `"DELETE"`; optional `headers`, `params` (body optional) |
+| **Form POST** (OAuth, urlencoded) | `web_post` | `url`, `form` object; optional `headers` |
+| **CMS / file upload** (multipart) | `web_upload` | `upload_url`, `source_url` **or** `file_path`; optional `headers`, `field_name`, `filename` |
+| **Mixed multipart** (fields + file) | `web_post` | `url`, `multipart` array with `text` / `file_path` / `source_url` per field |
+| **Binary download to workspace** | `web_fetch` | `url`, `save_to` workspace path (metadata-only result) |
+| Batch public GET (≤5 URLs) | `web_fetch` | `urls` array; shared `headers`, `params` |
+| Secrets | `headers.Authorization` (or API-key header docs specify) | Never in URL query; recall from `memory_recall` / `memory_search` or user-provided env |
+
+**Non-negotiable:** Read the API's real schema before inventing field names. On `ok: false` or GraphQL `errors`, fix the query — do not retry the same malformed call in a loop.
+
+## HTTP decision tree
+
+| Context | Use |
+|---------|-----|
+| Agent one-off REST/GraphQL call | `web_fetch` (GET) or `web_post` (writes/GraphQL) |
+| CMS / featured image / file to `/files` | `web_upload` with `source_url` or `file_path` — **never base64 in tool args** |
+| Reusable Python skill script | `import webagent.http as http` inside `run_python`; files → `http.upload_file` |
+| Legacy `urllib.request` in imported `.py` | Works (proxy-patched); prefer `webagent.http` for new code |
+| OAuth SaaS with Composio connector | `skill` (action=view) **`composio-oauth`**, then `composio_status` — use `composio_action` when connected; not raw `web_post` |
+| `requests` / `httpx` in Pyodide | Avoid — may JsProxy-fail; use agent tools or `webagent.http` |
+
+## When to Use
+
+- Any task hitting a REST or GraphQL HTTP API (CMS, CRM, webhooks, custom backends).
+- Directus CMS work — REST `/items/…`, GraphQL `/graphql`, `Blog_Posts`, translations, publish/status updates.
+- After `web_post` / `web_fetch` returns validation, 401, or 403.
+- Imported skills that mention `requests`, curl, axios, `pip install directus-skill`, or `python -m …` for HTTP.
+- Before guessing collection names, endpoints, or GraphQL root fields.
+
+## Relation to other skills
+
+- Tool picker (shell vs HTTP): **`browser-runtime-map`**. MCP integrations: `.webagent/mcp-servers.json` (+ secrets); `mcp_*` tools register at profile startup and appear as **active** under ## MCP in the **Tool capability index** — call them directly (not via `tool_search` / `tool_activate`).
+- Python scripts: **`run_python`** when Pyodide-compatible. Stored credentials: **`memory-layers`** (`memory_recall`).
+- **Imported skills own endpoints** — call `skill` (action=view) on the imported skill first; use this skill for generic REST/GraphQL mechanics.
+
+## Procedure
+
+1. **Imported skill** — `skill` (action=view) on the skill that documents this API (discovery order, auth, paths).
+2. **Pick verb** — GET → `web_fetch`; POST/GraphQL → `web_post`; PATCH/PUT/DELETE/HEAD/OPTIONS → `web_post` with `method`.
+3. **Auth** — pass `headers: { "Authorization": "Bearer <token>" }` (or header name from docs). Same token can go on every call; do not embed in URL.
+4. **Discovery** — follow the skill's order: health/ping → list metadata/schema → data queries. Do not guess resource slugs or GraphQL root fields.
+5. **REST read** — start minimal: list/count before heavy payloads. Use `params` on the tool or query string on `url`.
+6. **GraphQL** — POST JSON body `{"query":"…","variables":{…}}` with `Content-Type: application/json` (default for JSON bodies).
+7. **Errors** — if result has `ok: false` or `data.errors`, read `error` / `recovery_hint` / `errors[0].message` and adjust; one fix per failure class.
+8. **Unknown resource id** — run discovery or ask the user; do not brute-force generic names endlessly.
+
+## REST patterns (`web_fetch`)
+
+```json
+{
+  "url": "https://api.example.com/v1/resources/posts",
+  "response_format": "api",
+  "params": { "limit": 10, "fields": "id,title" },
+  "headers": { "Authorization": "Bearer <token>" }
+}
+```
+
+| Pattern | Example |
+|---------|---------|
+| Row count (when docs specify) | `GET …/resources/{slug}?limit=0&meta=total_count` (shape varies by API) |
+| Single filter | `…/resources/{slug}?filter[status]=published&fields=id` |
+| List metadata | Skill-documented list/schema endpoint (may 403 without admin scope) |
+| Pagination | `limit` + `offset` or `page` per API docs |
+
+JSON responses return `data` + `status`. HTML returns readable `text`.
+
+### TinyFish markdown vs API (Directus and other SPAs)
+
+**Routing:** `web_fetch` uses **TinyFish** only for public **HTML pages** (`response_format: "markdown"`). **REST/GraphQL/workflow GETs** use the **direct proxy** (`response_format: "api"`, or inferred automatically for `/items/`, `/graphql`, `/api/`, `api.*` hosts, and any `headers` including `Authorization`).
+
+When TinyFish markdown returns a **"JavaScript required"** page (Directus admin UI often shows: *"Directus doesn't work without JavaScript enabled"*):
+
+- **HTTP 200 means the host responded** — not outage, not "unreachable", and not proof the REST API is broken.
+- That body is the **non-API UI shell** (no JS in TinyFish). Do **not** loop on the same admin/root URL or declare the site down.
+- **Do instead:** call documented REST paths (`/items/…`, `/collections/…`, `/server/info`, …) with `response_format: "api"` and `headers.Authorization: Bearer <token>`, `web_post` for writes, or add the Directus MCP server in `.webagent/mcp-servers.json` and call `mcp_*` tools.
+
+### Directus / CMS via MCP (optional)
+
+Configure a Directus Streamable HTTP MCP endpoint (**the Web Agent page must be running** (Telegram messages already prove this — MCP failures are usually auth, remote server reachability, or an IPC bridge bug, not a closed tab):
+
+1. Bearer token in `.webagent/mcp-secrets.json` (`directus_token` or server-specific keys).
+2. Server entry in `.webagent/mcp-servers.json` (Streamable HTTP URL for Directus MCP).
+3. After `write_file` on either config file, check `mcp_reload` in the result — tools register without a full profile restart when the browser tab is open.
+4. Agent workflow: call `mcp_<server>_<tool>` by exact name from ## MCP in the Tool capability index — they are in the active tool schema when configured.
+
+If probe times out: keep the Web Agent tab open, verify the remote MCP endpoint and auth, then re-write config or restart the profile. Config may already be saved as enabled.
+
+Prefer MCP for CMS mutations when REST from the sandbox is blocked; prefer REST (`/items/…` + Bearer) when `headers` work. For GraphQL naming and mutations on this host, see **## Directus GraphQL** below.
+
+## REST updates (`web_post` + method)
+
+To update an existing resource (CMS item, record by id):
+
+```json
+{
+  "url": "https://api.example.com/v1/resources/posts/42",
+  "method": "PATCH",
+  "headers": { "Authorization": "Bearer <token>" },
+  "body": "{\"status\":\"published\"}"
+}
+```
+
+| Pattern | Example |
+|---------|---------|
+| Partial update | `method`: `"PATCH"`, body with changed fields only |
+| Full replace | `method`: `"PUT"` when API docs require it |
+| Delete | `method`: `"DELETE"` — body optional |
+| Form / OAuth token | `form`: `{ "grant_type": "...", ... }` — auto urlencoded |
+| Large CMS payload | `timeout_ms`: 180000 (up to 600000) |
+| Binary upload (avoid) | Do **not** pass base64 in `body` — use `web_upload` or `web_post.multipart` with `file_path`/`source_url` |
+
+Do not POST to `/resources/{slug}/{id}` to update — use PATCH/PUT on that path.
+
+## File uploads (`web_upload`)
+
+**Never put image/binary bytes or base64 in tool arguments** — runtime fetches or reads files server-side.
+
+Directus / generic CMS `/files`:
+
+```json
+{
+  "upload_url": "https://cms.example.com/files",
+  "headers": { "Authorization": "Bearer <token>" },
+  "field_name": "file",
+  "filename": "hero.jpg",
+  "content_type": "image/jpeg",
+  "source_url": "https://images.example.com/hero.jpg"
+}
+```
+
+From workspace (after `web_fetch` with `save_to`, or a generated asset):
+
+```json
+{
+  "upload_url": "https://cms.example.com/files",
+  "headers": { "Authorization": "Bearer <token>" },
+  "file_path": "projects/images/hero.jpg",
+  "filename": "hero.jpg"
+}
+```
+
+Then PATCH the record with the returned file id (`data.id` on Directus).
+
+Mixed multipart (custom API) via `web_post`:
+
+```json
+{
+  "url": "https://api.example.com/upload",
+  "multipart": [
+    { "name": "title", "text": "Hero" },
+    { "name": "file", "file_path": "projects/images/hero.jpg", "filename": "hero.jpg", "content_type": "image/jpeg" }
+  ],
+  "headers": { "Authorization": "Bearer <token>" }
+}
+```
+
+## GraphQL patterns (`web_post`)
+
+```json
+{
+  "url": "https://api.example.com/graphql",
+  "json": { "query": "query { __typename }" },
+  "headers": { "Authorization": "Bearer <token>" }
+}
+```
+
+With variables:
+
+```json
+{
+  "json": { "query": "query ($id: ID!) { item(id: $id) { id title } }", "variables": { "id": "42" } }
+}
+```
+
+| Rule | Detail |
+|------|--------|
+| Root fields | Must exist on **that** API's `Query` type — never assume generic names |
+| Imported CMS/API skills | Root fields often match **resource slugs** from the skill's list step — read the skill |
+| Introspection | `{ __schema { queryType { name } } }` only if docs allow |
+| Errors | 400 with `errors[]` → fix query shape; read `recovery_hint` when present |
+
+## Directus GraphQL
+
+Use when the imported skill or user task targets a **Directus** instance via GraphQL (`POST {base}/graphql`). Patterns match [directus-skill](https://github.com/nikola66/directus-skill) and the [Directus GraphQL guide](https://directus.io/blog/graphql-api).
+
+### Transport and auth
+
+```json
+{
+  "url": "https://cms.example.com/graphql",
+  "json": { "query": "query { __typename }", "variables": {} },
+  "headers": { "Authorization": "Bearer <token>" }
+}
+```
+
+Same token via `auth: { "directus_token": "<token>" }` on `web_post` / `web_fetch` (maps to Bearer). Always `response_format: "api"` on REST discovery GETs.
+
+### GraphQL basics (Directus)
+
+| Operation | Role |
+|-----------|------|
+| `query` | Read — selection set lists fields in `{ braces }` |
+| `mutation` | Write — `create_*_item`, `update_*_item`, `delete_*_item` |
+| Arguments | In parentheses: `Collection(limit: 5, filter: { … })` |
+| Variables | `$name` in query + `"variables": { "name": value }` in JSON body — use for large/HTML payloads |
+
+### Discovery order (do not skip)
+
+| Step | Call | Purpose |
+|------|------|---------|
+| 1 | `web_post` GraphQL `query { __typename }` | Health / auth |
+| 2 | `web_fetch` `GET /fields/{Collection}` with `response_format: "api"` | Field types, relation names, required fields |
+| 3 | Use **exact** GraphQL roots from step 2 | e.g. `Blog_Posts`, not `posts`, `blog_posts`, or `BlogPosts` |
+
+Optional introspection only if the token allows; otherwise REST `/fields/…` and `/collections` are authoritative.
+
+### Queries and filters
+
+Root field = **collection name as in Directus** (often PascalCase with underscores):
+
+```graphql
+query {
+  Blog_Posts(filter: { status: { _eq: "published" } }, limit: 10) {
+    id
+    status
+  }
+}
+```
+
+Common filter operators: `_eq`, `_neq`, `_in`, `_nin`, `_contains`, `_icontains`, `_null`, `_nnull`, `_gt`, `_gte`, `_lt`, `_lte`.
+
+**Count:**
+
+```graphql
+query {
+  Blog_Posts_aggregated {
+    count { id }
+  }
+}
+```
+
+### Mutations
+
+Pattern: `create_{Collection}_item`, `update_{Collection}_item(id: "…")`, `delete_{Collection}_item(id: "…")` — `{Collection}` must match the schema (e.g. `Blog_Posts` → `create_Blog_Posts_item`).
+
+```graphql
+mutation {
+  create_Blog_Posts_item(data: { status: "draft" }) {
+    id
+    status
+  }
+}
+```
+
+```graphql
+mutation {
+  update_Blog_Posts_item(id: "uuid-here", data: { status: "published" }) {
+    id
+    status
+  }
+}
+```
+
+### Relations (M2O / O2M)
+
+Link an **existing** related row with a nested object containing only `id` — not a bare UUID string, and not a full nested create unless the schema requires every non-null field:
+
+```graphql
+mutation {
+  create_Blog_Posts_Translations_item(data: {
+    languages_code: { code: "en-US" }
+    Blog_Posts_id: { id: "parent-uuid" }
+    title: "Title"
+  }) {
+    id
+  }
+}
+```
+
+Field names (`Blog_Posts_id`, `languages_code`, …) come from `GET /fields/Blog_Posts_Translations` — do not invent them.
+
+### Variables (large / HTML content)
+
+```json
+{
+  "url": "https://cms.example.com/graphql",
+  "json": {
+    "query": "mutation ($data: create_Blog_Posts_Translations_input!) { create_Blog_Posts_Translations_item(data: $data) { id } }",
+    "variables": {
+      "data": {
+        "title": "Post title",
+        "content": "<p>HTML body</p>",
+        "Blog_Posts_id": { "id": "parent-uuid" }
+      }
+    }
+  },
+  "headers": { "Authorization": "Bearer <token>" }
+}
+```
+
+### REST vs GraphQL on Directus
+
+| Prefer REST | Prefer GraphQL |
+|-------------|----------------|
+| Simple list/get/create/update one collection (`GET/POST/PATCH /items/{Collection}`) | Imported skill explicitly uses GraphQL |
+| File upload then PATCH item with file id | One mutation wiring multiple relations |
+| E2E / skill docs show REST path | Aggregates or nested writes clearer in one request |
+
+REST example (same auth):
+
+```json
+{
+  "url": "https://cms.example.com/items/Blog_Posts",
+  "response_format": "api",
+  "params": { "limit": 5, "fields": "id,status" },
+  "headers": { "Authorization": "Bearer <token>" }
+}
+```
+
+## Connect / discover an API
+
+Generic order (exact URLs come from the **imported skill**, not from memory):
+
+| Step | Call | Purpose |
+|------|------|---------|
+| 1 | Skill's health/ping GET (often unauthenticated) | Reachability |
+| 2 | Skill's list/metadata GET + auth | **Known resource slugs or schema** |
+| 3 | Pick slug/id from step 2 | Never guess `posts`, `articles`, etc. before step 2 |
+
+If step 2 returns **403**, the token may lack metadata scope — ask the user for the resource name; still do **not** brute-force guessed paths.
+
+**403 on a specific resource path** means wrong slug/id or missing read permission — return to discovery or ask the user; it does not mean the host is unreachable.
+
+## Pitfalls
+
+- Inventing GraphQL fields not in the schema.
+- Wrong Directus collection casing — `create_posts_item` vs `create_Blog_Posts_item`; GraphQL root `Blog_Posts` vs REST slug guesses.
+- Relation shape errors — bare UUID instead of `{ id: "uuid" }`; or full `create_*_input` with every field when only `id` is needed to link.
+- Inlining large HTML in the query string — use `variables` in the `web_post` JSON body.
+- `web_fetch` for POST/GraphQL (use `web_post`).
+- Putting Bearer tokens in the URL or repeating failed shell `node -e` axios attempts.
+- Treating 403 as "wrong URL" when it may mean **wrong permission** or wrong resource slug.
+- Ignoring structured error payloads — they tell you exactly which field failed validation.
+- Skipping `skill` (action=view) on the imported skill and guessing endpoints from product folklore.
+
+## Anti-patterns
+
+- Retry loop: same bad GraphQL query 3+ times without reading `recovery_hint` or re-running `GET /fields/{Collection}`.
+- `run_shell` with `require('axios')`, `fetch(`, curl, or python `requests` when `web_fetch`/`web_post` suffice.
+- Putting API tokens in URL query strings — use headers only.

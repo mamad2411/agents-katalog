@@ -1,0 +1,98 @@
+---
+description: "Backlog CRUD through the bound tracker: stats, list, add, start, done, due, recheck, search, audit, publish-plan, link (default: stats). Use when the user wants to add, claim, or close a work item, ticket, or issue; list, search, or see a dashboard of open items; check what is due on the recurring schedule; or audit stale claims and labels. New bug reports go to /bugs:write first. Picking and executing the next item is /work-items:work; raw intake is /work-items:triage."
+argument-hint: "[stats|list|add|start|done|due|recheck|search|audit|publish-plan|link|view|edit|changes…] [args]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Backlog CRUD through the bound tracker. Add, list, close, stats
+---
+
+## Variables
+
+Arguments: `$ARGUMENTS`. `[stats|list|add|start|done|due|recheck|search|audit|publish-plan|link|view|edit|changes|labels|wayfind-labels|dossier-branches|help] [args]`. The default action is stats.
+
+## Shared tracker context
+
+The seam, operation routing, label taxonomy, canonical-role remapping, recurring schedule, and
+memory-tier write rule that every work-items skill relies on live in
+[`${CLAUDE_PLUGIN_ROOT}/reference/tracker-seam.md`](${CLAUDE_PLUGIN_ROOT}/reference/tracker-seam.md)
+(and the references it links). Read it at the start of an invocation. Two invariants bind the
+actions below:
+
+- **Provider-neutral over the seam.** Coordination goes through
+  `${CLAUDE_PLUGIN_ROOT}/tools/work-item-tracker/work-item-tracker.sh <verb>`; provider mechanics (filtered listing,
+  search, aggregation, close, label/comment edits) route through the bound adapter's operations
+  reference. The core inlines no provider commands.
+- **Role-label resolution is an action-entry invariant.** `add`, `due`, `recheck`, and `audit`
+  query, create, or filter items by a canonical role. Resolve each role from
+  `config.role_labels` of the binding the seam resolves (the `tracker` mapping of
+  `<home>/work-items.yaml`) at action entry and use the resolved strings in
+  every query. An absent file or entry falls back to the documented default without a warning (a
+  conforming binding omits entries that keep their default); a present malformed, empty, or
+  non-string value is a hard stop.
+
+`add` and `recheck` also read:
+
+- [`${CLAUDE_PLUGIN_ROOT}/reference/label-taxonomy.md`](${CLAUDE_PLUGIN_ROOT}/reference/label-taxonomy.md):
+  the label structure `add` validates against and `list --category` filters by.
+- [`${CLAUDE_PLUGIN_ROOT}/reference/issue-conventions.md`](${CLAUDE_PLUGIN_ROOT}/reference/issue-conventions.md):
+  the item shape `add` follows; its title rule points at the house style.
+- [`${CLAUDE_PLUGIN_ROOT}/reference/agent-brief.md`](${CLAUDE_PLUGIN_ROOT}/reference/agent-brief.md):
+  the brief template `add --agent-ready` uses instead of the default body. `add --session-owned`
+  applies the session-owned role label instead, for an item the filing session works itself.
+- [`${CLAUDE_PLUGIN_ROOT}/reference/standing-item-preconditions.md`](${CLAUDE_PLUGIN_ROOT}/reference/standing-item-preconditions.md):
+  the precondition `recheck` evaluates before advancing dates or closing the associated item.
+
+## Scope
+
+`track` is the concurrent-safe backlog-CRUD surface, routed by the action table below. Selecting
+and executing one item, raw-intake evaluation, plan decomposition and the marker sweep belong to
+the sibling skills under "Sibling-skill verbs".
+
+## Emit checklist
+
+For the multi-step actions (`add`, `start`, `done`, `recheck`), copy the matching action section of
+[`${CLAUDE_PLUGIN_ROOT}/templates/checklist.md`](${CLAUDE_PLUGIN_ROOT}/templates/checklist.md) into
+`<memory_dir>/<slug>/work-items-checklist.md` (default `.work/`), a memory-tier write
+([`${CLAUDE_PLUGIN_ROOT}/reference/tracker-seam.md`](${CLAUDE_PLUGIN_ROOT}/reference/tracker-seam.md)
+"Memory-tier writes" owns the slug and the self-ignore guard).
+Tick each step as completed. Single-action reads (`stats`, `list`, `search`, `due`, `view`, `changes`,
+`labels`, `wayfind-labels`), `dossier-branches`, `audit` and `edit` don't need a checklist.
+
+## Next
+
+- A picked item: `/work-items:work`.
+- Raw intake: `/work-items:triage`.
+
+## Action Router
+
+Parse `$ARGUMENTS` to extract the action (first token) and remaining arguments.
+
+| Action | Description | Detail |
+|--------|-------------|--------|
+| `stats` | Dashboard: open/claimed counts, overdue recurring, category breakdown | [actions/stats.md](actions/stats.md) |
+| `list` | List work items with label/state/assignee filtering | [actions/list.md](actions/list.md) |
+| `add` | Create a new work item with labels from the taxonomy | [actions/add.md](actions/add.md) |
+| `start` | Claim an item (assignee + lease via the seam) | [actions/start.md](actions/start.md) |
+| `done` | Close an item with a completion comment | [actions/done.md](actions/done.md) |
+| `due` | Show recurring items past their `next_due` date | [actions/due.md](actions/due.md) |
+| `recheck` | Update `last_checked`/`next_due` in recurring schedule after a periodic check | [actions/recheck.md](actions/recheck.md) |
+| `search` | Full-text search across items (open + closed) | [actions/search.md](actions/search.md) |
+| `audit` | Detect stale claims, orphaned recurring entries, label hygiene; close decomposed parents whose children are done | [actions/audit.md](actions/audit.md) |
+| `publish-plan` | Post an approved PLAN.md to an item as one marked comment, edited in place on re-publish | [actions/publish-plan.md](actions/publish-plan.md) |
+| `link` | The adapter's text linking a change to an item, from an id or a branch name | [actions/link.md](actions/link.md) |
+| `view` | One item's title, state, labels and body, and its comments with `--comments` | [actions/view.md](actions/view.md) |
+| `edit` | Change an item's title, body or labels, add a blocked-by edge, or comment | [actions/edit.md](actions/edit.md) |
+| `changes` | Change requests the tracker links as closing an item | [actions/changes.md](actions/changes.md) |
+| `labels` | The live label set, or which named labels are missing | [actions/labels.md](actions/labels.md) |
+| `wayfind-labels` | The wayfind label prefix and human-gated label the binding sets | [actions/wayfind-labels.md](actions/wayfind-labels.md) |
+| `dossier-branches` | Delete or report one item's remote dossier branch | [actions/dossier-branches.md](actions/dossier-branches.md) |
+| `help` | Show the action table above | *(inline)* |
+
+If `$ARGUMENTS` is empty, run `stats` (the default dashboard). If the action is unknown, show the
+action table.
+
+**Sibling-skill verbs.** `work`, `triage`, `decompose`, and `scan` are standalone skills, not
+`track` sub-actions. If `$ARGUMENTS` names one, point the user at the skill instead of erroring: `work` → `/work-items:work`, `triage` → `/work-items:triage`,
+`decompose` → `/work-items:decompose`, `scan` → `/work-items:scan-todos`.

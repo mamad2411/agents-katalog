@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-greenfield-inc-Pane-refactor-apply/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Applies a refactor plan written by refactor-simple, refactor-deep, or the refactor orchestrator's merged report - auto-fixable items first, then manual items one at a time with the user, verifying wit

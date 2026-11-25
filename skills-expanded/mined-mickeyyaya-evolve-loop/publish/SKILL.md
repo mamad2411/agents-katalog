@@ -1,0 +1,136 @@
+---
+name: publish
+description: Use when the user asks to release a new version, ship a release, or publish a tag. Wraps the go-native self-healing release pipeline (`evolve release`) — pre-flight checks, auto-changelog, atomic ship, marketplace propagation poll, auto-rollback on failure.
+argument-hint: "<target-version> [--dry-run] [--no-rollback] [--skip-tests] [--max-poll-wait-s 300]"
+---
+
+# /evo:publish
+
+> Canonical release entry point. Owns the full publish lifecycle: pre-flight → bump → changelog → ship → propagate → rollback-on-failure. NOT a synonym for "git push" — see [docs/guides/publishing-releases.md](../../docs/guides/publishing-releases.md) for vocabulary.
+
+## What this skill does
+
+When the user types `/evo:publish 18.5.0` (or similar), invoke the go-native release pipeline with the target version. The pipeline owns every step (implementation: `go/internal/releasepipeline/`, journal under `.evolve/release-journal/`):
+
+| Step | Operation | Failure → action |
+|---|---|---|
+| 1 | Pre-flight gate (`evolve release-preflight`) | exit non-zero; abort, no mutations |
+| 2 | Auto-changelog | abort |
+| 3 | Version bump (6 markers) | abort |
+| 4 | Rebuild tracked binary `go/evolve` | abort |
+| 5 | Consistency check (`evolve release-consistency`) | abort, files in working tree |
+| 6 | Atomic ship (`evolve ship --class release`) | abort, nothing pushed |
+| 7 | Marketplace propagation poll (up to 5 min default) | auto-rollback unless `--no-rollback` |
+| 8 | Release verify: the committed `go/evolve` is the disk binary and reports the target version | auto-rollback unless `--no-rollback` |
+
+The order is the order in `go/internal/releasepipeline/release_run.go`. The guide [docs/guides/publishing-releases.md](../../docs/guides/publishing-releases.md) gives the details of each step.
+
+> Steps 1–8 are the **`gh`-free** pipeline binary. It cannot see GitHub CI — it ends with a `NOTE: GitHub CI is NOT verified by this pipeline` advisory. CI gating is **this skill's** job (next section); never treat a green pipeline as a green CI.
+
+## Site and README review (before the pipeline)
+
+`evolve release` moves the site version: `product.version` in `landing/shared/content.json` is the one home of that version, and the release commit deploys the site. A version bump cannot find a false sentence, so this skill adds a review. Run it when `landing/shared/content.json` exists, for each major or minor release. A patch can skip it.
+
+1. Read `git log <last tag>..HEAD` and the `CHANGELOG.md` text of the range. Run `evolve agent run docs-review` on `README.md`, `landing/shared/content.json`, `landing/shared/llms.txt` and the `docs/explain/*.html` pages that the range affects. Name those pages in the brief. Its budget does not cover every page, so state which pages it did not read.
+2. Ask three questions in the brief. Which claim is false at this tree? Which shipped feature does a reader need, and the pages do not state? Which number is out of date?
+3. Fix the findings through the normal commit path, and land them before the pipeline.
+4. Build the site and run the check in `landing/e2e/README.md`. Require exit 0.
+
+No code gate enforces this step yet (`release-content-review-gate`). **Report the result in the release summary: the pages reviewed, the findings fixed and the check count. If you skip the step, say so.**
+
+## CI gating (this skill adds what the binary cannot)
+
+`evolve release` is self-contained and headless-safe, so it does **not** verify GitHub CI. This skill wraps the pipeline with two `gh`-based checks. If `gh` is unavailable, report "cannot verify CI — confirm manually" and stop; never silently skip.
+
+**Before** invoking the pipeline — base CI must be green (catches *"releasing from an already-red `main`"*, the v20.1.0 trigger):
+
+```bash
+gh run list --workflow required.yml --branch main --limit 1 --json headSha,status,conclusion,url
+```
+
+The query is scoped to `required.yml`, whose `CI required` job aggregates every suite: the newest run of any workflow can be a green `landing-pages` run that hides a red or running `required CI`. Require `headSha == $(git rev-parse origin/main)`, `status == "completed"`, `conclusion == "success"`. Anything else → **STOP** with the run URL:
+- *in-progress* → wait for it.
+- *failure* → fix `main` green first.
+- *stale SHA / local `main` ahead of `origin`* → you'd publish commits CI has never seen; **push `main` and let CI run first**, then release. (This is the same gate [`/evo:release`](../release/SKILL.md) runs; it is hoisted here so `/evo:publish`-direct callers are protected too.)
+
+**Also before** invoking the pipeline — every LLM CLI must install AND the release binary must answer every core subcommand the installed skills shell out to. This is a deterministic, `gh`-free local gate (no network, no live LLM): it installs the Claude payload into a throwaway home, renders the Codex/agy projections, checks the Gemini in-repo layout, then smoke-runs each core subcommand on the running binary.
+
+```bash
+evolve release-verify-clis
+```
+
+Require **exit 0** — every CLI row plus the `binary:core-subcommands` row reports `OK`. Anything else → **STOP**; the printed table names the failing target: a CLI whose install/projection broke, or a subcommand the binary no longer answers (the *"installed skills silently break"* regression). Fix forward before publishing. CI enforces the same matrix via the `TestReleaseVerifyCLIMatrix_RealPayload` e2e test (the Go suite, `go.yml`, which `required CI` and `release` call), so a red here predicts a red CI on the release commit.
+
+**After** the pipeline reports success — the *released commit's* CI must go green AND the prebuilt binaries must publish. The `release` (goreleaser) workflow runs on the pushed tag, **separately** from the gh-free pipeline, so a goreleaser slip ships a binary-less release while `evolve release` reports success (the v21.1.0 trigger: 0 assets published, only caught by manual check). Watch both workflows (`required.yml`, whose `CI required` job aggregates the Go, plugin, durable-ACS and landing suites, and `release.yml`), then confirm the binaries actually landed. `evolve ci watch --tag` waits for both workflows on the tag's commit, prints one line per workflow with its conclusion, prints the `ci classify` verdict of every red run, and files one fix-forward inbox item on red; exit 0 = both green, 1 = either red, 2 = a run could not be observed:
+
+```bash
+evolve ci watch --tag "v<x.y.z>" || echo "RED or unobserved: see the per-workflow lines above"
+# A green `release` run can still upload nothing on a config slip — confirm the
+# prebuilt binaries (evolve_<os>_<arch>.tar.gz) actually landed on the release:
+gh release view --json assets -q '.assets[].name' | grep -q '\.tar\.gz$' \
+  || echo "MISSING: no prebuilt binaries on the latest release — re-run: gh run rerun <release-run-id>"
+```
+
+- **After the site deploys:** run the check in `landing/e2e/README.md` against the live URL, and report the count.
+- **All green + binaries present → done.** Report the run URLs + the published asset count (`gh release view --json assets -q '.assets | length'`).
+- **`required.yml` red → the release is published but its CI is red.** Do **not** auto-rollback a propagated release — **fix forward**: land the CI fix on `main`, then cut the next patch (`/evo:publish <x.y.z+1>`). Report the failing job + `gh run view --log-failed` excerpt.
+- **`release` red or binaries MISSING → the release shipped without prebuilt binaries** (the one-line installer keeps working via build-from-source, just slower). Fix forward: fix `.goreleaser.yml`/`release.yml`, then `gh run rerun <release-run-id>` if the tag is intact, else cut the next patch.
+
+## Invocation
+
+```bash
+/evo:publish 18.5.0                       # full publish, default 5-min poll, auto-rollback on
+/evo:publish 18.5.0 --dry-run             # simulate every step, mutate nothing
+/evo:publish 18.5.0 --skip-tests          # hot-fix path: skip preflight gate-test execution
+/evo:publish 18.5.0 --no-rollback         # post-push failure → exit 3, no auto-revert
+/evo:publish 18.5.0 --max-poll-wait-s 600 # tolerate slower marketplace propagation
+```
+
+The slash command translates to:
+
+```bash
+"$CLAUDE_PROJECT_DIR/go/evolve" release <args>
+```
+
+Optional hardening: `--require-preflight` runs the full-dry-run harness before any step; `--strict-pass` rejects WARN preflight verdicts.
+
+## When to use this skill
+
+- **Always for any version bump** (patch, minor, major). The pipeline guarantees consistency, propagation, and rollback.
+- Gate readiness first with [`/evo:release`](../release/SKILL.md) (read-only checks: preflight, consistency, CI-green-on-main, no-WIP-commits) — it delegates here when green.
+
+## When NOT to use this skill
+
+- **Not for non-release commits.** If you're committing a feature without bumping the version, use [`/evo:commit`](../commit/SKILL.md) (gated attestation → `evolve ship --class manual`). The release pipeline assumes a version bump and will fail-fast in preflight if `<target>` equals current.
+- **Not as a substitute for testing.** `--skip-tests` is for hot-fix scenarios where CI already verified. Routine releases must run the full preflight test suite.
+
+## Checking what `/evo:publish` would do (dry-run)
+
+Operators new to the pipeline: always start with `--dry-run` to see the proposed changelog block, version bump diff, and lifecycle plan before mutating:
+
+```bash
+/evo:publish 18.5.0 --dry-run
+```
+
+The pipeline emits each step's proposed output without writing or committing.
+
+## Common failure modes
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `preflight: target X not greater than current Y` | Version already bumped, OR you typo'd the arg | Run `cat .claude-plugin/plugin.json` and confirm; pick a higher target |
+| `preflight: most recent audit-report.md does not declare 'Verdict: PASS'` | Last audit was WARN/FAIL or stale | Run a fresh audit cycle (`evolve loop`) or `evolve subagent run auditor` |
+| `marketplace-poll: TIMEOUT` after `git push` | Marketplace checkout didn't pull within deadline | Pipeline auto-rolls-back. Investigate: `git -C ~/.claude/plugins/marketplaces/evo log --oneline \| head` |
+| `SELF_SHA_TAMPERED` on the next ship | Rebuilt binary pinned but not committed in the release | Known structural residue — see runtime-reference.md binary-rebuild procedure; fix tracked in the release-rebuild-binary-not-committed work package |
+| Hand-curated CHANGELOG entry overwritten | (Won't happen) | Changelog step is idempotent — if `## [<version>]` exists it skips |
+
+## Vocabulary refresher
+
+If unsure what "publish" means in this project: open [docs/guides/publishing-releases.md](../../docs/guides/publishing-releases.md). The short version:
+
+- **push** ≠ **publish**. `git push` only moves a remote ref; `publish` runs the full lifecycle.
+- **ship** is the per-commit primitive (`evolve ship --class manual|cycle`); `publish`/`release` is the version lifecycle on top of it.
+
+## Implementation note
+
+This skill is a thin wrapper over the go-native pipeline (`evolve release`, `go/internal/releasepipeline/`) plus the `gh`-based CI gating the binary can't do (the pipeline is intentionally `gh`-free so it stays headless/cron-safe). All `evolve release` flag semantics match the underlying command verbatim; the pre/post CI checks above are the skill's own and live only here. (History: through v8.13.x this wrapped `legacy/scripts/release-pipeline.sh`; the bash pipeline was deleted in the go-only consolidation and this skill now fronts its go-native successor.)

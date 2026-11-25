@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/milodule3-debug/aura-code (path: design-systems/paper/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Paper-textured, print-inspired design with minimal colors, clean serif/sans typography, and tactile surface qualities.

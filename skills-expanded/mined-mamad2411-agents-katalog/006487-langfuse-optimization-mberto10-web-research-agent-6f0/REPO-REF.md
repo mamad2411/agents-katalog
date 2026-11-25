@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-maji-fast/006487-langfuse-optimization-mberto10-web-research-agent-6f02b1e6/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: langfuse-optimization-mberto10-web-research-agent-6f02b1e6

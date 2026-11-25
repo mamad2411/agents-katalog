@@ -1,0 +1,345 @@
+---
+name: cisco-dc-networking-setup
+description: "Use when the user asks about Cisco DC networking, ACI, APIC, Nexus Dashboard, Nexus 9K TA setup, Splunk
+  TA automation, or cisco_dc_networking_app_for_splunk. Automate Cisco DC Networking TA setup and
+  configuration on Splunk. Creates indexes, configures ACI/Nexus Dashboard/Nexus 9K accounts, enables data
+  inputs, stores credentials securely, and validates the deployment."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Cisco DC Networking TA Setup Automation
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Cisco DC networking, ACI, APIC, Nexus Dashboard, Nexus 9K TA setup, Splunk TA automation, or
+  cisco_dc_networking_app_for_splunk.
+- Preview and review the cisco dc networking setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+## TA Completion Gate
+
+For every TA/add-on or dashboard companion run, satisfy the shared
+[TA completion gate](../shared/ta_completion_gate.md): configure and enable the
+data ingest path owned by this skill or its required companion, validate events
+or metrics in the target indexes/source types, and verify any
+pre-built/package-shipped dashboards are visible, macro-aligned, and returning
+data. If the package ships no dashboards, record that evidence explicitly and
+hand off dashboard use to the consuming app, ES/ITSI/ARI content, or readiness
+doctor.
+
+Automates the **Cisco DC Networking App for Splunk** (`cisco_dc_networking_app_for_splunk`).
+
+## Package Model
+
+**Pull from Splunkbase first (latest version), fall back to `splunk-ta/`.**
+Use `splunk-app-install` with `--source splunkbase --app-id 7777` to get the
+latest release. If Splunkbase is unavailable, fall back to the local package
+in `splunk-ta/`. This applies to both Splunk Cloud (ACS) and Splunk Enterprise.
+
+After installation, use this skill to configure accounts, inputs, macros, and
+validation over search-tier REST. Any `splunk-ta/_unpacked/` tree is
+review-only.
+
+## Agent Behavior — Credentials
+
+**The agent must NEVER ask for passwords, API keys, or secrets in chat.**
+
+Splunk credentials are read automatically from the project-root `credentials` file
+(falls back to `~/.splunk/credentials`). If neither exists, guide the user to create it:
+
+```bash
+bash skills/shared/scripts/setup_credentials.sh
+```
+
+For device credentials (APIC password, Nexus Dashboard password, Nexus 9K password),
+instruct the user to write the secret to a temporary file:
+
+```bash
+# User creates the file themselves (agent never sees the secret)
+bash skills/shared/scripts/write_secret_file.sh /tmp/dc_aci_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/dc_nd_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/dc_nexus9k_password
+```
+
+Then the agent passes the matching `--password-file` path to the configure script.
+After the account is created, delete the temp file.
+
+The agent may freely ask for non-secret values: account names, hostnames, account types, etc.
+
+For prerequisite collection, use `skills/cisco-dc-networking-setup/template.example`
+as the intake worksheet. Copy it to `template.local`, fill in non-secret values
+there, and keep the completed file local only.
+
+## Environment
+
+Setup and validation use the Splunk search-tier REST API and can run from any
+host with network access to the Splunk management port (`8089`). In Splunk
+Cloud, app installation, index creation, and restarts are handled through ACS
+instead of the search-tier REST endpoints.
+
+| Item | Value |
+|------|-------|
+| Search-tier API | `SPLUNK_SEARCH_API_URI` env var (legacy alias: `SPLUNK_URI`) |
+| Cloud stack | `SPLUNK_CLOUD_STACK` for Cloud installs (`SPLUNK_PLATFORM` is only an override for hybrid runs) |
+| TA app name | `cisco_dc_networking_app_for_splunk` |
+| Credentials | Project-root `credentials` file (falls back to `~/.splunk/credentials`) |
+| Skill scripts | `skills/cisco-dc-networking-setup/scripts/` (relative to repo root) |
+
+### Remote Splunk Connection
+
+To run against a remote Splunk instance:
+
+```bash
+export SPLUNK_SEARCH_API_URI="https://splunk-host:8089"
+```
+
+## Splunk Authentication
+
+Scripts read Splunk credentials from the project-root `credentials` file (falls back to `~/.splunk/credentials`) automatically.
+No environment variables or command-line password arguments are needed:
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/validate.sh
+```
+
+If credentials are not yet configured, run the setup script first:
+
+```bash
+bash skills/shared/scripts/setup_credentials.sh
+```
+
+## Setup Workflow
+
+### Step 1: Create Indexes and Macros
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/setup.sh
+```
+
+Creates three indexes and three search macros. No `sudo` required when running
+as the `splunk` user.
+In Splunk Cloud, the setup script creates these indexes through ACS.
+
+| Index | Macro | Purpose | Max Size |
+|-------|-------|---------|----------|
+| `cisco_aci` | `cisco_dc_aci_index` | ACI fabric data | 512 GB |
+| `cisco_nd` | `cisco_dc_nd_index` | Nexus Dashboard data | 512 GB |
+| `cisco_nexus_9k` | `cisco_dc_n9k_index` | Nexus 9K switch data | 512 GB |
+
+Partial runs: `--indexes-only` or `--macros-only`.
+
+### Step 2: Configure Account
+
+Before running, the agent must obtain from the user (non-secret values only):
+- Account name (e.g., "CVF_NYC")
+- Device hostname(s) or IP(s)
+- Username for the device
+- Device password — user writes to temp file; agent passes `--password-file`
+
+The configure script stores credentials securely via Splunk's encrypted credential manager:
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/configure_account.sh \
+  --type aci \
+  --name "MY_FABRIC" \
+  --hostname "10.0.0.1,10.0.0.2,10.0.0.3" \
+  --port 443 \
+  --auth-type password_authentication \
+  --username "device_user" \
+  --password-file /tmp/device_pass
+```
+
+Copy/paste secret-file prep commands:
+
+```bash
+bash skills/shared/scripts/write_secret_file.sh /tmp/dc_aci_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/dc_nd_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/dc_nexus9k_password
+```
+
+Account types: `aci` (uses `--hostname`), `nd` (uses `--hostname`), `nexus9k` (uses `--device-ip`).
+
+### Step 3: Enable Inputs
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/setup.sh --enable-inputs --account "MY_FABRIC" --index "cisco_aci" --input-type aci
+```
+
+| Input Type | Inputs Enabled | Index |
+|------------|---------------|-------|
+| `aci` | 9 inputs (auth, faults, audit, endpoints, fex, health, tenants, microseg, stats) | `cisco_aci` |
+| `nd` | 11 inputs (advisories, anomalies, congestion, endpoints, fabrics, switches, flows, protocols, MSO) | `cisco_nd` |
+| `nexus9k` | 10 inputs (hostname, version, module, inventory, temp, interfaces, neighbors, transceivers, power, resources) | `cisco_nexus_9k` |
+
+### Step 3b: Custom ACI classInfo Input (optional)
+
+Collect APIC classes that the shipped inputs do not cover with one named
+`classInfo` input. Render the stanza first, then apply:
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/setup.sh \
+  --classinfo-input classInfo_links --classinfo-classes "fabricLink lldpAdjEp" \
+  --account "MY_FABRIC" --index "cisco_aci" --dry-run
+```
+
+Remove `--dry-run` to create or update and enable the input over REST. The
+`application-atlas` preset creates `classInfo_adm` with
+`fabricLink lldpAdjEp vzBrCP vzSubj vzRsSubjFiltAtt vzEntry l3extInstP l3extSubnet`
+(fabric links, host LLDP neighbors and ACI contract objects) every 300 seconds
+(`adm` is an alias). The optional `adm-policy` preset adds `classInfo_adm_policy`
+with VRF, uSeg EPG, ESG, vzAny, contract-term, taboo and service-graph classes
+so Application Atlas can evaluate ACI policy completely; the Splunk admin then
+sets the app macro `adm_aci_policy_complete` to `1`:
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/setup.sh \
+  --classinfo-preset application-atlas --account "MY_FABRIC" --index "cisco_dc"
+bash skills/cisco-dc-networking-setup/scripts/setup.sh \
+  --classinfo-preset adm-policy --account "MY_FABRIC" --index "cisco_dc"
+```
+
+Names, classes, accounts, interval and index follow the TA's own validators;
+shipped default input names are refused so their class lists stay intact.
+Check arrival per class with
+`validate.sh --classinfo-preset application-atlas --index cisco_dc`.
+See [reference.md](reference.md#custom-classinfo-inputs).
+
+### Step 4: Restart If Required
+
+On Splunk Enterprise, restart Splunk after new index creation.
+On Splunk Cloud, check `acs status current-stack` and only run
+`acs restart current-stack` when ACS reports `restartRequired=true`.
+
+### Step 5: Validate
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/validate.sh --completion
+```
+
+Checks: app installation, indexes, macros, accounts, inputs, data flow, settings.
+
+## Dashboards
+
+The app ships dashboards in the package. They appear in Splunk Web
+automatically after installation.
+
+To access them: **Apps → Cisco DC Networking App for Splunk**
+
+**Prerequisites for dashboards to show data:**
+
+1. Indexes (`cisco_aci`, `cisco_nd`, `cisco_nexus_9k`) must exist and inputs
+   must be enabled.
+2. The `cisco_dc_*_index` macro family (`cisco_dc_aci_index`,
+   `cisco_dc_nd_index`, `cisco_dc_n9k_index`) must be updated by the setup
+   script (Step 1) to point to the correct indexes.
+3. At least one account (APIC, Nexus Dashboard, or Nexus 9K) must be
+   configured and actively polling.
+
+On **Splunk Cloud**, dashboards are available immediately after ACS installs
+the app. Macro updates run over search-tier REST.
+
+## Sourcetypes (from live ACI data)
+
+| Sourcetype | Source Example | Content |
+|---|---|---|
+| `cisco:dc:aci:class` | `cisco_nexus_aci://classInfo_*`, `cisco_nexus_aci://microsegment` | Faults, endpoints, ACLs, audit, topology |
+| `cisco:dc:aci:health` | `cisco_nexus_aci://health_*`, `cisco_nexus_aci://fex` | Fabric health scores, FEX status |
+| `cisco:dc:aci:authentication` | `cisco_nexus_aci://authentication` | APIC session/login records |
+
+For Nexus Dashboard, use the current SCAN-advertised `cisco:dc:nd:*` family
+documented in [reference.md](reference.md). The local `1.2.0` package still
+contains version-bound `fabrics` and `switches` inputs, but those two
+sourcetypes are no longer advertised by pinned SCAN catalog
+`2026_08_01_2130` and therefore require direct event/dashboard evidence.
+
+## MCP Server Integration
+
+```bash
+bash skills/cisco-dc-networking-setup/scripts/load_mcp_tools.sh
+```
+
+Tools: `cisco_dc_check_health`, `cisco_dc_list_inputs`, `cisco_dc_aci_faults`,
+`cisco_dc_aci_endpoints`, `cisco_dc_aci_health_summary`, `cisco_dc_aci_audit_log`,
+`cisco_dc_nd_anomalies`, `cisco_dc_n9k_interface_stats`.
+
+## Key Learnings / Known Issues
+
+1. **Password storage**: The configure script stores credentials in Splunk's
+   encrypted password store automatically. Use `--password-file` for device passwords.
+2. **Restart behavior differs by platform**: Enterprise requires a Splunk
+   restart after new index creation. Splunk Cloud uses ACS restart checks.
+3. **No sudo needed**: Scripts run fine as the `splunk` OS user.
+4. **Health data shape**: ACI health events don't always populate `healthAvg`
+   at the top level — the dn-based structure varies by object type.
+5. **Fault codes**: F0103 (interface down), F1011/F1014 (missing policy relations)
+   are the most common in typical ACI fabrics.
+
+## Additional Resources
+
+- [reference.md](reference.md) — Complete input catalog, account fields, sizing
+- [mcp_tools.json](mcp_tools.json) — MCP tool definitions
+
+## Validation Modes
+
+Run `scripts/validate.sh` for diagnostics. Use `--completion` (alias `--strict`)
+to require at least one DC account, an enabled input, recent data, dashboard
+macros, and visible shipped views. Add `--classinfo-input NAME` (or
+`--classinfo-preset application-atlas`) with `--index INDEX` to check a custom
+classInfo input is enabled and that `cisco:dc:aci:class` events arrived from it
+in the last 24 hours for each expected class.

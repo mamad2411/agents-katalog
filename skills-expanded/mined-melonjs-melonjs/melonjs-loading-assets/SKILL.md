@@ -1,0 +1,642 @@
+---
+name: melonjs-loading-assets
+description: "Use this skill for loading and managing game assets in melonJS — the resource descriptor format, the full asset type list, organising a multi-level game's assets as bundles (an assets file exporting common plus one bundle per level, passed to loader.preload), loading and freeing a level's bundle, preload versus load, retrieving loaded assets, base URLs and cross-origin settings, and the loading screen. Triggers on: loader, loader.preload, loader.load, resources, resources.js, assets file, getImage, getJSON, getTMX, getGLTF, getVideo, getFont, setBaseURL, setOptions, crossOrigin, withCredentials, credentials, cookies, authenticated assets, CORS, asset, preload, LOADER_COMPLETE, loading screen, unload, unloadAll, bundle, asset bundle, setBundle, getBundle, isLoaded, several levels, per-level assets, free memory between levels, setParser, custom asset type, generated texture, procedural texture."
+license: MIT
+---
+
+# Loading assets
+
+## The resource descriptor
+
+Every asset is `{ name, type, src }` plus type-specific extras. The name is
+what the asset is read back by; the type picks the parser. Type and name
+together identify an asset, so an atlas's image and its JSON share a name:
+
+```js
+{ name: "texture", type: "image", src: "data/img/texture.png" }
+{ name: "texture", type: "json",  src: "data/img/texture.json" }
+```
+
+## The type list
+
+The type strings are melonJS-specific — this is not a generic loader:
+
+| type | for |
+|---|---|
+| `"image"` | textures, sprite sheets, normal maps; `src` may be an array tried in order, such as compressed formats (`.ktx`, `.ktx2`, `.dds`, `.pvr`, `.pkm`) by priority with a PNG last |
+| `"json"` | data, texture-atlas descriptors, collision shapes from a shape editor |
+| `"tmx"` / `"tsx"` | Tiled maps and external tilesets |
+| `"audio"` | sound — **`src` is a directory**, see below |
+| `"video"` | video textures |
+| `"binary"` | raw data, bitmap font `.fnt` descriptors |
+| `"fontface"` | web fonts (`.ttf`, `.woff`) |
+| `"aseprite"` | Aseprite JSON + image |
+| `"shader"` | GLSL/WGSL shader sources — `src` **or** inline via `data` |
+| `"obj"` / `"mtl"` | Wavefront models and materials |
+| `"gltf"` / `"glb"` | glTF scenes |
+| `"js"` | scripts |
+| any type you register | your own formats, and things you generate rather than download — see [Custom asset types](#custom-asset-types) |
+
+## Organise the assets: `common` plus one bundle per level
+
+For any game with **more than one level or screen**, the assets file exports a
+**record of bundles**: what every level uses under `common`, and each level's
+own assets in a bundle of its own. The boot call takes the record as it is:
+
+```js
+// resources.js
+export const resources = {
+    common: [                          // everything every level uses
+        { name: "player",  type: "image", src: "data/img/player.png" },
+        { name: "tileset", type: "image", src: "data/img/tileset.png" },
+        { name: "tileset", type: "tsx",   src: "data/map/tileset.tsx" },
+        { name: "music",   type: "audio", src: "data/bgm/" },
+        { name: "jump",    type: "audio", src: "data/sfx/" },
+    ],
+    level1: [
+        { name: "level1", type: "tmx",   src: "data/map/level1.tmx" },
+        { name: "hills",  type: "image", src: "data/img/hills.png" },
+    ],
+    level2: [
+        { name: "level2", type: "tmx",   src: "data/map/level2.tmx" },
+        { name: "hills",  type: "image", src: "data/img/hills.png" },   // shared: listed again
+        { name: "lava",   type: "image", src: "data/img/lava.png" },
+    ],
+};
+```
+
+```js
+// game.js
+import { audio, loader, state } from "melonjs";
+import { resources } from "./resources.js";
+
+audio.init("mp3,ogg");                 // before any audio is loaded
+await loader.preload(resources);       // every bundle, behind the loading screen
+state.change(state.PLAY);
+```
+
+`preload(record)` declares each key as a bundle and loads them all, with one
+progress bar; an asset several bundles list is fetched once. Nothing else
+changes: a bundle is a lifetime, not a namespace, so assets keep their own
+names, and `getImage("hills")`, `new Sprite(x, y, { image: "player" })` and
+`level.load("level1")` work as with a flat list. What bundles add is that a
+level can later be freed and loaded again **by its id** (next section). Starting
+with bundles costs nothing even if the game never unloads anything.
+
+- **Name a level's bundle after its map.** Bundle ids and asset names are
+  separate, so `"level1"` can be both, and `level.load(id)` and
+  `loader.load(id)` then take the same string.
+- **List a shared asset in every bundle that uses it.** It is still fetched
+  once, and it is what keeps the asset alive when one of those bundles is
+  unloaded.
+- **A map's dependencies go with it**: its `.tsx` and tileset images in the
+  same bundle, or in `common`.
+- **Effects that outlive a level go in `common`** (a HUD's or a camera's
+  shader): unloading the level's bundle would destroy them under whatever
+  still draws with them.
+
+**A flat array is the simplest form**, and is fine for a single-screen game, a
+prototype or a jam game. It works as it always has, and everything in it stays
+in memory for the whole game:
+
+```js
+await loader.preload([
+    { name: "tiles", type: "image", src: "data/img/tiles.png" },
+    { name: "map1",  type: "tmx",   src: "data/map/map1.tmx" },
+    { name: "sfx",   type: "audio", src: "data/sfx/" },
+]);
+```
+
+Moving to bundles later is a change to the assets file alone: wrap the list in
+`{ common: [ … ] }` and split the levels out.
+
+Either way, `preload()` can be awaited (since 19.8) or given a callback, and a
+third argument suppresses the built-in loading screen:
+
+```js
+loader.preload(resources, onLoaded, /* switchToLoadState */ false);
+```
+
+## Level by level: load before, unload after
+
+With every bundle preloaded at boot, nothing more is needed to play. To keep
+memory bounded in a game whose levels are many or large:
+
+```js
+import { level, loader } from "melonjs";
+
+// leaving level1 for good: load the next, switch, then free the previous
+await loader.load("level2");                  // fetches nothing if still in memory
+await level.load("level2", { async: true });
+loader.unload("level1");                      // "hills" stays: level2 lists it too
+
+// going back to a level that was unloaded
+await loader.load("level1");                  // fetches what unloading freed
+await level.load("level1", { async: true });
+```
+
+- **`await loader.load(id)` before entering a level that may not be in
+  memory.** When the bundle is still loaded it resolves at once with no
+  request, so it is cheap to call every time. It does not show the loading
+  screen (the game keeps running); use `loader.preload([id])` for that, or
+  `loader.isLoaded(id)` to decide.
+- **`loader.unload(id)` for a level the player will not come back to soon,
+  after the next level is in.** It frees what no other loaded bundle lists.
+  Unloading the level being played leaves its world as it is, but with no
+  current level, so `level.reload()` has nothing to reload.
+
+**When not to unload:**
+
+- **Levels that loop back** — a hub, a retry after game over, a last level
+  whose exit leads to the first. Unloading one means fetching it again, and a
+  hitch, every time the player returns.
+- **A small game.** If every level fits comfortably in memory, keep
+  everything loaded. The platformer example does exactly this: `resources.ts`
+  exports `{ common, map1, map2 }`, `preload(resources)` loads it all at boot,
+  and since map2's exit leads back to map1, nothing is ever unloaded.
+
+Unload when the levels are large (big tilesets and backgrounds, per-level
+music, 3D scenes), numerous, or linear (a level behind the player for good),
+and on memory-constrained targets such as phones and mini-game platforms.
+
+## What belongs in the manifest — and what cannot
+
+Preloading is not only for things with a URL. Three tiers, and the middle one
+is the one people miss.
+
+**After preloading, switch to a stage of your own.** `preload()` puts you in
+`state.LOADING`, and that stage is transitional: build your scene in the
+callback and stay there, and nothing ever destroys it, so the built-in loading
+screen's logo and progress bar remain on top of your game. See
+`melonjs-scenes-and-state`.
+
+**1. Assets with a source.** Everything in the type table above. Note `"shader"`
+takes **inline source** as well as a `src`, via the `data` field:
+
+```js
+import { myRamp } from "./myRamp";   // a GLSL fragment body, in your own module
+
+loader.preload([
+    { name: "ramp", type: "shader", data: myRamp },
+]);
+const fx = loader.getShader("ramp");   // shared, already compiled
+```
+
+This matters more than it looks. A `ShaderEffect` compiles its program in its
+**constructor**, and `compileProgram` calls `getProgramParameter(LINK_STATUS)`
+immediately after `linkProgram` — a blocking call that forces the driver to
+finish. So building one during a scene costs that link on the frame it appears,
+and building three identical ones costs it three times. Preloaded as an asset it
+is compiled at load time, behind the loading screen, and the loader hands out a
+**shared** instance (`effect.shared === true`), which is what stops one
+renderable's teardown freeing it out from under the others. `clone()` does NOT
+help here — it constructs a new effect, and therefore links a new program.
+
+**2. Derived assets — build once, before the first stage.** Canvases you bake,
+`NoiseTexture2d`, `TextureAtlas`: none of the built-in types describes these,
+and they must not be rebuilt per scene either. The renderer's texture cache is
+keyed by the **image object**, so a freshly baked canvas is a brand new GPU
+texture with a new mip chain — rebuild one per stage and a title → play →
+game-over cycle uploads four copies of the same pixels. Build each once and
+share it from a module the scenes read from, the way the platformer example
+builds its `TextureAtlas`.
+
+*Where* you build it depends on what it costs. A gradient or a palette strip is
+well under a millisecond: build it after `preload` resolves. A bake that takes
+real time — procedural noise is the usual one: Earth Defender's sky, two fractal
+simplex fields over a 512² tile, takes about 200ms on a desktop — belongs
+**inside** the preload as an asset type of your
+own ([Custom asset types](#custom-asset-types)). It then runs behind the loading
+screen and counts on the progress bar. Built on stage entry instead, it lands on
+the frame the scene is assembled, and with a transition running that frame is a
+black screen.
+
+**3. The engine's own shader programs — warmed for you, since 20.6.** The mesh
+batcher compiles a program per *feature combination* (instance colours, instance
+data, fog — fog joins the key), lazily, on the first draw that needs it.
+`prewarm` builds them during `preload()` instead, behind the loading
+screen:
+
+```js
+const app = new Application(1280, 720, {
+    // on by default since 20.6 — named here only to show where it lives
+    prewarm: true,
+});
+```
+
+**You do not call this yourself.** `preload()` calls `renderer.prewarm()` once
+the assets are in and **before** `LOADER_COMPLETE` fires, so it happens while
+the progress bar is still up. Every `preload()` warms, not just the first, and
+so does `load(id)`, so loading a level's bundle warms whatever it brought.
+
+The one precondition for this part: **a game that never calls
+`loader.preload()` does not get it**. If you load assets another way, call
+`await app.renderer.prewarm()` yourself. On
+WebGL that links the mesh batchers' variants, for the unlit tier and the lit
+one that inherits from it; on WebGPU it compiles the
+WGSL module of every shader the loader holds, and the mip-chain blitter when
+textures are filtered.
+
+**4. Everything that depends on the renderable — warmed as you build, since
+20.10.** The rest cannot be done at preload, because it depends on what draws:
+on WebGPU a *pipeline* is keyed by blend mode, culling, transparency and the
+format of the target as well as by shader, and that compile is the expensive
+part (tens of milliseconds, up to 140ms measured, per effect). So, behind the
+same `prewarm` setting, the engine warms a renderable when it gains an effect
+(`addPostEffect`, or assigning `shader`) and when it is added to the world:
+its effect pipelines, its own draw, the render targets its chain composites
+through, the advanced-blend shader if it uses one. Inline effects are covered
+too; on WebGL that means linking a mesh-hosted effect's spliced program.
+
+That work starts after your code has run and finishes off the frame, so it
+needs **at least a frame between setting a renderable up and drawing it**. The
+pattern that gets it for free is the one you want anyway: build pools (and
+attach their effects) when the stage starts, then show and hide them during
+play. Something created and drawn in the same frame still compiles on that
+frame.
+
+Cost to a game that uses none of it is about 60ms of preload on a desktop GPU.
+Set it to `false` only for a target where linking is slow enough that the
+preload itself would suffer.
+
+**What it does not do.** It makes the shaders *ready* earlier. It does not
+remove the hitch on a scene's first frame, because most of that frame is
+first-**submit** work — texture residency, buffer uploads, the driver
+specializing against real bindings — which compiling a program does not touch.
+For that, the lever is still to **draw** the scene once while the loading screen
+is up and then throw it away; the warmed GPU state stays behind.
+
+```js
+await loader.preload(resources);
+buildScene(app);                       // same geometry the level uses
+await twoFrames();                     // event.GAME_AFTER_DRAW
+removeOnlyWhatYouAdded(app);           // keep the programs, drop the scene
+state.change(state.PLAY);
+```
+
+**It borrows the LOADING stage's world, and that has three teeth**, all learned
+the hard way:
+
+- **Never tear down with `app.world.reset()`.** It clears *every* child of that
+  world, the loading screen's own included, and the screen goes blank for the
+  rest of the load. Snapshot `app.world.children` first and remove only what
+  you added.
+- **Restore anything the warm-up changes that the loading screen shows** — the
+  renderer's `backgroundColor` above all, or the warm-up flashes its own empty
+  first frame.
+- **Under a `Camera3d` it will hide the built-in loading screen, and there is no
+  clean way around it** — see below.
+
+### `DefaultLoadingScreen` lives in the WORLD, not on the screen
+
+The built-in loading screen is written for a `Camera2d`. Its progress bar and
+logo are added together, once the logo is decoded (a frame or so after the
+screen comes up), with `app.world.addChild(bar, 1)` / `addChild(logo, 2)`, and are
+**`floating === false`** — ordinary world-space renderables. They read as an
+overlay only because that stage's world is otherwise empty.
+
+So with `cameraClass: Camera3d`, anything you add to that world is in the scene
+*with* them, and a 3D scene simply swallows them: the depth buffer puts terrain
+in front of a bar sitting at z = 1. What does NOT rescue it, all tried:
+
+- **Raising their `z`** — for a mesh on the `Camera3d` path `pos.z` IS world
+  depth, so the scene's own z values are geometry, not layering, and the bar
+  still loses to the depth test.
+- **`moveToTop()`** — it early-returns for a child already at index 0, which the
+  loading screen's children usually are, having been added before anything else.
+  It silently does nothing.
+- **Flipping them to `floating = true`** for the duration — the scene still
+  covers them.
+
+If you want a warm-up (or any 3D behind a loading screen), write your own
+loading stage and draw its progress UI as **floating** renderables over the
+scene. That is also the nicer result: the player watches the level assemble
+instead of a logo. Budget it as real work, not a one-liner — and weigh it
+against what the warm-up actually saves.
+
+One more limit: a warm-up only covers the combinations it actually draws.
+Renderables the real level has and the warm-up does not will still link on
+entry.
+
+## Two conventions that produce 404s
+
+**Audio `src` is a directory.** The loader appends the asset name plus each
+format from `audio.init()`, and picks the first that decodes:
+
+```js
+audio.init("mp3,ogg");                                  // before preloading audio
+{ name: "cling", type: "audio", src: "data/sfx/" }      // → data/sfx/cling.mp3
+```
+
+A full filename here gives you a 404. And `audio.init()` must run **before** any
+audio asset is preloaded.
+
+**A Tiled map needs its dependencies listed too** — the `.tmx`, any external
+`.tsx`, and the tileset images. Listing only the map produces a blank level.
+
+## Retrieving loaded assets
+
+```js
+loader.getImage("tiles");
+loader.getJSON("atlas");
+loader.getTMX("map1");
+loader.getGLTF("diorama");
+loader.getVideo("intro");
+loader.getFont("font");
+loader.getBinary("font-fnt");
+```
+
+Most engine classes take the asset **name** directly, so you often do not need
+these — `new Sprite(x, y, { image: "tiles" })` resolves it for you.
+
+## Custom asset types
+
+`loader.setParser(type, parserFn)` teaches the loader a type of its own. An entry
+of that type then sits in the preload list like any other: it is one step of the
+progress bar, and `preload()` waits for it before `LOADER_COMPLETE`. Use it for a
+file format melonJS does not know, and for anything you **generate** that takes
+long enough to matter.
+
+```js
+import { loader, Sprite } from "melonjs";
+
+const skies = new Map();
+
+// once, before preloading: registering a type twice logs a warning
+loader.setParser("sky", (asset, onload, onerror) => {
+    bakeSky(asset.name)                 // your generator, returning a Promise
+        .then((canvas) => {
+            skies.set(asset.name, canvas);
+            onload();                   // takes no value, see below
+        }, onerror);
+    return 1;                           // one asset, settling later
+});
+
+await loader.preload([
+    { name: "nebula", type: "sky" },    // no src: nothing to download
+    // ...the rest of the manifest
+]);
+
+// in the stage, later: already baked
+const backdrop = new Sprite(0, 0, { image: skies.get("nebula") });
+```
+
+The contract:
+
+- **Call `onload()` or `onerror(error)`, exactly once,** now or later. Return `1`
+  when you will, `0` when there is nothing to load (the loader then moves on
+  without waiting).
+- **The loader keeps nothing for a type it does not know.** `onload` takes no
+  value, and `loader.getImage` and friends will not find your result. Keep it
+  yourself, keyed by `asset.name`, and read it from there.
+- **`name` and `type` are a complete entry.** `src` is only for a type that
+  fetches something. `data` is typed for the built-in uses (a string, or a
+  `{glsl, wgsl}` pair), so for a generator's settings, keep a table in your own
+  module keyed by name and let the entry carry only the name. That also keeps
+  the preload and the stages from disagreeing on a seed.
+- **Base URLs:** a `src` is prefixed only by `setBaseURL(yourType, …)`. The `"*"`
+  wildcard does not cover custom types.
+- **Do not hold the main thread for the whole bake.** A parser runs alongside
+  the downloads, and a 200ms synchronous loop freezes the loading screen and
+  stalls every other asset's progress for that long. Bake in slices of a few
+  milliseconds and yield between them, with `setTimeout`, not
+  `requestAnimationFrame`, which stops in a background tab and would hold the
+  whole preload with it. Skip the yield while the tab is hidden: a background
+  tab runs timers about once a second, which turns a bake of 25 slices into 25
+  seconds, and there is no loading screen on show to keep smooth:
+
+```js
+const bakeSky = async (name) => {
+    const { size, seed } = SKIES[name];         // your recipe table
+    const tile = startTile(size, seed);         // set up the canvas and the noise
+    for (let y = 0; y < size; ) {
+        const start = performance.now();
+        while (y < size && performance.now() - start < 8) {
+            tile.fillRow(y++);
+        }
+        if (!document.hidden) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+    }
+    return tile.finish();
+};
+```
+
+The Earth Defender example does exactly this for its two nebula skies
+(`fx/nebula.ts`): a `"nebula"` type, two name-only entries in its manifest, and
+stages that ask for a sky by name and find it baked.
+
+## Base URLs
+
+Set a prefix per asset type rather than repeating it:
+
+```js
+loader.setBaseURL("image", "data/img/");
+loader.setBaseURL("audio", "data/sfx/");
+loader.setBaseURL("*", "https://cdn.example.com/");   // every 2D type at once
+```
+
+The `"*"` wildcard deliberately **skips `obj`, `mtl`, `gltf` and `glb`**: those
+resolve their own internal references (a `map_Kd` texture, a glTF `.bin`)
+relative to their file, so a global prefix would double-prefix them. Set those
+types individually.
+
+## Progress and completion
+
+Use the events. The old callback properties (`loader.onload`, `onProgress`,
+`onError`) were deprecated in 18.2 and **removed in 20.3** — being `let`
+bindings on an ES module namespace they could never be assigned from outside in
+the first place, so `loader.onProgress = fn` always threw a `TypeError`:
+
+```js
+import { event } from "melonjs";
+
+event.on(event.LOADER_PROGRESS, (progress) => { /* 0..1 */ });
+event.on(event.LOADER_COMPLETE, () => { /* … */ });
+event.on(event.LOADER_ERROR, (res) => { /* … */ });
+```
+
+**Each `preload()` has only its own callback.** One given none calls nothing
+on completion, so a later `await loader.preload(levelAssets)` does not re-run
+the boot callback. Before 20.13 the loader kept the last callback it was given
+and called it again for a preload that had none — usually a `state.change`
+straight back to the first screen. `loader.reload(src)` after a failure
+completes the preload that asset failed in, with that preload's callback, once
+all of its assets are in.
+
+**Progress is per preload:** `LOADER_PROGRESS` goes from that call's first
+asset to `1` with its last, every time. A preload started while another is
+still loading joins it, and the value covers both until everything in flight
+has settled; the next preload starts from zero again. A failed asset keeps
+its preload short of `1`, and only that preload.
+
+## Bundle and unloading reference
+
+Bundles can also be declared one by one, which is what `preload(record)` does
+for each key:
+
+```js
+loader.setBundle("level3", [
+    { name: "level3", type: "tmx",   src: "data/map/level3.tmx" },
+    { name: "hills",  type: "image", src: "data/img/hills.png" },
+]);
+await loader.preload(["common", "level3"]);   // ids and descriptors mix freely
+```
+
+- **Strings are bundles, objects are assets.** `loader.unload("map1")`
+  releases the bundle `"map1"`; `loader.unload({ name: "map1", type: "tmx" })`
+  frees that one asset at once, whoever holds it (the bundles listing it then
+  report `isLoaded(id) === false`, and loading one again fetches it again).
+- **`load(id)`** goes through the same path as `preload()`: `LOADER_PROGRESS`
+  for the bundle's own assets, the shader warm-up, then `LOADER_COMPLETE`. It
+  does not switch to the loading screen, and always returns a promise
+  (`onload` / `onerror` callbacks are optional extras).
+- **`load(id, assets)` declares and loads in one call** — `setBundle(id, assets)`
+  then `load(id)`. Called again with the same assets (type, name, src) it just
+  loads; with different ones it redefines the bundle, which throws while that
+  bundle is loaded. Handy where a level's assets are declared next to the code
+  that enters it.
+- **`preload(record)` again** fetches nothing already in memory. A bundle
+  already declared with the same assets is left as it is. A single descriptor
+  passed by mistake throws: wrap it in an array.
+- **Progress:** each asset of the bundle is one step; one already in memory
+  counts as a step done at once. An asset listed twice is one asset, and an
+  empty bundle is allowed (it is always loaded).
+- **Nothing is fetched twice.** An asset already in memory is not requested
+  again, however it got there, and two bundles loading the same asset at once
+  share one request.
+- **Ownership.** Each loaded bundle listing an asset holds it; `unload(id)`
+  frees the assets no other loaded bundle lists. An asset loaded the old way —
+  a flat `preload` list, or `load(asset)` — is **pinned**: no bundle unload
+  frees it, only `unload(asset)` or `unloadAll()`.
+- **`isLoaded(id)`** is true when every asset of the bundle is in memory,
+  however it got there. `getBundle(id)` returns a copy of the list, or
+  `undefined` for an id never declared.
+- **Freeing a map unregisters its level.** After `unload(id)`, `level.load` of
+  a map (or glTF scene) that bundle freed throws "level … not found" until the
+  bundle is loaded again, which registers it again.
+- **Freeing releases the GPU side too:** an image's texture (since 20.14), a
+  shader's program, a font's place in `document.fonts`. `getShader()` hands out
+  the loader's shared instance and does not track who took it, hence
+  "effects that outlive a level go in `common`".
+- **A failing asset rejects `load(id)`**, like `preload`; the assets that did
+  load stay, held by the bundle, and `loader.reload(src)` completes it.
+- **Errors are synchronous.** An unknown id throws in `load`, `unload`,
+  `preload` and `isLoaded`. Redefining a bundle with `setBundle` throws while
+  it is loading or loaded: unload it first. A bundle lists descriptors only,
+  not other bundle ids.
+- **`unloadAll()`** frees every asset, audio included, whoever holds it. The
+  bundles stay declared, all back to not loaded, ready to be loaded again.
+  Levels stay registered (unlike a bundle unload), so load a level's bundle
+  again before `level.load` of it.
+- **`load(asset)`, with a descriptor**, loads one asset while the game runs:
+  no loading screen, progress or loader event, only its promise (or the
+  `onload` / `onerror` callbacks). It is pinned. One already in memory
+  resolves at once with no request (the callback form returns `0` and never
+  calls `onload`), except a `"binary"`, `"fontface"`, `"aseprite"` or `"js"`
+  asset, which is fetched again.
+
+## Loading between scenes
+
+The default loading screen appears automatically when `preload` switches state.
+For a custom one, register a `Stage` against `state.LOADING`:
+
+```js
+state.set(state.LOADING, new MyLoadingScreen());
+```
+
+If you preload without a loading stage and then change state immediately, pass
+`forceChange`:
+
+```js
+state.change(state.PLAY, true);
+```
+
+## Cross-origin and authenticated assets
+
+**Nothing to set for the usual cases.** Every fetched asset (image, json,
+binary, tmx, tsx, shader, gltf/glb, obj, mtl, aseprite, buffered audio) is
+requested the same way:
+
+- **On the game's own origin**, it carries the browser's cookies and HTTP
+  auth, as the page and its scripts do. A game behind a login or a session
+  cookie loads its own assets with no option.
+- **On another origin** (a CDN), it is a CORS request: it loads when that
+  server sends `Access-Control-Allow-Origin`, and fails at load when not, with
+  an error naming the asset and the header it needs. No `crossOrigin` needed.
+
+| asset on… | default | `withCredentials: true` |
+|---|---|---|
+| the game's own origin | loads, with its cookies | loads, with its cookies |
+| another origin sending `Access-Control-Allow-Origin` | loads, no cookies | **blocked** if it answers `*`; needs the page's exact origin plus `Access-Control-Allow-Credentials: true` |
+| another origin allowing credentials for the page | loads, no cookies | loads, with that origin's cookies |
+| another origin with no CORS headers | fails at load, naming the asset | fails at load, naming the asset |
+
+Two global settings cover the rest, for every asset type — there is no
+per-asset or per-type spelling to remember:
+
+```js
+loader.setOptions({
+    withCredentials: true,      // send cookies / auth to OTHER origins too
+    crossOrigin: "anonymous",   // attribute of the <video>, <script> and glTF
+                                // image elements the loader creates
+});
+```
+
+`withCredentials` is for assets on **another** origin behind a session cookie
+or a login; that server must then allow credentials for the page's origin, or
+the browser blocks the request. `crossOrigin: "use-credentials"` does the same
+for fetched assets, and sets the attribute on the elements.
+
+Before 20.13 both were needed far more often: assets on the game's own origin
+went out with no cookies unless `withCredentials` was set (a 401 or 403 behind
+a login), and an asset on another origin without `crossOrigin: "anonymous"`
+was read as an empty response, failing later with "Unexpected end of input" or
+"The source image could not be decoded" even when its server allowed it.
+
+**Set them through `setOptions`.** `loader.crossOrigin` and
+`loader.withCredentials` are read-only module bindings; assigning to them
+throws, the same trap as the removed `loader.onload` / `onProgress`.
+
+| | |
+| --- | --- |
+| one streamed clip (`stream: true` / `html5: true` / `preload: false`) ignores `withCredentials` | it plays through an `<audio>` element, which needs a `crossorigin` attribute rather than fetch credentials. Preload it buffered if it is behind auth |
+| credentials silently dropped for audio before 20.4 | the loader forwarded them under a pre-20.3 name the backend never read — a hung preload rather than an error |
+
+## Symptom → cause
+
+| symptom | cause |
+|---|---|
+| audio 404s | `src` given as a file instead of a directory |
+| audio fails, `preload()` rejects with "Failed loading resource" | `audio.init()` not called before preloading — the real message is replaced by the loader's |
+| blank level, missing tiles | `.tsx` or tileset image not listed in the resources |
+| `Failed to load "…" (Failed to fetch). An asset on another origin loads only if its server allows it…` | that origin sends no `Access-Control-Allow-Origin` header — or, with `withCredentials`, sends `*` or no `Access-Control-Allow-Credentials: true`. Fix the server's headers, or serve the asset from the game's own origin |
+| an asset on another origin behind a login 401s / audio preload hangs | missing `loader.setOptions({ withCredentials: true })` — one switch, all asset types. Assets on the game's own origin need nothing (before 20.13 they needed it too) |
+| a remote JSON fails with "Unexpected end of input", or an image with "The source image could not be decoded" | melonJS before 20.13, which read assets on another origin without CORS unless `crossOrigin: "anonymous"` was set |
+| `TypeError` assigning `loader.withCredentials` / `crossOrigin` | read-only module bindings; use `loader.setOptions({ … })` |
+| preload never finishes, blank screen, no error | a failing sound with `audio.setStopOnAudioError(false)` before 20.4 — it disabled audio *and* failed the preload |
+| text renders in a fallback font | web font not preloaded as `"fontface"` |
+| `BitmapText` renders nothing | the `.fnt` (as `"binary"`) or its image is missing |
+| `TypeError` assigning `loader.onProgress` / `onload` | removed in 20.3; they were never writable — use the `LOADER_*` events |
+| `await loader.preload(level)` sends the game back to its title screen, or runs the boot setup twice (before 20.13) | a preload with no callback re-ran the previous preload's callback; update, each preload now calls only its own |
+| the loading bar starts part-full on a second preload, or never reaches the end after one asset failed (before 20.13) | the progress counters ran for the whole session; update, progress is per preload |
+| `loader.reload(src)` of a custom asset type throws `unload : unknown or invalid resource type` (before 20.13) | update: a type registered with `setParser` can now be retried |
+| `load : unknown or invalid resource type` | a custom type in the manifest before its `loader.setParser` call |
+| black or frozen screen when a stage is first entered, the profile shows your own code (noise, a canvas bake) | a costly derived asset built on stage entry — bake it inside the preload as a [custom asset type](#custom-asset-types) |
+| a custom asset preloads but the result is nowhere to be found | `onload` takes no value and the loader stores nothing for custom types — keep the result in your own module |
+| `level X not found` after switching levels with bundles | that map's bundle was unloaded (it unregisters the level), or never loaded: `await loader.load(id)` before `level.load` |
+| `loader: unknown bundle "…"` | a typo, or `setBundle` not called yet; ids and asset names are separate, a bundle is not found by an asset's name |
+| `setBundle(…): the bundle is loaded` | redefining a loaded bundle, by `setBundle` or by `load(id, assets)` with a different list: `loader.unload(id)` first |
+| a shared image disappears (blank layer) after unloading the previous level's bundle | the next level's bundle does not list it: list a shared asset in every bundle that uses it |
+| an asset survives `unload(id)` and memory stays up | it was also loaded the old way (a flat `preload` list, or `load(asset)`), which pins it; load it only through bundles, or `unload(asset)` |
+| a HUD or camera effect goes blank, or throws, after a level's bundle is unloaded | its shader came from that bundle; effects that outlive a level belong in a bundle that outlives it (`"common"`) |
+| `level.reload()` throws `level undefined not found` | the current level's own bundle was unloaded; unload the previous level's bundle after the next level is in |
+| a pause and new network requests every time the player goes back to an earlier level | that level's bundle is unloaded on leaving it although the game loops back to it; keep it loaded (see [When not to unload](#level-by-level-load-before-unload-after)) |
+| memory grows level after level although assets are unloaded (before 20.14) | unloading an image left its GPU texture in the renderer; update |
+| an asset given as a `data:` URI fails, or the default loading screen shows no logo, in a sandboxed embed or under a strict Content-Security-Policy (before 20.11) | the `data:` URI was fetched, which a `connect-src` without `data:` refuses; update, it is decoded in place |
+
+## Related skills
+
+- `melonjs-getting-started` — where preloading sits in the bootstrap
+- `melonjs-tilemaps` — the full Tiled asset set
+- `melonjs-audio` — formats and the directory convention

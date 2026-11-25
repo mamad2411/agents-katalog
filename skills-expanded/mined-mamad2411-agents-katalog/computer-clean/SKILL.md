@@ -1,0 +1,225 @@
+---
+name: computer-clean
+description: "Audit and reclaim disk space on macOS. Discovers cache hogs, dev caches, dead app data, old Downloads, dup installers, and obsolete container/VM images. Use when user says 'clean disk', 'free up space', 'computer-clean', 'cleanup mac', 'disk full', or shows ≥85% disk usage."
+license: MIT
+category: utilities
+keywords: [disk, cleanup, space, cache, mac, macos, prune, storage]
+metadata:
+  author: vanducng
+  version: "1.2.0"
+---
+
+# Computer Clean - macOS Disk Cleanup
+
+Goal: surface the largest reclaimable space on the user's Mac, classify by risk, **always confirm before destructive ops**, then execute.
+
+## Operating principle
+
+**Audit → Classify → Confirm → Execute → Verify.** Never skip the confirm step for 🟡/🔴 buckets. The 🟢 cache bucket can run after a single user "go".
+
+The skill **discovers** what's actually on the user's machine - don't assume specific apps/caches exist. Run audit commands first, then classify what was found.
+
+---
+
+## Phase 1 - Audit (read-only)
+
+Run these in parallel. Report top consumers per bucket.
+
+```bash
+# Volume stats
+df -h /
+
+# Home Library hot zones
+du -sh ~/Library/Caches ~/Library/Logs ~/Library/Containers \
+       ~/Library/Application\ Support ~/Downloads ~/.Trash 2>/dev/null
+
+# Drill the heavy ones - top 15 each
+du -sh ~/Library/Application\ Support/* 2>/dev/null | sort -rh | head -15
+du -sh ~/Library/Caches/* 2>/dev/null | sort -rh | head -15
+du -sh ~/Library/Containers/* 2>/dev/null | sort -rh | head -10
+du -sh ~/Downloads/* 2>/dev/null | sort -rh | head -15
+
+# Common dev caches outside Library (skip silently if missing)
+du -sh ~/.npm ~/.yarn ~/.pnpm-store ~/Library/pnpm \
+       ~/go/pkg ~/.cargo ~/.gradle ~/.m2 ~/.rustup \
+       ~/.cache ~/.docker 2>/dev/null
+
+# Drill ~/.cache children (uv, pip, puppeteer, pre-commit, etc.)
+du -sh ~/.cache/* 2>/dev/null | sort -rh | head -15
+
+# Unused images/volumes/build cache inside the active engine (skip if docker is down)
+docker system df 2>/dev/null
+
+# Xcode (developers only)
+du -sh ~/Library/Developer/Xcode/{DerivedData,Archives,iOS\ DeviceSupport} 2>/dev/null
+```
+
+## Phase 2 - Classify
+
+Bucket discovered items by risk.
+
+### 🟢 Safe (regenerable) - execute on single confirm
+
+Standard regenerable caches. Apply only if path exists.
+
+| Path / tool | Reclaim command |
+|---|---|
+| `~/.Trash/*` | `rm -rf ~/.Trash/* ~/.Trash/.[!.]*` |
+| Homebrew | `brew cleanup -s --prune=all` |
+| Go | `go clean -cache && go clean -modcache` (or `rm -rf ~/Library/Caches/go-build ~/go/pkg`) |
+| npm | `npm cache clean --force && rm -rf ~/.npm/_npx` (`npm cache clean` does not clear the npx cache) |
+| pnpm | `pnpm store prune` |
+| yarn | `yarn cache clean` |
+| Cargo | `cargo cache --autoclean` (if `cargo-cache` installed) |
+| Gradle | `rm -rf ~/.gradle/caches` |
+| uv (Python) | `uv cache clean --force` (lock is often a live `uvx` MCP; `--force` is the documented override. Kill `uv` only if it is hung, not serving) |
+| pip | `pip cache purge` |
+| Generic `~/.cache/<tool>` | `rm -rf` after confirming tool is regenerable (puppeteer, pre-commit, packer, etc.) |
+| Old JetBrains caches (>1yr) | `rm -rf ~/Library/Caches/JetBrains/*<old-year>*` |
+| App auto-updaters | `~/Library/Caches/*ShipIt*`, `~/Library/Caches/*.updater` |
+| Xcode `DerivedData` | `rm -rf ~/Library/Developer/Xcode/DerivedData` (rebuilds on next compile) |
+
+### 🟡 Review (user data, easy wins - confirm each)
+
+- **Downloads**: `*.dmg`/`*.pkg`/`*.zip`/`*.rar`/`*.tar.gz` older than 30 days
+- **Downloads**: duplicate installers matching `* (1).*`, `* (2).*`
+- **Downloads**: stray data dumps (large CSVs, sample videos), abandoned project folders, leftover venvs
+- **Apple Podcasts** episodes (auto-downloaded media, not subscriptions)
+- **Mail attachments**: `~/Library/Mail/V*/MailData/Attachments` (re-downloadable from server)
+- **LLM model weights**: `~/.cache/huggingface`, `~/.ollama` - regenerable but slow/expensive to redownload
+- **Cursor snapshots**: `~/Library/Application Support/Cursor/snapshots` - local codebase snapshots, rebuilds
+- **Claude Desktop VM**: `~/Library/Application Support/Claude/vm_bundles` - VM image, redownloads
+
+### 🔴 Big-ticket (explicit per-item auth required)
+
+- **Container engine VMs** - typically the largest single item. Confirm engine is unused (see Phase 4 migration check):
+  - Docker Desktop: `~/Library/Containers/com.docker.docker/Data/vms`
+  - OrbStack: `~/.orbstack/data`
+  - Rancher Desktop: `~/Library/Application Support/rancher-desktop/lima`, `~/.rd`
+  - Colima/Lima: `~/.colima`, `~/.lima`
+  - Podman: `~/.local/share/containers`
+- **Xcode** archives + simulators: `~/Library/Developer/Xcode/{Archives,iOS DeviceSupport,watchOS DeviceSupport}`, `~/Library/Developer/CoreSimulator`
+- **Chat / messaging app data** (Slack, Teams, Discord, Zalo, WeChat, Telegram, Signal) - user-owned history
+- **Browser profiles** (Chrome, Brave, Arc, Edge, Firefox, Safari, Vivaldi, etc.) - bookmarks/sessions/extensions live here
+- **iOS device backups**: `~/Library/Application Support/MobileSync/Backup`
+- **iCloud / Photos library**: `~/Pictures/Photos Library.photoslibrary`
+- **Time Machine local snapshots**: `tmutil thinlocalsnapshots / 0 4`
+
+## Phase 3 - Confirm
+
+Present a single summary table (path · size · bucket) and ask:
+1. Proceed with all 🟢? (default yes)
+2. For 🟡: which to keep / delete?
+3. For each 🔴: is the underlying app still in use? Run dependency checks (Phase 4) before approval.
+
+## Phase 4 - Execute
+
+### App-quit guard
+
+Before deleting any app's data dir, quit the app cleanly:
+```bash
+osascript -e 'quit app "<App Name>"' 2>/dev/null; sleep 1
+```
+
+### One path per delete
+
+Each regenerable cache is its own command. Do not pass several roots to one `rm`. A mid-run "leave this one" then stops only that path. List each browser's `~/Library/Caches/<App>` as its own row. That directory is cache. `~/Library/Application Support/<App>` is the profile and stays 🔴.
+
+### Container engine prune (engine still in use)
+
+Do not delete the VM. Do not run `docker system prune -af --volumes`. Unused volumes are often databases that are not attached to a running container, so they are 🔴, not part of an image prune.
+
+Show `docker system df`, then run only the lines the user approved:
+
+```bash
+docker builder prune -af    # build cache; regenerable
+docker image prune -af      # images no container uses; running containers keep theirs
+docker volume rm <name>     # one approved volume; volume prune deletes every unused volume
+```
+
+After an image prune, `docker ps` must still list the containers that were up before. Then verify host free space (`df -h /` and `df -h /System/Volumes/Data`). Sparse VM disks (OrbStack, Docker Desktop) often return that space to the host.
+
+### Container engine migration (generic)
+
+If user is decommissioning one engine in favor of another, **verify migration first**:
+
+```bash
+docker context ls                          # which engine is active (asterisk)
+which docker                               # current binary
+ls -la "$(which docker)"                   # follow symlink chain
+/usr/bin/which -a docker                   # all docker binaries on PATH
+kubectl config get-contexts                # k8s contexts that may be orphaned
+grep -nE 'rancher|orbstack|colima|docker' ~/.zshrc ~/.zprofile ~/.bashrc ~/.bash_profile ~/.config/fish/config.fish 2>/dev/null
+```
+
+After confirmation, the removal pattern is:
+1. Quit the app (`osascript -e 'quit app "..."'`).
+2. `rm -rf` the app's `Application Support` data dir + dotfile dir under `$HOME` (e.g., `~/.rd`, `~/.colima`).
+3. `rm -rf` its `Caches`, `Logs`, and `Preferences/<bundle-id>.*`.
+4. `kubectl config delete-context/cluster/user <name>` for orphaned k8s contexts.
+5. `rm -rf /Applications/<App>.app`.
+6. Remind user to remove any `PATH` entries from shell rc files if grep found matches.
+
+### Downloads sweep
+
+```bash
+# Duplicates created by re-downloads
+find ~/Downloads -maxdepth 1 -type f \( -name '* (1).*' -o -name '* (2).*' -o -name '* (3).*' \) -delete
+
+# Old installer payloads (>30d)
+find ~/Downloads -maxdepth 3 -type f \
+  \( -name '*.dmg' -o -name '*.pkg' -o -name '*.zip' -o -name '*.rar' -o -name '*.tar.gz' -o -name '*.tgz' \) \
+  -mtime +30 -print -delete
+```
+
+### Apple Podcasts media purge
+
+```bash
+osascript -e 'quit app "Podcasts"' 2>/dev/null; sleep 1
+find ~/Library/Group\ Containers/*.groups.com.apple.podcasts \
+     ~/Library/Containers/com.apple.podcasts \
+     -type f \( -name '*.mp3' -o -name '*.m4a' -o -name '*.mp4' \) -delete 2>/dev/null
+```
+
+### Files older than N months
+
+Always **preview first** with `find … -print` before adding `-delete`. Show total size before deleting. Skip if <100MB total unless user insists. **Never** blanket-delete `~/Documents`, `~/Pictures`, `~/Movies`, or iCloud-synced paths, and never delete anything under `~/git`/`~/code`/`~/src`/`~/projects` without explicit per-path approval.
+
+## Phase 5 - Verify
+
+```bash
+df -h /                             # confirm space freed
+node "$HOME/skills/skills/worktree/scripts/worktree.cjs" clean --merged 2>/dev/null
+docker context show 2>/dev/null     # if container engines were touched
+docker version --format '{{.Server.Version}}' 2>/dev/null
+```
+
+Report: GB freed, before/after free space, residual >5GB items the user declined (so they can revisit later).
+
+---
+
+## Git worktrees (🟡 project data - defer to vd:worktree)
+
+Discover roots read-only:
+
+```bash
+for root in "$HOME/git" "$HOME/code" "$HOME/src" "$HOME/projects" \
+           "$HOME/worktrees" "$HOME/Worktrees" "$HOME/repos" "$HOME/dev"; do
+  [ -d "$root" ] || continue
+  find "$root" -maxdepth 8 -type d \
+    \( -name .worktrees -o -name worktrees \
+       -o -path '*/.claude/worktrees' -o -path '*/.dmux/worktrees' \) -print 2>/dev/null
+done
+```
+
+For per-repo registration (including worktrees not co-located under a directory named `worktrees`), use `git -C "$repo" worktree list --porcelain`. Do not grep or `find` for a literal `.git/worktrees` path - the `scout-block` hook denies any Bash command matching `(^|/)\.git(/|$)`.
+
+All cleanup runs through `vd:worktree` (`node "$HOME/skills/skills/worktree/scripts/worktree.cjs" clean` from each repository root) - never `rm -rf` a worktree. Flags and semantics (dry run by default, `--yes`, `--merged`, `--force` and its dirty-worktree skip) are vd:worktree's to consult; the approval aliases are `clean merged` → `clean --merged --yes` and `clean all` → `clean --yes`. Always show the dry-run candidates and total size before applying either alias, grouped into `.worktrees/`, task-workspace checkouts, and scratch dirs. `clean` from a repo root selects all three. Do not run repo-wide `clean --yes` when a candidate sits outside `.worktrees/` unless that path was named; remove named paths with `remove <path>`. Never infer approval for dirty paths from `clean all`. The dirty skip ignores untracked files, so also skip a candidate whose `git status --porcelain` shows `??` other than `.env*`. Before removing each candidate, check for active processes and open files (`ps -axo pid=,command= | rg -F "$WT"`, then `lsof -a -p <pid> -d cwd` so a command line that merely mentions the path does not count, and `lsof -nP +D "$WT"`); if the cwd or open files are in that worktree, stop and ask the user to close it - never kill agent processes.
+
+## Hard rules
+
+1. **Never** wipe browser profiles. Bookmarks, sessions, history, extensions, saved passwords live there.
+2. **Never** use `sudo` to bypass file locks. If a tool's cache is locked (`uv`, `pnpm`), prefer the tool's `--force` (or wait). Kill only if the process is actually hung, not a live `uvx` / MCP / package-manager.
+3. **Never** delete an app's `Application Support` while the app is running - quit it first.
+4. **Surface skipped items** at the end so user can decide later - don't silently leave reclaimable space on the table.
+5. **Adapt to what's there.** macOS evolves; new caches appear (LLM tool caches, Playwright/Cypress, Hugging Face, Ollama models). Small regenerable caches are 🟢. Multi-GB model weights (Hugging Face, Ollama) are 🟡 even though they regenerate.

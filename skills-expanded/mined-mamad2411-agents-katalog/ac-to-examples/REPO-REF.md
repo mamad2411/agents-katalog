@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-mikecheng1208-battletree/ac-to-examples/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 将抽象的Acceptance Criteria（Given-When-Then）转换为具体的数值示例和真实对话，让AC对PM/客户/测试人员更易懂。适合在AC编写完成后、准备测试或向客户展示时使用，当AC格式正确但过于抽象时。帮助不熟悉BDD的PM/BA/测试人员理解测试场景，让AC从抽象规则变成可直接用于手动测试的具体步骤。

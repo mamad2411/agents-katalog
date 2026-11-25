@@ -1,0 +1,66 @@
+---
+name: terms-of-service
+description: "Use when a product with accounts, user content, purchases, subscriptions, or usage rules needs terms, or existing terms must match what the product actually does. It inspects features and drafts only supported sections, marking owner-only facts such as governing law, liability, and fees as gaps. Do not use it to paste boilerplate, to invent governing law or liability limits, or to add terms to a site that makes no commitments."
+license: Apache-2.0
+metadata:
+  kind: specialist
+  helpers: "audit-markup"
+  launch-checks: "2"
+  compliance-domains: "7,12"
+  references: "official-sources,legal-templates/README,legal-templates/01-terms-of-service,legal-templates/04-returns-refunds-cancellations"
+  companions: "user-content-safety,payments-readiness,subscription-readiness,consumer-protection-readiness,ai-features-readiness,policy-consistency,design-system-reconnaissance"
+---
+
+# terms-of-service
+
+Terms are the rules of *this* product. Generic terms for a product that has no accounts, or missing terms for one that takes money, both mislead. This skill maps real features to real clauses and leaves the legal choices to the owner.
+
+## Activate when
+
+- The product has accounts, user-generated content, purchases or subscriptions, a marketplace, an API, or acceptable-use concerns; or a terms link exists with no page behind it.
+- Existing terms describe features the product lacks or omit ones it has.
+- Not for a static brochure with no commitments (say so), and not to provide legal advice.
+
+## Working alone
+
+This skill is self-contained. Its **companions** (declared in its metadata) are skills whose method it may need to do its own promised work. Use of a companion can be conditional: declaring one does not mean running it. When a companion's lane applies, use the skill if it is installed; if not, follow its short entry in [references/companion-methods.md](references/companion-methods.md) and say in your report which lanes ran inline at reduced depth. Never skip an applicable lane silently. Skills mentioned here only for escalation, referral, documentation, or optional deeper follow-up are not dependencies: report the hand-off and finish honestly.
+
+Companions: `user-content-safety`, `payments-readiness`, `subscription-readiness`, `consumer-protection-readiness`, `ai-features-readiness`, `policy-consistency`, `design-system-reconnaissance`.
+
+## Inspect
+
+1. **Inspect the real service:** use routes, rendered pages, account and content actions, backend/API paths, deployment configuration, checkout, and provider configuration. Code presence is SOURCE-INDICATED until live behavior is established. Map accounts and roles; user content and visibility (`user-content-safety`); payments, subscriptions, trials, refunds (`payments-readiness`, `subscription-readiness`, `consumer-protection-readiness`); free vs paid tiers; APIs; AI-generated content (`ai-features-readiness`); third-party services; marketplaces; and actual downloads/licensing (`legal-identity-notices`).
+2. **Existing text**, if any: compare each clause to features (a subscription clause with no billing code; refunds promised in the FAQ but absent from terms; account termination with no account system).
+3. **Owner facts required** (mark MISSING unless provided): legal entity and contact; governing law and venue; liability caps and disclaimers; fee amounts, billing cycle, taxes, refund/cancellation windows; acceptable-use enforcement; age minimum; notice/dispute process; effective date. Treat all of these as **owner or lawyer decisions**.
+4. **Draft only supported sections**, in plain language, tied to features. Start from [the conditional Terms template](references/legal-templates/01-terms-of-service.md) and its [usage guide](references/legal-templates/README.md): what the service is; accounts and security; acceptable use; user content and license grant *only if the owner states the license*; payments, renewal, cancellation, and refunds *only with the owner's real terms*; termination; changes; and contact. Skip whole sections for features that do not exist. Do not generate a Terms page for a static informational site that makes no meaningful commitments.
+5. **Acceptance mechanics.** If terms bind users, check how they are presented: checkbox or "by signing up you agree" text next to the signup button, link to the actual page, and the terms/privacy links in the footer. Do not pre-tick consent boxes.
+6. **Implement, do not just suggest:** if a Terms page is appropriate, inspect and reuse the site's design system, typography, components, spacing, navigation, accessibility, and mobile conventions; create or update its established legal route and relevant footer/signup/checkout links. Coordinate with `legal-navigation`. Never overwrite owner-approved Terms without an appropriate review.
+
+## Evidence that counts
+
+Label each claim OBSERVED, SOURCE-INDICATED, DECLARED, INFERRED, UNKNOWN, or REVIEW REQUIRED. UNKNOWN is never a pass and never a failure.
+
+- A clause about a feature needs evidence the feature exists (a route, a billing integration, a content form).
+- Commercial terms (fees, refunds) are DECLARED by the owner; unsupported ones stay in a private draft/review report, not in a published page.
+- Whether terms are *enforceable* or *sufficient* is not observable. It is REVIEW REQUIRED.
+- **Legal specifics: never from memory.** When a rule, deadline, threshold, or required wording matters, read the current text or guidance at an official source while you run (start from [references/official-sources.md](references/official-sources.md)), cite the source and access date, and treat applicability to this business as REVIEW REQUIRED. If you cannot look it up, the answer is UNKNOWN.
+
+## May change
+
+Create or update the terms page; align feature-specific clauses with real features; add acceptance text near signup/checkout; fix broken terms links. Never overwrite lawyer-written terms; produce a mismatch list instead.
+
+## Must not claim
+
+That terms are "legally binding", "enforceable", "comprehensive", "compliant with consumer law", or "protect you from liability". Do not invent governing law, jurisdiction, arbitration clauses, liability caps, warranties disclaimers, refund periods, fee schedules, minimum ages, or a company name. Never copy another company's terms.
+
+## Verify
+
+Every substantive clause maps to a real feature; all `{{...}}`, `[[IF ...]]`, `[[END IF]]`, `[[REVIEW REQUIRED: ...]]`, and internal drafting instructions are absent from the public page. If one remains unresolved, keep the draft private and report **DRAFT — REVIEW REQUIRED**. Run `node scripts/audit-markup.mjs --url <site> --render`: the public page must have no `PLACEHOLDER_TEXT` finding. Verify links and contact destinations; signup/checkout reference the actual Terms if they are meant to bind; the page renders in the site's design at desktop and 375px. Cross-check with `policy-consistency`, `consumer-protection-readiness`, and `subscription-readiness` when relevant.
+
+## Escalate
+
+Money, subscriptions, minors, user content with safety risk, marketplaces, health/finance/legal services, and any cross-border sale: REVIEW REQUIRED. Say specifically what you could not determine (governing law, liability, refund terms, acceptable-use enforcement). Keep the recommendation proportional: name the specific unresolved fact or risk that warrants it (minors, sensitive data, a regulated domain, cross-border sale, unclear markets, contested wording), and do not tell an ordinary low-risk site to hire a lawyer.
+
+## No change is valid when
+
+The site makes no commitments (no accounts, purchases, or user content) and a terms page would add nothing; or existing terms match the features and were reviewed. Say "no terms change needed; recheck when accounts, payments, or content features are added".

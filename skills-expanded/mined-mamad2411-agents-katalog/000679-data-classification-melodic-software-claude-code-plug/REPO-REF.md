@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-maji-fast/000679-data-classification-melodic-software-claude-code-plugins-81179a69/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: data-classification-melodic-software-claude-code-plugins-81179a69

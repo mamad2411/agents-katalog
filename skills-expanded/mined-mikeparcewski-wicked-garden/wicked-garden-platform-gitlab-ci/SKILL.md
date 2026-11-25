@@ -1,0 +1,141 @@
+---
+name: wicked-garden-platform-gitlab-ci
+description: |
+  Write secure, optimized GitLab CI/CD pipelines.
+
+  Use when: "create CI/CD pipeline", "GitLab CI config", "fix pipeline",
+  ".gitlab-ci.yml", "configure runners", "pipeline optimization"
+metadata:
+  role: module
+  phases: "build,review,operate"
+  archetypes: "*"
+---
+
+# GitLab CI/CD Pipeline Writing
+
+Write production-ready GitLab CI/CD pipelines with security and optimization built in.
+
+## When to Use
+
+- Creating new CI/CD pipelines
+- Optimizing slow or expensive pipelines
+- Setting up multi-environment deployments
+- Debugging pipeline failures
+
+## Core Structure
+
+```yaml
+# .gitlab-ci.yml
+stages: [build, test, deploy]
+
+build:
+  stage: build
+  script: [npm ci, npm run build]
+  artifacts: { paths: [dist/] }
+```
+
+See `refs/templates.md` for full Node.js, Python, and other stack-specific templates.
+
+## GitLab vs GitHub Actions
+
+| Concept | GitHub Actions | GitLab CI |
+|---------|---------------|-----------|
+| Config | `.github/workflows/*.yml` | `.gitlab-ci.yml` |
+| Grouping | `jobs:` | `stages:` |
+| Triggers | `on:` | `rules:` |
+| Secrets | `${{ secrets.X }}` | `$VARIABLE` |
+| Artifacts | `actions/upload-artifact` | Built-in |
+| Caching | `actions/cache` | Built-in |
+
+## Security
+
+### Protected Variables
+
+```yaml
+deploy:
+  script:
+    - deploy --token $DEPLOY_TOKEN
+  # Set DEPLOY_TOKEN as protected in GitLab UI
+```
+
+### Restrict Execution
+
+```yaml
+deploy:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual  # Require approval
+    - when: never
+```
+
+## Performance
+
+### Caching
+
+```yaml
+default:
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+```
+
+### DAG (Parallel Dependencies)
+
+```yaml
+deploy:
+  needs:
+    - build-frontend
+    - build-backend
+  # Starts when both complete, skips waiting for whole stage
+```
+
+### Path Filtering
+
+```yaml
+build:
+  rules:
+    - changes:
+        - src/**/*
+        - package.json
+```
+
+### Parallel Jobs
+
+```yaml
+test:
+  parallel: 4
+  script:
+    - npm test -- --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL
+```
+
+## Common Patterns
+
+### Include Templates
+
+```yaml
+include:
+  - local: .gitlab/ci/build.yml
+  - template: Security/SAST.gitlab-ci.yml
+```
+
+### Services
+
+```yaml
+test:
+  services:
+    - postgres:15
+  variables:
+    DATABASE_URL: postgresql://postgres@postgres/test
+```
+
+### Multi-Environment
+
+YAML anchor (`&deploy`) lets you share a deploy job and override `environment:` + `rules:` per target (staging on develop, production on main, both `when: manual` for approval gates).
+
+## References
+
+- `refs/templates.md` - Copy-paste templates for Node.js, Python, Docker, K8s
+- `refs/troubleshooting.md` - Common errors and fixes

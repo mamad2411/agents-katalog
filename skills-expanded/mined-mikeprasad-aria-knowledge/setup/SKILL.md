@@ -1,0 +1,849 @@
+---
+description: "Configure aria-knowledge plugin. Creates or validates a knowledge folder, checks dependencies, sets audit cadences, and writes config. Run on first install or after plugin updates. Trigger: '/setup', 'setup aria-knowledge', 'configure knowledge'."
+argument-hint: ""
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+---
+
+# /setup — Knowledge Tools Configuration
+
+Walk the user through configuring their knowledge folder and plugin settings. Safe to re-run at any time — only touches what needs updating.
+
+## Step 1: Check for Existing Config
+
+**Read the installed plugin version first.** Parse `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and extract the `version` field. Hold it as `INSTALLED_VERSION` for use in Step 7 (config write), Step 8 (summary), and the announcement below. Use grep + sed to stay consistent with the no-jq invariant the hook scripts follow:
+
+```bash
+INSTALLED_VERSION=$(grep '"version"' "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+```
+
+Then read `~/.claude/aria-knowledge.local.md`.
+
+- **If it exists:** show current settings and say *"aria-knowledge v{INSTALLED_VERSION} is already configured. I'll check for updates."* If the existing config has `last_setup_version: X` and X differs from `INSTALLED_VERSION`, also note: *"Plugin upgraded from v{X} → v{INSTALLED_VERSION} since last setup. Diff prompts and any new config keys will surface in the steps below."* Then proceed to Step 2 in **update mode** — scan for missing structure, re-diff templated files, check dependencies.
+- **If it doesn't exist:** say *"Let's set up aria-knowledge v{INSTALLED_VERSION}. This will configure your knowledge folder and preferences."* Proceed to Step 2 in **fresh mode**.
+
+**Detect skill-only fields** (update mode only). After parsing the standard hook-parsed keys, also scan for the `projects_groups` multi-line YAML block — a skill-only field consumed by `/distill` and `/stitch` (see `CONFIG.md` for schema). It's **not** in the advanced-options bundle because it's not bash-parsed; surface its presence here so users get awareness without /setup trying to flatten it.
+
+```bash
+GROUPS_PRESENT=$(grep -c '^projects_groups:$' ~/.claude/aria-knowledge.local.md || true)
+GROUPS_COUNT=$(awk '/^projects_groups:$/{in_block=1; next} in_block && /^---$/{exit} in_block && /^[^[:space:]]/{exit} in_block && /^  [^[:space:]].*:$/{c++} END{print c+0}' ~/.claude/aria-knowledge.local.md)
+```
+
+If `GROUPS_PRESENT > 0`, add to the announcement: *"Detected `projects_groups` skill-only field with {GROUPS_COUNT} group(s) configured. Preserved as-is (consumed by `/distill` and `/stitch`; see `CONFIG.md` for the schema)."* If `GROUPS_PRESENT == 0`, say nothing — the field is opt-in and most users without multi-repo projects won't have it.
+
+## Step 2: Knowledge Folder Location
+
+Ask the user:
+> "Where would you like your knowledge folder? You can:
+> (a) Provide a path to an existing folder
+> (b) Create a new one — I'll ask where to put it"
+
+If **(a) existing path:**
+- Verify the path exists and is a directory
+- Proceed to Step 3 in **existing mode**
+
+If **(b) create new:**
+- Ask for the desired location (parent directory + folder name)
+- Create the directory
+- Proceed to Step 3 in **create mode**
+
+## Step 3: Folder Structure Validation
+
+Read the expected structure from `${CLAUDE_PLUGIN_ROOT}/template/`.
+
+**Expected directories:** `intake/`, `intake/notes/`, `intake/attachments/`, `intake/clippings/`, `intake/pre-compact-captures/`, `intake/subagent-captures/`, `intake/ideas/`, `logs/`, `rules/`, `approaches/`, `decisions/`, `guides/`, `references/`, `archive/`
+
+**Expected files:** `README.md`, `OVERVIEW.md`, `LOCAL.md`, `aliases.md`, `intake/insights-backlog.md`, `intake/decisions-backlog.md`, `intake/extraction-backlog.md`, `intake/rules-backlog.md`, `intake/ideas/README.md`, `logs/knowledge-audit-log.md`, `logs/config-audit-log.md`, `rules/working-rules.md`, `rules/user-rules.md`, `rules/user-examples.md`, `rules/change-decision-framework.md`, `rules/enforcement-mechanisms.md`, `guides/README.md`, `approaches/README.md`, `decisions/README.md`, `references/README.md`, `archive/README.md`
+
+**User-owned files (created once from template, never overwritten or diffed):** `LOCAL.md` (project-specific guide), `aliases.md` (tag aliases — added 2.16.0), `rules/user-rules.md` (your custom rules — ARIA never touches this file), `rules/user-examples.md` (your per-rule examples — `/rules N` reads this; ARIA never touches this file), `guides/README.md`, `approaches/README.md`, `decisions/README.md`, `references/README.md`, `archive/README.md` (directory stubs users may customize).
+
+**In create mode:** Create all directories and copy all template files. After creation, display a **one-time educational note** about the file-class model (this note is only shown on fresh installs — in update/existing mode, skip it):
+
+> **First-setup note: Plugin-Managed vs User-Owned Files**
+>
+> Your knowledge folder now contains two classes of template files:
+>
+> - **Plugin-managed** — `README.md`, `OVERVIEW.md`, `rules/working-rules.md`, `rules/change-decision-framework.md`, `rules/enforcement-mechanisms.md`, `rules/retrospect-patterns.md` (and `projects/README.md` when the project tier is enabled). These are diffed on every `/setup` run. Customize them freely — your edits will appear as diff prompts when plugin updates ship. That's how you receive improvements without silent overwrites. Each managed file also carries a `<!-- plugin-managed: -->` comment header so you can spot them at edit time.
+> - **User-owned** — `LOCAL.md`, `aliases.md`, `rules/user-rules.md`, `rules/user-examples.md` (your per-rule examples, since v2.14.2), intake backlogs (`insights-backlog.md`, `decisions-backlog.md`, `extraction-backlog.md`, `rules-backlog.md`) and the `intake/ideas/` directory (one file per idea since v2.11), audit logs under `logs/`, directory README stubs (`guides/`, `approaches/`, `decisions/`, `references/`, `archive/`), and per-project READMEs under `projects/{tag}/`. ARIA never diffs or overwrites these. Your customizations live here safely.
+>
+> See `OVERVIEW.md` "Plugin-Managed vs User-Owned Files" for details. This note appears only on first setup.
+
+**In existing mode:** Scan what's present vs missing.
+- For missing **directories**: create them silently.
+- For missing **files**: copy from template and note what was added.
+- For existing **files**: do NOT overwrite — collect for diffing in Step 4.
+- Report: "Created N directories, added N files, found N existing files to check."
+
+**Project tier scaffolding** (if `projects_enabled: true` in current or pending config) is deferred to **Step 7c** — it runs after the config is written so it uses the final values (including answers from Step 6 that aren't in the config file yet during Step 3).
+
+## Step 3b: Legacy `ideas-backlog.md` Detection
+
+ARIA v2.11 moved the ideas backlog from a single `intake/ideas-backlog.md` file to per-file storage under `intake/ideas/`. Users upgrading from v2.10.x or earlier have an orphaned legacy file that v2.11 skills don't read. This step catches the migration on the first post-upgrade `/setup` run.
+
+**Check:** does `{knowledge_folder}/intake/ideas-backlog.md` exist?
+
+- **If no:** skip this step silently. Fresh installs and already-migrated users land here.
+- **If yes:** count active entries by running:
+
+  ```bash
+  awk '/^---$/{sep++; next} sep>=1 && /^### /{c++} END{print c+0}' "{knowledge_folder}/intake/ideas-backlog.md"
+  ```
+
+  - **If count is 0:** the legacy file has no active entries (cleared-history HTML comments only). Prompt: *"Empty pre-2.11 `ideas-backlog.md` found. Delete it? (y/n)"* — on yes, `rm` the file; on no, leave it.
+  - **If count > 0:** report: *"Pre-2.11 `ideas-backlog.md` detected with {N} active entries. ARIA v2.11 uses per-file ideas in `intake/ideas/`. Options:"*
+    - `(1) Migrate now` — run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-ideas-backlog.sh" "{knowledge_folder}"` and report the output (N files written, original renamed to `ideas-backlog.md.pre-2.11-migration`)
+    - `(2) Skip for now` — leave the file in place; `/setup` will prompt again on the next run. Note in the Step 8 summary that legacy entries are still stranded.
+    - `(3) Never migrate` — write a sentinel file at `{knowledge_folder}/intake/ideas/.legacy-skipped` so future `/setup` runs stop prompting. Document that the user accepts stranded pre-2.11 entries.
+
+**Never auto-migrate without user choice.** The migration renames the original file (doesn't delete), so it's reversible, but executing filesystem changes without confirmation violates the user-review principle `/setup` is built around.
+
+**Report** in Step 8 summary: *"Legacy ideas-backlog.md: migrated N entries"* or *"Legacy ideas-backlog.md: skipped (N entries still pending)"* or *"Legacy ideas-backlog.md: not detected"* as appropriate.
+
+## Step 4: File Diffing
+
+For each templated file that already exists in the user's folder, compare against the plugin's shipped version in `${CLAUDE_PLUGIN_ROOT}/template/`.
+
+**Files to diff:** `rules/working-rules.md`, `rules/change-decision-framework.md`, `rules/enforcement-mechanisms.md`, `rules/retrospect-patterns.md`, `README.md`, `OVERVIEW.md`, `projects/README.md` (plugin-managed if present)
+
+**Never diff:** `LOCAL.md` (user-owned), `aliases.md` (user-owned — added 2.16.0), `rules/user-rules.md` (user-owned — your custom rules), `rules/user-examples.md` (user-owned — your per-rule examples), directory README stubs (`guides/README.md`, `approaches/README.md`, `decisions/README.md`, `references/README.md`, `archive/README.md`), backlog files (`intake/insights-backlog.md`, `intake/decisions-backlog.md`, `intake/extraction-backlog.md`, `intake/rules-backlog.md`) and the `intake/ideas/` directory (`intake/ideas/README.md` and all per-file ideas under `intake/ideas/**`), audit log files (`logs/knowledge-audit-log.md`, `logs/config-audit-log.md`), and per-project READMEs (`projects/{tag}/README.md` and any other content under `projects/{tag}/**`) — these contain user data or user-customizable content.
+
+For each file with differences:
+1. Notify: "[filename] differs from the plugin version."
+2. Show a brief summary of what's different (not the full diff unless asked).
+3. Offer options:
+   - **Keep mine** — no change
+   - **Use plugin version** — overwrite with template
+   - **Show diff** — display the full diff, then ask again
+
+If no files differ (or all are new), skip this step silently.
+
+In **update mode** (re-run): always diff, even if the file was previously kept. The plugin version may have changed.
+
+## Step 5: Dependency Check
+
+Check if the `explanatory-output-style` plugin is installed:
+
+```bash
+find ~/.claude/plugins -name "explanatory-output-style" -type d 2>/dev/null | head -1
+```
+
+- **If found:** "explanatory-output-style plugin detected. Insight capture will be enabled."
+- **If not found:** "The explanatory-output-style plugin generates Insight blocks that aria-knowledge can capture automatically. It's an official Anthropic plugin. Want to install it? (recommended, but optional)"
+  - If user says yes: guide them to install it (the exact install mechanism depends on their Claude Code setup)
+  - If user says no: "Insight capture will be disabled. You can enable it later by installing the plugin and re-running /setup."
+
+Record the result as `true` or `false`.
+
+## Step 5b: Status-line Meter (optional)
+
+Offer the CLI status-line meter — a persistent bottom-of-screen readout of context-window fill plus rolling 5-hour / 7-day plan usage (Claude Code only). It also persists a usage snapshot that the session's Claude can read on demand (and that powers the `usage_alert_threshold` warning configured in Step 6).
+
+1. Detect current state:
+
+   ```bash
+   command -v jq >/dev/null 2>&1 && grep -q 'aria-statusline-meter.sh' "$HOME/.claude/settings.json" 2>/dev/null && echo "installed" || echo "not-installed"
+   ```
+
+2. **If not installed:** offer it — *"Install the status-line meter? It shows `model │ context-bar % │ 5h % │ 7d %` at the bottom of the CLI and lets me see my own context/usage. (y/n)"*. On `y`, invoke the `/statusline on` skill (via the Skill tool) to do the wiring; on `n`, skip (note it can be added anytime with `/statusline`).
+3. **If already installed:** offer a refresh — *"Status-line meter is installed. Refresh its script to this plugin version? (y/n)"*. On `y`, invoke `/statusline on` (it re-copies the script); on `n`, skip.
+
+This step never edits `settings.json` directly — it delegates to `/statusline` so the wiring logic lives in one place. If `jq` is missing, mention the meter needs it (it'll show model-only otherwise) but still allow install.
+
+## Step 5c: Superpowers (strongly recommended companion)
+
+Check whether the **Superpowers** plugin is installed:
+
+```bash
+find ~/.claude/plugins -name "superpowers" -type d 2>/dev/null | head -1
+```
+
+- **If found:** *"Superpowers detected — its process skills pair with ARIA's discipline layer."* No action needed.
+- **If not found:** *"ARIA governs **knowledge and edit discipline**; Superpowers ([github.com/obra/superpowers](https://github.com/obra/superpowers)) governs **process discipline** — brainstorming, `writing-plans`, `executing-plans`, TDD, systematic-debugging, and subagent-driven development. They interlock: Superpowers' `writing-plans` produces a plan, ARIA's `/prospect` pre-mortems it before execution, Superpowers executes it, and ARIA's `/retrospect` closes the loop with per-fix validation. ARIA even stores plans/specs in the `docs/superpowers/{plans,specs}/` convention. **Strongly recommended, but optional** — ARIA works standalone; the two together are a full plan→build→verify→learn discipline. Install it? (y/n)"*
+
+  - This step does **not** install Superpowers itself (it's a separate plugin). On `y`, point the user to the install command — *"Install it with `/plugin install superpowers@claude-plugins-official` (the official Claude plugins marketplace), then restart the session. If that marketplace isn't registered yet, run `/plugin` to browse and add it."* On `n`, skip — *"Skipped. You can add Superpowers anytime; ARIA doesn't require it."*
+
+This is a recommendation only — ARIA never depends on Superpowers being present, and no ARIA skill is gated on it. Note the outcome in the Step 8 summary (*"Superpowers: detected / recommended (not installed)"*).
+
+## Step 6: Cadence Configuration
+
+Present current or default cadences:
+> "Audit cadences control how often you're prompted to review knowledge:
+> - **Knowledge audit:** triggers when either (a) backlog accumulates 20+ entries (primary, activity-driven) or (b) 7 days have elapsed since the last audit (safety net for low-activity weeks). Tier messages differ by size: 20+ "suggested", 35+ "recommended", 50+ "overdue — multi-pass".
+> - **Config audit:** every 14 days (checks configs and docs for drift)
+> - **Update check:** every 30 days (prompts to run /setup for plugin template updates)
+>
+> Want to change any? (Enter new values or press enter to keep defaults. Knowledge audit has two knobs: `audit_trigger_threshold` (entries, default 20) and `audit_cadence_knowledge` (days, default 7).)"
+
+Record the values.
+
+### Advanced Options
+
+> **These now have a visible effect.** The session and project settings below
+> (`projects_enabled`, `session_start_project_picker`, `session_state`, `autonomy`) drive
+> directives that reach Claude directly via the SessionStart hook. Before that delivery was
+> fixed they were generated and discarded, so turning one on changed less than it looked
+> like. All still default off; Step 7h reports which ones at the end.
+
+**Always offer** the advanced-settings review on every `/setup` run — both fresh installs and re-runs. New users need to see what's tunable up front rather than discovering it later; returning users need to surface and adjust values they may not have configured initially (e.g., keys added by plugin updates since their last `/setup`). Auto-mode users still see the bundle; pressing enter to accept defaults is an explicit no-op rather than a silent skip.
+
+**Highlight new-since-last-setup keys (re-runs only):** before showing the bundle below, compare each Advanced Option key against the existing config from Step 1. For any key that exists in this spec but is **not** present in the user's current config (the upgrade case — a plugin update added the key after the user's last `/setup`), append `[NEW]` to that bullet's title in the bundle and prepend a one-line note above the bundle:
+
+> *"Some settings are new since your last `/setup` run — `[NEW]` markers below indicate keys added by plugin updates that aren't yet in your config. Consider whether to set them now."*
+
+Detection is a per-key `grep -q '^{key}:' ~/.claude/aria-knowledge.local.md`; non-zero exit means the key is missing → flag with `[NEW]`. For fresh installs there is no prior config to compare against, so no `[NEW]` markers appear and no preamble note is shown — the bundle just renders defaults.
+
+**Emit detection summary (v2.15.2+):** before showing the Advanced Options bundle, output a one-line audit-trail line naming the detection result, regardless of outcome. This makes the [NEW]-detection step transcript-visible so users can verify the wizard actually ran the comparison instead of silently skipping it.
+
+- If `[NEW]` keys were found: `[setup] Advanced Options [NEW]-detection: flagged {N} key(s) added since v{last_setup_version} — {key1}, {key2}, ...`
+- If no `[NEW]` keys: `[setup] Advanced Options [NEW]-detection: none — all keys present in current config.`
+- For fresh installs (no prior config): `[setup] Advanced Options [NEW]-detection: skipped — fresh install, no prior config to compare against.`
+
+The summary line precedes the bundle text. If the user later questions "did the wizard surface my new field?", the transcript carries the explicit yes-or-no.
+
+> "Advanced settings (defaults are fine for most users):
+> - **Freeform tag promotion threshold:** 3 (suggest promoting a freeform tag to known after it appears on this many files)
+> - **Staleness threshold:** 6 months (flag knowledge files not updated within this period)
+> - **Ideas staleness threshold:** 7 days (during `/audit knowledge`, mark idea files in `intake/ideas/` older than this with `[STALE — still relevant?]` to prompt Accept/Reject/Defer decisions)
+> - **Auto-capture on compaction:** true (save transcript snapshot before context compaction)
+> - **Active knowledge surfacing:** true (when enabled, four hooks — SessionStart, TaskCreated, PreToolUse:Bash with cd, PostCompact — and two skills — /prospect, /retrospect — auto-load context at trigger moments. **Two kinds of context get surfaced (v2.16.1 expansion):** (a) **knowledge files** matched by tag against the user's task/cd-target/skill-input, and (b) **tracked artifacts** — CODEMAP directory + STITCH for the detected project (boundary-detected; not the full CODEMAP). Both surface with staleness annotations against `codemap_staleness_threshold_days` (default 14) and `stitch_staleness_threshold_days` (default 30); grossly-stale artifacts (>2× threshold) refuse to load with a warning. Companion surfaces — /audit config, /stats, /handoff, /wrapup — also gate their tracked-artifact surfacing on this flag. Set to `false` for passive mode where hooks only suggest `/context <tag>` and all proactive artifact loading is suppressed (users load manually via /context). Active mode honors a session-scoped dedup ledger (`aria-active-{session_id}` in the private per-user state directory, named to the model by `ledger=` in `ARIA CONFIG`) so the same file/artifact isn't re-Read across triggers. See CONFIG.md for the trigger sites and the ≥2-tag-match threshold + 5-file cap policy.)
+> - **Session state file (`SESSION.md`):** false (when on, aria-knowledge writes a per-project `SESSION.md` — `in-progress` at session start, `wrapup`/`handoff` at close — and offers to resume from it at session start; enables re-entry + the aria-atlas status board. Files are created at project roots only when on. Change later via `session_state` in `~/.claude/aria-knowledge.local.md`. A companion `session_stale_days` key [default 7] controls when a saved resume prompt is treated as possibly-stale: an older entry triggers a "still relevant? [resume / archive / keep]" prompt at session start instead of being presented as live — it never auto-evicts. A second companion key `session_state_tracked` [default false] decides whether `SESSION.md` is **git-ignored** or **committed**: the default treats it as ephemeral, while `true` treats it as a tracked decision-trail artifact that `/wrapup` and `/handoff` stage with their commit. Set it `true` in repos with no `PROGRESS.md`, where `SESSION.md` *is* the durable log and the ephemeral rationale does not apply. ⚠ Whichever it is set to, both skills test tracking with `git ls-files --error-unmatch`, not by looking for the pattern in `.gitignore` — an ignore rule is a no-op on an already-tracked path, so a pattern check never becomes true and the ignore line is appended on every run.)
+> - **Auto-prospect (`auto_prospect`):** off (when `nudge`, writing a plan to `docs/plans/` or `docs/superpowers/plans/` prompts an offer to run `/prospect file <path>`; when `run`, it runs inline. `docs/specs/` is intentionally not a trigger. Change later via `auto_prospect` in `~/.claude/aria-knowledge.local.md`.)
+> - **Autonomy posture (`autonomy`):** default (decision-routing posture, Rule 35). `default` injects nothing — no behavior change, no context cost. `balanced` injects an investigate-first directive each session: ask on intent/preference/judgment-with-no-gainable-visibility + ungranted explicit approval; act on mechanical/objectively-validatable. `autonomous` injects the full posture: decide objectively-validatable forks yourself (checked against the build-philosophy bar, Rules 13/14/18), run quality gates as checks-not-stops, stop only on a no-visibility judgment call or ungranted explicit approval. Turn it up when you want the agent to spend fewer of your decisions on what it can resolve itself. Change later via `autonomy` in `~/.claude/aria-knowledge.local.md`.)
+> - **Auto-retrospect (`auto_retrospect`):** off (when `nudge` [recommended], a `git push` of ≥`retrospect_min_commits` commits to a branch in `retrospect_branches` prompts an offer to run `/retrospect range <old>..<new>`; `run` runs it inline — note the post-push session is not disposable, so `run` adds real cost. Gates: `retrospect_min_commits` default 3, `retrospect_branches` default `main,master,production`.)
+> - **Usage alert threshold (`usage_alert_threshold`):** 80 (the percentage at which the status-line meter's `UserPromptSubmit` hook injects a usage warning into Claude's context when context-window, 5-hour, or 7-day usage crosses it — fires once per 5-point band, escalates, rearms after a drop). Only active when the status-line meter is installed (Step 5b). Set `off` to disable injection — Claude still reads usage on demand from the snapshot. Valid range 1–100.
+> - **Critical paths:** (empty) comma-separated path patterns that always require HIGH impact assessment (e.g., auth/*,payments/*,migrations/*)
+> - **Preflight commit gate (`preflight_gate`):** warn (what happens on a `git commit` with no `/preflight` recorded this session. `off` = never fires; `warn` = a reminder; `deny` = block every code commit. Any recorded preflight — of any verdict — satisfies the gate for the rest of the session, so even `deny` costs one run, not one per commit. Docs-only commits are always silent. An unrecognized value falls back to `warn`, never `off`.)
+> - **Preflight deny paths (`preflight_deny_paths`):** (empty) space-separated globs matched against **repo-relative** staged paths. An *escalation*, independent of the gate: `warn` + named paths = warn generally, block on these. Note the docs filter runs first, so `*.md` paths can never be covered here.
+> - **Preflight deny repos (`preflight_deny_repos`):** (empty) comma-separated substrings matched against the repository's absolute path — the way to say "always gate this repo", which deny_paths cannot express (staged paths are repo-relative and never contain the repo name). Substring, so it over-matches a same-named sibling; for a gate that is the safe direction. Same independence as deny_paths.
+> - **Style-audit lookback (`style_lookback_days`):** 90 (on `/audit style`'s first-ever run, how many days of session-log history to window the initial scan to. Later runs resume incrementally from the style-audit log's last stamp, so this only matters cold-start or after a `window <D>` override. Change later via `style_lookback_days` in `~/.claude/aria-knowledge.local.md`.)
+> - **Style-audit session cap (`style_max_sessions`):** 50 (the over-cap gate `/audit style` Step 1b stops at before scanning — exceeding it prompts `recent`/`all`/`window <D>`/`cancel` rather than silently truncating. Change later via `style_max_sessions`.)
+> - **Style-audit log path (`style_audit_log`):** `{knowledge_folder}/logs/style-audit-log.md` (where `/audit style` stamps its incremental scan boundary after each run. Change later via `style_audit_log`.)
+> - **External-fetch gate (`external_fetch_gate`):** off (when `on`, the first `WebFetch`/`WebSearch` per session aimed at a surface already covered by your curated knowledge dirs (`approaches`, `references`, `projects`, `rules`, `guides`, `decisions`) or your memory dirs is denied **once**, naming the matched files; the retry passes. Coverage is keyed on the URL's registrable domain, or on vendor-like words in a search query — ordinary English words are filtered out. It is an *interrupt, not a verification*: it cannot confirm you read the file. Change later via `external_fetch_gate` in `~/.claude/aria-knowledge.local.md`.)
+> - **External-fetch ambient cap (`external_fetch_max_hits`):** 8 (above this many matching files the surface is treated as ambient and the gate stays silent — a host mentioned in 76 files carries no signal, and surfacing them all trains you to dismiss the hook. Change later via `external_fetch_max_hits`.)
+> - **Ticketing plugins:** (empty) comma-separated `tag:plugin-command` pairs mapping a project tag to its ticket-drafting plugin (e.g., `proj-a:foo-ticket,proj-b:bar-ticket`). When set, `/audit knowledge` prints a hint to use that plugin's command when an idea's project matches a mapped tag during the `Accept → tracker` disposition. Hint only — never auto-invokes. Leave empty if you don't use a ticketing plugin or prefer to copy ideas into your tracker manually. Plugin commands are bare names — no leading `/`. Validate input: each pair must contain exactly one `:` separating tag from command; project tags cannot contain `:` or `,`; plugin commands cannot start with `/` (strip leading `/` and warn if found).
+> - **Project-specific knowledge tier:** disabled (creates `projects/{tag}/` subdirectories for project-specific decisions and patterns; opt in if you want to organize knowledge by project alongside the cross-project tree. If enabled, you'll be asked an inline follow-up about auto-loading project context on session start.)
+>
+> Want to change any? (Enter new values or press enter to keep defaults)"
+
+Record the values.
+
+### Skill-only fields (read-only awareness)
+
+Some configuration is consumed by skills (which parse YAML natively in Claude's context) rather than by bash hooks. These fields use multi-line nested YAML blocks that don't fit the single-line bundle prompt above and are **not** offered for interactive editing here — they're either populated by their consuming skill's auto-propose bootstrap (e.g., `/distill --group=<tag>`, `/stitch create <tag>`) or hand-edited per the schema in `CONFIG.md`.
+
+Currently in this category:
+
+- **`projects_groups`** — multi-repo group mapping (backend/web/mobile sub-folder layout per project tag). Read by `/distill` and `/stitch`. Auto-populated on first multi-repo skill invocation; hand-editable per `CONFIG.md` "Skill-only fields" section.
+
+If Step 1 detected this field, restate its current group count here for confirmation: *"Skill-only fields preserved: `projects_groups` ({N} groups). Edit via `CONFIG.md` schema or let `/distill`/`/stitch` auto-propose new groups on first use."* If absent, say: *"No skill-only fields configured. `/distill --group=<tag>` and `/stitch create <tag>` will auto-propose `projects_groups` entries on first use for any multi-repo project."*
+
+This block is read-only — `/setup` never writes new entries here. See **Step 7 / Step 7b** for how the existing block is preserved and validated.
+
+### Project Setup (only if user enables the project-specific knowledge tier)
+
+If the user enables (or keeps enabled) the project-specific knowledge tier in Advanced Options, ask six follow-up questions. In **update mode** where values already exist in the config, show the current value for each question and let the user keep it (press enter) or enter a new value — this is the discoverable path for toggling `auto_load_project_context` on a re-run when the tier was previously enabled:
+
+1. **Project list** — "Comma-separated `tag:relative-path` pairs (e.g., `proj-a:path/to/proj-a,proj-b:proj-b,lib:shared-lib`). Paths are relative to the parent of your knowledge folder (typically `~/Projects/`). Press enter to defer adding projects:"
+2. **Project remotes (optional)** — "Optional git-remote URL patterns for fallback project detection when CWD doesn't match a configured path. Comma-separated `tag:url-substring` pairs (e.g., `proj-a:myorg/proj-a-repo`). Press enter to skip:"
+3. **Promotion threshold** — "Minimum number of projects that must share a similar pattern before `/audit knowledge` suggests cross-project promotion (default 2):"
+4. **Auto-load project context on session start** — "When your CWD matches a configured project, should SessionStart automatically suggest `/context {tag}`? This is a runtime convenience — the project tier works fine without it, and you can change this later by editing `auto_load_project_context` in `~/.claude/aria-knowledge.local.md`. (y/n, default n):"
+5. **SessionStart project picker** — "When you open a session from a multi-project parent directory (no project chosen yet), should ARIA suggest a project menu generated from your `projects_list`? Non-blocking — you can always just name a project or start working. (y/n, default n):" → writes `session_start_project_picker`.
+6. **Project display labels (optional)** — "Optional friendly names for the picker menu. Comma-separated `tag:Label` pairs (e.g., `api:API Server,web:Web Client`). Empty = bare tags. Press enter to skip:" → writes `projects_labels`.
+
+**Validate input:**
+- Project tags cannot contain `:` or `,` (these are the parser delimiters). If invalid, show the offending tag and re-prompt.
+- Promotion threshold must be a plain integer ≥ 1. If invalid, re-prompt.
+- Auto-load answer must be `y`/`n` (or empty for default). If invalid, re-prompt.
+- SessionStart project picker answer must be `y`/`n` (or empty for default). If invalid, re-prompt.
+- `projects_labels` is comma-separated `tag:Label` pairs, or empty. Warn (don't error) if a label's tag is not in `projects_list`.
+- For each `tag:path` pair, warn (don't error) if the resolved path doesn't exist on disk yet — the user may be configuring projects they haven't created.
+
+**Existing-folder detection:**
+
+Before prompting, scan the user's knowledge folder for an existing `projects/` subdirectory:
+
+- **If found AND `projects_enabled` is unset in config:** Skip the Advanced Options bullet for this feature; instead prompt directly: "Detected existing `projects/` folder with these subdirectories: [list]. Enable project-specific knowledge tier? (y/n)" — if yes, auto-populate `projects_list` from detected subdirectories (prompt for the path mapping per detected tag), then ask question 4 from the Project Setup flow above so the user can opt into `auto_load_project_context` at the same time.
+- **If found AND `projects_enabled: false` explicitly in config:** Leave the existing folder untouched; note in verbose output: "An existing `projects/` folder was detected but the projects tier is disabled in config. Folder is preserved; automation is off."
+- **If found AND `projects_enabled: true`:** Verify each detected subdirectory is in `projects_list`; prompt to add any missing ones. Then surface the current `auto_load_project_context` value as a status check: "Auto-load project context on session start is currently [on/off]. Change? (y/n, default n — keep current)." — this is the re-run discoverability path for toggling the flag when the tier was previously enabled.
+
+**Never auto-delete or auto-rewrite existing `projects/` content.**
+
+### Shared Knowledge Setup (only if user enables the project tier)
+
+After Project Setup completes (questions 1-6), if `projects_enabled: true` AND `projects_list` is non-empty, ask two follow-up questions about the shared-knowledge feature. In **update mode** where values exist, show current values and let the user keep (press enter) or change.
+
+7. **Which projects do you want to enable shared knowledge for?** — *"This is an opt-in extension that lets you promote selected personal knowledge into per-repo `_project-knowledge/` folders so teammates can see what you've learned. Personal knowledge stays in your own knowledge folder; team copies are independent records committed to your project repos via your normal git workflow. Most users have many repos but only a few with teams to share with — pick only the ones with teammates who'd benefit. Your configured projects: {projects_list tag enumeration}. Enter comma-separated tags (default: empty = feature disabled, all projects stay personal-only):"*
+
+8. **Author tag for shared-knowledge filenames** — only ask if Q7 returned a non-empty tag list. *"Shared-knowledge files use `{YYYY-MM-DD}-{author-tag}-{slug}.md` naming. Pick a short author tag (e.g., `init`, or initials, or first2+last2 of your name). Default: derived from `git config user.name` (first 2 chars of first name + first 2 chars of last name) → '{auto-derived}':"*
+
+**Validate input:**
+- Q7 answer is a comma-separated tag list, or empty (= feature disabled). Each tag must already exist in `projects_list`. If a tag is not in `projects_list`, show the offending tag and re-prompt: *"Tag '{tag}' is not in projects_list. Available: {projects_list tags}. Re-enter:"*. Empty input is valid and means feature disabled.
+- Q8 author_tag must be 1-12 characters, alphanumerics + hyphens only (the value will appear in filenames). If invalid, show offending characters and re-prompt.
+- If Q7 returned a non-empty list but Q8 produces an empty value AND no derivable git user.name exists, warn: *"Author tag is required for shared knowledge. You can set `author_tag` later in `~/.claude/aria-knowledge.local.md`, but `/audit share` will refuse to run until it's set."* Continue setup with `author_tag:` empty.
+
+**Schema note:** the config field `projects_shared_knowledge` is itself the comma-separated tag list (the value IS the scope). Empty/missing = feature disabled. There is no separate boolean toggle; the field's presence and content together encode "enabled and for which projects." A legacy value of `true` (from pre-publish v2.13.0 stubs) is treated the same as empty and triggers Q7 to populate the list properly on `/setup` re-run.
+
+**CLAUDE.md reference handling deferred to first-write.** Earlier drafts of this spec offered to append `_project-knowledge/` references to project CLAUDE.md files at setup time. That has been removed: documenting a convention before the folder exists is aspirational, batch-applying across all projects loses per-repo nuance (different repos may have different teams / visibility), and a default-`y` prompt for a teammate-affecting change is more aggressive than ARIA's normal posture. The CLAUDE.md reference offer now happens inside `/audit share` Step 6.5 the first time a file is actually written to a repo's `_project-knowledge/` folder — at that moment the folder + README exist, the user has just made an active sharing decision, and per-repo confirmation with git-tracked detection can be presented in context. Step 6.5b additionally handles the multi-repo container CLAUDE.md case for tags with `projects_groups` entries.
+
+**Amended 2026-08-26 — narrowed, not reversed.** The deferral above still governs
+`_project-knowledge/` references, for exactly the reasons it gives. It does **not** govern a
+*rules pointer*, and the distinction is the objection itself: "documenting a convention
+before the folder exists is aspirational" does not apply to `rules/working-rules.md` and
+`rules/user-rules.md`, which exist the moment `/setup` finishes. Step 7f offers that
+pointer under the same guardrails this ADR was protecting — explicit, **default no**,
+per-repo, showing the exact text before writing, and reporting whether the target is
+git-tracked so a teammate-visible write is a visible decision. Nothing is batch-applied.
+
+**Existing `_project-knowledge/` folder detection:**
+
+Before completing this section, scan for existing `_project-knowledge/` folders. Scan locations depend on whether the project is single-repo or multi-repo (matches `/audit share` Step 2.3 and `/index` Phase 5 conventions):
+
+- **Single-repo project** (no `projects_groups[tag]` entry): probe `<project-root>/_project-knowledge/`.
+- **Multi-repo project** (`projects_groups[tag]` set): probe each sub-repo declared in the group (`<project-root>/<sub-repo>/_project-knowledge/`), in declaration order. Skip sub-repos whose path doesn't exist on disk.
+
+For each scan location where a `_project-knowledge/` folder is found:
+
+- **If found AND its parent project tag is NOT in the user's `projects_shared_knowledge` list:** Note in verbose output: *"An existing `_project-knowledge/` folder was detected at `<scan-location>` (parent project tag `{tag}`) but `{tag}` is not in your shared-knowledge list. Add `{tag}` to the list now? (y/n)"* — if yes, append the tag to the Q7 answer and continue.
+- **If found AND its parent project tag IS in the list:** No action; the folder will be picked up by `/index` Phase 5 on next rebuild.
+- **If found AND `projects_shared_knowledge` is empty:** Note: *"An existing `_project-knowledge/` folder was detected at `<scan-location>` but the shared-knowledge feature is disabled (empty list). Folder is preserved; `/index` and `/context` won't surface it until you enable the feature for tag `{tag}` via `/setup`."*
+
+For multi-repo projects, all of the project's sub-repos are evaluated independently — finding `_project-knowledge/` in one sub-repo doesn't suppress the scan of others. Each surfaces its own note.
+
+## Step 7: Write Config
+
+Write `~/.claude/aria-knowledge.local.md` with the collected settings:
+
+```yaml
+---
+knowledge_folder: [path from Step 2]
+audit_cadence_knowledge: [value from Step 6, default 7]
+audit_trigger_threshold: [value from Step 6, default 20]
+audit_cadence_config: [value from Step 6]
+explanatory_plugin: [true/false from Step 5]
+audit_cadence_update: [value from Step 6, default 30]
+last_setup_version: [INSTALLED_VERSION from Step 1 — the plugin version active when this /setup ran]
+freeform_promotion_threshold: [value from Step 6, default 3]
+staleness_threshold_months: [value from Step 6, default 6]
+ideas_staleness_threshold_days: [value from Step 6, default 7]
+auto_capture: [true/false from Step 6, default true]
+active_knowledge_surfacing: [true/false from Step 6, default true]
+session_state: [true/false from Step 6, default false]
+session_stale_days: [integer, default 7]
+session_state_tracked: [true/false, default false]
+auto_prospect: [off/nudge/run, default off]
+auto_retrospect: [off/nudge/run, default off]
+autonomy: [default/balanced/autonomous, default default]
+retrospect_min_commits: [integer, default 3]
+retrospect_branches: [comma-list, default main,master,production]
+usage_alert_threshold: [value from Step 6, default 80; or `off` to disable usage injection]
+critical_paths: [comma-separated patterns from Step 6, default empty]
+planning_paths: [comma-separated patterns from Step 6, default empty]
+external_fetch_gate: [on/off from Step 6, default off]
+external_fetch_max_hits: [integer from Step 6, default 8]
+preflight_gate: [off | warn | deny, from Step 6, default warn]
+preflight_deny_paths: [space-separated globs from Step 6, default empty]
+preflight_deny_repos: [comma-separated repo-path substrings from Step 6, default empty]
+style_lookback_days: [integer from Step 6, default 90]
+style_max_sessions: [integer from Step 6, default 50]
+style_audit_log: [path from Step 6, default {knowledge_folder}/logs/style-audit-log.md]
+ticketing_plugins: [comma-separated tag:plugin-command pairs from Step 6, default empty]
+projects_enabled: [true/false from Step 6, default false]
+projects_list: [comma-separated tag:path pairs from Step 6, default empty]
+projects_remotes: [comma-separated tag:url-pattern pairs from Step 6, default empty]
+projects_promotion_threshold: [integer from Step 6, default 2]
+auto_load_project_context: [true/false from Step 6, default false]
+session_start_project_picker: [true/false from Step 6, default false]
+projects_labels: [comma-separated tag:Label pairs from Step 6, default empty]
+projects_shared_knowledge: [comma-separated tag list from Shared Knowledge Setup Q7, default empty = feature disabled; each tag must exist in projects_list]
+author_tag: [string from Shared Knowledge Setup Q8, default empty when projects_shared_knowledge is empty]
+---
+```
+
+Add a markdown body below the frontmatter:
+
+```markdown
+# Knowledge Tools Configuration
+
+Configured by /setup on [today's date].
+```
+
+In **update mode:** preserve any user-added content in the markdown body below the frontmatter when rewriting.
+
+**Formatting rules** — the config file MUST follow these exact conventions or the hook scripts cannot parse it. The hooks parse this file using pure `grep + sed` (no jq/yq/python) — these constraints exist so the substitution patterns in `scripts/config.sh` work correctly, and any deviation breaks parsing silently.
+- Frontmatter delimiters must be exactly `---` on their own line (no leading spaces, no trailing content)
+- Each key must start at column 1 with no indentation
+- Keys use the exact names shown above (no quoting, no trailing spaces)
+- Values must NOT be quoted — write `knowledge_folder: /path/to/folder`, not `knowledge_folder: "/path/to/folder"`
+- **Empty values:** write `key:` with nothing after the colon (optionally one trailing space). Do NOT write `key: null`, `key: ""`, `key: none`, or `key: []` — the parser treats those as literal string values (`"null"`, `"\"\""`, etc.) and validators won't normalize them to empty
+- `knowledge_folder` must be an absolute path (starts with `/`) and must not contain `..`
+- Cadence values must be plain integers (no units, no quotes)
+- `projects_enabled` must be exactly `true` or `false` (not `True`, `yes`, `1`, etc.)
+- `projects_shared_knowledge` is a comma-separated tag list (e.g., `cs,ss`) — empty/missing = feature disabled. Each tag must already exist in `projects_list`. No spaces around commas. Tags cannot contain `:` or `,` (same as `projects_list`). A legacy literal `true` value is treated as empty (triggers `/setup` to repopulate the list properly). Requires `projects_enabled: true` to take effect.
+- `author_tag` is a 1-12 char string of alphanumerics + hyphens (used in shared-knowledge filenames); leave empty if `projects_shared_knowledge` is empty
+- `projects_list`, `projects_remotes`, and `ticketing_plugins`: comma-separated `tag:value` pairs, no spaces around the colon or comma (e.g., `proj-a:path/to/proj-a,proj-b:proj-b` for paths; `proj-a:foo-ticket,proj-b:bar-ticket` for plugin commands)
+- Project tags (used in `projects_list`, `projects_remotes`, `ticketing_plugins`) cannot contain colons or commas (the parser splits on these)
+- `ticketing_plugins` plugin-command values are bare command names without the leading `/` (e.g., `foo-ticket`, not `/foo-ticket`) — `/audit knowledge` prepends the slash when printing the hint
+- `last_setup_version` is a semver string read from `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` at Step 1 — write it as bare digits-and-dots (e.g., `2.12.1`), not quoted, not prefixed with `v`. The session-start hook compares this against the installed plugin version to detect upgrades since the user's last `/setup`
+- `projects_promotion_threshold` must be a plain integer ≥ 1 (no units, no quotes)
+- `auto_load_project_context` must be exactly `true` or `false` (not `True`, `yes`, `1`, etc.)
+- No blank lines between frontmatter entries
+- **Skill-only multi-line YAML blocks** (currently `projects_groups`; see `CONFIG.md`) must sit at the **end** of the frontmatter, after every column-1 hook-parsed key. Their indented sub-keys must use 2-space indents for tags and 4-space indents for role values. The blank-line-free rule applies inside the block too — no blank lines between sub-entries.
+- **In update mode, preserve every skill-only multi-line YAML block verbatim.** Do not reformat, reorder, or strip sub-entries. The block was either written by an auto-propose bootstrap (`/distill`, `/stitch`) or hand-edited per `CONFIG.md`; `/setup` is read-only for these. If a block exists in the input config, copy it byte-for-byte to the output config; if absent, write nothing for that field.
+
+## Step 7b: Verify Config Round-Trip
+
+After writing the config file, read it back and verify that each value can be extracted using the same patterns that `config.sh` uses. This catches formatting issues before the user discovers them in the next session.
+
+**Verification checks:**
+1. Read `~/.claude/aria-knowledge.local.md`
+2. Extract the frontmatter block (content between the first and second `---` lines)
+3. For each key, verify the value matches what was intended:
+   - `knowledge_folder` — grep for `^knowledge_folder:` and confirm the extracted path matches Step 2's value
+   - `audit_cadence_knowledge` — confirm it's the integer from Step 6
+   - `audit_trigger_threshold` — confirm it's the integer from Step 6 (default 20)
+   - `audit_cadence_config` — confirm it's the integer from Step 6
+   - `explanatory_plugin` — confirm it's `true` or `false`
+   - `audit_cadence_update` — confirm it's the integer from Step 6
+   - `freeform_promotion_threshold` — confirm it's the integer from Step 6
+   - `staleness_threshold_months` — confirm it's the integer from Step 6
+   - `ideas_staleness_threshold_days` — confirm it's the integer from Step 6
+   - `auto_capture` — confirm it's `true` or `false`
+   - `active_knowledge_surfacing` — confirm it's `true` or `false`
+   - `session_state` — confirm it's `true` or `false`
+   - `auto_prospect` / `auto_retrospect` — confirm each is `off`, `nudge`, or `run`
+   - `usage_alert_threshold` — confirm it's `off` or a plain integer in 1–100 (matches Step 6 input; default 80). Any other value is reset to 80.
+   - `critical_paths` — confirm it's a comma-separated string of path patterns (or empty)
+   - `planning_paths` — confirm it's a comma-separated string of path patterns (or empty)
+   - `preflight_gate` — confirm it is exactly `off`, `warn` or `deny`. Any other value is rewritten to `warn`, never to `off`: a typo must not silently disable a gate the user believes is on.
+   - `preflight_deny_paths` — confirm it's a space-separated string of globs (or empty). **Independent of `preflight_gate`, not a sub-setting of it**: these paths deny from any baseline, the same way `critical_paths` escalates Rule 22 regardless of surroundings. So `preflight_gate: warn` + named paths = "warn on code commits, but block on these" — the configuration most users want. Empty means no escalation. ⚠ Patterns are matched against **repo-relative** staged paths, and the docs filter drops `*.md`/`*.txt`/`*.rst`/`docs/*` before matching — so a `.md` path here can never fire, and a bare filename will not match that file nested in a subdirectory.
+   - `preflight_deny_repos` — confirm it's a comma-separated string of substrings (or empty); no spaces around commas. Matched against the repository's resolved absolute path, so it expresses "always gate this repo" — which `preflight_deny_paths` structurally cannot, staged paths being repo-relative. Independent of the gate, exactly like `preflight_deny_paths`. Empty means no escalation.
+   - `style_lookback_days` — confirm it's the integer from Step 6 (default 90)
+   - `style_max_sessions` — confirm it's the integer from Step 6 (default 50)
+   - `style_audit_log` — confirm it's a path string (default `{knowledge_folder}/logs/style-audit-log.md`, with `{knowledge_folder}` resolved to the actual configured path)
+   - `ticketing_plugins` — confirm it's a comma-separated string of `tag:plugin-command` pairs (or empty); validate no project tag contains `:` or `,`; validate plugin-command values do not start with `/`
+   - `last_setup_version` — confirm it matches `INSTALLED_VERSION` captured in Step 1 (this run's plugin version); validate it's a semver-shaped string of digits and dots (no `v` prefix, no quotes, no trailing whitespace). If it's missing or doesn't match, rewrite the line and re-verify
+   - `projects_enabled` — confirm it's `true` or `false`
+   - `projects_list` — confirm it's a comma-separated string of `tag:path` pairs (or empty); validate no project tag contains `:` or `,`
+   - `projects_remotes` — confirm it's a comma-separated string of `tag:url-pattern` pairs (or empty); validate no project tag contains `:` or `,`
+   - `projects_promotion_threshold` — confirm it's a plain integer ≥ 1 (matches Step 6 input)
+   - `auto_load_project_context` — confirm it's `true` or `false`
+   - **Empty-sentinel check** — for string-valued keys with an empty default (`critical_paths`, `planning_paths`, `preflight_deny_paths`, `preflight_deny_repos`, `ticketing_plugins`, `projects_list`, `projects_remotes`): confirm the raw extracted value is not the literal string `null`, `""`, `none`, or `[]`. If the key is intended to be empty, the value after the colon must be truly empty (nothing or a single trailing space). Rewrite the key as `key:` and re-verify.
+
+**Skill-only field validation (`projects_groups`)** — if the field is present in the config, run structural-only checks. Do not attempt to flatten or rewrite this field; it's parsed by skills, not bash, so the verification mirrors that consumer.
+
+1. **Block placement** — `projects_groups:` must sit **after** every hook-parsed key. If a column-1 hook-parsed key appears below the block (between it and the closing `---`), the parser scope is at risk. Move the block to the end of the frontmatter and re-verify.
+2. **Indentation shape** — sub-tags use 2-space indents; role values use 4-space indents; no blank lines inside the block. Use this awk pattern to extract the block and inspect:
+   ```bash
+   awk '/^projects_groups:$/{in_block=1; next} in_block && /^---$/{exit} in_block && /^[^[:space:]]/{exit} in_block{print}' ~/.claude/aria-knowledge.local.md
+   ```
+   Reject the block if any line inside the block fails to match `^  [^[:space:]].*:$` (tag header) or `^    [^[:space:]].*: .+$` (role value). Report the offending line and stop — do not auto-rewrite (the user may have a custom role layout the skills support but the regex doesn't predict).
+3. **Tag cross-check (warn, do not fail)** — every tag inside `projects_groups` should also appear in `projects_list` so `/distill` and `/stitch` can resolve `<project_root>`. If a `projects_groups` tag is not in `projects_list`, emit a warning: *"Warning: `projects_groups` tag `{tag}` is not declared in `projects_list`. `/distill --group={tag}` and `/stitch create {tag}` will fail until `{tag}` is added to `projects_list`. (This may be intentional if you're staging a project not yet path-mapped.)"* Do not block setup.
+
+**If any check fails:** rewrite the file with corrected formatting and verify again. Report which value failed and what was fixed.
+
+**If all checks pass:** proceed to Step 7c silently.
+
+## Step 7c: Project Tier Scaffolding
+
+Runs only if the config just written has `projects_enabled: true` and a non-empty `projects_list`. Skip entirely otherwise — no action, no output.
+
+Scaffold the project tier using the final config values:
+
+1. **Create `projects/` directory** if it doesn't exist.
+2. **Copy `${CLAUDE_PLUGIN_ROOT}/template/projects/README.md` to `projects/README.md`** if missing (plugin-managed; will be diffed on future `/setup` runs).
+3. **For each entry in `projects_list` (parsed as `tag:path` pairs):**
+   - Create `projects/{tag}/` if missing.
+   - Create `projects/{tag}/decisions/`, `projects/{tag}/patterns/`, and `projects/{tag}/rules/` if missing. The `rules/` subdir is the destination for `/audit knowledge` Step 7's project-tier rule promotion (`{knowledge_folder}/projects/{tag}/rules/working-rules.md`); it stays empty until the first rule is promoted.
+   - If `projects/{tag}/README.md` does not exist, generate it from this per-project template:
+     ```markdown
+     ---
+     Last updated: [today's date]
+     tags: [{tag}, knowledge-structure]
+     ---
+
+     # {Project Display Name} Project Knowledge
+
+     Project-specific architecture decisions, patterns, and gotchas for {project display name}.
+
+     ## Structure
+
+     - `decisions/` — Architecture Decision Records (ADRs) — numbered sequentially per project (001, 002, ...)
+     - `patterns/` — Reusable patterns specific to this project
+     - `rules/` — Project-specific working rules promoted from `intake/rules-backlog.md`; lands `working-rules.md` here
+     - `guides/` (optional) — Operational knowledge specific to this project; create on demand
+     - `references/` (optional) — External resources specific to this project; create on demand
+
+     ## Promotion
+
+     When a pattern in this folder is validated in another project, `/audit knowledge` will surface it as a candidate to promote to `knowledge/approaches/`. See `knowledge/projects/README.md` for the full promotion ladder.
+
+     ## Related
+     - [../README.md](../README.md) — projects/ tier overview
+     - [../../index.md](../../index.md) — tag index
+     ```
+     - **Project Display Name** is derived from the tag with hyphens converted to spaces and title-cased (e.g., `proj-a` → `Proj A`). If the tag doesn't produce a sensible display name, use the tag as-is and prompt the user to edit the README header.
+4. **Never overwrite** existing per-project READMEs or content under `projects/{tag}/` — these are user-owned.
+5. **Report** what was scaffolded: "Project tier: created N directories, N per-project READMEs."
+
+## Step 7d: Shared Knowledge Initial Sync
+
+Runs only if the config just written has a non-empty `projects_shared_knowledge` tag list AND a non-empty `author_tag`. Skip entirely otherwise — no action, no output.
+
+This step does NOT auto-create `_project-knowledge/` folders in any repo. Folders are created on demand by `/audit share` Step 5 (when the user actually shares the first file to that repo). This avoids littering empty folders into repos the user may not actively use.
+
+**Initial sync offer:**
+
+⛔ **Probe first — the sweep is a COLD-START offer and must be gated on cold start.**
+Before prompting, probe the `_project-knowledge/` folders for every tag in
+`projects_shared_knowledge`, using the same scan-location logic as this step's
+existing-folder detection above (single-repo: `<project-root>/_project-knowledge/`;
+multi-repo: one probe per sub-repo declared in `projects_groups[tag]`).
+
+- **All probed folders empty** → make the offer below.
+- **Any folder populated** → do NOT offer. Emit ONE line stating what exists, e.g.
+  `Shared knowledge: 33 files across 5 locations (proj-a 1, proj-a/backend 6,
+  proj-a/web 14, proj-b/backend 7, proj-b/web 5). Run /audit share anytime.`
+
+Without the probe this step fires whenever `projects_shared_knowledge` is non-empty, so it
+calls itself a cold-start sweep on workspaces that are years past cold start. Measured
+2026-09-10: 33 files across 5 populated locations, i.e. the offer was pure noise on every
+re-run.
+
+Prompt the user:
+
+> *"Run `/audit share` now to review your existing personal knowledge for sharing? This is the cold-start sweep — without it, the feature is enabled but nothing is shared yet (every audit-share run is opt-in per item). (Y/n, default y):"*
+
+If yes: invoke `/audit share` inline as the next action. The user will see the audit-share batch summary and decide what to share. Setup's Step 8 (Confirm) runs after audit-share completes.
+
+If no: continue to Step 8. Note in setup output: *"Shared knowledge enabled but not yet populated. Run `/audit share` anytime to do an initial sweep, or it'll surface candidates as they accumulate in your knowledge folder."*
+
+## Step 7e: Self-Validation Audit (v2.15.2+)
+
+After Step 7b's round-trip verification, run a coverage audit to catch any `KT_*` fields documented in `scripts/config.sh` but missing from the user's written config. **This is a defense-in-depth check against the wizard's own discipline failures** — if Step 6's Advanced Options bundle silently skipped surfacing a key (e.g., the `active_knowledge_surfacing` gap that bit v2.15.1's first users), this step catches it before the user leaves `/setup` thinking everything is current.
+
+**Algorithm:**
+
+1. Enumerate known user-facing field names by reading `${CLAUDE_PLUGIN_ROOT}/scripts/config.sh` and extracting them from the parse lines. Each known field has the shape:
+
+   ```bash
+   KT_FIELDNAME=$(sed -n '/^---$/,/^---$/p' "$KT_CONFIG" | grep '^fieldname:' | sed 's/^fieldname: *//')
+   ```
+
+   Use `grep -oE "grep '\\^[a-z_]+:'" plugin-claude-code/scripts/config.sh | grep -oE '[a-z_]+'` to extract the user-facing field names — those are the canonical list of fields the wizard should have covered.
+
+2. For each known field, grep the just-written config `~/.claude/aria-knowledge.local.md` for `^{fieldname}:`. If the grep returns zero hits, add to a `MISSING_FIELDS` list.
+
+3. **If `MISSING_FIELDS` is non-empty:**
+   - Output: `Self-validation found {N} known field(s) missing from your config: {field1}, {field2}, ...`
+   - For each missing field, look up its default value by reading the matching `KT_FIELDNAME=${KT_FIELDNAME:-default}` line in `scripts/config.sh`. If no default is set, treat as empty.
+   - Prompt: *"Add all {N} missing fields with their defaults? (y/n/select): {field1}={default1}, {field2}={default2}, ..."*
+   - If user answers **y**: append each missing field as `fieldname: default` between the last column-1 hook-parsed field and the closing `---` of the frontmatter. Re-run Step 7b's round-trip verification on the additions.
+   - If user answers **n**: emit a one-liner to the setup output: *"Self-validation skipped: {N} field(s) missing ({list}). Run `/audit config` later to surface them again, or hand-add to `~/.claude/aria-knowledge.local.md`."* Do not block setup.
+   - If user answers **select**: walk per-field, prompting `Add {fieldname}: {default}? (y/n)` for each. Aggregate decisions; apply approved fields atomically.
+
+4. **If `MISSING_FIELDS` is empty:** print `Self-validation passed: all {N} known fields present in config.`
+
+**Why this exists (v2.15.2 Origin):** the `[NEW]` detection in Step 6's Advanced Options was specced to surface new-since-last-setup keys, but Step 6 is a *soft instruction* to Claude — it's not hook-enforced, so a fast or quiet /setup run can silently skip the detection. Step 7e is a final verification gate that runs against the canonical config.sh source of truth, surfacing any gap regardless of how the wizard got there. Pairs with `/audit config`'s missing-known-fields cascade check (Step 3b) as the audit-cadence safety net.
+
+## Step 7ea: Install the Always-On Rules Files
+
+⛔ **PRECONDITION — skip this whole step unless the writer exists in this port:**
+
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}"/.claude-plugin/plugin.json "${CLAUDE_PLUGIN_ROOT}"/hooks.json 2>/dev/null \
+  | grep -q 'session-start-check\.sh' \
+  && grep -q '^kt_ensure_rules_files()' "${CLAUDE_PLUGIN_ROOT}/scripts/session-start-check.sh" 2>/dev/null \
+  && echo applies || echo skip
+```
+
+⚠ The test is **registration**, not file presence, and the difference is the whole
+point. A port's build may copy every canonical `scripts/*.sh` indiscriminately, so the
+script can be sitting there unwired — measured: antigravity ships a copy that appears
+in none of its hook manifests, so it never runs. A `[ -f ]` check answered `applies`
+for that port and would have had a user hand-install files into a directory nothing
+reads. Verified discriminating: `applies` for claude-code, `skip` for antigravity and
+codex. ⚠ Since 2026-10-25 the writer lives in `session-start-check.sh` (it absorbed
+`session-start-rules.sh`). Every port ships a script of that name, so the test also requires
+the writer function itself, `kt_ensure_rules_files`, which only the Claude Code one defines.
+
+If it prints `skip`, say so in one line and move to Step 7f. This step describes a
+**Claude Code** mechanism: the instruction-file channel plus the hook that maintains
+it. Other runtimes have their own always-on rules surface — Antigravity scaffolds
+`.agents/rules/` in Step 7ca, Cursor compiles `.cursor/rules/*.mdc` — and those are
+already handled by their own steps. ⚠ The port build path-substitutes the directory
+below, which makes this step *look* right in a runtime that has no writer for it, so
+the precondition is the only thing that catches that.
+
+Runs after the config is written and validated, because one of the two files is
+generated from `knowledge_folder`.
+
+ARIA's working rules, its standing directives, and the user's own U-rules are
+delivered as **instruction files under `~/.claude/rules/`**, not through the hook
+payload. In Claude Code that channel is delivered in full and additionally reaches
+**subagents**, which the hook channel does not — before this, every delegated agent
+ran with zero ARIA rules. ⚠ Both of those are measurements about Claude Code's
+channel; neither has been measured for another runtime, which is the second reason
+this step is gated rather than ported.
+
+```
+~/.claude/rules/aria-rules.md       38 working rules + every standing directive
+~/.claude/rules/aria-user-rules.md  the user's own U-rules, as a digest
+```
+
+**Install them now:**
+
+```bash
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/session-start-check.sh" </dev/null >/dev/null 2>&1
+ls -l ~/.claude/rules/aria-rules.md ~/.claude/rules/aria-user-rules.md 2>/dev/null
+```
+
+⛔ **Invoke the hook rather than copying the files here.** `kt_ensure_rules_files`
+inside that script is the single implementation: it compares the digest, under its
+one-line version stamp, against the bundled copy, and renders the U-rule digest to a
+temporary file and replaces the installed one only when the CONTENT differs. Since 2.57.8
+it never replaces either file when the file's stamp names a NEWER aria-knowledge, because
+two installs, or a session started before an upgrade, can run the hook at the same time. (It used to test whether `user-rules.md`
+was newer; that was retired 2026-08-28 because a timestamp cannot see a plugin upgrade
+that changes how a rule renders, and unzip keeps old mtimes on a fresh install.) So a
+run that rewrites nothing means the installed digest is current, whatever the file
+dates say. A second copy routine in this skill would be a second write path with nothing
+comparing the two — the drift shape this plugin has already paid for more than once.
+
+**Why this step exists at all**, given the hook self-heals on its own: the hook can
+only take effect from the **next** session, because the instruction-file set is
+snapshotted at session start. Running it here means a user who has just completed
+`/setup` gets the files in place immediately, and — more importantly — `/setup` is
+where a write into the user's own configuration is *expected and consented to*,
+rather than appearing silently later.
+
+**Report both paths in the summary**, naming them explicitly. A file the plugin
+writes into a user's config and never mentions is the defect that produced this
+whole arc: content generated, delivered nowhere, and nobody told.
+
+⚠ Both files are **plugin artifacts** and are replaced whenever the plugin's copy
+changes. The user-editable surface is `{knowledge_folder}/rules/working-rules.md` and
+`.../user-rules.md`; each installed file says so in its own header.
+
+## Step 7f: Rules Pointer (optional, default NO)
+
+Runs after the config is written and validated, so the rules files exist before they are
+referenced. Offer **once per repo**, never batch-applied.
+
+ARIA's rules already reach Claude through the instruction files installed in Step 7ea
+(`~/.claude/rules/`). `CLAUDE.md` adds one thing those cannot: it is the surface Claude
+Code natively re-injects after `/compact`. This is a backstop, not the delivery
+mechanism — a user who declines loses nothing that Step 7ea provides.
+
+⚠ Corrected 2026-08-26: this previously said the rules arrive "through the SessionStart
+hook". They no longer do — the hook payload is capped and delivered only the first
+~2,000 characters, which is why delivery moved to the file channel. The hook now only
+ensures those files exist.
+
+**Detect tracking first**, so the offer can say what a write would mean:
+
+```bash
+git -C "$PWD" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && echo tracked || echo untracked
+```
+
+⚠ Use `ls-files`, not `git check-ignore`. `check-ignore` consults the index and reports a
+**tracked** file as "not ignored" — an inversion that reads backwards until you know it.
+
+Then offer:
+
+> "Add a 4-line ARIA rules pointer to this repo's `CLAUDE.md`? The rules already reach
+> Claude through the SessionStart hook; `CLAUDE.md` is additionally re-injected after
+> `/compact`. This file is [tracked / untracked], so a write here [would be visible to
+> teammates / stays local]. (y/N)"
+
+On an explicit `y`, append exactly:
+
+```markdown
+## ARIA Rules
+Working rules: `{knowledge_folder}/rules/working-rules.md`
+User rules: `{knowledge_folder}/rules/user-rules.md`
+Read either before acting on anything it plausibly covers.
+```
+
+On `n`, no reply, or anything else: **write nothing.** Do not re-offer in the same run.
+
+If `CLAUDE.md` already contains an `## ARIA Rules` heading, skip silently — appending a
+second copy is the append-loop failure that `session_state`'s gitignore clause produced
+before v2.46.0.
+
+⛔ **The skip check is the POINTER, not the heading.** Skip when `CLAUDE.md` already
+references `rules/working-rules.md` **or** `rules/user-rules.md` anywhere, **or** carries the
+`## ARIA Rules` heading — any one of the three is enough. A heading-only test is not
+sufficient: measured 2026-09-10 on a real workspace, the root `CLAUDE.md` had **no**
+`## ARIA Rules` heading but already pointed at both rules files (three times, at lines 118,
+212 and 213), so the literal check passed and this step would have appended the exact
+duplicate pointer it exists to prevent. That run skipped 7f by hand to avoid it.
+
+## Step 7f2: Arc-Resume Allowlist (optional, default NO)
+
+Runs after the config is written. Offer **once per machine**, never batch-applied, and never
+without showing the exact lines first.
+
+**Why it exists.** An unattended `/auto` resume on a Desktop-class runtime executes as a scheduled
+task, and a scheduled task **stalls on the first Bash call that is not in `permissions.allow`** — it
+fires, sets `lastRunAt`, disables itself, and runs nothing. The failure is silent and produces an
+empty transcript, indistinguishable from never firing. Measured two-sided 2026-08-31/09-01 across
+two pattern shapes. Without this allowlist, `/auto`'s arc contract will honestly report
+`durable resume: UNAVAILABLE`, and the unattended Desktop path simply does not work.
+
+**The narrow set — three read-only patterns, derived as the measured delta** between an arc's real
+working set and what a typical allowlist already covers (15 of 21 commands were already present in
+the reference measurement):
+
+```
+    Bash(head:*)
+    Bash(tail:*)
+    Bash(git merge-base:*)
+```
+
+⛔ **D11 — check every candidate against its OWN flag surface before offering it, never against
+what you intend to run with it.** A pattern whose argument glob admits an exec flag
+(`--upload-pack`, `--receive-pack`, `--exec`) grants the entire destructive class regardless of how
+harmless the base command looks.
+
+- The three above **pass**: `head` and `tail` have no exec surface; `git merge-base`'s whole option
+  set is `--fork-point --independent --is-ancestor --octopus` — no transport, so nothing to abuse.
+- ⛔ **`Bash(git ls-remote:*)` FAILS and is the worked example.** `ls-remote` is read-only, yet
+  `git ls-remote --upload-pack='<cmd>' .` **executes `<cmd>` locally** — verified. Read-only does
+  not imply safe. Do not offer it.
+- ⛔ Never offer `Bash(sh:*)` or `Bash(bash:*)`. Bare shell nullifies the whole allowlist
+  (`sh -c '<anything>'`). If a plugin helper must run, scope it:
+  `Bash(sh */plugin-claude-code/scripts/*.sh:*)`.
+
+**Check what is already present first**, and offer only the remainder — never re-add a duplicate.
+⚠ Handle **both** pattern idioms; a matcher that only understands `Bash(cmd:*)` reports an entry
+written as `Bash(cmd *)` as missing:
+
+```bash
+python3 - <<'PY'
+import json
+need={"head","tail","git merge-base"}
+have=set()
+for p in ["~/.claude/settings.json", "./.claude/settings.local.json"]:
+    import os; p=os.path.expanduser(p)
+    try: d=json.load(open(p))
+    except Exception: continue
+    for a in (d.get("permissions",{}).get("allow") or []):
+        if isinstance(a,str) and a.startswith("Bash("):
+            pat=a[5:-1]
+            have.add(pat.split(':')[0].strip() if ':' in pat else pat.rstrip('*').strip())
+print("already allowlisted:", sorted(need & have) or "(none)")
+print("to offer:          ", sorted(need - have))
+PY
+```
+
+**Then offer, and require an explicit yes.** State the cost plainly — this is not a scheduled-task-
+only grant:
+
+> Add three read-only Bash patterns to `permissions.allow` so an unattended `/auto` resume can run
+> without stalling? They are `head`, `tail`, `git merge-base`. ⚠ **An allowlist widens standing
+> permissions for every session, not only scheduled ones.** [y/N]
+
+On `n`, no reply, or anything else: **write nothing**, and do not re-offer in the same run. `/auto`
+will report `durable resume: UNAVAILABLE (patterns not allowlisted)` — which is correct behaviour,
+not a defect.
+
+**After writing, assert the SET — never a count.** Per apex decision `2026-015`, where a gate
+asserts a permitted set it asserts the set, so that a fourth pattern is a visible diff rather than a
+silent append:
+
+```bash
+python3 - <<'PY'
+import json, os
+expected={"Bash(head:*)","Bash(tail:*)","Bash(git merge-base:*)"}
+p=os.path.expanduser("~/.claude/settings.json")
+allow=set(a for a in json.load(open(p)).get("permissions",{}).get("allow",[]) if isinstance(a,str))
+got=allow & {"Bash(head:*)","Bash(tail:*)","Bash(git merge-base:*)","Bash(git ls-remote:*)","Bash(sh:*)","Bash(bash:*)"}
+print("arc-resume set:", sorted(got))
+print("VERDICT:", "SET MATCHES" if got==expected else f"DRIFT — extra={sorted(got-expected)} missing={sorted(expected-got)}")
+PY
+```
+
+⚠ **Known gap, stated rather than glossed:** this assertion runs here, at write time. It is **not
+yet adopted by `/audit config`**, so nothing re-checks the set later. A check nobody re-runs cannot
+detect drift — an allowlist that is only ever appended to is how a 161-entry list accumulates with
+nobody having decided the total. Wiring it into `/audit config` is a follow-on.
+
+## Step 7g: Populate the Knowledge Index
+
+The template ships `index.md` as a skeleton with no tag sections. Run the full `/index`
+logic once here so it reflects whatever the user already has, rather than leaving them to
+discover `/index` separately.
+
+Why this is not optional ceremony: active knowledge surfacing gates on the index having at
+least one `### tag` section, so until `/index` runs, that whole capability is silent. A
+user who promotes knowledge but never runs `/index` gets nothing, and nothing tells them
+why. Promotion and indexing being two separate discoveries is the gap this closes.
+
+If the knowledge folder is empty, say so plainly — *"Index built; no tagged files yet.
+Active surfacing turns on once you promote something and re-run `/index`."* — and do not
+treat it as an error.
+
+## Step 7h: Report What Is Off
+
+ARIA's session-lifecycle features all default off, and until now that was largely
+invisible: their directives were generated but never reached the model, so enabling them
+changed less than it appeared to. That is fixed, which makes the defaults worth surfacing.
+
+Emit on `systemMessage` — this asks the user to make a decision, which is what that channel
+is for, and it is the same reasoning that keeps the audit nags there.
+
+```
+ARIA is configured. These features exist and are currently OFF:
+  Project knowledge tier ............ projects_enabled
+  Session resume (SESSION.md) ....... session_state
+  Project picker at session start ... session_start_project_picker
+  Autonomy posture .................. autonomy: default | balanced | autonomous
+Enable any of them by editing ~/.claude/aria-knowledge.local.md, or re-run /setup.
+```
+
+List only the ones actually off — a line claiming a feature is off when the user just
+enabled it is worse than no summary.
+
+**Changes no defaults.** Three of the four are dependent on a `projects_list` a new user
+has not populated, so flipping them would enable machinery with no data. `session_state`
+would write `SESSION.md` files into repos unasked, the posture the Step 7f ADR protects.
+`autonomy` changes agent behaviour for every existing user on upgrade. The gap here is
+discovery, not defaults — see spec §9 OQ5, which stays open.
+
+## Step 8: Confirm
+
+Output a summary:
+
+```
+Setup complete for ARIA v[INSTALLED_VERSION].
+- Knowledge folder: [path]
+- Knowledge audit: every [N] days
+- Config audit: every [N] days
+- Update check: every [N] days
+- Insight capture: [enabled/disabled]
+- Auto-capture on compaction: [enabled/disabled]
+- Ticketing plugins: [N mappings configured | not configured (empty — change anytime by re-running /setup; the advanced-options bundle always shows the current value)]
+- Shared knowledge: [enabled (author_tag: {tag}) | disabled (opt-in via re-run /setup)]
+- Files added: [N]
+- Files updated: [N]
+- Files kept (user version): [N]
+
+Two habits that make ARIA most effective:
+- Run /extract before ending sessions — captures knowledge while the full conversation is in context
+- Respond to "Knowledge audit due" prompts — promotes pending items so /context can surface them later
+Everything else runs automatically via hooks.
+```
+
+## Step (optional): Schedule the morning PM review (Claude Code, macOS only)
+
+If the user wants `/aria-assist` to run automatically each morning, offer to install the launchd job:
+
+> "Want me to schedule the morning PM review? It runs `/aria-assist generate` at your
+> `pm_schedule_time` (default 07:30) and notifies you. macOS only; you can remove it later with
+> `sh <plugin>/scripts/pm-schedule.sh --uninstall`."
+
+On yes (Bash available): `sh "${CLAUDE_PLUGIN_ROOT}/scripts/pm-schedule.sh"`.
+The iMessage notification path needs a one-time **Automation permission** grant
+(System Settings → Privacy & Security → Automation); the desktop banner always works.
+The schedule also surfaces as a read-only "Morning run" card in aria-atlas (if you use it),
+which reads the status from `<knowledge_folder>/pm-reviews/.aria-assist.json` (written by
+`pm-schedule.sh` on install/uninstall and refreshed by each run).

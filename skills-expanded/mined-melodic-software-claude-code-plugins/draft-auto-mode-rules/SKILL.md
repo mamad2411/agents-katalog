@@ -1,0 +1,195 @@
+---
+description: "Draft a paste-ready `autoMode` classifier block by interviewing the user about what should and should not be auto-approved, each entry in the shape the classifier reads well and every section keeping `$defaults`. Use when: 'help me write auto mode rules', 'draft an autoMode block', 'set up auto mode', 'add an auto-mode rule for X', 'my auto mode rules are too vague', 'rewrite this classifier entry', or an audit shows rules dropped or ignored. Prints only, never writes a settings file."
+argument-hint: "[environment|allow|soft_deny|hard_deny] [--unattended]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Interview and draft a paste-ready autoMode block, never writing settings
+---
+
+## Purpose
+
+The `autoMode` block is a natural-language prompt for a classifier, not a rule list the harness
+matches, so it fails in ways a config file does not. We write each condition as its own short entry
+the classifier can see, never buried in a long paragraph, because a condition deep in prose is the
+one a single classifier pass is likeliest to miss.
+
+This skill applies that at authoring time instead of reporting it afterwards, the job
+`claude auto-mode critique` does after the fact.
+
+- **Pointer**: when deciding how the classifier reads entries, fetch
+  [auto mode config: override the block and allow rules](https://code.claude.com/docs/en/auto-mode-config#override-the-block-and-allow-rules)
+  and, for the critique command,
+  [auto mode config: inspect the defaults and your effective config](https://code.claude.com/docs/en/auto-mode-config#inspect-the-defaults-and-your-effective-config)
+  live.
+
+## Report-only, permanently
+
+**This skill writes nothing, in any scope, under any flag.** It prints a block; you paste it. Editing
+a consumer's settings file would be making a permission decision on their behalf, which is the one
+thing this plugin exists not to do.
+
+## Scope boundary (route out)
+
+- What is in effect now, what auto mode drops, what a section discards →
+  `harness-config:audit-permission-state`. **Run it first.** Drafting against rules you have not read
+  is how a block ends up contradicting itself.
+- Grant portability and auto-mode durability → `harness-config:audit-permission-grants`.
+- Whether an existing block is any good → `claude auto-mode critique`, surfaced by
+  `audit-permission-state --critique`. It owns the semantic judgment; this skill owns composition.
+
+## Boundary, the built-in `/auto-mode-setup` command
+
+Both surfaces help a person write auto mode classifier content, so a request to "set up auto mode"
+can mean either.
+
+- **`/auto-mode-setup` (built-in command)**: the person runs it; this skill never invokes it. What
+  it drafts, reads and saves is read from
+  [auto mode config: generate environment entries](https://code.claude.com/docs/en/auto-mode-config#generate-environment-entries)
+  live.
+- **This skill (marketplace plugin).** Interviews for entries in every section (`environment`,
+  `allow`, `soft_deny`, `hard_deny`), each with stated exclusions and a transcript-visible
+  condition, and prints the block without writing anything.
+
+**Routing.** At the start of the run, offer it to the person:
+If /auto-mode-setup is available in your session (gate basis: its row of the commands reference;
+records in [reference/native-auto-mode-setup.md](reference/native-auto-mode-setup.md)), you can
+run it instead of or alongside this skill to have the `environment` section drafted from your sessions
+and saved for you; this interview then covers the allow and deny sections. It can also offer `allow`
+rules drawn from your recent auto mode denials (version in the records). Those rules are input to
+the `allow` section here: paste the ones you accepted, or the `allow` list `claude auto-mode config`
+prints, and the interview asks for each one's exclusions and transcript-visible condition instead of
+drafting it from recall. If they take it, run Phase 1 again after it saves so the draft builds on
+what it wrote. When the caller passes
+`--unattended`, the run records the offer in its output instead of asking;
+without that flag it asks.
+
+**Mutation gate.** We treat `/auto-mode-setup` as writing user settings once the person accepts its
+draft. This skill writes nothing and never chains into `/auto-mode-setup` on the person's behalf.
+
+**Availability is never assumed.** Offer the command when it resolves in this session, never assume
+it is present. Read what gates it from its row of
+[commands: all commands](https://code.claude.com/docs/en/commands#all-commands) live. The four-part
+records live in
+[reference/native-auto-mode-setup.md](reference/native-auto-mode-setup.md).
+
+## Inputs, and one deliberate omission
+
+The draft is built from **the interview plus the effective merge** (`audit-permission-state`), and
+nothing else. An optional argument, `environment`, `allow`, `soft_deny`, or `hard_deny`, names one
+section to focus the interview on. `--unattended`, anywhere in the arguments, is not a section: it is the caller
+declaring that nobody is present, which governs the `/auto-mode-setup` offer under "Routing". Take
+it out first, then read the rest.
+
+This skill reads no history itself: a read of "the repo's observed prompt and denial history" names
+no actual location, and an unnamed read surface in a skill shipped to consumers is unreviewable.
+Denial history reaches the draft only through the `allow` rules `/auto-mode-setup` saved, which the
+person brings to the interview (see "Routing").
+
+## Phase 1: Read what already exists
+
+Before asking anything, run the audit sibling and read its output:
+
+```shell
+bash "${CLAUDE_PLUGIN_ROOT}/skills/audit-permission-state/scripts/automode-block-lint.sh"
+```
+
+Three things there change what you should ask:
+
+- A section missing `"$defaults"` drops the built-in rules by the docs' account (pointer in Phase 3),
+  though for `soft_deny` the behavior probes observed them kept, git and non-git rules alike
+  (`/harness-ops:behavior-probes` record 6). Say both, and add the token before adding to that
+  section: it is correct under either behavior.
+- A `C2b-contradiction` or `C3-shadowed` finding means the block already disagrees with itself.
+  Resolving that comes before adding an entry that would deepen it.
+- A `status=skipped` or `status=unavailable` result means you could **not** read the block. Draft
+  anyway if asked, but say plainly that you are drafting blind.
+
+## Phase 2: Interview
+
+<!-- fresh-eyes-exempt: external-input -- the material judged here is the consumer's stated intent and their own existing configuration; no step judges output this skill authored -->
+
+Ask about one entry at a time. For each, you need four things, and the fourth is where drafts fail:
+
+1. **Which section.** `allow` (auto-approve), `soft_deny` (block, overridable), `hard_deny` (never),
+   `environment` (facts the classifier needs: organization, repositories, trusted domains).
+   A `hard_deny` entry is a classifier judgment. When the answer is an action that must never
+   happen (it cannot be undone, exposes a secret, or sends data outside), say that a classifier
+   judgment alone is not enough for it, and keep the `hard_deny` entry as a second layer. When
+   `/corrections:codify` is among the available skills, hand it the choice of mechanism; it picks
+   the strongest rung of the enforcement ladder that can decide the rule and proves the check.
+   Name the call, `/corrections:codify "<the rule>"`, for the user to run; never make it.
+   Otherwise, propose the strongest mechanism that can decide the rule: a change that
+   makes the mistake impossible first, then a check that blocks it, then a test, and an instruction
+   only when nothing a machine runs can decide it. Say that `/corrections:codify` was not
+   available, so the proposal is unproven. Before recommending a deny rule for a Bash action, read
+   what it matches in [permission rule syntax](https://code.claude.com/docs/en/permissions#permission-rule-syntax).
+2. **A short label**: the subject, two or three words. It is what a reader scans for.
+3. **What is covered, and what is explicitly not.** Both. An entry with no stated exclusions is one
+   the classifier will over-apply.
+4. **A condition visible in the transcript.** An entry whose precondition the classifier cannot
+   evaluate from the command text either allows blindly (the condition is decorative) or blocks (the
+   grant is inoperable), with no stated disposition.
+
+   Some answers name something the classifier cannot see: a person's intent, a fact about the
+   build server, whether a change was reviewed. **Say so and ask for the observable form instead.**
+   "Only when the deploy is approved" is not checkable; "only when the command names the staging
+   endpoint" is.
+
+Stop when they say stop. A short correct block beats a long vague one.
+
+## Phase 3: Compose
+
+Feed the answers to the drafter, one record per line:
+
+```text
+section allow
+label Test Execution
+covered running the repository's own test suite via its documented runner
+not installing new dependencies as a side effect
+why the runner is named in the command text
+```
+
+```shell
+bash "${CLAUDE_PLUGIN_ROOT}/skills/draft-auto-mode-rules/scripts/draft-automode-block.sh" < answers
+```
+
+It prints a JSON object carrying only the sections that got entries. **An unknown section name
+is a hard failure**, exiting 2 with nothing on stdout rather than warning beside partial output,
+because a caller capturing both streams together would otherwise get unparsable JSON. **Every section opens with
+`"$defaults"`.** We keep the token in every section so a customized section never loses the shipped
+rules (Pointer: when deciding what a section without the token keeps, fetch
+[auto mode config: define trusted infrastructure](https://code.claude.com/docs/en/auto-mode-config#define-trusted-infrastructure)
+and
+[auto mode config: override the block and allow rules](https://code.claude.com/docs/en/auto-mode-config#override-the-block-and-allow-rules)
+live. As of: 2026-10-11. Recheck trigger: that section changes what customizing a section does to
+the built-in list, or retires `$defaults`).
+
+## Phase 4: Hand it over
+
+Print the block. Say exactly where it goes: the `autoMode` key of
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`. Then stop.
+
+Two things to say while handing it over:
+
+- **Project and local settings will not work.** A block pasted into `.claude/settings.json` is
+  silently inert: send it to user settings, or to managed settings for a team-wide block. Pointer: for
+  the scopes the classifier reads, fetch
+  [auto mode config: where the classifier reads configuration](https://code.claude.com/docs/en/auto-mode-config#where-the-classifier-reads-configuration)
+  live.
+- **Merging into an existing block is theirs to do.** If they already have an `autoMode` section, the
+  drafted sections replace what they paste over. Point them at the audit sibling to confirm the result
+  rather than assuming it merged.
+
+## Gotchas
+
+- **Do not offer to write the file.** Not with `--fix`, not "shall I apply this", not as a follow-up.
+  The no-write posture is the skill's contract, not a default someone can opt out of.
+- **A drafted block is not a reviewed block.** After they paste it, `claude auto-mode critique` is what
+  judges it. Say that rather than implying the draft is validated.
+- **`claude auto-mode reset` is never run.** On a chezmoi-managed home what it removes is not
+  recoverable from the settings file alone. Read what it removes from
+  [CLI reference: CLI commands](https://code.claude.com/docs/en/cli-reference#cli-commands) live.
+- **Prose provenance does not belong in an entry.** Dates, issue numbers, and prior-draft archaeology
+  cost classifier attention and buy nothing. Version control owns that history.

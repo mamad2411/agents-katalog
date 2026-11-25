@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/bknd-create-entity/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when creating a new entity/table in Bknd. Covers entity definition with em() and entity(), primary key configuration, field basics, UI creation via admin panel, and code-first approach with type s

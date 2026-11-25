@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-genomoncology-biomcp-biomcp-research/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Do biomedical literature and variant research with the BioMCP CLI, and file what you learn about the tool itself as issues in the biomcp repo.

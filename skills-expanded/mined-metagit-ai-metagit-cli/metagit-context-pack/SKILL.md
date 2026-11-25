@@ -1,0 +1,298 @@
+---
+name: metagit-context-pack
+description: >-
+  Token-efficient workspace onboarding via tiered context packs — map, repo cards,
+  session digest, objectives, approvals, repomix profiles. Use at session start or
+  when scoping work in a metagit-managed workspace.
+metadata:
+  internal: true
+---
+# Metagit context packs
+
+Use this skill for the **most token-efficient** way to onboard into a metagit workspace.
+Prefer `metagit context pack --tier N --json` over reading raw trees or full manifests.
+
+<!-- modality:context_reduction -->
+
+Umbrella `.metagit.yml` stays on disk. Do **not** inject it: no `config show --json` without `--confirm-full`, no `workspace list --include-workspace`, no `metagit://workspace/config?view=full` without `confirm=1`. Maps default to 80 repos; check `truncated`. 500+ repos: `metagit prompt workspace -k large-workspace --text-only` and [context-reduction.md](https://metagit-ai.github.io/metagit-cli/reference/context-reduction/).
+
+Set non-interactive defaults:
+
+```bash
+export METAGIT_AGENT_MODE=true
+```
+
+Run from the **umbrella repo** that contains `.metagit.yml` (or pass `-c path/to/.metagit.yml`).
+
+## When to use
+
+- Session start in any metagit-managed workspace
+- Before editing — need project/repo boundaries and health without cloning everything
+- Returning after idle — tier 2 digest shows what changed since last session
+- Scoping a bugfix — tier 1 cards + `repomix` profile instead of whole-repo dumps
+- Coordinating humans and agents — objectives and approval queue state
+
+Do **not** skip context packs and grep the filesystem when a manifest exists.
+
+## Tier workflow
+
+| Tier | Command | Typical tokens | Contents |
+|------|---------|----------------|----------|
+| 0 | `metagit context pack --tier 0 --json` | ~100–400 | Workspace map: projects, repos, paths, clone status |
+| 1 | `metagit context pack --tier 1 --json` | +200–600/repo | Tier 0 + repo cards (git state, stack hints, health flags) |
+| 2 | `metagit context pack --tier 2 --json` | +digest | Tier 1 + session digest; **updates session boundary** |
+
+Escalate tiers only when needed. Narrow tier 1/2 with `--project` and/or `--repo`.
+
+### Primary session command
+
+```bash
+metagit -c .metagit.yml context pack --tier 0 --json --project P
+metagit -c .metagit.yml context pack --tier 2 --json --project P --repo R
+```
+
+Pair with operational prompts (paste `--text-only` output into agent context):
+
+```bash
+metagit -c .metagit.yml prompt workspace -k session-start --text-only
+metagit -c .metagit.yml prompt workspace -k context-pack --text-only   # tier escalation guide
+```
+
+### Escalation rules
+
+1. Start **tier 0** when you only need catalog boundaries (search-before-create, layout planning).
+2. Move to **tier 1** when git health, stack hints, or per-repo instructions matter.
+3. Use **tier 2** at session open/return — digest includes `first_session`, `manifest_changed`, per-repo commit counts, active objective id.
+4. **Tier 2 touches the session boundary** — avoid running it from multiple agents simultaneously on a shared manifest (see multi-instance below).
+
+### Scoped packs
+
+```bash
+metagit context pack --tier 1 --json --project portfolio --repo api-gateway
+metagit context pack --tier 2 --json --project portfolio
+```
+
+### Mid-session context switch
+
+<!-- modality:context_switch -->
+<!-- modality:context_resume_status_tracking -->
+
+Prefer one command instead of manually chaining pack + session-start + objective:
+
+```bash
+eval "$(metagit -c .metagit.yml context switch portfolio api-gateway)"
+metagit -c .metagit.yml context switch portfolio --json
+metagit -c .metagit.yml prompt workspace -k context-switch --text-only
+```
+
+MCP: `metagit_context_switch`. Lean switch without pack/objective: `metagit_project_context_switch`.
+See [Context switch](../../docs/reference/context-switch.md).
+
+Resume/pause objective loop (ADHD-friendly):
+
+```bash
+metagit context pause --title "Paused for handoff" --repo P/R --left-off "finished parser" --next "wire CLI"
+metagit context resume --format detailed
+metagit context resume "P/R" --json
+```
+
+For lightweight status/note updates, prefer ergonomic objective flags:
+
+```bash
+metagit context objective set --id obj-123 --status in_progress --left-off "tests green" --next "open PR" --human-notes "handoff"
+metagit context objective edit --id obj-123 --field human_notes --value "waiting on review"
+```
+
+## Single repo card
+
+When you already know the target repo:
+
+```bash
+metagit -c .metagit.yml context repo-card --project P --repo R --json
+```
+
+Card fields include: `status`, `health_flags` (`missing_clone`, `dirty`, `behind_remote`, `stale_head_30d`), `stack_hints`, resolved `agent_instructions` excerpts.
+
+## Repomix profiles (scoped snapshots)
+
+Bundled profiles: `bugfix-local`, `config-edit`, `cross-repo-impact`.
+
+```bash
+metagit -c .metagit.yml context repomix --profile bugfix-local --project P --repo R
+metagit -c .metagit.yml context repomix --profile config-edit --project P --repo R --output /tmp/pack.txt
+```
+
+Use profiles instead of raw `repomix` on an entire tree. Pick profile by task:
+
+| Profile | Use when |
+|---------|----------|
+| `bugfix-local` | Implement or debug in `src/`, `tests/` |
+| `config-edit` | Manifest or app config changes |
+| `cross-repo-impact` | Graph, schema, reference docs for dependency analysis |
+
+## Objectives (shared human ↔ agent state)
+
+Persisted under `.metagit/sessions/objectives.json`.
+
+```bash
+metagit -c .metagit.yml context objective list --json
+metagit -c .metagit.yml context objective get --id obj-123 --json
+
+echo '{"id":"obj-123","status":"in_progress","title":"Fix API timeout","repos":["portfolio/api"]}' \
+  | metagit -c .metagit.yml context objective set
+
+metagit -c .metagit.yml context objective complete --id obj-123
+metagit -c .metagit.yml context objective cancel --id obj-123
+```
+
+Tier-2 digest surfaces `active_objective_id` when one objective is in progress.
+
+## Approvals (human-in-the-loop)
+
+Queue under `.metagit/approvals/pending.json`.
+
+```bash
+metagit -c .metagit.yml context approval request --action repo_sync --requested-by hermes --payload '{"project":"P","repo":"R"}'
+metagit -c .metagit.yml context approval list --json
+metagit -c .metagit.yml context approval list --status all --json
+
+metagit -c .metagit.yml context approval approve --id apr-001 --note "ok for staging"
+metagit -c .metagit.yml context approval deny --id apr-002 --note "needs review"
+```
+
+Agents: list pending approvals before mutating ops; never self-approve without operator policy.
+
+## Hermes session bootstrap
+
+Wire metagit into Hermes (or any orchestrator) so every objective begins with bounded context.
+
+### When to call
+
+| Trigger | Recommended tier |
+|---------|------------------|
+| Session / objective open | 2 (full) or 0 (token-tight) |
+| Project switch mid-session | 1 scoped to `--project` |
+| Subagent handoff to one repo | 1 or `repo-card` + `repomix` |
+| Idle return (>1 digest window) | 2 |
+
+### Commands
+
+```bash
+export METAGIT_AGENT_MODE=true
+PACK_JSON="$(metagit -c .metagit.yml context pack --tier 2 --json)"
+PROMPT_TEXT="$(metagit -c .metagit.yml prompt workspace -k session-start --text-only)"
+```
+
+### How to inject output
+
+| Host pattern | Injection |
+|--------------|-----------|
+| Hermes system / bootstrap template | Include `session-start` prompt text; store or summarize pack JSON |
+| Pre-turn shell hook | Run commands above; append stdout to conversation context or state file |
+| Subagent task prompt | Pass tier-1 JSON for target `--project`/`--repo` plus `subagent-handoff` prompt |
+| MCP-connected Hermes | Prefer MCP resources (`metagit://catalog` → map → prompts) or `metagit_context_pack` tier 2 once per session; see **`metagit-mcp-resources`** |
+
+**Token-tight bootstrap:**
+
+```bash
+metagit context pack --tier 0 --json
+metagit prompt workspace -k session-start --text-only
+```
+
+**Default bootstrap:**
+
+```bash
+metagit context pack --tier 2 --json
+metagit prompt workspace -k context-pack --text-only
+metagit prompt workspace -k session-start --text-only
+```
+
+Parse pack JSON top-level keys: `workspace_name`, `tier`, `map`, `cards`, `digest`.
+
+## Multi-agent coordination (remote state vs Syncthing)
+
+**Preferred:** separate machines share coordination JSON through a coordinator running
+`metagit web serve` and clients with `METAGIT_STATE_URL` / `state.url`. See skill
+**`metagit-sharing-state`** and `docs/reference/sharing-state.md`.
+
+Verify MCP host config: `resources/read` → `metagit://gate/status` → `state_backend.backend` should be `http`.
+
+**Alternative:** Syncthing (or similar) on the same manifest root — use only when remote
+state is unavailable.
+
+### Syncthing conflict zones
+
+When multiple agents share a workspace root via Syncthing:
+
+### Conflict zones
+
+| Path | Risk | Mitigation |
+|------|------|------------|
+| `.metagit.yml` | Simultaneous catalog edits | Single writer; validate before save |
+| `.metagit/sessions/*` | Digest boundary race | One coordinator runs tier 2 per session window |
+| `.metagit/sessions/objectives.json` | Concurrent upserts | Idempotent objective `id`; list before set |
+| `.metagit/approvals/pending.json` | Duplicate rows | List before creating; unique action ids |
+
+### Agent rules
+
+1. **Read after sync settles** — wait for Syncthing idle, then `metagit config validate` and tier 0/1 pack.
+2. **One manifest writer** — designate the Hermes controller for catalog mutations (`metagit workspace …`, `metagit config patch --save`).
+3. **Tier 2 once per session window** — only the session-owning agent runs `--tier 2`; others use tier 0/1.
+4. **Git state is local** — Syncthing syncs manifest/state files, not clone contents; run `metagit project sync` per machine.
+5. **Optional coordination file** — teams may touch `.metagit/.manifest-lock` (pid + timestamp) as a human-visible lock; metagit does not enforce it.
+
+### Stale sync detection
+
+```bash
+metagit -c .metagit.yml context pack --tier 2 --json    # check digest.manifest_changed
+metagit -c .metagit.yml config validate
+```
+
+## MCP equivalents (when MCP gate is ACTIVE)
+
+| CLI | MCP tool |
+|-----|----------|
+| `context pack --tier N` | `metagit_context_pack` (required `tier`) |
+| `skills surface` | `metagit_skills_surface` <!-- modality:skills_surface --> |
+| `context compile` | `metagit_context_compile` <!-- modality:context_compile --> |
+| `context switch` | `metagit_context_switch` <!-- modality:context_switch --> |
+| `context repo-card` | `metagit_repo_card` |
+| `context objective list/set/complete/cancel` | `metagit_objective_list` / `metagit_objective_upsert` / `metagit_objective_edit` |
+| `context approval request/list/approve/deny` | `metagit_approval_request` / `metagit_approval_list` / `metagit_approval_resolve` |
+| `context handoff list/create/claim/complete` | `metagit_handoff_list` / `metagit_handoff_create` / `metagit_handoff_claim` / `metagit_handoff_complete` |
+| `context handoff heartbeat` / claim `--ttl` | *(CLI-only v0.13)* — renew lease; expired claims auto-release <!-- modality:handoff_lease_heartbeat --> |
+| `context events [--campaign] [--objective]` | `metagit_events` (+ resource `metagit://events/recent?since=`) <!-- modality:coordination_events_scope --> |
+
+Remote state: set `METAGIT_STATE_*` on the **MCP server process**; tools unchanged. Skill: **`metagit-sharing-state`**.
+
+Use CLI when operating shell-only (`METAGIT_AGENT_MODE=true`); use MCP resources/tools when the IDE host exposes metagit (see **`metagit-mcp-resources`** for the read ladder).
+
+## MCP resource ladder (read-only)
+
+| Step | URI |
+|------|-----|
+| 1 | `metagit://catalog` |
+| 2 | `metagit://workspace/map?limit=80` |
+| 3 | `metagit://prompt/workspace/session-start?instructions=0` |
+| 4 | `metagit://session/meta` |
+| Scoped | `metagit://project/{P}/summary`, `metagit://repo/{P}/{R}/card` |
+
+Use tool `metagit_session_begin` once when a full bootstrap envelope must update the session boundary.
+
+## Output contract
+
+After packing, report to the user or parent agent:
+
+- workspace name and tier used
+- project/repo count from `map`
+- repos with health flags (from `cards` if tier ≥ 1)
+- digest highlights if tier 2 (`first_session`, `manifest_changed`, active objective)
+- recommended next step (search, sync, repomix profile, or prompt kind)
+
+## Related skills
+
+- `metagit-sharing-state` — multi-agent remote coordination (`METAGIT_STATE_URL`)
+- `metagit-cli` — full CLI prompt and catalog reference
+- `metagit-workspace-scope` — gate and scope discovery
+- `metagit-control-center` — ongoing multi-repo coordination
+- `metagit-workspace-sync` — guarded fetch/pull after pack shows stale repos

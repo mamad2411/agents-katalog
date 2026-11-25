@@ -1,0 +1,110 @@
+---
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
+name: agent-harness
+description: "Use when making a repository agent-ready, verifying its instruction index, documented commands or harness CI, bootstrapping those artifacts, auditing harness maturity, or integrating delegated-review evidence with execution and merge controls. Not for a standalone code review or a small content edit without harness changes."
+license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
+compatibility: "Requires Bash, Read, Write, Edit, Glob, Grep tools"
+metadata:
+  author: Netresearch DTT GmbH
+  version: "1.10.0"
+  repository: https://github.com/netresearch/agent-harness-skill
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/*) Bash(git:*) Bash(make:*) Read Write Edit Glob Grep Agent
+---
+
+# Agent Harness
+
+The agent harness makes a repo agent-ready with self-sustaining enforcement. This skill **installs** it; CI, hooks, and conventions then enforce it.
+
+## Modes
+
+### 1. Verify (primary)
+
+Always start here. From the target repo root, run:
+
+```bash
+${CLAUDE_SKILL_DIR}/scripts/verify-harness.sh
+```
+
+Analyse the output and fix or suggest fixes. Verification checks dead references, line counts, missing artefacts, and command/target alignment.
+
+### 2. Bootstrap
+
+When artefacts are missing, create them from templates:
+
+| Artefact | Template | Platform |
+| --- | --- | --- |
+| `AGENTS.md` | `templates/AGENTS.md.tmpl` | All |
+| `docs/ARCHITECTURE.md` | `templates/ARCHITECTURE.md.tmpl` | All |
+| `docs/exec-plans/{active,completed}/` | Create directories | All |
+| `.github/workflows/harness-verify.yml` | `templates/harness-verify.yml.tmpl` | GitHub |
+| `.gitlab-ci.yml` (harness-verify job) | `templates/gitlab-ci-harness-verify.yml.tmpl` | GitLab |
+| `.forgejo/workflows/harness-verify.yml` | `templates/forgejo-harness-verify.yml.tmpl` | Forgejo/Gitea |
+| `.github/workflows/harness-checkpoints.yml` | `templates/harness-checkpoints.yml.tmpl` | GitHub |
+| `.gitlab-ci.yml` (harness-checkpoints job) | `templates/gitlab-ci-harness-checkpoints.yml.tmpl` | GitLab |
+| `.forgejo/workflows/harness-checkpoints.yml` | `templates/forgejo-harness-checkpoints.yml.tmpl` | Forgejo/Gitea |
+| `.github/pull_request_template.md` | `templates/pull_request_template.md.tmpl` | GitHub |
+| `.gitlab/merge_request_templates/Default.md` | `templates/merge_request_template.md.tmpl` | GitLab |
+| `.forgejo/pull_request_template.md` | `templates/pull_request_template.md.tmpl` | Forgejo/Gitea |
+| `.envrc` | `templates/envrc.tmpl` | All |
+| Makefile harness targets | `templates/Makefile.harness.tmpl` | All |
+| `scripts/verify-harness.sh` | `${CLAUDE_SKILL_DIR}/scripts/verify-harness.sh` (copy directly) | All |
+| `.harness/checkpoints.yml` | see `references/enforcement-mechanisms.md` § 12 | All |
+
+Populate with repo-specific values and preserve unrelated content. Existing
+authorization to update these files remains valid; ask only for a new scope or
+permission decision, not for each routine edit.
+
+### 3. Audit
+
+Report the repo's maturity level (1, 2, or 3) and show what is needed to reach the next level. See `references/maturity-levels.md` for detailed criteria.
+
+## Running the checks that skills ship
+
+A skill's own validator is run by an agent only if the agent decides to, and measured over six trials on the case where it was most obviously relevant, it was run once ([#61](https://github.com/netresearch/agent-harness-skill/issues/61)). A repository therefore declares in `.harness/checkpoints.yml` which skills' checkpoints apply to it, pinned by ref, and a CI job runs them:
+
+```bash
+${CLAUDE_SKILL_DIR}/scripts/run-shipped-checkpoints.sh
+```
+
+It fails the job on a failing checkpoint of severity `error`, reports the rest, and exits 2 on a declaration it cannot resolve rather than passing quietly. `verify-harness.sh` errors when a declaration has no job, and when a job has no declaration.
+
+For explicitly required results, set `require_pass` on the declaration entry.
+Only one passing result per named ID fulfills that obligation; skipped, blocked
+or missing results leave verification incomplete. See
+`references/enforcement-mechanisms.md`, section 12, for the contract and limits.
+
+## Key Principles
+
+- **AGENTS.md is an index, not an encyclopedia.** Keep it under 150 lines. Put detail in `docs/`.
+- **Enforcement is project-level.** CI workflows, git hooks, and branch protection enforce the harness -- not this skill at runtime.
+- **Verify first, bootstrap second.** Always run verification before creating artefacts. The skill checks artefacts, not tools.
+- **Delegate specialist work.** See `references/skill-integration-map.md` for skill routing (`@agent-rules`, `@github-project`, `@enterprise-readiness`, `@retro`).
+- **Verify evidence and enforcement separately.** A structural pass, static review,
+  actual test execution and a protected merge gate prove different things. Record
+  the checked revision/environment and unresolved coverage; a missing tool, denied
+  access or timeout is not a pass. Use the review evidence contract in
+  `references/skill-integration-map.md` when integrating review or eval results.
+- **Bound delegated work.** Use focused specialists for independent risks within
+  one task budget. Delegation cannot broaden permissions or count as a human's
+  approval. Reuse valid evidence for the same revision/property; rerun affected
+  checks when either changes.
+- **Does not own learning.** Session retrospection, outcome review, and constitutional audits are delegated to `retro-skill`. The harness verifies integration points exist (AH-22, AH-23) but does not invoke retro at runtime.
+
+## Maturity Levels
+
+**Level 1 -- Basic:** AGENTS.md exists, is an index, documents commands.
+
+**Level 2 -- Verified:** CI enforces harness integrity, AGENTS.md references resolve, commands match Makefile/scripts, ARCHITECTURE.md exists.
+
+**Level 3 -- Enforced:** Branch protection requires harness CI, git hooks auto-activate, PR template includes checklist, drift detection on push.
+
+See `references/maturity-levels.md` for the full breakdown.
+
+## References
+
+- `references/maturity-levels.md` -- Maturity criteria and progression
+- `references/harness-engineering-overview.md` -- Theory: four functions, patterns
+- `references/agent-first-architecture.md` -- Legibility, layered deps, agent-first tech
+- `references/enforcement-mechanisms.md` -- 12-mechanism table (CI, hooks, protection, drift, shipped checkpoints)
+- `references/skill-integration-map.md` -- Skill routing map + integration contracts with companion skills

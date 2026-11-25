@@ -1,0 +1,138 @@
+---
+name: qa-phase
+classification: workflow
+classification-reason: QA phase automation within PDCA cycle
+deprecation-risk: none
+effort: high
+description: |
+  QA Phase execution — L1-L5 test planning, generation, execution, and reporting for a single feature. For sprint-level QA (7-Layer dataFlowIntegrity / S1 gate across multiple features) use /sprint qa <sprintId> which delegates to sprint-qa-flow agent (v2.1.13).
+  Triggers: qa phase, QA test, qa run
+argument-hint: "[feature]"
+user-invocable: true
+agents:
+  lead: bkit:qa-lead
+  planner: bkit:qa-test-planner
+  generator: bkit:qa-test-generator
+  debug: bkit:qa-debug-analyst
+  monitor: bkit:qa-monitor
+  default: bkit:qa-lead
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - Task
+  - AskUserQuestion
+imports:
+  - ${PLUGIN_ROOT}/templates/qa-report.template.md
+  - ${PLUGIN_ROOT}/templates/qa-test-plan.template.md
+next-skill: pdca
+pdca-phase: qa
+task-template: "[QA] {feature}"
+---
+
+# QA Phase Skill
+
+> Execute QA phase of the PDCA cycle. Automatically runs L1-L5 tests with Chrome MCP integration.
+
+## Arguments
+
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `[feature]` | Target feature to test | `/qa-phase user-auth` |
+
+## Workflow
+
+1. **Context**: Read design doc and Check phase analysis
+2. **Plan**: Generate test plan (L1-L5 items with priorities)
+3. **Generate**: Create test code files
+4. **Execute**: Run L1-L5 tests (L3-L5 require Chrome MCP)
+5. **Report**: Generate QA report to `docs/05-qa/{feature}.qa-report.md`
+
+## PRE-SCAN: Pre-Release Quality Check
+
+Before running L1 tests, execute the automated quality scanners to catch structural issues early.
+
+### Steps
+
+1. Run `bash ${PLUGIN_ROOT}/scripts/qa/pre-release-check.sh` via Bash.
+   The path must be absolute: the script ships inside the plugin, not in the
+   user's project, so a relative `scripts/qa/...` resolves to nothing wherever
+   this skill actually runs. The script scans `$CLAUDE_PROJECT_DIR` (falling back
+   to the working directory) — pass `--root DIR` to point it elsewhere.
+2. Parse the output for CRITICAL / WARNING / INFO counts
+3. **If CRITICAL issues found**:
+   - Report all CRITICAL issues with file paths and suggested fixes
+   - Recommend fixing CRITICAL issues before proceeding with L1-L5 tests
+   - Use **AskUserQuestion** to ask whether to continue or abort the QA phase
+     (e.g. options: "Fix CRITICAL first" / "Continue anyway" / "Abort QA").
+     This gate is issued directly here, in the main session context — qa-phase
+     is deliberately **not** `context: fork`. AskUserQuestion is stripped at the
+     fork sub-agent boundary (CC #34592 / #54892), so it must run in the main
+     context and must not be delegated to a sub-agent (qa-lead, etc.).
+4. **If only WARNING/INFO issues (no CRITICAL)**:
+   - Include scanner results in the QA report under "Pre-Release Scan" section
+   - Continue to L1 test planning
+
+### Scanner Coverage
+
+| Scanner | Detects | Severity |
+|---------|---------|----------|
+| dead-code | Stale require/import, unused exports | CRITICAL / WARNING |
+| config-audit | Unreferenced config keys, hardcoded values, missing paths | CRITICAL / WARNING / INFO |
+| completeness | Missing agents, long descriptions, missing effort | CRITICAL / WARNING / INFO |
+| shell-escape | Bare $N in awk, unescaped backticks, unsafe heredocs | CRITICAL / WARNING |
+| wiring | Exported but never called functions | WARNING |
+
+### QA Report Integration
+
+When scanner results are available, include them in the QA report:
+
+```markdown
+## Pre-Release Scan Results
+
+- **Scanner**: dead-code — 0 CRITICAL, 1 WARNING, 0 INFO
+- **Scanner**: config-audit — 0 CRITICAL, 0 WARNING, 2 INFO
+- **Scanner**: completeness — 0 CRITICAL, 0 WARNING, 1 INFO
+- **Scanner**: shell-escape — 0 CRITICAL, 0 WARNING, 0 INFO
+- **Scanner**: wiring — 0 CRITICAL, 1 WARNING, 0 INFO
+
+**Overall**: PASS (0 CRITICAL issues)
+```
+
+## Test Levels
+
+| Level | Type | Tool | Chrome Required |
+|-------|------|------|:---------------:|
+| L1 | Unit Test | Node.js / Jest / Vitest | No |
+| L2 | API Test | fetch / curl | No |
+| L3 | E2E Test | Chrome MCP | Yes |
+| L4 | UX Flow Test | Chrome MCP | Yes |
+| L5 | Data Flow Test | Chrome MCP + Bash | Yes |
+
+## Browser QA Depth (L3-L4)
+
+qa-lead adds three things on top of the scripted L3-L4 scenarios. The full
+procedure is in `agents/qa-lead.md`:
+
+- **Diff-aware scope** — changed files are mapped to the pages and endpoints
+  they serve, and those pages are tested first.
+- **Exploratory pass** — each priority page is checked for forms, empty/error
+  states, navigation, and console output after every action.
+- **Health Score** — a weighted 0-100 summary of the exploratory findings,
+  reported next to the gate metrics. It is informational; the QA gate
+  (`qaPassRate`, `qaCriticalCount`, `runtimeErrorCount`) still decides the
+  verdict.
+
+On QA_FAIL, issues are handed to Act in fix order with reproduction steps. Act
+fixes one issue at a time, re-verifies it, and adds a regression test. It stops
+to ask when fixes start spreading to unrelated files or breaking passing tests.
+
+## Fallback
+
+Chrome MCP unavailable:
+- L1 + L2 only
+- QA report notes "L3-L5 skipped"
+- QA pass/fail based on L1+L2 results only

@@ -1,0 +1,537 @@
+---
+name: skill-tree-generator
+description: Generates, aggregates, and extends modular skill-trees with hierarchical routing. Supports three modes — (1) convert a monolithic skill into a tree with ROOT.md/ROUTER.md/SKILL.md, (2) aggregate multiple skills into a unified cross-domain tree with shared leaves and disambiguation, (3) incrementally update an existing tree by adding new skills. Use when users need to restructure, merge, or extend skills into context-aware, load-on-demand hierarchies.
+---
+
+# Skill Tree Generator
+
+## Usage
+
+```
+/skill-tree-generator <skill-name-or-skill-path-or-description>
+/skill-tree-generator --aggregate skill1,skill2,... [--domain domain-name] [--no-decompose]
+/skill-tree-generator --update <tree-path> --add <skill>
+```
+
+| 输入特征 | Mode | 描述 |
+|---------|------|------|
+| 单个 skill 路径/描述，无特殊 flag | **Mode 1** | 将单体 skill 转为路由树 |
+| `--aggregate skill1,skill2,...` | **Mode 2** | 聚合多个 skill 为统一跨域树 |
+| `--update <tree-path> --add <skill>` | **Mode 3** | 增量更新已有 tree |
+
+**可选 flag**：
+
+| Flag | 适用 Mode | 作用 |
+|------|----------|------|
+| `--domain <name>` | Mode 2 | 声明同域聚合，ROOT.md 按域内能力差异路由 |
+| `--no-decompose` | Mode 2 | 跳过 Step A1 能力拆解，所有源 skill 一律按单叶处理。仅当源 skill 已预先拆到原子粒度时使用 |
+
+## Overview
+
+Transform monolithic skills into modular, hierarchical skill-trees (ROOT.md → ROUTER.md → SKILL.md) with dynamic routing. Use when:
+- A skill has grown too complex and needs modularization
+- Multiple distinct workflows exist within a single skill
+- Multiple related skills need to be unified under one routing tree
+- Cross-domain workflows span multiple skills
+- Overlapping capabilities across skills need deduplication
+- An existing skill-tree needs new skills or capabilities added
+
+## Strict Conformance
+
+Before creating or modifying tree output, read and follow `references/strict_conformance.md`. Do not use substitute workflows, fast versions, heuristic-only splitting, or partial validation. If full conformance is impractical, stop and report the blocker before continuing.
+
+---
+
+## Mode 1: Single Skill Tree Generation
+
+Generate a routing tree for a single skill.
+
+**Input**: Skill path or description
+**Output**: Complete tree structure in `{skill-name}-tree/`
+
+Example:
+```
+/skill-tree-generator web-development
+```
+
+### Mode 1 Step 1: Analyze Input Skill
+
+First, analyze the input skill to identify:
+
+1. **Core domains** - What major functional areas does the skill cover?
+2. **Sub-domains** - Within each core domain, what sub-categories exist?
+3. **Leaf capabilities** - What specific tasks/endpoints are at the lowest level?
+4. **Routing criteria** - What signals distinguish one path from another?
+
+Read the skill content:
+```
+$ARGUMENTS
+```
+
+If `$ARGUMENTS` is a file path, read that file. If it's a description, use it directly.
+
+### Mode 1 Step 2: Design Tree Structure
+
+Based on analysis, design the hierarchy following these principles:
+
+```
+skill-tree/
+├── ROOT.md                    # L1 routing protocol
+├── {module1}/
+│   ├── ROUTER.md              # L2 routing logic
+│   ├── {submodule}/
+│   │   ├── ROUTER.md          # L3 routing logic
+│   │   └── {feature}/SKILL.md # Leaf node
+└── {module2}/
+    └── ...
+```
+
+**Design Guidelines:**
+- **L1 modules**: Major functional domains (2-5 modules typical)
+- **L2 submodules**: Sub-categories within each domain
+- **Leaf nodes**: Specific, atomic tasks/capabilities
+- **Depth limit**: 3-4 levels maximum for efficiency
+
+### Mode 1 Step 3: Generate ROOT.md
+
+Read `references/root_template.md` and generate `ROOT.md` following the Single-Skill section template.
+
+### Mode 1 Step 4: Generate ROUTER.md Files
+
+For each non-leaf level, read `references/router_template.md` and generate `ROUTER.md` following that template. The template's `[MANDATORY]` routing requirements and pre-write checklist are acceptance criteria; do not duplicate, weaken, or replace them in this workflow.
+
+### Mode 1 Step 5: Generate Leaf SKILL.md Files
+
+**前置检查**: 执行 `references/error_handling.md` 中的 **Error Severity & Handling Strategy** — 源技能不可用（Fatal）则报错终止，局部缺失（Degraded）则生成回退内容。
+
+For each leaf node, read `references/leaf_template.md` for the structure template. Extract the complete content from the original skill and fill it into the template. Do NOT replace any content with a file path reference or external link. Every instruction, code example, API reference, and constraint from the original skill must be inlined directly.
+
+Source skill paths are generation-time inputs only. They may be recorded in `GENERATION-REPORT.md` for auditability, but leaf `SKILL.md` files must not tell the runtime agent to read the source skill path for full instructions. After generation, the tree must remain usable if the source skill directory is deleted or inaccessible.
+
+**引用处理**: 执行 `references/error_handling.md` 中的 **Reference File Processing Flow** Step R1-R4（盘点 → 决策 → 清理 → 即时验证）。
+
+**自包含**: 遵循 `references/error_handling.md` 中的 **Self-Containment Rule**，生成结果必须作为 skill tree 整体自包含；短引用内联到叶节点，大文件集**必须**拷贝到 tree 内并通过 tree 内部相对路径引用。
+
+**嵌套 skill 检测**: 执行 `references/error_handling.md` 中的 **Nested Skill Detection**。生成前用 Glob 扫描源 skill 目录 `src/<skill>/*/SKILL.md`；若命中 ≥2 个，判定为嵌套（index 型）skill，在 `GENERATION-REPORT.md` 记录，并按两种承载方式之一处理：方式 A（路由分离型，`{skill}/ROUTER.md` + 入口 `{skill}/SKILL.md`，上游指向 ROUTER.md）或方式 B（路由内嵌型，路由表+全局约束直接承载在 `{skill}/SKILL.md` 标 `[Ln ROUTING NODE] [NESTED SKILL SUBTREE]`，不另设 ROUTER.md，上游指向 SKILL.md）。**禁止**方式 A 下只留 ROUTER.md 无入口 SKILL.md；**禁止**方式 B 下额外建只含指针的 ROUTER.md（与 SKILL.md 重复）；两种方式不得混用。
+
+**【强制】Pre-Write Content Completeness Check**: 在 Write 每个叶节点之前，**重新读取源 skill 文件**。按叶节点类型分别执行：
+
+- **独立叶节点（源 skill 不拆分，1 源 → 1 叶）**：除 YAML frontmatter 外，源 skill 的全部内容必须逐字迁入叶节点；不接受内容损失；禁止"简化"、"概括"、"保留框架"。若因标题替换、tree 内部路径替换、引用文件拷贝等自包含处理导致行数不同，必须在 `GENERATION-REPORT.md` 中逐项解释差异，并确认无执行级内容丢失。
+- **拆分型叶节点（1 源 → 多个子叶）**：先建立 source section → leaf mapping；每个子叶包含对应章节/能力的完整内容；所有子叶合计覆盖源 skill 全部章节；若某子叶比映射到它的源段落短 >30%，必须逐段排查并修复或解释。
+
+### Mode 1 Step 6: Create Output Structure
+
+Create all files in the target directory. **Small files (≤10KB) use Write tool; large file sets (>5 files or >50KB) use staging + platform-native copy (`cp -a` on Unix/macOS, `robocopy` on Windows; `xcopy /E /I` only as last fallback) — never copy large directories file-by-file with Write. Treat `robocopy` return codes `< 8` as success.**
+
+```
+.claude/skills/{skill-name}-tree/     # Claude Code
+# or
+.agent/skills/{skill-name}-tree/      # Codex CLI / other AGENTS.md-aware agents
+# or
+.zcode/skills/{skill-name}-tree/      # ZCode
+├── ROOT.md
+├── SKILL-TREE.md              # Directory structure overview
+├── GENERATION-REPORT.md       # Required evidence (see Strict Conformance)
+├── {module1}/
+│   ├── ROUTER.md
+│   └── {submodule}/
+│       └── SKILL.md
+└── ...
+```
+
+### Mode 1 Step 7: Validation + Report
+
+1. **Validate**: Execute every check in `references/validation_template.md`. Read the file and run each check sequentially — this is an executable checklist, not informational. Record pass/fail for each. If any check fails, fix the generated files and re-run that check.
+2. **Report**: Once all checks pass, create `GENERATION-REPORT.md` in the tree root directory, following the Required Evidence section in `references/strict_conformance.md`. The validation results recorded in step 1 go into this report.
+
+---
+
+## Mode 2: Multi-Skill Aggregate Tree
+
+Generate a routing tree that covers multiple skills. Skills can be from the same domain or from different domains.
+
+**Input**: `--aggregate skill1,skill2,skill3 [--domain domain-name]`
+**Output**: Unified tree with shared ROOT.md, each skill as a sub-tree
+
+`--domain` is optional. When omitted, the tree covers cross-domain skills and ROOT.md routes by domain intent. When provided, the tree covers same-domain skills and ROOT.md routes by capability differences within that domain.
+
+Examples:
+```
+# Cross-domain: coding + writing + security
+/skill-tree-generator --aggregate web-dev,technical-writing,security-review
+
+# Same-domain: frontend frameworks
+/skill-tree-generator --aggregate react,vue,svelte --domain frontend
+```
+
+Multi-skill trees require a two-phase routing: **Phase 1 selects one or more skills, Phase 2 selects one or more capabilities within each matched skill.** Multi-intent prompts must preserve all matched route paths.
+
+### Mode 2 Step A: Per-Skill Capability Decomposition + Cross-Skill Collection
+
+> **`--no-decompose` 快速路径**：若用户传入 `--no-decompose`，跳过 A1 的结构化分析，对所有 skill 直接标记 decomposition decision = 单叶，然后直接执行 A2 建矩阵（每个 skill 视为单一能力组）。
+
+**A1: 逐 Skill 能力拆解（与 Mode 1 Step 1 等价）**
+
+对 `--aggregate` 列表中的**每个 skill**，读取其完整内容后执行以下结构化分析：
+
+1. **Core domains** — 该 skill 覆盖哪些主要功能领域？
+2. **Sub-domains** — 每个功能领域内有哪些子分类？
+3. **Leaf capabilities** — 最底层的原子任务/端点是什么？
+4. **Routing criteria** — 什么信号区分该 skill 内部的不同路径？
+
+输出格式（每个 skill 一份）：
+
+```
+### Skill: {skill-name}
+- Core domains: {domain1}, {domain2}, ...
+- Sub-domains:
+  - {domain1}: {sub1}, {sub2}, ...
+  - {domain2}: {sub1}, {sub2}, ...
+- Leaf capabilities:
+  - {domain1}/{sub1}: {capability-a}, {capability-b}
+  - {domain1}/{sub2}: {capability-c}
+  - ...
+- Routing criteria:
+  - {capability-a} vs {capability-b}: {distinguishing signal}
+  - ...
+- Decomposition decision:
+  - [ ] 单叶（该 skill 功能单一/原子化，不需再拆）
+  - [ ] 多叶（该 skill 含 ≥2 个可独立路由的能力组，应拆为多个子叶）
+```
+
+**Decomposition decision 判定规则**：
+- 若 skill 只有 1 个核心功能领域且无明显子分类 → **单叶**
+- 若 skill 含 ≥2 个独立的功能领域，或 ≥3 个可用不同信号区分的原子能力 → **多叶**
+- 已由 Nested Skill Detection 判定为嵌套 skill 的 → 必须为**多叶**
+
+**A2: 跨 Skill 能力比较矩阵**
+
+基于 A1 的拆解结果，将所有 skill 的 leaf capabilities 汇总为比较矩阵：
+
+```
+| 能力组 | Skill_A | Skill_B | Skill_C |
+|--------|---------|---------|---------|
+| project | ✓ create,open,save | ✓ create,save | ✗ |
+| editing | ✓ add,remove,set | ✗ | ✓ add,remove |
+| export  | ✓ render | ✓ export-pdf | ✓ render |
+| session | ✓ undo,redo | ✗ | ✓ undo,redo |
+```
+
+注意：对于 A1 判定为「多叶」的 skill，矩阵中应列出其各子能力（而非将整个 skill 视为单一能力组）。
+
+### Mode 2 Step B: Shared vs Unique Classification
+
+Classify every capability group:
+
+| 类别 | 定义 | 处理方式 |
+|------|------|---------|
+| **Unique** | 仅一个 skill 有此功能 | 直接放入该 skill 的子树 |
+| **Shared-similar** | 多个 skill 有相似功能 | 各自独立叶节点，ROOT.md 消歧 |
+| **Shared-identical** | 功能/指令完全相同 | 合并为共享叶节点，标注适用 skill |
+
+### Mode 2 Step C: Two-Phase Hierarchy Design
+
+基于 Step A1 的拆解结果和 Step B 的分类，设计层级结构：
+
+```
+{domain}-tree/
+├── ROOT.md                        # Phase 1: 选一个或多个 skill
+├── SKILL-TREE.md                  # Overview with mapping table
+├── GENERATION-REPORT.md           # Required evidence (see Strict Conformance)
+├── {skill_a}/                     # Skill A（A1 判定单叶）
+│   └── SKILL.md                   # 直接是 leaf
+├── {skill_b}/                     # Skill B（A1 判定多叶）
+│   ├── ROUTER.md                  # Phase 2: 选能力
+│   ├── {capability1}/SKILL.md     # 子叶 1
+│   └── {capability2}/SKILL.md     # 子叶 2
+├── {skill_c}/                     # Skill C（A1 判定多叶）
+│   ├── ROUTER.md
+│   └── {capability}/SKILL.md
+├── shared/                        # Shared-identical 能力
+│   └── {capability}/SKILL.md      # 标注: 适用于 skill_a, skill_b
+└── cross-cutting/
+    └── SKILL.md                   # 跨 skill 工作流
+```
+
+**注意**：
+- A1 判定为「单叶」的 skill → `{skill}/SKILL.md` 即为 leaf，无需 ROUTER.md
+- A1 判定为「多叶」的 skill → `{skill}/ROUTER.md` + 多个 `{capability}/SKILL.md`
+- 已有嵌套结构的 skill → 按 Nested Skill Detection 方式 A/B 处理
+
+### Mode 2 Step C1: Generate Skill Phase-2 Routing (per skill form)
+
+综合 **Step A1 的 Decomposition decision** 和 `references/error_handling.md` Nested Skill Detection 判定每个 skill 的形态，决定是否生成 ROUTER.md：
+
+**形态判定输入源（两者取并集）**：
+1. Step A1 判定为「多叶」→ 该 skill 需要多叶结构
+2. Nested Skill Detection 发现物理嵌套 SKILL.md 文件 → 该 skill 是嵌套 skill
+
+两个条件任一满足即视为多能力 skill，需要 Phase 2 路由。
+
+**路由决策**：
+
+- **单叶 skill（A1 判定为「单叶」且无嵌套检测命中）**：**不生成 ROUTER.md**。ROOT.md 直接路由到 `{skill}/SKILL.md`（即 leaf）。为单叶 skill 创建仅指向 `./SKILL.md` 的 ROUTER.md 是**冗余错误**，禁止。
+- **A1 判定多叶但源为单文件（无物理嵌套）**：按「拆分型」处理——生成 `{skill}/ROUTER.md`（Phase 2 能力路由）+ 多个子叶 `{skill}/{capability}/SKILL.md`。拆分依据为 A1 识别的 leaf capabilities 和 routing criteria。此情况下 Step C2 对该 skill 使用「拆分型叶节点」规则。
+- **嵌套/多能力 skill 方式 A（路由分离型）**：生成 `{skill}/ROUTER.md`（Phase 2 能力路由，路由表覆盖该 skill 所有 skill-specific / Shared-similar 叶节点）+ 入口 `{skill}/SKILL.md`。仅当源 SKILL.md 是纯路由表无入口/使用说明时选方式 A。
+- **嵌套 skill 方式 B（路由内嵌型，源 SKILL.md 是「路由表+入口」一体文件时首选）**：**不生成 ROUTER.md**，把路由表 + 全局约束直接承载在 `{skill}/SKILL.md`（标 `[Ln ROUTING NODE] [NESTED SKILL SUBTREE]`），上游父路由指向 `{skill}/SKILL.md`。
+
+对方式 A 的 ROUTER.md 或方式 B 的承载路由 SKILL.md，读 `references/router_template.md`，模板的 `[MANDATORY]` 路由要求与 pre-write checklist 是验收标准：不通过则修订路由表再写。生成的路由文件必须：
+- Route from that skill to every skill-specific leaf generated for it
+- Cover Shared-similar capabilities as separate skill-owned leaves, with concrete disambiguating signals
+- If a Shared-identical capability is stored under `shared/`, make that capability reachable either through an explicit ROOT.md shared row or an explicit router row such as `Read ../shared/{capability}/SKILL.md`; record the chosen path in `SKILL-TREE.md`
+
+> **方式 A vs B 判定（防误选）**：读完源 SKILL.md 全文——含路由表 + 入口/使用说明 + 全局约束同文件 → 方式 B（默认首选）；仅路由表无入口性内容 → 方式 A。**禁止凭"含路由表"就选方式 A**。详见 `error_handling.md`。
+
+### Mode 2 Step C2: Generate Leaf SKILL.md Files
+
+按 `references/error_handling.md` 完整规则生成，三步硬闸门：
+
+1. **前置检查** — 源技能可用性：不存在/空内容 → Fatal 终止；局部缺失 → Degraded 回退。
+2. **自包含迁移** — 在源技能整体可用的前提下，完整执行 `references/error_handling.md`：R1-R4（盘点→决策→清理→验证）+ Self-Containment Rule。Write 前必须盘点源技能包中被源技能内容引用、或执行所必需的运行时资源；按 R2 决定内联、拷贝到 tree 内，或删除/替换不可用引用。不得机械迁入所有非 SKILL.md 文件；拷贝范围、过滤规则和大文件集处理以 `error_handling.md` 为准。
+3. **【强制】Pre-Write Content Completeness Check**: 在 Write 每个叶节点之前，**重新读取源 skill 文件**，逐字保留源正文（除 YAML frontmatter）。行数差异写入 GENERATION-REPORT.md 并证明无内容丢失。按叶节点类型分别执行：
+
+   **独立叶节点（源 skill 不拆分，1 源 → 1 叶）**：
+   - 源 skill 的全部内容必须逐字迁入叶节点
+   - **不接受任何内容损失**：行数应等于（源 skill − frontmatter + 叶节点新增头部）
+   - 禁止"简化"、"概括"、"保留框架"——每个代码块、表格、清单、约束、格式化规则全部逐字保留
+
+   **拆分型叶节点（1 源 → 多个子叶）**：
+   - 先建 source section → leaf mapping 表
+   - 每个子叶包含对应能力的完整内容
+   - 所有子叶的内容总和必须覆盖源 skill 全部章节
+   - 若某子叶偏移量异常（单叶比预期源子段短 >30%），逐段排查
+   - **全局约束复制**：源 skill 中标注为全局适用的前提/约束/配置（如文件头部的 environment requirements、API base URL、通用错误处理规则等）必须复制到**每个子叶**，不允许只放在其中一个子叶中
+
+   **【强制】A1 → 叶节点能力闭环校验**（仅对 A1 判定为「多叶」的 skill）：
+   - 将 A1 输出的 leaf capabilities 列表与实际生成的叶节点做 1:1 对照
+   - 每个 A1 标注的 capability 必须对应恰好一个生成的叶节点
+   - 每个生成的叶节点必须能追溯到 A1 的某个 capability
+   - 若有 mismatch（A1 标注了但没生成、或生成了 A1 未标注的），必须在 GENERATION-REPORT.md 中解释原因并修正 A1 或补建叶节点
+
+### Mode 2 Step D: Multi-Skill ROOT.md Generation
+
+ROOT.md must implement two-phase routing. Read `references/root_template.md` Multi-Skill section and generate ROOT.md following that template.
+
+Before writing ROOT.md, execute `references/root_template.md` → **Pre-Write Routing Signal Preparation [MANDATORY]**. Treat it as part of Step D's acceptance criteria, not an optional post-check.
+
+**Multi-intent requirement**: Generated Multi-Skill ROOT.md must support one prompt matching multiple route paths. When a prompt contains multiple independent intents, multiple skill names, multiple unique domain terms, or multiple separable subtasks, the router must split the prompt into subtasks and preserve every matched Skill/leaf route. Use `cross-cutting/SKILL.md` only when the matched paths need workflow coordination, sequencing, or data handoff; otherwise route into all matched skill subtrees directly.
+
+### Mode 2 Step E: Multi-Skill SKILL-TREE.md Overview
+
+Read `references/overview_template.md` Multi-Skill section and generate `SKILL-TREE.md`. The overview must include a skill dimension with the 能力→叶节点映射表 and Skill 覆盖统计.
+
+### Mode 2 Step F: Cross-Cutting Workflows
+
+Generate `cross-cutting/SKILL.md` following `references/cross_cutting_template.md`. This is a **workflow combiner** that:
+1. Provides predefined cross-skill workflow definitions
+2. Includes a custom workflow fallback mechanism (mandatory, see L7)
+
+### Mode 2 Step G: Validation + Report
+
+1. **Validate**: Execute every check in `references/validation_template.md`. Read the file and run each check sequentially — this is an executable checklist, not informational. Record pass/fail for each. If any check fails, fix the generated files and re-run that check.
+2. **Report**: Once all checks pass, create `GENERATION-REPORT.md` in the tree root directory, following the Required Evidence section in `references/strict_conformance.md`. The validation results recorded in step 1 go into this report.
+
+---
+
+## Mode 3: Update Existing Tree
+
+Add new skills or capabilities to an existing tree.
+
+**Input**: `--update <tree-path> --add <skill-name>`
+**Output**: Updated tree files
+
+Example:
+```
+/skill-tree-generator --update {skills-dir}/coding-tree --add angular
+# e.g. Claude Code:  /skill-tree-generator --update .claude/skills/coding-tree --add angular
+# e.g. Codex CLI:    /skill-tree-generator --update .agent/skills/coding-tree --add angular
+# e.g. ZCode:        /skill-tree-generator --update .zcode/skills/coding-tree --add angular
+```
+
+### Mode 3 Step A: Detect Single-Skill or Multi-Skill
+
+Read `<tree-path>/ROOT.md` and check:
+
+| 特征 | Single-Skill Tree | Multi-Skill Tree |
+|------|-------------------|------------------|
+| 路由表标题 | "Step 1: L1 路由" | "Phase 1: 选 Skill" 或 "Phase 1: 选一个或多个 Skill" |
+| 路由目标 | `./{module}/ROUTER.md` | `./{skill-name}/ROUTER.md` |
+| 消歧规则 | 无 | 有消歧规则 section |
+
+### Mode 3 Step B: For Single-Skill Tree — Same Skill or New Skill?
+
+**This is the critical branch point.** When the existing tree is Single-Skill, determine whether `--add` is adding capabilities to the **same skill** or adding a **different skill**:
+
+1. Read the tree's `SKILL-TREE.md` to identify the existing skill name(s)
+2. Compare with the `--add` skill name/domain:
+   - **Same skill** (e.g., tree is `web-dev-tree`, adding more `web-dev` capabilities) → **Step C** (add capability to existing skill)
+   - **Different skill** (e.g., tree is `web-dev-tree`, adding `react`) → **Step D** (transform to Multi-Skill), then **Step E** (add new skill)
+
+**How to judge "same" vs "different":**
+- If the `--add` skill's domain overlaps significantly with the existing tree's domain AND the skill name matches the tree's original skill → same skill
+- If the `--add` skill is a distinct technology/tool/domain with its own capability set → different skill
+- When uncertain, treat as **different skill** (safer to restructure early than to force capabilities into wrong module)
+
+**分支汇总：**
+- **Single-Skill Tree + Same skill** → 执行 **Step C**（添加能力到已有 skill）
+- **Single-Skill Tree + Different skill** → 执行 **Step D**（转型为 Multi-Skill tree）→ **Step E**（添加新 skill）
+- **Multi-Skill Tree** → 执行 **Step E**（添加新 skill 到 Multi-Skill tree）
+
+### Mode 3 Step C: Adding a new capability to the SAME skill (Single-Skill tree)
+
+**前提**: Step B 已确认 `--add` 的技能与现有 Single-Skill tree 是同一个 skill。
+
+1. Identify which module/leaf the new capability belongs to
+2. Add to the leaf's workflow and examples
+3. Update SKILL-TREE.md mapping table
+4. Enrich keyword signals if the capability introduces new intent patterns
+
+### Mode 3 Step D: Transform Single-Skill Tree to Multi-Skill Tree
+
+When adding a different skill to a Single-Skill tree, the tree must be restructured from Mode 1 format to Mode 2 format before adding the new skill.
+
+**Current structure (Single-Skill):**
+```
+{tree}/
+├── ROOT.md              # Step 1: L1 路由 → ./{module}/ROUTER.md
+├── SKILL-TREE.md
+├── {module1}/
+│   ├── ROUTER.md
+│   └── {leaf}/SKILL.md
+└── {module2}/
+    └── ...
+```
+
+**Target structure (Multi-Skill):**
+```
+{tree}/
+├── ROOT.md              # Phase 1: 选一个或多个 Skill, Phase 2: 选能力
+├── SKILL-TREE.md
+├── {existing-skill}/    # 原 Single-Skill 的模块移入此处
+│   ├── ROUTER.md        # 新建：原 L1 路由表移入此处
+│   ├── {module1}/
+│   │   ├── ROUTER.md    # 保持不变
+│   │   └── {leaf}/SKILL.md
+│   └── {module2}/...
+├── {new-skill}/         # 新 skill 的子树（按 Step E 生成）
+│   ├── ROUTER.md
+│   └── ...
+├── shared/              # 共享能力目录
+├── cross-cutting/       # 跨 skill 工作流
+│   └── SKILL.md
+```
+
+**Transformation steps:**
+
+1. **Identify existing skill name** from SKILL-TREE.md and the tree directory name
+2. **Create `{existing-skill}/` subdirectory** and move all existing module directories into it
+3. **Create `{existing-skill}/ROUTER.md`** — convert the old ROOT.md's L1 routing table into a skill-level ROUTER.md:
+   - The old ROOT.md's `| {category} | Read ./{module}/ROUTER.md |` table becomes the new ROUTER.md's routing table
+   - Add `[L2]` level marker
+   - Preserve all routing conditions and context hints
+4. **Rewrite ROOT.md** to Multi-Skill format (follow Mode 2 Step D template):
+   - Execute `references/root_template.md` → **Pre-Write Routing Signal Preparation [MANDATORY]** for the existing skill and the new skill before writing route rows
+   - Phase 1: 选一个或多个 Skill — includes both existing skill and new skill, and preserves multi-intent matches
+   - Phase 2: 选能力 — delegates to every matched skill sub-tree ROUTER.md
+   - Add 多意图路由规则 section
+   - Add 消歧规则 section
+   - Add 信号优先级 table
+5. **Create `shared/` directory** — initially empty, populated if Step E finds shared capabilities
+6. **Create `cross-cutting/SKILL.md`** — follow Mode 2 Step F template, include workflows combining existing + new skill
+7. **Update `SKILL-TREE.md`** — rewrite to Multi-Skill format with skill→capability mapping table and coverage stats
+8. **Delete original top-level module directories** — after moving modules into `{existing-skill}/`, the original `{module1}/`, `{module2}/`, etc. directories at the tree root must be physically deleted. These are now orphan duplicates that must not remain alongside the new Multi-Skill structure.
+9. **Then proceed to add the new skill** — execute Step E (add new skill to Multi-Skill tree) for the `--add` skill
+
+**Important constraints during transformation:**
+- **Preserve all existing leaf content** — no SKILL.md files are modified, only moved
+- **Preserve all routing logic** — the old ROOT.md's routing conditions must be accurately transferred to `{existing-skill}/ROUTER.md`
+- **Do NOT create stubs** — shared/ may be empty initially; only populate if shared capabilities are detected
+- After transformation + adding new skill, run Mode 3 Step F validation with Multi-Skill checks
+
+### Mode 3 Step E: Adding a new skill to existing Multi-Skill tree
+
+1. **Analyze new skill** — extract full capability set。执行 `references/error_handling.md` 中的**Error Severity & Handling Strategy**：源技能不存在 → Fatal 报错终止
+2. **Build comparison matrix** against existing skills (same as Mode 2 Step A)
+3. **Identify new shared keywords** — any capability overlapping with existing skills
+4. **Update ROOT.md** — execute `references/root_template.md` → **Pre-Write Routing Signal Preparation [MANDATORY]** for the new skill and any affected existing/shared routes, then add new skill route + update 多意图路由规则 and 消歧规则 for ALL new shared keywords. Ensure prompts mentioning the new skill plus existing skills can preserve multiple matched route paths.
+5. **Create new skill sub-tree** — `{new-skill}/ROUTER.md` + leaf SKILL.md files。执行 `references/error_handling.md` 中的**Reference File Processing Flow** Step R1-R4，遵循 **Self-Containment Rule**。大文件集**必须**使用 staging + 平台原生命令拷贝，禁止 Write 逐文件写入。**必须**执行源技能目录全量盘点（同 Mode 2 Step C2 的自包含迁移要求）
+6. **Re-check shared leaves** — if new skill has identical capabilities, update shared leaf
+7. **Update cross-cutting/SKILL.md** — add cross-skill workflow definitions + update dependencies (L7: most commonly missed step)
+8. **Update SKILL-TREE.md** — add rows to mapping table + update coverage stats
+
+### Mode 3 Step F: Validation + Report
+
+1. **Validate**: Execute every check in `references/validation_template.md`. Read the file and run each check sequentially — this is an executable checklist, not informational. Record pass/fail for each. If any check fails, fix the generated files and re-run that check.
+2. **Report**: Once all checks pass, create `GENERATION-REPORT.md` in the tree root directory, following the Required Evidence section in `references/strict_conformance.md`. The validation results recorded in step 1 go into this report.
+
+---
+
+## Templates
+
+Reference templates are available in `references/`:
+- `root_template.md` - ROOT.md generation template (Single-Skill + Multi-Skill)
+- `router_template.md` - ROUTER.md generation template
+- `leaf_template.md` - Leaf SKILL.md generation template
+- `cross_cutting_template.md` - Cross-cutting workflows template (Multi-Skill)
+- `overview_template.md` - SKILL-TREE.md overview template
+- `validation_template.md` - Executable validation checklist (MUST run after generation)
+- `error_handling.md` - Error Handling, Reference File Processing, Self-Containment Rule (Unified Specification)
+- `lessons_learned.md` - Lessons Learned（L1-L21）
+
+## Example
+
+**Input**: A monolithic "web-development" skill covering frontend, backend, and DevOps.
+
+**Output Structure**:
+```
+web-development-tree/
+├── ROOT.md
+├── SKILL-TREE.md
+├── GENERATION-REPORT.md
+├── frontend/
+│   ├── ROUTER.md
+│   ├── react/SKILL.md
+│   ├── vue/SKILL.md
+│   └── css/SKILL.md
+├── backend/
+│   ├── ROUTER.md
+│   ├── api/SKILL.md
+│   └── database/SKILL.md
+└── devops/
+    ├── ROUTER.md
+    ├── ci-cd/SKILL.md
+    └── docker/SKILL.md
+```
+
+---
+
+## Lessons Learned
+
+> **完整内容见** `references/lessons_learned.md`。以下为索引，具体的问题描述、根源分析和预防措施请阅读该文件。
+
+| ID | 主题 | 一句话 |
+|----|------|--------|
+| L1 | 路由表分类不互斥 | 使用消歧规则处理边界重叠 |
+| L2 | 叶节点内容太宽泛 | 每个叶节点保持单一职责 |
+| L3 | 路由可观测性不足 | 默认静默，按需输出 `[Route]` 路径 |
+| L4 | 上下文忽略 | 路由判断必须考虑完整对话历史 |
+| L5 | 跨领域工作流遗漏 | ROOT.md 必须含并行读取多叶节点的指令 |
+| L6 | 映射表不准 | 逐条计数，禁止目测估算 |
+| L7 | Mode 3 遗漏 cross-cutting | 添加新 skill 时显式更新 cross-cutting/SKILL.md |
+| L8 | 关键词信号无分层 | 单子任务内高 Tier 覆盖低 Tier；多意图先拆分子任务 |
+| L9 | 共享叶节点指令不同 | 只有完全一致才能合并为 Shared-identical |
+| L10 | 存根问题 | 已制度化 → `references/error_handling.md` |
+| L11 | 叶节点指令弱化 | 保留所有执行级指令（代码、阈值、clamp 行为） |
+| L12 | Mode 3 未转型 Single-Skill | Step B 显式判断 same/different skill |
+| L13 | 转型后未删除顶级模块 | Step D 步骤 8 显式删除原模块目录 |
+| L14 | 引用文件未内联/拷贝 | 已制度化 → `references/error_handling.md` |
+| L15 | 参考文档索引未清理 | 已制度化 → `references/error_handling.md` |
+| L16 | Multi-Skill 多意图被吞并 | Multi-Skill ROOT 必须保留多个命中路径 |
+| L17 | 技术实现视角过重 | ROOT/ROUTER 必须补充用户自然语言信号 |
+| L18 | 用户动作词覆盖不均 | 对有对应能力的域执行动作词覆盖检查 |
+| L19 | 元查询与执行混淆 | "找 XX 技能"默认进 discovery，具体执行对象才并行执行 |
+| L20 | 关键词被当穷举清单 | 模板必须声明语义匹配和代表性信号 |
+| L21 | 嵌套 skill 丢失入口 SKILL.md | 嵌套 skill 必须补入口 SKILL.md，领域级容器在 SKILL-TREE.md 显式声明 |
+| L22 | 嵌套 skill 误选方式 A 制造多余 ROUTER.md | 源 SKILL.md 是「路由表+入口」一体文件时默认首选方式 B（路由内嵌），不另设 ROUTER.md；禁止凭"含路由表"就选方式 A |
+| L23 | Check M0 误把单叶 skill 纳入"必须有 ROUTER.md" | M0 仅适用需 Phase 2 分流的 skill；单叶 skill 无 ROUTER.md，ROOT 直接路由到 leaf；禁止单叶 skill 自指向 ROUTER |
+| L24 | Mode 2 缺 per-skill 能力拆解 | Step A1 对每个 skill 做 core domains→sub-domains→leaf capabilities→routing criteria 拆解并输出单叶/多叶判定 |

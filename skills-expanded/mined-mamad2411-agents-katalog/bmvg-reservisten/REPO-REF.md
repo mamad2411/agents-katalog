@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/14350-bmvg-reservisten/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Reservistenrecht und Zivilschutzrecht (BMVg) in Legistik-Werkstatt geht: ordnet Akteninhalt, Belege, Lücken und Nachforderungen; liefert eine Schnittstellenkarte mit Kollisions-, Zuständigk

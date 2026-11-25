@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/my-finance-advisor/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: EO Studio 재무 어드바이저. Chris 페르소나 기반 재무 조언, AR 전략, 캐시플로우 분석, FX 판단. "재무 조언", "캐시 상황", "AR 분석", "FX 환전", "재무 리뷰", "/finance" 요청에 사용.

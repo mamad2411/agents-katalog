@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/todoist-visibility/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 基于 Todoist 的任务可见性管理。用于创建、更新和追踪任务状态（进行中🟡、等待中🟠、已完成🟢），并记录进度评论。当用户提到 Todoist 任务管理、任务状态追踪、或需要使用 Todoist API 时触发。"

@@ -1,0 +1,156 @@
+---
+description: "Read-only report of the five DORA delivery metrics (deployment frequency, change lead time, change fail rate, failed deployment recovery time, deployment rework rate) as a team trend from the default branch's history, never per person. Use when: 'measure delivery', 'DORA metrics', 'deployment frequency', 'change lead time', 'change fail rate', 'how fast do we ship', 'delivery trend'. Backlog counts are /work-items:track stats."
+argument-hint: "[--since YYYY-MM-DD] [--until YYYY-MM-DD] [--bucket week|month] [--branch <ref>] [--merge-risk]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Report the five DORA delivery metrics as a team trend from default-branch history
+---
+
+## Variables
+
+Arguments: `$ARGUMENTS`, the window and period flags below, passed through to the script.
+
+- `--since <YYYY-MM-DD>`: first UTC day of the window (default: the 84 days ending with `--until`).
+- `--until <YYYY-MM-DD>`: last UTC day, inclusive (default: now).
+- `--bucket week|month`: trend period (default `week`, ISO weeks starting Monday).
+- `--branch <ref>`: the default branch (default: the ref `origin/HEAD` names).
+- `--merge-risk`: add the merge-risk failures section below; not passed to `delivery-metrics.sh`.
+
+## Purpose
+
+Show how the team delivers over time: one row per period and a window total, for the five
+delivery metrics DORA defines. This skill reports one repository's trend against its own past,
+never a comparison between teams. It reads history and writes nothing.
+
+- **Pointer**: when a metric's definition is in question, fetch
+  <https://dora.dev/guides/dora-metrics/> live and read its "Throughput and instability"
+  section, which defines the five metrics.
+
+## Metrics
+
+Each row names a DORA metric and this skill's own measure of it; the metric's definition stays at
+the pointer above.
+
+| Metric | Measured here as |
+|---|---|
+| Deployment frequency | Deployments per period, and per week over the window |
+| Change lead time | Median hours from the earliest author date among a deployment's commits to its landing |
+| Change fail rate | Failed deployments / deployments |
+| Failed deployment recovery time | Median hours from a failed deployment to the first deployment that reverts it |
+| Deployment rework rate | Deployments that revert an earlier change / deployments |
+
+## Deploy signal
+
+What counts as a deployment is the team setting `delivery_deploy_signal` in the repository's
+`docs/conventions/work-items.yaml` (schema: `${CLAUDE_PLUGIN_ROOT}/schemas/work-items.schema.json`).
+Its one value, and the default, is `merge-to-default-branch`:
+
+- Each commit on the default branch's first-parent history is one deployment, at its committer
+  date. A merge commit or a squash landing is one deployment; a rebase landing puts each of its
+  commits on that history, so each one counts as its own deployment.
+- A deployment a later first-parent commit reverts is a failed deployment. A revert subject is
+  `Revert "<subject>"` or, in Conventional Commits form, `revert:` or `revert(<scope>):`. A
+  commit reverts a deployment by the first of these that names one:
+  1. a `This reverts commit <sha>` line in its message, naming the deployment or a commit it
+     merged, on any commit;
+  2. with a revert subject, a pull request reference: `Reverts #<n>` or
+     `Reverts <owner>/<repo>#<n>` in the body, or a `(#<n>` group in the subject other than its
+     own trailing `(#<n>)`, matched to the deployment whose subject ends in `(#<n>)`;
+  3. with a revert subject, a quoted subject (`Revert "<s>"`, or `"<s>"` inside a
+     `revert(<scope>):` subject), or the text after the `revert(<scope>):` prefix, matched to an earlier
+     deployment's subject with or without its trailing `(#<n>)`.
+
+  A revert subject that names no deployment by any of these is an unresolved revert: it counts as
+  a rework deployment and in `unresolved_reverts`, and marks nothing as failed. A merge counts the
+  messages of the commits it merges, so a revert that lands through a merge commit is seen by
+  forms 1 and 3. A `This reverts commit` line counts only when it names a commit already on the
+  default branch, so a squash body listing a revert of a commit that only existed on its branch is
+  not a revert. A revert landing after `--until` still marks a deployment in the window as failed,
+  and a target that landed before `--since` still resolves.
+
+The signal reads only git history, so no tracker or forge call is made and any host works. Only
+`--merge-risk` reads the forge.
+
+## Workflow
+
+1. Resolve the deploy signal from the repository root:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/triage/scripts/parse-concern-value.sh" \
+     docs/conventions/work-items.yaml delivery_deploy_signal
+   ```
+
+   Empty output means the key is unset: use the default, `merge-to-default-branch`. Report
+   whether the value came from the file or the default. A value other than
+   `merge-to-default-branch` stops the run: name the value and the one the schema allows.
+
+2. Run the report. With no `--branch`, the script reads the ref `origin/HEAD` names, as of the
+   last fetch. Run `git fetch` first only when the user asks for the remote's latest history;
+   otherwise say the report covers history up to the last fetch.
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/measure-delivery/scripts/delivery-metrics.sh" \
+     --repo "<repo root>" --deploy-signal "<signal>" <the flags from $ARGUMENTS>
+   ```
+
+   Exit `2` is a bad flag or a branch that does not resolve: show the script's stderr line,
+   and when `origin/HEAD` is unset, ask for `--branch`. Exit `3` is a failed git read and exit
+   `8` a missing `git` or `jq`: report it and stop.
+
+3. Render the JSON as one markdown table, a row per `trend` period then a `Window` row from
+   `totals`, a column per metric. Show a null value as `n/a` (nothing to measure, such as a
+   period with no deployments), and show rates as percentages. Mark the first or last period
+   as partial when the window starts or ends inside it. Add an `Unresolved reverts` column from
+   `unresolved_reverts`; when it is above 0, say that the change fail rate leaves those reverts'
+   targets out.
+
+4. Add two or three lines that read the trend: which metrics moved between the first and last
+   full periods with deployments, and in which direction. Describe the team's delivery only.
+
+Done when the table and the trend lines are shown, with the window, branch and deploy signal
+they cover.
+
+## Merge-risk failures (`--merge-risk`)
+
+With `--merge-risk` in `$ARGUMENTS`, also report whether merges rated `demote=true` by
+`/review:merge-risk` fail more often than those rated `demote=false`. It runs only where
+`docs/conventions/work-items.yaml` binds `tracker.provider: "github"` and the repository's merge
+lane records the rating (the `merge-risk-line` marker comment its pipeline convention defines);
+elsewhere, say the section does not apply. Run it after step 2, with the same window flags:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/skills/measure-delivery/scripts/merge-risk-failures.mjs" \
+  --repo "<repo root>" --format md <--since, --until and --branch from $ARGUMENTS>
+```
+
+Show its output as it prints it. It counts, per `demote` group, the rated merges and those later
+met by a post-merge demotion record, a silent-revert canary record, or a revert on the default
+branch (the forms in "Deploy signal"), plus a per-lane breakdown where the rating names the lane
+run that opened the pull request. A record that names a range of merges counts in `*_in_range`
+and in no rate. Where either group has too few failures, it prints "not enough failures to
+compare" in place of a rate: report that line, never a rate of your own. A `PARTIAL:` line means
+part of the window went unread: say so beside the table. Exit `3` is a rate limit: report it and
+stop, with no retry. It writes nothing to the forge.
+
+## Next
+
+`/work-items:track stats` for the open backlog behind the trend.
+
+## Gotchas
+
+- **Never name a person.** The script emits counts, medians and ratios only. Do not add
+  authors, committers, reviewers or a per-person breakdown, even when asked: DORA metrics
+  describe a team's delivery, and per-person delivery numbers are a different report.
+- **Squash and rebase landings can shorten lead time.** Lead time starts at the earliest author
+  date git keeps for the change. A landing that rewrites author dates moves that start later,
+  so the lead time reads short; a merge commit keeps every commit's author date.
+- **A rebase landing counts each of its commits as a deployment.** A team that rebase-merges
+  sees deployment frequency raised by its changes' commit counts, and a reverted change marks
+  only the commits its revert names as failed, so the change fail rate reads low.
+- **A revert under another subject goes uncounted.** A hand-written undo with neither a
+  `This reverts commit` line nor a revert subject is invisible to the signal. A revert subject
+  that names its target only in prose (`#<n>: the cut this reverts`) is counted as unresolved.
+- **Per-item stage times are out of scope.** Time an item spent in each tracker stage is a
+  separate report, not one of these five metrics.

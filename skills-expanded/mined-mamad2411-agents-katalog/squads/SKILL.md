@@ -1,0 +1,368 @@
+---
+name: squads
+description: "Squad lifecycle skill. Use when asked to create, validate, inspect, list, or migrate squads — portable AI agent teams with workflows. Triggers on: create squad, list squads, inspect squad, validate squad, migrate squad, adapters. For EXECUTION of production briefs ('use the squad X', 'orquestre via squad', 'rode via squad'), hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead — it carries the maestro intelligence and dispatches the right squad capability."
+compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
+tools: [Read, Write, Edit, Glob, Grep, Bash]
+maxTurns: 50
+metadata:
+  # Hidden from skills.sh discovery: this skill is not standalone (it needs the
+  # engine at ~/.nirvana). The `nirvana` skill is the one to install there.
+  internal: true
+  openclaw:
+    emoji: "🛠️"
+    requires:
+      # Todo script do Nirvana é Bun-nativo: sem bun a skill aparece e falha.
+      bins: ["bun"]
+---
+
+# Squad Protocol Engine v6.0.0
+
+> Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
+
+You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Gemini CLI, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
+
+---
+
+## Scope of this skill
+
+This skill is for **squad lifecycle operations**: create / validate / inspect / list / migrate squads. For **execution requests** ("use the squad X", "orquestre via squad", "produza Y via squad Z", any production brief), hand it to the **harness** (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead. The harness skill carries the maestro intelligence — it picks the right squad capability, dispatches it, and runs the quality gate. This skill is not the entry point for orchestration.
+
+### When this skill IS the right entry point
+
+- "Create a new squad called X" → here (lifecycle)
+- "Validate squad X" / "Inspect squad X" / "List my squads" → here
+- "Migrate squad to v6" → here
+- "Run squad X to produce Y" → **NOT here** — hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it).
+
+### Verifying real dispatch (when execution does happen via harness)
+
+After delivery, confirm in `~/.harness-logs/$(date +%Y-%m-%d)/audit.jsonl`:
+- `event=dispatch_squad` with this trace_id
+- `event=gate_passed` (after the quality judge)
+- The actual artifact at the dispatched capability's declared `outputs[]` location
+
+If absent, the orchestration didn't happen — claiming "I used squad X with agents Y, Z" without those events is fiction. Iterate, don't fake.
+
+---
+
+## Core Principles (v5.0)
+
+P1 Separation of Audiences — frontmatter=runtime, body=LLM, ui=marketplace.
+P2 Prose Over Structure — LLM reads prose, not nested YAML.
+P3 Token Budget Discipline — agent bodies ≤1.5% of context window.
+P4 Bounded Iteration — `maxTurns` MANDATORY on every agent. No exceptions.
+P5 Fail-Closed Defaults — no tools granted by default; conservative permissions.
+P6 Task-First — tasks describe WHAT; workflows decide WHO.
+P7 Runtime Neutrality — Core spec has no runtime-specific values.
+P8 Technical Honesty — never sell enforcement that doesn't exist.
+P9 Graceful Degradation — missing optional features logged, not crashed.
+P10 Namespaced Extensions — runtime config under `runtimes.{id}.*`.
+P11 Output Humanization — human-facing outputs pass through humanization before the final return (Squad v5 §27, Business v1 §10.7).
+
+## Protocol Source
+
+Sources of truth, in resolution order:
+
+- `SQUAD_PROTOCOL_V6.md` (v6.0 delta over v5, PT-BR): §28 workflow document, §29 acceptance, §30 evaluator, §31 composition, §32 execution binding, §33 `not_for` ≤25, §34 admission, §35 migration, App-G/H.
+- `SQUAD_PROTOCOL_V5.md` (v5.0 delta over v4): §22 capabilities, §23 registry, §24 discovery, §25 routing, §26 telemetry, §27 humanization, App-C/D/E/F/Z.
+- `SQUAD_PROTOCOL_V4.md` (21 sections, runtime-agnostic) — unchanged base that v5 extends.
+- `SQUAD_PROTOCOL.md` (v2.0, deprecated, kept for legacy squads).
+
+Schemas in `~/.nirvana/skills/_shared/schemas/{capability,business,core-schemas}.json`.
+Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,gemini-cli,hermes}.md` (cover squads + businesses + harness).
+Read sections on demand via TOC. NEVER load the full ~1600-line v4 protocol plus the v5 delta into context.
+
+## Squad Roots & Project Scoping
+
+Three scope modes resolved from `<project>/.env`:
+
+```
+NIRVANA_SCOPE=global   # ~/squads/* only (default — backward compat)
+NIRVANA_SCOPE=project  # <project>/.nirvana/squads/* only (full isolation)
+NIRVANA_SCOPE=merge    # both, project overrides global by slug (directory name)
+```
+
+In project mode, the squads registry, activation state, and logs persist under `<project>/.nirvana/` — never `$HOME`. Two scope=project projects on the same machine never collide. Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`.
+
+Discovery via the scope-aware loaders:
+```bash
+bun ~/.nirvana/skills/squads/scripts/list-squads.ts             # honors NIRVANA_SCOPE
+bun ~/.nirvana/skills/_shared/lib/scope.ts --explain            # debug current scope
+bun ~/.nirvana/skills/_shared/scripts/init-project.ts <dir>     # bootstrap a new scoped project
+```
+
+> ⛔ Always run these with the **absolute path from your project's cwd** (as
+> above). **Never `cd` into the skill directory to run a loader** — scope is
+> detected by walking up from cwd, so `cd`-ing out of the project tree makes the
+> loader silently resolve `scope=global`. If output says `scope=global` when you
+> expected `project`, you `cd`-ed out. Pin it cwd-independently with
+> `export NIRVANA_PROJECT_ROOT=<project>`.
+
+## Output Convention
+
+All squad outputs write to a **standard workspace** inside the project:
+
+```
+{project-root}/.squads-outputs/{squad-name}/{timestamp}-{slug}/
+```
+
+**Resolution algorithm:**
+1. Project root: `$NIRVANA_PROJECT_ROOT` or `$SQUADS_PROJECT_ROOT`, OR the nearest folder up from cwd() with `.nirvana/project.yaml`, OR the engine's store (`~/.nirvana`) when there is no project
+2. Output root: `{project-root}/.squads-outputs/`
+3. Run directory: `{output-root}/{squad-name}/{ISO-timestamp}-{slug}/`
+
+**Rules:**
+- The **skill** resolves the default path at runtime — squads inherit it automatically
+- `output:` in squad.yaml is **optional**. Three behaviors:
+  - **Absent** → default (`.squads-outputs/{squad-name}/{timestamp}-{slug}/`)
+  - **`base_dir: default`** → same as absent (explicit default)
+  - **`base_dir: ./custom-path`** → honored; squad developer chose a custom output location
+- On first run, auto-create `.squads-outputs/README.md` explaining the directory to AI agents
+- Do NOT auto-modify `.gitignore` — user decides per-project
+
+**Path examples:**
+- `*squad create my-app` → `.squads-outputs/nirvana-squad-creator/2026-04-05T120000-my-app/`
+- `nrv run --squad nirvana-video-creator` → `.squads-outputs/nirvana-video-creator/2026-04-05T185600-video-run/`
+
+**Lifecycle:** Outputs are intermediate. User moves final deliverables to their project structure. Old runs can be cleaned: `rm -rf .squads-outputs/{squad}/{old-run}/`
+
+**Environment variable:** At runtime, squads receive `$SQUAD_RUN_DIR` pointing to their resolved run directory. All artifact writes go there.
+
+**Resolver:** `lib/output-resolver.js` implements path resolution. Runtimes MUST use this resolver.
+
+## Skill Layout
+
+```
+~/.nirvana/skills/squads/
+├── SKILL.md                    ← this file
+├── SQUAD_PROTOCOL_V6.md        ← v6 delta (§28-35 + App-G/H), PT-BR
+├── SQUAD_PROTOCOL_V5.md        ← v5 delta (§22-27 + appendices)
+├── SQUAD_PROTOCOL_V4.md        ← v4 base (§1-21) that v5 extends
+├── SQUAD_PROTOCOL.md           ← v2 deprecated (kept for legacy squads)
+├── references/01..11-*.md      ← loaded on demand by intent
+├── templates/*.tmpl            ← agent/task/workflow/squad templates
+├── lib/*.js                    ← output-resolver, adapter-loader, etc.
+└── scripts/*.sh                ← activate-squad.ts, validate-squad.ts
+
+~/.nirvana/skills/_shared/
+├── schemas/{capability,business,core-schemas}.json   ← validation
+├── catalogs/CAPABILITY_CATALOG_V1.yaml               ← App-C catalog
+├── validators/{validators.ts,validators.py}          ← TS + Python
+└── adapters/{claude-code,codex,gemini-cli,hermes}.md ← 4 runtime adapters
+```
+
+## First Invocation
+
+1. Verify `SQUAD_PROTOCOL_V6.md` and `SQUAD_PROTOCOL_V5.md` exist alongside this SKILL.md.
+2. Check node>=18, python3>=3.8 (validators).
+3. Create `${SQUADS_DIR}/` if missing: `mkdir -p ${SQUADS_DIR}`. Default `${SQUADS_DIR}` resolves to `~/squads`.
+4. Report: `Squad Protocol Engine v6.0.0 ready. Default protocol for new squads: 6.0. Roots: ${SQUADS_DIR} (N), ./squads (M).`
+
+## Intent Classification
+
+Classify user input → load ONLY the relevant reference files → execute.
+
+| Intent | Keywords | Load references |
+|--------|----------|-----------------|
+| **DISCOVER** | list, show, find, search, inspect, info, describe | `references/01-discovery.md` |
+| **CREATE** | create, new, scaffold, generate, build squad | `references/02-creation.md`, `references/05-schemas.md` |
+| **VALIDATE** | validate, check, verify, fix, repair, lint, audit | `references/03-validation.md` |
+| **ACTIVATE** | activate, register, install, deps, enable | `references/04-activation.md` |
+| **MODIFY** | add agent, remove, update, add task, add workflow | `references/05-schemas.md` |
+| **EXECUTE** | run, execute, start, launch, resume, retry | `references/06-workflows.md`, `references/07-execution.md` |
+| **ADAPT** | adapter, runtime, compatibility, feature matrix | `references/08-runtime-contract.md`, `references/11-adapters-guide.md` |
+| **UPGRADE** | upgrade, migrate, convert, v4 | `references/09-upgrade.md` |
+| **OBSERVE** | state, status, traces, artifacts, flow, runs | `references/07-execution.md` |
+
+**Critical rule:** Read reference files BEFORE acting. Never guess squad structure. Multi-intent: process sequentially in dependency order.
+
+## Commands
+
+### Discovery
+- `*squad list` — list all squads (both roots)
+- `*squad list --format {table|card|compact|tree}` — display format
+- `*squad inspect {name}` — detailed squad view
+
+### Creation
+- `*squad create {name}` — interactive creation wizard. **Default in v6**: `protocol: "6.0"`, `capabilities[]` declared, one Markdown workflow at `workflows/<ref>.md` (§28), refs without their extension (§28.6), `runtime_requirements`, `maxTurns` mandatory. Use `--legacy-v4` to create a v4 squad when needed.
+
+### Validation
+- `*squad validate {name}` — 18 blocking checks (Core + adapter)
+- `*squad validate {name} --report` — AI-friendly fix guidance
+- `*squad validate {name} --fix` — auto-fix common issues
+- `*squad validate {name} --runtime {id}` — validate against specific adapter
+
+### Activation (with automatic dependency install)
+
+Activation is end-to-end: validate, install everything declared in `<squad>/dependencies.yaml`, register for slash commands. The squads skill delegates to a shared agent persona that handles the conversation (scope summary, consent for heavy items, error reporting).
+
+- `*squad activate {name}` — full activation (delegates to `agents/squad-activator.md` persona)
+- `*squad activate {name} --dry-run` — preview only, no installs run
+- `*squad activate {name} --confirm-heavy` — auto-accept downloads >1 GB, sudo installs, and installers that fetch a remote script and execute it
+- `*squad status {name}` — show activation state from `~/.claude/squads-state/<name>/activated.json`
+- `*squad deactivate {name}` — clear state file (does NOT uninstall packages)
+
+**How it works.** When the user says "ative o squad X":
+
+1. Skill detects intent and reads `agents/squad-activator.md`.
+2. Spawns `Agent({subagent_type: "general-purpose", prompt: <persona> + <slug>})`. Step 3 onwards reads what the persona reported — which arrives in the completion notification, not in the spawn result.
+**Activating an installed library (the buyer's path, not the author's).** The
+steps below are the AUTHORING flow, run from inside a squad being built. A
+user who just installed a pack activates through the CLI instead:
+`nrv activate <slug>`, or `nrv activate --all --only-declared` to walk the
+whole library one squad at a time (add `--dry-run` to see the plan,
+`--confirm-heavy` to accept large downloads, sudo installs, and installers
+that pipe a remote script into a shell). Activation is
+advisory — nothing blocks a dispatch — but a squad whose task shells out to
+ffmpeg or epubcheck fails MID-RUN when the tool is absent, after the dispatch
+is already paid for. `nrv doctor` warns when a declared tool is missing.
+
+3. Persona runs `bun scripts/activate-squad.ts status <slug>` first; if already active, asks reverify vs reactivate.
+4. Persona runs `bun scripts/activate-squad.ts activate <slug> --dry-run` to compute scope, then translates the JSON into a human summary listing CLIs, services to clone, custom nodes, model downloads (with sizes), env vars to check.
+5. Persona uses `AskUserQuestion` for any item >1 GB or sudo.
+6. After consent, persona runs `bun scripts/activate-squad.ts activate <slug> [--confirm-heavy]`.
+7. Persona reports the final state and the start commands for any long-running services (the user runs long-lived daemons such as ComfyUI manually).
+
+**Sidecar `dependencies.yaml`.** Each squad declares its install needs in `<squad>/dependencies.yaml` (sidecar, not part of `squad.yaml`). The 7 categories are:
+
+| Category | Purpose |
+|---|---|
+| `system` | CLIs (ffmpeg, git, uv) — checked then installed via brew/apt/choco per OS |
+| `python` | pip / uv packages → shared Python home `~/.nirvana/python` |
+| `node` | packages → shared store `~/.nirvana/node_modules`, squad dir symlinked to it (`global: true` = a command on PATH, installed by npm) |
+| `services` | Long-lived daemons cloned from git (Pixelle, ComfyUI, Ollama) — installed but NOT started |
+| `custom_nodes` | ComfyUI custom node repos cloned to `~/comfyui/custom_nodes/` |
+| `models` | HuggingFace / URL downloads. Items with `size_gb > 1` require explicit consent |
+| `env_vars` | Checked only (never written) — surfaced as set / missing_required / missing_optional |
+| `post_install` | Hooks run after everything else (e.g. re-index, ping health check) |
+
+Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator.js`. State per squad: `~/.claude/squads-state/<slug>/activated.json`.
+
+**Synthesis fallback.** If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes a manifest and caches it at `~/.claude/squads-state/<slug>/synth-deps.yaml`. The persona surfaces this and offers to promote it to a real sidecar.
+
+**Idempotent.** Re-activation is fast — every check passes, nothing reinstalls.
+
+### Modification
+- `*squad add-agent {squad} {agent-name}` — add agent with v4 template (maxTurns mandatory)
+- `*squad add-task {squad} {task-name}` — add task (no owner, workflow binds)
+- `*squad add-workflow {squad} {workflow-name}` — add workflow with DAG
+- `*squad remove {squad} {component}` — remove component
+
+### Execution
+- `nrv run --squad {slug}` — execute the squad's capability the router picks
+- `nrv run --squad {slug}:{capability}` — execute a named capability (its workflow is the one that runs)
+- `*squad resume {name}` — resume from checkpoint
+
+### Adapters
+- `*squad adapters` — list available runtime adapters
+- `*squad adapters inspect {runtime}` — show adapter feature matrix
+- `*squad runtime` — detect current runtime
+- `*squad compat {squad}` — check squad compatibility with current runtime
+
+### Migration
+- `nrv migrate {slug} --to 6` — preview the v5 → v6 conversion (dry run; `--apply` writes, `--rollback <ts>` undoes). See `SQUAD_PROTOCOL_V6.md` §35.
+- `*squad migrate {name} --from {v2|v3.1|v4} --to {v4|v5}` — the older, in-place upgrades.
+
+### Observation
+- `*squad status {name}` — current execution state
+- `*squad traces {name}` — execution traces
+- `*squad artifacts {name}` — list produced artifacts
+
+### Meta
+- `*squad help` — show this command list
+
+## Creation Rules (v6)
+
+When creating a NEW squad, ALWAYS:
+
+1. Set `protocol: "6.0"` in squad.yaml (`"5.0"` stays valid; the gate judges each squad by what it declares).
+2. Ask for target runtimes → set `runtime_requirements.minimum` (`claude-code`, `codex`, `gemini-cli`, etc., per `~/.nirvana/skills/_shared/adapters/`).
+3. Set `features_required` (whitelist in `business.schema.json`) and `features_optional`.
+4. Every agent MUST have `maxTurns` (default 25 for simple, 50 for complex).
+5. Declare `capabilities[]` in the v5 shape: `id` (dotted, ≥3 segments), `description`, `domains[]` from `CAPABILITY_CATALOG_V1.yaml`, `invoke{type,ref}`, `examples[]`. Without capabilities the squad is invisible to harness discovery.
+6. Use portable semantic tool names in agent `tools:` (`read`, `write`, `grep`, `bash`, `web_search`).
+7. Tasks have NO owner — workflows bind agent→task.
+8. A task states its `## Outcome` (what must be true when it is done) and binary, verifiable `## Acceptance Criteria`. `## Steps` is optional and is the author's reference method, never an order (v6 §36).
+9. Include `<protocol-context>` block in prompts for long-running subagents.
+10. A workflow is a DAG of phases that consume each other's output, so a phase starts only once the phase it depends on has REPORTED — and a phase reports through the `<task-notification>` carrying its `<result>`, never through the spawn's tool result (that is a launch receipt). Dispatching the next phase on a receipt leaves it reading a file that may still be half-written. Phases with no dependency between them go in ONE message as several calls, which is what makes them concurrent; phases that feed each other go one at a time, each dispatched once the previous one's notification landed.
+11. Declare output schemas in `contracts:` for chained tasks.
+12. Declare how the output is judged: `acceptance[]` on the capability (v6 §29), or a `## Acceptance Criteria` section in the task it invokes. There is no `humanize` field — the writing contract lives in the runtime memory files and reaches every dispatched agent.
+13. Set memory GC policy if persistent memory is used.
+13b. Host-side dependencies go in `dependencies.yaml`: `system:` programs, `env_vars:` credentials (with `required:` and a `description:`), and `mcps:` MCP servers (`name`, `purpose`, `required`). A squad never runs an MCP server: the runtime that executes it does, from its own configuration; the declaration is what lets `nrv activate`, `nrv doctor` and the dispatch preflight tell the operator what to configure (v4 §9.3, revised in 6.1.1).
+14. Validate with the admission gate: `nrv validate squad <slug|path>` (add `--fix` for the mechanical repairs). The validator it runs is Zod, in `~/.nirvana/skills/_shared/validators/validators.ts`.
+15. **Routing metadata, contract-complete** — every capability MUST carry the discovery fields per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`: `description` in canonical English, concrete and front-loaded (§1); `produces` as artifact-type slugs (§3); `keywords` as multilingual synonym groups — EN + PT (+ES where natural), accented AND unaccented forms (§4); `example_briefs` ≥3 with at least one EN and one PT, symptom-phrased, covering conjugated and infinitive verb forms (§5); `not_for` as short token lists of 2-4 content words, never sentences (§6). Empty or truncated metadata is a creation defect, not a stylistic choice.
+16. **Self-retrieval gate (blocking) — creation is NOT done until it passes.** After indexing, run:
+    ```bash
+    bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts <squad-slug>
+    ```
+    Every declared `example_brief` must route back to this squad top-1 (exit 0). On a miss, the defect is in the capability metadata — never "the router"; iterate keywords / example_briefs / not_for per the contract and rerun. Also confirm neighboring squads' home briefs still route to their owners. **Do not report the squad as created while this gate is red.**
+17. **Event vocabulary — nothing to add by hand.** Declaring `capabilities[]` (rule 5) is what makes a dispatch carry the event contract: `squad-exec.ts` injects a "COMO REPORTAR EVENTOS" block into the prompt of any squad whose capability resolves, telling the agent to emit via `nrv audit emit <nome> --squad=<slug> --trace=<trace>`, to prefix an unlisted name with `x_` so the log matches what it wrote, and to keep payloads short (no brief, no full output, no secret). The closed enum and the CloudEvents envelope are `references/03-audit.md`; the `x_` namespace stays open by design — the gate is on shape, never on what an event reports.
+
+## Agent Template
+
+```yaml
+---
+name: {agent-name}
+description: "{verb} {domain}. Use when {trigger}. Do NOT use for {anti-pattern}."
+maxTurns: 25
+tools: [read, write, grep]
+model: inherit
+runtimes:
+  claude-code:
+    tools: [Read, Write, Grep, Bash]
+---
+
+You are a {specific role} for {domain}. You {primary action}. You {boundary}.
+
+# Guidelines
+
+## DO
+- {principle 1}
+- {principle 2}
+
+## DO NOT
+- {anti-pattern 1}
+- {anti-pattern 2}
+
+# Process
+1. {step 1}
+2. {step 2}
+
+# Output
+{format} at {location}
+
+# Safety Boundaries
+- NEVER {destructive action}
+- If uncertain: {safe fallback}
+```
+
+## Anti-Patterns
+
+NEVER:
+- Guess squad structure — always read squad.yaml first.
+- Load full SQUAD_PROTOCOL_V4.md or V5.md into context — use TOC, read sections on demand.
+- Create agents without `maxTurns` — runtime may loop infinitely.
+- Create tasks with `owner:` field — use workflow binding instead.
+- Use runtime-specific tool names in portable `tools:` field — use semantic names.
+- Skip validation after create/modify — always run `*squad validate`.
+- Invent agent roles not requested by user.
+- Modify framework files (L1/L2 boundary).
+- Run workflows without verifying all referenced agents/tasks exist.
+- Execute destructive operations without confirmation.
+- Hardcode runtime-specific values in squad.yaml root — use `runtimes.{id}.*` namespace.
+- Create agents with body > 1.5% of context window — split instead.
+- Pass full conversation history between steps — use handoff artifacts.
+- Claim enforcement that doesn't exist (P8 Technical Honesty).
+- Skip output humanization on a human-facing capability (P11) — it breaks the zero-human perception.
+- Create a v5 squad without capabilities[] — the squad becomes invisible to harness discovery.
+- Declare a squad "created" while the self-retrieval gate is red (rule 16) — example_briefs that don't route back top-1 mean the squad is invisible or hijacking a neighbor.
+
+## Backward Compatibility
+
+- Old commands still work: `*create-squad` → `*squad create`.
+- v1, v2, v3 squads load via auto-upgrade shim (see `references/09-upgrade.md`).
+- v3 harness features (doom loop, ralph loop, traces) remain opt-in.
+- v4 adds: mandatory maxTurns, runtime_requirements, adapters, portable tool names.
+- v5 adds: capability manifest (§22), registry (§23), discovery BM25 (§24), three-signal routing (§25), OTel telemetry (§26), output humanization (§27).
+- Run `*squad migrate` to persist the upgrade to disk (default target: v6 — `nrv migrate <slug> --to 6`).
+- v4 squads remain valid — the harness treats them as `experimental_domains: true` by default during coexistence.

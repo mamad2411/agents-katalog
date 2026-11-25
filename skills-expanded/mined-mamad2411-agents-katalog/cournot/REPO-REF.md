@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-cournot-ai-cournot-skills/cournot/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Query Cournot probabilities and manage prepaid calls, balances, and API keys. Use only for /cournot or an explicit request to use Cournot, not for casual odds questions.

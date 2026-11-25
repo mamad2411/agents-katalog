@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-breath57-dingtalk-skills/dingtalk-document/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 钉钉知识库和文档管理操作。当用户提到"钉钉文档"、"知识库"、"新建文档"、"查看文档目录"、"读取文档内容"、"写入文档"、"更新文档"、"文档成员"、"dingtalk doc"、"knowledge base"时使用此技能。支持：创建知识库、查询知识库列表、新建文档/文件夹、读取/写入文档正文内容、管理成员权限等全部文档类操作。

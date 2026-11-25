@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-maji-fast/022071-flask-docker-deployment-jmazzahacks-byteforge-claude-ski-252bf095/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: flask-docker-deployment-jmazzahacks-byteforge-claude-ski-252bf095

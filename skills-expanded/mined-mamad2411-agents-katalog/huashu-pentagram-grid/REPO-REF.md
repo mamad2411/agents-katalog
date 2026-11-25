@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-nexu-io-open-design/huashu-pentagram-grid/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Pentagram Info-Architecture · 信息建筑·红

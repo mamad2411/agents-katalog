@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-leter-zh-tech-writing-zh-tech-writing/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 中文技术文档写作规范。写或修改中文技术文档、开发文档（README、设计文档、接口说明、教程）时使用。

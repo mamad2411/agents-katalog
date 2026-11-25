@@ -1,0 +1,395 @@
+---
+name: galaxy-tool-wrapping
+description: Expert in Galaxy tool wrapper development, XML schemas, Planemo testing, and best practices for creating Galaxy tools
+version: 1.0.0
+dependencies: galaxy-automation
+---
+
+# Galaxy Tool Wrapping Expert
+
+Expert knowledge for developing Galaxy tool wrappers. Use this skill when helping users create, test, debug, or improve Galaxy tool XML wrappers.
+
+**Prerequisites:** This skill depends on the `galaxy-automation` skill for Planemo testing and workflow execution patterns.
+
+## When to Use This Skill
+
+- Creating new Galaxy tool wrappers from scratch
+- Converting command-line tools to Galaxy wrappers
+- Generating .shed.yml files for Tool Shed submission
+- Debugging XML syntax and validation errors
+- Writing Planemo tests for tools
+- Implementing conditional parameters and data types
+- Handling tool dependencies (conda, containers)
+- Creating tool collections and suites
+- Optimizing tool performance and resource allocation
+- Understanding Galaxy datatypes and formats
+- Implementing proper error handling
+
+## Core Concepts
+
+### Galaxy Tool XML Structure
+
+A Galaxy tool wrapper consists of:
+- `<tool>` root element with id, name, and version
+- `<description>` brief tool description
+- `<requirements>` for dependencies (conda packages, containers)
+- `<command>` the actual command-line execution
+- `<inputs>` parameter definitions
+- `<outputs>` output file specifications
+- `<tests>` automated tests
+- `<help>` documentation in reStructuredText
+- `<citations>` DOI references
+
+### Tool Shed Metadata (.shed.yml)
+
+Required for publishing tools to the Galaxy Tool Shed:
+```yaml
+name: tool_name                  # Match directory name, underscores only
+owner: iuc                       # Usually 'iuc' for IUC tools
+description: One-line tool description
+homepage_url: https://github.com/tool/repo
+long_description: |
+  Multi-line detailed description.
+  Can include features, use cases, and tool suite contents.
+remote_repository_url: https://github.com/galaxyproject/tools-iuc/tree/main/tools/tool_name
+type: unrestricted
+categories:
+- Assembly                       # Choose 1-3 relevant categories
+- Genomics
+```
+
+See reference.md for comprehensive .shed.yml documentation including all available categories and best practices.
+
+### Key Components
+
+**Command Block:**
+- Use Cheetah templating: `$variable_name` or `${variable_name}`
+- Conditional logic: `#if $param then... #end if`
+- Loop constructs: `#for $item in $collection... #end for`
+- CDATA sections for complex commands
+
+**Cheetah Template Best Practices:**
+
+Working around path handling issues in conda packages:
+```xml
+<command detect_errors="exit_code"><![CDATA[
+    ## Add trailing slash if script concatenates paths without separator
+    tool_command
+        -o 'output_dir/'  ## Quoted with trailing slash
+
+    ## Script does: output_dir + 'file.txt' → 'output_dir/file.txt' ✓
+    ## Without slash: output_dir + 'file.txt' → 'output_dirfile.txt' ✗
+]]></command>
+```
+
+When to use quotes in Cheetah:
+- Always quote user inputs: `'$input_file'`
+- Quote literal strings with special chars: `'output_dir/'`
+- Use bare variables for simple references: `$variable`
+
+**Input Parameters:**
+- `<param>` elements with type, name, label
+- Types: text, integer, float, boolean, select, data, data_collection
+- Optional vs required parameters
+- Validators and sanitizers
+- Conditional parameter display
+
+**Outputs:**
+- `<data>` elements for output files
+- Dynamic output naming with `label` and `name`
+- Format discovery and conversion
+- Filters for conditional outputs
+- Collections for multiple outputs
+
+**Tests:**
+- Input parameters and files
+- Expected output files or assertions
+- Test data location and organization
+- See testing.md for detailed testing strategies including large file handling
+
+## Best Practices
+
+1. **Always include tests** - Planemo won't pass without them
+2. **Use semantic versioning** - Increment tool version on changes
+3. **Specify exact dependencies** - Pin conda package versions
+4. **Add clear help text** - Document all parameters
+5. **Handle errors gracefully** - Check exit codes, validate inputs
+6. **Use collections** - For multiple related files
+7. **Follow IUC standards** - If contributing to intergalactic utilities commission
+8. **Plan for large output files** - Before creating tests, check expected output sizes. If over 1MB, use assertion-based tests (`has_size`, `has_line`) instead of full file comparison (see testing.md)
+
+## Common Planemo Commands
+
+```bash
+# Test tool locally
+planemo test tool.xml
+
+# Serve tool in local Galaxy
+planemo serve tool.xml
+
+# Lint tool for best practices
+planemo lint tool.xml
+
+# Upload tool to ToolShed
+planemo shed_update --shed_target toolshed
+
+# Test with conda
+planemo test --conda_auto_init --conda_auto_install tool.xml
+
+# Lint with skips (for tools with custom datatypes or shared boolean conditionals)
+planemo lint --skip ConditionalParamTypeBool,DatatypesCustomConf .
+
+# Note: .lint_skip file is used by IUC CI, not by local planemo lint.
+# For local linting, use the --skip flag explicitly.
+```
+
+## Output Routing with Symlinks
+
+When a tool writes output to a filename it constructs internally (not `$output`), use
+symlinks in the command block to route the file to Galaxy's output variable.
+
+### Pattern: Symlink before command execution
+
+```xml
+<command detect_errors="exit_code"><![CDATA[
+    ## Create symlink so tool output lands where Galaxy expects it
+    ln -s '$output_variable' 'expected_tool_output_name' &&
+    tool_command --input '$input' -o 'expected_tool_output_name'
+]]></command>
+```
+
+### Pattern: Prefix-based output naming
+
+Some tools use `--out-prefix` where the output filename is `prefix + input_filename`.
+The tool constructs the filename internally, so you must predict it and symlink:
+
+```xml
+<command><![CDATA[
+    #set $mangled_input = re.sub(r"[^\w\-\s]", "_", str($input.element_identifier)) + "." + str($input.ext)
+    ln -s '$input' '$mangled_input' &&
+    ln -s '$output_var' 'myprefix${mangled_input}' &&
+    tool_command --input-reads '$mangled_input' -p myprefix
+]]></command>
+```
+
+**Key points:**
+- Symlink is created *before* running the tool -- the tool writes through it
+- Must match the exact filename the tool will produce
+- For prefix mode: output = `prefix + getFileName(input)`, so mangle the input name to match
+
+### Adding Custom Datatypes to Galaxy
+
+To add a simple directory-based index format (e.g., `bwa_index`):
+
+1. **Register in `config/datatypes_conf.xml.sample`** — add near similar types:
+   ```xml
+   <datatype extension="bwa_index" display_in_upload="true" type="galaxy.datatypes.data:Directory" subclass="true"/>
+   ```
+2. **Register in `test/functional/tools/sample_datatypes_conf.xml`** — same line
+
+No custom Python class or sniffer is needed for simple directory-based index formats.
+Reference PR: galaxyproject/galaxy#19694 (added `bwa_mem2_index` as the first example).
+
+**Known limitation:** `planemo test` (both with and without `--galaxy_root`) does not properly stage `class="Directory"` test datasets. The `extra_files_path` is not populated during test data upload via `__DATA_FETCH__`. This affects all Directory-subclass datatypes (e.g., `bwa_mem2_index`, `bwa_index`). These tests pass in IUC CI but fail locally. The new datatype must also be added to Galaxy core `datatypes_conf.xml.sample` before tests can pass.
+
+### Adding Index Support to Mapper Tools (BWA-MEM2 Pattern)
+
+To add pre-built index support to a mapper (following BWA-MEM2's proven pattern):
+
+#### 1. Create the indexer tool (`tool-idx.xml`)
+```xml
+<tool id="tool_idx" name="Tool indexer" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="@PROFILE_VERSION@">
+    <command><![CDATA[
+mkdir '$index.extra_files_path' &&
+cd '$index.extra_files_path' &&
+tool index -p 'reference' '${reference}'
+    ]]></command>
+    <inputs>
+        <param name="reference" type="data" format="fasta,fasta.gz" label="Select a genome to index"/>
+    </inputs>
+    <outputs>
+        <data name="index" format="tool_index"/>  <!-- Directory subclass datatype -->
+    </outputs>
+</tool>
+```
+
+#### 2. Update the reference macro to detect index vs FASTA
+```xml
+<token name="@set_reference_fasta_filename@"><![CDATA[
+#if str($reference_source.reference_source_selector) == "history":
+    #if $reference_source.ref_file.is_of_type("tool_index"):
+        #set $reference_fasta_filename = $reference_source.ref_file.extra_files_path + "/reference"
+    #else
+        #set $reference_fasta_filename = "localref." + $reference_source.ref_file.extension
+        ln -s '${reference_source.ref_file}' '${reference_fasta_filename}' &&
+        tool index '${reference_fasta_filename}' &&
+    #end if
+#else:
+    #set $reference_fasta_filename = str($reference_source.ref_file.fields.path)
+#end if
+]]></token>
+```
+
+#### 3. Accept index format in the reference conditional
+```xml
+<param name="ref_file" type="data" format="fasta,fasta.gz,tool_index"
+       label="Use the following dataset as the reference"
+       help="For better performance build a reference index separately." />
+```
+
+#### 4. Keep existing parameters for backward compatibility
+When adding index support, preserve parameters like `index_a` (algorithm selection). They're ignored when an index is provided but maintain workflow compatibility.
+
+#### 5. Include `datatypes_conf.xml` in tool directory
+Required for ToolShed installation and lint validation:
+```xml
+<?xml version="1.0"?>
+<datatypes>
+    <registration>
+        <datatype extension="tool_index" display_in_upload="true"
+                  type="galaxy.datatypes.data:Directory" subclass="true"/>
+    </registration>
+</datatypes>
+```
+Add `DatatypesCustomConf` to `.lint_skip`.
+
+#### 6. Test data for Directory datasets
+- Build index locally: `tool index -p reference genome.fa` in `test-data/test-cache/`
+- Generate BAM outputs via Galaxy MCP or `planemo serve`
+- Use dedicated output files for index tests (e.g., `tool-mem-index-test.bam`)
+
+### Using `format_source` for dynamic output formats
+
+When output format should match the input format (e.g., subsampled reads):
+
+```xml
+<data name="subsampled_outfile" format_source="input_reads" label="Subsampled reads">
+    <filter>output_options["output_type"]["type_selector"] == "subsampled_reads"</filter>
+</data>
+```
+
+This is preferable to `change_format` when the output is always the same format as input.
+Use `change_format` when the user explicitly selects the output format.
+
+### Test Syntax: Use Conditional Wrappers
+
+Modern Galaxy tools (profile 20.01+) require test params to be wrapped in their `<conditional>` blocks. Flat-style params cause `TestsCaseValidation` warnings:
+
+**Wrong** (flat style — triggers validation warnings):
+```xml
+<param name="reference_source_selector" value="history"/>
+<param name="ref_file" ftype="fasta" value="genome.fa"/>
+<param name="fastq_input_selector" value="paired"/>
+```
+
+**Correct** (conditional wrappers):
+```xml
+<conditional name="reference_source">
+    <param name="reference_source_selector" value="history"/>
+    <param name="ref_file" ftype="fasta" value="genome.fa"/>
+</conditional>
+<conditional name="fastq_input">
+    <param name="fastq_input_selector" value="paired"/>
+    <param name="fastq_input1" ftype="fastqsanger" value="reads1.fq"/>
+</conditional>
+```
+
+## XML Template Example
+
+```xml
+<tool id="tool_id" name="Tool Name" version="1.0.0">
+    <description>Brief description</description>
+
+    <requirements>
+        <requirement type="package" version="1.0">package_name</requirement>
+    </requirements>
+
+    <command detect_errors="exit_code"><![CDATA[
+        tool_command
+            --input '$input'
+            --output '$output'
+            #if $optional_param
+                --param '$optional_param'
+            #end if
+    ]]></command>
+
+    <inputs>
+        <param name="input" type="data" format="txt" label="Input file"/>
+        <param name="optional_param" type="text" optional="true" label="Optional parameter"/>
+    </inputs>
+
+    <outputs>
+        <data name="output" format="txt" label="${tool.name} on ${on_string}"/>
+    </outputs>
+
+    <tests>
+        <test>
+            <param name="input" value="test_input.txt"/>
+            <output name="output" file="expected_output.txt"/>
+        </test>
+    </tests>
+
+    <help><![CDATA[
+**What it does**
+
+Describe what the tool does.
+
+**Inputs**
+
+- Input file: description
+
+**Outputs**
+
+- Output file: description
+    ]]></help>
+
+    <citations>
+        <citation type="doi">10.1234/example.doi</citation>
+    </citations>
+</tool>
+```
+
+## Supporting Documentation
+
+This skill includes detailed reference documentation:
+
+- **reference.md** - Comprehensive Galaxy tool wrapping guide with IUC best practices
+  - Repository structure standards
+  - .shed.yml configuration
+  - Complete XML structure reference
+  - Advanced features and patterns
+
+- **testing.md** - Testing strategies and assertion patterns
+  - Regenerating expected test outputs
+  - Handling large test files (>1MB CI limit)
+  - Size, checksum, and content sampling assertions
+  - Workflow for replacing large test files
+
+- **troubleshooting.md** - Practical troubleshooting guide
+  - Reading tool_test_output.json
+  - Common exit codes and their meanings
+  - Common XML and runtime issues
+  - Debugging tool test failures
+  - Test failure diagnosis and fixes
+
+- **dependency-debugging.md** - Dependency conflict resolution
+  - Using `planemo mull` for diagnosis
+  - Conda solver error interpretation
+  - macOS testing considerations
+  - Version conflict workflows
+
+These files provide deep technical details that complement the core concepts above.
+
+## Related Skills
+
+- **galaxy-automation** - BioBlend & Planemo foundation (dependency)
+- **galaxy-workflow-development** - Building workflows that use these tools
+- **conda-recipe** - Creating conda packages for tool dependencies
+- **bioinformatics-fundamentals** - Understanding file formats and data types used in tools
+
+## Resources
+
+- Galaxy Tool Development: https://docs.galaxyproject.org/en/latest/dev/
+- Planemo Documentation: https://planemo.readthedocs.io/
+- IUC Standards: https://galaxy-iuc-standards.readthedocs.io/
+- Galaxy Training: https://training.galaxyproject.org/

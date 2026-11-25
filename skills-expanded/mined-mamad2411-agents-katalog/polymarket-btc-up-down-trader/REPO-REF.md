@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-SpartanLabsXyz-simmer-sdk/polymarket-btc-up-down-trader/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Trade Polymarket BTC daily and weekly UP/DOWN markets with empirically-anchored exit discipline. Enters on CEX momentum divergence; exits automatically on time cap, volume spike, or target capture. Us

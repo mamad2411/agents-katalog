@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-OpenLAIR-dr-claw-aris-paper-figure/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Generate publication-quality figures and tables from experiment results. Use when user says \"画图\", \"作图\", \"generate figures\", \"paper figures\", or needs plots for a paper."

@@ -1,0 +1,211 @@
+---
+name: splunk-kvstore-admin-setup
+description: "Use when the user asks to back up or restore the KV Store, migrate the KV Store storage engine, upgrade
+  the KV Store server version, reset or clean the KV Store, define a KV Store collection or lookup, or
+  recover KV Store on an SHC. Render, validate, and apply Splunk App Key Value Store administration:
+  backup and restore (point-in-time), clean/reset, storage-engine migration to WiredTiger, KV Store
+  server-version upgrade (7.0/8.0), maintenance mode, collections.conf and KV Store lookup-definition
+  governance, and standalone vs search head cluster paths."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk KV Store Admin Setup
+
+## Enterprise 10.6 migration gate
+
+Enterprise 10.6 automatically migrates the supported MongoDB-backed KV Store
+to a cohosted PostgreSQL storage sidecar after upgrade. Require KV Store server
+7.0 or higher, more than 50% free space on the KV Store data filesystem,
+authenticated healthy `splunk show kvstore-status`, a parallel backup with
+restore evidence, and a maintenance window that allows read-only operation.
+During migration, writes, backups/restores, resync, and KV Store restarts are
+unavailable. ITSI 5.0.x requires postponing the PostgreSQL migration even
+though ITSI 5.0.2 is listed as compatible with Enterprise 10.6. For the
+documented Enterprise 10.4-to-10.6 deferred path, explicitly render
+`server.conf` with `--defer-postgres-migration true`, review and distribute it
+before upgrading, then verify the effective setting and
+`migrationStatus : NotStarted` after upgrade. This flag differs from
+`kvstoreUpgradeOnStartupEnabled`, which controls the KV Store server-version
+upgrade. Keep the ordinary backup, restore-test, health, topology, and
+disk-readiness gates. Do not report cohosted PostgreSQL migration complete;
+schedule it after all installed apps support it. Completion of an actual migration requires
+`migrationStatus : Migration_Succeeded`, KV Store `status : ready`, and
+cohosted-store `status : ready`. Treat unauthenticated or inaccessible status
+as an unverified gate.
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Back up or restore the KV Store, migrate the KV Store storage engine, upgrade the KV Store server version, reset
+  or clean the KV Store, define a KV Store collection or lookup, or recover KV Store on an SHC.
+- Preview and review the splunk kvstore admin setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-kvstore-admin-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-kvstore-admin-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+This skill renders and applies Splunk App Key Value Store (KV Store)
+administration assets. It is render-first because backup, restore, clean,
+migrate, and upgrade operations change durable state; review the rendered host
+scripts before applying.
+
+## Agent Behavior
+
+Never ask for the Splunk admin password in chat. Lifecycle operations run as
+the splunk user on the host after `splunk login`; collection governance uses the
+project `credentials` file via the shared helper. Restore and clean are
+destructive and refuse to run without their acceptance flag.
+
+`--platform auto|cloud|enterprise` defaults to `auto` and is resolved before
+every apply/all, preflight, or status phase. Managed Splunk Cloud is a hard
+handoff for backup, restore, clean, migrate, upgrade, maintenance, and host
+status: the wrapper exits `2` before rendering or executing host assets.
+Cloud-rendered host scripts independently exit `2` before invoking the CLI.
+The only Cloud mutation supported here is collection and lookup definition
+governance through the standard Splunk REST configuration endpoints in an
+existing, writable app namespace supplied with `--app-name`.
+
+Read `reference.md` before any restore, migrate, or upgrade. The default
+`--backup-mode auto` selects parallel jobs for an authenticated ready cohosted
+PostgreSQL store (`type: Pdl`) and point-in-time backup for a legacy store.
+Explicit point-in-time mode refuses a cohosted store rather than weakening its
+consistency guarantee. Backup and restore poll `backupRestoreStatus` to a
+bounded `backupRestoreStatus : Ready` state before reporting success.
+
+## Splunk Enterprise 10.4 guardrails
+
+Enterprise **10.4** removes legacy MongoDB 4–6 binaries bundled with older KV
+Store releases. Do **not** upgrade directly from Splunk **9.x** to **10.4**;
+route through **10.0** or **10.2** first so KV Store reaches MongoDB 7+.
+
+On **10.x → 10.4**, MongoDB **8** is applied automatically during the Splunk
+upgrade. After upgrade, run `status.sh` or authenticated `splunk show kvstore-status`
+and confirm `serverVersion` reflects the expected MongoDB 8 train before
+collection governance or restore work.
+
+Cloud stacks on doc trains **10.5.2605** and **10.4.2604** inherit the same KV
+Store behavior on the Splunk-managed side. Splunk operates that lifecycle;
+customers must use Splunk Support for backup/recovery or engine/version work.
+Enterprise operators still own the upgrade ladder on self-managed hosts.
+
+## Quick Start
+
+Render the lifecycle assets:
+
+```bash
+bash skills/splunk-kvstore-admin-setup/scripts/setup.sh --topology shc
+```
+
+Take a point-in-time backup live:
+
+```bash
+bash skills/splunk-kvstore-admin-setup/scripts/setup.sh --platform enterprise \
+  --phase apply --operation backup --backup-mode auto --backup-archive-name kvdump_2026
+```
+
+Restore (destructive, captain on SHC):
+
+```bash
+bash skills/splunk-kvstore-admin-setup/scripts/setup.sh --platform enterprise \
+  --phase apply --operation restore \
+  --backup-archive-name kvdump_2026.tar.gz --accept-kvstore-restore
+```
+
+Define a KV Store collection + lookup definition live via REST:
+
+```bash
+bash skills/splunk-kvstore-admin-setup/scripts/setup.sh --platform auto \
+  --phase apply --operation collections \
+  --collection-name asset_inventory --collection-fields ip:string,risk:number \
+  --lookup-definition-name asset_inventory_lookup
+```
+
+## What It Renders
+
+- `backup.sh` / `restore.sh` / `clean.sh` / `migrate.sh` / `upgrade.sh` / `status.sh` / `preflight.sh`
+- `server.conf` with optional `[kvstore] kvstoreUpgradeOnStartupEnabled = false`
+- `collections.conf` and `transforms.conf` KV Store lookup-definition templates
+
+## Operations
+
+- `backup` - authenticated status-selected `splunk backup kvstore` (`--backup-mode auto|parallel|point-in-time|legacy`)
+- `restore` - status-selected `splunk restore kvstore` (parallel restores use `-restoreParallelJobs true`; gated)
+- `clean` - `splunk clean kvstore --local|--cluster` (gated)
+- `migrate` - SHC `start-shcluster-migration kvstore -storageEngine wiredTiger`
+- `upgrade` - SHC `start-shcluster-upgrade kvstore -version <v>`
+- `collections` - write collection + lookup definition via REST
+
+On managed Splunk Cloud, `collections` is the only live operation. Host
+lifecycle operations exit `2` with a Support handoff before any local render
+tree or host command is created. Cloud collection apply also verifies that
+`--app-name` identifies an existing writable namespace before mutation. Use
+`--phase render --platform cloud` to review collection/lookup templates and
+fail-closed host-script handoffs.
+
+Live standalone `migrate` and `upgrade` requests fail with an upgrade-workflow
+handoff because those transitions occur during a supported Splunk Enterprise
+binary upgrade. `--operation none` is render-only and is rejected by apply.
+`server.conf` is a rendered coordination artifact; this skill does not install
+that file automatically. Collection REST apply writes `replicate` and every
+declared `field.<name>` type.
+
+SHC migration defaults to `--migrate-dry-run true`; that successful operation
+does not claim that migration was applied. Actual migration requires
+`--migrate-dry-run false --accept-kvstore-migrate`, and server-version upgrade
+requires `--accept-kvstore-upgrade`. Rendered destructive scripts also require
+the acceptance environment set by the wrapper.
+
+Hand SHC replication health, captain transfer, and KV Store reset coordination
+to `splunk-search-head-cluster-setup`.

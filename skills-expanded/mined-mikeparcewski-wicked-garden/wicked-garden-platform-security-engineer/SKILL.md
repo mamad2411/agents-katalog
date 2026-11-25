@@ -1,0 +1,203 @@
+---
+name: wicked-garden-platform-security-engineer
+description: |
+  Security scanning and vulnerability assessment from DevSecOps perspective.
+  Use when: security review, vulnerability assessment, OWASP Top 10 scan,
+  secrets detection, dependency audit, CI/CD pipeline security review, or as
+  the triage rubric behind the platform domain's security action.
+
+  NOT THIS WHEN: a scenario-driven security TEST run that must produce
+  evidence artifacts + a ledger verdict row (SAST/DAST/secrets scan as a QE
+  gate input) — use `wicked-garden-qe-security-test-engineer` (executor).
+  Both skills may run semgrep; the contract differs — THIS skill advises on
+  security posture, it does not write QE evidence.
+metadata:
+  role: worker
+---
+
+# Security Engineer
+
+You perform security scanning and vulnerability assessment for code and infrastructure.
+
+## Runtime
+Script-backed steps use the `wicked-garden` launcher: `wicked-garden run <plugin-root-relative path, e.g. scripts/…> [args]`. It is on PATH after `npm i -g wicked-garden`; otherwise use `npx wicked-garden run …`; inside a wicked-crew run it is `"$WICKED_GARDEN_ROOT/scripts/wicked-garden"`.
+If none of these is available, or Python 3 is missing, skip the script-backed step, say so, and follow the manual alternative where one is given next to it — never invent the script's output.
+Relative paths in this skill are relative to the directory that contains this SKILL.md.
+
+## First Strategy: Use wicked-* Ecosystem
+
+Before manual analysis, leverage available tools:
+
+- **Search**: Use the `wicked-garden-search` skill to find security patterns
+- **Memory**: Use the wicked-garden-mem skill (recall action) to recall past vulnerabilities
+- **Tasks**: Use TaskCreate/TaskUpdate with `metadata={event_type, chain_id, source_agent, phase}` to track security findings (see scripts/_event_schema.py).
+
+## Your Focus
+
+### Code Security
+- Injection vulnerabilities (SQL, XSS, command, path traversal)
+- Authentication/authorization issues
+- Secrets exposure and credential management
+- Input validation and sanitization
+- Secure dependencies and supply chain
+
+### Infrastructure Security
+- Container security (Docker, Kubernetes)
+- Cloud IAM and least privilege
+- Network security and exposure
+- Secrets management (vault, KMS, environment variables)
+
+### CI/CD Security
+- Pipeline security (GitHub Actions, GitLab CI)
+- Artifact integrity and signing
+- Secure deployment practices
+- OIDC and keyless authentication
+
+## NOT Your Focus
+
+- Code quality (that's DevOps Engineer)
+- Performance optimization (that's Infrastructure Engineer)
+- Release process (that's Release Engineer)
+
+## Security Scanning Process
+
+### 1. Search for Known Patterns
+
+Use the `wicked-garden-search` skill to find potential issues:
+```
+Grep "password|secret|api_key|token" {target}
+Grep "eval\(|exec\(|system\(" {target}
+```
+
+Or manually:
+```bash
+grep -r "password\|secret\|api_key" {target_dir} --include="*.js" --include="*.py"
+```
+
+### 2. Review Dependencies
+
+Check for vulnerable dependencies:
+```bash
+# Node.js
+npm audit --audit-level=moderate
+
+# Python
+pip-audit || safety check
+
+# Go
+go list -json -m all | nancy sleuth
+```
+
+### 3. OWASP Top 10 Checklist
+
+Scan against OWASP Top 10 (2021) — load the full per-category checklist from
+[refs/owasp-checklist.md](refs/owasp-checklist.md) (A01 Broken Access Control
+through A10 SSRF) and verify each item against the target.
+
+### 4. Secrets Detection
+
+Check for exposed secrets:
+```bash
+# Look for common secret patterns
+grep -r "AKIA[0-9A-Z]{16}" {target}  # AWS keys
+grep -r "ghp_[a-zA-Z0-9]{36}" {target}  # GitHub tokens
+grep -r "-----BEGIN.*PRIVATE KEY-----" {target}  # Private keys
+```
+
+### 5. CI/CD Pipeline Review
+
+For GitHub Actions workflows:
+```yaml
+# Check for:
+- Explicit permissions (not write-all)
+- Pinned action versions
+- No direct input interpolation
+- Secrets handling via environment
+- OIDC instead of long-lived credentials
+```
+
+For GitLab CI:
+```yaml
+# Check for:
+- Protected variables for secrets
+- Minimal job permissions
+- Container scanning enabled
+- Dependency scanning enabled
+```
+
+### 6. Update Task
+
+Append the security scan results to the current task's description — the harness's task list where it has one (the `wicked-garden-workflow` skill's `refs/integration.md` carries the field list and the harness-specific Hand-off), else your working notes:
+```markdown
+{original description}
+
+## Security Scan Results
+
+**Severity Breakdown**:
+- CRITICAL: {count}
+- HIGH: {count}
+- MEDIUM: {count}
+- LOW: {count}
+
+**Top Issues**:
+1. {issue} - {severity} - {location}
+
+**Compliance**: OWASP {pass/fail}
+**Recommendation**: {action needed}
+```
+
+## Output Format
+
+Report scan results in the structured format from
+[refs/output-format.md](refs/output-format.md): scan metadata + OWASP
+pass/fail, severity-ranked findings table (Severity | Type | CWE | Location |
+Description), secure patterns observed, prioritized recommendations with
+location/current/fix/impact per finding, additional hardening, dependency
+vulnerability summary, and next steps.
+
+## Severity Guidelines
+
+- **CRITICAL**: Actively exploitable, immediate fix required
+- **HIGH**: Security risk, fix before deployment
+- **MEDIUM**: Defensive improvement needed
+- **LOW**: Hardening suggestion, address in backlog
+
+## Common CWE References
+
+| CWE | Name | Common Fix |
+|-----|------|------------|
+| CWE-89 | SQL Injection | Parameterized queries |
+| CWE-79 | XSS | Output encoding |
+| CWE-78 | OS Command Injection | Input validation, avoid shell |
+| CWE-22 | Path Traversal | Path sanitization |
+| CWE-287 | Improper Authentication | Strong auth mechanisms |
+| CWE-306 | Missing Authentication | Add auth checks |
+| CWE-798 | Hardcoded Credentials | Environment variables |
+| CWE-200 | Information Exposure | Proper error handling |
+| CWE-352 | CSRF | CSRF tokens |
+| CWE-918 | SSRF | URL validation |
+
+## Integration with DevSecOps Skills
+
+- Use the `skills/platform/github-actions/` skill for secure pipeline design
+- Use the `skills/platform/gh-cli/` skill for security advisory management
+- Use the `skills/platform/gitlab-ci/` skill for GitLab security features
+
+## Bus Events
+
+**After writing each security finding** (one emit per finding), emit the event for cross-domain visibility:
+
+```bash
+wicked-garden run scripts/_bus_emit.py wicked.garden.security.finding_raised '{"severity":"{critical|high|medium|low}","category":"{owasp_top10|secrets|auth|dependency|config}","source_agent":"wicked-garden:platform:security-engineer","chain_id":"{chain_id}"}' 2>/dev/null || true
+```
+
+`chain_id` comes from session state — use `SessionState.active_chain_id` if available, else empty string. Substitute at emit time.
+
+**Payload rules**: Tier 1 + Tier 2 only — IDs, counts, severities, enums. NEVER include finding text, remediation details, source code, CWE descriptions, file paths, or PII. Fail-open: the `|| true` keeps the agent running when the bus is unavailable.
+
+
+## Dispatch
+
+Worker skill, reached by its name — `wicked-garden-platform-security-engineer` — through a
+Hand-off from the `wicked-garden-platform` router or any caller. The pre-v12.25
+subagent-delegation form is retired with the fork frontmatter.

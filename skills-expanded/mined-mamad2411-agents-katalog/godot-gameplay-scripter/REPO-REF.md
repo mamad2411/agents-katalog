@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-clowlove-hermes-house/godot-gameplay-scripter/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 组合与信号完整性专家——精通 GDScript 2.0、C# 集成、节点式架构和类型安全信号设计，面向 Godot 4 项目

@@ -1,0 +1,62 @@
+---
+disable-model-invocation: true
+name: gfix
+description: Amend a git commit further back in the history.
+allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, AskUserQuestion
+argument-hint: <instructions>
+---
+
+# gfix — Amend a Past Commit
+
+Use the `gfix` shell command to fold staged changes into a commit that is not the most recent. This is the preferred way to amend historical commits in this repo.
+
+**MUST use `gfix`.** When this skill is loaded, every modification to a past commit goes through the `gfix` command. Do **not** reach for `git rebase -i`, hand-crafted `fixup!`/`amend!` commits, or `GIT_SEQUENCE_EDITOR=true git rebase --autosquash` directly — gfix already does all of this, with stash/restore guarantees and conflict handling.
+
+## How gfix works
+
+Source: `~/code/dotfiles/plugins/git.zsh` (the `gfix` function)
+
+`gfix [-m <message>] <commit-sha>` does the following:
+
+1. Guards against running during an in-progress git operation (rebase, merge, cherry-pick, etc.)
+2. Stashes any unstaged changes (preserving the index)
+3. Creates a fixup commit from whatever is currently staged:
+   - With no `-m`: `git commit --fixup <commit-sha>` (content-only fixup)
+   - With `-m <message>`: creates a manual `amend!` commit with subject `amend! <original-subject>` and body `<message>`, which autosquash then folds into the target (replacing its message, and including any staged changes; `--allow-empty` is used if nothing is staged)
+4. Runs `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <commit-sha>^` to automatically squash the fixup into the target commit
+5. Restores any stashed unstaged changes
+
+## When to use gfix
+
+Use gfix when you need to amend a commit that is **not** the HEAD commit. For example:
+
+- A review comment asks for a change to code introduced 3 commits ago
+- You notice a typo or bug in an earlier commit while working on something else
+- You want to keep a clean, logical commit history where each commit is self-contained
+
+If you only need to amend the most recent commit, use `git commit --amend` instead.
+
+## Steps
+
+1. **Determine the safe range** — The target commit must be within the current branch's own commits, not on or before the base branch. Find the base branch via the tracked parent in `git config branch.$(git branch --show-current).parent`, falling back to `bin/base-branch` if that script exists. As a last resort, ask the user.
+
+   The target commit **must** appear in `git log --oneline <base-branch>..HEAD`. If it does not, **stop and tell the user** — rewriting shared history would cause problems.
+
+2. **Identify the target commit** — Use `$ARGUMENTS` to understand what the user wants fixed. List the safe commits with `git log --oneline <base-branch>..HEAD` and examine their diffs to find the commit that introduced the code the user wants changed.
+
+3. **Make and stage the changes** — Edit the files, then `git add` only the files that belong to the target commit.
+
+4. **Run gfix** — Pass the target commit SHA. Add `-m <message>` to also rewrite the target commit's message:
+
+   ```bash
+   gfix <commit-sha>
+   gfix -m "new commit message" <commit-sha>
+   ```
+
+5. **Handle rebase conflicts** — If the rebase hits conflicts:
+   - Read the conflicting files and resolve them
+   - `git add` the resolved files
+   - `git rebase --continue`
+   - Repeat until the rebase finishes
+
+6. **Verify** — Run `git log --oneline -10` to confirm the history looks correct. If relevant tests exist, run them.

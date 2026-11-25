@@ -1,0 +1,161 @@
+---
+name: sap-option
+description: View SAP system status snapshot and edit values in `.sc4sap/sap.env` (connection, blocklist), HUD usage limits in `~/.claude/settings.json` → `env`, the agent model-dispatch mode in `~/.sc4sap/preferences.json`, and the SAP screen-mockup theme in the profile `config.json` — single entrypoint for all sc4sap runtime options
+model: inherit
+---
+
+# SC4SAP Option
+
+Single entrypoint to **inspect live SAP state** and **edit the values stored in `.sc4sap/sap.env`** — the dotenv file that holds SAP connection credentials, TLS settings, and the `abap-mcp-adt-powerup` blocklist policy for row-extraction safety.
+
+
+<Purpose>
+`sap.env` is the single source of truth for per-user runtime configuration of the sc4sap MCP server. This skill also replaces the former `/sc4sap:hud` snapshot: before editing, it shows a compact status panel (system ID, client, user, inactive object count, active transport, blocklist profile) so the user can confirm which system they are about to change settings for.
+
+Users should not edit `sap.env` blindly; this skill surfaces the current values (masking secrets), explains each option, lets the user pick what to change, and writes the file back safely with a backup.
+</Purpose>
+
+<Response_Prefix>
+Every response triggered by this skill MUST begin with `[Model: <main-model> · Dispatched: <sub-summary>]` per [`../../common/model-routing-rule.md`](../../common/model-routing-rule.md) § Response Prefix Convention.
+</Response_Prefix>
+
+<Use_When>
+- User says "sap option", "show sap.env", "change SAP password", "switch SAP client", "change the blocklist profile", "loosen blocklist", "whitelist ACDOCA", "view SAP config", "SAP options".
+- User says "change the industry", "change industry", "switch industry", "switch to retail", "switch to cosmetics" — route to the **Industry selection** flow described in `<Industry_Selection>` (updates `SAP_INDUSTRY` in `sap.env` and `industry` in `config.json` atomically).
+- User says "hud", "show status", "show system info", "current SAP status", "which system am I connected to" — run the status snapshot (workflow step 3) and stop there unless the user then asks to edit.
+- User says "switch profile", "switch to KR-QA", "change system", "use the PRD system", "list profiles", "add a new profile", "register another system", "remove profile", "edit KR-DEV", "rotate credentials for KR-PRD" — route to the **Profile management** flow described in `<Profile_Management>` (see [`profile-management.md`](profile-management.md)).
+- User wants to change blocklist tier (`MCP_BLOCKLIST_PROFILE`) or manage `MCP_ALLOW_TABLE` / `MCP_BLOCKLIST_EXTEND`.
+- User is rotating credentials, moving to a new SAP system, or flipping language/client.
+- After `/sc4sap:setup` if the user wants to adjust without re-running full setup.
+- User says "model dispatch", "dispatch mode", "let me choose the model", "ask me which model", "user-defined model", "auto dispatch" — route to the **Model dispatch** flow (see `<Model_Dispatch>`), which edits `~/.sc4sap/preferences.json` → `modelDispatch`, not `sap.env`.
+- User says "screen theme", "mockup theme", "signature theme", "pink theme", "화면 테마", "시그니처 테마" — route to the **Screen theme** flow (see `<Screen_Theme>`), which edits the profile `config.json` → `screenTheme`, not `sap.env`.
+- User says "hud limit", "5h limit", "weekly limit", "extra limit", "usage budget", "configure limit" — route to the **HUD limits** flow (see `<HUD_Limits>`), which edits `~/.claude/settings.json` → `env`, not `sap.env`.
+</Use_When>
+
+<Status_Snapshot>
+When invoked with `status` / `show` / `hud` (or as the preamble to any edit flow), render this panel. Keep it compact — roughly 10–14 lines — and silence sections that can't be fetched (e.g. MCP disconnected) rather than failing.
+
+Contents (only show rows you could resolve):
+- **Active profile**: `<alias> [<tier>]` with `🔒` if tier≠DEV — from `<project>/.sc4sap/active-profile.txt` + `~/.sc4sap/profiles/<alias>/sap.env` → `SAP_TIER`. Show `(legacy)` when no active-profile.txt is set and a legacy `sap.env` is in use.
+- **System**: `<SID>` · client `<MANDT>` · user `<BNAME>` · lang `<SPRAS>`   *(from `GetSession`)*
+- **Connection**: `<SAP_URL>` · auth `<SAP_AUTH_TYPE>` · type `<SAP_SYSTEM_TYPE>` · version `<SAP_VERSION>` · ABAP `<ABAP_RELEASE>`
+- **RFC backend**: `<SAP_RFC_BACKEND or "odata (default)">` — if `odata` (or unset), append `· <SAP_RFC_ODATA_SERVICE_URL>` (with CSRF TTL = `<SAP_RFC_ODATA_CSRF_TTL_SEC or "600">`s); if `native`, append `· ashost <SAP_RFC_ASHOST>:<SAP_RFC_SYSNR>` or `· mshost <SAP_RFC_MSHOST>/<SAP_RFC_SYSID>`; if `gateway`, append `· <SAP_RFC_GATEWAY_URL>` (token masked)
+- **Industry**: `<SAP_INDUSTRY or "(not set)">` — drives which `industry/*.md` consultant agents load
+- **Inactive objects**: `<count>` (0 = green, >0 = red)   *(from `GetInactiveObjects`)*
+- **Active transport (pinned)**: `<TRKORR> — <description>` if present in `config.json` → `activeTransport`, else "-"
+- **Blocklist (L4, MCP env)**: profile `<MCP_BLOCKLIST_PROFILE or "standard (default)">` · extend `<n>` entries · allow `<n>` entries
+- **Blocklist (L3, PreToolUse hook)**: profile `<config.json blocklistProfile>` · extend/custom file presence
+- **Model dispatch**: `<auto (default) | user-defined>` — from `~/.sc4sap/preferences.json` → `modelDispatch`
+- **Screen theme**: `<screenTheme | signature (default)>` — from `config.json` → `screenTheme`
+- **ALV framework / ABAP SP**: `<alvFramework | none (default)>` · ABAP SP `<abapSp | unset>` — from `config.json` (see `<ALV_Framework>`)
+- **sap.env path**: absolute path being edited
+
+If the user's intent is **status-only** (they just said "hud" / "show status"), render the panel and stop. Do not ask follow-up "what to change" questions unless the user continues.
+</Status_Snapshot>
+
+<File_Path>
+- **Active profile (multi-profile, default)**: read the alias from `<project>/.sc4sap/active-profile.txt`, then edit `~/.sc4sap/profiles/<alias>/sap.env`. Plugin-side mirrors (`industry`, `activeModules`, `blocklistProfile`, …) live in `~/.sc4sap/profiles/<alias>/config.json`. Every `sap.env` / `config.json` mention in this skill means these two files.
+- **Legacy (no `active-profile.txt`)**: `<project>/.sc4sap/sap.env` + `<project>/.sc4sap/config.json`. Offer the migration flow in [`migration.md`](migration.md).
+- If neither exists, tell the user to run `/sc4sap:setup` first. Do NOT create it from scratch here — setup handles the initial interactive credential flow.
+</File_Path>
+
+<Managed_Keys>
+Connection (required):
+- `SAP_URL`                — SAP host URL including port (e.g. `https://host:44300`)
+- `SAP_CLIENT`             — 3-digit client (e.g. `100`)
+- `SAP_AUTH_TYPE`          — `basic` | `xsuaa`
+- `SAP_USERNAME`           — SAP user ID
+- `SAP_PASSWORD`           — **secret — always mask when displaying**
+- `SAP_LANGUAGE`           — `EN`, `DE`, `KO`, ...
+- `SAP_SYSTEM_TYPE`        — `s4hana` | `cloud` | `ecc`
+- `SAP_VERSION`            — `S4` | `ECC`
+- `ABAP_RELEASE`           — e.g. `756`, `758`
+- `SAP_INDUSTRY`           — one of the 15 keys in `industry/README.md` (`retail` | `fashion` | `cosmetics` | `tire` | `automotive` | `pharmaceutical` | `food-beverage` | `chemical` | `electronics` | `construction` | `steel` | `utilities` | `banking` | `public-sector` | `other`). **Mirrored** to `.sc4sap/config.json` → `industry` whenever changed — both writes must succeed or neither.
+- `TLS_REJECT_UNAUTHORIZED` — `0` (accept self-signed, dev only) or unset
+
+Blocklist policy (optional — guard for `GetTableContents` / `GetSqlQuery`):
+- `MCP_BLOCKLIST_PROFILE`  — `minimal` | `standard` | `strict` | `off`  (default: `standard`)
+- `MCP_BLOCKLIST_EXTEND`   — comma-separated extra table names / patterns (always denied)
+- `MCP_ALLOW_TABLE`        — comma-separated whitelist for audited bypass
+
+RFC backend (optional — selects transport for Screen / GUI Status / Text Element ops):
+- `SAP_RFC_BACKEND` — `odata` (default) | `soap` | `native` | `gateway` | `zrfc`
+
+Per-backend env blocks (Native / Gateway / OData credentials and knobs) live in [`rfc-managed-keys.md`](rfc-managed-keys.md). Read that file when the user asks to change the RFC backend or edit any `SAP_RFC_*` field.
+
+Usage statistics source (optional, ECC — read by the CBO graph step and `GetTcodeUsage`):
+- `SAP_USAGE_RFCDEST` — SM59 destination on THIS system pointing to the QA / PRD system whose ST03N usage counts (a DEV profile only sees developer tests). Site-specific — no default; validate by one `GetTcodeUsage` call with `destination` (success shows the remote SID). Empty / unset → the connected system.
+
+XSUAA (only when `SAP_AUTH_TYPE=xsuaa`):
+- `XSUAA_URL`, `XSUAA_CLIENT_ID`, `XSUAA_CLIENT_SECRET`, `XSUAA_TOKEN_URL`
+
+Do not manage keys that are not in this list — warn the user and skip.
+</Managed_Keys>
+
+<Workflow>
+See [workflow.md](workflow.md).
+</Workflow>
+
+<Profile_Management>
+See [profile-management.md](profile-management.md). Handles multi-environment (Dev/QA/Prod) connection switching, tier-based readonly enforcement, OS-keychain-backed password storage, profile add/edit/remove/purge, and migration from legacy single-profile `.sc4sap/sap.env`.
+</Profile_Management>
+
+<Industry_Selection>
+See [industry-selection.md](industry-selection.md).
+</Industry_Selection>
+
+<HUD_Limits>
+See [hud-limits.md](hud-limits.md).
+</HUD_Limits>
+
+<Model_Dispatch>
+See [model-dispatch.md](model-dispatch.md). `auto` (default) routes sub-agent models per `common/model-routing-rule.md`; `user-defined` makes every multi-agent skill ask Opus / Sonnet / Haiku before each dispatch group. Runtime rules: [`../../common/model-dispatch-mode.md`](../../common/model-dispatch-mode.md).
+</Model_Dispatch>
+
+<Screen_Theme>
+See [screen-theme.md](screen-theme.md). Theme of the SAP screen mockups in `program-to-spec` / `program-to-manual`: `signature` (default), `signature-pink`, `modern`, or custom colours. Written with `scripts/spec/screen-theme.mjs`.
+</Screen_Theme>
+
+<ALV_Framework>
+See [alv-framework.md](alv-framework.md). Triggers: "alv framework", "alv base class", "abap sp", "support package". Edits `config.json` → `alvFramework` (`s4sap-cm` | `custom` | `none`), `alvBaseClass`, `alvGridClass`, `messageClass`, `abapSp` — not `sap.env`.
+</ALV_Framework>
+
+<Validation>
+- `SAP_URL`: must match `^https?://[^ ]+` and not end with `/`.
+- `SAP_CLIENT`: exactly 3 digits.
+- `SAP_AUTH_TYPE`: one of `basic` | `xsuaa`.
+- `SAP_LANGUAGE`: 2-letter uppercase.
+- `SAP_SYSTEM_TYPE`: one of `s4hana` | `cloud` | `ecc`.
+- `SAP_VERSION`: one of `S4` | `ECC`.
+- `ABAP_RELEASE`: 3-digit numeric (e.g. `750`, `756`).
+- `SAP_INDUSTRY`: must be one of the 15 canonical keys listed in `<Managed_Keys>`. Reject unknown values; offer the selection menu from `<Industry_Selection>`. Lowercase, hyphen-separated (e.g., `food-beverage`, not `Food_Beverage`).
+- `TLS_REJECT_UNAUTHORIZED`: `0` or unset. Warn that `0` is dev-only.
+- `MCP_BLOCKLIST_PROFILE`: one of `minimal` | `standard` | `strict` | `off`. If user chooses `off`, require explicit confirmation ("This disables ALL row-extraction guards. Type `I UNDERSTAND` to proceed.").
+- `MCP_BLOCKLIST_EXTEND` / `MCP_ALLOW_TABLE`: comma-separated uppercase table names (`[A-Z0-9_*]+` allowed; `*` is glob). Strip whitespace around commas.
+- When adding to `MCP_ALLOW_TABLE`, explicitly warn that each entry is audited to stderr and is a soft bypass of the blocklist — user should remove entries when no longer needed.
+- `SAP_PASSWORD`: no validation on content (may contain anything), but refuse empty.
+- All `SAP_RFC_*` validation rules live in [`rfc-managed-keys.md`](rfc-managed-keys.md) → "Validation rules".
+</Validation>
+
+<Security>
+- Never print secrets (`SAP_PASSWORD`, `XSUAA_CLIENT_SECRET`) in chat output, diffs, logs, or confirmation prompts. Always mask.
+- Never copy `sap.env` to any location outside `.sc4sap/` — no uploads to Notion, no pastes into issues.
+- After writing, do not display the final file contents. Only summarize which keys changed.
+- The backup `sap.env.bak` contains secrets — mention its existence but do not open/read it back to the user.
+</Security>
+
+<Edge_Cases>
+- **File missing** → stop, direct to `/sc4sap:setup`. Do not create.
+- **File has syntax errors** (lines that are not `KEY=VALUE` or comments) → show the offending lines, ask user to clean manually, abort.
+- **User wants to add a key not in `<Managed_Keys>`** → warn, ask to confirm adding as a custom key (append at end with a `# custom` comment). Do not validate content.
+- **User wants to remove a required connection key** (e.g. `SAP_URL`) → refuse; required keys can only be changed, not removed.
+- **Always tell the user the absolute path that was edited** (profile env vs legacy project env) so there is no ambiguity about which system changed.
+</Edge_Cases>
+
+<Standalone_TUI>
+See [standalone-tui.md](standalone-tui.md).
+</Standalone_TUI>
+
+<Examples>
+See [examples.md](examples.md).
+</Examples>

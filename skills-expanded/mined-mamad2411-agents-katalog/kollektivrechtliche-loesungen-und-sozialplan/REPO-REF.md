@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/18061-kollektivrechtliche-loesungen-und-sozialplan/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Kollektivrechtliche Lösungen und Sozialplan bei BAV-Restrukturierungen in BAV Strategie Konzern — Treuenfels Yamamoto Rechtsanwälte geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sof

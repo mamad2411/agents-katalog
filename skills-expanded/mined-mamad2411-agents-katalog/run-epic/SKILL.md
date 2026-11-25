@@ -1,0 +1,103 @@
+---
+name: run-epic
+description: Execute an epic plan phase-by-phase, inline by default with opt-in worker spawns per task annotation
+argument-hint: "[--status] [--skip-tests] [--phase N]"
+when_to_use: "Running a multi-phase epic created by /devloop:epic"
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash
+  - Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*.sh:*)
+  - Monitor
+  - Agent
+  - AskUserQuestion
+  - Skill
+---
+
+# Devloop Run Epic
+
+Execute an epic phase-by-phase. Tasks run inline by default; subagents are spawned per task `[model:X]` annotation (same pattern as `/devloop:run`). **You are the orchestrator -- execute the phase, validate tests, commit, promote the next phase.**
+
+## Step 1: Load State
+
+Read `.devloop/epic.json`.
+
+- **No file**: "No epic found. Use `/devloop:epic <topic>` to create one." STOP.
+- **`--status`**: Display phase tracker and STOP.
+- **`status: "complete"`**: "Epic already complete." STOP.
+- **`--phase N`**: Override current phase and re-promote.
+
+## Step 2: Validate Plan
+
+Read `.devloop/plan.md`. Verify `**Phase**:` matches `epic.json.current_phase`.
+- Mismatch or missing: run `${CLAUDE_PLUGIN_ROOT}/scripts/promote-phase.sh --force`.
+- All tasks `[x]`: skip to Step 5 (already completed).
+
+## Step 3: Execute Phase
+
+Read `epic.json` for context (user_stories, invariants, negative_cases, test_command). Keep this context in working memory while executing the phase.
+
+**Execute plan.md tasks inline**, following the same model-annotation pattern as `/devloop:run`:
+
+- **`[model:haiku]` tasks**: spawn `devloop:haiku-worker`.
+- **`[model:sonnet]` tasks**: spawn `devloop:swarm-worker` (sonnet).
+- **No annotation**: execute inline (no subagent). This is the default — most tasks should be inline.
+- Respect `[depends:N.M]` constraints and `[parallel:X]` groupings.
+- Do NOT commit or modify epic.json/epic.md during execution (that's Step 5).
+
+Use the epic context to guide your work:
+- User stories anchor WHY the tasks exist.
+- Invariants / negative cases are testable constraints that must hold.
+- Run `test_command` after implementation tasks.
+
+**Fallback (opt-in only)**: If the phase is very large (>15 tasks) *and* session context is already heavy, you MAY delegate the whole phase to a single sonnet subagent in a fresh context. This is a last-resort fresh-context reset, not the default path.
+
+## Step 4: Validate Completion
+
+1. Run `${CLAUDE_PLUGIN_ROOT}/scripts/check-plan-complete.sh .devloop/plan.md`.
+   - Incomplete: **AskUserQuestion**: "Retry" or "Skip remaining".
+
+2. Run tests (unless `--skip-tests` or `test_command` is null).
+   Use Monitor for real-time streaming when `test_command` matches a known long-running pattern
+   (test suites: `npm test`, `pytest`, `go test`, `cargo test`, etc.; builds; full-codebase linting).
+   Example:
+   ```
+   Monitor({ description: "epic phase tests", command: "<test_command> 2>&1 | grep --line-buffered -E 'PASS|FAIL|Error|ok|error|passed|failed'", timeout_ms: 300000, persistent: false })
+   ```
+   Fallback: if Monitor errors, run `test_command` with Bash directly.
+   - Fail: **AskUserQuestion**: "Fix and retry" or "Skip tests".
+
+## Step 5: Commit & Advance
+
+1. Commit: `git add` changed files, commit with `feat: phase N -- phase-name`.
+2. Update `epic.json`: mark phase `"complete"`, record commit hash, increment `current_phase`.
+3. Update `epic.md` Phase Tracker table.
+4. If all phases complete: Report done. **AskUserQuestion**: "Ship it" or "Review". STOP.
+5. Promote next phase: run `${CLAUDE_PLUGIN_ROOT}/scripts/promote-phase.sh --force`.
+
+Report:
+```
+Phase N complete and committed.
+Phase M loaded: "Phase Name" (X tasks)
+```
+
+## Step 6: Pause Point
+
+The next phase is already loaded in plan.md. **AskUserQuestion**:
+- **Continue now**: Loop to Step 3 in the same session.
+- **Clear and run**: "Run `/clear`, then `/devloop:run-epic` to execute Phase M." STOP.
+
+## Recovery
+
+`run-epic` is resumable. `epic.json` is the source of truth:
+- Mid-phase: plan.md has partial progress, execution picks up remaining tasks.
+- Post-phase: detects plan complete, skips to validation.
+- After `/clear`: reads epic.json, resumes from correct phase.
+
+If the repo is in a broken state (e.g. orphaned changes, mismatched plan), run-epic will detect the mismatch in Step 2 and re-promote the correct phase. Tests in Step 4 catch implementation issues before committing.
+
+---
+**Now**: Load epic state and begin.

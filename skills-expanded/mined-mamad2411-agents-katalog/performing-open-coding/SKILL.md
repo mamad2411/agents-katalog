@@ -1,0 +1,349 @@
+---
+name: performing-open-coding
+description: 当用户需要执行扎根理论的开放编码，包括中文质性数据的概念识别、初始编码、持续比较和备忘录撰写时使用此技能。
+version: 1.1.0
+author: socienceAI.com
+tags: [grounded-theory, open-coding, concept-identification, initial-coding, qualitative-analysis, planning-with-files]
+compatibility: Claude 3.5 Sonnet and above
+metadata:
+  domain: qualitative-research
+  methodology: grounded-theory
+  complexity: intermediate
+  integration_type: analysis_tool
+  last_updated: "2026-01-23"
+dependencies:
+  - planning-with-files
+allowed-tools: [python, bash, read_file, write_file]
+---
+
+# 开放编码技能 (Performing Open Coding)
+
+## Overview
+专门用于扎根理论研究的开放编码阶段，对中文质性数据进行系统性的概念识别和初始编码工作。
+
+## When to Use This Skill
+Use this skill when the user requests:
+- Initial coding of qualitative data in grounded theory
+- Concept identification from interview transcripts or other qualitative data
+- Line-by-line coding of textual data
+- Initial categorization of phenomena in data
+- Development of initial theoretical concepts from data
+- Systematic approach to early-stage qualitative analysis
+- Chinese qualitative data analysis following grounded theory principles
+- Need for systematic planning and progress tracking in open coding
+- Integration with planning-with-files for project management
+
+## Quick Start
+When a user requests open coding:
+1. **Prepare** the qualitative data for coding
+2. **Identify** initial concepts and phenomena
+3. **Code** data line by line or paragraph by paragraph
+4. **Compare** concepts across different data segments
+5. **Develop** initial categories and memo notes
+
+## 使用时机
+
+当用户提到以下需求时，使用此技能：
+- "开放编码" 或 "执行开放编码"
+- "扎根理论编码" 或 "质性数据编码"
+- "概念识别" 或 "概念提取"
+- "初始编码" 或 "逐行编码"
+- "持续比较" 或 "编码比较"
+- "备忘录撰写" 或 "编码备忘录"
+- 需要分析中文访谈、观察记录或文档资料
+
+## 脚本调用时机
+当需要执行开放编码的不同阶段时，调用对应的脚本：
+- 数据预处理阶段：调用 `preprocess_text.py`
+- 概念识别阶段：调用 `auto_loader.py`
+- 持续比较阶段：调用 `compare_codes.py`
+- 概念聚类阶段：调用 `cluster_concepts.py`
+- 编码验证阶段：调用 `validate_codes.py`
+
+## 统一输入格式
+```json
+{
+  "coding_context": {
+    "research_topic": "研究主题",
+    "data_source_type": "数据来源类型(访谈/观察/文档)",
+    "language": "数据语言",
+    "coding_purpose": "编码目的"
+  },
+  "raw_data": {
+    "content": "原始文本内容",
+    "segments": [
+      {
+        "id": "段落ID",
+        "text": "段落文本",
+        "context": "上下文信息"
+      }
+    ]
+  },
+  "coding_parameters": {
+    "abstraction_level": "抽象层次",
+    "coding_depth": "编码深度",
+    "theoretical_focus": "理论关注点"
+  },
+  "previous_results": {
+    "concepts": "之前识别的概念",
+    "codes": "之前创建的编码",
+    "memos": "之前的备忘录"
+  }
+}
+```
+
+## 统一输出格式
+```json
+{
+  "summary": {
+    "total_concepts": "识别的概念总数",
+    "total_codes": "创建的编码总数",
+    "processing_time": "处理时间(秒)",
+    "coding_progress": "编码进度"
+  },
+  "details": {
+    "concepts": [
+      {
+        "id": "概念ID",
+        "name": "概念名称(动词开头)",
+        "definition": "概念定义",
+        "examples": ["示例1", "示例2"],
+        "frequency": "出现频率",
+        "source_segments": ["来源段落ID列表"]
+      }
+    ],
+    "codes": [
+      {
+        "id": "编码ID",
+        "concept_id": "关联概念ID",
+        "segment_id": "来源段落ID",
+        "code_text": "编码文本",
+        "context": "上下文信息"
+      }
+    ],
+    "relationships": [
+      {
+        "from_concept": "源概念ID",
+        "to_concept": "目标概念ID",
+        "relationship_type": "关系类型",
+        "strength": "关系强度(0-1)"
+      }
+    ],
+    "statistics": {
+      "concept_diversity": "概念多样性",
+      "coding_density": "编码密度",
+      "intercoder_agreement": "编码者间一致性(可选)"
+    }
+  },
+  "metadata": {
+    "timestamp": "时间戳",
+    "version": "版本号",
+    "skill": "performing-open-coding",
+    "processing_stage": "处理阶段"
+  }
+}
+```
+
+## 快速开始
+
+### 工具链（5个脚本）
+
+```bash
+# 1. 文本预处理
+python scripts/preprocess_text.py --input interview.txt --output clean.json
+
+# 2. 快速概念提取
+python scripts/auto_loader.py --input interview.txt --output concepts.json
+
+# 3. 持续比较
+python scripts/compare_codes.py --input concepts.json --output comparison.json
+
+# 4. 概念聚类（可选）
+python scripts/cluster_concepts.py --input concepts.json --output clusters.json
+
+# 5. 编码验证
+python scripts/validate_codes.py --input concepts.json --output validation.json
+```
+
+## 核心流程
+
+### 第一步：数据预处理
+
+使用预处理工具清洗文本：
+```bash
+python scripts/preprocess_text.py --input raw.txt --output clean.json
+```
+
+**关键要点**：
+- 中文分词（jieba）
+- 停用词过滤
+- 语义分段
+
+详见：`references/theory.md` - 预处理原理
+
+### 第二步：概念识别
+
+使用自动提取工具获得初步概念：
+```bash
+python scripts/auto_loader.py --input raw.txt --output concepts_v1.json
+```
+
+**编码原则**：
+- ✅ 使用动词开头（"寻求帮助"）
+- ✅ 保持适度抽象（既不过具体也不过抽象）
+- ✅ 提供清晰定义和示例
+
+详见：`references/examples.md` - 完整编码案例
+
+**人工精炼**：
+- 改进概念命名
+- 补充清晰定义
+- 添加具体示例
+
+### 第三步：持续比较
+
+使用比较工具识别重复和关系：
+```bash
+python scripts/compare_codes.py --input concepts.json --output comparison.json
+```
+
+**比较维度**：
+- 相似度>0.8 → 考虑合并
+- 相似度0.5-0.8 → 建立关联
+- 相似度<0.5 → 独立概念
+
+详见：`references/theory.md` - 持续比较方法
+
+### 第四步：编码优化
+
+**使用聚类发现模式**（可选）：
+```bash
+python scripts/cluster_concepts.py --input concepts.json --output clusters.json
+```
+
+**使用验证工具检查质量**：
+```bash
+python scripts/validate_codes.py --input concepts.json --output validation.json
+```
+
+**质量标准**：
+- 命名规范：动词开头，长度适中
+- 定义完整：清晰说明概念内涵
+- 示例充分：至少2个具体例子
+
+详见：`references/troubleshooting.md` - 常见问题解决
+
+### 第五步：备忘录撰写
+
+记录编码过程的关键思考：
+- 概念识别的理由
+- 概念间的关系发现
+- 方法反思和改进
+
+详见：`writing-grounded-theory-memos` 技能
+
+## 输出格式
+
+所有工具使用统一的三层JSON格式：
+
+```json
+{
+  "summary": {
+    "total_concepts": 20,
+    "top_concepts": ["学习", "帮助", "关系"],
+    "processing_time": 2.5
+  },
+  "details": {
+    "concepts": [...],
+    "statistics": {...}
+  },
+  "metadata": {
+    "timestamp": "2025-12-18T10:30:00",
+    "version": "1.0.0"
+  }
+}
+```
+
+详见：`references/examples.md` - 完整输出示例
+
+## 质量检查清单
+
+在完成开放编码后，请检查以下项目：
+
+- [ ] 所有概念命名都使用行动导向的动词开头
+- [ ] 每个概念都有清晰的定义和说明
+- [ ] 提供了具体且代表性的示例
+- [ ] 进行了充分的持续比较分析
+- [ ] 撰写了完整的分析备忘录
+- [ ] 准确理解了中文语境的特殊含义
+- [ ] 保持了编码的一致性和连贯性
+- [ ] 概念的抽象层次适当，不过于具体也不过于抽象
+
+## 常见问题
+
+**快速诊断**：
+- 概念过多/过少 → 见 `references/troubleshooting.md` - 问题1、2
+- 抽象层次不当 → 见 `references/troubleshooting.md` - 问题3
+- 重复编码 → 使用 `compare_codes.py` 自动识别
+- 命名不规范 → 使用 `validate_codes.py` 检查
+
+**中文特殊性**：
+- 关系导向、面子文化、集体主义
+- 详见：`references/chinese-context.md`
+
+## 深入学习
+
+- **理论基础**：`references/theory.md` - 扎根理论流派、核心原则
+- **实践案例**：`references/examples.md` - 完整编码过程
+- **故障排除**：`references/troubleshooting.md` - 问题诊断和解决
+- **中文语境**：`references/chinese-context.md` - 文化和语言特点
+
+## 完成标志
+
+完成开放编码后，应该产出：
+1. 完整的概念编码清单
+2. 详细的备忘录记录
+3. 概念间关系分析
+4. 质量评估报告
+
+## 开放编码多阶段编码流程集成planning-with-files
+
+### 阶段1：项目规划与准备
+- 使用planning-with-files初始化项目
+- 创建开放编码任务计划文档
+- 定义编码目标、范围和时间线
+- 确定数据源和编码深度
+
+### 阶段2：数据预处理
+- 跟踪数据预处理进度
+- 记录数据清洗和分段结果
+- 更新任务完成状态
+- 记录预处理过程中发现的问题
+
+### 阶段3：概念识别
+- 执行初步概念提取
+- 监控概念识别进度
+- 记录关键概念发现
+- 与任务计划进行对照
+
+### 阶段4：持续比较
+- 跟踪概念比较过程
+- 记录概念相似性和关联
+- 更新编码阶段状态
+- 整理比较分析结果
+
+### 阶段5：编码优化与验证
+- 跟踪编码优化过程
+- 记录质量检查结果
+- 监控编码一致性指标
+- 整合优化结果
+
+### 阶段6：备忘录撰写与总结
+- 整合所有编码结果
+- 生成编码分析报告
+- 记录关键洞察和反思
+- 完成项目总结和复盘
+
+---
+
+*此技能专为中文质性研究设计，提供从数据预处理到概念提取的完整开放编码支持。*

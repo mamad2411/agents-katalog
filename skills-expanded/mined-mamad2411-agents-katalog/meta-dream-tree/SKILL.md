@@ -1,0 +1,483 @@
+---
+name: meta-dream-tree
+description: Use when the SessionStart nudge says a memory consolidation is due, when the store has grown or feels noisy/duplicated, before context compaction would lose detail, or on "dream", "dream tree", "/dream-tree", "consolidate memory", "tidy memory". Use AFTER per-turn capture (bitranox:meta-self-improve); for the cross-project / cross-tree scan use bitranox:meta-dream-crosstree instead. Honors an off/auto/propose mode. Formerly named meta-dream-project - answers to that name too.
+---
+
+# meta-dream-tree
+
+Memory consolidation for the CURRENT project's knowledge tree, the way a brain reorganizes during
+sleep. `bitranox:meta-self-improve` is the fast per-turn CAPTURE; this is the periodic batch
+CONSOLIDATION: dedup, merge, re-level (PLACEMENT), normalize, prune - so memory gets smaller and
+sharper, not bigger. **If a pass would grow the store, it is wrong.**
+
+**REQUIRED BACKGROUND:** the storage spec (trees/anchors, store grammar, trigger-first hooks,
+framed bodies, engine commands + fail-loud contract) is `bitranox:meta-self-improve` ->
+`references/memory-backend.md` - Read it BEFORE the first engine call. This skill stays WITHIN the
+current tree; cross-tree work is `bitranox:meta-dream-crosstree`.
+
+## Reference files
+
+| Topic                                                                                                                                                                                                         | File                       |
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
+| The SHARED DREAM CORE - scope ladder, mode knob, capture-first, backup+manifest, dedup semantics, THE routing prompt, verification contract, tier note (single source for nap/project/global)                 | references/dream-core.md   |
+| The behavioral pass catalog - removal policy, contradiction/override, CLAUDE.md reconciliation, skill/hook pointing, filler words, model review, skill-gap, gate-coverage, durability/squash, backup reminder | references/dream-passes.md |
+| Acceptance harness - planted-fixture test that proves a dream run works                                                                                                                                       | tests/README-acceptance.md |
+
+Tools shipped here, runnable outside a dream run too: `dream_state.py` (mode + due state),
+`store_manifest.py` (backup and verify), `dedup_scan.py` (candidate pairs), `statusrot.py` (pointer
+lines still asserting a STATUS that shipped and was never updated; a hit is a CANDIDATE to check
+against its owner, and only a SELF-CONTRADICTION - a slug saying one thing under a hook saying
+another - is a defect on its own and sets exit 1 (the hook must reverse the slug's state in a
+sentence that names it, so a slug word the hook uses as its When-condition is never one); its
+UNEXAMINED list is split into RE-SURFACED,
+WRITTEN SINCE the sweep and NEVER CHECKED, and only the last is a backlog of unchecked claims -
+read the count for that group, never the total; `clear` records an adjudication, which is what
+stops an entry being re-reported until its hook changes (a clear scoped to one level ADDS to
+what the record vouches for, so a copy at a level outside that scope keeps its verdict), and takes
+`--slug <s>` REPEATABLY - a bare `clear` certifies every candidate in scope, so name the ones you
+actually checked, and a slug that is not a flagged candidate is refused rather than recorded; a
+baseline it cannot parse, a merge conflict left in it for instance, is refused rather than
+rewritten, because rewriting it would drop every earlier verdict) and
+`factedit.py` (reword a fact's hook or body by recomposing it through `memory_engine.py`, since a
+Write or Edit on a pointer block or a body is denied by the store-edit guard; `show` reports the
+stored `type`, an amend PRESERVES it, and `--type` is the one deliberate way to re-classify, a
+PINNED fact included - `amend-pinned` carries `--type` and is the only route to a pinned fact's
+kind, since `add` refuses a pinned entry outright). The PreToolUse nudge names `statusrot.py` and
+`factedit.py` on the chores they answer, so they surface without this file being open. Every one
+of these tools finds the store the
+way the engine does (the topmost dir holding a `CLAUDE.md` AND a `.claude-memory/`), so a leftover
+store lower down the chain is never backed up, scanned or recorded against in its place. A level,
+directory or fact any of them could not read is an error (exit 2) that names the path, never a
+silent omission; one another process DELETED while the tool ran (a cache dir cleared mid-walk) no
+longer exists, holds nothing, and is passed over rather than called unreadable.
+
+Use the Read tool to load a referenced file when running its passes.
+
+## Mode
+
+Read the mode first per references/dream-core.md (propose / auto / off - the knob semantics live
+ONLY there).
+
+## When to run
+
+Nudged when due (SessionStart), around compaction (PreCompact salvages, you dream), or manual
+("dream", "/dream-tree"). Check `dream_state.py due` (the script lives in THIS skill's dir; launch
+recipe in references/dream-core.md "Script homes"): it prints `due` with exit 0 or `not-due` with
+exit 1, and that 1 is the answer no, not a failure. **A MANUAL dream ALWAYS captures -
+`not-due` never suppresses capture.** An absent store is the trigger to CREATE one (the first
+engine `add` bootstraps it), never a reason to skip; routing a learning only into a CLAUDE.md is
+NOT capture. Verify "nothing durable" - never assume it.
+
+## Procedure
+
+Create one todo per step. Every engine call follows the fail-loud contract (strict env, require
+the success line, abort-and-show on a miss).
+
+0a. **Deterministic scaffold + tree-wide integrity (scripts, no model).**
+    `memory_engine.py heal --proj "<cwd>"` (via `run-python.sh`): creates every missing marker
+    `CLAUDE.md` + `CLAUDE.local.md` pointer block from the project up to the anchor, plus the central
+    store; normalizes drifted grammar. Require `healed N file(s) across M level(s)`. `heal` is
+    CHAIN-scoped and only normalizes grammar, so FOLLOW it with
+    `reconcile_memory_index.py --check-tree "<cwd>"` (home: `<plugin>/skills/meta-self-improve/`) to
+    surface any cross-sibling DUPLICATE pointer / orphan / dangling body BEFORE consolidating - the
+    tree-uniqueness violations `heal` cannot see. Fix a duplicate deliberately (keep the better hook)
+    rather than with a blind `move`.
+
+0b. **Scope-descriptor synthesis (freshness-gated, parallel opus subagents).** The per-level
+    descriptors are the PLACEMENT ROUTING KEY, so every level needs a meaningful one. LEVELS MEANS
+    THE WHOLE TREE: every pointer-block-bearing dir under the anchor - SIBLING projects and
+    departments included - not just the cwd's ancestor chain. Enumerate them with
+    `find <anchor> -name CLAUDE.local.md -not -path '*/.venv*' -not -path '*/site-packages/*'`,
+    NEVER a bare `grep -r` (see "Level enumeration" in references/dream-core.md: the session
+    `grep` honors `.gitignore` and silently misses every gitignored store, while a bare `find`
+    OVER-counts a vendored plugin copy under a repo's `.venv`). Only synthesize levels whose descriptor is EMPTY,
+    INCOMPLETE (missing template keys), or whose CHILDREN list is stale vs the actual
+    subdirectories. Dispatch one `opus` subagent per stale
+    level, in parallel (bottom-up in two waves when a leaf and its parent are both stale, so the
+    parent can read fresh child descriptors). An upper level's subagent reads each child dir's
+    README/CLAUDE.md/docs headings + child descriptors; the project level's subagent reads the
+    project's OWN docs. Write via `set-scope` (require its success line). Fixed template, <= 120
+    words per level, ASCII, uppercase keys:
+
+        WHAT: <1-2 sentences: what this level IS>
+        STACK: <languages, frameworks, tools, key resources>
+        CHILDREN:
+        - <dir>/: <one clause>
+        PLACE-HERE: <knowledge true for THIS WHOLE subtree but NOT above>
+        PLACE-ELSEWHERE: <push child-specific down; push broader-than-subtree up>
+
+    After the fan-out, VERIFY from ground truth (see "Verify every parallel WRITE fan-out" in
+    references/dream-core.md): `set-scope` overwrites unconditionally, so a subagent that writes the
+    wrong `--proj` silently clobbers a sibling while reporting success on the right path. Re-run the
+    freshness check over ALL levels and diff each level's on-disk descriptor against what its own
+    agent RETURNED; keep each agent's returned text (the only restore source - the backup holds just
+    the stale version).
+
+0c. **Read the toolbox inventory (one command, and it belongs HERE, not at the end).**
+    `uv run ~/.claude/skills/toolbox/tools/toolbox.py list` - the READ half of the toolbox pass per
+    references/dream-core.md "Toolbox pass"; skip only if that path does not exist. This is a
+    PREREQUISITE of steps 4, 5 and 7, whose scans a shipped tool has often already implemented and
+    calibrated: read the names now and check them before hand-rolling any scan below. The
+    CONSOLIDATE judgement is a separate half and stays at step 10b.
+
+    Also run `jev_shadow.py status` HERE, once (home `<plugin>/skills/meta-self-improve/`, launch
+    via `hooks/run-python.sh`; exit 0 is on), and keep the result for the whole run. Name this
+    dream now, `tree-<YYYYMMDD-HHMM>` from the time you start, and use that id wherever a step
+    below says `<dream id>`. When shadow is on, three sites shadow a SAMPLE of 40 items each,
+    drawn by `items --sample 40 --seed <dream id>`: `dream-placement` (step 5), `dream-firing`
+    (step 6) and `dream-prune` (step 7). The pass itself still covers every fact; only the shadow
+    is sampled. Judge the sampled items while the pass is under way, in the format of that step's
+    shadow bullet, and tag each `run` with `--dream <dream id>`. Step 11's `done` refuses to mark
+    the dream done until each of the three logged rows for that id, or you named why not with
+    `--jev-skip SITE=REASON`.
+
+1. **Capture first (unconditional on a manual dream).** Enumerate this session's durable learnings
+   and capture via `bitranox:meta-self-improve` BEFORE consolidating, so the dream works on a
+   complete store. Read the `## Lessons for the next nap` heading of every `handover.md` on the
+   chain as capture input too (repo roots under the anchor; `git log -p -- handover.md` reaches
+   ones already overwritten since the last dream): a work session RECORDS its lessons there and
+   does not capture them itself, so a dream that skips the heading drops them.
+
+2. **Back up + manifest.** Run `store_manifest.py backup` (home: `<plugin>/skills/meta-dream-tree/`,
+   launch via `hooks/run-python.sh`) with `--scope tree` (a nap uses `--scope chain`):
+
+       store_manifest.py backup --from <anchor> --scope tree \
+         --out ~/.claude/self-improve-audit/backups/<key>-<ts>
+
+   It copies the anchor's `.claude-memory/` AND each in-scope `CLAUDE.local.md`, and records the
+   ORDER-INDEPENDENT manifest of (level, slug, title, pin) tuples that step 8 re-derives. Do not
+   hand-roll the walk: a gitignore-aware `grep -r` SKIPS the pointer files, and an exact-match
+   prune of `.venv` misses `.venv-win` and `venv-<user>`, so vendored copies read as real levels.
+   An empty scope is a REFUSAL, because a manifest of nothing verifies clean against anything.
+   So is an `--out` inside the store, or an existing dir that is not an earlier backup.
+   Then commit the store's git repo (Durability pass) so the pre-dream state is one `git diff`
+   away.
+
+3. **Load both tiers TREE-WIDE** - every level's pointer block under the anchor (the cwd's chain
+   AND every sibling project/department; the central bodies are one store) plus the native raw
+   tier - and skim the session for uncaptured items. A dream that only reads the cwd's chain
+   misses exactly where duplicates and misplaced facts live: the siblings.
+
+3b. **De-double the tiers.** A fact lives in exactly ONE tier. Per native entry: already curated
+   (by title/hook match) -> drop the native duplicate; native-only and
+   worthwhile -> PROMOTE via engine `add` into a level that EXISTS; some-value -> leave in
+   native. There is NO "native-only backend" mode - an absent pointer block is the trigger to
+   PROPOSE one, not evidence of one. Creating a level is a structural move (Boundaries in
+   references/dream-core.md), which the dream proposes and never applies, in every mode. So a
+   worthwhile entry whose target dir has no pointer block yet STAYS NATIVE: do not `add --proj`
+   into that dir (the engine would create the level silently), and list it in the report as a
+   create-level proposal - the dir, and the entries waiting on it. The only reasons a worthwhile
+   fact stays native: some-value, a target level that does not exist yet (proposed as above), or
+   the SECRETS carve-out (curated stores are git-tracked; the native tier is not - never stage
+   credentials into a repo).
+
+4. **Dedup / merge ACROSS THE TREE.** Get the candidate pairs from `dedup_scan.py` (home:
+   `<plugin>/skills/meta-dream-tree/`, launch via `hooks/run-python.sh`):
+
+       dedup_scan.py --from <anchor> --threshold 0.45
+
+   READ ITS CONTROL LINE FIRST. Every run plants a paraphrase of a real fact and scores it through
+   the same path; if that did not fire, the run is an INSTRUMENT FAILURE and its empty candidate
+   list means nothing - a scorer that cannot fire and a clean tree both report zero. An
+   `INCOMPLETE` line (exit 2) names facts it could not read, which the run says nothing about. Read
+   the printed DISTRIBUTION too: a pair just under the threshold is the one most worth a look, and a
+   threshold is otherwise a way of not looking. Only what a fact SAYS is scored: the engine's
+   frontmatter keys are stripped, its `description:` value kept.
+
+   The output is CANDIDATES, not duplicates - it scores words, so read BOTH bodies before folding
+   anything. Fold near-duplicates into one sharpened entry (engine `add`, same slug), comparing
+   across ALL levels, especially SIBLING projects (the classic duplicate is the same lesson
+   captured independently in two siblings; it merges at their common parent). Cross-link related
+   entries with `[[slug]]`. Dedup runs TWICE - here, and again in step 8, because placement
+   creates new overlap.
+
+   **A clean scan is a clean LEXICAL scan, never a clean tree.** It scores shared words, so two
+   facts teaching one lesson in different vocabulary score low and never appear: one tree measured
+   0 pairs at or above 0.30 while a reader found 5 real duplicates. So after the scan, make a
+   SEMANTIC pass over the pointer blocks loaded in step 3: group the hooks by the situation their
+   trigger names, and read both bodies of every group holding two or more facts; fold what is a
+   duplicate exactly as above. Zero candidates never skips this pass, and the report gives the
+   duplicates each pass found.
+
+5. **PLACEMENT (re-level every entry, pinned included; up AND down).** Route each fact through
+   THE routing prompt in references/dream-core.md against the descriptor ladder (leaf -> anchor);
+   the tier note (inline judgment at opus-class or above; switch-model-or-continue) is in the
+   core too. Batch the high-confidence moves into ONE propose-diff (auto mode: apply); apply each
+   via engine
+   `move --from-level A --to-level B --slug s` and require its success line (`! refused:` aborts
+   that move - a down-move with inbound refs needs the refs re-pointed first, or stays). When the
+   citer blocking a down-move belongs at the target TOO, move them in ONE call by repeating
+   `--slug`: the guard then judges each member by where the WHOLE set lands, which is the only way
+   a mutually-citing pair goes down at all (no ordering releases it). Never reach for `--force`
+   there - it strands the ref. Low/UNSURE never moves. **A fact your routing sends to the tree
+   top is a MISPLACEMENT or a PROMOTION - decide which first**, from the fact's hook and its
+   current level's PLACE-HERE, and write the class down per fact BEFORE reading its
+   `should-promote` verdict: a verdict on record says nothing about which class a fact is (the
+   full test: references/dream-core.md, "The corroboration gate answers a PROMOTION question"):
+   - a hook written generally, at a level whose PLACE-HERE EXCLUDES it, is a MISPLACEMENT:
+     re-home it to the level the routing prompt picks, whatever `should-promote` says (a `hold`
+     answers the promotion question, not this one), and still record the sighting with
+     `saw-promotable`;
+   - anything else - the hook names its project, or its level's PLACE-HERE covers it, or you
+     cannot tell - is a PROMOTION, and passes the corroboration gate (user-stated: eager;
+     model-inferred: >= 2 DISTINCT PROJECTS). Record the sighting with
+     `dream_state.py saw-promotable <slug> <project the fact came from>`, ask
+     `dream_state.py should-promote <slug>`, and obey the word it prints (`promote` exits 0,
+     `hold` exits 1 - an answer, not a failure). `promote`: move it to
+     the tree top, then run `dream_state.py promoted <slug>` to clear every project's sighting.
+     `hold`: it STAYS at its project level - no move to the tree top and no move part-way up as
+     a compromise, however general its body reads; report it as held. A fact that looks
+     universal on ONE project's evidence is exactly what the gate exists to stop, so "it plainly
+     applies everywhere" is why the hold binds, never a reason to override it. A `promote` never
+     picks the level, routing does: it only lets a fact go to the tree top when routing sent it
+     there; if routing picked a lower level, that is where it goes, and no `promoted` runs.
+   Repeat sightings from ONE project count once, so re-running a dream over unchanged facts
+   corroborates nothing. After moving, normalize
+   reference+delta
+   UPWARD-ONLY: the general lives once at its altitude, lower entries cite `[[general]]` + delta.
+   **A pinned fact is out of reach for an ordinary write, not for placement.** The engine REFUSES
+   an `add` targeting a pinned slug (`PinnedEntry`) before any write; the dream does not route
+   around that refusal with `amend-pinned` - that verb is for a human at the keyboard. Report a
+   pinned fact whose CONTENT you believe is wrong; do not rewrite it, and do not call
+   `amend-pinned` on its behalf. `move` carries the pin through unchanged and never refuses on it,
+   so re-leveling a pinned fact is ordinary placement work like any other entry - no exception, no
+   separate approval step.
+   - **Jev shadow on placement** (only when step 0c found `jev_shadow.py status` on; home
+     `<plugin>/skills/meta-self-improve/`, launch via `hooks/run-python.sh`; procedure in its
+     `references/jev-shadow.md`; both files in a fresh `D=$(mktemp -d)` outside any repo, since
+     they hold unredacted fact text), in this order: (1) `jev_shadow.py items --site
+     dream-placement --anchor <anchor> --sample 40 --seed <dream id> --out "$D/items.jsonl"`, 40
+     lines drawn from every pairing of a fact with a level on its chain (id `<slug>|<level>`, the
+     level relative to the anchor, `.` for the anchor); (2) YOU route every fact, as above; (3)
+     write YOUR score for every sampled line to `$D/verdicts.jsonl` (`{"id": "<slug>|<level>",
+     "verdict": {"fits_level": 2}}`: 2 belongs here, 1 could live here but is narrower or broader,
+     0 does not belong; none left out); (4) `jev_shadow.py run --site dream-placement --dream
+     <dream id> --items "$D/items.jsonl" --verdicts "$D/verdicts.jsonl"`, then `rm -rf "$D"`. `run`
+     prints counts only. Move by your own routing, whatever `run` printed or exited with.
+
+6. **Voice + firing check (maintenance).** The engine lints new hooks at add-time; here, sweep the
+   whole store for residue with `memory_engine.py lint --tree "<cwd>"` (reports, tree-wide, hooks over
+   the 500-char HARD cap - `add` refuses one, so any that exist were hand-edited or arrived with a
+   legacy store, and each needs a rewrite - trigger-less hooks, and bodies missing the
+   `**Why:**`/`**How to apply:**` frame - a tracked backlog number, advisory). Then apply judgment on
+   top: a hook whose trigger does not actually name the situations its body applies to (the FIRING
+   check - would this line catch your attention at the right moment?). Do
+   NOT rewrite a hook merely for exceeding the 350 SOFT cap - a complete trigger-first hook may run up
+   to the hard cap, which the engine enforces by refusal. Queue offenders to an opus
+   rewrite (trigger-first, facts preserved, slug-stable via `add --slug <the stored slug>` aimed at
+   the level that OWNS the pointer - a title-derived slug mints a duplicate when the fact was
+   retitled, and any other level is refused as a collision), propose-diff, apply.
+   Bodies missing the frame or the **Why:**/**How to apply:** sections get the same treatment.
+   - **Jev shadow on the firing check** (only when step 0c found `jev_shadow.py status` on; home, launch and
+     procedure as in step 5's shadow bullet; a fresh `D=$(mktemp -d)` of its own outside any repo):
+     `jev_shadow.py items --site dream-firing --anchor <anchor> --sample 40 --seed <dream id> --out
+     "$D/items.jsonl"` writes 40 facts of the tree. YOU judge every hook in the store, as above;
+     write YOUR verdict for every sampled fact to `$D/verdicts.jsonl` FIRST (`{"id": "<slug>",
+     "verdict": {"trigger_fires": false}}` for a hook whose trigger is missing or does not name what
+     its body covers, `true` for the rest; none left out), then `jev_shadow.py run --site
+     dream-firing --dream <dream id> --items "$D/items.jsonl" --verdicts "$D/verdicts.jsonl"`, then
+     `rm -rf "$D"`. `run` prints counts only. Queue rewrites by your own verdicts, whatever `run`
+     printed or exited with.
+
+7. **Prune (content-based only, tree-wide).** Archive obsolete/superseded/task-state entries at
+   EVERY level of the tree (siblings included) per the removal policy in
+   references/dream-passes.md (propose-first; the backup makes it safe). Never
+   usage/age/size-based.
+
+   Three questions to ask of every fact in the tree, because an accumulated bad fact
+   survives longest here:
+
+   1. Does this assert a tool does NOT work, without a version or date that makes
+      it re-testable? If so, re-test it or delete it. A stale negative claim is
+      worse than a missing fact: it actively steers away from something that works.
+   2. Does this describe a session that never reached a working end state, without
+      labelling it unsolved? If so, relabel it as unsolved.
+   3. Is its lesson tied to one past version - a bug fixed in a named release, a finished
+      upgrade or migration, a result measured on one version? These pass every other check (the
+      claim was true, the file it names still exists, a named version even reads as re-testable),
+      so find them with `versionrot.py scan --tree <anchor> --json` (home:
+      `<plugin>/skills/meta-dream-tree/`, launch via `hooks/run-python.sh`). Exit 1 lists the
+      facts naming a version a newer release replaced, each with the level that owns its pointer;
+      exit 0 lists none; exit 2 is an error to report, never a clean tree. A listed claim is a
+      CANDIDATE: re-check it against the CURRENT release (its `--help`, its changelog, or a rerun)
+      before acting, then do exactly one of:
+      - **still true** -> reword it to the current state with the version history dropped:
+        `factedit.py show --body --slug <slug> --level <its level>`, edit that text in a file,
+        then `factedit.py apply --slug <slug> --level <its level> --body-file <f>`, adding
+        `--hook-file <f2>` when
+        the HOOK names the version too - a body-only edit leaves the always-loaded line saying it
+        (home `<plugin>/skills/meta-dream-tree/`);
+      - **a fixed bug, a finished upgrade or migration, or a result on that version** ("tests
+        PASS on 1.5.0") -> archive it (`reconcile_memory_index.py --archive <slug> <its level>`,
+        removal policy in references/dream-passes.md; recoverable from `.archive/`); when only
+        one line of an otherwise valid body is such history, drop that line the same
+        `show` / `apply --body-file` way and keep the fact;
+      - **several facts on one library that the re-check reduces to one current lesson** ->
+        merge them as in step 4.
+      Not candidates: a package it reports `unresolved` (nothing is guessed), `ahead` (the local
+      clone is stale, not the fact), a version given only as an example, and a Python boundary
+      ("before Python 3.14") that the supported range still spans.
+
+   - **Jev shadow on those three questions** (only when step 0c found `jev_shadow.py status` on;
+     home, launch and procedure as in step 5's shadow bullet; a fresh `D=$(mktemp -d)` of its own
+     outside any repo): `jev_shadow.py items --site dream-prune --anchor <anchor> --sample 40
+     --seed <dream id> --out "$D/items.jsonl"` writes 40 facts of the tree. YOU answer all three
+     questions for every sampled fact; write YOUR answers to `$D/verdicts.jsonl` FIRST (`{"id":
+     "<slug>", "verdict": {"untestable_negative": false, "unlabelled_unsolved": false,
+     "version_bound": false}}`, `true` for each question the fact trips; none left out), then
+     `jev_shadow.py run --site dream-prune --dream <dream id> --items "$D/items.jsonl" --verdicts
+     "$D/verdicts.jsonl"`, then `rm -rf "$D"`. `run` prints counts only. Act by your own answers,
+     whatever `run` printed or exited with.
+
+8. **Re-dedup, then verify.** Sweep the entries placement touched (a lifted general now overlaps
+   its origin and siblings) and normalize - re-run `dedup_scan.py` from step 4, whose control line
+   applies again. Then re-derive the manifest and diff against step 2 with
+   `store_manifest.py verify --out <the same backup dir>`: exit 0 is identical, exit 1 NAMES what
+   was added, removed, changed or moved. Only `level` may differ (reported as `moved`), plus
+   explicitly-decided merges/prunes/rewords; anything else is a loss to explain before finishing.
+   Then run
+   `reconcile_memory_index.py --check <altitude chain, narrow->broad>` (home:
+   `<plugin>/skills/meta-self-improve/reconcile_memory_index.py`) and require `TOTAL problems: 0`,
+   AND `reconcile_memory_index.py --check-tree "<cwd>"` for `TOTAL tree problems: 0` (the cross-sibling
+   duplicate/orphan check the chain-only `--check` cannot make); fix integrity failures via the engine
+   (re-point a downward ref, resolve an orphan, dedup a duplicate pointer). Size warnings are advisory.
+
+9. **Behavioral passes.** Run the catalog in references/dream-passes.md (each pass on its own
+   trigger): CLAUDE.md reconciliation (chain-gated - runs EVERY dream, rule-by-rule, both
+   directions), contradiction/override, skill/hook pointing, filler words, model review,
+   skill-gap review, gate-coverage audit, local skill/hook audit (this tree's `.claude/skills`,
+   `--no-personal`), durability/git + squash, backup reminder.
+
+10. **Skill-fit -> batched change.** FIRST drain what is already pending: `contrib_queue.py list`
+    (home: `<plugin>/skills/meta-self-improve/`) shows the skill/hook contributions earlier sessions
+    judged shippable but never shipped - they are part of THIS batch. Then collect this dream's
+    generalizations that match or warrant a shipped skill, and QUEUE each one
+    (`contrib_queue.py add --what ... --target skill:<name> --why ...`) as you find it, so an
+    unshipped one survives this session. Then DELIVER them via the upstream loop
+    (`bitranox:meta-self-improve` -> references/upstream-propagation.md) as ONE structured change - a
+    REQUIRED end-of-dream action: verify each candidate against the CURRENT skill content first (some
+    may already be shipped -> drop, do not re-add), then `propose` -> self-PR; `auto` -> commit or
+    self-PR; `off` -> skip. Close each delivered one individually with `contrib_queue.py ship --match
+    <unique text> --note <where it landed>`, and each disproven one with `drop` - `--match` not
+    `--index`, which shifts under the previous close, and never `drain`, which closes the WHOLE
+    queue and so fits only a sweep where every entry shipped. Leave one queued for next session
+    ONLY when it genuinely needs user input or the mode is `off` - a deliverable one left pending
+    evaporates the intent until a manual re-prompt.
+
+10b. **Toolbox pass, CONSOLIDATE half (PROPOSE-ONLY).** Run the CONSOLIDATE delta per
+    references/dream-core.md "Toolbox pass" over the inventory step 0c already read - this half is
+    judgement about the tools, so it belongs at the end; the READ that the earlier passes depend on
+    does not, which is why it is not repeated here. PROPOSE merging near-duplicate tools and flagging
+    any stale/superseded one (no usage-based prune - `forgetting-is-usage-based-only`). Detect +
+    propose ONLY; the actual merge is a TDD change through `bitranox:meta-self-improve`'s tool
+    endpoint, never edited here. Skip if the toolbox path does not exist.
+
+11. **Done + report + /clear nudge.** Run `dream_state.py done --kind tree --dream <dream id>`
+    (home: `<plugin>/skills/meta-dream-tree/`, launch via `hooks/run-python.sh`; it records the
+    fact signature). With shadow on it first checks each tree site logged rows for `<dream id>`,
+    and exits 1 having marked NOTHING done when one did not, naming the site. Then feed that
+    site's sample (its step's shadow bullet) and run `done` again; only when it genuinely could
+    not be fed, add `--jev-skip <site>=<reason>` (a reason such as `items exited 2: <its
+    message>`). A skip is reported, so "no time" is not a reason. A `run` that exited 2 because
+    jev-judge answered no item (it timed out, could not start, or wrote no row) still logged its
+    rows, so the site counts as fed and its report entry is
+    `error <message>`; one that exited 2 before asking (a missing verdicts file, a malformed line)
+    logged nothing - fix the input and run it again. Exit 0 prints the receipt line. Report
+    counts + one line each: merges, placements (with direction), voice rewrites, prunes (the
+    versionrot candidates by outcome: reworded, archived, merged, kept), skill
+    changes, toolbox proposals (merges/flags), create-level proposals (step 3b), pinned facts
+    reported not rewritten, and
+    `jev shadow:` followed by one `<site> <form>` entry per site, joined by `; `, each in one of
+    the forms defined in meta-self-improve's `references/jev-shadow.md`, "The report line":
+    the counts `run` printed, `off (<reason>)`, `skipped (<reason>)`, `no items`, or
+    `error <message>`. Example:
+    `jev shadow: dream-firing 40 items, 40 paired, 36 of 40 answers agreed, ...`.
+    CLAUDE.md edits are APPLIED, so the report is the only place the user sees them: per RULE,
+    name every file touched, the ANCESTOR covering home it now relies on, and the transformation
+    (removed / rewritten in place); a rule left alone for want of an ancestor is listed too, never
+    silently skipped.
+    Nudge `/clear` (the consolidated store loads next session; not clearing loses nothing).
+
+## The tree, not "the global layer"
+
+This dream is scoped to the CURRENT tree (cwd's anchor). A machine can carry several independent
+trees; another tree is NEVER read or written here - `ensure-all-trees`/`tree-top` locate tops, and
+cross-tree movement is only ever collect-knowledge's labeled copy or dream-global's job. Say "the
+tree's top", not "the global layer".
+
+## Acceptance harness (prove the dream works)
+
+`tests/fixture_builder.py` plants a deterministic two-tree fixture (dup pair, mis-placed high/low
+facts, an obsolete entry, task-state, a trigger-less hook, a pinned decoy, an empty descriptor, an
+untouched control tree); `tests/fixture_asserter.py` checks a post-dream run: HARD assertions
+(control tree byte-identical, pinned entry untouched, slugs stable under voice rewrites, reconcile
+0 problems, backups exist) and JUDGMENT assertions (dup merged at the parent, high fact moved
+down, low fact moved up exactly one level, obsolete proposed for archive, task-state pruned,
+descriptor synthesized). Run it after any substantive change to this skill (procedure in
+tests/README-acceptance.md); the bar is all-hard + >= 5/6 judgment on two consecutive runs.
+
+## Boundaries
+
+- The family Boundaries (memory, CLAUDE.md, skills/hooks, pinned entries, structural moves) live in
+  references/dream-core.md and apply here unchanged - read them there, they are not restated.
+- Circle-breaker: consolidated twice and it keeps coming back -> escalate to a guard or the user.
+
+## Deliverables (a completed dream has ALL of these)
+
+- [ ] heal success line ("healed N file(s) across M level(s)").
+- [ ] Scope descriptors fresh: every chain level carries the template keys (or was verified fresh).
+- [ ] Capture ran BEFORE consolidation (or a verified "nothing durable" statement).
+- [ ] Backup taken + the (level, slug, title, pin) manifest recorded pre-dream.
+- [ ] Placement report: applied moves (with direction; pinned entries re-level like any other),
+      kept UNSUREs.
+- [ ] No pinned entry's content rewritten this run; any pinned fact believed wrong is reported, not
+      amended via `add` or `amend-pinned`.
+- [ ] Voice/firing residue swept (or "0 offenders" verified via the lint).
+- [ ] Post-dream manifest diff clean (only `level` changed, plus explicitly-decided merges/prunes).
+- [ ] `reconcile ... --check` printed `TOTAL problems: 0`.
+- [ ] `reconcile ... --check-tree "<cwd>"` printed `TOTAL tree problems: 0` (the cross-sibling
+      duplicate/orphan check the chain-only `--check` structurally cannot make).
+- [ ] Each behavioral pass reported against ITS OWN trigger (ran / no-op with the verified reason).
+- [ ] `versionrot.py scan --tree` ran, and each candidate was reworded, archived, merged or kept
+      after a re-check against the current release.
+- [ ] `dream_state.py done --kind tree --dream <dream id>` exited 0 (every shadow site fed, or
+      skipped with a stated reason); report + `/clear` nudge delivered.
+
+An ended run missing any box is not done - finish it or say plainly what was skipped and why.
+
+## Rationalizations (pressure-tested; these do not fly)
+
+| Excuse                                                         | Reality                                                                                                                                                                                           |
+|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "not-due / no store exists -> nothing to consolidate"          | not-due never suppresses capture; an absent store is the TRIGGER to create one. Two learnings uncaptured = work exists.                                                                           |
+| "Only N entries changed -> grep their keywords over CLAUDE.md" | The named prohibited shortcut. Reconciliation is rule-by-rule, BOTH directions, every dream - pre-existing overlap is the point.                                                                  |
+| "auto mode + 'stop asking' covers the pinned entry"            | Auto mode changes nothing here: the engine REFUSES an ordinary `add` on a pinned slug regardless of mode, and the dream never calls `amend-pinned` (human-only) to push a change through anyway.  |
+| "I'm 90% sure, despite CONFIDENCE low"                         | The router's confidence gates the move, not your certainty. Evidence beats wording; UNSURE stays put.                                                                                             |
+| "`hold`, but the body says it applies to every project"        | A fact that reads universal on ONE project's evidence is exactly what the gate stops. For a PROMOTION, `hold` binds: no tree-top move, and no part-way move up to a middle level as a compromise. |
+| "`should-promote` printed `hold`, so this misfiled fact stays" | A `hold` answers the promotion question only. Classify first: a general hook at a level whose PLACE-HERE excludes it is a MISPLACEMENT and is re-homed whatever the verdict says.                 |
+| "Writing it into CLAUDE.md is faster than the engine"          | Routing into CLAUDE.md is not capture; the store is the system of record.                                                                                                                         |
+| "The store is empty/unchanged, so the passes no-op"            | Only counter-gated passes no-op on emptiness; chain-gated passes (reconciliation, dedup, placement) run EVERY dream.                                                                              |
+| "No time for the full pass - I'll note it for next dream"      | Say it out loud in the report as INCOMPLETE and flagged; never silently downgrade a pass and call the dream done.                                                                                 |
+
+## Common mistakes
+
+- Growing the store (a dream must net-shrink noise).
+- Dreaming without capturing first.
+- Consolidating only the cwd's ancestor CHAIN. The dream covers the WHOLE tree - sibling
+  projects and departments are where the dups, misplacements, and stale task-state live (a
+  chain-only run leaves them untouched and scores as a half-dream).
+- Placement by wording instead of EVIDENCE, or moving a low-confidence fact.
+- Rewriting a pinned entry's content via `add` (the engine refuses, `PinnedEntry`), or reaching
+  for `amend-pinned` to push a dream-authored change through anyway (that verb is human-only; the
+  dream never calls it) - report a wrong pinned fact instead of touching it.
+- Moving DOWN past inbound `[[refs]]` without re-pointing them first (the engine refuses).
+- Deduping only BEFORE placement (placement creates the overlap; step 8 exists for that).
+- Reading a no-op off the wrong signal: chain-gated passes (CLAUDE.md reconciliation, dedup,
+  placement) run EVERY dream; only counter-gated passes no-op on emptiness.
+- Running CLAUDE.md reconciliation as a keyword-grep of only the newly-written entries (misses all
+  pre-existing duplication; the pass is rule-by-rule over the entire chain, both directions).
+- A downward or cross-tree `[[reference]]` (dangles on deletion; cross-tree is always a copy).
+- Forgetting `dream_state.py done --kind tree --dream <dream id>`, so the nudge keeps firing; or
+  reading its exit 1 as a failed write - it is the receipt refusing an unfed shadow site.
+- Archiving a version-bound fact without re-checking it: a claim naming an old version can still
+  be true, and then it is reworded, not removed.

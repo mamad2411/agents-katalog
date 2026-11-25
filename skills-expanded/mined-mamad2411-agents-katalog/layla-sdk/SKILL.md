@@ -1,0 +1,1310 @@
+---
+name: layla-sdk
+description: Use @layla-network/sdk when building or debugging third-party Layla mini-apps, WebView integrations, or task.js background scripts. Covers the public TypeScript client for chat, contextual events and out-of-band side questions, characters, scheduled chat and notifications, image/video/music media generation, memories and personas, private sqlite and files, Layla Cloud sign-in, local mocks, errors, and runtime packaging.
+---
+
+# Layla SDK
+
+Use `@layla-network/sdk` when building a third-party Layla mini-app that runs inside the Layla WebView and needs to call the on-device Layla host.
+
+The packaged skill is self-contained. Use the bundled references first:
+
+- Read `references/sdk-api.md` for SDK imports, method signatures, examples, exported types, mock usage, abort behavior, and error handling.
+- Read `references/types.d.ts` when you need a field name or the exact shape of a type. It is the generated TypeScript declaration file for the packaged SDK version and is authoritative — never guess an object shape or infer one from an example when this file is available.
+- Read `references/mini-apps-overview.md` for mini-app packaging, metadata, `index.html` versus `index.url`, WebView runtime expectations, and troubleshooting.
+
+If the bundled reference appears stale and internet access is available, check the public package source or release docs for the installed package version:
+
+- `https://github.com/l3utterfly/layla-sdk`
+- Prefer tagged release source over the default branch when the user's project has a specific installed version.
+
+## Runtime Rules
+
+Run SDK calls inside the Layla WebView. The host injects the React Native WebView bridge. If that bridge is unavailable, SDK requests reject with `LaylaBridgeUnavailableError`.
+
+The one non-WebView environment is `task.js`: an optional background task script at the mini-app root that the host runs in a QuickJS runtime with the SDK already injected as a global `layla` instance. See "Background Tasks (task.js)" below.
+
+Do not use this SDK as an ordinary browser HTTP client. There is no API key, base URL, or fetch endpoint to configure. The SDK sends bridge messages to the Layla host.
+
+Layla SDK is designed to work with local LLMs running on device, so response
+times can be slow. When building mini-apps, prioritize streaming APIs and show
+appropriate loading, thinking, and progress states instead of leaving the UI
+idle while a request runs.
+
+For local browser development outside Layla, use `installLaylaMock(...)` before the first SDK call when the app needs SDK responses during development.
+
+## Core Import
+
+Import from the package root:
+
+```ts
+import LaylaSDK, {
+  Layla,
+  LaylaAbortError,
+  LaylaBridgeUnavailableError,
+  LaylaError,
+  type ChatCompletionMessageParam,
+  type LaylaChatMessage,
+  type LaylaChatHistoryEntry,
+  type SaveChatMessageParams,
+  type SaveChatMessageResult,
+  type LaylaScheduledChatMessage,
+  type LaylaScheduledNotification,
+  type LaylaCharacter,
+  type LaylaMemory,
+  type LaylaPersona,
+  type LaylaTTSVoice,
+  type GenerateVoiceToFileResult,
+  type NeoDragonGenerateVideoOptions,
+  type NeoDragonGenerateVideoResult,
+  type NeoDragonProgress,
+  type ExecuteSqlResult,
+  type CloudLoginResult,
+  type STTSpeechRecognizedListener,
+  type BackgroundAudioTrack,
+  type BackgroundAudioStatusListener,
+  type BackgroundAudioTrackChangedListener,
+  type BackgroundAudioFinishedListener,
+  type LaylaExecutionContext,
+  type ChatContextFinishedSpeakingListener,
+  type ChatContextNewMessageListener,
+  type ChatContextSentimentUpdateListener,
+  type ChatContextStartedSpeakingListener,
+  type ChatContextStartedThinkingListener,
+  type SendOutOfBandMessageOptions,
+  type SentimentValues,
+  type TavernCardV2,
+} from '@layla-network/sdk';
+```
+
+`LaylaSDK`, `Layla`, and the default export are aliases for the same client class. Prefer one client instance and reuse it:
+
+```ts
+const layla = new LaylaSDK();
+```
+
+If a project avoids default imports:
+
+```ts
+import { LaylaSDK } from '@layla-network/sdk';
+```
+
+## Common APIs
+
+Use high-level client resources first:
+
+```ts
+const layla = new LaylaSDK();
+
+await layla.characters.list();
+await layla.characters.getImage(characterId);
+await layla.characters.update(character);
+await layla.classifier.getSentiment('This is a happy message.');
+await layla.images.generateImage(prompt, onProgress);
+await layla.neodragon.generateVideo(imageDataBase64, prompt, options);
+await layla.acestep.getModels();
+await layla.acestep.generateMusic(prompt, onProgress);
+await layla.acestep.lm(request);
+await layla.acestep.synth(request);
+await layla.acestep.understand({ audioBase64 });
+await layla.acestep.vaeEncode(audioBase64);
+await layla.acestep.vaeDecode(latentsBase64);
+await layla.contextual.getExecutionContext();
+await layla.contextual.sendOutOfBandMessage(message, options);
+await layla.chat.completions.create({ messages });
+await layla.chat.getInferenceEngines();
+await layla.chat.setInferenceEngine(engineName);
+await layla.chat.getChatSessions(characterId);
+await layla.chat.getChatHistory(sessionId);
+await layla.chat.saveChatMessage(message);
+await layla.chat.scheduleChatMessage(scheduledMessage);
+await layla.chat.getScheduledChatMessages();
+await layla.chat.cancelScheduledChatMessage(scheduledMessageId);
+await layla.utils.scheduleNotification({ message, timestamp, icon });
+await layla.utils.getScheduledNotifications();
+await layla.utils.cancelScheduledNotification(notificationId);
+await layla.memories.list(characterId);
+await layla.memories.getTopMemories(characterId);
+await layla.memories.createOrUpdate(memories);
+await layla.personas.get(characterId);
+await layla.tts.getVoices();
+await layla.tts.generateVoice(ttsVoiceId, text);
+await layla.tts.generateVoiceToFile(ttsVoiceId, text, save);
+await layla.tts.stopSpeaking();
+await layla.stt.startListening();
+layla.stt.on('speechRecognized', ({ transcript }) => {});
+await layla.stt.stopListening();
+await layla.backgroundAudio.start([{ file: 'intro.mp3', title: 'Intro' }]);
+await layla.backgroundAudio.pause();
+await layla.backgroundAudio.resume();
+await layla.backgroundAudio.skip();
+await layla.backgroundAudio.stop();
+await layla.db.executeSql(query, params);
+await layla.cloud.login();
+await layla.utils.saveFile(filename, contentBase64, share);
+await layla.utils.readFile(filename);
+await layla.utils.listDir(path);
+await layla.utils.deleteFileOrDir(path);
+```
+
+Read `references/sdk-api.md` before using a method signature that is not shown here.
+
+## Contextual Mini-Apps
+
+Use `layla.contextual.getExecutionContext(options?)` to get the current character
+and session along with the current Layla `app_version`. The context object is
+always returned; its `character` and `session_id` fields are `null` when
+standalone. Contextual mini-apps can subscribe to new messages, sentiment
+updates, and character speaking or thinking state in the surrounding chat.
+
+```ts
+const context: LaylaExecutionContext = await layla.contextual.getExecutionContext();
+console.log(context.app_version);
+const onNewMessage: ChatContextNewMessageListener = ({ message }) => {
+  console.log(message.role, message.content);
+};
+const onSentiment: ChatContextSentimentUpdateListener = ({ sentiment }) => {
+  console.log(sentiment);
+};
+const onStartedSpeaking: ChatContextStartedSpeakingListener = () => {
+  console.log('speaking');
+};
+const onFinishedSpeaking: ChatContextFinishedSpeakingListener = () => {
+  console.log('finished speaking');
+};
+const onStartedThinking: ChatContextStartedThinkingListener = () => {
+  console.log('thinking');
+};
+
+layla.contextual.on('chatContextNewMessage', onNewMessage);
+layla.contextual.on('chatContextSentimentUpdate', onSentiment);
+layla.contextual.on('chatContextStartedSpeaking', onStartedSpeaking);
+layla.contextual.on('chatContextFinishedSpeaking', onFinishedSpeaking);
+layla.contextual.on('chatContextStartedThinking', onStartedThinking);
+
+layla.contextual.off('chatContextNewMessage', onNewMessage);
+layla.contextual.off('chatContextSentimentUpdate', onSentiment);
+layla.contextual.off('chatContextStartedSpeaking', onStartedSpeaking);
+layla.contextual.off('chatContextFinishedSpeaking', onFinishedSpeaking);
+layla.contextual.off('chatContextStartedThinking', onStartedThinking);
+```
+
+The host uses `on_finished_speaking` for both contextual speech completion and
+TTS playback completion, so treat `chatContextFinishedSpeaking` as a shared
+speech-finished signal rather than a source-specific event.
+
+### Out-of-band messages
+
+Use `layla.contextual.sendOutOfBandMessage(message, options?)` for a quick side
+question about the ongoing conversation. It sends `message` as the user to the
+current chat service and resolves with the full reply `string`. The reply is
+generated against the conversation built up by `layla.chat.completions`
+requests (or an empty one before any chat), but neither the message nor the
+reply is added to that history, and nothing is streamed — there is no stream
+object and no `on_message` events.
+
+```ts
+const reply = await layla.contextual.sendOutOfBandMessage(
+  'Should the character send a picture now? Reply only with JSON like {"send": true}.',
+  {
+    jsonSchema: {
+      type: 'object',
+      properties: { send: { type: 'boolean' } },
+      required: ['send'],
+    },
+    // imageBase64: 'data:image/png;base64,...', // optional, data URI prefix included
+    // signal: controller.signal,
+  },
+);
+
+let send = false;
+try {
+  send = JSON.parse(reply).send === true;
+} catch {
+  // The engine ignored the schema; fall back to the default decision.
+}
+```
+
+`jsonSchema` is best-effort: engines without constrained decoding silently
+ignore it. Always describe the expected format in `message` as well, and
+validate the reply before relying on it. The reply has reasoning and tool calls
+stripped. The promise rejects with `LaylaError` when generation fails or the
+reply is empty, and with `LaylaAbortError` on abort; aborting asks the host to
+stop that generation only. Use it for decisions the mini-app makes, not for
+text the user should see in the chat — use `layla.chat.completions` for that.
+
+For local testing, set `executionContext` (including `app_version`) in
+`installLaylaMock(...)`, or omit it to use a standalone mock context. Drive
+events with the returned handle's `emitChatContextNewMessage(...)`,
+`emitChatContextSentimentUpdate(...)`, `emitChatContextStartedSpeaking()`,
+`emitChatContextFinishedSpeaking()`, and `emitChatContextStartedThinking()`.
+Pass an `outOfBandMessage: (request) => string` handler to answer
+`sendOutOfBandMessage` calls; without one, the mock replies with a value shaped
+by the request's `json_schema`, or a canned sentence when no schema was sent.
+Read `references/sdk-api.md` for full payloads, mock examples, and abort handling.
+
+## Chat
+
+Chat uses an OpenAI-shaped API. Completion inputs use
+`ChatCompletionMessageParam`:
+
+```ts
+const messages: ChatCompletionMessageParam[] = [
+  { role: 'system', content: 'You are concise and helpful.' },
+  { role: 'user', content: 'Write a tiny haiku about chess.' },
+];
+```
+
+Send images using OpenAI Chat Completions content parts. The image URL must be
+a base64 data URL because the SDK translates it to Layla's native
+`image_base64` wire field:
+
+```ts
+const messages: ChatCompletionMessageParam[] = [
+  {
+    role: 'user',
+    content: [
+      { type: 'text', text: 'What is in this image?' },
+      {
+        type: 'image_url',
+        image_url: {
+          url: `data:image/png;base64,${base64Image}`,
+          detail: 'auto',
+        },
+      },
+    ],
+  },
+];
+```
+
+The SDK accepts OpenAI's full request surface. How much of it reaches the model
+depends on the Layla app the mini-app is running in, and the SDK picks the route
+itself -- call sites are identical either way:
+
+- **Layla v7.5.0-alpha and above, with `@layla-network/sdk` 7.5.0 and above**:
+  the request body is forwarded to the host untranslated, so `tools`,
+  `tool_choice`, `tool`-role messages, multi-part content and multiple images
+  all survive. This is the path that supports tool calling.
+- **Older hosts**: the request is translated into Layla's narrower native
+  protocol, which ignores rather than rejects what it cannot carry. One image
+  per message, so remote image URLs and extra image parts are ignored, as are
+  `input_audio` and `file` parts, `tool`/`function` messages, and sampling or
+  tool fields such as `temperature` and `tools`. Each ignored message or content
+  part is reported with a `console.warn`.
+
+A `developer` message is treated as `system` on both paths. The OpenAI `detail`
+field is accepted but has no Layla wire equivalent.
+
+Use non-streaming chat when the UI only needs the final answer:
+
+```ts
+const completion = await layla.chat.completions.create({ messages });
+const text = completion.choices[0]?.message.content ?? '';
+```
+
+Prefer streaming chat for user-facing mini-app flows so the UI can update as
+tokens arrive, especially when on-device local LLM responses take time:
+
+```ts
+const stream = layla.chat.completions.stream({ messages });
+
+stream.on('content', (_delta, snapshot) => {
+  setAssistantText(snapshot);
+});
+
+stream.on('error', (err) => {
+  console.error(err);
+});
+
+const finalText = await stream.finalContent();
+```
+
+When the host wraps text in `<think>` and `</think>` tags, the SDK strips those
+tags from visible content. The text inside the tags streams as
+`choices[0].delta.reasoning`, is available through `stream.on('reasoning',
+(delta, snapshot) => ...)`, and appears on the final
+`choices[0].message.reasoning`. `finalContent()` returns only visible assistant
+content.
+
+### Tool calling
+
+Tool calling needs **Layla v7.5.0-alpha or newer** and **`@layla-network/sdk`
+7.5.0 or newer**. On an older host the `tools` field is dropped, the model never
+sees the tools, and replies come back as ordinary text -- so a mini-app that
+depends on tools should check the host version first:
+
+```ts
+const { app_version } = await layla.contextual.getExecutionContext();
+```
+
+Declare tools with OpenAI's shape and run the loop yourself. The SDK reports a
+reply that asked for tools with `finish_reason: 'tool_calls'`:
+
+```ts
+const tools = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_weather',
+      description: 'Current weather for a city.',
+      parameters: {
+        type: 'object',
+        properties: { city: { type: 'string' } },
+        required: ['city'],
+      },
+    },
+  },
+];
+
+const messages: ChatCompletionMessageParam[] = [
+  { role: 'user', content: 'What is the weather in Berlin?' },
+];
+
+const completion = await layla.chat.completions.create({ messages, tools });
+const reply = completion.choices[0];
+
+if (reply.finish_reason === 'tool_calls') {
+  // Send the assistant turn back exactly as the SDK handed it over.
+  messages.push({
+    role: 'assistant',
+    content: reply.message.content,
+    tool_calls: reply.message.tool_calls,
+  });
+
+  for (const call of reply.message.tool_calls ?? []) {
+    const args = JSON.parse(call.function.arguments);
+    messages.push({
+      role: 'tool',
+      tool_call_id: call.id,
+      content: JSON.stringify(await runTool(call.function.name, args)),
+    });
+  }
+
+  const answer = await layla.chat.completions.create({ messages, tools });
+}
+```
+
+`function.arguments` is raw JSON text, exactly as the model wrote it. The model
+may produce invalid JSON or invent parameters, so wrap the `JSON.parse` and
+validate the result before acting on it.
+
+While streaming, each call arrives once, whole, as a `tool_calls` delta and as a
+`toolCall` event -- the host writes the call's id last, so there is nothing to
+act on before the call is complete:
+
+```ts
+stream.on('toolCall', (call) => {
+  showPendingTool(call.function.name);
+});
+```
+
+The host carries tool calls inside the message text as `<tool_call>` markup. The
+SDK reads that back out, so `message.content` holds the prose only and the
+markup never reaches the UI. A reply that was nothing but tool calls has
+`content: ''` (not `null`, unlike OpenAI).
+
+To exercise a tool loop locally, the browser mock can stand in for a
+tool-using model: set `executionContext.app_version` to `'v7.5.0'` or newer so
+the SDK takes the richer path, read the declared tools from `respond`'s second
+argument, and return `mockToolCall(name, args)` as the reply.
+
+`ChatCompletionStream` is also async iterable:
+
+```ts
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta.content ?? '';
+  const reasoning = chunk.choices[0]?.delta.reasoning ?? '';
+  append(content);
+  appendReasoning(reasoning);
+}
+```
+
+Breaking out of `for await` aborts the request.
+
+Use `layla.chat.getInferenceEngines(options?)` to list the inference engines
+available for subsequent chat completions. Select one with
+`layla.chat.setInferenceEngine(engineName, options?)`, or pass `null` to reset
+to the host's default engine.
+
+```ts
+const engines = await layla.chat.getInferenceEngines();
+const selection = await layla.chat.setInferenceEngine(engines[0] ?? null);
+
+if (!selection.success) {
+  throw new Error('The requested inference engine is unavailable.');
+}
+```
+
+The setter resolves with `success` and `engineName`. If a requested name is not
+available, the host returns `success: false` and resets to its default engine.
+
+Use `layla.chat.getChatSessions(characterId, offset?, range?, options?)` to list a character's chat sessions before choosing which transcript to load. The result includes the character id and a newest-first `sessions` array with each session's `session_id`, `last_message_timestamp`, and `last_message_content`.
+
+```ts
+const { sessions } = await layla.chat.getChatSessions(character.id);
+const latestSessionId = sessions[0]?.session_id;
+```
+
+Use `layla.chat.getChatHistory(sessionId, offset?, range?, options?)` to fetch the newest chat messages for a specific session when you need to resume or inspect prior conversation state. The result is a paged array of `LaylaChatHistoryEntry` items in reverse chronological order.
+
+```ts
+const history: LaylaChatHistoryEntry[] = latestSessionId
+  ? await layla.chat.getChatHistory(latestSessionId)
+  : [];
+```
+
+The returned history entries are useful when building per-session summaries, transcript views, or follow-up prompts that depend on prior context.
+
+Use `layla.chat.saveChatMessage(message, options?)` to create or update a
+message in chat history. Use `SaveChatMessageParams`, with `display_message`
+for the visible text and `message` for the LLM text. Set `character_id` to
+`'user'` for user entries or to the character's ID for character entries.
+Pass a non-positive `id` to create an entry, or an existing positive `id` to
+overwrite every field; a missing positive ID rejects. A `timestamp <= 0` uses
+the host's current time. Updates retain an existing image; new entries have no
+image. Only character entries create missing sessions.
+
+```ts
+const saved: SaveChatMessageResult = await layla.chat.saveChatMessage({
+  id: 0,
+  display_message: 'Remember this message.',
+  message: 'Remember this message. Context for the LLM: ...',
+  character_id: 'user',
+  session_id: latestSessionId ?? crypto.randomUUID(),
+  timestamp: Date.now(),
+});
+```
+
+The result includes both text fields, the assigned ID, and the stored timestamp.
+History reads return `LaylaChatHistoryEntry[]`. See `references/sdk-api.md` for
+the full save contract and abort handling.
+
+Use `layla.chat.scheduleChatMessage(message, options?)` to create a scheduled
+message. Pass a non-positive `id` when creating a scheduled message; the host
+returns the assigned id. `session_id` can be `null` when the host should
+schedule against the character without a specific existing session.
+
+```ts
+const scheduled: LaylaScheduledChatMessage =
+  await layla.chat.scheduleChatMessage({
+    id: 0,
+    character_id: character.id,
+    session_id: latestSessionId ?? null,
+    timestamp: Date.now() + 60 * 60 * 1000,
+    message: 'Check in about this in one hour.',
+  });
+```
+
+Use `layla.chat.getScheduledChatMessages(options?)` to fetch all scheduled chat
+messages. The host protocol returns all scheduled messages in one response, so
+filter locally for a character or session when needed.
+
+```ts
+const scheduledForCharacter = (await layla.chat.getScheduledChatMessages())
+  .filter((entry) => entry.character_id === character.id);
+```
+
+Use `layla.chat.cancelScheduledChatMessage(id, options?)` to cancel a scheduled
+message. The result includes `id`, `success`, and an optional host `message`.
+
+```ts
+const result = await layla.chat.cancelScheduledChatMessage(scheduled.id);
+if (!result.success) throw new Error(result.message ?? 'Unable to cancel');
+```
+
+## Memories
+
+Use `layla.memories.list(characterId, offset?, range?, options?)` to fetch a
+character's newest memories in reverse chronological order. Each memory includes
+the `session_id` of the chat session it belongs to. Pass `minTimestamp` or
+`maxTimestamp` in the fourth argument to narrow the result.
+
+```ts
+const memories: LaylaMemory[] = await layla.memories.list(character.id, 0, 20);
+```
+
+Use `layla.memories.getTopMemories(characterId, limit?, options?)` when you
+want the host's best-ranked memories for a character. The host determines the
+ranking heuristic, and the returned `LaylaMemory[]` is newest first.
+
+```ts
+const topMemories = await layla.memories.getTopMemories(character.id, 5);
+```
+
+Use `layla.memories.createOrUpdate(memories, options?)` to save memory records.
+Pass a non-positive `id` to create a memory, or an existing positive `id` to
+update it.
+
+```ts
+const savedMemories = await layla.memories.createOrUpdate([
+  {
+    id: 0,
+    character_id: character.id,
+    session_id: latestSessionId ?? crypto.randomUUID(),
+    rawText: 'Alex prefers concise answers.',
+    timestamp: Date.now(),
+    summary: 'Prefers concise answers.',
+    knowledgeGraphJSON: null,
+  },
+]);
+```
+
+## Characters
+
+Use `layla.characters.list(offset?, range?, options?)` to list available characters. Use `layla.characters.getImage(characterId, options?)` to retrieve a ready-to-use image source string.
+
+When designing mini-apps with character selection, prefer square character icons or portraits. Square assets work best across grid cards, compact lists, and Layla import surfaces.
+
+Character cards use `LaylaCharacter`:
+
+```ts
+type LaylaCharacter = {
+  id: string;
+  data: TavernCardV2;
+};
+```
+
+`TavernCardV2` follows Character Card V2. Common fields live under `character.data.data`, including `name`, `description`, `personality`, `scenario`, `first_mes`, `mes_example`, `system_prompt`, `post_history_instructions`, `alternate_greetings`, `tags`, `creator`, `extensions`, and optional `character_book`.
+
+When updating a character, pass the full `LaylaCharacter` expected by `characters.update(...)`:
+
+```ts
+const updatedId = await layla.characters.update({
+  id: character.id,
+  data: {
+    ...character.data,
+    data: {
+      ...character.data.data,
+      description: 'A careful strategist with a dry sense of humor.',
+    },
+  },
+});
+```
+
+If the host creates a new character, the returned id may differ from the requested id.
+
+## Personas
+
+Use `layla.personas.get(characterId?, options?)` to fetch the default persona
+when `characterId` is omitted or `null`, or a character-specific persona when a
+character id is passed.
+
+```ts
+const persona: LaylaPersona = await layla.personas.get();
+const characterPersona = await layla.personas.get(character.id);
+```
+
+The returned persona has `name` and `description` fields.
+
+## Text-To-Speech
+
+Use `layla.tts.getVoices(options?)` to fetch the TTS voices installed in Layla.
+
+```ts
+const voices: LaylaTTSVoice[] = await layla.tts.getVoices();
+const voice = voices[0];
+```
+
+Each voice includes `id`, `type`, `tags`, and `name`.
+
+Use `layla.tts.generateVoice(ttsVoiceId, text, options?)` to ask Layla to
+generate and play voice audio on the device. Pass a voice ID to select an
+installed voice, or pass `null` to use Layla's global default TTS voice. The
+promise resolves after the host emits `on_finished_speaking`, meaning playback
+has completed.
+
+```ts
+await layla.tts.generateVoice(
+  null,
+  'This line will use the global default Layla voice.',
+);
+```
+
+```ts
+if (voice) {
+  await layla.tts.generateVoice(
+    voice.id,
+    'This line will be spoken by Layla.',
+  );
+}
+```
+
+Use `layla.tts.stopSpeaking(options?)` to stop any in-progress TTS playback.
+The promise resolves after the host emits `on_finished_speaking`.
+
+```ts
+await layla.tts.stopSpeaking();
+```
+
+Use `layla.tts.generateVoiceToFile(ttsVoiceId, text, save?, options?)` to
+generate audio without playing it. Pass `null` for the global default voice.
+When `save` is omitted or false, `audio_data_base64` contains a ready-to-use
+audio data URI. When `save` is true, the host saves the audio in the mini-app's
+private files and returns its `filename` instead.
+
+```ts
+const generated: GenerateVoiceToFileResult =
+  await layla.tts.generateVoiceToFile(
+    voice?.id ?? null,
+    'Generate this line without playing it.',
+  );
+
+if (generated.success && generated.audio_data_base64) {
+  audioElement.src = generated.audio_data_base64;
+}
+
+const saved = await layla.tts.generateVoiceToFile(
+  voice?.id ?? null,
+  'Save this generated line.',
+  true,
+);
+console.log(saved.filename);
+```
+
+## Speech-To-Text
+
+Use the `layla.stt` surface for microphone speech input. It has three parts: a
+`startListening(options?)` request, a `speechRecognized` event, and a
+`stopListening(options?)` request.
+
+`layla.stt.startListening(options?)` asks the host to start capturing microphone
+audio. Its promise resolves once the host emits `on_stt_listening_started`,
+confirming the recogniser started, or rejects on error/abort. Recognised speech
+is not returned by this call — subscribe to the `speechRecognized` event to
+receive transcripts. Subscribe before (or right after) starting so no transcript
+is missed.
+
+```ts
+const onSpeech: STTSpeechRecognizedListener = ({ transcript }) => {
+  console.log('Heard:', transcript);
+};
+
+layla.stt.on('speechRecognized', onSpeech);
+
+await layla.stt.startListening();
+
+// Release the microphone when input is no longer needed. Resolves once the
+// host emits `on_stt_listening_stopped`.
+await layla.stt.stopListening();
+
+// Stop receiving transcripts when microphone input is no longer needed.
+layla.stt.off('speechRecognized', onSpeech);
+```
+
+`stopListening()` stops the host recogniser; it does not remove your
+`speechRecognized` subscription — use `off('speechRecognized', ...)` for that.
+
+The resource attaches its window `message` listener only while it has
+subscribers and detaches it after the last `off(...)`. The browser mock confirms
+listening, then emits one canned `speechRecognized` event shortly after
+`startListening()` succeeds; configure that phrase with the `sttTranscript`
+option (set it to `null` to disable), and drive additional recognised-speech
+events with the returned handle's `emitSTTSpeechRecognized(...)`. It also
+confirms `stopListening()` with `on_stt_listening_stopped`.
+
+## Background Audio
+
+Use the separate `layla.backgroundAudio` surface for background music,
+podcasts, and other queued audio. Prefer `start(tracks)` with a
+`BackgroundAudioTrack[]`: each item has a required `file` and optional `title`,
+`artist`, `albumTitle`, and `artworkUrl`. Starting again replaces the existing
+queue. Local file paths resolve from the mini-app root; remote audio URLs also
+work. `artworkUrl`, when present, must be a remote HTTPS URL.
+
+The method name stays `start`: track objects select the host's
+`start_background_audio_player_v2` command. The deprecated
+`start(audioFiles: string[], metadata?)` overload still sends the original
+command unchanged. Empty arrays use the original command for compatibility.
+Do not mix strings and track objects or pass shared metadata with track objects.
+
+```ts
+await layla.backgroundAudio.start([
+  {
+    file: 'intro.mp3',
+    title: 'Intro',
+    artist: 'Layla Mini-App',
+    artworkUrl: 'https://example.com/artwork.jpg',
+  },
+  { file: 'chapter-1.mp3', title: 'Chapter 1', artist: 'Layla Mini-App' },
+]);
+
+await layla.backgroundAudio.pause();
+await layla.backgroundAudio.resume();
+await layla.backgroundAudio.skip();
+await layla.backgroundAudio.skip(0);
+await layla.backgroundAudio.stop();
+```
+
+These controls are fire-and-forget in the host protocol. Their promises resolve
+once the command is posted, so use events for player state. `pause()` retains
+the queue and position; `stop()` clears and releases the player.
+
+```ts
+const onTrackChanged: BackgroundAudioTrackChangedListener = (event) => {
+  console.log(event.previousIndex, event.currentIndex);
+};
+const onStatus: BackgroundAudioStatusListener = (status) => {
+  console.log(status.playing, status.currentTime, status.duration);
+};
+const onFinished: BackgroundAudioFinishedListener = () => {
+  console.log('queue finished');
+};
+
+layla.backgroundAudio.on('trackChanged', onTrackChanged);
+layla.backgroundAudio.on('status', onStatus);
+layla.backgroundAudio.on('finished', onFinished);
+
+layla.backgroundAudio.off('trackChanged', onTrackChanged);
+layla.backgroundAudio.off('status', onStatus);
+layla.backgroundAudio.off('finished', onFinished);
+```
+
+The host may throttle or suspend periodic status events while the app is
+backgrounded, so do not use them to drive queue logic. The browser mock updates
+status for player commands and exposes `emitBackgroundAudioTrackChanged(...)`,
+`emitBackgroundAudioStatus(...)`, and `emitBackgroundAudioFinished()` for local
+event testing. Its `generateVoiceToFile(...)` returns a small mock WAV data URI
+or saves `mock-voice.wav` when `save` is true.
+
+## Database
+
+Use `layla.db.executeSql(query, params?, options?)` to run SQL against a private
+sqlite database. Each mini-app gets its own database; it is not shared with the
+Layla app or with other mini-apps, so it is the place to persist structured
+mini-app state (settings, saved records, caches).
+
+Use `?` placeholders and pass their values in `params` so the host binds them
+safely instead of interpolating untrusted values into the SQL string.
+
+```ts
+await layla.db.executeSql(
+  'CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT)',
+);
+
+const insert = await layla.db.executeSql(
+  'INSERT INTO notes (body) VALUES (?)',
+  ['Remember to water the plants.'],
+);
+console.log(insert.insertId, insert.rowsAffected);
+
+const read: ExecuteSqlResult = await layla.db.executeSql(
+  'SELECT id, body FROM notes WHERE body LIKE ?',
+  ['%plants%'],
+);
+for (const row of read.rows) {
+  console.log(row.id, row.body);
+}
+```
+
+The result has `rows` (rows returned by a read; empty for writes),
+`rowsAffected` (rows changed by an INSERT/UPDATE/DELETE), and `insertId` (row id
+of the last inserted row, 0 when not applicable).
+
+For local testing, the browser mock has no real sqlite. By default every query
+resolves to an empty result (`{ rows: [], rowsAffected: 0, insertId: 0 }`); pass
+an `executeSql` handler to `installLaylaMock(...)` to return your own results, or
+to back the mock with an in-browser SQL engine.
+
+## Layla Cloud
+
+Use `layla.cloud.login(options?)` to get an access token for the Layla Cloud
+account signed in on the device. The host owns the sign-in flow: it may answer
+from an existing session or put an interactive login in front of the user
+first, so the call can stay pending for a while — show a waiting state.
+
+It resolves with the access token, or with `null` when the user declined to log
+in. `null` is a normal outcome, not an error; keep the mini-app usable without
+cloud features.
+
+```ts
+const accessToken: CloudLoginResult = await layla.cloud.login();
+
+if (accessToken === null) {
+  showMessage('Sign in to Layla Cloud to sync your data.');
+  return;
+}
+
+const response = await fetch('https://api.layla-network.ai/some/endpoint', {
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+```
+
+Call Layla Cloud HTTP APIs with ordinary `fetch` and the token as the
+`Authorization: Bearer <token>` header — the SDK does not proxy them. Do not
+persist the token; call `login()` again when a request comes back unauthorized,
+since the host may have refreshed or dropped the session.
+
+For local testing, the browser mock replies with a canned placeholder token.
+Pass a `cloudLogin` handler to `installLaylaMock(...)` to return your own token,
+or `null` to exercise the declined-login path.
+
+## Sentiment
+
+Use `layla.classifier.getSentiment(text, options?)` to score text with Layla's sentiment classifier. The result is a `SentimentValues` object keyed by emotion category.
+
+```ts
+const sentiment: SentimentValues = await layla.classifier.getSentiment(
+  'I am thrilled to start this new project.',
+);
+```
+
+This is useful for moderation, tone detection, UI reactions, or any feature that needs a lightweight emotional read on a message.
+
+## Images
+
+Image APIs return ready-to-use image source strings when successful. Do not add another `data:` prefix.
+
+```ts
+const imageSrc = await layla.images.generateImage(
+  'A cozy pixel-art study with warm lamplight',
+  (status, step, totalSteps) => {
+    setProgress({ status, step, totalSteps });
+  },
+);
+
+if (imageSrc) imageElement.src = imageSrc;
+```
+
+List the image models the host currently has available with
+`layla.images.getImageGenerationModels()`, then pass a model's `id` as the
+`modelId` argument (4th) to generate with it. When `modelId` is omitted the host
+uses its default model:
+
+```ts
+const models = await layla.images.getImageGenerationModels();
+
+const imageSrc = await layla.images.generateImage(
+  'A cozy pixel-art study with warm lamplight',
+  (status, step, totalSteps) => setProgress({ status, step, totalSteps }),
+  undefined, // img2img_base64
+  models[0]?.id, // modelId — omit to use the host default
+);
+```
+
+Character images follow the same convention:
+
+```ts
+const imageSrc = await layla.characters.getImage(character.id);
+if (imageSrc) imageElement.src = imageSrc;
+```
+
+## Video Generation
+
+Use `layla.neodragon.generateVideo(imageDataBase64, prompt, options?)` to
+animate a still image with NeoDragon. The source image must include its data URI
+prefix. The method resolves with the generated MP4 data URI plus the resolved
+seed and output metadata:
+
+```ts
+const result: NeoDragonGenerateVideoResult =
+  await layla.neodragon.generateVideo(
+    sourceImageDataUri,
+    'A slow camera push-in while the leaves move in a gentle breeze',
+    {
+      seed: 0,
+      fps: 24,
+      onProgress: ({ stage, fraction }: NeoDragonProgress) => {
+        setProgress({ stage, fraction });
+      },
+    },
+  );
+
+videoElement.src = result.video_data_base64;
+console.log(result.seed, result.width, result.height, result.duration_ms);
+```
+
+`NeoDragonGenerateVideoOptions` also accepts `upscale` (defaults to true for
+1024x640; false keeps the native 512x320 output), `cinematicPrompt` (defaults to
+true), a normalized `{ x, y, width, height }` source `crop`, and `signal`. `fps`
+is 1..60 and defaults to 24. A seed of zero is valid; omit the seed to let the
+host pick one.
+
+Progress reports `stage`, `current`, `total`, and `fraction`. The fraction is
+progress within the current engine stage, not an overall time estimate. Video
+generations serialize with each other. Aborting rejects locally but cannot stop
+NeoDragon because the protocol has no video-cancel command; the lane becomes
+available when the host sends the terminal response.
+
+The browser mock supports this surface. Pass a
+`neodragonGenerateVideo(request, reportProgress)` handler to
+`installLaylaMock(...)` for custom output, or use the default four-stage
+progress sequence and placeholder MP4. The host must implement the
+`neodragon_generate_video` command, so keep the SDK and Layla app versions
+synchronized.
+
+## Music Generation (Ace-Step)
+
+List the Ace-Step model bundles known to the host with
+`layla.acestep.getModels()`. Built-in bundles are listed even when they are not
+downloaded; complete imported bundles are included too. Only offer entries with
+`ready_for_use: true` for generation. Readiness is a local file check, not a
+guarantee that the device has enough memory:
+
+```ts
+const models = await layla.acestep.getModels();
+const model = models.find(({ ready_for_use }) => ready_for_use);
+if (!model) throw new Error('No Ace-Step model is ready');
+```
+
+Use `layla.acestep.generateMusic(prompt, onProgress, lyrics?, duration?, options?)`
+to generate music with the on-device Ace-Step model. This is the one-call
+pipeline: the host runs the LM pass and the synth pass back to back. It resolves
+to a ready-to-use audio source string (a base64 data URI) when successful, or
+`null` when the host does not return audio. Progress is reported through the
+callback, which receives `progress` (0..1 across the whole request), a `status`
+string naming the current phase, and `current`/`total` within that phase.
+
+```ts
+const audioSrc = await layla.acestep.generateMusic(
+  'A dreamy lo-fi hip-hop beat with warm vinyl crackle',
+  (progress, status, current, total) => {
+    setProgress({ progress, status, current, total });
+  },
+);
+
+if (audioSrc) audioElement.src = audioSrc;
+```
+
+Pass `lyrics` to steer the vocals, and `duration` (in seconds) to control the
+track length. Both come before the options argument, so pass `undefined` for the
+ones you are not using. Music generation can be slow on device, so always show a
+progress state, and support aborting with an `AbortController` signal:
+
+```ts
+const audioSrc = await layla.acestep.generateMusic(
+  'An upbeat indie-pop anthem',
+  (progress, status) => setProgress({ progress, status }),
+  'We are running through the city lights tonight', // lyrics
+  60, // duration in seconds — omit to use the host default
+  { signal: controller.signal, modelId: model?.modelId },
+);
+```
+
+`options.modelId` selects a model for this request. Omit it or pass `null` to
+use the user's selected Ace-Step model. The SDK forwards explicit IDs unchanged;
+the host does not validate compatibility between separately submitted passes.
+
+### Raw Ace-Step passes
+
+Prefer `generateMusic` for "prompt in, track out". Reach for the raw passes only
+when the mini-app needs the intermediate artefacts. Each takes an options object
+extending `RequestOptions`, so `signal` and an `onProgress` listener go in the
+same place. The same object also accepts `modelId`; use the same ID for every
+related `lm`, `synth`, `understand`, and VAE request:
+
+- `layla.acestep.lm(request, options?)` — enriches one request into metadata,
+  lyrics and `audio_codes` without rendering audio. Resolves with one enriched
+  request per batch variant (`lm_batch_size`, default 1); each can go straight
+  into `synth()`. `request.caption` is required.
+- `layla.acestep.synth(request, options?)` — renders one request into audio.
+  Resolves with `audio_data_base64` (data URI prefix included), the resolved
+  `seed`, `sample_rate` (always 48000), `num_samples`, `duration_seconds`, and
+  the `request` as rendered. `options` takes `useGpu`, `useFlashAttn`,
+  `vaeTileSize`.
+- `layla.acestep.understand(source, options?)` — analyzes an existing track and
+  resolves with a `request` holding its caption, lyrics, metadata and
+  `audio_codes`, ready to hand to `synth()`. Pass exactly one source:
+  `{ audioBase64 }` (WAV or MP3, max 10 minutes) or `{ latentsBase64 }` from an
+  earlier encode. Set `returnLatents` to get the latents back too.
+- `layla.acestep.vaeEncode(audioBase64, options?)` /
+  `layla.acestep.vaeDecode(latentsBase64, options?)` — the VAE on its own.
+  Latents are raw f32 `[T, 64]` bytes, base64 encoded, and are interchangeable
+  across the whole raw surface, so an expensive encode is done once and reused.
+
+```ts
+// Show the user several takes, then render the one they pick.
+const takes = await layla.acestep.lm(
+  { caption: 'A dreamy lo-fi hip-hop beat', duration: 60, lm_batch_size: 3 },
+  {
+    modelId: model?.modelId,
+    onProgress: ({ status, current, total }) =>
+      setProgress({ status, current, total }),
+  },
+);
+
+const rendered = await layla.acestep.synth(takes[chosen], {
+  modelId: model?.modelId,
+  useGpu: true,
+});
+audioElement.src = rendered.audio_data_base64;
+```
+
+```ts
+// Cover an existing track in a new style.
+const analysis = await layla.acestep.understand({ audioBase64: uploaded });
+const cover = await layla.acestep.synth({
+  ...analysis.request,
+  caption: 'the same song as an acoustic ballad',
+});
+```
+
+`synth()` writes nothing to storage — pass `audio_data_base64` to
+`layla.utils.saveFile()` to keep it. All Ace-Step generation and raw-pass
+commands share one bridge lane, so they queue behind each other rather than
+running two heavy passes at once. `getModels()` is a lightweight independent
+request.
+
+Progress arrives as an `AceStepProgress` (`{ progress, status, current, total }`)
+on every generation/pass command. `progress` is a 0..1 fraction of the whole
+request,
+but it is `null` on every raw pass — a single pass has no defined share of a
+larger whole — so drive a bar from `current`/`total` there, and show a spinner
+when `total <= 1`.
+
+## Utilities
+
+Use `layla.utils.scheduleNotification(notification, options?)` to schedule a
+one-time notification for the calling mini-app. Pass a future Unix timestamp in
+milliseconds, a message, and optionally an image path relative to the mini-app
+folder. Omit `icon` or pass `null` to use the mini-app's default icon. The
+returned `LaylaScheduledNotification` includes the opaque host-assigned `id`
+needed for cancellation.
+
+```ts
+const notification = await layla.utils.scheduleNotification({
+  message: 'Your local generation is ready.',
+  timestamp: Date.now() + 15 * 60 * 1000,
+  icon: 'images/reminder.png',
+});
+
+const pending = await layla.utils.getScheduledNotifications();
+await layla.utils.cancelScheduledNotification(notification.id);
+```
+
+`getScheduledNotifications(options?)` returns all pending notifications for
+the calling mini-app; delivered and cancelled notifications are excluded.
+`cancelScheduledNotification(id, options?)` rejects if the host cannot cancel
+that pending notification. URLs, absolute icon paths, and relative paths that
+escape the mini-app folder are not allowed.
+
+Use `layla.utils.saveFile(filename, contentBase64, share?, options?)` to save
+base64-encoded content through the host, and
+`layla.utils.readFile(filename, options?)` to read it back. Both operate on the
+mini-app's private files. Omit the data URI prefix when passing content to
+`saveFile`; `readFile` returns `content_base64` with a data URI prefix (or
+`null` when the file cannot be read).
+
+`filename` may be a plain name or a relative path that includes folders (for
+example `logs/run.txt`). The host resolves it inside the mini-app's private
+directory and creates any missing parent folders on save. Paths stay inside that
+directory: leading slashes are ignored and `..` segments that would escape the
+app folder are rejected, so pass a relative path rather than an absolute one.
+Read a file back with the same relative path you saved it under.
+
+```ts
+const result = await layla.utils.saveFile(
+  'logs/notes.txt',
+  btoa('Saved from a Layla mini-app.'),
+  true,
+);
+
+if (!result.success) {
+  throw new Error(result.message ?? 'Unable to save file');
+}
+
+const read = await layla.utils.readFile('logs/notes.txt');
+if (read.content_base64) {
+  fileLink.href = read.content_base64;
+}
+```
+
+With the browser mock installed, `saveFile` stores the content in browser
+`localStorage` (keyed by the relative path) and `readFile` reads it back.
+Passing `share: true` also downloads the content as a `Blob`.
+
+Use `layla.utils.listDir(path, options?)` to enumerate a directory and
+`layla.utils.deleteFileOrDir(path, options?)` to remove a file or directory.
+`path` is relative to the private directory (pass `''` for the root) and is
+confined to it, like `saveFile`/`readFile`. `listDir` resolves with an array of
+`{ path, is_dir }` entries — recurse into any entry whose `is_dir` is `true` to
+walk the tree. `deleteFileOrDir` resolves with `null` once the host confirms the
+deletion, and removes a directory's contents along with it.
+
+```ts
+const entries = await layla.utils.listDir('logs');
+for (const entry of entries) {
+  if (entry.is_dir) {
+    await layla.utils.listDir(entry.path); // recurse
+  }
+}
+
+await layla.utils.deleteFileOrDir('logs/notes.txt');
+await layla.utils.deleteFileOrDir('logs'); // whole folder
+```
+
+With the browser mock installed, both operate over the same
+`localStorage`-backed store, deriving a virtual directory tree from the stored
+file paths.
+
+## Abort Handling
+
+Pass abort options when the method accepts `RequestOptions`:
+
+```ts
+const controller = new AbortController();
+
+try {
+  const result = await layla.characters.list(0, 10, {
+    signal: controller.signal,
+  });
+} catch (err) {
+  if (err instanceof LaylaAbortError) return;
+  throw err;
+}
+```
+
+For streaming chat, either pass a signal or call `stream.abort()`.
+
+## Errors
+
+All SDK-specific errors extend `LaylaError`.
+
+```ts
+try {
+  const completion = await layla.chat.completions.create({ messages });
+} catch (err) {
+  if (err instanceof LaylaAbortError) return;
+
+  if (err instanceof LaylaBridgeUnavailableError) {
+    showMessage('This mini-app must run inside Layla.');
+    return;
+  }
+
+  if (err instanceof LaylaError) {
+    showMessage(err.message);
+    return;
+  }
+
+  throw err;
+}
+```
+
+## Mini-App Packaging
+
+Read `references/mini-apps-overview.md` before preparing an app for import into Layla.
+
+At minimum, a packaged mini-app folder should include:
+
+- `app.json`
+- `index.html` or `index.url`
+- any referenced icons, images, or assets
+- optionally `task.js` for a background task (see below)
+
+When distributing a mini-app as a zip, `app.json`, `index.html` or `index.url`, and referenced assets must be at the root of the zip file. Do not wrap them in an extra parent folder. `task.js`, when present, must also be at the zip root.
+
+Use `index.html` for a self-contained local app. Use `index.url` for an externally hosted app.
+
+## Background Tasks (task.js)
+
+A mini-app can ship an optional `task.js` file at its root (next to `app.json`).
+The Layla host scans each installed mini-app folder for `task.js`; when it
+exists, the app appears in Layla's Task Manager, which executes the script
+periodically in the background and lets the user run it manually, enable or
+disable it, and inspect each run's output and logs.
+
+### Execution model
+
+`task.js` does not run in the WebView. The host evaluates it in an isolated
+QuickJS runtime that it creates for the run and destroys when the script
+settles. Before your script is evaluated, the host bootstraps the runtime with
+a WebView compatibility shim plus the full `@layla-network/sdk` bundle (matched
+to the host's SDK version), so these globals are ready immediately:
+
+- `layla` — a ready-to-use SDK client instance
+- `Layla` — the client class
+- `LaylaError`, `LaylaAbortError`, `LaylaBridgeUnavailableError`
+
+Do not use `import`, `require`, or a bundler in `task.js`. It is a plain script
+with no module system; call `layla.*` directly. Under the hood the shim maps
+`window.ReactNativeWebView.postMessage` and window `message` events onto the
+QuickJS message channel, and the host wires a per-app API service to the
+runtime, so every `layla.*` method uses the same protocol and behaves the same
+as in the WebView.
+
+### Script shape, output, and logs
+
+The host evaluates `task.js` as a **classic script**, not a module, so
+**top-level `await` is a syntax error** (it surfaces as `expecting ';'` at the
+first top-level `await`). To use `await`, wrap the async body in an async IIFE
+and let the returned promise be the completion value:
+
+```js
+// Completion value — the returned promise resolves to the run's output.
+(async () => {
+  const characters = await layla.characters.list(0, 5);
+  return `Found ${characters.length} characters.`;
+})();
+```
+
+The script's completion value (its last expression) is recorded as the run's
+output; if the script completes with a promise, the host awaits it and records
+the resolved value — which is why the async-IIFE pattern above works. Make the
+completion value JSON-serializable — a value that fails JSON serialization (for
+example an object with function members) fails the run.
+
+`console.log`, `console.info`, `console.debug`, `console.warn`, and
+`console.error` are buffered inside the runtime and shown in the Task Manager's
+execution log after the run finishes — they do not stream live. A thrown error
+or rejected top-level promise marks the run as failed; the error message and
+stack become the output, and logs buffered before the failure are still kept.
+
+The host records each run's success, duration, timestamp, output, and logs per
+mini-app.
+
+### Environment constraints
+
+The QuickJS runtime is not a browser:
+
+- No DOM, `document`, `fetch`, `XMLHttpRequest`, or `localStorage`.
+- No timers — `setTimeout` and `setInterval` do not exist, so do not poll or
+  sleep; SDK promises are the only way to wait.
+- `Promise`, `async`/`await`, `queueMicrotask`, and `JSON` work normally.
+
+Each run starts a fresh runtime, so no global state survives between runs.
+Persist state with `layla.db.executeSql(...)` — the task shares the mini-app's
+private sqlite database, which is also the way to hand results to the WebView
+UI for the next launch.
+
+### What to call from a task
+
+Prefer headless-friendly APIs: non-streaming chat completions, `layla.db`,
+`layla.memories`, `layla.chat.saveChatMessage`,
+`layla.chat.scheduleChatMessage`, `layla.utils.scheduleNotification`,
+`layla.classifier.getSentiment`, and `layla.characters`. Avoid UI- and
+device-interaction flows (TTS playback, speech-to-text, background audio, and
+`layla.cloud.login()`, which can put a sign-in prompt in front of the user) in a
+background task. Do not rely on
+long-lived event subscriptions such as `layla.contextual.on(...)` — the run
+ends when the script's completion value settles, so listeners do not outlive
+the script.
+
+### Example
+
+```js
+// task.js — no imports; the host injects `layla` before this runs.
+// Wrap awaited work in an async IIFE: top-level `await` is a syntax error here.
+console.log('Digest task starting.');
+
+// Completion value — the returned promise resolves to the run's output.
+(async () => {
+  const characters = await layla.characters.list(0, 5);
+
+  await layla.db.executeSql(
+    'CREATE TABLE IF NOT EXISTS task_runs (id INTEGER PRIMARY KEY, ran_at INTEGER, character_count INTEGER)',
+  );
+  await layla.db.executeSql(
+    'INSERT INTO task_runs (ran_at, character_count) VALUES (?, ?)',
+    [Date.now(), characters.length],
+  );
+
+  console.log(`Recorded ${characters.length} characters.`);
+
+  return `Digest complete: ${characters.length} characters.`;
+})();
+```
+
+## Compatibility Guidance
+
+Prefer stable public APIs from the package root. Avoid relying on private paths inside `@layla-network/sdk`.
+
+When the user asks for a new SDK capability that is not in the bundled reference, check the installed package version and public release source if available. If the Layla host protocol would also need to change, explain that SDK and host changes must stay synchronized.

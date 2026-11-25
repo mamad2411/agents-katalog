@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic2-camgraphe-MaxVideoAi-maxvideoai/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when a user wants AI video planning, current model comparison, a project budget, an exact generation quote, approved generation, or recovery through MaxVideoAI.

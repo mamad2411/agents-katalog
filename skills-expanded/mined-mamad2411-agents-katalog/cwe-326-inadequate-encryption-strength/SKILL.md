@@ -1,0 +1,210 @@
+---
+name: cwe-326-inadequate-encryption-strength
+description: Use this skill when you need to remediate CWE-326 (Inadequate Encryption Strength) vulnerabilities in Java code. Triggers on SAST findings, security reviews, or when fixing inadequate encryption strength issues.
+version: 1.0.0
+license: MIT
+tags:
+- security
+- java
+- cwe-326
+- remediation
+- sast
+
+- cryptography
+
+- key-strength
+
+---
+
+# CWE-326 Inadequate Encryption Strength
+
+## Description
+
+Inadequate Encryption Strength
+
+Reference:
+https://cwe.mitre.org/data/definitions/326.html
+
+
+**OWASP Category**: A02:2021 – Cryptographic Failures
+
+
+---
+
+## Vulnerable Pattern
+
+
+### ❌ Example 1
+
+```java
+    public ResponseEntity<GenericVulnerabilityResponseBean<String>> getVulnerablePayloadLevel2(
+            @RequestParam Map<String, String> queryParams) {
+        String password = queryParams.get(PASSWORD_PARAM);
+
+        if (password == null || password.isEmpty()) {
+            return new ResponseEntity<>(
+                    new GenericVulnerabilityResponseBean<>(
+                            "CHALLENGE: A user's password is stored as SHA1 hash: "
+                                    + LEVEL2_HASH
+                                    + " — Crack it and enter the original password!",
+                            false),
+                    HttpStatus.OK);
+        }
+
+        String guessHash = DigestUtils.sha1Hex(password);
+        if (guessHash.equals(LEVEL2_HASH)) {
+            return new ResponseEntity<>(
+                    new GenericVulnerabilityResponseBean<>(
+                            "Correct! The password was '"
+                                    + LEVEL2_SECRET
+                                    + "'. SHA1 is deprecated — it is vulnerable to collision"
+                                    + " attacks and hashes can be reversed using rainbow tables.",
+                            true),
+                    HttpStatus.OK);
+        } else {
+        // ... (truncated for brevity)
+```
+
+
+
+
+
+---
+
+## Deterministic Fix
+
+
+### ✅ Secure Implementation
+
+```java
+    public ResponseEntity<GenericVulnerabilityResponseBean<String>> getVulnerablePayloadLevel4(
+            @RequestParam Map<String, String> queryParams) {
+        String password = queryParams.get(PASSWORD_PARAM);
+
+        if (password == null || password.isEmpty()) {
+            return new ResponseEntity<>(
+                    new GenericVulnerabilityResponseBean<>(
+                            "CHALLENGE: The system 'encrypts' passwords using Base64 encoding. "
+                                    + "The stored password is: "
+                                    + LEVEL4_ENCODED
+                                    + " — Decode it and enter the original password!",
+                            false),
+                    HttpStatus.OK);
+        }
+
+        if (password.equals(LEVEL4_SECRET)) {
+            return new ResponseEntity<>(
+                    new GenericVulnerabilityResponseBean<>(
+                            "Correct! The password was '"
+                                    + LEVEL4_SECRET
+                                    + "'. Base64 is an encoding, NOT encryption."
+                                    + " It provides zero security — anyone can decode it instantly.",
+                            true),
+                    HttpStatus.OK);
+        } else {
+        // ... (truncated for brevity)
+```
+
+
+
+
+
+---
+
+## Detection Pattern
+
+Look for these patterns in your codebase:
+
+
+```bash
+# Find key size specifications
+grep -rn "KeyGenerator\|KeyPairGenerator" --include="*.java" | grep -E "[0-9]+"
+```
+
+
+```bash
+# Find weak key sizes
+grep -rn "512\|1024" --include="*.java" | grep -i key
+```
+
+
+
+---
+
+## Remediation Steps
+
+
+1. Use RSA keys of at least 2048 bits (preferably 4096)
+
+2. Use AES-256 instead of AES-128
+
+3. Use strong key derivation functions (PBKDF2, Argon2)
+
+4. Ensure sufficient iterations in key derivation
+
+
+---
+
+## Key Imports
+
+```java
+
+import javax.crypto.KeyGenerator;
+
+import java.security.KeyPairGenerator;
+
+import javax.crypto.SecretKeyFactory;
+
+```
+
+---
+
+## Verification
+
+After remediation:
+
+
+- Re-run SAST scan - CWE-326 should be resolved
+
+- Verify RSA keys are >= 2048 bits
+
+- Verify AES keys are >= 128 bits (256 preferred)
+
+
+---
+
+## Trigger Examples
+
+```
+Fix CWE-326 vulnerability
+Resolve Inadequate Encryption Strength issue
+Secure this Java code against inadequate encryption strength
+SAST reports CWE-326
+```
+
+---
+
+## Common Vulnerable Locations
+
+| Layer | Files | Patterns |
+|-------|-------|----------|
+
+| Security | `*Crypto*.java` | Key generation |
+
+| Configuration | `*Config.java` | Security config |
+
+
+---
+
+## References
+
+
+- [CWE-326: Inadequate Encryption Strength](https://cwe.mitre.org/data/definitions/326.html)
+
+- [NIST Key Management Guidelines](https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final)
+
+
+---
+
+**Source**: Generated by [Java CWE Security Skills Generator](https://github.com/DevelopersCoffee/java-cwe-security-skills)
+**Last Updated**: 2026-03-07

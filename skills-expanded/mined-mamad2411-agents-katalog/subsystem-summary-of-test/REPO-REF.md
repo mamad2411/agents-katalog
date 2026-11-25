@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ComeOnOliver-skillshub/subsystem-summary-of-test/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Test Subsystem — Test Utilities and Infrastructure

@@ -1,0 +1,257 @@
+---
+name: merge-is-deploy-governance
+description: 'When the platform auto-deploys every merge to mainline, author standing merge/deploy governance: document what deploys, make pull-request-time (PR) validation the authoritative pre-production gate, treat post-merge checks as verification, record human-owned branch protection, state the exposure window and whether an authorized risk owner accepted it, and define strategy-correct revert-and-redeploy rollback. Publishing a draft does not accept risk. Use when merge deploys mainline, post-merge checks are mistaken for a gate, protection lives only in a web UI, or a surprise deploy occurs. Do NOT gate one release (release-readiness-reviewer), author rollback runbooks (rollback-runbook-author), define who may merge (agent-authorization-matrix), or design CI stages (ci-pipeline-architect).'
+---
+
+# Merge-Is-Deploy Governance
+
+**Reading key:** PR means pull request; CI means continuous integration; API
+means application programming interface; PaaS means platform as a service, a
+host that builds and runs an app for you; GitOps means deployment by a
+controller that keeps an environment in sync with a Git branch; `<sha>` is a
+commit's identifying hash; UI means user interface.
+
+## Purpose
+
+Stop pretending there is a deploy step when there isn't one. On platforms
+that auto-deploy every merge to mainline, "we'll validate before deploying"
+is a fiction — the merge IS the deploy, and any validation that runs after
+it runs in production's timeline. That is standing
+governance that aligns the paperwork with the physics: PR-time validation
+becomes the authoritative pre-production gate, post-merge checks are
+demoted to verification, the protection config that enforces all this is
+recorded and human-owned, and the exposure window between merge and
+verified deploy is a stated risk, explicitly accepted by an authorized
+owner or marked pending, instead of an unnoticed one.
+
+*Calibration note (source evidence, not this skill's requirements):* the
+pattern was calibrated on the rulebook of "Repo B", an anonymized source
+repository studied while this library was built (see the [workflow extraction
+report](../../../docs/research/aegis-workflow-extraction-report.md)). That
+document states merge-is-deploy explicitly, records the branch-protection
+configuration in-repo, and defines revert-based rollback. A source repository's
+practice is evidence that the pattern is achievable, not the boundary this
+skill imposes.
+
+## Use When
+
+- Use when: the platform (PaaS, serverless host, GitOps controller)
+  auto-deploys mainline on merge and no document says so.
+- Use when: post-merge validation is being treated as a gate ("we'll catch
+  it after merge") on such a platform.
+- Use when: branch-protection/required-check configuration exists only in
+  the hosting UI — unrecorded, unreviewable, silently changeable.
+- Use when: after a surprise deploy-on-merge, to codify what the pipeline
+  actually does before it surprises anyone again.
+- Do NOT use when: deciding whether ONE release/PR is safe to ship — that
+  is `release-readiness-reviewer`; this skill sets the standing rules that
+  such a review runs under.
+- Do NOT use when: authoring the executable rollback runbook (numbered
+  steps, verification per step) — that is `rollback-runbook-author`; this
+  skill fixes the rollback PRIMITIVE (revert-PR-then-auto-redeploy) that
+  the runbook elaborates.
+- Do NOT use when: deciding WHO may merge or arm auto-merge — that is
+  `agent-authorization-matrix` *(manual-only)*; this skill composes its floors and adds the
+  pipeline-reality layer.
+- Do NOT use when: designing CI stages, artifact flow, or deploy strategies
+  — that is `ci-pipeline-architect` *(manual-only)*.
+
+## Inputs to Inspect
+
+1. The platform's actual deploy trigger: hosting config (e.g. the
+   platform's project settings, `vercel.json`/`netlify.toml`-class files,
+   GitOps sync rules) — verify merge→deploy is real and note WHAT deploys
+   (app, functions, migrations — often not all of them; the differences
+   matter and get documented).
+2. Current branch protection, from the source of truth: read it via the API
+   where permitted (e.g. `gh api repos/<owner>/<repo>/branches/<branch>/protection`
+   — requires admin scope; `gh api repos/<owner>/<repo>/rulesets` for
+   rulesets) or from the human's screenshot/dictation — labeled by source
+   either way.
+3. The PR-time validation inventory: which checks exist, which are
+   REQUIRED, and whether they are sufficient to be the last line before
+   production (compose `risk-tiered-validation-selector` /
+   `sharded-validation-with-resume` outputs where present).
+4. The merge strategy (merge / squash / rebase) — it determines the revert
+   mechanics AND, where auto-merge auditing matters, which timeline event
+   names apply (`auto_merge_enabled` / `auto_squash_enabled` /
+   `auto_rebase_enabled` are strategy-specific).
+5. Post-merge signals available for VERIFICATION: smoke checks, health
+   endpoints, deploy-status APIs — and their latency (this sets the
+   exposure window's floor).
+
+## Workflow
+
+This automatic phase produces an in-conversation governance draft only. Writing
+that policy to the repository, changing enforcement configuration, or executing
+Git/network operations belongs to a separately authorized manual route. The
+ordinary-document exception does not cover those policy changes. Report exact
+proposed destinations/content and distinguish proposals from completed writes;
+honor applicable existing user grants without asking for the same grant again.
+
+1. **Verify and document the reality.** State, with the platform evidence:
+   merging to `<branch>` deploys `<what>` to `<environment>` with no human
+   step between. List what does NOT auto-deploy (e.g. migrations that an
+   operator applies — route those to `gated-deployment-prompt-template`
+   territory) — partial auto-deploy is the norm and the ordering hazards
+   live in the gap.
+2. **Promote PR validation to the authoritative gate — in writing.** The
+   governance doc names the required checks (by exact check name) as the
+   pre-production gate, and states the consequence: anything not validated
+   at PR time is validated in production. Gaps found here are routed to
+   the validation skills, not papered over.
+3. **Demote post-merge validation to verification.** Post-merge smoke/
+   health checks CONFIRM the deploy; they gate nothing (there is nothing
+   left to gate). A post-merge failure is an INCIDENT-CLASS signal that
+   triggers rollback/fix-forward — not a "gate failure" that implies the
+   merge could have been stopped.
+4. **Draft the branch-protection configuration record and its proposed repository path** (format:
+   [references/governance-doc-template.md](references/governance-doc-template.md)):
+   protected branch, required checks by name, strictness
+   (up-to-date-before-merge and why), review requirements, who may merge —
+   AND the ownership rule: **changing branch protection is a named human
+   role's act, never an agent's**, with changes recorded as dated diffs to
+   this doc. The recorded config is verified against the live config on a
+   cadence (drift check), with API-vs-UI source labeled.
+5. **Frame the exposure-window decision:** from merge to verified deploy,
+   measure or mark unknown the duration and blast radius if PR validation
+   missed something. Explain that this is time in production before
+   verification, not a pre-deploy gate. Compare (a) the authorized risk
+   owner's explicit acceptance of the evidenced current window, (b)
+   reducing the exposure first — faster verification signals or a smaller
+   blast radius via flags/canaries shorten or narrow the window, and
+   stronger PR-time checks lower the chance a defect reaches it; each
+   routed to the owning validation and pipeline skills — and (c) holding
+   merges that touch the exposed surface while exposure is unacceptable or
+   unknown.
+   For each viable path, state why it is viable here, benefits, residual
+   user impact, setup time and upkeep, and CI/hosting/engineering money
+   cost or unknowns. Recommend the path justified by the measured window,
+   validation gaps and blast radius, and explain why; never recommend
+   accepting a window whose duration or blast radius is unknown —
+   recommend measuring or reducing it, or holding, instead. Ask the risk
+   owner one clear decision question. Record acceptance only with who, when,
+   scope and evidence; otherwise mark pending, or record a reduce-first/hold
+   decision with who, when and actions.
+   Publishing a draft does not accept risk or authorize an agent to merge,
+   change protection or deploy.
+6. **Define the rollback primitive: revert-PR-then-auto-redeploy.** The
+   revert rides the same authoritative gate (a revert PR with required
+   checks) and the platform redeploys on its merge. Mechanics must match
+   the merge strategy: **squash-merged changes revert as ordinary commits —
+   `git revert <sha>`**. A true merge commit needs an explicitly chosen
+   mainline parent with `-m <parent-number>`; that flag is unnecessary for
+   an ordinary squash commit. Note what revert does NOT undo
+   (applied migrations, external side effects) and route the full runbook
+   to `rollback-runbook-author`.
+7. **Deliver the governance draft + gap list:** dated draft and proposed repo path,
+   gaps (insufficient required checks, missing verification signals,
+   unowned protection) as routed follow-ups.
+
+## Output Format
+
+```
+MERGE-IS-DEPLOY GOVERNANCE — <repo> (<dated doc path>)
+Reality:            merge to <branch> auto-deploys <what> to <env> (evidence: <platform config>)
+                    does NOT auto-deploy: <migrations/etc → operator path>
+Authoritative gate: PR-time required checks: <exact names> — pre-production's last line
+Post-merge:         verification only (smoke/health <signals>); failure = incident → rollback
+Branch protection (recorded <date>, source: <API|human-dictated>):
+                    <required checks, strictness, reviews, who may merge>
+                    changes: <named human role> only — never agents; dated diffs here
+Exposure window:    merge → verified deploy ≈ <duration or unknown>;
+                    blast radius <scope or unknown>;
+                    status <pending|accepted|reduce-first|hold>
+Owner choice:       <plain terms; accept evidenced window | reduce it (checks/
+                    verification/flags) | hold exposed merges; why each is
+                    viable, benefits, residual risk, setup time, upkeep, money
+                    cost or unknowns; recommendation and why; one clear
+                    question if pending>
+Acceptance receipt: <only if accepted: authorized risk owner, date, exact
+                    scope and evidence; otherwise pending with no implied grant>
+Rollback primitive: revert PR → gate → merge → auto-redeploy
+                    (squash: git revert <commit>; true merge: inspect parents,
+                    then use -m <chosen-parent-number>)
+                    does not undo: <migrations/external effects> → rollback-runbook-author
+Gaps routed:        <check gaps, signal gaps, ownership gaps → owning skills/humans>
+```
+
+## Validation Checklist
+
+- [ ] Merge→deploy verified from platform evidence, not assumed; the
+      not-auto-deployed remainder is listed.
+- [ ] Required checks named exactly; PR-gate sufficiency gaps routed, not
+      ignored.
+- [ ] Post-merge checks explicitly reclassified as verification with the
+      incident-on-failure consequence stated.
+- [ ] Branch-protection draft has source and proposed path labeled, drift-check
+      cadence set, and the human-only change rule (never agents) explicit.
+- [ ] Exposure window duration and blast radius are evidenced or marked
+      unknown; the draft does not claim acceptance without an authorized
+      risk owner, date, scope and evidence.
+- [ ] The risk owner gets plain terms, viable accept/reduce/hold paths,
+      the reason for each viable path, benefits, residual risks,
+      setup time/upkeep and money costs or unknowns, a reasoned recommendation
+      and one clear decision question.
+- [ ] Revert mechanics match the repo's merge strategy (squash ⇒ ordinary
+      `git revert <sha>`); revert's limits stated and runbook routed.
+- [ ] This doc changes only via reviewed PRs (it is itself an
+      important-path artifact — pairs with `context-co-update-ci-gate`
+      where that gate exists).
+
+## Gotchas
+
+- **The phantom deploy step:** teams on auto-deploy platforms keep writing
+  process docs with a "deploy" stage no one performs; every gate attached
+  to that phantom stage silently doesn't exist. Aligning docs to physics
+  is the whole skill.
+- **Partial auto-deploy:** commonly the app and serverless functions
+  auto-deploy while database migrations do not — merging a PR whose code
+  expects an unapplied migration deploys broken code. The
+  ordering/ownership of the non-auto part must be in the doc.
+- **Protection config drift:** UI-changed protection (a check renamed, a
+  requirement dropped) silently rewrites the authoritative gate. The
+  in-repo record + cadenced drift check is the countermeasure; reading via
+  API needs admin scope — label human-dictated records as such.
+- **Squash-revert confusion:** a squash merge produces one ordinary commit;
+  use `git revert <sha>` for that commit. The `-m` option chooses the parent
+  to retain when reverting a true merge commit. Inspect the commit's parents
+  and choose the mainline deliberately; do not infer the needed command from
+  the pull request label alone. A broken revert command in the rollback path
+  is discovered at the worst possible time.
+- **Revert theater:** a revert PR undoes the code but not the applied
+  migration or the external webhook registrations; stating what revert
+  does NOT undo is what keeps the primitive honest.
+- **Auto-merge interaction:** with merge==deploy, ARMING auto-merge is
+  arming auto-DEPLOY — the human-only rule from
+  `agent-authorization-matrix` gets sharper teeth here, and armed-state
+  checks use the strategy-specific event names.
+
+## Stop Conditions
+
+- Asked to reclassify post-merge validation as the gate ("we'll catch it
+  after merge, keep PR checks light") → refuse: on this platform
+  post-merge is production; strengthening the PR gate is the only lawful
+  direction.
+- Asked to change branch protection directly (API or UI) → refuse; the
+  skill RECORDS and verifies protection. Changing it is the named human
+  role's act — hand over the exact desired config.
+- Merge→deploy cannot be verified from platform evidence and the human
+  cannot confirm it → stop; governance written against a guessed pipeline
+  misgoverns the real one.
+- The platform deploys from something OTHER than mainline merges (release
+  tags, manual promote) → this skill's premise fails; say so and route to
+  `ci-pipeline-architect` *(manual-only)* or `release-readiness-reviewer` territory instead
+  of forcing the pattern.
+
+## Supporting Files
+
+- [references/governance-doc-template.md](references/governance-doc-template.md)
+  — the full governance-doc template with the branch-protection record
+  format, drift-check cadence, exposure-window wording, and revert
+  mechanics per merge strategy.
+- `evals/evals.json` — behavior cases incl. partial-auto-deploy and
+  refusing to demote the PR gate.
+- `evals/trigger-evals.json` — discrimination against
+  `release-readiness-reviewer`, `rollback-runbook-author`,
+  `agent-authorization-matrix`, and `ci-pipeline-architect`.

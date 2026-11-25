@@ -1,0 +1,547 @@
+---
+name: converge
+description: Use when a plan, code artifact, or other structured output needs iterative convergence through independent review cycles. Trigger on "converge", "收敛", "迭代收敛", or when confidence in artifact quality is insufficient for execution. trigger "ultraverge" for the full pipeline (评议+收敛+收敛后设计审查) on mission-critical artifacts. NOT for single-pass code review — use a lighter review skill for that.
+---
+
+# Converge — 双 Agent 迭代收敛器
+
+> Orchestrator（主对话）管理循环，每轮 Spawn 全新 Reviewer 审查产物，Executor 修复问题，直至 Reviewer 给出"可执行"verdict 或触发停止条件。
+>
+> **框架无关**：Reviewer / Executor 的启动和续命通过抽象能力层实现（见 refs/framework-adapters.md），不绑定特定框架 API。
+
+---
+
+## Positioning
+
+本 SKILL 在产物生命周期中的位置：
+
+```
+产物草稿完成 → [Round 0 合同谈判] → 评议（默认入口）→ Converge（按需升级）→ 产物进入执行/落地
+                     ↑                  ↑               ↑                  ↑
+                可选前置阶段         单轮主观 verdict  仅 conceptual/arch   ultraverge:
+                对齐"什么算完成"     一次写回           阻断时升级多轮收敛   全量（见执行流程）
+                + 定义 Rubrics 维度
+                                    ↖─────────────────────────────────────────────╳
+                                      需重新设计 → 用户决定：重写/缩小范围/主观接受
+```
+
+- **前置条件**：有可审查的产物（plan 文件 / 代码项目 / 文档等），且产物已完成初稿
+- **后继条件**：收敛达成后，产物可安全进入下一阶段（执行、提交、部署）
+- **不适合**：单次快速审查、日常代码 review、lint 级别的检查——这些用更轻量的 review 技能
+- **可组合**：如果存在完整的开发工作流型 SKILL（如 Dynamic Workflows 的 pipeline/parallel 编排），converge 可以作为其中的**质量门控**插入——在 phase 交接处插入独立的"方向性审视"，让指挥部的决策在行动前暴露盲点。门控分两级：L1 轻量信号检测（非 LLM 脚本，零 token 成本）和 L2 单轮对抗审查（按需启动）。详见 `refs/quality-gate.md`
+
+## 控制器边界
+
+Converge **被用户或宿主选为当前工作流时**，是本工作流的**唯一顶层控制器**，负责模式选择、角色转换、预算、独立审查、停止条件和终局裁决。
+
+TDD、系统性调试和完成验证是 **Executor-local** 方法——由 Executor 在其分配的变更范围内自主执行，不归 Orchestrator 或 Reviewer 控制。
+
+Converge **不使生成项目依赖 Converge**——由 `init-agent-docs` 生成的项目不被迫安装或引用 Converge。
+
+---
+
+> 设计原则、Orchestrator 行为边界、治理文档清单、修改程序详见 `CONSTITUTION.md`。
+> 优先级与冲突裁决规则详见 `CONSTITUTION.md` 开头段落。
+
+---
+
+## 抽象能力层
+
+三个原子能力。不同 agent 框架用不同方式实现，语义等价：
+
+| 能力 | 语义 | 输入 | 输出 |
+|------|------|------|------|
+| **Spawn** | 启动**全新上下文**的 agent，给自足 prompt | prompt 文本 | instance_id |
+| **Continue** | 向**已有** agent 发跟进消息，保有上下文 | instance_id + 消息 | agent 回复 |
+| **Identify** | 返回当前 agent 实例标识 | — | instance_id |
+
+> Claude Code / opencode / codex 的具体实现见 `refs/framework-adapters.md`。
+
+---
+
+## 核心角色
+
+| 角色 | 担任者 | 关键约束 |
+|------|--------|---------|
+| **Orchestrator** | 主对话 agent | 不兼任 reviewer/executor；只管理循环 + 语义判定 |
+| **Reviewer** | 每轮 Spawn 的独立 agent | **全新上下文**（看不到历史对话）；prompt 自足 |
+| **Executor** | 每轮 Spawn 的独立 agent | 全新上下文；prompt 自足 |
+
+### 模型分层
+
+Executor 可降档（模型档位下调）至该家族低档执行，**仅当同时满足以下三条件**：
+
+- (a) 执行合同已通过确定性检查——指令含逐字文本或等价的零歧义规格；
+- (b) 用户显式授权或计划明示——默认 inherit（继承主对话模型），**不静默降档**。本条**收紧并跨框架推广**refs/framework-adapters.md §A.3 codex 约束 #4（模型继承优先）：Executor 模型档位选择场景中二者冲突时以本节为准，A.3 #4 继续管辖其余 model override 情形；
+- (c) 降档时验收**必须**包含确定性核对（diff / grep / 测试 / 计数），不得仅语义验收。
+
+**不降档角色**：Reviewer、Orchestrator、设计审查（判断力密集）。确定性核对类子任务（清点、diff/grep 核对、行数统计——判别准绳：任务存在客观判准、其结果可被机械复核）可用低档。未列出的角色（如层级模式的 Worker、仲裁 agent、L2 gate Reviewer）默认 inherit。
+
+档位经由各框架 Spawn 的模型选择参数实现（如 Claude Code Agent 工具的 `model` 参数）；框架不支持模型选择时视同 inherit。降档（模型档位下调）与本 SKILL 既有的"降级"（能力/流程降级，见 refs/framework-adapters.md §A.4）语义无关，互不触发对方的义务。档位取值与三条件核对结果须记入 attempt log。
+
+家族档位对照见 `refs/model-tiers.md`（数据层，随模型换代更新，无需修宪）。
+
+---
+
+## 终止状态与收敛判定
+
+| 终止类型 | 判据 | 用户确认 | 产物要求 |
+|----------|------|---------|---------|
+| **终止-a 严格首轮通过** | fresh reviewer 首次审查 verdict = `可执行`，零阻断 | 无需 | 写 retrospective.md，记录 terminal decision，执行单一 `archive` |
+| **终止-b 渐近通过** | blocking_issues 单调下降 + 剩 ≤1 个无争议低级项 | 用户显式确认 | 保存用户原话/source_ref 后记录 terminal decision，执行单一 `archive` |
+| **终止-c 主观接受** | 未达 a/b，但用户明确说"够了，就这样" | 用户显式确认 | 保存用户原话/source_ref 后记录 terminal decision，执行单一 `archive` |
+| **预算软停**（无终止类型对应） | 达到配置的预算上限，用户决定不续费 | 用户确认不续费 | retrospective.md 注明"未收敛但用户接受" |
+| **振荡硬停**（无终止类型对应） | 触 Type O（推翻≥3）或 R（重复≥5） | 无需 | retrospective.md 填病因 + 建议 |
+
+终止-a 是默认目标。b/c 需用户显式确认。达预算上限后用户接受 → 预算软停；未达上限用户主动接受 → 终止-c。
+
+### 确认点分类（自主 vs 宪法强制 — 明线规则）
+
+普通 converge 的默认姿态是**自主推进到完成**，仅在宪法强制点向用户确认。下表把确认点分为「默认自主」与「宪法强制」两类——强制集**逐字保留**，不得缩小：
+
+| 确认点 | 类别 | 处置 |
+|--------|------|------|
+| 终止-a（零阻断首轮通过） | **默认自主** | 已自主，保持；无需确认、自动归档 |
+| 收敛后落地执行 | **默认自主**（受执行意图明线约束，见下） | 原始指令含执行意图时自主推进，不再追加"现在要执行吗"check-in |
+| `需重新设计` verdict | **宪法强制** | 保留——必须报告用户决定重写/缩范围/主观接受 |
+| 终止-b / 终止-c（渐近 / 主观接受） | **宪法强制**（#1/#5） | 保留显式确认 |
+| 预算软停 / `budget_exhausted` / `blind_exhausted` / `ultraverge_exhausted` / `MODE_SWITCH_REQUIRED` | **宪法强制**（#3/#5，GD-1 不授权扩展/切换） | 保留决策菜单 |
+| `FAIL_CLOSED` / `DENY:illegal_role` | **宪法强制**（状态损坏/非法） | 保留停机 |
+
+**执行意图机械明线**：落地执行的自主授权**当且仅当**原始指令含执行动词（如「并执行 / 落地 / apply」等）才成立；否则**不算**自主授权，落地前**仍需确认**。此明线防止 orchestrator 滥用「autonomous」跳过本应保留的确认。GD-1 已授权"走 converge 并执行"推进至默认预算 + 落地——本明线不扩大授权，只把已批准的自主/强制边界写成明线。
+
+---
+
+## 振荡检测
+
+| 类型 | 定义 | 处置 |
+|------|------|------|
+| **Type O (Overturn)** | 同决策点被推翻 ≥3 次 | 硬停 |
+| **Type R (Repeat)** | 本轮阻断与上轮同源（语义等价） | 标注，累计 ≥5 次硬停 |
+| **Type F (Flip)** | 同一问题在 A↔B 之间来回翻转 | 标注 |
+| **Type S (Swing)** | 同 reviewer 在 inner loop 中反转自己判断 | 标注 |
+
+> 发散（非重复/翻转的持续深化失效模式）的识别判据与处置原则见 `refs/orchestrator-guide.md` § 发散检测。
+
+---
+
+## 模式边界：评议 / 单层收敛 / 层级收敛 / 审计
+
+| 维度 | 评议 (deliberate) | 单层收敛 (converge) | 层级收敛 (hierarchical) | 审计 (audit) |
+|------|------------------|-------------------|----------------------|--------------|
+| **对象** | 计划文件（事前草案） | 单个 plan / 代码 / 文档 | 大型项目（多模块） | 已落地产物（事后） |
+| **时态** | 事前 | 事中 | 事中 | 事后 |
+| **反馈路径** | 一次写回 | **多轮写回** | **多轮写回 × 并行子收敛** | 不写回（观察者） |
+| **判断模式** | 主观 + 离散 verdict（5 问前置自检） | 严格首轮通过 / 渐近 / 主观接受 | 子收敛各自收敛 → Planner 整合 | P0-P3 + 对齐率% |
+| **并行性** | 无 | 无（单线程迭代） | 有（多子收敛并行） | 无 |
+| **启用条件** | 产物有初稿、需快速对齐 | 产物有初稿、需深度验证 | 产物可分解为 ≥2 独立 scope | 产物已落地 |
+
+**默认入口**：**从评议开始。** 绝大部分审查需求在第一轮评议中就能得到有效反馈。仅当评议发现 conceptual 或 architectural 级别的阻断、且单轮修复后需要 independent verification 时，才升级为完整收敛。完整收敛很少超过 3 轮。
+
+评议的前置自检（5 个设计层问题，见 `refs/reviewer-prompt.md`）覆盖了产物身份、边界诚实、数据纯度、职责边界和命名一致性——这些是方向性问题，通常能在 1 分钟内判定。Q1-Q3 与设计审查的 DR1/DR4/DR6 为分层审查（前置自检做 binary check，设计审查做 dimensional assessment）。Q4/Q5 触发 blocking 时，Orchestrator 应评估是否触发设计审查——职责边界和命名一致性问题往往暗示更深层架构问题。更深层的架构维度（可维护性、可扩展性、残留冗余等）留给收敛后设计审查处理。
+
+**判别原则：**
+
+1. 先看时态——事前 = 评议，事后 = 审计，事中 = 收敛
+2. 事中再看规模——单 scope = 单层收敛，多独立 scope = 层级收敛
+3. 默认评议——仅在评议 verdict 含 conceptual/architectural 阻断时升级为完整收敛
+
+> **Ultraverge**：评议的"全量变体"（扩域 + 多 Reviewer + 强制设计审查），详见执行流程专节。
+
+> **收敛后设计审查**（`refs/design-review-prompt.md`）：事后、不写回、咨询式——时态属于审计，但判断维度不同（7 维 vs P0-P3对齐率），是审计的一个可选子模式。在产物收敛完成后触发，产出 advisory findings 供用户决策。
+
+---
+
+## 执行流程
+
+### Ultraverge 路径（仅 `ultraverge` 关键词触发）
+
+对安全性或稳定性有极端要求的产物（核心 SKILL 定义、宪法文档、基础架构 plan），用户可使用 `ultraverge` 关键词触发全量流程：
+
+```
+ultraverge → 评议（扩域至 DR 7 维 + 前置自检 5 问，≥ultraverge_min_reviewers 并行独立 Reviewer）
+          → 评议 verdict = 可执行 → 跳过完整收敛 → 强制设计审查
+          → 评议 verdict ≠ 可执行 → 完整收敛 → 强制设计审查
+```
+
+与默认路径的差异：
+- **评议**：Reviewer prompt 额外注入设计审查的 7 维骨架（DR1-DR7），不做"仅查方向性问题"的裁切。**至少 Spawn `ultraverge_min_reviewers`（默认 3）个独立 Reviewer 并行审查**——这是 ultraverge 与普通评议的关键区分：普通评议允许单 Reviewer 快速对齐，ultraverge 要求多条独立视角以确保事实前提验证（如代码现状审计）和盲区覆盖（如 Bitter Lesson 冲突、跨治理域打包等问题往往只有少数 Reviewer 能捕获）。
+- **并行裁决规则**：`ultraverge_min_reviewers` 条 verdict 全部一致 → 采纳。存在分歧时：
+  - 多数方向 vs 少数方向 → Orchestrator 按多数方向推进，**但**：若少数派的阻断 issue severity 为 `conceptual` 或 `architectural`，Orchestrator **必须**升级为完整收敛（对应宪法约束 §1：不能以多数决跳过深层阻断）
+  - 裁决规则仅管辖 ultraverge 的 spawn 约束 + 并行收敛语义，不约束宿主项目自有的评议汇总机制
+- **降级路径**：若因 token 预算、API 不可用、并发限制等原因无法 spawn 满 `ultraverge_min_reviewers` 个 Reviewer：
+  - 实际 spawn 数 ≥2 且 verdict 一致 → 降级为普通评议模式，Orchestrator 标注 `degraded_from: ultraverge` 并告知用户
+  - 实际 spawn 数 <2 或 verdict 不一致 → 中止，告知用户原因，由用户决定是否降级为普通评议或稍后重试
+- **完整收敛**：若评议 verdict = 可执行 → 跳过（评议已在扩域下审查完毕，完整收敛新增发现概率极低，只增成本）；若 verdict ≠ 可执行 → 标准流程（Round 0→多轮→收敛）
+- **盲审预算**：普通 converge 与 ultraverge 共享同一 stock 默认（由 `scripts/budget_gate.py` 的 `DEFAULTS` 提供，单一权威源）；无模式叠加。
+- **收敛后设计审查**：**强制触发**——跳过常规触发条件（模块数/新约定/系统边界）的判断，直接执行
+
+仅在用户显式使用 `ultraverge` 关键词时触发。**触发边界（明线规则）**：
+
+- **修改对象涉及宪法/治理文档 → 必须 ultraverge**（≥3 Reviewer + 收敛 + 设计审查）
+- **修改对象不涉及宪法/治理文档 → 标准评议**（verdict 驱动，单轮写回）
+
+> **"治理文档"判据**：对 Agent 行为有规范性约束力的文件。项目治理文档由项目入口文档（AGENTS.md / CLAUDE.md 等）定义；本 SKILL 自身的治理文档清单见 `CONSTITUTION.md` 第三部。边界情形按最高强度处理。
+
+> **framework-adapters.md 例外**：仅新增一个框架适配分册（A.x）、不触及公共层/跨框架不变量（Archive provenance 采集、A.4 通用降级、A.5 适配新框架、best-effort guarded 可移植性矩阵）时，可走标准评议，无需 ultraverge；触及公共层/机制层/跨框架不变量仍需 ultraverge。详见 `CONSTITUTION.md` 第三部。
+
+### 默认入口：评议
+
+首次审查一律使用评议模式（单轮、主观 verdict、一次写回；ultraverge 关键词除外，见上方 Ultraverge 路径）。评议的 Reviewer prompt 与完整收敛的 Round 1 相同。评议完成后 Orchestrator 根据 verdict 决策：
+
+- verdict = 可执行 → 收敛完成，归档 done/
+- verdict = 阻断需修复 + 阻断为 implementation/structural → Executor 修复，评议模式再走一轮
+- verdict = 阻断需修复 + 阻断为 conceptual/architectural → **升级为完整收敛**（下方主循环）
+- verdict = 需重新设计 → 不进入修复循环。向用户报告产物存在方向性缺陷，由用户决定：重写产物后重新评议、缩小范围后重新评议、或走主观接受程序
+
+完整收敛仅在有证据表明"评议的单轮深度不足以解决问题"时触发——不是默认路径。
+
+### Round 0 · 合同谈判（可选前置）
+
+> 详细流程和 contract.md 格式见 `refs/contract-negotiation.md`。Rubrics 维度选择见 `refs/rubrics.md`。
+
+```
+0a. Orchestrator 判断是否跳过（用户要求 / 对象极简 → 跳过并记录理由）
+0b. Spawn Executor → 输出验收合同草案
+0c. Spawn Reviewer（独立 context）→ 挑战合同草案
+0d. 将挑战反馈交给 Executor → 修订合同 → 写入 contract.md
+0e. 更新 _orchestrator-state.md → contract_status: completed
+```
+
+Round 0 **不计入** max_outer_loops 预算。若跳过，Round 1 的 Reviewer 不引用 contract。
+
+### Orchestrator 主循环
+
+> **总则（机械层强制）**：本循环所有产生跨会话状态的机械动作（预算预约、派发簿记、round 骨架、verdict 落盘、归档序列）**必须经 `scripts/orchest.py`**；确需绕过时必须在 attempts.md 记录 `[manual-fallback]` 及原因，未标注的手工状态编辑 = 流程违规。判断动作（标注★）由 Orchestrator 执行，不经 orchest.py。命令参数细节见 `scripts/README.md`。
+
+机械阶段也可由 converge_loop spec 驱动（`scripts/converge_loop.py`，可选 scheduler；同一 active 目录单活：spec 驱动或人工主循环二选一；经 spec 依赖外部 `ocsr_dispatch`），LLM 只承担★步骤；语义判定始终按本主循环。命令细节见 `scripts/README.md`。
+
+
+```
+1. 创建 .converge/active/<slug>/ 目录
+2. 初始化 _orchestrator-state.md（格式见 refs/state-schema.md）
+3. for round in 1..max_outer_loops:
+   a0-1. **先落盘 reviewer prompt 文件**：reserve-round 的 `--prompt-file` 必填且须已存在
+        （begin-invocation 记录其 hash/metadata）——spawn 前将本轮 prompt 写入文件
+   a0+a. **reserve-round**：spawn 前单命令完成 gate reserve + begin-invocation + round 骨架落盘
+        （替代手动 reserve/begin-invocation/手写骨架；settle 由 register-round 承担，不归 reserve-round；
+        命令用法见 `scripts/README.md` Loop A 接线示例）。
+        → Spawn reviewer（prompt 模板见 refs/reviewer-prompt.md，若存在 contract.md 则一并传入）
+        → 成功返回即 `register-round`；失败/取消即 `cancel-round`（均单命令，用法见 scripts/README.md）。
+          不得手跑裸 budget_gate.py reserve/settle 序列。
+        - gate 裁决语义不变：reserve-round 透传 gate 返回值（PROCEED/BLOCK/DENY/FAIL_CLOSED），
+          非 PROCEED 按返回值处置（见步骤 4）；两个已落地 tier（auditable-only 和 best-effort guarded）
+          的 per-scope reserve 均由 reserve-round 驱动（责任清单 M-11）
+   b. round-N.md 骨架与 frontmatter 契约字段由 reserve-round/register-round 落盘与回填（脚本管，不手抄）；评审判断照旧（★LLM）；verdict 确定后 `record-verdict`（命令用法见 scripts/README.md；替代手写 frontmatter + 裸 ingest-verdict）
+   c. Orchestrator 处理：overturn 检测、等价标注、antipattern 关联（★ overturn 判定/等价标注——语义层，不经 orchest.py）
+   c+1. **角色边界自检**（详见责任清单 #3）：
+        - 本轮动作是否仅限于循环管理 + 语义判定？
+        - 若即将对产物做任何直接修改 → 停止，跳至步骤 f（Spawn Executor）
+        - 将自检结果记录到 _orchestrator-state.md（boundary_check: pass | violated）
+        - 若 violated 且已执行修改（guard step 被跳过时的补救路径）→ 在 attempts.md 以 [Orchestrator Detection] annotation 标注 source: orchestrator_self，告知用户降级影响
+   c+2. **意图漂移条件注入**（详见责任清单 #19）：
+        - 若存在 escalated_issues 或 contract_amendment_required 反复出现（≥2 次）→ 从 _orchestrator-state.md 提取 progress_summary 摘要，在下一轮 reviewer prompt 中注入 <drift_context> 块
+        - 处理 reviewer 输出时检测 drift_detected: true 标记，若有 → 记录到 rule_frequency
+   c+3. **规则触发记录**（详见责任清单 #19）：
+        - 在步骤 c/c+1 更新 boundary_check 时顺带更新 rule_frequency 的 boundary_guard / reviewer_boundary_audit 触发状态
+        - gate_l1 / design_review_trigger 在对应事件发生时更新
+   d. 若 verdict = 可执行 →
+        d1. 若本次收敛经历 ≥2 轮 outer loop → 进入盲审复核（见下方"盲审复核"小节）
+        d2. 若本次收敛经历 = 1 轮 → 直接收敛
+         收敛！执行完成前必检清单（语义项，逐项确认保持，见 §完成前必检清单）→ 写 retrospective.md（★LLM 撰写内容）→ `finish`（命令用法见 scripts/README.md；机械归档：finish 只执行步骤 0→8 机械序列——verdict 交叉核对/round 连续/全 settle/孤儿恢复/终局 decision/prompt 归位/原子归档/归档后 check——不覆盖必检清单语义项、不代写 retrospective）
+         d3. 落地执行（将方案改动清单写入目标文件）：**当原始指令含执行意图时**（机械明线：指令含执行动词「并执行 / 落地 / apply」等，见 §确认点分类）→ Orchestrator **默认自主推进**，不追加"现在要执行吗"check-in，按 `refs/orchestrator-guide.md` §落地执行编排 流程 spawn executor（落地执行 spawn 不进收敛预算门与 Archive Contract，改动清单核对经 `orchest.py checkpoint-paths`——操作权威与映射表见该节），使用 `refs/executor-prompt.md` Plan-Execution 模板。**指令不含执行意图时**：落地前仍需用户确认。全部宪法强制 gate（终止-b/c、预算软停/`*_exhausted`、`MODE_SWITCH_REQUIRED`、`FAIL_CLOSED`、`需重新设计`）不受此影响、逐字保留。
+    e. 若有 contract_amendment_required → 先回写 contract.md 再继续
+     f. **executor 修复轮**：`reserve-round`（role=executor，consumes=none，不建产物骨架）→ Spawn executor
+        （prompt 模板见 refs/executor-prompt.md）→ `register-round`（须 `--output attempts.md`）；失败/取消 → `cancel-round`。
+        命令用法与参数见 `scripts/README.md`。
+        取舍说明：attempts.md 是跨轮累计日志，complete-invocation 记录的 output hash/size 为累计文件快照，
+        下一轮追加即失配——接受该妥协（防呆意图 = 非空校验，非字节级证据完整性）；consuming 角色
+        （reviewer/blind 轮）的字节级证据由 round 产物（round-N.md）承担；executor 轮（consumes=none，
+        无骨架）的 attempts.md 为 metadata-only 记录——无 blob/snapshot，归档 check 不做哈希比对，
+        不承诺字节级完整性
+        **崩溃窗口官方恢复路径**：executor 轮在 spawn_succeeded-缺-terminal 形态下，finish 步骤 3 的
+        产物推导会命中 fail 分支——恢复 = 重跑 `register-round --output attempts.md`（--output 显式传
+        attempts.md，幂等），禁止手工补 terminal
+    g. Executor 修复后更新 attempts.md（格式见 refs/state-schema.md）
+    h. plan_amendment_required 时先回写 plan 本体再改下游
+    i. Continue 做 inner loop reviewer 验收（宪法第二部 #2：不可跳过；Continue 不可用时按 refs/framework-adapters.md §A.2/A.4 降级为 orchestrator 逐条验收并标注）
+4. **gate 裁决处置**（取代旧「超 max_outer_loops 预算软停」的纯 prose 询问）：
+   - `BLOCK:budget_exhausted` / `blind_exhausted` / `ultraverge_exhausted` / `total_spawn_cap` → **停止**，向用户呈现决策菜单：继续迭代（须写入 round-stamped `budget_extension` 令牌，关联触发它的 decision 事件 + 用户原话）/ 接受当前产物（终止-c）/ 简化 plan / 终止。令牌写入为 [manual-fallback] 逃生门（用户裁决不做 grant-extension 命令：超预算续跑是用户在环时刻，人工监督在场；在 attempts.md 记录 `[manual-fallback]` + 用户原话）。**无有效 extension 不得续 spawn。**
+   - `MODE_SWITCH_REQUIRED` → 呈现：接受进入执行 / 简化 plan（移除代码片段）重新收敛 / 终止。
+   - `DENY:unknown_role` / `illegal_role` → 角色非法，停止并复查。
+   - `FAIL_CLOSED:*` → 状态损坏/不确定（含 ledger schema 校验失败），停止，按 reason 修复后重试（绝不 fail-open）。
+   - 用户对超预算的续跑授权**必须显式、具体、可审计**（呼应宪法第二部 #3/#5 + 授权粒度澄清）；"走 converge 并执行"只授权到**默认**预算，不授权扩展。
+```
+
+### 盲审复核（Blank-Slate Recertification）
+
+当收敛经历 ≥2 轮 outer loop 后签发"可执行"，在 retrospective 写入前增加盲审复核 gate：
+
+```
+verdict=可执行 且 ≥2 轮 →
+  盲审 spawn 经 orchest.py（consuming 角色缺 --round 会被 cmd_reserve_round 前置校验直接拒绝（EXIT_ERROR，非 budget_gate 内部拒绝）——实测已发生的错误，--round 必传且为盲审独立序列号）：
+  `reserve-round`（role=blind-reviewer，--round 为盲审独立序列号；命令用法见 scripts/README.md）→ Spawn 盲审 Reviewer（不读 attempts.md，prompt 变体见 refs/reviewer-prompt.md §盲审复核变体）→ `register-round` → verdict 经 `record-verdict`（--product blind-recheck-N.md；verdict 用 gate 三档；pass/fail/waived 只进 retrospective，见下）
+  ├ 零阻断 → 真正收敛，retrospective 记 blind_recheck: pass
+  └ 有阻断 → findings 作为 escalated_issues（BR- 前缀独立注入块）注入主循环
+             → Executor 修复 → 下一 outer loop Spawn fresh Reviewer 验收 → 再次可执行 → 再次盲审
+             → 盲审修复轮的 executor/reviewer 轮同样经 orchest.py（同主循环 step f/步骤 a0+a）
+             → 超 max_blind_rechecks → gate 返回 BLOCK:blind_exhausted → 决策菜单（见主循环步骤 4），不自动续
+  若终止-c（主观接受）+ 盲审失败 → 提示用户，用户可确认跳过（retrospective 记 blind_recheck: waived）
+```
+
+**关键约束**：
+- 盲审在 `active/` 内进行，不触发 done/→active/ 回流
+- 盲审 Reviewer prompt 变体定义见 `refs/reviewer-prompt.md`
+- 盲审 findings → attempts.md 字段映射和 → escalated_issues 传递格式见 `refs/state-schema.md`
+- 归因协议：盲审只发现（attribution: pending），主循环 Reviewer 补归因（plan_defect / executor_limit）
+- pending 归因不得跨过下一主循环轮存活
+- 标注口径：`blind_recheck: pass | fail | waived`，永不升格终止类型。verdict 与标注是两个概念：盲审 reviewer 的 verdict 字段本就在 gate 三档之内（可执行/阻断需修复），经 record-verdict 直接 ingest；pass/fail/waived 是 retrospective 标注口径（blind_recheck 字段），仅写入 retrospective，永不 ingest；waived 无对应 gate 动作
+- finish 终局 owner：盲审 terminal 属 blank-slate authority（REVIEWER_AUTHORITIES["blank-slate"]）——若盲审为最后 succeeded terminal，finish 步骤 4 终局 reviewer-verdict owner 归 blank-slate；Continue 终端不作 owner（Inner Loop 轮内验收，契约要求终局 owner 为 fresh Spawn）
+- 盲审失败后的修复轮次**共享原 max_outer_loops**，不自动扩
+
+### Inner Loop
+
+```
+1. Executor 完成后，orchestrator 通过 Continue 续命同 reviewer instance——续命经 orchest.py 簿记：
+   `reserve-round --continue-of <父rid> --phase inner-review --prompt-file <path>`
+   （发射 begin-invocation kind=continue + parent 链；契约规定 continue 不携带 reservation——
+   计数由 events 承载，上限由 active state 有效配置（`max_inner_loops`）决定，不推进 max_outer_loops、不占新 spawn cap；
+   命令用法见 scripts/README.md）
+   → 宿主 Continue 同实例 → `register-round`（continue 轮入口；实例冲突被拒绝——续命同实例；失败/取消 `cancel-round`）
+2. Reviewer 验收修复（★判断）→ 通过则 Accepted，打回则继续修；verdict 经 `record-verdict` 落盘 round 产物
+3. Continue 上限由 active state 有效配置（`max_inner_loops`）决定（脚本按同父链计数拒绝超限），超过则该轮失败 → 下一 outer loop
+```
+
+### 收敛后修订（用户外部输入）
+
+收敛完成（retrospective 已写入 done/）后，用户可能提供外部输入（新的分析视角、遗漏的关键信息、对结论的质疑），需要重新评估已收敛的产物。
+
+**触发条件**：用户提供的输入对已收敛结论构成实质性挑战——不是微调措辞，而是动摇核心判断或引入新的分析维度。
+
+**流程**：
+
+```
+1. 运行 `archive_convergence.py reopen <active-root> <done-root> <slug>`，禁止手工移动或改写历史 manifest
+2. 在 attempts.md 追加新 entry（标注 source: user_external_input）
+3. Executor 根据外部输入修订产物
+4. Spawn fresh Reviewer 审查修订后的完整产物（含新增内容）
+5. 若通过 → 更新 retrospective，记录新 terminal decision，再运行单一 `archive`
+6. 若有阻断 → 进入标准 converge 主循环
+```
+
+**不计入 max_outer_loops 预算**：收敛后修订是对已完成产物的补充，不是原收敛的延续。但 retrospective 中必须记录修订的触发来源、新增轮次和结论变化。
+
+**spawn 治理显式豁免**：收敛后修订内部 spawn（Executor 修订 + fresh Reviewer）属范围收窄的显式豁免——预算/轮次不计入 max_outer_loops（上文原文语义），spawn 治理随 reopen 流程走 `archive_convergence.py` 命令域，不接线 orchest.py（显式保留，非遗漏）。
+
+
+### 收敛后设计审查（可选）
+
+收敛完成后，Orchestrator 可选择触发一次**设计审查**（`refs/design-review-prompt.md`）：单轮、咨询式、不给阻断权重，产出 `design-review.md` 写入 `.converge/done/<slug>/`。
+
+**触发条件**（满足任一即触发）：产物涉及 ≥ 3 个独立模块；或引入新目录结构/命名约定/跨组件接口；或定义了新的**系统边界**（如 scheduler↔Orchestrator 的职责划分、SKILL.md↔refs 的层次关系、两个子系统之间的协议边界）；或用户显式请求。**预算**：设计审查 Spawn 不计入 `max_outer_loops`，视为与收敛后修订同级的可选扩展操作。建议在产物涉及系统级设计时启用——单模块修复可跳过。
+
+---
+
+## Orchestrator 责任清单
+
+**每轮必做** ——
+M-1. **Spawn 真实性** — 失败时如实记 `orchestrator_self`，不掩盖
+M-2. **overturn 判定** — 比较本轮 issue 与 attempts.md 已 Accepted 修复
+M-3. **角色边界自检** — 每轮处理完 reviewer 输出后、执行任何修复动作前，确认：本次动作范围是否为"循环管理 + 语义判定"？若涉及产物修改且尚未 spawn Executor → 必须先 spawn Executor。违反时必须在 _orchestrator-state.md 记录 boundary_check: violated，在 attempts.md 以 [Orchestrator Detection] annotation 标注 source: orchestrator_self，告知用户降级模式及对结论可靠性的影响。Round 0 和 inner loop 中存在同构的边界违反窗口，当前 guard step 覆盖主循环（最频发场景），其余窗口依靠本责任清单条目提醒
+M-4. **Type O 计数** — 同决策点推翻 ≥3 次 → 硬停
+M-5. **Type R/F 等价标注** — 同源标注（语义判断）
+M-6. **信息源核对** — 逐条过 reviewer blocking 时，检查每条的事实前提是否与原始材料（用户原话 / reference_materials / contract.md）矛盾。若发现矛盾（信息源不忠实），按可机械核验性分流：**可机械核验的 agent 自裁**（对照原始材料驳回，记 `factual_self_adjudication`），**不可机械核验的才向用户申请仲裁**（用户驳回记 `user_arbitration`；具体操作见 `refs/orchestrator-guide.md` §九）。仅覆盖"可机械核验的事实矛盾"一类——非笼统不服、非语义层推理争议
+M-9. **instance_id + Continue 调度** — Spawn 后记录 id；inner loop 用 Continue 续命，禁止 Spawn 新 agent
+M-10. **_orchestrator-state.md 维护** — 每完成一个动作即更新
+M-11. **预算 gate 执行（收敛循环内）** — 收敛循环内每次 spawn（reviewer / executor / 各类角色）的 gate 生命周期统一经 `orchest.py reserve-round / register-round / cancel-round`（gate reserve/settle 由命令内部驱动，不得手跑裸 budget_gate 序列）；非 PROCEED 一律停止并按主循环步骤 4 处置。落地执行 spawn 豁免（设计裁决，见 §执行阶段/§落地执行编排）。**per-scope 预算（outer/blind/ultraverge）+ mode-switch + extension 菜单由 Orchestrator 经 reserve 驱动——两个已落地 tier（auditable-only / best-effort guarded）都如此（true enforced 仍 deferred）**。**`best-effort guarded`（= hook-blocked auditable-only，**非** enforced tier）**：会话绑定/解绑/扩容刷新与宿主 `PreToolUse` 总量硬上限（cap 派生自 validated `ceiling(state,total)`，达上限 deny——防 runaway 兜底、与 ledger/per-scope 互不干扰不双计）均由 hook 承担，命令级接线与诚实边界见 `refs/framework-adapters/claude-code.md` §A.1（wiring 单源）。**禁止在未取得 PROCEED 时 spawn**；收口前确保无未结孤儿 reservation。续跑超默认预算须有效 `budget_extension`（关联真实 decision 事件 + 用户原话），不得以记忆中的旧授权续费。**混合后端检查点（收敛循环内）**：同一会话混用 gated 通道（adapter/驱动器）与未 gate 通道（宿主原生 spawn）时，每次 spawn 前显式确认本通道已过预算门——adapter 自动 gated 不构成原生通道已 gate 的证据；收敛循环内原生 spawn 须过门（reserve-round/register-round），落地执行原生 spawn 豁免（设计裁决）；遗漏按 `orchestrator_self` 降级标注、禁止回填（2026-08-04 两次原生 executor 漏 gate 实证）。检测到漏 gate 的处置：不停止当前收敛，按 `orchestrator_self` 降级标注并继续，retrospective 中申报。宿主能力矩阵：Claude Code → best-effort guarded（PreToolUse hook 已落地，§A.1）；kimi-code → opt-in hook 可接线（§A.6，未接线即 auditable-only）；opencode → auditable-only（无可阻断 hook）。**auditable-only 宿主上本检查点无机械兜底，是纯 prose 自觉约束。**
+
+**条件触发** ——
+C-5. **plan_amendment_required** — 先回写 plan 本体，再让 executor 改下游
+C-6. **plan 漂移检测** — 每 5 轮 / 触 Type O 时报告用户
+C-7. **预算追踪** — 逐轮递增计数由主循环结构保证；本条规范触上限时必须问用户的行为（呼应宪法第二部 #3）
+C-10. **字段名映射** — 写入 attempt log entry 时执行：reviewer 输出 `attribution` ↔ attempt log `Issue 归因`
+C-13. **contract_amendment_required** — 先回写 contract.md 本体，再让 executor 按新 contract 调整。contract 演进导致的矛盾不计入 Type O
+C-14. **收敛后修订评估** — 用户在收敛后提供外部输入时，判断输入是否构成实质性挑战。判断标准：是否引入新的分析维度、是否动摇已收敛的核心判断、是否修正了被遗漏的关键事实。微调措辞不触发修订。触发后在 retrospective 中记录修订来源和结论变化
+C-15. **门控 L1 执行** — 在 Dynamic Workflows pipeline 的 phase 收口时，调用 L1 信号检测（`python scripts/l1_gate.py`），记录 pass/warn 结果
+C-16. **门控 L2 触发决策** — 根据 `gate_l2_mode` 和 L1 结果决定是否 spawn L2 gate Reviewer
+C-17. **门控发现处置** — 读取 gate_findings，按 severity 决策（info → 记录；risk → 记录 + 报警；critical_gap → 触发完整 converge），所有决策记录到 state 文件
+
+**Round 0 前置** ——
+R-11. **合同谈判编排** — Round 0 中依次 spawn Executor（提议合同）→ Reviewer（挑战）→ Executor（定稿），将终稿写入 contract.md
+R-12. **Rubrics 维度选择** — 根据收敛对象类型从维度库中选取，写入 contract.md
+
+**收口必做**（含逐项执行"收敛完成前必检"）——
+E-18. **设计审查触发与报告** — 收敛后判断是否满足设计审查触发条件：≥3 模块；或新约定/接口；或系统边界；或评议前置自检 Q4/Q5 触发过 blocking（职责边界和命名一致性问题往往暗示更深层架构问题）；或用户显式请求。满足则 Spawn reviewer 产出 design-review.md，提取 highlights 报告给用户
+
+**条件触发** ——
+C-19. **意图漂移检测 + 规则触发记录** — (a) 意图漂移：当 escalated_issues 存在或 contract_amendment_required 反复出现（≥2 次）时，从 _orchestrator-state.md 提取 progress_summary 摘要注入下一轮 reviewer prompt 的 `<drift_context>` 块；reviewer 通过 drift_detected: true 标记反馈漂移。与 C-6 的关系：C-6 是 Orchestrator 第一方循环内检测（plan 内容偏移，每 5 轮/触 Type O），本条是 Reviewer 独立第三方产物-合同对齐检测（条件注入），互补而非重叠。(b) 规则触发记录：在步骤 c/c+1 更新 boundary_check 时顺带更新 rule_frequency 的 boundary_guard / reviewer_boundary_audit 触发状态；gate_l1 / design_review_trigger 在对应事件发生时更新。rule_frequency 字段格式和规则 key 注册表见 `refs/state-schema.md`。不新增独立循环步骤。retrospective 中必须包含对追踪机制执行成本的评估（约 1 句话）；当被追踪规则总数降至 2 条以下时，必须显式评估追踪机制是否仍有必要
+  C-20. **盲审复核编排** — 当收敛经历 ≥2 轮 outer loop 且 verdict=可执行时：(a) 判断触发（≥2 轮）；(b) Spawn 盲审 Reviewer（refs/reviewer-prompt.md 盲审变体）；(c) 阻断 findings 以 BR- 前缀独立注入块转为 escalated_issues 注入下一主循环轮；(d) attempts.md 建 entry（source: blind_recheck, attribution: pending）；(e) pending 归因下一主循环轮硬过期；(f) retrospective 记 blind_recheck（pass / fail / waived）。职责要点；编排指引单源见 `refs/orchestrator-guide.md` §盲审复核编排
+  C-21. **后收敛执行编排** — 方案收敛后用户要求落地执行时：(a) Spawn executor（refs/executor-prompt.md Plan-Execution 模板，fresh-context）；(b) **不得直接编辑文件**（宪法 #7 落地阶段适用）；(c) 记录 executor instance_id 至 retrospective/落地日志（客观证据）；(d) 核对改动清单项数与 executor 报告文件数一致（M 侧经 orchest.py checkpoint-paths 机械生成，N vs M 比较仍 LLM）；(e) 落地后建议（非强制）`.meta/audit` plan-landing 子模式（条件触发、小落地豁免、ultraverge 不豁免——阈值与细节单源 `.meta/audit/README.md`）。职责要点；编排指引单源见 `refs/orchestrator-guide.md` §落地执行编排
+
+### 传话编排（relay orchestration）
+
+> **C-21 后收敛执行编排的变体**，不是主循环替代，不新增模式。
+
+**适用条件（三条同时满足，缺一不可）**：
+1. 产物已收敛且方案已定稿
+2. 验收判据机械可核（测试退出码 / hook 返回码 / diff / 计数）
+3. 参与方 ≤ 2
+
+**载荷强制**：载荷必须为**文件引用**，**不得为消息全文**——消息载荷下两侧 agent 各自累积对方全部历史，输入 token 随轮次二次增长，与该模式的成本论据方向相反。
+
+**独立性降级声明**：传话编排的两侧 agent 若为持续会话，则 converge 的反锚定机制（executor 纪律「打破过往同意惯性」/「打破上轮 reviewer 偏好锚定」、盲审复核、`past_commitment_anchoring` 巡查）**不生效**。使用该变体时 orchestrator **必须**按宪法 #6 告知用户当前处于独立性降级模式。
+
+**角色边界**：传话编排中 orchestrator 的「纠偏」限定为**指出偏差并要求对方修正**，**不含直接修改产物**（宪法 #7 在落地阶段同样适用，C-21(b) 已有明文）。若偏差需要改产物，仍须 **spawn executor**。Orchestrator **不得直接修改**产物文件。
+
+**振荡裁判**：orchestrator 对每次转发追加一条 relay-ledger 记录。每 `relay_oscillation_interval` 轮（默认 3），spawn 一个一次性「振荡裁判」agent——**输入仅为 relay-ledger**，**输出仅为 Type O/R/F/S 的枚举判定**。orchestrator 只负责 spawn 与转发判定结果，**保持沉默**——不自行做语义判定。该 spawn 记入现有 gate ledger，落在 `total_safety`（1.5）的余量内，不单列新预算 scope。
+
+> 操作细节（默认不发言、仅偏差介入的转发纪律与包裹格式）见 `refs/orchestrator-guide.md` §八；relay-ledger 记录格式以 `refs/state-schema.md` §relay-ledger 为**唯一单源**。
+
+---
+
+> Orchestrator 不可让渡的行为边界详见 `CONSTITUTION.md` 第二部。
+
+---
+
+## 收敛完成前必检
+
+宣布收敛成立前，逐项确认：
+
+- [ ] 最后一个 fresh reviewer verdict = `可执行`（或用户已显式接受 b/c）
+- [ ] attempts.md 中所有 Accepted entry 无未解决的 Overturn 标注
+- [ ] _orchestrator-state.md 的 current_phase 已标记为 completed
+- [ ] 每轮 boundary_check 均为 pass，或违反已记录并告知用户
+- [ ] **若收敛对象是代码**：所有测试通过（全绿）
+- [ ] 所有 suggestion items 已处置（采纳/拒绝/延后，记录在 retrospective 中）
+- [ ] retrospective.md 已在 active 目录完成，并引用唯一 terminal decision event id/value
+- [ ] 用户已被告知收敛结果
+- [ ] 若存在 contract.md：contract 中所有验收断言已被至少一轮 Reviewer 逐条验证
+- [ ] 不存在未处理的 `contract_amendment_required: true` 标记
+- [ ] 若触发了降级（orchestrator_self / inner_loop 降级）：用户已被告知降级模式及对结论可靠性的影响
+- [ ] 若触发了设计审查：`design-review.md` 已写入，highlights 已报告用户，用户决策已记录
+- [ ] 若本次收敛中 Executor 使用了降档（low）：验收已包含确定性核对，档位取值与三条件核对结果已记入 attempt log
+- [ ] 若本次收敛经历 ≥2 轮：盲审复核已完成（verdict=可执行 或 blind_recheck: waived），retrospective 中已记录 blind_recheck 字段
+- [ ] **每个预算内 spawn 均有有效 reservation（gate PROCEED）且已 settle；无未结孤儿 reservation**
+- [ ] **若发生过预算扩展（budget_extension）：每条均关联真实 BLOCK decision 事件 + round-stamped 用户原话；extension 仅抬高 ceiling，不替代 reservation；总量未突破 max_total_reserved_spawns**
+- [ ] **若宿主无可阻断的 pre-spawn hook（未 bind 的 auditable-only 会话）：用户已被告知该降级模式及其对预算强制力的影响**（呼应宪法 #6）
+
+---
+
+## 配置参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `max_outer_loops` | 见 budget_gate.py DEFAULTS（单源） | 成本优先的 outer loop 轮数上限；达到上限时 gate 阻断并进入预算软停，继续执行需取得显式、可审计的 `scope=outer` extension |
+| `max_inner_loops` | 见 budget_gate.py DEFAULTS（单源） | 同轮 inner loop 最大 Continue 次数 |
+| `type_o_threshold` | 3 | Type O 触发硬停的推翻次数 |
+| `type_r_threshold` | 5 | Type R 触发硬停的累计次数 |
+| `plan_drift_check_interval` | 5 | plan 漂移检测间隔（轮） |
+| `converge_dir` | `.converge/` | 收敛目录路径。可改为 `.meta/.converge/` 等自定义路径。**设 `CONVERGE_DIR` 环境变量可覆盖默认值（仅影响项目级 converge 产出，不影响 SKILL 自身 `.converge/` 内部记录）** |
+| `gate_l1_interval` | 1 | 门控 L1 每 N 个 phase 触发 |
+| `gate_l2_mode` | `signal` | 门控 L2 启动方式：`always` / `signal` / `adaptive` |
+| `gate_l2_signal_threshold` | `warn` | 信号触发条件（当前仅支持 `warn`；`info`/`critical` 级别预留给后续 L1 信号扩展） |
+| `gate_max_token_share` | 0.15 | 门控 token 预算占总预算比例上限 |
+| `ultraverge_min_reviewers` | 见 budget_gate.py DEFAULTS（单源） | ultraverge 评议阶段最少并行 Reviewer 数（默认 3，来自 ≥3 自动收敛阈值。可随实证数据调整）；standard 与 ultraverge 共用同一组默认值上限，无模式叠加 |
+| `executor_model_tier` | `inherit` | Executor 模型档位。`inherit` = 继承主对话模型；`low` = 该家族低档（对照表见 `refs/model-tiers.md`）。仅当「模型分层」小节三条件满足时可设 `low`。初始策略，随实证数据调整 |
+| `max_blind_rechecks` | 见 budget_gate.py DEFAULTS（单源） | 成本优先的盲审复核次数上限，独立于 max_outer_loops；达到上限时 gate 阻断且不自动续跑，继续盲审需取得显式、可审计的 `scope=blind` extension。盲审失败后的修复轮次共享 max_outer_loops |
+| `max_ultraverge_initial` | =`ultraverge_min_reviewers` | ultraverge 并行初审的独立预算上限。扩容需 `scope=ultraverge` 的 extension |
+| `max_total_reserved_spawns` | 确定性公式 | 与角色无关的总 spawn 硬上限（单调，failed 不释放）。默认 = `ceil(total_safety × [3 + ultraverge_min_reviewers + max_outer_loops×(1+max_inner_loops) + max_blind_rechecks + 1])`，stock 参数以 `scripts/budget_gate.py` DEFAULTS 为准（具体值随配置模式变化）。扩容需 `scope=total` extension |
+| `total_safety` | 见 budget_gate.py DEFAULTS（单源） | 总量公式安全系数（含 arbitration 等 consumes:none 触发余量） |
+| `impl_severity_streak_threshold` | 见 budget_gate.py DEFAULTS（单源） | 连续 N 轮 blocking 中 `implementation` 占比 ≥50% → `MODE_SWITCH_REQUIRED` |
+| `preflight_code_block_threshold` | 见 budget_gate.py DEFAULTS（单源） | 收敛前置自检：plan 内 fenced code block 数达此值即 `WARN:code_heavy`（建议剥离或标 `非规范`） |
+| `relay_oscillation_interval` | 3 | 传话编排下振荡裁判的触发间隔（轮）。每 N 轮 spawn 一次性裁判 agent，输入仅 relay-ledger |
+| `task_tier` | 未配置 | 任务级总信封档位：`small`(4/8) / `medium`(8/16) / `feature`(16/24) / `critical`(20/30)（初始额度/一次性授权上限，见下）。未配置时 `task-envelope` scope 不可用（`reserve --role task-envelope` → `FAIL_CLOSED:task_envelope_not_configured`），对其它角色的 reserve/settle 无任何影响（A8 向后兼容）。初始化时显示 `quality_path_guaranteed: false`——选档是质量-成本权衡，非到达保证。**治理计划（含 `converge.governance-change/v1` 机器块）默认要求配置 task-envelope**（preflight 未配置 → `FAIL_CLOSED:governance_requires_task_envelope`）；推荐 `critical`，依据见 `refs/state-schema.md`。非治理计划行为不变。 |
+| `task_envelope_initial` / `task_envelope_cap` | 由 `task_tier` 派生 | 直接覆盖任务档的初始额度/一次性授权上限，无需通过 `task_tier` 四档之一；`cap` 须 `>= initial` |
+
+> **预算执行**：预算由 `scripts/budget_gate.py` 在每次 spawn 前裁决；trust boundary 三级，逐级能力见 framework-adapters 分册（`refs/framework-adapters/claude-code.md` §A.1 / `refs/framework-adapters/kimi-code.md` §A.6 / `refs/framework-adapters/dsh.md` §A.7）；行为禁令「不得靠记忆计数」规范落在 `refs/orchestrator-guide.md` §六，此处仅指针。
+>
+> **Stock 默认 8/3/3 经验依据**（`scripts/budget_gate.py` DEFAULTS 为单一权威源）：普通任务通常在 2-3 轮收敛（历史数据 `aac95bd`），outer=8/blind=3 是复杂任务的止损上限而非预期用量（两次复杂收敛 outer 7/12、blind 3/4 仍在推进；`d3c82cb` 治理任务至 outer R8 + blind #2 后通过）；inner=3 是已发布兼容保留，不声称同等强度的实证校准。
+>
+> **治理 preflight 机器输入**：`converge.governance-change/v1` 是 Orchestrator/preflight 的唯一机器输入（prose/表格不进入机器解析），详见 `refs/state-schema.md`。
+>
+> **Material revision 分级复核规则**：`decisional` 修订须两个不同 fresh Spawn（outer + blank-slate）审查相同最终 plan 字节；任何字节变化使两份失效。`non-decisional` 修订走单 fresh delta reviewer 增量复核（delta payload + 块链 hash + 并集交集 fail-safe），任何一环缺失 fail closed。详见 `refs/orchestrator-guide.md` §Material revision。
+>
+> **Calibration sample/report**：`converge.calibration-sample/v1`（retrospective 唯一样本）和 `converge.calibration-report/v1`（`distill_antipatterns.py --calibration` 输出）的定位器语法与验证规则见 `refs/state-schema.md`。
+>
+> **Task-envelope 诚实声明**：**治理计划默认必须选定**（不再纯 opt-in）；task-envelope 是用户选定的更严格质量-成本叠加层，可能在本地 8/3/3 上限到达前阻断 instrumented run；它不保证8/3/3 最坏路径可达；在 auditable-only 宿主上无法证明宿主级全量记账。
+>
+> **任务级总信封**（`task_tier`/`task_envelope_initial`/`task_envelope_cap`，consumes=`task-envelope`）是与本表其余参数**不同维度、并行叠加**的粗粒度计量，按一次任务的 OCSR/模型调用总量计量（可跨越多次收敛、多个角色、以及 release executor 等 converge 循环外的调用），不消费、也不受 `max_total_reserved_spawns` 约束。agent 需读的角色摘要见 `refs/state-schema.md` §预算 gate「任务档预算 / task-envelope scope」；机制细节（BLOCK 语义、与 total 的正交性、`summary` 命令等）单一权威源 = `scripts/budget_gate.py`（task-envelope 单一权威源）。
+
+### pre-push hook 环境变量（`scripts/hooks/`）
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CONVERGE_STRICT` | (未设) | 设为 `1` 时，pre-push hook 对 CRITICAL 级 stale 项阻断 push（exit 1）；未设时仅提示（exit 0） |
+| `CONVERGE_STALE_AGE_DAYS` | 7 | WARNING 级年龄阈值（天）。超过此天数的 active/ 项标记为 likely abandoned |
+| `plan_status_critical` | `done, landed` | plan frontmatter `status` 触发 CRITICAL 的值（当前硬编码于 stale-check.py，尚未可配置） |
+
+---
+
+## Pilot 经验速查
+
+1. **自举收敛可行**：convergence 自身 plan 可自举收敛（3 轮，4→1→0），但无法验证独立 executor 路径依赖
+2. **Continue > Spawn 新 agent**：同 context 往返实现真正 inner loop
+3. **antipattern 巡查有效**：over_compromise / minimum_patch 在 pilot 中被独立 reviewer 确认
+4. **结构对标 > 内容对标**：reviewer 对"缺专节"的阻断力度大于"内容不完善"
+5. **可用性是关键维度**："可直接使用"比"分析透彻"更影响 reviewer 的 verdict
+6. **R0 Reviewer 挑战不可省**：自举收敛中 Executor 自选的概念列表漏了最关键的项。跳过 R0 挑战是自举偏差的主要来源
+7. **用户外部输入可触发实质性修正**：收敛后用户提供的新分析视角（Bitter Lesson、做不到/做不好分类）产出了 R1/R2 Reviewer 均未能提供的洞察。用户角色不仅是最终确认者，还是关键的外部纠偏来源
+8. **反面论证需限定范围**：合同中的反面论证断言必须限定"在 converge 目标场景内"，否则 Executor 会选择自己不参加的比赛来"承认"对手强（稻草人）
+
+---
+
+## 目录结构
+
+`.converge/` 按 `tmp/`、`active/<slug>/`、`done/<slug>/`、`gate/<slug>/` 布局托管收敛产物；slug 命名 `<YYYYMMDD>-<对象简述>`；收敛后修订沿 `done/ → active/ → 重新归档 done/` 回流且 retrospective 追加不覆盖。
+
+规范单源见 `refs/state-schema.md` §目录结构。
+
+## Archive Contract v1
+
+不变量要点：事件**仅追加**（begin/complete/recover terminal event，禁手写/覆盖/回填 started）；provenance 诚实（requested/resolved 区分，无法解析须写 closed reason code、不得声称已证明）；完成门禁**仅** `scripts/archive_convergence.py archive`；SHA-256 非来源认证（不证历史真实性、不抵抗同权限重写）。
+
+规范单源见 `refs/state-schema.md` §Archive Contract v1（normative single source）。
+
+---
+
+## 层级模式（Planner → 多个 Orchestrator）
+
+> 当项目规模超出单次收敛的合理范围时，可启用层级式并行收敛。详细协议见 `refs/decomposition-protocol.md`。
+
+**启用条件**（三个同时满足）：
+
+1. 任务可分解为 ≥2 个互不干扰的独立 scope
+2. 子任务间无实时数据依赖
+3. 并行效率收益 > 分解 + 整合的开销
+
+**关键约束**：
+- **Planner 不改被收敛对象**
+- **子收敛之间不通信**
+- **子收敛内部运行标准 converge 语义**
+
+---
+
+## 拆分文件索引
+
+拼装 Reviewer/Executor prompt 或写 state 文件时，参考对应文件：
+
+| 需求 | 文件 |
+|------|------|
+| Spawn reviewer 时拼装 prompt | `refs/reviewer-prompt.md` |
+| Spawn executor 时拼装 prompt | `refs/executor-prompt.md` |
+| 写 round-N.md / attempts.md / state / retrospective | `refs/state-schema.md` |
+| 执行 overturn/Type R 判定、inner loop 验收等语义判断 | `refs/orchestrator-guide.md` |
+| Round 0 合同谈判流程、contract.md 格式 | `refs/contract-negotiation.md` |
+| Rubrics 维度库、评分标准、与 verdict 的关系 | `refs/rubrics.md` |
+| 层级式并行收敛：分解协议、分阶段管控、边界仲裁 | `refs/decomposition-protocol.md` |
+| 代码项目测试/lint 命令速查、发现流程、CI 信号源 | `refs/testing-toolbox.md` |
+| 在 Dynamic Workflows 中插入质量门控：两级门检协议 + 触发决策 + 预算统筹 | `refs/quality-gate.md` |
+| 收敛后设计审查：7 维骨架、单轮咨询式、不给阻断权重 | `refs/design-review-prompt.md` |
+| Reviewer/Executor/Orchestrator 反模式巡查清单（动态注入，status 由 distill 维护） | `refs/antipatterns.md` |
+| Executor 降档时选择各家族低档 | `refs/model-tiers.md` |
+| 框架适配：Spawn/Continue/Identify 的具体实现 | `refs/framework-adapters.md` |
+| 循环级机械调度（spec 驱动机械阶段，可选 scheduler） | `scripts/converge_loop.py`（用法见 scripts/README.md） |
+
+---
+
+> 框架适配实现见 `refs/framework-adapters.md`（Claude Code / opencode / codex / 通用降级 / 适配新框架）。

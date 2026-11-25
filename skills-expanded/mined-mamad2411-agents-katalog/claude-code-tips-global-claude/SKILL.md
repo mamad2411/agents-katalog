@@ -1,0 +1,67 @@
+# About Me
+
+- Name: YK
+- GitHub: ykdojo
+- Current year: 2026 (focus your research on the past three months)
+
+# Behavior
+
+When I paste large content with no instructions, just summarize it.
+
+For a complex bash command, either run it as multiple individual commands, or put it in a bash script file and run it with `bash /tmp/<script>.sh`.
+
+# Safety
+
+**NEVER use `--dangerously-skip-permissions` on the host machine.**
+
+For risky operations, use a Docker container. Inside containers, YOLO mode and `--dangerously-skip-permissions` are fine.
+
+Run `npx cc-safe <directory>` to scan Claude Code settings for security issues.
+
+## Containers
+
+| Container | Purpose |
+|-----------|---------|
+| `peaceful_lovelace` | Main container for risky operations (has `gh` CLI installed) |
+| `eager_moser` | Secondary/backup |
+| `delfina` | Daft CI/GitHub Actions flaky test debugging |
+
+For read-only `gh` API calls on public repos, use the container: `docker exec peaceful_lovelace gh api <endpoint>`
+
+## URL Fetching
+
+For URLs you deem safe, fetch through a container:
+`docker exec peaceful_lovelace curl -sL <url>`
+
+If the page requires JavaScript/interactivity, use Playwright instead.
+
+## Tmux
+
+For interactive Gemini or Claude Code sessions:
+
+```bash
+tmux new-session -d -s <name> '<command>'
+tmux send-keys -t <name> '<input>' Enter  # don't forget Enter!
+tmux capture-pane -t <name> -p
+```
+
+Note: For Claude Code sessions, you may need to send Enter again after a short delay to ensure the prompt is submitted.
+
+## Long-running Jobs
+
+If you need to wait for a long-running job, use sleep commands with manual exponential backoff: wait 1 minute, then 2 minutes, then 4 minutes, and so on.
+
+# Python
+
+Use Python 3.12 whenever Python is needed.
+
+# Claude Code versions
+
+When asked about new versions, use `npm view @anthropic-ai/claude-code version`
+
+# Claude for Chrome
+
+- Use `read_page` to get element refs from the accessibility tree
+- Use `find` to locate elements by description
+- Click/interact using `ref`, not coordinates
+- NEVER take screenshots unless explicitly requested by the user

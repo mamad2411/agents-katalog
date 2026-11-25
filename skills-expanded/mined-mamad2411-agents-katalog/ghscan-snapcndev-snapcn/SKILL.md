@@ -1,0 +1,88 @@
+---
+title: Agent Skill
+seoTitle: Agent Skill — better Remotion videos from your AI
+description: Install the snapcn agent skill with skills.sh so your AI generates better Remotion videos
+---
+
+snapcn ships an **agent skill** — a knowledge pack that teaches AI coding agents (Claude Code and
+friends) how to build videos with snapcn: the full component catalog with props and durations,
+design defaults, motion-design principles, and common anti-patterns.
+
+Once installed, your agent picks the right components, budgets the timeline correctly, and styles
+your additions to match the library — without you pasting context every time.
+
+## Install with skills.sh
+
+The skill lives in the [`skills/`](https://github.com/snapcndev/snapcn/tree/main/skills) folder of
+the snapcn repo. Install it with the [`skills`](https://skills.sh) CLI:
+
+```bash
+npx skills add snapcndev/snapcn
+```
+
+The CLI asks which skills and which agent to install them into (for Claude Code that is
+`.claude/skills/<name>/`). `snapcn` is the catalogue; the six below are workflows built on it.
+
+## Workflow skills
+
+Each one takes a brief to a finished Remotion video, one snapcn component per beat, with a
+composition that typechecks and renders as written:
+
+| Skill | For | Install |
+|---|---|---|
+| `remotion-launch-video` | Launch films, announcements, Product Hunt and X promos | `npx skills add snapcndev/snapcn --skill remotion-launch-video` |
+| `remotion-product-demo` | Walkthroughs from a real screen recording, CLI and AI-app demos | `npx skills add snapcndev/snapcn --skill remotion-product-demo` |
+| `remotion-motion-graphics` | Kinetic type, logo stings, stats and short openers | `npx skills add snapcndev/snapcn --skill remotion-motion-graphics` |
+| `remotion-kinetic-typography` | Animated text and title cards | `npx skills add snapcndev/snapcn --skill remotion-kinetic-typography` |
+| `remotion-logo-animation` | Logo reveals, intro and outro stings | `npx skills add snapcndev/snapcn --skill remotion-logo-animation` |
+| `remotion-explainer-video` | Narrated explainers with burned-in captions | `npx skills add snapcndev/snapcn --skill remotion-explainer-video` |
+
+## Claude Code plugin
+
+The same skills install as a Claude Code plugin:
+
+```bash
+/plugin marketplace add snapcndev/snapcn
+/plugin install snapcn@snapcn
+```
+
+With snapcn Pro, `snapcn-mcp@snapcn` adds the MCP server. Set `SNAPCN_API_KEY` (from
+[your account](https://snapcn.dev/account)) in your environment first.
+
+### Common flags
+
+```bash
+# Install globally (available in every project)
+npx skills add snapcndev/snapcn --skill snapcn -g
+
+# Target a specific agent
+npx skills add snapcndev/snapcn -a claude-code
+
+# Confirm what the repo publishes
+npx skills add snapcndev/snapcn --list
+```
+
+### Use without installing
+
+To try it for a single session without writing files:
+
+```bash
+npx skills use snapcndev/snapcn@snapcn | claude
+```
+
+## What's inside
+
+| File | Contents |
+|---|---|
+| `SKILL.md` | Install flow, the two tiers, categories, patterns, design defaults |
+| `references/components/` | One file per component — props, defaults, example, use / don't-use — plus `index.md`, the router table |
+| `references/archetypes/` | Per-archetype build recipes (product demo, changelog, logo bumper…) |
+| `references/anatomy.md` | Composing a full video: strategy, the product-demo beats, the quality bar |
+| `references/design.md` | Anti-slop design defaults + tokens (palette, fonts, canvas) |
+| `references/motion-principles.md` | The 12 motion principles adapted to snapcn |
+| `references/anti-patterns.md` | Common generation mistakes and their fixes |
+
+## Prerequisites
+
+- An AI agent that loads skills (e.g. Claude Code).
+- A Remotion project with snapcn — see [Installation](/docs/getting-started/installation).

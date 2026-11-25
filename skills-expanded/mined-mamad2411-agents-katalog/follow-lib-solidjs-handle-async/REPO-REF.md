@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-newkub-devin-skills/handle-async/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: SolidJS async — createResource, Suspense, lazy loading, streaming SSR, error handling

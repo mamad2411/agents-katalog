@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-brycewang-stanford-Awesome-Journal-Skills/jde-identification-strategy/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when the causal identification strategy is the bottleneck for a Journal of Development Economics (JDE) manuscript — RCT/field experiment, DID, IV, RDD in low- and middle-income settings. Stress-te

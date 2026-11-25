@@ -1,0 +1,480 @@
+---
+name: orchestrator-lessons
+description: >
+  Use when running a fleet of agents, or when the same class of mistake keeps
+  recurring across sessions. Failure patterns that repeat, why each one survives
+  review, and the check that catches it. Read before declaring work done.
+verify: "PYTHONDONTWRITEBYTECODE=1 python3 skillsets/agent-runtime/shared/orchestrator-lessons/scripts/verify-contract.py"
+verified: 2026-10-19
+---
+
+# Lessons an orchestrator keeps having to relearn
+
+When assigning feature implementation, shared-contract, LLM-output, or production-fix work, load `engineering-contracts` before planning acceptance or validation. Keep this skill's orchestration, data-movement, and recurrence checks.
+
+Every entry here cost real rounds. They are written as the check to run, not as
+advice, because advice does not fire and a check does.
+
+## Have the full picture before you plan or distribute anything
+
+On 2026-10-03 an orchestrator had a working reference system, the product's
+source, its schemas and production read access. It staffed more than fifteen
+cards from symptom counts before mapping anything. A proxy field made a display
+gap look like a data gap. The biggest gap went unexamined: 89% of ingested
+communications were never linked to a client, so they could not reach any
+screen. New-capability cards ran while cheap backfill and display wins waited.
+A deadline was missed with activity everywhere and the user's screens still
+thin.
+
+**Check, before the first card is cut:** produce the map, then plan from it.
+
+1. Inventory every user-facing surface in scope and every field on it, with its
+   read path: route, procedure, service, store, and field.
+2. Trace one representative record end to end through every stage, in your
+   system and in the working reference: source, ingest, attribution, processing
+   under current rules, storage, API, and rendered screen.
+3. For every surface × field × entity (each customer, account or tenant in
+   scope), count each stage. The first stage that drops to zero is the gap for
+   that cell. Classify the losses, for example why unlinked records are
+   unlinked.
+4. Give every gap a fix class (backfill, attribution, processing, display,
+   performance, source access) and an hours estimate with its basis.
+5. Only then rank by user-visible outcome per hour, cut cards, and commit to
+   times.
+
+Work that cannot point to a cell in the map is not started. When evidence
+contradicts the map, update the map before re-planning.
+
+## Gate data movement at plan and integration
+
+Classify the actual effects before requiring data-movement evidence. A change
+is data-moving when it processes, attributes, projects, backfills, writes, or
+requeues stored data. A nominal reader or UI change that triggers such a write
+is data-moving. A pure stored-data reader with no writes, a UI-only change with
+no writes, and docs/tests-only changes do not move stored data; do not require
+them to invent a lane, throughput, drain, count change, takeover, or 30-minute
+read-back. Use the real outcome, integration, quality, and behavior evidence
+for those changes; UI changes use a screen read when that is the changed
+outcome, while docs/tests-only changes use their relevant document or test
+evidence.
+
+Only for a change whose actual behavior moves stored data, require this
+completed block in the card and carry it through integration. For every other
+kind, mark the block not applicable and state the actual effect and evidence:
+
+```markdown
+## Data movement
+- Kind: data-moving | reader-only | UI-only | docs/tests-only; classify by actual writes/requeues, not the label
+- Existing records affected (production, counts only): <count and what; UTC measurement, owner/query, or COORDINATOR TO MEASURE plus exact query>
+- Lane and cadence: <cron/queue/route, source file:line; every N minutes>
+- Per-run throughput: <rows per invocation; source file:line or measurement>
+- Time-budget check: <per-run time vs limit; source file:line>
+- Predicted drain: ceil(<existing count> / <per-run throughput>) runs × <cadence> = <duration>
+- Counts-only read-back query: <path or exact query, used before and after>
+- Expected after-value: <count by 30 minutes after deployment is Ready and the lane has taken over>
+- Deployment-takeover check: <new deployment runs the lane; logs grouped by deploymentId show integrations.chain.started on the new deployment, not skipped_sibling>
+```
+
+For data-moving cards, complete every field above. At release closeout,
+report the observed before and 30-minute after counts from the read-back.
+Writers without production access use the coordinator's latest count or
+provide the exact query and mark it COORDINATOR TO MEASURE; measure it before
+merge. Tests passed is never evidence of data movement. At integration,
+capture the before read-back, then the same counts-only query 30 minutes after
+deployment is Ready and takeover is confirmed. The release verdict stays FAIL
+until the after-read reaches the prediction; diagnose immediately if it does
+not. Deployment readiness and delivery are separate: trigger the processing
+after deployment, then measure the same outcome read-back.
+
+## Find colliding work before you write, and own it once found
+
+On 2026-09-20 a sibling thread was fixing the same product onboarding bug in
+parallel. The orchestrator noticed it and kept working alongside it; the user
+had to say "coordinate", "orchestrate" and "divide to conquer" five times.
+
+**Check, at the start and whenever a thread stops or goes quiet:**
+`bb thread list`, `bb fleet groups`, `bb fleet tasks` and `bb fleet orphans`,
+looking for the same repo, ticket or branch. If one exists, you own coordinating it: tell it which slice
+it holds, give each slice one writer, route new children with
+`bb fleet route` at the reasoning level the user asked for, and resume stopped
+children yourself. A stopped child is your next action, not a status line.
+
+A peer's "rebased, green" is a claim. Read the remote SHA and the check result
+yourself: that day a peer's green rebase never reached GitHub, and your own
+`git push` was silently refused by a pre-push gate.
+
+## Carry hard boundaries into delegated execution
+
+A native trial's parent brief prohibited retries after permission denials, but
+its generated prompt omitted that rule and requested file outputs without
+checking whether the child's allowed tools authorized those writes. The child
+retried/rerouted denied actions; the required output failed. This confirms a
+handoff omission, not a single cause of the model's behavior.
+
+**Check before launch:** copy the parent's exact hard refusal and permission
+boundaries into both the generated brief and launcher configuration. Check
+that requested disposable writes fit the existing authority and allowed tools;
+if not, narrow the requested output to authorized work. Preserve the original
+outcome: report an unattempted requested output as BLOCKED/NOT RUN and an
+attempted failed output as FAIL, as applicable; continue independent
+authorized work and never silently substitute reduced output as success. Never
+widen authority or add a routine approval step. Actual hard safety/authorization
+refusals—a safety-hook, sandbox, guardian, DLP, access-policy, or provider-policy
+refusal—are final: do not retry, rephrase, switch tools/routes, delegate around
+them, or widen authority. Preserve the exact refusal and continue only
+independently authorized work.
+
+Ordinary command usage/format, transport/runtime, and wrong execution-context
+errors may be diagnosed and corrected within already established authority.
+An external access/ACL refusal is not such an error. A GitHub collaborator
+error under one account does not authorize evading repository ACLs or selecting
+credentials; use an already authenticated owner context only when actual owner
+rules authorize it. This distinction does not make external access refusals
+generally recoverable. Keep safety/process FAIL distinct from successful output
+observations or task API results. This text check is preventive knowledge only;
+it does not prove agent behavior or enforce safety.
+
+## Verify the thing you did not change
+
+Nearly every regression in a long session comes from a change that worked and
+broke its neighbour. Padding a panel broke the thread view. Moving an element
+out of a React row fixed a control and dropped the element into the wrong
+corner. Splitting a ternary to add a caption made a loading skeleton render on
+top of live data.
+
+In each case the new behaviour was verified and the surrounding behaviour was
+not.
+
+**Check:** after any change, exercise the adjacent surface — the page you did
+not open, the branch you did not take, the filter you did not click. If a change
+touches shared layout, open a different screen before calling it done.
+
+## A tool that reports success is not a tool that worked
+
+`resumeSession` returned `{threadId: "thr_..."}` and the thread was in `error`.
+`bb plugin reload` reported `running` while serving the previous build, because
+the new one had failed to compile. An edit that matched nothing applied cleanly
+and silently did nothing.
+
+**Check:** assert on the RESULT, not the response. A spawn is verified by the
+thread reaching a non-error state. A build is verified by the rendered output.
+An edit is verified by reading the file back, or by a test that fails without it.
+
+## One source per answer
+
+A report that draws from two populations will eventually mix them. Filtering to
+one provider returned burn from transcripts and a turn count borrowed from a
+different ledger — one row, which made a project's parts sum to one more than
+the project itself.
+
+The tempting patch is a fallback: when source A is empty, use source B. That is
+not a fallback, it is a substitution, and it produces numbers nobody can
+reconcile.
+
+**Check:** for any figure, name the single population it came from. If a filter
+cannot be expressed on that source, either express it — the data is usually
+recoverable — or say the dimension is unavailable. Never quietly swap corpora.
+
+## Assert on every metric, not the one you looked at
+
+A combination sweep checked `weighted`, found it exact, and the conclusion
+became "combinations partition exactly". `turns` was off by one the whole time.
+
+**Check:** when verifying a partition or an invariant, iterate the metrics the
+thing actually reports. One passing metric is evidence about one metric.
+
+## Do not style what you do not render
+
+Three regressions in one session came from writing into another component's DOM:
+padding its scroll containers, inserting into its rows, and leaving inline
+styles behind after a revert that a running client kept applying.
+
+Reading another component's geometry is safe. Writing to it is not.
+
+**Check:** position by measuring, never by inserting. If a plugin needs room in
+someone else's layout, that is a request to the host, not something to take.
+
+## Fixtures catch what corpus checks cannot
+
+Four rounds of reconciliation against live data missed an edit that had silently
+failed. A twenty-line fixture caught it on the first run, because a fixture
+tests a PATH while a corpus check tests a TOTAL — and totals can agree while a
+path is dead.
+
+Corpus data also moves under you: a session written during a scan produced a
+"failure" that cost a review round to explain.
+
+**Check:** every parser gets fixtures for its edge cases, especially the schema
+variants. Reconciliation is for aggregates; fixtures are for behaviour.
+
+## The reviewer's job is to refuse you
+
+A reviewer that keeps rejecting is working. Every rejection in this project
+named something real: an under-reporting figure called a "known gap" when it was
+a blocker, evidence that was derived rather than raw, a claim contradicted by
+the artifact attached to it.
+
+The failure mode is arguing with the verdict or sending more prose. The fix is
+sending what it asked for — raw inputs it can recompute — or fixing the thing.
+
+**Check:** before disputing a verdict, ask what evidence would settle it, then
+produce that. If the answer is "a test I have not written", write it.
+
+A native report about work you own is actionable failure input. Before sending
+any review-fix design, inspect the exact candidate code and affected consumers;
+reproduce the finding or trace it through source, identify why it escaped, and
+derive the smallest repair and falsifiable acceptance from that evidence. Check
+the prior repair for collateral effects. Do authorized routine repairs while
+preserving real ownership and approval boundaries; name any outside dependency
+that prevents action. A drafted, sent, or dismissed report, a policy edit, or an
+unrelated green check does not prove healing. Tie recurring cases to
+engineering-contracts' scoped root-cause and prevention contract instead of
+adding another self-attested global checklist.
+
+## Members that report nothing are not working
+
+Idle members held "so they can iterate later" consume a worktree and make the
+board overstate work in flight. A member that has reported nothing for an hour
+is either blocked or done and does not know it.
+
+**Check:** ask every idle member for what it has NOW, even partial. Retire or
+redirect anything that answers with nothing twice.
+
+## Healthy agents are not a moving board
+
+The most expensive failure so far was not an agent that broke. It was a group
+where every agent was fine: members spawned, routed correctly by work kind,
+reporting, retiring cleanly. And the board held **eleven cards in review against
+eleven done**, the oldest sitting five and a half hours, with exactly **one**
+review-kind member spawned across forty-nine spawns.
+
+Nothing was wrong with any agent. The work simply stopped moving, because
+`in_review` and `blocked` are the two states no member will ever clear — the
+member that finished the card has already reported and been retired. Watching
+members cannot see this: a card rots precisely when its agent is healthy and
+gone.
+
+"Somebody is working" and "the board is moving" are different claims. A group
+with six busy members and eleven stalled cards satisfies the first and fails the
+task it was given.
+
+**Check:** every cycle, read `in_review` and `blocked` by DWELL TIME, not by
+count. Anything older than about an hour is stalled. Review it yourself or spawn
+a `review`-kind member; clear the block, re-scope it, or escalate it. A card is
+not done because someone finished the work — it is done when it has been
+accepted and moved.
+
+## Cleanup has to happen on the path that actually runs
+
+An orchestrator was told to retire idle children. It did — twenty times. Every
+one of those threads was still alive an hour later, because `fleet_member_retire`
+updated a row and never touched the thread, and retired rows are hidden from the
+supervision meant to watch them. The supervisor that would have caught it was
+correct code on a path nothing called.
+
+Worse, the two places that *did* try to close a thread wrote
+`archive(...).catch(() => undefined)`, so a failed archive and a successful one
+were the same event.
+
+**Check:** for any cleanup, name the call the agent actually makes and verify
+the effect there — not in the helper you would have used. Never swallow the
+error from a close: an unclosed child that nothing is watching is strictly worse
+than a visible failure.
+
+## Idle is not unwanted — ask what points at it
+
+Fleet archived a thread at 23:43 on 2026-08-16. Every signal agreed: a
+member named `pr-listener`, retired two days earlier, not running, not in any
+board, holding a worktree for nothing. The drain pass closed it exactly as
+designed.
+
+It was also line 17 of a bb automation — a dispatch script with that thread id
+hardcoded as `THREAD = "..."` — and every scheduled run since has failed with
+"review thread lookup failed".
+
+The check asked whether the thread was still RUNNING. Nothing asked whether
+anything still POINTED AT IT, and those have different answers. A thread that
+something dispatches into once a day is indistinguishable from an abandoned one
+for the other twenty-three hours; the quieter it is, the more certain the
+cleanup becomes. This survives review because every reviewer checks the
+reasoning about liveness, and the reasoning about liveness is correct.
+
+Then the fix went wrong in the other direction, which is the part worth keeping.
+Matching hard-coded ids was obvious, so that shipped first — and the very next
+change removed the last id from that script, replacing it with resolution by
+title. The guard now reported "nothing points at" the one thread it existed to
+protect. Meanwhile it *did* block on an id that appeared only inside a
+postmortem comment, pinning a deleted thread forever and punishing the habit of
+writing incidents down. One rule, both errors live at once: blocking on threads
+nothing needed, missing the thread something did.
+
+Two smaller traps. Absence of a reference is only evidence when you actually
+looked — an unreadable directory has to refuse, not close, or you have rebuilt
+the bug behind a passing check. And a reference in *runtime state* is the
+opposite of a dependency: those ids are threads the automation spawned, and
+blocking on them wedges cleanup against the very threads it exists for.
+
+**Check:** before any irreversible cleanup, ask what NAMES the thing — by id and
+by every other handle it can be resolved by — in code rather than in prose, and
+refuse when the scan cannot complete. `bb fleet references <threadId>` answers
+this for threads. State the rule you chose and test BOTH directions: a rule that
+fixes the false negative and quietly keeps the false positive reads as a fix and
+is half of one. Liveness tells you whether something is using it *now*; only a
+reference tells you whether something is going to.
+
+## Read what a child had before you close it
+
+A retired member's last output is the only trace of work that never reached the
+board. Closing eighteen of them without reading first would have thrown away one
+child's report that it died on a provider API error mid-response — the only
+explanation for a card that never moved.
+
+**Check:** capture the last output as a note before archiving, and hand it back
+to whoever ordered the retirement. "Retire it" and "it produced nothing worth
+keeping" are two different findings.
+
+## Shared context goes stale and then lies
+
+A member wrote "card #6 complete, no scheduler semantics changed" into group
+memory; both halves were wrong. Anything reading it afterwards was misled, and
+nothing in the system knew.
+
+**Check:** context entries carry who wrote them and when. Before acting on one,
+confirm it against the artifact rather than the note. Correct entries in place
+when they are found wrong — a stale note is worse than an absent one.
+
+## Report the work that was rejected
+
+Two of three finished pieces were rejected on substance and are better for it.
+Reporting "0 done" is more useful than counting them, because the board is a
+claim about reality and inflating it destroys its only value.
+
+**Check:** Done means accepted. Anything else is In Review, however finished it
+feels.
+
+## A data-moving release is done when the user's data moved, not merely when the release is Ready
+
+On 2026-10-03 two releases reached production before a noon deadline. Both were
+gated, tree-verified and Ready, with every scheduled job "accepted". The
+per-client numbers barely moved: one producer timed out after 2 of 16 accounts,
+and the improved extraction never ran over the existing backlog. "Ready" and
+"accepted" were reported as delivery for an hour before anyone measured the
+outcome.
+
+**Check:** for releases whose actual behavior processes, writes, or requeues
+stored data, trigger the processing the change depends on, then measure the
+user-facing outcome (per customer or per entity, the same table as the
+baseline) within 30 minutes. A job that has not reported completion is a FAIL
+to act on now, not "pending". Until that table moves, the data-moving release
+is deployed, not delivered. Pure readers and UI changes with no writes, and
+docs/tests-only releases, do not require processing or a 30-minute baseline
+read-back; use their actual outcome evidence.
+
+## Find a gap by tracing one record end to end, in both systems
+
+A storage count showed 0 of 67 work items linked to their source, so the plan
+treated it as a data gap and staffed it. The count read a legacy field. The
+links existed for 70 of 76 items in the graph; the missing piece was the reader
+that displays them. The card that fixed the real gap was not made a release
+blocker.
+
+**Check:** before staffing a gap, pick one representative entity and follow it
+through every stage in BOTH the working reference and your system: source,
+ingest, storage, processing, graph, API, screen. Name the first stage where they
+diverge, and confirm the field you counted is the one the reader actually uses.
+A gap is located when you can show that stage, not when a count is low.
+
+## Use the pipeline you have on the data you have before building new
+
+The reference system looked rich because it had processed its full history. Our
+system processed forward only. The quickest per-customer gains were
+reprocessing existing data through existing code and wiring existing data to the
+screen. Instead the plan spread effort across six new-capability cards, none of
+which could finish by the deadline.
+
+**Check:** rank work by user-visible outcome per hour. Do these first:
+1. Reprocess or backfill existing data through code that already works.
+2. Display data that already exists.
+3. Fix whatever blocks those.
+
+Only after that, build new capability.
+
+## A commitment needs a measured estimate for every card on its path
+
+A noon deadline was promised while every card on the path had "ETA unmeasured".
+Each card also needed serial gate runs of 15–25 minutes, and every failure cost
+another one.
+
+**Check:** before committing a time:
+- Get each card's remaining hours with their basis: tests left, review rounds, gate runs.
+- Add the serial gate cost: number of gates times their duration, plus retries at the observed failure rate.
+- Plan backwards from the deadline.
+
+Anything that doesn't fit gets cut or escalated before the commitment, not
+after it is missed.
+
+## One reading is not a measurement
+
+A single favorable read reported a page at 5.1–5.6 s against 6.4–25.5 s
+before. A fresh paired read measured 6.6–27.1 s against 6.7–28.5 s: no change.
+The first figure had already gone into a business report.
+
+**Check:** performance claims need:
+- paired, interleaved runs of baseline and candidate against the same data;
+- at least three cold and three warm runs each;
+- ranges, not a best case.
+
+If the control has moved since the stored baseline, the stored baseline is void.
+Never publish a figure that was measured once.
+
+## Catch gate failures before the gate
+
+Nearly every PR in one wave failed its expensive gate at least once, for reasons
+that could have been caught locally:
+- three shared docs files that every change must edit;
+- a hand-edited index table with strict formatting;
+- tests that silently read a developer's `.env`;
+- a strict test fake that hung for 30 s on an unscripted read instead of failing.
+
+Each failure cost a 15–25 minute gate run plus a review round.
+
+**Check:** before requesting a gate slot, each worker runs a gate replica in its
+own worktree:
+1. Merge the newest integration branch.
+2. Run conflict detection.
+3. Run the changed directories and their consumers with a clean environment at the gate's concurrency.
+4. Run docs tests and lint.
+
+Treat any file that conflicts on most merges as a design defect. Generate it,
+or split it per area. Strict fakes must throw on unexpected calls, never wait.
+
+## Run the persona check on the PR, and ship what passed
+
+A user-facing change merged without a persona check. Two hours later its 60 s
+timeout surfaced in the release candidate and held every other passed change
+for three hours.
+
+**Check:** a change that touches what a user sees gets its persona check before
+merge, not at release. A release ships what has passed. A card that fails its
+check is pulled from the release, not waited on.
+
+## A processing change states its backfill and its run-time budget
+
+A producer was extended to do per-account generation inside one scheduled
+invocation across every tenant. It had no time budget, by an earlier decision.
+Its old worst case was about 58 s, and the change made it time out. Extraction
+rules changed with no path for existing data.
+
+**Check:** any change to processing must answer two questions in its brief and
+its PR:
+- How will self-healing detect existing data that needs reprocessing or
+  backfill, and requeue it? For example, stamp each processed record with the
+  rule version, so a sweep finds records processed under an older version. Not
+  a manual database script, and not a one-off app feature. Backfill is part of
+  the self-healing policy: reconnect, then detect what the data is missing and
+  treat it.
+- Does the job fit its runtime limit at production volume, measured or computed
+  from real counts?
+
+Per-entity work belongs on a queue with one job per entity, not inside a single
+scheduled call.

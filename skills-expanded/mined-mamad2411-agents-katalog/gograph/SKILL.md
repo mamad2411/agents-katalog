@@ -1,0 +1,267 @@
+---
+name: gograph
+version: "0.1.0"
+description: "Go repository intelligence for Claude Code. Use when reading, navigating, editing, reviewing, or refactoring a Go codebase. Exposes 64 query, analysis, and workflow capabilities through the local gograph MCP server, including bounded first-call exploration, AST-aware call graphs, blast-radius analysis, impact, and security-flow candidates."
+argument-hint: "gograph stats | gograph plan UserService.Login | gograph review --uncommitted"
+allowed-tools: Bash, Read
+homepage: https://gograph.identuum.ai
+repository: https://github.com/ozgurcd/gograph
+author: ozgurcd
+license: MIT
+user-invocable: true
+---
+
+# gograph: Go Repository Intelligence
+
+`gograph` is a local, AST-aware Go code intelligence engine that exposes 64 query, analysis, and workflow capabilities over the Model Context Protocol (68 endpoints including session lifecycle). It gives terminal LLMs (Claude Code, Cursor agents, OpenClaw) a structural view backed by a persisted or in-memory graph. `gograph_explore` offers compact, standard, and deep bounded discovery over one shared native result: compact preserves identity/role and complete counts, standard includes source/direct evidence and exact impact, and deep adds depth-3 exact evidence, package context, and explanation. `gograph_context` remains the focused known-symbol bundle. Actual savings depend on the task.
+
+`gopls` provides live compiler-backed navigation, diagnostics, implementations,
+refactoring, and experimental MCP support. `gograph` complements it with a
+persisted repository graph, composed change-analysis workflows, and policy
+gates for coding agents.
+
+## When to invoke this skill
+
+Activate whenever the user is working in a Go repository:
+
+- Reading code, asking what a function does, or tracing a behavior across files.
+- Planning, editing, refactoring, or deleting any Go symbol (function, method, struct, interface, package).
+- Reviewing a Go diff or unstaged changes.
+- Hunting a bug, auditing for security issues, or measuring complexity / coupling.
+
+If a `.go` file is in the CWD or the user mentions a Go symbol, type, package, or interface by name, the skill applies.
+
+Do NOT invoke for non-Go work. The skill is Go-scoped.
+
+## Prerequisite
+
+For unrelated broken packages, use `gograph build . --precise --strict --exclude-dirs=legacy,examples/broken`. Pass the same
+`--exclude-dirs` to MCP startup and verify `analysis_build_context.exclude_dirs`
+in capabilities. Paths are literal root-relative subtrees; imported dependencies
+still must compile. Excluded code is outside the census. Workspace members use
+`exclude_dirs` in their manifest. See `docs/build-selection.md`.
+For symlinked skills in v1.7.2+, exclude their real parent, for example
+`--exclude-dirs=.claude/skills`. Precise production/test loading masks directory
+links beneath it without following targets. Linked Go inputs/metadata remain
+errors, and an existing Go overlay conflicts with masking. `doc` retains its
+independent strict preflight. Codex setup: `docs/codex-integration.md`.
+
+The gograph binary must be installed and on `$PATH`:
+
+```bash
+go install github.com/ozgurcd/gograph/cmd/gograph@latest
+```
+
+Verify the active installation with `gograph doctor --json`; it reports the
+running binary, PATH resolution, shadowed copies, and—inside a repository—the
+current graph's freshness, analysis capabilities, and diagnostic without
+executing alternate binaries.
+The marketplace plugin supplies this workflow
+guidance; it does not install the binary or register an MCP server. Register
+`gograph mcp <project-path>` for each project using the client's MCP setup.
+Packaged and generated registrations keep refresh persistence off by default.
+
+## Mandatory workflow (enforced)
+
+1. **At the start of any Go coding session**, run CLI `gograph doctor --json`
+   to detect installation shadowing, then invoke `gograph_capabilities` to
+   confirm what the connected server exposes.
+2. **Confirm graph health** before symbol queries. MCP creates an in-memory AST
+   graph when the artifact is missing, unreadable, unsafe, or has an unsupported
+   source-policy marker, and refreshes source analysis per call. Invoke
+   `gograph_stats` with no parameters and require `build_status=complete`; a
+   build with zero successful parses never replaces the previous graph, while
+   partial failures are reported explicitly. When durable precise enrichment
+   is needed, run CLI `gograph build . --precise`; use
+   `gograph build . --precise --strict` when CI must fail on fallback. If
+   compilation prevents precision during exploratory work, use CLI
+   `gograph build .` and explain the fallback.
+3. **For unfamiliar structural questions, invoke `gograph_explore` first; for complete structural symbol / type / function discovery, use `gograph_query` instead of `grep`, `rg`, `find`, or glob.** Start with `compact=true` when identity and evidence counts are enough; use standard mode for direct evidence or `deep=true` for bounded depth-3 exact evidence, package context, and explanation. Compact/deep are mutually exclusive and default to 5/25 rows versus standard's 10; an explicit limit overrides the mode default. `gograph_explore` discloses lexical selection, ambiguity, totals, truncation, and omissions; follow with a focused tool when a complete section is needed. Text search also matches comments and string literals; `gograph_query` returns AST-derived matches. Continue to use text search for literal strings, documentation, ordinary non-sensitive configuration, and non-Go files.
+4. **Before editing any Go symbol**, invoke `gograph_plan` with
+   `symbol=<symbol>`. The plan returns callers, tests connected to the symbol,
+   and a blast-radius estimate. Edit decisions should reference the plan.
+5. **To understand a function or method**, invoke `gograph_context` with
+   `symbol=<symbol>`. This single call combines node + source + callers +
+   callees + statically mapped tests; inspect source or `gopls` when the
+   evidence is incomplete.
+6. **After editing Go code**, invoke `gograph_review` with `uncommitted=true`;
+   MCP refreshes source analysis before the review. If the task requires a
+   durable precise artifact for later CLI or server processes, run CLI
+   `gograph build . --precise` first. Run the repository's required tests and
+   checks separately.
+
+MCP responses carry graph provenance in `_meta` and native structured content
+where supported. Common bounded row lists use `gograph.results.v1`; native
+explain/changes retain their schemas. Other legacy results retain a
+`gograph.mcp-result.v1` (source/context instead use `gograph.read.v1` with the answer or refusal) structured companion. Inspect the accompanying
+`graph_state` before using an absence or broad impact result: `source`,
+`freshness`, `completeness`, and `precision` are independent. A current
+in-memory fallback and a trusted stale persisted result are intentionally
+usable but degraded; disclose them and cross-check important negatives. A
+different effective Go build context fails closed rather than being served.
+CLI graph-backed `--json` responses expose the same
+`gograph.graph-state.v1` object at the envelope top level.
+
+## High-value tools
+
+Uncommitted modes compare declarations against `HEAD`. Incomplete comparisons,
+deleted declarations needing historical caller evidence, and missing/ambiguous
+current identities are explicit errors, not empty successful reviews. Inspect
+`gograph_changes` with `git_ref=HEAD` for deletions; rebuild before traversing
+new declarations. CLI uses the same rules.
+
+| Tool | Use case |
+|---|---|
+| `gograph_capabilities` | Record the running server version and discover what it exposes |
+| `gograph_explore` with `query=<term-or-symbol>` | Compact/standard/deep bounded discovery with shared CLI semantics; start compact and deepen only when needed |
+| `gograph_query` with `term=<term>` or `terms=[...]` | AST-derived structural symbol search |
+| `gograph_context` with `symbol=<symbol>` | Node + source + callers + callees + tests in one call |
+| `gograph_plan` with `symbol=<symbol>` | Pre-edit blast radius + callers + tests |
+| `gograph_review` with `uncommitted=true` | Post-edit coverage check |
+| `gograph_impact` with `symbol=<symbol>` | Canonical upstream identities with exact/possible labels; `exact_only=true` excludes uncertain paths |
+| `gograph_callers` / `gograph_callees` with `function=<symbol>` | Explicit call-graph traversal |
+| `gograph_implementers` with `interface=<interface>` | Type-checked production implementers plus AST-discovered test fakes; set `test_only=true` for only fakes |
+| `gograph_usages` with `type=<type>` | Signature, field, interface-method, and composite-literal uses; use `gograph_literals` for only construction sites |
+| `gograph_routes` with optional `term`, `module`, `include_tests`, `limit`, `cursor` | Bounded production-first HTTP route pages; root repositories and nested modules accept directory-name selectors; follow `next_cursor` for all rows (CLI `--files-only` is a file census) |
+| `gograph_sql` with optional `term`, `tables[]`, `verbs[]`, `accesses[]`, `function`, `module`, `no_tests`, `limit`, `cursor` | Bounded PostgreSQL static SQL pages, including statically resolved declarations/concatenations, with explicit operation/table classification; follow `next_cursor` for a complete census |
+| `gograph_complexity` | Cyclomatic complexity per function |
+| `gograph_godobj` | God-object detection |
+| `gograph_coupling` | Package coupling / instability scores |
+| `gograph_diagram` | Mermaid architecture diagrams |
+| `gograph_errors` with optional `term=<term>` | Error inventory |
+| `gograph_errorflow` with `query=<term>` | Error propagation paths |
+| `gograph_flow` | Potential HTTP/JSON/env paths to SQL, process, filesystem, and outbound HTTP sinks |
+| `gograph_changes` | Declaration add/modify/delete/excluded/unknown census against persisted graph or `git_ref`; require `evaluation=complete` before treating the result as exhaustive |
+| `gograph_tests` with `symbol=<symbol>, transitive=true` | Every test statically reaching a symbol, with exact/possible path and depth; omit `transitive` for direct edges, where `Receiver.Method` and stable IDs are accepted |
+| `gograph_coverage` with `test=<TestFunc>` | Transitive product symbols one unambiguous test statically reaches; exact/possible paths; optional `package` disambiguation |
+| `gograph_identity` with `symbol=<symbol-or-stable-id>` | Print or re-resolve canonical symbol identity without silently choosing ambiguity; optional `package` disambiguation |
+| `gograph_check` | Policy checks, including changed-route tests, coverage, orphans, API drift, arity, and complexity |
+
+The live surface is 68 MCP endpoints; `gograph_capabilities` is the tested source of truth. `gograph_flow` is path-insensitive with bounded call-site matching; use it for security review leads, not exploitability proof.
+Common list tools (including query, callers/callees, impact, types/usages,
+errors/envs, and httpcalls) default to 100 rows, maximum 200, within a 16 KiB
+native-page budget. Inspect `total`, `returned`, `truncated`, and `next_cursor`;
+follow cursors with the same snapshot and filters for a complete census.
+Changing page size is allowed. Snapshot or selection changes reject old cursors;
+restart the census. Never combine pagination with `mermaid` or `files_only`.
+Routes and SQL retain their specialized 64 KiB page contracts.
+`gograph_explain` returns ambiguity candidates instead of selecting a name twin.
+`gograph_changes` reuses recorded platform/build tags and rediscovers current
+module ownership; missing legacy selection or a racing source tree makes its
+evaluation incomplete. CLI incomplete changes exit 2.
+
+`gograph_httpcalls` retains bounded lexical URL-base/static-suffix evidence and
+labels `NewRequest`/`NewRequestWithContext` as request construction, not dispatch
+proof. Workspace `http_clients` explicitly maps bases (`cfg.API`, `env:API_URL`)
+to logical authorities in the selected scope; no environment values are read.
+Workspace query retains `http_unresolved` diagnostics; verified status includes
+per-scope unresolved counts. Such diagnostics never participate in traversal.
+The four `gograph_workspace_*` tools require a separate workspace server and
+share native values with CLI workspace status/query/path/impact.
+For `gograph_callers`, `gograph_callees`, `gograph_impact`,
+`gograph_endpoint`, `gograph_dependents`, `gograph_deps`, `gograph_path`, and
+`gograph_coupling`, set `mermaid=true` to request Markdown-fenced Mermaid
+instead of the tool's normal response.
+
+CLI `path` and MCP `gograph_path` share deterministic best-path selection:
+exact before possible, then shorter, production before tests, typed resolution
+before heuristics, and a canonical tie-breaker. Workspace path adds fewer
+cross-repository transitions as the final semantic preference.
+
+## Privacy
+
+Graph artifacts and MCP transport are local. Indexing asks the installed Go
+toolchain for effective build/module context; precise mode additionally
+type-loads packages, and `doc` runs `go doc`. These operations follow the
+configured module-cache and network policy and remain open-world. Indexing reads Go
+source and ordinary project/gograph metadata; it does not intentionally scan
+`.env`, key, certificate, kubeconfig, tfstate, or credential files. It respects
+`.gitignore` and skips AI-agent worktree directories automatically. See
+`PRIVACY.md` in the gograph repo for details.
+
+Linked directories and linked/special files for recognized Go build inputs are
+excluded; unrelated regular-file or dangling non-Go links do not block
+precision. AST and graph-directed source reads are confined to regular files beneath the analyzed repository;
+an explicitly symlinked repository root remains supported. Persisted
+`graph.json` must also be a regular repository-confined file, and publication
+refuses a linked or non-directory `.gograph` and linked/non-regular lock files.
+The automatic `.gitignore` update rejects links rather than modifying their
+targets. Linked/non-regular `go.mod`, `go.sum`, `go.work`, `go.work.sum`, and
+`vendor/modules.txt` metadata is rejected before gograph or the Go toolchain
+reads it. Applicable `go.work use` members may be sibling modules beneath the
+nearest real Git checkout; without one they remain beneath the workspace
+directory. Nested Git boundaries are not crossed, and each member directory,
+`go.mod`, and optional `go.sum` is validated before `cmd/go`. A persisted graph with a missing
+or unsupported source-policy marker must be rebuilt before graph-backed tools
+use it, and its serialized root is ignored. Saved `.json` baselines for
+`gograph_api` and `gograph_check` must be regular, non-linked files inside the
+selected project with the exact current marker; their serialized roots are
+also ignored. Use the current binary for untrusted repositories. Precise
+repository package loading and `go doc` are refused when source/metadata-link
+validation fails; their preflight rejects source-tree links without following
+targets that `cmd/go` may inspect across the selected root plus its effective
+module root, or the workspace root and member trees; `.git` and
+`.gograph` are excluded from that walk. `doc` also rejects filesystem-shaped queries.
+
+Most MCP tools are read-only. Boundary creation writes configuration, session
+create/end mutate telemetry, session cleanup deletes stale logs, and
+`gograph_wiki` writes documentation; their MCP annotations declare those
+effects. Repository-controlled session, snapshot, boundary, gate-init, and
+relative wiki paths use rooted regular-file operations and reject linked path
+components. Absolute wiki output is an explicit local destination whose
+generated descendants remain confined beneath its real directory. Wiki
+regeneration prunes obsolete generator-owned package pages while preserving
+custom pages and `packages/README.md`.
+
+An operator can opt into durable MCP refreshes with
+`gograph mcp [path] --persist-refresh`. After a successful refresh this writes
+or overwrites `.gograph/graph.json` and the nine reports, without modifying
+`.gitignore`. Refresh-capable tools then advertise that they may write. A
+publication failure during a tool-triggered refresh is reported as
+`persistence.outcome=failed`; the fresh in-memory result remains usable and the
+write is retried on a later refresh-capable call without rebuilding. If startup must auto-build, failure to publish prevents the server from
+starting. A failed precise retry retains an already-fresh successful precise
+artifact for the same sources. The artifact is the latest state only, not a
+branch cache. Because default `gograph_changes` compares the working tree with
+the persisted graph,
+a successful publication also advances that comparison baseline. Reports are
+replaced first and `graph.json` is replaced last as the publication marker.
+Same-directory replacement is atomic on Unix-like systems but is not guaranteed
+atomic by Go on non-Unix platforms; the complete ten-file bundle is not one
+atomic transaction, and `.artifacts.lock` remains as separate operational state.
+The server must start under the same effective `GOWORK`, `GOFLAGS`, and tag
+selection used by the persisted graph; a mismatch is stale and must refresh
+successfully or return a diagnostic rather than silently serving incompatible
+facts.
+
+Queries pin immutable graph/provenance snapshots while refresh is serialized.
+Cancellation reaches Go loading and pre-publication checks; a started artifact
+commit finishes its set, without promising rollback. Derived indexes are cached
+for the current fingerprint; workspace verification receipts never bypass source
+freshness, path confinement, module ownership, or artifact-byte checks.
+After installing a new binary, restart the MCP server and verify
+`gograph_capabilities.version`; an existing process does not hot-reload schemas.
+
+## Anti-patterns
+
+- Treating text search or gograph as universally authoritative. Use gograph
+  first for supported structural queries; use `gopls` or targeted source/text
+  search when precision is AST/fallback, results are ambiguous, or a known call
+  is missing. Use text search directly for literals, comments, generated or
+  non-indexed files, and non-Go content.
+- Editing a Go function without `gograph_plan` first. This can miss relevant callers and downstream tests.
+- Skipping `gograph_review` with `uncommitted=true` after a multi-file change
+  and therefore missing a useful static review signal.
+- Repeating broad source reads when `gograph_context` with `symbol=<symbol>` can provide a
+  focused structural starting point.
+- Assuming MCP refreshes are durable, or that `--persist-refresh` caches branch
+  history. Default registrations refresh only in memory, and the opt-in mode
+  keeps one latest artifact set.
+
+## Why this exists
+
+Coding agents often need a symbol's source, callers, callees, tests, and role at
+the same time. `gograph_context` combines that indexed evidence in one response.
+Measure tool calls, actual model tokens, false positives, false negatives, and
+task success on your own repository; gograph output remains static-analysis
+evidence rather than runtime proof.

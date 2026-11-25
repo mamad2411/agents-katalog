@@ -1,0 +1,4351 @@
+# NeuroSkill™ CLI — Complete Reference
+
+NeuroSkill™ exposes a real-time EEG analysis API through a local WebSocket server and an HTTP tunnel.
+The `cli.ts` script is the fastest way to query it from a terminal, shell script, or any
+automation pipeline.
+
+---
+
+## Contents
+
+1. [Supported Devices](#supported-devices)
+2. [Transport — WebSocket & HTTP](#transport--websocket--http)
+3. [Quick Start](#quick-start)
+4. [Output Modes](#output-modes)
+   - [Default — summary only](#default-no-flag--human-readable-summary-only)
+   - [`--json` — raw JSON, pipe-safe](#--json--raw-json-only-pipe-safe)
+   - [`--full` — summary and JSON](#--full--human-readable-summary-and-colorized-json)
+   - [What `--full` reveals](#what---full-reveals)
+5. [Global Options](#global-options)
+6. [Polling with `status`](#polling-with-status)
+7. [Commands](#commands)
+   - [status](#status)
+   - [session](#session)
+   - [sessions](#sessions)
+   - [say](#say)
+   - [label](#label)
+   - [hooks](#hooks)
+   - [search-labels](#search-labels)
+   - [interactive](#interactive)
+   - [search](#search)
+   - [compare](#compare)
+   - [sleep](#sleep)
+   - [sleep-schedule](#sleep-schedule)
+   - [umap](#umap)
+   - [listen](#listen)
+   - [notify](#notify)
+   - [calibrations](#calibrations)
+   - [calibrate](#calibrate)
+   - [timer](#timer)
+   - [health](#health)
+   - [dnd](#dnd)
+   - [raw](#raw)
+   - [search-images](#search-images)
+   - [screenshots-around](#screenshots-around)
+   - [screenshots-for-eeg](#screenshots-for-eeg)
+   - [eeg-for-screenshots](#eeg-for-screenshots)
+8. [Screenshots](#screenshots)
+9. [Data Reference](#data-reference)
+   - [EEG Band Powers](#eeg-band-powers)
+   - [EEG Ratios & Indices](#eeg-ratios--indices)
+   - [Core Scores](#core-scores)
+   - [Complexity Measures](#complexity-measures)
+   - [PPG / Heart Rate Variability](#ppg--heart-rate-variability)
+   - [Motion & Artifacts](#motion--artifacts)
+   - [Sleep Stages](#sleep-stages)
+   - [Migraine EEG Correlate](#migraine-eeg-correlate)
+   - [Consciousness Metrics](#consciousness-metrics)
+10. [Use-Case Recipes](#use-case-recipes)
+   - [Focus & Productivity](#focus--productivity)
+   - [Stress & Anxiety](#stress--anxiety)
+   - [Sleep Quality](#sleep-quality)
+   - [Cognitive Load](#cognitive-load)
+   - [Meditation & Relaxation](#meditation--relaxation)
+   - [Comparing Two Sessions](#comparing-two-sessions)
+   - [Time-Range Queries](#time-range-queries)
+   - [Automation & Scripting](#automation--scripting)
+
+---
+
+## Supported Devices
+
+NeuroSkill™ supports multiple EEG headsets.  The CLI and API work identically
+regardless of which device is connected — all commands, scores, and metrics are
+device-agnostic.
+
+| Device | Channels | Sample Rate | Connection | Notes |
+|---|---|---|---|---|
+| **Muse** (S, 2, 2016) | 4 (TP9, AF7, AF8, TP10) | 256 Hz | BLE | Default device. PPG + IMU included. |
+| **OpenBCI Ganglion** | 4 | 200 Hz | BLE | Open-source research-grade board. |
+| **OpenBCI Cyton / Cyton+Daisy** | 8 / 16 | 250 Hz | Serial / WiFi | Full 10-20 montage capable. |
+| **Neurable MW75 Neuro** | 12 (FT7/T7/TP7/CP5/P7/C5, FT8/T8/TP8/CP6/P8/C6) | 500 Hz | BLE + RFCOMM | Noise-cancelling headphones with EEG. Behind `mw75-rfcomm` feature flag. |
+| **Vital Neuro** | 3 (ch1–ch3) | 250 Hz | BLE | Headphones with EEG; audio runs over a separate Bluetooth Classic link. Accelerometer + battery. Device reports no electrode montage. |
+| **RE-AK Nucleus Hermes** | 8 (Fp1, Fp2, AF3, AF4, F3, F4, FC1, FC2) | 250 Hz | BLE GATT | ADS1299 + 9-DOF IMU. |
+| **Emotiv** (EPOC/Insight/Flex/MN8) | 14 / 5 / 32 | 128 Hz | Cortex WebSocket | IMU included. Connected via Emotiv Cortex API. |
+| **IDUN Guardian** | 1 (bipolar in-ear) | 250 Hz | BLE | Single-channel earbud EEG + 6-DOF IMU. |
+| **Mendi** | — (fNIRS optical) | — | BLE | Frontal fNIRS headband with IMU + battery telemetry. Not traditional EEG. |
+| **Cognionics / CGX** (Quick-20/32r/8r, AIM-2, Patch) | 2–30 | up to 500 Hz | USB Serial (FTDI) | Research-grade; full 10-20 montage on Quick-20+. IMU on r/m variants. |
+| **AttentivU** | 4 ExG | 250 Hz | BLE | EEG glasses with 9-axis IMU. |
+| **BrainBit** (Original, 2, Pro, Flex 4/8) | 4 (O1, O2, T3, T4) | 250 Hz | BLE (NeuroSDK2) | Consumer EEG headband. |
+| **g.tec Unicorn Hybrid Black** | 8 | 250 Hz | BLE (Unicorn API) | Research-grade headset with IMU. |
+| **NeuroField Q21** | 20 | 256 Hz | PCAN-USB (CAN bus) | Full 10-20 montage. |
+| **BrainMaster** (Atlantis/Discovery/Freedom) | 2–24 | 256 Hz | USB Serial | Neurofeedback amplifiers. Discovery/Freedom support up to 24 channels. |
+| **NeuroSky MindWave** | 1 (Fp1) | 512 Hz | Serial (ThinkGear) | Single-channel consumer headset. |
+| **Neurosity** (Crown / Notion) | 8 (CP3, C3, F5, PO3, PO4, F6, C4, CP4) | 256 Hz | Cloud-streamed | IMU included. |
+| **Brain Products BrainVision** | 16 | 500 Hz | TCP/IP (RDA) | Research-grade; full 10-20 montage. |
+
+The DSP pipeline dynamically scales to the active channel count (1–32).
+Inactive channels have zero overhead.
+
+---
+
+## Transport — WebSocket & HTTP
+
+NeuroSkill™ runs a local server (auto-discovered via mDNS or `lsof`).  All commands work over
+**both** transports; the CLI picks the best one automatically.
+
+### WebSocket (`ws://127.0.0.1:<port>`)
+
+- **Full-duplex, low-latency.**  Best for live data, event streaming, and polling loops.
+- Commands are JSON messages sent over the socket; responses arrive as JSON messages.
+- Supports real-time broadcast events (EEG packets, scores, label-created, …).
+- Used by default when the server is reachable.
+
+```
+# Force WebSocket:
+node cli.ts status --ws
+
+# Direct WebSocket from any language (wscat example):
+wscat -c ws://127.0.0.1:8375
+> {"command":"status"}
+< {"command":"status","ok":true,"device":{...},"scores":{...},...}
+```
+
+### HTTP (`http://127.0.0.1:<port>/`)
+
+- **Request / response only.**  No live streaming, no broadcast events.
+- All commands are `POST /` with a JSON body; the response is JSON.
+- Useful from `curl`, Python `requests`, Node `fetch`, or any HTTP client.
+- Automatic fallback when the WebSocket is unreachable.
+
+```bash
+# Force HTTP:
+node cli.ts status --http
+
+# curl equivalent of every CLI command:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"status"}'
+
+# Extract a single field with jq:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"status"}' | jq '.scores.relaxation'
+```
+
+### Auto-transport (default)
+
+When neither `--ws` nor `--http` is given, the CLI probes WebSocket first and silently
+falls back to HTTP.  Informational lines are written to **stderr** (not stdout), so JSON
+piping is never polluted.
+
+### Port Discovery
+
+The CLI finds the port automatically via:
+1. `--port <n>` flag (explicit, skips all discovery)
+2. mDNS (`_skill._tcp` service advertisement, 5 s timeout)
+3. `lsof` / `pgrep` fallback (probes each TCP LISTEN port)
+
+```bash
+node cli.ts status --port 62853    # skip discovery entirely
+```
+
+---
+
+## Quick Start
+
+```bash
+# Prerequisites (run once):
+npm install
+
+# Snapshot of everything:
+node cli.ts status
+
+# Pipe-friendly JSON output:
+node cli.ts status --json | jq '.scores'
+
+# Print full help with examples:
+node cli.ts --help
+```
+
+> **Aliases:** `node cli.ts`, `npx tsx cli.ts`, and `./cli.ts` (after `chmod +x`) all work.
+
+---
+
+## Output Modes
+
+Every command has three output modes. Choose the one that suits your use case.
+
+### Default (no flag) — human-readable summary only
+
+The CLI prints a structured, colored, human-readable summary to **stdout**.
+The underlying raw JSON response is **not printed** — it is discarded after the
+summary is rendered.
+
+```bash
+node cli.ts status        # colored summary, no JSON
+node cli.ts session 0     # trend table, no JSON
+node cli.ts sleep         # stage counts, no JSON
+```
+
+This is the fastest way to read results at a glance, but data that the summary
+doesn't surface — such as per-epoch arrays, full reference objects, or every
+metric field — is silently dropped.  See [What `--full` reveals](#what---full-reveals)
+for a command-by-command breakdown.
+
+---
+
+### `--json` — raw JSON only, pipe-safe
+
+`print()` calls are suppressed entirely; only `printResult()` fires.
+Output is plain JSON with no ANSI codes, written to **stdout**.
+Informational lines (transport, connection, mDNS discovery) go to **stderr** and
+never pollute the JSON stream.
+
+```bash
+node cli.ts status --json                            # full JSON, no summary
+node cli.ts status --json | jq '.scores.relaxation'     # pipe to jq
+node cli.ts sleep  --json | jq '.summary'
+node cli.ts search --json | jq '.result.results[0].neighbors'
+node cli.ts umap   --json | jq '.result.points | length'
+```
+
+Use `--json` whenever you need to pipe output to another tool, parse it in a
+script, or feed it into an API.
+
+---
+
+### `--full` — human-readable summary **and** colorized JSON
+
+Both `print()` and `printResult()` fire. The human-readable summary prints first,
+then the complete colorized JSON response is appended below it.
+
+```bash
+node cli.ts status       --full   # summary + full colorized JSON
+node cli.ts session 0    --full   # trend table + raw first/second/trends objects
+node cli.ts sleep        --full   # stage counts + full epochs[] array
+node cli.ts umap         --full   # cluster analysis + full points[] array
+node cli.ts search       --full   # match summary + all neighbors for every query epoch
+```
+
+`--full` is the inspection mode: use it when you want to see which exact fields the
+server returned, discover keys the summary omits, or verify data before writing a
+`--json` pipeline.
+
+> **Colors:** `--full` uses ANSI-colored JSON (keys in blue, strings in green,
+> numbers in cyan). If you need plain text from `--full`, pipe through `sed 's/\x1b\[[0-9;]*m//g'`
+> or just switch to `--json`.
+
+---
+
+### What `--full` reveals
+
+The following data exists in the server response but is **omitted by the default
+summary**. It is only visible with `--full` (colorized) or `--json` (plain).
+
+#### `status`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `scores.faa`, `scores.tar`, `scores.bar` … | numbers | EEG ratios and spectral indices not surfaced in the summary's Scores section |
+| `calibration.actions[]` | array | Full ordered list of calibration step objects (name, duration, …) |
+| `labels.recent[]` | array | Full label objects; summary only prints text + timestamp |
+| `hooks.latest_trigger` | object | Most recent hook trigger across all hooks: `{ hook, triggered_at_utc, distance, label_id, label_text }`. The summary shows hook name, timestamp, and distance; the JSON has the full object. |
+| `history.today_vs_avg` | object | Per-metric today-vs-7-day-avg comparison table (metric, today, avg_7d, delta_pct, direction) |
+| `apps` | object | Most-used apps by window-switch count. Contains `top_all_time`, `top_24h`, `top_7d` arrays. Each entry: `{ app_name, switches, last_seen }`. |
+| `labels.top_all_time` | array | Most frequent label texts (all time). Each: `{ text, count }`. |
+| `labels.top_24h` / `labels.top_7d` | array | Most frequent label texts in the last 24 h / 7 d. |
+| `labels.embedded` | number | Count of labels with text embeddings computed. |
+| `screenshots` | object | Screenshot/OCR summary counts: `total`, `with_embedding`, `with_ocr`, `with_ocr_embedding`. Also `top_apps_all_time` and `top_apps_24h` arrays (each: `{ app_name, count }`). |
+
+```bash
+node cli.ts status --json | jq '.history.today_vs_avg'
+node cli.ts status --json | jq '.calibration.actions'
+node cli.ts status --json | jq '.labels.recent'
+node cli.ts status --json | jq '.hooks.latest_trigger'
+node cli.ts status --json | jq '.apps.top_all_time[:5]'
+node cli.ts status --json | jq '.apps.top_24h'
+node cli.ts status --json | jq '.labels.top_all_time'
+node cli.ts status --json | jq '.screenshots'
+node cli.ts status --json | jq '.screenshots.top_apps_24h'
+```
+
+#### `session`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `first` | object | Every metric averaged over the **first half** of the session |
+| `second` | object | Every metric averaged over the **second half** |
+| `trends` | object | Direction string (`"up"` / `"down"` / `"flat"`) for every metric key |
+| `metrics` | object | All ~50 metric fields — the summary only prints a curated subset |
+
+```bash
+node cli.ts session 0 --json | jq '.metrics'          # all metric averages
+node cli.ts session 0 --json | jq '.trends'           # all trend directions
+node cli.ts session 0 --json | jq '{r1: .first.relaxation, r2: .second.relaxation}'
+node cli.ts session 0 --json | jq '[.trends | to_entries[] | select(.value == "up") | .key]'
+```
+
+#### `sessions`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `sessions[]` | array | Raw session objects — the summary formats them into a table but the JSON contains the same data |
+
+```bash
+node cli.ts sessions --json | jq '.sessions[0]'
+# → { "day": "20260224", "start_utc": 1740412800, "end_utc": 1740415510, "n_epochs": 541 }
+```
+
+#### `search`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `result.results[]` | array | Full list of query epochs, each with its complete `neighbors[]` array. The summary only shows the 5 closest overall — `--full` shows every neighbor for every query epoch. |
+| `result.analysis.temporal_distribution` | object | Hour-of-day match counts (the bar chart in the summary, but as raw numbers) |
+| `result.analysis.top_days` | array | `[["YYYYMMDD", count], …]` |
+
+```bash
+node cli.ts search --json | jq '.result.results | length'          # query epoch count
+node cli.ts search --json | jq '.result.results[0].neighbors'      # all neighbors for epoch 0
+node cli.ts search --json | jq '[.result.results[].neighbors[]] | sort_by(.distance) | .[0]'
+node cli.ts search --json | jq '.result.analysis.temporal_distribution'
+```
+
+#### `compare`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `a` | object | All ~50 averaged metrics for session A |
+| `b` | object | All ~50 averaged metrics for session B |
+| `sleep_a` / `sleep_b` | objects | Full sleep staging summary for each range |
+| `insights.deltas` | object | Full delta table for every metric (not just the key ones shown in the summary) |
+| `umap` | object | Enqueued job info: `job_id`, `estimated_secs`, `n_a`, `n_b` |
+
+```bash
+node cli.ts compare --json | jq '.a'                         # all metrics for A
+node cli.ts compare --json | jq '.b'                         # all metrics for B
+node cli.ts compare --json | jq '.insights.deltas'           # every metric delta
+node cli.ts compare --json | jq '.insights.deltas | to_entries | sort_by(.value.pct) | reverse'
+node cli.ts compare --json | jq '.umap.job_id'               # use with umap --json
+```
+
+#### `sleep`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `epochs[]` | array | Per-epoch classification: `{ utc, stage, rel_delta, rel_theta, rel_alpha, rel_beta }` for every 5-second window. Can be thousands of entries for a full night. |
+
+```bash
+node cli.ts sleep --json | jq '.epochs | length'             # total epochs
+node cli.ts sleep --json | jq '.epochs[0]'                   # first epoch
+node cli.ts sleep --json | jq '[.epochs[] | select(.stage == 3)] | length'  # N3 epochs
+node cli.ts sleep --json | jq '[.epochs[] | {utc: .utc, stage: .stage}]'    # hypnogram data
+```
+
+#### `umap`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `result.points[]` | array | 3D coordinates for every embedding epoch: `{ x, y, z, session, utc, label? }`. Typically 500–2000+ entries. |
+
+```bash
+node cli.ts umap --json | jq '.result.points | length'
+node cli.ts umap --json | jq '.result.points[0]'
+# → { "x": 1.23, "y": -0.45, "z": 2.01, "session": "A", "utc": 1740380105 }
+node cli.ts umap --json | jq '[.result.points[] | select(.session == "B")]'
+node cli.ts umap --json | jq '[.result.points[] | select(.label != null)]'  # labeled points only
+```
+
+#### `search-labels`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `results[].eeg_metrics` | object | Full EEG metrics object for the label window — the summary shows only 5 fields; the JSON has all available metrics |
+| `results[].context` | string | Long-context string (if set) — only a truncated preview is shown in the summary |
+
+```bash
+node cli.ts search-labels "deep focus" --json | jq '.results[0].eeg_metrics'
+node cli.ts search-labels "stress" --json | jq '[.results[].eeg_metrics.tbr]'
+node cli.ts search-labels "meditation" --json | jq '.results[0].context'
+```
+
+#### `interactive`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `nodes[]` | array | All graph nodes — the summary prints each layer; `--json` gives the raw array with all fields |
+| `edges[]` | array | All graph edges with `from_id`, `to_id`, `distance`, `kind` |
+| `dot` | string | Complete Graphviz DOT source — only accessible via `--dot` or `--json` (never printed in default or `--full`) |
+| `svg` | string | Pre-rendered SVG — PCA-scatter layout for found_labels |
+| `svg_col` | string | Pre-rendered SVG — column-per-EEG-parent layout |
+| `svg_3d` | string | Pre-rendered SVG — 3-D perspective-projected view of all nodes including screenshots (dark theme with depth cues) |
+| `nodes[].eeg_metrics` | object | Full EEG metrics for `text_label` nodes — the summary shows 5 fields; JSON has all |
+| `nodes[].proj_x/y/z` | numbers | 3-D PCA coordinates (normalised [-1, 1]) for all nodes with text embeddings |
+| `nodes[].filename` | string | Screenshot image path (screenshot nodes only) |
+| `nodes[].app_name` | string | Application name at capture time (screenshot nodes only) |
+| `nodes[].window_title` | string | Window title at capture time (screenshot nodes only) |
+| `nodes[].ocr_text` | string | OCR-extracted text (screenshot nodes only) |
+| `nodes[].ocr_similarity` | number | Cosine similarity between query and OCR text (screenshot nodes only) |
+
+```bash
+node cli.ts interactive "deep focus" --json | jq '.nodes | length'
+node cli.ts interactive "meditation" --json | jq '.edges | map(.kind) | unique'
+node cli.ts interactive "anxiety" --json | jq '[.nodes[] | select(.kind == "text_label") | .text]'
+node cli.ts interactive "coding" --json | jq '[.nodes[] | select(.kind == "screenshot") | {file: .filename, app: .app_name}]'
+node cli.ts interactive "focus" --dot | dot -Tsvg > graph.svg   # visualize with graphviz
+node cli.ts interactive "stress" --dot | dot -Tpng > graph.png
+node cli.ts interactive "relaxed" --json | jq '.dot' -r | dot -Tsvg > graph.svg  # same via --json
+node cli.ts interactive "work" --json | jq '.svg_3d' -r > graph_3d.svg          # 3D perspective SVG
+```
+
+---
+
+#### `say`
+
+Like `notify`, `say` produces only a one-line confirmation in default mode.
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `ok` | boolean | Confirmation that the utterance was enqueued |
+| `spoken` | string | Echo of the text that was sent to TTS |
+| `voice` | string | Voice name used (only present when `--voice` was specified) |
+
+```bash
+node cli.ts say "Eyes open" --json
+# → { "command": "say", "ok": true, "spoken": "Eyes open" }
+```
+
+---
+
+#### `calibrations`
+
+The `calibrations` summary formats profiles into a table but the JSON contains
+the full profile objects with all actions, durations, and settings.
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `profiles[].actions[]` | array | Full ordered list of action objects (name, duration_secs) |
+| `profiles[].break_duration_secs` | number | Break between action loops |
+| `profiles[].auto_start` | boolean | Whether the profile auto-starts on window open |
+
+```bash
+node cli.ts calibrations --json | jq '.profiles[0].actions'
+node cli.ts calibrations get 3 --json | jq '.profile'
+```
+
+---
+
+#### `dnd`
+
+The `dnd` summary prints a rich visual status (bars, scores, tips) but several
+raw fields are only visible via `--json`.
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `avg_score` | number | Current rolling average focus score (0–100) |
+| `sample_count` | number | How many focus score samples have been collected |
+| `window_size` | number | Target number of samples for the rolling window |
+| `mode_identifier` | string | DND automation mode identifier |
+| `dnd_active` | boolean | Whether this app activated DND |
+| `os_active` | boolean | Whether the OS reports DND as active |
+
+```bash
+node cli.ts dnd --json | jq '{avg: .avg_score, threshold: .threshold, active: .dnd_active}'
+```
+
+---
+
+#### `notify`
+
+`notify` has almost no human-readable summary — only a one-line echo of the title and body.
+The entire JSON confirmation from the server is suppressed in default mode.
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `ok` | boolean | Confirmation that the OS notification was dispatched |
+| `command` | string | Echo of the command name (`"notify"`) |
+
+```bash
+node cli.ts notify "done" --full
+# default output:  ⚡ notify "done"
+# --full appends:  { "command": "notify", "ok": true }
+
+node cli.ts notify "done" --json
+# → { "command": "notify", "ok": true }
+```
+
+If `ok` is `false` the CLI exits with an error even in default mode, so `--full`
+or `--json` is only useful when you need the confirmation in a script:
+
+```bash
+# Verify notification was delivered before continuing a script:
+node cli.ts notify "build finished" --json | jq -e '.ok' > /dev/null \
+  && echo "notification sent" || echo "notification failed"
+```
+
+---
+
+#### `calibrate`
+
+`calibrate` has two hidden layers:
+
+**Layer 1 — the `list_calibrations` intermediate call.**
+When `--profile` is given, the CLI internally calls `list_calibrations` to resolve the
+profile name to a UUID.  That response — which contains the **full list of all calibration
+profiles with their actions, durations, and settings** — is consumed internally and
+**never printed, not even with `--full`**.  To inspect it, use `raw` or HTTP directly:
+
+```bash
+# See all profiles and their full action sequences:
+node cli.ts raw '{"command":"list_calibrations"}' --json
+# or:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"list_calibrations"}' | jq '.'
+```
+
+The `list_calibrations` response shape:
+```jsonc
+{
+  "command": "list_calibrations",
+  "ok": true,
+  "profiles": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Eyes Open/Closed",
+      "loop_count": 3,
+      "break_duration_secs": 5,
+      "auto_start": true,
+      "actions": [
+        { "name": "Eyes Open",  "duration_secs": 20 },
+        { "name": "Eyes Closed", "duration_secs": 20 }
+      ]
+    },
+    // ... more profiles
+  ]
+}
+```
+
+**Layer 2 — the `run_calibration` confirmation.**
+The actual calibration trigger response is suppressed in default mode, just like `notify`.
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `ok` | boolean | Confirmation that the calibration window opened and started |
+| `command` | string | Echo of the command name (`"run_calibration"`) |
+
+```bash
+node cli.ts calibrate --full
+# default output:
+#   ⚡ calibrate
+#   profile: Eyes Open/Closed  (a1b2c3d4-…)
+# --full appends:
+#   { "command": "run_calibration", "ok": true }
+
+node cli.ts calibrate --json
+# → { "command": "run_calibration", "ok": true }
+
+# Check all available profile names without starting calibration:
+node cli.ts raw '{"command":"list_calibrations"}' --json | jq '[.profiles[].name]'
+
+# Verify calibration started in a script:
+node cli.ts calibrate --profile "Eyes Open" --json | jq -e '.ok' > /dev/null \
+  && echo "calibration started" || echo "failed — is a Muse connected?"
+```
+
+---
+
+#### `timer`
+
+Like `notify`, `timer` produces only a one-line header in default mode.
+The server confirmation is suppressed.
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `ok` | boolean | Confirmation that the focus-timer window opened and started |
+| `command` | string | Echo of the command name (`"timer"`) |
+
+```bash
+node cli.ts timer --full
+# default output:  ⚡ timer
+# --full appends:  { "command": "timer", "ok": true }
+
+node cli.ts timer --json
+# → { "command": "timer", "ok": true }
+
+# Use in a script after a calibration block:
+node cli.ts calibrate --json | jq -e '.ok' > /dev/null \
+  && node cli.ts timer --json | jq -e '.ok' > /dev/null \
+  && echo "calibration + timer both started"
+```
+
+---
+
+#### `listen`
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| events array | array | Full array of every raw broadcast event received. The summary only prints `event_type × count` (plus a dedicated 🪝 section for hook triggers); `--full` appends every packet. |
+| hook events | objects | Full `{ event: "hook", payload: { hook, scenario, distance, label_id, label_text, triggered_at_utc, command, text, context } }` for each Proactive Hook trigger — the summary shows hook name, distance, and matched label; `--json` gives the complete payload for scripting. |
+
+```bash
+node cli.ts listen --seconds 10 --json | jq '[.[] | select(.event == "scores")]'
+node cli.ts listen --seconds 5  --json | jq '.[0]'   # first event in full
+node cli.ts listen --seconds 60 --json | jq '[.[] | select(.event == "hook") | .payload]'
+```
+
+---
+
+## Global Options
+
+| Flag | Description |
+|---|---|
+| `--port <n>` | Connect to an explicit port (skips mDNS) |
+| `--ws` | Force WebSocket; error if unreachable |
+| `--http` | Force HTTP REST; no live-event commands |
+| `--json` | Raw JSON only — no summary, no colors, pipe-safe |
+| `--full` | Human-readable summary **and** colorized full JSON appended below |
+| `--no-color` | Disable ANSI color output (also honoured via `NO_COLOR` env var or non-TTY stdout) |
+| `--version`, `-v` | Print CLI version and exit |
+| `--help`, `-h` | Show full help and exit |
+| `--poll <n>` | (`status` only) Re-poll every N seconds; keeps the socket open |
+| `--dot` | (`interactive` only) Graphviz DOT to stdout — pipe to `dot -Tsvg` |
+| `--trends` | (`sessions` only) Show first-half → second-half deltas |
+| `--mode <m>` | (`search-labels`) `text` \| `context` \| `both`; (`search-images`) `semantic` \| `substring` |
+| `--k <n>` | Number of nearest neighbors (`search`, `search-labels`, `search-images`, `eeg-for-screenshots`) |
+| `--by-image <path>` | (`search-images`) Search by visual similarity using CLIP embeddings instead of OCR text |
+| `--window <n>` | (`screenshots-for-eeg`, `eeg-for-screenshots`) Temporal window in seconds (default 30 / 60) |
+| `--k-text <n>` | (`interactive`) k for text-label HNSW search (default 5) |
+| `--k-eeg <n>` | (`interactive`) k for EEG-similarity HNSW search (default 5) |
+| `--k-labels <n>` | (`interactive`) k for label-proximity step (default 3) |
+| `--reach <n>` | (`interactive`) temporal window in minutes around each EEG point (default 10) |
+| `--ef <n>` | HNSW ef parameter (`search-labels`; default `max(k×4, 64)`) |
+| `--seconds <n>` | Duration for `listen` (default 5) |
+| `--profile <p>` | Profile name or UUID for `calibrate` |
+| `--context "..."` | (`label`) Long-form annotation body; used by `search-labels --mode context` |
+| `--at <utc>` | (`label`) Backdate to a specific unix second (default: now) |
+| `--voice <name>` | (`say`) Voice name to use (e.g. `Jasper`); omit for server default |
+| `--keywords <csv>` | (`hooks add`/`update`) Comma-separated keywords |
+| `--scenario <s>` | (`hooks add`/`update`) `any` \| `cognitive` \| `emotional` \| `physical` |
+| `--command <cmd>` | (`hooks add`/`update`) Command to run on trigger |
+| `--hook-text <txt>` | (`hooks add`/`update`) Payload text |
+| `--threshold <f>` | (`hooks add`/`update`) Distance threshold (0.01–1.0) |
+| `--recent <n>` | (`hooks add`/`update`) Recent-refs limit (10–20) |
+| `--limit <n>` | (`hooks log`) Page size (default: 20) |
+| `--offset <n>` | (`hooks log`) Row offset (default: 0) |
+| `--actions "L1:20,L2:20"` | (`calibrations create`/`update`) Actions as `label:secs` pairs |
+| `--loops <n>` | (`calibrations create`/`update`) Loop count (default: 3) |
+| `--break <n>` | (`calibrations create`/`update`) Break duration in seconds (default: 5) |
+| `--auto-start` | (`calibrations create`/`update`) Auto-start when opened |
+| `--name "…"` | (`calibrations update`) Rename the profile |
+| `--system "..."` | (`llm chat`) Prepend a system prompt |
+| `--temperature <f>` | (`llm chat`) Sampling temperature 0–2 (default 0.8) |
+| `--max-tokens <n>` | (`llm chat`) Maximum tokens to generate per turn (default 2048) |
+| `--image <path>` | (`llm chat`) Attach image file (can repeat: `--image a.jpg --image b.png`) |
+| `--mmproj <file>` | (`llm add`) Also download a vision projector from the same repo |
+| `--bedtime <HH:MM>` | (`sleep-schedule set`) Bedtime in 24-h format (e.g. `23:00`) |
+| `--wake <HH:MM>` | (`sleep-schedule set`) Wake-up time in 24-h format (e.g. `07:00`) |
+| `--preset <id>` | (`sleep-schedule set`) Apply a named preset: `default`, `early_bird`, `night_owl`, `short_sleeper`, `long_sleeper` |
+| `--metric-type <t>` | (`health metrics`) Metric type to query: `restingHeartRate`, `hrv`, `vo2Max`, `bodyMass`, etc. |
+
+---
+
+## Polling with `status`
+
+`status` is the single fastest call to get a complete system snapshot.
+Poll it periodically from any script or external tool to react to EEG state changes.
+
+The `--poll <n>` flag keeps the WebSocket connection open and re-polls every N seconds
+with a live timestamp header — no need for a shell loop:
+
+```bash
+# Built-in polling (single connection, live updates):
+node cli.ts status --poll 5              # refresh every 5 s
+node cli.ts status --poll 10 --json      # JSON snapshot every 10 s (Ctrl+C to stop)
+
+# One-shot snapshot:
+node cli.ts status --json
+
+# Manual shell loop (opens a new connection each time):
+while true; do
+  node cli.ts status --json | jq '.scores.relaxation'
+  sleep 5
+done
+
+# Alert when focus drops below 0.4:
+while true; do
+  RELAX=$(node cli.ts status --json | jq '.scores.relaxation')
+  if (( $(echo "$FOCUS < 0.4" | bc -l) )); then
+    node cli.ts notify "Relaxation dropped" "Current: $FOCUS"
+  fi
+  sleep 10
+done
+```
+
+### What `status` returns
+
+```jsonc
+{
+  "command": "status",
+  "ok": true,
+  "device": {
+    "state": "connected",          // "connected" | "connecting" | "disconnected"
+    "name": "Muse-A1B2",          // or "MW75-Neuro-XXXX", "Hermes-XXXX", "Ganglion-XXXX"
+    "battery": 73,                 // percent
+    "firmware": "1.3.4",
+    "eeg_samples": 195840,         // cumulative samples this run
+    "ppg_samples": 30600,          // Muse only (PPG sensor)
+    "imu_samples": 122400,
+    "eeg_channels": 4              // 4 (Muse/Ganglion), 8 (Hermes), or 12 (MW75)
+  },
+  "session": {
+    "start_utc": 1740412800,       // Unix seconds (UTC)
+    "duration_secs": 1847,
+    "n_epochs": 369                // 5-second embedding epochs computed so far
+  },
+  "signal_quality": {
+    // Keys vary by device — Muse: tp9/af7/af8/tp10; Hermes: fp1/fp2/af3/af4/f3/f4/fc1/fc2
+    // MW75: ft7/t7/tp7/cp5/p7/c5/ft8/t8/tp8/cp6/p8/c6
+    "tp9": 0.95,                   // 0–1; ≥0.9 = good, ≥0.7 = acceptable
+    "af7": 0.88,
+    "af8": 0.91,
+    "tp10": 0.97
+  },
+  "scores": {
+    // Core scores (0–1 unless noted):
+    "relaxation": 0.38,
+    "relaxation": 0.40,
+    "engagement": 0.60,
+    "meditation": 0.52,
+    "mood": 0.55,
+    "cognitive_load": 0.33,
+    "drowsiness": 0.10,
+    "hr": 68.2,                    // bpm (from PPG)
+    "snr": 14.3,                   // signal-to-noise ratio in dB
+    "stillness": 0.88,             // 0–1; 1 = perfectly still
+    // Band powers (relative, sum ≈ 1):
+    "bands": {
+      "rel_delta": 0.28,
+      "rel_theta": 0.18,
+      "rel_alpha": 0.32,
+      "rel_beta":  0.17,
+      "rel_gamma": 0.05
+    },
+    // EEG ratios & spectral indices:
+    "faa": 0.042,                  // Frontal Alpha Asymmetry (positive = approach)
+    "tar": 0.56,                   // Theta/Alpha Ratio
+    "bar": 0.53,                   // Beta/Alpha Ratio
+    "tbr": 1.06,                   // Theta/Beta Ratio
+    "apf": 10.1,                   // Alpha Peak Frequency (Hz)
+    "coherence": 0.614,
+    "mu_suppression": 0.031
+  },
+  "embeddings": {
+    "today": 342,
+    "total": 14820,
+    "recording_days": 31
+  },
+  "labels": {
+    "total": 58,
+    "embedded": 42,
+    "recent": [
+      { "id": 42, "text": "meditation start", "created_at": 1740413100 }
+    ],
+    "top_all_time": [
+      { "text": "deep focus", "count": 12 },
+      { "text": "meditation", "count": 8 }
+    ],
+    "top_24h": [ { "text": "deep focus", "count": 3 } ],
+    "top_7d":  [ { "text": "deep focus", "count": 7 } ]
+  },
+  "apps": {
+    "top_all_time": [
+      { "app_name": "VS Code", "switches": 342, "last_seen": 1740413000 },
+      { "app_name": "Firefox", "switches": 198, "last_seen": 1740412900 }
+    ],
+    "top_24h": [ { "app_name": "VS Code", "switches": 28, "last_seen": 1740413000 } ],
+    "top_7d":  [ { "app_name": "VS Code", "switches": 142, "last_seen": 1740413000 } ]
+  },
+  "screenshots": {
+    "total": 1842,
+    "with_embedding": 1840,
+    "with_ocr": 1780,
+    "with_ocr_embedding": 1756,
+    "top_apps_all_time": [
+      { "app_name": "VS Code", "count": 620 },
+      { "app_name": "Firefox", "count": 310 }
+    ],
+    "top_apps_24h": [ { "app_name": "VS Code", "count": 48 } ]
+  },
+  "sleep": {
+    // Last 48 h sleep staging summary:
+    "total_epochs": 1054,
+    "wake_epochs": 134,
+    "n1_epochs": 89,
+    "n2_epochs": 421,
+    "n3_epochs": 298,
+    "rem_epochs": 112,
+    "epoch_secs": 5
+  },
+  "hooks": {
+    "total": 3,                    // total configured hooks
+    "enabled": 2,                  // how many are enabled
+    "latest_trigger": {            // most recent trigger across all hooks (null if never)
+      "hook": "Deep Work Guard",   // hook name that fired
+      "triggered_at_utc": 1740413100,
+      "distance": 0.0892,          // cosine distance to matched reference
+      "label_id": 7,
+      "label_text": "focused reading session"
+    }
+  },
+  "history": {
+    "total_sessions": 63,
+    "recording_days": 31,
+    "current_streak_days": 7,
+    "total_recording_hours": 94.2,
+    "longest_session_min": 187,
+    "avg_session_min": 89
+  }
+}
+```
+
+---
+
+## Commands
+
+### `status`
+
+Full snapshot: device state, session, signal quality, scores, bands, embeddings, labels
+(with most-frequent texts), hooks (with latest trigger), sleep summary, recording history,
+app usage analytics, and screenshot/OCR statistics.
+
+Use `--poll <n>` to re-poll every N seconds over the same open connection
+(keeps the socket open; press Ctrl+C to stop).
+
+```bash
+node cli.ts status
+node cli.ts status --json
+node cli.ts status --json | jq '.scores.relaxation'
+node cli.ts status --json | jq '.scores.bands'
+node cli.ts status --json | jq '.device.battery'
+node cli.ts status --json | jq '.signal_quality'
+node cli.ts status --json | jq '.sleep'
+node cli.ts status --json | jq '.history.current_streak_days'
+node cli.ts status --json | jq '.hooks'                      # hook summary + latest trigger
+node cli.ts status --json | jq '.hooks.latest_trigger'       # most recent hook trigger
+node cli.ts status --json | jq '.hooks.latest_trigger.hook'  # which hook fired last
+node cli.ts status --json | jq '.apps.top_24h'               # most-used apps in last 24h
+node cli.ts status --json | jq '.apps.top_all_time[:5]'      # top 5 apps all-time
+node cli.ts status --json | jq '.labels.top_all_time'        # most frequent label texts
+node cli.ts status --json | jq '.screenshots'                # screenshot/OCR counts
+node cli.ts status --json | jq '.screenshots.top_apps_24h'   # top screenshot apps (24h)
+node cli.ts status --poll 5              # refresh every 5 seconds
+node cli.ts status --poll 10 --json      # JSON snapshot every 10 seconds
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"status"}'
+```
+
+---
+
+### `session`
+
+Full metric breakdown for a single recording session, with first-half → second-half trend arrows.
+Index `0` = most recent, `1` = previous, and so on.
+
+```bash
+node cli.ts session          # most recent session (default: 0)
+node cli.ts session 0        # same
+node cli.ts session 1        # previous session
+node cli.ts session 2        # two sessions ago
+node cli.ts session --json
+node cli.ts session 1 --json | jq '.metrics.relaxation'
+node cli.ts session 0 --json | jq '{relaxation: .metrics.relaxation, hr: .metrics.hr, trend: .trends.relaxation}'
+```
+
+**HTTP (two requests):**
+```bash
+# Step 1 — get session list to find timestamps:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"sessions"}' | jq '.sessions[0]'
+
+# Step 2 — fetch full metrics for that session:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"session_metrics","start_utc":1740412800,"end_utc":1740415510}'
+```
+
+**Example output:**
+```
+⚡ session [0]
+  20260224  2/24/2026, 8:00:00 AM → 8:45:10 AM  45m 10s  541 epochs
+
+  Core Scores
+  focus                   0.70  ↑  (0.64 → 0.76)
+  relaxation              0.40  ↓  (0.44 → 0.36)
+  engagement              0.60  →  (0.60 → 0.61)
+  meditation              0.52  ↑  (0.47 → 0.57)
+  mood                    0.55  →  (0.54 → 0.56)
+  cognitive load          0.33  ↓  (0.38 → 0.28)
+  drowsiness              0.10  →  (0.11 → 0.09)
+
+  PPG / Heart
+  heart rate (bpm)        68.2  ↓  (70.1 → 66.3)
+  rmssd (ms)              42.1  ↑  (38.4 → 45.8)
+  ...
+
+  EEG Bands
+  δ delta                  28%  ↓  (31% → 25%)
+  θ theta                  18%  ↓  (21% → 15%)
+  α alpha                  32%  ↑  (28% → 36%)
+  β beta                   17%  →  (17% → 17%)
+  γ gamma                   5%  →  (5% → 5%)
+```
+
+**JSON response structure:**
+```jsonc
+{
+  "ok": true,
+  "metrics": {
+    "relaxation": 0.38,
+    "relaxation": 0.40,
+    "n_epochs": 541,
+    // ... all metrics (see Data Reference)
+  },
+  "first": {
+    "relaxation": 0.38,  // first-half average
+    // ...
+  },
+  "second": {
+    "relaxation": 0.41,  // second-half average
+    // ...
+  },
+  "trends": {
+    "relaxation": "up", // "up" | "down" | "flat"
+    "relaxation": "down",
+    // ...
+  }
+}
+```
+
+---
+
+### `sessions`
+
+List every recorded session across all days.  Sessions are contiguous embedding ranges
+(gap threshold: 120 seconds between epochs).
+
+```bash
+node cli.ts sessions
+node cli.ts sessions --json
+node cli.ts sessions --json | jq '.sessions | length'
+node cli.ts sessions --json | jq '.sessions[0]'
+node cli.ts sessions --json | jq '[.sessions[] | {day, dur: (.end_utc - .start_utc)}]'
+node cli.ts sessions --trends              # show per-session metric trends
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"sessions"}'
+```
+
+**Example output:**
+```
+⚡ sessions
+3 session(s)
+
+  20260223  2/23/2026, 9:15:00 AM → 10:02:33 AM  47m 33s  570 epochs
+  20260223  2/23/2026, 2:30:00 PM → 3:12:45 PM   42m 45s  513 epochs
+  20260224  2/24/2026, 8:00:00 AM → 8:45:10 AM   45m 10s  541 epochs
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "sessions",
+  "ok": true,
+  "sessions": [
+    {
+      "day": "20260224",
+      "start_utc": 1740412800,   // Unix seconds
+      "end_utc": 1740415510,
+      "n_epochs": 541            // 5-second embedding windows
+    },
+    {
+      "day": "20260223",
+      "start_utc": 1740380100,
+      "end_utc": 1740382665,
+      "n_epochs": 513
+    }
+    // ...newest first
+  ]
+}
+```
+
+> **Getting Unix timestamps for other commands:**
+> ```bash
+> # Get start/end of the most recent session:
+> node cli.ts sessions --json | jq '{start: .sessions[0].start_utc, end: .sessions[0].end_utc}'
+> ```
+
+---
+
+### `say`
+
+Speak text aloud via the on-device KittenTTS engine (fire-and-forget).
+The server enqueues the utterance on a dedicated TTS thread and returns immediately —
+the response arrives before audio playback begins.
+
+Requires `espeak-ng` on PATH.  First run downloads a ~30 MB TTS model from HuggingFace Hub.
+
+```bash
+node cli.ts say "Eyes open. Starting calibration."
+node cli.ts say "Break time. Next: Eyes Closed." --voice Jasper
+node cli.ts say "Calibration complete." --http
+node cli.ts say "Hello!" --json
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"say","text":"Eyes open. Starting calibration."}'
+
+# With a specific voice:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"say","text":"Break time.","voice":"Jasper"}'
+```
+
+**Response:**
+```jsonc
+{ "command": "say", "ok": true, "spoken": "Eyes open. Starting calibration." }
+// With --voice Jasper:
+{ "command": "say", "ok": true, "spoken": "Break time.", "voice": "Jasper" }
+```
+
+> **Note:** `--voice` is optional; omitting it uses the voice last selected in Settings → Voice.
+
+---
+
+### `label`
+
+Create a timestamped text annotation on the current EEG moment.
+Labels are stored in the database, shown in the dashboard, and searchable via `search-labels`.
+
+Optional flags:
+- `--context "..."` — long-form body stored alongside the short text; used by
+  `search-labels --mode context` and `--mode both`.
+- `--at <utc>` — backdate the label to a specific unix second instead of using
+  the current time (useful for retrospective annotation).
+
+```bash
+node cli.ts label "meditation start"
+node cli.ts label "eyes closed"
+node cli.ts label "feeling anxious"
+node cli.ts label "coffee just finished"
+node cli.ts label "task switch: coding → email"
+node cli.ts label "phone notification distracted me"
+node cli.ts label --json "focus block start"   # just print the label_id
+node cli.ts label "breathwork" --context "box breathing 4-4-4-4, 10 min"
+node cli.ts label "retrospective note" --at 1740412800
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"label","text":"meditation start"}'
+
+# With long-form context:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"label","text":"eyes closed","context":"4-7-8 breathing exercise"}'
+
+# Backdated to a specific timestamp:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"label","text":"retrospective note","label_start_utc":1740412800}'
+
+# Save the label_id for later reference:
+LABEL_ID=$(curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"label","text":"focus block start"}' | jq '.label_id')
+echo "Created label #$LABEL_ID"
+```
+
+**Response:**
+```jsonc
+{ "command": "label", "ok": true, "label_id": 42 }
+```
+
+---
+
+### `hooks`
+
+List configured Proactive Hooks with scenario + last-trigger metadata.
+
+Supports the following subcommands:
+
+| Subcommand | Description |
+|---|---|
+| `hooks` (or `hooks status`) | List hooks with scenario + last-trigger metadata |
+| `hooks list` | List raw hook rules (name, keywords, threshold, enabled, …) |
+| `hooks add <name> [opts]` | Add a new hook rule |
+| `hooks remove <name>` | Delete a hook by name |
+| `hooks enable <name>` | Enable a hook |
+| `hooks disable <name>` | Disable a hook |
+| `hooks update <name> [opts]` | Update fields on an existing hook |
+| `hooks suggest "kw1,kw2"` | Suggest threshold from matching labels + recent EEG embeddings |
+| `hooks log [--limit N --offset M]` | View paginated hook trigger audit log rows |
+
+**Hook mutation flags** (for `hooks add` and `hooks update`):
+
+| Flag | Description |
+|---|---|
+| `--keywords <csv>` | Comma-separated keywords (e.g. `"focus,deep work,flow"`) |
+| `--scenario <s>` | `any` \| `cognitive` \| `emotional` \| `physical` |
+| `--command <cmd>` | Command to run on trigger |
+| `--hook-text <txt>` | Payload text |
+| `--threshold <f>` | Distance threshold (0.01–1.0) |
+| `--recent <n>` | Recent-refs limit (10–20) |
+
+```bash
+# Status (default) — hooks with scenario + last trigger
+node cli.ts hooks
+node cli.ts hooks --json
+node cli.ts hooks --json | jq '.hooks[] | {name: .hook.name, scenario: .hook.scenario, last: .last_trigger.triggered_at_utc}'
+
+# List raw hook rules
+node cli.ts hooks list
+node cli.ts hooks list --json
+
+# Add a new hook
+node cli.ts hooks add "Deep Work Guard" --keywords "focus,deep work,flow" --scenario cognitive --threshold 0.14
+node cli.ts hooks add "Stress Alert" --keywords "stress,anxious,overwhelmed" --scenario emotional --threshold 0.12
+
+# Update an existing hook
+node cli.ts hooks update "Deep Work Guard" --keywords "focus,flow" --threshold 0.12
+
+# Enable / disable
+node cli.ts hooks enable "Deep Work Guard"
+node cli.ts hooks disable "Deep Work Guard"
+
+# Remove
+node cli.ts hooks remove "Deep Work Guard"
+
+# Suggest threshold from real EEG/label data
+node cli.ts hooks suggest "focus,deep work"
+node cli.ts hooks suggest "focus" --json | jq '.suggestion.suggested'
+
+# Scenario-focused quick examples:
+# cognitive: deep work overload guard
+node cli.ts hooks suggest "focus,deep work"
+# emotional: stress-recovery style labels
+node cli.ts hooks suggest "stress,anxious,overwhelmed"
+# physical: fatigue/body-state style labels
+node cli.ts hooks suggest "fatigue,tired,slump"
+
+# View hook trigger audit log
+node cli.ts hooks log --limit 20 --offset 0
+node cli.ts hooks log --json | jq '.rows[] | {ts: .triggered_at_utc, hook: (.hook_json|fromjson).name, scenario: (.hook_json|fromjson).scenario}'
+```
+
+**HTTP:**
+```bash
+# Status
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"hooks_status"}'
+
+# List raw rules
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"hooks_get"}'
+
+# Set hooks (add/remove/update — sends the full array)
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"hooks_set","hooks":[...]}'
+
+# Suggest threshold
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"hooks_suggest","keywords":["focus","deep work"]}'
+
+# Audit log
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"hooks_log","limit":20,"offset":0}'
+```
+
+#### How Proactive Hooks Work (Broadcast → `listen`)
+
+Proactive Hooks are a **real-time pattern matching system** that runs inside the
+EEG embedding pipeline.  Every 5 seconds, when a new EEG embedding epoch is
+computed, the server checks all enabled hooks against the live brain state:
+
+```
+EEG stream → 5 s epoch → embedding vector → cosine distance to hook references
+                                                       ↓
+                                              distance ≤ threshold?
+                                                       ↓
+                                              scenario gate passes?
+                                                       ↓
+                                       broadcast { event: "hook", payload: {...} }
+                                              + audit log in hooks.duckdb
+                                              + OS toast notification
+```
+
+**Step by step:**
+
+1. **Labels as reference patterns** — When you create labels (`node cli.ts label "deep focus"`),
+   the server embeds both the text and the surrounding EEG window.  Each hook's
+   `keywords` are matched against label texts to build a set of reference EEG
+   embeddings (up to `recent_limit` most recent matches).
+
+2. **Live comparison** — Every new 5-second EEG epoch is compared (cosine distance)
+   against every enabled hook's reference embeddings.  If the closest match is
+   within the hook's `distance_threshold`, the hook fires.
+
+3. **Scenario gating** — Before firing, the hook checks the current epoch's metrics
+   against the scenario filter:
+   - `any` — always passes
+   - `cognitive` — requires elevated theta/beta ratio or cognitive load ≥ 55
+   - `emotional` — requires stress index ≥ 55, mood ≤ 45, or relaxation ≤ 35
+   - `physical` — requires drowsiness ≥ 55, migraine index ≥ 45, or extreme HR
+
+4. **Cooldown** — A hook cannot fire more than once every 10 seconds (prevents
+   rapid-fire spam when the brain state is sustained).
+
+5. **Broadcast** — When a hook fires, the server pushes a `{ "event": "hook" }` message
+   over WebSocket to **all connected clients**.  This is the same broadcast mechanism
+   used for EEG, scores, and label events — any WebSocket listener receives it.
+
+6. **Audit log** — Every trigger is persisted to `hooks.duckdb` for later review
+   via `hooks log`.
+
+**Why this matters for the CLI:**
+
+Because hook triggers are broadcast events, `listen` captures them automatically.
+This lets you build automation pipelines that react to your brain state in real time:
+
+```bash
+# ── React to hook triggers in a shell script ──────────────────────────────────
+# Listen for 5 minutes and act on any hook triggers:
+node cli.ts listen --seconds 300 --json | jq -c '.[] | select(.event == "hook") | .payload' | while read -r payload; do
+  HOOK=$(echo "$payload" | jq -r '.hook')
+  DIST=$(echo "$payload" | jq -r '.distance')
+  LABEL=$(echo "$payload" | jq -r '.label_text')
+  echo "Hook triggered: $HOOK (dist=$DIST, label=$LABEL)"
+
+  # Run custom actions based on hook name:
+  case "$HOOK" in
+    "Deep Work Guard")
+      node cli.ts notify "Deep Focus Detected" "Distance: $DIST to '$LABEL'"
+      ;;
+    "Stress Alert")
+      osascript -e 'display notification "Take a break" with title "Stress Detected"'
+      ;;
+  esac
+done
+
+# ── Python real-time hook listener ────────────────────────────────────────────
+python3 - <<'EOF'
+import asyncio, json
+import websockets
+
+async def listen_for_hooks(port: int):
+    async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+        print("Listening for hook triggers…")
+        async for raw in ws:
+            msg = json.loads(raw)
+            if msg.get("event") == "hook":
+                p = msg["payload"]
+                print(f"🪝 {p['hook']} fired! distance={p['distance']:.4f} label=\"{p['label_text']}\"")
+                # Do something: send Slack message, log to CSV, trigger HomeKit, etc.
+
+asyncio.run(listen_for_hooks(8375))
+EOF
+
+# ── End-to-end workflow: create labels, add hook, listen for triggers ─────────
+# 1. Record some EEG while in a specific state and label it:
+node cli.ts label "deep focus coding"
+node cli.ts label "deep concentration"
+
+# 2. Create a hook that fires when your brain returns to that state:
+node cli.ts hooks add "Focus Mode" \
+  --keywords "focus,concentration,deep" \
+  --scenario cognitive \
+  --threshold 0.15
+
+# 3. Verify the threshold makes sense:
+node cli.ts hooks suggest "focus,concentration,deep"
+
+# 4. Listen and watch for triggers:
+node cli.ts listen --seconds 300
+
+# 5. Check the audit log after the session:
+node cli.ts hooks log --limit 10
+```
+
+**Hook trigger event shape (WebSocket):**
+```jsonc
+{
+  "event": "hook",
+  "payload": {
+    "hook":             "Deep Work Guard",      // hook rule name
+    "scenario":         "cognitive",            // scenario filter
+    "context":          "labels",               // match source
+    "distance":         0.0892,                 // cosine distance to closest reference
+    "label_id":         7,                      // which label's EEG pattern matched
+    "label_text":       "focused reading session",
+    "triggered_at_utc": 1740412830,             // unix seconds
+    "command":          "notify",               // configured action
+    "text":             "You're in deep focus!" // configured payload
+  }
+}
+```
+
+> **Note:** Hook broadcast events are only available over WebSocket.  HTTP transport
+> (`--http`) has no push streaming, so you cannot receive hook triggers via HTTP.
+> Use `listen` (which requires WebSocket) or connect directly via `ws://`.
+
+---
+
+### `search-labels`
+
+Semantic (vector) search across all your EEG annotations.
+The query is embedded and compared against the label HNSW index.
+
+```bash
+node cli.ts search-labels "deep focus"
+node cli.ts search-labels "relaxed meditation" --k 10
+node cli.ts search-labels "anxiety" --mode context
+node cli.ts search-labels "flow state" --mode both --k 5
+node cli.ts search-labels "creative work" --json | jq '.results[].text'
+node cli.ts search-labels "morning routine" --json | jq '.results[] | {text, sim: .similarity}'
+```
+
+**Modes:**
+- `text` (default) — searches the label short-text HNSW index
+- `context` — searches the long-context HNSW (requires context fields to be set)
+- `both` — runs both indexes, deduplicates by best cosine distance
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"search_labels","query":"deep focus","k":10,"mode":"text"}'
+```
+
+**Example output:**
+```
+⚡ search-labels "deep focus"  (mode: text, k: 10)
+
+  model:  Xenova/bge-small-en-v1.5
+  k:      10   results: 3
+
+  #7  "focused reading session"
+     similarity: 88%  distance: 0.1204  model: bge-small-en-v1.5
+     recorded:  2/24/2026, 8:05:00 AM  (300s window)
+     eeg:       focus=0.74  relaxation=0.38  engagement=0.62  hr=66.10  mood=0.58
+
+  #12  "deep work block"
+     similarity: 84%  distance: 0.1601
+     recorded:  2/23/2026, 9:20:00 AM  (300s window)
+     eeg:       focus=0.71  relaxation=0.42  engagement=0.65  hr=68.30  mood=0.55
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "search_labels",
+  "ok": true,
+  "query": "deep focus",
+  "mode": "text",
+  "model": "Xenova/bge-small-en-v1.5",
+  "k": 10,
+  "count": 3,
+  "results": [
+    {
+      "label_id": 7,
+      "text": "focused reading session",
+      "context": "",
+      "distance": 0.1204,
+      "similarity": 0.8796,         // 1 − distance
+      "eeg_start": 1740412800,
+      "eeg_end": 1740413100,
+      "created_at": 1740412810,
+      "embedding_model": "bge-small-en-v1.5",
+      "eeg_metrics": {
+        "relaxation": 0.38,
+        "relaxation": 0.38,
+        "engagement": 0.62,
+        "hr": 66.1,
+        "mood": 0.58,
+        "rel_alpha": 0.35,
+        "rel_beta": 0.19
+      }
+    }
+  ]
+}
+```
+
+---
+
+### `interactive`
+
+Cross-modal 5-layer graph search.  Combines semantic text search, EEG similarity search,
+temporal label proximity, and screenshot discovery into a single directed graph:
+
+```
+"deep focus"  →  text_label nodes       (semantically similar annotations)
+                      ↓
+              eeg_point nodes           (raw EEG moments from label time windows)
+                      ↓
+              found_label nodes         (labels near those EEG moments in time)
+                      ↓
+              screenshot nodes          (screenshots near EEG timestamps, ranked by
+                                         window-title / OCR-text proximity to query)
+```
+
+Four output formats — choose exactly one:
+
+| Flag | Output |
+|---|---|
+| _(none)_ | Colored human-readable summary of all four layers |
+| `--full` | Summary **+** colorized JSON appended below |
+| `--json` | Raw JSON: `{ query, nodes, edges, dot }` — pipe-safe |
+| `--dot` | Graphviz DOT source only — pipe directly to `dot -Tsvg` or `dot -Tpng` |
+
+```bash
+# Default summary:
+node cli.ts interactive "deep focus"
+
+# Tune the pipeline:
+node cli.ts interactive "meditation" --k-text 8 --k-eeg 8 --k-labels 5 --reach 15
+
+# Raw JSON — count nodes:
+node cli.ts interactive "flow state" --json | jq '.nodes | length'
+
+# Extract text_label texts:
+node cli.ts interactive "focus" --json | jq '[.nodes[] | select(.kind == "text_label") | .text]'
+
+# Extract EEG moment timestamps:
+node cli.ts interactive "anxiety" --json | jq '[.nodes[] | select(.kind == "eeg_point") | .timestamp_unix]'
+
+# Extract discovered nearby labels:
+node cli.ts interactive "stress" --json | jq '[.nodes[] | select(.kind == "found_label") | .text]'
+
+# Extract discovered screenshots:
+node cli.ts interactive "coding" --json | jq '[.nodes[] | select(.kind == "screenshot") | {file: .filename, app: .app_name, ocr_sim: .ocr_similarity}]'
+
+# Render graph as SVG (requires graphviz):
+node cli.ts interactive "deep focus" --dot | dot -Tsvg > graph.svg
+
+# Render graph as PNG:
+node cli.ts interactive "meditation" --dot | dot -Tpng > graph.png
+
+# Pull DOT from JSON output instead:
+node cli.ts interactive "focus" --json | jq -r '.dot' | dot -Tsvg > graph.svg
+
+# Full inspection (summary + full JSON):
+node cli.ts interactive "anxiety" --full
+```
+
+**Pipeline parameters:**
+
+| Flag | Default | Range | Description |
+|---|---|---|---|
+| `--k-text <n>` | 5 | 1–20 | k for text-label HNSW search |
+| `--k-eeg <n>` | 5 | 1–20 | k for EEG-similarity HNSW per text label |
+| `--k-labels <n>` | 3 | 1–10 | k for label-proximity per EEG point |
+| `--reach <n>` | 10 | 1–60 | Temporal window (minutes) around each EEG point |
+
+All parameters are server-clamped to their stated range. Out-of-range values are silently adjusted.
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command":       "interactive_search",
+    "query":         "deep focus",
+    "k_text":        5,
+    "k_eeg":         5,
+    "k_labels":      3,
+    "reach_minutes": 10
+  }'
+```
+
+**Example default output:**
+```
+⚡ interactive "deep focus"  (k-text:5, k-eeg:5, k-labels:3, reach:10m)
+
+  Graph  7 nodes · 9 edges
+  edges:  text_sim ×2  eeg_bridge ×3  label_prox ×4
+  ──────────────────────────────────────────────────────
+
+  ● query  "deep focus"
+
+  ◆ Text Labels  (2 semantically similar labels)
+  #0  "focused reading session"  2/24/2026, 8:00:00 AM PST
+      similarity: 88%  dist: 0.1204
+      focus 0.74  relaxation 0.38  engagement 0.62  hr 66.10  meditation 0.44
+  #1  "concentration phase"  2/23/2026, 2:30:00 PM PST
+      similarity: 82%  dist: 0.1805
+
+  ◈ EEG Moments  (3 neural moments found)
+  #0  2/24/2026, 8:12:45 AM PST   dist: 0.0231  ← tl_0
+  #1  2/22/2026, 10:14:00 AM PST  dist: 0.0319  ← tl_0
+  #2  2/21/2026, 3:02:00 PM PST   dist: 0.0487  ← tl_1
+
+  ◉ Nearby Labels  (2 labels found near EEG moments)
+  #0  "eyes closed"   2/24/2026, 8:13:00 AM PST  0.8m from EEG point
+  #1  "task complete" 2/22/2026, 10:18:00 AM PST  4.0m from EEG point
+
+  tip: rerun with --dot | dot -Tsvg > graph.svg  to visualize
+```
+
+**JSON response structure:**
+```jsonc
+{
+  "command": "interactive_search",
+  "ok": true,
+  "query":         "deep focus",
+  "k_text":        5,
+  "k_eeg":         5,
+  "k_labels":      3,
+  "reach_minutes": 10,
+  "nodes": [
+    {
+      "id":             "query",
+      "kind":           "query",
+      "text":           "deep focus",
+      "timestamp_unix": null,
+      "distance":       0.0,
+      "eeg_metrics":    null,
+      "parent_id":      null
+    },
+    {
+      "id":             "tl_0",
+      "kind":           "text_label",
+      "text":           "focused reading session",
+      "timestamp_unix": 1740412800,
+      "distance":       0.1204,    // cosine distance from query
+      "eeg_metrics": {
+        "relaxation": 0.38, "engagement": 0.62,
+        "hr": 66.1, "meditation": 0.44, "rel_alpha": 0.35
+      },
+      "parent_id": "query"
+    },
+    {
+      "id":             "ep_1740413565",
+      "kind":           "eeg_point",
+      "text":           null,
+      "timestamp_unix": 1740413565,
+      "distance":       0.0231,    // cosine distance in EEG embedding space
+      "eeg_metrics":    null,
+      "parent_id":      "tl_0"
+    },
+    {
+      "id":             "fl_42",
+      "kind":           "found_label",
+      "text":           "eyes closed",
+      "timestamp_unix": 1740413580,
+      "distance":       0.133,     // fraction of reach window (0 = right at the EEG point)
+      "eeg_metrics":    null,
+      "parent_id":      "ep_1740413565"
+    },
+    {
+      "id":             "ss_20260224080530",
+      "kind":           "screenshot",
+      "text":           null,
+      "timestamp_unix": 1740413130,
+      "distance":       0.05,
+      "eeg_metrics":    null,
+      "parent_id":      "ep_1740413565",
+      "filename":       "20260224/20260224080530.webp",
+      "app_name":       "VS Code",
+      "window_title":   "main.rs",
+      "ocr_text":       "fn dispatch(app: &AppHandle, command: &str…",
+      "ocr_similarity": 0.42,
+      "proj_x":         0.31,
+      "proj_y":         -0.18,
+      "proj_z":         0.72
+    }
+    // ... more nodes
+  ],
+  "edges": [
+    { "from_id": "query",        "to_id": "tl_0",          "distance": 0.1204, "kind": "text_sim" },
+    { "from_id": "tl_0",        "to_id": "ep_1740413565",  "distance": 0.0231, "kind": "eeg_bridge" },
+    { "from_id": "ep_1740413565","to_id": "fl_42",          "distance": 0.133,  "kind": "label_prox" },
+    { "from_id": "ep_1740413565","to_id": "ss_20260224080530","distance": 2.0,  "kind": "screenshot_prox" },
+    { "from_id": "ep_1740413565","to_id": "ss_20260224080530","distance": 0.42, "kind": "ocr_sim" }
+    // ...
+  ],
+  "dot": "digraph interactive_search {\n  graph [rankdir=TB, ...];\n  \"query\" [...];\n  ...",
+  "svg": "<svg ...>...</svg>",
+  "svg_col": "<svg ...>...</svg>",
+  "svg_3d": "<svg ...>...</svg>"
+}
+```
+
+**Node kinds:**
+
+| Kind | Layer | Color | Description |
+|---|---|---|---|
+| `query` | 0 | violet | The embedded search keyword (always exactly 1) |
+| `text_label` | 1 | blue | Annotations semantically similar to the query |
+| `eeg_point` | 2 | amber | Raw EEG moments from label time windows |
+| `found_label` | 3 | emerald | Annotations discovered near EEG moments in time |
+| `screenshot` | 4 | pink | Screenshots near EEG timestamps, ranked by window-title / OCR proximity |
+
+**Edge kinds:**
+
+| Kind | Connects | What the distance means |
+|---|---|---|
+| `text_sim` | query → text_label | Cosine distance in text embedding space |
+| `eeg_bridge` | text_label → eeg_point | Cosine distance in EEG embedding space |
+| `eeg_sim` | eeg_point → eeg_point | Cosine distance (shared EEG point, cross-edge) |
+| `label_prox` | eeg_point → found_label | Temporal proximity (fraction of reach window) |
+| `screenshot_prox` | eeg_point → screenshot | Temporal proximity (seconds between EEG epoch and screenshot capture) |
+| `ocr_sim` | eeg_point → screenshot | Cosine similarity between query text and screenshot OCR text |
+
+**Screenshot node fields** (only present on `screenshot` kind nodes):
+
+| Field | Type | Description |
+|---|---|---|
+| `filename` | string | Relative path to the screenshot image file |
+| `app_name` | string | Application name at capture time |
+| `window_title` | string | Window title at capture time |
+| `ocr_text` | string | OCR-extracted text from the screenshot |
+| `ocr_similarity` | number | Cosine similarity (0–1) between query text and OCR text |
+
+**3-D projection fields** (present on all nodes when text embeddings are available):
+
+| Field | Type | Description |
+|---|---|---|
+| `proj_x` | number | PCA axis 1, normalised to [-1, 1] |
+| `proj_y` | number | PCA axis 2, normalised to [-1, 1] |
+| `proj_z` | number | PCA axis 3, normalised to [-1, 1] |
+
+> **Empty results:** If no labels have been embedded yet, only the query node is returned
+> (`nodes.length === 1`, `edges.length === 0`). Annotate moments with `label` first, then
+> run `search-labels` to verify the embedding index, then re-run `interactive`.
+
+---
+
+### `search`
+
+Find EEG moments from your entire history that are neurally similar to a query range.
+Uses approximate nearest-neighbor (ANN) search over the 5-second embedding HNSW index.
+
+Auto-range: when no `--start`/`--end` flags are given, the CLI automatically uses your
+most recent session and prints a `rerun:` line you can copy-paste.
+
+```bash
+node cli.ts search                                     # auto: last session, k=5
+node cli.ts search --k 10                             # 10 nearest neighbors
+node cli.ts search --start 1740412800 --end 1740415500
+node cli.ts search --start 1740412800 --end 1740415500 --k 20
+node cli.ts search --json | jq '.result.results | length'
+node cli.ts search --json | jq '.result.results[0].neighbors[0]'
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"search","start_utc":1740412800,"end_utc":1740415500,"k":5}'
+```
+
+**Example output:**
+```
+⚡ search
+  range: 1740412800–1740415500 (auto: 2/24/2026 8:00 AM → 8:45 AM, 45m 0s)
+  k: 5
+  rerun: node cli.ts search --start 1740412800 --end 1740415500 --k 5
+
+  Search Results
+  query epochs: 541   searched days: 31   total matches: 2705   span: 744.3h
+
+  Match Quality  (cosine distance — lower = more similar)
+  ████████████████████░░░░  similarity 82%
+  min 0.0231   mean 0.1842   max 0.3901   σ 0.0612
+
+  Neighbor Metrics  (avg · min–max across 2705 matches)
+  focus              0.67    0.34 – 0.91
+  relaxation         0.43    0.19 – 0.74
+  hr (bpm)          67.4    52.0 – 88.3
+  α alpha            0.33    0.18 – 0.51
+  θ/α ratio          0.54    0.28 – 0.89
+
+  Top Matches  (closest by cosine distance)
+  #1  2/22/2026, 10:14:00 AM  dist 0.0231  focus 0.73  relax 0.41  hr 66.2
+  #2  2/21/2026,  3:02:00 PM  dist 0.0319  focus 0.69  relax 0.44  hr 67.8
+  ...
+
+  Temporal Distribution  (matches by hour of day, UTC)
+  08:00 ████████████░░░░░░░░  142    20:00 ███░░░░░░░░░░░░░░░░░   38
+  09:00 ████████████████░░░░  198    21:00 █░░░░░░░░░░░░░░░░░░░   12
+  ...
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "search",
+  "ok": true,
+  "result": {
+    "query_count": 541,
+    "searched_days": ["20260224", "20260223", ...],
+    "analysis": {
+      "distance_stats": { "min": 0.0231, "mean": 0.1842, "max": 0.3901, "stddev": 0.0612 },
+      "time_span_hours": 744.3,
+      "neighbor_metrics": { "relaxation": 0.38, "relaxation": 0.43, "hr": 67.4, ... },
+      "temporal_distribution": { "8": 142, "9": 198, ... },
+      "top_days": [["20260222", 312], ["20260221", 289], ...]
+    },
+    "results": [
+      {
+        "timestamp_unix": 1740412800,
+        "neighbors": [
+          {
+            "distance": 0.0231,         // cosine distance — lower = more similar
+            "timestamp_unix": 1740320040,
+            "date": "20260222",
+            "device_name": "Muse-A1B2",
+            "labels": [{ "text": "morning focus block" }],
+            "metrics": {
+              "relaxation": 0.38,
+              "relaxation": 0.41,
+              "hr": 66.2,
+              "rel_alpha": 0.34
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+### `compare`
+
+Side-by-side A/B comparison of two sessions.
+Returns averaged metrics for both ranges, delta values, and trend direction for every metric.
+Also enqueues a 3D UMAP projection (use `umap` to get the spatial points).
+
+Auto-range: uses your last two sessions as A (older) and B (newer).
+
+```bash
+node cli.ts compare                                    # auto: last 2 sessions
+node cli.ts compare --a-start 1740380100 --a-end 1740382665 \
+                    --b-start 1740412800 --b-end 1740415510
+node cli.ts compare --json
+node cli.ts compare --json | jq '{a_relax: .a.relaxation, b_relax: .b.relaxation}'
+node cli.ts compare --json | jq '.insights.deltas.relaxation'
+node cli.ts compare --json | jq '.insights.improved'
+node cli.ts compare --json | jq '.insights.declined'
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "compare",
+    "a_start_utc": 1740380100, "a_end_utc": 1740382665,
+    "b_start_utc": 1740412800, "b_end_utc": 1740415510
+  }' | jq '{a_relax: .a.relaxation, b_relax: .b.relaxation}'
+```
+
+**Example output:**
+```
+⚡ compare
+  A: 1740380100–1740382665 (auto: 2/23/2026 2:30 PM → 3:12 PM, 42m 45s)
+  B: 1740412800–1740415510 (auto: 2/24/2026 8:00 AM → 8:45 AM, 45m 10s)
+  rerun: node cli.ts compare --a-start 1740380100 --a-end 1740382665 ...
+
+  Compare Insights  (513 vs 541 epochs)
+
+  metric              A        B       Δ      Δ%    dir
+  ────────────────────────────────────────────────────────
+  focus            0.62     0.71   +0.09   +14.5%  ↑
+  relaxation       0.45     0.38   -0.07   -15.6%  ↓
+  engagement       0.58     0.60   +0.02    +3.4%  →
+  hr              72.1     68.4   -3.70    -5.1%  ↓
+  meditation       0.44     0.52   +0.08   +18.2%  ↑
+  drowsiness       0.18     0.10   -0.08   -44.4%  ↓
+
+  ▲ improved: focus, meditation, engagement
+  ▼ declined: relaxation, hr
+```
+
+**JSON response:**
+```jsonc
+{
+  "ok": true,
+  "a": { "relaxation": 0.45, "engagement": 0.62, "hr": 72.1, "n_epochs": 513, ... },
+  "b": { "relaxation": 0.38, "engagement": 0.71, "hr": 68.4, "n_epochs": 541, ... },
+  "sleep_a": { "total_epochs": 0, ... },
+  "sleep_b": { "total_epochs": 0, ... },
+  "insights": {
+    "n_epochs_a": 513,
+    "n_epochs_b": 541,
+    "deltas": {
+      "relaxation": { "a": 0.45, "b": 0.38, "abs": 0.07, "pct": -15.6, "direction": "down" },
+      "relaxation": { "a": 0.45, "b": 0.38, "abs": -0.07, "pct": -15.6, "direction": "down" },
+      ...
+    },
+    "improved": ["focus", "meditation", "engagement"],
+    "declined": ["relaxation", "hr"]
+  },
+  "umap": {
+    "queued": true,
+    "job_id": 5,
+    "estimated_secs": 14,
+    "n_a": 513,
+    "n_b": 541
+  }
+}
+```
+
+---
+
+### `sleep`
+
+Classify EEG epochs into sleep stages (Wake / N1 / N2 / N3 / REM) using
+relative band-power ratios and simplified AASM heuristics.
+
+Auto-range: all sessions from the last 24 hours.
+By index: `sleep 0` = most recent session, `sleep 1` = previous, etc.
+
+```bash
+node cli.ts sleep                          # auto: last 24h of sessions
+node cli.ts sleep 0                        # most recent session's sleep data
+node cli.ts sleep 1                        # previous session
+node cli.ts sleep --start 1740380100 --end 1740415510
+node cli.ts sleep --json | jq '.summary'
+node cli.ts sleep --json | jq '.analysis'
+node cli.ts sleep --json | jq '.summary | {n3: .n3_epochs, rem: .rem_epochs}'
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"sleep","start_utc":1740380100,"end_utc":1740415510}' | jq '.summary'
+```
+
+**Example output:**
+```
+⚡ sleep
+  range: 1740380100–1740415510 (auto: 2/23/2026 2:30 PM → 2/24/2026 8:45 AM, 9h 50m)
+  rerun: node cli.ts sleep --start 1740380100 --end 1740415510
+
+  Sleep Summary
+  total: 1054 epochs (87 min)
+  Wake  134  (12.7%)
+  N1     89   (8.4%)
+  N2    421  (39.9%)
+  N3    298  (28.3%)
+  REM   112  (10.6%)
+
+  Sleep Analysis
+  efficiency:    85.2%
+  onset latency: 12.5 min
+  REM latency:   62.0 min
+  transitions:   38  awakenings: 11
+
+  Stage durations: Wake 11m  N1 7m  N2 35m  N3 25m  REM 9m
+
+  Bout analysis:
+    WAKE   11 bouts  avg 1.0m  max 3.5m
+    N2     14 bouts  avg 2.5m  max 8.0m
+    N3      6 bouts  avg 4.2m  max 9.0m
+    REM     4 bouts  avg 2.3m  max 4.5m
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "sleep",
+  "ok": true,
+  "summary": {
+    "total_epochs": 1054,
+    "wake_epochs": 134,
+    "n1_epochs": 89,
+    "n2_epochs": 421,
+    "n3_epochs": 298,
+    "rem_epochs": 112,
+    "epoch_secs": 5
+  },
+  "analysis": {
+    "efficiency_pct": 85.2,
+    "onset_latency_min": 12.5,
+    "rem_latency_min": 62.0,
+    "transitions": 38,
+    "awakenings": 11,
+    "stage_minutes": { "wake": 11, "n1": 7, "n2": 35, "n3": 25, "rem": 9 },
+    "bouts": {
+      "WAKE": { "count": 11, "mean_min": 1.0, "max_min": 3.5 },
+      "N3":   { "count": 6,  "mean_min": 4.2, "max_min": 9.0 },
+      "REM":  { "count": 4,  "mean_min": 2.3, "max_min": 4.5 }
+    }
+  },
+  "epochs": [
+    { "utc": 1740380100, "stage": 0, "rel_delta": 0.18, "rel_theta": 0.21, "rel_alpha": 0.38, "rel_beta": 0.17 },
+    { "utc": 1740380105, "stage": 2, "rel_delta": 0.41, "rel_theta": 0.28, "rel_alpha": 0.19, "rel_beta": 0.09 },
+    ...
+  ]
+}
+```
+
+> **Stage codes:** `0` = Wake, `1` = N1, `2` = N2, `3` = N3, `4` = REM.
+
+---
+
+### `sleep-schedule`
+
+View or update the sleep schedule used for session classification and sleep staging analysis.
+The schedule defines your expected bedtime and wake-up time, and can be set to one of five
+built-in presets or a fully custom window.
+
+```bash
+# Show current schedule:
+node cli.ts sleep-schedule
+node cli.ts sleep-schedule --json
+
+# Update with explicit times:
+node cli.ts sleep-schedule set --bedtime 23:00 --wake 07:00
+node cli.ts sleep-schedule set --bedtime 01:00 --wake 09:00
+
+# Apply a named preset:
+node cli.ts sleep-schedule set --preset early_bird
+node cli.ts sleep-schedule set --preset night_owl
+
+# Combine preset with override:
+node cli.ts sleep-schedule set --preset short_sleeper
+node cli.ts sleep-schedule set --bedtime 00:30 --wake 06:30 --preset custom
+```
+
+**Available presets:**
+
+| Preset | Bedtime | Wake | Duration |
+|---|---|---|---|
+| `default` | 23:00 | 07:00 | 8 h |
+| `early_bird` | 21:30 | 05:30 | 8 h |
+| `night_owl` | 01:00 | 09:00 | 8 h |
+| `short_sleeper` | 00:00 | 06:00 | 6 h |
+| `long_sleeper` | 22:00 | 08:00 | 10 h |
+
+When you set `--bedtime` or `--wake` without `--preset`, the preset is automatically
+set to `custom`.
+
+**HTTP:**
+```bash
+# Get current schedule:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"sleep_schedule"}'
+
+# Update schedule:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"sleep_schedule_set","bedtime":"23:00","wake_time":"07:00","preset":"default"}'
+
+# Apply a preset (only the fields you send are updated):
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"sleep_schedule_set","preset":"early_bird","bedtime":"21:30","wake_time":"05:30"}'
+```
+
+**Example output (default):**
+```
+⚡ sleep-schedule  current schedule
+
+  Sleep Schedule
+    bedtime    23:00
+    wake       07:00
+    duration   8h  (480 min)
+    preset     default
+
+  Available presets:
+    ● default           23:00 — 07:00  (8h)
+    ○ early_bird        21:30 — 05:30  (8h)
+    ○ night_owl         01:00 — 09:00  (8h)
+    ○ short_sleeper     00:00 — 06:00  (6h)
+    ○ long_sleeper      22:00 — 08:00  (10h)
+```
+
+**Example output (set):**
+```
+⚡ sleep-schedule set
+  bedtime:  01:00
+  wake:     09:00
+  preset:   night_owl
+
+  updated
+  bedtime:  01:00
+  wake:     09:00
+  duration: 8h
+  preset:   night_owl
+```
+
+**JSON response (get):**
+```jsonc
+{
+  "command": "sleep_schedule",
+  "bedtime": "23:00",
+  "wake_time": "07:00",
+  "preset": "default",
+  "duration_minutes": 480
+}
+```
+
+**JSON response (set):**
+```jsonc
+{
+  "command": "sleep_schedule_set",
+  "ok": true,
+  "bedtime": "01:00",
+  "wake_time": "09:00",
+  "preset": "night_owl",
+  "duration_minutes": 480
+}
+```
+
+---
+
+### `umap`
+
+Compute a 3D UMAP projection of EEG embedding vectors from two sessions.
+Runs GPU-accelerated UMAP; the CLI polls for progress and prints a live bar.
+Results are cached so re-running the same ranges is instant.
+
+Auto-range: last two sessions (same as `compare`).
+
+```bash
+node cli.ts umap                           # auto: last 2 sessions
+node cli.ts umap --a-start 1740380100 --a-end 1740382665 \
+                 --b-start 1740412800 --b-end 1740415510
+node cli.ts umap --json | jq '.result.points | length'
+node cli.ts umap --json | jq '.result.points[0]'
+node cli.ts umap --json | jq '[.result.points[] | select(.session == "A")] | length'
+node cli.ts umap --json | jq '.result.analysis.separation_score'
+```
+
+**HTTP (two requests — enqueue then poll):**
+```bash
+# Step 1 — enqueue:
+JOB=$(curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"umap","a_start_utc":1740380100,"a_end_utc":1740382665,"b_start_utc":1740412800,"b_end_utc":1740415510}')
+JOB_ID=$(echo $JOB | jq '.job_id')
+
+# Step 2 — poll (repeat until status == "complete"):
+until [ "$(curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d "{\"command\":\"umap_poll\",\"job_id\":$JOB_ID}" | jq -r '.status')" = "complete" ]; do
+  sleep 2
+done
+```
+
+**Example output:**
+```
+⚡ umap
+  A: 1740380100–1740382665 (auto: 2/23/2026 2:30 PM → 3:12 PM, 42m 45s)
+  B: 1740412800–1740415510 (auto: 2/24/2026 8:00 AM → 8:45 AM, 45m 10s)
+  rerun: node cli.ts umap --a-start 1740380100 ...
+
+enqueued job_id=5  n_a=513  n_b=541  est=14s
+████████████░░░░░░░░░░░░░░░░░░ 40%  epoch 80/200  42ms/ep  ~5s left
+completed in 8432ms
+
+  UMAP Cluster Analysis
+  separation score:  1.84  (higher = better A/B separation)
+  inter-cluster:     2.31
+  intra-spread A:    0.82  B: 0.94
+  centroid A: (1.23, -0.45, 2.01)  B: (-0.87, 1.34, -1.22)
+```
+
+**JSON response:**
+```jsonc
+{
+  "status": "complete",
+  "elapsed_ms": 8432,
+  "result": {
+    "points": [
+      { "x": 1.23, "y": -0.45, "z": 2.01, "session": "A", "utc": 1740380105, "label": null },
+      { "x": 1.31, "y": -0.38, "z": 1.94, "session": "A", "utc": 1740380110, "label": "eyes closed" },
+      { "x": -0.87, "y": 1.34, "z": -1.22, "session": "B", "utc": 1740412805 }
+      // ... 513 + 541 = 1054 points total
+    ],
+    "n_a": 513, "n_b": 541, "dim": 3,
+    "analysis": {
+      "separation_score": 1.84,
+      "inter_cluster_distance": 2.31,
+      "intra_spread_a": 0.82,
+      "intra_spread_b": 0.94,
+      "centroid_a": [1.23, -0.45, 2.01],
+      "centroid_b": [-0.87, 1.34, -1.22],
+      "n_outliers_a": 3,
+      "n_outliers_b": 5
+    }
+  }
+}
+```
+
+---
+
+### `listen`
+
+Passively collect real-time broadcast events from the server for a fixed duration.
+Events include raw EEG packets, PPG, IMU, scores, label-created notifications,
+and **Proactive Hook triggers**.
+
+> Requires WebSocket (`--http` mode has no push streaming).
+
+```bash
+node cli.ts listen                         # 5 seconds (default)
+node cli.ts listen --seconds 30
+node cli.ts listen --seconds 10 --json
+node cli.ts listen --seconds 5 --json | jq '[.[] | select(.event == "scores")]'
+node cli.ts listen --seconds 5 --json | jq 'map(select(.event == "eeg")) | length'
+
+# ── Capture hook triggers ────────────────────────────────────────────────────
+node cli.ts listen --seconds 60 --json | jq '[.[] | select(.event == "hook")]'
+node cli.ts listen --seconds 300 --json | jq '[.[] | select(.event == "hook") | .payload]'
+```
+
+**Example output:**
+```
+⚡ listen for 30s…
+
+  eeg ×282
+  ppg ×72
+  scores ×30
+  imu ×150
+  hook ×1
+
+  🪝 Hook Triggers
+  Deep Work Guard  [cognitive]  dist: 0.0892
+    matched label: "focused reading session"  id: 7
+    command: notify
+    text: You're in deep focus — stay in the zone!
+```
+
+### subscribe — Per-connection broadcast filter
+
+Control which broadcast events reach your WebSocket connection, with optional
+field projection and rate limiting.  Reduces bandwidth for mobile clients,
+widgets, and integrations that only need specific metrics.
+
+> Requires WebSocket (`--http` mode has no push streaming).
+
+```bash
+# Only receive eeg-bands, keep focus + hr fields, at max 1 Hz:
+node cli.ts subscribe --events eeg-bands --fields focus,hr --max-hz 1
+
+# Receive eeg-bands and hook events, all fields, unlimited rate:
+node cli.ts subscribe --events eeg-bands,hook
+
+# Reset to default (all events, all fields, unlimited):
+node cli.ts subscribe --events '*'
+node cli.ts subscribe                      # same — no args = reset
+```
+
+**WebSocket JSON:**
+```json
+→ {"command":"subscribe","events":["eeg-bands"],"fields":["focus","hr","timestamp"],"max_hz":1}
+← {"command":"subscribe","ok":true,"events":["eeg-bands"],"fields":["focus","hr","timestamp"],"max_hz":1.0}
+```
+
+| Parameter  | Type       | Default       | Description |
+|------------|------------|---------------|-------------|
+| `events`   | `string[]` | `[]` (all)    | Event types to receive. `["*"]` = all. |
+| `fields`   | `string[]` | `[]` (all)    | Payload keys to keep. `timestamp` always included. |
+| `max_hz`   | `number`   | `0` (unlimited) | Max updates per second per event type. Server drops excess. |
+
+**Use cases:**
+- **iOS/Android client on LTE:** `events: ["eeg-bands"], fields: ["focus","hr","relaxation"], max_hz: 1` → ~200 bytes/sec instead of 12 KB/sec
+- **Lock screen widget:** `events: ["eeg-bands"], fields: ["focus"], max_hz: 0.2`
+- **Hook monitor:** `events: ["hook"]` — only receive hook triggers
+- **Full firehose:** omit all params or `events: ["*"]`
+
+When a hook fires during the listen window, the CLI prints a dedicated
+**🪝 Hook Triggers** section showing the hook name, scenario, cosine distance
+to the matched label, and the label that triggered it.
+
+**JSON event shapes:**
+```jsonc
+// EEG packet (4 channels × N samples):
+{ "event": "eeg", "electrode": 0, "samples": [12.3, -4.1, ...], "timestamp": 1740412800.512 }
+
+// PPG packet:
+{ "event": "ppg", "channel": 0, "samples": [2048.1, 2051.3, ...], "timestamp": 1740412800.512 }
+
+// IMU packet:
+{ "event": "imu", "ax": 0.01, "ay": -0.02, "az": 9.81, "gx": 0.0, "gy": 0.0, "gz": 0.0 }
+
+// 5-second epoch scores:
+{ "event": "scores", "relaxation": 0.40, "engagement": 0.60,
+  "rel_delta": 0.28, "rel_theta": 0.18, "rel_alpha": 0.32, "rel_beta": 0.17,
+  "hr": 68.2, "snr": 14.3, "timestamp": 1740412805 }
+
+// Label created (by dashboard or CLI):
+{ "event": "label_created", "label_id": 43, "text": "distracted", "created_at": 1740412830 }
+
+// Proactive Hook trigger (fired when live EEG matches a labeled pattern):
+{
+  "event": "hook",
+  "payload": {
+    "hook": "Deep Work Guard",           // hook rule name
+    "scenario": "cognitive",             // scenario: any | cognitive | emotional | physical
+    "context": "labels",                 // what matched (always "labels" currently)
+    "distance": 0.0892,                  // cosine distance to the matched label's EEG embedding
+    "label_id": 7,                       // label that triggered the match
+    "label_text": "focused reading session",
+    "triggered_at_utc": 1740412830,      // unix seconds when the hook fired
+    "command": "notify",                 // configured hook command
+    "text": "You're in deep focus — stay in the zone!"  // configured hook text
+  }
+}
+```
+
+---
+
+### `notify`
+
+Send a native OS notification through the NeuroSkill™ app.
+Useful for triggering alerts from automation pipelines.
+
+```bash
+node cli.ts notify "Session complete"
+node cli.ts notify "Focus done" "Take a 5-minute break"
+node cli.ts notify "High drowsiness detected" "Consider a break"
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"notify","title":"Session done","body":"Great work!"}'
+```
+
+**Response:** `{ "command": "notify", "ok": true }`
+
+---
+
+### `calibrations`
+
+Full CRUD for calibration profiles stored on the server.
+
+| Subcommand | Description |
+|---|---|
+| `calibrations` / `calibrations list` | List all profiles |
+| `calibrations get <id>` | Inspect a single profile by numeric ID |
+| `calibrations create "name" --actions "L:s,…"` | Create a new profile |
+| `calibrations update <id-or-name> [opts]` | Update an existing profile |
+| `calibrations delete <id-or-name>` | Delete a profile |
+
+**Calibration profile flags** (for `create` and `update`):
+
+| Flag | Description |
+|---|---|
+| `--actions "L1:20,L2:20"` | Actions as `label:duration_secs` pairs (comma-separated) |
+| `--loops <n>` | Loop count — how many times to repeat the action sequence (default: 3) |
+| `--break <n>` | Break duration in seconds between loops (default: 5) |
+| `--auto-start` | Auto-start when the calibration window opens |
+| `--name "…"` | (`update` only) Rename the profile |
+
+The `--actions` format is `"Label1:seconds,Label2:seconds"`.  If no colon is present,
+defaults to 20 seconds per action.
+
+```bash
+# List / inspect
+node cli.ts calibrations                         # list all profiles
+node cli.ts calibrations list                    # same as above
+node cli.ts calibrations get 3                   # full detail for profile id=3
+node cli.ts calibrations --json | jq '.profiles[].name'
+node cli.ts calibrations get 3 --json | jq '.profile.actions'
+
+# Create a new profile
+node cli.ts calibrations create "My Protocol" --actions "Eyes Open:20,Eyes Closed:20" --loops 3 --break 5
+node cli.ts calibrations create "Quick Baseline" --actions "Relax:30,Focus:30" --auto-start
+node cli.ts calibrations create "Three Phase" --actions "Rest:15,Concentrate:30,Breathe:10" --loops 2
+
+# Update an existing profile (by name or UUID)
+node cli.ts calibrations update "My Protocol" --loops 5 --break 10
+node cli.ts calibrations update "My Protocol" --name "Renamed Protocol"
+node cli.ts calibrations update "My Protocol" --actions "Eyes Open:30,Eyes Closed:30,Breathe:15"
+node cli.ts calibrations update "a1b2c3d4" --loops 4
+
+# Delete a profile (by name or UUID)
+node cli.ts calibrations delete "My Protocol"
+node cli.ts calibrations delete "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+```
+
+**HTTP:**
+```bash
+# List all profiles:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"list_calibrations"}' | jq '.profiles[].name'
+
+# Get a specific profile:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"get_calibration","id":3}'
+
+# Create a new profile:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "create_calibration",
+    "name": "My Protocol",
+    "actions": [
+      { "label": "Eyes Open", "duration_secs": 20 },
+      { "label": "Eyes Closed", "duration_secs": 20 }
+    ],
+    "loop_count": 3,
+    "break_duration_secs": 5,
+    "auto_start": false
+  }'
+
+# Update a profile:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"update_calibration","id":"a1b2c3d4-...","loop_count":5}'
+
+# Delete a profile:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"delete_calibration","id":"a1b2c3d4-..."}'
+
+# REST equivalents:
+curl -s -X POST http://127.0.0.1:8375/calibrations \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My Protocol","actions":[{"label":"Eyes Open","duration_secs":20}]}'
+curl -s -X PATCH http://127.0.0.1:8375/calibrations/a1b2c3d4-... \
+  -H "Content-Type: application/json" \
+  -d '{"loop_count":5}'
+curl -s -X DELETE http://127.0.0.1:8375/calibrations/a1b2c3d4-...
+```
+
+**Example output (list):**
+```
+⚡ calibrations
+
+  id     name                           actions  loop
+  ──────────────────────────────────────────────────────────
+  1      Eyes Open/Closed               4        2
+  2      Relaxation                     3        1
+  3      Focus Baseline                 5        1
+```
+
+**Example output (create):**
+```
+⚡ calibrations create "My Protocol"
+  ✓ created My Protocol  id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  actions: Eyes Open (20s) → Eyes Closed (20s)
+  loops: 3  break: 5s  auto-start: false
+```
+
+**JSON response (create):**
+```jsonc
+{
+  "command": "create_calibration",
+  "ok": true,
+  "profile": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "My Protocol",
+    "loop_count": 3,
+    "break_duration_secs": 5,
+    "auto_start": false,
+    "actions": [
+      { "label": "Eyes Open",  "duration_secs": 20 },
+      { "label": "Eyes Closed", "duration_secs": 20 }
+    ]
+  }
+}
+```
+
+---
+
+### `calibrate`
+
+Open the calibration window and start a profile immediately.
+With `--profile`, matches by profile name (case-insensitive substring) or exact UUID.
+
+```bash
+node cli.ts calibrate                              # uses active profile
+node cli.ts calibrate --profile "Eyes Open"        # by name
+node cli.ts calibrate --profile default            # by id
+node cli.ts calibrate --json | jq '.ok'
+```
+
+**HTTP:**
+```bash
+# List profiles first:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"list_calibrations"}' | jq '.profiles[].name'
+
+# Run the active profile:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"run_calibration"}'
+
+# Run a specific profile by UUID:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"run_calibration","id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890"}'
+```
+
+---
+
+### `timer`
+
+Open the Focus Timer window and auto-start the work phase using the last saved preset
+(Pomodoro 25/5, Deep Work 50/10, or Short Focus 15/5).
+
+```bash
+node cli.ts timer
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"timer"}'
+```
+
+---
+
+### `health`
+
+Query and manage Apple HealthKit data synced from the iOS companion app.
+Data is stored in `~/.skill/health.duckdb` and covers sleep analysis, workouts,
+heart rate, step counts, mindfulness sessions, arbitrary scalar health metrics,
+and GPS location fixes recorded by CoreLocation.
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `health` (or `health summary`) | Aggregate counts for a time range (default: last 24h) |
+| `health sleep` | Query sleep analysis samples (InBed, Asleep, Awake, REM, Core, Deep) |
+| `health workouts` | Query workout sessions (type, duration, calories, distance, HR) |
+| `health hr` | Query heart rate samples (bpm, context) |
+| `health steps` | Query step count aggregates |
+| `health metrics --metric-type <t>` | Query scalar health metrics (restingHeartRate, hrv, vo2Max, …) |
+| `health metric-types` | List all distinct metric types stored in the database |
+| `health location` | Query GPS fixes from CoreLocation (lat, lon, altitude, accuracy, speed) |
+| `health sync '<json>'` | Push HealthKit data from the iOS companion app |
+
+**Options (apply to query subcommands):**
+
+| Flag | Description |
+|---|---|
+| `--start <utc>` | Start of time range (unix seconds; default: now − 24h) |
+| `--end <utc>` | End of time range (unix seconds; default: now) |
+| `--limit <n>` | Max results to return (default: 100, max: 10,000) |
+| `--metric-type <t>` | Required for `health metrics` — e.g. `restingHeartRate`, `hrv`, `vo2Max`, `bodyMass` |
+
+```bash
+# Summary — aggregate counts (last 24h):
+node cli.ts health
+node cli.ts health --json
+node cli.ts health summary --start 1740000000 --end 1740086400
+
+# Sleep samples:
+node cli.ts health sleep
+node cli.ts health sleep --json | jq '.results[] | {stage: .value, start: .start_utc}'
+
+# Workouts:
+node cli.ts health workouts
+node cli.ts health workouts --json | jq '.results[] | {type: .workout_type, cal: .active_calories}'
+
+# Heart rate:
+node cli.ts health hr --limit 20
+node cli.ts health hr --json | jq '.results[] | {bpm: .bpm, ctx: .context}'
+
+# Steps:
+node cli.ts health steps
+node cli.ts health steps --json | jq '.results[].count'
+
+# Scalar metrics:
+node cli.ts health metrics --metric-type restingHeartRate
+node cli.ts health metrics --metric-type hrv --json | jq '.results[].value'
+
+# List available metric types:
+node cli.ts health metric-types
+
+# GPS location fixes:
+node cli.ts health location
+node cli.ts health location --limit 50
+node cli.ts health location --json | jq '.results[] | {lat:.latitude,lon:.longitude,ts:.timestamp}'
+node cli.ts health location --start 1740000000 --end 1740086400 --json
+
+# Sync data from iOS companion:
+node cli.ts health sync '{"steps":[{"start_utc":1740000000,"end_utc":1740086400,"count":9500}]}'
+```
+
+**HTTP:**
+```bash
+# Summary (GET — last 24h):
+curl -s http://127.0.0.1:8375/v1/health/summary | jq '.'
+
+# Summary (POST — custom range):
+curl -s -X POST http://127.0.0.1:8375/v1/health/summary \
+  -H "Content-Type: application/json" \
+  -d '{"start_utc":1740000000,"end_utc":1740086400}'
+
+# Query by type:
+curl -s -X POST http://127.0.0.1:8375/v1/health/query \
+  -H "Content-Type: application/json" \
+  -d '{"type":"sleep","start_utc":1740000000,"end_utc":1740086400,"limit":100}'
+
+curl -s -X POST http://127.0.0.1:8375/v1/health/query \
+  -H "Content-Type: application/json" \
+  -d '{"type":"metrics","metric_type":"restingHeartRate","start_utc":1740000000,"end_utc":1740086400}'
+
+# List metric types:
+curl -s http://127.0.0.1:8375/v1/health/metric_types | jq '.metric_types'
+
+# GPS location fixes:
+curl -s -X POST http://127.0.0.1:8375/v1/health/query \
+  -H "Content-Type: application/json" \
+  -d '{"type":"location","start_utc":1740000000,"end_utc":1740086400,"limit":100}'
+
+# Sync from iOS:
+curl -s -X POST http://127.0.0.1:8375/v1/health/sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sleep": [{"source_id":"watch","start_utc":1740000000,"end_utc":1740028800,"value":"REM"}],
+    "workouts": [{"workout_type":"Running","start_utc":1740030000,"end_utc":1740033600,
+                   "duration_secs":3600,"active_calories":450,"distance_meters":8000}],
+    "heart_rate": [{"timestamp":1740030000,"bpm":72.0,"context":"sedentary"}],
+    "steps": [{"start_utc":1740000000,"end_utc":1740086400,"count":9500}],
+    "mindfulness": [{"start_utc":1740040000,"end_utc":1740041200}],
+    "metrics": [{"metric_type":"restingHeartRate","timestamp":1740000000,"value":58.0,"unit":"bpm"}],
+    "location": [{"source_id":"iphone","timestamp":1740030000,"latitude":37.3317,"longitude":-122.0307,
+                   "altitude":25.0,"horizontal_accuracy":5.0,"speed":1.4,"course":270.0}]
+  }'
+```
+
+**Example output (summary):**
+```
+⚡ health  last 24h
+
+  Apple Health Summary
+    sleep samples    12
+    workouts          2
+    heart rate      148 samples
+    total steps    9500
+    mindfulness       1 sessions
+    metrics          24 entries
+    location fixes  312
+```
+
+**Example output (location):**
+```
+⚡ health location  last 24h  limit: 100
+
+  type: location  count: 3
+
+  37.33170, -122.03070  alt 25m  ±5m  1.4 km/h  [iphone]  3/29/2026, 10:30:00 AM
+  37.33251, -122.03140  alt 24m  ±8m  0.0 km/h  [iphone]  3/29/2026, 10:25:00 AM
+  37.33089, -122.02980  alt 26m  ±6m  4.2 km/h  [iphone]  3/29/2026, 10:20:00 AM
+```
+
+**Example output (workouts):**
+```
+⚡ health workouts  last 24h  limit: 100
+
+  type: workouts  count: 2
+
+  Running  3/17/2026, 6:30:00 AM  45m  450 kcal  8.0 km  avg HR 145
+  Yoga     3/16/2026, 8:00:00 PM  30m  120 kcal
+```
+
+**JSON responses:**
+
+Summary:
+```jsonc
+{
+  "start_utc": 1740000000,
+  "end_utc": 1740086400,
+  "sleep_samples": 12,
+  "workouts": 2,
+  "heart_rate_samples": 148,
+  "total_steps": 9500,
+  "mindfulness_sessions": 1,
+  "metric_entries": 24
+}
+```
+
+Query:
+```jsonc
+{
+  "type": "sleep",
+  "count": 12,
+  "results": [
+    { "id": 1, "source_id": "watch", "start_utc": 1740000000, "end_utc": 1740028800,
+      "value": "REM", "created_at": 1740100000 }
+  ]
+}
+```
+
+Sync:
+```jsonc
+{
+  "sleep_upserted": 1,
+  "workouts_upserted": 1,
+  "heart_rate_upserted": 1,
+  "steps_upserted": 1,
+  "mindfulness_upserted": 1,
+  "metrics_upserted": 1
+}
+```
+
+**Sync payload format (all arrays optional, idempotent upsert):**
+
+```jsonc
+{
+  "sleep":       [{ "source_id": "watch", "start_utc": 0, "end_utc": 0, "value": "REM" }],
+  "workouts":    [{ "workout_type": "Running", "start_utc": 0, "end_utc": 0, "duration_secs": 3600,
+                     "active_calories": 450, "distance_meters": 8000, "avg_heart_rate": 145 }],
+  "heart_rate":  [{ "timestamp": 0, "bpm": 72.0, "context": "sedentary" }],
+  "steps":       [{ "start_utc": 0, "end_utc": 0, "count": 9500 }],
+  "mindfulness": [{ "start_utc": 0, "end_utc": 0 }],
+  "metrics":     [{ "metric_type": "restingHeartRate", "timestamp": 0, "value": 58.0, "unit": "bpm" }]
+}
+```
+
+> **Common metric types:** `restingHeartRate`, `hrv` (SDNN ms), `vo2Max`, `bodyMass`,
+> `bloodPressureSystolic`, `bloodPressureDiastolic`, `respiratoryRate`, `bodyTemperature`,
+> `oxygenSaturation`, `bloodGlucose`.
+>
+> **Oura Ring metric types:** `oura_sleep_score`, `oura_readiness_score`, `oura_activity_score`,
+> `oura_deep_sleep_secs`, `oura_rem_sleep_secs`, `oura_light_sleep_secs`, `oura_awake_time_secs`,
+> `oura_total_sleep_secs`, `oura_sleep_efficiency`, `oura_breath_rate`, `oura_sleep_avg_hr`,
+> `oura_temperature_deviation`, `oura_temperature_trend_deviation`, `oura_active_calories`,
+> `oura_total_calories`, `oura_high_activity_time`, `oura_medium_activity_time`,
+> `oura_low_activity_time`, `oura_sedentary_time`, `oura_resting_time`,
+> `oura_equivalent_walking_distance`, plus standard types `hrv`, `restingHeartRate`, `spo2`.
+
+---
+
+### `oura`
+
+Sync data from the Oura Ring V2 Cloud API and store it in the unified health database.
+Data flows through the same `health.duckdb` pipeline as Apple HealthKit — query with
+`health` commands after syncing.
+
+| Subcommand | Description |
+|---|---|
+| `oura` / `oura status` | Check if Oura token is configured and test API connectivity |
+| `oura sync` | Sync last 30 days of Oura Ring data (sleep, activity, readiness, HR, SpO2, workouts) |
+
+```bash
+node cli.ts oura                                # check token + connectivity
+node cli.ts oura status                         # user info from Oura API
+node cli.ts oura status --json                  # raw JSON
+node cli.ts oura sync                           # sync last 30 days
+node cli.ts oura sync --oura-start 2026-03-01 --oura-end 2026-03-28  # custom date range
+node cli.ts oura sync --json                    # raw JSON response
+```
+
+**HTTP:**
+```bash
+# Status:
+curl -s http://127.0.0.1:8375/v1/oura/status | jq '.'
+
+# Sync (last 30 days):
+curl -s -X POST http://127.0.0.1:8375/v1/oura/sync \
+  -H "Content-Type: application/json" \
+  -d '{"start_date":"2026-03-01","end_date":"2026-03-28"}'
+```
+
+**WebSocket:**
+```jsonc
+{ "command": "oura_status" }
+{ "command": "oura_sync", "start_date": "2026-03-01", "end_date": "2026-03-28" }
+```
+
+**Example output (status):**
+```
+⚡ oura status
+
+  token       configured
+  connected   yes
+  email       user@example.com
+  age         32
+```
+
+**Example output (sync):**
+```
+⚡ oura sync  2026-03-01 → 2026-03-28
+
+  synced from Oura Ring
+    sleep:       28 fetched → 28 stored
+    workouts:    12 fetched → 12 stored
+    heart rate:  8064 fetched → 8064 stored
+    steps:       28 fetched → 28 stored
+    mindfulness: 5 fetched → 5 stored
+    metrics:     392 fetched → 392 stored
+```
+
+> After syncing, query Oura data with standard health commands:
+> ```bash
+> node cli.ts health metrics --metric-type oura_sleep_score
+> node cli.ts health metrics --metric-type oura_readiness_score
+> node cli.ts health hr --limit 20     # includes Oura HR samples
+> node cli.ts health steps             # includes Oura step counts
+> node cli.ts health metric-types      # lists all oura_* metric types
+> ```
+
+---
+
+### `dnd`
+
+Show Do Not Disturb automation status, or force-override it.
+
+With no subcommand, shows the full DND config and live state: automation enabled/disabled,
+focus threshold, rolling average score, sample window fill, and OS-level Focus state.
+
+With `on` or `off`, immediately activates or deactivates DND, bypassing the EEG threshold.
+
+```bash
+node cli.ts dnd                                 # show config + live eligibility state
+node cli.ts dnd on                              # force-enable DND (bypass EEG threshold)
+node cli.ts dnd off                             # force-disable DND
+node cli.ts dnd --json                          # raw JSON (pipe to jq)
+node cli.ts dnd --json | jq '{enabled: .enabled, avg_score: .avg_score, threshold: .threshold}'
+```
+
+**HTTP:**
+```bash
+# Status:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"dnd"}'
+
+# Force on:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"dnd_set","enabled":true}'
+
+# Force off:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"dnd_set","enabled":false}'
+```
+
+**Example output (status):**
+```
+⚡ dnd  automation status
+
+  DND automation
+    enabled        yes
+    threshold      60  avg focus score (0–100) required to activate
+    window         60s  (≈ 240 samples at ~4 Hz)
+    mode           standard
+
+  Rolling average  (avg of last 240 focus scores)
+    ████████████████████░░░░  72.5 / 60
+    ▶ above threshold — DND is active
+
+  Sample window
+    ████████████████████████  240 / 240 samples
+
+  State
+    app activated  yes  (this app set DND)
+    OS active      yes  (macOS Assertions.json / defaults read)
+```
+
+**JSON response (status):**
+```jsonc
+{
+  "command": "dnd",
+  "ok": true,
+  "enabled": true,
+  "threshold": 60,
+  "duration_secs": 60,
+  "window_size": 240,
+  "mode_identifier": "standard",
+  "avg_score": 72.5,
+  "sample_count": 240,
+  "dnd_active": true,
+  "os_active": true
+}
+```
+
+**JSON response (dnd on/off):**
+```jsonc
+{ "command": "dnd_set", "ok": true }
+```
+
+---
+
+### `raw`
+
+Send any JSON payload to the server and print the raw response.
+Use this for commands not yet exposed as named CLI subcommands, or for precise
+control over parameters.
+
+```bash
+node cli.ts raw '{"command":"status"}'
+node cli.ts raw '{"command":"sessions"}' --json
+node cli.ts raw '{"command":"search","start_utc":1740412800,"end_utc":1740415500,"k":3}'
+node cli.ts raw '{"command":"label","text":"retrospective note","label_start_utc":1740412800}'
+```
+
+**HTTP:**
+```bash
+# The raw command body is forwarded verbatim:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"search","start_utc":1740412800,"end_utc":1740415500,"k":3}'
+```
+
+---
+
+### `llm`
+
+Control the built-in on-device LLM inference server (OpenAI-compatible, powered by the RLX runtime).
+All subcommands route to the WebSocket/HTTP API — no GPU dependency for status/catalog/logs queries.
+
+#### Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `llm status` | Server state (stopped/loading/running), model name, context window |
+| `llm start` | Load the active model and start the inference server |
+| `llm stop` | Stop the server and free GPU/CPU memory |
+| `llm catalog` | List all GGUF models with download states and active selections |
+| `llm add <repo> <filename>` | Add an external HF model to the catalog and download it |
+| `llm add <hf-url>` | Add from a full HuggingFace URL |
+| `llm add ... --mmproj <file>` | Also add and download a vision projector from the same repo |
+| `llm select <filename>` | Set the active text model |
+| `llm mmproj <filename\|none>` | Set the active vision projector (or `none` to disable) |
+| `llm autoload-mmproj <on\|off>` | Toggle auto-loading of vision projector on start |
+| `llm download <filename>` | Download a model by filename (fire-and-forget; poll catalog for progress) |
+| `llm pause <filename>` | Pause an in-progress model download |
+| `llm resume <filename>` | Resume a paused model download |
+| `llm cancel <filename>` | Cancel an in-progress download |
+| `llm delete <filename>` | Delete a locally-cached model file |
+| `llm downloads` | List all downloads with status and progress |
+| `llm refresh` | Re-probe the HF Hub cache for externally downloaded models |
+| `llm fit` | Check which models fit in available RAM/VRAM |
+| `llm logs` | Print the last 500 LLM server log lines |
+| `llm chat` | **Interactive multi-turn REPL** — type `exit` to quit (**WebSocket only**) |
+| `llm chat "message"` | Single-shot: send one message, stream the reply, and exit (**WebSocket only**) |
+
+```bash
+# Server lifecycle
+node cli.ts llm status
+node cli.ts llm start          # loads model — may take several seconds
+node cli.ts llm stop
+
+# Model management — catalog, add, select, download
+node cli.ts llm catalog
+node cli.ts llm catalog --json | jq '.entries[] | select(.state == "downloaded")'
+node cli.ts llm add bartowski/Phi-4-mini-reasoning-GGUF Phi-4-mini-reasoning-Q4_K_M.gguf
+node cli.ts llm add bartowski/Phi-4-mini-reasoning-GGUF Phi-4-mini-reasoning-Q4_K_M.gguf --mmproj mmproj-Phi-4-mini-reasoning-BF16.gguf
+node cli.ts llm add https://huggingface.co/bartowski/Phi-4-mini-reasoning-GGUF/blob/main/Phi-4-mini-reasoning-Q4_K_M.gguf
+node cli.ts llm select "Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+node cli.ts llm mmproj "mmproj-Qwen_Qwen3.5-4B-BF16.gguf"
+node cli.ts llm mmproj none                    # disable vision projector
+node cli.ts llm autoload-mmproj on
+node cli.ts llm download "Qwen3-1.7B-Q4_K_M.gguf"   # fire-and-forget
+node cli.ts llm pause "Qwen3-1.7B-Q4_K_M.gguf"
+node cli.ts llm resume "Qwen3-1.7B-Q4_K_M.gguf"
+node cli.ts llm cancel "Qwen3-1.7B-Q4_K_M.gguf"
+node cli.ts llm delete "Qwen3-1.7B-Q4_K_M.gguf"
+node cli.ts llm downloads                      # list all downloads with progress
+node cli.ts llm refresh                        # re-probe HF Hub cache
+node cli.ts llm fit                            # check which models fit in RAM/VRAM
+
+# Logs
+node cli.ts llm logs
+
+# ── Interactive multi-turn chat REPL ──────────────────────────────────────────
+node cli.ts llm chat                          # opens interactive REPL
+
+# With a system prompt (persists for the whole session):
+node cli.ts llm chat --system "You are a concise EEG neuroscience assistant."
+
+# With GenParam overrides:
+node cli.ts llm chat --temperature 0.3 --max-tokens 512
+
+# Combined — system prompt + lower temperature for factual answers:
+node cli.ts llm chat \
+  --system "Answer in one sentence. Only use what you know about EEG." \
+  --temperature 0.2
+
+# ── Single-shot chat (pipe-friendly) ─────────────────────────────────────────
+node cli.ts llm chat "What EEG frequency bands are associated with meditation?"
+node cli.ts llm chat "Explain delta waves" --temperature 0.3 --max-tokens 256
+node cli.ts llm chat "Summarize my session" --json   # JSON output: {text, tokens}
+```
+
+**Interactive REPL commands** (type these at the `You:` prompt):
+
+| Command | Effect |
+|---|---|
+| `/clear` | Clear conversation history (system prompt is kept) |
+| `/history` | Print all messages in the current conversation |
+| `/help` | Show REPL command help |
+| `exit` or `quit` | End the session |
+| `Ctrl+C` or `Ctrl+D` | End the session immediately |
+
+**Chat persistence:**
+
+All conversations initiated via WebSocket (`llm_chat`) and HTTP (`POST /llm/chat`)
+are **automatically persisted** to the same DuckDB chat store used by the Chat window UI
+(`~/.skill/chats/chat_history.duckdb`).  This means:
+
+- WebSocket / HTTP chats appear in the Chat window sidebar and can be reviewed later.
+- The server returns a `session_id` that you can pass in subsequent requests to continue
+  the same conversation (multi-turn persistence across connections).
+- New sessions are auto-titled from the first user message (up to 60 characters).
+- Tool calls executed during the conversation are also persisted.
+
+To continue an existing conversation, include `"session_id": <id>` in your request.
+If omitted, a new session is created automatically.
+
+**WebSocket protocol — `llm_chat` (streaming):**
+
+`llm_chat` is the only WebSocket command that returns **multiple frames** per request.
+Tokens stream back as `delta` frames; generation ends with a single `done` (or `error`) frame.
+
+```js
+ws.send(JSON.stringify({
+  command:  "llm_chat",
+  messages: [
+    { role: "system", content: "You are a concise EEG assistant." },
+    { role: "user",   content: "What does high theta power indicate?" },
+  ],
+  // Optional — continue an existing session:
+  // session_id: 42,
+  // Optional GenParams — all have sensible defaults:
+  // temperature: 0.8, top_k: 40, top_p: 0.9, repeat_penalty: 1.1,
+  // max_tokens: 2048, thinking_budget: 512  (set to 0 to skip <think> blocks)
+}));
+
+// Short-hand for single user message:
+ws.send(JSON.stringify({ command: "llm_chat", message: "Hello!" }));
+```
+
+**Server sends multiple frames back:**
+
+```jsonc
+// Session frame (sent first — contains the persistent session_id):
+{ "command": "llm_chat", "type": "session", "session_id": 42 }
+
+// Delta frames (one per token batch):
+{ "command": "llm_chat", "type": "delta", "text": "High theta" }
+{ "command": "llm_chat", "type": "delta", "text": " power (4–8 Hz)" }
+// ...
+
+// Final done frame (also includes session_id):
+{
+  "command":           "llm_chat",
+  "ok":                true,
+  "type":              "done",
+  "finish_reason":     "stop",     // "stop" | "length"
+  "prompt_tokens":     42,
+  "completion_tokens": 87,
+  "n_ctx":             4096,
+  "session_id":        42
+}
+
+// Or on error:
+{
+  "command": "llm_chat",
+  "ok":      false,
+  "type":    "error",
+  "error":   "LLM server not running — send { \"command\": \"llm_start\" } first"
+}
+```
+
+**HTTP REST shortcuts** (non-streaming):
+
+```bash
+# Status
+curl -s http://127.0.0.1:8375/llm/status | jq '{status, model_name, n_ctx}'
+
+# Start / stop
+curl -s -X POST http://127.0.0.1:8375/llm/start
+curl -s -X POST http://127.0.0.1:8375/llm/stop
+
+# Catalog
+curl -s http://127.0.0.1:8375/llm/catalog | jq '.entries[] | select(.state == "downloaded") | .filename'
+
+# Add an external model (via WebSocket/universal tunnel)
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_add_model","repo":"bartowski/Phi-4-mini-reasoning-GGUF","filename":"Phi-4-mini-reasoning-Q4_K_M.gguf","download":true}'
+
+# Select active model / mmproj
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_select_model","filename":"Qwen_Qwen3.5-4B-Q4_K_M.gguf"}'
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_select_mmproj","filename":"mmproj-Qwen_Qwen3.5-4B-BF16.gguf"}'
+
+# Download a model (fire-and-forget; poll /llm/catalog for progress)
+curl -s -X POST http://127.0.0.1:8375/llm/download \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"Qwen3-1.7B-Q4_K_M.gguf"}'
+
+# Pause / resume / cancel / delete
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_pause_download","filename":"Qwen3-1.7B-Q4_K_M.gguf"}'
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_resume_download","filename":"Qwen3-1.7B-Q4_K_M.gguf"}'
+curl -s -X POST http://127.0.0.1:8375/llm/cancel_download \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"Qwen3-1.7B-Q4_K_M.gguf"}'
+curl -s -X POST http://127.0.0.1:8375/llm/delete \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"Qwen3-1.7B-Q4_K_M.gguf"}'
+
+# Downloads list / refresh / hardware fit
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_downloads"}'
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_refresh_catalog"}'
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"llm_hardware_fit"}'
+
+# Logs
+curl -s http://127.0.0.1:8375/llm/logs | jq '.logs[-10:]'
+
+# ── POST /llm/chat — non-streaming chat with optional image upload ────────────
+# All conversations are persisted to chat_history.duckdb (same store as the Chat window).
+# A session_id is returned in the response; pass it in subsequent requests to continue
+# the same conversation.
+
+# Plain text message (creates a new session automatically)
+curl -s -X POST http://127.0.0.1:8375/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"What is EEG coherence?"}' | jq '{text, finish_reason, completion_tokens, session_id}'
+
+# Continue an existing session (multi-turn)
+curl -s -X POST http://127.0.0.1:8375/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Can you elaborate on that?","session_id":42}'
+
+# With a system prompt and GenParams
+curl -s -X POST http://127.0.0.1:8375/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Summarize in one line.","system":"Be extremely brief.","temperature":0.3}'
+
+# With an image (base64 data-URL in the "images" array)
+IMAGE_B64=$(base64 -i screenshot.png)
+curl -s -X POST http://127.0.0.1:8375/llm/chat \
+  -H "Content-Type: application/json" \
+  -d "{\"message\":\"What do you see in this image?\",\"images\":[\"data:image/png;base64,${IMAGE_B64}\"]}"
+
+# Full OpenAI messages format (multi-turn, vision content parts)
+curl -s -X POST http://127.0.0.1:8375/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role":"system","content":"You are a neuroscience assistant."},
+      {"role":"user","content":[
+        {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}},
+        {"type":"text","text":"What brain region might this scan show?"}
+      ]}
+    ]
+  }' | jq '.text'
+```
+
+**`POST /llm/chat` response** (always complete JSON, never streamed):
+```json
+{
+  "command":           "llm_chat",
+  "ok":                true,
+  "text":              "EEG coherence measures…",
+  "finish_reason":     "stop",
+  "prompt_tokens":     42,
+  "completion_tokens": 87,
+  "n_ctx":             4096
+}
+```
+
+**Image upload via CLI** (WebSocket streaming):
+
+```bash
+# Single-shot with one image
+node cli.ts llm chat "What do you see?" --image screenshot.png
+
+# Multiple images
+node cli.ts llm chat "Compare these EEG plots" --image session1.png --image session2.png
+
+# With system prompt + GenParams
+node cli.ts llm chat "Describe this headset" \
+  --image headset.jpg \
+  --system "You are a hardware expert." \
+  --temperature 0.2
+
+# HTTP non-streaming (works without WebSocket)
+node cli.ts llm chat "What's in this scan?" --image brain.png --http
+
+# Interactive REPL with image staging (type /image inside the session)
+node cli.ts llm chat
+# You: /image eeg_plot.png
+# You: What anomalies do you see in this EEG trace?
+```
+
+**Image upload via WebSocket** (`llm_chat` streaming protocol):
+
+Images are embedded directly in the `messages` array as OpenAI-format `image_url` content parts using base64 `data:` URLs.  The server extracts and decodes them automatically before passing to the inference actor.
+
+```js
+// Single image + text (standard OpenAI vision format)
+ws.send(JSON.stringify({
+  command:  "llm_chat",
+  messages: [
+    {
+      role:    "user",
+      content: [
+        { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo…" } },
+        { type: "text",      text: "What do you see in this EEG spectrogram?" },
+      ],
+    },
+  ],
+}));
+
+// Multiple images (in document order)
+ws.send(JSON.stringify({
+  command:  "llm_chat",
+  messages: [
+    {
+      role:    "user",
+      content: [
+        { type: "image_url", image_url: { url: "data:image/jpeg;base64,/9j/4AAQ…" } },
+        { type: "image_url", image_url: { url: "data:image/jpeg;base64,/9j/4BBQ…" } },
+        { type: "text",      text: "Compare these two EEG recordings." },
+      ],
+    },
+  ],
+}));
+```
+
+> **Vision requirement:** Image input requires the LLM server to be started with a
+> vision-capable model that has an mmproj (multi-modal projector) loaded.
+> Check `supports_vision: true` in `llm_status` before sending images.
+> If `supports_vision` is false the server will still attempt inference but will
+> ignore the image content.
+
+**WebSocket commands** (also available via `POST /` universal tunnel):
+
+| Command | Required params | Optional params | Description |
+|---|---|---|---|
+| `llm_status` | — | — | Server state + model info |
+| `llm_start` | — | — | Start inference server (blocks until model loaded) |
+| `llm_stop` | — | — | Stop server + free resources |
+| `llm_catalog` | — | — | Full model catalog with live download progress |
+| `llm_add_model` | `repo` (string), `filename` (string) | `download` (bool), `mmproj` (string) | Add an external HF model to the catalog |
+| `llm_select_model` | `filename` (string) | — | Set the active text model |
+| `llm_select_mmproj` | `filename` (string) | — | Set the active vision projector (`""` to disable) |
+| `llm_set_autoload_mmproj` | `enabled` (bool) | — | Toggle auto-loading of vision projector on start |
+| `llm_download` | `filename` (string) | — | Start model download |
+| `llm_pause_download` | `filename` (string) | — | Pause an in-progress download |
+| `llm_resume_download` | `filename` (string) | — | Resume a paused download |
+| `llm_cancel_download` | `filename` (string) | — | Cancel in-progress download |
+| `llm_delete` | `filename` (string) | — | Delete cached model file |
+| `llm_downloads` | — | — | List all downloads with status and progress |
+| `llm_refresh_catalog` | — | — | Re-probe HF Hub cache for externally downloaded models |
+| `llm_hardware_fit` | — | — | Check which models fit in available RAM/VRAM |
+| `llm_logs` | — | — | Last ≤500 log entries |
+| `llm_chat` | `messages` (array) **or** `message` (string) | `temperature`, `top_k`, `top_p`, `repeat_penalty`, `seed`, `max_tokens`, `thinking_budget` | Streaming chat (multi-frame response; `messages` grows per turn for multi-turn) |
+| `subscribe` | — | `events` (string[]), `fields` (string[]), `max_hz` (number) | Filter broadcasts for this connection (WS only). Empty/omit = reset to all. |
+
+**GenParams reference** (applicable to `llm_chat`):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `temperature` | float | 0.8 | Sampling temperature (0 = deterministic) |
+| `top_k` | int | 40 | Top-K sampling |
+| `top_p` | float | 0.9 | Nucleus sampling threshold |
+| `repeat_penalty` | float | 1.1 | Repetition penalty |
+| `seed` | uint | 0xDEADBEEF | RNG seed for reproducible output |
+| `max_tokens` | uint | 2048 | Maximum tokens to generate |
+| `thinking_budget` | uint \| null | 512 | Max tokens in `<think>…</think>` block (`0` = skip thinking, `null` = unlimited) |
+
+#### Built-in Tool Calling
+
+When the LLM server is running, `llm_chat` supports **automatic tool calling** — the
+model can invoke built-in tools to perform actions and return results within the
+conversation. Tools are injected into the system prompt automatically when enabled.
+
+| Tool | Description |
+|---|---|
+| `bash` | Execute shell commands (with safety approval for dangerous operations) |
+| `read_file` | Read file contents from disk |
+| `write_file` | Write / create files |
+| `edit_file` | Surgical find-and-replace edits in files |
+| `web_search` | Search the web (DuckDuckGo/Brave/SearXNG + fallback handling) |
+| `web_fetch` | Fetch a URL and return its content |
+| `search_output` | Navigate large tool outputs (paginated) |
+| `skill` | Query the NeuroSkill™ API — status, sessions, search, labels, screenshots, sleep, hooks, DND |
+
+Tool calls are detected in the model's output, executed server-side, and results are
+fed back into the conversation automatically. The CLI's `llm chat` command handles
+this transparently — you'll see tool-call cards in the interactive REPL and results
+streamed back inline.
+
+##### Tool policy settings (LLM → Tools)
+
+The following runtime settings control tool behavior:
+
+| Field | Type | Default | Meaning |
+|---|---:|---:|---|
+| `chat_mode` | `automatic \| chat \| query` | `automatic` | `automatic`: use tools when relevant; `chat`: free-form responses allowed; `query`: strict grounded mode (requires tool evidence). |
+| `query_refusal_response` | string | built-in sentence | Response returned in `query` mode when no relevant tool evidence is available. |
+| `intelligent_selection_enabled` | bool | `true` | Enables per-prompt tool reranking to reduce tool injection bloat. |
+| `intelligent_selection_top_n` | number | `8` | Max tools kept after reranking. |
+| `prefer_native_tool_calling` | bool | `true` | Prompts models to prefer OpenAI-style native `tool_calls` JSON, with `[TOOL_CALL]...` fallback. |
+| `strict_path_safety` | bool | `true` | Enforces trusted-root path integrity checks (`cwd`, `home`, `tmp`) for file tools. |
+| `prompt_variables` | object | `{}` | Runtime `{key}` replacements for system/user prompts before inference. |
+
+Built-in prompt variables include: `{time}`, `{date}`, `{datetime}`, `{os}`,
+`{arch}`, `{home}`, `{cwd}`, `{llm.model}`, `{llm.n_ctx}`. Custom keys from
+`prompt_variables` are merged on top.
+
+##### Query mode behavior
+
+When `chat_mode = query`, the assistant is prevented from answering with ungrounded
+free-text if no successful tool-backed evidence was produced in the turn. In that
+case, it returns `query_refusal_response` exactly.
+
+**The `skill` tool** lets the LLM query and control NeuroSkill™ directly. Commands
+are sent as `{ "command": "<ws_command>", "args": { ... } }` objects. Supported
+commands include: `status`, `sessions`, `session_metrics`, `search`, `compare`,
+`sleep`, `sleep_schedule`, `sleep_schedule_set`, `label`, `search_labels`,
+`interactive_search`, `search_screenshots`, `screenshots_around`,
+`screenshots_for_eeg`, `eeg_for_screenshots`, `search_screenshots_vision`,
+`search_screenshots_by_image_b64`, `hooks_status`, `hooks_get`, `hooks_suggest`,
+`hooks_log`, `dnd`, `notify`, `say`, `health_summary`, `health_query`,
+`health_metric_types`, `health_sync`, `oura_sync`, `oura_status`, and others.
+
+**Blocked commands:** For safety, the LLM cannot invoke self-management commands:
+`llm_start`, `llm_stop`, `llm_select_model`, `llm_select_mmproj`, `llm_add_model`,
+`llm_download`, `llm_cancel_download`, `llm_pause_download`, `llm_resume_download`,
+`llm_refresh_catalog`, `llm_logs`, `llm_delete`, `run_calibration`, `timer`.
+
+**Safety:** Dangerous operations (e.g. `rm -rf`, writing to system paths) trigger an
+approval dialog before execution. With `strict_path_safety` enabled, file tools also
+reject paths outside trusted roots (`cwd`/`home`/`tmp`) before execution. The tool
+system enforces output size limits and automatic history trimming to stay within the
+model's context window.
+
+---
+
+**LLM server status values:**
+
+| `status` | Meaning |
+|---|---|
+| `"stopped"` | No model loaded; `llm_start` required |
+| `"loading"` | Model is being loaded from disk / initialising |
+| `"running"` | Model ready; `llm_chat` and `/v1/*` endpoints are live |
+
+**Download state values** (in `llm_catalog` entries):
+
+| `state` | Meaning |
+|---|---|
+| `"not_downloaded"` | Model not present locally |
+| `"downloading"` | Download in progress; check `progress` (0.0–1.0) |
+| `"downloaded"` | Model cached locally; ready to use |
+| `"cancelled"` | Download was cancelled |
+| `"failed"` | Download failed; `status_msg` has details |
+
+> **Note:** The LLM server also exposes an OpenAI-compatible HTTP API on the same
+> port at `/v1/chat/completions`, `/v1/completions`, and `/v1/embeddings` once started.
+> Use any OpenAI client library by pointing it at `http://127.0.0.1:<port>`.
+
+**Python example — streaming over WebSocket:**
+
+```python
+import asyncio, json
+import websockets
+
+async def llm_chat(port: int, message: str):
+    async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+        # Start server if needed
+        await ws.send(json.dumps({"command": "llm_start"}))
+        resp = json.loads(await ws.recv())
+        print("server:", resp.get("result"))
+
+        # Stream a chat response
+        await ws.send(json.dumps({"command": "llm_chat", "message": message}))
+        text = ""
+        async for raw in ws:
+            frame = json.loads(raw)
+            if frame.get("command") != "llm_chat":
+                continue  # broadcast event — skip
+            if frame.get("type") == "delta":
+                print(frame["text"], end="", flush=True)
+                text += frame["text"]
+            elif frame.get("type") == "done":
+                print(f"\n[{frame['finish_reason']} | {frame['completion_tokens']} tokens]")
+                break
+            elif frame.get("type") == "error" or frame.get("ok") is False:
+                raise RuntimeError(frame.get("error", "llm_chat error"))
+
+asyncio.run(llm_chat(8375, "Explain delta waves in one sentence."))
+```
+
+**Node.js example — streaming via ws:**
+
+```js
+const WebSocket = require("ws");
+const ws = new WebSocket("ws://127.0.0.1:8375");
+
+ws.on("open", () => {
+  // Start server
+  ws.send(JSON.stringify({ command: "llm_start" }));
+});
+
+ws.on("message", (raw) => {
+  const frame = JSON.parse(raw);
+
+  if (frame.command === "llm_start" && frame.ok) {
+    // Server ready — send a chat message
+    ws.send(JSON.stringify({ command: "llm_chat", message: "What is EEG coherence?" }));
+    return;
+  }
+
+  if (frame.command !== "llm_chat") return;
+
+  switch (frame.type) {
+    case "delta": process.stdout.write(frame.text); break;
+    case "done":
+      console.log(`\n[${frame.finish_reason} | ${frame.completion_tokens} tokens]`);
+      ws.close();
+      break;
+    case "error":
+      console.error("Error:", frame.error);
+      ws.close();
+      break;
+  }
+});
+```
+
+---
+
+## Screenshots
+
+NeuroSkill™ periodically captures screenshots of the active window, embeds them
+with CLIP vision (ONNX), runs OCR text extraction, and indexes both modalities in
+separate HNSW indices for similarity search.
+
+**Capabilities:**
+- **Capture:** macOS (CoreGraphics FFI), Linux (X11/Wayland), Windows (GDI)
+- **Vision embedding:** Nomic Embed Vision v1.5 via the rlx runtime (GPU or CPU)
+- **OCR:** on-device via `rlx-ocr` (Linux/Windows) or Apple Vision (macOS)
+- **Search:** dual HNSW architecture — visual similarity and OCR text similarity
+- **Configuration:** interval, image size, quality, embedding backend, OCR engine,
+  GPU/CPU toggle — all in Settings → Screenshots
+- **Image serving:** `GET /screenshots/<day>/<filename>` on the API server
+
+Screenshot images appear as indicators on the History day-view heatmap grid and can
+be searched from the CLI via `search-images`, `screenshots-around`, `screenshots-for-eeg`,
+and `eeg-for-screenshots`.
+
+---
+
+### `search-images`
+
+Search screenshots by OCR text — either semantic (embedding similarity via HNSW)
+or substring (SQL LIKE matching).
+
+Each result includes the screenshot filename, timestamp, app name, window title,
+OCR text, and a similarity score (for semantic mode).
+
+Screenshot images can be viewed at: `http://127.0.0.1:<port>/screenshots/<filename>`
+
+**Modes:**
+- `semantic` (default) — embeds the query text and searches the OCR HNSW index
+  for semantically similar on-screen text
+- `substring` — direct SQL LIKE matching against raw OCR text
+- `vision` (via `--by-image`) — embeds a reference image with CLIP and searches
+  the visual HNSW index for visually similar screenshots
+
+```bash
+node cli.ts search-images "compiler error"
+node cli.ts search-images "login page" --k 5
+node cli.ts search-images "TODO" --mode substring
+node cli.ts search-images "dashboard" --json | jq '.results[].filename'
+node cli.ts search-images "meeting notes" --json | jq '.results[] | {file: .filename, app: .app_name, sim: .similarity}'
+node cli.ts search-images "error stack trace" --mode semantic --k 10
+
+# Vision search — find screenshots visually similar to a reference image:
+node cli.ts search-images --by-image reference.png
+node cli.ts search-images --by-image screenshot.jpg --k 5
+node cli.ts search-images --by-image layout-mock.webp --json | jq '.results[].filename'
+```
+
+**HTTP:**
+```bash
+# Semantic search (default):
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"search_screenshots","query":"compiler error","k":20,"mode":"semantic"}'
+
+# Substring search:
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"search_screenshots","query":"TODO","k":10,"mode":"substring"}'
+
+# Vision search (base64-encoded image):
+IMAGE_B64=$(base64 -w0 reference.png)
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d "{\"command\":\"search_screenshots_by_image_b64\",\"image_b64\":\"$IMAGE_B64\",\"k\":20}"
+```
+
+**Example output:**
+```
+⚡ search-images "compiler error"  (mode: semantic, k: 20)
+
+  mode:    semantic
+  k:       20   results: 3
+
+  20260315/20260315143025.webp
+     time:       3/15/2026, 2:30:25 PM
+     app:        VS Code  window: skill — cli.ts
+     similarity: 87%
+     ocr:        error[E0308]: mismatched types expected `Result<Vec<…
+
+  20260315/20260315144510.webp
+     time:       3/15/2026, 2:45:10 PM
+     app:        Terminal  window: cargo build
+     similarity: 82%
+     ocr:        error: aborting due to 3 previous errors…
+
+  20260314/20260314091205.webp
+     time:       3/14/2026, 9:12:05 AM
+     app:        Firefox  window: Stack Overflow
+     similarity: 74%
+     ocr:        TypeError: Cannot read properties of undefined…
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "search_screenshots",
+  "ok": true,
+  "query": "compiler error",
+  "mode": "semantic",
+  "k": 20,
+  "count": 3,
+  "results": [
+    {
+      "timestamp":    20260315143025,
+      "unix_ts":      1741963825,
+      "filename":     "20260315/20260315143025.webp",
+      "app_name":     "VS Code",
+      "window_title": "skill — cli.ts",
+      "ocr_text":     "error[E0308]: mismatched types expected `Result<Vec<…",
+      "similarity":   0.87
+    },
+    // ... more results
+  ]
+}
+```
+
+#### `--full` reveals
+
+| Hidden field | Type | Contents |
+|---|---|---|
+| `results[].ocr_text` | string | Full OCR text (the summary truncates to 120 chars) |
+| `results[].timestamp` | number | YYYYMMDDHHmmss-format timestamp (the cross-modal join key to EEG embeddings) |
+| `results[].similarity` | number | Raw cosine similarity 0–1 (summary shows as percentage) |
+
+```bash
+node cli.ts search-images "build error" --json | jq '.results[0].ocr_text'
+node cli.ts search-images "meeting" --json | jq '.results[] | {file: .filename, app: .app_name}'
+```
+
+---
+
+### `screenshots-around`
+
+Find screenshots near a given unix timestamp.  Returns all screenshots within
+±`window_secs` of the target time.  Useful for correlating screenshots with
+specific EEG moments, labels, or hook triggers.
+
+```bash
+node cli.ts screenshots-around --at 1740412800
+node cli.ts screenshots-around --at 1740412800 --seconds 120
+node cli.ts screenshots-around --at 1740412800 --json | jq '.results | length'
+node cli.ts screenshots-around --at 1740412800 --json | jq '.results[].filename'
+```
+
+**HTTP:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"screenshots_around","timestamp":1740412800,"window_secs":60}'
+```
+
+**Example output:**
+```
+⚡ screenshots-around  (timestamp: 1740412800, window: ±60s)
+
+  around:  2/24/2026, 8:00:00 AM
+  window:  ±60s   results: 4
+
+  20260224/20260224075945.webp
+     time:  2/24/2026, 7:59:45 AM   app: VS Code  window: main.rs
+     ocr:   fn main() { let app = tauri::Builder::default()…
+
+  20260224/20260224080005.webp
+     time:  2/24/2026, 8:00:05 AM   app: VS Code  window: main.rs
+     ocr:   pub async fn dispatch(app: &AppHandle, command: &str…
+
+  20260224/20260224080025.webp
+     time:  2/24/2026, 8:00:25 AM   app: Terminal  window: cargo test
+     ocr:   running 12 tests… test result: ok. 12 passed…
+
+  20260224/20260224080045.webp
+     time:  2/24/2026, 8:00:45 AM   app: Firefox  window: localhost:1420
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "screenshots_around",
+  "ok": true,
+  "timestamp": 1740412800,
+  "window_secs": 60,
+  "count": 4,
+  "results": [
+    {
+      "timestamp":    20260224075945,
+      "unix_ts":      1740412785,
+      "filename":     "20260224/20260224075945.webp",
+      "app_name":     "VS Code",
+      "window_title": "main.rs",
+      "ocr_text":     "fn main() { let app = tauri::Builder::default()…",
+      "similarity":   0.0
+    },
+    // ... more results
+  ]
+}
+```
+
+**Use with other commands — correlate screenshots with EEG moments:**
+
+```bash
+# Find what was on screen when a label was created:
+LABEL_TS=$(node cli.ts search-labels "deep focus" --json | jq '.results[0].created_at')
+node cli.ts screenshots-around --at $LABEL_TS --seconds 30
+
+# See what you were looking at during a search hit:
+HIT_TS=$(node cli.ts search --json | jq '.result.results[0].neighbors[0].timestamp_unix')
+node cli.ts screenshots-around --at $HIT_TS
+
+# View the actual image in a browser:
+PORT=8375
+FILE=$(node cli.ts screenshots-around --at 1740412800 --json | jq -r '.results[0].filename')
+open "http://127.0.0.1:$PORT/screenshots/$FILE"   # macOS
+xdg-open "http://127.0.0.1:$PORT/screenshots/$FILE"  # Linux
+```
+
+---
+
+### `screenshots-for-eeg`
+
+Find screenshots captured near EEG recording timestamps.  Given an EEG time range
+(auto: latest session, or `--start`/`--end`), finds all EEG embedding timestamps in
+that range, then returns screenshots within `--window` seconds (default ±30s) of
+each epoch.
+
+This is the **"EEG → screenshots" cross-modal bridge**: start from brain data,
+discover what was on screen at that moment.
+
+```bash
+node cli.ts screenshots-for-eeg                             # auto: last session
+node cli.ts screenshots-for-eeg --start 1740412800 --end 1740415500
+node cli.ts screenshots-for-eeg --window 60                  # ±60s around each epoch
+node cli.ts screenshots-for-eeg --limit 20                   # max 20 results
+node cli.ts screenshots-for-eeg --json | jq '.results[].screenshot.filename'
+node cli.ts screenshots-for-eeg --json | jq '.results[] | {eeg: .eeg_timestamp_utc, file: .screenshot.filename, app: .screenshot.app_name}'
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--start <utc>` | auto (latest session) | Start of EEG range (unix seconds) |
+| `--end <utc>` | auto (latest session) | End of EEG range (unix seconds) |
+| `--window <n>` | `30` | Temporal window: ±N seconds around each EEG epoch |
+| `--limit <n>` | `50` | Maximum number of screenshot results |
+
+**HTTP / WebSocket API:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"screenshots_for_eeg","start_utc":1740412800,"end_utc":1740415500,"window_secs":30,"limit":50}'
+```
+
+**Example output:**
+```
+⚡ screenshots-for-eeg
+  range: 1740412800–1740415500 (auto: 2/24/2026 8:00 AM → 8:45 AM, 45m 0s)
+  window: ±30s   limit: 50
+
+  EEG epochs scanned: 541
+  screenshots found:  12
+
+  20260224/20260224080530.webp
+     EEG at:     2/24/2026, 8:05:30 AM
+     screenshot: 2/24/2026, 8:05:28 AM   app: VS Code  window: main.rs
+     ocr:        fn dispatch(app: &AppHandle, command: &str…
+
+  20260224/20260224081245.webp
+     EEG at:     2/24/2026, 8:12:45 AM
+     screenshot: 2/24/2026, 8:12:44 AM   app: Terminal  window: cargo test
+     ocr:        running 12 tests… test result: ok…
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "screenshots_for_eeg",
+  "ok": true,
+  "start_utc":   1740412800,
+  "end_utc":     1740415500,
+  "window_secs": 30,
+  "eeg_count":   541,
+  "count":       12,
+  "results": [
+    {
+      "eeg_timestamp_utc": 1740413130,
+      "screenshot": {
+        "timestamp":    20260224080530,
+        "unix_ts":      1740413128,
+        "filename":     "20260224/20260224080530.webp",
+        "app_name":     "VS Code",
+        "window_title": "main.rs",
+        "ocr_text":     "fn dispatch(app: &AppHandle, command: &str…",
+        "similarity":   0.0
+      }
+    }
+    // ... more results
+  ]
+}
+```
+
+---
+
+### `eeg-for-screenshots`
+
+Find EEG data and labels near screenshots matching an OCR text query.
+This is the **"screenshots → EEG" cross-modal bridge**: start from what
+was on screen, discover what your brain was doing at that moment.
+
+**Pipeline:**
+1. Search screenshots by OCR text (semantic or substring mode).
+2. For each matched screenshot, find EEG labels within `--window` seconds.
+3. Report the associated EEG session and labels alongside each screenshot.
+
+Use this to answer: *"When I was looking at [X], what was my brain doing?"*
+
+```bash
+node cli.ts eeg-for-screenshots "compiler error"
+node cli.ts eeg-for-screenshots "TODO" --mode substring --k 5
+node cli.ts eeg-for-screenshots "dashboard" --window 120
+node cli.ts eeg-for-screenshots "login page" --json | jq '.results[].labels[].text'
+node cli.ts eeg-for-screenshots "slack message" --json | jq '.results[] | {file: .screenshot.filename, labels: [.labels[].text], session: .session.device_name}'
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--mode <m>` | `semantic` | Search mode: `semantic` or `substring` |
+| `--k <n>` | `10` | Maximum number of screenshot matches |
+| `--window <n>` | `60` | Temporal window: ±N seconds to search for EEG labels |
+
+**HTTP / WebSocket API:**
+```bash
+curl -s -X POST http://127.0.0.1:8375/ \
+  -H "Content-Type: application/json" \
+  -d '{"command":"eeg_for_screenshots","query":"compiler error","k":10,"window_secs":60,"mode":"semantic"}'
+```
+
+**Example output:**
+```
+⚡ eeg-for-screenshots "compiler error"  (mode: semantic, k: 10, window: ±60s)
+
+  screenshots matched: 3
+  results with EEG:    3
+
+  20260315/20260315143025.webp
+     time:       3/15/2026, 2:30:25 PM   app: VS Code  window: skill — cli.ts
+     similarity: 87%
+     ocr:        error[E0308]: mismatched types expected…
+     EEG session: 3/15/2026, 2:00:00 PM → 3:00:00 PM  (1h 0m)  device: Muse-A1B2
+     labels (2):
+       "debugging session"  3/15/2026, 2:28:00 PM  id: 47
+       "frustrated"         3/15/2026, 2:31:00 PM  id: 48
+```
+
+**JSON response:**
+```jsonc
+{
+  "command": "eeg_for_screenshots",
+  "ok": true,
+  "query":            "compiler error",
+  "mode":             "semantic",
+  "k":                10,
+  "window_secs":      60,
+  "screenshot_count": 3,
+  "count":            3,
+  "results": [
+    {
+      "screenshot": {
+        "timestamp":    20260315143025,
+        "unix_ts":      1741963825,
+        "filename":     "20260315/20260315143025.webp",
+        "app_name":     "VS Code",
+        "window_title": "skill — cli.ts",
+        "ocr_text":     "error[E0308]: mismatched types expected…",
+        "similarity":   0.87
+      },
+      "labels": [
+        {
+          "id": 47, "text": "debugging session",
+          "eeg_start": 1741963560, "eeg_end": 1741963860,
+          "label_start": 1741963680, "label_end": 1741963680
+        },
+        {
+          "id": 48, "text": "frustrated",
+          "eeg_start": 1741963740, "eeg_end": 1741964040,
+          "label_start": 1741963860, "label_end": 1741963860
+        }
+      ],
+      "session": {
+        "csv_path": "/home/user/.skill/20260315/exg_1741960800.csv",
+        "session_start_utc": 1741960800,
+        "session_end_utc":   1741964400,
+        "device_name":       "Muse-A1B2"
+      }
+    }
+    // ... more results
+  ]
+}
+```
+
+**Cross-modal workflows combining all screenshot commands:**
+
+```bash
+# ── Workflow 1: "What was I looking at during my best focus session?" ──────────
+# Find the focus peak, then see the screenshots
+START=$(node cli.ts sessions --json | jq '.sessions[0].start_utc')
+END=$(node cli.ts sessions --json | jq '.sessions[0].end_utc')
+node cli.ts screenshots-for-eeg --start $START --end $END --window 15
+
+# ── Workflow 2: "How did my brain react when I saw error messages?" ────────────
+# Search for error screenshots, get the EEG context
+node cli.ts eeg-for-screenshots "error" --window 120
+
+# ── Workflow 3: "Find screenshots similar to this reference image" ─────────────
+# CLIP vision similarity search
+node cli.ts search-images --by-image reference-layout.png --k 10
+
+# ── Workflow 4: "Full cross-modal chain — OCR → screenshots → EEG → labels" ───
+# Search for code review screenshots, get the brain state, then find similar moments
+node cli.ts eeg-for-screenshots "pull request" --json | jq '.results[0].session'
+# Use the session timestamps for a neural search:
+node cli.ts search --start <session_start> --end <session_end> --k 5
+```
+
+---
+
+## Data Reference
+
+### EEG Band Powers
+
+Relative power — values sum to approximately 1.0.
+Always found under `scores.bands` in `status`, or as `rel_*` top-level keys in metric responses.
+
+| Field | Band | Range | What it means |
+|---|---|---|---|
+| `rel_delta` | δ 0.5–4 Hz | 0–1 | Deep sleep, unconscious processes. High during N3 sleep or drowsiness. |
+| `rel_theta` | θ 4–8 Hz | 0–1 | Drowsiness, meditation, creativity, memory encoding.  |
+| `rel_alpha` | α 8–13 Hz | 0–1 | Relaxed wakefulness, idle cortex, eyes-closed state. Drops on task engagement. |
+| `rel_beta` | β 13–30 Hz | 0–1 | Active thinking, focus, anxiety. High beta = cognitive effort or stress. |
+| `rel_gamma` | γ 30–100 Hz | 0–1 | Sensory binding, high-level cognition. |
+
+---
+
+### EEG Ratios & Indices
+
+| Field | Formula | What it means |
+|---|---|---|
+| `faa` | ln(αR) − ln(αL) | **Frontal Alpha Asymmetry.** Positive = approach motivation / positive affect. Negative = withdrawal / depression. |
+| `tar` | θ / α | **Theta/Alpha Ratio.** High = drowsy or meditative. |
+| `bar` | β / α | **Beta/Alpha Ratio.** High = alert, possibly anxious. |
+| `dtr` | δ / θ | **Delta/Theta Ratio.** High in deep sleep or pathological slowing. |
+| `tbr` | θ / β | **Theta/Beta Ratio.** Cortical arousal index. Healthy ~1.0; elevated (>1.5) indicates reduced cortical arousal. |
+| `pse` | (power law slope) | **Power Spectral Exponent.** Steeper = more 1/f, typical of rest. Flatter = active. |
+| `bps` | (regression slope) | **Band-Power Slope.** Similar to PSE; measures spectral tilt. |
+| `apf` | Hz | **Alpha Peak Frequency.** 8–12 Hz typical; shifts with age and cognitive state. |
+| `sef95` | Hz | **Spectral Edge Frequency 95%.** Frequency below which 95% of power falls. |
+| `spectral_centroid` | Hz | **Spectral Centroid.** Weighted average frequency — rises with cognitive load. |
+| `coherence` | 0–1 | **Inter-channel coherence.** High = coordinated brain activity. |
+| `mu_suppression` | 0–1 | **Mu rhythm suppression.** Increases with motor imagery or observed action. |
+| `laterality_index` | −1 to 1 | **Hemispheric laterality.** Left vs. right hemispheric dominance. |
+| `snr` | dB | **Signal-to-Noise Ratio.** > 10 dB = good signal; < 5 dB = noisy. |
+
+---
+
+### Core Scores
+
+0–1 range unless noted. Computed per 5-second epoch by the on-device model.
+
+| Field | What it means |
+|---|---|
+| `focus` | Sustained attention. Driven by frontal beta and suppressed alpha. |
+| `relaxation` | Calm, low-arousal state. High alpha, low beta. |
+| `engagement` | Active cognitive engagement. Composite of beta, theta, alpha suppression. |
+| `meditation` | Meditative depth. High frontal alpha, stable theta, low beta. |
+| `mood` | Valence estimate. Positive FAA and alpha balance → positive mood. |
+| `cognitive_load` | Mental effort. High theta + beta, low alpha. |
+| `drowsiness` | Sleepiness. High delta + theta, alpha intrusions. |
+
+---
+
+### Complexity Measures
+
+Nonlinear EEG measures — higher complexity generally means more flexible, awake brain state.
+
+| Field | What it means |
+|---|---|
+| `hjorth_activity` | Signal variance (power). |
+| `hjorth_mobility` | Mean frequency estimate. |
+| `hjorth_complexity` | Signal shape complexity — how much the signal changes its frequency. |
+| `permutation_entropy` | Ordinal pattern entropy. Near 1 = complex/random; near 0 = highly ordered. |
+| `higuchi_fd` | Fractal dimension. ~1.5–1.8 during healthy wakefulness. |
+| `dfa_exponent` | Detrended fluctuation. ~0.5 = white noise; ~1.0 = long-range correlations. |
+| `sample_entropy` | Regularity — lower = more predictable/periodic signal. |
+| `pac_theta_gamma` | Phase-Amplitude Coupling (θ–γ). Linked to working memory and attention. |
+
+---
+
+### PPG / Heart Rate Variability
+
+Derived from the Muse PPG sensor (forehead).
+
+| Field | Unit | What it means |
+|---|---|---|
+| `hr` | bpm | Heart rate. |
+| `rmssd` | ms | Root mean square of successive differences — parasympathetic HRV. High = relaxed. |
+| `sdnn` | ms | Standard deviation of NN intervals — overall HRV. |
+| `pnn50` | % | % of successive differences > 50 ms — parasympathetic index. |
+| `lf_hf_ratio` | ratio | Low/High frequency power ratio — sympathetic vs. parasympathetic balance. High = stress. |
+| `respiratory_rate` | bpm | Estimated breathing rate from PPG. |
+| `spo2_estimate` | % | Estimated blood oxygen saturation (research only). |
+| `perfusion_index` | % | Ratio of pulsatile to static IR signal — peripheral perfusion quality. |
+| `stress_index` | 0–100 | Composite stress index. High HR + low HRV + high LF/HF → high stress. |
+
+---
+
+### Motion & Artifacts
+
+| Field | What it means |
+|---|---|
+| `stillness` | 0–1. Head movement score; 1 = no motion. |
+| `head_pitch` | Degrees forward/backward tilt. |
+| `head_roll` | Degrees left/right tilt. |
+| `nod_count` | Number of detected vertical head nods. |
+| `shake_count` | Number of detected horizontal head shakes. |
+| `blink_count` | Number of detected eye blinks (from frontal electrodes). |
+| `blink_rate` | Blinks per minute. |
+| `jaw_clench_count` | Number of detected jaw clenches (EMG artifact). |
+| `jaw_clench_rate` | Jaw clenches per minute. |
+
+---
+
+### Sleep Stages
+
+Used in `sleep` and `status.sleep`.
+
+| Stage | Code | EEG signature |
+|---|---|---|
+| Wake | `0` | High beta, present alpha when eyes closed |
+| N1 | `1` | Slow eye movements, alpha fades, theta begins |
+| N2 | `2` | Sleep spindles (12–15 Hz bursts), K-complexes, dominant theta |
+| N3 | `3` | High-amplitude delta > 50% of epoch — deep/slow-wave sleep |
+| REM | `4` | Low-amplitude mixed frequency, sawtooth waves, suppressed delta |
+
+**Good sleep targets (healthy adult, ~8h):**
+- N3 (slow-wave): 15–25% of total sleep
+- REM: 20–25%
+- Sleep efficiency: > 85%
+- Sleep onset: < 20 min
+
+---
+
+### Migraine EEG Correlate
+
+Surfaced in the EEG Indices panel.  0–100.  **Research use only — not diagnostic.**
+
+| Index | Mechanism | Reference |
+|---|---|---|
+| `migraine_index` | Delta elevation + alpha suppression + hemispheric lateralisation | Bjørk et al. (2009) |
+
+---
+
+### Consciousness Metrics
+
+All 0–100 (higher = better).
+
+| Metric | What it measures |
+|---|---|
+| `lzc` | Lempel-Ziv Complexity proxy — signal diversity; drops under anesthesia |
+| `wakefulness` | Inverse drowsiness — high alpha relative to theta |
+| `integration` | Composite of coherence × PAC × spectral entropy — cortical integration |
+
+---
+
+## Use-Case Recipes
+
+### Focus & Productivity
+
+```bash
+# Current focus level:
+node cli.ts status --json | jq '.scores.relaxation'
+
+# Is alpha suppressed? (good focus = low alpha)
+node cli.ts status --json | jq '.scores.bands.rel_alpha'
+
+# Focus trend across today's session (did I get better or worse?):
+node cli.ts session 0 --json | jq '{relax_avg: .metrics.relaxation, trend: .trends.relaxation, first_half: .first.relaxation, second_half: .second.relaxation}'
+
+# Beta/alpha ratio — high = alert/focused, very high = stressed:
+node cli.ts status --json | jq '.scores.bar'
+
+# Check spectral centroid — rises with cognitive load:
+node cli.ts status --json | jq '.scores.spectral_centroid'
+
+# Compare a morning session vs an afternoon session:
+node cli.ts compare \
+  --a-start 1740380100 --a-end 1740382665 \
+  --b-start 1740412800 --b-end 1740415510 \
+  --json | jq '.insights.deltas.relaxation'
+
+# Find all moments in your history that look like deep focus:
+node cli.ts search --start $(node cli.ts sessions --json | jq '.sessions[0].start_utc') \
+                   --end   $(node cli.ts sessions --json | jq '.sessions[0].end_utc') \
+                   --json | jq '.result.analysis.neighbor_metrics.relaxation'
+
+# Label a focus block for later retrieval:
+node cli.ts label "deep focus block — no distractions"
+
+# Search all prior labeled focus moments:
+node cli.ts search-labels "deep focus" --k 10
+
+# Alert when focus drops — poll every 30 seconds:
+while true; do
+  R=$(node cli.ts status --json | jq '.scores.relaxation')
+  if (( $(echo "$F < 0.35" | bc -l) )); then
+    node cli.ts notify "Focus low" "Current: $F — take a break?"
+  fi
+  sleep 30
+done
+```
+
+---
+
+### Stress & Anxiety
+
+```bash
+# LF/HF ratio — high = sympathetic dominance (stress):
+node cli.ts status --json | jq '.scores.lf_hf_ratio'
+
+# Composite stress index from PPG:
+node cli.ts session 0 --json | jq '.metrics.stress_index'
+
+# FAA — negative = frontal alpha withdrawal (linked to anxiety/depression):
+node cli.ts status --json | jq '.scores.faa'
+
+# Frontal beta elevation (anxiety marker):
+node cli.ts status --json | jq '[.scores.bar, .scores.faa, .scores.lf_hf_ratio]'
+
+# Compare stress markers across two sessions:
+node cli.ts compare --json | jq '.insights.deltas | {anxiety_faa: .faa, stress_hr: .hr, lf_hf: .lf_hf_ratio}'
+
+# HRV breakdown (low rmssd = stress):
+node cli.ts session 0 --json | jq '{rmssd: .metrics.rmssd, sdnn: .metrics.sdnn, pnn50: .metrics.pnn50}'
+
+# Label a stressful event for analysis:
+node cli.ts label "stressful presentation — racing thoughts"
+
+# Find neurally similar stressful moments in history:
+node cli.ts search-labels "stress anxiety overwhelmed" --mode both --k 10
+```
+
+---
+
+### Sleep Quality
+
+```bash
+# Last night's sleep summary:
+node cli.ts sleep --json | jq '.summary'
+
+# Deep sleep percentage (N3 — most restorative):
+node cli.ts sleep --json | jq '(.summary.n3_epochs / .summary.total_epochs * 100 | round | tostring) + "% N3"'
+
+# REM percentage:
+node cli.ts sleep --json | jq '(.summary.rem_epochs / .summary.total_epochs * 100 | round | tostring) + "% REM"'
+
+# Full analysis (efficiency, onset, transitions):
+node cli.ts sleep --json | jq '.analysis'
+
+# Sleep for a specific session (e.g. last night's recording):
+node cli.ts sleep 0
+
+# Sleep over a custom range (yesterday 10 PM to today 7 AM):
+node cli.ts sleep --start 1740376800 --end 1740405600
+
+# Sleep staging for a past date (get timestamps from sessions list):
+SESSIONS=$(node cli.ts sessions --json | jq '.sessions')
+START=$(echo $SESSIONS | jq '.[1].start_utc')
+END=$(echo $SESSIONS | jq '.[1].end_utc')
+node cli.ts sleep --start $START --end $END
+
+# Wakefulness and drowsiness during the day:
+node cli.ts status --json | jq '{drowsiness: .scores.drowsiness, wakefulness: .consciousness.wakefulness}'
+
+# Status includes a 48h sleep summary:
+node cli.ts status --json | jq '.sleep'
+```
+
+---
+
+### Cognitive Load
+
+```bash
+# Raw TBR (theta/beta ratio) — main cognitive load biomarker, healthy ~1.0:
+node cli.ts status --json | jq '.scores.tbr'
+
+# Cognitive load score (0–1):
+node cli.ts status --json | jq '.scores.cognitive_load'
+
+# PAC theta-gamma — working memory coupling:
+node cli.ts status --json | jq '.scores.pac_theta_gamma'
+
+# Sample entropy — lower = more regular/predictable 
+node cli.ts session 0 --json | jq '.metrics.sample_entropy'
+
+# Full session trend for TBR and cognitive load:
+node cli.ts session 0 --json | jq '{tbr: .metrics.tbr, cog_load: .metrics.cognitive_load, tbr_trend: .trends.tbr}'
+
+# Compare TBR before and after a task:
+node cli.ts compare --json | jq '.insights.deltas.tbr'
+
+# Watch TBR in real time (lower is better for focus):
+while true; do
+  node cli.ts status --json | jq '{tbr: .scores.tbr, relaxation: .scores.relaxation}'
+  sleep 10
+done
+```
+
+---
+
+### Meditation & Relaxation
+
+```bash
+# Current meditation score:
+node cli.ts status --json | jq '.scores.meditation'
+
+# Alpha peak frequency — rises during deep relaxation:
+node cli.ts status --json | jq '.scores.apf'
+
+# FAA — positive = relaxed/approach state:
+node cli.ts status --json | jq '.scores.faa'
+
+# Theta elevation (meditative absorption):
+node cli.ts status --json | jq '.scores.bands.rel_theta'
+
+# Full session meditation trend:
+node cli.ts session 0 --json | jq '{meditation: .metrics.meditation, relaxation: .metrics.relaxation, trend: .trends.meditation}'
+
+# Complexity during meditation (lower = more ordered):
+node cli.ts session 0 --json | jq '{perm_entropy: .metrics.permutation_entropy, sample_entropy: .metrics.sample_entropy}'
+
+# Label meditation milestones:
+node cli.ts label "entered theta meditation state"
+node cli.ts label "meditation ended — felt deeply rested"
+
+# Find all prior meditation sessions:
+node cli.ts search-labels "meditation" --mode both --k 20
+node cli.ts search-labels "relaxed theta alpha" --mode context --k 10
+
+# Compare a meditation session to a work session:
+node cli.ts compare \
+  --a-start <meditation_start> --a-end <meditation_end> \
+  --b-start <work_start> --b-end <work_end> \
+  --json | jq '.insights.deltas | {relaxation, meditation: .meditation, alpha: .rel_alpha}'
+```
+
+---
+
+### Cross-Modal Graph Search
+
+```bash
+# Basic: find concepts related to "deep focus" across all data layers:
+node cli.ts interactive "deep focus"
+
+# Increase reach to capture labels up to 30 minutes from each EEG point:
+node cli.ts interactive "deep focus" --reach 30
+
+# More neighbors at each layer for a richer graph:
+node cli.ts interactive "meditation" --k-text 8 --k-eeg 8 --k-labels 5 --reach 20
+
+# What text labels are semantically closest to "anxiety"?
+node cli.ts interactive "anxiety" --json | jq '[.nodes[] | select(.kind == "text_label") | {text, sim: (1 - .distance | . * 100 | round)}]'
+
+# What nearby labels cluster around EEG moments found via "stress"?
+node cli.ts interactive "stress" --json | jq '[.nodes[] | select(.kind == "found_label") | .text]'
+
+# Count total discovered nodes by layer:
+node cli.ts interactive "flow state" --json | jq '[.nodes | group_by(.kind)[] | {(.[0].kind): length}] | add'
+
+# Visualize the graph (requires graphviz):
+node cli.ts interactive "deep focus" --dot | dot -Tsvg -o focus_graph.svg && open focus_graph.svg
+node cli.ts interactive "meditation" --dot | dot -Tpng -o meditation_graph.png
+
+# Export DOT from JSON if you want both outputs at once:
+RESULT=$(node cli.ts interactive "anxiety" --json)
+echo "$RESULT" | jq -r '.dot' | dot -Tsvg > anxiety_graph.svg
+echo "$RESULT" | jq '[.nodes[] | select(.kind == "text_label") | .text]'
+
+# Chain with search-labels to verify what's in the text index first:
+node cli.ts search-labels "deep focus" --k 5 --json | jq '.results[].text'
+# Then run interactive to cross-modal bridge into EEG:
+node cli.ts interactive "deep focus" --k-text 5 --k-eeg 5
+
+# Use --full to inspect raw JSON alongside the summary:
+node cli.ts interactive "concentration" --full
+
+# Feed into a script — check if any EEG moments were found:
+EEG_COUNT=$(node cli.ts interactive "focus" --json | jq '[.nodes[] | select(.kind == "eeg_point")] | length')
+if [ "$EEG_COUNT" -eq 0 ]; then
+  echo "No EEG moments found — record more sessions first"
+fi
+```
+
+---
+
+### Comparing Two Sessions
+
+```bash
+# Auto: last 2 sessions vs each other:
+node cli.ts compare
+
+# Explicit sessions (get timestamps from `sessions`):
+node cli.ts sessions --json | jq '.sessions[:2] | [.[].start_utc, .[].end_utc]'
+
+node cli.ts compare \
+  --a-start 1740380100 --a-end 1740382665 \
+  --b-start 1740412800 --b-end 1740415510
+
+# Which metrics improved?
+node cli.ts compare --json | jq '.insights.improved'
+node cli.ts compare --json | jq '.insights.declined'
+
+# Full delta table:
+node cli.ts compare --json | jq '.insights.deltas'
+
+# Focus delta only:
+node cli.ts compare --json | jq '.insights.deltas.relaxation | {a, b, change_pct: .pct}'
+
+# All metrics for session A:
+node cli.ts compare --json | jq '.a'
+
+# 3D UMAP — how spatially separated are the two sessions?
+node cli.ts umap \
+  --a-start 1740380100 --a-end 1740382665 \
+  --b-start 1740412800 --b-end 1740415510 \
+  --json | jq '.result.analysis.separation_score'
+
+# High separation score (>1.5) means the sessions are neurally distinct.
+# Low score (<0.5) means similar brain state across both sessions.
+```
+
+---
+
+### Time-Range Queries
+
+All commands that accept `--start` and `--end` use **Unix seconds (UTC)**.
+
+```bash
+# Get timestamps from the session list:
+node cli.ts sessions --json | jq '.sessions[0] | {start: .start_utc, end: .end_utc}'
+
+# Convert a human date to Unix seconds (bash):
+date -j -f "%Y-%m-%d %H:%M" "2026-02-24 08:00" +%s      # macOS
+date -d "2026-02-24 08:00" +%s                            # Linux
+
+# Last 2 hours:
+NOW=$(date +%s)
+node cli.ts sleep --start $((NOW - 7200)) --end $NOW
+
+# Today midnight to now:
+TODAY=$(date -j -v0H -v0M -v0S +%s 2>/dev/null || date -d "today 00:00" +%s)
+node cli.ts sleep --start $TODAY --end $(date +%s)
+
+# Specific date range (Feb 23):
+node cli.ts sleep --start 1740268800 --end 1740355199
+
+# rerun: lines — the CLI always prints exact timestamps when auto-selecting:
+node cli.ts sleep
+# → rerun: node cli.ts sleep --start 1740380100 --end 1740415510
+#   Copy-paste this for reproducible results.
+
+# Pipe the rerun command into jq for automation:
+node cli.ts search --json | jq '.result.analysis.distance_stats.mean'
+# Then re-run with explicit timestamps for a cron job:
+node cli.ts search --start 1740412800 --end 1740415500 --json | jq '.result.analysis.distance_stats.mean'
+```
+
+---
+
+### Automation & Scripting
+
+```bash
+# ── Cron / scheduled polling ──────────────────────────────────────────────
+
+# Every 5 minutes: log focus score to a CSV
+*/5 * * * * node /path/to/cli.ts status --json \
+  | jq -r '[now, .scores.relaxation, .scores.engagement, .scores.hr] | @csv' \
+  >> ~/eeg_log.csv
+
+# ── Shell function wrappers ────────────────────────────────────────────────
+
+skill_relax()  { node cli.ts status --json | jq '.scores.relaxation'; }
+skill_relax()  { node cli.ts status --json | jq '.scores.relaxation'; }
+skill_tbr()    { node cli.ts status --json | jq '.scores.tbr'; }
+skill_battery(){ node cli.ts status --json | jq '.device.battery'; }
+
+# ── Python polling example ────────────────────────────────────────────────
+
+python3 - <<'EOF'
+import subprocess, json, time
+
+def skill(cmd):
+    r = subprocess.run(
+        ["node", "cli.ts", *cmd.split(), "--json"],
+        capture_output=True, text=True
+    )
+    return json.loads(r.stdout)
+
+while True:
+    data = skill("status")
+    focus = data["scores"]["focus"]
+    print(f"Focus: {focus:.2f}")
+    if focus < 0.35:
+        skill(f'notify Focus dropped Current: {focus:.2f}')
+    time.sleep(30)
+EOF
+
+# ── HTTP from Python (no Node required) ──────────────────────────────────
+
+python3 - <<'EOF'
+import requests
+
+PORT = 8375   # use --port to find yours, or read from NeuroSkill™'s mDNS
+
+def skill(command, **kwargs):
+    return requests.post(
+        f"http://127.0.0.1:{PORT}/",
+        json={"command": command, **kwargs}
+    ).json()
+
+status = skill("status")
+print("Focus:", status["scores"]["focus"])
+print("Battery:", status["device"]["battery"], "%")
+
+sessions = skill("sessions")
+for s in sessions["sessions"][:3]:
+    print(f"  {s['day']}  {s['n_epochs']} epochs")
+
+sleep = skill("sleep", start_utc=sessions["sessions"][0]["start_utc"],
+                       end_utc=sessions["sessions"][0]["end_utc"])
+print
+
+---
+
+## iroh Clients, TOTP, and Scopes
+
+NeuroSkill now supports iroh client authorization with TOTP and per-client scopes.
+
+### Commands
+
+- `iroh info`
+- `iroh totp list`
+- `iroh totp create <name>`
+- `iroh totp qr <totp_id>`
+- `iroh totp revoke <totp_id>`
+- `iroh clients list`
+- `iroh clients register <endpoint_id> --otp <code> [--totp-id <id>] [--scope read|full]`
+- `iroh clients scope <client_id> <read|full>`
+- `iroh clients revoke <client_id>`
+
+### Scope model
+
+- `read` (default): read-only access to basic metrics/status endpoints.
+- `full`: full API control, including mutating commands.
+
+> ⚠️ **Warning**: granting `full` scope gives remote control over the full local API.
+
+### Settings UI
+
+A **Clients** tab is available in Settings for:
+
+- creating and revoking TOTP credentials,
+- viewing enrollment QR codes,
+- registering/revoking iroh clients,
+- changing scopes (`read` / `full`),
+- viewing last connection metadata (time, IP, geo fields when available).

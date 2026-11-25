@@ -1,0 +1,42 @@
+---
+name: review-security-criteria
+description: The security review criteria, reading budget, severity anchors, finding ids, and finding contract, preloaded into the review-security-finder agent. Not a command; the direct-run skill is /tk:review-security.
+user-invocable: false
+allowed-tools:
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/pre-push-check.js *)"
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/pre-push-check.js)"
+---
+
+# Security Review Criteria (preloaded)
+
+This is the expertise of `/tk:review-security`, loaded into the finder that reviews through the Staff Security Engineer lens. The direct-run skill inlines the same criteria file, so there is one source.
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/criteria-security.md"`
+
+## Reading Budget
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/reading-budget.md"`
+
+## Severity Levels and Anchors
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/severity-anchors.md"`
+
+**Project severity anchors** (from `.claude/toolkit/severity-anchors.md`): this project's weighting for its own review kinds. The Universal Anchors above still win. A note that the command printed nothing means this project adds none.
+
+!`cat .claude/toolkit/severity-anchors.md 2>/dev/null || true`
+
+## Finding IDs
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/finding-id-system.md"`
+
+## Noise Control
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/do-not-report.md"`
+
+The project's own entries, from `.claude/toolkit/do-not-report.md`, in the same format and under the same rules (an entry suppresses a category and never lowers a real severity). A note that the command printed nothing means this project adds none.
+
+!`cat .claude/toolkit/do-not-report.md 2>/dev/null || true`
+
+## What a Finding Contains
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/finding-contract.md"`

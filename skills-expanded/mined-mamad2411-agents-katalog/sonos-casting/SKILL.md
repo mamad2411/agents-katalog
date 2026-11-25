@@ -1,0 +1,648 @@
+---
+name: sonos-casting
+description: Sonos UPnP discovery, multi-room casting, coordinator transfer, dockable room mixer, individual room volume, custom checkbox UI, and protocol quirks. Use when working on Sonos casting, room controls, UPnP control, multi-room audio, or group management.
+---
+
+# Sonos Integration
+
+This guide covers Sonos speaker discovery, casting, and multi-room grouping in NullPlayer.
+
+## Quick Start
+
+1. Open Sonos from either:
+   - Right-click anywhere in NullPlayer → **Output Devices → Sonos**
+   - Top menu bar → **Output → Sonos**
+2. Check the rooms you want to cast to (checkboxes stay open for multi-select)
+3. Click **🟢 Start Casting** to begin playback
+4. Click **🔴 Stop Casting** from the Sonos menu to fully end the cast session
+
+For a persistent room list and individual volume controls, open **Windows → Sonos Rooms** or
+**Output → Sonos → Sonos Rooms…**. Resize the window or scroll to reach additional rooms;
+**Refresh** remains in the footer even when no rooms are discovered.
+
+## Discovery Methods
+
+NullPlayer uses two methods to discover Sonos devices:
+
+### 1. SSDP (Simple Service Discovery Protocol)
+- UDP multicast to `239.255.255.250:1900`
+- Search target: `urn:schemas-upnp-org:device:ZonePlayer:1`
+- Works on most networks but can be blocked by firewalls/routers
+
+### 2. mDNS/Bonjour (Fallback)
+- Service type: `_sonos._tcp.local.`
+- Uses Apple's NWBrowser API
+- More reliable on networks that block UDP multicast
+- Added as fallback due to Sonos app changes in 2024-2025
+
+## Requirements
+
+### UPnP Must Be Enabled
+Sonos added a UPnP toggle in their app settings. **Discovery will fail if disabled.**
+
+To enable:
+1. Open Sonos app (iOS/Android)
+2. Go to **Account → Privacy & Security → Connection Security**
+3. Ensure **UPnP** is **ON** (default)
+
+If UPnP is disabled, SSDP discovery won't find devices and SOAP control won't work.
+
+### Connection Security (Firmware 85.0+, July 2025)
+
+Sonos firmware 85.0-66270 added optional security settings:
+
+| Setting | Default | Effect if Changed |
+|---------|---------|-------------------|
+| Authentication | OFF | Blocks SOAP commands from NullPlayer |
+| UPnP | ON | Disables ALL local SOAP control |
+| Guest Access | ON | Prevents same-network playback control |
+
+NullPlayer detects 401/403 SOAP errors and shows a specific message directing users to the Connection Security settings.
+
+## Architecture
+
+### Zone vs Group vs Room
+- **Zone**: Individual Sonos speaker hardware (e.g., a single Sonos One)
+- **Room**: A named location that may contain one or more zones (e.g., "Living Room" with stereo pair)
+- **Group**: Multiple rooms playing in sync (e.g., "Living Room + Kitchen")
+
+When casting, NullPlayer targets the **group coordinator** - the speaker that controls playback for the group.
+
+### Discovery Flow
+1. SSDP/mDNS finds Sonos devices on network
+2. Fetch device description XML from each device (port 1400)
+3. Extract room name, UDN (unique device name), and AVTransport URL
+4. After 3 seconds, fetch group topology from any zone
+5. Create cast devices based on groups (showing coordinator only)
+
+### Group Topology
+Fetched via SOAP request to `/ZoneGroupTopology/Control`:
+```xml
+<u:GetZoneGroupState xmlns:u="urn:schemas-upnp-org:service:ZoneGroupTopology:1"/>
+```
+
+Response contains all groups and their member zones.
+
+## User Interface
+
+### Sonos Rooms window
+
+Open **Windows → Sonos Rooms** or **Output → Sonos → Sonos Rooms…**. The context-menu
+**Output Devices → Sonos** submenu exposes the same entry. The existing Sonos submenu remains
+available even before discovery finds a room, including its **Refresh** command.
+
+The window is a resizable center-stack room mixer. Its scrollable list has no fixed room limit;
+**Refresh** and **Start/Stop Casting** stay in a fixed footer. Each room has a selection checkbox,
+an independent 0–100 volume slider, a numeric level, and selection/error status. Volume is available
+before casting as well as during a cast. An unreadable volume is shown as unavailable, not as zero.
+The empty state retains Refresh. Native controls use a light/dark appearance matched to the skin;
+sliders use the skin's text color.
+
+- `Casting/SonosRoomMixer.swift` owns shared room selection/start actions and per-room volume state.
+  Both the existing menu and the window call these actions, including coordinator transfer when
+  removing the current coordinator. Starting a cast resolves an actual selected room and makes it
+  standalone before starting, so an unselected existing group is not used as a fallback target.
+- Room volume uses **RenderingControl**, `Channel=Master`, on the room representative's own
+  renderer. `UPnPManager.getSonosRoomVolume` / `setSonosRoomVolume` do not require an active session
+  and never send `SetGroupVolume`. The player's existing group-volume path is unchanged.
+- Writes are single-flight and latest-value-wins **per room**, with SOAP retries disabled for
+  superseded writes. Polling uses at most four concurrent reads; per-room revision checks prevent
+  a read begun before a slider edit from replacing the new value. One failed room does not disable
+  other rooms. Refresh retries discovery as well as topology and levels.
+- `Windows/Sonos/` owns the controller and shared controls; `Windows/Shared/AuxiliaryWindowChrome.swift` (with
+  `ModernAuxiliaryChrome` for Original and Metal) supplies the chrome, titled `SONOS`; the Equalizer
+  Studio wears the same chrome under its own title. `.wal` uses the `.sonos` hosted-window registry entry and a chromeless
+  `WinampModernHostedSurface`, with the standard hosted drag helper and palette.
+  `.wmz` draws the skin's borrowed frame through `AuxiliaryWindowChrome`'s `isRunningWMPUI` branch and
+  joins `hostedBorderWindows` in that mode only; the contract is `wmp-skin-guide/reference/windows/hosting.md` § *Current
+  hosting contract*.
+- WindowManager registers `.sonos` as a center-stack sizing policy with a double-height baseline.
+  User-expanded height is preserved on restore; the window participates in snapping, scaling,
+  stack collapse, Compact Mode, and live UI rebuilding. AppState stores visibility and frame with
+  backward-compatible decoding. Speaker volume is always read from the speaker, never restored
+  from saved window state.
+- Polling belongs to the visible view and is suspended on hide, minimize, occlusion, and teardown.
+  Volume writes belong to the mixer so an accepted slider edit can finish across a UI rebuild.
+
+`SonosRoomMixerTests` covers independent room writes, stale-read protection, bounded polling with
+32 rooms, scrolling to the last room, footer visibility with no rooms, restored sizing, and the
+Sonos menu. Set `SONOS_RENDER_DUMP` to an existing directory when running the tests to render
+empty and 32-room fixtures for Classic, Original, and Metal. These are rendering fixtures, not
+proof of playback or hardware volume control.
+
+### Menu Structure
+
+```
+Sonos                          ▸
+├── ☐ Dining Room                 (checkbox - selectable room)
+├── ☐ Living Room                 (checkbox - selectable room)  
+├── ☐ Kitchen                     (checkbox - selectable room)
+├── ─────────────────
+├── 🟢 Start Casting              (when NOT casting)
+│   OR
+├── 🔴 Stop Casting               (when casting)
+└── Refresh
+```
+
+### Checkbox Behavior
+
+**When NOT casting:**
+| State | Meaning |
+|-------|---------|
+| ☐ Unchecked | Room is not selected for casting |
+| ☑ Checked | Room is selected for future casting |
+
+**When casting:**
+| State | Meaning |
+|-------|---------|
+| ☐ Unchecked | Room is NOT receiving audio from the app |
+| ☑ Checked | Room IS receiving audio from the app |
+
+### Multi-Select Feature
+
+The room checkboxes use `SonosRoomCheckboxView` which **keeps the menu open** when clicked, allowing you to select multiple rooms without the menu closing.
+
+This behavior is intentionally the same in both:
+- Context menu Sonos submenu
+- Top menu bar `Output > Sonos` submenu
+
+## Casting Workflow
+
+### Starting a Cast
+
+1. **Load music** - Play or load a track from Plex, Subsonic, local files, or internet radio
+2. **Open Sonos menu** - Right-click → Output Devices → Sonos
+3. **Select rooms** - Check one or more room checkboxes
+4. **Start casting** - Click "🟢 Start Casting"
+
+The app will:
+- Cast to the first selected room
+- Join additional rooms to that group
+- Update checkboxes to show which rooms are receiving audio
+
+**Internet Radio Note:** Radio streams are live and don't support seeking. When you cast a radio station, time resets to 0:00.
+
+**EQ Cast:** with **Output ▸ EQ Cast** on, a track with an EQ profile is cast as a rendered 16-bit
+FLAC (S1 decodes only 16-bit FLAC) at the source's rate. A track that fails `isSonosCompatible` is
+skipped as before and never rendered. Mechanism: `eq-profiles` § *EQ Cast*.
+
+### Managing Rooms While Casting
+
+While casting is active:
+- **Check a room** → Room joins the cast group and starts playing
+- **Uncheck a non-coordinator room** → Room leaves the group and stops playing
+- **Uncheck the coordinator room (with other rooms still checked)** → Playback transfers to the next remaining room, which becomes the new coordinator. Brief (~1-2s) playback interruption during transfer. Menu closes to refresh state.
+- **Uncheck the coordinator room (only room in group)** → Casting stops entirely
+
+**Coordinator transfer implementation**: `CastManager.transferSonosCast()` saves session state, stops the old coordinator, casts to the new coordinator, and re-joins other rooms. Uses `UPnPManager.disconnectSession()` to clear the session without sending Stop (old coordinator is already standalone after leaving). `stopCasting()` ungroups all member rooms **before** stopping the coordinator to prevent stale group topology on subsequent casts. Polling is also stopped at the top of `stopCasting()` before any ungrouping SOAP calls.
+
+### Stopping a Cast
+
+There are two intentional stop paths:
+
+- **Player Stop button / end-of-playlist**: sends `Stop` to Sonos but keeps `upnpManager.activeSession`, selected rooms, group membership, and LocalMediaServer registrations intact. The next compatible track reuses the same Sonos target without re-selecting rooms. This path is `AudioEngine.stop()` or `castTrackDidFinish()` → `CastManager.softStopForActiveDevice()` → `stopPlayback()`.
+- **Sonos menu 🔴 Stop Casting**: fully tears down the cast session via `CastManager.stopCasting()`.
+
+Click **🔴 Stop Casting** to fully disconnect:
+- Ungroup all member rooms (each becomes standalone)
+- Stop playback on the coordinator
+- Clear all room selections
+- Return to local control: stopped at 0:00 with the current local file queued again, so the Play
+  button plays it from the start. Starting the cast stopped the local player node, which discards
+  its schedule; `AudioEngine.stopCastPlayback()` re-queues it, or Play would run
+  an empty node — clock moving, output device running, no sound (`AudioEngineCastHandoffTests`).
+  It stops the node first, since a Stop pressed during the cast already queued the file. A track
+  picked during the cast moved only the selection, so when the open file is not the current
+  track's it is dropped instead and Play reloads the track on screen.
+- If the Mac's output device changed during the cast, the local audio graph rebuild was held until
+  the session ends. A Play Now in that window is held as Play Now and starts once the graph is
+  rebuilt; see `audio-system` (graph recovery).
+
+## Casting Protocol
+
+### AVTransport Control
+- Control URL: `http://{ip}:1400/MediaRenderer/AVTransport/Control`
+- Service type: `urn:schemas-upnp-org:service:AVTransport:1`
+
+Key actions:
+- `SetAVTransportURI` - Set media URL with DIDL-Lite metadata
+- `Play` - Start playback
+- `Pause` - Pause playback
+- `Stop` - Stop playback
+- `Seek` - Seek to position (REL_TIME format: HH:MM:SS)
+- `GetTransportInfo` - Get transport state
+- `GetPositionInfo` - Get current position and duration
+
+### Fire-and-Forget Commands
+
+For Sonos audio casting, playback control commands use a **fire-and-forget** pattern:
+
+| Command | Behavior |
+|---------|----------|
+| `Pause` | Sends SOAP request, returns immediately |
+| `Resume` | Sends SOAP request, returns immediately |
+| `Seek` | Sends SOAP request, returns immediately |
+
+**Why fire-and-forget?**
+- Sonos SOAP requests can take 5-10 seconds
+- Blocking makes the UI unresponsive
+- Commands succeed even without waiting for acknowledgment
+
+**Error detection:** Consecutive failures are tracked. After 3 failures, a user-facing error notification is posted.
+
+### Volume Control
+Sonos uses **GroupRenderingControl** (not `RenderingControl`) so that volume/mute apply to the whole group, not just the coordinator zone. Non-Sonos DLNA devices still use `RenderingControl`.
+
+| | Sonos | Other DLNA |
+|---|---|---|
+| Control URL | `/MediaRenderer/GroupRenderingControl/Control` | `/MediaRenderer/RenderingControl/Control` |
+| Set volume | `SetGroupVolume` (no Channel arg) | `SetVolume` (Channel=Master) |
+| Get volume | `GetGroupVolume` | `GetVolume` |
+| Set mute | `SetGroupMute` (no Channel arg) | `SetMute` (Channel=Master) |
+| Service type | `urn:schemas-upnp-org:service:GroupRenderingControl:1` | `urn:schemas-upnp-org:service:RenderingControl:1` |
+
+This group-level behavior is handled in `UPnPManager.setVolume(_:)`, `getVolume()`, and `setMute(_:)`
+by branching on `session.device.type == .sonos`. The room mixer's independent RenderingControl
+path is described above; do not route a room slider through these group methods.
+
+**Group volume snapshot.** `SetGroupVolume` does not scale from each room's current level but from
+the room ratio captured by the last `SnapshotGroupVolume`. Without a fresh snapshot, a group change
+after one room's own volume changed (Sonos Rooms slider or the Sonos app) puts the old ratio back.
+`SonosGroupSnapshotPolicy` decides when: before the first group send of each gesture (no send for
+1.5 s), after any room write through `CastManager.setSonosRoomVolume` (the room mixer's write path),
+after a failed snapshot, and on a new target. `CastManager.sendUPnPVolume` — the coalescer's send —
+then calls `UPnPManager.snapshotSonosGroupVolume()`. Never snapshot per send, nor after a pause at
+group volume 0: a snapshot at 0 flattens the ratio. Room writes must go through `CastManager`, not
+straight to `UPnPManager.setSonosRoomVolume`, or the next group send skips the snapshot.
+
+### Playback State Monitoring
+
+NullPlayer polls Sonos every 5 seconds during casting:
+- `GetTransportInfo` — Returns transport state (PLAYING, PAUSED_PLAYBACK, STOPPED, etc.)
+- `GetPositionInfo` — Returns current position and duration
+
+**What polling detects:**
+- Sonos stopped externally (paused via Sonos app, speaker went to sleep)
+- Track position drift (syncs local timer)
+- Device unreachable (SOAP timeout) — tears down the session after 3 consecutive poll failures (~15s)
+
+**Polling lifecycle:**
+- Started (`startSonosPolling`) when Sonos casting begins
+- Stopped (`stopSonosPolling`) at the top of `stopCasting()`, before ungrouping rooms
+- Also runs post-wake check after Mac sleep
+
+**Position sync:** Each PLAYING poll updates `activeSession.position` and sets `activeSession.playbackStartDate = Date()`. On PAUSED_PLAYBACK, `playbackStartDate` is set to `nil` so the timer freezes. `CastManager.currentTime` interpolates `session.position + elapsed(since: playbackStartDate)` — the same pattern used for Chromecast.
+
+**Seek clock sync:** Sonos `Seek` is fire-and-forget, so an audio seek must optimistically re-anchor `activeSession.position` to the requested target and reset `playbackStartDate` when the session is playing. Do this for audio as well as video. Otherwise Sonos can reach EOF before the next 5-second poll while NullPlayer still evaluates completion from the pre-seek position.
+
+**Poll failure tracking and teardown:** `pollSonosState()` counts consecutive `pollSonosPlaybackState()` failures (each returns `nil`). When the counter reaches 3 consecutive failures (~15s of poll timeouts), the cast session is torn down via `_stopCastingCore()`, returning audio playback to local. The counter is reset to 0 on every successful poll or when a new cast starts. Early post-stop race failures (detected by checking `isAudioCastRoutingActive`) are ignored so they don't trigger false teardowns.
+
+### Resilience and Recovery
+
+**CoreAudio route churn:**
+- Sonos grouping, coordinator transfer, room switching, Wi-Fi changes, Zoom routes, and AirPlay-style output changes can trigger local `AVAudioEngineConfigurationChange` notifications even while cast playback is remote.
+- Local `AudioEngine` graph rebuilds must be deferred while `CastManager.activeSession` exists or `AudioEngine.isAnyCastingActive` is true.
+- See `skills/audio-system/audio-pipelines.md` — Cast Route-Change Safety.
+
+**Network change detection:**
+- LocalMediaServer monitors network changes via NWPathMonitor and refreshes its own bound IP when Wi-Fi changes.
+- UPnPManager also monitors network changes. When the active local IP changes, or the network returns after being unavailable, it stops SSDP/mDNS discovery, clears cached Sonos/DLNA device URLs and Sonos topology, then starts discovery on the current interface.
+- Active Sonos casts are ended only when the local IP actually changes. A pure reconnect refreshes discovery without tearing down a working speaker session.
+
+**Mac sleep/wake handling:**
+- CastManager observes sleep/wake notifications
+- On wake: waits 2s for network, refreshes local/UPnP network state, then polls Sonos state if casting and updates UI
+
+**Server health checks:**
+- LocalMediaServer pings itself every 30 seconds
+- Auto-restarts if the ping fails
+
+**Group topology refresh:**
+- During casting, group topology refreshed every 60 seconds
+- Detects external group changes
+
+**Cast-failure auto-recovery (stale coordinator after reboot):**
+- Casts target the group *coordinator* via the control URL cached in `sonosZones` + `lastFetchedGroups`. Topology is only re-fetched on a local-IP change or every 60s *while a cast is already active* — never before initiating a new cast. A speaker reboot is not an IP change, so the cached coordinator can go stale and `SetAVTransportURI`/`Play` returns HTTP 500. Manually refreshing the device list used to be the only fix.
+- Both AVTransport SOAP error sites now throw `CastError.soapError(statusCode:detail:)` instead of `playbackFailed`, so the status code is reliably available to callers (`UPnPManager.sendSetAVTransportURI` fails fast with no retry; `sendSOAPAction` still retries transient 5xx first).
+- `CastManager.cast(...)` `.sonos` branch: on a recoverable failure (`soapError` ≥ 500, `networkError`, or a raw URL-loading error) it `disconnect()`s, calls the awaitable `UPnPManager.refreshSonosGroupTopologyAwait()`. The refresh validates the HTTP response, tries each cached zone until one returns a valid topology, and **blocks until** the device/coordinator list is rebuilt. It then maps the old zone UDN through fresh group membership to the current coordinator (falling back to room-name matching) and retries the cast **once**. If no zone returns valid topology, it preserves the cached topology and does not retry the stale endpoint.
+- Recovery is Sonos-only and retries at most once; a genuinely fatal error (401/403 Connection Security, unsupported format) is not retried and surfaces its existing message.
+
+**Mid-cast unreachability teardown (speaker reboot/power loss):**
+- While a cast is active, `pollSonosState()` continuously queries `GetTransportInfo` and `GetPositionInfo` every 5 seconds. If the poll fails 3 consecutive times (indicating the speaker is unreachable, e.g., due to a reboot or power loss), the session is automatically torn down via `_stopCastingCore()`, cleanly returning audio playback to local and clearing the UI. The counter is reset to 0 on every successful poll or when a new cast begins. Early post-stop poll failures (detected by `isAudioCastRoutingActive` check) are ignored to avoid false positives during normal teardown races.
+- This is distinct from the stale-coordinator auto-recovery above: stale-coordinator recovery fires **during** `cast()` before playback starts; mid-cast unreachability detection fires **during** active polling if the speaker becomes unreachable while casting.
+
+**Premature STOPPED after a near-end Plex FLAC seek:**
+- Reproduced deterministically on a Living Room Sonos Arc (S19, S2 firmware 96.0-79160, home-theater/bonded renderer) while a Dining Room renderer handled repeated tests correctly.
+- NullPlayer sent a valid `REL_TIME` seek to a direct Plex FLAC URL. The Arc acknowledged the SOAP request in about 15 ms and reported `PLAYING` at the requested position, then changed to `STOPPED` at position 0 after only 3–4 seconds while still advertising 12–18 seconds of remaining duration. This points to receiver-specific FLAC time-to-byte/range seeking behavior, not a rejected SOAP command.
+- The ordinary natural-finish classifier intentionally has a tight 6-second tolerance so an external stop near the end does not advance. The Arc's premature EOF falls outside that tolerance and would therefore be misclassified as an external stop, leaving playback paused.
+- `CastManager` briefly records a Sonos seek made within the final 30 seconds (and no earlier than halfway through a short track). If the same session was playing, its local clock reached the target, and Sonos reports `STOPPED` within 12 seconds, classify that report as EOF and use the normal cast-track advance path. Clear the recent-seek state on a new cast/track, teardown, local Stop, and after the first STOPPED classification. Rooms that play through normally remain on the ordinary completion path.
+- **A mid-track `STOPPED` on the Dining Room (2026-09-24, W271) was not this class**: another NullPlayer instance was still casting to the room. See **Casting Stops Unexpectedly** — rule that out before widening this classifier.
+- Regression status: this is **not introduced by the #419 changes**. Fire-and-forget Sonos seeking existed from the initial January 2026 casting implementation, and STOPPED polling paused playback from the February 2026 resilience work. #419 added the 6-second natural-finish classifier for #415; the Arc/Plex case is a pre-existing renderer edge case that exceeded that classifier's intended tolerance.
+
+### Group Management
+
+**Join a group** - `SetAVTransportURI` with `x-rincon:{coordinator_uid}`:
+```xml
+<u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>0</InstanceID>
+  <CurrentURI>x-rincon:RINCON_xxxx</CurrentURI>
+  <CurrentURIMetaData></CurrentURIMetaData>
+</u:SetAVTransportURI>
+```
+
+**Leave a group** - `BecomeCoordinatorOfStandaloneGroup`:
+```xml
+<u:BecomeCoordinatorOfStandaloneGroup xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>0</InstanceID>
+</u:BecomeCoordinatorOfStandaloneGroup>
+```
+
+## Implementation Details
+
+### State Management
+
+**CastManager.swift** maintains:
+```swift
+/// Rooms selected for Sonos casting (UDNs) - used before casting starts
+var selectedSonosRooms: Set<String> = []
+```
+
+### Custom Checkbox View
+
+**SonosRoomCheckboxView** is an `NSView` subclass that:
+- Renders a checkbox with the room name
+- Handles clicks without closing the menu
+- Updates `selectedSonosRooms` when not casting
+- Joins/unjoins rooms when casting is active
+
+```swift
+@objc private func checkboxClicked(_ sender: NSButton) {
+    if isCastingToSonos {
+        // Toggle actual Sonos group membership
+        if isNowChecked {
+            joinSonosToGroup(...)
+        } else {
+            unjoinSonos(...)
+        }
+    } else {
+        // Just update local selection state
+        if isNowChecked {
+            selectedSonosRooms.insert(roomUDN)
+        } else {
+            selectedSonosRooms.remove(roomUDN)
+        }
+    }
+}
+```
+
+### Device Matching
+
+**Challenge**: `sonosRooms` returns room UDNs, but `sonosDevices` only contains group coordinators.
+
+**Solution** in `castToSonosRoom`:
+1. Try direct ID match (room is a coordinator)
+2. Fall back to matching by room name
+3. Use first available device as last resort
+
+### Local File Casting
+
+Local files are supported via an embedded HTTP server (LocalMediaServer):
+- **Port**: 8765
+- **Seeking**: Supports HTTP Range requests
+- **Network binding**: Binds to local network interface (en0/en1), not localhost
+- **HEAD requests**: Handles HEAD requests (Sonos may send HEAD before GET)
+
+**Supported content:**
+- ✅ Plex streaming (with token in URL)
+- ✅ Subsonic/Navidrome streaming (via proxy)
+- ✅ Jellyfin streaming (via proxy)
+- ✅ Emby streaming (via proxy)
+- ✅ Local files (via embedded HTTP server)
+- ✅ Internet radio (Shoutcast/Icecast streams)
+
+**Subsonic/Navidrome/Jellyfin/Emby Casting:**
+Streams are proxied through LocalMediaServer because:
+1. Sonos has issues with URLs containing query parameters
+2. The media server may be localhost-bound, unreachable by Sonos
+
+### Artwork Display
+
+NullPlayer sends artwork URLs via DIDL-Lite metadata:
+
+| Source | Artwork URL |
+|--------|-------------|
+| Plex | `PlexManager.artworkURL(thumb:)` - Plex transcode endpoint |
+| Subsonic | `SubsonicManager.coverArtURL(coverArtId:)` - Subsonic getCoverArt |
+| Jellyfin | `JellyfinManager.imageURL(itemId:imageTag:size:)` - Jellyfin `/Items/{id}/Images/Primary` |
+| Emby | `EmbyManager.imageURL(itemId:imageTag:size:)` - Emby `/Items/{id}/Images/Primary` |
+| Local files | LocalMediaServer extracts embedded artwork and serves as JPEG |
+
+See [artwork-debugging-history.md](artwork-debugging-history.md) for historical artwork troubleshooting attempts.
+
+## Sonos Protocol Quirks
+
+**Content-Type matching:** The content type in DIDL-Lite `protocolInfo` must match the actual HTTP Content-Type header. Use `track.contentType` when a backend provides it; otherwise use `CastManager.detectAudioContentType(for:)` to detect from file extension. Extensionless server streams must not fall back to `audio/mpeg` when API metadata says the codec/container is FLAC, WAV, ALAC, etc.
+
+**Content-Length for MP3/OGG:** Sonos closes the connection if Content-Length is missing for MP3 and OGG. Chunked transfer encoding only works for WAV/FLAC.
+
+**HEAD requests:** Sonos sends HTTP HEAD before GET to check file size. LocalMediaServer handles both methods.
+
+**Radio streams:** MP3 radio streams use `x-rincon-mp3radio://` URI scheme for better Sonos buffering.
+
+**Error 701:** "Transition Not Available" - occurs when the speaker is busy. NullPlayer waits for transport ready state before retrying.
+
+**Redirect limitation:** Sonos doesn't follow HTTP 30x redirects with relative URLs - only absolute URLs work.
+
+**Supported formats:** MP3 (320kbps), AAC/HE-AAC (320kbps), FLAC (24-bit, 48kHz), WAV (16-bit), OGG Vorbis (320kbps).
+
+**Not supported for Sonos casting:** ALAC, AIFF/AIF, WavPack (`wv`), Monkey's Audio (`ape`).
+
+## Format Compatibility and Auto-Skip
+
+### Two-Tier Compatibility Check
+
+`CastManager.isSonosCompatible(_:allowUnknownSampleRate:)` has two modes:
+
+- **Strict (default)**: nil sample rate on a lossless track → incompatible. Used as the _final_ verdict in `castCurrentTrack` and `castNewTrack` after the sample rate has been fetched.
+- **Permissive** (`allowUnknownSampleRate: true`): nil sample rate → pass through. Used in _scan/positioning_ functions that advance the playlist index before casting begins.
+
+Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`, `wv` (WavPack), `ape` (Monkey's Audio).
+Every track with a known or resolved sample rate is rejected above 48 kHz, regardless of its URL extension or MIME type. Resolve the rate before the final cast verdict for every Plex or local track whose metadata lacks one; do not restore an extension/MIME gate around that resolution. FLAC and WAV additionally require a known rate in strict mode.
+
+Format classification uses the URL extension first, then normalized `Track.contentType` when the URL is extensionless. MIME types are normalized case-insensitively and parameters are ignored, so `Audio/X-FLAC; charset=binary` is treated as FLAC. This matters for Plex, Subsonic/Navidrome, Jellyfin, and Emby stream URLs that may not end in `.flac` or `.wav`.
+
+### Scan Functions Use Permissive Mode
+
+Functions that advance the playlist index use `allowUnknownSampleRate: true` because they run _before_ the sample rate is known:
+
+| Function | Location | Mode |
+|----------|----------|------|
+| `advanceToFirstSonosCompatibleTrack()` | `AudioEngine.swift` | permissive |
+| Skip loops in `castTrackDidFinish()` — sequential, shuffle, shuffle+repeat | `AudioEngine.swift` | permissive |
+
+### Cast Functions Are the Final Authority
+
+`castCurrentTrack` and `castNewTrack` in `CastManager.swift` call `resolveSonosSampleRate(for:)`
+when metadata has nil SR. Plex tracks fetch the actual rate from the server; local files
+are probed directly with `AVAudioFile` and asynchronously-loaded `AVAsset` format descriptions,
+even when their extension or MIME type is unfamiliar. Plex rate resolution does not depend on
+format classification; classification remains relevant for unsupported codecs and strict unknown
+FLAC/WAV handling. If a track fails there,
+`advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+
+The final compatibility call remains strict for server tracks. A local file whose sample rate is
+still genuinely undetectable is attempted instead of being skipped, because Sonos can make the
+final decoder decision. Known local rates above 48 kHz remain incompatible even when local-file
+leniency is enabled.
+
+For non-Plex backends, preserve both `Track.contentType` and sample rate from server metadata. If an extensionless FLAC/WAV track reaches strict mode without sample rate, it is rejected conservatively rather than sent to Sonos.
+
+### Design Principle
+
+> Scan functions only reject _definitively_ incompatible formats (ALAC, AIFF, WavPack, Monkey's Audio, known >48 kHz SR). They pass nil-SR lossless tracks through so the cast function can fetch and decide. Never use strict mode in a skip/scan loop — it causes Plex FLAC tracks with nil SR to be skipped silently without a fetch attempt.
+
+## Troubleshooting
+
+### Debugging a live defect
+
+For a screen-only defect, follow the live-defect process in
+[`winamp-modern-skin-guide/reference/harness.md`](../winamp-modern-skin-guide/reference/harness.md).
+Identify the running executable by PID and checkout before comparing it to a worktree build.
+Measure actual window/control frames, capture the window, and verify Refresh in both an empty
+list and a populated one. Check light/dark native control appearance as well as skin colors;
+a control with a valid frame can still be unreadable. For volume, read back the edited room and
+an untouched room to distinguish individual RenderingControl from group-volume changes.
+
+**Read the running app's state first:** `skills/app-control/scripts/playback-snapshot.sh` prints
+the cast session and its state, the local engine and player, a measured output level, held
+audio-graph recovery and output routing from a running debug build (see `app-control`,
+*Playback snapshot*). Take one before and after the step that misbehaves. Casting defects on
+the local side — silence after Stop Casting, a Play that does nothing, the wrong track after a
+cast — are engine state, and the snapshot names them in one line.
+
+### Logging switches
+
+Both are off by default and read once at launch (`EnvGatedLog`); any value, even an empty one,
+turns them on.
+
+- `NULLPLAYER_UPNP_LOG` — the SSDP/SOAP wire log from `UPnPManager` (see `chromecast-casting`).
+- `NULLPLAYER_CAST_DISCOVERY_LOG` — the periodic discovery refresh in `CastManager` (refresh,
+  +10s/+15s boosts, idle stop) and the Chromecast browser. Use it when rooms fail to appear or
+  vanish between refreshes.
+
+The `Sonos poll — state=…` line every 5 s while casting is always on; it is the record of
+position, duration and engine state used to diagnose seek and end-of-track defects.
+
+### Confirming a cast is live from outside the app — use `nettop`, not `lsof`
+
+Sonos control is **short-lived fire-and-forget SOAP** to ports 1400 and 1443, polled every 5 s. The
+connections open, transfer and close in well under 100 ms, so **`lsof` sampling does not see them**:
+113 `lsof` samples across 20 s — four whole poll windows — returned nothing but an unrelated SSDP
+UDP socket, on a session that was demonstrably casting. Reading "not casting" off that is wrong, and
+it is the kind of blind instrument that reads exactly like a real negative.
+
+Use per-connection monitoring instead, which catches them in `TimeWait`:
+
+```sh
+nettop -p $(pgrep -f 'NullPlayer') -x -J bytes_out -l 12 2>/dev/null | grep -E ':1400|:1443'
+```
+
+A live cast shows repeated short connections to the household's speakers (`sonos1.lan`,
+`sonoszp.lan`, …). Counting the matched lines across a switch is also the cheapest way to prove a
+cast **survived** a UI mode change: 33 connections across a `winampModern → Classic` swap, 15 in the
+sample after swapping back.
+
+### Devices Not Found
+1. Check UPnP is enabled in Sonos app settings
+2. Ensure devices are on same network/VLAN
+3. Check firewall allows UDP 1900 (SSDP) and mDNS (5353)
+4. Click "Refresh" and wait 10 seconds
+
+### Devices Found But Won't Play
+1. Verify AVTransport URL is accessible: `curl http://{ip}:1400/xml/device_description.xml`
+2. Check Sonos isn't in "TV" mode (some soundbars)
+3. Ensure media URL is accessible from Sonos (not localhost)
+
+### Authentication Errors (401/403)
+If you see "Sonos rejected the command":
+1. Open Sonos app → Settings → Account → Privacy & Security → Connection Security
+2. Ensure **UPnP** is **ON**
+3. Ensure **Authentication** is **OFF**
+4. These settings were added in Sonos firmware 85.0 (July 2025)
+
+### Local Files Won't Cast
+1. Check your Mac has a local network IP address (not just 127.0.0.1)
+2. Ensure firewall allows incoming connections on port 8765
+3. Verify Sonos speakers are on same network
+4. Check Console.app for "LocalMediaServer" log messages
+
+### Seek Bar Stuck at 0 / Position Not Updating
+- Root cause: `activeSession.position` and `activeSession.playbackStartDate` not set at cast start.
+- At Sonos cast start, `activeSession.position = startPosition` and `activeSession.playbackStartDate = Date()` must both be set immediately (Sonos has no status updates to set them later).
+- Each PLAYING poll must update both fields. Check `CastManager: Sonos poll — state=PLAYING` logs.
+- **Intermittent "stuck at zero" at cast start (instrumented via `[CLOCKDBG]` logs):** a `PLAYING` poll can carry `position=0` because `pollSonosPlaybackState()` swallows a failed `getPositionInfo()` (e.g. SOAP contention while the volume slider is moving at cast start) and fabricates `(position: 0, duration: 0)`. The `"PLAYING"` poll handler then blindly applies `activeSession.position = 0` and re-anchors `playbackStartDate = Date()`, so `AudioEngine.currentTime`'s interpolation (`session.position + (now - playbackStartDate)`) reads ~0 and freezes until a later successful poll. To capture it, grep logs for the `[CLOCKDBG]` tag and look for the sequence: `UPnPManager: [CLOCKDBG] getPositionInfo FAILED` → `CastManager: [CLOCKDBG] PLAYING poll carries position=0 duration=0`, correlated with nearby `[CLOCKDBG] volume submit/send` lines. This is diagnostics only — the poll still overwrites the clock; the fix (skip the position sync when the poll's `getPositionInfo` failed) is a follow-up.
+
+### Near-End Plex Seek Stops Instead of Advancing
+- Confirm that the `Seek` SOAP request was acknowledged and Sonos briefly reported `PLAYING` at or after the target. A later `STOPPED` at position 0 can be receiver-generated premature EOF even when Sonos still reports a longer track duration.
+- Compare rooms separately. The same Plex FLAC and server can behave correctly on one Sonos renderer and fail deterministically on a soundbar/home-theater coordinator.
+- Log the target, track metadata duration, Sonos-reported duration, room UDN/model, time from seek to STOPPED, and the last interpolated session position. Do not diagnose this only from the final Sonos position because Sonos resets it to 0 when stopped.
+- Preserve the narrow correlation guards described under **Premature STOPPED after a near-end Plex FLAC seek**; globally widening the normal EOF tolerance would make genuine external stops near the end advance unexpectedly.
+
+### Player Stop Keeps Session Alive
+- This is expected for Sonos when using the player Stop button: `handleStopForActiveDevice()` calls `softStopForActiveDevice()`, which stops Sonos playback but leaves the session active.
+- Use the Sonos menu **🔴 Stop Casting** action when a full disconnect is required.
+- Chromecast and non-Sonos DLNA should still route through `stopCasting()` from `softStopForActiveDevice()`.
+
+### Casting Stops Unexpectedly
+1. **Check that no other NullPlayer (another Mac, a CLI run) is casting to the same room.** A displaced
+   instance keeps its session and still acts on the room; the new cast then reports `STOPPED` at
+   position 0 at a steady point (~45 s in, every run, 2026-09-24) and pauses as "ended externally".
+   It looks exactly like a renderer or stream defect and survives a bisect, because the fault is in
+   the other process. Open as `tasks/WMP_TASKS.md` W276 (detect a replaced `TrackURI` and drop the session).
+2. Check if Sonos speaker went to sleep (idle timeout)
+3. Check if someone paused via Sonos app (NullPlayer detects this)
+4. Check if Mac went to sleep (NullPlayer recovers on wake)
+5. Check Console.app for "Sonos reported STOPPED" or "consecutive command failures"
+
+## Network Requirements
+
+### Ports
+- **UDP 1900**: SSDP discovery
+- **UDP 5353**: mDNS discovery
+- **TCP 1400**: Sonos HTTP/SOAP control
+- **TCP 8765**: Local media server (for casting local files)
+- **Media port**: Whatever port your media is served on (Plex default: 32400)
+
+### Multicast
+SSDP requires multicast. Some routers/switches block this:
+- Enable IGMP snooping
+- Allow multicast on WLAN
+- Don't isolate wireless clients
+
+## Key Source Files
+
+| File | Purpose |
+|------|---------|
+| `Casting/CastManager.swift` | Central coordinator, `selectedSonosRooms` state, polling timer, sleep/wake handling |
+| `Casting/UPnPManager.swift` | SSDP/mDNS discovery, SOAP control, group topology, `pollSonosPlaybackState()` |
+| `Casting/SonosRoomMixer.swift` | Shared room actions, independent volume writes, bounded polling and stale-read protection |
+| `Windows/Sonos/` | Room mixer controls and window lifecycle |
+| `Windows/Shared/AuxiliaryWindowChrome.swift`, `Windows/Shared/ModernAuxiliaryChrome.swift` | Titled auxiliary chrome for every family (shared with the Equalizer Studio) |
+| `WinampModern/WinampModernHostedWindows.swift` | `.sonos` skin-hosted window registration |
+| `App/ContextMenuBuilder.swift` | Menu UI, `SonosRoomCheckboxView`, casting actions |
+| `Casting/LocalMediaServer.swift` | Embedded HTTP server, HEAD handlers, health checks, network monitoring |
+
+## References
+
+- [Sonos UPnP Services (unofficial)](https://github.com/SoCo/SoCo/wiki/Sonos-UPnP-Services-and-Functions)
+- [SoCo Python Library](https://github.com/SoCo/SoCo)
+- [Sonos Developer Docs](https://docs.sonos.com/)
+- [Sonos Connection Security](https://support.sonos.com/en-us/article/adjust-connection-security-settings)
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs or credentials; pass response bodies
+through the helper rather than omitting them.

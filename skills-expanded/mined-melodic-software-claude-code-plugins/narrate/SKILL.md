@@ -1,0 +1,169 @@
+---
+description: "Text-to-speech: turn a narration script into narration.wav plus words.json with per-word start and end times, so video, captions or a page can sync to the voice. The default kokoro backend runs locally. The optional elevenlabs backend sends the script text to the third-party ElevenLabs API, only after showing the character count against remaining quota and getting the user's go-ahead. Use when: 'narrate this script', 'text to speech', 'read this aloud', 'make a voiceover', 'generate narration audio', 'TTS with word timings', 'I need audio for this explainer', 'narrate with elevenlabs'. Not for transcribing existing audio."
+argument-hint: "<script or text> [--backend kokoro|elevenlabs] [--out <dir>] [--voice <v>] [--speed <n>]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: implement
+  summary: Script in, narration.wav and words.json out (kokoro local, or a voice fallback chain)
+---
+
+# Narrate
+
+Turn a script into speech, and write a word timing file beside it. kokoro runs on this machine and is
+the default. elevenlabs is a separate, optional backend that sends the text to a third party; use it
+only when the user asks for it by name.
+
+## Inputs
+
+- **Script.** A path to a UTF-8 text file, or text the user gave. For given text, write it to
+  `script.txt` in the output folder first, so the run is repeatable. Write the script the way it
+  should be spoken: spell out abbreviations you want expanded and keep one idea per sentence.
+- **Backend** (`--backend`). Default `kokoro`. `elevenlabs` only when the user names it; it follows
+  its own section below.
+- **Output folder** (`--out`). Default: the script file's folder. The run writes two files there and
+  replaces earlier ones with the same names.
+- **Voice** (`--voice`, kokoro). Default `af_heart`. Names starting `af_`/`am_` speak American English,
+  `bf_`/`bm_` British English. `${CLAUDE_PLUGIN_ROOT}/scripts/kokoro-assets.json` lists every
+  voice the plugin pins.
+- **Speed** (`--speed`, kokoro). Default `1.0`, from `0.5` to `2.0`.
+
+## Run (kokoro)
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pydeps.py" run --data-dir "${CLAUDE_PLUGIN_DATA}" -- \
+  "${CLAUDE_PLUGIN_ROOT}/scripts/narrate.py" --data-dir "${CLAUDE_PLUGIN_DATA}" \
+  --model-dir '${user_config.model_dir}' \
+  --script <script file> --out <output folder> [--voice <name>] [--speed <x>]
+```
+
+Where `python3` is not on PATH, run the same command with `python`; the SessionStart hook accepts either.
+Keep the `--model-dir` argument exactly as shown, in single quotes: it carries the plugin's
+`model_dir` option, and the script handles an unset one ([reference/plugin-options.md](../../reference/plugin-options.md)).
+
+`narrate.py` owns the behavior: how words are split, how timings are measured, and the
+`words.json` fields. Read its docstring when you need the details.
+
+- **Exit 0:** it prints the audio path with its length and word count, then the `words.json` path.
+  Report both paths and the length.
+- **Exit 2:** a prerequisite is missing. The message names it: espeak-ng, the model files, or the
+  Python packages. Report the message as written and stop. Do not install anything.
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check.py" --data-dir "${CLAUDE_PLUGIN_DATA}" --model-dir '${user_config.model_dir}'`
+  lists every gap with its remedy, and installs nothing. Where `python3` is not on PATH, run it with
+  `python`. Keep `--model-dir` exactly as shown, in single quotes; the script handles an unset
+  `model_dir` option.
+- **Exit 1:** report the error. An unknown voice or a speed out of range is the caller's to fix.
+
+## Run a backend chain
+
+A producer that must not stop for want of one voice (explainer-video, reviewer media) passes
+`--backend-chain`, a comma-separated order such as `edge-tts,kokoro`. One backend voices the whole
+script; on failure the whole script goes to the next one, so voices never mix. edge-tts sends one
+request per paragraph, so separate paragraphs with a blank line; if one paragraph fails, the whole
+script still goes to the next backend.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pydeps.py" run --data-dir "${CLAUDE_PLUGIN_DATA}" -- \
+  "${CLAUDE_PLUGIN_ROOT}/scripts/narrate.py" --data-dir "${CLAUDE_PLUGIN_DATA}" \
+  --model-dir '${user_config.model_dir}' \
+  --script <script file> --out <output folder> --backend-chain <name,...> \
+  [--voice <backend>:<voice>]... [--command '<template>'] [--timeout <s>] [--allow-paid-voice] \
+  [--scan-pattern <regex>]...
+```
+
+The backends, their default voices, the retries, the timeout and the scan are in `narrate.py`'s
+docstring. Besides `narration.wav` and `words.json` the run writes `voice.json`: the backend and
+voice that spoke, and every attempt.
+
+- Pass each `--scan-pattern` the caller hands over (a team's `scan.extra_patterns`): the scan
+  refuses those too, on top of its floor.
+- Pass `--allow-paid-voice` only after the user agreed to the paid call in this session, or when the
+  caller's `allow_unattended_paid_voice` setting is true. Never add it to get past exit 3.
+- **Exit 0:** report the paths, the length, and the backend and voice from `voice.json`.
+- **Exit 3:** the chain reached a paid backend without the allowance; nothing was sent.
+- **Exit 4:** the script holds a secret or machine data (the scan floor); nothing was sent. Report
+  the finding kinds from `voice.json` and fix the script. Do not drop the online backends to get
+  past it.
+- **Exit 5:** no backend produced audio. A producer makes its captions-only version.
+- **Exit 1:** a usage error, such as an unknown backend or a `--voice` without its backend.
+
+## The elevenlabs backend
+
+Third-party egress: the script text goes to `api.elevenlabs.io`, and ElevenLabs bills the call
+(pricing pointer: [reference/elevenlabs.md](../../reference/elevenlabs.md#cost-and-quota)). Pick this backend only when the user names ElevenLabs. Never pick it because kokoro is
+slow or its output was disliked, and never switch to it after a kokoro failure.
+
+The key is the `ELEVENLABS_API_KEY` environment variable. When it is unset and `vault-exec` is on
+PATH, the script runs itself again under `vault-exec`, which supplies the key to that one process
+from the user's vault. Never ask the user to paste the key into the chat, never put it on a command
+line, never wrap the command in `vault-exec` yourself, and never print, echo or log the key.
+
+Two runs, with the user's answer between them:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/elevenlabs.py" --data-dir "${CLAUDE_PLUGIN_DATA}" \
+  --model '${user_config.elevenlabs_model}' --script <script file> --out <output folder> \
+  [--voice <voice id>] [--setting <name>=<value> ...] [--no-cache]
+```
+
+Keep `--model` exactly as shown, in single quotes: it carries the plugin's `elevenlabs_model`
+option, and the script uses its default model, `eleven_v4`, when that option is unset ([reference/plugin-options.md](../../reference/plugin-options.md)). When the
+user names a model for this run, replace that argument with `--model <model id>`.
+How the models differ: the models pointer in
+[reference/elevenlabs.md](../../reference/elevenlabs.md#models).
+
+1. **Without `--proceed`**, the script prints one statement and sends nothing (exit 3): the
+   character count, the host, the model and voice, the plan's remaining character quota, and the
+   pricing page. Show that statement to the user as printed and ask whether to proceed. Stop until
+   they answer.
+2. **After a yes**, run the same command with `--proceed` added. A no, or no answer, ends the task.
+   Do not add `--proceed` on your own, and do not reuse an earlier yes for a changed script, model,
+   voice or setting: run step 1 again.
+
+A request identical to an earlier one (text, voice, model, settings) is served from the cache in
+the plugin data directory: the script says so, sends nothing, needs no key and no `--proceed`, and
+exits 0. `--no-cache` forces a new call, which goes through both steps above.
+
+The models, their limits, and whether each is confirmed on the timed endpoint are the script's
+`MODELS` table. `--setting` takes the voice settings the script names in its `--help`. Where to read the
+live ElevenLabs specifics (models, script-writing guidance, voice cloning, pricing) is
+[reference/elevenlabs.md](../../reference/elevenlabs.md).
+
+- **Exit 0:** report the audio path with its length, and the `words.json` path, and say when the
+  audio came from the cache.
+- **Exit 3:** the statement was shown and nothing was sent. Ask, as above.
+- **Exit 4:** the organization's egress floor forbids this backend (`SPEECH_EGRESS_FLOOR` is
+  set in the environment, usually from managed settings). Report the reason as written, use kokoro
+  if the user agrees, and do not try to unset the variable.
+- **Exit 2:** no key: `ELEVENLABS_API_KEY` is unset and `vault-exec` is absent or could not supply
+  the secret. Report the message as written; it names the remedy.
+- **Exit 1:** report the error, such as a rejected key, a script over the model's limit, or an
+  empty audio reply.
+
+## Outputs
+
+- `narration.wav`: 24 kHz mono, 16-bit PCM.
+- `words.json`: `audio`, `sample_rate`, `duration`, `backend`, `voice`, `speed` (kokoro) or `model`,
+  `voice_settings`, `request_id`, `character_cost` and `cached` (elevenlabs), and `words`, a list
+  with one `{word, start, end}` per whitespace-separated token of the script, in script order. A
+  kokoro token with only punctuation, such as a dash, spans its pause. An elevenlabs word spans its first to its last character's time; what the API returns is behind
+  the with-timestamps pointer in
+  [reference/elevenlabs.md](../../reference/elevenlabs.md#the-api-the-script-calls).
+
+## Next
+
+/harness-ops:prerequisites
+
+When the run stopped with exit 2, it lists the declared tools this machine lacks.
+
+## Gotchas
+
+- Never read, print or pass `ELEVENLABS_API_KEY` yourself. `elevenlabs.py` reads it from the
+  environment, and no command, message or file you write carries its value.
+- espeak-ng is GPL-3.0. The user installs it. Never install it, download it, or suggest a
+  package that bundles it.
+- The first run of a session loads a 325 MB model. On a desktop CPU the model makes audio faster
+  than real time (about 0.4 s of compute for each second of audio, measured on a 32-thread x86
+  CPU).
+- Each word is phonemized on its own, so a function word can carry more stress than it would in
+  running speech. Rewrite the sentence if one sounds wrong.

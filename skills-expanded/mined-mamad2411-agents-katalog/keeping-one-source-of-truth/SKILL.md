@@ -1,0 +1,35 @@
+---
+name: keeping-one-source-of-truth
+description: "Use when adding data, config, state, constants, an enum-like string, a cache, or anything that could exist in two places - or when two sources already disagree. Encodes the one-fact-one-source doctrine for code and data: derive rather than store, extend the owner, absorb duplicates. Use at the moment copying a value feels faster than referencing it."
+---
+
+# Keeping one source of truth
+
+**REQUIRED BACKGROUND:** the `principal-engineering` skill.
+
+## Overview
+
+Every fact about the system lives in exactly one place, and every other part of the system reads it from there. This outranks convenience.
+
+## The doctrine
+
+1. **Before adding data, find who already owns it.** Extend that owner; do not start a rival.
+2. **Derive rather than store.** If the platform or an existing source can answer it at read time, read it there; do not copy the answer into a second source where it can go stale.
+3. **Absorb duplicates you find on the way.** When you touch code that hardcodes what a file already knows (or the reverse), fold the two together as part of the work instead of leaving a third variant behind.
+4. **A missing entry fails loud** (see `handling-failures`): the single source is only authoritative if absence from it is an error, never a silent default.
+5. **Mark generated versus hand-edited, and never edit generated output.** Every artifact states which it is.
+6. **Vocabulary is typed, not stringly.** Identifiers, kinds, states, and names that code branches on are constants, enums, sealed types, or registry entries; a free string spelled twice is two sources of truth with a typo between them.
+7. **When two sources disagree, say so.** Surfacing the contradiction is the first fix. The full fix determines which value is live, collapses to one source, and deletes the loser. Never silently follow either one; that launders the disagreement into whichever answer you happened to read first. On a declared critical path, a live disagreement earns a direct message to the owner, not only a tracked item; an unread ticket surfaces nothing.
+
+## Boundaries
+
+- Caches and read models are legitimate derived copies when their derivation is automatic and their staleness is bounded and observable. The rule bans copies a person keeps in sync by hand.
+- Test fixtures may freeze a copy of reality on purpose; the word fixture is the label that says so.
+- Documentation follows the same rule (an index routes, never decides); the technical-writer plugin's `technical-writing` skill carries that side where installed.
+
+## Common mistakes
+
+- Copying a threshold, URL, or mapping "temporarily". Temporary copies have the same lifetime as the TODO above them.
+- Creating `thing-v2` beside `thing` instead of editing in place.
+- A default value in code that shadows the config file's value. When someone changes the config and nothing happens, this is why.
+- Two enums in two services spelling the same states. The day one gains a state, the boundary between them becomes a silent filter.

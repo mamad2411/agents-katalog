@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/saas/saas-business-plan/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Plan SaaS businesses. TRIGGERS - Use when user needs help with saas-business-plan related tasks."

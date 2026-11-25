@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-eachlabs-skills/menu-design-generation/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Generate professional restaurant, cafe, and bar menu designs using each::sense AI. Create print-ready menus, digital displays, QR code menus, and seasonal specials with stunning food photography and e

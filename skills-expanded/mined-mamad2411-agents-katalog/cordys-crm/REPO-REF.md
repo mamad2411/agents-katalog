@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-1Panel-dev-CordysCRM-skills-cordys-crm/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Cordys CRM 助手

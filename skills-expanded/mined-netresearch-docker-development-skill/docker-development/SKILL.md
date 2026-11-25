@@ -1,0 +1,157 @@
+---
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
+name: docker-development
+description: "Use when working with ANY Docker task: writing Dockerfiles, configuring docker-compose/compose.yml, multi-stage builds, docker-bake.hcl, container security audits, .dockerignore optimization, or CI/CD container testing. Triggers on: Dockerfile, docker-compose, container, image build, multi-stage, docker bake, compose."
+license: "(MIT AND CC-BY-SA-4.0)"
+compatibility: "Requires docker, docker compose."
+metadata:
+  version: "1.21.0"
+  repository: "https://github.com/netresearch/docker-development-skill"
+  author: "Netresearch DTT GmbH"
+allowed-tools:
+  - "Bash(docker version:*)"
+  - "Bash(docker info:*)"
+  - "Bash(docker ps:*)"
+  - "Bash(docker images:*)"
+  - "Bash(docker inspect:*)"
+  - "Bash(docker history:*)"
+  - "Bash(docker logs:*)"
+  - "Bash(grep:*)"
+  - "Read"
+  - "Glob"
+  - "Grep"
+---
+
+# Docker Development
+
+## Core Principles
+
+1. **Minimal** -- Alpine/distroless, multi-stage
+2. **Secure** -- Non-root USER, no layer secrets, pin versions
+3. **Testable** -- entrypoint bypass, DNS mocking
+4. **Cache-efficient** -- deps first, clean in-layer
+
+## Quick Reference
+
+### Multi-Stage Build (Node.js)
+
+```dockerfile
+FROM node:24-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+
+FROM node:24-alpine
+RUN addgroup -g 1001 app && adduser -u 1001 -G app -D app
+USER app
+COPY --from=builder /app .
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
+CMD ["node", "server.js"]
+```
+
+### Multi-Stage Build (Go -- scratch/distroless)
+
+```dockerfile
+FROM golang:1.26-alpine AS builder
+WORKDIR /app
+COPY go.* ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app/server .
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /app/server /server
+CMD ["/server"]
+```
+
+### Layer Optimization
+
+```dockerfile
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+```
+
+### Build Cache: Copy Dependency Files First
+
+```dockerfile
+COPY package*.json ./
+RUN npm ci
+COPY . .
+```
+
+Manifests before source keeps install layers cached.
+
+### BuildKit Secrets
+
+```dockerfile
+RUN --mount=type=secret,id=ssh_key,dst=/root/.ssh/id_rsa git clone git@github.com:org/repo.git
+```
+
+`ARG` leaks via `docker history` **and** SLSA provenance --
+`references/build-secret-leaks.md`
+
+### Docker Bake (Multi-Platform)
+
+```hcl
+target "app" {
+  platforms = ["linux/amd64", "linux/arm64"]
+}
+```
+
+CI builds go through Bake and `netresearch/.github/.github/workflows/build-container-bake.yml@main`, one image or several. The reusable adds a GHA cache per target, so the HCL declares none; a scheduled rebuild passes `cache: false` -- `references/bake-ci-cache.md`
+
+## Security Anti-Patterns
+
+| Anti-pattern | Fix |
+|---|---|
+| `FROM image:latest` | Pin version: `image:1.2.3-alpine` |
+| No `USER` directive | `adduser` + `USER appuser` |
+| `chmod 777` | Use specific permissions: `chmod 550` |
+| `privileged: true` in compose | Remove or use specific `cap_add` |
+| `volumes: [/:/host]` | Mount only needed paths |
+| `ports: ["0.0.0.0:3000:3000"]` | Bind to `127.0.0.1:3000:3000` |
+| `ENV DB_PASSWORD=secret` | Use `--mount=type=secret` or compose secrets |
+
+## CI Testing Gotchas
+
+1. **Bypass entrypoint**: `docker run --rm --entrypoint php myimage -v`
+2. **Mock upstream DNS**: `docker run --rm --add-host backend:127.0.0.1 nginx-image nginx -t`
+3. **Compose validation**: `cp .env.example .env` before `docker compose config`
+4. **Secret scanning**: exclude `.env.example`, README, docs
+5. **Root-owned artifacts**: bind-mount dirs (`EACCES`) -- `references/bind-mount-ownership.md`
+
+## .dockerignore
+
+Exclude: `.git`, `node_modules`/`vendor`, `.env*`, `*.pem`, `*.key`
+
+## Compose Essentials
+
+- startup ordering: `depends_on.condition: service_healthy` + `healthcheck` `start_period`. The probe runs with the image's own tools: bare Alpine has busybox `wget` and no `curl` (check the image), and `localhost` resolves to `::1` first -- probe the address the server listens on, `127.0.0.1` for IPv4 (`references/compose-runtime-lifecycle.md`); `mariadb:11+` has no `mysqladmin` -- use `healthcheck.sh` (`references/database-container-readiness.md`)
+- swapping a service's image keeps its anonymous volume at a path the new image's `VOLUME` or the compose file declares (`redis:8.0` → `valkey/valkey:9` with `volumes: [/data]` hands Valkey an RDB it cannot load) -- for disposable data rename the service (and update `depends_on` and clients) or run `up -V --no-deps <service>`; a bare `-V` also renews a database's anonymous volume (`references/compose-runtime-lifecycle.md`)
+- `networks.internal: true` isolates databases
+- `profiles: [debug]`: start only with `--profile debug`. `down` and `--remove-orphans` ignore a disabled profile's containers, so a service you stop enabling keeps running -- `docker compose --profile '*' down`, or `docker compose down <service>` (`references/compose-runtime-lifecycle.md`)
+- logging drivers block by default: a stalled remote endpoint (`awslogs`, ...) stalls the app's writes; `mode: non-blocking` + `max-buffer-size` drops lines instead, protecting a running container only (`references/compose-runtime-lifecycle.md`)
+- a socket-reading scheduler (Ofelia) runs the job labels of every stack on the host: `--docker-filter label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}`, written in the compose file itself (`references/compose-runtime-lifecycle.md`)
+- `COMPOSE_FILE` (shell or `.env`) loads exactly that list, so `compose.override.yml` is silently not merged -- list it in the pin; and `docker compose config` prints a literal `$` as `$$`, so measure values with `printenv` inside a container (`references/compose-config-and-env.md`)
+- shared image ref: define ONCE per file as top-level extension field + anchor -- `x-app-image: &app-image registry/app:${APP_IMAGE_VERSION:-85}`, services use `image: *app-image`. The field must sit ABOVE `services:` — an alias is only valid after its anchor in document order. `:-` defaults cover unset AND empty vars (a bare omitted tag silently resolves `:latest`). Anchors are file-local: every overlay file needs its own. Verify both paths: `APP_IMAGE_VERSION= docker compose config` and with an override
+
+## References
+
+- `references/bake-ci-cache.md` -- the shared bake reusable; `-f docker-bake.hcl` beside a compose file; GHA cache scope per target; uncached scheduled rebuild that still writes the cache; helper steps in bake-action's directory
+- `references/ci-testing.md` -- CI testing patterns for Docker images; busybox `sh` vs bash in `-c` strings; `timeout` around `docker compose run` leaves the container running when PID 1 ignores the signal; a negative control taken from a mutable base tag expires when upstream ships the fix; a local fallback build that matches CI (`git archive <tag> | docker build -`)
+- `references/dind-testing-patterns.md` -- Docker-in-Docker testing patterns
+- `references/bind-mount-ownership.md` -- root-owned bind-mount artifacts; a tmpfs on a parent path hiding a volume below it
+- `references/gpg-verification.md` -- gpgv patterns; stale keybox locks
+- `references/registry-catalogue-and-pin-rot.md` -- catalogue probes; pin rot
+- `references/build-secret-leaks.md` -- `ARG` in provenance
+- `references/php-fpm-worker-starvation.md` -- keepalive pins php-fpm; with `fastcgi.logging` on a long PHP error overflows `fastcgi_buffer_size`, and on a service with several addresses `max_fails` turns those 502s into `no live upstreams` for everyone
+- `references/engine-and-image-upgrades.md` -- `MinAPIVersion` cuts off socket-reading sidecars; probe-container upgrade check; a base image changing its `USER`; PHP 8.5 OPcache built into the core; run the tests of images built `FROM` a base before changing what it ships
+- `references/pinned-source-fetch.md` -- a commit hash fetched from GitHub may come from any fork; fetch the upstream branch and require the pin to be its ancestor
+- `references/database-container-readiness.md` -- seeded DB images log `ready for connections` twice; verify the seed, not the log; `mariadb:11+` drops the `mysql*` binaries; major upgrade of an existing data directory (`MARIADB_AUTO_UPGRADE`, `healthcheck.sh`, manual `docker stop -t`, `stop_grace_period`)
+- `references/compose-runtime-lifecycle.md` -- a disabled profile's container survives `down` and `up --remove-orphans`; blocking vs non-blocking log delivery and what non-blocking does not protect; an Ofelia on the Docker socket runs other stacks' jobs unless filtered to its own project; an image swap keeps an anonymous volume the new container declares; healthcheck probes inside Alpine images
+- `references/compose-config-and-env.md` -- a `COMPOSE_FILE` pin disables the `compose.override.yml` merge; `docker compose config` re-escapes `$` as `$$`, so it is not what the container receives
+- `references/image-ca-trust.md` -- after a CA compromise: measure the published image's `ca-certificates` version and root subjects; `grep` for a CA name in the bundle always returns 0

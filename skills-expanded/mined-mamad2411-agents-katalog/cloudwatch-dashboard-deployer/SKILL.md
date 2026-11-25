@@ -1,0 +1,505 @@
+---
+name: cloudwatch-dashboard-deployer
+description: Provisions CloudWatch dashboards with widget layouts, metric selections, and sharing models. Covers dashboard JSON (widgets, layout), metric widgets (namespace/metric/dimensions/statistics), log insights widgets (query syntax), alarm widgets, text widgets, metric math expressions, custom metrics (CloudWatch agent, PutMetricData, EMF), cross-account shared dashboards, snapshot sharing, dashboard variables ($INSTANCE_ID), SLO/operational/ executive dashboards, Metric Explorer, and Application Signals auto-discovery. Runs pre-checks (namespace availability, metric publishing, IAM, cross-account role), emits put-dashboard CLI behind a CONFIRM gate, and verifies widget rendering. Emits READY_TO_DEPLOY | PREREQUISITES_MISSING. Use when creating operational, SLO, executive, cross-account, log insights, or metric math dashboards.
+license: Apache-2.0
+compatibility: Agent runtime that reads SKILL.md (Claude Code, Cursor, Windsurf, Codex, Gemini). No AWS CLI required for offline plan classification. Live-account operations use aws cloudwatch put-dashboard, get-dashboard, list-dashboards, delete-dashboards, get-metric-statistics (AWS CLI v2, SSO or key-based credentials).
+metadata:
+  domain: aws-cloudops
+  complexity: high
+  requires_llm: 'true'
+  phase: '1'
+  supports_pipeline: 'true'
+  entry_point: 'false'
+  family: Management
+  task_type: deploy
+  skill_class: capability
+  lifecycle_status: active
+  verdict_shape: READY_TO_DEPLOY | PREREQUISITES_MISSING
+  version: 0.1.0
+  author: Jacky Chan — AWS Community Builder
+  tags: cloudwatch, monitoring, dashboards, observability, deploy, metric-widgets, cross-account
+  dependencies: aws-orchestrator
+  keywords: CloudWatch, dashboards, put-dashboard, metric widgets, log insights widgets, alarm widgets, text widgets, metric math, custom metrics, CloudWatch agent, PutMetricData, embedded metrics format, cross-account dashboards, snapshot sharing, dashboard variables, SLO dashboards, operational dashboards, executive dashboards, metric explorer, Application Signals, auto-discovery
+  when_to_use: Creating CloudWatch dashboards (operational, SLO, executive, cross- account), building metric widgets with correct namespace/dimensions/ statistics, adding log insights widgets with query syntax, using metric math to combine multiple metrics, configuring dashboard variables for dynamic filtering, deploying shared cross-account dashboards, setting up snapshot sharing, leveraging Application Signals auto-discovery, or auditing dashboard widget correctness.
+  activation_triggers: create CloudWatch dashboard, provision dashboard, metric widget, log insights widget, alarm widget, text widget, metric math dashboard, custom metrics dashboard, cross-account dashboard, snapshot sharing dashboard, dashboard variables, SLO dashboard, operational dashboard, executive dashboard, metric explorer, Application Signals dashboard
+  invocation_schema: 'Input: either (a) a dashboard deployment intent (create, update, share) with target dashboard name, widget specifications, metric namespace/ dimensions, and sharing model, OR (b) a dashboard name for live-account update or validation. Output: deterministic DASHBOARD/VERDICT/PRE_CHECKS/ STEPS/POST_VERIFY block per operation, where VERDICT is one of READY_TO_DEPLOY, PREREQUISITES_MISSING.'
+---
+
+# CloudWatch Dashboard Deployer
+
+## What this skill does
+
+Provisions CloudWatch dashboards with correct widget layouts, metric
+selections, and sharing models. Runs deterministic pre-checks before any
+state-changing CLI (do the namespaces exist? are dimensions correct?
+is the cross-account sharing role configured? does the IAM principal hold
+`cloudwatch:PutDashboard`?), emits the exact `put-dashboard` CLI behind a
+CONFIRM gate, and verifies widget rendering after apply. Every dashboard
+plan surfaces the widget count cap, the 24-hour auto-refresh limit, and the
+metric-math expression limits.
+
+## Quick navigation
+
+| Section | What it covers | When to read it |
+|---|---|---|
+| **§ Quick reference** | Verdict thresholds + pre-check priority order + widget types | Before any operation |
+| **§ Mindset** | Why widget layout matters, dashboard JSON structure, sharing limits | Understanding the deployment model |
+| **§ Pre-flight** | Metric/metadata gate — namespace, dimensions, sharing role | Before executing any CLI |
+| **§ Process** | Per-operation planning: create, update, share, validate | When choosing which operation |
+| **§ Common patterns** | Operational / SLO / executive / cross-account boilerplate | Boilerplate lookup |
+| **§ Output format** | Structured output template with VERDICT, COMMANDS, POST_VERIFY | Formatting the response |
+| **§ Anti-Patterns** | NEVER list — common mistakes that cause empty/broken dashboards | Review before deploy |
+| **§ Pre-flight safety** | Additional checks before any provisioning CLI | Defense-in-depth |
+
+## Quick reference — verdict thresholds
+
+| Verdict | Trigger condition | Action |
+|---|---|---|
+| `PREREQUISITES_MISSING` | One or more pre-checks failed (namespace not publishing, dimensions wrong, cross-account role absent, IAM permission missing, dashboard JSON invalid) | List failures, do NOT execute |
+| `READY_TO_DEPLOY` | All pre-checks passed; awaiting CONFIRM gate | Emit exact CLI sequence with dashboard JSON body, wait for operator yes |
+
+**Priority order for pre-checks (apply in this sequence, all must pass for
+READY_TO_DEPLOY):**
+
+1. **Dashboard JSON structure** — valid DashboardBody with widgets array,
+   each widget has type, properties, position (x, y, width, height).
+2. **Metric namespace + dimensions** — for each metric widget, the namespace
+   exists and dimensions match the metric's native structure.
+3. **Metric publishing** — `get-metric-statistics` returns non-empty
+   datapoints for the metrics referenced in each widget.
+4. **Statistic / period alignment** — Statistic matches metric semantics
+   (Sum for counts, Average for utilization); Period >= native publishing
+   interval.
+5. **Log group existence** — for log insights widgets, the referenced log
+   groups exist and are receiving log events.
+6. **Alarm existence** — for alarm widgets, the referenced alarm names
+   resolve to existing alarms.
+7. **Cross-account sharing role** — for cross-account dashboards, the
+   CloudWatch-CrossAccountSharingRole is configured in each source account.
+8. **IAM permissions** — the operator principal holds
+   `cloudwatch:PutDashboard` and (for sharing) `iam:PassRole`.
+9. **Widget count** — total widgets <= 100 per dashboard (hard cap).
+10. **Dashboard variables** — referenced variables ($INSTANCE_ID, etc.)
+    match available metric dimensions.
+
+**Dashboard limits (2026):**
+
+- Max widgets per dashboard: 100.
+- Max dashboard name length: 255 chars.
+- DashboardBody max size: 256 KB.
+- Widget grid: 24 columns wide, unlimited rows.
+- Metric expressions per widget: up to 100 metrics/expressions.
+- Auto-refresh intervals: 1m, 2m, 5m, 10m, 15m (max 15m).
+- Cross-account dashboards: up to 200 source accounts per sharing account.
+
+## Mindset
+
+**One-line takeaway:** a dashboard is only as good as its widgets are
+correct. A widget with the wrong namespace or dimensions renders blank
+forever — no error, no alert, just an empty chart that erodes operator
+trust. Driven by three CloudWatch realities:
+
+- **PutDashboard overwrites atomically.** Dashboard names are unique
+  within account+region. `put-dashboard` replaces the ENTIRE
+  DashboardBody — there is no partial update. A deployment that adds one
+  widget but omits the existing widgets silently deletes the old layout.
+  Always snapshot via `get-dashboard` first.
+
+- **Metric widgets silently render empty.** If the namespace, metric name,
+  or dimensions are wrong, the widget shows no error — just a flat empty
+  chart. Operators assume the metric has no data, when in fact the widget
+  config is incorrect. The only way to verify a widget is correct is
+  `get-metric-statistics` on the exact same namespace/metric/dimensions.
+
+- **Cross-account sharing requires a role in EACH source account.** The
+  sharing (monitoring) account can see metrics from source accounts only
+  if each source account has the `CloudWatch-CrossAccountSharingRole`
+  trust policy granting the sharing account access. Missing the role in
+  one source account means that account's metrics silently render empty
+  on the shared dashboard.
+
+## Pre-flight: dashboard metadata gate
+
+Run before classification. Misclassifying these produces wrong plans.
+
+**Pagination:** `list-dashboards` returns at most 1000 dashboards per
+page (via `--page-size`). Use `--starting-token` to drain.
+
+**Live-account pre-flight (skip if offline plan audit):**
+1. `aws cloudwatch get-dashboard --dashboard-name <name>` — confirm the
+   dashboard exists (or doesn't, for create ops). Capture the full
+   DashboardBody for snapshot/diff.
+2. `aws cloudwatch get-metric-statistics --namespace <ns> --metric-name
+   <mn> --dimensions <dims> --start-time <iso> --end-time <iso> --period
+   <p> --statistics <stat>` — for each metric widget, confirm the metric
+   is publishing and observe the typical range.
+3. `aws logs describe-log-groups --log-group-name-prefix <prefix>` — for
+   log insights widgets, verify the referenced log groups exist.
+4. `aws cloudwatch describe-alarms --alarm-names <name>` — for alarm
+   widgets, verify the referenced alarms exist.
+5. `aws iam get-role --role-name CloudWatch-CrossAccountSharingRole` —
+   for cross-account dashboards, verify the sharing role exists in each
+   source account.
+6. `aws cloudwatch list-dashboards` — check for naming conflicts.
+
+**Malformed input:** if the dashboard JSON is invalid or missing required
+fields, emit `VERDICT: PREREQUISITES_MISSING` with `REASON: Dashboard
+JSON is not valid or is missing required widget fields — cannot plan.`
+and `REMEDIATION: Validate the DashboardBody structure at
+https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/cloudwatch-dashboards.html.`
+
+| Attribute | Effect on operation |
+|---|---|
+| Dashboard name already exists | Update operation. Must snapshot existing body first; put-dashboard overwrites. |
+| Metric widget with 0 datapoints | Widget will render empty. Surface as PREREQUISITES_MISSING: verify namespace/dimensions. |
+| Log insights widget referencing non-existent log group | Widget will error at render time. PREREQUISITES_MISSING. |
+| Alarm widget referencing non-existent alarm | Widget renders "Alarm not found." PREREQUISITES_MISSING. |
+| Cross-account dashboard without sharing role | Source account metrics render empty. PREREQUISITES_MISSING. |
+| > 100 widgets in DashboardBody | PutDashboard API rejects. PREREQUISITES_MISSING. |
+
+## Process — operation planning (apply in order)
+
+### Step 0: Expert knowledge — non-obvious CloudWatch dashboard behaviors
+
+Step 0 expert knowledge — non-obvious dashboard behaviors (atomic PutDashboard, 24-column grid, period auto, log query cost, m/e ID conventions, AccountId, variables, sharing semantics, snapshots, EMF) moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand before classifying an operation or planning widget layout.
+
+### Step 1: Pre-check gate — PREREQUISITES_MISSING if any check fails
+
+Run ALL of the following pre-checks. If ANY fails, the verdict is
+PREREQUISITES_MISSING with the failed checks enumerated in PRE_CHECKS.
+Do NOT execute.
+
+**For ALL operations:**
+1. The DashboardBody is valid JSON with the required `widgets` array.
+2. Dashboard name is <= 255 chars, matches `^[a-zA-Z0-9-_./]+$`.
+3. Total widget count <= 100.
+4. No widget positions overlap (x+width <= 24, no y-axis collisions).
+5. The IAM principal holds `cloudwatch:PutDashboard`.
+
+**For create/update dashboard (`put-dashboard`):**
+6. For each **metric widget**: namespace + metric name + dimensions
+   return datapoints via `get-metric-statistics` within the last hour.
+7. For each **metric widget**: Period >= metric native publishing
+   interval; Statistic matches metric semantics.
+8. For each **log insights widget**: referenced log groups exist and
+   are receiving events (`aws logs describe-log-groups`).
+9. For each **alarm widget**: referenced alarm names resolve via
+   `describe-alarms`.
+10. For each **metric math expression**: expression syntax is valid
+    (m-IDs reference defined metrics, e-IDs use valid math operators).
+11. For each **dashboard variable**: the variable maps to a valid
+    dimension name in the referenced metric namespace.
+
+**For cross-account shared dashboard:**
+12. `CloudWatch-CrossAccountSharingRole` exists in each source account.
+13. The sharing account has `sts:AssumeRole` permission on each source
+    account's sharing role.
+14. Each metric widget includes the correct `AccountId` field for the
+    source account.
+
+**For snapshot sharing:**
+12. The S3 bucket for snapshot storage exists and the operator has
+    `s3:PutObject` permission.
+13. The bucket policy allows presigned URL generation for the intended
+    recipients.
+
+### Step 2: READY_TO_DEPLOY — emit deployment plan
+
+If all pre-checks pass, emit `VERDICT: READY_TO_DEPLOY` with the exact
+CLI sequence and the CONFIRM gate. The plan includes:
+
+- The exact `aws cloudwatch put-dashboard` CLI with the DashboardBody
+  as a JSON string (or file reference).
+- The expected widget count and layout summary.
+- The expected sharing behavior (single-account vs cross-account).
+- The CONFIRM gate prompt.
+
+### Step 3: Execute behind CONFIRM gate
+
+- **MANDATORY CONFIRMATION GATE.** Before any state-changing CLI
+  (`put-dashboard`, `delete-dashboards`), emit:
+  `CONFIRM: About to <operation> dashboard <name> in account <account>
+  region <region>. This will <consequence>. Proceed? (yes/no)`. Do NOT
+  execute until the operator confirms.
+- Snapshot the current dashboard config before modification:
+  `aws cloudwatch get-dashboard --dashboard-name <name> --output json >
+  /tmp/<name>-backup-$(date +%s).json`.
+- Execute the CLI with the full DashboardBody.
+
+### Step 4: Post-verification
+
+After the operation finishes, run post-verification:
+
+1. `get-dashboard --dashboard-name <name>` returns the expected
+   DashboardBody with all widgets present.
+2. For each metric widget: the metric is rendering (no empty charts) —
+   verify by checking `get-metric-statistics` for the widget's
+   namespace/metric/dimensions.
+3. For cross-account dashboards: verify at least one source account's
+   metrics render by spot-checking a metric widget with `AccountId`
+   set.
+4. Dashboard loads within 30 seconds (no slow log insights queries
+   blocking render).
+
+## Common dashboard patterns (boilerplate)
+
+### Operational dashboard — EC2 fleet (metric widgets)
+
+Operational EC2-fleet dashboard boilerplate (put-dashboard CLI with metric, CWAgent, and metric-math widgets) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when building the standard ops dashboard.
+
+### Log insights widget — error analysis
+
+Log insights widget boilerplate (error-analysis query JSON) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when adding a log query widget.
+
+### Alarm widget
+
+Alarm widget boilerplate (alarm ARN list JSON) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when surfacing existing alarms.
+
+### Text widget (Markdown runbook link)
+
+Text widget boilerplate (Markdown runbook JSON) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when adding runbook links or section headers.
+
+### Metric math — error rate (errors / total requests)
+
+Metric-math error-rate widget boilerplate (m1/m2 expression JSON) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when plotting ratio metrics.
+
+### SLO dashboard — burn rate (Application Signals)
+
+SLO burn-rate widget boilerplate (ConsumedRAT/RequestedRAT with burn annotations) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when building an Application Signals SLO view.
+
+### Cross-account dashboard (shared)
+
+Cross-account dashboard boilerplate (AccountId-tagged metric widgets) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when comparing metrics across source accounts.
+
+### Executive dashboard — KPI summary (single-value widgets)
+
+Executive KPI boilerplate (singleValue widget JSON) moved verbatim to [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md).
+Load on demand when building KPI summary views.
+
+## STRICT output contract
+
+### Required output structure
+
+Every response MUST begin with this block — no preamble, no conversational
+opening:
+
+```text
+DASHBOARD: <dashboard-name>
+VERDICT: READY_TO_DEPLOY | PREREQUISITES_MISSING
+TARGET: <dashboard-name>
+PRE_CHECKS:
+  - [PASS] <check description>
+  - [FAIL] <check description> — <reason>
+STEPS:
+  1. CONFIRM: About to <operation> dashboard <name> in account <account> region <region>. This will <consequence>. Proceed? (yes/no)
+  2. <exact CLI command with DashboardBody — no placeholders>
+POST_VERIFY:
+  - [PASS] <verification description>
+  - [FAIL] <verification description> — <reason>
+WIDGETS: <count> widgets (<metric>, <log>, <alarm>, <text>)
+SHARING: <single-account | cross-account:N-source-accounts | snapshot>
+NOTES: <widget layout rationale, sharing caveats, variable configuration>
+```
+
+### FORBIDDEN output patterns
+
+- NEVER start with "Let me analyze…" or "I'll create…" — the VERDICT
+  block is the FIRST line, always. No conversational preamble.
+- NEVER use lowercase verdict values — emit `READY_TO_DEPLOY` or
+  `PREREQUISITES_MISSING` (not `ready`, `prerequisites`).
+- NEVER omit PRE_CHECKS — every pre-check run must appear with `[PASS]`
+  or `[FAIL]` and a specific reason for each failure. An empty
+  PRE_CHECKS block is non-compliant.
+- NEVER emit a metric widget with placeholder dimensions (e.g.,
+  `"<instance-id>"`) in a READY_TO_DEPLOY plan — every field must be
+  populated with actual values or dashboard variables from the input.
+- NEVER omit the CONFIRM gate as the first STEPS entry for any
+  state-changing operation.
+- NEVER claim success without verifying that each metric widget's
+  namespace/metric/dimensions actually return datapoints — empty widgets
+  are the #1 dashboard failure mode.
+- NEVER put-dashboard without snapshotting the existing body first —
+  PutDashboard replaces the entire DashboardBody with no diff or rollback.
+- NEVER reference a dashboard variable without confirming it maps to a
+  valid dimension in the referenced metric namespace.
+
+### Perfect example output
+
+```text
+DASHBOARD: prod-ec2-ops
+VERDICT: READY_TO_DEPLOY
+TARGET: prod-ec2-ops
+PRE_CHECKS:
+  - [PASS] DashboardBody valid JSON, 3 widgets, 0 overlaps
+  - [PASS] Widget 1: AWS/EC2 CPUUtilization InstanceId=${INSTANCE_ID} returns datapoints
+  - [PASS] Widget 2: CWAgent mem_used_percent InstanceId=${INSTANCE_ID} returns datapoints
+  - [PASS] Widget 3: metric math m1/1048576 valid (NetworkIn exists)
+  - [PASS] Dashboard variable INSTANCE_ID maps to valid dimension on AWS/EC2
+  - [PASS] IAM principal holds cloudwatch:PutDashboard
+  - [PASS] 3 widgets <= 100 cap
+STEPS:
+  1. CONFIRM: About to put-dashboard prod-ec2-ops in account 111111111111 region us-east-1. This will CREATE a new dashboard with 3 metric widgets (CPU, Memory, Network). Proceed? (yes/no)
+  2. aws cloudwatch put-dashboard --dashboard-name prod-ec2-ops --dashboard-body '{"widgets":[...]}'
+POST_VERIFY:
+  - (pending execution)
+  - get-dashboard returns 3 widgets with correct positions
+  - Each metric widget renders non-empty within the dashboard time range
+WIDGETS: 3 widgets (3 metric, 0 log, 0 alarm, 0 text)
+SHARING: single-account
+NOTES:
+  - Dashboard variable INSTANCE_ID configured for dynamic instance selection.
+  - CWAgent widget requires CloudWatch agent installed on target instances —
+    verify agent status if memory chart renders empty.
+  - No auto-refresh configured — set to 5m for operational use via the
+    console or dashboard update.
+```
+
+## Anti-Patterns — NEVER do these things
+
+- NEVER PutDashboard without snapshotting the existing body first.
+  `get-dashboard --output json > /tmp/<name>-backup-$(date +%s).json`.
+  PutDashboard replaces the entire body with no version history.
+
+- NEVER create a metric widget without verifying via
+  `get-metric-statistics` that the metric is publishing. A wrong
+  namespace or dimension produces an empty chart that silently erodes
+  operator trust — no error is surfaced.
+
+- NEVER use Period < metric native publishing interval in a widget.
+  A 5-minute metric (basic monitoring) with Period=60 produces mostly
+  empty windows. Match the period to the metric's resolution.
+
+- NEVER hardcode instance IDs in production dashboards. Use dashboard
+  variables ($INSTANCE_ID) so the dashboard adapts to fleet changes.
+  Hardcoded IDs break when instances are replaced.
+
+- NEVER build a cross-account dashboard without verifying the
+  `CloudWatch-CrossAccountSharingRole` exists in each source account.
+  Missing the role causes source account metrics to silently render
+  empty — the dashboard appears configured but shows no data.
+
+- NEVER create a log insights widget with an unbounded query (no
+  `limit` clause, no time bucketing). Expensive queries on large log
+  groups can take minutes to render and cause dashboard timeouts.
+
+- NEVER exceed 100 widgets per dashboard. The PutDashboard API silently
+  rejects the 101st widget. Split into multiple dashboards or use a
+  dashboard link in a text widget.
+
+- NEVER mix regions in widget properties without setting the `region`
+  field explicitly in each widget. A dashboard in us-east-1 with a
+  widget missing the `region` field queries us-east-1 — even if the
+  operator intended a multi-region view.
+
+- NEVER use `stat: "Sum"` for utilization metrics (CPU, memory, disk).
+  Sum aggregates across all datapoints in the period, producing
+  misleadingly high values for high-resolution metrics. Use `Average`
+  for utilization, `Sum` for counts/volumes.
+
+- NEVER auto-execute PutDashboard without the CONFIRM gate. PutDashboard
+  overwrites the entire dashboard config with no version history and no
+  rollback path. Always snapshot first.
+
+- NEVER create a dashboard with overlapping widget positions. The API
+  accepts overlapping positions but the rendering is unpredictable —
+  widgets may occlude each other or render in the wrong z-order.
+
+- NEVER forget the `view` field in widget properties. Without `view`
+  (e.g., `timeSeries`, `singleValue`, `bar`, `pie`, `gauge`), the
+  widget defaults to `timeSeries` which may not match the intended
+  visualization for KPI/executive dashboards.
+
+- NEVER use Embedded Metrics Format (EMF) without testing the metric
+  extraction. EMF payloads with malformed JSON or missing metric
+  directives silently produce no metrics — verify via
+  `get-metric-statistics` on the expected namespace after deploying
+  the EMF log ingestion.
+
+## Pre-flight safety checks (run before any provisioning CLI)
+
+Pre-flight safety checks (CONFIRM gate, snapshot-before-overwrite, sharing role per source account, log query render time, additive-change preference, snapshot lifecycle) moved verbatim to [references/diagnostic-commands.md](references/diagnostic-commands.md).
+Load on demand before executing any provisioning CLI.
+
+## Expert heuristic: empty widgets vs no data
+
+An empty widget does NOT mean "the metric has no data." It means **the
+widget's metric query returned zero datapoints for the dashboard's time
+range** — which can be caused by either a real data gap or (more commonly)
+a widget configuration error.
+
+**Diagnostic decision tree:**
+
+```
+Empty metric widget
+   ├─ Is the namespace correct? (case-sensitive)
+   │    ├─ NO → Fix namespace (AWS/EC2 not aws/ec2)
+   │    └─ YES → Check dimensions
+   │              ├─ Are dimension names/values correct?
+   │              ├─ If dashboard variable: does the variable resolve?
+   │              └─ If cross-account: is AccountId set correctly?
+   │
+   └─ Confirm via get-metric-statistics:
+        aws cloudwatch get-metric-statistics \
+          --namespace <widget-namespace> \
+          --metric-name <widget-metric> \
+          --dimensions <widget-dimensions> \
+          --start-time <now-1h> --end-time <now> \
+          --period <widget-period> --statistics <widget-stat>
+        If datapoints > 0 → widget config is wrong somewhere
+        If datapoints = 0 → metric is genuinely not publishing
+```
+
+**Per-widget-type empty render causes:**
+
+| Widget type | What to check when widget is empty |
+|---|---|
+| Metric | Namespace case? Dimensions match? Period >= native resolution? Stat matches? Cross-account AccountId correct? |
+| Log insights | Log group exists? Query syntax valid? Log group receiving events? Time range matches? |
+| Alarm | Alarm ARN/name correct? Alarm still exists (not deleted)? |
+| Text | Markdown syntax valid? (rarely empty — usually a rendering issue) |
+
+**Fix — verify the widget config against get-metric-statistics:**
+- If `get-metric-statistics` returns datapoints but the widget is empty:
+  the widget config is wrong. Diff the widget's namespace/metric/
+  dimensions against the working CLI command.
+- If `get-metric-statistics` also returns nothing: the metric source
+  is not publishing. Check the CloudWatch agent, the PutMetricData
+  calls, or the EMF log ingestion.
+
+ALWAYS test a dashboard's metric widgets by rendering it in the console
+after PutDashboard — the API confirms structure but not visual correctness.
+
+## Recent AWS features (2024-2026)
+
+Recent AWS features (2024-2026) moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand when deciding between Metric Explorer, variables, EMF v2, or snapshot sharing.
+
+## AWS documentation
+
+- **Amazon CloudWatch User Guide** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/WhatIsCloudWatch.html
+- **CloudWatch Dashboards** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Dashboards.html
+- **Dashboard JSON Structure** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch-dashboards.html
+- **Cross-Account Cross-Region Dashboards** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Cross-Account-Cross-Region-Dashboard.html
+- **CloudWatch Logs Insights** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AnalyzingLogData.html
+- **Metric Math** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/using-metric-math.html
+- **Embedded Metrics Format** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html
+- **CloudWatch Application Signals** — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals.html
+
+## References (load on demand)
+
+- [references/advanced-patterns.md](references/advanced-patterns.md) — Step 0 expert knowledge and Recent AWS features (2024-2026) moved from SKILL.md
+- [references/diagnostic-commands.md](references/diagnostic-commands.md) — pre-flight safety checks moved from SKILL.md
+- [references/dashboard-widget-patterns.md](references/dashboard-widget-patterns.md) — widget patterns; now also holds all eight Common-patterns boilerplate blocks moved from SKILL.md
+
+## Domain
+
+AWS CloudOps / CloudWatch Dashboard Provisioning & Observability Visualization.
+

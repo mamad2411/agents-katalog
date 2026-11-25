@@ -1,0 +1,238 @@
+---
+description: "Fresh-context re-derivation of a performance result that does not inherit the implementer's numbers, reporting the target as met or not met without rounding a miss into a win. Use when: 'verify this speedup', 'is this result real', 'independent verification', 'write up the performance result'. Final phase after /performance:snapshot post. Skip when no baseline exists, or when reviewing a diff for general quality rather than a measured claim."
+user-invocable: true
+argument-hint: "[<claim or target>]"
+disable-model-invocation: false
+metadata:
+  workflow-stage: verify
+  summary: Re-derive the result in fresh context and report it honestly
+---
+
+**Arguments.** `[<claim or target>]`. e.g. /performance:verify the 4-to-1 spawn reduction
+
+## Purpose
+
+Answers **"is this result real, and what does it actually say?"**
+
+This phase catches **blocking correctness defects that the implementer, the implementer's own test
+suite, and a full green CI run all missed**, so it is a separate phase, not a step inside
+measurement.
+
+Read [`${CLAUDE_PLUGIN_ROOT}/reference/harness-integrity.md`](${CLAUDE_PLUGIN_ROOT}/reference/harness-integrity.md) first.
+
+## 1. Fresh context, and adversarial by construction
+
+Dispatch a verifier that **does not inherit the implementer's numbers**. Give it the trees and the
+claim; withhold the reasoning that produced the figures. A verifier shown the expected answer
+verifies the answer, not the work.
+
+The brief should say, in substance: distrust the reported numbers, re-derive them yourself, and
+report what you actually observe including the ways you could not reproduce it.
+
+The brief also sets a turn budget, a limit the verifier keeps for itself: 30 turns, stop gathering and
+re-measuring by turn 22, and spend the remaining turns writing the report. Run the highest-value
+checks first: re-derive the headline number and the differential before any secondary check. A
+report that ends short names what it did not reach under `Not covered:`. A verification that ran out
+of turns is not complete, so anything unreached stays NOT MET or unverified.
+
+Two independent verifiers routinely find different defects, so one verifier is the floor, not the
+target.
+
+## 2. Prove behavior did not change, with a differential
+
+**A passing test suite is not a behavior proof.** It proves nothing asserted broke, not that
+behavior is unchanged.
+
+Run a differential: the pre-change and post-change subject over a harvested corpus of real inputs,
+requiring **byte-identical output**. Use the bundled one rather than writing one:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/differential.py" --baseline <path> --candidate <path>
+--config <json>`. Its config takes a `matrix` of modes, and it refuses a run where neither arm ever
+produced output. Run it from the Bash tool, whose shell resolves `python3` (`command -v python3` names
+the one it found); a bare name inside another process's `subprocess` call searches a different
+`PATH` (harness-integrity rule 6). The module docstring documents the config.
+
+**Cover every mode the subject runs in.** A differential that covers one of two modes can miss
+a deny -> ask downgrade in the other and still report byte-identical output. Enumerate the modes
+first and record which the differential actually exercised; an unexercised mode is an unverified
+mode, and it is reported as such rather than assumed fine.
+
+## 3. Record whether the measured build is the deployed build
+
+The verdict is a statement about the measurement. Whether the measured build is the one the user
+runs is a separate disposition, the `Deployed:` line. The flow measures a worktree before merge, so
+a difference at this point is expected and cannot be resolved before the PR: record it, never report
+the change as done, and do not change the verdict for it.
+
+This applies to a subject that runs from an installed copy, such as a Claude Code plugin. A subject
+with no install record gets `Deployed: n/a (no install record for this subject)` and the report
+proceeds, so a target-agnostic run is not blocked.
+
+1. Record **what was measured**: plugin or component version (from the tree or worktree path the
+   harness used), and whether a worktree override, `--plugin-dir`, or project-scope install path
+   was in play.
+2. Record **what is deployed** where the user actually runs: read the install record for the
+   plugin under test and quote its version and install path. Choose the record for the scope the
+   subject runs under; for a project-scope record also require its project path to equal the
+   subject project's root, both resolved to absolute paths, since one plugin can hold project
+   records for several repositories, and
+   fall back to the user-scope record when none matches. A plugin loaded only through
+   `--plugin-dir` has no record.
+3. **Set the disposition.** Versions agree: `Deployed: same as measured`. Versions differ:
+   `Deployed: differs: <installed version/path>, re-measure after install`, plus an `Open
+   follow-up:` line (install the measured build, then `/performance:snapshot post` and
+   `/performance:verify` again). With an open follow-up the report says the change is measured,
+   never that it is done, shipped, or live.
+
+- **Pointer**: when locating the install record, its fields and the plugins root, fetch
+  [Check which stage a plugin reached](https://code.claude.com/docs/en/plugins/loading#check-which-stage-a-plugin-reached)
+  and [Find plugins on disk](https://code.claude.com/docs/en/plugins/loading#find-plugins-on-disk)
+  live. The project-path match rests on a probe, not that page: the source-control plugin's
+  [project-scope reap probe](https://github.com/melodic-software/claude-code-plugins/blob/main/plugins/source-control/skills/worktree/fixtures/README.md#project-scope-reap-probesh-what-plugin-uninstall--s-project-acts-on)
+  observed one project-scope record per plugin per directory, keyed by that directory's path.
+
+## 4. Check the harness before believing the result
+
+Every gate in the harness-integrity checklist. In particular, for any discrimination
+check involved, confirm it asserts that its **two arms differ**, not merely that each produced its
+expected string. A harness that exits identically in both arms and still reports a confident verdict
+never exercised the subject. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/discriminate.py" --config <json>`
+runs such a check with all three assertions, restores from a sidecar copy, and exits 2 rather than 1
+when the harness never ran; prefer it to a hand-built pair of arms.
+
+## 5. Report
+
+State the target as **met** or **not met**, with the measurement that explains why.
+
+### Before the verdict: what limits the number
+
+Nothing in a printed figure tells a sound run from a broken one. Before the report states `MET` or
+`NOT MET`, the verifier fills two lines from its own runs:
+
+- **`Limiter:`** what stops the after arm from doing better: a fixed sleep or poll interval, the
+  harness or load driver, a lock both arms queue on, a saturated core, disk or network throughput.
+  For a counter it is what keeps the count at its after value, often the floor the goal recorded.
+  Profile an extra run, or record OS counters while it runs (a profiler slows what it watches), and
+  trace the busiest frames to their code path. These profiling runs locate the limiter; they are
+  not reported measurements.
+  Reading the source can suggest a limiter; only a measured run confirms one. A flat counter after
+  a change is a reason to look for the limiter, not proof the change did nothing: the cost it
+  removed may not have been the one holding the number.
+- **`Ruled out:`** at least one other thing the number could reflect, each with the evidence that
+  excludes it. Spread between runs is checked against the snapshot's interleaved pairs; arms on
+  different build modes or flags against the snapshot's `Rig:` line, and arms that took different
+  code paths against its `Path (<arm>):` lines; a cache the after arm found warm against a
+  cold-start run of each arm; failed or skipped work against the error and work counts
+  ([harness-integrity rule 8](${CLAUDE_PLUGIN_ROOT}/reference/harness-integrity.md#8-read-the-failure-and-completion-tallies-before-the-timing)).
+  An untuned arm, one left on default runtime settings the `Rig:` line does not record (a pool or
+  cache size, a GC setting, a connection limit) while the other was tuned, is checked against a
+  diff of the settings each arm ran with. A gap that one-sided tuning buys belongs to the tuning,
+  not the change, so when the settings differ, re-run the default arm with the same tuning before
+  comparing. The exception is a claim whose change is that tuning.
+
+Check the bound with arithmetic too: the saving is capped by how long the changed code ran in the
+before arm. If the old code ran for 300 ms of a 2 s run, the after arm can be at most 300 ms
+faster; a bigger saving says the after arm did less work or read from a cache, which needs
+explaining before any verdict. On a `/performance:climb` branch, compare the limiter with the
+mechanism the kept attempts named: a gain whose limiter sits elsewhere moved something the
+hypothesis did not describe.
+
+A report that cannot fill one of the two lines writes `unknown` on that line, lists the gap under
+`Not covered:`, and is not `MET`.
+
+```text
+Target:      <realistic> / <ideal>        Floor: <value>
+Counter:     <before> -> <after>          [headline] [unproven, when Correlation is]
+Correlation: <evidence, repeated from the goal> | unproven
+Scaling:     <growing input, per-size result, bound, demonstrated at every size: yes | no> | n/a
+Event:       <event-level metric, result vs event target> | n/a
+Unit:        <unit metric, result vs unit target> | n/a
+Measured:    <version/path harness used>
+Deployed:    same as measured
+             | differs: <installed version/path>, re-measure after install
+             | n/a (no install record for this subject)
+Duration:    <p50/p95 before> -> <after>  [or: REFUSED, <reason from is_measurable>]
+Rig:         <hardware>, <runtime mode>, <throttling>, <run count>, <timestamp>
+Limiter:     <resource or bound, the evidence, the code path> | unknown
+Ruled out:   <alternative explanation: evidence that excludes it>, one or more | unknown
+Verdict:     MET | NOT MET | UNMEASURABLE
+Behavior:    UNCHANGED (differential: N inputs, modes covered: <list>)
+             | CHANGED: <what changed>    [ranked above the performance claim]
+Cost:        <diff size, new moving parts>   [optional; beside the gain]
+Not covered: <percentiles, inputs, paths, modes not exercised>
+Overrides:   <any recorded gate override, or none>
+Open follow-up: <only when Deployed differs: install, then /performance:snapshot post and /performance:verify>
+Reproduced by an independent verifier: yes/no, and what diverged
+```
+
+Rules that bind the report:
+
+- **If `Correlation:` is `unproven`, then the `Counter:` line shows `unproven` beside the
+  headline.** An unproven counter win is a counter win, not a user-perceived one.
+- **`Scaling:`, `Event:`, and `Unit:` repeat the goal's lines of the same name, `n/a` where the
+  goal says `n/a`.** A `Scaling:` bound not demonstrated at every size the goal recorded is not
+  `MET`, however well the largest or smallest size did. A goal with an `Event:` target is not `MET`
+  on the `Unit:` target alone: an unmeasured event target gives `NOT MET` and is named under
+  `Not covered:`. The event-level result is reported even when the unit result is good.
+- **The goal's `Boundary:`, `Path:`, and `Done when:` lines have no report line.** The verifier
+  re-derives against them and reports the outcome in `Verdict:`, `Not covered:`, and the snapshot's
+  `Path (<arm>):` lines: an arm flagged `unobserved` or mismatched there is listed under
+  `Not covered:`.
+- **Any aggregate over several targets reports the speedup as a geometric mean** of the per-target
+  ratios, with each target's row shown beside it. An arithmetic mean of ratios changes with which
+  arm is the reference; a geometric mean does not. See
+  [write the result up](../../reference/techniques.md#j-write-the-result-up).
+- **`Not covered:` is never omitted.** Write `none` only when nothing was left unexercised.
+- **`Cost:` sits beside the gain it buys.** Whether a large diff is worth a small win is the
+  human's call; the report makes the trade visible.
+- **Never round a miss into a win.** A target missed by 8% is not met.
+- **`Limiter:` and `Ruled out:` come before the verdict.** When the limiter is something other
+  than the change, the report says so: a result held by the harness or a shared resource is not
+  evidence about the change.
+- **`Deployed:` is required and never changes the verdict.** When it differs, the report carries
+  the `Open follow-up:` line and no done, shipped, or live language until a post-install
+  re-measurement agrees.
+- **A correctness regression outranks any speedup** and is stated separately, above the performance
+  claim, never folded into it.
+- **The counter is the headline; the duration is context.** On a host that failed
+  `is_measurable()`, there is no duration line at all, only the refusal and its reason.
+- **Say which claims rest on the plugin's own conventions** rather than on sourced practice: the
+  p50/p95-over-20 default, the refusal threshold, and counts-over-wall-clock for anything other than
+  instruction counts.
+
+A MET change that shipped behind a flag gets a field read before `/performance:protect`. For
+Claude Code's own hook behavior the source is `/harness-ops:observability latency`; for any other
+subject it is the telemetry the project's own instructions name. Take the read before the release
+and again after it, and compare the two.
+
+- **Pointer**: when you need the latency read's window, grouping, and cold-tier limits, read
+  [Field read for Claude Code hook behavior](../../reference/techniques.md#h-ship-roll-out-read-the-field)
+  live.
+
+## Boundary
+
+- **Does not measure.** `/performance:snapshot` captures; this re-derives and reports.
+- **Does not review the diff for general quality.** That is the review lane. This checks one measured
+  claim.
+- **Does not merge.** Under any autonomy setting this plugin may open a PR and never merge one.
+
+## Next
+
+- Target met on a drift-immune counter, to lock the win in (after the field read, when it shipped
+  behind a flag): `/performance:protect`, which then hands off to `/source-control:pull-request`.
+- Target met on a duration only: `/source-control:pull-request`.
+- Target met with a large realistic-to-ideal gap (re-scan), not met with another candidate due, or
+  a field read showing no gain (flag turned off): `/performance:target`.
+- Behavior changed: `/debugging:debug`.
+
+## Gotchas
+
+- **A green CI run is not verification.** CI stays green while blocking defects are live, because it
+  only checks what someone thought to assert.
+- **A verifier that inherits the numbers is not independent.** Withhold the reasoning, not just the
+  conclusion.
+- **`git checkout --` is not a restore mechanism** when the code under test is uncommitted. It
+  silently reverts the fix and destroys the work. Restore from saved bytes, and verify the restore.
+- **"The tests pass" answers a different question than "behavior is unchanged".** Only a differential
+  over real inputs answers the second, and only for the modes it ran.
+- **UNMEASURABLE is a legitimate, complete verdict.** It is not a failure of the work; reporting a
+  number the host cannot support would be.

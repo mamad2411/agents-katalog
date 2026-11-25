@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-golemcloud-golem/golem-schedule-agent-effect/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Scheduling a future CLI invocation on an Effect-based Golem agent. Use when asked to schedule, delay, or plan an agent method call using golem agent invoke --trigger --schedule-at."

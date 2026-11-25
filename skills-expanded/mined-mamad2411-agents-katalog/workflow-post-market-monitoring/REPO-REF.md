@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-LegalSkillsKlotzkette/workflow-post-market-monitoring/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Post-Market-Monitoring in robotik-recht geht: rechnet Schwellen, Beträge, Varianten und Kontrollannahmen durch; liefert eine Berechnungstabelle mit Schwellen, Annahmen und Kontrollfragen. A

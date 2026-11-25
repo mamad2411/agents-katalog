@@ -1,0 +1,205 @@
+---
+name: wicked-garden-qe
+description: |
+  Consolidated quality-engineering domain: evidence-gated testing from strategy
+  to verdict. Nine actions — setup, plan (strategy, risk, testability, AC
+  quality), author (scenarios, test code, fixtures), campaign (three-lens repo
+  recon → a dependency-ordered scenario ladder), intake (plan as a crew HITL
+  gate), execute (run scenarios, capture evidence), review (independent
+  verdicts, suite quality), insight (ledger stats, flake detection, coverage
+  archaeology), accept (the isolated 3-agent pipeline that eliminates
+  self-grading).
+
+  Use when: "what should I test", "test strategy", "write tests", "qe
+  campaign", "run the test", "capture evidence", "acceptance test", "did it
+  pass", "judge the evidence", "flake rate", "coverage gaps", "release
+  readiness", "initialize testing".
+
+  NOT for: senior-engineer code review (engineering review action), multi-model
+  deliberation (jam council), in-run crew review (governed-worker, Evaluator),
+  or the portable evidence gate the prove skill's compile action stamps into a
+  repo.
+metadata:
+  role: router
+  phases: "*"
+  archetypes: "*"
+---
+
+# QE — quality engineering
+
+Evidence-gated testing as a domain: strategy → authoring → execution →
+independent verdict, with a read-only ledger lens. Verdicts are re-derived
+from captured evidence — never self-asserted by the agent that ran the work.
+Data contract: `.wicked-qe/` (config, evidence, SQLite ledger); legacy
+`.wicked-testing/` roots still resolve via wicked-ledger's dual-read. <!-- historical -->
+**Ledger root.** When `WICKED_QE_LEDGER_DIR` is set, it IS the ledger root (absolute as given,
+relative under the cwd). A governed wicked-crew run hands its QE unit the run's own ledger this way,
+outside the worktree. Every `.wicked-qe/` path in this skill and its refs then means that root.
+Never write `.wicked-qe` into the worktree: the run's guard discards it, and the verdict with it.
+
+## Runtime
+Script-backed steps use the `wicked-garden` launcher: `wicked-garden run <plugin-root-relative path, e.g. scripts/…> [args]`. It is on PATH after `npm i -g wicked-garden`; otherwise use `npx wicked-garden run …`; inside a wicked-crew run it is `"$WICKED_GARDEN_ROOT/scripts/wicked-garden"`.
+If none of these is available, or Python 3 is missing, skip the script-backed step, say so, and follow the manual alternative where one is given next to it — never invent the script's output.
+Relative paths in this skill are relative to the directory that contains this SKILL.md.
+
+## Routing
+
+| Ask | Action |
+|-----|--------|
+| Initialize QE for this project / `ERR_NO_CONFIG` | § setup |
+| What to test, risk matrix, testability, AC quality | § plan |
+| Write scenarios, test code, fixtures, test data | § author |
+| Campaign a whole repo: recon → capability inventory → scenario ladder | § campaign |
+| Confirm/refine a campaign plan at a human gate; annotation intake | § intake |
+| Flaky campaign verdict / quarantine / gate exclusions | § campaign |
+| Degradation scenarios / campaign rerun+diff / campaign CI wiring | § campaign |
+| Run a scenario/suite, capture evidence, record the run | § execute |
+| Independent verdict, spec-vs-code alignment, suite quality | § review |
+| Ledger stats, flake rate, coverage gaps, history | § insight |
+| Acceptance-grade verdict via the isolated 3-agent pipeline | § accept |
+
+**Review disambiguation**: this domain renders *verdicts on captured QE
+evidence*. Source-code quality review is the `engineering` skill's review
+action; multi-model deliberation is `jam` council; in-run crew review is
+`wicked-garden-governed-worker` (Evaluator); spec-meaning judgment is dispatched to
+`wicked-garden-qe-semantic-reviewer`.
+
+## Preflight (writing actions only — author, execute, intake, accept)
+
+Read-only actions (plan, insight, review) never require setup; they read `.wicked-qe/config.json` where present and otherwise proceed without it. A writing action checks for config first:
+
+```bash
+# WICKED_QE_LEDGER_DIR set: that root; else dual-read (Phase 6c): a legacy .wicked-testing root still counts  # <!-- historical -->
+if [ -n "$WICKED_QE_LEDGER_DIR" ]; then test -f "$WICKED_QE_LEDGER_DIR/config.json" || echo "ERR_NO_CONFIG"; else { test -f ".wicked-qe/config.json" || test -f ".wicked-testing/config.json"; } || echo "ERR_NO_CONFIG"; fi  # <!-- historical -->
+```
+
+On `ERR_NO_CONFIG`, run § setup first (safe to auto-run: it only scaffolds `.wicked-qe/` and registers a project record).
+
+## setup — per-project initialization
+
+1. Read `refs/setup.md` (relative to this skill's base directory) — full playbook.
+2. Detect available test CLIs, create `.wicked-qe/` + `config.json`,
+   register the project row in the ledger DomainStore.
+
+## plan — strategy, risk, testability, AC quality
+
+1. Read `refs/plan.md` — full playbook.
+2. Route the target to `wicked-garden-qe-{test-strategist | risk-assessor |
+   testability-reviewer | requirements-quality-analyst}` (parallel when broad);
+   merge findings into one strategy with concrete next actions.
+
+## author — scenarios, test code, fixtures
+
+1. Read `refs/author.md` — full playbook, incl. § Verified-test contract.
+2. Scenario authoring and/or framework test code via
+   `wicked-garden-qe-{test-automation-engineer | acceptance-test-writer |
+   test-data-manager | contract-testing-engineer}` per the playbook's table.
+3. Contract (binding for every produced test): detect the repo's harness; write
+   BEHAVIOUR tests against it; RUN every produced test and record command + result
+   in the PLAN — not executed = `unverified`, never `covered`; cite `file:line` for
+   any pre-existing coverage; label fixture-bound e2e `needs-fixture` with how to
+   start it. Never `gh pr create`/`git push` — the run's deliver phase opens the PR.
+
+## campaign — repo recon + generated scenario ladder
+
+1. Read `refs/campaign.md` — full playbook.
+2. Three-lens recon (estate graph when indexed, docs recall via
+   `wicked-garden-mem`, live probe incl. committed endpoint manifests) → a plan
+   CONFORMING to `schemas/campaign-recon.schema.json` (v2; spec:1 still valid —
+   never a parallel format), assembled fail-closed by `scripts/qe/campaign_plan.py`,
+   persisted as a ledger `strategies` row + scenario v1.1 files. Unindexed degrades
+   honestly; doc-derived claims enter `proposed` pending review.
+3. Flaky verdicts (TH-21): `refs/campaign-flake-policy.md` — bounded re-runs both-recorded; quarantine (owner+deadline); excluded-with-reason everywhere.
+4. Degradation (TH-23): `refs/campaign-degradation.md` — break-it scenarios per declared dependency; pass bar = honest error naming, zero crashes, recovery.
+5. Rerun+diff (TH-23): `campaign-rerun.mjs --strategy <dir>` — ledger verdict diffs, regressions exit 1; CI assembly: `refs/campaign-ci.md`.
+
+## intake — propose the campaign plan as a human gate (TH-12)
+
+1. Read `refs/intake.md` — full playbook.
+2. V1 = **propose-as-gate** over crew's campaign-proven UI+REST gate wire
+   (`scripts/qe/campaign_intake.py` (under the plugin root: `wicked-garden path scripts/qe/campaign_intake.py`)): approve runs the
+   confirmed set, amend = the scenario-edit channel, reject cancels.
+   Annotations → PROPOSED entries. Elicitation = v2 (wicked-crew#358).
+
+## execute — run + capture evidence
+
+1. Read `refs/execute.md` — full playbook.
+2. Dispatch `wicked-garden-qe-scenario-executor` (or the matching specialist);
+   evidence lands in `.wicked-qe/evidence/<run-id>/`; run + verdict rows
+   go to the ledger. Verdict requests default to § accept, never self-grading.
+
+## review — independent verdicts
+
+1. Read `refs/review.md` — full playbook, incl. § Reviewing produced tests.
+2. Evidence manifests → `wicked-garden-qe-acceptance-test-reviewer`;
+   spec-vs-code → `wicked-garden-qe-semantic-reviewer`; suite quality →
+   `wicked-garden-qe-code-analyzer` + the matching tier-2 specialist.
+3. A PLAN + produced tests (the `author` output): verify every `covered` claim at
+   its `file:line`, mutate-or-reason about ≥ 2 tested behaviours, and FAIL a plan
+   whose e2e (or any produced test) has no execution record. The reviewer never
+   opens or merges the PR — the verdict goes back to the run.
+
+## insight — read-only ledger lens
+
+1. Read `refs/insight.md` — full playbook.
+2. Natural-language questions route to `wicked-garden-qe-test-oracle`
+   (fixed-SQL oracle — never synthesized SQL); flake/coverage/exploratory
+   questions go to their dedicated specialists. Never mutates state.
+
+## accept — the 3-agent acceptance pipeline
+
+1. Read `refs/accept.md` — full playbook.
+   **Isolation is the point**: Writer plans, Executor captures, Reviewer
+   judges from evidence paths only, as a separate worker (a fresh context
+   whose only input is its brief). Never review inline in the turn that
+   planned or ran the test; no separate worker = FAIL `inconclusive`.
+2. Verdict + run rows are written via the wicked-ledger DomainStore and the
+   public manifest lands at `.wicked-qe/evidence/<run-id>/manifest.json`.
+
+## Workers
+
+**Dispatch guard (mandatory):** resolve every specialist through
+`wicked-garden run scripts/qe/campaign_dispatch.py <name>` before the hand-off — it
+asserts the resolved worker is a shipped `wicked-garden-qe-*` skill and BLOCKS retired
+`wicked-testing-*` / `wicked-brain-*` names at dispatch with a clear error naming the garden <!-- historical -->
+replacement. Never work around a block; fix the caller.
+
+Pipeline: `wicked-garden-qe-acceptance-test-{writer, executor, reviewer}` · `wicked-garden-qe-scenario-executor` ·
+`wicked-garden-qe-test-designer` (dev-loop fast path — keeps its self-grading warning).
+
+Planning: `wicked-garden-qe-{test-strategist, risk-assessor, testability-reviewer, requirements-quality-analyst}`.
+
+Review/insight: `wicked-garden-qe-{semantic-reviewer, code-analyzer, test-oracle,
+production-quality-engineer, release-readiness-engineer, flaky-test-hunter, coverage-archaeologist,
+exploratory-tester, test-code-quality-auditor, snapshot-hygiene-auditor, test-impact-analyzer, mutation-test-engineer}`.
+
+Domain specialists (all prefixed `wicked-garden-qe-`): `a11y-test-engineer` · `security-test-engineer` ·
+`compliance-test-engineer` · `ai-feature-test-engineer` · `chaos-test-engineer` · `iac-test-engineer` ·
+`integration-test-engineer` · `localization-test-engineer` · `observability-test-engineer` ·
+`ui-component-test-engineer` · `load-performance-engineer` · `visual-regression-engineer` ·
+`fuzz-property-engineer` · `data-quality-tester` · `e2e-orchestrator` · `contract-testing-engineer` ·
+`test-automation-engineer` · `test-data-manager` · `incident-to-scenario-synthesizer`.
+
+**Executor-vs-advisor twins** (reciprocal NOT-THIS-WHEN contracts): qe specialists RUN tools and
+write evidence + ledger verdict rows; their garden twins advise. a11y ↔ `product-a11y-expert`;
+security ↔ `platform-security-engineer`; compliance ↔ `platform-compliance-officer`;
+AC quality ↔ `product-requirements-analyst`; AI-feature probes ↔ `agentic-safety-reviewer` (design-time).
+
+## Data layer
+
+- **Evidence + config contract (shared with crew/ledger — do not rename):**
+  `.wicked-qe/config.json`, `.wicked-qe/evidence/<run-id>/`,
+  `.wicked-qe/wicked-qe.db`.
+- **wicked-ledger** (npm, pinned via `wicked_ledger_version` in plugin.json): DomainStore CRUD,
+  fixed-SQL oracle queries, `buildManifest`. Import-style snippets need the package resolvable
+  from the project (`npm i --no-save wicked-ledger`).
+- **`{WT_LIB}` helpers**: specialist playbooks reference helper modules that ship in-catalog at
+  `scripts/qe/lib/` (ported from the retired wicked-testing package in Phase 6c) — resolve <!-- historical -->
+  `WT_LIB="$(wicked-garden path scripts/qe/lib)"`.
+
+## Integration with wicked-crew
+
+Engaged during **build** (author + execute), **test/review** phases (execute + accept + review),
+and **ship** gates (release-readiness via insight/review). Crew routes the `qe` specialist per
+`specialist.json`; gates read verdict rows from the ledger — the pipeline never self-declares a
+crew gate passed, and no qe action pushes or opens a PR — the run's deliver phase delivers.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/biz-email-writer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: **비즈니스 이메일/공문 작성기**: 한국어 비즈니스 이메일의 격식 수준 자동 조절, 제목 구조화, 한영 이메일 작성을 지원합니다. 업무 요청, 회신, 감사, 미팅 요청, 공지, 거절 등 다양한 유형을 지원합니다.\n  - MANDATORY TRIGGERS: 이메일, 메일, email, 비즈니스 메일, 업무 메일, 공문, 회신, 답장, 메일 작성, 영문 이

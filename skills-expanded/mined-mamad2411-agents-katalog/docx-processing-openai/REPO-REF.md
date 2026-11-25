@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-lawve-ai-awesome-legal-skills/docx-processing-openai/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Toolkit for comprehensive document reading, editing, and creation with visual quality control. Use to work with Word documents (.docx files) for: (1) Reading or extracting content from existing DOCX f

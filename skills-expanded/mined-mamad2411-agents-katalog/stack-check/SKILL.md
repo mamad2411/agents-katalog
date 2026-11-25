@@ -1,0 +1,319 @@
+---
+name: stack-check
+description: >
+  USE WHEN the `stack-freshness` SessionStart hook nudges
+  ("stack last checked 42d ago"), or when user asks to check dep
+  versions. Verifies Claude Code + Codex + plugin + CLI deps vs
+  `stack.toml` (per-OS update commands), flags stale
+  AIDEV-TODO/QUESTION anchors (deadline-aware), and sanity-checks
+  AGENTS.md size + imports. Read-only. Resets the freshness timestamp.
+allowed-tools:
+  - Read
+  - Write
+  - Grep
+  - Glob
+  - Bash(claude --version)
+  - Bash(codex --version)
+  - Bash(git --version)
+  - Bash(rg --version)
+  - Bash(jq --version)
+  - Bash(python --version)
+  - Bash(python3 --version)
+  - Bash(mmdc --version)
+  - Bash(node --version)
+  - Bash(shellcheck --version)
+  - Bash(npm view:*)
+  - Bash(touch:*)
+  - Bash(date:*)
+  - Bash(test:*)
+  - Bash(mkdir:*)
+  - Bash(git rev-parse:*)
+  - Bash(wc:*)
+  - Bash(stat:*)
+  - WebFetch
+---
+
+# /stack-check
+
+## What it does
+
+Walks `stack.toml`, queries each declared dependency's installed version,
+optionally fetches the latest available version, and reports a Markdown
+table:
+
+```markdown
+# Stack check — <YYYY-MM-DD>
+
+| Tool | Installed | Required | Status | Update |
+|------|-----------|----------|--------|--------|
+| claude (Claude Code) | 2.1.89 | ≥2.1.0 | ok | — |
+| codex (Codex CLI) | 0.39.0 | ≥0.40.0 | **outdated** | npm i -g @openai/codex |
+| claude-leverage (this plugin) | 1.0.0 | latest 1.0.1 | **outdated** | /plugin update claude-leverage |
+| git | 2.45.0 | ≥2.40.0 | ok | — |
+| rg | 14.0.3 | ≥13.0.0 | ok | — |
+| jq | (not found) | ≥1.6 (optional) | missing | brew install jq |
+| python | 3.12.1 | ≥3.10 | ok | — |
+| mmdc | (not found) | ≥10.0.0 (optional) | missing | npm i -g @mermaid-js/mermaid-cli |
+| node | 20.10.0 | ≥20.0.0 | ok | — |
+| shellcheck | (not found) | ≥0.8.0 (optional) | missing | brew install shellcheck |
+```
+
+On successful completion (no errors thrown), updates
+`~/.local/state/claude-leverage/.last-stack-check` (or
+`~/.claude/claude-leverage/.last-stack-check` if XDG state dir is
+unavailable) with the current epoch time so the SessionStart hook stays
+quiet for the next N days.
+
+## Workflow
+
+1. **Load `stack.toml`.** From the plugin install dir
+   (`$CLAUDE_PLUGIN_ROOT/stack.toml`) or, if running standalone, from the
+   repo root. If neither exists, STOP and report.
+
+2. **For each `[[host.tool]]` and `[[deps.tool]]`:**
+   - Run `check_cmd`. Capture stdout+stderr.
+   - Parse the version with a simple regex (`(\d+\.\d+(\.\d+)?)` —
+     accept "X.Y" and "X.Y.Z" both). If parse fails or command not
+     found, mark "missing" (and "outdated" if `optional = false`).
+   - Compare against `min_version` using a tuple compare (split on `.`).
+   - Mark: `ok` | `outdated` | `missing` | `unknown (parse failed)`.
+   - **Resolve update hint** per-OS: detect platform via `uname -s` (or
+     PowerShell `$env:OS` / `$IsWindows`). Prefer `update_hint_macos` /
+     `update_hint_linux` / `update_hint_windows` when present and the
+     platform matches; otherwise fall back to the generic `update_hint`
+     field. This is what stack.toml `manifest_version = 2` introduced.
+
+3. **For the plugin itself:**
+   - Read `version` from the installed `.claude-plugin/plugin.json`.
+   - WebFetch
+     `https://raw.githubusercontent.com/Filip-Podstavec/claude-leverage/main/.claude-plugin/plugin.json`
+     and compare to the installed version. Cache the network result for
+     24h in `~/.claude/claude-leverage/.stack-check-cache.json` to avoid
+     hammering GitHub if the user runs the skill repeatedly.
+
+4. **For Claude Code itself:**
+   - `claude --version` is the installed version.
+   - We do NOT fetch the latest Claude Code version from the network —
+     Anthropic doesn't expose a stable scrapable endpoint. Instead, the
+     `min_version` in stack.toml is hand-maintained: bump it when this
+     plugin starts depending on a feature only present in a newer CC.
+
+5. **Walk the current repo for AIDEV anchor health** (if cwd is inside
+   a git repo). Grep `git rev-parse --show-toplevel` for
+   `AIDEV-(TODO|QUESTION)` matches and parse each line.
+
+   Two flavors of anchor:
+   - **Deadline-bearing**: `AIDEV-TODO(by: 2026-08-01):` or
+     `AIDEV-QUESTION(by: YYYY-MM-DD):`. Extract the ISO-8601 date and
+     compare against today.
+     - `due-soon` (deadline in the next 14 days)
+     - `overdue` (deadline already passed)
+   - **Age-based** (no deadline): use `git log -1 --format=%cI -- <file>`
+     for the file's last-modified timestamp.
+     - `fresh` (≤30 days)
+     - `aging` (30–90 days)
+     - `stale` (>90 days)
+
+   Cap walk at 5000 files; skip the bench archive, vendor dirs,
+   node_modules, __pycache__, .git.
+
+   Reported after the version table:
+
+   ```markdown
+   ## AIDEV anchors (current repo: <name>)
+
+   - 14 AIDEV-TODO total: 3 fresh, 8 aging, 2 stale (>90d), **1 overdue (by deadline)**
+   - 5 AIDEV-QUESTION total: 1 fresh, 2 aging, 1 stale, 1 due-soon
+
+   **Overdue (deadline passed):**
+   - `src/billing/charge.py:47` — AIDEV-TODO due 2026-04-01 (44 days overdue)
+     "replace the polling loop with webhooks"
+
+   **Due soon (next 14 days):**
+   - `src/auth/middleware.py:89` — AIDEV-QUESTION due 2026-06-05 (in 12 days)
+
+   **Stale (no deadline, last touched >90 days ago):**
+   - `src/legacy/handlers.py:120` — AIDEV-TODO (last touched 2025-12-03)
+     "migrate to v2 API"
+   ```
+
+   If not in a git repo, skip this section silently.
+
+   Deadline parsing tolerates a few formats. The distinguishing rule
+   for implementors: the parenthesized content matches one of these
+   regexes (anchored, case-insensitive on the keyword):
+   - `^by:\s*(\d{4}-\d{2}-\d{2})$`         — `(by: 2026-08-01)`
+   - `^(\d{4}-\d{2}-\d{2})$`               — `(2026-08-01)` (bare ISO date)
+   - `^deadline:\s*(\d{4}-\d{2}-\d{2})$`   — `(deadline: 2026-08-01)`
+
+   Anything else in the parens (free-form notes like `(Q3 2026)` or
+   `(after the migration)`) is NOT a deadline; that anchor falls under
+   age-based stale tracking. This prevents misclassifying ambiguous
+   parenthetical text as a date.
+
+6. **Sanity-check AGENTS.md** (if present in cwd or repo root):
+   - File size, two tiers (report the size either way):
+     - **warn over 8 KiB** — lean target exceeded; an always-loaded file
+       this large dilutes attention. Suggest extracting topic depth to
+       `docs/` behind a when-to-read link.
+     - **flag over 32 KiB** — Codex caps the assembled project doc at
+       `project_doc.max_bytes` (default 32768) and silently drops the rest,
+       so content past that byte is invisible to Codex agents.
+     Both tiers are advisory here and do not stop the timestamp reset (step
+     9). `/repo-doctor` escalates the 32 KiB tier to a hard ❌ — that split
+     is intentional (see ADR 0009): `/stack-check` informs, `/repo-doctor`
+     gates.
+   - Broken `@<path>` imports: grep for `^@` lines, verify each
+     referenced file exists relative to the importer.
+   - Stale file references: extract `path/to/file.ext`-shaped strings
+     from the body and check existence (best-effort; lots of false
+     positives, so report only the obvious ones — e.g. when AGENTS.md
+     mentions `scripts/foo.sh` and `scripts/foo.sh` does not exist).
+   Per-directory AGENTS.md files (`**/AGENTS.md`, depth ≤ 3) get the same
+   two-tier size check — and they share the same ~32 KiB Codex budget as the
+   root file, so a large root plus several per-dir files can truncate even
+   when no single file exceeds the cap.
+
+   Reported after the anchors section:
+
+   ```markdown
+   ## AGENTS.md sanity
+
+   - `AGENTS.md` — 11.3 KiB, **over 8 KiB lean target** (extract topic
+     depth to `docs/` behind a when-to-read link)
+   - `src/billing/AGENTS.md` — 1.1 KiB, ok
+   - `src/api/AGENTS.md` — **38.4 KiB, over Codex 32 KiB cap** (Codex
+     will silently drop content beyond byte 32768; split it)
+   - Broken imports: _none_
+   - Possibly stale references: 1 (`scripts/old_runner.sh` mentioned
+     but not found)
+   ```
+
+7. **Walk every tracked `*.md` file for stale path references.** This
+   is the generalization of step 6's "Possibly stale references" check
+   beyond AGENTS.md — the failure mode "doc references a file that was
+   moved or deleted N versions ago" is repo-wide, not AGENTS.md-only.
+
+   Scope:
+   - Use `git ls-files '*.md'` so untracked / .gitignored markdown is
+     not scanned. Skip files under the bench archive, `node_modules/`,
+     `vendor/`, `__pycache__/`, `.git/`, and anything inside a
+     `.gitignored` tree (relying on `ls-files` filters most of this).
+   - Cap walk at the first 200 markdown files (sorted) — repos with
+     larger doc trees get a "(truncated)" footer; honest scope, not a
+     silent half-job.
+
+   Per file:
+   - Strip fenced code blocks (` ``` ... ``` `) and inline backticks
+     before regex-walking the body. Path-like tokens inside code blocks
+     are usually placeholders / examples, not live links.
+   - Extract candidates with a deliberately conservative regex (rough
+     shape, implementor adjusts):
+     `(?:^|[\s(\[`>])([a-zA-Z][a-zA-Z0-9_.\-]*(?:/[a-zA-Z0-9_.\-]+)+\.[a-zA-Z0-9]+)(?:$|[\s.,;:)`\]])`
+     — must contain at least one `/`, must end in a file extension, must
+     not look like a URL (skip if preceded by `://` or starting with
+     `http`).
+   - Skip tokens that look like commit hashes, version strings
+     (`v1.2.3`), or domain names (anything matching `\.(com|org|io|dev|gov)$`).
+   - Resolve relative to the repo root (`git rev-parse --show-toplevel`).
+     If the file does not exist, record `<md-file>:<line> → <token>`.
+
+   Output budget: hard cap of 20 broken refs in the report; if more,
+   show the first 20 plus a "(N more not shown)" footer so the section
+   does not dominate the report.
+
+   Reported as a new section:
+
+   ```markdown
+   ## Markdown link audit
+
+   Scanned 47 tracked `*.md` files; 3 broken path references.
+
+   - `README.md:118` → `scripts/legacy/runner.sh` (not found)
+   - `docs/adr/0002-...md:42` → `agents/old-reviewer.md` (not found)
+   - `workflows/security-first-feature.md:88` → `templates/old-logging.md` (not found)
+   ```
+
+   If zero broken refs, write `_All links resolve._` and move on. If
+   the scan was skipped (not in a git repo, or `CLAUDE_LEVERAGE_SKIP_MD_LINK_AUDIT=1`),
+   omit the section entirely.
+
+   This check exists because the v1.0.0 → v1.3.3 pivot in this repo
+   left three stale `tests/README.md` / `AGENTS.md` / `ci.yml` refs
+   that survived 4–7 version bumps before being caught by a human-led
+   pre-push audit. Catching that class of drift automatically is the
+   point.
+
+8. **Emit the Markdown report** combining version table + anchors +
+   AGENTS.md sanity + markdown link audit. Tier the version rows:
+   required first, then optional. Required-failing rows in bold.
+
+9. **Reset the timestamp.** Only if no row failed with an *error*
+   (process crashed, network exception). A failure status (outdated /
+   missing / stale anchors / oversized AGENTS.md) is information, not
+   an error — reset the timestamp.
+
+   **Run exactly this command — do NOT write a literal number into the
+   file:**
+
+   ```bash
+   date +%s > "$STATE_DIR/.last-stack-check"
+   ```
+
+   where `$STATE_DIR` is `${CLAUDE_LEVERAGE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-leverage}`
+   (matching the fallback chain in `scripts/hooks/stack-freshness.sh`).
+   The SessionStart hook reads the epoch from the file body — not the
+   mtime — so a stale or hallucinated number suppresses nudges for
+   weeks. Capturing the value via `date +%s` is the only reliable way
+   to avoid the v1.4.0 field-feedback #7 bug where the body and mtime
+   disagreed by ~2 months.
+
+## Hard rules
+
+- **Never install anything.** Output update commands, but never run
+  them. The user types whichever they want.
+- **Never block.** Read-only network + filesystem.
+- **Cache network results for 24h.** If the cache file exists and is
+  fresh, use it without hitting the network. Cache key: the
+  fully-resolved marketplace.json URL.
+- **Network is optional.** If WebFetch fails (offline), report
+  "(cannot fetch latest — offline)" for the rows that need network and
+  keep the rest of the report.
+- **Always run `Bash(... --version)` defensively.** Use `2>&1` and treat
+  exit code != 0 OR empty output as "not found".
+
+## Tunables
+
+- `CLAUDE_LEVERAGE_FRESHNESS_DAYS=N` — override the 30-day default for
+  the SessionStart hook.
+- `CLAUDE_LEVERAGE_FRESHNESS_DAYS=0` — disable the SessionStart nudge
+  entirely.
+- `CLAUDE_LEVERAGE_STATE_DIR=<path>` — override the state directory.
+- `CLAUDE_LEVERAGE_ANCHOR_STALE_DAYS=N` — change the "stale" threshold
+  for AIDEV-TODO/QUESTION (default 90).
+- `CLAUDE_LEVERAGE_SKIP_ANCHOR_AUDIT=1` — skip the AIDEV anchor walk
+  entirely (useful when running outside any project repo).
+- `CLAUDE_LEVERAGE_SKIP_AGENTS_MD_AUDIT=1` — skip the AGENTS.md
+  sanity pass.
+- `CLAUDE_LEVERAGE_SKIP_MD_LINK_AUDIT=1` — skip the repo-wide markdown
+  link audit (step 7). Use when the repo has a very large doc tree
+  and the audit is producing too many false positives to be useful.
+
+## Codex parity
+
+Same SKILL.md ships in Codex via `scripts/install-codex.sh`. The skill
+checks Codex's own version too (if `codex` is on PATH); the row is
+optional so a Claude-only user doesn't see a false missing.
+
+## What this skill does NOT do
+
+- **Install or update anything.** Suggest commands; let the user run
+  them.
+- **Check arbitrary user-installed plugins.** Scope is limited to this
+  plugin's own stack. Policing every other plugin's freshness is scope
+  creep with bad failure modes (marketplaces change shape, plugins
+  uninstall, etc.).
+- **Telemetry / phone-home.** All state is local. Only network calls
+  are to public GitHub and (optionally) npm registry for plugin/codex
+  latest-version lookup, and only when the user explicitly runs this
+  skill.

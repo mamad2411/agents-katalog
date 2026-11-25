@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/my-fetch-youtube/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: YouTube URL을 받으면 자막을 추출하고, Web Search로 자동자막 오류를 보정한 뒤, 요약-인사이트-전체 번역을 제공하는 스킬. "유튜브 번역", "영상 정리", "YouTube 요약" 요청에 사용.

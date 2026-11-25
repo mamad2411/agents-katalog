@@ -1,0 +1,144 @@
+---
+name: swift-package-build-run-workflow
+description: Guide ordinary build, run, manifest, dependency, resource, Metal-packaging, and Release-versus-Debug work in existing Swift Package Manager repositories. Use when Package.swift is the source of truth and the task is package build or run work rather than testing or package extensions.
+---
+
+# Swift Package Build Run Workflow
+
+## Purpose
+
+Use this skill as the primary execution workflow for ordinary non-testing work in existing Swift package components. Keep it focused on manifest and dependency changes, package resources, builds, runs, and Release-versus-Debug validation. `scripts/run-workflow.fsx` resolves the nearest package root and plans commands without classifying the containing repository.
+
+## When To Use
+
+- Use this skill for ordinary build and run work inside an existing Swift package repo.
+- Use this skill for ordinary manifest, target, product, dependency, and package-resource work driven by `Package.swift`.
+- Recommend `swift-package-extension-workflow` for package plugins, macros, traits, generated source, or plugin permissions.
+- Use this skill for package resources, `Bundle.module`, `.process(...)`, `.copy(...)`, `.embedInCode(...)`, and package-local fixture layout decisions.
+- Use this skill for Metal library packaging, distribution, and the SwiftPM side of Metal-related package work before Xcode-managed Apple toolchain behavior becomes the real concern.
+- Use this skill for Debug-versus-Release validation, build artifacts, and tagged-release package expectations.
+- Use this skill for Swift Package Index readiness checks in package repositories, but hand external add-package submission to Socket's guarded `scripts/spi_add_package.py` issue-form flow when that script is available.
+- Do not use this skill for package-testing-first work, test-plan execution, XCTest or Swift Testing diagnosis, or test-specific filtering and retries.
+- Do not use this skill for brand-new package bootstrap from nothing.
+- Do not use this skill for repo-guidance alignment in an existing package repo.
+- Do not use this skill as the default path for Xcode workspace, scheme, preview, simulator, or navigator-driven work.
+- Recommend `swift-package-testing-workflow` when the request is primarily about running, diagnosing, organizing, or evolving tests.
+- Recommend `bootstrap-xcode-workspace --operation create --component-kind library` when the package repo does not exist yet.
+- Recommend root workspace `just align` when product guidance needs to be refreshed.
+- Recommend `xcode-build-run-workflow` when the task depends on active Xcode workspace state, scheme-aware execution, previews, navigator diagnostics, simulator or device flows, or guarded mutation inside Xcode-managed scope.
+- Recommend `explore-apple-swift-docs` when the user needs Apple or Swift docs exploration before implementation or package changes.
+
+## Single-Path Workflow
+
+1. Classify the request into one operation type:
+   - package inspection
+   - read or search
+   - manifest or dependency changes
+   - build
+   - run
+   - package extension handoff
+   - toolchain management
+   - mutation
+2. Apply the Apple and Swift docs gate before any design, architecture, implementation, or refactor guidance:
+   - use `explore-apple-swift-docs` to gather the relevant SwiftPM, Swift, or Apple documentation first
+   - when SwiftPM behavior, manifest syntax, package plugins, resources, products, targets, or dependency rules matter, prefer the Dash.app docset workflow with the `swiftlang/swift-package-manager` docset first
+   - fall back to the canonical `swiftlang/swift-package-manager` GitHub repository only when the local Dash docset is unavailable or insufficient
+   - state the documented API behavior, package rule, or workflow requirement being relied on before proposing changes
+   - do not rely on memory as the primary source when docs exist
+   - if the docs and the current code conflict, stop and report that conflict
+   - if no relevant docs can be found, say that explicitly before proceeding
+3. Apply the shared Swift-package policy before giving implementation guidance:
+   - apply the detailed local policy in `references/snippets/apple-swift-package-core.md` when package-policy wording is needed
+   - preserve its simplicity-first, shape-preserving, and anti-ceremony Swift guidance
+   - preserve its explicit `swiftLanguageModes: [.v6]` package-manifest default and prefer that spelling over the legacy `swiftLanguageVersions` alias on current manifest surfaces
+   - preserve its package-appropriate logging, telemetry, and structured-concurrency guidance
+4. Run `scripts/run-workflow.fsx` to resolve the nearest package root, confirm the request stays on the build/run surface, and plan the SwiftPM command path.
+5. Use `references/cli-command-matrix.md` for agent-executed SwiftPM commands and terminal-first editor workflows.
+6. Use `references/package-resources-testing-and-builds.md` when the request touches package resources, Metal artifacts, `Bundle.module`, or Debug/Release and tagged-release validation.
+7. Apply `../../shared/execution-surface-routing.md`; use `xcode-build-run-workflow` only when the requested operation needs Xcode-owned state.
+8. For Swift Package Index add-package work, distinguish local readiness from external submission:
+   - local readiness may include `Package.swift`, semantic-version tag, `swift package dump-package`, `swift build`, `swift test`, `.spi.yml`, and DocC checks
+   - external submission must use the official `SwiftPackageIndex/PackageList` Add Package issue form
+   - when working from Socket, run `uv run /Users/galew/Workspace/gaelic-ghost/socket/scripts/spi_add_package.py hands-free <package-root>` and follow its Codex Computer Use handoff
+   - never create PackageList issues with `gh issue create`, apply labels manually, fork PackageList, edit `packages.json`, or open PackageList PRs
+9. Report which parts were agent-executed, the docs relied on, the resolved package context, and any required next step or handoff.
+
+## Inputs
+
+- `operation_type`: one of the operation types listed above.
+- `request`: optional short natural-language request text used to infer `operation_type` when the explicit operation is omitted.
+- `repo_root`: optional absolute path for the target package repo.
+- Defaults:
+  - runtime entrypoint: executable `scripts/run-workflow.fsx`
+  - `repo_root=.` when omitted
+  - the runtime may infer `operation_type` from `--request` text when the request wording is clear enough
+  - package execution prefers `swift package`, `swift build`, and `swift run`
+  - Xcode files do not change package routing
+
+## Outputs
+
+- `status`
+  - `success`: the workflow completed on the SwiftPM-first path
+  - `handoff`: the workflow is handing off to another skill because testing or Xcode-managed behavior is the safer surface
+  - `blocked`: prerequisites or package-root resolution prevented completion
+- `path_type`
+  - `primary`: the SwiftPM-first path completed
+  - `fallback`: a non-mutating planned command path was returned
+- `output`
+  - operation type
+  - resolved package root
+  - package context
+  - `planned_commands`
+  - one concise next step or handoff payload
+
+## Guards and Stop Conditions
+
+- Stop with `blocked` when the package root cannot be resolved.
+- Stop with `blocked` when the repo does not contain `Package.swift`.
+- Stop with `handoff` when the request is really package-testing or package-extension work.
+- Stop with `handoff` only when the requested operation requires an Xcode scheme, destination, preview, target membership, build phase, or app bundle integration.
+- Stop with `handoff` when the requested work crosses into Xcode project membership, scheme, preview, simulator, or other Xcode-managed concerns.
+- Stop with `blocked` when no safe SwiftPM-first command path exists for the requested operation.
+- Stop with `blocked` when Swift Package Index submission is requested but the package is only locally ready, the official Add Package issue form is unavailable, the Socket guarded script reports incomplete readiness, or the created issue cannot be verified with the `Add Package` label.
+
+## Fallbacks and Handoffs
+
+- SwiftPM and ordinary filesystem edits are the default execution surface for this skill.
+- The only current fallback is a non-mutating planned command result when the user asked for guidance rather than immediate execution.
+- Hand off to `swift-package-testing-workflow` when the request becomes primarily about tests, test plans, or test diagnosis.
+- Hand off to `swift-package-extension-workflow` when the request becomes primarily about plugins, macros, traits, generated source, or plugin permissions.
+- Hand off to `xcode-build-run-workflow` when package build or distribution work depends on:
+  - active Xcode workspace or scheme state
+  - previews, snippet execution, simulator, or device flows
+  - navigator issues or Xcode build-log inspection
+  - Xcode MCP mutation tools
+  - Metal shader compilation, Apple-managed Metal toolchain inspection, or package distribution that depends on Xcode-managed Apple SDK integration
+  - direct changes inside `.xcodeproj`, `.xcworkspace`, or `.pbxproj` managed scope
+- Recommend root workspace `just align` when the request is really about product guidance instead of execution.
+- Recommend `bootstrap-xcode-workspace --operation create --component-kind library` when the repository still needs to be created from scratch.
+- When maintaining this repository itself, refresh guidance-sync consumers after substantial package-policy changes and keep the top-level export-surface docs aligned. Do not tell users to rely on repo-local installer workflows; this repository does not ship them.
+
+## Fixed Policy
+
+- `scripts/run-workflow.fsx` enforces the fixed SwiftPM-first policy without runtime customization.
+
+## References
+
+### Workflow References
+
+- `references/workflow-policy.md`
+- `references/cli-command-matrix.md`
+- `references/package-resources-testing-and-builds.md`
+- `../../shared/execution-surface-routing.md`
+
+### Contract References
+
+### Support References
+
+- Recommend `references/snippets/apple-swift-package-core.md` when the user needs reusable SwiftPM baseline policy wording in an end-user repo.
+- `references/snippets/apple-swift-package-core.md`
+- For Swift Package Index add-package automation in Socket, use `/Users/galew/Workspace/gaelic-ghost/socket/scripts/spi_add_package.py` and `/Users/galew/Workspace/gaelic-ghost/socket/docs/maintainers/spi-add-package-automation-plan.md`.
+
+### Script Inventory
+
+- `scripts/run-workflow.fsx`

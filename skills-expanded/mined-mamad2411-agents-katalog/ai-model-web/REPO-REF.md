@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-tunoc2c-workbuddy-skill-official/ai-model-web/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use this skill when developing browser/Web applications (React/Vue/Angular, static websites, SPAs) that need AI capabilities. Features text generation (generateText) and streaming (streamText) via @cl

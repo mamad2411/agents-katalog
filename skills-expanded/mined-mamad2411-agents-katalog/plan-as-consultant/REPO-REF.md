@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/plan-as-consultant/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Plan a business research study the way a professional consultant would — selecting the right analytical framework (JTBD, KANO, STP, GE-McKinsey, etc.), designing the research method, and defining a sp

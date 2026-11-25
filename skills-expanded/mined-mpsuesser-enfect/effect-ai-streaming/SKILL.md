@@ -1,0 +1,440 @@
+---
+name: effect-ai-streaming
+description: Master Effect AI streaming response patterns including start/delta/end protocol, accumulation strategies, resource-safe consumption, and history management with SubscriptionRef.
+---
+
+# Effect AI Streaming
+
+Baseline: `effect@4.1.0`; inspect that tag in the Effect source reference.
+The `effect/ai` APIs remain `@stability unstable` despite their shorter import
+paths and may break in minor releases. Align provider package versions with `effect`.
+
+## When to Use This Skill
+
+- Real-time streaming responses from language models
+- Building chat interfaces with incremental updates
+- Managing conversation history with streaming
+- Protecting concurrent stream operations
+- Accumulating stream parts with side effects
+- Converting stream responses to prompt history
+
+## Import Patterns
+
+**CRITICAL**: Always use namespace imports:
+
+```typescript
+import * as Stream from 'effect/Stream';
+import * as Effect from 'effect/Effect';
+import * as Channel from 'effect/Channel';
+import * as SubscriptionRef from 'effect/SubscriptionRef';
+import * as Match from 'effect/Match';
+import * as Response from 'effect/ai/Response';
+```
+
+## StreamPart Protocol
+
+stream := start → delta\* → end
+
+StreamPart lifecycle for each content type follows a three-phase protocol:
+
+```haskell
+text      :: text-start → text-delta* → text-end
+reasoning :: reasoning-start → reasoning-delta* → reasoning-end
+toolParam :: tool-params-start → tool-params-delta* → tool-params-end
+finish    :: { type: "finish", reason: FinishReason, usage: Usage }
+```
+
+Each streaming sequence has a unique `id` field that links start/delta/end parts.
+
+## Part Type Matching
+
+Stream parts use a `type` field (not `_tag`), so use `Match.when` with `type` checks:
+
+```typescript
+import * as Match from 'effect/Match';
+import * as Effect from 'effect/Effect';
+
+const processPart = (part: StreamPart) =>
+	Match.value(part).pipe(
+		Match.when({ type: 'text-delta' }, ({ delta }) =>
+			Effect.sync(() => console.log(delta))
+		),
+		Match.when({ type: 'reasoning-delta' }, ({ delta }) =>
+			Effect.sync(() => logReasoning(delta))
+		),
+		Match.when({ type: 'finish' }, ({ usage, reason }) =>
+			Effect.sync(() => recordUsage(usage, reason))
+		),
+		Match.orElse(() => Effect.void)
+	);
+```
+
+Direct `type` checks also work well for simple branching:
+
+```typescript
+if (part.type === 'text-delta') {
+	console.log(part.delta);
+}
+```
+
+## Accumulation Pattern
+
+Accumulate stream parts incrementally using mutable state for efficiency:
+
+```typescript
+import * as Stream from 'effect/Stream';
+import * as Effect from 'effect/Effect';
+import * as Prompt from 'effect/ai/Prompt';
+import * as Response from 'effect/ai/Response';
+import * as SubscriptionRef from 'effect/SubscriptionRef';
+
+const streamWithHistory = Stream.suspend(() => {
+	const accumulated: Array<Response.AnyPart> = [];
+	return stream.pipe(
+		Stream.mapArrayEffect(
+			Effect.fnUntraced(function* (parts) {
+				accumulated.push(...parts);
+
+				// Fold accumulated parts so start/delta/end IDs are visible together.
+				const combined = Prompt.fromResponseParts(accumulated);
+				yield* SubscriptionRef.set(history, Prompt.concat(checkpoint, combined));
+				return parts;
+			})
+		)
+	);
+});
+```
+
+Key insight: `Stream.mapArrayEffect` enables side-effectful accumulation while preserving stream semantics. Its input/output batches are non-empty arrays, not v3 Chunks. Allocate mutable accumulators inside `Stream.suspend` so separate stream runs do not share history.
+
+## Resource-Safe Streaming
+
+Prevent concurrent stream operations using semaphore protection:
+
+```typescript
+import * as Channel from 'effect/Channel';
+import * as Semaphore from 'effect/Semaphore';
+import * as Stream from 'effect/Stream';
+
+const streamWithProtection = Stream.fromChannel(
+	Channel.acquireUseRelease(
+		// Acquire only the permit so release covers checkpoint setup too.
+		semaphore.take(1),
+
+		// Use: Prepare history, then stream with per-run accumulation.
+		() => Stream.unwrap(Effect.gen(function* () {
+			const checkpoint = Prompt.concat(yield* SubscriptionRef.get(history), newPrompt);
+			yield* SubscriptionRef.set(history, checkpoint);
+			const accumulated: Array<Response.AnyPart> = [];
+			return LanguageModel.streamText({ prompt: checkpoint }).pipe(
+				Stream.mapArrayEffect(Effect.fnUntraced(function* (parts) {
+					accumulated.push(...parts);
+					yield* SubscriptionRef.set(history,
+						Prompt.concat(checkpoint, Prompt.fromResponseParts(accumulated)));
+					return parts;
+				}))
+			);
+		})).pipe(Stream.toChannel),
+
+		// Release: Always release semaphore
+		() => semaphore.release(1)
+	)
+);
+```
+
+Resource acquisition order:
+
+1. Take semaphore (exclusive access)
+2. Get current history snapshot
+3. Merge with new prompt
+4. Update history with checkpoint
+5. Stream response (with incremental updates)
+6. Release semaphore (guaranteed via `acquireUseRelease`)
+
+Keep steps 2–5 in the use phase. If checkpoint setup fails after acquisition,
+the finalizer must already own the permit.
+
+## Consumption Patterns
+
+runForEach :: (A → Effect<R, E>) → Stream<A, E, R> → Effect<Unit, E, R>
+runDrain :: Stream<A, E, R> → Effect<Unit, E, R>
+runLast :: Stream<A, E, R> → Effect<Option<A>, E, R>
+
+```typescript
+// Process each part with side effects
+stream.pipe(
+	Stream.runForEach((part) =>
+		Match.value(part).pipe(
+			Match.when({ type: 'text-delta' }, ({ delta }) => updateUI(delta)),
+			Match.when({ type: 'finish' }, ({ usage }) => recordMetrics(usage)),
+			Match.orElse(() => Effect.void)
+		)
+	)
+);
+
+// Consume without collecting (memory efficient)
+stream.pipe(Stream.tap(logPart), Stream.runDrain);
+
+// Get final accumulated value
+stream.pipe(
+	Stream.runFold(() => initialState, (acc, part) => merge(acc, part)),
+	Effect.map(Option.some)
+);
+```
+
+## History Update Pattern
+
+Incremental merge strategy for conversation history:
+
+```typescript
+// Prompt.concat: (Prompt, RawInput) → Prompt
+// Prompt.fromResponseParts: ReadonlyArray<Response.AnyPart> → Prompt
+
+// Pattern: checkpoint + accumulated response fold, scoped to each stream run.
+const streamWithHistory = Stream.suspend(() => {
+  const accumulated: Array<Response.AnyPart> = [];
+  return stream.pipe(Stream.mapArrayEffect(Effect.fnUntraced(function* (parts) {
+    accumulated.push(...parts);
+
+    // Fold accumulated parts, not only this batch, so start/delta/end IDs align.
+    const combined = Prompt.fromResponseParts(accumulated);
+    yield* SubscriptionRef.set(history, Prompt.concat(filteredCheckpoint, combined));
+    return parts;
+  })));
+});
+```
+
+Why checkpoint-based merging:
+
+- Prevents re-merging entire history on each chunk
+- Separates base state (checkpoint) from streaming accumulation (combined)
+- Enables atomic history updates via SubscriptionRef
+- Ensures `Prompt.fromResponseParts` sees matching start/delta/end parts for each `id`
+
+The fold preserves text/reasoning start order when their ends arrive out of
+order. Nonempty partial text is retained without an end marker; unended reasoning
+is dropped because its replay metadata may be incomplete. This makes interrupted
+stream history intentionally different from a completed response. The examples
+above retain all parts and repeatedly fold them; for long streams, measure memory
+and fold cost rather than assuming incremental UI updates imply bounded storage.
+
+## Tool Streaming, Finish, and Approvals
+
+- With automatic framework tool resolution enabled, `finish` is deferred until tool handler streams complete so emitted tool results appear before finish.
+- `tool-result` parts can be preliminary or final. Use preliminary results for progress updates only; `Prompt.fromResponseParts` skips preliminary results and persists final results.
+- `Prompt.fromResponseParts` routes framework-executed final results into a tool message, but keeps provider-executed final results in the assistant message. It preserves `providerExecuted` and uses `encodedResult` in both cases.
+- Tools requiring approval emit `tool-approval-request`. Append a matching `Prompt.toolApprovalResponsePart` in a tool message and call the model again; approved/denied responses are pre-resolved into final tool results before the next provider call.
+- In OpenAI-specific SSE code, unknown future events decode through `OpenAiSchema.ResponseStreamEvent` and are ignored by `OpenAiLanguageModel`; malformed known events still fail decoding.
+- OpenAI-compatible Chat Completions providers can send null delta fields. The
+  adapter preserves text and tool arguments from the remaining fields; custom
+  adapters should skip null fragments rather than discard the whole chunk.
+- Manual `Toolkit.handle` execution requires handler services on both the outer
+  Effect and its returned Stream. Even return-mode streams can fail with
+  `AiError` during result encoding; keep that error channel when composing streams.
+
+### Tool-stream lifetime and backpressure
+
+Closing a `Toolkit.handle` result stream interrupts its handler, including early
+termination such as `Stream.take`. Always consume or close returned streams;
+detaching a producer without a consumer is not a safe background-task API.
+
+`Toolkit.PreliminaryBuffer` defaults to `'unbounded'`. Provide a positive integer
+around `handle` to bound its per-call preliminary-result queue; `context.preliminary`
+suspends once the queue fills. Invalid values defect. Consume while the handler
+runs: waiting for producer completion before reading can deadlock. This is not an
+end-to-end memory limit for `LanguageModel`, which transfers results into its own
+buffers. See `effect-ai-tool` for a standalone bounded-consumption example.
+
+For manual model streaming, disabled resolution defaults to strict encoded
+params. Add `toolCallValidation: 'deferred'` only when the consumer will validate
+unknown params and arbitrary names before dispatch. Provider-executed calls
+remain validated. `Response.StreamPart()` without a toolkit can decode persisted
+parts for any tool name; `Response.StreamPart(Toolkit.empty)` is restrictive.
+
+Provider envelope/SSE decoding failures use nonretryable `InvalidResponseError`,
+distinct from retryable `InvalidOutputError` for decoded model output. Keep
+stream failures separate from explicit `{ type: 'error' }` parts in consumer policy.
+
+## Complete Example
+
+<!-- typecheck -->
+```typescript
+import * as Prompt from 'effect/ai/Prompt';
+import * as Response from 'effect/ai/Response';
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import * as Stream from 'effect/Stream';
+import * as Channel from 'effect/Channel';
+import * as Effect from 'effect/Effect';
+import * as SubscriptionRef from 'effect/SubscriptionRef';
+import * as Semaphore from 'effect/Semaphore';
+import * as Match from 'effect/Match';
+
+const Chat = Effect.gen(function* () {
+	const history = yield* SubscriptionRef.make(Prompt.empty);
+	const semaphore = yield* Semaphore.make(1);
+
+	const streamText = (prompt: string) =>
+		Stream.fromChannel(
+			Channel.acquireUseRelease(
+				// Acquire only the permit; all following work is covered by release.
+				semaphore.take(1),
+				() => Stream.unwrap(Effect.gen(function* () {
+					const checkpoint = Prompt.concat(yield* SubscriptionRef.get(history), prompt);
+					yield* SubscriptionRef.set(history, checkpoint);
+					const accumulated: Array<Response.AnyPart> = [];
+					return LanguageModel.streamText({ prompt: checkpoint }).pipe(
+						Stream.mapArrayEffect(Effect.fnUntraced(function* (parts) {
+							accumulated.push(...parts);
+							yield* SubscriptionRef.set(history,
+								Prompt.concat(checkpoint, Prompt.fromResponseParts(accumulated)));
+							return parts;
+						}))
+					);
+				})).pipe(Stream.toChannel),
+				() => semaphore.release(1)
+			)
+		);
+
+	return { streamText };
+});
+
+// Consume with a LanguageModel layer provided by the application.
+const consume = Effect.gen(function* () {
+	const chat = yield* Chat;
+	yield* chat.streamText('Hello').pipe(
+	Stream.runForEach((part) =>
+		Match.value(part).pipe(
+			Match.when({ type: 'text-delta' }, ({ delta }) =>
+				Effect.logInfo(delta)
+			),
+			Match.when({ type: 'finish' }, ({ usage }) =>
+				Effect.logDebug(usage)
+			),
+			Match.orElse(() => Effect.void)
+		)
+	)
+	);
+});
+```
+
+## Anti-Patterns
+
+```typescript
+// ❌ Avoid Effect.either for pattern matching
+Effect.either(effect).pipe(
+  Effect.map((result) => result._tag === "Left" ? ... : ...)
+)
+
+// ✓ Use Effect.match
+effect.pipe(
+  Effect.match({
+    onFailure: (error) => ...,
+    onSuccess: (value) => ...
+  })
+)
+
+// ❌ Using Match.tag on stream parts (stream parts use `type`, not `_tag`)
+Match.value(part).pipe(Match.tag("text-delta", handler))
+
+// ✓ Use Match.when with type checks (stream parts have `type` field, not `_tag`)
+Match.value(part).pipe(Match.when({ type: "text-delta" }, handler))
+
+// ✓ Direct type checks are also correct
+if (part.type === "text-delta") { handler(part) }
+
+// ❌ Accumulating in Stream.map (loses effects)
+Stream.map((chunk) => {
+  accumulated.push(...chunk) // side effect ignored
+  return chunk
+})
+
+// ✓ Use Stream.mapArrayEffect
+Stream.mapArrayEffect(Effect.fnUntraced(function* (chunk) {
+  accumulated.push(...chunk)
+  yield* updateHistory()
+  return chunk
+}))
+```
+
+## Additional Stream Part Types
+
+### File Parts
+
+```typescript
+{ type: "file", mediaType: "image/png", data: Uint8Array }
+```
+
+### Source Parts
+
+```typescript
+{ type: "source", sourceType: "document", id: string, mediaType: string, title: string }
+{ type: "source", sourceType: "url", id: string, url: URL, title: string }
+```
+
+The encoded URL source uses a string URL.
+
+### Metadata Parts
+
+```typescript
+{ type: "response-metadata", id?: string, modelId?: string, timestamp?: DateTime.Utc }
+```
+
+The encoded provider form uses an ISO string for `timestamp`; the decoded part
+uses `DateTime.Utc`.
+
+### Error Parts
+
+```typescript
+{ type: "error", error: AiError }
+// Handle with:
+Match.when({ type: "error" }, ({ error }) => Effect.fail(error))
+```
+
+## ExecutionPlan Streaming Nuances
+
+`Stream.withExecutionPlan(plan, { onEvent })` emits the same ordered `AttemptStart` / `AttemptSuccess` / `AttemptFailure` lifecycle as the Effect combinator. A downstream consumer that stops pulling early reports `AttemptSuccess`, because the consumer ended the attempt rather than the source failing.
+
+Set `preventFallbackOnPartialStream: true` when a provider failure after emitted chunks must fail the stream rather than append fallback-provider output to the partial response. Lifecycle observer defects are ignored and cannot change stream attempt outcomes.
+
+## Quality Checklist
+
+- [ ] Use start/delta/end protocol for streaming content
+- [ ] Match stream parts with `Match.when({ type: ... })` or direct `part.type` checks (NOT `Match.tag` — parts use `type`, not `_tag`)
+- [ ] Accumulate using Stream.mapArrayEffect (not a side-effecting Stream.map)
+- [ ] Use SubscriptionRef for reactive history updates
+- [ ] Protect concurrent streams with Semaphore
+- [ ] Use Channel.acquireUseRelease for resource safety
+- [ ] Handle error parts appropriately
+- [ ] Checkpoint history before streaming
+
+Response codecs require tool parameter decoding/encoding services as well as
+result services, including toolkits with handlers. Track these requirements with
+`Tool.ParametersDecodingServices` when exposing generic toolkit wrappers.
+
+## Related Skills
+
+- effect-ai-language-model - streamText method that produces these streams
+- effect-ai-prompt - Converting stream responses to history with fromResponseParts
+- effect-ai-tool - Tool call streaming parts
+- effect-ai-provider - Provider-specific streaming behavior
+
+## Reference
+
+StreamPart types:
+
+- `text-start`, `text-delta`, `text-end` - Text content streaming
+- `reasoning-start`, `reasoning-delta`, `reasoning-end` - Chain-of-thought streaming
+- `tool-params-start`, `tool-params-delta`, `tool-params-end` - Tool parameter streaming
+- `tool-call` - Complete tool invocation (non-streaming)
+- `tool-result` - Tool execution result
+- `finish` - Stream completion with usage stats
+- `error` - Error part
+
+Key modules:
+
+- `effect/ai/Response` - Response part schemas and constructors
+- `effect/ai/Prompt` - Prompt construction and merging
+- `effect/Stream` - Stream combinators (`mapArrayEffect`, `runForEach`, `runDrain`)
+- `effect/Channel` - Low-level resource management (`acquireUseRelease`)
+- `effect/SubscriptionRef` - Reactive shared state
+- `effect/Match` - Pattern matching (use `Match.when({ type: ... })` for stream parts)

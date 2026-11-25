@@ -1,0 +1,163 @@
+---
+name: use-case-spec
+description: >
+  Creates detailed use case specification documents with actors, preconditions,
+  main success scenarios, alternative flows, postconditions, and business rules.
+  Use when the user asks to "write a use case", "specify a use case", "document
+  system behavior", "define scenarios", "write a functional spec", or mentions
+  use case specification, acceptance criteria, or user scenarios.
+---
+
+<!--
+Copyright 2025-2026 Simon Martinelli and the AI Unified Process contributors.
+Part of the AI Unified Process — https://unifiedprocess.ai
+Licensed under the Apache License, Version 2.0. See LICENSE and NOTICE.
+
+Modifications Copyright 2026 Nexa (nexadev.app).
+This file is derived from the AI Unified Process Marketplace and has been
+modified for the Nexa Agentic Engineering methodology.
+-->
+
+# Use Case Specification
+
+## Instructions
+
+Create or update use case specification documents for $ARGUMENTS in `docs/use_cases/`. Each use case describes a complete interaction between an actor and the system to achieve a goal.
+
+## DO NOT
+
+- Write vague or incomplete scenarios
+- Skip numbering steps in the Main Success Scenario
+- Omit alternative flows for error conditions
+- Leave postconditions undefined
+- Mix multiple use cases in one document
+- Use technical implementation details in the flow steps
+
+## Nexa Rules Gate
+
+Read and follow `${CLAUDE_PLUGIN_ROOT}/shared/readiness/NEXA_RULES_GATE.md`.
+
+## Template
+
+Use [templates/use-case.md](templates/use-case.md) as the document structure.
+
+## Example Use Case
+
+# Use Case: Create Reservation
+
+## Overview
+
+| | |
+|---|---|
+| **Use Case ID** | UC-001 |
+| **Use Case Name** | Create Reservation |
+| **Primary Actor** | Front Desk Clerk |
+| **Goal** | Create a new room reservation for a guest |
+| **Depends On** | UC-000 |
+| **User Interface** | Yes |
+| **Status** | Approved |
+
+## Preconditions
+
+- Clerk is logged into the system
+- At least one room type is available for the requested dates
+
+## Main Success Scenario
+
+1. Clerk selects "New Reservation" from the menu.
+2. System displays the reservation form.
+3. Clerk enters guest information (name, email, phone).
+4. Clerk selects check-in and check-out dates.
+5. System displays available room types for the selected dates.
+6. Clerk selects a room type.
+7. System calculates the total price.
+8. Clerk confirms the reservation.
+9. System creates the reservation and displays a confirmation number.
+
+## Alternative Flows
+
+### A1: Guest Already Exists
+
+**Trigger:** Guest email matches existing record (step 3)
+**Flow:**
+
+1. System displays existing guest information.
+2. Clerk confirms or updates guest details.
+3. Use case continues at step 4.
+
+### A2: No Rooms Available
+
+**Trigger:** No rooms available for selected dates (step 5)
+**Flow:**
+
+1. System displays "No availability" message.
+2. Clerk adjusts dates or cancels operation.
+3. Use case continues at step 4 or ends.
+
+### A3: Payment Required
+
+**Trigger:** Business rule requires deposit (step 8)
+**Flow:**
+
+1. System prompts for payment information.
+2. Clerk enters payment details.
+3. System processes payment.
+4. Use case continues at step 9.
+
+## Postconditions
+
+### Success Postconditions
+
+- Reservation is stored in the system with status "Confirmed"
+- Room availability is updated for the reserved dates
+- Confirmation email is sent to the guest
+
+### Failure Postconditions
+
+- No reservation is created
+- Room availability remains unchanged
+- System displays error message to clerk
+
+## Business Rules
+
+### BR-001: Minimum Stay
+
+Reservations must be for at least one night.
+
+### BR-002: Advance Booking Limit
+
+Reservations cannot be made more than 365 days in advance.
+
+### BR-003: Deposit Requirement
+
+Reservations of 3 or more nights require a 50% deposit.
+
+## Workflow
+
+1. Read the requirements document and use case diagram
+2. Read `docs/engineering/cluster-N-analysis.md` for the cluster this use case belongs to, if
+   it exists. `/engineer-requirements` records there the refined requirements, the **Depends On**
+   and **User Interface** values, and the EXPLICIT or INFERRED provenance of each decision.
+   Those decisions were reviewed — copy them, do not derive them again, and do not contradict them
+3. Identify the use case to document
+4. Use TodoWrite to track progress
+5. Write the Overview section with actor and goal
+6. Fill **Depends On** — take it from the cluster analysis when step 2 found one. Otherwise
+   list every use case that must be `Done` before this one can be delivered, or `None`, derived
+   from the preconditions, from postconditions this use case consumes, and from
+   `docs/use_cases.puml`. This row is what the delivery scheduler parses to decide what can run
+   in parallel; an unlisted dependency causes a use case to be delivered against a system that
+   is not ready for it.
+7. Fill **User Interface** — take it from the cluster analysis when step 2 found one. Otherwise
+   `Yes` if the actor interacts with a screen, `No` for background jobs and system-triggered
+   processes. `No` means no screen design will be produced.
+8. Define preconditions (what must be true before starting)
+9. Write the Main Success Scenario step by step
+10. Identify alternative flows:
+    - Error conditions
+    - Optional paths
+    - Exceptional situations
+11. Define postconditions for both success and failure
+12. Document applicable business rules
+13. Review for completeness and clarity
+14. Mark todo complete

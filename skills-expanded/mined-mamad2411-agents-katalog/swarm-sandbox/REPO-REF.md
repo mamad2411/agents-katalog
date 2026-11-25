@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-uitbreidenos-uitkit/swarm-sandbox/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Safe isolated testing environment for multi-agent swarm topologies before production deployment"

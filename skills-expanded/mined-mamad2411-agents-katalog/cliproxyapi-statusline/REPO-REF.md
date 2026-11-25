@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/cliproxyapi-statusline/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Display cliproxyapi proxy multi-account quota usage in Claude Code statusline. cliproxyapi 프록시 서버의 다중 계정 쿼터 사용량을 Claude Code 상태라인에 표시하는 스킬.

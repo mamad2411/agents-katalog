@@ -1,0 +1,227 @@
+---
+name: meta-dream-crosstree
+description: Use on "dream crosstree", "/dream-crosstree", "consolidate across projects", "global consolidation", occasionally after several per-project dreams, or when two projects or knowledge trees have learned related things that should be shared. This is the expensive cross-project/cross-tree pass reading every store; for one project's routine tidy use bitranox:meta-dream-tree. Honors an off/auto/propose mode. Formerly named meta-dream-global - answers to that name too.
+---
+
+# meta-dream-crosstree
+
+The cross-project dream. `bitranox:meta-dream-tree` tidies ONE knowledge tree, TREE-WIDE - every
+level under that anchor, so it already sees sibling projects sharing it - and is the frequent, cheap
+pass; **meta-dream-crosstree is the occasional, EXPENSIVE
+pass that reads across ALL project stores - and it is the ONLY dream whose territory spans
+INDEPENDENT KNOWLEDGE TREES** (a machine can carry several tree tops; the project dream never
+crosses them). Cascade only flows down one ancestor chain, so knowledge filed in a sibling project
+or another tree is invisible elsewhere; this skill bridges that. Tree discovery runs over the
+configured `discovery_roots` (`tree-top` / `ensure-all-trees` locate the tops). It builds on `bitranox:meta-self-improve` (altitude logic, the upstream-PR loop,
+`reconcile_memory_index.py` - home: `<plugin>/skills/meta-self-improve/`, launch via
+`hooks/run-python.sh`) and delegates inbound gather to `bitranox:meta-collect-knowledge`; follow
+those for the primitives. Do not duplicate per-project consolidation here - run meta-dream-tree for
+that first if a project's own store is messy.
+
+**It must SHRINK noise, never add it**, and it moves knowledge ONLY by lift-or-copy - **NEVER a
+cross-tree reference** (a sideways pointer dangles when the other tree is deleted).
+
+## Mode
+
+Read the mode per `bitranox:meta-dream-tree` -> references/dream-core.md (propose / auto /
+off - the knob semantics live ONLY there); `off` skips this skill entirely.
+
+## When to run
+
+- **Manual / occasional.** "dream crosstree", "/dream-crosstree", "consolidate across projects". There is no
+  per-session nudge for this (it is heavy); run it deliberately - a good cadence is after several
+  per-project dreams, or when you know two projects have learned related things.
+- **Honor the `privacy` knob.** With `walled`, gather and promote ONLY within one privacy domain
+  (e.g. do not lift a note from a private/client subtree into a tree top that loads everywhere under it); the
+  default (open) does a light secret/PII scrub and otherwise propagates concrete operational knowledge
+  freely.
+
+## Procedure
+
+Create one todo per step.
+
+0. **Capture first, reading the session from DISK** - the shared rule in
+   `bitranox:meta-dream-tree` -> references/dream-core.md "Capture-first" applies here too (it is
+   the shared core for EVERY consolidation skill, not just nap/tree). Run
+   `dream_state.py session-review "<cwd>" > review.txt 2>&1` before consolidating, and read the
+   FILE (rendered inline it is silently truncated): your context is not the session (a
+   compaction clears the context, never the transcript file), and it also surfaces the SUBAGENT
+   learnings and the touched-path routing evidence you would otherwise never see. Finish with
+   `dream_state.py session-reviewed "<cwd>"`; a stretch over 2 MB comes in parts, so while the
+   review prints a `TRUNCATED` line, repeat `session-review` and `session-reviewed` until it prints
+   `NOTHING NEW`. It is incremental and the watermark is shared with the
+   other dream modes, so if a nap already reviewed this session this costs nothing. Earlier
+   sessions it lists under `OTHER UNREVIEWED TRANSCRIPTS` are read and marked with the same
+   `--transcript <path>` on both verbs (dream-core "Capture-first").
+1. **Back up first.** Snapshot every store this run may touch - each affected tree's TOP store and, for any level you will write, the anchor's central
+   `.claude-memory/` note bodies + that level's `CLAUDE.local.md` pointer block (+ native `memory/`) - to
+   timestamped copies OUT of the project trees (`~/.claude/self-improve-audit/backups/`, so a backup is
+   never re-discovered as live memory) before any edit. Curated writes go through the engine, not a
+   hand-edit. The one-time whole-store backup is the safety net; this is the per-run one.
+2. **Inbound gather (delegate).** For each project that should be enriched, run
+   `bitranox:meta-collect-knowledge` (the grep -> inspect -> gather funnel): pull knowledge from OTHER
+   trees relevant to that project and bring it in by **lifting broadly-useful hits to a common ancestor**
+   or writing a **self-contained local copy** (marked so it is not re-promoted; scrubbed). Single source
+   of truth - do not re-implement the funnel here.
+3. **Cheap convergence pre-check, THEN ask before the deep scan.** The cross-project semantic read (the
+   fan-out below) is the expensive part - dozens of subagents. Do NOT run it unconditionally. First the
+   cheap, deterministic pass: which stores changed since the last global dream, `reconcile_memory_index.py
+   --check` over the altitude chains (the LEVEL dirs; orphans / downward; index size is an advisory warning),
+   `model_review_due()`, any pending
+   filler queue. If nothing material changed since the last run, report convergence and STOP - a global
+   dream that writes nothing is the correct outcome. Only if there is genuinely new cross-project material
+   (or the user wants a fresh deep read), **ASK the user before launching the fan-out**. For an
+   always-run deep semantic scan with no asking, that is its own skill: `bitranox:meta-dream-crosstree-deep`.
+   - **Deep scan (on confirmation): FAN OUT** one **`opus`** subagent per project store (or per thematic
+     batch for many stores), in parallel, each returning recurring / broadly-useful candidate entries.
+     Instruct each subagent to flag a DUPLICATE/MERGE only from the BODIES (not a title/topic match),
+     and treat every such finding as a CANDIDATE the main agent VERIFIES before merging (see "Dedup
+     semantics" in references/dream-core.md: a summary+detail pair, a valid cross-link, or a
+     cited-across-a-subtree fact is not a duplicate). Keep the promotion gate and altitude /
+     normalization decisions INLINE on the main agent at
+     opus-class OR ABOVE (opus is the universally-available deep tier; fable sits above it but
+     needs paid API credits) - if the session is below opus-class, offer switch-model-or-continue
+     per "The session model is fixed" in `bitranox:process-agents-subagent-driven-development`
+     (a /model switch keeps the conversation; the main agent cannot self-switch). (Tiers:
+     "Concrete tiers" in the same skill.)
+4. **Promotion gate (corroboration + dedup against CLAUDE.md).** A promotion to a tree's TOP loads into every
+   session UNDER THAT TREE, so it is high-blast. Gate by **cross-project corroboration** - a model-inferred
+   generalization promotes once seen in **>= 2 DISTINCT PROJECTS** - the same bar meta-dream-tree uses,
+   from the same dwell store, which is idempotent per project, so no number of dreams over one project
+   ever corroborates; a USER-stated concrete rule promotes eagerly. **Before promoting, dedup the
+   candidate against the existing global layer, the shipped skills, AND every `CLAUDE.md` in the tree**
+   (project roots + ancestors + the workspace), not only the memory stores - during the conversion phase
+   many rules still live in `CLAUDE.md`, and promoting one that is already there would DUPLICATE it.
+   Classify each candidate: already-global/skill -> skip; already in a `CLAUDE.md` -> do NOT just
+   duplicate-avoid, ROUTE it through the CLAUDE.md reconciliation model (delete the lower copy if a
+   broader tier covers it / lift it up and leave only the delta / keep it if it is genuinely local),
+   and across trees CONSOLIDATE the same rule duplicated in many sibling `CLAUDE.md` UP to their common
+   ancestor - the highest-leverage context saving; new + corroborated + nowhere-else -> promote. (The
+   case model + guards live in `bitranox:meta-dream-tree` "CLAUDE.md reconciliation"; every
+   `CLAUDE.md` removal obeys the reachability invariant, is backed up, and is reported.) Keep promoted
+   rules CONCRETE (never water a
+   concrete-but-universal rule down); abstract only when specifics fit nowhere else. Gate the
+   corroboration the same way as the tree dream, and know what the counter measures: >= 2 DISTINCT
+   PROJECTS, one entry per project however often it is recorded. So two projects sighting a slug
+   inside a SINGLE crosstree run DO satisfy it, and a later run that re-derives the same candidate
+   list from the same unchanged fact bodies corroborates nothing. Name the project the fact CAME
+   FROM, never your cwd, or every sighting in the fan-out collapses to one corroborator:
+   `dream_state.py saw-promotable <slug> <project>` records a sighting,
+   `dream_state.py should-promote <slug>` (`promote`/`hold`), `dream_state.py promoted <slug>`
+   to clear after an applied promotion (home: `<plugin>/skills/meta-dream-tree/`; the counters are the
+   `self_improve_signals.py` dwell store, OUT of the dreamed store so a converged re-run is a no-op).
+   **VERIFY a `promote` before acting on it: the counter keys on the RAW PROJECT STRING**, with no
+   validation that it names a real level and no normalisation. Spell a project differently from an
+   earlier run (`rpx01` where that run used the level path) and you create a SECOND key for the SAME
+   project, which the >= 2-distinct-projects gate reads as two corroborators. It does not fail
+   loudly - it returns the word you were hoping for. So open the store
+   (`~/.claude/self-improve-audit/promotion-candidates.json` maps slug -> its list of project keys),
+   confirm those keys are genuinely DIFFERENT projects, and reuse the spelling earlier runs used
+   instead of inventing one. Treat a verdict whose provenance you cannot establish as `hold`:
+   holding costs one more dream, a wrong promote costs a permanently always-loaded line.
+4b. **Misplacement audit (wrong-TREE facts).** ONLY the cross-tree modes can see this: a fact
+   captured while cwd was another repo lands in the WRONG tree's store, and nothing in that tree's
+   own integrity checks knows it is foreign (`meta-dream-tree` sees one tree and structurally
+   cannot notice). Run `reconcile_memory_index.py --check-misplaced <anchor>` per tree (home:
+   `<plugin>/skills/meta-self-improve/`): it reports facts whose body cites ONLY another tree's
+   paths, plus the exact `relocate` command. A path mention is EVIDENCE, not proof - a fact may
+   legitimately cite a neighbour - so JUDGE each candidate against its body before acting; expect
+   to reject some. For a confirmed misfile use the engine's `relocate` verb (NOT a copy: a copy
+   leaves the stale original, which is the bug). Propose-first in `propose`; apply in `auto`.
+   - **Jev shadow on that judgement** (only when `jev_shadow.py status` exits 0; home
+     `<plugin>/skills/meta-self-improve/`, launch via `hooks/run-python.sh`; procedure in its
+     `references/jev-shadow.md`), per tree, each in a fresh `D=$(mktemp -d)` of its own outside any
+     repo (the files hold unredacted fact text). Name this run once, `crosstree-<YYYYMMDD-HHMM>`
+     from the time you start, and use it as `<dream id>` for every tree. `jev_shadow.py items
+     --site crosstree-misplaced --anchor <anchor> --sample 40 --seed <dream id> --out
+     "$D/items.jsonl"` writes up to 40 `--check-misplaced` candidates (all of them when there are
+     fewer; id = slug; exit 1 means no candidates, so skip `run`). The verdict is yours: judge every
+     candidate and write YOUR verdict for each sampled one to `$D/verdicts.jsonl` FIRST (`{"id":
+     "<slug>", "verdict": {"wrong_tree": true}}` for a confirmed misfile, `false` for one you
+     reject; none left out), then `jev_shadow.py run --site crosstree-misplaced --dream <dream id>
+     --items "$D/items.jsonl" --verdicts "$D/verdicts.jsonl"`, then `rm -rf "$D"`. `run` prints
+     counts only. Relocate or reject by your own verdicts, whatever `run` printed or exited with.
+
+5. **Outbound cross-pollination.** When a learning is useful BEYOND its project, do not write into other
+   projects - **promote it to the lowest common ancestor WITHIN ITS TREE** (often the tree's top) and let the native
+   downward cascade deliver it; a project in a DIFFERENT subtree receives it via ITS inbound gather. A
+   direct self-contained copy into one specific other project is the rare exception (marked so a later
+   dream does not re-promote it; scrubbed; never a cross-tree ref).
+6. **Re-dedup after promotion (the required final sweep), then reconcile.** Promotion is what CREATES
+   the duplication: every rule lifted to a common ancestor or global now overlaps the note it came from
+   AND any sibling note across the stores that holds the same lesson. So after promoting, sweep ALL
+   affected stores and normalize each overlapping lower entry to `references [[general]]` + its delta -
+   the general lives ONCE at its altitude, UPWARD-only. This is not optional and not covered by any
+   earlier dedup: those ran before the promotions existed. (Per-note bytes may be a wash; the win is one
+   source of truth instead of the general restated in every project.) Then run
+   `reconcile_memory_index.py --check <altitude-chain>` (the LEVEL dirs) over the affected chains to verify reference
+   integrity (no orphans, no DOWNWARD or cross-tree refs; index size is an advisory warning, not a
+   failure), AND `reconcile_memory_index.py --check-tree <anchor>` per affected tree for
+   `TOTAL tree problems: 0` - promotion to a common ancestor is exactly what can leave a slug pointed
+   at from two levels, which the chain-only `--check` cannot see.
+7. **Skill-fit -> batched change.** FIRST `contrib_queue.py list` (home:
+   `<plugin>/skills/meta-self-improve/`) - contributions earlier sessions judged shippable but never
+   shipped are part of THIS batch. QUEUE each new one as you find it (`contrib_queue.py add --what ...
+   --target skill:<name> --why ...`) so it survives this session, then - as a REQUIRED end-of-dream
+   action, not an optional one - DELIVER them via `bitranox:meta-self-improve` -> "Propagating skill
+   (or hook) improvements upstream" (self-PR in `propose`, commit-or-PR in `auto`, skipped in `off`).
+   Verify each candidate against the CURRENT skill content FIRST - some may already be shipped ->
+   drop, do not re-add. Close each delivered one individually with `contrib_queue.py ship --match
+   <unique text> --note <where it landed>`, and each disproven one with `drop` - `--match` not
+   `--index`, which shifts under the previous close, and never `drain`, which closes the WHOLE
+   queue and so fits only a sweep where every entry shipped. Leave a contribution queued for a
+   later session ONLY when it genuinely needs user input or the mode is `off`, never as the default
+   for a deliverable one (a queued-but-deliverable contribution evaporates until a manual re-prompt).
+7b. **Toolbox pass (contribute; PROPOSE-ONLY).** Run the CONTRIBUTE delta per
+   `bitranox:meta-dream-tree` -> references/dream-core.md "Toolbox pass": list the local toolbox
+   (`uv run ~/.claude/skills/toolbox/tools/toolbox.py list`), judge which tools are broadly useful to
+   OTHER users -> propose contributing upstream via `contrib_queue` + the upstream loop, and surface a
+   chore that recurred across MANY sessions (the cross-session view a single turn misses) -> propose a
+   NEW tool. Detect + propose ONLY; tools stay LOCAL by default; the build runs TDD through
+   `bitranox:meta-self-improve`'s tool endpoint. Skip if the toolbox path does not exist.
+8. **Report.** First run `jev_shadow.py receipt --dream <dream id> --site crosstree-misplaced`
+   (only when step 4b found shadow on). Exit 1 means no tree logged rows for this run: feed a
+   tree's sample per 4b, or, when no tree had a candidate or none could be fed, re-run it with
+   `--skip crosstree-misplaced=<reason>` (`no items on any tree`, or the error) - the receipt's
+   output is what the report states, never a silent gap. Counts: stores scanned, items gathered (lift vs local copy), promotions to global,
+   cross-pollinations, normalizations, any skill change,
+   toolbox proposals (contribute / new tool), and any contribution still queued (only those blocked
+   on user input or `off`-mode - deliverable ones are shipped THIS run, not left pending), and
+   `jev shadow:` followed by one `crosstree-misplaced <anchor> <form>` entry per tree, joined by
+   `; `, each in one of the forms defined in meta-self-improve's `references/jev-shadow.md`,
+   "The report line": the counts `run` printed, `off (<reason>)`, `skipped (<reason>)`, `no items`
+   (when `items` exited 1), or `error <message>`. Your own relocated and rejected counts go on a line of their
+   own, never on this one. Example: `jev shadow: crosstree-misplaced /work 20 items, 20 paired,
+   18 of 20 answers agreed, ...; crosstree-misplaced /lab no items`.
+   **CLAUDE.md edits are applied, so the report is the only place the user sees them:** per RULE,
+   list every file touched, the ANCESTOR covering home the rule now relies on, and the
+   transformation (removed / rewritten in place). A rule left alone because no ancestor covered it
+   is listed too - never silently skipped.
+
+## Convergence
+
+A second global dream on an already-converged set of stores must write nothing: corroboration / gather
+counters live OUT of the dreamed stores; an item already present up the ancestor chain is caught by the
+ancestor-overlap check, not by any content-hash (none exists - a duplicate is always a CANDIDATE the
+dream adjudicates, per dream-core.md's "Dedup semantics"); re-gather is debounced by
+`gather_scan.py`'s own `gathered-topics.tsv`, kept OUT of the store. If a run keeps
+re-moving the same item, stop and treat it as a bug (the circle-breaker), do not loop.
+
+## Boundaries
+
+- The family Boundaries (memory, CLAUDE.md, skills/hooks, pinned entries, structural moves) live in
+  `bitranox:meta-dream-tree` -> references/dream-core.md and apply here unchanged. The CLAUDE.md
+  case model + guards are in `bitranox:meta-dream-tree` -> references/dream-passes.md
+  "CLAUDE.md reconciliation".
+- **Never a cross-tree reference.** Bridge trees only by lift-to-common-ancestor or a self-contained
+  copy. A sideways or downward pointer dangles when the lower / sibling tree is deleted.
+
+## Common mistakes
+
+- Running this every time instead of occasionally - it is the expensive pass; the routine tidy is
+  `bitranox:meta-dream-tree`.
+- A cross-tree or downward reference instead of lift-or-copy.
+- Promoting a model-inferred rule to a tree top on first sight (it needs >= 2-project corroboration).
+- Over-broadening: watering a concrete-but-universal rule into a vague principle, or globalizing a
+  narrowly-applicable one (it then loads in every session for nothing).
+- Ignoring the `privacy` knob and lifting a domain-private note into a tree top that loads everywhere under it.

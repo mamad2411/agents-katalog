@@ -1,0 +1,108 @@
+---
+name: split-and-ship
+description: "Execute an approved split plan, shipping each change group separately as its own branch and PR or as sequential commits on the current branch. Use when the user asks to \"split and ship\", \"ship the split plan\", \"create separate PRs\", or \"split changes into branches\"."
+---
+
+# Split and Ship
+
+Ship an approved split plan so each change group becomes its own reviewable unit, either as a separate branch and PR or as a sequential commit on the current branch.
+
+## Context
+
+A split plan must exist in the conversation. The plan specifies an ordered list of groups, each with a name, file list, and any dependencies on earlier groups.
+
+## Task Tracking
+
+At the start, use `update_plan` to track each phase, restating any remaining steps of a parent workflow alongside them:
+
+1. Choose realization path
+2. Ship the groups
+3. Summarize
+
+## Step 1: Choose Realization Path
+
+Detect the repository state:
+
+- Default branch: `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'`
+- Current branch name, and whether it tracks an upstream
+- Whether a PR already exists for the current branch (`gh pr view`)
+
+Sample the prevailing workflow from recent default-branch history (`git log --first-parent origin/<default-branch> -n 30 --pretty=%s`): judge whether changes mostly land through pull requests (merge-PR commits or `(#N)`-suffixed squash commits) or are committed directly to the default branch.
+
+Output a one-line summary of the detected state as text. Then use `request_user_input` to choose how to ship the groups:
+
+- **Separate branches and PRs** — one branch and PR per group (Step 2)
+- **Commit each group and push** — one commit per group on the current branch, then push (Step 3)
+- **Commit each group only** — one commit per group on the current branch, no push (Step 3)
+
+Recommend the option that fits this repo by listing it first and labeling it `(Recommended)`: a PR-based history recommends separate branches and PRs; a direct-commit history recommends committing each group on the current branch.
+
+If the user declines (chooses the free-form "Other" option or asks to abort), leave the changes staged and do not commit.
+
+## Step 2: Ship as Separate Branches and PRs
+
+Take this step only when the user chose separate branches and PRs.
+
+### Prepare the working tree
+
+Stash all changes including untracked files (`git stash --include-untracked`) without unstaging first.
+
+Verify `git stash list` shows the saved changes and `git status --short` lists nothing the stash should have taken before proceeding. Entries for a submodule, a nested repository, or files a stashed ignore rule had hidden may remain. When either check fails, stop and report where the changes now are.
+
+### Ship each group
+
+Use `update_plan` to track each group, restating any remaining steps of a parent workflow alongside them. Process groups in order.
+
+For each group:
+
+1. **Determine branch**: If the current branch already has a PR and this group's changes align with the PR's purpose, stay on the current branch. Otherwise, use `request_user_input` to confirm the proposed branch name and create it from the appropriate base:
+   - Group that builds on an earlier group: branch from that group's branch (stacked)
+   - Group with no dependencies: branch from the default branch (independent)
+2. **Restore and stage** this group's files from the stash's staged snapshot (`git checkout 'stash^2' -- <files>` restores and stages in one operation). For files with hunks belonging to different groups, restore the file, use `apply_patch` to remove the unwanted hunks, then re-stage it (`git add <file>`): for an independent group, remove every other group's hunks; for a stacked group, remove only later groups' hunks (earlier groups' hunks are already in its base). After committing, reset the working tree (`git checkout -- .`) to clean up before the next group.
+3. **Commit and push**: run the `$commit-rules` skill to load commit message rules, commit the staged changes following them, then `git push`
+4. **Create or update PR**:
+   - Staying on existing branch with a PR: run the `$update-pr` skill
+   - New branch: run the `$create-pr` skill targeting the appropriate base (default branch for independent groups, previous group's branch for stacked groups)
+
+### Clean up and summarize
+
+1. Drop the stash
+2. Check out the last created branch
+3. Output a summary table: group name, branch, PR URL, and base branch. For a group whose PR was not posted, print the handed-over body file path in place of the URL.
+
+Then call `update_plan` to mark this step completed and continue with the next step of the active workflow.
+
+## Step 3: Ship as Commits on the Current Branch
+
+Take this step only when the user chose to commit each group. This path stays on the current branch and creates no branches or PRs.
+
+### Prepare the working tree
+
+Stash all changes including untracked files (`git stash --include-untracked`) without unstaging first.
+
+Verify `git stash list` shows the saved changes and `git status --short` lists nothing the stash should have taken before proceeding. Entries for a submodule, a nested repository, or files a stashed ignore rule had hidden may remain. When either check fails, stop and report where the changes now are.
+
+### Commit each group
+
+Run the `$commit-rules` skill to load commit message rules. Use `update_plan` to track each group, restating any remaining steps of a parent workflow alongside them. Process groups in order.
+
+For each group:
+
+1. **Restore and stage** this group's files from the stash's staged snapshot (`git checkout 'stash^2' -- <files>` restores and stages in one operation). For files with hunks belonging to different groups, restore the file, use `apply_patch` to remove the hunks that belong to later groups, then re-stage it (`git add <file>`).
+2. **Commit** the staged changes with a message following the loaded rules. If a commit hook modifies files, re-stage them before retrying.
+3. Reset the working tree (`git checkout -- .`) to clean up before the next group.
+
+### Push and summarize
+
+1. If the chosen option includes pushing, push the current branch's remote (`git push`)
+2. Drop the stash
+3. Output a summary table: group name and commit subject
+
+Then call `update_plan` to mark this step completed and continue with the next step of the active workflow.
+
+## Rules
+
+- Run the `$commit-rules` skill before every commit; do not commit without loading it first.
+- Never lose uncommitted work. Both paths stash all changes before shipping. Before dropping the stash, restore and report every stashed change that no group shipped, rather than discarding it: re-apply the unstaged changes with `git diff 'stash^2' stash | git apply --3way --allow-empty`, restore untracked files with `git checkout 'stash^3' -- <files>`, then unstage everything with `git reset -q`. Report any hunk that does not apply. If any step fails (commit hook, push, PR creation), stop and report the failure, which groups have been shipped, and that the stash still contains all changes for recovery. A group whose PR was handed over for editing rather than posted is not a failure; record it in the summary and continue.
+- For stacked groups, the PR description should note the dependency chain.
+- Don't reference `.turbo/` content (filenames, acceptance criteria, step numbers, headings) in branch names. `.turbo/` is gitignored, so these references would be opaque to anyone reading without local copies.

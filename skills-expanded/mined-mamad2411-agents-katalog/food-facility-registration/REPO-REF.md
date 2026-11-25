@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ThomasMoreAI-legal-skills-open/food-facility-registration/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Drafts an FDA Food Facility Registration under FSMA and 21 CFR Part 1, Subpart H (21 U.S.C. 350d). Covers facility identity, food product categories, U.S. agent designation for foreign facilities, and

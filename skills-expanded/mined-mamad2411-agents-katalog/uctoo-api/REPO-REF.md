@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/uctoo-api/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 完整的 uctoo 后端 API 集成技能。将自然语言请求转换为 uctoo-backend API 调用，支持用户管理、产品管理、订单管理、登录认证等功能。使用时用户提及 \"uctoo\"、\"后端API\"、\"用户管理\"、\"产品\"、\"订单\"、\"登录\"、\"认证\" 等关键词时，你应该直接使用 http_request 工具发起实际的 API 请求。"

@@ -1,0 +1,49 @@
+---
+name: terradart-add-beta-resource
+description: Add a beta-only curated factory to terradart_google_beta (filtered-fixture extraction, google_beta override, wrap with provider pin). Use when a later provider pin introduces a new beta-only google_* type — the current pin's beta-only catalog is filled.
+---
+# Add a beta-only curated resource
+
+Read [`CONTEXT.md`](../../../CONTEXT.md) for vocabulary. The beta lane's coordinates live in [`tool/providers.yaml`](../../../tool/providers.yaml); its philosophy (filled at the current pin, filtered fixture, no backlog/wave lane) is in `AGENTS.md`'s Current-phase section. Do **not** hand-edit files under `packages/terradart_google_beta/lib/src/` or the `source_beta/` fixture — regenerate both.
+
+The beta-only catalog at the current provider pin is **filled**. Add a resource only when a later pin introduces a new beta-only type (issue / maintainer ask) — do not sweep overlapping GA names into this package. GA resources belong in `terradart_google` — check the GA schema fixture first; a resource present there is NOT beta-only.
+
+## Workflow
+
+**Task progress:**
+
+- [ ] 1. **Confirm beta-only.** The type must be absent from the GA fixture (`packages/terradart_codegen/test/fixtures/wrap/source/schema.json`) and present in the google-beta provider. If it exists in GA, stop — curate it in `terradart_google` instead ([`terradart-add-curated-resource`](../terradart-add-curated-resource/SKILL.md)).
+- [ ] 2. **Re-extract the fixture** with the new type added via union — the current set comes from the fixture itself (`schema.json` keys are the single source of truth; no name list is maintained anywhere else):
+  ```bash
+  dart tool/extract_schema_subset.dart \
+    --provider=hashicorp/google-beta --version=<provider_version.txt> \
+    --resources-from=packages/terradart_codegen/test/fixtures/wrap/source_beta/schema.json \
+    --resources=<new_type> \
+    --out=packages/terradart_codegen/test/fixtures/wrap/source_beta
+  ```
+  Requires `terraform` on PATH and terraform-registry network access (no cloud credentials). If either is missing in your environment, stop and report — never hand-write schema JSON.
+- [ ] 3. **Write the override** at `packages/terradart_codegen/lib/src/codegen/wrapper_overrides/google_beta/yaml/<type>.yaml` — scaffold it with `dart run bin/terradart.dart wrap-init --provider hashicorp/google-beta ...` (from `packages/terradart_codegen`), which fills `deriveNestedTypes`, `deriveOutputGetters`, `deriveEnums` and `deriveExactlyOne`; every beta override must keep all four (`yaml_loader_test.dart`). Same axes and rules as GA overrides (Generation Policy binds you: thin overrides, human decisions only, IAM binding/policy `curatedDoc` authoritative-semantics rule). Enums and sealed `exactly_one_of` slots derive from the resource's Magic Modules YAML — do not hand-write them in `prelude`.
+- [ ] 4. **Barrels manifest:** if the override's `outputDir` introduces a new barrel, add it to `barrels_google_beta.yaml` with a `doc:` (fail-closed — wrap errors without it).
+- [ ] 5. **Regenerate** through the lane runner, which first re-syncs the lane's Magic Modules YAML (network: api.github.com + raw.githubusercontent.com; `GITHUB_TOKEN` / `GH_TOKEN` raises the rate limit) because the fixture's resource set changed, then wraps with the `--resource-provider google-beta` pin and `--mm-hints`:
+  ```bash
+  dart tool/wrap_lanes.dart --lane google-beta --gate regen
+  ```
+  It writes `source_beta/mm/<type>.yaml` (when the type's generated Go source names an `mmv1` file) and `source_beta/mm_sources.yaml` — commit both, never hand-edit them. The migration manifest regenerates with the wrappers; CI's beta `wrap_check` lane and `tool/agent_verify.sh` fail on a stale manifest or a stale MM sync.
+- [ ] 6. **Gated example check:** if applying the type needs an entitlement, an organization or real external inputs, bills while it exists, or leaves behind something that cannot be deleted (or a name that stays reserved), say so in the example README's `## Before you apply` section (see `AGENTS.md` **Example verification**).
+- [ ] 7. **Example coverage:** extend [`examples/beta_leftover_quickstart`](../../../examples/beta_leftover_quickstart/) (or a focused beta example) so the factory appears in a synth, or record a reasoned `tool/example_debt.yaml` line (apply-time reasons — cost, entitlements, an organization — are not acceptable; see `AGENTS.md` **Example verification**). `dart tool/example_synth_gates.dart` reads **both** GA and beta catalogs — an uncovered new factory fails CI.
+- [ ] 8. **Package test:** extend `packages/terradart_google_beta/test/synth_test.dart` when the new factory has synth-visible behavior worth pinning (provider pin, sealed slots, sensitive fields).
+- [ ] 9. **CHANGELOG:** add the factory to `packages/terradart_google_beta/CHANGELOG.md` under the next version heading.
+
+## Verification
+
+Run the FULL gate from the repo root before opening or updating a PR (it includes the beta `wrap --check` and the beta package suite; CI's `wrap_check` job re-runs the beta lane on every PR):
+
+```bash
+tool/agent_verify.sh
+```
+
+Check exit codes bare — never pipe into tail/grep and trust `&&`.
+
+## PR conventions
+
+Single-purpose PR, Conventional Commit `feat(beta): curate <resource>`. Commit messages carry the demand source (issue link) and the example decision. English, no AI footers.

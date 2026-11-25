@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/midudev/autoskills (path: packages/autoskills/skills-registry/clerk-backend-api/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Clerk Backend REST API explorer and executor. Browse tags, inspect endpoint schemas, and execute authenticated requests. Use when listing users, managing organizations, or calling any Clerk API endpoi

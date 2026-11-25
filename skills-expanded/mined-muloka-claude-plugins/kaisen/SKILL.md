@@ -1,0 +1,1054 @@
+---
+name: kaisen
+description: |
+  Orchestrate parallel subagent execution across isolated jj workspaces with
+  wave-based scheduling and spec-informed peer review, then reunify results
+  into a single change. Use when the user asks to "fan out tasks", "run tasks
+  in parallel with isolation", "dispatch subagents for independent tasks",
+  or when subagent-driven-development routes here via CLAUDE.md override in a jj repo.
+---
+
+**CRITICAL: This is a jj (Jujutsu) plugin. You MUST NOT use ANY raw git commands — not even for context discovery. Always use jj equivalents (jj log, jj diff, jj status, etc.). The only exceptions are `jj git` subcommands and `gh` CLI.**
+
+# Kaisen: Parallel Workspace Orchestration
+
+Orchestrate parallel subagent execution across isolated jj workspaces with
+wave-based scheduling and spec-informed peer review, then reunify results
+into a single change. The jj-native replacement for superpowers' subagent-driven-development.
+
+**Announce at start:** "I'm using the kaisen skill to orchestrate parallel workspace execution."
+
+## Phase Overview
+
+```
+PLAN ─── validate independence, compute waves, confirm with user
+  │
+  ╔══════════════════════════════════════════════╗
+  ║  Per wave:                                   ║
+  ║                                              ║
+  ║  FAN OUT ── dispatch all wave tasks          ║
+  ║     │       in parallel workspaces           ║
+  ║     ▼                                        ║
+  ║  COLLECT ── gather results + change IDs      ║
+  ║     │       classify status                  ║
+  ║     │       workspaces kept alive            ║
+  ║     ▼                                        ║
+  ║  REVIEW ── test suite (spec gate)            ║
+  ║     │      spec-informed peer review         ║
+  ║     │      (batched, ~1 agent per 300 lines) ║
+  ║     │      fix loop on critical findings     ║
+  ║     │      cleanup workspaces on pass        ║
+  ║     ▼                                        ║
+  ║  FAN IN ── squash into @, smallest first     ║
+  ║            (only review-approved tasks)      ║
+  ╚══════════════════════════════════════════════╝
+  │
+  VERIFY ── final wave only: run the full test suite in @
+  │         (the run's ONLY combined-result gate)
+  │
+  Report plan coverage
+```
+
+After the final wave's FAN IN, the orchestrator runs the project's whole test
+suite once in `@` — the combined-result gate. In a **multi-wave** run the last
+wave's peer review already saw most of the integrated tree (prior waves were
+squashed into `@` before it dispatched). In a **single-wave** run — the common
+case for a handful of independent tasks — nothing was pre-squashed and every
+review was scoped to one task's change, so this suite run in `@` is the ONLY
+thing that ever exercises the tasks *together*. It is cheap and mandatory either
+way; a red combined suite blocks `run: complete`.
+
+## Per-Wave Execution
+
+For each wave (computed in PLAN):
+
+1. Execute **FAN OUT** — dispatch all wave tasks in parallel
+2. Execute **COLLECT** — gather results, classify, keep workspaces alive
+3. Execute **REVIEW** — test gate + spec-informed peer review, fix loop if needed, cleanup on pass
+4. Execute **FAN IN** — squash review-approved tasks into @
+
+After all waves complete, report plan coverage.
+
+If only one wave (no overlaps), this is equivalent to v1 behavior plus review.
+
+## Prerequisites
+
+Before starting, verify:
+
+1. **jj repo** — confirm this is a jj repository (`jj root` succeeds)
+2. **jj workspaces available** — confirm `jj workspace list` succeeds (orchestrator creates workspaces directly, hooks are not involved)
+3. **Clean working copy** — current change should have a description and be a sensible parent for the parallel work
+4. **Resume check** — look for a ledger from an interrupted run (see Durable
+   Progress and Resume). If one exists, resolve resume-vs-fresh with the user
+   before planning.
+
+If any prerequisite fails, explain what's missing and how to fix it.
+
+## Input
+
+The user provides one of:
+
+**A) Plan document reference** — path to a plan file with numbered tasks
+**B) Ad-hoc task list** — inline list of independent task descriptions
+
+If given a plan document, read it and extract all tasks with their full text.
+
+## Artifacts Directory
+
+All run artifacts live in one shared directory outside every working copy, so
+no workspace snapshot ever picks them up and nothing bulky is pasted through
+the orchestrator's context:
+
+```bash
+../../scripts/kaisen-artifacts   # prints /tmp/jj-workspaces/<repo>/artifacts, creating it
+```
+
+(Script paths are relative to this skill file's directory.)
+
+Kaisen can be orchestrated from any jj workspace, not just the default —
+`@` and `jj root` resolve to the workspace you run it from, so the whole run
+targets that workspace's working copy. This also isolates artifacts for free:
+`jj root` returns the current workspace's directory, so runs orchestrated
+from different workspaces get separate artifacts dirs (and separate ledgers).
+
+| File | Written by | Read by |
+|------|-----------|---------|
+| `task-N-brief.md` | PLAN (task-brief script, or Write for ad-hoc tasks) | implementers, fix subagents, reviewers |
+| `task-N-report.md` | implementer; fix subagents append | reviewers; orchestrator only on demand |
+| `prior-waves.md` | orchestrator, appended after each wave's FAN IN | Wave 2+ implementers |
+| `progress.md` | orchestrator, at every phase transition | orchestrator (resume after compaction) |
+
+**Rule: hand artifacts to subagents as file paths, never as pasted text.**
+Everything pasted into a dispatch prompt — and everything a subagent prints
+back — stays resident in the orchestrator's context for the rest of the run
+and is re-read on every later turn. A real superpowers session hit a 42k-char
+dispatch prompt that was 99% pasted history; file handoffs are how kaisen
+avoids that failure mode.
+
+## Durable Progress and Resume
+
+Conversation memory does not survive compaction. An orchestrator that loses
+its place re-dispatches entire completed waves — the most expensive failure
+mode superpowers observed in real sessions. The ledger at
+`<artifacts>/progress.md` is the recovery map: the change IDs it names exist
+in jj's DAG even when your context no longer remembers creating them.
+
+Append-only line format (latest line for a task wins):
+
+```
+# kaisen ledger — plan: docs/plans/foo-plan.md — parent: xyzabc12 — start-op: 4279dc009e64
+wave-plan: wave 1: tasks 1,2,4 | wave 2: tasks 3,5
+task 1: dispatched workspace=workspace-task-1
+task 1: done change=abc12345 files=src/a.ts,src/b.ts
+task 1: review-passed
+task 1: squashed
+wave 1: fanned-in
+run: complete
+```
+
+Event lines: `dispatched workspace=…`, `done change=… files=…`,
+`done-with-concerns change=… files=…`, `blocked reason=…`, `needs-context`,
+`workspace-leak`, `review-passed`, `review-failed findings=<n>c,<n>i`,
+`fixing from=<commit-id>`, `squashed`, `wave <W>: no-test-surface`,
+`wave <W>: fanned-in`, `run: complete`.
+
+Write ledger lines in the same message as the phase's other bookkeeping —
+never as a separate turn.
+
+### Aborting a Run (atomic rollback)
+
+The ledger header's `start-op` is the run's whole-repo checkpoint. If the
+user aborts a run (or fix loops fail beyond repair), the entire run — every
+workspace add, squash, and abandon — can be undone atomically:
+
+```
+jj op restore <start-op-id>
+```
+
+This restores the repo to the exact state before PLAN ran. The artifacts
+directory lives outside the repo, so briefs, reports, and the ledger
+survive — append `run: aborted (restored to <start-op-id>)` to the ledger
+afterward so the resume check doesn't misread the run as interrupted.
+Only use this for full aborts: it also reverts any changes the run
+legitimately merged.
+
+### Resume Check (at skill start, before PLAN)
+
+Check for a ledger from an interrupted run:
+
+```bash
+cat "$(../../scripts/kaisen-artifacts)/progress.md" 2>/dev/null
+```
+
+If it exists and does not end with `run: complete`, a previous run was
+interrupted. Report what the ledger shows and ask the user: resume or start
+fresh. On resume:
+
+- Tasks marked `squashed` are DONE — never re-dispatch them
+- Tasks marked `done`/`review-passed` but not `squashed` — their change IDs
+  are in the ledger; resume at REVIEW or FAN IN using those IDs
+- Tasks marked `dispatched` with no later line — the agent died mid-flight;
+  check `jj log -r 'description(substring:"Task N:")'` and the workspace before
+  re-dispatching
+- Trust the ledger and `jj log` over your own recollection
+
+If it exists and **does** end with `run: complete`, the previous run finished.
+There is nothing to resume — but its artifacts are still sitting there, so
+this is a start-fresh, not a no-op.
+
+### Starting Fresh — clear the artifacts directory
+
+The artifacts directory is **per-repo, not per-run**: every run in this repo
+reuses it. Any file a new run does not happen to overwrite survives from the
+old one, and nothing distinguishes the two. A three-task run following a
+five-task run leaves `task-4-report.md` and `task-5-report.md` in place; hand
+a reviewer that path and it reads the previous run's work as if it were this
+one's. So does a reviewer whose implementer died before writing its report.
+
+Clear them before PLAN:
+
+```bash
+ART=$(../../scripts/kaisen-artifacts)
+find "$ART" -maxdepth 1 \( -name 'task-*-brief.md' -o -name 'task-*-report.md' \
+  -o -name 'prior-waves.md' \) -delete
+```
+
+`find`, not `rm -f task-*.md`: an unmatched glob is an error in zsh (`no
+matches found`) and fails before `rm` runs, so the glob form breaks on the
+first run in a repo, when there is nothing to clear yet. `find` is a no-op
+when nothing matches, in every shell.
+
+PLAN then writes the ledger header and the briefs this run needs.
+
+**On resume, clear nothing.** The ledger and the reports are the recovery
+map — deleting them is deleting the reason you resumed.
+
+## Model Selection
+
+Parallel dispatch multiplies model cost: each wave fans the chosen model out
+across N workspaces, then reviewers, then fix loops. Use the least capable
+model that can handle each role, and specify it explicitly on every Agent
+call — an omitted `model` silently inherits the session's model, often the
+most capable and most expensive.
+
+| Role | Model |
+|------|-------|
+| Implementer — brief contains the complete code to write (transcription + tests) | `haiku` |
+| Implementer — prose spec, 1-2 files | `sonnet` |
+| Implementer — multi-file integration or design judgment | `opus` |
+| Reviewer — small mechanical wave | `sonnet` |
+| Reviewer — subtle/risky changes, or the final wave (covers the combined result) | `opus` |
+| Fix subagent | same model as the task's implementer |
+
+**Turn count beats token price.** Cost scales with how many turns a subagent
+takes, and the cheapest models routinely take 2-3× the turns on multi-step
+work — costing more overall. `sonnet` is the floor for reviewers and for
+implementers working from prose descriptions.
+
+## Phase 1: PLAN — Validate Independence and Compute Waves
+
+Before fanning out, validate that tasks can run in parallel and compute execution waves:
+
+1. Extract the file paths each task will touch (from the plan's `Files:` sections or by analyzing task descriptions)
+2. Build a file → task mapping
+3. Build an undirected overlap graph: edge between tasks that share files
+4. Compute waves using greedy graph coloring:
+   - For each task, assign to the earliest wave where it has no overlap with already-assigned tasks in that wave
+
+```
+Example:
+Tasks: 1(a.ts, b.ts), 2(c.ts), 3(a.ts, d.ts), 4(e.ts), 5(d.ts, e.ts)
+
+Overlap graph:
+  1 ── 3  (a.ts)
+  3 ── 5  (d.ts)
+  4 ── 5  (e.ts)
+
+Wave assignment:
+  Wave 1: Task 1, Task 2, Task 4  ← no edges between them
+  Wave 2: Task 3, Task 5          ← no edges between them
+```
+
+### Pre-Flight Plan Scan
+
+While extracting tasks, scan the plan once for conflicts:
+
+- tasks that contradict each other or the plan's Global Constraints
+- anything the plan explicitly mandates that review would flag as a defect
+  (a test that asserts nothing, verbatim duplication of a logic block)
+
+Batch anything found into the same interaction as the wave-plan
+confirmation — each finding beside the plan text that mandates it, asking
+which governs. If the scan is clean, proceed without comment. The review
+loop remains the net for conflicts that only emerge from implementation.
+
+### User Interaction
+
+**No overlaps (most common case):**
+
+```
+All N tasks are independent — executing as a single wave.
+```
+
+No confirmation needed. Proceed immediately.
+
+**Overlaps detected:**
+
+```
+File overlaps detected — proposing W waves:
+
+  Wave 1: Task 1 (a.ts, b.ts), Task 2 (c.ts), Task 4 (e.ts)
+  Wave 2: Task 3 (a.ts, d.ts), Task 5 (d.ts, e.ts)
+
+  Overlaps: 1↔3 (a.ts), 3↔5 (d.ts), 4↔5 (e.ts)
+
+Proceed with this wave plan? (or restructure)
+```
+
+Wait for user confirmation before proceeding.
+
+### Parallelism Threshold
+
+After computing waves, calculate the parallelism ratio: tasks in the largest wave / total tasks. If less than 40% of tasks can run in parallel (e.g., 2 of 9 tasks in the largest wave), warn the user:
+
+```
+⚠️ Low parallelism: only N/M tasks can run in parallel (largest wave: W tasks).
+File overlaps make most tasks sequential. The overhead of workspace setup,
+spec review, and squash ceremony may exceed the time saved.
+
+Options:
+  a) Proceed with kaisen anyway
+  b) Switch to single-agent sequential execution (superpowers:executing-plans)
+```
+
+Wait for user decision.
+
+5. **Recommend** 3-5 concurrent workspaces per wave for most tasks. Note the recommendation but do not block dispatch if more are requested.
+
+### Prepare Artifacts
+
+Once waves are confirmed:
+
+1. Resolve the artifacts directory: `../../scripts/kaisen-artifacts`
+2. Write one brief per task:
+   - **Plan document input:** `../../scripts/kaisen-task-brief <plan-file> <N>`
+     for each task — the script extracts the task's full text without it
+     passing through your context again, and prepends the plan's preamble
+     (Global Constraints, shared definitions) so the brief stands alone
+   - **Ad-hoc input:** Write `<artifacts>/task-N-brief.md` yourself containing
+     the full task description
+3. Record the integrity baseline: run `jj diff -r @ --stat` and
+   `jj log -r @ --no-graph -T description`, and keep both results. Together
+   they are the recorded baseline every Workspace Integrity Check
+   compares against — `@` may legitimately be non-empty at PLAN, and
+   comparing against zero would report the run's own starting content as a
+   leak.
+4. Initialize the ledger — write the header and wave plan to
+   `<artifacts>/progress.md`:
+
+   ```
+   # kaisen ledger — plan: <plan path or "ad-hoc"> — parent: <change-id of @-> — start-op: <jj op log -n1 --no-graph -T 'id.short()'>
+   wave-plan: wave 1: tasks … | wave 2: tasks …
+   ```
+
+## Phase 2: FAN OUT 🪭 — Create Workspaces and Dispatch
+
+For each task in the current wave, the orchestrator creates a jj workspace and dispatches a subagent to work in it.
+
+### Step 1: Create workspaces
+
+Before dispatching any agents, create all workspaces for the wave:
+
+```bash
+# For each task in the wave:
+DIR="/tmp/jj-workspaces/$(basename $(jj root))/<task-name>"
+mkdir -p "$(dirname "$DIR")"
+# Wave 1: pin to @- (the parent revision).
+base_rev=$(jj log -r '@-' --no-graph -T 'commit_id')
+# Wave 2+: pin to @ instead — prior waves' merged content lives in the
+# accumulating working-copy change, and agents must build on it:
+#   base_rev=$(jj log -r '@' --no-graph -T 'commit_id')
+jj workspace add "$DIR" --name "workspace-<task-name>" --revision "$base_rev"
+```
+
+**The pin revision is wave-aware.** Wave 1 workspaces are pinned to `@-`, so
+each agent's change is an independent sibling of `@` (Pattern B). Wave 2+
+workspaces MUST be pinned to `@`: FAN IN squashes each wave into `@`, so `@`
+is where prior waves' content lives — a Wave 2 workspace pinned to `@-` would
+be missing the files earlier waves created, and the dispatch prompt's claim
+that prior-wave changes "are already in your working copy" would be false.
+Wave 2+ agent changes are therefore children of `@`; the FAN IN squash
+(`jj squash --from <change-id> --into @`) is identical either way.
+
+**Name collisions:** workspace names live in one shared per-repo registry
+across all workspaces. If orchestrating from a non-default workspace, or if
+`jj workspace add` reports the name is taken (e.g. a concurrent run), prefix
+the names with the orchestrating workspace's name —
+`workspace-<orchestrator-ws>-<task-name>` — and use that name consistently
+wherever `workspace-<task-name>` appears in this skill.
+
+### Step 2: Dispatch agents
+
+For each task, dispatch a subagent **without** `isolation: "worktree"`:
+
+```
+Agent tool:
+  description: "Task N: <short description>"
+  model: <per Model Selection — always specify explicitly>
+  prompt: |
+    ## Working Directory
+    Your workspace is <workspace-path>, and all of your work happens there.
+    Your shell does not stay in it: every Bash call starts back in the
+    session's directory, which is the orchestrator's workspace of this same
+    repository. A `cd` run on its own is gone by the next call, and a bare
+    `jj describe` or `jj log -r @` then acts on the orchestrator's change
+    instead of yours. So:
+      - Begin every Bash call with `cd <workspace-path> && `, for example
+          cd <workspace-path> && jj status
+      - Give Read, Edit and Write absolute paths under <workspace-path>.
+    Check once before starting:
+      cd <workspace-path> && jj workspace list
+    and confirm workspace-<task-name> is the one marked as current.
+
+    ## Your Task
+
+    Read your task brief first — it is your requirements, with the exact
+    values to use verbatim:
+      <artifacts>/task-N-brief.md
+
+    <one line: where this task fits in the overall plan>
+
+    <if wave > 1: "Changes from prior waves are already in your working copy.
+    Read <artifacts>/prior-waves.md before starting — build on that work,
+    don't duplicate or conflict with it.">
+
+    <only if needed: interfaces or decisions the brief cannot know, e.g.
+    exact signatures produced by an earlier wave>
+
+    CRITICAL: You MUST NOT use ANY raw git commands — not even for context
+    discovery. Always use jj equivalents (jj log, jj diff, jj status, etc.).
+    The only exceptions are `jj git` subcommands and `gh` CLI.
+
+    CRITICAL: Use only non-interactive jj forms — interactive commands hang
+    you. Always pass -m to describe/commit/squash. Never run bare
+    `jj describe`, `jj resolve`, `jj diffedit`, `jj split` without paths,
+    `jj absorb -i` or `jj absorb --tool`, `jj arrange` (interactive-only —
+    it has no batch form), or any command that opens an editor or TUI. To
+    resolve a conflict, edit the conflict markers in the file, then verify
+    with `jj resolve --list`.
+
+    ## Self-Review Before Reporting
+
+    Before reporting back, review your work with fresh eyes:
+
+    - Completeness: did I implement everything in the spec?
+    - Quality: are names clear, code maintainable?
+    - Discipline: did I avoid overbuilding (YAGNI)?
+    - Testing: do tests verify behavior, not just mock it?
+    - Formatting: run the project's formatter/linter (e.g., cargo fmt, prettier, ruff) and fix any issues
+
+    If you find issues, fix them now before reporting.
+
+    ## When You're in Over Your Head
+
+    It is always OK to stop and say "this is too hard for me."
+    Bad work is worse than no work.
+
+    STOP and escalate when:
+    - The task requires architectural decisions with multiple valid approaches
+    - You need to understand code beyond what was provided
+    - You feel uncertain about your approach
+    - The task involves restructuring the plan didn't anticipate
+
+    ## Reporting
+
+    Write your full report to <artifacts>/task-N-report.md:
+    - What you implemented (or attempted, if blocked)
+    - What you tested and the test results
+    - Files changed, with one line on what changed in each
+    - Self-review findings (if any)
+    - Any issues or concerns
+
+    Before reporting back, describe your change so it can be recovered if
+    you die before reporting, then capture your change ID and workspace name.
+    These run in your workspace like every other command:
+    cd <workspace-path> && jj describe -m "Task N: <short description>"
+    cd <workspace-path> && jj log -r @ --no-graph -T 'change_id'
+    cd <workspace-path> && basename "$PWD"
+
+    Then report back ONLY the following, under 15 lines — the detail lives
+    in the report file:
+    - Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+    - Change ID: <the change_id from above>
+    - Workspace directory: <the basename from above>
+    - Files changed: paths only
+    - One-line test summary (e.g. "14/14 passing")
+    - Concerns, if any
+    - Report file: <artifacts>/task-N-report.md
+
+    If BLOCKED or NEEDS_CONTEXT, put the specifics in your final message
+    itself — the orchestrator acts on it directly.
+```
+
+(`<artifacts>` is the absolute path printed by `../../scripts/kaisen-artifacts` —
+substitute the real path when composing each prompt.)
+
+**Dispatch rules:**
+- Create all workspaces first, then dispatch all agents simultaneously (parallel, not sequential)
+- Agents are dispatched **without** `isolation: "worktree"` — the orchestrator manages jj workspaces directly
+- Each agent's prompt begins with the `cd` + verify instructions for its workspace path
+- Point each subagent at its brief file — never paste task text, plan
+  excerpts, or prior-wave summaries into the prompt
+- Include relevant project context (CLAUDE.md rules, key file contents)
+- If the plan uses superpowers skills (TDD, code review), include those references in the subagent prompt
+
+**Prior wave context (Wave 2+ only):**
+
+After each wave's FAN IN, append a concise summary of what that wave merged
+to `<artifacts>/prior-waves.md` (see Phase 5). Wave 2+ dispatch prompts
+reference that file by path — the summary is written once per wave and read
+by every later agent, instead of being pasted into each prompt.
+
+Keep entries concise — files, functions/types added or changed, and key APIs.
+Never full diffs.
+
+**Progress tracking:**
+- Append one ledger line per dispatched task:
+  `task N: dispatched workspace=workspace-<task-name>`
+- After dispatch, report how many subagents are running:
+
+```
+🪭 Fan-out: Wave W — 3 tasks dispatched to isolated workspaces
+  🔥 Task 1: "Add validation middleware"
+  🔥 Task 2: "Migrate auth store"
+  🔥 Task 3: "Update API types"
+
+Waiting for all subagents to return...
+```
+
+## Phase 3: COLLECT — Classify Results
+
+As subagents return, classify each result:
+
+| Status | Action |
+|--------|--------|
+| DONE | Verify workspace integrity, then ready for fan-in |
+| DONE_WITH_CONCERNS | Verify workspace integrity, read concerns, decide if fan-in safe |
+| NEEDS_CONTEXT | Provide context, re-dispatch |
+| BLOCKED | Assess the blocker: missing context → provide it and re-dispatch same model; needs more reasoning → re-dispatch with a more capable model; task too large or plan wrong → escalate to user. Otherwise note failure, track workspace for sweep |
+
+Track which tasks succeeded and which failed. **Capture the change ID and workspace directory name from each subagent's report** — change IDs are needed for fan-in squash, workspace names for cleanup.
+
+As each result is classified, append its ledger line: `task N: done
+change=<id> files=<paths>` (or `done-with-concerns …`, `blocked reason=…`,
+`needs-context`). If the integrity check flags a leak, append
+`task N: workspace-leak`.
+
+### Workspace Integrity Check (Primary Gate)
+
+**This is the first validation step after agents return.** Without `isolation: "worktree"`, agents reach their workspace only by prefixing every call with `cd <workspace-path> &&`, because a subagent's shell returns to the session's directory between calls. A call without the prefix lands in the orchestrator's workspace `@`: edits leak into it, and a `jj describe` overwrites its description. The integrity check catches both before review wastes cycles: Step 1 compares `@`'s diff and its description against the recorded baseline.
+
+**Step 1:** Check the orchestrator's workspace `@` for leaked changes:
+
+```bash
+jj diff -r @ --stat
+jj log -r @ --no-graph -T description
+```
+
+Compare against the **recorded baseline**, never against zero. `@` is not
+required to be empty — it routinely holds the plan document, or work in
+progress the run builds on. PLAN records both outputs as the run's
+baseline; every FAN IN re-records them, so from Wave 2 on the baseline includes
+all prior waves' merged content. If either differs from the current baseline,
+at least one agent ran a command without its `cd <workspace-path> &&` prefix.
+
+**Step 2:** For each agent that reported DONE or DONE_WITH_CONCERNS, verify its change landed in the correct workspace:
+
+```bash
+# Check the workspace's working copy matches the reported change ID
+jj log -r 'workspace-<task-name>@' --no-graph -T 'change_id'
+```
+
+Compare against the change ID the agent reported.
+
+**Step 3:** If mismatch detected, flag as `WORKSPACE_LEAK`:
+1. Report: "Workspace integrity failure — Task N's edits landed in the orchestrator's workspace instead of workspace-<task-name>."
+2. Determine if changes are in `@` (recoverable — skip squash for this task) or lost (treat as BLOCKED)
+3. Diagnose with `jj op log` — each operation is attributed to the workspace
+   it was created from (jj ≥ 0.40), which identifies exactly which agent
+   produced the leaked operation
+4. Report to user before proceeding to review
+
+> **Safety net context:** This check replaces the former Pattern C edge case handler. Pattern C was caused by dual isolation mechanisms (`isolation: "worktree"` + jj workspace hook). With orchestrator-managed workspaces (v3), the root cause is eliminated. This check catches `cd` failures, which are the remaining risk vector.
+
+### Recovery: Missing Change IDs
+
+If a subagent crashes or times out before reporting its change ID, the change still exists in jj's DAG — it's just not referenced. Recover it by searching for the task description:
+
+```bash
+jj log -r 'description(substring:"Task N: <short description>")' --no-graph -T 'change_id'
+```
+
+`substring:` is load-bearing, not stylistic. A bare `description("…")` is an
+**exact** match and jj stores descriptions with a trailing newline, so the bare
+form matches nothing even when the text is copied correctly. It returns empty
+rather than erroring — which reads as "the subagent never created a change" and
+sends a recoverable task to BLOCKED.
+
+If multiple matches, use the most recent. If no matches, the subagent likely never created any changes — treat as BLOCKED.
+
+### Empty Changes Are a Valid Outcome
+
+A task can correctly produce no change — an audit that finds nothing, a
+check that confirms the code is already right. An empty change is a result,
+not a failure: review it like any other (the claim "there was nothing to do"
+is exactly as verifiable as a diff, just against the source rather than
+against a patch), and fan it in normally. `jj squash` abandons an empty
+source silently, which is the correct no-op. Distinguish this from a subagent
+that produced nothing because it failed — the report and the ledger say which.
+
+### Divergent Changes (`change_id??`)
+
+A change ID printed with a `??` suffix means the same change has two
+commits — divergence. In kaisen this happens if anything rewrites a
+change that a live task workspace still holds as its `@` (e.g. the
+orchestrator running `jj edit`/`jj squash` on a task's change before that
+workspace is forgotten, or two fix subagents amending the same change).
+
+- Detect: `jj log -r 'change_id(<change-id>)'` lists both commits. A **bare**
+  `jj log -r '<change-id>'` does not — it fails with `Error: Change ID <id> is
+  divergent`, because the ID no longer resolves to one revision. jj's own hint
+  names the selectors: `change_id(<id>)` for both sides, `<id>/0` and `<id>/1`
+  for one side each.
+- Fix, non-destructive — **prefer this when both sides are agents' work**:
+  `jj metaedit --update-change-id -r <COMMIT-id>` gives that side a fresh
+  change ID. Both commits survive, each addressable by an unambiguous change
+  ID, and the divergence is gone. Descendants of the edited side are rebased
+  onto it, so nothing is stranded.
+- Fix, destructive — only when one side is genuinely unwanted: inspect both,
+  then `jj abandon <unwanted-COMMIT-id>` (commit ID, not change ID — the
+  change ID is ambiguous while divergent). This discards that side's work;
+  in kaisen the two sides are usually two subagents' output, so reach for
+  `metaedit` first and abandon only after reading both.
+- Prevent: never rewrite a task's change while its workspace is still
+  registered; fix subagents work only in their own task's workspace
+
+### Workspace Lifecycle
+
+The orchestrator owns the full workspace lifecycle — no hooks are involved:
+
+- **FAN OUT:** Orchestrator creates workspaces via `jj workspace add`
+- **COLLECT:** Workspaces kept alive for integrity verification
+- **REVIEW:** Workspaces kept alive so fix subagents can be dispatched to existing workspace paths
+- **POST-REVIEW:** Orchestrator cleans up workspaces for tasks that passed review
+- **FAN IN:** Uses change IDs only (workspaces already cleaned up)
+
+Workspaces for failed/blocked tasks are handled by the wave-end sweep (see Phase 4).
+
+## Phase 4: REVIEW — Test and Peer Review
+
+Runs once per wave, after COLLECT and before FAN IN. Combines spec compliance and code quality review in a single pass, eliminating the need for a separate end-of-run VERIFY phase.
+
+### Step 1: Run Tests (Spec Gate)
+
+Run the project's test suite against the wave's changes. This is the primary spec compliance gate — if tests pass, the implementation satisfies testable requirements.
+
+Run it **inside each task workspace** — that is where the wave's changes are
+materialized as files. The orchestrator's working copy does not contain
+them until FAN IN (revsets make changes visible to jj commands, but do not
+materialize files on disk):
+
+```bash
+# For each task in the wave:
+(cd /tmp/jj-workspaces/<repo>/<task-name> && <the project's test command>)
+```
+
+If tests fail, dispatch fix subagents to the relevant workspace(s) and re-run. Escalate to user after 2 failed attempts.
+
+**If the wave has no test surface** — its changes are documentation, prose, or
+config that no test in the project reads — say so and move on. Record
+`wave <W>: no-test-surface` in the ledger, tell the reviewers no automated
+check has validated this wave, and rely on review. Do not invent a test, and
+do not run an unrelated suite and report its pass as this wave's gate: a suite
+that cannot fail on these changes has verified nothing, and reporting it as a
+pass is worse than reporting no gate at all.
+
+### Step 2: Spec-Informed Peer Review
+
+After tests pass, dispatch batched peer review agents as `general-purpose` agents carrying the wave-reviewer template (see that file for why not `change-reviewer`). Reviewers catch what tests can't: naming, patterns, edge cases, missing requirements that aren't tested, cross-module integration issues.
+
+**Batching:** ~1 reviewer agent per 300 lines changed in the wave. For a wave with 600 lines across 3 tasks, dispatch 2 reviewers splitting the files between them. For a wave with < 300 lines total, 1 reviewer.
+
+**Prompt:** Each reviewer gets the brief files of all tasks in the wave as ground truth — this eliminates hallucinations about intent (reviewers verify against the spec rather than guessing about history). Reviewers check both spec compliance and code quality in one pass.
+
+Use the template at `./wave-reviewer.md` to construct each reviewer prompt. Fill in:
+- `[WAVE_NUMBER]` — the current wave number
+- `[BRIEF_FILES]` — paths to the brief files of every task in the wave
+  (`<artifacts>/task-N-brief.md` — paths, not pasted text)
+- `[REPORT_FILES]` — paths to the implementer report files
+  (`<artifacts>/task-N-report.md`)
+- `[FILES_TO_REVIEW]` — the files assigned to this reviewer
+- `[CHANGE_IDS]` — the jj change IDs from the implementers
+
+When filling the template, never pre-judge findings: no "do not flag X", no
+pre-rated severities ("suggestion at most"), and no open-ended extras
+("check all uses") without a concrete task-specific reason. If you expect a
+finding would be a false positive, let the reviewer raise it and adjudicate
+it in the fix loop.
+
+Dispatch all reviewers for the wave in parallel.
+
+### Handling Review Results
+
+Reviewers report findings as JSON with severity levels:
+
+| Severity | Action |
+|----------|--------|
+| critical | Must fix before fan-in |
+| important | Must fix before fan-in |
+| suggestion | Note for user, don't block |
+| cannot-verify | Orchestrator resolves it — you hold the plan and cross-task context the reviewer lacks. A confirmed gap = review-failed for that task |
+
+If no critical/important findings: all tasks approved for fan-in.
+
+A finding labeled plan-mandated — or any finding that conflicts with what
+the plan's text requires — goes to the user: present the finding beside the
+plan text and ask which governs. Don't dismiss it because the plan mandates
+it, and don't dispatch a fix that contradicts the plan without asking.
+
+Append a ledger line per task as verdicts land: `task N: review-passed` or
+`task N: review-failed findings=<n>c,<n>i` (append `review-passed` after a
+successful fix loop).
+
+### Fix Loop
+
+When reviewers find critical or important issues:
+
+1. Dispatch ONE fix subagent per task carrying that task's complete findings
+   list — never one subagent per finding (per-finding fixers each rebuild
+   context and re-run suites). Dispatch **without** `isolation: "worktree"`
+   (the workspace already exists — `isolation` would create a new one), on
+   the same model as the task's implementer (see Model Selection). Give it
+   the implementer template's Working Directory block for the existing
+   workspace path (its shell resets every call, exactly as the implementer's
+   did), and name the test files
+   covering the change — a small fix doesn't need the whole suite. Before
+   dispatching, record the change's current commit ID —
+   `jj log -r <change-id> --no-graph -T 'commit_id.short()'` — to the ledger
+   as `task N: fixing from=<commit-id>`. This is the only moment the fix's
+   starting point is unambiguous; step 3 needs it
+2. Fix subagent uses the same implementer protocol (DONE / BLOCKED /
+   NEEDS_CONTEXT) and appends its fix report to the task's existing
+   `<artifacts>/task-N-report.md`. The report must contain the covering
+   tests, the command run, and the output — confirm all three are present
+   before re-dispatching the reviewer. If no test covers the change (a docs
+   or config fix), the report must say that explicitly and state what was
+   verified instead; a fix subagent must never fabricate a test command to
+   satisfy this gate
+3. Re-dispatch reviewer scoped to the fix delta. Fix subagents amend in
+   place, so the delta is exactly `jj diff --from <the commit-id recorded in
+   step 1> --to <change-id>`. Name that command in the re-review prompt as
+   the reviewer's primary view (with the original findings for context) —
+   re-reviews judge the amendment, not the whole task again. Do not derive
+   the delta from `jj evolog --limit N`: that counts evolution steps, not
+   "the fix", and a `jj describe` or a second snapshot silently shifts the
+   window — a truncated delta is indistinguishable from a small one
+4. Re-run the Workspace Integrity Check (Phase 3) against the recorded baseline.
+   Fix subagents reach their workspace by the same per-call `cd` prefix as implementers, and
+   are exactly as able to miss it — a check that runs only after COLLECT does
+   not cover an agent dispatched after COLLECT
+5. Repeat until no critical/important findings remain
+6. Escalate to user after 2 failed fix attempts — present the findings and ask how to proceed
+
+Fix-induced file overlap changes for later waves are ignored. jj handles any resulting conflicts during fan-in.
+
+### After All Tasks in the Wave Pass
+
+1. Clean up workspaces for passed tasks:
+   ```bash
+   jj workspace forget workspace-<task-name>
+   rm -rf /tmp/jj-workspaces/<repo>/<task-name>
+   ```
+   If `rm -rf` is denied (sandbox or permission policy), leaving the
+   directory is safe: after `jj workspace forget` it is inert, and /tmp
+   self-cleans. Report the leftover path and move on — don't retry or
+   escalate over it.
+2. Proceed to FAN IN
+
+### Wave-End Workspace Sweep
+
+After FAN IN completes (or after COLLECT if the wave is fully blocked), sweep all workspaces created this wave to prevent leaking directories in `/tmp`:
+
+| Task status | Action |
+|---|---|
+| DONE and squashed | Already cleaned in POST-REVIEW (no-op) |
+| BLOCKED or CRASHED | Default: preserve workspace for inspection. Report: "Workspace preserved: `/tmp/jj-workspaces/<repo>/<task-name>`" |
+| WORKSPACE_LEAK | Clean up (content is already in `@`): `jj workspace forget workspace-<task-name>` + `rm -rf` |
+
+Partial success is progress — don't silently discard failed workspaces. The user can inspect and manually clean up later.
+
+### Skipping Review
+
+When `--skip-review` is set, the review phase is skipped. Workspaces are cleaned up immediately after COLLECT, and all DONE/DONE_WITH_CONCERNS tasks proceed directly to FAN IN. The wave-end sweep still runs after FAN IN.
+
+## Phase 5: FAN IN 🔥 — Reunify Changes
+
+**Only review-approved tasks are squashed.** Tasks that failed review and couldn't be fixed are preserved in their workspaces — same handling as BLOCKED tasks.
+
+jj workspaces share a single DAG. With orchestrator-managed workspaces pinned to
+the wave's base revision (`@-` for Wave 1, `@` for Wave 2+), subagents should
+consistently produce **Pattern B** (independent branches off the shared base). The
+dual-topology detection below is retained as a safety net.
+
+**Pattern A: Auto-chained** — Subagents see each other's commits and chain linearly.
+The orchestrator's `@` already sits on top of all changes. Content is merged.
+
+> **Safety net (v3):** With orchestrator-managed workspaces pinned to the wave's
+> base revision, Pattern A is not expected to occur. It is retained for
+> defense-in-depth. If Pattern A is detected, it is handled correctly — no squash needed.
+
+**Pattern B: Independent branches (expected)** — Each subagent created a change off the
+wave's shared base (Wave 1: siblings of `@`; Wave 2+: children of `@`). Changes
+need to be squashed into `@`.
+
+Both patterns produce correct content. Detect which occurred, then handle accordingly.
+
+### Step 1: Detect topology
+
+```bash
+jj log -r '<change-id-1> | <change-id-2> | <change-id-3>' --no-graph -T 'change_id ++ " " ++ parents.map(|p| p.change_id()).join(",") ++ "\n"'
+```
+
+Check: do all change IDs share the same parent? If yes → Pattern B (independent branches).
+If changes are ancestors of each other → Pattern A (auto-chained).
+
+Simpler heuristic: check if the orchestrator's `@` is already a descendant of all change IDs:
+
+```bash
+# If this returns all change IDs, they're already in @'s ancestry — Pattern A
+jj log -r 'ancestors(@) & (<change-id-1> | <change-id-2> | <change-id-3>)' --no-graph -T 'change_id ++ "\n"'
+```
+
+### Step 2a: Pattern A — Auto-chained (content already merged)
+
+If all changes are already in `@`'s ancestry, fan-in is free. No squash needed.
+
+1. **Verify content:** Spot-check that expected files exist in the working copy
+2. **Optionally reshape the DAG** with `jj parallelize` if a clean fan-out/fan-in
+   diamond shape is preferred for history readability:
+
+```bash
+jj parallelize <change-id-1>::<change-id-N>
+```
+
+This retroactively converts the chain into siblings off the shared parent.
+Only do this if the user cares about history topology — content is identical either way.
+
+### Step 2a-reject: Pattern A — Selective rejection
+
+If some tasks in the auto-chain failed review, remove them from the chain:
+
+```bash
+jj abandon <rejected-change-id>   # descendants rebase onto its parent automatically
+jj log -r 'conflicts()'           # verify no conflicts in rebased descendants
+```
+
+`jj abandon` removes the change and rebases all descendants onto its parent — as if the rejected task never existed. If the rebased descendants conflict (because they touched lines the rejected task introduced), resolve before proceeding.
+
+For partial acceptance (keep some changes from a rejected task), split by
+file path, then abandon the unwanted half (`jj diffedit` also works but is
+interactive — human-only, never for agents):
+
+```bash
+jj split -r <change-id> paths/to/keep
+jj abandon <reject-half-change-id>
+```
+
+Note: `jj revert -r <change-id>` (formerly `jj backout`) is the alternative when history is immutable (already pushed). For local workspace chains, `abandon` is idiomatic.
+
+### Step 2b: Pattern B — Independent branches (squash needed)
+
+If changes are independent siblings, squash each into `@`.
+
+**Merge order:** Sort by files touched (ascending). Smallest diff first — fewer files
+touched means lower conflict surface area.
+
+If the user specified `--merge-order`, use their explicit ordering instead.
+
+```bash
+# Count files touched per task
+jj diff -r <change-id> --stat | tail -1
+```
+
+**Before fan-in, verify you are back in the orchestrator's own workspace (the one kaisen was started from — not a task workspace):**
+
+```bash
+jj workspace list  # the workspace you started kaisen from should be the active one
+```
+
+**For each completed task, in order:**
+
+1. **Squash into the orchestrator's workspace:**
+
+```bash
+JJ_EDITOR=true jj squash --from <change-id> --into @
+```
+
+2. **Check for conflicts:**
+
+```bash
+jj log -r 'conflicts()' --no-graph -T 'change_id.short() ++ "\n"'
+```
+
+Empty output means clean. Use this rather than `jj resolve --list` as the
+check: `resolve --list` exits 2 when there are *no* conflicts, so any scripted
+use reads the clean case as a failure. `jj resolve --list` is still the right
+way to show a human which files conflict, once you know some do.
+
+If conflicts exist:
+- Report them clearly with file paths
+- Ask user: resolve now, skip this task, or abandon the merge
+- If the user wants it resolved: edit the conflict markers in each file to
+  the intended content, then verify with `jj resolve --list` (should be
+  empty). For take-one-side resolutions, `jj resolve --tool :ours <path>`
+  (or `:theirs`) is non-interactive and safe. Never run `jj resolve` bare
+  or with only a file argument — that launches an interactive merge tool
+
+3. **Append the ledger line:** `task N: squashed`
+
+### Why change IDs, not workspace revsets
+
+Each subagent reports its change ID before returning. We use these IDs instead of
+`workspace-<name>@` revsets because workspaces are cleaned up after review but
+before fan-in. Change IDs are stable regardless of workspace lifecycle.
+
+**For each failed task:**
+- Do NOT squash or forget — preserve workspace for inspection
+- Report the failure and workspace name
+
+### After the Wave's FAN IN
+
+1. Append `wave W: fanned-in` to the ledger
+2. Re-record the integrity baseline: run PLAN step 3's two commands again
+   and keep the new results. The squash just changed `@`'s content and its
+   description, so the next wave's Integrity Check must compare against this
+   state, not PLAN's.
+3. Append the wave's summary to `<artifacts>/prior-waves.md` (for Wave 2+
+   dispatch prompts):
+
+   ```markdown
+   ## Wave W (merged into @)
+   - Task N: <file>: added <functions/types>; <file>: updated <what changed>
+   ```
+
+   Build it from the implementers' short returns; run
+   `jj diff -r <change-id> --stat` if you need to refresh which files a task
+   touched. Never paste diffs.
+
+4. **If this was the final (or only) wave — run the combined-result gate.**
+   The fully-integrated tree now lives in the orchestrator's `@` (every merged
+   task materialized on disk). Run the project's *entire* test suite there — the
+   same discovery the project's CI uses, not just the wave's touched suites:
+
+   ```bash
+   # example — use the project's real command; this mirrors a CI glob runner
+   for t in $(find <test-roots> -path '<suite-glob>' | sort); do bash "$t"; done
+   ```
+
+   This is the run's ONLY check of the tasks *together*: the per-task test gates
+   (REVIEW step 1) ran each suite in isolation inside its own workspace,
+   pre-fan-in, and never exercised the squashed combination. A failure here
+   blocks `run: complete` exactly like a wave test-gate failure — the merged
+   content is in `@`, so fix it there (or dispatch a fix subagent to work in
+   `@`), re-run the full suite, and only then proceed to Phase 6. A red combined
+   suite is never "done".
+
+(For Pattern A waves, where no squash is needed, the same appends apply once
+content is verified; the combined-result gate still runs for the final wave.)
+
+## Phase 6: Report — Plan Coverage
+
+After all waves complete **and the final wave's combined-result gate is green**
+(the full-suite run in `@` from "After the Wave's FAN IN"), report plan coverage.
+No separate peer-review *pass* is dispatched here — but mind the boundary it
+leaves: the wave reviewers verified each task against its brief's stated values
+as ground truth, so they **cannot catch an error in the plan itself** (a wrong
+constant, a stale count, a misstated requirement) — they will *confirm* it. Kaisen
+executes the plan faithfully, mistakes and all. The only nets against plan-level
+errors are this combined-result gate and the upstream plan/spec review — never
+the wave reviewers.
+
+Append `run: complete` to the ledger — this is what the resume check keys on.
+Do not append it while the combined-result gate is red.
+
+**If plan-based:**
+
+```
+🪭🔥 Kaisen complete (N/M tasks across W waves)
+
+### Waves
+- Wave 1: Tasks 1, 2, 4 — all passed spec review, merged
+- Wave 2: Tasks 3, 5 — Task 3 passed, Task 5 blocked
+
+### Plan Coverage
+- X/Y plan requirements satisfied by merged tasks
+- Z requirements blocked by failed tasks
+
+### Failed
+- Task 5: <failure reason>
+  Workspace: workspace-task-5 (preserved, inspect with /workspace-list)
+```
+
+**If ad-hoc:**
+
+```
+🪭🔥 Kaisen complete (N/M tasks across W waves)
+
+### Waves
+- Wave 1: "Add validation", "Update types" — merged
+- Wave 2: "Migrate store" — blocked
+
+### Failed
+- "Migrate store" — <failure reason>
+  Workspace preserved for inspection
+```
+
+## Conflict Handling Reference
+
+jj's conflict model is first-class — conflicts are recorded in the tree, not blocking.
+
+- Conflicts after a squash don't prevent further squashes
+- But compounding conflicts become harder to reason about
+- Smallest-diff-first ordering minimizes conflict cascading
+- Use `jj resolve --list` to see conflicted files
+- Resolve by editing the conflict markers in the file to the intended
+  content — or `jj resolve --tool :ours <path>` / `:theirs` for
+  take-one-side cases — then re-check `jj resolve --list` (interactive
+  `jj resolve` is human-only — it hangs agents)
+
+## DAG Topology Reference
+
+jj provides tools to reshape history after the fact:
+
+- **`jj parallelize A::D`** — converts a chain A→B→C→D into siblings off A's parent
+- **`jj new A B C`** — creates a merge commit with multiple parents
+- **`jj rebase -r C -A B`** — moves changes between branches
+- **`jj absorb`** — redistributes changes from a merge commit back into parent branches
+
+The chain-first approach is strictly more flexible — you can always reshape later
+but can't un-parallelize without squashing. Content is what matters; topology is presentation.
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--merge-order auto` | auto | Merge order within each wave: `auto` (smallest diff first) or explicit task list |
+| `--skip-review` | false | Skip test + peer review in REVIEW phase (cleanup after COLLECT, straight to FAN IN) |
+
+## Key Principles
+
+- **Delegate dispatch** — don't reimplement superpowers' agent patterns
+- **jj-specific bookends only** — workspace create, squash, forget, conflict handling
+- **Partial success is progress** — merge what succeeded, preserve what failed
+- **Smallest diff first** — minimize conflict surface during fan-in
+- **Permission-gateway underneath** — subagents run autonomously when installed

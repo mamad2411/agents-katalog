@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/ruanyifeng-weekly/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 搜索阮一峰科技爱好者周刊 GitHub issues 中的工具和资源。当用户想找工具、开源项目、网站或资源时使用，尤其是提到「阮一峰」「周刊」「ruanyifeng」或在中文语境下询问工具推荐时触发。

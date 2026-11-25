@@ -1,0 +1,151 @@
+---
+name: skill-creator-plus
+description: Create or review a reusable skill (SKILL.md) that packages a workflow, and decide whether the request should be a skill instead of a prompt, instruction, agent, or hook. Use when creating a new skill, extracting a workflow from a conversation, updating an existing skill, reviewing SKILL.md quality, or fixing weak skill triggering. Triggers on "create skill", "/create-skill", "new skill", "review skill", "fix skill trigger", "SKILL.md", "スキル作成".
+argument-hint: "作りたい skill の目的、trigger、入れたい resources"
+user-invocable: true
+license: Apache-2.0
+metadata:
+  author: yamapan
+---
+
+# Skill Creator+
+
+Design and review reusable skills that trigger reliably and stay lean.
+
+## Decision Flow
+
+Start by deciding whether the user really needs a skill.
+
+| Need                                                                        | Use              |
+| --------------------------------------------------------------------------- | ---------------- |
+| Reusable multi-step workflow with bundled scripts, references, or templates | **Skill**        |
+| Single focused slash task with parameterized input                          | **Prompt**       |
+| Always-on or file-scoped guidance                                           | **Instruction**  |
+| Persona, tool restrictions, delegation, or handoffs                         | **Custom Agent** |
+| Deterministic enforcement or lifecycle automation                           | **Hook**         |
+
+If the answer is not **Skill**, stop and create the right primitive instead.
+
+> 上表は「skill にすべきか」の即時ゲート。primitive 選択の詳細 SSOT は **agentic-workflow-guide** skill。
+
+→ **[references/customization-primitives.md](references/customization-primitives.md)** for the full selection guide
+
+## When to Use
+
+- **Create skill**, **/create-skill**, **new skill**, **review skill**, **fix skill trigger**, **SKILL.md**, **workflow**, **スキル作成**
+- Creating a new skill from scratch
+- Extracting a repeated workflow from a conversation, incident, or checklist
+- Updating or refactoring an existing skill
+- Reviewing existing SKILL.md files
+- Deciding whether a customization should be a skill before authoring it
+
+## Start Here
+
+1. Extract the workflow you want to package.
+2. Clarify only the missing dimensions: target outcome, personal vs workspace scope, checklist vs full workflow.
+3. Draft the smallest useful SKILL.md, then move detail into references.
+
+## License And Validation Gate
+
+Classify the target before creating or changing it: **self-authored**,
+**third-party**, or **derivative**. A self-authored target uses independent
+content; copying this Skill's prose, code, templates, or notices makes it a
+derivative and requires preserved upstream evidence.
+
+For a new self-authored Skill, propose `CC BY-NC-SA 4.0` as a candidate, show
+the exact display attribution, and get confirmation. Do not silently copy this
+Skill's Apache-2.0 license into the target. Preserve an existing or upstream
+license when updating or importing.
+
+Use the [target license profiles](references/target-license-profiles.json) and
+[validation lanes](references/validation-lanes.md). Baseline review is always
+required; Python helpers and packaging are conditional.
+
+### Gotchas
+
+- `init_skill.py --path` takes the **existing parent directory**; the target becomes `<path>/<skill_name>`. Passing the skill directory itself nests a duplicate.
+- Three artifacts are generated: `SKILL.md`, `LICENSE.txt`, `skill-license.json`.
+- `quick_validate.py` compares `LICENSE.txt` **content exactly** against the rendered template and requires `metadata.author` to equal `authorAttribution.value` character for character. Never hand-edit `LICENSE.txt`; regenerate it with the tool and copy the result over.
+- **A passing gate proves consistency, not correctness.** The manifest hashes whatever the template rendered, so a broken template yields a broken notice that still validates. Read the rendered `LICENSE.txt` once after scaffolding.
+- Classification turns on whether the **source** is independently authored, not on the act of copying. Reusing your own material stays `self-authored`; `PROVENANCE.md` and `upstreamAttributions` are required only for `third-party` and `derivative`.
+- A Skill with no `skill-license.json` is treated as legacy and skips the content comparison, so repairing a shared template does not invalidate older Skills.
+- When importing a Skill into another repository, regenerate `LICENSE.txt` and `skill-license.json` with **that** repository's toolchain. The manifest pins the template hash, so a copied pair fails validation there.
+
+## Core Principles
+
+| Principle                  | Description                                                          |
+| -------------------------- | -------------------------------------------------------------------- |
+| **Concise is Key**         | Context window is shared. Only add what Claude doesn't already know. |
+| **Discovery First**        | The description is the routing surface. Triggers must be explicit.   |
+| **Degrees of Freedom**     | Match specificity to task fragility (high/medium/low freedom)        |
+| **Progressive Disclosure** | Split into 3 levels: Metadata → Body → References                    |
+| **Integrate Before Add**   | Update, merge, or replace existing guidance before appending more.   |
+| **Right Primitive**        | A good skill is not a fallback for prompt/agent/instruction design.  |
+| **Scope Before File**      | Decide workspace vs profile before creating anything.                |
+| **Self-Contained**         | The skill must carry its own knowledge. Bundle into references/scripts; do not just link to workspace files (instructions, memory, ledgers) that die when copied elsewhere. Abstract env-specific values (paths, names) into args/config. |
+
+> **Default assumption:** Claude is already very smart. Challenge each piece: "Does this justify its token cost?"
+
+Before adding a new section, ask whether it can replace an existing rule, move to `references/`, or be dropped as session-specific.
+
+## Skill Structure
+
+Keep routing and decisions in `SKILL.md`; put deterministic helpers in `scripts/`, on-demand detail in `references/`, and reusable outputs in `assets/`. References load on demand and are often never read, so any constraint that gates an irreversible action — allowlists, forbidden values, safety limits — stays inline in `SKILL.md` even when it reads like detail, with only its rationale in `references/`. See [Skill Structure](references/skill-structure.md), including excluded files.
+
+## Creation Process
+
+Use [Creation Process](references/creation-process.md): choose primitive and scope, extract the reusable workflow, plan resources, implement, validate, and test real trigger prompts.
+
+## Clarify if Needed
+
+- What outcome should this skill produce?
+- Should it live in workspace scope or personal scope?
+- Is a short checklist enough, or does it need a full multi-step workflow?
+
+### Refactor Order
+
+When improving an existing skill, use this order:
+
+1. Delete stale or low-value guidance
+2. Merge duplicate rules
+3. Move long detail to `references/`
+4. Add genuinely missing guidance last
+
+## Frontmatter and Triggering
+
+Use the smallest viable frontmatter: `name`, `description`, and only behavior-changing optional fields. `name` must match the folder and `description` must include trigger conditions.
+
+Frontmatter details and silent failures: [references/common-pitfalls.md](references/common-pitfalls.md)
+
+## SKILL.md Guidelines
+
+Keep `SKILL.md` lean: <150 lines is good, >300 lines must split to references. Start `When to Use` with user phrases, keep essential workflow only, and push long examples / schemas / recipes to references.
+
+Detailed review criteria: [references/skill-review-checklist.md](references/skill-review-checklist.md)
+
+## Iteration Loop
+
+1. Draft the skill and save it.
+2. Identify the weakest or most ambiguous parts.
+3. Tighten those parts, then summarize what the skill produces and example prompts to try.
+
+## Review Checklist
+
+Use [references/skill-review-checklist.md](references/skill-review-checklist.md). For bloat review, use [references/skill-bloat-review.md](references/skill-bloat-review.md).
+
+## Key References
+
+Use [primitive choice](references/customization-primitives.md), [structure](references/skill-structure.md), [creation](references/creation-process.md), [review checklist](references/skill-review-checklist.md), [bloat review](references/skill-bloat-review.md), and [common pitfalls](references/common-pitfalls.md). The [structure gallery](references/skill-structure-gallery.md), [workflows](references/workflows.md), and [output patterns](references/output-patterns.md) are optional examples.
+
+## Done Criteria
+
+- [ ] Request is confirmed to be a skill, not another primitive
+- [ ] Scope is decided before file creation
+- [ ] SKILL.md created and under 150 lines
+- [ ] Frontmatter has name + description with trigger conditions
+- [ ] Manually used skills have `argument-hint`
+- [ ] `user-invocable` is set intentionally
+- [ ] Optional fields are added only when they change behavior
+- [ ] Details moved to references/ (Progressive Disclosure)
+- [ ] Self-Contained: no hard reference to other skills / workspace files; env-specific values (paths, customer names, tenant IDs) abstracted
+- [ ] Review checklist passed

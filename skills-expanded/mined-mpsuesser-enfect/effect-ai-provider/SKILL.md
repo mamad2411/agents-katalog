@@ -1,0 +1,827 @@
+---
+name: effect-ai-provider
+description: Configure and compose AI provider layers using @effect/ai packages. Covers Anthropic, OpenAI, OpenAI-Compat, and OpenRouter providers with config management, model abstraction, ExecutionPlan fallback, and runtime overrides for language model integration.
+---
+
+# Effect AI Provider
+
+Configure AI provider layers for language model integration using Effect's AI ecosystem.
+
+Baseline: `effect@4.1.0`; inspect the matching tag in the Effect source reference.
+Keep `effect` and every `@effect/*` package on the same version. Core AI APIs and
+provider clients, models, and generated schemas carry `@stability unstable`:
+minor releases may include breaking changes, even with `effect/ai` import paths.
+
+For TypeSafe/Jev, OpenRouter, OpenAI, and Cloudflare **decision-model** layers, use
+`effect-ai-decision-model`; its provider contracts differ from language models.
+
+## When to Use This Skill
+
+Use this skill when:
+
+- Integrating AI language models (Anthropic, OpenAI, OpenRouter, etc.) into Effect applications
+- Setting up multi-provider AI architectures with ExecutionPlan fallback
+- Implementing stateful chat conversations with context history
+- Managing AI provider configuration and API keys securely
+- Composing AI capabilities with other Effect services
+
+## Import Patterns
+
+**CRITICAL**: Always use namespace imports. Use `{ }` destructured imports for the `effect` package barrel exports.
+
+```typescript
+// From the "effect" barrel — destructured
+import {
+	Config,
+	Effect,
+	ExecutionPlan,
+	Layer,
+	Ref,
+	Schema,
+	Context,
+	Stream
+} from 'effect';
+
+// From "effect/ai" — namespace imports
+import {
+	AiError,
+	Chat,
+	LanguageModel,
+	Model,
+	Prompt,
+	Tool,
+	Toolkit
+} from 'effect/ai';
+// Or individually:
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import * as Chat from 'effect/ai/Chat';
+import * as Model from 'effect/ai/Model';
+import * as Prompt from 'effect/ai/Prompt';
+import * as AiError from 'effect/ai/AiError';
+
+// Anthropic
+import { AnthropicClient, AnthropicLanguageModel } from '@effect/ai-anthropic';
+
+// OpenAI
+import {
+	OpenAiClient,
+	OpenAiClientGenerated,
+	OpenAiLanguageModel,
+	OpenAiSchema,
+	OpenAiTool
+} from '@effect/ai-openai';
+
+// OpenRouter
+import {
+	OpenRouterClient,
+	OpenRouterLanguageModel
+} from '@effect/ai-openrouter';
+
+// HTTP client (required by all providers)
+import { FetchHttpClient } from 'effect/http';
+```
+
+## Provider Layer Pattern
+
+Every provider exposes two constructors:
+
+- **`model(modelId, config?)`** — returns a `Model.Model` (preferred for `ExecutionPlan` and `Effect.provide`)
+- **`layer({ model, config? })`** — returns a raw `Layer<LanguageModel.LanguageModel, never, Client>`
+
+```haskell
+-- Model constructor (preferred)
+ProviderLanguageModel.model :: (modelId, config?) → Model.Model<providerName, LanguageModel, Client>
+
+-- Layer constructor
+ProviderLanguageModel.layer :: { model, config? } → Layer LanguageModel Client
+
+-- Client layer
+ProviderClient.layerConfig :: { apiKey } → Layer Client HttpClient
+```
+
+## Anthropic Provider
+
+```typescript
+import { AnthropicClient, AnthropicLanguageModel } from '@effect/ai-anthropic';
+import { Config, Layer } from 'effect';
+import { FetchHttpClient } from 'effect/http';
+
+// Client layer (reusable across models)
+const AnthropicClientLayer = AnthropicClient.layerConfig({
+	apiKey: Config.Redacted('ANTHROPIC_API_KEY')
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
+// Option A: model() — returns Model.Model (preferred)
+const claudeModel = AnthropicLanguageModel.model('claude-opus-4-6');
+// Use with: Effect.provide(claudeModel) or in ExecutionPlan
+
+// Option B: layer() — returns raw Layer<LanguageModel>
+const AnthropicLive = AnthropicLanguageModel.layer({
+	model: 'claude-sonnet-4-20250514'
+}).pipe(Layer.provide(AnthropicClientLayer));
+```
+
+Anthropic capability detection preserves the lower output limits and structured-output support of known legacy Claude models. Unknown and newly released model identifiers default to modern capabilities: native structured outputs and `128_000` output tokens. Override capability detection with `structuredOutputs: false` (or `true`) when a model or compatible endpoint differs from that default; set `max_tokens` separately when the provider's output limit differs.
+
+The service's optional `supportsSystemMessagesInHistory: Effect<boolean>` reports
+effective support in the **request context**, respecting
+`midConversationSystemMessages` overrides. Unknown models default to modern
+support; known older models retain their restrictions. Set the override to false
+for gateways that require top-level instructions. Absence of this capability on
+another provider means unknown, not false.
+
+All system instructions are preserved. Inline system blocks have placement
+restrictions; when the prompt cannot satisfy them, the adapter sends all system
+instructions top-level in order rather than dropping later instructions.
+Anthropic cache metadata is `anthropic.cacheControl` on Prompt parts/messages,
+not `cache_control`. Assistant-message breakpoints use the last eligible
+non-thinking block; explicit part-level options take precedence.
+
+Provider fallback content blocks are exposed as `response-metadata` with
+`metadata.anthropic.fallback` and the fallback `modelId`, for both generation and
+streaming. Anthropic usage now reports total input including uncached input,
+cache reads, and cache writes; use shared `usage.inputTokens.cacheRead` /
+`cacheWrite` rather than counting cache tokens twice.
+
+Anthropic-compatible gateways may omit `usage.inference_geo`. Malformed gateway
+4xx error bodies are classified by HTTP status (including 429 retry delays), not
+as `InvalidOutputError`. Direct `client.betaMessagesPost` calls expose
+`HttpClientError` for those responses; the language-model adapter maps them to
+`AiError` reasons.
+
+```typescript
+const compatibleClaude = AnthropicLanguageModel.model('future-claude-model', {
+	structuredOutputs: false,
+	max_tokens: 8192
+});
+```
+
+## OpenAI Provider
+
+```typescript
+import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai';
+import { Config, Layer } from 'effect';
+import { FetchHttpClient } from 'effect/http';
+
+const OpenAiClientLayer = OpenAiClient.layerConfig({
+	apiKey: Config.Redacted('OPENAI_API_KEY')
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
+// model() constructor (preferred)
+const gptModel = OpenAiLanguageModel.model('gpt-5.2');
+
+// layer() constructor
+const OpenAiLive = OpenAiLanguageModel.layer({
+	model: 'gpt-4.1'
+}).pipe(Layer.provide(OpenAiClientLayer));
+```
+
+Public OpenAI modules:
+
+- `OpenAiSchema` — typed Responses API request/response and SSE event schemas
+- `OpenAiClient` — handwritten service with `createResponse`, `createResponseStream`, and `createEmbedding`
+- `OpenAiClientGenerated` — generated direct endpoint access when you need raw OpenAI API coverage
+- `OpenAiTool` — OpenAI provider-defined tools for native capabilities
+
+`OpenAiSchema.ResponseStreamEvent` accepts both flat OpenAI error events and compatible-provider events with details nested under `error`, normalizing both to the same decoded error event shape.
+
+For WebSocket turns, `previous_response_not_found` triggers a retry with the full
+prompt. An open socket is retained; custom adapters can inspect
+`ProviderOptions.incrementalFallback` to recognize the full-prompt retry.
+
+### Reasoning detection and cache configuration
+
+Unknown OpenAI model IDs default to reasoning-capable. Non-reasoning families
+include `gpt-3*`, `gpt-4*`, `chatgpt-*`, `chat-latest`, and versioned
+`gpt-<version>-chat*`; fine-tunes follow their base model. Set
+`reasoningModel: false` for compatible endpoints that should not get developer
+roles or automatic `reasoning.encrypted_content` inclusion. Explicit `include`
+entries are preserved and merged without duplicates; opting out of the automatic
+include does not remove an explicitly requested entry.
+
+Config supports `safety_identifier`, `prompt_cache_retention`, and
+`prompt_cache_options.comparison_response_id`. Prompt cache breakpoints now work
+on text, images, and files as well as system messages. Cache diagnostics appear
+in finish metadata; inspect them instead of assuming a breakpoint caused a hit.
+The service-tier schema also accepts `ultrafast`; availability remains a provider
+contract, not a guarantee from the type union.
+
+```typescript
+const client = yield* OpenAiClient.OpenAiClient;
+const [body] = yield* client.createResponse({
+	model: 'gpt-4.1',
+	input: 'Say hello'
+});
+```
+
+### OpenAI Provider-Defined Tools
+
+Use `OpenAiTool` for OpenAI-native tools instead of hand-rolling provider-defined descriptors:
+
+```typescript
+const NativeTools = Toolkit.make(
+	OpenAiTool.WebSearch({}),
+	OpenAiTool.FileSearch({ vector_store_ids: ['vs_123'] }),
+	OpenAiTool.Mcp({
+		server_label: 'docs',
+		server_url: 'https://mcp.example.com/mcp'
+	})
+);
+```
+
+Available hosted/provider tools include `WebSearch`, `CodeInterpreter`, `FileSearch`, `ImageGeneration`, and `Mcp` (`customName: "OpenAiMcp"`). MCP tool approval requests/results use this canonical `OpenAiMcp` name and the normal Effect AI approval request/response parts. Handler-required local tools such as `Shell`, `LocalShell`, and `ApplyPatch` run in your environment; provide handlers only behind explicit sandboxing, authorization, and audit policy.
+
+Web-search calls may omit `action`. Narrow that optional field before reading
+action details; incomplete calls are preserved as failed tool results. A `find`
+action may also omit `pattern` or `url`; check each field before using it.
+
+## OpenAI-Compatible Providers
+
+Use `apiUrl` with `@effect/ai-openai` for APIs compatible with OpenAI Responses.
+For Chat Completions-compatible endpoints use `@effect/ai-openai-compat`
+(`OpenAiClient`, `OpenAiLanguageModel`), which preserves non-null text/tool
+argument fragments when other streamed delta fields are null. Both adapters
+preserve raw JSON Schema dynamic-tool arguments.
+
+OpenAI-Compat uses the **`'openai-compat'`** key for Prompt options, Response
+metadata, and error metadata, not `openai`. Migrate persisted metadata consumers
+and manual Prompt construction accordingly. Assistant replay preserves reasoning,
+text, and tool calls; reasoning metadata's `reasoningField` selects `reasoning`
+or `reasoning_content` (default), while tool-call `extraContent` preserves provider
+thought signatures. Keep these fields when folding response parts into history.
+Responses-only `store` and `conversation` options have been removed from the
+Chat Completions config surface.
+
+```typescript
+import { OpenAiClient, OpenAiConfig } from '@effect/ai-openai';
+import { Config, Layer } from 'effect';
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
+
+const CompatibleClientLayer = OpenAiClient.layerConfig({
+	apiKey: Config.Redacted('OPENAI_COMPAT_API_KEY'),
+	apiUrl: Config.succeed('https://my-provider.example.com/v1')
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
+// Keep withClientTransform for middleware/proxy/tracing/header transforms.
+const withAuditHeader = OpenAiConfig.withClientTransform(
+	HttpClient.mapRequest(HttpClientRequest.setHeader('x-audit-source', 'writer'))
+);
+
+const program = myEffect.pipe(withAuditHeader);
+```
+
+## OpenRouter Provider
+
+Multi-provider access through unified interface:
+
+```typescript
+import {
+	OpenRouterClient,
+	OpenRouterLanguageModel
+} from '@effect/ai-openrouter';
+import { Config, Layer } from 'effect';
+import { FetchHttpClient } from 'effect/http';
+
+const OpenRouterClientLayer = OpenRouterClient.layerConfig({
+	apiKey: Config.Redacted('OPENROUTER_API_KEY')
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
+// model() constructor — use provider-prefixed model IDs
+const routerModel = OpenRouterLanguageModel.model('anthropic/claude-sonnet-4');
+```
+
+`.model()` now correctly carries provider metadata/type `'openrouter'`, not
+`'openai'`. Update code that inspected `Model.ProviderName` or annotated the old
+literal type. For schema-backed structured output, `strictJsonSchema` defaults
+to true only for model prefixes selecting the OpenAI schema transformer:
+`openai/`, `gpt-`, `o1-`, `o3-`, and `o4-`. Other models send `strict: null`.
+Explicit true/false overrides either default; transformer selection is **not**
+an endpoint-capability check and this setting does not control tool strictness.
+Assistant text and tool results preserve `openrouter.cacheControl` during replay.
+
+### Manual tool-call validation
+
+Anthropic, OpenAI, and OpenAI-Compat honor `toolCallValidation: 'deferred'` when
+`disableToolCallResolution: true`. They can then return unknown params and
+undeclared tool names for caller-owned validation, including toolkit-free calls.
+Provider-executed calls remain validated. Do not assume another compatible
+endpoint/adapter implements the same behavior; see `effect-ai-language-model`.
+
+## ExecutionPlan (Multi-Provider Fallback)
+
+`ExecutionPlan` defines a strategy for trying multiple providers with different configurations and retry counts:
+
+```typescript
+import { AnthropicClient, AnthropicLanguageModel } from '@effect/ai-anthropic';
+import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai';
+import { Effect, ExecutionPlan, Layer } from 'effect';
+import { LanguageModel } from 'effect/ai';
+
+// Try cheaper model first, fall back to more expensive one
+const DraftPlan = ExecutionPlan.make(
+	{
+		provide: OpenAiLanguageModel.model('gpt-5.2'),
+		attempts: 3 // up to 3 total attempts before falling back
+	},
+	{
+		provide: AnthropicLanguageModel.model('claude-opus-4-6'),
+		attempts: 2
+	}
+);
+
+// Inside a Layer.effect, call captureRequirements to capture current services
+const draftsModel = yield* DraftPlan.captureRequirements;
+// This satisfies the plan's client requirements from the current context
+
+// Apply the plan to an effect
+const result = yield* myEffect.pipe(Effect.withExecutionPlan(draftsModel));
+```
+
+### Observing ExecutionPlan Lifecycle
+
+`Effect.withExecutionPlan` and `Stream.withExecutionPlan` accept an optional `onEvent` observer. Events are the `ExecutionPlan.Event` tagged union: `AttemptStart`, `AttemptSuccess`, and `AttemptFailure`.
+
+```typescript
+const result = yield* myEffect.pipe(
+	Effect.withExecutionPlan(draftsModel, {
+		onEvent: (event) =>
+			Effect.logInfo('AI provider attempt').pipe(
+				Effect.annotateLogs({
+					event: event._tag,
+					attempt: event.attempt,
+					stepAttempt: event.stepAttempt,
+					stepIndex: event.stepIndex
+				})
+		})
+);
+```
+
+- `attempt` is cumulative and 1-based across the plan; `stepAttempt` is 1-based within a step; `stepIndex` is 0-based.
+- Success and failure events include attempt `duration`; failure includes the full `Cause`, including defects and interruption.
+- Every start is paired with one terminal event, including interruption. Observers are awaited in order, should stay cheap, and their defects are ignored so telemetry cannot change the attempt outcome.
+- For `Stream.withExecutionPlan`, an attempt truncated by downstream cancellation is reported as `AttemptSuccess`; use `preventFallbackOnPartialStream` when mixing partial output with fallback output is unacceptable.
+
+## Chat Service (Stateful Conversations)
+
+Maintain conversation history with automatic context management:
+
+```typescript
+import { Effect, Ref } from 'effect';
+import { Chat, Prompt } from 'effect/ai';
+
+// Create with system prompt
+const session =
+	yield*
+	Chat.fromPrompt(
+		Prompt.empty.pipe(Prompt.setSystem('You are a helpful assistant.'))
+	);
+
+// Or create empty
+const emptySession = yield* Chat.empty;
+
+// Or from raw messages
+const agentSession =
+	yield*
+	Chat.fromPrompt([
+		{ role: 'system', content: 'You are an assistant.' },
+		{ role: 'user', content: 'Hello' }
+	]);
+
+// Generate text (history is maintained automatically)
+const response =
+	yield*
+	session
+		.generateText({
+			prompt: 'What is Effect?'
+		})
+		.pipe(Effect.provide(modelLayer));
+
+// Access conversation history
+const history = yield* Ref.get(session.history);
+
+// Export for persistence
+const json = yield* session.exportJson;
+
+// Restore from persisted state
+const restored = yield* Chat.fromJson(json);
+```
+
+## Config Override Pattern
+
+Runtime configuration adjustment on a per-effect basis using `withConfigOverride` (dual API):
+
+```typescript
+import { AnthropicLanguageModel } from '@effect/ai-anthropic';
+
+// Apply overrides to any effect that uses the LanguageModel
+const result =
+	yield*
+	model.generateText({ prompt: '...' }).pipe(
+		AnthropicLanguageModel.withConfigOverride({
+			temperature: 0.7,
+			max_tokens: 4096
+		})
+	);
+
+// Also available for OpenAI:
+import { OpenAiLanguageModel } from '@effect/ai-openai';
+
+const result2 =
+	yield*
+	model.generateText({ prompt: '...' }).pipe(
+		OpenAiLanguageModel.withConfigOverride({
+			temperature: 0.9,
+			reasoning: { effort: 'medium', summary: 'auto' },
+			text: { verbosity: 'low' },
+			strictJsonSchema: true,
+			fileIdPrefixes: ['file-']
+		})
+	);
+```
+
+`OpenAiLanguageModel.Config` accepts Responses API request fields plus `fileIdPrefixes`, `text.verbosity`, restored `reasoning` config, `reasoningModel`, and `strictJsonSchema`. Do not manually send library-only fields (`fileIdPrefixes`, `reasoningModel`, `strictJsonSchema`) to OpenAI APIs; the language model strips them before request construction.
+
+Reasoning effort also accepts `'max'` for OpenAI-compatible providers that expose that level, in addition to the standard OpenAI effort values.
+
+OpenAI error classification distinguishes temporary rate limits from exhausted account quota. HTTP 402 responses, and HTTP 429 responses whose code or type is `insufficient_quota` or `billing_insufficient_balance`, become `AiError` values with reason `QuotaExhaustedError`; `error.isRetryable` is `false`, so do not retry them without explicit user action. Ordinary 429 responses remain retryable `RateLimitError` values and preserve retry metadata when available.
+
+## Model.make — Model Abstraction
+
+Wrap provider layers with metadata. Takes 3 positional arguments: `(providerName, modelId, layer)`:
+
+```typescript
+import { Model } from 'effect/ai';
+
+// This is what ProviderLanguageModel.model() calls internally:
+const Claude = Model.make(
+	'anthropic', // provider name
+	'claude-sonnet-4-20250514', // model identifier
+	AnthropicLanguageModel.layer({ model: 'claude-sonnet-4-20250514' })
+);
+```
+
+In practice, use the provider's `.model()` shorthand instead of calling `Model.make` directly:
+
+```typescript
+// Preferred — equivalent to Model.make("anthropic", "claude-opus-4-6", layer)
+const claudeModel = AnthropicLanguageModel.model('claude-opus-4-6');
+```
+
+## Context.Service Pattern
+
+Define services using the shape-as-type-parameter pattern:
+
+```typescript
+import { Effect, Context, Stream } from 'effect';
+
+export class AiWriter extends Context.Service<
+	AiWriter,
+	{
+		draftAnnouncement(
+			product: string
+		): Effect.Effect<string, AiWriterError>;
+		streamHighlights(version: string): Stream.Stream<string, AiWriterError>;
+	}
+>()('myapp/AiWriter') {
+	static readonly layer = Layer.effect(
+		AiWriter,
+		Effect.gen(function* () {
+			const model = AnthropicLanguageModel.model('claude-opus-4-6');
+			const modelLayer = yield* model.captureRequirements;
+
+			const draftAnnouncement = Effect.fn('AiWriter.draftAnnouncement')(
+				function* (product: string) {
+					const lm = yield* LanguageModel.LanguageModel;
+					const response = yield* lm.generateText({
+						prompt: `Write a launch announcement for ${product}`
+					});
+					return response.text;
+				},
+				Effect.provide(modelLayer),
+				Effect.mapError((e) => AiWriterError.fromAiError(e))
+			);
+
+			return AiWriter.of({ draftAnnouncement, streamHighlights });
+		})
+	).pipe(Layer.provide(AnthropicClientLayer));
+}
+```
+
+`AiError.NetworkError` records `method` and `url` instead of `request` and may
+carry an unredacted `HttpClientError` in `cause`; inspect it deliberately when
+logging. Providers use `NetworkError.fromHttpClientError`; `fromRequestError`
+remains available. `AiError.HttpRequestDetails`, `Response.HttpRequestDetails`,
+and request fields in HTTP context/response metadata were removed.
+
+OpenAI maximum-output exhaustion and Anthropic context-window exhaustion report
+`finishReason: 'length'`. A truncated OpenAI response with a tool call does not
+execute the handler; handle truncation before continuing the tool loop.
+
+Anthropic's generated Files and Skills clients now decode GA resource shapes,
+with `page` / `next_page` pagination and `File` / `Blob` uploads. Check the pinned
+provider changelog before using these low-level clients, including migration of
+dated beta headers; the released beta response shapes are not decoded.
+
+## Custom Error Wrapping
+
+`AiError.AuthenticationError` accepts an optional `description` and
+appends it after the kind-based remediation message. Anthropic, OpenAI,
+OpenAI-compatible, and OpenRouter adapters propagate provider error text from
+401/403 responses. Preserve this reason rather than replacing it with a generic
+authentication string. `AiError.buildErrorDescription` is available to adapter
+authors; inspect its signature before building custom provider mappings.
+Authentication failures generally require corrected credentials/permissions,
+not a blanket transient retry. Keep redacted credentials out of logs.
+
+Malformed provider envelopes and SSE schema failures now use nonretryable
+`InvalidResponseError`, with optional HTTP context. This differs from retryable
+`InvalidOutputError` for decoded model output. Do not retry malformed wire data
+just because earlier versions reported it as output validation.
+
+OpenAI Responses additionally supports GPT-5.6+ explicit prompt cache breakpoints
+through `Prompt` metadata and `prompt_cache_options` model config; see
+`effect-ai-prompt` for the complete construction example.
+
+Wrap `AiError` into domain-specific tagged errors:
+
+```typescript
+import { Schema } from 'effect';
+import { AiError } from 'effect/ai';
+
+export class MyAiError extends Schema.TaggedError<MyAiError>()(
+	'MyAiError',
+	{
+		reason: AiError.AiErrorReason
+	}
+) {
+	static fromAiError(error: AiError.AiError) {
+		return new MyAiError({ reason: error.reason });
+	}
+}
+
+// Usage: Effect.mapError((e) => MyAiError.fromAiError(e))
+```
+
+## Available Providers
+
+| Package                 | Provider      | Models                                          |
+| ----------------------- | ------------- | ----------------------------------------------- |
+| `@effect/ai-anthropic`  | Anthropic     | Claude Opus 4, Claude Sonnet 4, etc.            |
+| `@effect/ai-openai`     | OpenAI        | GPT-5, GPT-4.1, o-series, etc.                  |
+| `@effect/ai-openai-compat` | OpenAI-Compat | Chat Completions-compatible APIs via `apiUrl` |
+| `@effect/ai-openrouter` | OpenRouter    | Multi-provider proxy (any model ID)             |
+
+**Note**: There are no `@effect/ai-google` or `@effect/ai-amazon-bedrock` packages. Use OpenRouter to access Google/Bedrock models.
+
+## Telemetry contracts
+
+AI generation spans use client span kind. `Telemetry` now uses
+`provider: { name }` / `gen_ai.provider.name`, not `system` /
+`gen_ai.system`. Removed exports include `BaseAttributes`, `WellKnownSystem`,
+`TokenAttributes`, `AllAttributes`, and OpenAI's `WellKnownResponseFormat`;
+the old `token` and OpenAI `responseFormat` attribute shapes are gone too.
+Use `ProviderAttributes` / `WellKnownProviderName` and `OutputAttributes` /
+`WellKnownOutputType`; `output: { type }` emits `gen_ai.output.type` (`text`,
+`json`, `image`, or `speech`). Provider names also changed, for example
+`az.ai.*` → `azure.ai.*` and `gemini` → `gcp.gemini`.
+Inspect the exact tagged `Telemetry.ts` / `OpenAiTelemetry.ts` before updating
+custom instrumentation rather than casting an old attribute record.
+
+Core attributes include `effect.ai.concurrency`, `effect.ai.tool_choice`, and
+`effect.ai.object_name`; OpenAI-specific attributes use `openai.*` instead of
+the old `gen_ai.openai.*` namespace. Update dashboards/queries as well as source.
+
+## Complete Working Example
+
+Full application with ExecutionPlan, Chat, and streaming:
+
+```typescript
+import { AnthropicClient, AnthropicLanguageModel } from '@effect/ai-anthropic';
+import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai';
+import {
+	Config,
+	Effect,
+	ExecutionPlan,
+	Layer,
+	Ref,
+	Schema,
+	Context,
+	Stream
+} from 'effect';
+import {
+	AiError,
+	Chat,
+	LanguageModel,
+	Model,
+	Prompt,
+	type Response
+} from 'effect/ai';
+import { FetchHttpClient } from 'effect/http';
+
+// ---------------------------------------------------------------------------
+// Provider client layers
+// ---------------------------------------------------------------------------
+
+const AnthropicClientLayer = AnthropicClient.layerConfig({
+	apiKey: Config.Redacted('ANTHROPIC_API_KEY')
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
+const OpenAiClientLayer = OpenAiClient.layerConfig({
+	apiKey: Config.Redacted('OPENAI_API_KEY')
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
+// ---------------------------------------------------------------------------
+// ExecutionPlan — try cheap model first, fall back to expensive
+// ---------------------------------------------------------------------------
+
+const DraftPlan = ExecutionPlan.make(
+	{ provide: OpenAiLanguageModel.model('gpt-5.2'), attempts: 3 },
+	{ provide: AnthropicLanguageModel.model('claude-opus-4-6'), attempts: 2 }
+);
+
+// ---------------------------------------------------------------------------
+// Custom error type
+// ---------------------------------------------------------------------------
+
+export class WriterError extends Schema.TaggedError<WriterError>()(
+	'WriterError',
+	{
+		reason: AiError.AiErrorReason
+	}
+) {
+	static fromAiError(error: AiError.AiError) {
+		return new WriterError({ reason: error.reason });
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Service definition
+// ---------------------------------------------------------------------------
+
+export class AiWriter extends Context.Service<
+	AiWriter,
+	{
+		draft(
+			product: string
+		): Effect.Effect<{ provider: string; text: string }, WriterError>;
+		chat(message: string): Effect.Effect<string, WriterError>;
+		streamHighlights(version: string): Stream.Stream<string, WriterError>;
+	}
+>()('app/AiWriter') {
+	static readonly layer = Layer.effect(
+		AiWriter,
+		Effect.gen(function* () {
+			const draftsModel = yield* DraftPlan.captureRequirements;
+			const chatModel = OpenAiLanguageModel.model('gpt-4.1');
+			const chatModelLayer = yield* chatModel.captureRequirements;
+
+			// --- Chat session with history ---
+			const session = yield* Chat.fromPrompt(
+				Prompt.empty.pipe(
+					Prompt.setSystem('You are a helpful writing assistant.')
+				)
+			);
+
+			const draft = Effect.fn('AiWriter.draft')(
+				function* (product: string) {
+					const provider = yield* Model.ProviderName;
+					const lm = yield* LanguageModel.LanguageModel;
+					const response = yield* lm.generateText({
+						prompt: `Write a launch announcement for ${product}.`
+					});
+					return { provider, text: response.text };
+				},
+				Effect.withExecutionPlan(draftsModel),
+				Effect.mapError((e) => WriterError.fromAiError(e))
+			);
+
+			const chat = Effect.fn('AiWriter.chat')(
+				function* (message: string) {
+					const response = yield* session
+						.generateText({ prompt: message })
+						.pipe(Effect.provide(chatModelLayer));
+					const history = yield* Ref.get(session.history);
+					yield* Effect.logInfo(
+						`History: ${history.content.length} messages`
+					);
+					return response.text;
+				},
+				Effect.mapError((e) => WriterError.fromAiError(e))
+			);
+
+			const streamHighlights = (version: string) =>
+				LanguageModel.streamText({
+					prompt: `Release highlights for v${version} as bullets.`
+				}).pipe(
+					Stream.filter(
+						(part): part is Response.TextDeltaPart =>
+							part.type === 'text-delta'
+					),
+					Stream.map((part) => part.delta),
+					Stream.provide(chatModelLayer),
+					Stream.mapError((e) => WriterError.fromAiError(e))
+				);
+
+			return AiWriter.of({ draft, chat, streamHighlights });
+		})
+	).pipe(Layer.provide([OpenAiClientLayer, AnthropicClientLayer]));
+}
+
+// ---------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------
+
+const program = Effect.gen(function* () {
+	const writer = yield* AiWriter;
+	const result = yield* writer.draft('Effect Cloud');
+	yield* Effect.logInfo(`Provider: ${result.provider}, Text: ${result.text}`);
+});
+
+Effect.runPromise(program.pipe(Effect.provide(AiWriter.layer)));
+```
+
+## Anti-Patterns
+
+```typescript
+// WRONG: Hardcoded API keys
+AnthropicClient.layerConfig({ apiKey: 'sk-...' });
+
+// RIGHT: Config.Redacted for secrets
+AnthropicClient.layerConfig({ apiKey: Config.Redacted('ANTHROPIC_API_KEY') });
+
+// WRONG: Missing FetchHttpClient layer
+AnthropicClient.layerConfig({ apiKey: Config.Redacted('KEY') });
+// Will fail at runtime — providers require an HttpClient
+
+// RIGHT: Always provide an HTTP client layer
+AnthropicClient.layerConfig({ apiKey: Config.Redacted('KEY') }).pipe(
+	Layer.provide(FetchHttpClient.layer)
+);
+
+// WRONG: Old Chat.make API
+const chat = yield* Chat.make({ system: 'You are helpful' });
+
+// RIGHT: Chat.fromPrompt with Prompt composition
+const chat =
+	yield*
+	Chat.fromPrompt(Prompt.empty.pipe(Prompt.setSystem('You are helpful')));
+
+// WRONG: Old Model.make API with object arg
+Model.make({ name: 'claude', layer: AnthropicLive });
+
+// RIGHT: Model.make with 3 positional args (or use .model() shorthand)
+Model.make('anthropic', 'claude-opus-4-6', anthropicLayer);
+// Better: AnthropicLanguageModel.model("claude-opus-4-6")
+
+// WRONG: Importing non-existent providers
+import { GoogleClient } from '@effect/ai-google'; // Does NOT exist
+import { BedrockClient } from '@effect/ai-amazon-bedrock'; // Does NOT exist
+```
+
+## Quality Checklist
+
+- [ ] Use `Config.Redacted` for API keys (never hardcode)
+- [ ] Provide `FetchHttpClient.layer` to all client layers
+- [ ] Use `.model()` constructor for `ExecutionPlan` and `Effect.provide`
+- [ ] Use `ExecutionPlan` for multi-provider fallback with retry
+- [ ] Use `withConfigOverride` for per-effect config adjustments
+- [ ] Use `apiUrl` for OpenAI-compatible base URLs; reserve client transforms for middleware/proxy/tracing/headers
+- [ ] Use `OpenAiTool` for OpenAI provider-defined tools
+- [ ] Use `Chat.fromPrompt` / `Chat.empty` / `Chat.fromJson` (not `Chat.make`)
+- [ ] Wrap `AiError` into a domain-specific `Schema.TaggedError`
+- [ ] Use `Context.Service` with shape type parameter for service definitions
+
+## Related Skills
+
+- effect-ai-language-model - Using LanguageModel service for text/object/stream generation
+- effect-ai-prompt - Building prompts with Prompt composition operators
+- effect-ai-tool - Defining tools and toolkits for agentic loops
+- effect-ai-streaming - Streaming response patterns and accumulation
+- effect-layer-design - General Effect layer composition patterns
+
+## References
+
+Provider-neutral structured decisions use `Decision` / `DecisionModel` from
+`effect/ai`. `OpenRouterDecisionModel` targets OpenRouter's alpha Decisions
+API; `@effect/ai-typesafe` supplies a provider for TypeSafe System One. Custom
+OpenRouter client implementations include `createDecisions`.
+
+`OpenRouterDecisionModel` and the TypeSafe decision model configure
+`probabilityPrecision: 2`: rounded distributions such as `0.02 / 0.93 / 0.04`
+are accepted and rescaled. Custom `DecisionModel.make` adapters retain strict sum
+validation unless they opt in. `Decision.probability` allows omitted `criteria`;
+when present it must describe both boolean outcomes (see `effect-ai-language-model`).
+
+Use each branded service's same-name type (`LanguageModel.LanguageModel`,
+`EmbeddingModel.EmbeddingModel`, `Chat.Chat`) and its exported TypeId for custom
+implementations. Prefer provided constructors; do not hard-code marker strings.
+OpenAI web-search sources are a discriminated union: narrow `type` before reading
+`url` or `name`. Provider-executed tool failures remain failure results.
+
+- `packages/ai/anthropic/src/AnthropicLanguageModel.ts`
+- `packages/ai/openai/src/OpenAiLanguageModel.ts`
+- `packages/ai/openai-compat/src/OpenAiLanguageModel.ts`
+- `packages/ai/openrouter/src/OpenRouterLanguageModel.ts`
+- `packages/effect/src/ai/{AiError,Telemetry}.ts` and provider telemetry modules
+- `ai-docs/src/71_ai/10_language-model.ts`
+- `ai-docs/src/71_ai/30_chat.ts`

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/treebuy-best-present/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 依一句話描述找合適的小樹購禮物。Use when: (1) 用戶說「幫我找禮物」「推薦適合的商品」「送○○什麼好」，(2) 需要依對象/場合/預算篩選多樣商品，(3) 想從 treebuy.com 找禮物選項。Triggers on: 找禮物, 推薦禮物, 送禮, 生日禮物, 母親節禮物, 小樹購禮物, best present, gift recommendation。"

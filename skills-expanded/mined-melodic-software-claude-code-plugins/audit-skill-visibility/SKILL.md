@@ -1,0 +1,497 @@
+---
+description: "When the built-in skill-doctor command resolves in this session, prefer it for cost; this skill for unseen ones. Use when: 'why do I never use most of my skills', 'why does Claude never suggest this skill', 'are my skill descriptions being dropped', 'is my skill listing over budget', 'which skills can the model actually see', 'which skills are starved', 'I have too many skills to know when to use them', 'audit skill visibility'."
+argument-hint: "[--unattended] [--installed [dir]] [--plugins-root <dir>] [--render markdown|json]"
+user-invocable: true
+shell: bash
+disable-model-invocation: false
+metadata:
+  workflow-stage: operator
+  summary: Which skills the model can actually see, which are starved, and which are unobservable
+  cadence: weekly
+---
+## Run-start suggestion
+
+Relay the sentence below to the user and do not run `/skill-doctor` yourself: it is a command the Skill tool never lists.
+
+If /skill-doctor is available in your session (gate basis: **Boundary, the bundled `doctor` skill and `/skill-doctor`** below), run it for the one-shot unused-versus-context-cost report when that is the whole ask.
+
+**Arguments.** `[--unattended] [--installed [dir]] [--plugins-root <dir>] [--render markdown|json]`. `--unattended`, anywhere in the arguments, is the caller declaring that nobody is present: the skill takes it out before reading the rest, never passes it to the engine script (whose parser does not accept it) and never reads it as a root path; under it both suggestions are omitted. The bare word `unattended` is neither this flag nor a path: stop and name `--unattended`. Full form: [--unattended] [--installed [dir]] [--plugins-root <dir>] [--context-window <tokens>] [--bytes-per-token 3|4] [--budget-fraction <f>] [--max-desc-chars <n>] [--listing-capture <transcript.jsonl>] [--render markdown|json] [--now <RFC3339>] [--fixture <path>]. Collects live; --installed reads the plugin manifest, else fleet defaults to ./plugins; unpinned, the budget is a band over both windows and both byte estimates
+
+## Purpose
+
+Answers one question: **can the model actually see each of my skills, and if not, why?**
+
+That is the question behind the one operators usually ask, which is *why does most of
+my skill fleet never get used?* A skill the model cannot see cannot be chosen, so
+"unused" is very often a visibility failure wearing a preference costume.
+
+**Visibility is Claude Code's own term** for this; the settings page documents `skillOverrides`
+under "Override skill visibility". This skill audits every way a plugin skill loses it, and
+`skillOverrides` is not one of those ways: we treat plugin skills as governed by `enabledPlugins`
+alone, and apply `skillOverrides` only to the non-plugin skills `--installed` enumerates; it is
+never cited as a cause for a plugin skill. Our binary reading on Claude Code 2.1.283
+agrees: its listing resolver returns `on` for every plugin-sourced skill before it reads the
+override map. A `skillOverrides` entry already in an operator's settings that names a plugin skill
+therefore never takes effect; `harness-config:audit`, when installed, reports those entries.
+
+- **Pointer**: when deciding whether `skillOverrides` can affect a plugin skill, fetch [skills: override skill visibility from settings](https://code.claude.com/docs/en/skills#override-skill-visibility-from-settings) live.
+
+Claude Code budgets the model-visible skill listing in characters, at
+`window x bytes-per-token x skillListingBudgetFraction` (our binary reading), and, when it
+overflows, **sheds descriptions from the lowest-scoring skills first**. Names always survive,
+descriptions do not. A skill at zero usage scores zero, so it loses its description, loses the
+keywords a request would match against, and stays at zero. Unused is partly self-causing.
+
+The window and the bytes-per-token are both per model, so the budget is not one number for a
+machine: the same fraction yields a budget five times larger at a 1M window than at 200k. This
+skill never resolves the session's model from disk. It reads the fraction and the per-entry cap
+from the settings scopes the product merges and, unless you pin the model-side inputs, reports the
+budget as a band over both windows and both byte estimates, naming no row as this session's.
+
+- **Pointer**: when stating the fraction's or the per-entry cap's default, fetch [settings reference: skillListingBudgetFraction](https://code.claude.com/docs/en/settings-reference#skilllistingbudgetfraction) and [skillListingMaxDescChars](https://code.claude.com/docs/en/settings-reference#skilllistingmaxdescchars) live.
+
+**The drop order is a source conflict.** The skills page's [skill descriptions are cut short](https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short)
+and the binary disagree on which descriptions overflow drops first. Take the ordering from the
+binary: [reference/listing-scorer.md](reference/listing-scorer.md) carries the counterexamples, the
+greps, the budget arithmetic, and the stamp.
+
+So the useful question is not *which skills are unused*: that one belongs to Claude Code's own
+surfaces, which the run-start and run-end suggestions offer; what they report is read live from
+[skills: find unused skills](https://code.claude.com/docs/en/skills#find-unused-skills).
+It is **which skills are starved by
+that loop and still wanted, versus genuinely unwanted, versus not observable at
+all.**
+
+## The refusal that defines this skill
+
+A usage store younger than the window being asked about **cannot** distinguish
+"never invoked" from "never observed". Reporting the second as the first libels
+most of a fleet on any fresh install. A days-old install measured against
+30-day and 90-day tiers puts nearly the whole fleet in a "never used" bucket.
+
+This skill therefore computes an `observed_horizon`, clamps every window to it,
+and routes any claim the span cannot support into a first-class `withheld`
+section with its reason. **A declined verdict is reported, never omitted.**
+
+## Run it
+
+It collects live by default. No fixture required. Two inputs resolve
+differently, and the difference decides which command you want:
+
+- **Usage** comes from this machine regardless of where you run it
+  (`~/.claude.json`, overridable with `--claude-json`).
+- **The fleet being audited**, the denominator, is a plugins directory
+  enumerated from disk, and it defaults to **`./plugins` relative to your
+  current directory**, not to an installed root.
+
+So from a plugins-layout repo (this marketplace, or any checkout with a
+`plugins/` directory), bare audits the tree you are standing in:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-skill-visibility/scripts/audit_skill_visibility.py"
+```
+
+Anywhere else that exits non-zero with `no skills found`. Nothing is silently
+audited. Name the fleet you mean:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-skill-visibility/scripts/audit_skill_visibility.py" \
+  --plugins-root <dir>
+```
+
+`<dir>` is any directory holding one subdirectory per plugin, each with a
+`skills/` directory, the layout both a marketplace checkout and an installed
+plugin root use.
+
+### Auditing the installed fleet
+
+`--plugins-root` measures a directory. To measure what is actually installed
+instead, read the plugin manifest:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-skill-visibility/scripts/audit_skill_visibility.py" \
+  --installed
+```
+
+It reads `~/.claude/plugins` by default (pass a directory to `--installed` to
+point elsewhere). The two answers differ on purpose: a checkout can hold
+plugins that are not installed, so the repo count and the installed count
+disagree. Neither number is wrong; they answer different questions.
+
+**The manifest lists one entry per install scope, not per plugin.** A
+marketplace installed at both `project` and `user` scope carries two entries
+per plugin. This resolves to one entry per plugin, and the report states both
+numbers so the collapse is auditable. Counting entries would inflate the fleet
+and, since the fleet is the denominator, roughly double the reported overflow.
+
+Where a plugin is installed at more than one scope, resolution loads the highest-precedence
+*applicable* record. The scope order and its record live in this plugin's own
+[`skills/plugins/context/scope-semantics.md`](../plugins/context/scope-semantics.md). The nearest
+docs section, [settings: settings precedence](https://code.claude.com/docs/en/settings#settings-precedence),
+ranks settings files and names no install records. Getting it wrong is not cosmetic: plugins pinned
+at different versions across scopes can ship different skill *sets* and different `description` text. Superseded records are
+listed under **Fleet resolution** so a pin being outranked is visible.
+
+Applicability matters as much as precedence: `project` and `local` records load
+**only** in the `projectPath` they name, so another project's records are
+excluded and reported rather than counted. Current project comes from
+`CLAUDE_PROJECT_DIR`, falling back to the working directory.
+
+A marketplace whose source is a local `directory` loads from that **checkout**,
+not from either cached `installPath`. Verified by a skill executing out of the
+marketplace directory. For those, the plugin's root comes from the catalog's
+declared `source`, since `plugins/<name>` is the common layout but not a rule.
+
+Whether each resolved plugin actually loads is read from `enabledPlugins` in the
+same settings scopes the listing budget reads, merged per `plugin@marketplace` key across scopes
+by the order in [plugin loading: find where a plugin is enabled](https://code.claude.com/docs/en/plugins/loading#find-where-a-plugin-is-enabled).
+The `--settings` flag scope is unread from outside the session. A key set to `false`
+makes every skill of that plugin `hidden`, with the scope file that supplied
+the `false` as evidence. A key absent from every scope makes every skill of
+that plugin `not-enabled` (cause `plugin-never-enabled`, remedy
+`claude plugin enable <plugin>@<marketplace>`), with evidence naming any scope
+that could not be read at all.
+
+Verification record for that rule. Claim: an installed plugin loads only when
+an `enabledPlugins` scope sets it `true`; `defaultEnabled` does not decide an
+absent key at runtime. Basis: a fixture probe of `claude plugin list --json` on
+Claude Code 2.1.280 reported disabled every installed plugin no scope named,
+including one whose marketplace entry and one whose `plugin.json` set
+`defaultEnabled: true`. The settings reference
+(<https://code.claude.com/docs/en/settings-reference#enabledplugins>) says a
+plugin with no entry at any scope falls back to its `defaultEnabled` value, and
+the manifest reference (<https://code.claude.com/docs/en/plugins/manifest-reference#defaultenabled>)
+agrees. Both contradict the measured runtime, so the engine follows the product
+and each such row's `provenance` says so.
+
+Every `enabledPlugins` value must be a Boolean. A settings file holding one
+that is not contributes none of its `enabledPlugins` keys, `true` siblings
+included, and the other scopes still decide each key it named. A key only
+such a file names makes every skill of that plugin `hidden` (cause
+`settings-file-rejected`), with evidence naming the file and the offending key.
+
+Verification record for that rule. Claim: Claude Code rejects a settings file
+whose `enabledPlugins` holds any non-Boolean value and reads its keys as if the
+file set none. Basis: a fixture probe on Claude Code 2.1.280, with
+`CLAUDE_CONFIG_DIR` and `HOME` under a scratch directory: `claude plugin list
+--json` read a `true` disabled beside a `"yes"` (or `1`) in the same user file,
+a project file holding one lost its `false` to the user file's `true`, and
+`claude doctor` listed the value under "Invalid settings". The settings
+reference types the key as an object of Booleans, and
+<https://code.claude.com/docs/en/settings#fix-a-broken-settings-file> says a
+value the schema rejects skips the file, without naming this key. As of
+2026-09-28. Recheck trigger: a Claude Code release that changes
+`claude plugin list`'s answer for a `true` beside a non-Boolean value, or that
+doc section naming per-entry handling for `enabledPlugins`.
+
+A scope file that exists but cannot be read or parsed could
+have set any key at its own precedence, so plugins whose answer would come
+from below it read `unknown`, with that file named in the remedy. Only
+`--installed` assesses this: a checkout is not an install, so a
+`--plugins-root` run reports reachability as `not-assessed` once for the run.
+
+`--render json` swaps the Markdown report for the machine-readable model, and
+`--now <RFC3339>` pins the clock the horizon is measured against.
+
+### The listing budget's inputs
+
+The budget has five inputs, and the report states where each one came from:
+
+- `skillListingBudgetFraction` and `skillListingMaxDescChars` are read from the
+  user (`~/.claude/settings.json`, relocated by `CLAUDE_CONFIG_DIR`), project
+  (`<project>/.claude/settings.json`), local
+  (`<project>/.claude/settings.local.json`), `--settings` flag and managed-policy
+  scopes, per key, with the precedence the product uses, read live from
+  [settings: settings precedence](https://code.claude.com/docs/en/settings#settings-precedence).
+  The project is `CLAUDE_PROJECT_DIR`, falling back to the
+  working directory. The flag scope lives inside the session and cannot be read
+  from outside it, so it is reported as **unread**, never as absent. Managed
+  locations (the base file plus the `managed-settings.d` drop-ins, per OS) come
+  from this plugin's vendored `lib/managed-scope.sh`, never from a path written
+  in the script; when that enumeration cannot run, the policy scope is reported
+  as unreadable rather than empty. `--budget-fraction` and `--max-desc-chars`
+  pin either value over every scope.
+- When `SLASH_COMMAND_TOOL_CHAR_BUDGET` is set, the engine uses it in place of
+  the computation, and the row carries `budget_basis: env-override` and the
+  label `SLASH_COMMAND_TOOL_CHAR_BUDGET`. What the variable does in the product
+  is read live from its row in
+  [environment variables](https://code.claude.com/docs/en/env-vars#variables).
+- The context window is per model. The engine treats `CLAUDE_CODE_DISABLE_1M_CONTEXT` as
+  collapsing it to 200k, and `CLAUDE_CODE_MAX_CONTEXT_TOKENS` as naming it when
+  `DISABLE_COMPACT` is also set; both are read from the process environment and
+  recorded. That rule assumes a recognized model ID ([which IDs it applies to](https://code.claude.com/docs/en/model-config#which-ids-claude_code_max_context_tokens-applies-to)), so pin a gateway alias's window with `--context-window`.
+  What each does in the product is read live from its row in [environment variables](https://code.claude.com/docs/en/env-vars#variables). Otherwise `--context-window <tokens>` pins it, and unpinned the
+  report carries both 200k and 1M.
+- Bytes per token is 4 or 3 per model. `--bytes-per-token` pins it; unpinned the
+  report carries both.
+
+With nothing pinned the `listing` section is a **band** of four labeled rows
+(200k/4, 200k/3, 1M/4, 1M/3), each with its own demand, floor, budget,
+overflow, verdict, and starved count, and the top-level numbers are null under
+`budget_basis: band`.
+Pinning both model-side inputs yields the single-row shape with the pinned
+numbers at the top level. A row's `budget_basis` names the settings file that
+supplied the fraction (`settings:<path>`), `fraction` for the documented
+default, or the pin. `inputs` in the JSON, and the "Inputs consulted" list in
+the Markdown, carry every scope and variable consulted with its status.
+
+### What the verdict counts
+
+The verdict compares the **whole rendered listing** with the budget, as the
+product does: every listed entry is `- <name>: <description>` (or `- <name>`
+when name-only), joined by newlines. `demand_chars` is the competing
+descriptions alone; `floor_chars` is what the listing costs before any
+description is granted (every name, the exempt entries in full, the
+separators); `listing_chars` is the full rendering, and `overflow_chars` is
+that over the budget. [reference/listing-scorer.md](reference/listing-scorer.md)
+carries the arithmetic and its stamp.
+
+The entries come from every source on disk: plugin skills, commands and
+workflows, and with `--installed` the user's `~/.claude/skills`, the
+`.claude/skills` of the project and each parent up to the repository root, and
+the signed-in account's claude.ai-synced skills, each with `skillOverrides`
+applied. A user or project skill is listed under its frontmatter `name` when it
+sets one, a synced skill under its folder name, and the engine lets a personal skill shadow a project skill of the same name, the order read live from [skills: resolve skills that share a name](https://code.claude.com/docs/en/skills#resolve-skills-that-share-a-name). Built-in and bundled skills ship
+inside Claude Code and cannot be read from disk, so without a capture
+`coverage` is `enumerated-only`, the Markdown says what was not counted, and a
+row whose counted entries fit reports `fit-unconfirmed`, never `listing-fits`:
+only a read capture that covers the counted fleet can confirm a fit. A capture
+that omits a counted entry, or renders one longer than it is counted, came from
+a session that loaded a different fleet; it is listed under
+`listing.capture.not_in_capture` or `longer_in_capture` and the fit stays
+`fit-unconfirmed`. `overflowing` needs no capture, since an uncounted entry
+only adds to the listing.
+`--listing-capture <transcript.jsonl>` reads the listing a session actually
+received from its transcript (`~/.claude/projects/<project>/<session>.jsonl`),
+counts every entry no disk walk could find (built-in, bundled, synced skills
+when no signed-in account was read, and, in a checkout, any plugin outside the
+checkout and the project's own skills) at its captured length, and reports in
+`listing.capture.not_in_fleet` the qualified `plugin:skill` entries it names
+that the fleet lacks, as when a plugin was uninstalled after the captured
+session. Those are not counted, the capture is from a different fleet, and an
+overflow that only the capture's charges produce is `overflow-unconfirmed`,
+never `overflowing`. An unqualified captured name is always counted, since a
+removed personal skill cannot be told from a built-in by name. It also reports in
+`listing.capture` the descriptions the session shed; a budget row that says
+`listing-fits` while the session shed descriptions is listed under
+`disagrees`. The engine only reads the file; it never launches Claude Code.
+The transcript's listing record is not a published format: its shape, as-of
+date (2026-10-04, Claude Code 2.1.289) and recheck trigger are stamped beside
+`parse_listing_capture` in the script, and a shape it does not recognize
+reports the capture as `not-read` rather than guessing.
+
+A verdict covers the main session at the stated window. A subagent gets a
+listing sized to its own window and can shed where the main session does not.
+
+`--fixture <bundle.json>` reads a recorded collection instead of the live one, the reproduction path, used by the tests and for handing someone else's state to
+the same engine. It is not needed to get a report.
+
+Python 3.11+ is the only requirement. No third-party packages, matching
+`inventory.py` and `install_state.py`.
+
+### The skill-usage store session-telemetry writes
+
+session-telemetry's hooks write `skill-usage.jsonl` where its `skill_usage_scope` and
+`skill_usage_dir` options say, read through the session-telemetry data contract
+(`docs/contracts/session-telemetry-data/README.md` in the marketplace repository):
+
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/session-telemetry-state.mjs" 2>/dev/null || echo "session-telemetry state unknown: node did not run"`
+
+When those lines say session-telemetry is not enabled, say so in the report, print the install and
+enable lines they give as they are, and carry on: the visibility verdicts need no store, and a store
+earlier sessions left is still read below; a missing store reports as missing, as it always does.
+
+Neither script here guesses the store's location: `audit_skill_visibility.py` takes it as
+`--skill-usage`, and `scripts/skill-pair-cooccurrence.sh` resolves it through this plugin's copy of
+the resolver the hooks call. Hand it the `option skill_usage_scope` and `option skill_usage_dir`
+values and the `data_dir` line above (empty when no line names one), resolve once, pass the one path
+to both:
+
+```bash
+STORE="$(bash "${CLAUDE_PLUGIN_ROOT}/skills/audit-skill-visibility/scripts/skill-pair-cooccurrence.sh" \
+  --scope "<skill_usage_scope>" --dir "<skill_usage_dir>" \
+  --data-root "<data_dir>" --print-store)"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-skill-visibility/scripts/audit_skill_visibility.py" \
+  --skill-usage "$STORE"
+bash "${CLAUDE_PLUGIN_ROOT}/skills/audit-skill-visibility/scripts/skill-pair-cooccurrence.sh" \
+  --store "$STORE" --pair <caller>,<callee>
+```
+
+An empty option value reads as its default, as it does in the hooks. `--data-root` is the
+`data-dir` scope's answer and the other two scopes ignore it, so the one call above serves all
+three. It is written out here rather than read from the environment because the script takes no
+`CLAUDE_PLUGIN_DATA` fallback, and this plugin's own data directory is not session-telemetry's. Which processes receive the variable is read live from
+[plugins manifest reference: where each variable resolves](https://code.claude.com/docs/en/plugins/manifest-reference#where-each-variable-resolves).
+Flags, that reason, and missing-store behavior:
+[reference/pair-cooccurrence.md](reference/pair-cooccurrence.md).
+
+## Reading the output
+
+Three independent fields per skill; a single flat verdict would collapse
+questions that demand different actions.
+
+| Field | Answers | Phase |
+|---|---|---|
+| `observation` | What has actually been seen, within a stated horizon | **live** |
+| `reachability` | Can the model ever select this skill | **live** |
+| `starvation` | Is it competing for description budget, and likely losing | **live** |
+
+`observation` values: `active` · `cooling` · `dormant` · `no-observation-in-horizon`
+· `not-observable`. The last is the default whenever the data cannot support
+better, and it is never a synonym for unused.
+
+`reachability` values: `model-reachable` · `user-only` · `hidden` ·
+`not-enabled` · `misconfigured` · `unknown` · `not-assessed`. Only
+`model-reachable` with no observation is a starvation candidate. `user-only`
+means you type it by design, `hidden` means an `enabledPlugins` entry sets the
+owning plugin to `false`, `not-enabled` means the plugin is installed but no
+scope names it, so it never loads, and `misconfigured` is a fix. A skill whose
+plugin settles to not loading is `hidden` or `not-enabled` whatever its
+frontmatter says, since it has no listing entry to misconfigure. `unknown` is
+reserved for a settings file the reader could not parse, and `not-assessed` is
+the checkout-mode answer, where there is no install to read enablement from.
+Each carries its causes, evidence, and a remedy.
+
+**The reachability causes are not an official list.** No such list is published;
+this catalogue is assembled from scattered documentation plus strings in the
+shipped binary, and every row says so in its `provenance`. Do not present it to
+a user as documented.
+
+`starvation.verdict` values: `likely-starved` · `likely-retained` ·
+`listing-fits` · `fit-unconfirmed` · `withheld` · `not-assessable`. A listing that overflows with no
+usage recorded for any competing skill reports `withheld` with
+`reason: "unscored"` on every competing row and no band, because at all-zero
+scores the product's ordering is the catalog-order tie its stable sort leaves,
+and naming rows would sell catalog position as preference. How many descriptions
+cannot fit is arithmetic and is still reported, as `starved_count` and as a
+count in the Markdown; the run carries one run-level `withheld` entry for the
+per-skill claim, never one per skill. An `overflow-unconfirmed` listing
+withholds the same way with `reason: "capture-mismatch"`.
+
+`not-assessable` marks the rows that never enter the contest, with
+`starvation.eligibility` naming why: `exempt-bundled` (a bundled skill keeps
+its description unconditionally and is charged for it in the floor),
+`exempt-user-only` (`disable-model-invocation`, or a `user-invocable-only`
+override, keeps it out of context), `exempt-name-only` (a `name-only` override
+lists the name alone), and `exempt-hidden` (the owning plugin is `hidden` or
+`not-enabled`, or an `off` override drops the skill, so it is never listed).
+Only `exempt-bundled` and `exempt-name-only` rows are listed, so a fleet whose
+only excess sits in plugins that do not load reports a fit (`listing-fits`
+with a capture that covers the fleet, `fit-unconfirmed` otherwise).
+`exempt-hidden` covers both not-loading answers, and
+only a settled not-loading answer (`hidden` or `not-enabled`) exempts: a
+`not-assessed` checkout row or an `unknown` one keeps competing, because
+unknown is not hidden.
+
+The Markdown names what these fields hold rather than only counting it. Under
+Reachability, hidden plugins are tabled with the scope file that disabled them,
+never-enabled plugins get one count line (leaving an installed plugin off is
+intentional, so it gets no fix; the line names any scope other than the flag
+scope that could not be read and might enable them), and misconfigured skills
+are tabled with their cause and one remedy per cause. Under
+Listing budget, when any row overflows, the ten longest competing descriptions
+are tabled by source length beside the capped charge the listing counts
+(`description_chars` and `demand_chars` in the JSON): trimming lowers the
+overflow only once a description is under `skillListingMaxDescChars`, and the
+table is labeled as length, never as a starvation ranking, so it renders the
+same in an unscored run. Each table caps at ten rows and counts the rest. A
+closing Next actions section names only the fixes this run's findings support,
+points at the budget control the run's provenance says is effective (the env
+override when set, the managed policy when it supplied the fraction, otherwise
+the settings file that did), and says so when there is nothing to fix.
+
+## Counting rules that are not obvious
+
+- **Never sum sources.** Native counters and the JSONL store both record the
+  same invocation, so adding them double-counts. At a given instant the count is
+  the MAX across sources, while two events from one source at the same instant
+  still count twice, because those are genuinely two invocations.
+- **`pluginUsage` is not a skill signal.** Neither its counts nor its
+  timestamps are read as skill use. What it counts and how its rows are seeded
+  are this plugin's binary reading in
+  [reference/usage-counters.md](reference/usage-counters.md#pluginusage-machine-global-per-plugin),
+  which carries the version, date and recheck trigger; read it before
+  explaining the field to a user.
+- **Ambiguous attribution is reported, not guessed.** Two marketplaces shipping
+  a same-named plugin collapse to one usage key; those rows are marked
+  `ambiguous-attribution` rather than attributed to one of them.
+- **Two possible usage keys per skill.** The stores hold the qualified
+  `<plugin>:<leaf>` key and the bare leaf as separate rows. Both are collected; a
+  bare key is attributed only when exactly one skill owns that leaf, ambiguous
+  ones are withheld with their candidates.
+- **The starvation band is decay-weighted, not a count**, and reports
+  `score_basis: "unscored"` when nothing survives to weigh. Read
+  [reference/listing-scorer.md](reference/listing-scorer.md) before changing that
+  ordering or quoting it to a user.
+
+## Scope boundary
+
+| Question | Owner |
+|---|---|
+| Why is my fleet unused, starved, unwanted, or unobserved? Does skill B get invoked where skill A ran? | **this skill**, the second via `scripts/skill-pair-cooccurrence.sh`, co-occurrence and never attribution ([reference/pair-cooccurrence.md](reference/pair-cooccurrence.md)) |
+| Which skills are unused vs their context cost, right now? | Claude Code's own built-in `/skill-doctor` command, when it resolves in this session; the bundled `/doctor` skill's checkup, when that one resolves |
+| Is a repo's authored listing over budget? | `skill-quality`'s `check-listing-budget.sh` |
+| What is installed and invocable? | `/harness-ops:inventory` |
+| Is the telemetry pipeline healthy? | `/harness-ops:observability` |
+
+Read-only. It never disables, deletes, or edits a skill, and it never
+recommends deleting one it classified as misconfigured. That class is a
+fix-me, not a removal candidate.
+
+## Boundary, the bundled `doctor` skill and `/skill-doctor`
+
+Two native Claude Code surfaces answer the question this skill starts from, and the three get
+conflated whenever a fleet looks unused:
+
+- **`doctor` (bundled skill)**: an in-session checkup that can offer to disable components, which
+  this skill never does. What it checks is read live from
+  [skills: check your setup with /doctor](https://code.claude.com/docs/en/skills#check-your-setup-with-%2Fdoctor).
+- **`/skill-doctor` (built-in command).** Claude Code's own unused-skills report; what it shows
+  and where is read live from
+  [skills: find unused skills](https://code.claude.com/docs/en/skills#find-unused-skills).
+- **This skill (marketplace plugin).** Reconciles the native counters with a JSONL store and OTEL,
+  computes an observed horizon, and separates starved-and-wanted from unwanted from unobservable,
+  withholding every verdict the span cannot support. Read-only.
+
+**Routing.** The run-start suggestion offers `/skill-doctor` for "which skills are unused versus
+their cost, right now", and the run-end suggestion offers `/doctor`. Prefer this skill when the
+answer has to survive a young usage store, when starved and unwanted must be told apart, or when
+the question is whether skill B fires where skill A ran.
+
+**Mutation gate.** `doctor` disables. This skill never disables, deletes, or edits a skill, so
+never chain into a `doctor` disable on this skill's behalf; report the classification and let the
+user act.
+
+**Availability is never assumed.** Settings and the environment can hide either surface; this
+section states what to do when one resolves, never that it is present. What hides each, and the
+records, live in [reference/bundled-doctor.md](reference/bundled-doctor.md).
+
+## Run-end suggestion
+
+Relay the sentence below to the user and do not run `/doctor` yourself: it is reserved for the person to run.
+
+If /doctor is available in your session (gate basis: **Boundary, the bundled `doctor` skill and `/skill-doctor`** above), run it for the bundled checkup's unused-components pass when you want fixes offered in place.
+
+**`--unattended`:** omit both suggestions and run neither `/skill-doctor` nor `/doctor`.
+
+## Gotchas
+
+- **A short horizon is the normal case, not an error.** Fresh installs, new
+  machines, and ephemeral cloud containers all produce spans below the exposure
+  floor. The correct output there is a withheld verdict, not a smaller number:
+  if a run reports most of the fleet as cold on a days-old install, the report is
+  wrong, not the fleet.
+- **Do not "fix" a fixture that asserts everything is `not-observable`.** That is
+  the honesty floor being tested, and it is the defect this skill exists to
+  prevent.
+- **Never sum two sources.** Native counters and the JSONL store record the same
+  invocation; summing them doubles every count. The reconciliation is MAX across
+  sources at an instant, and it is deliberately not MAX across an entire skill:
+  two same-instant events from one source are two invocations.
+- **OTEL and native counts legitimately disagree.** Divergence is expected and
+  must not be reconciled away. Why the native counter records fewer is this
+  plugin's binary reading in
+  [reference/usage-counters.md](reference/usage-counters.md#skillusage-machine-global-per-skill).
+- **`misconfigured` never renders as a removal candidate.** Several of its causes
+  are silent misconfigurations, a skill that looks fine and can never be
+  selected. The remedy is a fix.

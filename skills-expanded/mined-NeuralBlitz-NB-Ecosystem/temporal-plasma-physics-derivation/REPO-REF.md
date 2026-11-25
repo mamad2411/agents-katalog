@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/temporal-plasma-physics-derivation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Temporal Plasma Physics Derivation Skill

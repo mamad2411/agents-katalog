@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/theoretical-exoplanet-science-optimization/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Theoretical Exoplanet Science Optimization Skill

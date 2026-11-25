@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/tarkov-api/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Security-focused Tarkov.dev + optional EFT Wiki operations for hardcore Escape from Tarkov players. Use when users want reliable EFT data lookups (items, prices, ammo comparison, tasks, map bosses, se

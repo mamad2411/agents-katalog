@@ -1,0 +1,92 @@
+---
+name: prepare-pr
+description: Prepare, create, publish, or edit a NeMo Relay pull request or its body using the repository template and contributor requirements. Do not use for code review or implementation without PR preparation.
+license: Apache-2.0
+---
+
+
+# Prepare A PR For NeMo Relay
+
+Use this skill at the end of a contributor or maintainer change before opening a
+pull request. Also use it whenever a user asks to create, open, publish, update,
+or edit a NeMo Relay pull request, pull request description, or PR body.
+
+If this repo-local guidance conflicts with generic GitHub publishing, connector,
+or plugin guidance, this skill wins for PR body format, validation language, and
+review handoff details.
+
+## Checklist
+
+- [ ] Branch scope is coherent and reviewable
+- [ ] Validation results accurately report checks already run and relevant
+      omissions without widening validation solely for PR preparation
+- [ ] Pull request title follows Conventional Commit style and uses the correct
+      type
+- [ ] Pull request body follows `.github/pull_request_template.md`
+- [ ] Breaking changes or renamed surfaces are called out explicitly
+
+## Pull Request Title
+
+Use Conventional Commit style for PR titles:
+
+```text
+<type>: <concise imperative summary>
+```
+
+Choose the type from the actual change surface, not from the impact of the
+review comment or CI outcome. Use `fix` only for an actual user-facing or
+runtime/product code bug fix. Never use `fix` for changes that are not related
+to product code behavior, including chores, CI configuration, docs, tests,
+packaging metadata, generated-output handling, or agent/skill guidance.
+
+Common examples:
+
+- `ci: update codecov coverage reporting`
+- `docs: clarify release workflow`
+- `enhancement: improve scope configuration`
+- `chore: refresh generated attribution data`
+- `skills: add a plugin-authoring guide`
+- `test: add Python scope regression coverage`
+- `fix: preserve scope-local middleware cleanup`
+
+## Opening A Pull Request
+
+Always use `.github/pull_request_template.md` as the source of truth for the PR
+body. Before opening a PR, read the current template and preserve its headings,
+checkboxes, comments' intent, and related-issue guidance.
+
+This applies both when creating a new PR and when editing an existing PR
+description. Do not use a generic `Summary / Why / Validation` body unless the
+current repository template uses those headings.
+
+When using GitHub CLI, prefer:
+
+```bash
+gh pr create --template .github/pull_request_template.md
+```
+
+If a tool cannot consume the template directly, create the PR body from the
+template content and then fill in every visible section before opening the PR.
+Do not replace the template with a freeform summary.
+
+After creating or editing a PR, fetch the rendered PR body and verify that the
+template's visible headings and checklist items are still present.
+
+The PR body must include:
+
+- `#### Overview` with a concise summary and both contribution confirmation
+  checklist items preserved
+- `#### Details` with the concrete changes made
+- `#### Where should the reviewer start?` with the most useful file, test, or
+  design decision
+- `#### Related Issues: (use one of the action keywords Closes / Fixes / Resolves / Relates to)`
+  with an issue reference, or a clear `Relates to: none` entry when there is no
+  related issue
+
+Only check the contribution confirmation boxes when they are true. If either
+confirmation cannot be made, stop before opening the PR and surface the blocker.
+
+## References
+
+- `CONTRIBUTING.md`
+- `.github/pull_request_template.md`

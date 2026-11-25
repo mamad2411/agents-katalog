@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/finance/statement-preparation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: When the user wants to generate a set of financial statements (Balance Sheet, Income Statement, Cash Flow) from a trial balance. Also use when the user mentions "closing the books," "preparing financi

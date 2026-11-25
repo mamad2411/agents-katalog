@@ -1,0 +1,254 @@
+---
+name: splunk-enterprise-security-install
+description: "Use when the user asks to install, upgrade, bootstrap, post-install, or validate Splunk Enterprise
+  Security. Install, post-install, and validate Splunk Enterprise Security (ES), including
+  SplunkEnterpriseSecuritySuite, essinstall, standalone search-head and SHC deployer workflows, required
+  ES framework apps, local splunk-ta packages, and Splunkbase app 263 fallback."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Enterprise Security Install
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Install, upgrade, bootstrap, post-install, or validate Splunk Enterprise Security.
+- Preview and review the splunk enterprise security install workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-enterprise-security-install/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-enterprise-security-install/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+## Shared add-on completion gate
+
+Whenever this workflow installs, configures, or hands off a registry-listed
+Splunk app or add-on, follow the
+[shared completion gate](../shared/ta_completion_gate.md). Package delivery
+alone is not success; capture applicable configuration, data/readiness, and
+shipped-view evidence, or explicit package evidence that no dashboards ship.
+
+Installs and validates **Splunk Enterprise Security** (`SplunkEnterpriseSecuritySuite`).
+
+## Agent Behavior
+
+Never ask for secrets in chat. Splunk and Splunkbase credentials are read from
+the project-root `credentials` file, falling back to `~/.splunk/credentials`.
+If neither exists, guide the user to run:
+
+```bash
+bash skills/shared/scripts/setup_credentials.sh
+```
+
+Use the local package under `splunk-ta/` first when it exists. If no local ES
+package is available, use Splunkbase app ID `263`; pass `--app-version` to force
+a specific Splunkbase version.
+
+For Splunk Cloud Platform, do not self-service install ES unless the customer
+has an explicitly supported ACS/support process. Splunk Cloud customers usually
+coordinate ES search-head access and installation with Splunk Support.
+
+The public ES `8.5.1` listing includes platform `10.5`. In this repository,
+`10.5` is the current Splunk Cloud target and does not change the self-managed
+Enterprise default from `10.4.1`. Confirm the target-specific ES compatibility
+matrix and supported Cloud installation process rather than presenting the
+cross-product listing as self-managed Enterprise `10.5` validation.
+
+### Package Verification Boundary
+
+The reviewed pin is `8.5.1`; the current public release is `8.6.1`, which also
+advertises `10.5`. The pin stays on `8.5.1` because the Splunkbase download for
+`263` is entitlement-gated and returns HTTP 403 without an Enterprise Security
+entitlement, so `8.6.1` could not be downloaded, unpacked, or inspected here.
+Nothing about that hold blocks the default install path, which still resolves a
+`10.5`-capable release. To install `8.6.1`, supply it explicitly with
+`--app-version` (or a local package under `splunk-ta/`) after reviewing the
+`8.6.1` release notes and app contents yourself; the app names, indexes, and
+post-install steps in this skill are derived from the `8.5.1` package and have
+not been re-derived against `8.6.1`.
+
+## Environment
+
+| Item | Value |
+|------|-------|
+| Search-tier API | `SPLUNK_SEARCH_API_URI` env var (legacy alias: `SPLUNK_URI`) |
+| App name | `SplunkEnterpriseSecuritySuite` |
+| Splunkbase ID | `263` |
+| Local fallback | `splunk-ta/splunk-enterprise-security_851.spl` |
+| Credentials | Project-root `credentials` file (falls back to `~/.splunk/credentials`) |
+| Skill scripts | `skills/splunk-enterprise-security-install/scripts/` |
+
+### Remote Splunk Connection
+
+```bash
+export SPLUNK_SEARCH_API_URI="https://splunk-host:8089"
+```
+
+## Workflow
+
+1. **Read the reference** for version-specific notes:
+
+   ```text
+   skills/splunk-enterprise-security-install/reference.md
+   ```
+
+2. **Preflight the target**:
+   - ES is a premium product and requires a valid license.
+   - The user must be an admin or equivalent with app-install capabilities.
+   - Ensure KV Store is healthy and `/tmp` has approximately 3 GB free.
+   - Remove `deploymentclient.conf` from apps managed by a deployment server.
+   - On SHC deployers, back up `etc/shcluster/apps`, one member's `etc/apps`,
+     and one member's KV Store before install.
+
+3. **Install and run ES post-install**:
+
+   ```bash
+   bash skills/splunk-enterprise-security-install/scripts/setup.sh
+   ```
+
+   Defaults: install/update ES from the local package when present, otherwise
+   Splunkbase app `263`, run `| essinstall`, then validate.
+
+4. **For SHC deployers**, pass the deployer mode and then apply the bundle:
+
+   ```bash
+   bash skills/splunk-enterprise-security-install/scripts/setup.sh \
+     --deployment-type shc_deployer
+   ```
+
+   Then run `splunk apply shcluster-bundle` from the deployer using local
+   Splunk CLI credentials or your normal SHC operations process.
+
+5. **Validate**:
+
+   ```bash
+   bash skills/splunk-enterprise-security-install/scripts/validate.sh
+   ```
+
+## Scripts
+
+### setup.sh
+
+Installs the ES package, runs preflight checks, runs post-install setup, and
+optionally orchestrates the SHC bundle apply and the `Splunk_TA_ForIndexers`
+handoff for clustered indexers.
+
+Useful flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--install` | Install/update the ES package only |
+| `--post-install` | Run `\| essinstall` only |
+| `--validate` | Run validation only |
+| `--preflight-only` | Run preflight checks and exit |
+| `--skip-preflight` | Skip preflight (logs a WARN) |
+| `--confirm-upgrade` | Required when an existing ES install is detected |
+| `--backup-notice PATH` | Write backup runbook to PATH before upgrade |
+| `--set-shc-limits` | On SHC deployer, set the required `web.conf` / `server.conf` limits via REST |
+| `--allow-deployment-client` | Allow install when `deploymentclient.conf` has active stanzas |
+| `--apply-bundle` | After SHC `essinstall`, run `splunk apply shcluster-bundle` via the deployer SSH profile |
+| `--shc-target-uri URI` | SHC member URI for `--apply-bundle` and the post-apply health check (or set `SHC_TARGET_URI` env). Required when `SPLUNK_URI` is the deployer; otherwise the post-apply `/services/shcluster/status` query 404s. |
+| `--generate-ta-for-indexers DIR` | Extract `Splunk_TA_ForIndexers` from the local ES package into `DIR` (highest version wins when multiple members exist) |
+| `--deploy-ta-for-indexers CM_URI` | After staging, run `splunk validate cluster-bundle` then `splunk apply cluster-bundle` on the CM via its SSH profile. The CM_URI host MUST match the host in `SPLUNK_CLUSTER_MANAGER_PROFILE`; the script aborts on mismatch. |
+| `--force-apply-bundle` | Apply the cluster-manager bundle even when `splunk validate cluster-bundle` returns non-zero (validation is otherwise blocking) |
+| `--backup-kvstore` | Run `splunk backup kvstore` via the deployer/local SSH profile **before** the install/upgrade so a failed install leaves a recoverable archive. |
+| `--uninstall` | Disable removable framework apps, request uninstall of ES + support apps, and leave Mission Control installed (restart required to finalize) |
+| `--source auto\|splunkbase\|local` | Force package-source behavior |
+| `--file PATH` | Local ES `.spl`/`.tgz` package |
+| `--app-version VER` | Pin a Splunkbase version |
+| `--deployment-type search_head\|shc_deployer` | Select `essinstall` deployment type |
+| `--ssl-enablement strict\|auto\|ignore` | Pass through to `essinstall` |
+| `--dry-run` | Run `essinstall --dry-run` |
+| `--skip-essinstall` | Install package but skip post-install setup |
+| `--no-validate` | Skip validation |
+| `--no-restart` | Pass `--no-restart` to the generic installer (skip the post-install restart) |
+| `--allow-cloud` | Permit an install attempt on Splunk Cloud targets (otherwise aborts; ES Cloud is normally coordinated with Splunk Support) |
+
+### generate_ta_for_indexers.sh
+
+Extracts the Splunk Cloud-variant `Splunk_TA_ForIndexers` tarball from a local
+ES package into a target directory. This is what operators stage under
+`$SPLUNK_HOME/etc/manager-apps/Splunk_TA_ForIndexers` on the cluster manager
+before running `splunk apply cluster-bundle`.
+
+### validate.sh
+
+Runs read-only checks for:
+
+- Splunk API authentication
+- ES suite version and configured state
+- Required framework apps and bundled supporting apps
+- KV Store status
+- Data model acceleration enforcement stanzas
+- Search-head and SHC platform limits (`max_upload_size`,
+  `max_content_length`, `splunkdConnectionTimeout`)
+- `Splunk_TA_ForIndexers` presence on the connected tier
+- Key ES indexes, with warnings for distributed deployments where indexes live
+  on another tier
+
+## Key Rules
+
+- Do not disable `Mission Control`; it is part of ES 8.x.
+- Do not disable ES framework apps with `SA-` or `DA-ESS-` names.
+- ES 8.x upgrades are one-way; perform a full search-head and KV Store backup
+  first.
+- ES 8.x on on-prem Splunk Enterprise 10.x must be installed from the command
+  line rather than uploaded through Splunk Web.
+- Run `essinstall --deployment_type shc_deployer` for SHC deployers.
+- `ssl_enablement=auto` is not valid for SHC deployer installs.
+
+## Additional Resources
+
+- [reference.md](reference.md) — researched ES install requirements, package
+  contents, version notes, and validation details.

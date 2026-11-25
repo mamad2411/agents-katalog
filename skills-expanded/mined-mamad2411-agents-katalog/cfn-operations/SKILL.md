@@ -1,0 +1,73 @@
+---
+name: cfn-operations
+description: "File and log operations for CFN. Use when reading/writing/managing files or appending/reading/rotating log files in CFN workflows."
+version: 1.0.0
+tags: [mega-skill, file-io, logging, operations]
+status: production
+---
+
+# Operations Skill (Mega-Skill)
+
+**Version:** 1.0.0
+**Purpose:** File and log operations for CFN
+**Status:** Production
+**Consolidates:** cfn-file-operations, cfn-log-operations
+
+---
+
+## Overview
+
+This mega-skill provides I/O operations:
+- **File** - File read/write/copy operations
+- **Log** - Log file management and rotation
+
+---
+
+## Directory Structure
+
+```
+operations/
+├── SKILL.md
+├── lib/
+│   ├── file/             # From cfn-file-operations
+│   └── log/              # From cfn-log-operations
+└── cli/
+```
+
+---
+
+## Migration Paths
+
+| Old Path | New Path |
+|----------|----------|
+| cfn-file-operations/ | operations/lib/file/ |
+| cfn-log-operations/ | operations/lib/log/ |
+
+---
+
+## Version History
+
+### 1.0.0 (2025-12-02)
+- Consolidated 2 operations skills into mega-skill
+
+---
+
+## Quick Start
+
+Read or write files with safety checks:
+```bash
+bash $HOME/.claude/skills/cfn-operations/lib/file/file-ops.sh --read <path>
+bash $HOME/.claude/skills/cfn-operations/lib/file/file-ops.sh --write <path> --content "data"
+```
+
+Manage log files (view, rotate, clean):
+```bash
+bash $HOME/.claude/skills/cfn-operations/lib/log/log-ops.sh --tail <log-path> --lines 100
+bash $HOME/.claude/skills/cfn-operations/lib/log/log-ops.sh --rotate <log-path> --max-size 10M
+```
+
+Copy files with backup:
+```bash
+bash $HOME/.claude/skills/cfn-operations/lib/file/file-ops.sh --copy <source> <dest> --backup
+```
+

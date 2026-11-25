@@ -1,0 +1,497 @@
+---
+description: "Babysit the user's own open GitHub pull requests as a tiered fleet loop. The safe default discovers the user's own PRs under the current repo's owner, checks readiness, fixes clear branch-owned issues, and reports, it never resolves threads or merges. Explicit 'worker' tier adds auto-resolving outdated bot threads and gate-proven merges; explicit 'autopilot' adds all authors under the watched owners. Use when asked to babysit, watch, or advance open pull requests as a fleet (the safe tier), to run the worker or autopilot tier by name, or when pairing with /loop for continuous coverage; not for the single-PR lifecycle: prep, create, monitor one PR, or merge (use /pull-request)."
+user-invocable: true
+disable-model-invocation: false
+argument-hint: "[worker|autopilot|help] [--unattended] [owner/repo|#n|owner/repo#n]"
+shell: bash
+metadata:
+  workflow-stage: operator
+  summary: Tiered fleet pass advancing your open PRs
+  cadence: continuous
+---
+
+**Arguments.** `[worker|autopilot|help] [--unattended] [owner/repo|#n|owner/repo#n]`. Full form: [worker|autopilot|help] [--unattended] [owner/repo|#n|owner/repo#n] · default: configured default_tier (safe) over your own PRs; worker=fix+resolve-outdated+merge-ready; autopilot=max autonomy all authors; 'help' lists flows
+
+## Pre-computed context
+
+<!-- portability-ok: harness-executed pre-computed context; changing the command changes what the skill loads -->
+Current login: !`gh api user --jq .login 2>/dev/null || echo "unknown"`
+<!-- portability-ok: harness-executed pre-computed context; changing the command changes what the skill loads -->
+Own open PRs here: !`gh pr list --state open --author "@me" --limit 200 --json number --jq 'length' 2>/dev/null || echo "unknown"`
+
+Branch and working tree: gather with two separate Bash calls, `git branch --show-current` then `git status --porcelain`; treat a failure as an unknown value and carry on. Keep them out of the pre-computed block above ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation), "The pre-compute block runs as one shell invocation").
+
+## Purpose
+
+Keep pull requests moving without taking unsafe forge actions. Guarantees are enforced in
+deterministic gate scripts; judgment stays with the agent. The safe default discovers your own
+open PRs, author is one of your self logins, under the current repo's owner (or the configured
+watched owners), works each to readiness, and reports. **The safe tier never resolves threads
+and never merges**; merging exists only behind the explicit `worker`/`autopilot` opt-in and a
+deterministic merge gate. Designed for `/loop /source-control:babysit-prs` continuous coverage.
+
+The per-PR review discipline (finding extraction, per-finding D1–D7 verification gates,
+self-reply filtering) is the plugin-scope seam shared with `/source-control:pull-request`:
+[`${CLAUDE_PLUGIN_ROOT}/reference/review-discipline.md`](../../reference/review-discipline.md).
+Read it before processing findings; dispatched workers cite it directly.
+
+This body names forge operations; the commands that perform them on GitHub, the one forge
+supported today, are in
+[the GitHub provider reference](../../reference/providers/github/README.md). The bundled scripts
+and the `reference/` spokes already carry them.
+
+## Modes and arguments
+
+An invocation is `[mode] [--unattended] [scope]`; mode and scope are orthogonal. Combine them freely (`worker owner/repo`, `worker #87`, etc.). `--unattended`, anywhere in the string and taking no value, is neither a mode nor a scope: it is the caller declaring that nobody is present, which governs only the `/autofix-pr` offer under "Boundary". Take it out first, then parse the rest, so `--unattended worker #87` and `worker #87 --unattended` both run the `worker` tier on `#87`, and `--unattended` alone runs the tier the invocation would run without it. It never selects or raises a tier, and this skill passes it to no script or skill: the merge gate's `--unattended` below is a separate path no tier passes, and `ready --unattended` is a separate flag on that skill. The bare word `unattended` and `--unattended=<value>` are not this modifier: stop and name `--unattended`, never guess a tier.
+
+| Mode | What it does |
+| --- | --- |
+| *(none)*, the configured `default_tier` (`safe` unless the consumer changed it) | Safe tier: discover in-scope PRs (your own, under the current repo's owner by default), check readiness, fix clear branch-owned issues and push, report blockers and the next cadence. Never resolves threads or merges. |
+| `worker` | Everything safe does, and additionally auto-resolves *pre-push-outdated* bot threads and merges PRs the merge gate proves 100% ready. On a PR you opened, it resolves only outdated bot threads a configured lane login already answered, never a CRITICAL or security thread and never one a person wrote or joined. Requires Python. For dedicated 24/7 loops over your own PRs. |
+| `autopilot` | Maximum autonomy for a solo owner: every open PR under the watched owners regardless of author; fix everything it can; resolve every thread it has addressed (bot, AI-review, and human); merge everything the gate proves ready. Requires Python. A deliberate power-user opt-in, never a default. |
+| `help` (or `?`) | Print the common flows and the effective configuration below; take no other action. |
+
+**Tier selection is explicit.** The tier keyword in the invocation wins. An explicitly typed
+`/source-control:babysit-prs` invocation with no keyword, including inside `/loop`. Runs the
+configured `default_tier`, `safe` unless the consumer changed it. An auto-routed match (this
+skill loaded from conversational vocabulary such as "babysit my PRs" rather than a typed
+invocation) always runs the safe tier: `default_tier` never acts on auto-routed invocations, so
+a merge-capable tier engages only when the user names it, the `worker`/`autopilot` keyword, or
+a typed invocation under a deliberately changed `default_tier`. Configuration can never convert
+a casual invocation into standing merge authority.
+
+Any tier also honors an explicit user instruction to merge or resolve specific PRs now; that is a direct order, not autonomous behavior, and it runs the same guarded gates below.
+
+Common flows (this is what `help` prints, along with the effective configuration):
+
+```text
+/source-control:babysit-prs                     one pass at the configured default tier
+/source-control:babysit-prs #87                 one PR in the current repo
+/source-control:babysit-prs owner/repo          one repository
+/source-control:babysit-prs owner/repo#87       one specific PR
+/source-control:babysit-prs worker              full-auto (your PRs): fix + resolve-outdated + merge-ready
+/source-control:babysit-prs autopilot           max autonomy: ALL authors, fix+resolve+merge, escalate stuck PRs
+/source-control:babysit-prs help                list these flows and stop; add --unattended to any flow when nobody is present
+Looped worker:    /loop 15m /source-control:babysit-prs worker --unattended
+Looped autopilot: /loop 15m /source-control:babysit-prs autopilot --unattended
+Explicit order (any tier): "merge owner/repo#87 now" | "resolve bot threads on #87"
+```
+
+## Scope resolution
+
+Scope resolves deterministically, most specific first. Read the current git context with the forge CLI and `git` (all read-only) before falling back:
+
+1. **Explicit full ref** in the invocation (`owner/repo#N` or `owner/repo`), use it exactly.
+2. **Bare PR number** (`#87`, `pr 87`) inside a git repo, resolve the current repository's
+   `owner/repo` and target that `owner/repo#87`.
+3. **Bare invocation inside a repo whose current branch has an open PR you authored**. Target
+   just that one PR (detect by resolving the current branch's PR with its number, URL, author
+   and head branch; use it only when the PR exists and its author is a self login).
+4. **Bare invocation inside a repo under a watched owner**, that repository's own open PRs.
+   When `watched_owners` is unset, the current repo's owner is the inferred watch scope.
+5. **Otherwise** (a neutral working directory, or an unattended loop), your own open PRs
+   across every watched owner, via the snapshot's author filter.
+6. **Conversation context** that clearly scopes specific PRs or repositories overrides the
+   working-directory inference at any level.
+
+Own-authorship is the default safety boundary, not a preference: never act on another person's
+PR under the safe default. Widen beyond your own authorship only on an explicit user
+instruction or in `autopilot`, a deliberate opt-in that drops the author filter. The owner
+allowlist (`watched_owners`, inferred as the current repo's owner when unset) is a separate,
+always-on trust boundary: even autopilot never acts on a repository outside the watched owners.
+
+## Autonomy tiers (per action class)
+
+Autonomy is decomposed per action, not per run. Irreversibility governs the gate.
+
+| Action class | Safe (default) | Worker | Autopilot |
+| --- | --- | --- | --- |
+| Discover, snapshot, report | yes | yes | yes, **all authors** |
+| Fix clear branch-owned CI or bot-review issues, commit, push | yes | yes | yes, and harder (research a fix before giving up) |
+| Dispatch a dedicated conflict worker (`git merge`, never rebase; it resolves locally and never pushes, the orchestrator re-verifies and pushes, [reference/orchestration.md](reference/orchestration.md)) | no, report (simple mechanical conflicts met while freshening a branch are still handled inline per [reference/loop.md](reference/loop.md)) | mechanical/textual conflicts only, escalate genuine ambiguity | mechanical/textual conflicts only, escalate genuine ambiguity |
+| Resolve review threads | no, report | **pre-push-outdated bot threads only** | any thread **it has addressed**, bot, AI-review, or human |
+| Merge a PR | no. Report readiness | only when the gate proves 100% ready | only when the gate proves 100% ready |
+| Mark a completed draft ready (`/source-control:pull-request ready --unattended`) | no, report | no, report | yes, via its worker's completeness assessment |
+| Refresh a stale (behind-base) branch, post a review trigger | orchestrator-only | orchestrator-only | orchestrator-only |
+| `CHANGES_REQUESTED`, security/P1, posture, design, dependency acceptance | escalate | escalate | attempt with research; escalate only when it cannot confidently and safely resolve |
+
+**Blast radius before a fix, verdict, or merge, in every tier.** When a fix, a VALID/INCORRECT
+verdict, or a merge changes a shared artifact (a reusable workflow or action, shared config, a
+published package), list its consumers and check the change against each first, and state the
+verdict with a `Basis:` (`verified` with the `file:line`, tool output, or URL, or `judgment`,
+which such a change never qualifies for). A verdict the evidence cannot settle is withheld:
+UNCERTAIN, naming the evidence that would settle it, and escalated. The per-finding form is D3
+and D4 in [review-discipline](../../reference/review-discipline.md) §3. Contract:
+[`${CLAUDE_PLUGIN_ROOT}/context/recommendation-basis.md`](../../context/recommendation-basis.md);
+full convention: [recommendation-basis](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/recommendation-basis/README.md#grounding-bar).
+
+**Reading the merge-conflict blocker string.** The snapshot classifier is mode-agnostic by
+design, it has no tier input, so it emits the same blocker string, `"merge conflict;
+dedicated conflict-resolution agent required"`, for every conflicting PR regardless of tier.
+That string names a capability that exists in this skill, not an instruction to invoke it. In
+the safe tier the table's `no, report` still governs: report the blocker exactly as stated
+and dispatch no conflict worker. Only `worker` and `autopilot` read that same string as
+license to act.
+
+**Cross-tier invariants**, hold in every tier including autopilot: never a force-push (freshness is
+merge-only, refspec-pushed fast-forward, [reference/loop.md](reference/loop.md)); never `--admin`;
+never delete a branch or worktree
+that is dirty or unmerged; never change forge settings, secrets, branch protection, or
+billing; never act on a repository outside the watched owners; never resolve a thread whose
+finding is not actually addressed. A merge always requires the deterministic gate. Autopilot
+works harder to reach that state but never forces past it. A blocked action escalates; it is
+never routed around. Advisory-only fix attempts are bounded per PR (the fix-round cap in
+[reference/orchestration.md](reference/orchestration.md)); blocking defects are never capped.
+**Dependency hold-merge:** a dependency-manager-authored PR (Dependabot/Renovate-class) is
+never merged autonomously by this skill in any tier (a pr-merge lane with its Dependabot class on owns those merges);
+the merge gate refuses it absent `--allow-dependency`, passed only on an explicit user instruction to merge that specific PR.
+
+**Do-not-merge hold:** a PR whose body says "do not merge" (or "don't merge"), or has a line
+starting `Hold:`, is held in any tier: the merge gate reads the live body and reports a blocker, and a PR carrying a `do-not-merge`
+label is held the same way: the gate blocks on that label unconditionally (an `--unattended` run or the autopilot merge
+tier also on the human-gated label, `needs-human` by default), and `--block-labels` adds further labels in the autopilot
+merge tier. The PR is reported and left unmerged. The hyphenated label name in a body is not a hold.
+
+**Draft policy (per tier).** Drafts enter evaluation scope in every tier. There is no blanket
+draft skip. Safe: evaluate and report draft status, never flip a draft ready. Worker and
+autopilot: zero-blocker drafts always route through a worker (see Fan out). The ready flip
+happens only in autopilot, only for a draft its worker assesses complete, and it runs
+`/source-control:pull-request ready --unattended` rather than a bare draft flip: that step updates from the base
+branch and runs the security review and the verify gate before it flips, which a bare flip does
+not. A PR that `/source-control:pull-request create` took through `ready`, because its
+`pr_open_state` resolved to `ready`, is handled as any non-draft PR; no tier turns it back into a
+draft.
+
+## Autopilot
+
+`autopilot` is a deliberate, set-aside power-user tier for a **solo owner** who wants the queue
+driven to zero, not the default, and not for a repo with other human reviewers whose feedback
+must not be steamrolled. It processes every PR, fixes what it can, resolves only threads it has
+addressed, merges through the pinned gate, and escalates the specific PRs that genuinely need a
+human. What it does per PR, what "every PR" excludes, its draft-PR handling, and which scopes it
+widens are the single home in [reference/autopilot.md](reference/autopilot.md).
+
+## Autopilot merge tier
+
+A config-gated escalation of autopilot's merge authority, off by default and active only while the operator sets `babysit_autopilot_merge_tier`; with the key unset, every merge decision follows the base path above. When enabled, per candidate PR autopilot runs a **genuine review pass** under a **second bot account** (author ≠ approver) that submits an approving review **only when clean**, then runs the pinned merge gate with the `--autopilot-merge-tier` flags layered onto `--merge --expected-head <post-push-head-sha>`. The concrete enabled-path merge command, the second-account approve mechanic, and the review-workflow requiredness precondition for enabling the tier are the single home in [reference/safety.md](reference/safety.md).
+That gate merges **only when every criterion holds**, the criteria and the safety-contract rationale are codified in [reference/safety.md](reference/safety.md). It is **fail-closed** (the umbrella flag refuses unless all three parameter sets are supplied; predicates reused from the shared `babysit_classify` module), and any criterion failing falls back to the human merge-ready list, the tier never routes around the gate. The gate's `--unattended` flag is the unattended path, off unless the repository's `pr-pipeline.yaml` sets `merge.authority: local-babysit` and a `merge.agent-identity`: under that identity alone it enqueues a LOW, eligible pull request at its pinned head once the effective rung's promotion cells are promoted, writes the reasons comment for MED or HIGH, and dequeues on a stop or a hold. No tier passes it, and plain `--merge` refuses the configured identity: [reference/safety.md](reference/safety.md#unattended-merge-path).
+
+## Guarded mutations: deterministic gates, agent judgment
+
+The two mutation gates are invoked only through their wrapper scripts, by the bundled `scripts/`-path form,
+never the bare command name nor the raw Python behind them. Each `source-control-babysit-<x>` named in the bullets below is that wrapper launched by its `scripts/`-path form; the exact form is the single
+home in [reference/safety.md](reference/safety.md). Both fail closed without `--allowed-owners`.
+
+**Before composing either wrapper command, read [reference/safety.md](reference/safety.md),
+"Guarded Mutation Wrappers", for the exact flag set.** That section is the single home for the
+`scripts/`-path form, every configured flag that must ride on a given form (self logins, extra bot
+logins, the review-settle pair, extra dependency-manager logins), the pins and the refusals they
+produce, the override flags that are never passed autonomously, and the per-thread `action`
+vocabulary. Never reconstruct one of these commands from memory; a silently dropped flag is a
+silently dropped guard.
+
+- **Merge readiness**. `source-control-babysit-merge` is the gate. Safe tier runs it read-only and
+  reports; `worker` and `autopilot` add `--merge --expected-head <vetted-head-sha>` only on a
+  vetted head, and an enabled autopilot merge tier layers its own flags on
+  ([reference/safety.md](reference/safety.md)). When the expected-head pin is missing, or the
+  pinned sha no longer matches the live head, the wrapper refuses: re-snapshot and reassess the new
+  head instead of using `--allow-unpinned-head`. React
+  to the reported `blockers`; do not bypass the gate, and never reach for one of its override flags
+  on an unattended path. **This gate's `ready` field is the sole authority for calling a PR merge-ready**, never the finding-classification gate's `READINESS_OK` ([reference/safety.md](reference/safety.md) "Two Gates, One Merge-Ready Authority").
+
+- **Once ready, stop.** When the gate proves a PR ready (safe mode) or its merge is deferred to
+  a human (Pinned-Command Degradation, [reference/safety.md](reference/safety.md)), report that
+  outcome and end the PR's cycle. The no-background-monitor clause (Worker Contract,
+  [reference/orchestration.md](reference/orchestration.md)) governs this gate-completion step
+  exactly as it governs a worker's turn. Proving readiness is never a license to arm a watch.
+
+- **Thread resolution**. `source-control-babysit-resolve-thread` is the gate, and the mode is the
+  tier's: safe lists only and never resolves; worker resolves `--autonomous`, confined further to
+  threads already outdated in the pre-push snapshot
+  ([reference/orchestration.md](reference/orchestration.md)), a rule that is agent discipline rather
+  than machine-enforced; autopilot widens to threads it has addressed, human threads included. The
+  wrapper touches only bot-authored threads unless that widening is in play, and it can never merge,
+  reply, or dismiss reviews. Never treat exit code 0 alone as proof a specific thread was resolved.
+  Always parse the per-thread JSON `action` field and the run summary before reporting or
+  re-checking the merge gate.
+
+- **Independent resolution**. `--independent-resolver` is a third mode, parallel to `--autonomous`
+  and never a relaxation of it. `isOutdated` means the referenced code moved, so on a prose or
+  documentation PR a genuinely addressed finding never becomes outdated and the worker guard refuses
+  forever. This mode is dispatched to a fresh context that is not the merging worker and did not
+  author the fix, that independence is what replaces `isOutdated` as the anti-self-certification
+  property, and the script cannot verify it, which is why the other half is machine-checked: one
+  pinned thread per call, and a disposition whose evidence the script validates against the world
+  rather than against the claim. A thread carrying more than one finding is refused outright
+  (`skipped-multi-finding-thread`) and escalates: one disposition cannot clear a thread whose other
+  findings nothing validated. Bot-only and the security/P1 bright line still hold. Who dispatches
+  this mode, the per-finding
+  D7.5 ledger owed before the wrapper is called, the fresh-pin rule, and the fail-closed fallback
+  for every bound it cannot cross are the single home in
+  [reference/independent-resolution.md](reference/independent-resolution.md).
+
+- **The agent** decides severity (is this security/P1?), whether a finding is genuinely addressed,
+  what a label means, and every fix-vs-escalate call, never a script. Escalate a security/P1
+  thread instead of resolving it, in every tier and mode and with no exception. The resolve wrapper refuses a severity-flagged thread under `--autonomous` and `--independent-resolver`;
+  a vetted pinned `--resolve --thread-id` and autopilot's `--resolve --include-human` apply no severity screen, so there the escalation rests on this agent (`safety.md`, "Security/P1 escalation has no exception").
+
+## Fan out: one fresh worker per PR that needs one, per cycle
+
+Engine-backed runs (Python present) process the queue as one bounded cycle: snapshot the queue,
+handle orchestrator-only transitions (stale-branch refresh, review triggers) and global cleanup
+while holding the queue lease, then spawn one fresh, unbiased sub-agent per actionable PR up to
+the concurrency cap. "Actionable" is every open in-scope PR the snapshot returns, narrowed only
+by the deterministic exclusions, lease contention, the owner allowlist,
+`mutation_policy.branch_write_allowed`, and the snapshot's `needs_worker` delta gate, never by
+the orchestrator's own priority judgment. Full mechanics, the worker contract, and the prompt
+template (untrusted PR fields fenced as data) are in
+[reference/orchestration.md](reference/orchestration.md).
+
+A PR that is merely unchanged since the last cycle, even one still reporting blockers it was
+already escalated for, does not get a fresh worker. A non-draft PR with zero blockers **and no
+untriaged material feedback** also gets no worker, only a direct mode-appropriate
+`source-control-babysit-merge` gate check; that is coverage, not a skip, a PR still carrying
+untriaged material findings defers to the snapshot's `needs_worker` signal instead. In default
+(safe) mode, run the gate without `--merge` and report readiness without merging. Pass
+`--merge --expected-head <snapshotted-head-sha>` only in `worker` or `autopilot` mode, or under
+an explicit user order to merge that PR, but an enabled autopilot merge tier adds the tier flags
+([reference/safety.md](reference/safety.md)), never the flagless base command. Use the exact head
+SHA from the snapshot; a missing or stale pin must refuse the merge and send the PR back through
+snapshot and assessment, never an unattended unpinned override.
+
+**Zero-blocker drafts are the exception:** always route them through a worker, never directly
+to the merge gate. In autopilot, that worker assesses whether the draft is complete: a
+completed draft is marked ready with `/source-control:pull-request ready --unattended` and continues through
+the normal guarded path; a genuinely in-progress draft stays draft and is reported and escalated with the reason.
+A draft cannot merge until it is marked ready (provider reference "Draft stage"). Completeness of the diff is not the
+only hold reason: an explicit unchecked human-only item named in the PR's own body holds the
+draft too, even when the content is finished and green, as does a body line starting `Draft:` (create's mark of a requested or multi-session draft): no tier flips it. See the worker contract in
+[reference/orchestration.md](reference/orchestration.md).
+
+Each per-PR worker owns its local lifecycle end to end: acquire that PR's worker lease and its
+own isolated worktree (find or create, never a shared checkout), check out and freshen the PR
+branch, make only clear branch-owned fixes, re-check the head SHA, push, clean up on merge
+(worktree + local branch), and release the lease, except a conflict worker, whose push the
+orchestrator performs ([reference/orchestration.md](reference/orchestration.md)). Worktree policy:
+[reference/worktrees.md](reference/worktrees.md).
+
+## Effective configuration (substituted at load)
+
+The values below substitute from this plugin's stored configuration when this skill loads.
+A surviving literal `${user_config.…}` placeholder means that key is unset. Apply its
+documented unset behavior. Reference files use `<angle-bracket>` slots; fill every slot from
+this block. Values reach scripts only as explicit CLI flags (**Pointer**: when checking which processes receive option values, fetch [Reference a saved value](https://code.claude.com/docs/en/plugins/manifest-reference#reference-a-saved-value) live). Configuration selects targets and thresholds; it never widens tier authority.
+
+| Key | Value | Flag delivery | Unset behavior |
+| --- | --- | --- | --- |
+| `babysit_watched_owners` | `${user_config.babysit_watched_owners}` | `--owners` (snapshot), `--allowed-owners` (both wrappers, fail-closed) | infer the current repo's owner |
+| `babysit_self_logins` | `${user_config.babysit_self_logins}` | `--extra-self` (readiness gate and snapshot); `--self-logins` (merge gate, resolve-thread) | none. Always added to your current forge login |
+| `babysit_intended_write_identity` | `${user_config.babysit_intended_write_identity}` | `--intended-write-identity` (snapshot) | attribution-drift check dormant |
+| `babysit_default_tier` | `${user_config.babysit_default_tier}` | prose only. Tier of explicit bare invocations | `safe` |
+| `babysit_merge_method` | `${user_config.babysit_merge_method}` | deprecated fallback `--method` (merge wrapper) | `auto`: repo convention, then squash |
+| `babysit_stacked_prs` | `${user_config.babysit_stacked_prs}` | `--stacked-prs` (merge gate, every form) when `true`; omit it otherwise | `false` (a stack layer is held for a human) |
+| `babysit_autopilot_merge_tier` | `${user_config.babysit_autopilot_merge_tier}` | prose only. Gates whether the tier's `--autopilot-merge-tier` merge flags are wired at all | `false` (tier disabled; PRs go to the human merge-ready list) |
+| `babysit_lane_logins` | `${user_config.babysit_lane_logins}` | `--lane-logins` (merge wrapper, autopilot merge tier); `--own-pr-lane-logins` (resolve-thread, worker `--autonomous` forms) | tier refuses fail-closed when enabled; on your own PRs the resolver uses the repository's `merge.agent-identity` from its base and default branch, else resolves nothing |
+| `babysit_approver_bot_logins` | `${user_config.babysit_approver_bot_logins}` | `--approver-bot-logins` (merge wrapper, autopilot merge tier) | tier refuses fail-closed when enabled |
+| `babysit_merge_block_labels` | `${user_config.babysit_merge_block_labels}` | deprecated fallback `--block-labels` (merge wrapper, autopilot merge tier); omit it when unset | tier refuses fail-closed when enabled and the target repository declares none |
+| `babysit_review_trigger_phrase` | `${user_config.babysit_review_trigger_phrase}` | `--trigger-phrase` (snapshot, request_review); omit it when unset | review-trigger module dormant |
+| `babysit_review_bot_logins` | `${user_config.babysit_review_bot_logins}` | `--review-bot-logins` (snapshot, request_review, merge gate) | review-trigger module dormant; merge gate's review-settle hold dormant |
+| `babysit_review_gate_context` | `${user_config.babysit_review_gate_context}` | deprecated fallback `--review-gate-context` (snapshot) | gate treated as absent |
+| `babysit_review_settle_minutes` | `${user_config.babysit_review_settle_minutes}` | `--review-settle-minutes` (merge gate) | review-settle hold dormant. Pair it with `babysit_review_bot_logins`, which the gate requires alongside it |
+| `babysit_ci_gateway_context` | `${user_config.babysit_ci_gateway_context}` | deprecated fallback `--ci-gateway-context` (snapshot) | gateway check unused |
+| `babysit_extra_bot_logins` | `${user_config.babysit_extra_bot_logins}` | `--extra-bot-logins` (snapshot, resolve-thread, request_review) | structural bot detection only |
+| `babysit_extra_dependency_manager_logins` | `${user_config.babysit_extra_dependency_manager_logins}` | deprecated fallback `--extra-dependency-manager-logins` (merge gate) | built-in dependabot/renovate dependency-manager set only |
+| `babysit_approval_downgrade_logins` | `${user_config.babysit_approval_downgrade_logins}` | deprecated fallback `--approval-downgrade-logins` (snapshot) | an approval carrying blocking-looking prose is downgraded to ignored structurally (every bot); a named login instead surfaces its own as material. Real APPROVED-state reviews and plain clean approvals are ignored regardless. |
+| `babysit_skip_downgrade_logins` | `${user_config.babysit_skip_downgrade_logins}` | `--skip-downgrade-logins` (snapshot) | downgrade heuristic dormant |
+| `babysit_max_quiet_recheck_seconds` | `${user_config.babysit_max_quiet_recheck_seconds}` | `--max-quiet-recheck-seconds` (snapshot) | `14400` |
+| `babysit_stuck_check_age_seconds` | `${user_config.babysit_stuck_check_age_seconds}` | `--stuck-check-age-seconds` (snapshot) | `1800` |
+| `babysit_advisory_fix_round_cap` | `${user_config.babysit_advisory_fix_round_cap}` | `--fix-round-cap` (snapshot, ledger) | `100` |
+| `babysit_worker_concurrency_cap` | `${user_config.babysit_worker_concurrency_cap}` | prose only. Fan-out bound | `10` |
+| `babysit_worktree_root` | `${user_config.babysit_worktree_root}` | `--root` (prune; worktree creation) | `${CLAUDE_PLUGIN_DATA}/worktrees` |
+| state dir (not configurable) | `${CLAUDE_PLUGIN_DATA}/state/babysit-prs` | `--state-dir` (every state-touching script, the merge gate included) | n/a |
+
+Seven rows are repository policy: `babysit_merge_method`, `babysit_merge_block_labels`,
+`babysit_review_gate_context`, `babysit_ci_gateway_context`,
+`babysit_extra_dependency_manager_logins`, `babysit_approval_downgrade_logins`, and
+`babysit_skip_downgrade_logins`. Each PR's repository resolves them from its default branch's
+`docs/conventions/source-control.yaml`, merged per key with the flag on its row by the modes in
+[config-resolution.md](../../reference/config-resolution.md#babysit-prs-repository-policy-keys):
+hold lists union, `babysit_skip_downgrade_logins` is remove-only, and the rest take the repository
+value first. The flag is a deprecated fallback for every one of these except
+`babysit_skip_downgrade_logins`, whose flag stays its only additive source. The review pair
+(`babysit_review_bot_logins`, `babysit_review_settle_minutes`) and the trigger phrase
+(`babysit_review_trigger_phrase`) are `userConfig`-only: a repository declaration of any of them is
+ignored. A repository whose file cannot be read is refused by the merge
+gate and `request_review`, and its PRs are never merge-ready in the snapshot. The unset behavior
+above applies when neither source sets the key.
+
+Configure via the `/plugin` dialog, or headless at install time with `claude plugin install
+--config KEY=VALUE`; `/source-control:setup` documents both plus the environment probes.
+
+## Engine and degrade
+
+The snapshot engine and gates are Python (stdlib-only) under
+`${CLAUDE_PLUGIN_ROOT}/skills/babysit-prs/scripts/`; every script ships `--help`. Python is a
+declared prerequisite for `worker` and `autopilot` (and for engine-backed safe runs): when it
+is absent, `worker`/`autopilot` stop at entry with a concise remediation message naming the
+prerequisite, and the safe tier degrades gracefully to the Python-free loop in
+[reference/loop.md](reference/loop.md). Discovery via the forge's PR list, finding classification via the
+plugin-scope gate script, cadence via the static ladder. The merge gate is itself Python, so that
+path cannot assess merge-readiness at all: report it unchecked, never inferred from the
+classification gate. Let a safe iteration proceed when the engine is absent, reporting
+merge-readiness as unchecked.
+
+**Sandboxed sessions: the engine reads over REST, and thread resolution fails closed.**
+In a cloud session behind the GitHub proxy, a forge GraphQL call can be refused, and the
+refusal reads like an expired token or a missing scope while being neither: take it as a signal to
+switch APIs rather than to re-authenticate (the signal, the REST routes and the upstream pointer:
+provider reference "Sandboxed sessions"). The engine re-sources its pull-request reads over REST by itself, so
+discovery, classification, and the branch-rule and freshness checks keep working unchanged.
+
+Review-thread **resolution** is the one fact with no REST equivalent, and it is not approximated.
+The merge gate reports `threadResolutionProven: false` and `unresolvedThreadCount: null`, never `0`,
+and holds the PR with a blocker naming the restriction: an empty thread list would read as "zero
+unresolved threads", the false-clean signal [reference/safety.md](reference/safety.md) exists to
+prevent. Readiness there is UNPROVEN, never clean. Report it that way, quoting the blocker, and run
+the lane from a session that is served GraphQL when a PR actually needs to merge. `reviewDecision`
+degrades the same way: REST can prove `CHANGES_REQUESTED` but cannot prove an approval, so a
+protected base holds rather than merging on evidence that does not reach it.
+
+## Per-PR checklist (safe core, each PR, every iteration)
+
+Execute for each PR discovered, oldest first. Detailed mechanics: [reference/loop.md](reference/loop.md).
+
+- [ ] **Step 0, PR discovery:** open PRs in scope (tier-scoped author filter), oldest-first
+  FIFO (§5.0.2). Zero PRs → report and schedule the idle wake
+- [ ] **Step 0.1, Evidence-based fresh rescan:** fetch all comments via the bundled
+  `${CLAUDE_PLUGIN_ROOT}/scripts/fetch-all-pr-comments.sh` (derives owner/repo from the current directory; from a cwd that is not a checkout of the target repo, export `FETCH_COMMENTS_OWNER`/`FETCH_COMMENTS_REPO` first, also unblocks the readiness gate's exit 4), filter own prior replies, classify
+  addressed/unaddressed from forge evidence (§5.0.3). The forge is the source of truth, not model
+  memory
+- [ ] **Step 0.2, Branch checkout:** put this worktree's HEAD at the true PR head (the head commit read from the forge). Check out with the forge's PR checkout, detached when the branch is locked in a sibling worktree (never `git checkout` the locked branch);
+  assert HEAD == that head before any mutate, read-only on mismatch or dirty tree (§5.1.2)
+- [ ] **Step 0.3, Branch freshness:** fetch + `git merge-base --is-ancestor`; integrate
+  merge-only (never rebase, rebasing a PR branch needs a forbidden force-push), graduated conflict handling (§5.1.2)
+- [ ] **Step 1, Event-delivery gate:** cloud poll / push channel / Monitor watch, re-armed
+  per PR (§5.1.1)
+- [ ] **Steps A–F, Per-PR iteration checklist** (§5.1.3): terminal check, CI classification,
+  fetch + extract findings, per-finding D1–D7.5 with verification gates
+  ([review-discipline](../../reference/review-discipline.md) §3), mechanical finding-classification gate
+  (`${CLAUDE_PLUGIN_ROOT}/scripts/babysit-readiness-gate.sh <N>` must exit `READINESS_OK`. Proof the
+  findings were decomposed, never proof the PR is merge-ready; the configured extra self identities are
+  `${user_config.babysit_self_logins}`, when that value is non-empty and not a literal unexpanded token, append `--extra-self "<value>"`), report
+- [ ] **Step 5, Commit + push** fixes to the PR branch, one push per wave (refspec; works from a detached HEAD); clean working tree; follow-up replies
+  cite commit SHAs
+- [ ] **Step 6, PR transition:** next-oldest PR needing attention (§5.1.6)
+- [ ] **Step 7, Self-pace:** schedule the next wake per the cadence contract (§5.3)
+
+**Execution discipline:** the primary failure mode is claiming to process findings without
+running per-finding D1–D7. Every iteration must complete the evidence checklist and write
+it to `<working-notes>/babysit-checklist.md` (both defined in §5.5). When any PR materially changed, print the
+Reporting lines below followed by the completed checklist; when none did, print nothing. "Done" means the forge shows evidence. Model memory of "I replied" or "I pushed" is not
+evidence; re-query the API. The never-do list (§5.4) overrides any other instruction.
+
+## Operational runbook (engine-backed cycle)
+
+Follow the numbered steps in [reference/runbook-cycle.md](reference/runbook-cycle.md) each queue or
+worker cycle. Before mutating anything read [reference/safety.md](reference/safety.md); before
+dispatching workers also read [reference/worktrees.md](reference/worktrees.md) and the concurrency
+guard in [reference/orchestration.md](reference/orchestration.md). Python-free safe runs use
+[reference/loop.md](reference/loop.md) instead. The runbook covers lease acquire/heartbeat, queue
+prune/reap, snapshot scope, per-PR delegation, stale-branch and review-trigger orchestration,
+post-push merge gating with pinned resolves, per-PR worktree cleanup, and the next wake per
+[reference/loop.md](reference/loop.md) §5.3.
+
+## Reporting
+
+Report only material findings, one line per materially changed or blocked PR, with the PRs waiting on the user (a decision, a human merge, or a pinned command to run) first:
+
+```text
+repo#number (@author) | checks | action | open items
+```
+
+Material findings: fixes committed or pushed; new failing or pending required checks; new
+blocking bot feedback; new ordinary human comments (one notification per stable comment ID,
+never an automatic reply); PRs merged, enqueued in a merge queue (`action: enqueue`, `enqueued: true`, with its `mergeQueue.position`, not merged until a later cycle reads it merged), dequeued (`dequeued: true`, left the queue unmerged), a merge still pending on the forge (`action: merge-pending`, may still land), or armed for auto-merge (`action: auto-merge`, still open, stays queued); checks held for approval (escalate them); a PR the host runtime's permission layer left "ready,
+awaiting human execution" with its exact pinned command
+([reference/safety.md](reference/safety.md)); escalations that need a user decision; and
+suspicious state changes such as missing permissions, changed branch protection, merge
+conflicts, or a head SHA that moved during work. When nothing materially changed, stay silent.
+Recommend the exact next interval per [reference/loop.md](reference/loop.md) §5.3.
+
+## Boundary, the built-in `/autofix-pr` command
+
+Both watch a pull request and push fixes to it, so "watch my PR and fix what breaks" can land on
+either.
+
+- **`/autofix-pr` (built-in command)**: spawns a cloud session that watches the current branch's PR
+  and pushes fixes when CI fails or reviewers comment, and keeps running after the local session
+  ends. It is reserved for the person to run; the model does not invoke it.
+- **This skill (marketplace plugin).** A fleet pass over the person's open PRs from the local
+  session, under tiered autonomy, with deterministic gates on every mutation; the safe tier never
+  resolves threads or merges.
+
+**Routing.** When the person wants one PR watched after this session ends, offer it to the person:
+If /autofix-pr is available in your session (gate basis: it registers hidden and gated and needs forge CLI and cloud-session access;
+records in [reference/native-autofix-pr.md](reference/native-autofix-pr.md)), you can run it instead of or alongside this skill for that PR.
+Prefer this skill for the fleet, for tiered merge authority, and for anything the gates must prove. With `--unattended`, record the offer in the output instead of asking; without it, ask.
+
+**Mutation gate.** Both push to the PR branch. When `/autofix-pr` runs on a PR this skill also
+works, fetch before each fix commit and skip a finding the cloud session already fixed. This skill
+never runs `/autofix-pr` on the person's behalf.
+
+**Availability is never assumed.** The command registers hidden and gated, and needs forge CLI and
+cloud-session access; this section states what to do when the person can run it, never that it is
+present. The four-part records live in
+[reference/native-autofix-pr.md](reference/native-autofix-pr.md).
+
+## Spoke paths
+
+The `reference/` files write this skill's directory as `<skill-dir>`, which is
+`${CLAUDE_SKILL_DIR}`, and the plugin's root directory as `<plugin-root>`, which is
+`${CLAUDE_PLUGIN_ROOT}`. Put each path in place of its placeholder before running a command or
+writing it into a brief: we never rely on a `${…}` token in a file read from disk being expanded
+later. Where each plugin variable resolves: the plugins reference,
+<https://code.claude.com/docs/en/plugins/manifest-reference#where-each-variable-resolves>.
+
+## Gotchas
+
+- **Survey-without-classifying is the primary failure.** A run can report completion having
+  classified only part of the findings; prose emphasis alone does not prevent it. That is why
+  finding classification is gated by `babysit-readiness-gate.sh` exit code, not by the model's claim
+- **`READINESS_OK` is not merge-ready.** That gate is blind to branch rules, thread resolution, and required checks; only the merge gate's `ready` field can call a PR MERGE-READY. Reporting off the classification gate alone produces a false MERGE-READY report ([reference/safety.md](reference/safety.md) "Two Gates, One Merge-Ready Authority")
+- **Multi-finding comments glossed as one work item.** A single comment carrying N severity
+  markers is N work items; three or more findings require the extractor-subagent dispatch
+  ([review-discipline](../../reference/review-discipline.md) §2)
+- **Model memory across compaction is not state.** "I already replied/pushed" without an API
+  re-query is a false completion claim. The forge is the state store
+- **Exploring the wrong branch produces wrong classifications.** Findings validated off the PR
+  branch are confidently wrong. Checkout is mandatory before D2
+- **Own prior replies re-processed as findings.** Classification-table replies from your own
+  posting identities must be filtered during rescan or the loop chases its own tail
+  ([review-discipline](../../reference/review-discipline.md) §1)
+- **Exit codes are not per-thread outcomes.** Both wrappers demand JSON `action`-field parsing; a zero exit covers skipped and refused threads too
+- **Self-blocking CI check.** A newly required check whose own fix PR carries that same check
+  cannot be gate-merged, the check is failing or absent on the very PR that would make it pass,
+  so the merge gate correctly refuses. Breaking the cycle is a one-time human admin-merge
+  bootstrap of that fix PR; no tier automates it. Surface it as a blocker needing that bootstrap,
+  never as a reason to route around the gate
+- **Every worker draws on one forge [API budget](../../reference/providers/github/README.md#api-budget):** one background watcher per PR at 60 s or slower, writes one at a time, stop at the first rate-limit error
+
+## Reference index. Load on demand
+
+| File | Load when |
+|---|---|
+| [reference/safety.md](reference/safety.md) | Before any mutating action, in every tier. The two gates, role boundaries, stop-ask and never-do lists. |
+| [reference/runbook-cycle.md](reference/runbook-cycle.md) | Starting an engine-backed queue or worker cycle; it is the numbered sequence that cycle follows. |
+| [reference/loop.md](reference/loop.md) | Running the safe tier, or the engine is unavailable and every tier degrades to the Python-free loop. |
+| [reference/orchestration.md](reference/orchestration.md) | An acting cycle is about to dispatch workers or resolve a conflict: gate arms, concurrency cap, leases, prompt template. |
+| [reference/cadence.md](reference/cadence.md) | Deciding the next wake interval, or a `recommended_cadence` reading needs its state and threshold. |
+| [reference/freshness.md](reference/freshness.md) | The snapshot reports `branch_freshness.state == "behind"` for a PR. |
+| [reference/stuck-checks.md](reference/stuck-checks.md) | The snapshot reports a non-empty `checks.stuck` or `checks.approval_held` array, **or** `branch_freshness.state == "conflicting"` and the check list is short. Report and escalate, never auto-fix. |
+| [reference/review-trigger.md](reference/review-trigger.md) | An external AI reviewer is configured and a PR needs summoning or its gate read. |
+| [reference/autopilot.md](reference/autopilot.md) | Running the autopilot tier: its per-PR steps, exclusions, draft handling, widened scopes. |
+| [reference/worktrees.md](reference/worktrees.md) | Creating, reusing, or pruning a per-PR worktree before dispatching a worker. |
+| [reference/feedback.md](reference/feedback.md) | A PR carries review comments needing classification and disposition, or the PR is a bot's and its taxonomy decides the handling. |
+| [reference/native-autofix-pr.md](reference/native-autofix-pr.md) | Checking the basis of the `/autofix-pr` Boundary section, or its recheck trigger fired. |
+| [reference/independent-resolution.md](reference/independent-resolution.md) | A current bot thread is addressed but this context may not retire it. |
+| [`${CLAUDE_PLUGIN_ROOT}/reference/review-discipline.md`](../../reference/review-discipline.md) | Running the per-PR checklist for real, or briefing a worker: the compact checklist above is a skeleton over this. |

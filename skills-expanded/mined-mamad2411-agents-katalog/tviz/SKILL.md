@@ -1,0 +1,99 @@
+---
+name: tviz
+description: How to use the tviz CLI to read and write Things 3 tasks
+---
+
+# tviz
+
+## Things 3 concepts
+
+**Areas** are ongoing life domains (Career, Health, Home). They never complete.
+
+**Projects** are completable goals with a clear end state. If it never ends, it's not a project—it's an area or ongoing responsibility.
+
+**Someday** is for genuine future possibilities, not a graveyard for items you're afraid to cancel.
+
+Tasks should be concrete next actions. Not "plan party" but "email guests about date." If it's vague, work with the user to break it down.
+
+## Commands
+
+Run `tviz --help` for full reference. Key commands:
+
+```bash
+tviz today                    # primary working view
+tviz inbox                    # process daily
+tviz someday                  # deferred items (also tagged "(someday)" in short/pretty output)
+tviz todos -a <area>          # filter by area
+tviz todos -p <project>       # filter by project
+tviz todos -f tsv             # compact: uuid, dates, project, heading, title
+tviz todos -f pretty          # full notes and checklists
+tviz logbook                  # recently completed items (default 50)
+tviz logbook -a Oxide -n 100  # filter by area, increase limit
+tviz item <uuid> -f pretty    # details on one item
+tviz link <uuid>              # OSC 8 terminal hyperlink, for the user's terminal only
+```
+
+Tips:
+
+- Use `-f tsv` first to get uuids and dates; only fetch `-f pretty` when you need notes
+- When referring to specific tasks in a response, link them with `[title](things:///show?id=<uuid>)`. Use the full original title so the user can search Things for it. `tviz link` prints terminal escape codes, which don't render in chat.
+- Find oldest items: `tviz todos -f json | jq -r 'sort_by(.created) | .[0:20] | .[] | "\(.created[0:10]) \(.title)"'`
+
+## Write commands
+
+Create commands are allowlisted. Update commands are in `ask` permission, so
+the user will be prompted before each one runs.
+
+```bash
+# Create a todo
+tviz add todo "Buy groceries" --area Life
+tviz add todo "Fix login bug" --project "Auth redesign" --when today
+tviz add todo "Review PR" --project "Auth redesign" --heading "Code review" --deadline 2026-04-01
+echo "Detailed notes here" | tviz add todo "Research options" --area Oxide
+
+# Checklist items (repeat the flag once per item, max 100 per todo)
+tviz add todo "Pack toiletries" --project "Trip" --checklist "toothbrush" --checklist "sunscreen"
+
+# Create a project
+tviz add project "Kitchen renovation" --area Home
+tviz add project "Q2 planning" --area Oxide --deadline 2026-04-15
+
+# Update an existing item (todo or project, same command)
+tviz update <uuid> --title "New title"
+tviz update <uuid> --completed
+tviz update <uuid> --canceled
+tviz update <uuid> --when today --deadline 2026-04-01
+tviz update <uuid> --append-notes "Additional context"
+tviz update <uuid> --add-tags "urgent,blocked"
+tviz update <uuid> --append-checklist "one more thing"   # also --prepend-checklist
+tviz update <uuid> --checklist "a" --checklist "b"       # REPLACES all checklist items
+
+# Delete an item (moves it to the Things trash)
+tviz delete <uuid>
+```
+
+Delete vs cancel: cancel is for items that we want a record of having had on the
+list and then decided not to do or realized don't need to be done. Usually this
+means they were on the list for more than a few minutes. If you're rearranging
+items you just created (e.g., splitting a todo into multiple), you can use
+delete because there's no value in treating the initial version as a todo we
+canceled.
+
+If the `--project` name doesn't match an existing project, Things silently
+puts the item in the inbox.
+
+`--append-notes` and `--prepend-notes` automatically add a blank line of
+separation, so just write the new content without leading/trailing newlines.
+
+Things doesn't render markdown in notes. Use bare URLs, which become
+clickable automatically, not `[text](url)`. For checklists use the
+`--checklist` flags above, never `- [ ]` in notes.
+
+To seed a new project from a past one (e.g. copying items from an old
+trip's project), always create fresh todos with `tviz add todo`. Copy/paste
+of items in the Things app preserves the original creation date, which
+pollutes date-based views and stats, and the URL scheme's `creation-date`
+param can only move a date backward — fixing it requires an Apple Shortcut
+("Set Creation Date"). ⌘D duplication assigns fresh dates (tested
+2026-07-18), but fresh creation via the CLI is the reliable path. Full
+details in the Obsidian bot note "things 3 url scheme creation-date".

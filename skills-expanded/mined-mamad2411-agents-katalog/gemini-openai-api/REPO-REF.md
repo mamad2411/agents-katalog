@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/gemini-openai-api/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Gemini 模型通过 OpenAI 兼容 API 接入指南。包含：(1) 辅助 API 配置（summary/correction/emotion/vision），(2) extra_body 格式用于控制 thinking，(3) 响应格式处理（markdown 代码块）。当需要将 Gemini 作为辅助模型接入、配置 thinking 参数、或处理 Gemini API 返回格式时使用。"

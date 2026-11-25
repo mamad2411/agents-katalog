@@ -1,0 +1,92 @@
+---
+name: decant-spec
+description: Turn an ambiguous or high-impact change request into a small executable specification using async questions and a confirmed task contract. Use when scope, authority, acceptance checks, or rollback are unclear, or when the user asks for async questions and says not to stop; do not use for a narrow reversible edit or a question the repository can answer.
+---
+
+# Decant Spec
+
+Design the smallest change that can prove the requested outcome. Resolve facts
+from evidence. For a decision evidence cannot make, state the question and a
+reversible assumption, then continue. Wait only when the action is irreversible.
+
+## Clarify only what matters
+
+1. Inspect the repository before asking about filenames, commands, existing
+   behavior, or other facts that local evidence can answer.
+2. Ask only when the answer would materially change the outcome, authority,
+   risk, acceptance criteria, or irreversible action.
+3. Use async question mode, at most three questions. For a reversible
+   assumption, write one line and continue:
+   `질문: <question>? 답이 없으면 <assumption>으로 진행합니다.`
+   Record it as `safe_assumption`. Prefer the host `request_user_input_async`
+   tool when it exists: post the decision, continue independent inspection, and
+   incorporate the answer before the step that depends on it. A required answer
+   stays pending; silence and a preselected option are not answers. Stop only
+   the dependent work when a blocking decision remains.
+4. Record each material premise as `user_decision`, `repo_fact`,
+   `safe_assumption`, or `blocker`, with its evidence or owner. End with the
+   assumptions that were applied.
+5. Do not treat "알아서 해", "use your judgment", silence, or a broad goal as
+   authorization for destructive changes, publication, spending, credentials,
+   or production operations.
+
+Skip the interview when the request is already specific, reversible, and
+verifiable. State a safe assumption and continue when the assumption is inside
+the user's authority and cannot materially change the result.
+
+## Build the specification
+
+1. Inspect the existing behavior, conventions, tests, and user-owned changes.
+2. State the user outcome in one sentence.
+3. List non-goals and constraints, including provider, app, platform, and licensing boundaries.
+4. Describe two alternatives only when the choice materially affects scope or risk.
+5. Select one approach and explain the rejected alternative briefly.
+6. Define observable acceptance criteria before listing implementation files.
+7. Add a verification plan, rollback path, and unresolved questions.
+
+Before handing work to `decant-build`, restate the result as a Confirmed Task
+Contract using [the contract fields](./references/task-contract.md). A clear
+original request can confirm revision 1 without another ceremonial question.
+When an explicit answer already selects the restated scope, record it as
+confirmation. A reversible assumption does not need a second question. Ask
+again only if a material decision is still unresolved. A contract with a
+blocker or unresolved material decision cannot authorize implementation.
+
+After confirmation, do not silently rewrite intent. A material requirement
+change creates a new revision that names the prior revision and repeats only
+the confirmation needed for the changed decision.
+
+## Risk routing
+
+Assess each dimension from low to high:
+
+- complexity;
+- blast radius;
+- security or data sensitivity;
+- verification difficulty;
+- irreversibility.
+
+Use stronger planning and review only where these dimensions justify it. A small, reversible, well-tested edit should stay small.
+
+## Output contract
+
+Produce:
+
+- contract status, revision, and decision provenance;
+- outcome and user-visible behavior;
+- current-state evidence;
+- non-goals and constraints;
+- allowed mutations and forbidden actions;
+- chosen design and key interfaces;
+- file-level implementation map;
+- acceptance tests;
+- risks, rollback, and follow-ups.
+
+For plan-only requests, stop after the specification. Do not implement or publish.
+
+For the Decant CLI, `--question-mode async` persists questions while planning
+continues. Read them with `decant questions <run-id> --json` and answer with
+`decant answer <run-id> <question-id> "<answer>"`. Required answers stop edits;
+`decant resume <run-id>` starts a new bounded child run after answers arrive.
+The original evidence remains frozen. Optional late answers belong to a follow-up,
+not an unrecorded rewrite of a completed result.

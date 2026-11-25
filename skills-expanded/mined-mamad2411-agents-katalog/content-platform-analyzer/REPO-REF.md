@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/content-platform-analyzer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 通用内容平台分析技能 - 帮助创作者深度分析内容质量、识别爆款模式、对标学习、制定增长策略。适用于公众号、小红书、知乎、博客等内容平台。核心：内容理解优先，数据验证为辅。使用场景：分析自己的内容质量、学习对标账号的成功模式、基于数据洞察改进内容策略。

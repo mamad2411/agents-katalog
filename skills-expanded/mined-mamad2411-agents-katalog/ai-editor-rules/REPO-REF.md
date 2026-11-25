@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/ai-editor-rules/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: AI代码编辑器规则模板集合 - 为Cursor、Windsurf、Claude Code、Cline等AI编辑器提供项目规则配置。适用于需要配置AI编码助手规则的开发者，包含全栈Web、移动端、Vue3+SpringBoot等技术栈模板。"

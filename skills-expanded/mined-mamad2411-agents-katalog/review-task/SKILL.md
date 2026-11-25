@@ -1,0 +1,59 @@
+---
+name: review-task
+description: "Use to verify that a task has been completed according to its intent and criteria. Typical workflow: create-task → clarify-task → plan-task → impl-task → review-code → review-task → ship-task."
+---
+
+# Review Task
+
+## Usage
+
+`/at:review-task <task-path> [further user instructions]`
+
+## Goal
+
+Verify that a task has been completed according to its intent and criteria.
+
+## Context
+
+This skill is typically run as part of a larger workflow:
+
+```text
+create-task → clarify-task → plan-task → impl-task → review-code → review-task → ship-task
+```
+
+As steps (e.g. clarify, plan, impl, review) typically run in new sessions, it's imperative that the task file plus repo state carry everything the next agent needs.
+
+Task files live in the project's task store. Project config can override its location and other defaults: read `.claude/auto-task.config.md` (project, committed) and `.claude/auto-task.config.local.md` (personal overrides — win on conflict) if they exist. `/at:config` owns the defaults and the precedence rules.
+
+## Guidance (DO NOT IGNORE!)
+
+<!-- Curate as we go along. -->
+
+These rules govern how to perform the review. Internalise and follow them throughout.
+
+- Flag issues — do not attempt to fix them; let the user decide.
+
+## Step 1: Build Context
+
+Read the task and the code that was implemented. Ensure you fully understand the task's intent, criteria and what was implemented.
+
+## Step 2: Verify ACs
+
+For each acceptance criterion, determine: **pass**, **fail**, or **unclear**.
+
+A criterion passes when you can point to **specific evidence** — for example, a test that exercises it, observable behaviour in the code, or output from running it. "The code looks like it would work" is not evidence; a passing test is.
+
+## Step 3: Verify Intent
+
+In addition to checking ACs:
+
+- Check that the implementation truly matches the *why* in the description. It's easy to meet every AC but miss the intent.
+- If there were deviations from the plan, check that they are justified.
+
+## Step 4: Summarise
+
+Say whether the review passed or, if not, present a summary of your findings and wait for user input.
+
+## Step 5: Wrap Up
+
+Once there are no findings left, or the user has asked you to proceed, remember to set the task status to `ready-for-signoff` — by default, edit the frontmatter `status:` field and commit with a `(task/NNN)` subject suffix; if the project config defines a task-status command, use that instead.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ComeOnOliver-skillshub/bun-tanstack-start/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: TanStack Start full-stack React framework with Bun runtime. Use for TanStack Router, server functions, vinxi, or encountering SSR, build, preset errors.

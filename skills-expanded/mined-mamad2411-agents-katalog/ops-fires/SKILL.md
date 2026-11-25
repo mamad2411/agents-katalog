@@ -1,0 +1,356 @@
+---
+name: ops-fires
+description: "OPS on-demand: This skill should be used when the user asks to \"production fires\", \"what is on fire\"…"
+argument-hint: '[project-alias|all]'
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Skill
+  - Agent
+  - AskUserQuestion
+  - TeamCreate
+  - SendMessage
+  - TaskCreate
+  - TaskUpdate
+  - Monitor
+  - WebFetch
+  - WebSearch
+  - mcp__plugin_sentry_sentry__search_issues
+  - mcp__plugin_sentry_sentry__get_sentry_resource
+  - mcp__plugin_sentry_sentry__find_organizations
+effort: medium
+maxTurns: 30
+---
+
+# OPS ► FIRES
+
+Load `ops-rules` before acting. Public repo (no personal data). Outbound: one draft → one approval → one send. If `AskUserQuestion` / `Workflow` are missing, follow Rule 10 in `ops-rules` (Hermes: numbered options / two-turn Telegram card; `delegate_task`).
+
+## Runtime Context
+
+Before executing, load available context:
+
+1. **Daemon health**: Read `${CLAUDE_PLUGIN_DATA_DIR:-$HOME/.claude/plugins/data/ops-ops-marketplace}/daemon-health.json`
+   - Check `infra-monitor` service status — if not running, pre-gathered infra data may be stale
+   - If `action_needed` is not null → surface it immediately as a potential fire
+
+2. **Secrets**: AWS credentials are required for ECS/CloudWatch queries.
+
+   ### Secret Resolution
+   - First: check `$AWS_ACCESS_KEY_ID` / `$AWS_PROFILE` env vars
+   - Then: `doppler secrets get AWS_ACCESS_KEY_ID --plain` (if `doppler` configured in prefs)
+   - Then: use `password_manager_config.query_cmd` from preferences
+   - Sentry token: `$SENTRY_AUTH_TOKEN` → `$SENTRY_TOKEN` → Doppler `claude-ops/prd/SENTRY_AUTH_TOKEN`. Resolved by `bin/ops-sentry`; no action needed here.
+   - Sentry org and region: `preferences.json` `.partner_registry.sentry.{org,region_url}`. Sentry is region-sharded — issues are served by the org's own region host (e.g. `https://us.sentry.io`), not `sentry.io`, and querying the wrong region returns an empty list rather than an error. Omit `org` and the script discovers the first org the token can see.
+
+3. **Preferences**: Read `${CLAUDE_PLUGIN_DATA_DIR}/preferences.json` for `secrets_manager` config to know which vault to query.
+
+## CLI/API Reference
+
+### aws CLI
+
+| Command                                                                                                                                       | Usage          | Output                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------- |
+| `aws ecs list-services --cluster <name> --query 'serviceArns'`                                                                                | ECS services   | ARN list                              |
+| `aws ecs describe-services --cluster <name> --services <arn> --query 'services[0].{status:status,running:runningCount,desired:desiredCount}'` | Service health | JSON                                  |
+| `aws logs tail /ecs/<service> --since 1h --format short`                                                                                      | ECS logs       | Log lines (use with Monitor for live) |
+
+### gh CLI (GitHub)
+
+| Command                                                                     | Usage          | Output     |
+| --------------------------------------------------------------------------- | -------------- | ---------- |
+| `gh run list --limit 20 --json status,conclusion,name,headBranch,createdAt` | Recent CI runs | JSON array |
+| `gh run view <id> --repo <repo> --log-failed`                               | Failed CI logs | Log output |
+
+### sentry-cli / Sentry API
+
+| Command                                                                                                                          | Usage                             | Output     |
+| -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ---------- |
+| `sentry-cli issues list --project <slug> --status unresolved`                                                                    | Unresolved issues                 | Issue list |
+| `bin/ops-sentry [org]` | Pre-gather path (already inlined below) | JSON `{org,issues,error}` |
+| `OPS_SENTRY_PERIOD=7d OPS_SENTRY_LIMIT=25 bin/ops-sentry` | Widen the window or cap | JSON |
+| `curl -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://us.sentry.io/api/0/organizations/<org>/issues/?query=is:unresolved"` | Manual probe (note: region host, org-scoped) | JSON array |
+
+---
+
+## Agent Teams support
+
+If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set, use **Agent Teams** when dispatching multiple fix agents simultaneously. This enables:
+
+- Fix agents share findings (e.g., API agent discovers DB is the root cause → infra agent pivots to DB fix)
+- You can prioritize: "CRITICAL ECS issue first, then CI failures"
+- Real-time progress: agents report as they find root causes, you can merge fixes in optimal order
+
+**Team setup** (only when flag is enabled, dispatch phase):
+
+```
+TeamCreate("fire-fixers")
+Agent(team_name="fire-fixers", name="fix-[service]", ...)
+```
+
+If the flag is NOT set, use standard parallel subagents.
+
+## Pre-gathered infrastructure data
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-infra 2>/dev/null || echo '{"clusters":[],"error":"infra check failed"}'
+```
+
+### FinOps dashboard — open anomalies
+
+Live anomaly feed from finops-dashboard (spend spikes, idle services,
+expired credits, drift detections). High-severity items belong in the
+FIRES table alongside infra outages. Falls open to `[]` if the dashboard
+isn't configured.
+
+```!
+${CLAUDE_PLUGIN_ROOT}/scripts/finops-bridge.sh anomalies high 2>/dev/null || echo "[]"
+```
+
+## CI failures (last 24h)
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-ci 2>/dev/null || echo '[]'
+```
+
+## Sentry — unresolved issues (last 24h)
+
+Pre-gathered so Sentry is never skipped. Sorted by event frequency. An
+`error` field that is not null means the probe itself failed (missing or
+expired token, unreachable API) — report that as a gap, and do NOT read an
+empty `issues` list as "no errors in production".
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-sentry 2>/dev/null || echo '{"org":null,"issues":[],"error":"sentry probe failed"}'
+```
+
+## External projects health
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-external 2>/dev/null || echo '[]'
+```
+
+## Home automation (only if `home_automation` is configured in `$PREFS_PATH`)
+
+```!
+if jq -e '.home_automation' "${CLAUDE_PLUGIN_DATA_DIR:-$HOME/.claude/plugins/data/ops-ops-marketplace}/preferences.json" >/dev/null 2>&1; then
+  ${CLAUDE_PLUGIN_ROOT}/bin/ops-home snapshot 2>/dev/null || echo '{"configured":true,"error":"home probe failed"}'
+else
+  echo '{"configured":false}'
+fi
+```
+
+## Your task
+
+Analyze the pre-gathered data — including external projects. Then run parallel checks:
+
+1. **ECS health** — parse infra data for unhealthy services, stopped tasks, failed deployments.
+2. **Sentry** — parse the pre-gathered Sentry data above; it is always present, so never report Sentry as unchecked. Classify by blast radius: an issue affecting many users or growing fast is HIGH, a warning-level issue with a handful of events is LOW. Only reach for `mcp__plugin_sentry_sentry__get_sentry_resource` (stack trace, breadcrumbs) or `analyze_issue_with_seer` when you are about to dispatch a fix agent for that issue. If the probe returned a non-null `error`, say Sentry could not be read and why — an empty list is not proof production is clean.
+3. **CI** — parse CI data for failing pipelines, broken main/dev branches.
+4. **GitHub Actions** — `gh run list --limit 20 --json status,conclusion,name,headBranch,createdAt 2>/dev/null`
+5. **External projects** — parse ops-external data. Flag `auth_expired` as HIGH (credential rotation needed), `unreachable`/`degraded` as MEDIUM, `not_configured` as LOW.
+6. **Home automation** (only if home snapshot returned `configured:true`) — classify Homey incidents:
+   - Active critical alarm (smoke / water leak / security breach) → **P0 / CRITICAL** — cross-reference `/ops:ops-home alarm` for details.
+   - Major device offline (gateway, hub, primary thermostat) → **P1 / HIGH**.
+   - Energy spike > 3× 7-day baseline → **P2 / MEDIUM** — cross-reference `/ops:ops-home status`.
+     If snapshot returned `configured:false`, skip silently.
+
+Classify each issue by severity:
+
+| Severity | Criteria                                          |
+| -------- | ------------------------------------------------- |
+| CRITICAL | Service down, DB unreachable, auth broken         |
+| HIGH     | Elevated error rate, deploy stuck, CI main broken |
+| MEDIUM   | Non-critical service degraded, flaky tests        |
+| LOW      | Warning-level, non-urgent                         |
+
+---
+
+## Output format
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ OPS ► FIRES DASHBOARD — [timestamp]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CRITICAL
+[service] — [issue] — [since]
+
+HIGH
+[service] — [issue] — [since]
+
+MEDIUM
+[service] — [issue] — [since]
+
+ECS HEALTH
+[cluster] [service] [desired/running] [status]
+
+CI STATUS
+[repo] [branch] [workflow] [status] [last run]
+
+SENTRY (unresolved, 24h — by event count)
+[short_id] [title truncated] [events]ev [users]u [project] [last seen]
+[If the probe returned an error, print that instead of an empty section]
+
+EXTERNAL PROJECTS
+[alias] [source] [status] [details — e.g. auth_expired, unreachable]
+
+HOME (only if `home_automation` is configured)
+[alarm/device] [type — smoke/water/security/offline/energy] [severity] [since]
+[If `configured:false`, omit this section entirely]
+
+──────────────────────────────────────────────────────
+```
+
+Use **batched AskUserQuestion calls** (max 4 options each). Only show relevant actions (e.g., skip dispatch options if no issues found):
+
+AskUserQuestion call 1:
+
+```
+  [Dispatch fix agent for [top critical issue]]
+  [Dispatch fix agent for [second issue]]
+  [View logs for [service]]
+  [More...]
+```
+
+AskUserQuestion call 2 (only if "More..."):
+
+```
+  [Open Sentry dashboard]
+  [Open GitHub Actions]
+  [All clear — nothing to do]
+```
+
+If no fires: show "ALL SYSTEMS OPERATIONAL" with last-checked timestamps.
+
+---
+
+## Pre-dispatch staleness check (MANDATORY)
+
+The pre-gathered CI data is cached and may be minutes-to-hours old. Before
+dispatching ANY fix agent, verify the failure is still red on its branch HEAD.
+This is defense-in-depth: even after the `bin/ops-ci` "current-state" filter
+(which only emits workflows whose latest run on a tracked branch is failing),
+a fix may have landed in the seconds since the cache was written. Dispatching
+to a self-resolved fire wastes Sonnet quota — typically 50–150k tokens per
+agent before it figures out there's nothing to fix.
+
+For each fire the user selects:
+
+```bash
+gh run list --repo "$REPO" --workflow "$WORKFLOW" --branch "$BRANCH" --limit 1 \
+  --json conclusion,databaseId,createdAt --jq '.[0]'
+```
+
+- If `conclusion == "success"` → SKIP. Mark task completed with metadata `{resolution: "self-resolved-pre-dispatch"}`. Do NOT spawn agent.
+- If `conclusion == "failure"` → proceed to dispatch.
+- If `conclusion == null` (in_progress) → wait 30s, recheck once, then proceed if still null.
+
+For workflows scoped only to PRs (no main/dev runs), check the PR's combined CI status instead: `gh pr checks <num> --repo "$REPO" --json bucket,name`.
+
+## Dispatch fix agent
+
+When user selects to fix an issue, use `AskUserQuestion` to confirm the scope before dispatching:
+
+```
+Dispatch fix agent for: [issue title]
+  Severity: [CRITICAL/HIGH/MEDIUM]
+  Repo: [repo]
+  Error: [brief description]
+
+  The agent will:
+  - Investigate root cause in [repo]
+  - Create feature branch with fix
+  - Open PR for review
+
+  [Dispatch agent]  [Show me the logs first]  [Skip — I'll fix manually]
+```
+
+On confirmation, spawn an Agent with:
+
+- The error details and logs
+- Access to the relevant repo
+- Instruction to create a feature branch, fix, and open a PR
+- Report back when done or blocked
+
+Use the `agents/infra-monitor.md` agent definition for infra issues.
+
+If `$ARGUMENTS` contains a project alias, filter to that project's services only.
+
+---
+
+## Native tool usage
+
+### Monitor — live service health
+
+Use `Monitor` to stream ECS task logs or GitHub Actions runs when investigating fires:
+
+```
+Monitor(command: "aws logs tail /ecs/<service> --follow --since 5m")
+```
+
+### Tasks — incident tracking
+
+Use `TaskCreate` for each active fire. Update with `TaskUpdate` as fires are investigated/fixed/escalated.
+
+### WebFetch — status pages
+
+When diagnosing fires, use `WebFetch` to check AWS status page (`https://health.aws.amazon.com/health/status`), Vercel status, or third-party API status pages.
+
+### WebSearch — known outage patterns
+
+Use `WebSearch` to find if the error pattern matches a known AWS/infrastructure issue (e.g., "ECS task stopped CannotPullContainerError" → known ECR throttling).
+
+---
+
+## Credential Expiry & Rate Limit Warnings (Phase 16)
+
+The ops-daemon surfaces two additional fire categories in `daemon-health.json`:
+
+- `credential_warnings` — tokens/keys expiring within 7 days OR API keys older than 180 days. Fed by offline inspection of `preferences.json` (`*_expires_at`, `*_created_at` fields). No live API calls are made to validate credentials.
+- `rate_limit_warnings` — integrations currently at ≥80% of their quota window. Fed by counters in `rate-limits.json`. Resets automatically when the window rolls over.
+
+`/ops:fires` lists both alongside Sentry / infra / CI issues. Push notifications are dispatched by the daemon on the first crossing of the threshold — not re-sent until the next day (credentials) or window rollover (rate limits).
+
+---
+
+## Ledger Integration
+
+**CLAIM_KEY:** `sentry:issue:<short_id>` (e.g. `sentry:issue:MY-PROJECT-1A2B`)
+
+For non-Sentry fires (infra, CI, credential expiry), use:
+
+- CI failure: `ci:run:<repo>:<run_id>`
+- Credential expiry: `credential:expiry:<service>`
+
+### Pre-flight skip-check
+
+```bash
+CLAIM_KEY="sentry:issue:<short_id>"
+ledger query --claim-key "$CLAIM_KEY" --since=-PT24H
+```
+
+If `in_progress` or `done` exists, skip the issue. If `awaiting_user` exists, surface
+it as "fix already staged — needs your decision."
+
+### Claim + resolve
+
+```bash
+# Claim when beginning to investigate/fix
+ledger write \
+  --claim-key "$CLAIM_KEY" \
+  --kind "fix" \
+  --status "in_progress" \
+  --title "Fire: <issue title>" \
+  --ttl-sec 7200
+
+# Resolve after fix is applied or escalated
+ledger write \
+  --claim-key "$CLAIM_KEY" \
+  --kind "fix" \
+  --status "done" \
+  --title "Fire: <issue title>" \
+  --context "fixed: <brief resolution> | escalated: <reason>"
+```

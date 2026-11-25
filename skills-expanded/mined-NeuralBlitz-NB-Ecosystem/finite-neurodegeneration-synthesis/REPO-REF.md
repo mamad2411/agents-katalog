@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/finite-neurodegeneration-synthesis/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Finite Neurodegeneration Synthesis Skill

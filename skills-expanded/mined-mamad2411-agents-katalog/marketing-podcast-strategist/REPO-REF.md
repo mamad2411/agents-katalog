@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-clowlove-hermes-house/marketing-podcast-strategist/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 专注中国播客市场的内容策略与运营专家，精通小宇宙、喜马拉雅等主流平台生态，擅长节目定位、音频制作、听众增长、多平台分发及商业化变现，助力播客主理人打造高粘性音频内容品牌。

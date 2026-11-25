@@ -1,0 +1,96 @@
+---
+name: mastermind-style-deep
+description: Draft a grounded, reviewable portrait of how the author develops from attributed code and commit evidence. Keep it as a persona candidate until the author verifies the source examples. Use for "deep style", "design patterns", or "qualitative profile" requests.
+metadata:
+  version: 0.4.0
+  authors:
+    - mastermind
+  tags:
+    - workflow
+    - style
+    - miner
+---
+
+# Mastermind — deep style portrait
+
+`mastermind miner profile` measures commit-level code-shape observations
+(indentation, quotes, braces, line length), commit voice, workflow habits and
+range, and sets formatter-decided conventions aside under Repository tooling.
+`mastermind miner feedback` records what the author stated to agents. Code-shape
+observations remain diagnostic evidence because language mix and repository
+policy can still explain them; do not apply them directly as coding rules. This
+skill drafts the qualitative **portrait of how the author develops** for review.
+The binary gathers evidence; you (the agent, already running a model) read code
+and write the portrait. No separate `claude -p` process or authentication.
+
+## When to use
+
+- The user wants a real "write like me" profile, not formatter-config rules.
+- The user says "deep style", "design patterns", "qualitative profile", "make it richer".
+- After `mastermind miner profile`, to add the section the deterministic core can't.
+
+## What you're producing
+
+A portrait of **how this person works** — the kind a senior writes after reading someone's PRs for a month. Organized by the dimensions below, every claim tied to a concrete tell. Prose per dimension, not a list of isolated counts — the measured static rules already live in the section above this one.
+
+## Gather evidence — quantitative AND qualitative
+
+Don't just grep. A portrait needs both numbers and read code:
+
+1. **Counts with their contrast.** Any "prefers X over Y" needs BOTH counted — early-`return`/`let-else` vs nesting depth; iterator chains vs `for` loops; typed errors vs `Box<dyn Error>`; table-driven tests vs one-assertion-per-fn. A bare count of X is not evidence of a preference.
+2. **Read 4–6 real files.** A core module (design), a hot path (optimization), a public API (ergonomics), a test file (test style), a recent diff. Greps can't see *why* or *what they watch for* — reading can.
+3. **Commits.** Reuse the author identity selected by `mastermind miner profile`
+   when available. Otherwise inspect `git shortlog -sne --all` and confirm the
+   identity from local evidence; do not assume `git config user.name` matches
+   the author being profiled. Read up to 100 matching subjects and a few bodies.
+4. **Enforcing config FIRST.** The Repository tooling line in `style.md` names
+   what the miner already set aside; check the rest yourself. `rustfmt.toml` / `.eslintrc` / `pyproject` lint config, `#![deny(...)]` / `#![warn(...)]`, `clippy.toml`, CI lint steps. Anything a formatter or linter *forces* is not personal style — exclude it, or mark it "enforced". Do not credit a `///` on every fn as a habit if `#![deny(missing_docs)]` mandates it.
+5. **Optimization signals.** Benchmarks (`criterion` / `#[bench]` / `*.bench.*`), `#[inline]`, `with_capacity`, caching/memoization, `tracing`/profiling spans, comments mentioning perf. Their presence can evidence what they optimize and whether it is measured. Absence is only a bounded observation, never a preference by itself.
+6. **Observability & safety signals.** Logging/tracing/metrics density, assertions, input validation, `#[must_use]`, where error boundaries sit.
+
+## Dimensions (cover only where evidence supports; omit the rest)
+
+- **Design & problem-solving** — what they reach for: error-handling philosophy, how they decompose, concurrency/ownership model, abstraction level, state management.
+- **Code shape & organization** — module/file/function layout, granularity, naming tendencies. Exclude anything the formatter enforces.
+- **Comments** — do they write them *at all*? Where, and what kind — why-comments, doc contracts, or none? Is the density lint-forced?
+- **Tests** — parametrized/table-driven or one-off per case? Unit vs integration? Assert-heavy vs property-based? What do they actually cover — happy path, edges, error paths?
+- **Optimization & performance** — do they optimize? Premature, or measured (benchmarks/profiling present)? What — allocations, hot paths, caching? Or do they trade perf for clarity?
+- **What they pay attention to** — the throughline. Where the care and ceremony cluster: correctness, type-safety, error boundaries, observability, API ergonomics, backward-compat, security. Infer it; name it.
+- **Commits** — voice (terse/verbose, imperative, conventional/ticket/bare), granularity (one concern or bundled), subject vs body.
+
+## Hard rules
+
+- **Ground every claim in a tell** — a count or a named example. `Optimizes only after measuring (3 criterion benches; no #[inline] in the hot loop)`, not `cares about performance`.
+- **Count the contrast.** "X over Y" needs both numbers.
+- **Exclude tool-enforced traits.** Check fmt/lint config first; a forced trait is a measured rule, not a signature.
+- **Absence needs a denominator and opportunity.** State `not observed in <N> relevant files/tests/commits`, not `never X`; do not infer a preference when the sample lacks a relevant opportunity. A missing property test in a non-algorithmic corpus, for example, says nothing about the author's testing preference.
+- **No generic praise.** `clean`, `readable`, `idiomatic`, `well-structured`, `best practices` — banned. If you can't tie it to a tell, cut it.
+- **Write it as a portrait** — a short grounded paragraph per dimension, not isolated bullets. It should read like a description of a person, not a lint report.
+
+## Save a review candidate
+
+Write the portrait with a source list to a new `~/.mastermind/style.deep-candidate-*.md` file. Label each statement as unreviewed and cite the actual commit or file span that led to it. Do not write it into the managed `style.md` block or present it as an accepted personal rule. Ask the author to verify attribution, the examples, and counterexamples before any later import into the SQL profile.
+
+## Persistence contract
+
+The candidate stays separate from the generated profile. A normal
+`mastermind miner profile` re-mine does not overwrite it. The compatibility
+command `mastermind miner profile --deep` also writes an unreviewed candidate.
+On the next publication, legacy manual/interpreted text is preserved in fenced
+unreviewed notes in schema-5 `style.md`. Inspect its original evidence locally.
+For supported human session signals use `miner collect`, `candidates show`,
+`candidates propose-preference` and revision-bound `feedback accept`; habits use
+`habit propose` and `habit observe`. Git-only interpretations and unsupported
+session signals remain unreviewed. Do not invent a human quote or use the legacy
+`feedback add` route as proof of strict candidate provenance.
+
+## Consumption contract
+
+The reviewed profile is advisory input for [[mastermind-task-planning]] and
+[[mastermind-task-executor]]. An unreviewed candidate is not agent context.
+Deterministic code-shape observations are evidence for the
+portrait, not direct implementation preferences. Never transfer a
+language-specific observation into another language. Commit voice may be a
+fallback only when repository policy is silent. Repository code and
+enforced formatter/linter configuration take precedence. The profile never
+overrides Scope, Acceptance Criteria, security controls, or public behavior.

@@ -1,0 +1,101 @@
+---
+name: keel-update
+description: Pull the latest Keel template improvements into THIS project — kit tooling in one reviewed batch, likely-tailored files hunk-by-hunk; only approved hunks are applied. Never touches project memory (HANDOVER/LESSONS/TASKS) or project-owned files (src/, CLAUDE.md, ADRs).
+---
+
+# /keel-update — sync this project with the latest Keel template
+
+Use when the kit was **cloned** a while ago and the template has since improved (hardened hooks, doc
+fixes, workflow updates). Pull model: run it IN the project, review diffs, approve. Non-destructive is
+the hard rule (same spirit as `/keel-adopt`): nothing is applied without a shown diff + an explicit yes.
+
+**One channel:** the kit is clone-only (the plugin/marketplace half was retired in v0.8.23 — it
+delivered only the tooling, double-fired hooks alongside a clone, and needed marketplace access that
+locked-down networks block). Everything therefore syncs HERE, through the buckets below. If a project
+still has `keel@keel` installed from before, removing it is the fix for double-firing hooks.
+
+## 1. Fetch the latest template (never inside the project)
+```bash
+rm -rf /tmp/keel-latest   # idempotent — clear the stale clone a previous /keel-update run left behind
+git clone --depth 1 https://github.com/muratsilahtaroglu/claude-code-starter-kit /tmp/keel-latest
+git -C /tmp/keel-latest rev-parse --short HEAD   # record for the handover line
+```
+
+## 2. Classify every template path into three buckets
+- **PROTECTED — never touched (project-owned):** `HANDOVER.md` · `LESSONS.md` · `TASKS.md` · `PLAN.md` ·
+  `docs/handover-archive.md` · `docs/lessons-retired.md` · `docs/architecture.md` · `docs/adr/*` (except the kit-owned `0000`
+  template and the folder `README.md` — those are TOOLING) · `CLAUDE.md` · `README.md` · `LICENSE` ·
+  `config/` · `requirements/*.{txt,lock}` contents · `.env.example` values · `src/` · `tests/`
+  (except the kit-owned `tests/unit/test_keel_*.py` matrix — that is TOOLING, same carve-out as
+  the ADR `0000` template; never put project tests in a `test_keel_*.py` file) ·
+  `scratch/` · `research/` findings · `reports/` · `.claude/last-audit` · `.claude/project-owner` ·
+  `.claude/keel-caps` · `.claude/lessons-backlog` · `.claude/tasks-backlog` (project state: audit clock + governance owner +
+  tuned caps + entry-budget baseline) ·
+  `.claude/agents/team-*.md` (project agent-team charters, owner-authored — the kit ships none;
+  `.claude/agent-team-sessions` is git-ignored and never syncs).
+- **REVIEW — likely tailored; full diff, apply hunk-by-hunk with approval:** `rules.md` ·
+  `.claude/settings.json` (permissions merge = union, keep the project's) · `.gitignore` ·
+  `.pre-commit-config.yaml` · `pyproject.toml` · `Makefile` · `Dockerfile*` · `.dockerignore` ·
+  `docker-compose.yml` · `.editorconfig` · `.github/*` (workflows + PR template) ·
+  `docs/layouts.md` · `docs/user_manual.md` · **folder READMEs that carry KIT DOCTRINE inside a
+  PROTECTED tree** — `scratch/README.md`, `tests/README.md`, `tests/*/README.md`: the folder's
+  CONTENTS are the project's, but the README states the kit's rule for that folder and projects
+  tailor it, so it is diffed hunk-by-hunk rather than skipped with the tree (without this the
+  scratch-as-evidence rule of v0.8.25 could never reach an adopted project) · **`reports/team/README.md`**
+  (the index TEMPLATE inside the PROTECTED `reports/` tree: its header is kit doctrine — status
+  vocabulary, index scope — while its lines are the project's; diff the header, never the lines).
+- **TOOLING — template-owned; summarize changes, one approval for the batch:** `.claude/skills/**` ·
+  `.claude/hooks/**` · `.claude/*.py` · `.claude/claude-launch-wrapper.sh` (kit-owned tools that sit at the `.claude/` root — team-addresses, ritual-report, the launch wrapper) · `.claude/agents/{researcher,verifier,auditor,observer,README}.md` · `.claude/rules/README.md`
+  (+ example) · `tests/unit/test_keel_*.py` · `docs/security.md` · `docs/steering.md` ·
+  `docs/memory-files.md` · `.claude/keel-caps.example` (the key reference; the project's own
+  `.claude/keel-caps` stays PROTECTED) ·
+  `docs/adr/0000-adr-template.md` · `docs/adr/README.md` · `docs/assets/` · `CONTRIBUTING.md`
+  (kit-meta by its own first line) · folder `README.md`s.
+
+**If a path matches two buckets, the more protective one wins: PROTECTED > REVIEW > TOOLING**
+(e.g. `config/README.md` is a folder README, but `config/` is PROTECTED → protected).
+
+**A TOOLING file the project has COMMITTED to is no longer template-owned — check before copying.**
+For every TOOLING path about to be applied, run `git log --oneline -- <path> | wc -l` IN THE PROJECT:
+non-zero means the project edited it, so it moves to **REVIEW** (hunk-by-hunk), never a blind
+overwrite. These files carry kit doctrine in their HEADER but project DATA in their BODY — the same
+split the memory files use — and the batch approval only ever covered the doctrine. Field case
+(2026-08-27): one blind TOOLING batch reset a 12-row ADR index to the template's empty
+`Next number: 0001`, deleted a project agent's registration, deleted a 27-line pip-audit runbook, and
+inverted a project note. The file with the MOST local commits (13) was exactly the one destroyed —
+the signal was there and nothing read it.
+
+**Respect the bootstrap prune (rules.md §0e):** files the tailoring removed on purpose (recorded in the
+first HANDOVER block / tailoring ADR) are **not re-added** — list them as "pruned, skipped" unless the
+user explicitly asks for them back.
+
+## 3. Present the plan, then apply approved-only
+**Enumerate changes MECHANICALLY — do not eyeball.** For EVERY path in the TOOLING + REVIEW buckets,
+`diff -q <template-copy> <project-copy>`; every differing file MUST appear in the plan. Hand-picking "the
+files that obviously changed" is how a hook lands while the skill it references does not — a half-applied
+update leaves the hooks ahead of the skills (e.g. an owner-review nudge with no `## Review` write logic).
+Then one table — **new · changed · pruned-skipped · protected** — one line per file with what/why, and the
+diffs per §2 buckets. Apply only what was approved; never resolve a conflict silently.
+
+**When the kit and the project both implement ONE function, decide per FUNCTION — not per file set.**
+Compare the two feature by feature and keep the SUPERSET; either side may be it, and the answer can
+differ within a single update, so a blanket "adopt the kit's tools" is the wrong unit of decision.
+Field case (2026-08-27): of two such pairs, the kit's address resolver was the superset (same
+detections plus the fix instruction in every line) while the PROJECT's LESSONS entry-budget was — it
+had already absorbed the kit's fix and its docstring carried the owner's decision rationale, which a
+pointer would have demoted. **Whichever loses is REMOVED — its file and its test — and listed as a
+conscious skip**, so exactly one implementation survives: keeping both and disabling one leaves a
+second codebase that drifts (measured in that same case — the two copies had already diverged by one
+fix). If something permanent cites the retired file (an archive block, a report), leave a one-line
+pointer to the survivor instead of deleting it, so no citation dangles.
+
+## 4. Verify + record
+- **Consistency re-diff:** after applying, `diff -q` the TOOLING paths against the template again — none
+  should still differ except the ones consciously skipped. A leftover diff means a skill/hook pair is
+  half-updated (the §3 failure mode) — finish it before committing.
+- Hooks stay executable: `chmod +x .claude/hooks/*.sh`; each new/changed hook is registered in
+  `.claude/settings.json` (an unregistered hook never fires — the re-ground hook flags this).
+- Quick smoke: the project's tests still pass (rules.md §2.8).
+- `HANDOVER.md` block (a) one-liner: `keel /keel-update applied @ <template-sha>: <files>`; structural
+  changes also land in `docs/architecture.md` (rules.md §1.6). Commit with approval (rules.md §1.3);
+  push only with approval (§6).

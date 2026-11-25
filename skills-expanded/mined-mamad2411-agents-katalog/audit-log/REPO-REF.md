@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-boisenoise-skills-collections/antigravity-audit-log/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Audit trail register: timestamp, user, module, record, action, field changed, old and new value, and the reason for the change. Use for change history and control evidence.'

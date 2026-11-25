@@ -1,0 +1,269 @@
+---
+description: "When the built-in EnterWorktree or ExitWorktree tool resolves in this session, prefer ExitWorktree with action keep to leave a worktree; this skill to create one, to enter an existing one (claim check, then EnterWorktree by path), and to inventory, clean up, or audit worktrees. Manage git worktree lifecycle for parallel-session isolation: create (external root, then enter), status (PR + staleness inventory), cleanup (file-lock-aware removal), audit (infrastructure health). Use when: 'create worktree', 'worktree status', 'clean up worktrees', 'orphaned worktrees', or proactively when on main before writing code, not for PR lifecycle (use /pull-request)."
+user-invocable: true
+disable-model-invocation: false
+argument-hint: "[create|status|cleanup|audit] [args]"
+metadata:
+  workflow-stage: session
+  summary: Create, inspect, and clean git worktrees for parallel sessions
+---
+
+**Arguments.** `[create|status|cleanup|audit] [args]`. e.g., /worktree create feat/my-feature, /worktree status, /worktree cleanup [<path>...] [--dry-run], /worktree audit
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+- Worktree inventory, `git worktree list | head -30`
+- Git dir. `git rev-parse --git-dir`
+- Git common dir (differs from the git dir when in a linked worktree).
+  `git rev-parse --git-common-dir`
+
+Body calls keep this skill invocable from inside a worktree. The Bash shapes an isolated session
+accepts at body time and in subagents are in [reference/gather-block.md](reference/gather-block.md),
+"Accepted command shapes for body-time and subagent Bash".
+
+The refusal that record names is documented isolation enforcement, so the constraint is durable. Our rules: treat a
+refused compound command as unverifiable, not as proof it would have reached the main checkout;
+rewrite it as plain, separate commands; expect a delegated worker to inherit the same refusal; and
+never use PowerShell, whose coverage is narrower, as a route around the git-redirect or
+command-shape check. Pointer:
+[How Claude Code enforces isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation),
+which lists the checks, their scope over subagents and background runs, and PowerShell's coverage.
+
+## Purpose
+
+Orchestrate git worktree lifecycle from creation through cleanup. **Front-half** of the development workflow: it gets you into a worktree and keeps worktrees healthy. `/source-control:pull-request` is the **back-half**: prep, PR creation, monitoring, merge.
+
+**Why this exists:** worktrees isolate parallel code changes, so Claude Code sessions on different tasks don't step on each other. Where branch protection blocks direct commits to main, every feature, fix, or refactor starts with a worktree or branch; this skill makes that seamless.
+
+This skill canonically owns the parallel-session worktree convention **for this plugin fleet**, and [reference/nesting-invariant.md § The nesting invariant, dated measurement](reference/nesting-invariant.md) is the one site that states the mechanism; every other surface in this plugin points there. That is an ownership claim, not a census: consumer docs outside this repository also describe worktree placement, at least one written after that file's as-of date. So ownership comes with an inbound channel: **a consumer that measures something contradicting that file should open an issue on this plugin's tracker so the owner is corrected here.** Without that back-channel the owner is the last to know.
+
+Worktrees live at an external `worktree_root` (`<root>/<owner>-<repo>-<slug>`, outside every repository), defaulting to `<plugin-data-dir>/worktrees` when the key is unset, and never nested inside any repository's tree. Creation enforces that nesting invariant on the dated measured basis recorded below, not as a standing absolute. Keeping `worktree_root` clear of repository-discovery roots (such as a ghq root) is convention, not machine-checked: creation rejects only paths inside an existing repository, so a root inside a discovery tree still pollutes repository enumeration (`ghq list` reports each worktree as a repository, and a leading dot does not hide it). Choose a configured root accordingly. The default is already clear: the plugin data directory is harness state, never a checkout and never inside a discovery tree, which a checkout-relative default would be under a layout like `<root>/github.com/<owner>/<repo>`.
+
+## Adapting to your environment (graceful degrade)
+
+This skill is self-contained: every action runs on plain `git`, plus the forge CLI for PR cross-referencing where available ([GitHub provider reference](../../reference/providers/github/README.md)). An adjacent capability it mentions (an issue tracker, a build/lint verifier, a session-start setup hook) is optional: use it when present, proceed without it otherwise. Project conventions (branch naming, worktree layout, which gitignored files a fresh worktree needs) come from the consuming project's own `CLAUDE.md`, rules, and hooks; read them before creating or removing anything.
+
+## Arguments
+
+`$ARGUMENTS`. Action selector: parse the first token as the action, the rest as arguments.
+
+| Action | Entry point | Use case |
+|--------|-------------|----------|
+| *(empty)* | Smart default | Detect current state, suggest appropriate action |
+| `create [name]` | Create worktree | Validate name, explain setup, call EnterWorktree |
+| `status` | Inventory | List all worktrees with PR status and staleness |
+| `cleanup [<path>...] [--dry-run]` | Remove stale | Prune orphans, detect merged PRs and stale locks, remove with confirmation; named paths limit it to exactly those worktrees |
+| `audit` | Health check | Run status + verify configuration health |
+
+---
+
+## Action: Smart Default (empty args)
+
+Detect current state and guide user to the right action.
+
+1. **Check git repo**: `git rev-parse --is-inside-work-tree`. If not in a repo → "Not in a git repository. `status`, `cleanup` and `audit` still work here, across repositories."
+
+2. **Detect current branch**: `git rev-parse --abbrev-ref HEAD`
+
+3. **Check if in a worktree**: `git rev-parse --git-dir` differs from `git rev-parse --git-common-dir` in any linked worktree. Common layouts: a `.worktrees/` directory sibling to the repo's `.claude/`, Claude Code's default `.claude/worktrees/`, or a bare-clone hub (`git rev-parse --git-common-dir` ends in `.bare` and worktrees are siblings of `.bare/`).
+
+4. **Branch-based guidance**:
+
+   - **On the default branch** → "You're on `<default-branch>`. Create a branch (`git checkout -b <type>/<description>`) or use `/source-control:worktree create` if you need parallel session isolation."
+   - **In a worktree** → Show current worktree info: branch name, last commit, associated PR (the forge's PR list for the branch). If a PR exists, suggest the next `/source-control:pull-request` phase.
+   - **On a feature branch (not worktree)** → Show branch info and any associated PR.
+
+5. **Check for stale/prunable worktrees**: Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/worktree-facts.sh" list <repo>` and read its `prunable` column. If any worktrees are prunable or branches have merged PRs → suggest `/source-control:worktree cleanup`.
+
+6. **Otherwise** → Show brief status summary (worktree count, any needing attention).
+
+---
+
+## Action: `create [name]`
+
+Create a worktree with guided naming and setup verification. Full procedure (pre-flight guards for already-in-worktree and mid-session transition, name validation against EnterWorktree schema constraints, base-ref notes, the explain-before-create block, directory-rename caveats, post-create setup checks): [context/create.md](context/create.md).
+
+**Safety invariants create must honor** (full detail in context/create.md):
+
+- **Create via the shared helper, not `EnterWorktree(name:)`.** `${user_config.worktree_root}` substitutes into skill content as raw text, not shell-escaped, so it must never reach a shell parser: a value containing `'`, `$`, or a backtick breaks a quoted `--root` literal, and one containing the delimiter line ends a heredoc early. Write it to a temp file with the `Write` tool (JSON string parameter, never shell-parsed) and pass the file to the helper's `--fallback-root-file` flag (plugin-option rung, below `worktreeroot.path`); full render in [context/create.md § Create the worktree](context/create.md#create-the-worktree). The helper places the worktree at the external root (`<root>/<owner>-<repo>-<slug>`), copies `.worktreeinclude` files, and prints the path. `EnterWorktree(name:)` lands in the in-repo `.claude/worktrees/`, the placement [The nesting invariant, dated measurement](reference/nesting-invariant.md) exists to avoid.
+- **On a non-zero helper exit, stop, never fall back to `EnterWorktree(name:)`.** An unset `worktree_root` is not an error when another rung resolves: the helper may use `worktreeroot.path` or fall back to `<plugin-data-dir>/worktrees` from the value below, noting it on stderr and exiting 0. Exit 3 means no usable root (none configured or supplied), a resolved root the containment guard rejects as inside a repository, **or** (on Windows) a root on a different drive from the repo, including the unconfigured plugin-data-dir default. Surface the helper's guidance and stop; a silent in-repo fallback is the nesting regression this closes.
+- **Scripts directory (resolved): `${CLAUDE_PLUGIN_ROOT}/scripts`.** The `context/` files call it `<scripts-dir>`; substitute this resolved absolute path before any of their commands reaches Bash. Observed 2026-09-29 (Claude Code 2.1.284) in two headless `claude -p` runs on a disposable `--plugin-dir` plugin, which quoted the token back from the skill body and from a context file, then ran the context file's Bash line: `${CLAUDE_PLUGIN_ROOT}` expands in this file but stays literal in a `context/` file read via `Read`, and a command with the literal token exits 127 from `/scripts/...`. **Pointer**: when checking where plugin variables resolve, fetch [Where each variable resolves](https://code.claude.com/docs/en/plugins/manifest-reference#where-each-variable-resolves) live. **As of**: 2026-11-10. **Recheck trigger**: that section or a Claude Code release note changes plugin-variable substitution or the Bash tool environment, or a run of the same probe shows the token expanded in a context file.
+- **Plugin data directory: `${CLAUDE_PLUGIN_DATA}`**. This file is the only surface where that token expands (a `context/` file is read as raw bytes and carries it literally, and a Bash-tool subprocess's environment copy is not per-plugin). Pass the resolved path to the helper's `--data-root-file` flag through the same `Write`-tool temp file channel as the root above, so an unconfigured `worktree_root` still resolves outside every repository. If the token arrives unexpanded, the helper detects it and refuses rather than creating a literally-named directory.
+- **Run the Workspace environment `setup` after the worktree exists and before entering it.** When origin's default branch declares a "Workspace environment" entry, read it from the fetched default-branch commit (never the working tree) and run its `setup` command through the Bash tool from the new worktree root with `WORKSPACE_ID` and `WORKSPACE_ROOT` set, on both the helper path and the plain `git worktree add` path; skip it for a worktree whose stage reads untrusted input. The `WorktreeCreate` hook runs no verb. Contract: `docs/contracts/workspace-environment/README.md` in this plugin's marketplace repository; procedure in [context/create.md § Workspace environment setup](context/create.md#workspace-environment-setup).
+- **Enter with `EnterWorktree(path: "<printed-path>")` as the final action**: the working directory and session state change on that call, so nothing may run after it. The out-of-`.claude/worktrees/` path prompts for approval; the next bullet's pointer covers when that prompt fires.
+- **With no user present, skip `EnterWorktree` outside `.claude/worktrees/`.** A headless, background or auto-mode run has no one to answer that approval, so the call is denied. Report the printed path and work by explicit path: `git -C <literal path>` for git, and the literal absolute path for every other command and file tool, since the shell's working directory resets after each call. Observed 2026-10-09: the ask was denied in a headless probe. Pointer: [Ask Claude to create a worktree](https://code.claude.com/docs/en/worktrees#ask-claude-to-create-a-worktree), which states when the approval prompt fires and what suppresses it.
+
+**Orchestrated (autonomous) provisioning does not use this action.** An orchestrator that must stay resident to keep dispatching (e.g. `/work-items:work`) cannot invoke `create`: the `EnterWorktree` terminal above would transition its own session and end its ability to orchestrate. It provisions **non-interactively**: the dispatched worker runs the shared `worktree-create.sh` helper directly (its output contract prints the path; the caller omits the `EnterWorktree` step), or a plain `git worktree add` followed by `scripts/worktree-claim.sh claim <path>` (the PostToolUse hook does this for Bash-tool adds, claiming only the parsed target), then runs the Workspace environment `setup` for it exactly as [context/create.md § Workspace environment setup](context/create.md#workspace-environment-setup) describes, then works the worktree via `git -C <path>` **without entering it**. When that direct invocation runs from outside the repository, add `--repo-dir <repo-toplevel>` to the flags the interactive path already passes (`--name`, `--fallback-root-file`, `--data-root-file`; see context/create.md). `--repo-dir` alone is incomplete: with `worktreeroot.path` unset, the helper gets the plugin-data default only through `--data-root-file` and otherwise exits 3. Also pass `--base-ref head` when the effective `worktree.baseRef` setting is `head`, resolved one settings layer per call as [context/create.md § Base branch](context/create.md#base-branch) orders it; an omitted `--base-ref` defaults to `fresh`. The dispatching orchestrator (`/work-items:work`) owns that worker-side lifecycle end to end.
+
+**Pass this session's id on every direct helper invocation.** `${CLAUDE_SESSION_ID}` expands in this file. The helper's lock is this session's claim only when `--session-id` carries that resolved value, because the reason then contains `session <id> since`, the token `check-enter` matches. If the token is still literal, stop and do not call the helper: it treats an unexpanded value as a usage error and creates nothing. [context/create.md](context/create.md) gets the resolved value, not the token, because a context file is read as raw bytes.
+
+**Before writing in an existing worktree, run the claim gate.** A helper-created tree already carries a lock reason; a plain `git worktree add` may not. Run it before `git -C <path>` writes, or before `EnterWorktree(path:)` into a tree this session did not just create:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-claim.sh" check-enter <path> --session-id "${CLAUDE_SESSION_ID}"
+```
+
+`${CLAUDE_SESSION_ID}` is the skill-markdown substitution (same token as `plugins/context-usage/reference/reader-contract.md`). Pass it explicitly: the PostToolUse hook records the payload `session_id` in the lock. Without `--session-id`, the script falls back to `CLAUDE_CODE_SESSION_ID` from the Bash environment, then `CLAUDE_SESSION_ID`; with none of the three, `check-enter` cannot prove ownership and treats even this session's claim as foreign. If the literal `${CLAUDE_SESSION_ID}` survives unexpanded, do not guess an id: surface that and stop.
+
+Exit 4 prints `FOREIGN CLAIM: <reason>`: stop, another session holds a live claim. Exit 3 prints `UNCLAIMED`: claim it (`claim <path> --session-id "${CLAUDE_SESSION_ID}"`) or leave it. Exit 0 is this session's claim, or a path that is not a linked worktree. `report` lists every linked worktree that still has no reason. The lock does not block writes; the reason is the claim other agents can read.
+
+**Resuming a handoff: hand the claim over before the gate.** After a handoff and `/clear` the lock still names the old session, so `check-enter` reports it as foreign; first run the `handover` in [context/create.md § Resuming a handoff](context/create.md#resuming-a-handoff).
+
+---
+
+## Action: `status`
+
+Inventory all worktrees with PR association, staleness detection, and a **stranded-work axis**. Collect Tier-0 facts with `bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/worktree-facts.sh" list <repo>` (do not parse porcelain by hand), a per-branch forge PR read, last-commit dates, and one run of `${CLAUDE_PLUGIN_ROOT}/scripts/landed-work.sh` per repository. Then apply the two-axis classification, staleness threshold (14-day default; the configured override is `${user_config.worktree_stale_days}`), the reap-age hours `cleanup` reads (48 default; `${user_config.worktree_reap_after_hours}`), and presentation schema per [context/status.md](context/status.md). `audit` Step 1 runs this logic internally. Outside a repository it covers every repository: [context/status.md](context/status.md#outside-a-repository-cross-repository-mode).
+
+The **Work** axis answers what age and PR state cannot: whether removing a worktree would destroy a commit. It is classified first and outranks the rest, so a worktree holding unpushed unlanded commits is `stranded`, never merely `stale`. An unprovable verdict reports `unknown` and is treated exactly as `stranded`: the engine reports `?` rather than `no` so an ambiguity is never read as safe.
+
+---
+
+## Action: `cleanup [<path>...] [--dry-run]`
+
+**Safety invariants cleanup must honor** (full detail in context/cleanup.md):
+
+- **Never remove a worktree, and never run or emit its `git branch -D`, while its work is stranded or unproven**: a worktree whose unpushed commits are not already on the base loses them, and `unknown` is treated exactly as `stranded`. Both sites are guarded because removal is recoverable (the branch ref survives) but the branch deletion one step later is not; a detached-HEAD worktree is the exception, where removal alone is terminal. The override is `--acknowledge-stranded`, per worktree, never a bare `--force`, which answers git's dirty-tree check, a different question. Offer `git -C <path> push -u origin HEAD` first: it makes the commits durable without anyone judging whether the work matters.
+- **Release OS file locks before `git worktree remove --force`, but only after the keep/remove guards clear** (Step 4a), so a worktree a guard keeps loses no process. On Windows `--force` unregisters the worktree but leaves a husk on disk if a process holds a file handle. Stop build servers (with the shutdown command the project's build tool documents) and worktree-rooted daemons/MCP servers first; stop only those (never another live worktree's processes).
+- **Reap the worktree's project-scope plugin install records before removing its directory, and only ever on a teardown this action is performing** (Step 4a). Claude Code keys a project-scope install to a literal `projectPath` and never reaps it when that path goes away, so a torn-down worktree leaves one record per installed plugin behind forever. Run `${CLAUDE_PLUGIN_ROOT}/scripts/reap-project-plugin-records.sh --worktree-path <path>` after the stranded-work and carried-file guards clear and, for a locked candidate, `worktree-claim.sh stale <path>` exits 0. `claude plugin uninstall -s project` has no path flag and resolves strictly against the current directory, so the script enters `<path>` itself (the caller's cwd does not matter) and refuses a main working tree. **Never trigger a reap on bare path non-resolution.** A record for a live repository on an unmounted share or detached volume looks identical to a dead worktree, and destroying it is unrecoverable. An **orphaned-directory** candidate is the strictest case, the only class with no stranded-work row to read, so it must pass every test for its class. An `empty` row needs *not a symlink*, *not a work tree*, *no `.git` entry*, and *empty*. A `husk` row needs *not a symlink*, *not a work tree*, a `.git` file naming `<common>/worktrees/<name>` whose admin dir is gone while `<common>` is still a repository, and *no entry but that file*. The `.git` test is the one that matters, and the first does not imply it: a live worktree whose main clone was moved, deleted, or unmounted still carries its `.git` file while `rev-parse` fails and has no `<common>` to show, and the external root is shared across repositories, so such a directory is another lane's live work: `unknown`, never a husk. Pre-existing orphans are `audit`'s to report, not this action's to remove.
+- **A worktree's lock is its owner's claim, and reap age never overrides it.** Every helper-created worktree is locked at creation. A locked worktree past the reap age is proposed only when `worktree-claim.sh stale <path>` exits 0, the same proof a **Stale lock** needs; otherwise it stays locked and is reported. Unlock and removal wait for the Step 4 confirmation, never `--force --force`.
+- **A reap's non-zero exit is a no-op to report, never an escalation.** The CLI's failure text for an id with no project-scope record here suggests `--scope user`, which would uninstall the plugin fleet-wide. Never run `-s user`, never `--prune`, and never hand-edit `installed_plugins.json` (Claude Code's internal state, not a published contract).
+- **Never swallow removal stderr** (`2>/dev/null`): a failed removal must surface so Step 5 reports husks honestly instead of counting one as removed.
+- **Run the Workspace environment `down` before removing a worktree**, after the guards clear and before the reap, read from the fetched default branch and run through the Bash tool; a failed `down` is reported and the removal continues under the guards. Procedure in [context/cleanup.md](context/cleanup.md) Step 4a.
+- **Run `git branch -D` + self-worktree removal inline on Linux and macOS, only after the Step 4 confirmation and a passed stranded-work guard; emit them for the user to run on Windows or when a hook blocks the command** (Step 4b). On Windows the running Claude Code session holds the directory handle, so a worktree can't delete itself; on POSIX a working directory can be removed while a process runs. A hook block is reported, never worked around. `-D` (not `-d`) is needed because squash-merge changes the SHA.
+
+Remove stale worktrees, orphaned metadata, branches from merged PRs, and the project-scope plugin install records the worktree leaves behind. Full 5-step procedure: prune orphaned metadata → identify candidates (detection reasons: orphaned dir / prunable / PR-merged / stale / stale lock / reap age, the last proposing an already-safe worktree older than `${user_config.worktree_reap_after_hours}` hours, 48 by default) → present → execute (4a guards → release file locks → `down` → reap records → remove, 4b branch deletion and current-worktree removal) → verify physical deletion: [context/cleanup.md](context/cleanup.md). `--dry-run` reports candidates and takes no action.
+
+**Scope.** Paths given after `cleanup` limit the run to exactly those worktrees: the same classification and every Step 4 guard apply to each, and the repository-wide inventory and root scan are skipped. A bare `cleanup` in a session that created, entered or merged a PR from one worktree asks whether to target that worktree or the whole repository before inventorying; the whole-repository sweep behaves as before when chosen. See [context/cleanup.md § Scope](context/cleanup.md#scope-explicit-paths-or-the-whole-repository).
+
+---
+
+## Action: `audit`
+
+Periodic health check for worktree infrastructure, suitable as a recurring tracker work item. **Step 1:** run the `status` action internally, flagging any worktree whose Work axis is anything but `safe` (the closed mapping is in [context/status.md](context/status.md); do not re-enumerate here) and any whose Status shows an issue (stale, merged-not-cleaned, prunable, locked, pr-unknown). Stranded work leads the findings: it is the only class where doing nothing is safer than acting. The Step 2 configuration-health checklist (`delete_branch_on_merge`, the `worktreeroot.path` conformance doctor, gitignored-file propagation), the Step 2b orphaned-plugin-install-record report, the Step 2c root scan of unregistered directories under the worktree root (`${CLAUDE_PLUGIN_ROOT}/scripts/worktree-root-scan.sh`; `empty` and a `husk` holding only its `.git` file go to `cleanup`, the other classes are reported only), and the Step 3 findings presentation: [context/audit.md](context/audit.md).
+
+**Step 2b reports; it never reaps.** Records left by worktrees removed without the reap step (by hand, by another tool, or by an older cleanup) are out of that step's reach, so `audit` shows them in four buckets: *live here*, *live elsewhere*, *candidate orphan*, and *other project records* (information only, no remedy, because this plugin owns worktree lifecycle and nothing else). **The *live elsewhere* bucket is load-bearing and is the one an implementation drops:** one shared root at `<root>/<owner>-<repo>-<slug>` serves every repository, so "not in *this* repository's `git worktree list`" is true of every other repository's live worktree under it. Registration is scoped to one repository; a liveness test (`git -C <path> rev-parse --is-inside-work-tree`) is not, and both are required before anything is called an orphan. Removing an orphan needs its directory recreated first, a deliberate user act; the audit emits the commands and stops. Bare path non-resolution is exactly what an unmounted volume looks like, so a reap on it is never done.
+
+---
+
+## Sandboxed sessions
+
+When this session's Bash commands run in the sandbox, `create` and `cleanup` take the native-tool
+route below. In a sandboxed session this section overrides the create invariants above and the
+Routing and Mutation gate rules of the Boundary section below wherever they forbid `EnterWorktree(name:)` or
+`ExitWorktree(action: "remove")`. Unsandboxed sessions keep the helper and `EnterWorktree(path:)`
+route. Decide which route applies before running the helper. To tell whether this session's
+commands run sandboxed, see
+[sandboxing: confirm commands run inside the sandbox](https://code.claude.com/docs/en/sandboxing#confirm-commands-run-inside-the-sandbox).
+
+- **Require a git repository.** Outside one, report and stop.
+- **Create.** The plugin's `WorktreeCreate` hook creates and claims the worktree at the external
+  root. For a new branch the hook uses the
+  helper's `fresh` base, with the remote default branch and fallback described in
+  [Base branch](context/create.md#base-branch). Resolve `worktree.baseRef` as described there
+  before calling the tool. If the session needs `head`, stop and report that the sandboxed route
+  cannot honor it. Follow the name validation and explain block in [context/create.md](context/create.md),
+  describing the base and the steps for this route. Call `EnterWorktree(name: "<validated name>")`,
+  then run the Workspace environment `setup` through Bash from the worktree root. Report a failed
+  `setup` without retrying. For upstream behavior, read
+  [WorktreeCreate](https://code.claude.com/docs/en/hooks#worktreecreate),
+  [what runs outside the sandbox](https://code.claude.com/docs/en/sandboxing#what-runs-outside-the-sandbox),
+  and [default placement](https://code.claude.com/docs/en/worktrees#start-claude-in-a-worktree).
+- **Commit** from inside the entered worktree, never by `git -C <worktree>` from the main checkout.
+  Pointer: [sandboxing: filesystem isolation](https://code.claude.com/docs/en/sandboxing#filesystem-isolation),
+  for what a linked worktree may write in the shared `.git`.
+- **Remove** only the worktree this session created with `EnterWorktree(name:)`, from inside it.
+  Run `cleanup`'s stranded-work and carried-file guards (both read-only), then the Workspace
+  environment `down`, then `ExitWorktree(action: "remove")`. The plugin's `WorktreeRemove` hook
+  handles the reap and removal, so skip `cleanup`'s Bash reap. Read
+  [WorktreeRemove](https://code.claude.com/docs/en/hooks#worktreeremove) for the tool's removal
+  arguments and [Clean up worktrees](https://code.claude.com/docs/en/worktrees#clean-up-worktrees)
+  for native removal and branch handling. When the guard keeps the worktree and the push it offers
+  fails under the sandbox, leave with `ExitWorktree(action: "keep")` and report it. `cleanup`
+  reports every other candidate, and any `git branch -D` the sandbox refuses, for an unsandboxed
+  session to finish, as it does for a hook block.
+
+Probe observation: [the #17901 probe](https://github.com/melodic-software/claude-code-plugins/issues/17901#issuecomment-7089725966),
+Claude Code 2.1.330 on Linux (WSL2), found Bash `git worktree add` and `remove`, and a commit run
+from the main checkout into a worktree, all refused with the sandbox on, while the native create,
+commit and remove route succeeded. **As of**: 2026-11-22. **Recheck trigger**: the sandboxing
+page's filesystem-isolation section changes what a linked worktree may write in the shared `.git`,
+or a Claude Code release changes the sandbox's filesystem rules or the worktree tools.
+
+### The nesting invariant, dated measurement
+
+Worktrees stay outside every repository's tree. The measured basis, its disputed arms, the
+verification stamp and its unconditional expiry are owned by
+[reference/nesting-invariant.md](reference/nesting-invariant.md); read it before citing that
+basis or changing the placement rule. A routine `create` follows the rule without reading it.
+
+## Boundary, the built-in `EnterWorktree` and `ExitWorktree` tools
+
+When built-in worktree tools resolve in this session, a request to "make a worktree" can reach
+either a tool or this skill.
+
+- **`EnterWorktree` (built-in tool)**: creates a worktree by name in the in-repo
+  `.claude/worktrees/` and switches the session into it, or, given a `path`, switches into an
+  existing worktree. The model invokes it; the person does not.
+- **`ExitWorktree` (built-in tool)**: leaves a worktree session and restores the original
+  directory. `action: "keep"` leaves the worktree and its branch on disk; `action: "remove"`
+  deletes both, but the tool will not remove a worktree that was entered by `path`. Since
+  2.1.327, `remove` asks first when the worktree may hold unsaved work, and is refused in
+  don't-ask mode or with nobody to answer unless an allow rule, auto mode or bypass permissions
+  mode allows it (changelog item 2.1.327-131). Since 2.1.330, neither `remove` nor the worktree exit dialog deletes a worktree that another running
+  Claude Code session is working in (changelog item 2.1.330-012).
+- **This skill (marketplace plugin).** Creates the worktree at an external root through the
+  shared helper, then enters it with `EnterWorktree(path:)`; checks the session claim before
+  entering an existing worktree; owns `status`, `cleanup`, and `audit`.
+
+**Routing.** When `ExitWorktree` resolves in this session, use it with `action: "keep"` to leave a
+worktree. Use this skill to create a worktree, and never `EnterWorktree(name:)`, which places it
+inside the repository (see the nesting invariant above). Entering a worktree that already exists
+also goes through this skill: run the claim gate above (`check-enter`), then, when
+`EnterWorktree` resolves in this session, call `EnterWorktree(path:)` as the final action.
+Removing a worktree is `cleanup`: this skill enters by `path`, and `ExitWorktree` will not remove
+a worktree entered that way.
+
+**Mutation gate.** `EnterWorktree` and `ExitWorktree` change the session's working directory, so
+each is the final action of its step. `ExitWorktree` with `action: "remove"` deletes a worktree
+and its branch, so this skill never passes it. Only `cleanup` deletes a worktree, under its own
+confirmation.
+
+**Availability is never assumed.** This section states what to do when a tool resolves in this
+session, never that it is present. The four-part records live in
+[reference/native-worktree.md](reference/native-worktree.md).
+
+## What this skill does not do
+
+- **Does not push, create, merge, or close PRs**: `/source-control:pull-request` owns the back-half (prep, create, monitor, merge).
+- **Does not commit or stage code**: staging and committing stay user-controlled; `/source-control:commit` owns the commit mechanic.
+- **Does not run CI, build, test, or lint**: use your project's build/test/lint tooling or skills.
+- **Does not manage remote branches**: the forge's delete-branch-on-merge setting handles remote cleanup on merge (when enabled); local `git branch -D` runs only for a confirmed, landed candidate (inline on Linux and macOS, emitted for the user on Windows or on a hook block).
+- **Does not uninstall plugins, and does not touch user or local scope.** `cleanup`'s reap removes only the *project-scope install records keyed to the worktree it is tearing down*, through `claude plugin uninstall -s project`. It never runs `-s user` or `-s local`, never passes `--prune`, and never edits `installed_plugins.json`. Fleet-wide plugin state is a plugin-management concern, not a worktree one.
+- **Does not enforce branch naming**: the consuming project's hooks and CI are the gates. This skill only surfaces the project's convention (read it from the project's `CLAUDE.md` / rules; default suggestion: `<type>/<kebab-description>` with a Conventional Commits type prefix).
+
+## Integration Points
+
+This skill complements other workflow components. It does not duplicate their logic.
+
+| Component | Relationship |
+|-----------|-------------|
+| `/source-control:pull-request merge` (Phase 4) | Handles post-merge cleanup as part of PR lifecycle. `/source-control:worktree cleanup` is the standalone version for ad-hoc or batch cleanup |
+| `/source-control:pull-request create` (Phase 2.1) | Detects default-branch checkout and suggests `/source-control:worktree create` |
+| Project session-start hooks (if any) | May warn on main or auto-configure fresh worktrees; this skill verifies setup ran per context/create.md's post-create checks |
+| Recurring maintenance tracker items | Can invoke `/source-control:worktree audit` periodically |
+
+## Graceful Degradation
+
+- **Forge CLI unavailable or fails**: `status` and `cleanup` work with git-only data. PR cross-reference and the delete-branch-on-merge check are skipped with note: "Forge API unavailable. PR status unknown."
+- **Not in a git repo**: `status` and `audit` run across repositories: `${CLAUDE_PLUGIN_ROOT}/scripts/worktree-discover.sh` resolves the worktree roots, discovers repositories and maps each worktree to its owner ([context/status.md](context/status.md#outside-a-repository-cross-repository-mode)). Pass it `--project-dir "${CLAUDE_PROJECT_DIR}"`, the resolved path, so a project-scoped fleet config is read. `cleanup` shows candidates grouped by owning repository behind one confirm and removes each through `git -C <owning-repo>` with every guard unchanged ([context/cleanup.md](context/cleanup.md#outside-a-repository-across-repositories)). `create` exits with "Not in a git repository."
+- **`worktree_stale_days` invalid or unexpanded**: Falls back to 14-day default silently (treat a literal `${user_config.worktree_stale_days}` token as unset).
+- **`worktree_reap_after_hours` invalid or unexpanded**: Falls back to 48 hours silently (treat a literal `${user_config.worktree_reap_after_hours}` token as unset).
+- **No worktrees exist**: `status` reports "No linked worktrees found." `cleanup` reports "Nothing to clean up."

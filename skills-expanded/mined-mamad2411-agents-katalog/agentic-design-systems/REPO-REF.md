@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/agentic-design-systems/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when designing, scaffolding, extending, or auditing a component library whose primary consumer is an AI agent — i.e. the design system needs machine-readable metadata (props, variants, relationshi

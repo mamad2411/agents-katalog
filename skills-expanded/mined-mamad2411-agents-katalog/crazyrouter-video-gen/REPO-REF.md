@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/crazyrouter-video-gen/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: AI video generation via Crazyrouter API. Supports Sora 2, Kling V2, Veo 3, Seedance, Pika, MiniMax Hailuo, Runway. Text-to-video generation. Use when user asks to generate, create, or make a video. Re

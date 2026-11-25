@@ -1,0 +1,153 @@
+---
+name: mp-format
+description: 使用场景：用户运行 `/collate:mp-format`、对校对定稿的 Markdown（或 Word）说"转公众号""排版公众号""微信推送""秀米""壹伴""发 WeChat""做成推文""公众号 HTML"等。这个 skill 把定稿转成**可直接粘贴到公众号后台**的 HTML：带内联 CSS（公众号不支持外链样式表）、引用框样式、注释块样式、脚注以小字紧跟原文、图片居中 + 题注、繁简选项、作者/来源卡片。同时生成一份秀米兼容的 Markdown（供用户用秀米做更精细的模板化排版）。**主动触发**：用户提到"公众号""推送""微信""秀米""壹伴""做成推文""发出去""给读者看"都应走这个 skill，不必等用户说 mp-format 三个字。
+argument-hint: "<markdown-path> [--simplify] [--byline=<作者信息>] [--source=<原文出处>]"
+allowed-tools: Read, Write, Edit, Bash
+---
+
+# Markdown → 公众号推文
+
+## Task
+
+用户的 Word 稿是给学界看的，**公众号版是给公众看的**——要求不一样：
+
+| 维度 | Word 版 | 公众号版 |
+|------|--------|---------|
+| 字体 | 宋体 | 无衬线（苹方 / 微信默认） |
+| 繁简 | 保留繁（学术版本） | `--simplify` 把正文简化，blockquote 保留原貌 |
+| 脚注 | 页底编号 | 正文内 `<sup>[1]</sup>`，文末集中列出 |
+| 引文 | 无特殊样式 | **灰底 + 左竖条的引用框** |
+| 图片 | 正文流式 | 满宽 + `alt` 做题注 |
+
+输出（落在工作区 `output/` 目录，与 to-docx 的 Word 稿并列）：
+
+```
+<workspace>/output/<title>_<author>_<year>_wechat.html  ← 带内联 CSS，粘贴到公众号后台 / 直接上传
+<workspace>/output/<title>_<author>_<year>_wechat.md    ← 秀米兼容 Markdown（用户想进一步精修时用）
+```
+
+> **路径约定**：输出由脚本自动推导：优先 `_internal/_import_provenance.json`，缺失时回退到 `meta.json` 与 Markdown 标题，不用显式指定 `--output`。权威规范见插件的 `references/workspace-layout.md`。
+
+## Process
+
+### Step 1：确认输入
+
+```bash
+INPUT="<markdown-path>"
+test -f "$INPUT" || { echo "文件不存在"; exit 1; }
+```
+
+### Step 2：繁简处理
+
+历史论文常见繁体字、异体字。公众号读者大部分读简体更顺。
+
+默认不简化。传 `--simplify` 时，脚本用 OpenCC（`t2s`：繁 → 简）处理正文，**但跳过以 `>` 开头的 blockquote**（引文保持原貌，学术引文忠实要求）。
+
+注意：脚本**只保护 `>` 引用块**，不识别 「」""『』 内的短引文。如果你的正文里有大量夹杂短引（「如此」「若是」），整段会被一并简化。若必须忠实保留这类短引，用默认（不传 `--simplify`）或手动在 Markdown 里把关键片段抽进 blockquote。
+
+什么时候加 `--simplify`：
+
+| 场景 | 处理 |
+|------|------|
+| 纯学术古籍研究（读者是学界）| 不加 `--simplify`，原样输出 |
+| 现代简体论文（本来就简体） | 不加 `--simplify`，脚本不动字 |
+| 民国排印 / 偶有繁体（读者是公众） | 加 `--simplify`，blockquote 自动保留 |
+
+### Step 3：调排版脚本
+
+```bash
+# --output / --also-markdown 都省略；脚本按工作区约定把两份文件放到 <ws>/output/
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/mp-format/scripts/md_to_wechat.py" \
+    --input "$INPUT" \
+    --also-markdown \
+    $( [ "$SIMPLIFY" = "1" ] && echo "--simplify" ) \
+    --byline "$BYLINE" \
+    --source "$SOURCE"
+```
+
+脚本会打印两行 `[md_to_wechat] wrote <path>`，第一行是 HTML，第二行是 Markdown。需要自定义路径（CI / 回归测试）仍可传 `--output path` 和 `--also-markdown path`。
+
+脚本产出 HTML 特性（**这些是脚本真正实现的**，别过度承诺）：
+
+1. **全内联 CSS**（公众号后台剥离外联 style，所以每条规则都 inline 在 style 属性里）
+2. **标题层级**：
+   - `#` → 22 px 加粗 深灰（同时 byline + source 会作为 meta 行放在 H1 下面）
+   - `##` → 18 px 加粗 左侧橙色竖条
+   - `###` → 16 px 加粗
+3. **引用块** `>`：灰底 + 左竖条 + 字号小一点
+4. **脚注**：`[^1]` 转成 `<sup>[1]</sup>`，`[^1]: ...` 形式的定义抽到文末「注释」区
+5. **段首缩进**：2 em（公众号移动端阅读友好）
+6. **图片**：满宽 + `alt` 文本当题注显示在图片下方
+7. **作者 / 来源栏**：byline 和 source 以 "·" 连接，居中显示在 H1 下方
+8. **`--also-markdown`**：再额外输出一份 Markdown（顶部拼上 byline / source 斜体行），供秀米 / 壹伴导入
+
+> **脚本不实现的**（以免误导）：
+> - 人名生卒年自动注（没有人名库）
+> - LaTeX 公式渲染成图片（公众号有公式，建议主打 Word 版）
+> - 拉丁字母 `<span lang="en">` 自动包裹
+> - 竖排古籍自动转横排（Markdown 本身就是横排输入）
+> - 「」""『』 内短引文的简化保护（只 `>` blockquote 受保护）
+
+### Step 4：预览
+
+```bash
+# 捕捉脚本输出，拿到两份实际路径
+LOG=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/mp-format/scripts/md_to_wechat.py" \
+        --input "$INPUT" --also-markdown \
+        $( [ "$SIMPLIFY" = "1" ] && echo "--simplify" ) \
+        --byline "$BYLINE" --source "$SOURCE")
+HTML_OUT=$(printf '%s\n' "$LOG" | awk '/^\[md_to_wechat\] wrote .*\.html$/{print $3}')
+MD_OUT=$(printf '%s\n' "$LOG" | awk '/^\[md_to_wechat\] wrote .*\.md$/{print $3}')
+
+open "$HTML_OUT"
+```
+
+在浏览器里能看到真实的公众号样式预览——排版、字号、间距都是最终效果（公众号会加载相同的内联样式）。后续操作：
+1. 视觉校对最终排版
+2. 直接复制 HTML 源码 → 粘贴到公众号后台「html 模式」
+3. 或复制渲染后的内容 → 粘贴到公众号编辑器（富文本模式保留大部分样式）
+4. 或导入秀米做更精致的模板（用 `_wechat.md` 文件）
+
+### Step 5：刷新 README + 报告
+
+```bash
+# 推导工作区根，刷新目录地图
+WS="$(dirname "$INPUT")"
+[ -d "$WS" ] && [ "${WS##*.}" = "ocr" ] || WS="$(dirname "$WS")"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workspace_readme.py" --workspace "$WS"
+```
+
+汇报格式：
+
+```
+公众号版已生成：
+- HTML（粘贴到后台）：$HTML_OUT
+- 秀米 Markdown：     $MD_OUT
+- 字数：NNN（简化后）
+- 图片：M 张
+
+已发布到工作区的 output/ 目录，同目录下可并列 Word 稿（见 to-docx）。
+
+后续操作：
+1. 在浏览器中核验预览效果
+2. 粘贴到公众号后台时选 "html 模式"（设置 → 群发 → 模板 下方）
+3. 或在秀米中导入 _wechat.md 后套用公众号素材类模板
+```
+
+## 判断规则
+
+- **原文有数学公式**：公众号不原生支持 LaTeX，脚本不渲染公式为图片。若公式密度较高，建议以 Word 版为主要交付。
+- **原文有图片但路径是相对路径**：上传到公众号后台前需要把图片单独传一遍，再替换 `<img src>`——脚本只照搬原路径，不做图片上传。
+
+## 失败兜底
+
+- OpenCC 没装 → `pip3 install opencc-python-reimplemented`（脚本会 fallback：跳过简化，原样输出并在 stderr 提示）
+- 图片是相对路径 → 脚本原样照搬到 `<img src>`，上传到公众号后台时需要重新上传并替换 src
+- 粘贴到公众号后样式丢失 → 富文本模式会剥离 inline style，切到 html 模式粘贴
+
+## 跟 to-docx 的关系用户的标准流程：
+
+1. 先跑 `to-docx` 出 Word 稿（学界用）
+2. 再跑 `mp-format` 出公众号（给读者）
+
+两者都基于同一份校对定稿 `final.md`，互不干扰。公众号版的简化和增强**不会**污染 Word 版。

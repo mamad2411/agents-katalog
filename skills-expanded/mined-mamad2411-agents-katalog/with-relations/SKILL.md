@@ -1,0 +1,123 @@
+---
+# name: stable skill identifier. Match the skill directory name or the final namespace segment.
+# Lowercase letters/numbers with hyphen, slash, or colon separators.
+name: with-relations
+# description: routing-facing summary of what the skill covers and when it activates.
+# Include concrete triggers and an explicit negative boundary; keep routing semantics out of prose-only ambiguity.
+description: "Use as the v8-conformant fixture exercising typed relation predicates (related, suppresses, verify_with, depends_on) using the live schema item shapes. Activate this skill when verifying that lint resolves cross-fixture relation targets without a sibling skills clone. Do NOT use as a production skill (use a real capability skill from the canonical library)."
+
+# === v8 Classification (subject + public; polyhierarchy via subjects[]) — see ADR-0017 ===
+# subject: primary browse shelf — what the skill teaches. One of twelve closed values:
+# backend-engineering / frontend-engineering / software-architecture / data-engineering / agent-ops / ai-engineering /
+# quality-assurance / design / reasoning-strategy / software-engineering-method / knowledge-organization / product-domain.
+subject: knowledge-organization
+# public: publishability/private-data gate. Boolean.
+# true = publishable/shareable; false = private and excluded from public export.
+# Project anchoring is carried separately by non-empty `project[]` plus `grounding`.
+public: true
+# scope: free-text PRD-style statement of what the skill teaches and what it excludes.
+# (v8 required; not an enum). Mirrors Coverage + Do NOT Use When at frontmatter level.
+scope: "Hermetic v8 fixture for validating relation target resolution and relation item shapes. Out: production relation modeling guidance."
+# relations: typed graph edges to sibling skills. Current fields:
+# related (adjacency for browse / co-routing expansion) /
+# suppresses (exclude listed skills from co-routing when THIS skill wins; write reason
+#             as "I own this exclusively over X", not "use X instead") /
+# boundary (DEPRECATED alias of suppresses, retained for unmigrated skills) /
+# verify_with (cross-check; co-loaded as one-hop expansion) /
+# depends_on (composition; transitive — A→B→C loads all three) /
+# broader / narrower (SKOS-style generalization) /
+# disjoint_with (mutual exclusion for incompatible ownership).
+relations:
+  related:
+    - minimal-capability
+  suppresses:
+    - skill: with-grounding
+      reason: "with-relations owns portable relation-shape fixture behavior over with-grounding, which owns project-grounded metadata fixture behavior."
+  verify_with:
+    - comprehension-full
+  depends_on:
+    - skill: minimal-capability
+      min_version: "1.0.0"
+# stability: lifecycle marker. One of:
+# experimental (active development) / stable (production-ready) /
+# frozen (no further changes expected) / deprecated.
+# When `deprecated`, schema's allOf REQUIRES `superseded_by: <real-skill-name>`.
+stability: experimental
+# license: SPDX license identifier (e.g., MIT, Apache-2.0).
+license: Apache-2.0
+---
+
+# With-Relations Fixture
+
+This fixture exercises typed relation predicates in the v8 contract using
+the item shapes accepted by the live schema: bare strings for `related` and
+`verify_with`, `{skill, reason}` for `suppresses`, and `{skill, min_version}` for
+`depends_on`. Together with the sibling
+fixtures (`minimal-capability`, `with-grounding`, `comprehension-full`) it
+forms a closed cross-reference cluster — lint resolves every relation target
+from the fixtures directory alone, with no dependency on the sibling
+`../skills/skills/` canonical library.
+
+## Concept of the skill
+
+**What it is:** Relations are the typed edges of the Skill Graph that connect a skill to its siblings.
+**Mental model:** Each predicate (`related`, `suppresses`, `verify_with`, `depends_on`) carries a distinct routing semantic; the router walks them differently.
+**Why it exists:** To prove every current relation predicate resolves its targets. The deprecated `boundary` alias is covered by compatibility tests, not this current-contract fixture.
+**What it is NOT:** It is not a taxonomy (`subject`/`subjects[]`) and not grounding; relations connect skills, they do not classify or ground them.
+**Adjacent concepts:** `related`, `suppresses` (canonical for the former `boundary`), `verify_with`, `depends_on`, manifest relation-integrity validation.
+**One-line analogy:** Relations are the hyperlinks between skill pages; each link type means something different.
+**Common misconception:** That `boundary`/`suppresses` means "defer to that skill" — it means the opposite: exclude that skill from co-routing when this one wins.
+
+## Coverage
+
+The four relation kinds with distinct semantics:
+
+| Predicate | Meaning | Target here |
+|---|---|---|
+| `related` | Adjacency for browse / routing expansion | `minimal-capability` |
+| `suppresses` | Routing-layer exclusion ("when I own this query, suppress that one") | `with-grounding` |
+| `verify_with` | Cross-check: when applied, verify with another | `comprehension-full` |
+| `depends_on` | Composition: this assumes the other is in scope | `minimal-capability` |
+
+The `suppresses` entry carries a non-empty ownership-framed `reason` string,
+because suppression reasons are projected into export descriptions and audited for
+orientation. The `depends_on` entry carries `min_version` to exercise the
+version-constrained dependency shape.
+
+## Philosophy of the skill
+
+Relations are the edges of the Skill Graph. The four predicates are
+intentionally orthogonal: `related` is symmetric and weakly directional,
+`suppresses` is asymmetric and routing-exclusion-oriented, `verify_with` is symmetric and
+quality-routed, `depends_on` is asymmetric and load-order-routed. Conflating
+them would force the router to guess intent. This fixture is the smallest
+configuration that demonstrates the distinction across every predicate at
+once, hermetically, without leaking any canonical-skill name into the test
+surface.
+
+## Verification
+
+```bash
+node scripts/skill-lint.js examples/fixture-skills
+# expected: 0 errors across all four fixtures with relations resolved
+```
+
+Lint must resolve every relation target from the union of configured roots
+plus the directory scanned. In a hermetic package-test environment (no sibling
+skills clone), the four fixtures in this directory form a closed cross-reference
+set: every `relations.*` target above names another fixture that lives in the
+same directory.
+
+**Important:** scan the parent `examples/fixture-skills/` directory, not the
+individual `with-relations/` directory. A single-fixture scan only loads that
+one SKILL.md into the known-skill set, so the relation targets pointing at
+sibling fixtures (`minimal-capability`, `with-grounding`, `comprehension-full`)
+fail to resolve. This is a known resolver-semantics gap — see the suite-scan
+form above as the canonical verification for fixtures with sibling relations.
+
+## Do NOT Use When
+
+- You need to test the bare-minimum frontmatter — use `minimal-capability`.
+- You need to test codebase grounding — use `with-grounding`.
+- You need to test flat Understanding fields or the nested concept block — use `comprehension-full`.
+- You need to test relation-target resolution against the canonical library — use any real skill from `skills/` (e.g. `naming-conventions` → `semantics`).

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/biophysics-validation-expert/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Biophysics Validation Expert Skill

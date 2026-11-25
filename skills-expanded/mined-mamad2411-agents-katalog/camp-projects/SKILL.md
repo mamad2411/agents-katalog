@@ -1,0 +1,66 @@
+---
+name: camp-projects
+description: Manage a camp's projects. Use when committing inside `projects/*`, deciding status/pull/push scope (root vs submodule vs all), or creating/removing project worktrees.
+---
+
+# Camp Projects
+
+A camp was previously called a campaign; project commands work the same either way.
+
+## Commit in Submodules
+
+```bash
+camp p commit -m "fix: message"
+```
+
+Pointer sync is intentional and root-level:
+
+```bash
+camp refs-sync
+camp refs-sync projects/camp
+```
+
+## Scope-Safe Status / Sync
+
+```bash
+camp status
+camp status --sub
+camp status all
+
+camp pull --sub
+camp push --sub
+```
+
+Use `all` commands only when broad workspace churn is intended.
+
+## Rename a Project
+
+```bash
+camp project rename <current> <new>
+camp project rename <current> <new> --dry-run --json
+camp project rename <current> <new> --remote-url git@github.com:org/new-name.git
+```
+
+Renames submodules, linked workspace symlinks, and camp-owned directories,
+migrating the camp references in one transaction. Dirty checkouts and linked
+worktrees are preserved; destination collisions and unmanaged directories are
+rejected before anything is written.
+
+Camp never guesses that the upstream repository was renamed too. Pass
+`--remote-url` to move origin as part of the same transaction.
+
+## Worktrees
+
+```bash
+camp project worktree add <name>
+camp project worktree list
+camp project worktree remove <name>
+```
+
+## Common Mistakes
+
+- Assuming submodule commits should auto-update camp-root pointers.
+- Running `camp pull`/`camp push` expecting submodule scope without `--sub`.
+- Passing worktree path to remove; command expects worktree name.
+- Renaming a project directory by hand instead of `camp project rename`, which
+  leaves the camp references pointing at the old name.

@@ -1,0 +1,42 @@
+# Marine lingo system block
+
+Interpret terms in the Marine Corps context below. Do not guess unknown acronyms; ask for context. Treat low-confidence items as provisional.
+
+- deadlined: Equipment is out of service and unavailable for its intended mission until a fault is corrected. NOT an administrative due date
+- dwell: Time at home station between deployments or specified operational absences, used to describe deployment-to-dwell balance. NOT housing or a physical place where someone lives
+- gain: A Marine or other member joining a unit's personnel account. NOT financial profit or an increase in signal strength
+- loss: A Marine or other member departing a unit's personnel account. NOT death, casualty, or financial loss
+- chit: A written request, authorization, or administrative form routed for approval, depending on context. NOT a casual note, debt marker, or restaurant receipt
+- float: A shipboard deployment or period underway with an embarked naval force, in common Marine usage. NOT a buoyant object or a financial cash reserve
+- boot: Informal term for a newly trained or inexperienced Marine; tone can be dismissive. NOT footwear or starting a computer
+- secure: To stop, close, put away, make safe, or finish an activity, depending on the object and command context. NOT only to protect something from unauthorized access
+- field day: A scheduled period of intensive cleaning and inspection of barracks or workspaces. NOT an outdoor sports day or especially enjoyable event
+- police: As a verb, to pick up litter, clean, straighten, or restore order in an area. NOT to summon or act as civilian law enforcement
+- gear adrift: Equipment or personal property left unsecured, unattended, or out of its proper place. NOT equipment literally floating at sea
+- on deck: Present, available, next, or at the stated location, depending on operational context. NOT necessarily standing on a ship's deck
+- NMCS (Not Mission Capable Supply): Equipment cannot perform its mission because required repair parts or materiel are unavailable. NOT a generic inventory shortage unrelated to equipment readiness
+- NMCM (Not Mission Capable Maintenance): Equipment cannot perform its mission because maintenance work remains to be completed. NOT a supply shortage
+- GCSS-MC (Global Combat Support System-Marine Corps): The Marine Corps logistics system supporting ground supply, maintenance, inventory, and equipment-condition information. NOT a generic joint combat system
+- TAMCN (Table of Authorized Materiel Control Number): A Marine Corps identifier used to manage and report an authorized type of equipment or materiel. NOT a serial number for one physical asset
+- ERO (Equipment Repair Order): The record used to open, control, and document maintenance on an item of equipment. NOT an emergency response organization
+- LTI (Limited Technical Inspection): A focused technical inspection used to determine an item's condition or the extent and feasibility of repair. NOT a full acceptance inspection
+- CMR (Consolidated Memorandum Receipt): A property-accountability record listing equipment issued to and held by a responsible individual or activity. NOT a customer relationship management report
+- MOS (Military Occupational Specialty): A four-digit code identifying a Marine's occupational specialty or qualification. NOT a civilian job title with no qualification implications
+- EDIPI (Electronic Data Interchange Personal Identifier): The unique ten-digit DoD identifier associated with a person's personnel and identity records. NOT a CAC card serial number or Social Security number
+- IPAC (Installation Personnel Administration Center): The installation organization that performs many personnel administrative services for Marines. NOT an information-technology access center
+- MOL (Marine Online): The Marine Corps web portal for personnel information and self-service functions. NOT a unit of chemical amount
+- TFSMS (Total Force Structure Management System): The authoritative Marine Corps system for force-structure requirements, including unit organization, billets, and equipment allowances. NOT a personnel payroll system
+- T/O (Table of Organization): The approved organizational structure and personnel requirements for a type of unit. NOT a task order or takeoff
+- TAD/TDY (Temporary Additional Duty / Temporary Duty): Official temporary duty away from a member's permanent duty station; Marine and joint documents may use different forms. NOT a permanent reassignment
+- FITREP (Fitness Report): The formal performance evaluation report for Marine officers and staff noncommissioned officers. NOT a physical-fitness test result
+- TCCOR 1R (Tropical Cyclone Condition of Readiness 1 Recovery): An Okinawa recovery condition used after a tropical cyclone while restoration and hazard-clearing continue; it is not automatically normal operations. NOT an immediate all-clear with unrestricted movement
+- SOFA status (Status of Forces Agreement status): A legal status under the U.S.-Japan Status of Forces Agreement that affects entry, residence, jurisdiction, and support for eligible people. NOT immigration status based merely on owning furniture or living on base
+- Y-plate: A Japanese vehicle-registration plate category commonly associated with privately owned vehicles registered to eligible SOFA personnel. NOT a U.S. government-vehicle plate or proof of insurance
+- JCI (Japanese Compulsory Insurance): The mandatory basic motor-vehicle liability insurance required in Japan, separate from additional coverage and vehicle inspection requirements. NOT Japan's vehicle inspection certificate or complete auto coverage
+- MCIPAC (Marine Corps Installations Pacific): The regional Marine Corps command responsible for installations across the Pacific. NOT the operational III MEF headquarters
+- III MEF (III Marine Expeditionary Force): The Marine air-ground task force headquartered on Okinawa for operations in the Indo-Pacific. NOT the same organization as the installation command
+- EABO (Expeditionary Advanced Base Operations): A naval concept for employing mobile, low-signature forces from temporary or austere locations to support sea control and denial. NOT construction of permanent overseas bases
+- HADR (Humanitarian Assistance and Disaster Relief): Military support to relieve human suffering and assist civil authorities after disasters; often written HA/DR. NOT combat operations under a humanitarian label
+- OPR (Office of Primary Responsibility): The organization assigned primary responsibility for completing or coordinating an action. NOT a named individual necessarily doing all the work
+- OCR (Office of Coordinating Responsibility): An organization assigned to coordinate, contribute to, or review an action led by the OPR. NOT optical character recognition
+- suspense: The deadline by which a staff action, response, or product is due. NOT anxiety or dramatic tension

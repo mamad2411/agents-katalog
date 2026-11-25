@@ -1,0 +1,209 @@
+---
+description: "Compress markdown by dropping flavor, filler, and hedging while keeping every directive, qualifier, threshold, and example, behind a semantic-diff subagent that reverts any meaning loss. Articles (a, an, the) are kept by default; the compress_articles setting can allow cutting them. Use when: 'compress this doc', 'tighten markdown', 'cut prose', 'shorten without losing meaning', 'trim onboarding doc', 'did this skill rewrite lose meaning'. Actions: default, audit (read-only dry run), and compare (read-only before/after labeling of a rewritten skill directory). Not session compaction (/compact), markdown noise (/docs-hygiene:audit-noise), or SSOT consolidation (/docs-hygiene:extract-ssot)."
+argument-hint: "[audit [target]|compare <ORIG_DIR> <NEW_DIR> [REASONS]|target] [--force] [--repo <repo> ...]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Tighten markdown by dropping flavor while preserving every directive
+---
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+- Uncommitted .md files (empty = none matched or the probe returned nothing), `git status --porcelain | grep -E '\.md"?$' | head -10`
+
+## Purpose
+
+Markdown in `docs/`, README files, onboarding docs, third-party pasted prose, and drifted skill bodies accumulates flavor: filler ("just", "really", "basically"), hedging ("perhaps", "might"), pleasantries, and, only when `compress_articles` is `cut`, articles. `context/flavor-vs-content-matrix.md` defines flavor (safe to cut) vs content (never cut). Under the default, `keep`, a run keeps every `a`, `an` and `the` and is held to the batch path's word-level cuts on every target, single file included ([Articles](#articles-compress_articles)). The **batch fan-out path** (Phase A LATITUDE) is a word-level trimmer: mechanical drops + passive→active + nominalization only, no sentence-level restatement deletion. Under `cut`, the **single-file in-session Edit fallback** may apply the full matrix taxonomy (including redundant restatement of bold rule names) behind the same semantic-diff net. Always-loaded instruction files (`.claude/rules/**`, `AGENTS.md`, `CLAUDE.md`, `**/SKILL.md`) bound empirically at 2-3% yield (see ## Sources); author-time-undisciplined content likely yields 5-15% under the Edit fallback's broader latitude, less under batch fan-out.
+
+Methodology: snapshot original → mechanical compression (the `caveman` plugin via `/caveman:caveman-compress`, or in-session Edit fallback) → semantic-diff subagent compares original vs condensed (SEMANTIC LOSS / AMBIGUITY / FALSE POSITIVE per finding, verbatim citations) → revert every SEMANTIC LOSS + AMBIGUITY → run `markdownlint-cli2` → ship or revert.
+
+## Articles: `compress_articles`
+
+Resolve this before Step A and before the audit scan; it decides the backend and how much a run may cut. Layers, lowest first, a later one winning (key contract: [`${CLAUDE_PLUGIN_ROOT}/reference/config.md`](${CLAUDE_PLUGIN_ROOT}/reference/config.md)):
+
+| Layer | Value |
+|---|---|
+| default | `keep` |
+| `userConfig` | `${user_config.compress_articles}`. A literal unexpanded token means unset; `keep` here is reported as the default, since the two cannot be told apart. |
+| repository | `compress_articles` in `docs/conventions/docs-hygiene.yaml` at the repository root |
+
+Read the repository layer with `bash "${CLAUDE_SKILL_DIR}/scripts/articles-setting.sh"`. It prints `keep` or `cut` for a valid value, `unset` with a reason when the layer does not apply (no git working tree, a root that is `$HOME` or an ancestor of it, no file, no key), or `invalid` with what the key holds (a value other than the two, an empty or null value, a map or list, a key set twice, a file that does not parse).
+
+A layer holding anything other than `keep` or `cut` is named in the output (the file or `userConfig` that held it, the key, the value) and dropped. A valid higher layer still wins; with none, the run continues on the default, `keep`. It never stops on an invalid value and never falls through to a lower layer's value.
+
+| Value | Backend | What may be cut |
+|---|---|---|
+| `keep` | in-session Edit, even when caveman is enabled ([why `keep` skips caveman](${CLAUDE_PLUGIN_ROOT}/reference/config.md#caveman-removes-articles)) | the batch path's word-level set without articles: filler, hedging, pleasantries, verbose verb phrases, passive to active, nominalization collapse. No sentence or restatement deletion, on a single file as in a batch. An article dropped anyway is restored in the revert pass |
+| `cut` | caveman when available, otherwise in-session Edit (Step A onward, unchanged) | articles too; a single-file Edit run may use the full matrix, restatement deletion included |
+
+Report the result once per run, as the last line of the summary: `compress_articles: keep (default)`, `compress_articles: cut (docs/conventions/docs-hygiene.yaml)`, or `compress_articles: cut (userConfig)`.
+
+**Revert threshold, `compress_revert_below_pct`** (`N` below; a whole number 0-100, default `3`): the same layers, from `${user_config.compress_revert_below_pct}` and, at the repository root `git rev-parse --show-toplevel` prints (skipped as for `compress_articles`), `bash "${CLAUDE_PLUGIN_ROOT}/lib/parse-concern-value.sh" --strict <root>/docs/conventions/docs-hygiene.yaml compress_revert_below_pct` (empty means unset; exit 3 or any other value is invalid and dropped as above). `0` turns the auto-revert off. Report it beside the articles line: `compress_revert_below_pct: 3 (default)`.
+
+**Over several repositories** (a target form, below), resolve both settings once per repository, the repository layer from the tree that pass reads (`articles-setting.sh <that tree>`, and `<root>` above set to it), and report the two lines per repository. One repository's `cut` never applies to another.
+
+## Backend selection
+
+Under `compress_articles: keep`, skip Step A and Step B's caveman path: the backend is the in-session Edit fallback, held to the `keep` row above. Under `cut`, default-action Step B picks the backend: the `caveman` plugin (marketplace `caveman`, invoked as `/caveman:caveman-compress` via the Skill tool) when present, otherwise the in-session Edit fallback, which also substitutes whenever caveman is unwanted. Caveman performs the mechanical flavor cuts; it is not the verification gate. `/caveman:caveman`, the same plugin's session-wide response formatter, is unrelated to this skill.
+
+**Step A. Detect caveman plugin:** `bash "${CLAUDE_SKILL_DIR}/scripts/detect-caveman.sh"`
+Tri-state: `available` → prefer caveman; `absent` or `unknown` → treat as absent and use the Edit fallback (`unknown` means `claude`/`jq` missing from PATH: fail open to Edit, not a hard error).
+
+**Step B, caveman backend (preferred when available):** the steps span tool calls, and Bash state does not persist across them (no `trap … EXIT`, no relying on `$tempdir` in a later call):
+
+1. **Bash call 1**. Create a temp copy and echo its absolute path (no EXIT trap):
+
+   ```bash
+   tempdir=$(mktemp -d)
+   cp "$target" "$tempdir/$(basename "$target")"
+   printf '%s\n' "$tempdir/$(basename "$target")"
+   ```
+
+2. **Skill call**. `Skill(caveman:caveman-compress, args="<absolute-path-from-step-1>")` on that temp copy.
+3. **Bash call 2**. On caveman success, copy the compressed file back and remove the tempdir explicitly:
+
+   ```bash
+   cp "<absolute-path-from-step-1>" "$target"
+   rm -rf "$(dirname "<absolute-path-from-step-1>")"
+   ```
+
+   On caveman failure, skip the `cp` and still `rm -rf` the tempdir so the real target is untouched.
+
+The real file is replaced only on success. Consumers may add a defensive `**/*.original.md` entry to their `.gitignore` in case caveman's backup ever lands in the tree.
+
+- **Pointer**: when checking where caveman writes its backup, fetch
+  [caveman-compress, Purpose](https://github.com/JuliusBrussee/caveman/blob/main/skills/caveman-compress/SKILL.md#purpose)
+  live.
+
+**Step B fallback. In-session Edit (`compress_articles: keep`, or caveman absent, unknown, or unwanted):**
+
+Apply Edit ops directly on `$target` per the `context/flavor-vs-content-matrix.md` taxonomy. Under `cut`: the full matrix, including restatement deletion. Under `keep`: word-level cuts only, every article kept, no sentence or restatement deleted.
+
+**Step C+ unchanged:** semantic-diff dispatch (mandatory hard rule, skipped only by a `light` or `off` verification level, with the resolved `compress_articles` value as the prompt's `{ARTICLES}`, so under `keep` a dropped article is SEMANTIC LOSS and is restored), revert pass for SEMANTIC LOSS / AMBIGUITY / UNCERTAIN findings, markdownlint-cli2, summary.
+
+## Action router
+
+| Action | Args | Behavior |
+|---|---|---|
+| `<target>` (default, no action keyword) | empty → uncommitted `.md` from `git status`; file path → single-file; dir path → batch | snapshot → backend → dispatch → revert-pass → markdownlint verify → summary |
+| `audit [target]` | same target rules | read-only dry-run; run `scripts/audit-scan.sh --articles <resolved compress_articles>` (six-signal heuristic in `context/target-types.md`); classify SKIP/COMPRESS/UNCERTAIN |
+| `compare ORIG_DIR NEW_DIR [REASONS]` | two skill directories, before and after a rewrite; optional file listing each intended cut with its deletion-test reason | read-only; see `## Compare` |
+
+Flags (apply to the default and `audit` actions):
+
+- `--force`. Proceed even when the `<N% AND 0 semantic-loss → REVERT` rule would trip; beats every `compress_revert_below_pct` layer. User owns the sub-N% diff
+- `--keep-snapshot`. Persist the original to `${CLAUDE_PLUGIN_DATA}/snapshots/<ISO-basic>Z-<basename>.orig.md` (the plugin data directory survives plugin updates)
+- `--repo <repo>` and the other target forms. Run the action once per repository, per [`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md) and [`../../context/clean-tree-fallback.md`](../../context/clean-tree-fallback.md) "Several repositories", with one difference from its "Fan-out": the main session runs each repository's pass itself, one repository at a time, because this skill's compressor and semantic-diff dispatches stay in the main session (`context/fan-out-orchestration.md`). With no path, the repositories go through the repo-wide interview fallback's steps 2-4 below, minus the step 1 offer. Step 2 writes one audit table per repository, at `${CLAUDE_PLUGIN_DATA}/audit/<owner>/<name>/<branch-or-scope>-audit.md`. Step 3's scope ranks the COMPRESS rows of every repository on one scale, so the default top-10 is ten files in total. One merged step 4 confirmation gates every Edit, with or without a path. The default action edits each repository in its own worktree and ships one pull request per repository ("Writes stay per repository" there); `audit` stays read-only. A non-interactive context may run only `audit` with a target form, never the default action
+
+## Compare
+
+Judges a rewrite of a whole skill directory, SKILL.md plus its references, where the default
+action's per-file diff would call every moved line and every intended cut a loss.
+
+1. Check both paths are directories; stop on a missing one. Write nothing to either.
+2. Dispatch the read-only `docs-hygiene:compare-labeler` agent with `context/compare-prompt.md`,
+   never `general-purpose`, which can edit. The calling session never labels a difference: it may
+   have written the rewrite and would excuse its own cuts. The step is done when the return
+   carries labeled rows and a `VERDICT:` line.
+3. Print the labeler's rows and its literal `VERDICT: PASS` or `VERDICT: BLOCK` line verbatim, as
+   returned: no restyling, reformatting, reordering, bolding, recasing or paraphrase. Any summary
+   of your own goes after them. `VERDICT: BLOCK` (any SEMANTIC LOSS, or an instruction in the
+   compared text aimed at the labeler) is the gate a rollout PR blocks on.
+
+## Auto-detect default
+
+Shared clean-tree / no-scope shape: [`../../context/clean-tree-fallback.md`](../../context/clean-tree-fallback.md). The rules below are what this skill runs; open the shared file only when editing them, for the sibling divergences it owns.
+
+1. Empty arg and clean tree → interactive session: repo-wide interview fallback (next section); non-interactive context (subagent, headless/CI): friendly no-op exit 0 ("No uncommitted .md files. Pass file/dir target.")
+2. Empty arg and uncommitted `.md` files → batch default action over those files
+3. Single file path → single-file default action
+4. Directory path → batch default action (filenames sorted lexically for deterministic output)
+5. First positional == `audit` → audit action on rest (same clean-tree offer as rule 1 when the rest is empty. Report-only corpus audit, no Edit)
+6. First positional == `compare` → compare action on the next two paths (and an optional REASONS file); no clean-tree fallback
+
+## Repo-wide interview fallback (empty arg, clean tree, interactive)
+
+Instead of dead-ending, offer a repo-wide run, confirmation-gated at the offer (step 1) and before the run (step 4); declining at either exits with the friendly no-op message. Bare `/docs-hygiene:compress audit` on a clean tree uses steps 1–2 only (free audit + report; no compression defaults or run confirmation).
+
+1. **Offer** (AskUserQuestion): run against all tracked eligible `.md` files? Decline → no-op exit.
+2. **Audit first** (free, mechanical scan, no subagents): run the audit action over every tracked eligible `.md`. Present inline only aggregate counts per class, a dispatch-cost estimate (2 subagent requests per compressed file), and a top-20 excerpt of COMPRESS rows selected deterministically: expected-yield band descending, then word count descending, then lexical path (band strings tie; the two tie-breaks keep the excerpt stable run-to-run). Write the full per-file table, lexically sorted per the "Summary output deterministic" hard rule, to `${CLAUDE_PLUGIN_DATA}/audit/<branch-or-scope>-audit.md` when that dir is writable, otherwise to a temp path echoed to the user, and point at it. Never render every row inline: on a large repo the full table can run to hundreds of KB and truncate the confirmation prompt it feeds. **Stop here when the invocation was the audit action** (report-only).
+3. **Take the prescribed defaults**, default (mutating) action only. Take each default below without asking and report all three in one line, each with its override, for example `Defaults: scope top-10 COMPRESS (override: top-N, all COMPRESS, include UNCERTAIN, or report only); concurrency 2 (override: 1 or 3-5); always-loaded files excluded (override: explicit opt-in)`. The user overrides any of them in the reply to step 4's confirmation.
+   - **Scope**. Default: **top-10** COMPRESS-classified files, the first ten COMPRESS rows in step 2's order; overrides: top-N (user picks N), all COMPRESS, include UNCERTAIN, stop after audit (report only). A misclassified cohort burns two dispatches per file before the circuit breaker stops it, so the default caps exposure at ten. See `context/fan-out-orchestration.md` circuit breaker.
+   - **Concurrency**. Default: 2 concurrent subagents per wave (rate-limit-conservative); overrides: 1 (sequential), 3-5 (`context/fan-out-orchestration.md` default).
+   - **Always-loaded files**. Default: excluded (SKIP per the 2-3% empirical baseline); they stay excluded unless the user opts in explicitly, the same opt-in as `--force`.
+4. **Confirm and run**: batch default action over the set step 3 reported, with any override the user gave, waves per `context/fan-out-orchestration.md`. Every per-file hard rule, semantic-diff dispatch, revert pass, markdownlint, `<N% AND 0 semantic-loss → REVERT`, applies unchanged.
+
+Non-interactive contexts skip the offer and take the no-op branch. The fallback adds an entry path only. It changes no compression, verification, or revert semantics.
+
+## Hard rules
+
+- **Semantic-diff dispatch is mandatory for default action** at the `standard` and `strict` verification levels. Audit is read-only. No dispatch. Compare is read-only and always dispatches its labeler, whatever the level: the labels are its output.
+- **The verification level.** Before the first default-action target, run `bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin docs-hygiene --skill compress --file docs/conventions/docs-hygiene.yaml` once and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)). Under `light`, and `off`, which acts as `light` here, dispatch no semantic-diff subagent and never audit the edit inline in its place: the target's summary line carries `verification: skipped (<level>)` in place of the `semantic_loss`, `ambiguity` and `false_positive` counts, no revert pass runs, and the `<N%` auto-revert applies on compression alone. `markdownlint-cli2` still gates every level.
+- **Post-edit `markdownlint-cli2` must pass** (with the consuming repository's markdownlint config when present). Non-zero exit blocks ship; revert and surface failures. It is the ship gate, so it is **required for correctness**: if the binary is absent (neither on `PATH` nor as the repo's `node_modules/.bin/markdownlint-cli2`), stop at the entry point before compressing anything and surface the remediation. Install it explicitly (`npm install --save-dev markdownlint-cli2` or a global install); never treat absence as a lint failure and never ship unverified output.
+- **`<N% AND 0 semantic-loss → REVERT`**, `N` = `compress_revert_below_pct`, default 3. The default is proven safe in the authoring repo's empirical baseline (always-loaded instruction files: 3/3 attempts reverted). `--force` bypasses.
+- **Summary output deterministic.** No timestamps; filenames sort lexically.
+- **Snapshot default = ephemeral** (`mktemp -d`, deleted post-dispatch). `--keep-snapshot` persists to `${CLAUDE_PLUGIN_DATA}/snapshots/` instead.
+- **Always-loaded instruction-file policy: SOFT-BLOCK.** Default reverts <N%/0SL on any file including `.claude/rules/**` / `AGENTS.md` / `CLAUDE.md` / `**/SKILL.md`. `--force` bypasses on any file; the user owns the result. `audit` emits an informational SKIP recommendation on always-loaded paths citing the 2-3% empirical baseline; not a structural gate.
+- **Subagent dispatch follows `context/semantic-diff-prompt.md` template.** Findings must carry verifiable citations; training-recall citation tokens are forbidden: `[known]` / `[from memory]` / `[context]` / `[obvious]` / `[standard]` / `[usual]`.
+- **Backend choice does not bypass semantic-diff dispatch.** When the caveman backend is absent or unwanted, `/docs-hygiene:compress` falls back to in-session Edit compression. Backend selection determines only the mechanical-compression path; semantic-diff, revert pass and markdownlint apply regardless (the verification level alone can skip the first two), and the revert pass structurally catches LLM-compression fabrication from either backend.
+
+## Output schema (default action, per target)
+
+```text
+<basename>: <action_taken> (compression_pct=N.N%, semantic_loss=K, ambiguity=M, false_positive=P, markdownlint=PASS|FAIL)
+```
+
+`action_taken` ∈ {`compressed`, `reverted`, `skipped`}. Aggregate at end of batch.
+
+Audit action output: table with `target`, `expected_yield_pct`, `classify` (SKIP/COMPRESS/UNCERTAIN), `reason`.
+
+## Gotchas
+
+- **Self-audit drifts toward expansion.** Run the semantic-diff dispatch as a separate fresh-context audit, never a self-audit by the model that produced the edits: self-audit re-adds words just removed ("preserve clarity"; an observed failure, see ## Sources). Prefer a cross-vendor advisor for that audit **when one is enabled and set up**, e.g. the OpenAI Codex plugin, when its documented surface can take this artifact, invoked per its own docs, with the fresh-context same-vendor subagent as the stated fallback, never a route to a command that may not resolve (per `docs/plugin-philosophy.md` "Fresh-eyes checkpoints" in the marketplace repository). For batch fan-out follow `context/fan-out-orchestration.md`: the main session dispatches separate compress + audit subagents and reconciles per finding, so every audit stays under its control rather than inside a compressor's context.
+
+  - **Pointer**: when a design question turns on whether a subagent can spawn its own, fetch
+    [Let subagents spawn their own subagents](https://code.claude.com/docs/en/sub-agents#let-subagents-spawn-their-own-subagents)
+    live.
+- **Sub-N% diffs auto-revert unless `--force`.** Pass `--force` only when a targeted sub-N% diff is intentional; the user owns the result.
+- **Run caveman on a temp copy, never the real file.** Step B's `mktemp -d` wrapper keeps caveman's edit on the copy, so the real file changes only when caveman succeeds. Where caveman keeps its backup: the Step B pointer.
+
+## When NOT to use
+
+- Code files (`.cs`, `.py`, `.ts`, `.sh`, etc.). The methodology is markdown-specific; code-comment compression is out of scope
+- Binary files
+- Author-time-disciplined instruction files (`.claude/rules/**`, `AGENTS.md`, `CLAUDE.md`, `**/SKILL.md`). `audit` will SKIP-recommend; sub-N% revert default applies (Gotchas "Sub-N% diffs auto-revert unless `--force`")
+- Conversation summarization or session compaction. That's the built-in `/compact`, different semantic
+- **Subagent context invoking `/docs-hygiene:compress` for batch fan-out**. See Gotchas "Self-audit drifts toward expansion"; follow `context/fan-out-orchestration.md`
+
+## What this skill is NOT
+
+- **Not an orchestrator surface.** `/docs-hygiene:compress` prints a human-readable summary; no structured/`--json` output
+- **Not a lint front-end.** `markdownlint-cli2` is the post-edit verifier, not the purpose
+- **Not a code-comment compressor.** Out of scope
+- **Not a `/code-review` / `/simplify` shadow.** The bundled `/code-review` and `/simplify` skills review code changes; `/docs-hygiene:compress` rewrites markdown prose
+- **Not `/docs-hygiene:audit-noise`.** `/docs-hygiene:compress` owns flavor (filler, hedging, redundant restatement, and articles under `compress_articles: cut` only). `/docs-hygiene:audit-noise` owns noise classification (historical citations, ghost refs, "Why this file exists" preambles, hard-coupled enumerated consumer lists) per its own taxonomy. Both may apply to the same target iteratively
+- **Not a content-relocation / cite-don't-recap tool.** Condensing an inline passage that recaps a cited single source of truth (another doc or rule) is content relocation, not flavor removal: the mandatory semantic-diff net sees the words gone from this file and reverts them as SEMANTIC LOSS, blind to the SSOT. Apply "reference, don't duplicate" as a manual editorial pass (verify the cited SSOT actually holds the detail first; an unread pointer is an unverified claim); route the duplicated cluster to `/docs-hygiene:extract-ssot` at any multiplicity (it rosters rule-of-one / -two / -three buckets; only extraction into a new artifact waits for 3+ files)
+
+## Sources
+
+- Always-loaded instruction-file yield bound (2-3%): authoring-repo baseline, 3/3 compression attempts reverted, all flavor-only, 0 semantic loss
+- Self-audit expansion drift: authoring-repo batch compression wave, 2026-05-23. 4/4 reverse-direction edits from self-audit (`context/fan-out-orchestration.md` ## History)
+
+## Reference index. Load on demand
+
+| File | Load when |
+|---|---|
+| `context/semantic-diff-prompt.md` | Dispatching the semantic-diff subagent; it is the prompt body and the return contract. |
+| `context/compare-prompt.md` | Dispatching the `compare` labeler; it is the prompt body and the return contract. |
+| `context/flavor-vs-content-matrix.md` | Judging whether a specific span is flavor or content, and during the revert pass. |
+| `context/target-types.md` | Resolving what an argument points at, or classifying SKIP / COMPRESS / UNCERTAIN in `audit`. |
+| `context/fan-out-orchestration.md` | Compressing N files across parallel subagents, so the semantic diff stays in a separate context. |
+| `context/integration.md` | Another skill, lint job, or gate wants to call this one, and you need the invocation form it may use. |

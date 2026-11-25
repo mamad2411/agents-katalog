@@ -1,0 +1,30 @@
+---
+name: intro-example
+description: Minimal MDA source demonstrating relationship-graph footnotes and metadata.mda.* MDA-extended fields. Use as a reference fixture when learning the MDA source format.
+metadata:
+  mda:
+    version: 1.0.0
+    doc-id: c2cb4f0e-3e1f-4f5a-9b80-72d2c4d6c4f1
+    title: Intro Example
+    author: Sno Lab
+    tags:
+      - example
+      - intro
+      - relationships
+    created-date: '2026-05-07T00:00:00Z'
+    relationships:
+      - rel-type: parent
+        doc-id: spec-skill-md-v1.0
+        rel-desc: MDA SKILL.md target schema
+---
+
+# Intro
+
+This is a minimal MDA source file. It demonstrates MDA-extended frontmatter
+fields at the top level and the relationship-graph footnote pattern.
+
+## A relationship
+
+This document references the SKILL.md target schema as its conceptual parent[^skill-md-spec].
+
+[^skill-md-spec]: {"rel-type": "parent", "doc-id": "spec-skill-md-v1.0", "rel-desc": "MDA SKILL.md target schema"}

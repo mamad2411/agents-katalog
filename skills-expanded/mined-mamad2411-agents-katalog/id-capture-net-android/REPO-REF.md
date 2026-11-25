@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-gutsofpratik-openclaude-skills/source-1de5190a8c70401d805ac1e2/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Scandit ID Capture (`IdCapture`) in .NET for Android projects (`net*-android` target framework, `Scandit.DataCapture.IdCapture` NuGet, C#) — scanning passports, driver's licenses, ID cards, residence 

@@ -1,0 +1,137 @@
+---
+name: net-rotating-proxies
+description: Use when a download, scrape, or API pull is blocked or rate-limited by the target (HTTP 429, IP ban, geoblock) and must be routed through proxies, or when fetching many items from a host that throttles per IP (bulk YouTube transcripts, scraping, API harvesting).
+---
+
+# Rotating proxies for blocked / rate-limited fetches
+
+When the local IP is rate-limited or blocked (HTTP 429, ban, geoblock) and you must keep
+fetching, route requests through a rotating pool of proxies. Free proxies are flaky and
+short-lived, so the method is: keep a persistent pool, never trust it as-is, fetch in parallel
+(most proxies are slow), prefer proxies that have actually worked, and keep refreshing the pool
+in the background while downloading.
+
+## When to use
+
+- A bulk fetch starts returning 429 / "Too Many Requests", or the host bans your IP partway through.
+- Client-side fixes do NOT help: changing user-agent, impersonation, or a JS runtime will not beat
+  a per-IP quota. Only a different egress IP (a proxy) will. Verify the block is per-IP first.
+- You need to pull many items from one throttling host (e.g. YouTube auto-caption transcripts).
+
+## The rules (always)
+
+1. **Persistent pool, disproven at use time.** Proxies constantly die, recover, and appear, so a
+   saved list is never trusted as-is. Keep `pool.txt` (all candidates) and `live.txt` (passed a
+   reachability test at some point). Note what `validate` actually does: it tests only
+   `pool - live - bad`, so an entry already in `live.txt` is NOT re-tested on a later run - the file
+   accumulates. Freshness comes from the other end instead: a proxy that fails during a job is
+   banned to `bad.txt`, and every reader uses `live - bad`. So treat a live entry as
+   not-yet-disproven rather than proven-good, and let the ban path do the pruning.
+2. **Discover from public lists**, merge grow-only and deduped into the pool (github raw proxy
+   lists, proxyscrape API). Expect thousands of candidates; only a few percent will be usable.
+3. **Validate reachability in parallel** against a cheap endpoint on the target host before using
+   a proxy for real work, and **record each proxy's latency** (response time of that test) so
+   selection can favour fast proxies. **Right-size to the job:** pass `validate --need N` to stop as
+   soon as N live proxies are found (and cancel the rest) instead of testing the whole pool - a small
+   job needs only a few. Size with a generous `~100%` margin: `N ~= 2 x concurrency` (e.g. 8-wide is
+   `--need ~16`, not thousands). The over-provision is what lets the speed-weighted pick run the load on
+   the FASTEST proxies while the slower half idles as warm backup (effectively phased out - rarely
+   picked). That warm backup is the ONLY instant replacement: a proxy that dies is banned and the
+   next pick skips it immediately. The background refresh is what REFILLS the backup, and it is
+   slow - with `--background-discovery` it discovers and tops up every 10 minutes (hardcoded, and
+   the first pass is at t+10min, not t+0); without that flag it never runs at all. Size `--need`
+   to survive ten minutes of attrition rather than to be rescued from it. Distribute requests
+   across the pool so no single exit-IP is hammered.
+4. **Download in parallel, wide.** Most free proxies are awfully slow (tens of seconds each), so
+   parallelism is the only way to make progress: 8 workers minimum, 16 when the pool is large.
+5. **Keep good/bad lists and weight by speed, but ROTATE so no proxy is hammered.** A proxy that
+   completes a real download goes in `good.txt` (higher base weight); one that fails at the
+   connection level goes in `bad.txt` and is excluded. Within the remaining pool, select proxies by
+   **weighted random sampling where the weight rises as latency falls**, so faster proxies are used
+   far more often than slow ones (the stored validation latency drives this; unknown-latency proxies
+   default to the median). Layer a **cool-down / least-recently-used rest** on top of the speed
+   weighting: a proxy used within the last `--cooldown` seconds is held out of the pick so the single
+   fastest exit-IP is not hit back-to-back; load spreads across the fast half of the pool and the
+   cool-down relaxes (oldest-rested first) if it would otherwise starve the pick. Rotate to the next
+   proxy on any per-item failure.
+6. **Self-optimize in the background: benchmark, swap up, and evict flaky.** While the workers run,
+   a background loop keeps the working set = the N FASTEST healthy proxies:
+   - discovery + revalidation tops `live.txt` back up so dead proxies get replaced without stopping
+     the job (right-sized to `--need`);
+   - a benchmark pass re-times the in-pool proxies and trials fresh candidates; when a fresh
+     candidate is faster than the slowest **idle** in-pool proxy (never one mid-request), it swaps
+     the slow one out for the fast one (`--bench-interval` controls the cadence);
+   - per-proxy success/failure is tracked, and a proxy that fails intermittently past
+     `--flaky-fail-ratio` is evicted from this run's working set and replaced - so steady state is
+     the N fastest, still-functioning proxies. Unlike a hard-dead proxy it is NOT written to
+     `bad.txt`: those failures (429, timeouts) are often the target throttling, and `bad.txt` is
+     permanent.
+7. **Resumable.** Make the worklist skip items already done, so a killed run resumes cheaply.
+
+## Tool
+
+`scripts/proxy_pool.py` (HTTP via `httpx2`, otherwise stdlib; cross-platform) implements all of
+the above. Run it with `uv run` so the `httpx2` dependency (declared in the script's PEP-723
+header) is fetched into an isolated env. Subcommands:
+
+    # 1. build the pool (grow-only, deduped)
+    uv run scripts/proxy_pool.py --store ./.proxies discover
+
+    # 2. test reachability against the target host, grow live.txt (parallel)
+    uv run scripts/proxy_pool.py --store ./.proxies validate \
+        --test-url https://www.youtube.com/generate_204 --workers 150 --need 10   # stop at 10 live (right-size)
+
+    # 3. run a worklist through rotating proxies, 16-wide, refreshing the pool in the background
+    uv run scripts/proxy_pool.py --store ./.proxies run \
+        --worklist items.txt --workers 16 --per-item-proxies 8 --need 24 --background-discovery \
+        --test-url https://www.youtube.com/generate_204 \
+        --success-glob 'out/{item}*.vtt' \
+        --cmd 'yt-dlp --proxy http://{proxy} --skip-download --write-auto-subs --sub-langs en.*,en --sub-format vtt -o out/{item}.%(ext)s https://www.youtube.com/watch?v={item}'
+
+`{proxy}` (host:port) and `{item}` are substituted per attempt. The `--cmd` is parsed once and
+run as an argv list with NO shell (OS-independent, injection-safe), so it must be a single
+command: no pipes, `||`, `$?`, redirects, or `case`. It is split by the host's own rules: POSIX
+`shlex` quoting, or on Windows the `CommandLineToArgvW` rules, where a backslash in a path is
+literal and only double quotes group (single quotes are ordinary characters there). It runs once
+per proxy until one succeeds.
+
+Exit codes: `run` gives 0 when every item succeeded, 1 when any did not, and 2 when it cannot do
+the work at all - the `--cmd` binary is not found (the run stops at the first attempt), the
+store holds no usable proxy (run `discover` and `validate` first), or an argument cannot be used
+(a `--cmd` that cannot be split, an invalid `--dead-regex`, a `--worklist` that is not UTF-8).
+`discover` gives 2 when no source answered; `validate` is a report and gives 0 even when no
+candidate turned out live.
+
+`run` holds a self-optimizing working set of the `--need` fastest healthy proxies - pass it, or
+`--need` defaults to None and the working set is not right-sized at all: it rotates the
+pick with a `--cooldown` rest so no exit-IP is hammered, evicts a proxy once its failure fraction
+exceeds `--flaky-fail-ratio`, and (with `--background-discovery`) re-benchmarks the pool every
+`--bench-interval` seconds, swapping a freshly-found faster proxy in for the slowest idle one.
+
+### How success / failure is decided (no shell glue)
+
+The tool classifies each attempt itself, portably:
+
+- **success** = return code 0 AND, when `--success-glob` is given, a matching output file exists
+  (many tools exit 0 without producing output, so prefer `--success-glob`) -> proxy goes in
+  `good.txt`, rotation stops for that item.
+- **dead proxy** = the command's combined stdout+stderr matches `--dead-regex` (connection
+  refused, reset, timeout, unreachable, proxy/tunnel errors) -> proxy goes in `bad.txt`, excluded
+  next time.
+- **otherwise** (incl. timeout, 429, transient) -> rotate to the next proxy, do not ban it (one
+  that keeps failing this way leaves this run's working set, but never goes in `bad.txt`).
+
+Pick `--test-url` and `--success-glob` to match the host and tool you are unblocking; widen
+`--dead-regex` if your tool words connection failures differently.
+
+## Notes
+
+- Stay within lawful use. Only fetch content you are authorised to access, and respect the
+  target's terms of service and robots directives. Rotating egress IPs spreads a legitimate bulk
+  fetch past a per-IP rate limit; it is not for defeating a block meant to keep you out.
+- Confirm the block is per-IP before reaching for proxies; if a few requests still succeed from
+  your own IP, slow down instead.
+- Free-proxy hit rate is low and decays within minutes; the background refresh and good/bad lists
+  exist precisely because of this. Re-run `discover`+`validate` between sessions.
+- Treat proxied traffic as untrusted transport: only route public, non-sensitive fetches through
+  free proxies, never anything authenticated or private.

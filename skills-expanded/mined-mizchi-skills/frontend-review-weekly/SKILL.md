@@ -1,0 +1,120 @@
+---
+name: frontend-review-weekly
+description: Use for the weekly AI review. Orchestrates all frontend-review-* skills in order, runs five perspective reviews, in parallel when authorized or sequentially, diffs against last week's KPIs, and produces a weekly report that feeds the ratchet.
+---
+
+# Frontend Review — Weekly Orchestrator
+
+Run the weekly evidence review, combine the domain and perspective findings, and compare measured KPIs. The review produces reports and follow-up proposals; implementation follows a separate engineering request:
+
+1. Re-run every `frontend-review-*` skill in the correct order.
+2. Run the five perspective reviews using the authorized execution mode.
+3. Diff the KPIs against last week's baseline.
+4. File GitHub issues for repeat findings.
+5. Propose static-rule promotions for patterns that appear 3+ weeks in a row.
+
+## Procedure
+
+Collector reports use a versioned envelope: read values under `data`, inspect `status` and `issues`, and keep missing measurements distinct from zero. See the local collection contract.
+
+### Phase 1: raw data collection
+
+Run, in this order. Keep partial collection reports visible and do not treat missing inputs as a passing KPI:
+
+1. `frontend-review-triage`
+2. `frontend-review-ci`
+3. `frontend-review-hygiene`
+4. `frontend-review-deps`
+5. `frontend-review-testing`
+6. `frontend-review-security`
+
+Each of these writes to `<client-repo>/.frontend-review/report/latest/`.
+
+### Phase 1.5: architecture review (run when findings are suspected)
+
+Run these on-demand, or always for the first weekly of a new engagement:
+
+7. `frontend-review-state`
+8. `frontend-review-performance`
+
+These write to `<client-repo>/.frontend-review/report/latest/md/`.
+
+### Phase 2: perspective review (parallel)
+
+Use available parallel-agent tools for the five perspective reviews when that execution is authorized and beneficial; otherwise run them sequentially. No external orchestration skill is required. Each reads the raw JSON and produces a perspective-specific markdown report:
+
+- `frontend-expert`
+- `react-expert`
+- `performance-expert`
+- `security-expert`
+- `frontend-ops-expert`
+
+### Phase 3: KPI diff and ratchet
+
+Compare `<client-repo>/.frontend-review/report/latest/raw/*.json` against `<client-repo>/.frontend-review/kpi/baseline.json`. Flag:
+
+- Any **regression** (bad) — these must be fixed before the next weekly
+- Any **improvement** (good) — these update the baseline (ratchet tightens)
+
+### Phase 4: repeat-finding detection
+
+Compare this week's findings with the previous 2 `report/weekly-*.md` files. Any finding that appears in all three weeks is a candidate for **static rule promotion**: propose an eslint/biome custom rule, a codemod, or a CI gate that would make the check automatic. Write these proposals to `<client-repo>/eslint-rules/proposals/<rule-name>.md` (create the directory if needed) but do NOT implement them — that's a separate engineering task.
+
+### Phase 5: report
+
+Write `<client-repo>/.frontend-review/report/weekly-$(date +%Y-w%V).md` with:
+
+- **KPI delta table** (per category)
+- **Regressions** (must fix)
+- **Improvements** (ratchet updates)
+- **Perspective summaries** (1 paragraph per perspective)
+- **Static rule promotions** (pointer to proposals)
+- **Issues filed** (`gh issue create` output)
+
+## Trend Monitoring
+
+Alongside KPI diffing, check the following external signals once per weekly cycle to detect ecosystem drift early.
+
+### Monitoring sources
+
+| Source | Cadence | What to look for |
+|---|---|---|
+| **jser.info** | Weekly (Sunday publish) | Major releases, RFCs, breaking changes, security advisories affecting the project's dependencies |
+| **State of JS** (yearly, ~Dec) | Annual | Usage/satisfaction trends; two consecutive years of satisfaction decline is a switch-trigger |
+| **State of CSS** (yearly) | Annual | CSS adoption trends, Tailwind / CSS-in-JS sentiment |
+| **JavaScript Rising Stars** (yearly, ~Jan) | Annual | GitHub star growth; early signal for emerging tools |
+| **Official release blogs** | On release | Track the project's direct dependencies (framework, bundler, test runner, linter, TypeScript) for major releases |
+
+For the weekly run, WebFetch `https://jser.info/` and scan for any mention of packages listed in `package.json`. Flag anything relevant under an **Ecosystem Signals** heading.
+
+### Switch triggers
+
+Recommend investigating a tool replacement when **any two** of these conditions are met:
+
+1. Satisfaction score has declined for **2 consecutive years** in State of JS / State of CSS.
+2. **No major release in the past 6 months** and GitHub issue accumulation is trending up.
+3. A **maintainer departure or deprecation notice** was reported.
+4. A **clear superior alternative** exists: feature parity + significant performance or DX improvement + realistic migration path.
+
+## Follow-up engineering
+
+Classify each proposed change for the separately requested engineering work:
+
+- Routine candidates: automatic lint/type fixes, tests for existing behavior,
+  and dependency updates validated by the project's checks.
+- Product or architecture decisions: changed app behavior, a new state/routing
+  boundary, library replacement, or a disagreement between specification and tests.
+
+Record the evidence and decision owner in the weekly report. Source changes and
+new engineering PRs belong to the implementation request; generating this report
+does not authorize applying those changes to the client application.
+
+## Boundaries
+
+- Do NOT skip any of the Phase 1 domain skills, even if time is short.
+- Do NOT modify source code in the client repo.
+- Do NOT silently update `kpi/baseline.json` on a regression. Only update on improvement.
+
+## Reference
+
+Read the bundled [collection contract](references/collection-contract.md) for report schemas, standalone script paths, partial results and verification limits. The operational guidance above does not require an external checklist bundle.

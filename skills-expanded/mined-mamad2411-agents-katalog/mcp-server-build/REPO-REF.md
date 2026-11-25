@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-fabioc-aloha-alex-skill-mall/mcp-server-build/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Implement an MCP server in TypeScript, Python, or C#/.NET, and register it with a host. Working stdio and HTTP samples verified against the published SDKs."

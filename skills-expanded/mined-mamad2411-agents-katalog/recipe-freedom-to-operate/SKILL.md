@@ -1,0 +1,110 @@
+---
+name: recipe-freedom-to-operate
+description: Freedom-to-operate clearance for a product or technology — per-feature query generation, dual-database blocking-patent search, and legal-status, family, and all-elements claim checks on every live candidate. Trigger when the user asks whether a product or technology can launch without infringing, or requests an FTO/clearance search.
+metadata:
+  requires:
+    skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-ops"]
+---
+
+# Recipe: Freedom-to-Operate (FTO) Search
+
+Search for potentially blocking patents for a product or technology. Each
+database uses its own query syntax — see `flowleap-uspto` for the USPTO Lucene
+grammar.
+
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
+## Steps
+
+### Step 1: Write Targeted Searches
+
+Write a query per key product feature, in each database's own syntax, yourself
+(method in `flowleap-patent`; ODP Lucene in `flowleap-uspto`). For each
+feature: extract its specific noun phrases, build the CQL around the
+discriminating ones, and probe the count — FTO is a recall search, so refine
+toward broad (drop classifications, OR in synonyms) rather than precise:
+
+```bash
+# EPO CQL count probe for feature 1 (read `total` from the payload)
+flowleap --json tools run search_patents query='<CQL for feature 1>' range=1-1 details=false
+# Repeat for each feature; USPTO Lucene queries are title + metadata only
+```
+
+Done when every key feature has a probed EPO CQL query and a USPTO ODP query.
+
+### Step 2: Search for Potentially Blocking Patents
+
+```bash
+flowleap --json patent search --query "<CQL for feature 1>" --limit 20
+flowleap --json uspto search --query "<recommended_query for feature 1>" --limit 20
+# Repeat for each feature
+```
+
+**A missing patent-data key never narrows a clearance scope.** If one office
+answers `provider_keys_required`, search the live office fully and carry the
+gated office into the deliverable as an explicit missing-key gap — an
+unsearched jurisdiction is not a cleared one, and web-scraped patent data is not
+an acceptable substitute for it. Ask for the free key at the end of the turn;
+when the user adds it, re-run only that office and merge. See `flowleap-keys`.
+
+Done when both databases have been searched for every feature, or the gated
+office is recorded as an open missing-key gap.
+
+### Step 3: Screen to Live, In-Market Candidates
+
+Take the one-call snapshot (bibliography + legal status + family + term) and
+keep only patents that are **legally alive** and cover a **jurisdiction you
+sell in**:
+
+```bash
+flowleap --json summary <patent-number>
+```
+
+Or, if you need the pieces separately:
+
+```bash
+flowleap --json ops legal <patent-number>     # is it active? which states?
+flowleap --json ops family <patent-number>    # where is it filed?
+```
+
+Read the jurisdiction from the right field. `family` names the **offices** the
+invention published in; for an EP member that is one entry ("EP") and says
+nothing about countries. The countries are the `designatedStates` on the legal
+status (`extensionStates` for extension/validation states) — for a European
+regional filing those ARE its designated-state coverage. Then subtract the states
+lapsed per the `PG25`/`PGFP` events, which each carry their own `state`: a patent
+designating DE and still paying fees there blocks you in Germany, one lapsed
+there does not.
+
+The designation is rolled up from the AK event with the latest date. If that
+event carried no readable list an older one answers, so the set can be a
+superseded, **wider** one — it can name a state the applicant has since dropped.
+For a clearance call that is the dangerous direction, so read the `AK` rows in
+`events` before you flag or clear a market on the roll-up alone.
+
+Done when every survivor is both in force and designates a sales jurisdiction;
+drop the rest.
+
+### Step 4: All-Elements Claim Mapping
+
+For each surviving blocker, pull its claims and map product features against
+every element of each independent claim:
+
+```bash
+flowleap --json ops claims <patent-number>
+```
+
+A claim clears only if at least one of its elements is absent from the product.
+Done when every independent claim of every survivor is either cleared (≥1 element
+absent) or flagged as a live infringement risk.
+
+## Output
+
+FTO data package per live blocking patent:
+- Legal status (active, expired, abandoned) and remaining term
+- Geographic reach against your sales jurisdictions — family members for the
+  offices, `designatedStates` minus lapsed states for an EP filing's countries
+- Per-claim all-elements verdict: cleared or at-risk
+
+If the full skill pack is installed, continue with `recipe-infringement-charting`
+to chart the at-risk claims element by element.

@@ -1,0 +1,173 @@
+---
+name: wicked-garden-engineering-architecture
+description: |
+  Complete solution architecture design with patterns, decisions, and diagrams.
+  Define overall system structure, technology choices, and architectural trade-offs.
+
+  Use when: "design the architecture", "what's the overall structure",
+  "architecture patterns", "technology stack", "system architecture"
+metadata:
+  role: module
+  phases: "design,build"
+  archetypes: "*"
+---
+
+# Architecture Skill
+
+Design end-to-end solutions with clear patterns, decisions, and visual documentation.
+
+For genuinely structural greenfield design (system boundaries, cross-cutting
+design trade-offs, full ADR sets), hand off to the
+`wicked-garden-engineering-solution-architect` worker skill.
+
+## Purpose
+
+Move from requirements to implementable architecture through:
+- Pattern selection and justification
+- Technology stack decisions
+- Cross-cutting concern planning
+- Architectural Decision Records (ADRs)
+
+## Process
+
+### 1. Gather Context
+
+- Read outcome document
+- Analyze requirements
+- Identify constraints
+- Understand scale needs
+
+### 2. Select Patterns
+
+Choose architectural style:
+- **Monolithic** - Simple deployment, single codebase
+- **Microservices** - Independent scaling, team autonomy
+- **Serverless** - Event-driven, auto-scaling
+- **Event-Driven** - Loose coupling, async
+- **Layered** - Clear separation, traditional
+
+### 3. Make Decisions
+
+Recommend stack based on:
+- Requirements fit
+- Team expertise
+- Ecosystem maturity
+- Cost considerations
+
+### 4. Document
+
+Creates in `phases/design/`:
+```
+design/
+├── architecture.md
+├── decisions/
+│   ├── 001-architecture-style.md
+│   └── 002-tech-stack.md
+└── diagrams/
+    └── system-context.mmd
+```
+
+## Output Format
+
+See [ADR Template](refs/adr-template.md) for decision records.
+
+See [Architecture Template - Design](refs/architecture-template-design.md) and [Architecture Template - Deployment](refs/architecture-template-deployment.md) for full structure.
+
+## Integration
+
+### With wicked-crew
+
+Auto-engaged during design phase.
+
+Publishes: `[arch:design:completed:success]`
+
+### With qe
+
+Architecture informs test strategy:
+- Critical paths
+- Failure modes
+- Performance targets
+
+### With the harness's task list
+
+Track work with ADR links as tasks — subject `ADR-001`, description `Reference:
+phases/design/decisions/001.md`, metadata `event_type: task`, `chain_id: {project}.design`,
+`source_agent: solution-architect`, `phase: design`; the field list and the harness-specific
+Hand-off live in the `wicked-garden-workflow` skill's `refs/integration.md`.
+
+## Architectural Thinking
+
+### Balance Trade-offs
+
+- **Simplicity vs Flexibility** - Easy now vs extensible later
+- **Performance vs Maintainability** - Fast vs readable
+- **Coupling vs Duplication** - DRY vs independent
+- **Build vs Buy** - Control vs speed
+
+### Apply Principles
+
+- **SOLID** - Single responsibility, dependency inversion
+- **YAGNI** - Build for now, not speculation
+- **Separation of Concerns** - Clear boundaries
+
+### Consider NFRs
+
+- **Scalability** - Users, growth rate
+- **Security** - Threats, compliance
+- **Performance** - Latency, throughput
+- **Reliability** - Uptime, DR
+- **Maintainability** - Team, skillset
+
+### Detect Scope Creep
+
+When reviewing changes (not greenfield):
+- Flag unauthorized architectural changes (new boundaries, changed patterns)
+- Flag "while I'm here" improvements beyond the task scope
+- Flag components restructured beyond what was requested
+
+## Common Patterns
+
+### Layered
+```
+UI → Application → Domain → Infrastructure
+```
+**Use**: Traditional apps, clear separation
+
+### Microservices
+```
+API Gateway → Services
+```
+**Use**: Large teams, independent deployment
+
+### Event-Driven
+```
+Producers → Bus → Consumers
+```
+**Use**: Async workflows, loose coupling
+
+See [Structural Patterns](refs/patterns-structural.md) and [Advanced Patterns](refs/patterns-advanced.md) for detailed examples.
+
+## Events
+
+- `[arch:design:completed:success]` - Architecture done
+- `[arch:decision:documented:success]` - ADR created
+- `[arch:diagram:generated:success]` - Diagram created
+
+## Tips
+
+1. **Start Simple** - Don't over-engineer
+2. **Document Decisions** - Future you will thank you
+3. **Show Alternatives** - Explain your choices
+4. **Use Diagrams** - Visual communication
+5. **Make it Scannable** - Quick understanding
+
+## Reference Materials
+
+- [ADR Template](refs/adr-template.md)
+- [Architecture Template - Design](refs/architecture-template-design.md)
+- [Architecture Template - Deployment](refs/architecture-template-deployment.md)
+- [Structural Patterns](refs/patterns-structural.md)
+- [Advanced Patterns](refs/patterns-advanced.md)
+- Example ADRs:
+  - [E-Commerce & Analytics](refs/examples-ecommerce-analytics.md)
+  - [SaaS & Trading](refs/examples-saas-trading.md)

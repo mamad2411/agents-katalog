@@ -1,0 +1,503 @@
+---
+lane:
+  class: prunable
+  prunable_when: no_code_delta
+  cost_size: M
+name: finalize-step-review-retrospective
+description: Finalize-phase wrapper that compares the PR's automated and human reviewers — a deterministic per-reviewer metrics pass (raw vs actionable vs meta comments, resolution buckets, %-resolved-as-fixed) augmented by an LLM qualitative quality judgment and a comparative verdict, persisted as a review-retrospective artifact
+user-invocable: false
+mode: workflow
+allowed-tools: Bash, Read, Write
+order: 990
+default_on: false
+presets: []
+mutates_source: false
+post_run_review: true
+head_dependent: true
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
+---
+
+# Finalize Step: review-retrospective
+
+## Purpose
+
+After a plan finishes, compare the PR's reviewers — the three automated reviewers
+(CodeRabbit `coderabbitai`, Sourcery `sourcery-ai`, PR-Agent `cuioss-review-bot`)
+plus any human reviewer — on review quality, reading THIS plan's `pr-comment` findings
+grouped by reviewer. The step is **HYBRID by construction**:
+
+- A **deterministic numbers pass** (the backing `review_retrospective.py`
+  aggregator) computes the per-reviewer, `(author, kind)`-grouped metrics. These
+  counts are authoritative and are NOT recomputed by the LLM.
+- An **LLM qualitative-judgment pass** (this workflow body) reads the comment
+  titles/bodies/details + their resolutions + the deterministic metrics and writes
+  a per-reviewer quality assessment plus a comparative verdict. This pass
+  **AUGMENTS** the numbers — it never recomputes or overrides them.
+
+Two layers of review-quality signal:
+
+- **Deterministic signal** (from the aggregator): per reviewer — raw total
+  comments; ACTIONABLE count (kind=inline + substantive review_body) reported
+  SEPARATELY from raw total; meta/non-actionable count (CodeRabbit status-summary
+  review_body + walkthrough issue_comment); resolution buckets; %-resolved-as-fixed
+  **over the resolved actionable set** (`actionable_fixed_count` ÷
+  `resolved_actionable_count`, never over `raw_total`); positives
+  (resolution=`fixed`); false-positives (resolution in {`rejected`} — the one
+  disposition that means the reviewer was wrong); acknowledged-without-change
+  (resolution in {`accepted`, `taken_into_account`}) reported separately and
+  counted in NEITHER quality bucket; suppressed=borderline; pending=excluded.
+- **LLM qualitative signal** (this body): signal-to-noise (real bug/design issue
+  vs nitpick vs style/lint/markdownlint trivia); depth and usefulness; accuracy of
+  the deterministic false-positive inference; and a comparative verdict (which
+  reviewer added more value on this PR and why).
+
+Cross-plan aggregation is **out of scope** — the corpus-wide quality-chain view
+belongs to the cross-plan auditor in the `plan-marshall-telemetry` repository.
+
+## Interface Contract
+
+Invoked by `plan-marshall:phase-6-finalize` for projects that include
+`project:finalize-step-review-retrospective` in their `phase-6-finalize.steps`
+list. Accepts the standard finalize-step arguments:
+
+- `--plan-id` — plan identifier (required; used to read the pr-comment findings,
+  scope the artifact, and mark the step done)
+- `--iteration` — finalize iteration counter (accepted for contract compliance,
+  no effect)
+
+MUST be ordered (via its `order: 990` frontmatter) **after**
+`plan-marshall:automatic-review` (30, which stages the pr-comment findings this
+step consumes) and `default:sonar-roundtrip` (40), and **before**
+`default:lessons-capture` (991).
+
+The lower bound is stronger than those two producers alone. This step declares
+`post_run_review: true`, so it MUST also be ordered after the merge gate
+`default:branch-cleanup` (70): the gate hosts the pre-merge review-completeness
+barrier and the bot re-review wait, which keep ADDING to the same `pr-comment`
+findings store this step reads. Ordered ahead of the gate, the step would compare
+reviewers over a store the gate had not finished filling and report a confident
+verdict about evidence that did not exist yet. `order: 990` is that placement; the
+governing contract is
+[`marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md)
+§ "The reciprocal", and the membership discriminator is owned by
+[`ext-point-finalize-step.md`](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md)
+§ "Implementor Frontmatter". Being post-merge-ordered, the step writes no tracked
+source and declares `mutates_source: false` explicitly — the explicit declaration
+is mandatory for any step ordered at or after the merge gate.
+
+## HEAD-dependency
+
+This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"; the governing discriminator lives there and is deliberately not restated here).
+
+It matches on the verdict shape: the step records a pass/fail-style verdict over the **remote state of tracked source** — which reviewer added more value on this PR, computed from the `pr-comment` findings that review of the pushed diff produced. Push a different diff and the reviewers say different things, so the verdict is bound to the HEAD it was computed against.
+
+**Why the declaration survives this step's post-merge placement (`order: 990`).** Loop-back is hosted by the merge gate `default:branch-cleanup` (70), so at 990 this step runs *after* the last point at which HEAD can advance within the run — no loop-back can follow it, and the declaration therefore no longer arms a live re-entry invalidation. Its remaining value is the recorded `--head-at-completion` **provenance stamp**: the artifact this step persists is a verdict about a specific tree, and the stamp is what ties it to that tree for anyone reading the retrospective later. This is stated explicitly so the declaration is not mistaken for a live loop-back guard, and so a future maintainer does not "fix" the apparent redundancy by deleting it — a later reordering that moves this step back above the gate would silently need the guard again.
+
+Every terminal `--outcome done` record therefore captures the **main-checkout** HEAD (`git -C {main_checkout} rev-parse HEAD`) immediately before its `mark-step-done` call — at `order: 990` the worktree `default:branch-cleanup` (70) removed is gone, so the worktree HEAD is unreadable and the merged base branch is the tree the verdict is about — and forwards it via `--head-at-completion {sha}`: the Step 5 completion record, the Step 1 zero-findings skip-clean record, and both non-fatal Error-Handling paths that also mark done (aggregator error, artifact-write failure). Re-firing is safe and cheap: the step is non-fatal throughout and recomputes from the findings store each time.
+
+## Reviewer comment-structure asymmetry
+
+The three automated reviewers post structurally different comment layers per PR,
+all under one login each, so a naive "every pr-comment finding = one actionable
+item" count over-counts CodeRabbit. The aggregator discriminates on the
+first-class `kind` field:
+
+- **CodeRabbit** (`coderabbitai`): inline actionable comments (`kind=inline`, each
+  wrapping nested `<details>` blocks that are ONE comment); a `review_body` status
+  summary ("Actionable comments posted: N") that is META; an `issue_comment`
+  walkthrough/poem that is also META.
+- **Sourcery** (`sourcery-ai`): inline `<issue_to_address>` comments plus an
+  **Overall Comments** `review_body`; its Reviewer's Guide `issue_comment` is META.
+- **PR-Agent** (`cuioss-review-bot`): no inline comments at all — exactly one
+  persistent `issue_comment` headed `## PR Reviewer Guide 🔍`, updated in place on
+  re-review. Its findings live inside that one record, so a stage that counts
+  inline comments will conclude this bot found nothing.
+
+So `kind=inline` is actionable, a substantive `review_body` is actionable, and
+CodeRabbit's status-summary `review_body` + walkthrough `issue_comment` are
+meta/non-actionable — reported separately from the actionable counts so they never
+inflate `actionable_count` or mis-rank reviewers. Records lacking `kind` are
+bucketed as `unknown` and counted in the raw total only.
+
+## Workflow
+
+### Step 1: Read this plan's pr-comment findings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+  --plan-id {plan_id} --type pr-comment
+```
+
+Read both resolved and pending findings (the retrospective wants the full
+picture). The records carry first-class `author` and `kind` fields.
+
+**Zero-findings GRADED exit**: if `filtered_count` is 0 there is nothing to
+compare — but **an empty store is ambiguous, and the step MUST NOT mark itself
+complete on a comparison it could not perform.** Zero `pr-comment` findings is the
+identical store for two opposite facts: reviewers ran and found nothing (a
+legitimate no-op), and NO reviewer produced content (reviewer coverage collapsed —
+exactly the condition this instrument exists to detect). A `participated_but_empty`
+reviewer files zero findings just like a silent one, so the store alone cannot tell
+them apart. **Do not record the benign `"0 pr-comment findings — nothing to
+compare"`** — that string renders the collapse identically to a clean review, which
+is the defect this exit closes. Grade the comparison instead.
+
+The distinguisher is the **reviewed-at-all** signal: which enabled reviewers
+resolved to `participated` / `participated_but_empty` (the `_REVIEWED_STATES` of
+`review_completeness`). That set is what `--reviewed-reviewers` expects, mapped from
+`review_completeness`'s `bot_states` `{bot_kind, state}` to each bot's `author_login`
+via the registry.
+
+⚠ **No persisted handoff of that classification currently reaches this step.**
+`review_completeness check` emits `bot_states` in its immediate TOON during the
+automatic-review step and the merge-gate barrier, but nothing persists it in a form
+this step can read at `order: 990` (after the merge gate). So **pass
+`--reviewed-reviewers` bare** here, and the zero-findings grade **fails closed to
+`indeterminate`** — the honest reading of a store that substantiates no review. This
+is correct behaviour, not a stopgap: an unsubstantiated review is never credited as
+a clean one, which is exactly the property this exit exists to guarantee. A `clean`
+grade upgrade — distinguishing a genuinely reviewed-clean run from a coverage
+collapse — becomes available only once a persisted reviewed-at-all handoff exists
+(the `bot_states` reviewed set, mapped to `author_login`, written where a
+post-merge-ordered step can read it); until then a zero-findings run with a
+configured roster grades `indeterminate`, and that is the safe result. Run the
+aggregator even though findings are zero:
+
+```bash
+python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
+  --plan-id {plan_id} --enabled-reviewers "{enabled_author_logins}" \
+  --reviewed-reviewers "{reviewed_author_logins}"
+```
+
+Read `comparison` from the TOON (`measured` / `clean` / `vacuous` / `indeterminate`
+— see `comparison_states`). Then resolve the HEAD SHA immediately before marking
+done, per § HEAD-dependency. Read it from **`{main_checkout}`**: this step is
+ordered at 990, after `default:branch-cleanup` (70) has merged and REMOVED the
+worktree, so `{worktree_path}` no longer exists on disk and a `git -C` against it
+fails — leaving the mandatory `--head-at-completion` unresolvable. `{main_checkout}`
+is the tree the merge landed on and is present on both the worktree and no-worktree
+flows (§ HEAD-dependency states the same rule for every terminal record):
+
+```bash
+git -C {main_checkout} rev-parse HEAD
+```
+
+Capture stdout as `{sha}`, and choose the `--display-detail` from the grade — never
+a bare comment count:
+
+| `comparison` | `--display-detail` |
+|---|---|
+| `clean` | `reviewed-clean — {k} reviewer(s) reviewed, 0 findings; nothing to compare` |
+| `vacuous` | `no reviewer roster configured — nothing to compare` |
+| `indeterminate` | `indeterminate — 0 findings and no reviewer produced content; review-quality comparison could not be performed` |
+
+`--outcome` stays **`done`** for every grade: the finalize `--outcome` enum has no
+`indeterminate` member, and this step is non-fatal — it must never block finalize
+(§ Error Handling). The `indeterminate` grade lives in the `--display-detail` and
+the persisted artifact, not in the lifecycle outcome. The grade is the instrument's
+assessment of its OWN work; the `done` outcome only says the step ran.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-review-retrospective \
+  --outcome done --display-detail "{graded_detail}" \
+  --head-at-completion {sha}
+```
+
+### Step 2: Deterministic numbers pass
+
+First derive the **enabled reviewer roster** — the `author_login` of every reviewer
+this PR enabled — so the aggregator can emit a row per ENABLED reviewer rather than
+per RESPONDING one. Read the automatic-review step's `required_bots ∪ optional_bots`
+config, then read each of those bots' `author_login` from its registry doc
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`) —
+the same machine-readable source the participation guard uses. **Derive it; never
+transcribe a reviewer list here** — a hand-maintained list goes stale the instant a
+reviewer is added to or removed from the registry.
+
+Pass those logins via `--enabled-reviewers` (comma-separated). This is load-bearing:
+a reviewer that produced no comments, one that never ran, and one that was
+enabled-invoked-and-refused all leave the store with no record, so deriving rows
+from the responding authors alone gives them **no row** — rendering three distinct
+facts identically (the vacuous-set archetype: the population becomes a strict subset
+of its own domain). A row per enabled reviewer closes that.
+
+Also pass `--reviewed-reviewers` — the `author_login`s that resolved to
+`participated` / `participated_but_empty` (`review_completeness`'s reviewed-at-all
+set), when a persisted classification is available. As the Step 1 note explains, no
+such persisted handoff currently reaches this step, so this is passed **bare**; on a
+run with findings the grade is `measured` regardless, so the bare flag costs nothing
+here and keeps the same call shape as the zero-findings exit above.
+
+```bash
+python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
+  --plan-id {plan_id} --enabled-reviewers "{enabled_author_logins}" \
+  --reviewed-reviewers "{reviewed_author_logins}"
+```
+
+Parse the TOON. Key fields:
+
+- `total_findings`, `reviewer_count`, `enabled_reviewers`, `reviewed_reviewers`
+- `comparison` — `measured` / `clean` / `vacuous` / `indeterminate` (see `comparison_states`): the instrument's grade of whether the review-quality comparison could be performed. `indeterminate` names a run where no reviewer produced content — never render it, or a `vacuous` run, as a clean comparison.
+- `reviewers[]{author,participation,raw_total,actionable_count,meta_count,fixed,accepted,taken_into_account,rejected,suppressed,pending,positives_count,false_positives_count,resolved_actionable_count,actionable_fixed_count,pct_resolved_as_fixed}`
+- `by_author_kind[]{author,kind,count}` — the per-`(author, kind)` breakdown
+- `kind_actionability`, `resolution_quality`, `participation_states`, and `comparison_states` — the mapping legends
+
+`participation` is now a first-class per-row field: `measured` (at least one record
+attributed — the reviewer can be judged) or `unmeasurable` (enabled but no record —
+the store substantiates neither participation nor absence, so the reviewer is named
+but **never scored or ranked**, its metrics all zero / `null`). An enabled reviewer
+that produced nothing therefore has a row marked `unmeasurable`, distinct from an
+absent row for a reviewer that was never enabled.
+
+`raw_total` and `actionable_count` are DISTINCT — the meta comments never inflate
+`actionable_count`. `pct_resolved_as_fixed` is `actionable_fixed_count` ÷
+`resolved_actionable_count`, both emitted beside it so the denominator is visible.
+A `null` `pct_resolved_as_fixed` means **"no resolved actionable comments"** — the
+reviewer's records were all META, all still pending, or both. It MUST NOT be read
+as, or rendered as, `0%`: a `null` is the absence of a measurement, whereas `0%`
+asserts the reviewer got everything wrong. These numbers are authoritative; do NOT
+recompute them.
+
+### Step 3: LLM qualitative-judgment pass
+
+Reading the comment titles/bodies/details (from Step 1) + their resolutions + the
+deterministic metrics (from Step 2), produce per reviewer:
+
+- **Signal-to-noise** — real bug/design issue vs nitpick vs style/lint/markdownlint
+  trivia.
+- **Depth / usefulness** — how substantive and actionable the comments were.
+- **False-positive accuracy** — did the deterministic false-positive inference
+  (resolution in {`rejected`}) genuinely read as a wrong claim in the comment
+  bodies, or was the rejection a scope call on a correct observation?
+- **Acknowledged vs false-positive sanity check** — read the
+  acknowledged-without-change comments (resolution in {`accepted`,
+  `taken_into_account`}) and confirm they belong in NEITHER quality bucket: an
+  acknowledgement means the reviewer said something valid that the triage absorbed
+  without a code change, so it is evidence of neither a caught defect nor a wrong
+  claim. Flag any that actually read as a wrong claim — those were mis-triaged and
+  belong on `rejected`.
+
+Then a comparative verdict: which reviewer added more value on this PR and why.
+This pass AUGMENTS — never replaces or overrides — the Step 2 counts.
+
+#### Participation is UNMEASURABLE unless positively substantiated
+
+An empty or thin slice of the findings store is **not** evidence that a reviewer
+was absent, that its inline coverage was zero, or that the PR took a
+"thin-review landing". Silence and non-participation are indistinguishable to a
+comment count: a bot that reviewed and found nothing, a bot that was rate-limited,
+a bot that refused, and a bot that was never enabled all present here as the same
+zero. This is the same asymmetry the merge gate already documents for its own two
+predicates — see
+[`branch-cleanup.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md)
+§ "Pre-Merge Review-Completeness Barrier".
+
+This pass therefore MUST NOT:
+
+- infer that a reviewer was **absent** / did not participate from a zero or
+  missing slice of the store;
+- report **"zero inline coverage"**, "no findings", or any equivalent
+  quantified-absence claim about a reviewer whose participation is not
+  positively substantiated;
+- characterise the run as a **"thin-review landing"** (or any comparable
+  whole-PR quality claim) on the strength of a low aggregate count alone.
+
+Instead, classify each reviewer into exactly one of two states and report the
+state explicitly. This classification is now **backed by the aggregator's
+deterministic `participation` field** (Step 2), not left to LLM judgment: every row
+already carries `measured` or `unmeasurable`, and every ENABLED reviewer has a row
+even when the store is silent on it. Read the field; do not re-derive it from a
+comment count:
+
+| State | Substantiation | How the artifact reports it |
+|-------|----------------|-----------------------------|
+| **measured** | At least one record attributed to that reviewer is present in the store, so its output can be judged. | Normal per-reviewer assessment. |
+| **unmeasurable** | No record attributed to that reviewer is present (the aggregator emits an `unmeasurable` row for it because it is on the enabled roster). | Report participation as `unmeasurable`, naming the reviewer and stating that the store substantiates neither participation nor absence. Do NOT score it, rank it, or count it as a negative. |
+
+The **comparative verdict** MUST name every reviewer it could not measure and
+MUST scope its claim to the measured ones — a verdict silent about an
+unmeasurable reviewer reads as a verdict that measured it and found nothing.
+When NO reviewer is measurable, the verdict itself is `unmeasurable`; do not
+manufacture a ranking from an empty store.
+
+### Step 3b: The review-versus-gate delta
+
+Steps 2 and 3 compare reviewers **against each other**. Neither answers the
+question the whole apparatus exists for: *what did review catch that the in-house
+gates did not?* That delta is the only direct read on gate/review parity available,
+and it arrives free on every PR.
+
+**This step runs AFTER Step 3, not before it, and the ordering is load-bearing.**
+The delta's `--partitions` labels are a judgment — whether an in-house gate *could*
+have caught each escape — and that judgment is produced by Step 3's qualitative
+pass. Placed ahead of Step 3 the flag would always be empty, every escape would be
+`unpartitioned`, and the share would be withheld on every PR forever: an instrument
+that is correct and never measures.
+
+Derive the two populations as `bot_kind` values — **not** the `author_login`s Step 2
+passes, since this verb reads `bot_kind` off the findings. Then resolve the two tree
+identities the escape claim rests on:
+
+- `{gate_head_sha}` — the `head_at_completion` recorded by `pre-push-quality-gate`
+  (read the step record via `manage-status`).
+- `{reviewed_head_sha}` — the `reviewed_commit_sha` carried by the `pr-comment`
+  findings. **Findings from different loop-back iterations carry DIFFERENT values**,
+  and `fetch_findings` pre-filter 5 never re-stamps an existing one, so a PR that
+  looped back has no single answer. The rule: pass the value only when every
+  finding agrees on it; when they disagree, **pass nothing**. A mixed set means
+  no one tree was reviewed in full, which is exactly the `gate_tree_unsubstantiated`
+  exclusion — deriving a single SHA from a mixed set by taking the newest would
+  manufacture a tree identity no reviewer actually reviewed against.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
+  --plan-id {plan_id} --enabled-bots "{enabled_bot_kinds}" \
+  --reviewed-bots "{reviewed_bot_kinds}" --gates-green \
+  --gate-head-sha {gate_head_sha} --reviewed-head-sha {reviewed_head_sha} \
+  --partitions "{partitions}"
+```
+
+Pass `--gates-green` only when `pre-push-quality-gate`, `functional-review` and
+`code-review` all recorded `done`; pass `--gates-red` when any of them failed.
+**Omitting both is not a shortcut** — it leaves the gate state unsubstantiated and
+excludes the PR.
+
+The two SHAs must be supplied and must MATCH. The code-mutating settle steps —
+`finalize-step-simplify` (3) and `finalize-step-security-audit` (5) — sort before
+`functional-review` (6), `code-review` (7) and `pre-push-quality-gate` (10), so on an
+ordinary forward pass the gates certify the settled tree. The SHAs still differ
+whenever HEAD advances after the gate: the gate's own auto-fix commit, or a
+post-push loop-back fix. Then the reviewer sees lines the gates never did and the PR
+is correctly excluded as `gates_did_not_cover_reviewed_tree`. That exclusion is the
+honest outcome, not a failure of this step. Record the exclusion rather than working
+around it.
+
+Read `verdict`, `escapes_total`, `by_partition`, `structural_share`,
+`share_withheld`, `reviewer_coverage`, `gate_head_sha`, `reviewed_head_sha`, and
+`provenance` — the same field set Step 4 persists, so the step that reads and the
+step that records cannot disagree about it. **`structural_share: null` is never
+`0`**, and `verdict: excluded` is never "the gates caught everything" — both name a
+PR that is not evidence. Report the withheld or exclusion reason verbatim rather
+than a number, and carry the `provenance` string's selection-effect sentence with
+it: a run of `excluded` rows means those PRs were never measurable, not that the
+gates were clean. See
+[`automatic-review/standards/bot-participation-contract.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md)
+§ "The review-versus-gate delta" for why the withholding rules are structural, and
+[`automatic-review/SKILL.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md)
+§ Canonical invocations → `review_gate_delta assess` for the argument surface.
+
+### Step 4: Persist the retrospective artifact
+
+Write `review-retrospective.md` under the plan dir, containing the
+deterministic per-reviewer metrics table (raw vs actionable vs meta,
+positives/false-positives/acknowledged, %-resolved-as-fixed) from Step 2, the
+review-versus-gate delta from Step 3b as a `## Review-versus-Gate Delta` section,
+AND the LLM sections from Step 3 as NAMED sections — `## Qualitative Quality Assessment`
+(per reviewer) and `## Comparative Verdict`. Render a `null`
+`pct_resolved_as_fixed` as `n/a` — never as `0%` — and put the denominator beside
+every rendered value (e.g. `40.0% (2/5 resolved actionable)`, `n/a (0 resolved
+actionable)`) so the reader can see what the percentage was measured over:
+
+The `## Review-versus-Gate Delta` section carries Step 3b's `verdict`,
+`escapes_total`, the `by_partition` counts, `structural_share` (or `null` with its
+`share_withheld` reason), `reviewer_coverage`, both tree SHAs, and the `provenance`
+string — **every figure beside the population it was computed over**, and the
+exclusion or withheld reason in words whenever no share exists. Persisting it is
+what makes the delta a *recurring* signal rather than a number computed and
+discarded: the artifact is the only place it accumulates across PRs.
+
+Both LLM sections carry the participation state Step 3 assigned: every reviewer
+classified `unmeasurable` is named as such, and the comparative verdict states
+which reviewers it could not measure. The artifact's **closing recommendation**
+is bound by the same rule as the verdict — it MUST NOT recommend acting on an
+inferred absence ("drop reviewer X", "coverage was thin, tighten Y") when the
+input for that reviewer was `unmeasurable`. A recommendation derived from an
+unmeasured input is the actively-misleading shape this constraint exists to
+remove; recommend only what the measured reviewers substantiate, and say plainly
+that the rest could not be measured.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id {plan_id} --file review-retrospective.md --content-file {temp_artifact_path}
+```
+
+Compose the artifact body with the Write tool to a temp file under `.plan/temp/`
+first, then pass it via `--content-file` (multi-line markdown never goes through a
+shell argument).
+
+### Step 5: Record the step outcome
+
+Resolve the HEAD SHA immediately before marking done, per § HEAD-dependency.
+Read it from **`{main_checkout}`** — at `order: 990` the worktree
+`default:branch-cleanup` (70) removed is gone, so `{worktree_path}` cannot be
+read; see § HEAD-dependency for the full reasoning:
+
+```bash
+git -C {main_checkout} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-review-retrospective \
+  --outcome done --display-detail "{N} reviewers compared, {M} actionable comments" \
+  --head-at-completion {sha}
+```
+
+**Step 3b's delta verdict deliberately does NOT reach `display_detail`.** The
+`display_detail` ceiling (owned by
+[`phase-6-finalize/standards/external-step-contract.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/external-step-contract.md)
+§ "Required termination") has no room for a verdict plus its exclusion reason plus
+its populations, and a delta figure shown WITHOUT them is precisely the bare number
+the whole measurement forbids. It rides the Step 4 artifact instead, in full. This
+omission is a stated choice, not an oversight — the same carve-out the surfacer's
+`scope_statement` and `structural_limit` take for the same reason.
+
+## Error Handling
+
+| Scenario | Action |
+|----------|--------|
+| Zero pr-comment findings | **Graded exit, not a benign skip** (§ Step 1). Run the aggregator on the empty store, read `comparison`, and `mark-step-done --outcome done` (non-fatal, always) with the grade's `--display-detail`: `reviewed-clean …` / `no reviewer roster configured …` / `indeterminate — 0 findings and no reviewer produced content …`. Never the flat `"0 pr-comment findings — nothing to compare"` — it renders a coverage collapse identically to a clean review. |
+| Aggregator returns `status: error` | Non-fatal — log the error, skip the qualitative pass, and `mark-step-done --outcome done --head-at-completion {sha}` with a display detail noting the aggregator failure. The retrospective must never block finalize. |
+| `manage-files write` failure | Non-fatal — log the failure and still `mark-step-done --outcome done --head-at-completion {sha}`. The artifact is advisory; finalize must not abort. |
+
+The step's posture is **non-fatal throughout**: finalize must never abort because
+the review retrospective hit a snag.
+
+## Canonical invocations
+
+The canonical argparse surface for the backing aggregator `review_retrospective.py`.
+
+### review_retrospective — run
+
+```bash
+python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
+  --plan-id PLAN_ID [--enabled-reviewers [ENABLED_REVIEWERS]] [--reviewed-reviewers [REVIEWED_REVIEWERS]]
+```
+
+`--enabled-reviewers` is a comma-separated list of `author_login` values for the
+reviewers this PR enabled. Every enabled reviewer gets a row — carrying
+`participation: unmeasurable` when the store holds no record for it — so a reviewer
+that produced nothing, one that never ran, and one that refused no longer collapse
+into having no row. It may be supplied bare (no value), which reads as the empty
+roster and preserves the prior observed-authors-only behaviour.
+
+`--reviewed-reviewers` is a comma-separated list of `author_login` values for the
+reviewers positively substantiated as having REVIEWED the diff — the reviewed-at-all
+set (`participated` / `participated_but_empty`) from `review_completeness`. It feeds
+the `comparison` grade: on a zero-findings run it separates `clean` (a reviewer
+reviewed and found nothing) from `indeterminate` (no reviewer produced content). It
+may be supplied bare (no value), which reads as the empty set; against a non-empty
+enabled roster that yields `indeterminate` — the instrument never credits an
+unsubstantiated review as a clean one.
+
+## Related
+
+- [.claude/skills/finalize-step-lessons-housekeeping/SKILL.md](../finalize-step-lessons-housekeeping/SKILL.md) — sibling project-local `mode: workflow` finalize step (reads data via scripts, reasons, persists an artifact, ends with `mark-step-done`)
+- [.claude/skills/finalize-step-deploy-target/SKILL.md](../finalize-step-deploy-target/SKILL.md) — sibling project-local finalize step
+- `plan-marshall:manage-findings` — the pr-comment finding store this step reads (first-class `author` / `kind` fields)
+- `plan-marshall:manage-files` — plan-dir artifact persistence
+- The cross-plan auditor in the `plan-marshall-telemetry` repository — the cross-plan, corpus-wide quality-chain view (this step is single-plan)
+- [marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md) — finalize phase that invokes this wrapper

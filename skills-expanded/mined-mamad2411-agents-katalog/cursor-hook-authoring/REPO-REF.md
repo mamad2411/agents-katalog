@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/cursor-hook-authoring/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Cursor Cloud Agent 環境で Git hook 連鎖（特に commit-msg と Co-authored-by 付与・除去）を設計・実装・検証するときに参照する。Cursor 管理 hook の実行順、`commit-msg.cursor.co-author-strip` の命名規則、install スクリプト、lefthook 多層防御、テスト手順を定義する。

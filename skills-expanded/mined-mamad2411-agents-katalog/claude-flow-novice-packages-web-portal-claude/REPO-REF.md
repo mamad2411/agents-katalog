@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/claude-flow-novice-packages-web-portal-claude/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: packages/web-portal — @claude-flow-novice/web-portal

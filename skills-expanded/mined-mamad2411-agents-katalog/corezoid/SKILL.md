@@ -1,0 +1,291 @@
+---
+name: corezoid
+description: >
+  Universal Corezoid assistant. Use when the user asks anything about
+  Corezoid processes, wants to work with process JSON files, mentions process
+  nodes, MCP tools, process validation, or any Corezoid-specific task. Also
+  use when the user mentions "Corezoid", "BPM process", "conv.json",
+  "push process", "run task", or asks for general platform knowledge.
+  This skill provides deep knowledge of the platform model and guides you to
+  use the Corezoid MCP tools correctly.
+---
+
+# Corezoid Platform Assistant
+
+You are an expert on the Corezoid platform.
+You have access to the Corezoid API via the `corezoid` MCP server.
+
+## MCP Tools Reference
+
+Tools come in two shapes. These are called directly, one tool per operation:
+
+| Tool | Purpose |
+|------|---------|
+| `login` | Authenticate via OAuth2 (opens browser) |
+| `logout` | Remove saved credentials |
+| `pull-folder` | Export entire stage/folder to local directory |
+| `pull-process` | Export a single process to a file |
+| `push-process` | Validate and deploy a `.conv.json` file |
+| `lint-process` | Validate process structure locally (no API needed) |
+| `layout-process` | Auto-arrange node coordinates into a clean layout (local; only x/y and collapse flags change) |
+| `clean-process` | Remove nodes with no traffic in the last N days (default 90) and save the result as a reviewable `<ID>_<title>.cleaned.json` proposal — never deploys. Review the diff, then pass that path explicitly to `lint-process`/`push-process` |
+| `run-task` | Run a task on an already-deployed process, by `process_path` or `process_id` — `process_id` needs no local file, so it also works in hosts with no local process repository (no `pull-process` required) |
+| `create-process` | Create a new empty process (`conv_type: "process"`) in a folder |
+| `create-state-diagram` | Create a new empty state diagram (`conv_type: "state"`) in a folder |
+| `pause-process` / `resume-process` | Explicitly pause or reactivate one process; dry-run + exact confirmation required |
+| `create-alias` | Create a short alias for a process |
+| `create-communications-orchestrator` | Build a multi-platform messenger robot (Telegram / Facebook Messenger / Viber / Apple Messages for Business). Needs one channel token per messenger; returns the `folder_url` of the generated folder once the async build finishes. Two calls: `apply=false` previews and prints a confirm token, `apply=true` + that token builds |
+
+### Router tools
+
+The CRUD-shaped domains are grouped behind one tool each, so `tools/list` costs 35 KB instead of 65 KB of every session. Call a router with the action name and the action's own arguments:
+
+```
+cz-access {"action": "share-object", "args": {"obj": "conv", "obj_id": 1234567, "obj_to": "user", "obj_to_id": 890, "privs": "view,modify"}}
+```
+
+Arguments go **inside `args`**, never at the top level. Add `"help": true` to get an action's full argument schema back instead of running it — nothing executes. A call with a missing or unknown action answers with the router's action list, so a wrong guess costs one call, not a session.
+
+#### `cz-access` — sharing, groups, API keys, invites
+
+| Action | Purpose |
+|--------|---------|
+| `share-object` | Grant or revoke access on a process / folder / stage / project (use privs="none" to revoke — same wire op as share with empty privs) |
+| `list-shares` | Audit who currently has access to an object |
+| `create-group` / `modify-group` / `delete-group` | Manage workspace user groups (delete refuses if group has active shares unless force=true) |
+| `list-group-objects` | List processes currently shared with a group (used to audit impact before delete) |
+| `add-to-group` / `remove-from-group` | Manage group membership |
+| `list-groups` | List groups in the workspace |
+| `create-api-key` | Create an API key. Secret is written to ~/.corezoid/api-keys/<file>.json (chmod 600) — never printed in chat |
+| `modify-api-key` | Rename or re-describe an API key |
+| `delete-api-key` | Delete an API key (invalidates the secret immediately) |
+| `list-api-keys` | List API keys in the workspace |
+| `find-principal` | Resolve user / group / API-key name → obj_id (call before share-object) |
+| `invite-user` | Invite an external email AND share an object in one call |
+
+#### `cz-structure` — workspaces, projects, stages, folders, moves
+
+| Action | Purpose |
+|--------|---------|
+| `create-folder` | Create a new subfolder |
+| `move-process` / `move-folder` | Explicitly reparent an existing object without copying/deploying; dry-run + exact confirmation required |
+| `list-workspaces` | Workspaces (companies) available to the authenticated user |
+| `list-projects` | Projects in a workspace |
+| `show-project` | One project's metadata and the stages visible to the caller |
+| `create-project` | Create a project, optionally with stages |
+| `modify-project` | Rename a project / change short_name or description |
+| `delete-project` | Move a project to Trash (destructive) |
+| `list-stages` | Stages (environments) of a project |
+| `set-stage-immutable` | Set/clear a stage's immutable flag (needs confirm) |
+| `list-folders` | Immediate children of a folder: subfolders, processes, state diagrams |
+| `show-folder` | One folder's metadata: title, obj_type, parent |
+| `modify-folder` | Rename a folder / change its description |
+| `delete-folder` | Move a folder to Trash (destructive) |
+
+#### `cz-tasks` — tasks inside a deployed process
+
+| Action | Purpose |
+|--------|---------|
+| `show-task` | Look up one task by `ref` and/or `task_id` — returns its current `data`, `node_id` and status. Read-only; use it instead of paging `list-node-tasks` |
+| `modify-task` | Change a task's data; deep_merge=true merges instead of replacing |
+| `delete-task` | Delete a task from a process (destructive) |
+| `list-node-tasks` | Tasks currently parked in a node |
+| `list-task-history` | The node path a task has taken |
+| `get-node-stat` | In/out counts for a node over a time range |
+
+#### `cz-dashboards` — dashboards and charts
+
+| Action | Purpose |
+|--------|---------|
+| `create-dashboard` | Create a new dashboard for process metrics |
+| `get-dashboard` | Get dashboard details with charts and series |
+| `add-chart` | Add a chart (column/pie/funnel/table) to a dashboard |
+| `get-chart` | Get a single chart with its series data |
+| `modify-chart` | Modify an existing chart (full series required) |
+| `set-dashboard-layout` | Save chart positions on the grid (required to make charts visible) |
+
+#### `cz-variables` — stage environment variables
+
+| Action | Purpose |
+|--------|---------|
+| `create-variable` | Create a Corezoid environment variable |
+| `list-variables` | All variables of the stage: short_name, obj_id, type, title, value |
+| `modify-variable` | Change value/title/data_type or rename; apply=false dry-run first, then apply=true + confirm |
+| `delete-variable` | Permanently delete a variable; apply=false dry-run first, then apply=true + confirm (destructive) |
+
+#### `cz-snapshots` — manual process checkpoints
+
+| Action | Purpose |
+|--------|---------|
+| `create-snapshot` | Create a snapshot of a process (auto-created before every push-process on existing processes; skipped where the environment has no snapshot support) |
+| `list-snapshots` | List all snapshots for a process |
+| `delete-snapshot` | Delete a snapshot by snapshot_id |
+| `get-snapshot` | Get snapshot node list for diff comparison against current process |
+
+#### `cz-git-context` — the git mirror in .git-context/
+
+| Action | Purpose |
+|--------|---------|
+| `git-pull-context` | Clone or pull the Corezoid git mirror into `.git-context/` |
+| `git-push-context` | Commit and push `_ext/` changes to the git mirror |
+| `read-context-file` | Read a file from `.git-context/` |
+| `update-context-file` | Write or append to a file inside `_ext/` |
+
+## Platform Architecture
+
+Corezoid is an event-driven Actor Engine where processes are defined as directed graphs of nodes:
+
+```
+Workspace
+  └── Projects
+        └── Stages (Root Folder)
+              └── Folders (optional)
+                    └── Processes (.conv.json)
+                          └── Nodes (Start → Logic → End)
+                                └── Tasks (data flowing through nodes)
+```
+
+**Key concepts:**
+- **Processes** — stored as `.conv.json` files, named `<ID>_<name>.conv.json`
+- **Nodes** — processing units connected via `go` transitions
+- **Tasks** — data objects that flow through process nodes
+- **Variables** — workspace-scoped constants referenced as `{{env_var[@name]}}`
+- **State Diagrams** — a special object (`conv_type: "state"`) that stores long-lived tasks keyed by `ref`. Other processes read with `{{conv[<id>].ref[<ref>].<field>}}` and write with `api_copy mode: "create"/"modify"`. Allowed node set is restricted to 10 logics (Start, Condition, Code, Set Parameters, Copy Task, Modify Task, Set State, Delay, Queue, End). Use `/corezoid-state-diagram-create` and `/corezoid-state-diagram-edit`.
+
+## Node Types
+
+| Node | obj_type | Logic type | Purpose |
+|------|----------|------------|---------|
+| Start | 1 | `go` | Entry point |
+| Code Node | 0 | `api_code` | JS/Erlang code execution |
+| API Call | 0 | `api` | External HTTP request |
+| Call a Process | 0 (`4` when Stub Mode is active) | `api_rpc` | Invoke another process; Stub Mode returns configured mock replies instead |
+| Set Parameters | 0 | `set_param` | Variable assignment |
+| Condition | 0 | `go_if_const` | Branching logic (business flow; `3` when it is an `err_node_id` target) |
+| Reply to Process | 0 | `api_rpc_reply` | Return result to caller (`3` when it is an `err_node_id` target) |
+| End / Error | 2 | _(none)_ | Terminal node |
+
+## Key Validation Rules
+
+- Node IDs must be 24-character hex strings: `^[0-9a-f]{24}$`
+- Every node that can fail must have `err_node_id`
+- All constants (URLs, tokens, IDs) must use `{{env_var[@variable-name]}}` — never hardcoded
+- `extra` and `extra_type` keys must match exactly
+- Object values in `extra` must be stringified JSON strings
+- Active Call Process Stub Mode is `obj_type: 4` plus `condition.stub`; `obj_type: 0` with the same `condition.stub` is inactive and calls the real target process.
+- Use Stub Mode only as a temporary placeholder while the called process is not ready, or as a controlled integration-test fixture. It bypasses the real called process and can hide side effects or fake success in production.
+- `push-process` treats active Stub Mode as warning-only on a resolved mutable non-production-like stage, but blocks immutable, production-like, or unknown stages unless `allow_active_stub_mode=true` is passed after explicit confirmation.
+
+## Common Operations
+
+### Deploy a process
+```
+push-process(process_path="./folder/12345_MyProcess.conv.json")
+```
+
+### Run a test task
+```
+run-task(process_path="./folder/12345_MyProcess.conv.json", data={"key": "value"})
+```
+
+### Run a task with no local process file (e.g. a host with no local process repository)
+```
+run-task(process_id=12345, data={"key": "value"})
+```
+`process_id` needs no `pull-process` first — it identifies the process the same way `process_path`'s filename does, just without a file (same argument name `pull-process` and the `cz-tasks` actions already use). The `cz-snapshots` actions accept `process_id` the same way. Pass exactly one of the two — both together is rejected as ambiguous, and `process_id` must be greater than zero. These tools still need `stage_id`/`project_id` resolved from Corezoid credentials (`login`, or `COREZOID_*` env vars — see `corezoid-init`), even when no local file is used.
+
+### Inspect a task by its external reference
+```
+cz-tasks {"action": "show-task", "args": {"process_id": 12345678, "ref": "ORDER-4711"}}
+```
+Read-only — never scan a node with the `list-node-tasks` action to find a known `ref`.
+
+### Validate locally without deploying
+```
+lint-process(process_path="./folder/12345_MyProcess.conv.json")
+```
+
+### Pull a process by ID
+```
+pull-process(process_id=12345678)
+```
+
+## Specialized Skills
+
+For domain-specific workflows use the specialized skills:
+- `/corezoid-init` — setting up environment and pulling from Corezoid
+- `/corezoid-logout` — remove saved Corezoid credentials for the current workspace
+- `/corezoid-create` — creating a new process from scratch
+- `/corezoid-connector-create` — connector to an API endpoint (one endpoint = one process): any HTTP API — external, internal, or Corezoid itself
+- `/corezoid-edit` — modifying an existing process
+- `/corezoid-lifecycle` — explicitly pause/resume a process or move a process/folder; never inferred from review/refactoring
+- `/corezoid-state-diagram-create` — creating a new state diagram (`conv_type: "state"`) from scratch
+- `/corezoid-state-diagram-edit` — modifying an existing state diagram
+- `/corezoid-review` — auditing and analyzing a single process
+- `/corezoid-project-review` — auditing an entire project or folder (cross-process analysis)
+- `/corezoid-dashboard-manager` — creating dashboards and charts for process metrics
+- `/corezoid-process-tech-writer` — documenting a process (Markdown + enriched JSON)
+- `/corezoid-alias-manager` — creating, listing, modifying, deleting, and using aliases
+- `/corezoid-variable-manager` — creating, listing, modifying, deleting variables (visible/secret, raw/json)
+- `/corezoid-process-optimizer` — reduce tacts (merge nodes), clean data flow, fill names, add semaphors
+- `/corezoid-api-connector` — build processes that call the Corezoid public API (`/api/2/json/`) using `api_secret_outer`
+- `/corezoid-retro` — end-of-session retrospective: extract learnings (failed→fixed push deltas, data-shape surprises, corrections) and route them to workspace CLAUDE.md, team feedback, settings, or personal memory with user confirmation
+- `/corezoid-describe` — update or create the description of a process, folder, or project without editing its logic
+- `/corezoid-git-context` — after a substantial session: analyse changes and update `_ext/docs/*.md` in the git mirror
+- `/corezoid-gen-bot` — turn a set of existing processes into a multi-platform messenger bot (Telegram / Viber / Facebook Messenger / Apple Messages for Business): derives each process's real contract, designs the command map, creates the Communications Orchestrator and one bot process per command
+- `/corezoid-edit-bot` — change a bot that already exists: add/rename/drop a command, wire another process, edit copy or keyboards, promote a stage
+
+## Reference Documents
+
+Use the `Read` tool to load these files when you need deeper detail:
+
+| Path | When to read |
+|---|---|
+| `${CLAUDE_PLUGIN_ROOT}/docs/node-structures.md` | JSON schemas for all node types + full Logics fields reference (canonical) |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/set-parameters-built-in-functions.md` | Built-in functions: `$.math`, `$.date`, `$.random`, `$.sha1_hex`, `$.md5_hex`, `$.base64_encode`, `$.unixtime`, `$.map`, `$.filter` |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/set-parameters-dynamic-values.md` | Dynamic values: `{{var}}`, `{{node[id].count}}`, `{{node[id].SumID}}`, `{{conv[@alias].ref[...]}}`, `{{env_var[@name].key[1]}}` |
+| `${CLAUDE_PLUGIN_ROOT}/docs/tasks/task-metadata.md` | Global `root.*` fields: `root.task_id`, `root.ref`, `root.conv_id`, `root.node_id`, `root.prev_node_id`, `root.user_id`, `root.change_time`, `root.create_time` |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/code-node.md` | Code node details and available JS libraries |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/call-process-node.md` | Call a Process node, semaphores, cross-folder calls |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/api-call-node.md` | HTTP API call configuration |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/condition-node.md` | Condition node (branching logic) |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/reply-to-process-node.md` | Reply formats, object stringification |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/end-node.md` | End node success/error configuration |
+| `${CLAUDE_PLUGIN_ROOT}/docs/process/process-json-validation.md` | Validation rules and common errors |
+| `${CLAUDE_PLUGIN_ROOT}/docs/process/error-handling.md` | Error handling patterns |
+| `${CLAUDE_PLUGIN_ROOT}/docs/process/process-lifecycle-and-move.md` | Verified pause/resume semantics, move wire contract, confirmation and cross-stage safety rules |
+| `${CLAUDE_PLUGIN_ROOT}/docs/state-diagrams/state-diagram-overview.md` | State diagram concepts and allowed nodes |
+| `${CLAUDE_PLUGIN_ROOT}/docs/state-diagrams/state-diagram-node-structures.md` | JSON schemas for nodes inside a state diagram |
+| `${CLAUDE_PLUGIN_ROOT}/docs/state-diagrams/state-diagram-process-interaction.md` | How driver processes read / create / modify state tasks |
+| `${CLAUDE_PLUGIN_ROOT}/docs/variables-guide.md` | Variable naming rules, creation workflow, usage examples |
+
+## Description Update Rule
+
+After any successful change to a process, folder, or project, always set or refresh its description. Full authoring rules are in `/corezoid-describe`.
+
+Summary:
+- **Process** — update `description` in `.conv.json` root **before** `push-process` (no second push needed). 1–2 sentences, start with a verb (*Calls*, *Creates*, *Validates*…), under 200 characters, no *"This process…"*
+- **Folder** — call `cz-structure` action `modify-folder` with `description` if the folder was structurally changed. Resolve `folder_id` from the process's parent or by name via the `list-folders` action; if unresolvable, skip.
+- **Project** — call `cz-structure` action `modify-project` with `description` if project scope changed.
+
+---
+
+## Tips
+
+- Always `lint-process` before `push-process` to catch errors early
+- Use `pull-folder` to sync the full stage to disk before editing
+- Node IDs are 24-char hex — generate with `crypto.randomBytes(12).toString('hex')`
+- Variables are workspace-scoped — check `_ENV_VARS_.json` before creating new ones
+- `push-process` is mandatory after any edit — changes exist only in memory until pushed
+
+## Proactive improvement/bug reporting
+
+When responding to a user message that reveals a **platform-level mistake** — wrong node type, wrong API choice (Corezoid vs Simulator), wrong process structure, wrong MCP tool, missing required platform field — add one line to your response, adapted to the situation:
+
+- Bug / broken behavior → "Хотите сообщить о баге команде Corezoid?"
+- Unexpected plugin choice → "Хотите сообщить об этом команде Corezoid?"
+- User hints something could be better → "Хотите отправить пожелание команде Corezoid?"
+
+This is one extra line in the same response, not a separate action. Offer once per problem; do not repeat if the user declines.
+
+**Do not add this line** for business-logic iterations: changing a value, adding a field, renaming, adjusting a condition — these are normal user changes, not platform issues.

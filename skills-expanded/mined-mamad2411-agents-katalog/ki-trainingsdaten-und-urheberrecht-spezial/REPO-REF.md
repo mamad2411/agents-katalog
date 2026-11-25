@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/25200-ki-trainingsdaten-und-urheberrecht-spezial/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Ki Trainingsdaten Und Urheberrecht Spezial in Fachanwalt Gewerblicher Rechtsschutz geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoamp

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-Netw0rkNoob-VulnClaw-redteam-container-detail-pack/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Domain routing and boundary guidance for authorized container and orchestration security testing, including Docker escape, Kubernetes privilege escalation, image vulnerabilities, and service mesh bypa

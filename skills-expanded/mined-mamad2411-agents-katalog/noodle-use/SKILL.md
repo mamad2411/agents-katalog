@@ -1,0 +1,407 @@
+---
+name: noodle-use
+description: Teach agents to create, organize, maintain, evaluate, import, convert, and automate noodle terminal REST client collections using supported CLI commands plus YAML and dotenv files.
+---
+
+# noodle-use
+
+Terminal REST client. YAML files on disk. Dotenv environments. Prefer supported non-interactive automation commands; use file-level operations for richer collection edits. No Bun dependency.
+
+## Response files
+
+Use `noodle request run <id> --collection <dir> --output <file> --json` to download any response into a new file, preserving original transport bytes after normal HTTP decompression. Choose a user-authorized destination; existing files are never overwritten. Completed responses are saved even when HTTP or response checks fail, and the failures remain nonzero. Pre-script/transport failures create no output. Downloads contain original server data without redaction. Binary JSON results contain metadata only (`bodyKind`, `size`, `contentType`, optional `filename`, and successful `outputFile`); never expect body text, bytes, or base64. JSON body captures/assertions fail for binary responses; metadata expressions still work. Binary TUI history and Runner details retain metadata without a downloadable body. Humans use Save file (Save As, initially Downloads) and Open in default app; only PNG/JPEG/static WebP/GIF first frame have native previews, with explicit activation above 5 MiB. See [automation](workflows/automation.md) for exit and diagnostic behavior.
+
+For human-readable single-request inspection, add `--body`, `--headers`, or `--cookies` to `noodle request run`. These details use the redacted result, escape terminal control characters, and mask received-cookie values. `--json` remains one envelope and includes received-cookie metadata; binary bodies are never printed.
+
+## Quick routing
+
+| Intent | Read |
+|--------|------|
+| Create new collection, request, folder, or environment | [workflows/create.md](workflows/create.md) |
+| Configure collection metadata, history, cookies, proxy, or TLS | [workflows/create.md](workflows/create.md#configure-collection-settings) |
+| Script collection discovery, validation, execution, or simple mutations | [workflows/automation.md](workflows/automation.md) |
+| Refactor, rename, restructure existing collection | [workflows/organize.md](workflows/organize.md) |
+| Audit collection for REST best practices and security | [workflows/evaluate.md](workflows/evaluate.md) |
+| Import or export OpenAPI, Swagger, Postman, or Insomnia collections via CLI | [workflows/import.md](workflows/import.md) |
+| Convert a cURL command or unsupported format at file level | [workflows/convert.md](workflows/convert.md) |
+| Understand file formats, schemas, field rules | [schema.md](schema.md) |
+| Author JavaScript with external-editor types | [noodle-script.d.ts](noodle-script.d.ts) |
+| Look up every scripting member, phase, and fixed limit | [reference/script-api.md](reference/script-api.md) |
+| Understand naming conventions, ID rules, variable syntax | [reference/conventions.md](reference/conventions.md) |
+| Read/write ~/.config/noodle/ settings | [reference/config.md](reference/config.md) |
+| See annotated example files | [reference/examples.md](reference/examples.md) |
+| Find troubleshooting, TUI guidance, or examples beyond bundled references | [Online documentation index](https://noodlerest.dev/llms.txt) |
+
+When bundled references do not answer the question, consult the online documentation index. Start with its abridged documentation and fetch the complete documentation only if needed. Check `noodle --version` before relying on features described online, since the site may document a newer version. Routine collection tasks should use bundled references without requiring network access.
+
+## Critical rules
+
+These apply to ALL operations. Read before any workflow.
+
+### Non-interactive CLI first
+Do NOT import noodle's internal modules or run `bun`. Never run `noodle` in TUI mode; that's for humans. Use supported non-interactive commands (`workspace list`, `collection ...`, `request ...`, `environment set`, `secret ...`, `cookie ...`, `import`, and `export`) when they fully express the task. Use direct `.yml`, `.env`, and `.js` edits for folders, request bodies, auth, headers, params, inline or external pre/post scripts and tests, captures, assertions, new environment files, secret declarations, and conversions not supported by the CLI. Pass `--json` when output will be consumed programmatically.
+
+### Foreign scripts
+
+Import preserves only scripts whose compatibility can be established by parsing
+JavaScript and checking free identifiers against Noodle's contract and a
+conservative ECMAScript allowlist. Read ordered `data.warnings` in `--json`:
+`itemPath`, original `phase`, `format`, `code`, `reason`, `unsupportedGlobals`, and
+safe `message`. Never reconstruct omitted scripts with regex replacements.
+Imports retaining scripts or tests require a new collection; current or existing
+targets are rejected before writes. Postman pre-request events map to
+collection/folder/request pre; only request `test` events map to tests. Insomnia preserves request pre/post hooks only.
+Foreign APIs, plugins, modules, duplicate Postman phases, disabled events,
+external Postman sources, API aliases, dynamic access, reflection, and async
+source are left unconverted. Script-free requests import normally. See
+[import details](workflows/import.md#script-compatibility).
+
+### Variable syntax
+`$VARNAME` (no braces), where names match `^\w+$`. Use `$$` for a literal dollar: `$$NAME` sends `$NAME`, while `$$$NAME` sends a literal `$` followed by the resolved value. Values resolve once; substituted values are not scanned again. In request YAML substitution applies to `url`; enabled header values; enabled query-param names and values; `path_params` names and values; `body`; enabled `form_data` names and values; `file_path`; supported auth string fields and enabled OAuth 2 additional parameters; and string values nested inside assertion expectations. Disabled entries are preserved exactly until enabled. Every evaluated reference must resolve from the selected environment or a committed capture/script RunScope value from an earlier request in the same collection run.
+
+### Random and time body values
+Use `$random.uuid`, `$random.email()`, or `$random.number({"min":18,"max":80})` in JSON, text/XML bodies and enabled text-valued form fields. Calls take JSON literals, generate once per occurrence before pre-scripts, and reuse the existing [random catalog](schema.md#script-random-api), except `seed`. JSON strings escape generated text; standalone placeholders preserve JSON types. `$$random.uuid` is literal. URLs, headers, auth, form names and file paths do not support these generators. See [body templates](schema.md#random-body-templates) for quoting, limits, and lifecycle rules.
+
+Use `$time.now` for Unix milliseconds, `$time.unix` for Unix seconds, and `$time.iso` for an ISO timestamp in the same body fields. They share one instant per request execution. All existing `noodle.time` methods are available with JSON arguments, such as `$time.format("2026-01-01", "YYYY-MM-DD")`. The body editor and text form values autocomplete both namespaces with descriptions, signatures, and examples. See [time body templates](schema.md#time-body-templates).
+
+### Response capture
+Use a top-level `capture` mapping to pass response values to later requests in one ordered `collection run`:
+
+```yaml
+capture:
+  user_id:
+    value: body.id
+  access_token:
+    value: body.access_token
+    persist: secret
+  optional_trace:
+    value: headers.x-trace
+    enabled: false
+```
+
+Names use `^\w+$`. Every entry is an object with required `value`, optional `persist: secret|environment`, and optional `enabled: false`; scalar shorthand is invalid. Expressions use the same `status`, `response.time`, case-insensitive `headers.<name>`, and JSON `body` path grammar as assertions and are not variable-substituted. Disabled declarations produce no results, failures, summary counts, timeline outcomes, RunScope mutations, or writes. Environment values load first, RunScope values override them, and the latest successful capture or script write wins. Missing or invalid traversal fails without creating or replacing a variable. Successful values from the same block still commit before post and assertions, so the same request's post script can read them. On manual TUI sends and CLI `request run`, successful captures with `persist` update the active or selected environment even when HTTP status, post, or a later assertion fails, using the captured value rather than a post overwrite. Missing environments and write failures fail that capture while preserving the response and other successful writes. `collection run` and the TUI collection Runner always keep captures transient. Secret capture values and captures from sensitive response headers are fully redacted from TUI and JSON capture results. Human users edit persistence with the Capture row Select; Run Collection remains a transient result inspector.
+
+### Assertions and declarative execution
+Use a top-level `assert` list for response contracts:
+
+```yaml
+assert:
+  - expression: status
+    operator: equals
+    value: 201
+  - expression: body.user.id
+    operator: isNumber
+  - expression: headers.Content-Type
+    operator: contains
+    value: application/json
+  - expression: response.time
+    operator: lt
+    value: 500
+```
+
+Operators without `value`: `exists`, `notExists`, `isString`, `isNumber`, `isBoolean`, `isArray`, `isObject`, `isNull`, `notNull`. Operators with `value`: `equals`, `notEquals`, `gt`, `gte`, `lt`, `lte`, `contains`, `notContains`, `matches`. Missing is distinct from JSON null. Timing uses milliseconds; headers are case-insensitive; strings and regex are case-sensitive. Equality is typed recursive JSON equality with no coercion, array order matters, and object key order does not. Regex uses JavaScript syntax without flags, is unanchored unless the pattern contains anchors, and rejects unsafe or unsupported constructs.
+
+Every manual send, `request run`, `collection run`, and TUI Runner request uses this order:
+
+1. Merge folder overrides.
+2. Overlay the current RunScope for substitution.
+3. Substitute the request once.
+4. Run inherited and request pre blocks against a staged prepared copy.
+5. Commit successful script request and RunScope mutations.
+6. Send the prepared request.
+7. Evaluate and commit captures.
+8. Run optional post-response processing and atomically commit successful
+   RunScope and URL-scoped cookie changes.
+9. Evaluate assertions, including after post failure.
+10. Run optional read-only scripted tests, including after HTTP, capture, post, or assertion failure.
+
+Use `scripts.pre` for synchronous or async request preparation and `scripts.post` for
+response extraction or conditional processing that cannot be expressed
+declaratively. Script source is literal and never variable-
+substituted. Noodle readers and state APIs live under the frozen `noodle` namespace; bare
+reader aliases are unavailable. Only the tests phase adds global `test` and `expect`. Pre exposes `noodle.request`, `noodle.env`, `noodle.run`,
+`noodle.crypto`, `noodle.random`, `noodle.time`, and captured global `console` APIs. Pre/post support top-level await and Promise-returning
+`noodle.runRequest(id)` and `noodle.sendRequest(options)`; await each call.
+Imports, raw fetch, host APIs, timers, and background work are unavailable. Script request mutations are
+in-memory only. Successful pre RunScope mutations commit before HTTP and are
+visible to later collection requests even if later phases fail. Read the complete API and
+limits in [schema.md](schema.md#inline-request-scripts).
+
+Both phases expose frozen `noodle.random.*()` English test-data generators with bounded
+options. Each invocation has independent Faker 10.6.0 state; `noodle.random.seed` resets
+only its sequence. Use `noodle.run.set` to share values, and an explicit `refDate` plus
+seed for reproducible relative dates. Passwords are automatically known secrets;
+other generated data stays visible. IDs and passwords are test data without
+cryptographic security or guaranteed uniqueness. Body templates use the same generators
+without sharing a script invocation's seeded sequence.
+See [the catalog and options](schema.md#script-random-api).
+
+Both phases expose frozen `noodle.time` helpers for Unix milliseconds/seconds,
+ISO parsing and output, pattern formatting in named timezones, and elapsed-time
+arithmetic. UTC is the default; a day always means 24 hours. Use `now()` once
+when multiple values must share one instant, and pass dates with explicit
+offsets or date-only ISO strings (midnight UTC).
+See [the methods, tokens, and limits](schema.md#script-time-api).
+
+Post sees captures and the completed response, including HTTP/capture failures.
+It adds bounded `noodle.response.text/json`, metadata, case-insensitive response headers,
+and optional final-URL-scoped `noodle.cookies.get/set/delete`. Request readers reflect
+the final prepared HTTP leg; all request mutations are rejected. Post failure
+rolls back only staged post RunScope/cookie changes, preserves captures and the
+response, and still runs assertions. Successful post values reach later
+collection requests even after assertion failure. Capture
+persistence uses the captured value, not post overwrites, and survives post
+failure. Cookie writes
+retain deferred durability. The capability is absent for unavailable/disabled
+jars and `sendCookies: false`; response Set-Cookie capture remains enabled.
+
+Both phases support `noodle.run.set(name, value, { persist: "environment" | "secret" })`
+and `noodle.run.unset(name, { persist: "environment" | "secret" })`. Manual sends and
+`request run` save to an existing active environment; collection runs and Runner
+keep changes transient and report suppression. No options keep old semantics.
+`noodle.env.get` remains an initial selected-environment snapshot; `noodle.run.get` sees scope
+writes. Persistent unset suppresses the baseline until a later set/capture and
+secret unset removes both the vault value and declaration. Environment targets
+cannot change declared secrets; secret set can promote ordinary entries.
+Explicit durable precedence is pre, capture, post. Later transient writes do
+not change a saved snapshot. VM failure discards intents; storage failure keeps
+runtime changes but fails automation with redacted persistence diagnostics.
+
+Treat collections containing scripts as trusted code. A script can read selected-environment secrets with `noodle.env.get`
+and place them in the URL, headers, or body sent by the following HTTP request.
+
+Manual timeline history retains bounded, redacted pre/post outcome summaries, persistence outcomes, script/test logs, and scripted test results/errors. Source code, capture results, and RunScope values remain excluded; oversized diagnostic text and logs use `[TRUNCATED]` markers. Automation runs do not create timeline entries.
+
+### Scripted response tests
+
+Use an inline `tests` string or a collection-relative `./path/to/file.js` reference for conditional checks, loops, and
+related JSON assertions. Use declarative `assert` for simple response contracts;
+use `scripts.post` for mutations. `test(name, callback)` and `expect(actual)` are
+global only in tests; readers remain `noodle.response`, `noodle.request`,
+`noodle.env`, `noodle.run`, and final-URL `noodle.cookies` when enabled. Crypto,
+random, time, and captured console helpers remain available.
+
+```yaml
+tests: |
+  test("successful response has an active user", () => {
+    if (noodle.response.status < 400) {
+      const user = noodle.response.json().user
+      expect(user.id).toBeDefined()
+      expect(user.status).toBe("active")
+      expect(user.roles).toContain("member")
+    }
+  })
+```
+
+Supported matchers: `toBe`, `toEqual`, `toBeTruthy`, `toBeFalsy`, `toBeDefined`,
+`toBeNull`, `toContain`, `toMatch`, `toBeGreaterThan`, `toBeGreaterThanOrEqual`,
+`toBeLessThan`, `toBeLessThanOrEqual`, `toMatchSchema`, `toHaveProperty`,
+`toHaveLength`, `toBeTypeOf`, and `toMatchObject`. Each supports `.not`. See the
+[matcher reference](schema.md#inline-scripted-tests) for exact types and limits.
+
+Tests cannot mutate request, response, RunScope, environment, or cookies.
+Callbacks start immediately; returned Promises and thenables are awaited and
+results keep declaration order. Duplicate names remain separate. Failed
+callbacks do not stop later tests. Top-level errors and resource limits retain
+completed results. Network APIs and modules are unavailable in tests; external source files use the confined host resolver. Empty source is
+a no-op, source is never substituted, and non-string `tests` values are invalid.
+
+Read `data.result.tests` or `data.results[].tests`: `{ evaluated, results, logs,
+error?, errors?, invocations? }`, with `{ name, passed, message, durationMs }` per test. Pre/transport
+failures leave tests unevaluated. Failure category `test` covers failed callbacks
+and top-level errors; collection summaries include `testPasses`, `testFailures`,
+and `testScriptErrors` when tests exist. Fail-fast waits for all diagnostics.
+Known secrets are redacted, and human output omits log text.
+
+### Redirect and timeout safety
+Noodle rejects HTTPS-to-HTTP redirects. When a redirect changes origin, it
+removes sensitive headers and headers containing known secrets, disables request
+auth, and refuses to preserve a body containing a known secret. Redirects that
+discard the body may continue. A configured request timeout is a transport
+failure; caller-triggered cancellation remains owned by the caller. Keep
+credentials in declared secret variables so Noodle can apply these protections.
+
+For chaining, place the producer before its consumers and use `$captured_name` in later request fields. `collection run` and the TUI Runner share one transient scope in collection order after target and tag filtering, with a fresh scope for each dataset row; `request run` and manual sends use isolated scopes. In the Runner, choose requests or folders, environment, Include tags, Exclude tags, fail-fast, delay, and an optional Data file, then inspect ordered Results. See [automation](workflows/automation.md) and [annotated create/fetch/delete and login examples](reference/examples.md#chained-requests-with-response-capture).
+
+### File extension
+`.yml` NOT `.yaml`. Requests are one-per-file. Folders use `folder.yml`.
+
+### ID convention
+File at `auth/login.yml` → ID = `"auth/login"` (relative path minus `.yml`). Used for: tree navigation, file I/O, timeline storage, and UI state. Timeline YAML lives at `.timeline/auth/login.yml`; large bodies may be stored beside it in `.timeline/auth/login.yml.bodies/`. Treat both as generated, sensitive data and do not edit body references manually.
+
+### Environment format
+Dotenv-style `.env` files in `<collection>/.environments/`. Variable names match `^\w+$`; `_color` is reserved. `KEY=value` declares a public variable, preserving everything after the first `=` exactly, including trailing spaces. `# KEY=value` disables it. `# @secret KEY` immediately followed by a blank `KEY=` declares an enabled secure value; use a commented blank placeholder to disable it. Secret values live in the OS credential vault, with `process.env.KEY` taking precedence. On headless Linux, the vault requires a running Secret Service provider such as GNOME Keyring or KWallet, a user D-Bus session, and an unlocked keyring collection; see the [Linux secret storage setup](https://noodlerest.dev/docs/reference/environment-format/#linux-and-headless-environments) guide when `secret set` reports that the `login` collection is unavailable. For unattended automation, prefer the same-named process environment variable or an external secret manager. `_color=<name>` sets sidebar badge color. Valid colors: primary, secondary, accent, error, warning, success, info, text, textMuted, background, backgroundPanel, backgroundElement, border, borderActive, borderSubtle.
+
+### Folder inheritance
+- `folder.yml` applies only inside its folder directory. A root-level `folder.yml` is ignored by the loader.
+- Request and non-root folder `tags` are case-sensitive, non-empty trimmed strings. A request's effective tags are the union of its own tags and all ancestor folder tags. Tags cannot be removed downstream.
+- Headers merge additively: folder header only applies if child request doesn't have the same header key.
+- Auth: request with `type: inherit` uses nearest parent folder's auth override. Walk up the tree until a folder with an auth override is found.
+- `folder.yml` format:
+```yaml
+meta:
+  name: Display Name
+  seq: 5
+tags:
+  - smoke
+  - users
+headers:
+  X-API-Key: $API_KEY
+auth:
+  type: bearer
+  token: $TOKEN
+```
+`meta` and `tags` are optional. `meta.seq` controls sort order (lower = first, undefined = last). `meta.name` overrides display name (defaults to directory name).
+
+### Collection settings
+`settings.yml` at collection root supports generated `collection_id` plus optional
+`name`, multiline `description`, `timeline_max_entries`, `environment`, `cookies`,
+`proxy`, and `tls` fields.
+Timeline retention defaults to 50 responses per request; `0` disables history.
+Collection proxy mode is `inherit`, `off`, or `custom`. A custom proxy uses a
+credential-free HTTP(S) URL plus an optional bypass list. Authentication is
+configured in Settings; config stores only `auth: true`, while the username and
+optional password live in the OS vault. URLs containing credentials or variables
+are invalid. `--noproxy` overrides every saved policy for one TUI, `collection
+run`, or `request run` invocation.
+TLS settings support verification, a custom PEM CA bundle, and exact-host PEM
+client certificates. Enter encrypted-key passphrases in Settings; config retains
+only a generated `secret_id`. `--insecure` disables verification for one run.
+Collection cookies are enabled by default and stored per collection. Use the
+non-interactive `cookie list` command to inspect cookies plus storage warnings;
+use `cookie clear` for explicit recovery because it backs up unreadable state
+before resetting the jar. Plaintext fallback is mode `0600` and always reported.
+Request `sendCookies: false` suppresses jar cookies on the outgoing request but
+still captures response cookies. Cookie values are sensitive, and `cookie list`
+includes them in both human and JSON output; never expose that output in logs.
+Settings parsing is strict: malformed YAML, unknown keys, wrong types, and
+invalid proxy/TLS/cookie blocks fail collection opening, auditing, and execution.
+
+### Path safety
+When creating/deleting files, only operate within the collection directory. Never create files outside the collection root. IDs must not contain `..`, leading `/`, backslashes, empty path segments, or hidden path segments.
+
+### Authorization
+Auth types: `none`, `inherit`, `bearer`, `basic`, `ntlm`, `api_key`, `aws_sigv4`, `oauth1`, `oauth2`.
+- `none`: No auth. Omit the `auth` field entirely (don't write `{ type: none }`).
+- `inherit`: Use parent folder's auth override. Only valid when a parent folder defines auth.
+- `bearer`: `{ type: bearer, token: "$TOKEN" }`
+- `basic`: `{ type: basic, user: "$USER", pass: "$PASS" }`
+- `api_key`: `{ type: api_key, key: "X-API-Key", value: "$KEY", placement: "header" }`. Placement is `"header"` or `"query"`.
+- `ntlm`: `{ type: ntlm, username: "$NTLM_USERNAME", password: "$NTLM_PASSWORD", domain: "$NTLM_DOMAIN", workstation: "$NTLM_WORKSTATION" }`. Domain and workstation are optional. Noodle supports connection-bound server NTLMv2 authentication only; keep the password in a secret environment variable.
+- `aws_sigv4`: `{ type: aws_sigv4, access_key: "$AWS_ACCESS_KEY_ID", secret_key: "$AWS_SECRET_ACCESS_KEY", region: "us-east-1", service: "execute-api", session_token: "$AWS_SESSION_TOKEN" }`. `session_token` is optional. Signing uses headers and supports text, JSON, URL-encoded, and binary bodies; multipart is not supported.
+- `oauth1`: Start with `{ type: oauth1, consumer_key: "$OAUTH1_CONSUMER_KEY", consumer_secret: "$OAUTH1_CONSUMER_SECRET", access_token: "$OAUTH1_ACCESS_TOKEN", access_token_secret: "$OAUTH1_ACCESS_TOKEN_SECRET", signature_method: "HMAC-SHA1", placement: "header" }`. Supported methods are HMAC-SHA1/256/512, RSA-SHA1/256/512, and PLAINTEXT. Placement is `header`, `query`, or `body`; body placement requires URL-encoded form data. RSA keys may be inline text or a collection-relative or `@/` file path.
+- `oauth2`: Start with `{ type: oauth2, grant_type: authorization_code, discovery_url: "https://identity.example", client_id: "$OAUTH2_CLIENT_ID", client_secret: "$OAUTH2_CLIENT_SECRET", scope: "openid profile", redirect_uri: "http://127.0.0.1:8765/oauth/callback" }`. `discovery_url` accepts an OIDC issuer; set `discovery_url_kind: document` for an exact discovery-document URL. Explicit `authorization_url` and `access_token_url` values remain authoritative. Supported grants are `authorization_code`, `client_credentials`, `implicit`, and `password`; authorization code defaults to S256 PKCE. Read [schema.md](schema.md) before authoring advanced token, client assertion, or additional-parameter fields.
+
+Keep OAuth consumer secrets, token secrets, client secrets, passwords, and private signing keys in secret environment variables. OAuth 2 token responses live in the OS credential vault, with a session-only memory fallback if the vault is unavailable; never write tokens, authorization codes, PKCE verifiers, or generated state into collection files. Browser authorization is a TUI-only human workflow. Non-interactive `request run` and `collection run` may reuse or refresh stored browser credentials, and may acquire client-credentials or password tokens directly, but never open a browser.
+
+Noodle cannot generate client-code snippets for NTLM, AWS SigV4, OAuth 1.0a, or OAuth 2.0 requests. Keep these requests in the collection and run them with noodle instead.
+
+### Request chaining
+
+Use `await noodle.runRequest("folder/request")` for a saved same-collection
+request, or `await noodle.sendRequest({ url, method, headers, body, timeout })`
+for literal HTTP values. Both return read-only response readers and throw on
+HTTP or execution failures. Catch errors to inspect `response`, `execution`,
+and `failureCategories`. Children share staged variables transactionally; a
+failed child rolls back its writes and a failed parent rolls back the combined
+variables. Nested persistence is transient. Persist selected results explicitly
+in the parent and use request setters to change the already-substituted current
+request. HTTP/cookie effects are not rolled back. Limits: one outstanding call,
+ten calls per top-level request, four child levels, 30-second ancestor-bounded
+wall time, and 500 ms VM execution excluding network waiting. See
+[the full contract](schema.md#async-scripts-and-request-chaining).
+
+
+## Inherited scripts and tests
+
+Declare `scripts.pre`, `scripts.post`, and `tests` in collection `settings.yml`,
+nested `folder.yml`, or request YAML. Each field accepts one inline JavaScript
+string or a collection-relative external reference such as `./scripts/sign.js`.
+Empty strings are no-ops and are omitted by canonical serialization.
+
+For every request: collection pre → folder pre (outermost to nearest) → request
+pre → HTTP → captures → collection post → folder post (outermost to nearest) →
+request post → assertions → tests (collection, outer folders, inner folders,
+request). Collection and folder hooks run once per request, including each selected
+request and dataset row. Ancestors use file paths, not display names; root
+`folder.yml` remains ignored. Existing inherited tests remain supported.
+The most specific successful post write wins, including persisted writes.
+
+Every block has a fresh QuickJS invocation. JavaScript locals are isolated;
+successful RunScope writes are visible to later blocks. A pre failure stops
+remaining pre blocks and HTTP. A post failure rolls back only that block and
+continues later posts, assertions, and tests. A top-level test error stops only
+its block. Successful persistence intents keep execution order; collection
+runs and F5 suppress persistence as before. Saved `noodle.runRequest()` calls
+use the same inheritance and cycle protections.
+
+Every executed block identifies its phase, scope, scope ID, source kind, duration,
+logs, and normalized error. `source.path` remains the declaring YAML path;
+`source.scopeId` identifies the collection, folder path, or request ID;
+`source.sourceKind` is `inline` or `external`, and external blocks add
+`source.sourcePath`, such as `./scripts/sign.js`. Test groups retain ordered
+`invocations` even for files declaring zero tests, and `errors` with legacy
+first `error` compatibility. JSON and live Results retain bounded redacted logs.
+New history entries retain bounded, redacted outcome summaries and script/test
+logs, excluding source code and RunScope values. Existing history remains readable.
+
+Inherited blocks share a 64 KiB console-text budget and a 256 KiB test-record
+budget per request. Logs become `[TRUNCATED]` at the limit; exhausted test
+records produce a test script error, and later blocks are still invoked.
+
+
+## CSV and JSON iteration data
+
+```bash
+noodle collection run ./my-api --data ./data/users.csv
+noodle collection run ./my-api users/ --data ./data/users.json --tag smoke --delay 100 --fail-fast --json
+```
+
+`--data` is optional and independent of the `--json` output flag. In F5, enter
+the optional **Data file** path, check the iteration count, and select **Run**.
+Relative CLI paths start at the current directory; relative F5 paths start at
+the collection root. Both accept absolute paths. F5 revalidates at run start.
+The path and results are temporary Runner options.
+
+CSV uses a header row as variable names and keeps cells as strings, including
+quoted commas and multiline fields; a UTF-8 BOM is accepted. JSON requires a
+non-empty array of objects and preserves JSON value types:
+
+```json
+[{ "user_id": 1, "active": true }, { "user_id": 2, "active": false }]
+```
+
+The entire file is validated before requests are sent. Empty files, invalid or
+unsafe variable names, duplicate CSV headers, and inconsistent CSV rows fail.
+Names use letters, digits, or underscores. Limits are 5 MiB per file, 1,000
+rows, and 10,000 selected request executions. Rows must fit the existing
+256 KiB/depth-32 bridge limits, including the iteration wrapper.
+
+Each row runs every selected request in collection order. Its variables
+override environment values for `$name` substitution and `noodle.run.get`;
+successful captures and scripts can replace them during that iteration.
+`noodle.env.get` continues to read the original environment snapshot.
+`noodle.iteration` is deeply read-only `{ index, count, data }`, with zero-based
+`index` and the original row in `data`. It is `null` without data and is shared
+with child requests. JavaScript objects in `data` retain their JSON types.
+
+Each row starts with fresh variables and an in-memory copy of the same initial
+cookie jar. Cookies change within that row only and are never persisted.
+Fail-fast skips every remaining request and row. Delay applies between all
+consecutive executions, including row boundaries. Results, skips, and details
+carry zero-based `iteration`; the collection result adds `iterations`. F5 groups
+results by iteration and counts progress across all executions. Human labels
+show iteration numbers starting at one. Datasets themselves are not included
+in results or history.
+
+Exit codes remain `0` for success, `1` for execution/response validation failure,
+and `2` for configuration or invalid data. Without `--data`, behavior and result
+shapes remain unchanged.
+
+## Human TUI script authoring
+
+Humans add request Pre Script, Post Script, and Tests tabs from the existing `+` menu. Populated tabs stay visible. Folder tabs and Collection Settings > Scripts edit the same three phases through their existing save paths. Inline editors provide JavaScript highlighting, folding, syntax checks, advisory semantic diagnostics, and phase-aware completion for `noodle.*`, JavaScript built-ins, locals, environment keys, and saved request IDs. `Ctrl+Space` requests completion or parameter help. `Ctrl+Alt+F` formats inline JavaScript or JSON bodies; global Behavior > Format on save defaults off and uses the existing save paths. External mode completes collection-relative `./path/to/file.js` references; switching source kind confirms discarding non-empty source. Open Script in External Editor (`Ctrl+Alt+X`) validates the selected file and uses the configured editor. It never creates or rewrites a script file. On a request script tab, `Ctrl+Alt+R` shows the active phase's inherited execution order.
+
+TUI Send and Runner compile all applicable sources before HTTP without executing them. CLI execution remains authoritative and unchanged. Console shows the current result's bounded, redacted logs with relative timing, phase and level, plus copying; Runner request details share it. Results shows outcomes. Existing bounded, redacted timeline logs remain available, with no separate Console history store.
+
+The generated [noodle-script.d.ts](noodle-script.d.ts) comes from the runtime API contract and ships with this skill. Reference it using a JavaScript triple-slash `reference path` comment in an external editor. It declares the public `noodle`, `console`, `test` and `expect` APIs, plus `NoodleScript.Pre`, `Post` and `Tests` interfaces for phase-specific tooling. Runtime phase checks remain authoritative. Agents should continue using the non-interactive CLI and direct file edits described above.

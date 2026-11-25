@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/14890-berater-red-team-und-qualitaetskontrolle/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Berater Red Team Und Qualitaetskontrolle in Fachanwalt Insolvenz- und Sanierungsrecht geht: zerlegt Ergebnis, Frist, Zuständigkeit, Beweislast und Gegenposition; liefert eine Fristen- und R

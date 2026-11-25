@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-GAJETOso-financeskills-personal-budgeting/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: When the user wants to create a personal budget, track income vs. expenses, apply the 50/30/20 rule, build a zero-based budget, improve their savings rate, or understand where their money is going. Al

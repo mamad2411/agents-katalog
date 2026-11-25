@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-mem0ai-mem0/mem0-oss-to-platform/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Migrate mem0 OSS → mem0 Platform (hosted)

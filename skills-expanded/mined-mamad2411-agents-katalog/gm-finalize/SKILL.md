@@ -1,0 +1,298 @@
+---
+name: gm-finalize
+description: |
+  Seal the current tag: snapshot the per-tag working docs into
+  docs/tags/<Tag>/, write a CHANGELOG entry, run `git tag`, and reset
+  per-tag runtime state for the next /gm-gdd round. Does NOT package a
+  release — that lives in a separate skill.
+  Explicit invocation only — use /gm-finalize.
+disable-model-invocation: true
+---
+
+# GodotMaker Finalize
+
+$ARGUMENTS
+
+You are sealing the **current tag** (vX.Y.Z) so the next `/gm-gdd` round can start cleanly. This is a per-tag operation, not a "the game is finished" operation. The user may continue to the next tag right after, or stop here — either way, this tag's deliverables are now archived and git-tagged.
+
+## Session Setup
+
+**FIRST ACTION — before anything else:** Write `finalize` to `.godotmaker/current_role`.
+
+## Resume Check
+
+Read `.godotmaker/stage.jsonl` (treat as empty if missing) — each line is `{"role": X, "ts": Y, ...}`.
+
+- If `PLAN.md` does not exist or is missing the `**Tag:**` header → STOP. Tell the user the project is in a bad state; re-run `/gm-gdd` to regenerate the current tag's working docs.
+- If **no event with `role == "accept"` and `decision == "accept"`** exists anywhere in the file → STOP. Tell user to run `/gm-accept` first.
+  (Events with `decision == "fix"` or `decision == "done"` are trace records, not completions.)
+- If `.godotmaker/final_report.json` exists **and** `git tag <Tag>` already exists → STOP. Tell the user:
+  > "Tag {Tag} already finalized. Run /gm-gdd to start the next tag, or stop here.
+  > If you need to redo this step or have other plans, just tell me."
+- Otherwise → proceed.
+
+**Resume condition for a half-finished archive.** `docs/tags/<Tag>/evidence/manifest.json` records whether the archive is sealed:
+
+| Archive state | Meaning | What to do |
+|---|---|---|
+| directory absent | finalize never reached Step 4 | run Step 4 normally |
+| manifest absent, or `"sealed": false` | a previous run died mid-finalize | re-run Steps 4→6b; both commands overwrite a partial archive |
+| `"sealed": true` | the tag is already sealed | do NOT re-archive — `archive` / `index` exit 3 on purpose |
+
+`"sealed": true` is written after every other file inside the archive, so an interrupted finalize always lands in the resumable row — there is no state where the tag reads as sealed but the archive is incomplete. If the tag is sealed but `docs/tags/README.md` does not list it, the seal succeeded and only the index write failed: run `python tools/seal_tag.py reindex`, not `archive` or `index`.
+
+Never pass `--force` to work around exit 3. A sealed archive is immutable; if the user genuinely wants to reseal, say so explicitly and get their confirmation first.
+
+## Resolve `godot` binary
+
+Read `godot_path` from `.claude/godotmaker.yaml` and substitute it
+verbatim for `<godot_path>` in every `godot --headless …` command
+below. The path was validated at publish time and is the source of
+truth for which Godot binary this project uses.
+
+If `.claude/godotmaker.yaml` is missing the `godot_path` field, fall
+back to plain `godot` (PATH lookup). If THAT also fails, STOP and tell
+the user `Godot binary not configured — re-run tools/publish.py to set
+godot_path in .claude/godotmaker.yaml`. Do NOT spelunk through PATH
+directories or guess install locations.
+
+## Process
+
+### 1. Read the current tag
+
+Read `PLAN.md`, extract `**Tag:**` header value (e.g. `v0.2.0`). All later steps refer to this as `<Tag>`.
+
+### 2. Quick Sanity Check
+
+- `"<godot_path>" --headless --quit 2>&1` — builds clean
+- `PLAN.md` — no `pending` or `in_progress` tasks; all `verified`
+- `.godotmaker/evaluation.json` exists with `result: "approve"`
+
+If any check fails, STOP and tell the user which one — finalize must not seal a broken tag.
+
+### 3. Document Consistency Check (current tag scope)
+
+Run these fast gates before archiving. For passing gates, continue silently. For failures, update the root doc to match reality and remember the path for `doc_updates`.
+
+- **PLAN.md**: All tasks are `verified`; Tag Mechanics and Inherited Mechanics sections exist.
+- **STRUCTURE.md**: `extends Component` and `extends System` filenames under `src/` appear in the component/system listings.
+- **ASSETS.md**: Asset paths for current-tag generated rows exist under `assets/` or `references/`.
+- **SCENES.md**: Scene paths referenced for this tag exist on disk.
+- **MEMORY.md**: Confirm it contains only current architecture decisions and project constraints; update it only if the final implementation changed one.
+
+Apply documentation fixes only. Finalize does not change code.
+
+### 4. Archive into `docs/tags/<Tag>/`
+
+From the project root run:
+
+```bash
+python tools/seal_tag.py archive <Tag>
+```
+
+The helper copies per-tag working docs, the `memory/` subtree and best-effort runtime evidence:
+
+| Destination | Source |
+|---|---|
+| `docs/tags/<Tag>/GDD-snapshot.md` | `GDD.md` |
+| `docs/tags/<Tag>/PLAN.md` | `PLAN.md` |
+| `docs/tags/<Tag>/STRUCTURE.md` | `STRUCTURE.md` |
+| `docs/tags/<Tag>/DESIGN.md` | `DESIGN.md` |
+| `docs/tags/<Tag>/SCENES.md` | `SCENES.md` |
+| `docs/tags/<Tag>/MEMORY.md` | `MEMORY.md` |
+| `docs/tags/<Tag>/memory/` | `memory/` |
+| `docs/tags/<Tag>/evaluation-final.json` | `.godotmaker/evaluation.json` |
+| `docs/tags/<Tag>/evidence/e2e/` | `e2e/` excluding `e2e/screenshots/` |
+| `docs/tags/<Tag>/evidence/screenshots/` | `e2e/screenshots/` |
+| `docs/tags/<Tag>/evidence/manifest.json` | generated by `tools/seal_tag.py archive` |
+
+`memory/` is archived alongside `MEMORY.md` so the frozen architecture index still resolves inside the archive. The helper then link-checks the archived `MEMORY.md`:
+
+- A `memory/…` link with no archived target, an absolute path, or a link escaping the archive → **exit 2**. The archive is left in place but unsealed. Fix the root `MEMORY.md` (or restore the missing `memory/` file) and re-run this step.
+- A link to a live project file that is deliberately not archived (`src/player.gd`) → recorded in the manifest's `link_warnings`, not a blocker.
+
+Other exit codes: 2 if any required document source is missing, 1 if a required document copy fails, 3 if the tag is already sealed.
+
+Then verify the archive landed — list `docs/tags/<Tag>/` and confirm all document destination files are present. If a required document destination is missing or has stale content (size or mtime mismatching the source), STOP and report to the user.
+
+Do not Edit/Write these destinations yourself.
+
+Do NOT archive `ASSETS.md`, `.godotmaker/stage.jsonl`, `metrics.jsonl`, or `traces/`. Caches and temp files (`__pycache__/`, `*.pyc`, `*.tmp`, `*.log`, …) are filtered out by the helper.
+
+### 5. Generate `docs/tags/<Tag>/CHANGELOG.md`
+
+From the project root run:
+
+```bash
+python tools/seal_tag.py bundle <Tag>
+```
+
+The bundle JSON on stdout has:
+- `roadmap_entry` (heading + body from ROADMAP.md for `<Tag>`)
+- `plan_tag_mechanics` (list of `<Tag>-Mn` IDs)
+- `previous_tag` + `git_log_since_previous_tag` (`--oneline` slice)
+- `test_count.unit` (count of `test/**/*.gd`) + `test_count.e2e` (count of `e2e/**/test_*.py`)
+- `evidence.archive_path`, `evidence.e2e_files`, `evidence.screenshots`, `evidence.warnings`
+
+Combine that with PLAN.md task table and `evaluation.json` `minor_issues`, and write `docs/tags/<Tag>/CHANGELOG.md` directly. Keep the entry concise. Use this format:
+
+```markdown
+# Changelog — <Tag>
+
+**Released:** <UTC ISO date>
+**Theme:** <ROADMAP headline>
+
+## Delivered mechanics
+
+- [<Tag>-M1] <description>
+- [<Tag>-M2] ...
+
+## Added systems / scenes / assets
+
+- <bulleted list pulled from PLAN.md>
+
+## Refactored from prior tags (if any)
+
+- <files / systems modified that belonged to a previous tag, with one-line reason>
+
+## Known limitations
+
+- <minor issues from evaluation.json that ship as-is>
+```
+
+### 6. Generate Final Report
+
+Field sources for the schema below:
+- `summary.tag_mechanics` — bundle `plan_tag_mechanics` (from step 5)
+- `summary.test_count.unit` — bundle `test_count.unit` (direct)
+- `summary.test_count.e2e_tag` + `e2e_regression` — split bundle `test_count.e2e` by which test files were added this tag (use PLAN's task table / git log to decide)
+- `summary.systems_added` + `components_added` — PLAN task table (already in context from step 3)
+- `known_limitations` — `evaluation.json` `minor_issues`
+- `doc_updates` — root docs you edited in step 3
+- `evidence` — bundle `evidence` object
+
+Write `.godotmaker/final_report.json`:
+
+```json
+{
+  "status": "tag_sealed",
+  "tag": "<Tag>",
+  "completed_at": "UTC timestamp",
+  "archive_path": "docs/tags/<Tag>/",
+  "git_tagged": true,
+  "summary": {
+    "tag_mechanics": ["<Tag>-M1", ...],
+    "systems_added": [...],
+    "components_added": [...],
+    "test_count": {"unit": N, "e2e_tag": M, "e2e_regression": K}
+  },
+  "evidence": {
+    "archive_path": "docs/tags/<Tag>/evidence/",
+    "e2e_files": N,
+    "screenshots": M
+  },
+  "doc_updates": ["list of root docs updated in step 3"],
+  "known_limitations": ["from evaluation minor_issues"]
+}
+```
+
+`final_report.json` is **per-tag overwritten** — only the latest tag's report is kept at this path. Historical reports are recoverable from the `docs/tags/<Tag>/` archives via git history if needed.
+
+### 6b. Seal the archive
+
+From the project root run:
+
+```bash
+python tools/seal_tag.py index <Tag>
+```
+
+This is the step that marks the tag **sealed**. It writes, deterministically:
+
+| File | What it is |
+|---|---|
+| `docs/tags/<Tag>/SUMMARY.md` | Bounded retrieval summary — tag / release date / source revision / theme, pointers to the canonical documents, verification verdict and test counts, delivered mechanics, systems-scenes-assets changed, known limitations |
+| `docs/tags/<Tag>/README.md` | Navigation page — per-file role table, reading order, completeness status, immutability note |
+| `docs/tags/<Tag>/evidence/manifest.json` | Every archived file with its archive-relative path, category, byte size and SHA-256, plus source revision and generator version, and `"sealed": true` |
+| `docs/tags/README.md` | Parent index of every sealed tag, in version order |
+
+Run it **after** Step 5 and Step 6 — `SUMMARY.md` is generated from the archived `CHANGELOG.md`, `evaluation-final.json`, `PLAN.md` and this tag's `final_report.json`. It deliberately does not read `.godotmaker/traces/`, worker output or `MEMORY.md`: `SUMMARY.md` is a retrieval index over confirmed deliverables, not a second source of truth.
+
+Exit codes: 2 if the archive or `CHANGELOG.md` is missing, or if the archived `MEMORY.md` still has unresolvable links; 3 if the tag is already sealed; 1 on an fs failure.
+
+`"sealed": true` is committed by a single atomic manifest write, after `SUMMARY.md` and the tag `README.md` and *before* the parent `docs/tags/README.md`, which is derived purely from the manifests already on disk. Read the stderr message to know which recovery applies:
+
+- **"is left UNSEALED"** — the failure landed at or before the seal commit. The parent index was not touched. Re-run `index <Tag>`; never `--force`.
+- **"sealed, but refreshing docs/tags/README.md failed"** — the tag IS sealed and correct; only the index is stale. Run `python tools/seal_tag.py reindex`. Do NOT re-run `index` — the tag is sealed, so it exits 3.
+
+Neither branch can leave `docs/tags/README.md` listing a tag that is not sealed.
+
+Do not Edit/Write `SUMMARY.md`, either `README.md`, or the manifest yourself. If the generated summary is wrong, the CHANGELOG or evaluation it was generated from is wrong — fix that and re-run.
+
+### 7. Commit pre-tag state
+
+`git add -A && git commit -m "chore(finalize): seal <Tag>"`
+
+This is the commit `git tag <Tag>` will point at — it includes the archive (step 4), CHANGELOG (step 5), final_report.json (step 6), the sealed index files (step 6b), and the full pre-truncation `.godotmaker/stage.jsonl` for this tag.
+
+### 8. Run `git tag <Tag>`
+
+```bash
+git tag <Tag>
+```
+
+If the tag already exists locally, skip silently. If git is unavailable in the project, log the gap and continue.
+
+Do NOT push the tag. Pushing is a separate user decision.
+
+### 9. Reset per-tag runtime state
+
+From the project root run:
+
+```bash
+python tools/seal_tag.py reset
+```
+
+That truncates `.godotmaker/stage.jsonl` and deletes `.godotmaker/metrics_current.jsonl`. Exit 1 if `.godotmaker/` is missing or the truncate/delete fails.
+
+It does NOT touch: `.godotmaker/metrics.jsonl` (cross-session history), `.godotmaker/traces/`, `.godotmaker/config.yaml`, `.godotmaker/hooks/`, `.godotmaker/version`, `.godotmaker/evaluation.json`, `.godotmaker/current_role` (step 12 clears it).
+
+Then verify the reset landed — `.godotmaker/stage.jsonl` is empty (0 bytes) and `.godotmaker/metrics_current.jsonl` does not exist. If either check fails, STOP and report.
+
+The root-level working docs (`PLAN.md`, `STRUCTURE.md`, `DESIGN.md`, `SCENES.md`) stay at root.
+
+### 10. Append finalize event
+
+From the project root run `python tools/append_stage_event.py finalize --tag=<Tag>` to append a `{"role": "finalize", "ts": "<server-generated UTC>", "tag": "<Tag>"}` line to `.godotmaker/stage.jsonl`. Do NOT hand-write the JSON or the timestamp — the helper exists so the timestamp comes from the system clock, not your own output.
+
+> Note: this re-creates `stage.jsonl` after step 9 truncated it. The single finalize event is the only thing that lives in the new tag's stage.jsonl until /gm-gdd subsequent-mode adds its own event.
+
+### 11. Commit post-tag stage event
+
+`git add -A && git commit -m "chore(finalize): post-seal stage event"`
+
+Captures the truncated stage.jsonl plus the new finalize marker — runtime metadata for the next `/gm-gdd` round, not part of `<Tag>`.
+
+### 12. Clear current_role and inform user
+
+Delete `.godotmaker/current_role` AFTER step 10 has completed — that write needs the role lock in place so `check_file_permissions.py` keeps the finalize permission scope active.
+
+Then print a compact result:
+
+```
+## Tag <Tag> Sealed
+
+- Archive: docs/tags/<Tag>/ (start at SUMMARY.md; index at docs/tags/README.md)
+- Git tag: <Tag> (local; not pushed)
+- Tag mechanics: {Tag Mechanics IDs or "none"}
+- Doc updates this round: {list or "none needed"}
+- Known limitations: {list only if non-empty; otherwise "none"}
+
+To start the next tag: /gm-gdd
+```
+
+## What this skill explicitly does NOT do
+
+- **No release packaging.** Building a distributable archive (zip / installer / web export) is the job of a separate release skill, invoked at the user's choice.
+- **No `git push`.** The tag stays local until the user pushes it.
+- **No code changes.** Finalize is paper-trail + archive only.
+- **No cross-tag history rewrite.** Older tags' archives in `docs/tags/v0.X.Y/` are immutable from this skill's perspective. Retrofitting `README.md` / `SUMMARY.md` / the manifest onto archives sealed by an older GodotMaker release is an explicit, user-invoked `python tools/seal_tag.py backfill --all` — never something finalize does on its own.

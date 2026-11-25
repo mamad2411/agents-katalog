@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/experimental-mathematical-physics-design/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Experimental Mathematical Physics Design Skill

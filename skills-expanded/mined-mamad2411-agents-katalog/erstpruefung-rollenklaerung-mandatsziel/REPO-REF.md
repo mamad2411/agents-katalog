@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/21492-erstpruefung-rollenklaerung-mandatsziel/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Corporate: Erstprüfung, Rollenklärung und Mandatsziel in Corporate-Kanzlei geht: klärt Rolle, Ziel, Frist, Unterlagen und den passenden nächsten Fachskill; liefert eine Fristen- und Risikoa

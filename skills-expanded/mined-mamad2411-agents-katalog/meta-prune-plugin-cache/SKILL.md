@@ -1,0 +1,132 @@
+---
+name: meta-prune-plugin-cache
+description: Use when ~/.claude has grown large or the disk is filling, when the Claude Code plugin cache holds a directory per published version, when temp_subdir_*.clone or temp_git_* leftovers pile up after marketplace add/update operations, or before deleting anything under ~/.claude/plugins/cache while a session is running.
+---
+
+# Pruning the Claude Code plugin cache
+
+## Overview
+
+`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` keeps a FULL copy per version and
+drops none, so the marketplace you publish to grows by a whole plugin on every release. Beside
+those sit `temp_subdir_*.clone` and `temp_git_*` directories at the CACHE ROOT: temporary clones
+from marketplace add/update operations that a killed operation abandons, ~50MB each.
+
+One question decides the whole job: **which versions is a live session still using?** Delete the
+directory a running session loaded from and its skills and hooks stop loading until it restarts.
+
+## The cache answers that question itself
+
+Every version directory carries `.in_use/<pid>` locks, one per Claude Code process that loaded
+it, each holding `{"pid":N,"procStart":"<start time>"}`.
+
+A lock is evidence only while its process lives. `procStart` is there so a REUSED pid cannot pass
+for the original holder: a lock whose pid is gone, or whose start time disagrees with the running
+process, is stale and keeps nothing. An `.in_use` directory that is empty or absent means no
+session has claimed that version.
+
+**Do not reach for `lsof`, `pgrep`, or transcript mtimes.** Hooks are launched per invocation and
+hold no file open between calls, so an open-file search finds nothing and reads as "free" for a
+version that is very much in use. The lock file is the direct instrument; the rest are proxies
+that answer a different question.
+
+## Use the tool
+
+`scripts/pluginprune.py` classifies every version directory AND every `temp_*` leftover in ONE
+pass, stating a reason per line. Paths here are relative to this skill's own directory, which
+is announced when the skill loads. Dry run by default. `--apply` builds the plan again in its
+own run and removes THAT plan, not the one your earlier dry run printed: a `temp_*` leftover that
+aged past `--min-age` in between can go although the dry run kept it. Every removal still passes
+the same rules, and within one `--apply` the set only shrinks - a session starting between the
+plan and the removal claims its version, and that directory is refused. Only what was actually
+removed is reported as removed. On stderr a directory the plan refused, and so never attempted, is
+reported REFUSED; one whose removal was attempted and did not happen is reported FAILED. A
+symlinked marketplace or plugin directory is reported once, as the alias, not once per version
+reached through it; `--json` gives every refused or failed entry a `reason_code` (`alias`,
+`symlink`, `outside_cache`, `in_use`, `io_error`, ...) to key on instead of the message text.
+
+```bash
+uv run scripts/pluginprune.py             # the plan, with sizes and a reason per kept directory
+uv run scripts/pluginprune.py --apply     # re-plan, then remove that plan
+uv run scripts/pluginprune.py --json      # {ok, command, data, skipped} on every exit; ok false only on exit 2
+```
+
+Run `--help` for the rest (`--marketplace`, `--keep`, `--min-age`, `--settings`).
+
+Exit codes: 0 nothing blocked; 1 something was refused (by the plan, or claimed by a session
+before `--apply` reached it) and the rest went ahead; 2 a removal that was tried and FAILED on I/O
+(it is still on disk, and a 2 wins over any refusal), a usage error, or a settings source it
+cannot use.
+
+It keeps a version with a live lock (or an `.in_use` directory it cannot list), the
+`installPath` from `installed_plugins.json` (what a fresh session resolves to), anything a
+settings file pins (spelled absolute, or relative to the home or Claude config directory however
+that prefix is written - `~/`, `"$HOME"/`, `${HOME}/`, `%USERPROFILE%\`, `$env:USERPROFILE/`,
+`${CLAUDE_CONFIG_DIR}/`, quoted or not, and on Windows in any letter case), anything `--keep` names or points inside (so the base
+path a skill invocation prints works), and the sole version of a plugin a settings file's
+`enabledPlugins` lists - a symlinked sibling is refused and never counts as a second version. Paths are compared resolved, so a relative
+`--keep` or `--cache-dir` or a symlinked `~/.claude` still matches; a `--keep` that matches no
+scanned version is a usage error (exit 2), never silently ignored. It reads each `temp_*`
+leftover's own mtime and keeps any younger than `--min-age` (60m), so no separate age check is
+needed. It refuses symlinks, anything reached THROUGH a symlinked marketplace or plugin directory
+(removing through the alias deletes the real one), and paths outside the cache.
+
+When `installed_plugins.json` is missing, unreadable or malformed, it refuses every version
+nothing else keeps and exits 1, because the installed one can no longer be told apart. An
+explicit `--installed-plugins` that cannot be read is a usage error (exit 2).
+
+A settings file or `~/.claude.json` that exists but cannot be read, is not UTF-8, is not valid
+JSON or has the wrong shape stops the run with exit 2 before anything is planned or removed,
+naming the file and the reason; so does a `--settings` or `--claude-json` naming a missing file.
+Skipping it would lose the pin or `enabledPlugins` entry it holds and plan that version for
+deletion. Repair the file, or choose the files yourself with `--settings` or
+`--no-project-settings`. A discovered file that is simply absent, or holds only whitespace, is
+ordinary.
+
+A plugin nothing references at all is planned even as the only version: that is what an
+uninstalled plugin leaves behind, and nothing else reclaims it. `enabledPlugins` is the guard
+that makes that safe, and it applies only to a sole version - it names a PLUGIN, never a
+version, so honouring it per version would preserve the entire history of everything enabled.
+
+The settings files it reads are the user's pair plus the same pair inside every project
+`~/.claude.json` lists, because a plugin enabled only in a project may have no install record
+at all. The run reports which files it read (the last lines of the text report;
+`settings_files` and `install_record` in `--json`); `--no-project-settings` limits it to the user's,
+and naming any `--settings` file takes over the list entirely.
+
+When locks exist but none is live it says so on stderr rather than guessing: a session whose
+version cannot be identified is worth confirming by hand, so pass that version with `--keep`.
+
+When NOT ONE version directory has an `.in_use` directory at all, it refuses them and exits
+non-zero. An idle machine leaves that directory behind EMPTY, so its total absence means the
+mechanism was renamed or dropped, and every version would otherwise read as unused - the
+running session's included. `--allow-missing-locks` overrides it once you know why.
+
+## Where the space actually is
+
+Count version directories PER PLUGIN, never sort by size. A plugin with one version that
+something still references is footprint, not waste. Apply that test per plugin, not per
+marketplace - a marketplace can be mixed - though in practice only the one you publish to
+accumulates, and the one you merely consume is routinely the biggest directory while yielding
+nothing but its uninstalled leftovers.
+
+A long-running session pins every version it has loaded, not just its current one, so with
+several old sessions open most of the cache is legitimately in use. The yield rises once they
+end; that is not a reason to override a live lock.
+
+## Common mistakes
+
+| Mistake                                             | What happens                                                                 |
+|-----------------------------------------------------|------------------------------------------------------------------------------|
+| Keeping only the newest version                     | The running session may sit on an older one it loaded before the last update |
+| `lsof` / `pgrep` to find the session's version      | Finds nothing, so a live version reads as free                               |
+| Deleting the biggest marketplace directory          | Referenced single-version plugins are footprint, not waste                   |
+| Looking for `temp_*` inside a marketplace directory | They sit at the cache ROOT, one level up                                     |
+| `rm -rf` straight from a glob                       | No plan, no reasons, no refusals, and no way to check before it runs         |
+
+After pruning, confirm a kept version is intact (its `skills/` and `hooks/` are populated). A
+fresh session re-fetches whatever it needs, so a wrong deletion costs a re-fetch, not data.
+
+One side effect: a memory fact captured with the working directory inside a cache version
+directory leaves its POINTER there and its BODY at the tree anchor, so pruning strands the body
+where no integrity check looks. See `bitranox:meta-self-improve`.

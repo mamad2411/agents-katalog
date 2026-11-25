@@ -1,0 +1,394 @@
+---
+name: process-test-design
+description: Use when writing, reviewing, or pruning tests in ANY language - deciding unit vs integration vs e2e, whether to mock/patch or use the real dependency, which edge/adversarial inputs to cover (unusual UTF, emoji, CJK, binary, wrong types, oversized), why a test is flaky or order-dependent, or whether a test earns its keep. Keywords - mock, monkeypatch, spy, stub, fake, fixture, e2e, integration test, flaky, order-dependent, sleep, adversarial input, low-value test, coverage, pytest, vitest, jest, go test, cargo test, bats. For the red-green discipline see process-test-driven-development; for what to validate at a boundary see coding-input-sanitization.
+---
+
+# process-test-design
+
+## Overview
+
+How to write tests that are worth having: real behavior over mocks, the edge inputs that actually
+break code, deterministic and order-independent, and no low-value filler. This is the WHAT-to-write
+companion to `bitranox:process-test-driven-development` (the red-green-refactor discipline and the
+mock anti-patterns) - follow that for WHEN/order; this for test design and quality.
+
+**Core principle: a test must be able to fail for a real, specific reason.** A test that cannot fail
+(asserts nothing, restates the implementation, or exercises a mock) is negative value - it adds
+maintenance and false confidence. Test observable behavior at a boundary, not internals.
+
+**Every principle here is language-neutral; only the mechanics differ.** Examples name Python where
+one is needed, but the rules apply to any language - the per-ecosystem commands, seams, and tier
+conventions are in "Per-language mechanics" below. When your language is not listed, map it by role
+(what is the injection seam, what marks a test tier, what shuffles order) rather than assuming the
+rule does not apply.
+
+## Prefer real over mocked; mock only at the true edge
+
+- **Default to integration / e2e against the real dependency** (real DB, real broker, real HTTP via a
+  local server or recorded fixtures). In-memory fakes accept arguments the real service rejects, so
+  green unit tests can still ship a broken contract. Treat the integration/e2e run as the proof.
+- **Avoid monkeypatching. Use dependency injection.** Pass the collaborator in (a port/protocol) and
+  substitute a real-ish fake or the real thing in tests. Reach for `monkeypatch`/patch only at a true
+  external edge you cannot inject (a third-party global, the clock - with the caveat below, the
+  network) - never to reach into your own internals. Patching your own code is a design smell: make
+  it injectable instead.
+- **Fakes live behind the same interface as the real thing** (a `fake_*` implementation of the port),
+  exercised by the same contract tests as the real adapter, so the fake cannot drift.
+- **"Patch the network/clock" is the fallback, not the choice, when you own the caller.** If the code
+  under test is yours, the collaborator IS injectable - inject it, even for a unit test, and keep the
+  real call for the integration tier. Patching a global (`fetch`, the HTTP module, the clock) is
+  correct only when nothing you own sits between the test and that global: third-party code you cannot
+  change calls it, or the call is buried in a dependency. "It is an external edge" does not license
+  patching a global you could have passed in.
+- **Never patch the clock function itself: it is process-global, and the runtime's own timers read
+  it.** In Python, `patch("time.monotonic", ...)` replaces it for the whole process, and so does
+  `patch("pkg.mod.time.monotonic", ...)` - that path reaches the SAME function object through the
+  module's `time` name. asyncio's `loop.time()` is `time.monotonic()`, so every `sleep`, `wait_for`
+  and `call_later` freezes and the test hangs, often in teardown. The same holds in any runtime whose
+  scheduler reads the clock you swap. Inject a clock; when the code is not yours, patch the
+  CONSUMER's own name for it - a module-level `_now = time.monotonic` it calls (patch `pkg.mod._now`),
+  or the module's `time` name replaced with a stub that keeps the rest of `time` - never the function
+  on the time module.
+- See `bitranox:process-test-driven-development` -> `testing-anti-patterns.md` (testing the mock,
+  test-only methods in production, incomplete mocks, integration-as-afterthought).
+
+## Per-language mechanics
+
+Same rules, different handles. The "self-mock tell" column is what to grep for when auditing a suite:
+it is the idiom that reaches into the code under test instead of injecting at a seam.
+
+| Language        | Inject the seam as                | Self-mock tell (the anti-pattern)                                | Real dependency for the e2e tier        | Order / shuffle                                                                                                                                                                                   |
+|-----------------|-----------------------------------|------------------------------------------------------------------|-----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Python          | constructor arg typed `Protocol`  | `monkeypatch.setattr(MyClass, "_method")`                        | testcontainers, a local server, `respx` | `pytest -p randomly`                                                                                                                                                                              |
+| TypeScript / JS | constructor arg or interface      | `vi.spyOn(obj, "privateMethod")`, `jest.mock` of your own module | `node:http` server, MSW, testcontainers | `vitest --sequence.shuffle`                                                                                                                                                                       |
+| Go              | interface parameter               | package-level function var swapped in a test                     | `httptest.Server`, real DB in Docker    | `go test -shuffle=on`                                                                                                                                                                             |
+| Rust            | generic param or `Box<dyn Trait>` | `#[cfg(test)]` branch inside production code                     | `wiremock`, a real DB behind a feature  | `cargo test -- -Z unstable-options --shuffle` (nightly only; `cargo nextest run` does NOT shuffle - it runs lexicographically, one process per test, and `RUST_TEST_SHUFFLE` is silently ignored) |
+| Bash            | a command name/path variable      | redefining the function under test in the test                   | a stub binary earlier on `PATH`         | `bats` (isolate per file)                                                                                                                                                                         |
+
+**Mark the tiers so a bare test run stays offline.** Every ecosystem needs a way to keep the
+network/DB tests out of the default run; pick the project's and use it consistently: pytest markers
+(`-m "not integration"`), a filename or directory convention (`*.e2e.test.ts`, `test/e2e/`), a
+separate config or workspace project, Go build tags, Rust `#[ignore]`, a `bats` tag. State it in the
+project's own docs so the split is discoverable - inventing a private convention per test file is
+how the integration tier quietly stops running.
+
+**A marker only skips when something acts on it - registering it is not wiring it.** In pytest,
+listing a name under `[tool.pytest.ini_options] markers` silences the unknown-marker warning and
+nothing more; the skip has to come from a `pytest_runtest_setup` hook in `conftest.py` that reads
+`item.iter_markers()` and calls `pytest.skip()`. A marker that guards a CONDITION (a platform, a
+capability, an available service) is the dangerous case, because a registered-but-unwired one reads
+exactly like a guard and runs everywhere. Before you trust one, grep `conftest.py` for the marker
+name; if only the config mentions it, it is documentation. Then prove the skip fires by forcing the
+condition rather than assuming.
+
+Watch for two families that mean the same thing - one wired, one not. A repo that carries both
+(`posix_only`/`windows_only` wired to a real skip, and `os_posix`/`os_windows` registered and inert)
+hands you a coin flip. Fix that at the root by wiring the unwired family, not by renaming the
+markers in the one test that failed: the rename fixes today's file and leaves the trap armed for the
+next test someone writes.
+
+**What decides the tier is the dependency, not the realism.** A test belongs in the marked tier when
+it needs something the machine does not already provide - an external service, a shared DB, Docker,
+credentials, the real network - or when it is slow enough to hurt the default run. A dependency you
+start and stop inside the test process (an ephemeral loopback HTTP server, a temp-file DB) is real
+enough to prove the contract while staying offline, deterministic and fast, so it belongs in the
+DEFAULT run. "Uses the real implementation" and "must be marked and skipped" are different
+questions; answer them separately.
+
+## Injecting a callable as a seam: two traps a green suite cannot show
+
+Injecting a stdlib callable so a test can substitute it is the right shape. Two things about it
+fail silently.
+
+**Annotate the attribute with YOUR contract, not the stdlib's.** A bare assignment makes pyright
+strict infer the library function's exact signature, and an honest double is then rejected:
+
+```python
+self._sleep = time.sleep                              # infers (seconds: _SupportsFloatOrIndex, /) -> None
+self._sleep: Callable[[float], None] = time.sleep     # infers YOUR contract
+```
+
+Under `typeCheckingMode: strict`, assigning a double declared `(_seconds: float) -> None` to the
+first form is an error - the parameter is positional-only and `_SupportsFloatOrIndex` is not
+assignable to `float`. The second form accepts it. The failure lands on the TEST, so it reads as a
+bad double rather than as a missing annotation.
+
+**After adding a wait or retry to a shared path, read the test file's WALL CLOCK, not its pass
+count.** Every pre-existing test that goes through that path now pays the real delay. One 30-second
+settle took a file from 0.07s to 90.05s while staying fully green. A slow suite never fails; it
+decays until someone stops running it. Inject the sleep or clock too, and watch the file's duration
+in CI (`pytest --durations`, the runner's slow-test report) rather than asserting elapsed time inside
+a test.
+
+## Adversarial inputs at the boundary (the test side of sanitization)
+
+For any function/endpoint at an application or facing-API boundary, test the input battery, not just
+the happy path. (Validation rules: `bitranox:coding-input-sanitization`; full per-codepath matrix:
+enumerate every variant/caller a path serves and cover each branch.)
+
+| Axis           | Cover at least                                                                                       |
+|----------------|------------------------------------------------------------------------------------------------------|
+| Text / Unicode | empty, whitespace-only, very long; non-ASCII, accented, combining marks, RTL, zero-width, emoji, CJK |
+| Bytes          | control chars, NUL byte, invalid UTF-8 / raw binary                                                  |
+| Type           | wrong type (str where int, None, list where scalar), missing field, extra field                      |
+| Numbers        | 0, -1, 1, max, off-by-one at every limit, overflow, NaN/inf where float                              |
+| Size           | empty collection, one element, at the cap, over the cap (DoS bound)                                  |
+| Structure      | malformed JSON, truncated payload, duplicate keys, deeply nested                                     |
+
+Assert the SPECIFIC behavior (rejected with a typed error, normalized, or escaped) - not just "does
+not crash".
+
+**How much is enough (the stopping rule).** Cover one case per BRANCH the code actually takes, not
+one per input you can imagine. For each failure the code distinguishes - a different error type, a
+different message, a different recovery - there is one test. Inputs the code handles identically get
+one representative case between them. Applied to a thin HTTP wrapper: one non-2xx case if every
+status is treated the same (two if 4xx and 5xx diverge), one malformed-body case, one
+transport-failure case, and no more. When a caller only ever sees your declared error type, the test
+that matters is the one asserting the raw underlying error was converted to it.
+
+**The branch rule governs the axis table above.** An axis with no corresponding branch in the code
+gets no test - if nothing bounds a number, an "at max / overflow" case asserts nothing you have
+promised. But do not just drop it: a missing branch where the axis clearly applies (an unbounded
+size or length reaching a real sink) is a CODE finding - report the absent validation rather than
+writing a test that documents its absence.
+
+## Scrub a captured artifact fully before it becomes a fixture
+
+A captured artifact (a packet capture, a protocol exchange, a log or config dump) committed as a
+test fixture carries more than its headers. A scrub that only touches the header/summary fields
+looks complete while the structured payload underneath - options, TLVs, nested records - still
+carries site topology (internal hostnames, domain names, subnets, device identifiers, vendor/serial
+data). This is general practice, not tied to one protocol: it applies to DHCP, DNS, LLDP, and SNMP
+captures, and equally to log and config dumps - scrub every layer the format defines, not just the
+fields visible in a summary view.
+
+**Assert the shipped fixture's fields in a test**, not only once by eye before committing. A fixture
+nobody asserts on can silently re-acquire unscrubbed content the next time it is regenerated (a
+re-capture, a re-export): the eyeball check does not repeat, the assertion does. Parse the committed
+fixture and assert the sanitized values, including the structured payload fields, so the scrub is
+enforced by the suite rather than remembered by a person.
+
+## Deterministic and order-independent
+
+- **No dependence on test execution order.** No shared mutable module/global state between tests; each
+  test sets up and tears down its own world (fixtures). A test must pass run alone and in any order
+  (green with random ordering on and off).
+- **No timer in a test: no `sleep`, no poll-until-deadline loop, no `*_timeout` wait.** A fixed
+  `sleep(n)` is flaky or slow, and a deadline loop or `wait(timeout=5)` is the same bet against the
+  machine's load with a longer fuse. Block on an event the code under test signals - a channel/queue
+  receive, a thread `join`, a condition variable, an awaited future or promise. When the code offers
+  none, plant one: a sender dropped when the thread exits, a completion callback or hook the test
+  passes in. Let the runner's per-test timeout (pytest-timeout, nextest `terminate-after`, the
+  framework's test timeout; configure one suite-wide if the project has none) catch a wedge instead
+  of a deadline written into the test. Treat a sleep, deadline loop or timeout-bounded wait inside a
+  test as a review defect. The one exception, a COUNT-bounded spin (a zero-duration yield such as
+  `await asyncio.sleep(0)`, which yields rather than waits) or a fake-driven production loop where
+  no event exists or can be planted, is in `references/silent-test-defeaters.md`. Code that has its own timeout is driven by injecting its clock, not by
+  waiting it out.
+- **Inject time and randomness.** No bare now-clock, RNG, or UUID call in code under test - pass a
+  clock / seed so the test is reproducible. (`datetime.now()`/`random`/`uuid4` in Python;
+  `Date.now()`/`Math.random()`/`crypto.randomUUID()` in JS, or `vi.useFakeTimers()` at the edge;
+  `time.Now`/`rand` in Go; `Instant::now`/`rand` in Rust; `$RANDOM`/`date` in Bash.)
+- **No unmarked network / filesystem / external resource.** Those belong in integration tests
+  (marked, opt-in), not the unit suite. The unit suite runs offline and identically every time.
+- A flaky test is a bug in the test or the code, never "just re-run it" - fix the determinism.
+
+## Wait on whatever lands LAST
+
+When a test waits for A and then asserts on B, read the PRODUCER's order. If B is written after
+A, the wait is satisfied while B is still absent, and the test is a race that only a slow machine
+loses - so it passes locally for months and fails on one CI cell. Wait on the last thing the
+producer emits, or on a signal it writes only when finished, never on the first thing that
+happens to be observable.
+
+## Reproducing a flake: starve it, or slow the clock it races
+
+A flake reproduces under the pressure that matches its MECHANISM, and the two mechanisms need
+opposite apparatus. Repetition alone is the weakest option and is what most runs reach for first.
+
+- **A race between tasks** reproduces under CPU STARVATION. Pin the suite to one cpu (read the
+  allowed set from the process's own status rather than assuming cpu 0) and run N busy
+  competitors on that cpu, interleaved with an unstarved arm. It has a working range: past
+  roughly 2.3x competitors it also reports margin failures that are not defects, so a finding
+  there needs checking against the unstarved arm before you believe it. Measured: 45 unstarved
+  runs found nothing, while the starved arm found two real ordering defects on every run.
+- **A race against a TIMER** does not reproduce that way, because contention reschedules tasks
+  and the timer keeps its own time. Find the clock the race is against and slow THAT - a UI
+  framework's update tick, an animation rate, a poll interval - which widens the window the test
+  samples in. Measured: 16 busy competitors reproduced a UI flake 0 times in 400 runs, while
+  dropping the framework's tick reproduced it in 10 of 80, and 0 of 80 after the fix.
+
+Both arms must run through the REAL test entry point. A standalone probe that reconstructs the
+setup can stub out the very path that fails, and then passes whatever the code does.
+
+## Run in a clean, project-correct environment
+
+**The rule in any language: run against the project's OWN pinned toolchain, resolved from a lockfile,
+never an ambient or global one.** Two runs that resolve different dependency versions turn a real
+defect into "works on my machine" and an environment flake into a phantom bug. Per ecosystem: commit
+the lockfile and install from it, not from the loose ranges (`uv sync` / `npm ci` not `npm install` /
+`go mod download` with a committed `go.sum` / `cargo build --locked`), and pin the runtime version
+(`requires-python`, `.nvmrc` or `engines`, the `go` directive, `rust-toolchain.toml`). An
+environment-shaped failure - a missing module you know is installed, a flood of phantom type errors,
+audit findings for packages not in your tree - is a wrong-environment smell to verify before you
+trust it as a code bug.
+
+Python specifics, where the trap is most common:
+
+- **Run tests in the project's OWN venv, never the IDE's.** An ambient `VIRTUAL_ENV` (PyCharm, or carried
+  over from another project's shell) silently hijacks the interpreter, so the suite runs against the
+  wrong env. Isolate it: `env -u VIRTUAL_ENV uv run pytest` (mechanism + the bmk variant:
+  `bitranox:coding-python-uv` "stray VIRTUAL_ENV"). "Fresh" = the project venv, isolated - only recreate
+  (`uv venv --clear && uv sync`) when debugging suspected env corruption.
+- **A wrong-venv failure masquerades as a code failure.** `ModuleNotFoundError` for a dep you know is
+  installed, a flood of phantom type-check errors, or pip-audit CVEs for packages not in your tree are a
+  WRONG-VENV smell, not a real defect. Before trusting such a failure, verify the interpreter:
+  `uv run python -c "import sys; print(sys.executable)"` should point at `./.venv`. (Evidence before
+  conclusions - see `bitranox:process-review-verification-before-completion`.)
+- **Keep `.venv` out of git.** The project venv is a per-machine build artifact - never commit it;
+  gitignore it (and untrack it if it slipped in). Mechanics: `bitranox:compuse-git` "Don't track local
+  build artifacts".
+
+## A permission-wall test on Windows: build the wall stat cannot see past
+
+A test that needs a path the user cannot check (so `stat` raises `PermissionError`) is built with
+`chmod` on POSIX. On Windows the obvious version - deny the user on the directory - does not
+work, for two reasons that both leave the test passing for the wrong reason:
+
+- **`os.stat` of a denied directory succeeds.** CPython falls back to reading the entry from the
+  PARENT directory's listing, so `stat` raises only when the directory's read-attributes AND the
+  parent's list-directory right are both denied. Deny only those two rights: a full-control deny
+  also removes your own right to change the ACL back, so the wall cannot be taken down.
+- **An elevated session can see through any ACL.** An admin token with `SeBackupPrivilege`
+  enabled (an OpenSSH session typically has it enabled, not merely present - check `whoami /priv`)
+  opens files with backup semantics and ignores every deny entry. Disable the backup and restore
+  privileges for the wall's lifetime and restore their previous state after.
+
+Inside the test, assert the wall holds (`stat` raises) BEFORE asserting the behaviour under test,
+so a runner whose token or ACL handling differs fails loudly instead of passing vacuously. Build
+the wall through the Win32 security API rather than `icacls` by account name, which fails when the
+name does not map to a SID:
+
+- Take the user's SID from the process token (`GetTokenInformation`, `TokenUser`).
+- Per path, save the DACL (`GetNamedSecurityInfoW`), add ONE non-inheritable deny entry
+  (`SetEntriesInAclW` with `DENY_ACCESS`; `FILE_READ_ATTRIBUTES` (0x80) on the directory,
+  `FILE_LIST_DIRECTORY` (0x1) on a parent the test owns, such as a `tmp_path` subdirectory), and
+  apply it (`SetNamedSecurityInfoW`).
+- Disable the privileges with `AdjustTokenPrivileges` (attributes 0, keeping the previous state it
+  returns). The token is process-wide, so the wall must not span tests running in parallel threads.
+- Take it down in reverse: privileges first, then the parent's saved DACL, then the directory's.
+
+## Prune low-value tests
+
+Delete a test when it:
+- asserts nothing (or only that no exception was raised, for logic that should assert a result),
+- restates the implementation line-by-line (changes whenever the code changes, catches nothing),
+- tests the language, framework, or a mock rather than your behavior,
+- duplicates another test's coverage with no new branch.
+
+Fewer, behavior-focused tests beat many brittle ones. Coverage percent is a smell detector, not a goal.
+
+**Never commit a test that asserts behavior the code does not have.** When docs promise something the
+code never wired up (a documented cache nothing calls, a flag with no effect), the honest output is a
+FINDING - the feature is missing or the doc is wrong - not a red test left in the suite. A permanently
+failing test is a broken gate, and a skipped one is a comment that rots. Report the gap, and write the
+test when the behavior lands.
+
+## A gate that only ever passed has not been shown to gate
+
+A regression/perf gate that compares each run ONLY against a committed baseline answers "did this
+move", never "is this right". A cell already broken when the baseline was seeded passes forever, and
+a slow bleed of sub-threshold regressions never trips it. Pair the relative check with an ABSOLUTE
+sanity bound (or a sibling/reference cell measured in the SAME run), declare a known-bad cell with a
+tracking id so it is reported rather than frozen in, and make a declared cell that RECOVERS fail too
+so a stale waiver cannot re-hide a fix.
+
+The same doubt applies to any gate: validate it against a KNOWN-BAD input once, so you have seen it
+go red. Otherwise "green for months" is equally consistent with "it stopped gating months ago".
+
+**An exemption or scope limit added to a guard, filter, or validator needs the same proof, run in
+the untouched direction.** Add a test where the trigger is present but the exemption must NOT
+apply, asserting the verdict stays unchanged - not only a test proving the exemption fires where it
+should. Then keep the case the guard was built to catch as a permanent test, re-run after every
+exemption added later: two narrow-looking exemptions added in the same change can each pass alone
+and still add up to silencing the guard on its own motivating case.
+
+Four mechanics worth stating because they silently defeat a test that looks right:
+
+- **`from m import X` binds a COPY at import time.** `monkeypatch.setattr(m, "X", v)` mutates `m`'s
+  namespace and never reaches the consumer's already-bound name, so the test runs against the
+  original value and passes for the wrong reason. Best, inject - which is why this skill prefers a
+  seam over patching in the first place; where you own the reader, read the qualified `m.X` at call
+  time and drop the bare import; else patch at the CONSUMER (`setattr(consumer, "X")`). Default
+  arguments, module splits and composition containers bind early the same way (reference below).
+- **A correctness test cannot prove an INDEX is used.** Results rank correctly whether the store
+  used the index or full-scanned. Assert the plan (`EXPLAIN` shows an index scan, `list_indices` is
+  non-empty), or the check silently passes on an O(n) path.
+- **Two files sharing a BASENAME collide, and the loser's tests exercise the winner.** Python
+  resolves an import to the first match on `sys.path`, and pytest's default `prepend` mode prepends
+  each test root as it collects, so with two same-named modules the one collected FIRST wins for the
+  whole run. The other directory's tests then run against a file you never changed. Both suites stay
+  green, so nothing announces it; the tell is a fix that reads as absent in the full run while
+  passing in isolation, and the shadowed file's real coverage is zero. Ship the module once, or run
+  `--import-mode=importlib`, which keys modules by path instead of basename.
+- **A teardown on a doctest's LAST line does not run when an earlier line raises.** A
+  `mock.patch(...).start()` closed only by a trailing `mock.patch.stopall()` leaks the patch into
+  every test collected after it, and under `--doctest-modules` the doctest executes in the collected
+  module's namespace, so the leak is global. The resulting failures land far away and look unrelated
+  to the doctest. Prefer a real injectable seam over patching inside a doctest at all.
+
+Prove a codec/serializer swap by SEMANTIC equivalence - decode the new output with the OLD decoder
+and compare the values - not by byte-equality, which fails on harmless ordering or padding changes
+and passes on a compatible-looking but wrong encoding.
+
+**A check built on a lenient parser can only see what that parser exposes.** A validator that reads
+structured input through a forgiving reader - a bare `text.split("---", 2)[1]`, an unanchored regex,
+a try/except that swallows a parse error - inherits every malformation that reader tolerates. A
+second, smuggled copy of the block further down the file lands wherever the split throws its
+unexamined remainder, so a check that only asserts on the fields it extracted reports the file clean
+while never looking at what the parser silently dropped. Before trusting such a check, enumerate
+concretely what its own parser forgives (a duplicated block, a glued-on closing delimiter, a
+duplicate key a dict-based loader overwrites), then verify each one STRUCTURALLY against the raw
+text - a delimiter count, a line scan - rather than through the same parser, which by construction
+cannot see what it already swallowed.
+
+**Read `references/silent-test-defeaters.md` (Read tool)** when a test patches a name, parses tool
+output, asserts on an exception message or on rendered output, loops until a condition holds,
+carries a skip or an exclusion, judges an artifact, compares against a git ref, guards against
+cost, or tests environment isolation - or before you claim a code path is untested or accept a
+surviving mutation.
+
+## Quick checklist
+
+- [ ] Real dependency or an injected fake behind the real interface; patch only where you own no seam
+- [ ] Integration / e2e path exists and is the proof of the contract
+- [ ] Test tiers marked so the default run stays offline, by the project's stated convention
+- [ ] Boundary inputs covered (UTF/emoji/CJK/binary/wrong-type/oversized/edge numbers), asserting specific behavior
+- [ ] Every error branch the code can raise has a test asserting the declared error type
+- [ ] Order-independent (passes alone and shuffled); no shared mutable state
+- [ ] No timer in a test (`sleep`, deadline poll loop, `*_timeout` wait): block on an event the code signals, plant one if it has none, let the runner's per-test timeout catch a wedge
+- [ ] Time/randomness injected, never by patching the process-global clock function; unit suite offline
+- [ ] Runs against the project's own locked toolchain, not an ambient/global one; an environment-shaped failure is a wrong-env smell, not a code bug (Python: `env -u VIRTUAL_ENV uv run ...`)
+- [ ] One behavior per test; name states the behavior
+- [ ] A test that builds a precondition (a permission wall, a missing file, a dead port) asserts it holds before relying on it
+- [ ] No test that cannot fail for a real reason
+
+## Common mistakes
+
+- **Mocking your own internals** instead of injecting them. Make the seam a port; pass a fake in.
+- **Patching a global you could have injected.** "The network is an external edge" is not a licence to
+  stub `fetch` when the caller is your own code - inject the collaborator and keep the real call for e2e.
+- **Inventing a private tier convention per file.** If the project has no stated way to mark
+  integration tests, add one and document it; an undiscoverable tier is a tier that stops running.
+- **Green units, broken contract.** Fakes accepted what the real service rejects. Add the integration test.
+- **"It passes on my machine / re-run it."** Flakiness is a defect - fix order/timing/clock, do not retry.
+- **Testing the happy path only.** The bugs live in the edge battery above.
+- **Chasing 100% coverage** with assertion-free or impl-mirroring tests. Delete those; they hide rot.
+- **Single-layer mutation stays green (defense in depth).** Disabling ONE validation check can leave its test green because a LATER check rejects the same bad input, so the test looks like coverage it lacks. Mutate the single layer first; if it stays green, find which later check absorbed it - the test is asserting a contract no single mutation can break, so prove it by disabling the whole defense stack in ONE mutation. Copy the file aside before mutating and restore from that copy, never `git checkout -- <file>` - it restores from the index or HEAD and so discards the uncommitted work you are testing.
+
+## Cross-references
+
+- `bitranox:process-test-driven-development` - red-green-refactor discipline + `testing-anti-patterns.md`.
+- `bitranox:coding-input-sanitization` - what to validate/escape at the boundary (this skill is how to TEST it).
+- Per-repo convention (bmk): `make test` (unit, offline) vs `make testintegration` (real resources);
+  shared fixtures in `tests/conftest.py`.

@@ -1,0 +1,133 @@
+---
+name: maxsim-batch
+description: >-
+  Orchestrates parallel agent execution using worktree isolation following
+  Anthropic's batch pattern. Used when multiple independent tasks can be
+  executed simultaneously.
+---
+
+# Batch Parallel Execution
+
+Decompose large tasks into independent units, spawn all agents in a single message block, track progress, collect results.
+
+## When to Use
+
+Use batch execution when:
+- 3 or more tasks with no shared file modifications
+- Each task can be verified independently
+- Speed matters and the overhead of coordination is worth it
+
+Do not use for fewer than 3 tasks (overhead exceeds benefit), sequential dependencies, or tasks that modify the same files.
+
+## Process
+
+The batch orchestrator auto-advances between waves when `workflow.auto_advance` is true (default). No human confirmation needed between waves.
+
+### 1. DECOMPOSE -- Verify Independence
+
+List all units. For each unit, list the files it will create or modify. Check:
+
+- No file appears in more than one unit
+- No unit's output is another unit's input
+- Each unit's tests pass without the other units' changes
+
+If overlap exists: merge overlapping units, or extract shared code into a prerequisite unit that runs first (serially) before the parallel batch begins.
+
+### 2. SPAWN -- All Agents in One Message Block
+
+Spawn all agents in a single message. Each agent call must be self-contained -- the prompt includes all context the agent needs without relying on shared state or prior conversation.
+
+Agent configuration:
+- `isolation: "worktree"` -- each agent works in an isolated git worktree
+- `run_in_background: true` -- agents run in parallel
+
+Each agent prompt must include:
+1. The specific task and acceptance criteria
+2. The exact files it owns (and only those files)
+3. The base branch to branch from
+4. Instructions: implement, run tests, commit, push, create PR
+5. Output contract (see below)
+
+### 3. OUTPUT CONTRACT
+
+Every agent returns a terminal line that the orchestrator reads:
+
+```
+RESULT: PASS — [brief summary]
+RESULT: FAIL — [reason for failure]
+```
+
+The line must be the last non-whitespace line of agent output. This is what the orchestrator uses to update the status table -- do not use other formats.
+
+Full handoff output follows the `handoff-contract` skill format.
+
+### 4. TRACK -- Status Table
+
+Maintain a status table and re-render it after each agent completion:
+
+| # | Unit | Branch | Status | PR |
+|---|------|--------|--------|----|
+| 1 | description | feat/unit-1 | done | #123 |
+| 2 | description | feat/unit-2 | in-progress | -- |
+| 3 | description | feat/unit-3 | pending | -- |
+
+Statuses: `pending` → `in-progress` → `done` | `failed`
+
+Update the table in place -- replace the previous table, do not append a new one each time.
+
+### 5. COLLECT -- Handle Results
+
+When all agents complete: list all PRs, verify each is independently mergeable, merge automatically (fast-forward preferred, rebase if needed).
+
+Handle failures:
+- Unit fails tests: spawn a fix agent in the same worktree (up to 2 retries)
+- Merge conflict found: decomposition was wrong -- fix overlap and re-run the conflicting units
+- 3+ failures on one unit: stop and escalate to user with full failure context
+
+## Per-Wave Verification
+
+After all agents in a wave complete, the orchestrator runs verification before starting the next wave:
+
+1. **Build gate**: `npm run build` -- must exit 0
+2. **Test gate**: `npm test` -- must pass
+3. **Must-haves check**: For each completed plan in this wave, check `must_haves.truths` from frontmatter
+
+If a wave fails verification:
+- Failing plans get retry escalation (quick fix -> deeper analysis -> rescue)
+- Non-dependent plans in the next wave proceed
+- Dependent plans are blocked until the failing plan passes
+- After 3 failed retries: auto-reopen the plan's GitHub Issue with diagnostic comment
+
+## Agent Teams (Tier 2)
+
+For Tier 2 Agent Teams patterns (competitive implementation, multi-reviewer code review, collaborative debugging), see the dedicated `agent-teams` skill.
+
+**Tier Selection Logic:** See `references/agent-teams-patterns.md` for the full tier selection table and graceful degradation rules.
+
+## Limits
+
+- Up to 30 parallel agents; typically 3-10 for manageable coordination
+- Each unit must be independently mergeable -- prefer fast-forward, rebase if needed
+- Context budget: each agent consumes its own context window; keep prompts focused
+
+## Common Pitfalls
+
+| Pitfall | Reality |
+|---------|---------|
+| "The overlap is minor" | Minor overlap causes merge conflicts. Extract shared code first. |
+| "We'll merge in dependency order" | Order-dependent merges are not independent. Serialize those units. |
+| "Only 2 units, let's use batch anyway" | Overhead is not worth it. Run sequentially. |
+| "Agents can ask each other for context" | Agents are isolated. All context goes in the spawn prompt. |
+| "I'll fix the prompt after spawning" | Re-spawning restarts work. Write complete prompts before spawning. |
+
+## Verification Before Completion
+
+Before reporting batch complete:
+
+- [ ] All units touch non-overlapping files
+- [ ] All agents returned `RESULT: PASS`
+- [ ] Each unit was implemented in an isolated worktree
+- [ ] Each unit's tests pass independently
+- [ ] Each unit has its own PR
+- [ ] No PR depends on another PR being merged first
+- [ ] Status table shows `done` for all units

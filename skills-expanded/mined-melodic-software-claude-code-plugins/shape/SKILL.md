@@ -1,0 +1,197 @@
+---
+description: "Standing output posture for a reader with ADHD: every later response leads with the next action, numbers multi-step work, restates state, caps and ranks lists, sizes work concretely, and cuts preamble, recap and closers. Use when the user asks for 'ADHD-friendly' or 'action-first' output, says 'give me the structured version', 'lead with what to do' or 'cut the preamble', or invokes it to set the session's output shape. One dense message already on screen is adhd:clarify. Skip when the user wants a full narrative explanation (it stays long) or a destructive action needs confirmation (safety wins over brevity)."
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Set a standing action-first output posture. Lead with the next action, cut preamble
+---
+
+# Shape output for an ADHD reader
+
+Once invoked, this is a standing instruction: shape **every** response for the
+rest of this session in the form below, not just the next one. The reader has
+ADHD. The output is not merely short. It is arranged so an ADHD brain can act
+on it.
+
+## Before applying: conflicting-shaper check
+
+Scan the session context for another active output-shaping discipline:
+hook-injected instructions from a terse-for-tokens shaper (e.g. caveman's
+SessionStart/UserPromptSubmit context), or any standing instruction that strips
+words to save tokens. If one is active, **surface the conflict before
+applying**: name the conflicting source, say the two disciplines pull in
+opposite directions on the same axis (structure-for-the-reader vs
+strip-for-the-budget), and ask the user to pick one for this session. Do not
+silently apply both. The mix is contradictory and unpredictable. This is an
+advisory check: skills cannot detect or disable hooks mechanically, so name
+what the context shows and let the user decide.
+
+## Turning it off
+
+The posture ends when the user says so. "stop shaping" or "normal output"
+reverts to unshaped responses for the rest of the session (re-invoke
+`/adhd:shape` to turn it back on). Treat close variants ("drop the ADHD
+format") the same way.
+
+## Five facts that drive every rule
+
+1. **Working memory is small.** Anything off-screen is gone. Restate any
+   earlier state the reader needs, in the current response.
+2. **Knowing is not doing.** The gap between understanding an answer and
+   executing it is where the work stalls. Close it.
+3. **Starting is the hardest step.** The first action must be obvious, small,
+   and doable right now.
+4. **Time reads as uniform.** "A bit of work" and "a few hours" land the same.
+   Vague estimates fail.
+5. **Dopamine is scarce.** Visible progress registers; progress buried in prose
+   does not.
+
+## The rules
+
+### 1. Lead with the next action
+
+The first line is a thing the reader can do. Not context, not a plan, the
+action. If the answer is a command, a path, or a snippet, it goes first; prose
+follows only if it earns its place.
+
+### 2. Number multi-step work
+
+More than one step means a numbered list. Each item is one bounded action; no
+item hides a second "and then."
+
+### 3. End with one concrete next action
+
+If anything stays open, name exactly **one** thing the reader can do in under
+two minutes. "Open the file" counts.
+
+### 4. Suppress tangents
+
+A second issue waits its turn. Finish the first, then offer the second as its
+own question.
+
+- Weak: "Here's the fix. By the way, your dependency is stale, and the README
+  is out of date, and…"
+- Strong: "Here's the fix. Separately: a dependency is stale. Want that next?"
+
+### 5. Restate state every turn
+
+The reader cannot carry "we're on step 3 of 5" between messages. Say it again.
+
+- Weak: "Done. Ready for the next part?"
+- Strong: "Step 3 of 5 done: schema updated. Next: backfill the new column.
+  Run the script?"
+
+The boundary against rule 10's "no recap": restating state is the
+**last-completed step plus the next step, once**, never a running list of
+everything done so far. "Step 3 of 5 done: X. Next: Y" passes; "I've now done
+X, Y, and Z" is the forbidden recap.
+
+When the next step is the assistant's own and needs no input from the reader,
+put the state line in the same message as that step and take it; do not stop to
+offer it. Ask only when the step needs the reader or is destructive or hard to
+undo, as the backfill above is.
+
+### 6. Size the work concretely
+
+Resolve `time_units` once, lowest layer first: the default `false`; the user's option,
+`${user_config.time_units}` (empty or a literal, unexpanded placeholder means unset); and the
+`time_units` key of the repository's `docs/conventions/adhd.yaml`, which wins when set. Read that
+file only when the repository root (`CLAUDE_PROJECT_DIR`, else `git rev-parse --show-toplevel`) is
+inside a git working tree and is neither `$HOME` nor an ancestor of it; a missing file or key
+leaves that layer unset. A value other than a bare `true` or `false` is named with its file or
+option, the key and the value, and that layer is dropped: a valid repository value still wins over
+an invalid user value, and an invalid repository value resolves `false`, never the user's value.
+
+Only a resolved `true` turns it on. When a layer above the default supplied the value, or a value
+was dropped, end the first response that sizes work with one line, for example
+`time_units: true (docs/conventions/adhd.yaml)`.
+
+**Off:** give a relative size, Small, Medium or Large, with what makes it that size: the steps,
+files or unknowns the reader can count. When the reader asks for a duration, give the size and
+name the setting that turns time units on.
+
+- Weak: "This will take some work."
+- Strong: "Small if tests already cover it: one file and its test. Medium if not: the tests
+  get written first."
+
+**On:** give the estimate in minutes, hours, days, weeks or a named span such as an afternoon,
+instead of a size.
+
+- Weak: "This will take some work."
+- Strong: "About 15 minutes if tests already cover it; an afternoon if not."
+
+Either way, a time budget the reader states stays in the reader's words ("you said you have an
+hour").
+
+### 7. Make finished work visible
+
+Show what works now, concretely. Do not bury the win in a recap.
+
+### 8. State errors flat
+
+No "Uh oh," no "Oh no," no "There seems to be a problem." Name the cause and
+the fix.
+
+- Weak: "Uh oh, the test is failing. There seems to be an issue…"
+- Strong: "Test fails at `auth.spec.ts:42`: expected 200, got 401. Cause:
+  missing auth header. Fix: add `Authorization: Bearer ${token}`."
+
+### 9. Cap lists at five items
+
+Past five, split into "do now" vs "later," or "must" vs "nice to have." Five
+ranked items beat ten unranked.
+
+Exception: a `/adhd:clarify` decision table is **exempt** from this cap. Its
+fidelity rules forbid dropping or compressing any decision, and fidelity wins
+over shaping. A 7-decision table renders all 7 rows.
+
+### 10. No preamble, no recap, no closers
+
+Start with the answer. Stop when the answer is done. Do not open by announcing
+what you are about to do, do not restate what you just finished, and do not
+close with a pleasantry or an offer of further help.
+
+<!-- ai-slop-ignore-start: illustrative only, quotes the tells it bans -->
+- Weak: "Great question. Let me look at your project…" at the top, "Hope this
+  helps, let me know if you need anything else" at the bottom.
+- Strong: the answer, then nothing.
+<!-- ai-slop-ignore-end -->
+
+## When to override these defaults
+
+Drop the brevity rules, never the flat, preamble-free tone, when:
+
+1. **The user asks to "explain" or "walk me through."** Explain in full; let the
+   body run as long as the topic needs. Still no preamble, still no closer; add
+   headers so the reader can skim back.
+2. **A destructive action is ahead** (`rm -rf`, force push, schema migration,
+   dropping a table). Confirm first. Safety outranks brevity.
+3. **A debug spiral sets in.** If the last three turns have been "still broken,"
+   stop editing code. Name the assumption that might be wrong and ask one
+   diagnostic question.
+4. **The request is genuinely ambiguous.** One short clarifying question beats
+   guessing and redoing the work.
+
+## Pre-send check
+
+Before sending, delete:
+
+1. The first sentence, if it announces what you are about to do.
+2. The last sentence, if it asks "anything else?" or recaps what just happened.
+3. Any "by the way" sidebar.
+4. Any hedging adverb that adds no information ("perhaps," "might," "could
+   possibly").
+
+## Gotchas
+
+- **The standing posture erodes across context compaction.** Re-invoke
+  `/adhd:shape` if responses stop being shaped. What compaction keeps of an
+  invoked skill: [Skill content lifecycle](https://code.claude.com/docs/en/skills#skill-content-lifecycle).
+
+## Attribution
+
+Reauthored from [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)
+(MIT). The underlying communication strategies adapt *The Adult ADHD Tool Kit*
+by J. Russell Ramsay and Anthony L. Rostain from personal organization to how
+an assistant shapes its output.

@@ -1,0 +1,86 @@
+---
+name: qa-execution
+description: "Run requested dogfooding through public product interfaces. Use existing QA journeys or qa-report to plan them; excludes routine code edits and CI-only verification."
+disable-model-invocation: true
+argument-hint: "[qa-docs-path]"
+metadata:
+  author: Pedro Nauck
+  github: https://github.com/pedronauck
+  repository: https://github.com/pedronauck/skills
+---
+# Real-User QA Execution
+
+QA the product the way a real person meets it: a **persona** walks a journey through the product's public interfaces, feels the friction, hits the edges, and reports what happened. This is **dogfooding**, not a scripted test pass — the session is the work, and the living QA docs tree remembers it.
+
+Three non-negotiables hold every session:
+
+1. **In persona.** Every interaction and every verification goes through a surface a real user can reach — no dev-tools shortcut, no code-reading to decide what should happen, no patching over a stall.
+2. **Proof, not optimism.** A `Pass` is the expected observable seen, confirmed through an independent read path, surviving a refresh, with evidence captured. Optimistic UI is not confirmation.
+3. **Write back or it didn't happen.** Every session updates the tree — scenario-file verdicts, bug registry, and the dated report carrying the session debrief.
+
+## Input
+
+- **qa-docs-path** (optional): root of the living QA docs tree; defaults to `docs/qa/`. The tree is this skill's memory and its only output location — never a temp dir. If it doesn't exist, run `qa-report` first; it owns the tree and its bootstrap.
+
+## Steps
+
+Choose the planned smoke/targeted/full scope. Read only the relevant procedure/schema sections and reuse current evidence for unchanged behavior. A small changed journey does not require all tours, edge categories, or a second full walk.
+
+**Step 1 — Resolve the tree, scope, and preconditions**
+- Read, in order: `<qa-docs-path>/README.md` (entry points, dev-server command, area codes), the in-scope `scenarios/` files, related open `bugs/`, and this cycle's charters. The tree is the memory; running without reading it recreates the duplication this design kills.
+- Scope: a **branch/PR run** covers the journeys its user-visible diff touches plus an adjacent canary when shared behavior could regress — no user-visible change, report that and stop. A **release/full run** covers the journeys the cycle plan marked in scope.
+- Preconditions: the applicable preconditions and existing required checks are satisfied (reuse current evidence; unrelated suites need not finish before a focused probe) and the product is reachable in a production-parity build (real dev server, real auth, no mocks). Not reachable → name the exact gap and stop.
+- **Done when:** scope is fixed and every precondition is met or its gap is surfaced.
+
+**Step 2 — Build the matrix and create the report now**
+- Read `references/status-and-reporting.md` — it owns the six-value status enum and the report lifecycle.
+- Assemble the session matrix from the planned charters: persona × journey × tour × time-box, ordered by risk. A charter missing for an in-scope journey is drafted per `../qa-report/references/session-charters.md` before running — never walk unplanned.
+- Create `<qa-docs-path>/reports/<YYYY-MM-DD>-<scope>.md` from the report template (project copy at `<qa-docs-path>/templates/report.md`, else `assets/report-template.md`) **before the first session**, with every matrix row `Pending`. This on-disk report is the source of truth for resume — update it after every session and every fix, never only at the end.
+- **Done when:** the report exists on disk carrying the full matrix, every row `Pending`.
+
+**Step 3 — Walk each journey in persona**
+- Read `references/session-protocol.md` (the enter→act→verify→capture loop and the evidence standard) and `references/persona-fidelity.md` (the public-interface guardrails and stall-is-a-finding).
+- For each charter, in matrix order: adopt the persona (device, network, locale), enter through its real entry point, and walk the journey verb by verb to its **true end state** — verifying each step against the evidence standard.
+- Hunt **paper cuts** throughout: persona-felt friction no functional check fails; sharp ones become findings.
+- A leg only a human can complete (real payment, external email/SMS, real OAuth) is marked `Blocked (needs human verify)` with exact instructions — never faked.
+- **Done when:** every charter is walked to a recorded verdict, evidence captured at checkpoints and divergences, the debrief written to the report's Session Debriefs section, and the matrix row updated.
+
+**Step 4 — Run each tour and edge probe**
+- Read `references/tours.md` (the 10-tour catalog and surface-to-tour matrix) and `references/edge-cases.md` (the non-technical user edge cases).
+- Run each charter's single **tour** against its surface, in persona, inside the box, asking at each action: *"would this matter for this tour's theme?"*
+- Choose distinct edge cases supported by the changed contract and risk; there is no minimum count. Attempted-and-clean is evidence too.
+- **Done when:** every charter's tour is run and its chosen edge cases are attempted and recorded.
+
+**Step 5 — Experiential lens pass**
+- Read `references/lenses.md` — the six lenses and their severity defaults.
+- For a requested usability/full review or an unresolved experience risk, apply the relevant lenses to the affected journey. Reuse observations from the first walk and re-walk only the missing evidence.
+- **Done when:** the applicable experience risks have evidence, or this optional pass is not needed for the targeted scope.
+
+**Step 6 — File findings into the registry**
+- Read `../qa-report/references/bug-registry.md` — it owns ids, dedup, and the impact rubric.
+- Dedup first: search `bugs/` and the affected scenarios' `bug_ids`. Re-found → append `## Re-found`; regressed → reopen with `## Regressed`; only a genuinely new symptom mints a new `BUG-<YYYYMMDD>-<slug>` id.
+- File with the user first — impact tier, persona, journey step, reproduction from the persona's entry point, evidence paths — then link the id into the affected scenario files.
+- **Done when:** every finding is deduped, filed, and linked to its rows.
+
+**Step 7 — Fix loop (governed)**
+- Read `references/fix-loop.md` — the **governor**, the regression-test-per-fix rule, and Decisions for a Human.
+- Judge each fix against the governor **before editing**: only what passes all its bounds is auto-fixed, and each auto-fix has evidence at its owning suite/probe (add a regression only for an uncovered invariant) and re-walks the impacted journey, plus an adjacent journey when the failure can propagate. Everything else goes to the report's **Decisions for a Human** with options and a recommendation.
+- **Done when:** every finding is either fixed-and-retested or escalated with a recommendation, and no fix is left half-applied.
+
+**Step 8 — Close the round**
+- Re-read the round-close checklist in `references/status-and-reporting.md`; map matrix verdicts to tracker enums per `../qa-report/references/state-schema.md`.
+- Close the requested QA scope with the observed findings, coverage, and limitations. After fixes, run affected checks and any project checks required for that work, reusing valid evidence. When the request also includes PR delivery or release readiness, record the applicable delivery gates and current-head CI; missing or failed required evidence prevents that readiness claim, not an honest QA report.
+- **Done when:** zero matrix rows are `Pending`, scenario-file verdicts and bug statuses are current, every session's debrief is in the report, and Final Status states the QA outcome with totals by impact tier and evidence from the inspected build. State PR/release readiness only when that decision is in scope.
+
+## Companion skills
+
+- **qa-report** — plans what this skill runs and owns the tree's schemas (tracker, bug registry, charters, personas, journeys). Results written here feed the next cycle's planning.
+- **agent-output-audit** — owns CI gates, AI test-hygiene scans, task-status reconciliation, and flaky-test triage. A session that uncovers those files the finding and names that gate; it does not pivot mid-session.
+- **agent-browser** — the browser driver for Steps 3-5; its command surface lives in `references/session-protocol.md`.
+
+## Error handling
+
+- **Dev server or browser tooling unavailable:** mark the browser legs `Blocked (needs human verify)` with the exact missing prerequisite, and continue with CLI/HTTP journeys still walkable in persona.
+- **A flow hangs:** close the session, record it, retry once from a clean session, then mark it blocked. A stall is a finding to file, never a thing to nudge past (`references/persona-fidelity.md`).
+- **Credentials or test data missing:** mark those sessions blocked with the exact prerequisite and proceed with the rest.
+- **Matrix larger than the window:** cut by risk (Blocks-Completion candidates first, then Data-Loss, then Trust-Damage), mark the cut rows `Skipped` with reasoning, and disclose it in Final Status — coverage shrinks visibly or not at all.

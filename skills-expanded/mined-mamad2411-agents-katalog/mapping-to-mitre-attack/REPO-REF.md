@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-leodpraetorian-praetorian-coverage-digest/mapping-to-mitre-attack/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when tagging security findings with MITRE ATT&CK techniques during capability development - provides tactic/technique lookup, decision trees, and detection-to-TTP mappings for threat intelligence 

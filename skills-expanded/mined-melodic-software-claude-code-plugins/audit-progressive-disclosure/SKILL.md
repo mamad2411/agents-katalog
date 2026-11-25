@@ -1,0 +1,202 @@
+---
+description: "Read-only progressive-disclosure audit of agent-facing instruction markdown: grades each file against always-loaded, invocation-loaded, and on-demand tiers and flags split and disclosure defects. Use when: 'progressive disclosure', 'split this file', 'this file is too long', 'too much context', 'mixed concerns', 'hub and spoke', 'is my CLAUDE.md too big', 'audit context loading', 'what should always be loaded'. In-page noise is /docs-hygiene:audit-noise; frontmatter QA is /skill-quality:check."
+argument-hint: "[audit] [target] [--repo <repo> ...]"
+user-invocable: true
+disable-model-invocation: false
+allowed-tools: ["Bash(${CLAUDE_SKILL_DIR}/scripts/detect.sh:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(echo:*)"]
+metadata:
+  workflow-stage: anytime
+  summary: Grade instruction files for split opportunities and hub/spoke disclosure defects
+---
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+- Uncommitted .md files (sample, first 10; empty = none matched or the probe returned nothing), `git status --porcelain | grep -E '\.md"?$' | head -10`
+
+## Purpose
+
+Agent-facing instruction markdown (`CLAUDE.md`/`AGENTS.md`, `.claude/rules/`, skill/agent/command
+bodies, their bundled spokes) has a load cost set by its **tier**: always-loaded content is paid
+every session, invocation-loaded content recurs for the rest of the session once triggered, and
+on-demand content is free until read. This skill audits both directions: content that should move
+down a tier (split opportunities), and hub/spoke structures whose pointers no longer let an agent
+pull exactly the file it needs (structure defects). It is a read-only classifier: findings carry
+treatment guidance; the author applies every edit.
+
+Read [context/tier-model.md](context/tier-model.md) for the full tier tables, official numbers,
+split triggers, and pointer-quality criteria when adjudicating a finding that needs the exact
+threshold, routing rule, or citation posture (Anthropic-prescribed vs corroborated vs community).
+
+## Finding shapes and treatments
+
+| Lane | Shape | What it looks like | Default tier | Treatment |
+|---|---|---|---|---|
+| split | `oversize` | File at/approaching its tier's size guidance (SKILL.md approaching the line cap `/playbooks:skill-authoring` `## Body` records and `/skill-quality:check` enforces; CLAUDE.md approaching the memory page's size target; references per the TOC bands). Ceilings, not targets. Size alone below the cap is no finding | 2 | Add a hierarchy layer: name the sections to push into spokes, each behind a conditioned pointer |
+| split | `mixed-concerns` | Mutually-exclusive contexts co-resident (content that never co-executes), category straddle, multi-topic rules file, cross-file contradiction | 2 | Split by concern. One topic per file; name the proposed split seams |
+| split | `tier-mismatch` | Content at the wrong tier: a procedure grown inside CLAUDE.md (→ skill), path-local rules in a global file (→ scoped rule), reference detail inline in a hub (→ spoke), always-loaded content not needed every session (→ demote behind a pointer) | 1 when an official routing rule decides it; else 2 | Route down-tier per the rule, unless owned upstream (see Hard rules); the finding names source section and destination surface |
+| structure | `blind-pointer` | Pointer with no when-to-read clause, unmarked execute-vs-read intent, or a vague target name (`doc2.md`, `utils`) | 2 | Attach the condition and intent; rename the target descriptively. On skill descriptions, a missing when-not-to-use clause is advisory color (community-sourced), never a violation |
+| structure | `orphan-spoke` | Bundled spoke no hub references. Unreachable by pointer | 2 | 3-way: add the missing pointer, merge the content up, or delete the spoke |
+| structure | `deep-nesting` | Spoke-to-spoke chain, required reading more than one level from the hub (documented partial-read failure) | 2; 1 when the chain is the only path to required content | Re-link the deep target directly from the hub, or flatten |
+| structure | `missing-toc` | Reference file with no TOC above both sources' TOC thresholds = definite; between the two thresholds = awareness only, citing the source conflict on the TOC threshold | 1 (above both) / 3 (between them) | Add a TOC at top (or a grep recipe for lookup-shaped content) |
+
+Thresholds are advisory and tier-calibrated, never hard gates; consuming repos refine them in
+their own `CLAUDE.md` / rules. There is deliberately **no** "should have spokes" shape: a small
+single-file skill is never flagged for lacking spokes.
+
+- **Pointer**: when sizing a CLAUDE.md, fetch
+  [Write effective instructions](https://code.claude.com/docs/en/memory#write-effective-instructions)
+  live. For the `missing-toc` bands, the pages
+  [Structure longer reference files with a table of contents](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#structure-longer-reference-files-with-table-of-contents)
+  and skill-creator's
+  [Progressive Disclosure](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md#progressive-disclosure)
+  disagree on the TOC threshold; fetch both live when placing a file in a band.
+
+## Action router
+
+| Action | Args | Behavior |
+|---|---|---|
+| `<target>` (default) | empty → uncommitted `.md` files from git; file path → single file; dir path → recursive batch | run `${CLAUDE_SKILL_DIR}/scripts/detect.sh` on the targets; map its facts onto the shapes table via the judgment rules below |
+| `audit [target]` | same target rules | explicit form of the default; same behavior |
+| `--repo <repo>` (and the other target forms) | beside either action | that action once per repository, per [`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md) and [`../../context/clean-tree-fallback.md`](../../context/clean-tree-fallback.md) "Several repositories"; with no path, each repository's corpus is rule 1's below, minus the offer |
+
+One action; the author hand-edits from the audit output.
+
+**Facts vs judgment.** `detect.sh` emits facts, not verdicts: per-file size and heading facts,
+load-tier classification (path + frontmatter heuristic; `unknown` is yours to classify), a pointer
+inventory with source-line context, orphan-spoke records, and spoke-to-spoke `chain` records. The
+judgment layer owns: concern-mixing (from the heading census + content), whole-conversation
+relevance of always-loaded sections, when-clause quality (judge whether a `pointer` record's `ctx`,
+the surrounding line, carries a condition and intent), and whether a `chain` is a required reading
+path (finding) or a legitimate cross-reference (not one). In a repo with no Claude Code
+configuration most files classify on-demand/unknown and the split lane still applies.
+
+## Auto-detect default
+
+Shared clean-tree / no-scope shape: [`../../context/clean-tree-fallback.md`](../../context/clean-tree-fallback.md).
+The rules below are what this skill runs; open the shared file only when editing them, for the
+sibling divergences it owns.
+
+1. Empty arg AND clean tree → offer a repo-wide audit (never auto-start). Prescribed defaults
+   (overridable): corpus = all tracked agent-facing instruction `.md` (CLAUDE.md/AGENTS.md,
+   `.claude/rules/`, skill/agent/command trees) minus `**/evals/fixtures/**`, `**/vendor/**`, and
+   `CHANGELOG.md`; scan via one `detect.sh` pass per top-level root; report-first. Unattended,
+   surface the offer as blocked and stop.
+2. Empty arg AND uncommitted `.md` files → batch audit over all of them. Re-derive the full
+   list in-session (`git status --porcelain`); the sample gathered above caps at 10 and is
+   orientation, never the corpus.
+3. Single file path → single-file audit.
+4. Directory path → recursive batch.
+5. First positional == `audit` → audit on the rest (explicit form).
+
+## Hard rules
+
+- **Read-only.** No `Edit`, no `Write`, no mutating `Bash` ops; the author owns every treatment edit.
+- **Tier semantics** (identical to the sibling audits): Tier 1 = definite; Tier 2 = review needed;
+  Tier 3 = likely legitimate, surfaced for awareness and carrying no treatment.
+- **Citation posture.** Skill size and description caps are `/playbooks:skill-authoring`'s (`## Body`,
+  `## Descriptions`); the other vendor-defined numbers (CLAUDE.md target, listing budget, per-skill metadata cost,
+  compaction re-attach budgets) are cited as Anthropic-prescribed; their owning pages, as-of date, and recheck trigger live in the
+  provenance record in [context/tier-model.md](context/tier-model.md), which is re-verified rather
+  than trusted. Reserve consensus language for independently corroborated claims; label
+  community-sourced signals as such and keep them advisory.
+- **Small-corpus guard.** Never flag a file for not using progressive disclosure when its content
+  fits comfortably at its tier.
+- **Skip surfaces.** `CHANGELOG.md`, `evals/fixtures/`, `vendor/` trees, YAML frontmatter, and
+  fenced code blocks are never findings surfaces.
+- **Ownership check.** Before proposing any treatment, grep the repo for the target path near
+  `synced|sync-managed|vendored|generated|upstream`, and check `docs/adr/` and `docs/decisions/`
+  for a decision recording the file's tier or owner. Search beyond the targets: the ownership
+  statement usually lives in a README inventory, a tool-config comment, or a sync manifest. When
+  the hit names an upstream owner, keep the finding, set Treatment to `file with the owner, citing
+  the decision`, and mark disposition `upstream`. Never propose a local move or edit for an
+  upstream-owned file. When the hit is a decision recording only the tier of a locally owned file,
+  cite it as the recorded reason to stay at that tier; no owner exists, so do not use `upstream`.
+- **Output deterministic.** Files sort lexically; per-file rows sort by line; no timestamps.
+- **Default action is the audit action**. `/docs-hygiene:audit-progressive-disclosure <file>` ==
+  `… audit <file>`.
+
+## Output schema
+
+```text
+<file>: tier=<always|invocation|on-demand|unknown> — N finding(s) — T1=<n>, T2=<n>, T3=<n>
+
+| Tier | Lane | Shape | Line | Evidence | Treatment |
+|------|------|-------|------|----------|-----------|
+| 1    | split | tier-mismatch | 41 | "## Deploy procedure" (multi-step) in always-loaded CLAUDE.md | Move to a skill; leave a one-line pointer |
+| 2    | structure | blind-pointer | 12 | "[details](context/tier-model.md)" — no when-clause | Attach the read condition and intent |
+| 3    | structure | missing-toc | — | reference file, 180 lines, no TOC (sources disagree on the TOC threshold) | awareness only |
+| 1    | split | tier-mismatch | 41 | "## Deploy procedure" in always-loaded file listed as synced in `sync/README.md` | upstream: file with the owner, citing the decision |
+```
+
+`upstream` is a disposition shown in the Treatment cell, not a tier: a Tier 1/2 finding on an
+upstream-owned file keeps its tier. A Tier 3 row's Treatment cell is only `awareness only`.
+
+Batch aggregate at end:
+
+```text
+Total: <N> file(s) audited — T1=<n>, T2=<n>, T3=<n>. Facts: files=<n> pointers=<n> unresolved=<n> orphans=<n> chains=<n>
+```
+
+`shape` values: `oversize`, `mixed-concerns`, `tier-mismatch`, `blind-pointer`, `orphan-spoke`,
+`deep-nesting`, `missing-toc`.
+
+## Next
+
+- A split is agreed and the new hub and spoke text needs writing:
+  `/docs-hygiene:write-for-agents`.
+- The file is long on flavor rather than structure: `/docs-hygiene:compress`.
+- A pointer no longer resolves: `/docs-hygiene:rename-references`.
+
+## Gotchas
+
+- Ownership is usually stated outside the audited targets. A file that looks local may be synced
+  or vendored; grep the repo, not just the target.
+- The SKILL.md line cap and the CLAUDE.md size target (read at the pointer under the shapes
+  table) are **ceilings, not targets**; *approaching*
+  the cap is the split trigger, and a well-split hub sits far below it (about 30 lines is common).
+  Size alone under the cap never fires `oversize`.
+- Invocation-loaded is **cheap to have, not cheap to use**: once a skill body loads, every line
+  recurs for the session, so mutually-exclusive content inside one body fires `mixed-concerns`
+  even when the file is "small enough".
+- A `chain` record is a candidate, not a verdict. Sibling cross-references between spokes that
+  are alternates (not required reading) are legitimate.
+- An unresolved pointer (`resolved=no`) is upstream breakage worth surfacing, but rename sweeps
+  belong to `/docs-hygiene:rename-references`.
+- The TOC bands exist because two Anthropic sources disagree on the TOC threshold; never present
+  either source's number as the single official rule. Both are read at the pointer under the
+  shapes table.
+
+## What this skill is not
+
+- **Not `/docs-hygiene:compress`**. Flavor/wordiness inside a file is compression, not disclosure.
+- **Not `/docs-hygiene:audit-noise`**. In-page noise shapes (citations, ghost-refs, preambles).
+- **Not `/docs-hygiene:audit-derivability`**. Whether a whole doc should exist at all.
+- **Not `/docs-hygiene:extract-ssot`**. Content repeated across files is deduplication territory.
+- **Not `/skill-quality:check`**. Frontmatter validation, listing budgets, and description QA are
+  its static gates; this skill audits loading structure, and cross-references rather than
+  duplicates those checks.
+
+## Sources
+
+Each entry names the topic this skill relies on the source for, never what the source says; the
+pointer, as-of date and recheck trigger for each threshold live in
+[context/tier-model.md](context/tier-model.md); a live-docs entry that backs no threshold
+carries its own as-of date and recheck trigger.
+
+- [Claude Code skills docs: Skill content lifecycle](https://code.claude.com/docs/en/skills#skill-content-lifecycle) and [Skill descriptions are cut short](https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short). Loading levels, listing cap and drop order, compaction budgets
+- [Claude Code memory docs: Write effective instructions](https://code.claude.com/docs/en/memory#write-effective-instructions). CLAUDE.md/rules loading, CLAUDE.md size target, fact-vs-procedure routing
+- [Claude Code large-codebases docs: Layer CLAUDE.md files by directory](https://code.claude.com/docs/en/large-codebases#layer-claude-md-files-by-directory) and [Centralize conventions when layering stops scaling](https://code.claude.com/docs/en/large-codebases#centralize-conventions-when-layering-stops-scaling). Root-orients / per-directory layering, escalation ladder
+- [Agent Skills best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices). Hub-and-spoke patterns, pointer rules, observed-navigation diagnostics, TOC guidance
+- [Agent Skills spec](https://agentskills.io/specification). Frontmatter limits, one-level-deep rule, metadata cost
+- [Progressive disclosure patterns](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#progressive-disclosure-patterns). Mutual-exclusivity split rule (correlate with [Anthropic engineering: Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills))
+- [How Skills work](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview#how-skills-work). Just-in-time retrieval, pointer doctrine (correlate with [Anthropic engineering: context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents))
+- [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator). Approaching-the-limit split trigger, TOC guidance
+- [UC Davis disclosure study (arXiv 2607.17598)](https://arxiv.org/abs/2607.17598). Scale boundary, depth>1 harm (academic corroboration)
+- [happyskills](https://happyskills.ai). Community source for the when-not-to-use description clause (advisory color only); the listing drop order comes from the skills docs entry above

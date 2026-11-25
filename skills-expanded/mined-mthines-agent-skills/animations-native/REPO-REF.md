@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mthines/agent-skills (path: skills/design/animations-native/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Animations (React Native / Expo)

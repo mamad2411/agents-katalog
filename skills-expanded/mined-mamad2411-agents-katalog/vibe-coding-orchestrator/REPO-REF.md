@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/vibe-coding-orchestrator/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: **VIBE CODING ORCHESTRATOR v5.0** - 16개 AI 스킬 자동 조율 시스템. 비개발자도 프로급 코딩. 바이브 코딩에서 프로덕션까지. 4단계 성숙도 모델. 2025 현대 도구 통합."

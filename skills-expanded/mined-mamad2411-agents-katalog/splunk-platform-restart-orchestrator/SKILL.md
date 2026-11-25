@@ -1,0 +1,148 @@
+---
+name: splunk-platform-restart-orchestrator
+description: "Use when the user asks to restart Splunk, avoid unnecessary restarts, recover from management API
+  restart trouble, review repo-wide restart handling, choose between REST/CLI/systemd/ACS restart paths,
+  or validate that a Splunk app/config change has been activated. Plan, validate, audit, and safely
+  execute Splunk Platform restarts and reloads across Splunk Enterprise, Splunk Cloud, systemd-managed
+  hosts, deployment servers, indexer clusters, and search head clusters."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "conditional"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Platform Restart Orchestrator
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Restart Splunk, avoid unnecessary restarts, recover from management API restart trouble, review repo-wide restart
+  handling, choose between REST/CLI/systemd/ACS restart paths, or validate that a Splunk app/config change has been
+  activated.
+- Preview and review the splunk platform restart orchestrator workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-platform-restart-orchestrator/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-platform-restart-orchestrator/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+Use this skill whenever restart or reload handling is part of the task. It is a
+guardrail skill: prefer reload or topology-aware restart paths, and refuse to
+hide a risky restart behind a generic REST call.
+
+## Guardrails
+
+- Never ask for secrets in chat and never place secrets on argv or env prefixes.
+- Default to `--plan-restart`; actual restart requires `--restart --accept-restart`.
+- Do not kill Splunk processes automatically. Detect partial shutdown and render
+  an operator handoff.
+- Treat REST `/services/server/control/restart` as explicit fallback only.
+- Use ACS for Splunk Cloud and restart only when `restartRequired=true`.
+- Delegate indexer cluster peer restarts to `splunk-indexer-cluster-setup`.
+- For SHC, use searchable rolling restart only when the change is eligible.
+- `--validate-restart-path` and live `--restart` return nonzero when the plan
+  resolves to a manual, indexer-cluster, SHC, or privilege handoff. The printed
+  handoff is actionable guidance, not a successful restart.
+- Enterprise `--expected-port` values are probed on target loopback after the
+  management API recovers. Cloud rejects that option before restart because
+  ACS cannot provide a target-host listener probe.
+
+## Quick Start
+
+Plan a restart:
+
+```bash
+bash skills/splunk-platform-restart-orchestrator/scripts/setup.sh \
+  --plan-restart \
+  --operation "app installation" \
+  --target-role search-tier \
+  --json
+```
+
+Execute an accepted Enterprise restart:
+
+```bash
+bash skills/splunk-platform-restart-orchestrator/scripts/setup.sh \
+  --restart \
+  --accept-restart \
+  --operation "app installation"
+```
+
+Audit the repository:
+
+```bash
+bash skills/splunk-platform-restart-orchestrator/scripts/setup.sh --audit-repo
+```
+
+## Workflow
+
+1. Read `reference.md` when the task touches Cloud, systemd, clusters, or repo
+   adoption.
+2. Run `--plan-restart` before any live restart unless another skill has already
+   rendered a plan.
+3. For reloadable paths, use `--reload ENDPOINT_OR_HINT` or the skill-specific
+   reload helper.
+4. For repo work, run `--audit-repo` and use the report to choose adoption
+   targets.
+5. Validate after restart with management API readiness and any expected data or
+   listener probes.
+
+## Shared Helper
+
+Existing skills should call the shared helpers loaded by
+`skills/shared/lib/credential_helpers.sh`:
+
+- `platform_restart_or_exit <session_key> <uri> <operation> [skip_message]`
+- `platform_restart_plan <operation> <target_role> <restart_mode>`
+- `platform_reload_or_restart_guidance <change_description>`
+- `platform_restart_handoff <operation> <reason>`
+
+Keep existing skill flags such as `--no-restart` compatible.

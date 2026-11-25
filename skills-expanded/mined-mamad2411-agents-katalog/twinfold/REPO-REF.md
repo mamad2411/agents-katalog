@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/twinfold/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Control Twinfold — AI-powered social media content platform — from your agent. Create posts, generate images, adapt content for 10 platforms in 13 languages, manage autopilot, publish, and track analy

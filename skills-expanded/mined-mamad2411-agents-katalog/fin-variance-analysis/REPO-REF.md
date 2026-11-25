@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-evolution-foundation-evo-nexus/fin-variance-analysis/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Decompose financial variances into drivers with narrative explanations and waterfall analysis. Use when analyzing budget vs. actual, period-over-period changes, revenue or expense variances, or prepar

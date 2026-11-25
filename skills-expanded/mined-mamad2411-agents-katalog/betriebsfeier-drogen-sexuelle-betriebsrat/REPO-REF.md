@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/00841-betriebsfeier-drogen-sexuelle-betriebsrat/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Betriebsfeier Drogen Alkohol Vorfall in Start-up-HR-Personalabteilung Berlin geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-veronez-io-claude-code-devops/gerador-terraform/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Gera a estrutura padrão de um projeto Terraform modularizado, ou audita um projeto existente e gera um relatório de conformidade. Use esta skill sempre que o usuário pedir para criar, gerar, organizar

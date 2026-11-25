@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-anthropics-knowledge-work-plugins/journal-entry-prep/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Prepare journal entries with proper debits, credits, and supporting documentation for month-end close. Use when booking accruals, prepaid amortization, fixed asset depreciation, payroll entries, reven

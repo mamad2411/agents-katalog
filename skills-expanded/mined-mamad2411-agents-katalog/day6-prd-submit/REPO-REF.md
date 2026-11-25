@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ai-native-camp-camp-1/day6-prd-submit/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: PRD 초안을 작성하고 형식을 검증한 뒤 GitHub PR 제출을 안내한다. "PRD 작성", "PRD 검증", "Day 6", "6일차", "PR 제출", "prd submit" 요청에 사용.

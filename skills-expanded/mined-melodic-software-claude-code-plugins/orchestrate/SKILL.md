@@ -1,0 +1,344 @@
+---
+description: "Arm the session for orchestration-heavy work with seven standing imperatives (delegate and fan out, spec every spawn, fresh-context verify, and more), optionally exported as a worker brief. Use when: 'orchestrate', 'prime this session', or before heavy delegation."
+argument-hint: "[<task>|handoff [compact]|worker [compact]|coordinator [<area>]]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: session
+  summary: Arm the session with proactive-orchestration imperatives
+---
+
+## Purpose
+
+Invoking this skill **arms the current session** for an orchestration-heavy task: it loads the
+expanded seven-imperative operational form into active working context, and it declares deliberate
+intent to orchestrate the work about to start, so the triggers get evaluated actively rather than
+sitting passively in background rules. That is the default: no paste, no rails, just preloaded
+context.
+
+The same imperatives also **export** as a self-contained, paste-ready brief for targets that leave
+the session and therefore inherit none of its context: a spawned subagent/teammate, a fresh session
+you will `/clear` into, or a non-Claude-Code tool. Export is model- and tool-agnostic by
+construction. Nothing in the pasted text depends on a specific model, env var, or repo file.
+
+Pointers behind each imperative: `context/sources.md`; observed failure modes:
+`context/gotchas.md`. Read gotchas before authoring a nested tree or trusting a worker's return.
+
+## Actions
+
+| Action | What it does |
+|---|---|
+| *(default. Optional `<task>`)* | **Prime this session.** The standing instructions below are now active for the upcoming task; respond with a terse acknowledgment and, if `<task>` is given, one line orienting to it. Do not re-emit the imperatives. Loading them is the priming. |
+| `handoff [compact]` | **Export** the imperatives as a paste-ready dashed-rail brief framed for a fresh session. `compact` = headlines only. |
+| `worker [compact]` | **Export** framed for a spawned worker (prepends the did-not-inherit-context line). `compact` = headlines only. |
+| `coordinator [<area>]` | **Arm this session as the one coordinator for `<area>`** to delegate that area's work to workers. The coordinator keeps no store of its own: state lives in the tracker and the repository's durable files, so it creates no store file. It runs on whatever surface the user chooses, a plain CLI session included, so account rotation never strands it. Load `context/coordinator.md` and follow its four rules for the rest of the session. Respond with a terse acknowledgment that names the area and where state lives. |
+
+## Orchestration imperatives. Standing instructions
+
+At each decision boundary in this task, evaluate these and act on a match without waiting to be
+told:
+
+1. DELEGATE / FAN OUT. Start with one agent; delegate only when work would flood context, fans
+   across genuinely independent paths, or needs a tool-restricted specialist. Decompose by what
+   context each piece needs, not by head-count or work-type. Sequential or shared-context steps stay
+   in one agent, and one feature is never split across agents. Our operating figure for a fan-out
+   is 3–10× one agent's tokens (returns cost context too), and it is a floor: budget a
+   research-shaped fan-out above it. Spend it on value + parallelism, not convenience. Pointer: for
+   multi-agent token cost, see <https://code.claude.com/docs/en/costs#agent-team-token-costs>; no
+   docs page covers research fan-out sizing as of 2026-10-01 (correlate with
+   <https://www.anthropic.com/engineering/multi-agent-research-system>). As of: 2026-10-01.
+   Recheck trigger: that section moves or starts stating its own multiplier, or a docs page starts
+   covering fan-out sizing.
+   "Would flood context" is a measurement, not a hunch, when the instrument exists: with the
+   `context-usage` plugin enabled, resolve this session's zone word per its reader contract
+   before a fan-out decision
+   (the contract owns the snapshot path, staleness rule, and bands. Read them there; this
+   imperative consumes only the word, no band values). Never estimate your own remaining window,
+   that guess is the failure the seam replaces. A degraded or `unknown` zone shifts the balance
+   toward delegating context-heavy legs and shrinking what returns; a healthy zone is license to
+   keep sequential, shared-context work inline.
+2. SPEC EVERY SPAWN. Every brief states why the work is wanted, what done looks like, when to
+   stop and ask, and a deliberately chosen capability tier, on top of the brief elements the
+   multi-agent post lists. Pointer: [Give the reason, not only the request](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5#give-the-reason-not-only-the-request);
+   correlate with <https://www.anthropic.com/engineering/multi-agent-research-system> for the
+   brief elements, which no docs page covers. Name the capability tier deliberately rather than leaving
+   it unspecified: what an omitted `model` resolves to, with or without a consumer-level
+   subagent-model override, is upstream behavior
+   (pointer: <https://code.claude.com/docs/en/sub-agents#choose-a-model>).
+   Holding only an objective, a worker resolves each ambiguity toward the sentence you wrote rather
+   than the outcome you wanted, and returns something well-formed and wrong.
+   A worker that measures is told which exact commits to compare and how to sample (how many
+   runs, in what order), and its return repeats both beside the numbers; a measurement whose
+   return leaves either out is not evidence. A brief for a worker that writes may state how long
+   the work should take, which imperative 4 uses.
+3. FRESH-CONTEXT VERIFY, after an edit batch or a finding set, hand it to a separate verifier;
+   never self-audit in the context that produced it. Give the verifier concrete pass/fail criteria
+   ("run the full suite, report all failures"), scope it to correctness/requirements (not style),
+   and judge the final state, not the process, an uncriteriaed verifier just rubber-stamps. When
+   the verdict is high-stakes, prefer a different-vendor advisor when one is set up and able to
+   judge this artifact, its blind spots are uncorrelated with yours, with the fresh-context
+   same-vendor verifier as the fallback. A `light` or `off` verification level, where the session resolved
+   one, skips this verifier. Scope it to what ships: a process record about the work
+   (ledger, checklist, status log) is not the work and gets no verifier, however many of them a
+   batch touched, and a record of a verification is never itself verified, that loop feeds itself.
+4. RUN WORKERS WELL. Dispatch without blocking, and keep a worker across subtasks where the
+   runtime allows; watch each worker and step in when it drifts. Pointer:
+   [Parallel subagents](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5#parallel-subagents).
+   A worker that must wait on an external result polls it in the foreground with a bounded loop, or returns what
+   it has and lets the parent re-dispatch. A background command or watch the worker started is not
+   a wait: the runtime may stop it when the worker returns, a watch expires at its deadline, and no
+   sentinel file appears unless something the worker launched writes it. The runtime may also leave
+   it running: a hung background shell has been observed to keep a worker that already reported
+   listed as active (`context/sources.md`, "A worker's own background work is not a wait"). So
+   retiring a finished worker includes checking for its still-running background tasks and
+   surfacing each one; stopping one is gated like any kill (`/session-flow:reconcile` step 3).
+   Liveness covers workers that write (edit files, commit, or run a process for the run), never
+   read-only ones such as a verifier. Read a writing worker's progress from its side effects
+   (new commits, written files, its task status), never by sending it a message to ask. Past the
+   runtime its brief states with no side effect, it is stuck: stop it (gated like any kill) and
+   respawn it with consolidated scope. With no stated runtime, confirm at each decision boundary
+   that its task is still running and still producing output. Every resume message restates the
+   brief's scope fence and standing constraints; after an interrupt, respawn the worker instead
+   of resuming it. Landing: "land" means a local commit on the run's own branch, never a push or
+   a merge. Land each unit as soon as it passes verification instead of holding a batch, and
+   apply no cutoff based on remaining budget, since imperative 1 forbids estimating the window.
+   Where a configured batched drain decides when returns are read, a unit lands once its return
+   has been read and verified. A worker runs where its parent session runs; cloud placement is
+   chosen per work item by the execution-target contract
+   (`docs/contracts/execution-target/README.md` in the marketplace repository).
+5. NESTED SUBAGENTS, a worker may spawn its own workers when a delegated task itself subdivides
+   and the depth is non-load-bearing. Reliability
+   degrades with depth and platforms cap it (for the cap, see
+   <https://code.claude.com/docs/en/sub-agents#let-subagents-spawn-their-own-subagents>), so never author a tree that needs a specific or deep
+   nesting level.
+6. SURFACE DRIFT, the moment you notice a stale reference, broken citation, or convention
+   conflict adjacent to your task, flag it in one line; don't fix it silently, don't deep-dive.
+7. CALIBRATE TO CONDITIONS. Size the whole orchestration (whether to delegate at all, fan-out
+   width, nesting depth) to the conditions in play, never a fixed recipe: the active model's
+   capability (a stronger model reaches further single-agent; a weaker one needs more decomposition
+   and tighter specs), whether a capable advisor/verifier is on hand, current context pressure
+   (delegate to protect a filling window; stay inline when it is roomy). Usage or rate-limit headroom
+   never lowers capability tier, effort, review depth or worker count; pacing is the user's call. Back
+   off only on this session's own rate-limit errors or on live sibling-automation 429s already
+   visible to the session (for example review-lane infra comments classifying
+   `api_error_status: 429`); scale back up only after those reactive signals stop, never on a
+   guessed recovery. Sizing is
+   small/medium/large, a small ask stays single-agent, a medium one fans out a few, only a large
+   genuinely-independent surface earns a wide or nested tree. Single-agent is the floor, not the
+   fallback. Per-worker tier is part of sizing and follows the work: mechanical work runs on the
+   cheaper tier, which a wide mechanical fleet inherits as its default because volume multiplies
+   every notch of over-provisioning, and the standing exception is an explicitly hard stage
+   (verify, judge/adjudicate, judgment-heavy synthesis), which keeps the parent tier. Tier is not only the
+   model: match the reasoning depth (effort) to the subtask too, not the parent session,
+   high-volume mechanical work (search, extraction, per-item transforms, formatting) runs cheaper
+   on both. Work that changes code, verifies a change, or is likely to hit edge cases is excluded
+   from the lower effort: pick its level from model-config's effort table
+   (<https://code.claude.com/docs/en/model-config#choose-an-effort-level>), and, as this
+   repository's own floor, never below medium. A premium fan-out outside the hard stages is a per-stage decision to justify
+   explicitly, never a default to inherit. Pointer for both cost judgments (delegating bulk work,
+   tuning effort per subtask):
+   <https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence#orchestrator-strategy-delegate-bulk-work>
+   and <https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence#tune-effort>.
+   Both judgments are ours.
+
+Discipline: trigger-evaluation is mandatory; the action stays calibrated (delegate on value +
+parallelism, not convenience). Treat every worker's return as unverified synthesis: check its
+evidence before accepting it, verify load-bearing claims against a primary source before acting,
+and merge a many-item fan-out into one table (item, verdict, evidence). An item whose return
+lacks a field its brief requires enters that table as a gap, never as a pass, unless a single
+consolidated-scope respawn returns the field. Cite sources you actually fetched;
+never label a claim "known" / "from memory" / "obvious".
+
+**Priming addendum (current session only).** As the main session, not a spawned non-fork worker,
+you may also reach orchestration surfaces a non-fork worker cannot: agent teams (driven from the
+lead session; the docs do not state whether a fork of the lead can drive one; see
+[agent teams: architecture](https://code.claude.com/docs/en/agent-teams#architecture) and
+[limitations](https://code.claude.com/docs/en/agent-teams#limitations)) and dynamic workflows (withheld from non-fork workers). This session's reasoning effort is `${CLAUDE_EFFORT}`; if that value reads as a literal
+placeholder, resolve the session's effort yourself before using it. Feed the value
+into imperative 7's tier calibration: we treat it as the effort an unpinned spawn may run at when it
+passes no `effort`, and the pointer below says on which model that holds. Its gap from what a subtask needs is
+the over-provisioning imperative 7 exists to stop. Close that gap by passing the level on a
+non-fork spawn of an unpinned agent, and omit it on a pinned named agent. Never read ultracode from this value. Pointer: for
+the subagent `effort` field, see <https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields>;
+for the per-spawn `effort` and its precedence, see
+<https://code.claude.com/docs/en/sub-agents#choose-an-effort-level>; for which model the session's
+level reaches, see <https://code.claude.com/docs/en/model-config#effort-level-of-subagents-and-teammates>;
+for how ultracode relates to
+effort, see <https://code.claude.com/docs/en/model-config#adjust-effort-level>. Where a
+`SendMessage` tool resolves in this session, run imperative 4's worker reuse and mid-flight
+intervention through it, addressed by the worker's agent ID. Never re-invoke the dispatch tool to
+continue a worker: that starts a second, independent worker. Read a refused message as a worker
+the user stopped. Pointers and the empirical probe: `context/sources.md`, "SendMessage
+worker continuation".
+`worker_continuation` decides how a worker's next unit (a fix round, a follow-up, a retry, the
+next queue item) runs. Resolve it once, at arm time, lowest layer first: the default `resume`; the
+user's option `${user_config.worker_continuation}`, where a literal, unexpanded placeholder means
+unset; then the repository's `docs/conventions/session-flow.yaml`, which wins when it sets the key
+(schema: [`${CLAUDE_PLUGIN_ROOT}/schemas/session-flow.schema.json`](${CLAUDE_PLUGIN_ROOT}/schemas/session-flow.schema.json)).
+Read the repository value with
+`bash "${CLAUDE_PLUGIN_ROOT}/skills/retro/scripts/parse-concern-value.sh" --strict "<git root>/docs/conventions/session-flow.yaml" worker_continuation`,
+and only when the working directory's git root is neither `$HOME` nor an ancestor of it; otherwise
+skip that layer and say so. Empty output means unset only when the key is absent: if
+`grep -qE '^worker_continuation[[:space:]]*:' "<file>"` matches, the key is present but empty or not
+a scalar, which is invalid. Exit 3 means the parser rejected the file: name the file and drop the
+layer. A value other than `resume` or `respawn` is named with its file or option, the key and the
+value, and that layer is dropped: the repository's valid value still wins over an invalid user
+value, and an invalid repository value or file resolves the default `resume`, never the user's
+value; the run never stops on it. Report one line, for
+example `worker_continuation: respawn (docs/conventions/session-flow.yaml)`. Under `resume`,
+imperative 4's reuse stands. Under `respawn`, each new unit goes to a fresh worker whose brief
+consolidates the scope (the original brief, every later directive, the prior worker's report and
+its branch); resume instead only when the unit needs state that lives in that worker and is
+costly to move: its checkout, uncommitted changes, or a running process. Settings page:
+[`${CLAUDE_PLUGIN_ROOT}/reference/config.md`](${CLAUDE_PLUGIN_ROOT}/reference/config.md).
+To choose between a workflow and subagents, and the model and effort each spawn gets, run
+`/multi-agent:assess` and `/multi-agent:route` when they resolve in this session; otherwise read
+<https://code.claude.com/docs/en/sub-agents#choose-a-model> (record: `context/sources.md`,
+"Priming addendum: model and effort routing").
+Resolve the repository's verification level once with
+`bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin session-flow --skill orchestrate --file docs/conventions/session-flow.yaml`
+and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)).
+It governs imperative 3 in this session: under `light`, and `off`, which acts as `light` here,
+hand nothing to a verifier and never self-audit in its place; write `verification: skipped
+(<level>)` where the verdict would go. An exported brief carries no level: its target resolves
+its own.
+Export modes omit this addendum, a
+pasted target reaches none of those surfaces, and the substitution would travel as dead text.
+
+## Tiered delegation, the shape of a deep tree
+
+Guidance for the main session once a task needs more than one layer; the export brief omits it,
+because a pasted worker sits inside a tree rather than authoring one.
+
+**A rough anchor for small/medium/large.** Not thresholds to enforce, the judgment still runs on context
+boundaries, not head-count, but our anchor is the platform's workflow size guideline values,
+read live. A run large enough to trip the platform's large-workflow warning is a size to justify
+out loud. An order-of-magnitude disagreement with this anchor is one to name, not skip. Before a
+workflow run, read the size guideline in force for this session: the guideline the session sets
+is the one Claude receives, whatever this anchor says.
+
+- **Pointer**: for the size guideline values and their defaults, see
+  <https://code.claude.com/docs/en/workflows#set-a-size-guideline>; for the large-workflow
+  warning, see <https://code.claude.com/docs/en/workflows#cost>.
+
+**The top of the tree owns the loop, not the work.** Its context is the scarcest in the run,
+everything that enters it stays for the rest of the session. So it holds the objective, the
+stopping condition, and the decision about what to spawn next, and it delegates the rest. It keeps
+the task list in a file (the plan or checklist the work already has, else one it creates), ticks
+each item as its return is verified, keeps an item it will not do listed as `skip: <reason>`, and
+reads that file rather than the scrollback. It keeps going
+when a step needs no input, with status notes in the same message as the next action, and stops to
+ask only when blocked on the user or before a destructive, hard-to-undo, or outward action. A top
+tier that reads findings, weighs them, and asks a follow-up question has converted a fan-out into a
+conversation, and the context it was protecting fills anyway.
+
+**Chatter belongs low.** Two workers resolving an ambiguity between themselves costs nothing at the
+top. The same exchange routed through the parent costs the parent's window twice and permanently.
+Push coordination to the lowest tier that can resolve it, and let each tier return a compressed
+verdict rather than its reasoning.
+
+**Spec what crosses a boundary, not just what to do.** Every spawn already needs an objective and
+an output format (imperative 2). In a multi-tier tree the output format is the context-economy
+lever: name the identifiers, the verdict, and where the bulky payload was parked, so the tier above
+can act without re-reading the work. "Compressed" means a return many times smaller than the work
+behind it, however much the worker explored: the identifiers, the verdict and the payload's
+location, never its reasoning transcript. Our magnitude: a worker that explored across tens of
+thousands of tokens still aims to return roughly 1,000 to 2,000. Treat it as the shape a return
+should aim for, never a budget to spend up to.
+
+- **Pointer**: for a subagent returning a summary in place of its verbose output, see
+  <https://code.claude.com/docs/en/sub-agents#isolate-high-volume-operations>
+  (correlate with <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>).
+  No docs page states a return size.
+
+**Workers are ephemeral, and the deeper the tier the shorter the life.** A worker that finishes and
+stays alive keeps costing the tier above, notifications, status, re-acknowledgement, for zero
+additional output. Retire on completion. When the next grouping needs doing, spawn fresh rather than
+reusing a worker whose context now carries the last job. (The exception is imperative 4's long-lived
+worker across *related* subtasks, where cache reuse is the point; that is a deliberate trade, not
+the default.)
+
+**Check one sampled brief per wave, beside the wave.** Pick one brief from each wave you dispatch
+and check it against imperative 2 while that wave runs. The check never gates the wave: what it
+finds corrects the next wave's briefs, and a defect that would change a running worker's result
+goes to that worker as a directive.
+
+**Treat a clean return as unverified, especially a suspiciously clean one.** An under-specified
+worker rarely stalls and asks; it substitutes the nearest plausible interpretation and reports
+success. In a fan-out, most workers given a brief missing a resource will locate it and close the
+gap, and one will silently audit a different, similar artifact and return a confident,
+well-formed, wrong-target result that nothing in its return distinguishes from the others. This
+is why imperative 3's fresh-context verify is not optional at depth, and why a return payload
+benefits from naming its sources. Provenance is the field that makes a wrong-target answer
+detectable from above.
+
+**Never author a tree that needs a specific depth.** The platform's nesting default is
+configurable and changes. Agent-tool subagents carry a depth cap and a concurrency cap (their
+settings: the pointers below); workflow agents
+and agent-team teammates carry their own, and workflow concurrency has its own override, so "read
+the current values" includes the workflows page whenever the run will use the Workflow tool. Read the current values rather than assuming
+them, and design the tree so it degrades to a shallower one instead of failing. Never design a
+tree that needs a fork to spawn a fork: that is a shape constraint, not a tunable. Whether a
+below-limit fork can parent non-fork children is unconfirmed, so do not treat a fork as a
+forbidden intermediate tier either. The version history behind the caps lives in
+`context/sources.md`.
+
+- **Pointer**: for the depth cap, see
+  <https://code.claude.com/docs/en/sub-agents#let-subagents-spawn-their-own-subagents>; for the
+  concurrency cap, see <https://code.claude.com/docs/en/sub-agents#concurrent-subagent-limit>; for
+  workflow limits, see <https://code.claude.com/docs/en/workflows#behavior-and-limits>; for forks,
+  see <https://code.claude.com/docs/en/sub-agents#how-forks-differ-from-other-subagents>.
+
+**Confirm nesting from behavior, not from one page** (why: `context/gotchas.md`). Have a
+worker of the same definition you plan to use as the intermediate tier attempt a trivial nested
+spawn and report the outcome. The gate is definition-specific, so another agent type proves
+nothing, and holding `Agent` is necessary but not sufficient. Read a refusal: a depth rejection
+names depth; a permission refusal (classified pre-launch) does not. Pointers: `context/sources.md`.
+
+## Export modes (handoff / worker). Paste-ready brief
+
+Only for a target that leaves the session. Emit the seven imperatives above between two full-width
+`─` (U+2500) dashed rails. Top rail, brief, bottom rail, nothing else between them; the
+`/clear`/paste instruction or any commentary sits above the top rail or below the bottom rail,
+never between (not a code fence, the user copies the text between the rails, not fence markers).
+
+Live shape: bare `─` rails, no fence. Shown inside a fence here for display only. On a markdown
+surface ([Markdown surfaces](../../reference/save-point.md#markdown-surfaces) owns the detection),
+print the brief inside a fenced `text` block in place of the rails, every line unchanged.
+
+```text
+──────────────────────────────────────────────────────────
+ORCHESTRATION BRIEF — standing instructions for the whole task, regardless of which model or tool runs you.
+
+At each decision boundary, evaluate these and ACT on a match without waiting to be told:
+[the seven numbered imperatives above, verbatim]
+
+Discipline: [the Discipline line above, verbatim]
+──────────────────────────────────────────────────────────
+```
+
+- `handoff`, the opening line above already fits a fresh session; emit as-is.
+- `worker`, insert as the first line between the rails: `You are a spawned worker and did NOT
+  inherit the parent session's context or the repo's conditional rules, these instructions are
+  your only copy.` Then insert this waiting line directly after it, before the `ORCHESTRATION BRIEF` line,
+  in full and `compact` exports alike: `Waiting: poll in the foreground with a bounded loop, or
+  return what you have; never end your turn to wait on your own background job.`
+- `compact`. Emit only the seven numbered headlines (`1. DELEGATE / FAN OUT`, `2. SPEC EVERY
+  SPAWN`, …) plus the closing Discipline line; drop every sub-clause. `worker compact` also keeps the
+  `worker` did-not-inherit and waiting lines; compact drops neither.
+
+## Next
+
+/planning:draft-goal-condition turns the coordinated work into a completion condition.
+
+## What this skill does not do
+
+- **Default does not emit paste-text.** Priming the current session is a terse acknowledgment,
+  the work happens because the imperatives loaded into context, not because anything was printed.
+  Use `handoff` / `worker` only when the target leaves the session.
+- **Not a surface-selection guide.** Which parallel-execution surface to pick (subagents vs nested
+  vs teams vs workflows) is a judgment the main session makes against current official docs; the
+  export brief deliberately omits agent teams + dynamic workflows because a pasted target cannot
+  reach either.
+- **Does not delegate, verify, nest, or spawn anything itself**. It arms the session or emits
+  instruction text.

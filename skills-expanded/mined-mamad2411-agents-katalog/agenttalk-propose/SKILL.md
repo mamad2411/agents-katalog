@@ -1,0 +1,171 @@
+---
+name: agenttalk-propose
+description: Send a concrete proposal to a named agent over agenttalk and wait for an accept, reject, or counter response. Use when Codex should propose a specific design, plan, scope, or decision for agreement before proceeding.
+reviewed-against: "0.55"
+---
+
+# agenttalk-propose - Propose a concrete solution (codex side)
+
+You are running as a **Codex** agent. Use this skill when you need a
+named agent to decide on a specific proposal, not when you merely need
+an open-ended answer.
+
+`proposal` is for "I recommend this concrete solution; accept, reject,
+or counter it." Use `question` for open questions, `review-request`
+for already-implemented work, and `$agenttalk-consult` for
+pressure-testing a draft answer to the user.
+
+Proposals are point-to-point. If a whole group needs awareness, send a
+follow-up `python -m agenttalk broadcast --kind note`; do not treat a broadcast
+as a multi-party acceptance protocol.
+
+## Identity
+
+```bash
+SELF="${AGENTTALK_SELF:-codex}"
+PEER="${AGENTTALK_PEER:-claude}"
+```
+
+`PEER` is the default decision target for the canonical two-agent
+pair. In a larger roster, use `python -m agenttalk roster` and choose a specific
+agent such as `claude-lead`, `claude-rev`, or the named owner. Always
+resolve inside your current shell - env from prior tool calls does
+not persist across separate tool-call processes.
+
+If `.agenttalk/` is not under the current directory, pass `--root
+<path>` before the subcommand on every invocation, for example
+`python -m agenttalk --root <path> propose --from "$SELF" --to "$PEER" ...`. Do
+not write `python -m agenttalk propose --root ...`; global options must precede
+the subcommand.
+
+## Invoking agenttalk under the Codex sandbox
+
+Run bus commands from the current project WORKSPACE cwd, using AGENTTALK_ROOT for that workspace when it is set. If `AGENTTALK_PY` is set, invoke the bus with the pinned interpreter:
+
+```powershell
+& "$env:AGENTTALK_PY" -m agenttalk <subcommand> ...
+```
+
+If `AGENTTALK_PY` is not set, fall back to the runnable module form:
+
+```bash
+python -m agenttalk <subcommand> ...
+```
+
+Treat `agenttalk` as the installed/runtime package for this environment. Do NOT cd to, import from, or reference an agenttalk SOURCE checkout outside the workspace for bus I/O: no `..\agenttalk`, no sibling source paths, and no `D:\Projects\claude\agenttalk`. The only source-tree exception is when the current workspace itself is the agenttalk repo being worked on; then `<workspace>\src\agenttalk` is acceptable.
+
+Do NOT run `pip install -e <agenttalk-source>` as an in-turn bus fix. If the runtime import resolves outside the workspace, ask the operator to install agenttalk non-editable into the runtime Python used by `AGENTTALK_PY`, or run the agent from the agenttalk workspace when intentionally developing agenttalk. If `AGENTTALK_PY` exists but cannot execute inside Codex workspace-write, ask the operator to opt in to the Python install directory with Codex `--add-dir` or equivalent config.
+## Split-work guard
+
+A proposal must not become a backdoor for splitting implementation
+work. Unless the project's chosen planning authority already owns the
+assignment, if the proposal assigns ownership of files/tasks between
+agents, ask the user first. If the user already
+approved the split, state the ownership boundary in the proposal or a
+separate `kind=note`, and every implemented piece still needs a
+`kind=review-request` cross-review before the work is called done.
+
+This rule applies equally in a team roster: a proposal can lock the
+plan, but it cannot silently make a named agent, role, or group own
+implementation work.
+
+## Procedure
+
+1. Resolve `SELF` and `PEER`.
+2. Choose `TARGET`. Use `$PEER` for the default pair; otherwise pick
+   the named decision-maker from `python -m agenttalk roster`. If the user did
+   not name a target and several agents could decide, ask.
+3. Build the proposal body:
+   ```text
+   ## Problem
+   <what needs a decision>
+
+   ## Proposed solution
+   <the concrete recommendation>
+
+   ## Alternatives considered
+   <credible alternatives and why they lose>
+
+   ## Tradeoffs
+   <risks, costs, constraints>
+
+   ## Decision requested
+   <accepted / rejected / countered, and what each means>
+
+   ## Challenge
+   <for major work (see $agenttalk-challenge): request id, verdict and
+   disposition, or exempt:<reason>>
+   ```
+4. Send:
+   ```bash
+   TARGET="${AGENTTALK_PEER:-claude}"
+   REQ_ID="pp-$(uuidgen 2>/dev/null || python -c 'import uuid; print(uuid.uuid4())')"
+   python -m agenttalk propose --from "$SELF" --to "$TARGET" \
+     --subject "<one-line decision>" \
+     --meta request_id="$REQ_ID" \
+     -m "$BODY"
+   ```
+   The command writes `kind=proposal`, auto-mints
+   `meta.request_id=pp-...` if absent. Passing `REQ_ID` explicitly
+   lets the wait below target the proposal thread.
+5. Wait for the response:
+   ```bash
+   python -m agenttalk wait --for "$SELF" --to-request "$REQ_ID" --kind proposal-response --timeout 600
+   ```
+   The scoped wait ignores unrelated traffic and does not advance your
+   global cursor.
+6. Match the response by `meta.request_id`.
+   - `proposal-response status=accepted`: proceed with the decision.
+   - `proposal-response status=rejected`: do not proceed; either revise
+     or ask the user.
+   - `proposal-response status=countered`: treat the old proposal as
+     closed, then read the fresh counter proposal linked by
+     `meta.in_reply_to`.
+
+Scoped wait intentionally ignores unrelated traffic. If the proposal
+stalls or you suspect another urgent thread is waiting on you, run
+`python -m agenttalk sync --for "$SELF"` and `python -m agenttalk threads --for "$SELF"`.
+Handle the older or more urgent thread first, then resume the scoped
+wait for your proposal. Use `python -m agenttalk reply --to-id <message_id>` or
+`--to-request <request_id>` when replying inside a specific thread.
+
+## Countering a proposal
+
+To counter a proposal you received:
+
+1. Close the old proposal:
+   ```bash
+   python -m agenttalk reply --from "$SELF" --kind proposal-response \
+     --meta status=countered \
+     -m "<why a counter is needed>"
+   ```
+2. Send the counter as a fresh proposal:
+   ```bash
+   python -m agenttalk propose --from "$SELF" --to "$TARGET" \
+     --in-reply-to <old-request-id> \
+     --subject "<counter proposal>" \
+     -m "$BODY"
+   ```
+
+## Rescinding a proposal (0.14.0)
+
+- **Rescind, don't retract in prose (0.14.0).** To cancel a tracked
+  request you opened (question / review-request / proposal), use
+  `python -m agenttalk rescind --from $SELF --to-request <RID> -m "<why>"`. A prose
+  "ignore my last message" moves no thread state — the peer's `wait`
+  cannot see it and `check` still reports current. A rescind wakes a
+  blocked scoped waiter with exit 3 and flips the thread to
+  closed-superseded for every participant. A re-ask after a rescind needs
+  a FRESH request_id.
+
+## Before stopping
+
+Before declaring the decision handled or going idle, run:
+
+```bash
+python -m agenttalk sync --for "$SELF"
+python -m agenttalk threads --for "$SELF"
+```
+
+Resolve any `reply-waiting` or `owed-inbound` rows. Do not leave an
+accepted/rejected/countered response unread in the inbox.

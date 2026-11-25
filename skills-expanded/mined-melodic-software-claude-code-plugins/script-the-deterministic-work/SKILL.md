@@ -1,0 +1,237 @@
+---
+description: "Re-anchor: deterministic sub-work (counts, diffs, transforms, arithmetic) gets a script; reason over its output. Use when: 'script the deterministic work', 'you should have scripted that', 'don't eyeball that', 'you counted that by hand', 'compute that, don't estimate', 'diff it with a tool', 'stop hand-tallying', 'run it instead of guessing', or at conversation start on count-, diff-, transform-heavy work. Fires on drift, not a work order ('script it', 'diff these files', 'count the routes'). Mode lever-check plus a block summary: answers build-a-lever or edit-by-hand for one change repeated across sites."
+argument-hint: "[lever-check <block summary>]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  discipline-batch: situational  # only when count/diff/transform work is in play
+  discipline-batch-rank: 90
+  workflow-stage: anytime
+  summary: Script counting, diffing, and transforms instead of eyeballing them
+---
+
+# Script the deterministic work
+
+A drift corrector for the discipline of offloading deterministic sub-work to
+a script instead of performing it in your head. The shared method (re-anchor,
+audit the work in flight, correct forward, report) lives in
+[`${CLAUDE_PLUGIN_ROOT}/context/re-anchor-audit-correct.md`](../../context/re-anchor-audit-correct.md).
+Read it; this file adds only what is specific to scripting deterministic work.
+
+## The discipline this re-anchors
+
+When a sub-task is purely deterministic (its answer follows mechanically
+from its input with no judgment in the middle), write a script (or invoke a
+tool) that produces the answer, run it, read the output, and reason only
+**after**, over that output. Counting, diffing, sorting, transforming,
+matching, sweeping across files, and arithmetic are the recurring shapes. A
+hand-tallied count or an eyeballed diff carries a silent error the script
+would not.
+
+The boundary of *what* to script is not "anything tedious". It is set by
+which enforcement tier the sub-work belongs to.
+
+### The tier vocabulary, a standards convention owns this
+
+The source of truth for the tier distinction is the consuming organization's
+enforceability-tiers convention, which classifies work by who can decide it.
+Resolve it per the method doc's ladder, the consumer's own instruction layer
+first, then that standards convention, then the portable baseline below, and
+re-anchor the distinction rather than restating the doc's criteria:
+
+- **Deterministic**, the answer is pass/fail, exact, or countable with no
+  judgment. **Script it, run it, reason over the output.**
+- **Detect-then-judge**, a mechanical pass narrows the candidates, but the
+  verdict needs meaning or context. **Script only the detect half**; the
+  judgment stays with the model. A script's flag is a candidate, never the
+  ruling.
+- **Reasoning-only**. Meaning, intent, fit, abstraction quality. **Never
+  script it.** A script here dresses a judgment call as a computed fact.
+
+When the consuming project declares no such convention, re-anchor that same
+three-tier shape as the portable baseline.
+
+### The in-task application. No standards doc yet (flagged gap)
+
+The enforceability-tiers convention routes a *recurring* finding to the
+mechanism its tier permits; it does not speak to the in-task move this skill
+re-anchors: "this task needs a count or a diff **now**, so script it now."
+When the consuming project's standards source declares a convention for it,
+route through it; when it does not, treat that as a flagged gap (a candidate
+upstream standards addition), not license to invent a rubric here beyond the
+portable baseline above.
+
+### Generation, not just analysis
+
+The discipline runs in both directions. Analysis feeds input to a script and
+reasons over its output; generation emits deterministic *structure* from a
+script or template and fills only the judgment slots by hand. A PR body, an
+issue body, a report, a skill skeleton, or config boilerplate is mostly fixed
+scaffold; reserve model output for the slots that need judgment. Prefer a
+native mechanism where one exists: a repo's pull-request or issue templates,
+for instance, already emit the scaffold with no generation cost.
+
+## Audit. What to look for
+
+Name concrete, located findings (per the method doc's step 2, self-audit; on load-bearing work a fresh-context subagent, or a review skill that runs in its own context, confirms a clean result, a declared delta: either one audits the work without this context's reasoning. Running the change's code or tests is this audit's own work and re-reading it inline is self-audit, so neither confirms):
+
+- a count, total, or tally produced by reading and adding in prose rather
+  than by a command whose output was read back;
+- two files, lists, or versions compared by eye where a diff or a set
+  operation would be exact;
+- a sort, dedupe, filter, or reformat performed inline in the answer instead
+  of by a tool, so the result cannot be reproduced or trusted;
+- a sweep, "every file that matches", "all call sites of X", asserted from
+  memory of what was read rather than from a search that enumerated them;
+- arithmetic or a mechanical transform worked through by hand mid-answer;
+- a deterministic scaffold, a PR body, an issue, a report, config
+  boilerplate. Hand-typed frame and all, where a script or a native template
+  would emit the structure and leave only the judgment slots to fill;
+- **the reverse over-reach**, an existing script or tool that *decides a
+  judgment call*: a detect-then-judge script's flag consumed as the verdict,
+  or reasoning-only work (meaning, intent, fit, abstraction quality) handed to
+  a script, so a judgment is dressed as a computed fact. The audit hunts both
+  ways, not just hand-work that should have been scripted.
+- one change applied by hand at many sites where a lever was the cheaper and
+  checkable route, or a lever run across every site with no hand-edited site
+  to compare it against (the Lever check below sets the rule);
+- work that says a lever made its change but has no script in its diff: no
+  lever was applied. The test is to look in the diff for the script or
+  codemod configuration the work cites, and in its report for the exact
+  command that ran a tool which leaves no file (a language-server rename);
+  when none is there, the sites were edited some other way, so no pilot
+  diff or rerun check (Lever check step 4) stands behind them, and a
+  reviewer has nothing to rerun (pstack's `build-the-lever` principle).
+
+Correct each forward now: write and run the script or tool, read its real
+output, and re-derive the conclusion from that output. Do not keep the
+hand-computed figure alongside it. Where the sub-work is detect-then-judge,
+script the detection and keep the verdict; where it is reasoning-only, leave
+it un-scripted and say why. Where an **existing** script already over-reaches
+into judgment, correct in the other direction. **de-script it**: demote a
+detect-then-judge flag back to a candidate the model rules on, and return
+reasoning-only work to reasoning rather than letting the script's output stand
+as the answer.
+
+Resolve the verification level once with
+`bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin discipline --skill script-the-deterministic-work --file docs/conventions/discipline.yaml`
+and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)):
+`light` and `off` skip the method doc's step 2 and step 3 subagents, as it says, and the review skill that would stand in for one, and the final reply then carries the line `verification: skipped (<level>)` verbatim, such as `verification: skipped (light)`.
+
+## Distinct from standing automation
+
+A **recurring** deterministic finding goes to a **standing** mechanism (a
+linter, analyzer, or commit hook that fires on every change). That is the
+territory of an automation-gaps capability
+(`/harness-config:audit-automation-gaps` when that plugin is enabled; prose
+guidance otherwise).
+
+This skill owns the **one-off, session-time** need: the current task needs a
+count, a diff, or a transform right now, so make a script *now*, often
+throwaway, feed it the input, and reason over its output. A short throwaway
+script that runs and returns real output satisfies the discipline.
+
+## Lever check (`lever-check <block summary>`)
+
+`$ARGUMENTS` whose first word is `lever-check` selects this mode; any other
+text runs the corrector above, with the text read as the request. The mode
+answers one question for a block of work that applies one change at several
+sites: build a lever (a script or tool that makes the change at every site),
+or edit each site by hand. `/implementation:implement` calls it before a
+block that applies one change at three or more sites, and
+`/implementation:implement-dispatch` calls it before it fans one change out
+to workers. The block summary names the change, the sites, and how many
+there are.
+
+1. **Resolve `lever_scope`**, once per call, lowest layer first: the default
+   `deterministic`; the user's option, `${user_config.lever_scope}` (empty or
+   a literal, unexpanded placeholder means unset); and the `lever_scope` key
+   of the repository's `docs/conventions/discipline.yaml`, which wins when
+   set, read only under the root rule in
+   [`${CLAUDE_PLUGIN_ROOT}/reference/config.md`](${CLAUDE_PLUGIN_ROOT}/reference/config.md).
+   A value other than `deterministic` or `non-trivial` is named with its file
+   or option, the key and the value, and that layer is dropped: a valid
+   repository value still wins over an invalid user value, and an invalid
+   repository value resolves `deterministic`, never the user's value. An
+   invalid value never stops the check. Report one line, for example
+   `lever_scope: non-trivial (docs/conventions/discipline.yaml)`.
+2. **Classify the change.** It is mechanical when the edit at each site
+   follows from that site's text alone, with no reading of the surrounding
+   intent: a rename, a fixed rewrite of a call shape, a moved import path, a
+   format conversion. It needs judgment when two sites with the same text
+   could need different edits.
+3. **Answer `build-a-lever` or `edit-by-hand`, with the reason.**
+   - Under `deterministic`: `build-a-lever` for a mechanical change; a
+     throwaway script is enough. `edit-by-hand` for a change that needs
+     judgment, naming the kind of site that needs it.
+   - Under `non-trivial`: a mechanical change gets the same answer as under
+     `deterministic`. A change that needs judgment also gets
+     `build-a-lever`, unless it is a few one-line edits that cost less to
+     make than a tool would cost to set up. For it the lever is an
+     established codemod or refactoring tool for the language (a
+     language-server rename, a structural search-and-replace tool, the
+     ecosystem's codemod runner), never a refactoring script written from
+     scratch for this change. When no such tool covers the change, answer
+     `edit-by-hand` and say that no tool fit.
+   - **A migration** is a change that moves many sites from one established
+     way to another (an API replaced across its callers, a framework version
+     bump, a deprecated call shape retired). This row applies only after the
+     two bullets above have answered `build-a-lever` for the change; it never
+     turns an `edit-by-hand` answer into `build-a-lever`, and it adds no
+     exception to the bullets' own rules. Where it applies, reach for tools
+     in this order: an established codemod or structural-rewrite tool for the
+     language (the ecosystem's codemod runner, a structural search-and-replace
+     tool, a language-server refactoring) first; a written script only when no
+     such tool covers the change and the bullet that answered
+     `build-a-lever` allows one (a mechanical change under either value). A
+     migration that needs judgment under `non-trivial` with no covering tool
+     is `edit-by-hand`, as above. A migration piloted this way still takes
+     the pilot step below, on one site. `lever_scope` keeps its default
+     `deterministic`; this row changes the order of tools, not the scope.
+4. **Pilot before the rest.** With `build-a-lever`, under either value, the
+   caller edits the first site by hand, runs the lever on a clean copy of
+   that site, and diffs the two results. A difference means the lever is
+   wrong: fix it and diff again before it touches any other site. Then run
+   the lever a second time, on its own output for that site, and diff
+   against that output: expect no diff. A lever that changes its own output
+   on a rerun cannot be rerun safely across the remaining sites, where a
+   retry after a partial run lands on sites it already changed; a diff here
+   means the lever is wrong too, so fix it and repeat both diffs (pstack's
+   `build-the-lever` principle).
+5. **One pass or a fan-out.** When the caller is about to fan the change out
+   to workers, also answer `one-pass: yes` or `one-pass: no`. `yes` means a
+   single run of the lever covers every unit, so the caller dispatches one
+   worker that builds, pilots and runs the lever over all of them instead of
+   one worker per unit editing by hand. `no` names the units the lever cannot
+   reach.
+
+Report the result as these lines, then return to the caller:
+
+```text
+lever_scope: <value> (<layer>)
+answer: build-a-lever | edit-by-hand
+reason: <one sentence>
+one-pass: yes | no   (fan-out calls only)
+```
+
+The mode answers and stops. It writes no lever and edits no file; the caller
+does the work under its own cadence.
+
+## Next
+
+- A lever-check answer goes back to its caller: /implementation:implement
+- A deterministic check that recurs needs a standing hook: /harness-config:audit-automation-gaps
+
+## Gotchas
+
+- "Reason over the output" here means *where the computation happens*: let
+  the tool compute, then reason over what it returned. It is unrelated to
+  `/discipline:reason-dont-recite`, which interrogates inherited content.
+- The subtle miss is the detect-then-judge trap: a script that flags
+  candidates is doing the deterministic half correctly, but its output is a
+  shortlist for judgment, not the answer. Reading the flag as the ruling
+  re-hides the judgment the tier split exists to protect.
+- A script that was never actually run is worse than hand-work: it looks
+  rigorous while its output is imagined. The discipline is script **and
+  run**: reason over real output, not over what the script would presumably
+  print.

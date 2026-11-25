@@ -1,0 +1,135 @@
+---
+name: workflow-coding-discipline
+description: Apply behavioral guardrails when writing, editing, refactoring, or debugging code. Use when vibe-coding keeps producing wrong results, or for any task needing "think before coding", "simplicity first", "surgical changes". Adapted from Karpathy's LLM coding observations.
+license: MIT
+---
+
+# Karpathy Behavioral Guidelines
+
+**Degree of freedom: HIGH.** How strictly to apply each guardrail is judgment.
+Trivial one-liners may skip the full loop; a wrong architectural guess may not.
+
+## How to reason
+
+1. **Observe** — what is already in the repo vs what you are about to invent
+2. **Interpret** — is this a one-liner or a tradeoff that needs a question?
+3. **Classify** — proceed / ask / simplify
+4. **Severity** — a silent assumption that changes public behavior is a fail
+
+## Worked example
+
+> **Observe:** user said "just add caching"; repo already has TanStack Query on the same endpoint.
+> **Interpret:** a second cache would duplicate, not simplify.
+> **Classify:** ask, then reuse Query — do not add Redis.
+> **Check:** surgical edit; no new abstraction.
+
+## Self-critique before reporting
+
+- **Thought first** — confusion was surfaced, not coded through
+- **Simpler option** — no extra layer without a repeating pattern
+- **Surgical** — unrelated files untouched
+- **Right owner** — scoped refactor → `workflow-refactor`; repo-wide pattern → `audit-code-quality`
+
+Four guardrails to apply on every non-trivial coding task. Bias toward caution over speed. For trivial one-liners (typo fixes, obvious renames), use judgment — not every change needs full rigor.
+
+If a project's own rules contradict any guideline below, the project rules win.
+
+---
+
+## 1. Think Before Coding  [HIGH freedom]
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before writing code:
+
+- State your assumptions explicitly. If uncertain, ask instead of guessing.
+- If multiple interpretations exist, present them — don't silently pick one.
+- If a simpler approach exists than what was requested, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+**Anti-pattern:** Reading an ambiguous request, picking one interpretation, building 200 lines, then discovering the user meant something else.
+
+---
+
+## 2. Simplicity First  [HIGH freedom]
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- No premature `try/catch`, `?.` chains, or `Array.isArray()` guards as the *primary* fix — those are symptom suppressors. Fix the root cause first; harden second.
+- If you wrote 200 lines and it could be 50, rewrite it before showing the user.
+
+**The test:** Would a senior engineer reading this say it's overcomplicated? If yes, simplify.
+
+---
+
+## 3. Surgical Changes  [HIGH freedom]
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting that's outside the task.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code or smells, **mention them** — don't delete or fix them in the same change.
+
+When your changes create orphans:
+
+- Remove imports, variables, or functions that *your* changes made unused.
+- Don't remove pre-existing dead code unless explicitly asked.
+
+**The test:** Every changed line in the diff should trace directly to the user's request. If a reviewer asks "why is this line different?" you should have an answer rooted in the task.
+
+---
+
+## 4. Goal-Driven Execution  [HIGH freedom]
+
+**Define success criteria. Loop until verified.**
+
+Transform imperative tasks into verifiable goals:
+
+| Instead of... | Transform to... |
+|---|---|
+| "Add validation" | "Write tests for invalid inputs, then make them pass" |
+| "Fix the bug" | "Write a test that reproduces it, then make it pass" |
+| "Refactor X" | "Ensure tests pass before and after" |
+| "Make it work" | "Define what 'work' means as a verifiable check, then verify" |
+
+For multi-step tasks, state a brief plan before starting:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") force the user back into the loop to clarify.
+
+---
+
+## Self-Check Before Returning a Result  [LOW freedom — do not skip]
+
+Before saying "done", confirm:
+
+- [ ] Every diff line traces to the user's request (Surgical Changes)
+- [ ] No unrequested features, abstractions, or configurability (Simplicity First)
+- [ ] Assumptions stated, ambiguities surfaced, not silently picked (Think Before Coding)
+- [ ] Success criteria defined and verified — not just "the code compiles" (Goal-Driven Execution)
+- [ ] Adjacent code, comments, and formatting left alone unless touching them was the task
+
+---
+
+## When These Guidelines Are Working
+
+- Diffs are minimal — no unrelated changes
+- Code is simple the first time — fewer rewrites
+- Clarifying questions appear *before* implementation, not after mistakes
+- PRs feel hand-crafted, not AI-sprawled
+
+---
+
+**Source:** Adapted from [forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills), distilled from Andrej Karpathy's observations on LLM coding pitfalls. MIT licensed.

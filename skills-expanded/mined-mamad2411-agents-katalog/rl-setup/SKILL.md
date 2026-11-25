@@ -1,0 +1,139 @@
+---
+name: rl-setup
+description: >-
+  Wire up online GRPO (RLVR) or async GRPO with environments (multi-turn tool-use) for
+  Halo: bring up the separate rollout container — vLLM 0.26.0 (cu13), or
+  SGLang 0.5.17 for async GRPO with environments (rollout_backend: sglang, the families
+  its loaders can take an update for)
+  — point the trainer at it via AsyncTrainingConfig rollout URLs, establish
+  NCCL weight sync through the vendored client in src/distributed/nccl/
+  (parallelism-aware gather — EP/TP/ETP and multi-rank FSDP2 all participate),
+  select the RL environment by registry name, and set the key GRPO
+  hyperparameters. USER-INVOKED ONLY — invoke when the user explicitly asks to set
+  up / configure / wire online or async GRPO, the vLLM or SGLang rollout
+  server, Ray rollout actors, or NCCL weight sync.
+disable-model-invocation: true
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+---
+
+# rl-setup
+
+Wire up online GRPO (RLVR) or async GRPO with environments (multi-turn tool-use). The
+generation engine (vLLM) runs in a **separate container** — the training env
+cannot import vLLM (the server image ships its own torch and
+`transformers 5.14.1`, ABI-incompatible with the training image's PyTorch
+2.11+cu130 + `transformers 5.16`). `Dockerfile.vllm` pins that 5.14 line and
+asserts it at build: vLLM's Gemma 4 code reads the 5.14 config schema that 5.16
+folds into `per_layer_config`, so a 5.16 server makes Gemma 4 unservable
+(`agent-docs/infrastructure/rollout-servers.md`, config-schema parity). Four further
+build gates keep the sync honest — layerwise-reload skip-list coverage, the
+weight-transfer re-init patch, the `/pause mode=keep` signature the client pauses with,
+and the gpt-oss parser-plugin verifier — so a green
+build is what proves the server can be synced (`wiring.md` §1).
+Trainer and vLLM communicate over **HTTP** (generation) and **NCCL** (weight
+sync via the vendored client). For concrete commands, field-by-field references,
+and full launch examples see [`wiring.md`](wiring.md).
+
+## End-to-end wiring
+
+1. **Bring up the vLLM container.** Build `Dockerfile.vllm` (`vllm-server:0.26.0`)
+   and start it via `docker-compose.vllm.yml`. It serves the policy model with
+   `--weight-transfer-config '{"backend": "nccl"}'` so the NCCL weight-transfer
+   endpoints are live. One flow, no version branch: `/pause` →
+   `/start_weight_update` → N × `/update_weights` → `/finish_weight_update` →
+   `/resume`. **MoE models also need `--moe-backend triton`** (compose default) — the
+   auto-selected FlashInfer/CUTLASS backends repack expert weights at load and
+   corrupt synced updates. vLLM and the trainer must be on **different GPUs** (set
+   `VLLM_CUDA_DEVICES` vs `TRAINER_CUDA_DEVICES`); both compose services run
+   `network_mode: host` (the server's workers dial the trainer's rendezvous on its
+   `group_port`, then NCCL's bootstrap on an ephemeral trainer port; a bridge network
+   publishes neither). Both the server and
+   training images install the one `nvidia-nccl-cu13` version `uv.lock` pins,
+   resolved by `docker/nccl_pin.py`, so the weight-transfer NCCL group links the
+   same ABI on both ends.
+
+2. **Point the trainer at it.** Env GRPO reads `AsyncTrainingConfig` from YAML:
+   `rollout_backend` (`vllm` default, `sglang` for the families its 0.5.17
+   loaders take an update for — the trainer refuses the rest at construction,
+   naming the loader reason), then
+   `rollout_server_url` (single server) or `rollout_server_configs`
+   (multi-server) and `rollout_connection_timeout`. The NCCL TCPStore port is
+   TRL's own `vllm_group_port` on `GRPOConfig`, not an `AsyncTrainingConfig`
+   field. The parser migrates no spelling — an unknown key
+   raises rather than being renamed. Online
+   GRPO (RLVR) uses TRL's native vLLM fields instead (`use_vllm: true`,
+   `vllm_mode: server`, `vllm_server_host`, `vllm_server_port`).
+
+3. **NCCL weight sync** is the vendored `VLLMWeightSyncClient` (`SGLangWeightSyncClient` under
+   `rollout_backend: sglang`; `src/distributed/nccl/`) — trainer is NCCL rank 0, server workers rank 1+,
+   weights pushed as packed broadcasts (`pause → packed NCCL broadcast →
+   resume`). Online and env GRPO share **one** gather routine,
+   `gather_and_send_weights` (`src/trainers/grpo/rollout/weight_sync.py`), which is
+   **parallelism- and PEFT-aware**: in EP / TP / ETP modes **and** under
+   multi-rank FSDP2 DP, *every* rank joins the collective gather
+   (each EP layer's `gather_expert_state_dict` for experts, `materialize_dtensor`
+   plus `iter_tp_sharded_non_dtensor_full` for the hand-sliced TP shards) and only the
+   global-main TP-rank-0 process sends; LoRA adapters are folded out of place
+   into each base weight as it is sent (the frozen base is never written) and
+   forwarded under base-model names. Routing multi-rank DP through the
+   single-process path would deadlock right after vLLM pauses, so this is not
+   optional.
+
+4. **Pick the environment** (env GRPO only) by registry name in
+   `EnvironmentConfig.environment_type` (e.g. `react_math`, `native_coding`, `swe`,
+   `mcp`, `qa_search`, `code_contests`, `codeforces`, `exam_qa`).
+   Per-env knobs go in `environment_kwargs` (e.g. `search_backend`, `open_book`,
+   `mcp_server`, `timeout_per_test`, `carry_reasoning`). Reward shaping is the
+   **`rewards:` term list** — each term prices a source's score in `[0, 1]` as
+   `weight × score ^ exponent`, defaulting to `[{source: environment}]`
+   (`agent-docs/training-methods/grpo/rewards.md`); `max_turns` defaults to `None` = the
+   environment class's own. Custom envs: pass `environment_cls`
+   (a `BaseEnvironment` subclass) instead. See the table in `wiring.md`.
+
+5. **Key GRPO hyperparameters** (both flavors): `num_generations` (group size),
+   `beta` (KL to ref; `0.0` disables the ref model), `epsilon` (clip),
+   `scale_rewards`, `temperature`, `loss_type`. Env GRPO adds rollout sampling
+   (`rollout_temperature` / `rollout_top_p` / `rollout_max_tokens` /
+   `rollout_chat_template_kwargs`), row and eval sizing (`max_train_row_tokens`,
+   `eval_rollout_batch_size`), Ray pool
+   sizing (`num_rollout_workers`, `max_concurrent_rollouts`), prefetch
+   (`enable_prefetch`), and `sync_weights_every_n_steps`.
+   `rollout_max_thinking_tokens` caps CoT per turn and is enforced **engine-side**
+   (vLLM `thinking_token_budget`): it needs a server reasoning parser,
+   `VLLM_USE_V2_MODEL_RUNNER=0` and, when `rollout_reasoning_end_token` resolves, the IS
+   correction that neutralizes its forced closes; it is refused under `rollout_backend: sglang` — as is
+   `carry_reasoning`. The effort length terms (`effort_length_penalty_k0`,
+   `effort_length_floor_weight`; both off by default) price an episode's reasoning length by its
+   effort level and its shortfall against the per-effort budget.
+
+## Parallelism note
+
+Online and environment GRPO trainers support **EP** (experts distributed) and **TP** (dense weights
+DTensor-sharded); generation is external, so parallelism only affects the
+training forward/backward and the weight-sync gather. **CP is unsupported** for
+these trainers (`logits_to_keep` + global log-prob sums are incompatible with sequence
+splitting); they inherit `_supports_cp = False`. Offline GRPO supports CP for full fine-tuning,
+without a rollout server. Use `torchrun` (not
+`accelerate`) for EP/TP.
+
+## Single-server vs multi-server
+
+Single server blocks during weight sync, so prefetch is auto-disabled with a
+warning (no overlap possible). For rollout/sync overlap, run multiple servers
+via `rollout_server_configs`. Multi-rank runs flush all servers concurrently
+during the sync; the rolling sync that keeps (N-1) servers generating exists
+only on the single-process path (no EP wrappers, no PEFT).
+
+## Sources of truth
+
+`wiring.md` + `agent-docs/training-methods/grpo/` document the setup (`rewards.md` owns the
+term list, `async-grpo/setup.md` the servers and launch). The code is the **ultimate** authority:
+`src/trainers/grpo/environmental.py`, `src/distributed/nccl/` (the vendored weight-sync client), and
+`Dockerfile.vllm` decide the real handshake — when a doc, this skill, or memory disagrees, or you are
+unsure, read those files before wiring it up. (`CLAUDE.md`: docs-first, the code wins.) Related skills:
+`data` (the async-GRPO format: `prompt`, plus `answer` where the environment's `requires_answer` is
+set), `checkpoints` (merge the trained policy for serving/eval).

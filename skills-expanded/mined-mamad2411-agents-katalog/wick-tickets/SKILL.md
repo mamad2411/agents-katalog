@@ -1,0 +1,107 @@
+---
+name: wick-tickets
+description: Use when the session's prompt names a ticket (T-XXXX), when the user talks about tickets, the board, statuses, assignees, or when a conversation has gone off the rails and the work should continue in a fresh session on the same ticket. Covers the ticket model (one ticket, many sessions), keeping status honest, and attaching or detaching sessions. Notes live in the separate wick-notes skill.
+---
+
+# Tickets
+
+A **ticket** is a unit of work. A **session** is one conversation about it, and a
+ticket can hold several. That separation is the point: a conversation that has
+gone wrong can be abandoned and replaced without losing the work, because the
+ticket keeps the status, the assignee, the fields, and the notes.
+
+Use the `tickets` connector. Notes are a different connector — see the
+**wick-notes** skill for those.
+
+## Know what you are on
+
+Your prompt already names this session's ticket — its id, title, status, and
+an excerpt of its **description** — so when the user starts talking, assume
+the conversation is about that ticket unless they say otherwise.
+
+`ticket_get` with no arguments returns the ticket this session is attached to,
+in full:
+
+```
+ticket_get
+```
+
+Call it when you need what the prompt excerpt does not carry — the full
+description (`body`), the fields, who it is assigned to, how many other
+sessions are on it.
+
+`ticket_list` shows a project's tickets, newest first, and takes an optional
+`status` filter, plus `mine=true` or `assignee=<id>`. Use it to answer "what is
+open?" and "what is mine?" — the questions a filter can answer.
+
+`ticket_search` answers the one it cannot: **where is the ticket about X**.
+
+```
+ticket_search query="webhook 401"
+ticket_search query="paragon" status=open mine=true
+```
+
+It matches the id, the title, the **description** and the field values,
+case-insensitively, and each hit says which of them matched (`matched_in`), so
+a ticket that merely mentions the word in passing is not mistaken for one
+named after it — title hits are returned first for the same reason. Searching
+the description matters more than it looks: a title is written in the first
+minute, when the least is known, while the detail that makes a ticket findable
+later ends up in the body. `limit` defaults to 20, and the response reports
+`scanned` alongside `total`, so a truncated result never looks complete.
+
+## Keep the status honest
+
+The status is what a person scanning the board reads, so move it when reality
+moves:
+
+```
+ticket_update status=in_progress     # you started work
+ticket_update status=waiting         # blocked on a human or something external
+ticket_update status=done            # finished
+```
+
+Those are the built-in defaults — a project can rename or replace its columns
+entirely. Call `ticket_settings_get` or `ticket_list` if you are unsure what
+this board's statuses are; `ticket_update` only accepts this project's own.
+
+Every update also resets the project's stale-follow-up timer. **If a follow-up
+message woke you, update the ticket before you finish**, or you will be woken
+again for the same reason.
+
+`ticket_update` also takes `title`, `body` (the markdown description — an
+empty string clears it), `assignee` (an empty string unassigns), and `fields`
+as a JSON object of the project's own field values. Only what you pass
+changes. Keep the description current the same way you keep status honest:
+when the understanding of the work changes, rewrite `body` so the next
+session starts from the truth.
+
+## Several sessions on one ticket
+
+This is normal, not an edge case. When this conversation has run out of road —
+you are going in circles, or your last conclusions turned out to be wrong — do
+not try to salvage it quietly. Record what is actually known (see wick-notes),
+then say plainly that a fresh session on this ticket would do better. The notes
+travel; the confusion does not.
+
+To move sessions around explicitly:
+
+```
+ticket_attach_session ticket_id=T-4F2A          # attaches THIS session
+ticket_detach_session ticket_id=T-4F2A          # detaches THIS session
+```
+
+Attaching is idempotent, and both take an explicit `session_id` when you mean a
+different one.
+
+## Turning a loose chat into tracked work
+
+A conversation that turns out to be real work can become a ticket in place:
+
+```
+ticket_create title="Payment webhook returns 401" attach_current_session=true
+```
+
+Pass `body` too when the conversation already surfaced repro steps or context
+worth keeping. Its notes then live on the ticket, so the next session
+inherits them.

@@ -1,0 +1,118 @@
+---
+name: git-worktree
+description: Use when the user asks to create, switch to, or remove a git worktree on Windows. Handles worktrees under `.claude/worktrees/` with a shared node_modules junction and copied `.env`. Windows + PowerShell only.
+---
+
+# Git Worktree
+
+Windows + PowerShell only. Worktrees live at `<repo>/.claude/worktrees/<name>`.
+
+Scripts: `scripts/wt-create.ps1`, `scripts/wt-remove.ps1` (PowerShell 5.1+). Run as `powershell -NoProfile -File <skill dir>\scripts\<script>.ps1 ...`. Below, `$SKILL` = this skill's directory (e.g. `$HOME\.claude\skills\git-worktree`).
+
+Commands: **create** (`/git-worktree feature-login`), **switch** (`/git-worktree switch`), **remove** (`/git-worktree remove`). Bare `/git-worktree` → switch.
+
+## Hard rules
+
+- Never `npm install` / `npm ci` in a worktree whose `node_modules` is a junction — mutates main repo's deps. Only the drift path (Create step 3, `npm ci` option) makes a real `node_modules` where installing is safe.
+- Never delete a worktree directory while a `node_modules` junction is live. Unlink first (Remove step 3) — a recursive delete that follows the junction can eat main's `node_modules`.
+- Removal always user-confirmed. Never automatic, never inferred from "PR raised" or "work done".
+- Copy `.env`, never link it. A link → worktree edit silently rewrites the real secrets file.
+
+## Create
+
+**1. Guard.** Record `MAIN = git rev-parse --show-toplevel` first — after entering, cwd is the worktree and this resolves differently.
+
+```powershell
+powershell -NoProfile -File "$SKILL\scripts\wt-create.ps1" -Main "$MAIN"
+```
+
+Exit 1 → already inside `.claude/worktrees/`; worktrees don't nest. Tell user to `/git-worktree remove` or exit first.
+
+**2. Enter.** `EnterWorktree(name: "<name>")` → creates `.claude/worktrees/<name>` on a new branch, switches session cwd. Set `WT` = returned path. Report the branch name from the result.
+
+Base ref = `worktree.baseRef` setting: `fresh` (default) branches from `origin/<default-branch>`, `head` from current local HEAD. Don't change it. User wants to stack on unpushed local work → `worktree.baseRef` must be `head` in settings first; don't flip it silently.
+
+**3. node_modules + `.env`** (one script):
+
+```powershell
+powershell -NoProfile -File "$SKILL\scripts\wt-create.ps1" -Main "$MAIN" -Wt "$WT"
+```
+
+Script:
+- node_modules skipped if `$WT\package.json` absent, `$WT\node_modules` exists, or main has none.
+- Compares on-disk `package-lock.json` (main's installed tree matches main's working-copy lockfile, not any committed ref). Identical → junction. Junctions need no admin or Developer Mode, unlike symlinks.
+- Copies root-level `.env*` from main that Wt lacks. Gitignored, so checkout has none; tracked ones already present, so the existence check is the whole filter.
+- Prints `node_modules: <mode>` and `env copied: <files>`.
+
+Exit codes: 0 ok, 1 error/guard refusal, 2 lockfile **DRIFT**.
+
+Exit 2 (also when lockfile missing on either side) → not linked; branch's deps don't match what's installed. `.env` still copied. **Stop, report, ask user:**
+- junction anyway (read-only work, raising a PR without running anything) → re-run with `-ForceJunction`, or
+- `npm ci` in `$WT` — gives a real `node_modules`; slow, use a long timeout (10 min). Needs `$WT\package-lock.json` or `npm-shrinkwrap.json`; neither → offer the project's own install command instead.
+
+Exit 1 → report the printed error.
+
+`WARN junction (existing)` (exit 0, Switch re-run) → branch's lockfile changed since linking. Report it; any install needs `wt-remove.ps1 -Unlink` first, else `npm ci` writes into main's `node_modules`.
+
+**4. Report** path, branch, base, node_modules mode (junction / real / skipped), files copied, and what Not provisioned leaves out. Then run Per-repo check.
+
+## Switch
+
+List candidates with branch and dirty state; user picks:
+
+```bash
+git worktree list --porcelain
+```
+
+`git -C <path> status --short` per entry for dirty state.
+
+Set `MAIN` = first `worktree` entry of that list (the main worktree) before entering; Create step 3 needs it.
+
+`EnterWorktree(path: "<chosen>")`, then re-run Create step 3 — worktrees from a bare `git worktree add`, or made before this skill, usually lack `node_modules` and `.env`.
+
+From inside a worktree, `EnterWorktree(path)` only reaches worktrees under the same repo's `.claude/worktrees/`. Worktrees elsewhere (sibling dirs) → exit to main repo first.
+
+## Remove
+
+**1. Identify** target: current worktree, or the one user named.
+
+**2. Report and confirm.**
+
+```powershell
+powershell -NoProfile -File "$SKILL\scripts\wt-remove.ps1" -Wt "$WT" -Report
+```
+
+Lists uncommitted files, ignored files (copied `.env`, build output; `node_modules` excluded, step 3 handles it), and unpushed commits on the worktree's HEAD (capped at 30 each). Wait for explicit confirmation. Any list non-empty → say so plainly; that work dies with the worktree. Exit 1 → stop, report the printed error; don't ask to confirm on an incomplete report.
+
+**3. Unlink node_modules** — after confirmation, before any removal command touches the directory:
+
+```powershell
+powershell -NoProfile -File "$SKILL\scripts\wt-remove.ps1" -Wt "$WT" -Unlink
+```
+
+Removes the junction only (non-recursive `DirectoryInfo.Delete()`; target keeps contents). Real directory or none → untouched. Exit codes: 0 ok, 1 error, 3 `node_modules` is a non-junction link (e.g. symlink). 1 or 3 → stop, tell user; no step 4 while a link may still be live. Script never removes the worktree itself.
+
+**4. Remove.** Session created the worktree via EnterWorktree → `ExitWorktree(action: "remove")` (`discard_changes: true` only after user confirmed step 2).
+
+Otherwise `ExitWorktree(action: "keep")` to return to main repo, then:
+
+```bash
+git worktree remove <path>
+git branch -d <branch>
+git worktree prune
+```
+
+`remove` refusing a dirty tree needs `--force`; `branch -d` refusing an unmerged branch needs `-D`. Both only after step-2 confirmation, never pre-emptively. `remove` failing as locked → `git worktree unlock <path>`, retry.
+
+## Not provisioned
+
+Only `.env*` copied. Other gitignored local state — saved auth/session state, tokens, caches, build output — absent; project's own setup step regenerates it on first run. Say so in the create report so a slow first run isn't mistaken for failure.
+
+## Per-repo check
+
+Root-level tooling that globs the whole tree compiles/lints every nested worktree copy. Runs from Create step 4 → check each independently (a `.gitignore` entry doesn't exclude worktrees from eslint), offer a fix for each missing exclusion. Fixes go in `$MAIN`, not cwd `$WT` — edits there change only the worktree's branch, while main keeps linting the nested copies:
+
+- **.gitignore** — needs `.claude/worktrees/`; Claude Code doesn't add it.
+- **eslint** — nearly always affected. Flat config (`eslint.config.mjs`) auto-ignores only `**/node_modules/` and `.git/` → `.claude/worktrees/` needs a global ignore: a config object with only `ignores: [".claude/worktrees/"]` (works on every flat-config version; `globalIgnores()` from `eslint/config` is the same, where available); eslintrc needs it in `ignorePatterns`. Not all of `.claude/` — it drops lint on project files like `.claude/hooks/*.js`. Worse with `parserOptions.project` + `createDefaultProgram: true` — worktree files fall outside the project's program, each gets a slow fallback program.
+
+- **tsconfig** — usually nothing: tsc wildcards (`**/*`, `./**/*.ts`) skip dot-directories, so `include` never reaches `.claude/` unless a pattern names it (e.g. `.claude/**/*.ts`). One does → it pulls in every worktree's sources; offer adding `.claude/worktrees` to `exclude`, keeping existing entries, incl. any inherited via `extends` (a local `exclude` replaces it; rewrite those paths relative to this file). No `exclude` yet → also list `node_modules`, `bower_components`, `jspm_packages`, and the configured `outDir`; setting `exclude` drops those defaults.

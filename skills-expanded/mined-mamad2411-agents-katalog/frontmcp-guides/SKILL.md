@@ -1,0 +1,477 @@
+---
+name: frontmcp-guides
+description: 'Tutorials, end-to-end walkthroughs, and complete reference projects for FrontMCP. Use when you want a getting-started guide, a full worked example, or to learn best practices by following a step-by-step build rather than a single API reference. Includes a beginner weather-API server (tool plus static resource, Zod schemas, E2E tests), an authenticated task manager (CRUD tools, Redis storage, OAuth, Vercel deploy, authenticated E2E tests), and a multi-app knowledge base (vector search, semantic resources, an AI research agent, audit logging). Triggers: tutorial, walkthrough, how do I build, getting started, end-to-end example, sample project, learn FrontMCP, full app example.'
+tags: [guides, examples, best-practices, architecture, walkthrough, end-to-end]
+category: guides
+targets: [all]
+bundle: [recommended, full]
+priority: 10
+visibility: both
+license: Apache-2.0
+metadata:
+  docs: https://docs.agentfront.dev/frontmcp/guides/your-first-tool
+examples:
+  - scenario: Build a simple weather API MCP server from scratch
+    expected-outcome: Working server with tools, resources, and tests deployed to Node
+  - scenario: Build a task manager with auth, Redis, and multi-tool patterns
+    expected-outcome: Authenticated server with CRUD tools, session storage, and E2E tests
+  - scenario: Build a multi-app knowledge base with agents and plugins
+    expected-outcome: Composed server with multiple apps, AI agents, caching, and Vercel deployment
+---
+
+# FrontMCP End-to-End Guides
+
+Complete build walkthroughs and best practices for FrontMCP servers. Each example starts from an empty directory and ends with a deployed, tested server. Every pattern references the specific skill that teaches it.
+
+## When to Use This Skill
+
+### Must Use
+
+- Starting a new FrontMCP project from scratch and want a complete walkthrough to follow
+- Learning FrontMCP architecture by building progressively complex real examples
+- Need to see how multiple skills work together in a complete application
+
+### Recommended
+
+- Planning a new project and want to see how similar architectures are structured
+- Onboarding a team member who learns best from complete working examples
+- Reviewing best practices for file organization, naming, and code patterns
+
+### Skip When
+
+- You need to learn one specific component type (use the specific reference, e.g., `create-tool` under `frontmcp-development/references/`)
+- Looking for the right reference for a task (use domain routers: `frontmcp-development`, `frontmcp-deployment`, etc.)
+- You need CLI/install instructions for the skills system (see `frontmcp-skills-usage`)
+
+> **Decision:** Use this skill when you want to see how everything fits together. Open individual references under each router's `references/` directory when you need focused instruction.
+
+## Prerequisites
+
+- Node.js 24+ and npm/yarn installed
+- Familiarity with TypeScript and decorators
+- `frontmcp` CLI available globally (`npm install -g frontmcp`)
+
+## Steps
+
+1. Choose an example that matches your project's complexity level (Beginner, Intermediate, Advanced)
+2. Work through the Planning Checklist to define your project's scope
+3. Follow the example code and architecture, referencing individual skills for deeper guidance
+4. Verify your implementation using the Verification Checklist at the end of this skill
+
+## Planning Checklist
+
+Before writing any code, answer these questions:
+
+### 1. What does the server do?
+
+- What tools does it expose? (actions AI clients can call)
+- What resources does it expose? (data AI clients can read)
+- What prompts does it expose? (conversation templates)
+
+### 2. How is it organized?
+
+- Single app or multiple apps? (see `multi-app-composition`)
+- Standalone project or Nx monorepo? (see `project-structure-standalone`, `project-structure-nx`)
+
+### 3. How is it secured?
+
+- Public (no auth), transparent (passthrough), local (self-contained), or remote (OAuth)? (see `configure-auth`)
+- What session storage? Memory (dev), Redis (prod), Vercel KV (serverless)? (see `configure-session`)
+
+### 4. Where does it deploy?
+
+- Node, Vercel, Lambda, Cloudflare, CLI, browser, or SDK? (see `frontmcp-deployment`)
+- What transport? stdio (local), SSE (streaming), Streamable HTTP (stateless)? (see `configure-transport`)
+
+### 5. How is it tested?
+
+- Unit tests for each component (see `setup-testing`)
+- E2E tests for protocol-level flows
+- Coverage target: 95%+
+
+---
+
+## Example 1: Weather API (Beginner)
+
+**Skills used:** `setup-project`, `create-tool`, `create-resource`, `setup-testing`, `deploy-to-node`
+
+A simple MCP server that exposes a weather lookup tool and a resource for supported cities.
+
+### Architecture
+
+```text
+weather-api/
+├── src/
+│   ├── main.ts              # @FrontMcp server (deploy-to-node)
+│   ├── weather.app.ts       # @App with tools and resources
+│   ├── tools/
+│   │   └── get-weather.tool.ts    # @Tool: fetch weather by city (create-tool)
+│   └── resources/
+│       └── cities.resource.ts     # @Resource: list supported cities (create-resource)
+├── test/
+│   ├── get-weather.tool.spec.ts   # Unit tests (setup-testing)
+│   └── weather.e2e.spec.ts        # E2E protocol test (setup-testing)
+└── package.json
+```
+
+### Key Code
+
+**Server entry point** (`setup-project`):
+
+```typescript
+import { FrontMcp } from '@frontmcp/sdk';
+
+import { WeatherApp } from './weather.app';
+
+@FrontMcp({
+  info: { name: 'weather-api', version: '1.0.0' },
+  apps: [WeatherApp],
+})
+export default class WeatherServer {}
+```
+
+**Tool** (`create-tool`):
+
+```typescript
+import { Tool, ToolContext, z } from '@frontmcp/sdk';
+
+@Tool({
+  name: 'get_weather',
+  description: 'Get current weather for a city',
+  inputSchema: {
+    city: z.string().min(1).describe('City name'),
+  },
+  outputSchema: {
+    temperature: z.number(),
+    condition: z.string(),
+    humidity: z.number(),
+  },
+})
+export class GetWeatherTool extends ToolContext {
+  async execute(input: { city: string }) {
+    const city = encodeURIComponent(input.city);
+    const data = await this.fetch(`https://api.weather.example.com/v1?city=${city}`);
+    const json = await data.json();
+    return { temperature: json.temp, condition: json.condition, humidity: json.humidity };
+  }
+}
+```
+
+**Resource** (`create-resource`):
+
+```typescript
+import { ReadResourceResult, Resource, ResourceContext } from '@frontmcp/sdk';
+
+@Resource({
+  uri: 'weather://cities',
+  name: 'Supported Cities',
+  description: 'List of cities with weather data',
+  mimeType: 'application/json',
+})
+export class CitiesResource extends ResourceContext {
+  async execute(uri: string): Promise<ReadResourceResult> {
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: 'application/json',
+          text: JSON.stringify(['London', 'Tokyo', 'New York', 'Paris', 'Sydney']),
+        },
+      ],
+    };
+  }
+}
+```
+
+> **Full working code:** See `references/example-weather-api.md`
+
+---
+
+## Example 2: Task Manager (Intermediate)
+
+**Skills used:** `setup-project`, `create-tool`, `create-provider`, `configure-auth`, `configure-session`, `setup-redis`, `setup-testing`, `deploy-to-vercel`
+
+An authenticated task management server with CRUD tools, Redis storage, and OAuth.
+
+### Architecture
+
+```text
+task-manager/
+├── src/
+│   ├── main.ts                    # @FrontMcp with auth: { mode: 'remote' }
+│   ├── tasks.app.ts               # @App with CRUD tools + provider
+│   ├── providers/
+│   │   └── task-store.provider.ts # @Provider: Redis-backed task storage (create-provider)
+│   ├── tools/
+│   │   ├── create-task.tool.ts    # @Tool: create a task (create-tool)
+│   │   ├── list-tasks.tool.ts     # @Tool: list tasks (create-tool)
+│   │   ├── update-task.tool.ts    # @Tool: update task status (create-tool)
+│   │   └── delete-task.tool.ts    # @Tool: delete a task (create-tool)
+│   └── types/
+│       └── task.ts                # Shared task interface
+├── test/
+│   ├── *.spec.ts                  # Unit tests per tool
+│   └── tasks.e2e.spec.ts          # E2E with auth flow
+├── vercel.json                    # Vercel config (deploy-to-vercel)
+└── package.json
+```
+
+### Key Code
+
+**Server with auth** (`configure-auth`, `configure-session`, `setup-redis`):
+
+```typescript
+@FrontMcp({
+  info: { name: 'task-manager', version: '1.0.0' },
+  apps: [TasksApp],
+  auth: { mode: 'remote', provider: 'https://auth.example.com', clientId: 'my-client-id' },
+  redis: { provider: 'redis', host: process.env.REDIS_URL ?? 'localhost' },
+})
+export default class TaskManagerServer {}
+```
+
+**Provider for shared storage** (`create-provider`):
+
+```typescript
+import { Provider, ProviderScope } from '@frontmcp/sdk';
+
+@Provider({ name: 'task-store', scope: ProviderScope.GLOBAL })
+export class TaskStoreProvider {
+  async create(task: Task): Promise<Task> {
+    /* Redis-backed implementation */
+  }
+  async list(userId: string): Promise<Task[]> {
+    /* ... */
+  }
+  async update(id: string, data: Partial<Task>): Promise<Task> {
+    /* ... */
+  }
+  async delete(id: string): Promise<void> {
+    /* ... */
+  }
+}
+```
+
+> Use the class itself as the DI token (`this.get(TaskStoreProvider)`). For factory-built singletons (e.g. when you need async setup before the class is constructed), use `AsyncProvider({ provide, name, scope, useFactory })` instead.
+
+**Tool with DI** (`create-tool` + `create-provider`):
+
+```typescript
+import { Tool, ToolContext, UnauthorizedError, z } from '@frontmcp/sdk';
+
+@Tool({
+  name: 'create_task',
+  description: 'Create a new task',
+  inputSchema: {
+    title: z.string().min(1).describe('Task title'),
+    priority: z.enum(['low', 'medium', 'high']).default('medium'),
+  },
+  outputSchema: { id: z.string(), title: z.string(), priority: z.string(), status: z.string() },
+})
+export class CreateTaskTool extends ToolContext {
+  async execute(input: { title: string; priority: string }) {
+    const store = this.get(TaskStoreProvider);
+    const userId = this.auth?.user.sub;
+    if (!userId) this.fail(new UnauthorizedError('Authentication required'));
+    return store.create({ title: input.title, priority: input.priority, status: 'pending', userId });
+  }
+}
+```
+
+> **Full working code:** See `references/example-task-manager.md`
+
+---
+
+## Example 3: Knowledge Base (Advanced)
+
+**Skills used:** `setup-project`, `multi-app-composition`, `create-tool`, `create-resource`, `create-agent`, `create-skill-with-tools`, `create-plugin`, `official-plugins`, `configure-auth`, `deploy-to-vercel`
+
+A multi-app knowledge base with AI-powered search, document ingestion, and an autonomous research agent.
+
+### Architecture
+
+```text
+knowledge-base/
+├── src/
+│   ├── main.ts                          # @FrontMcp composing 3 apps
+│   ├── ingestion/
+│   │   ├── ingestion.app.ts             # @App: document ingestion
+│   │   ├── tools/ingest-document.tool.ts
+│   │   └── providers/vector-store.provider.ts
+│   ├── search/
+│   │   ├── search.app.ts               # @App: search and retrieval
+│   │   ├── tools/search-docs.tool.ts
+│   │   └── resources/doc.resource.ts
+│   ├── research/
+│   │   ├── research.app.ts             # @App: AI research agent
+│   │   └── agents/researcher.agent.ts  # @Agent: autonomous research loop
+│   └── plugins/
+│       └── audit-log.plugin.ts         # @Plugin: audit logging
+├── test/
+│   └── *.spec.ts
+├── vercel.json
+└── package.json
+```
+
+### Key Code
+
+**Multi-app composition** (`multi-app-composition`):
+
+```typescript
+@FrontMcp({
+  info: { name: 'knowledge-base', version: '1.0.0' },
+  apps: [IngestionApp, SearchApp, ResearchApp],
+  plugins: [AuditLogPlugin],
+  auth: { mode: 'remote', provider: 'https://auth.example.com', clientId: 'my-client-id' },
+  redis: { provider: 'redis', host: process.env.REDIS_URL ?? 'localhost' },
+})
+export default class KnowledgeBaseServer {}
+```
+
+**AI Research Agent** (`create-agent`):
+
+```typescript
+@Agent({
+  name: 'research_topic',
+  description: 'Research a topic across the knowledge base and synthesize findings',
+  inputSchema: {
+    topic: z.string().describe('Research topic'),
+    depth: z.enum(['shallow', 'deep']).default('shallow'),
+  },
+  llm: {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    apiKey: { env: 'ANTHROPIC_API_KEY' },
+    maxTokens: 4096,
+  }, // provider and model are client-configurable
+  execution: { maxIterations: 5 },
+  systemInstructions:
+    'Search for relevant documents using search_docs, synthesize findings, and produce a structured summary with source attribution.',
+  tools: [SearchDocsTool, IngestDocumentTool],
+})
+export class ResearcherAgent extends AgentContext {}
+```
+
+> The framework drives the LLM tool-use loop via the `agents:call-agent` flow — you don't override `execute()`. Configure iteration limits and other runtime knobs through the `@Agent({ execution: { maxIterations } })` block.
+>
+> **Full working code:** See `references/example-knowledge-base.md`
+
+---
+
+## Best Practices
+
+### Planning
+
+| Practice                                               | Why                                                               | Reference                             |
+| ------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------- |
+| Start with the `@App` boundaries, not individual tools | Apps define module boundaries; tools are implementation details   | `multi-app-composition`               |
+| Choose auth mode and storage before writing tools      | Auth affects session handling, which affects storage requirements | `configure-auth`, `configure-session` |
+| Pick your deployment target early                      | Target determines transport, storage, and build constraints       | `frontmcp-deployment`                 |
+
+### Organizing Code
+
+| Practice                                          | Why                                                         | Reference                      |
+| ------------------------------------------------- | ----------------------------------------------------------- | ------------------------------ |
+| One class per file with `<name>.<type>.ts` naming | Consistency, generator compatibility, clear imports         | `project-structure-standalone` |
+| Group by feature, not by type, for 10+ components | Feature folders scale better than flat `tools/` directories | `project-structure-standalone` |
+| Extract shared logic into `@Provider` classes     | Testable, lifecycle-managed, injected via DI                | `create-provider`              |
+
+### Writing Code
+
+| Practice                                        | Why                                                           | Reference         |
+| ----------------------------------------------- | ------------------------------------------------------------- | ----------------- |
+| Always define `outputSchema` on tools           | Prevents data leaks, enables CodeCall chaining                | `create-tool`     |
+| Use `this.fail()` with MCP error classes        | Proper error codes in protocol responses                      | `create-tool`     |
+| Use `this.get(TOKEN)` not `this.tryGet(TOKEN)!` | Clear error on missing dependency vs silent null              | `create-provider` |
+| Use Zod raw shapes, not `z.object()`            | Framework wraps internally; double-wrapping breaks validation | `create-tool`     |
+
+## Common Patterns
+
+| Pattern           | Correct                                     | Incorrect                                 | Why                                                       |
+| ----------------- | ------------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| Project start     | Plan apps and auth first, then build tools  | Jump straight into writing tools          | Architecture decisions are expensive to change later      |
+| Code organization | Feature folders with `<name>.<type>.ts`     | Flat directory with generic names         | Scales to large projects and matches generator output     |
+| Shared state      | `@Provider` with DI token                   | Module-level singleton or global variable | DI is testable, lifecycle-managed, and scoped per request |
+| Error handling    | `this.fail(new ResourceNotFoundError(...))` | `throw new Error('not found')`            | MCP error codes enable proper client error handling       |
+| Testing           | Unit tests per component + E2E for protocol | Only E2E tests or only unit tests         | Both layers catch different types of bugs                 |
+
+## Verification Checklist
+
+### Architecture
+
+- [ ] Apps define clear module boundaries with no circular imports
+- [ ] Shared logic extracted into providers, not duplicated across tools
+- [ ] Auth mode and storage chosen before writing tools
+
+### Code Quality
+
+- [ ] All tools have `outputSchema` defined
+- [ ] All files follow `<name>.<type>.ts` naming convention
+- [ ] All test files use `.spec.ts` extension
+- [ ] Coverage at 95%+ across all metrics
+
+### Production Readiness
+
+- [ ] Secrets stored in environment variables, not source code
+- [ ] Session storage uses Redis/KV in production (not memory)
+- [ ] Rate limiting configured for public-facing tools
+- [ ] E2E tests exercise the full protocol flow
+
+## Troubleshooting
+
+| Problem                                  | Cause                                                  | Solution                                                     |
+| ---------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
+| Unsure where to start                    | No project plan                                        | Run through the Planning Checklist above before writing code |
+| Architecture feels wrong                 | Wrong app boundaries or component types                | Review the Scenario Routing Table in `frontmcp-development`  |
+| Feature works locally but fails deployed | Environment-specific config (storage, auth, transport) | Check the Target Comparison in `frontmcp-deployment`         |
+| Tests pass but coverage below 95%        | Missing error path or branch tests                     | Run `jest --coverage` and add tests for uncovered lines      |
+| Provider state leaking between requests  | Using module-level state instead of DI                 | Move state into a `@Provider` scoped per request             |
+
+## Examples
+
+Each reference has matching examples under [`examples/<reference>/`](./examples/):
+
+### `example-knowledge-base`
+
+| Example                                                                                           | Level        | Description                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`agent-and-plugin`](./examples/example-knowledge-base/agent-and-plugin.md)                       | Advanced     | Shows an autonomous research agent with inner tools and configurable depth, and a plugin that hooks into tool execution for audit logging.    |
+| [`multi-app-composition`](./examples/example-knowledge-base/multi-app-composition.md)             | Basic        | Shows how to compose multiple apps (Ingestion, Search, Research) into a single server with shared providers, plugins, and agent registration. |
+| [`vector-search-and-resources`](./examples/example-knowledge-base/vector-search-and-resources.md) | Intermediate | Shows a semantic search tool with embedding generation and a resource template for retrieving documents by ID using URI parameters.           |
+
+### `example-task-manager`
+
+| Example                                                                                 | Level        | Description                                                                                                                                    |
+| --------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`auth-and-crud-tools`](./examples/example-task-manager/auth-and-crud-tools.md)         | Basic        | Shows how to create CRUD tools with authentication, using `this.context.session` for user isolation and `this.get()` for dependency injection. |
+| [`authenticated-e2e-tests`](./examples/example-task-manager/authenticated-e2e-tests.md) | Advanced     | Shows how to write E2E tests with authentication using `TestTokenFactory`, and unit tests for tools that require session context.              |
+| [`redis-provider-with-di`](./examples/example-task-manager/redis-provider-with-di.md)   | Intermediate | Shows how to create a Redis-backed provider with a DI token, lifecycle hooks (`onInit`/`onDestroy`), and how tools inject it.                  |
+
+### `example-weather-api`
+
+| Example                                                                                    | Level        | Description                                                                                                                            |
+| ------------------------------------------------------------------------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [`server-and-app-setup`](./examples/example-weather-api/server-and-app-setup.md)           | Basic        | Shows the server entry point, app registration, and static resource for a beginner FrontMCP weather API server.                        |
+| [`unit-and-e2e-tests`](./examples/example-weather-api/unit-and-e2e-tests.md)               | Intermediate | Shows how to write unit tests for tools by mocking context methods, and E2E tests using `McpTestClient` and `TestServer`.              |
+| [`weather-tool-with-schemas`](./examples/example-weather-api/weather-tool-with-schemas.md) | Basic        | Shows how to create a tool with Zod input and output schemas, use `this.fetch()` for HTTP calls, and handle errors with `this.fail()`. |
+
+## Accessing This Skill
+
+Skills are distributed as plain SKILL.md files plus a sibling `references/`
+and `examples/` tree, so consumers can pick whichever access mode fits:
+
+| Mode               | How it works                                                                                                                                                                                                                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Filesystem**     | Read `libs/skills/catalog/frontmcp-guides/` directly from a clone of the catalog repo, or from a published `@frontmcp/skills` install. SKILL.md is the entry point.                                                                                                                                                                             |
+| **`frontmcp` CLI** | `frontmcp skills list`, `frontmcp skills read frontmcp-guides`, `frontmcp skills read frontmcp-guides:references/<file>.md`, `frontmcp skills install frontmcp-guides` — no server required.                                                                                                                                                    |
+| **MCP `skill://`** | When a developer mounts this skill into their own FrontMCP server (`@FrontMcp({ skills: [...] })`), the SDK exposes it via SEP-2640 resources: `skill://frontmcp-guides/SKILL.md`, `skill://frontmcp-guides/references/{file}.md`, etc. The server’s `skill://index.json` returns the SEP-2640 discovery document for everything mounted on it. |
+
+The catalog itself is **not** an MCP server. The `skill://` URIs only resolve
+when a server has been configured to host this skill.
+
+## Reference
+
+- [Your First Tool](https://docs.agentfront.dev/frontmcp/guides/your-first-tool)
+- Domain routers: `frontmcp-development`, `frontmcp-deployment`, `frontmcp-testing`, `frontmcp-config`
+- Core references: `setup-project`, `create-tool`, `create-resource`, `create-provider`, `create-agent`, `configure-auth`, `setup-testing` (each lives under its parent router's `references/` directory, e.g. `frontmcp-development/references/create-tool.md`)
+- Mandatory boundaries: import MCP protocol types and `McpError` from `@frontmcp/protocol` (never directly from `@modelcontextprotocol/sdk`); use `@frontmcp/utils` for crypto and file-system operations.

@@ -1,0 +1,52 @@
+<!--
+LICENSE UPL
+Author: Mauro Risonho de Paula Assumpção
+Data Create: 2026-03-16
+Data Update: 2026-03-16
+-->
+
+---
+name: writeup-andreafioraldi
+description: CTF writeups and security challenges by andreafioraldi.
+---
+
+# Writeups by andreafioraldi
+
+Source repository: `/repos/andreafioraldi`
+
+## Repository Index
+
+- useful-pwn-writeups/README.md
+
+## Writeup Content
+
+
+### File: useful-pwn-writeups/README.md
+
+# useful-pwn-writeups
+a repo of links to useful writeups of pwn challenges
+
+## ROP
++ http://gmiru.com/writeups/octf-bh/ get flag without output
++ https://www.da.vidbuchanan.co.uk/blog/0CTF-2018-babystack-ret2dlresolve.html ret2dlresolve
+
+
+## Heap
++ https://0x00sec.org/t/heap-exploitation-fastbin-attack/3627
++ https://gbmaster.wordpress.com/2015/06/15/x86-exploitation-101-house-of-mind-undead-and-loving-it/
++ https://nacayoshi00.wordpress.com/2017/09/25/how-to-do-heap-exploithouse-of-einherjar-csaw-2017-auir-pwn200/
++ double free + fd rewrite https://github.com/VoidHack/write-ups/tree/master/Harekaze%20CTF%202018/pwn/flea_attack
++ https://amritabi0s.wordpress.com/2018/04/02/0ctf-quals-babyheap-writeup/ fastbin dup, top chunck ptr in arena overwrite
++ https://dangokyo.me/2018/04/02/0ctf-2018-pwn-babyheap-write-up/ file stream oriented programming
++ https://amritabi0s.wordpress.com/2018/05/01/asis-ctf-quals-2018-fifty-dollors-write-up/ house of orange
+
+## Linux Kernel
++ http://s3.eurecom.fr/nops/2018-01-24-csaw-2107-kws2.html
++ https://changochen.github.io/2018/02/07/sharif8/
++ http://blog.eadom.net/writeups/0ctf-2018-zerofs-writeup/ copy_to_user copy_from_user CRED
+
+
+## Jemalloc resources
++ http://docplayer.net/34893477-Exploiting-the-jemalloc-memory-allocator-owning-firefox-s-heap-patroklos-argyroudis-chariton-karamitas-argp.html
++ http://www.phrack.org/issues/68/10.html
+

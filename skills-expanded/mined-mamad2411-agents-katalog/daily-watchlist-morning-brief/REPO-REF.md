@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-wind-alice-alicemarket/daily-watchlist-morning-brief/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 为自选股生成盘前简报，汇总隔夜公告、新闻、价格变化、事件日程与今日观察重点。适用于开盘前快速浏览重点、晨会准备、盘前设定观察顺序等场景。

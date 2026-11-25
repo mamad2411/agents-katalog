@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-tt-a1i-skillroster/domain-extractor-v2/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Extract a small, exact domain glossary from notes using the package reference schema. Activation contract: when this Skill is directly visible as Core, load the complete SKILL.md in one standalone rea

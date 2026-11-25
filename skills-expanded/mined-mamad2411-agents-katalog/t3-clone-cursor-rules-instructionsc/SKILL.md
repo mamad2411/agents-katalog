@@ -1,0 +1,109 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Instructions & Architecture
+
+This document contains the general rules and architectural overview for the T3 Chat Cloneathon project.
+
+## 0. Package Manager
+
+**CRITICAL:** This project uses **pnpm ONLY**. Never use npm or yarn.
+
+-   **Installation:** Use `pnpm install` to install dependencies
+-   **Running scripts:** Use `pnpm run dev`, `pnpm run build`, etc.
+-   **Adding packages:** Use `pnpm add <package-name>`
+-   **Dev dependencies:** Use `pnpm add -D <package-name>`
+-   **Lockfile:** Only `pnpm-lock.yaml` should exist (never `package-lock.json` or `yarn.lock`)
+
+If you encounter npm lockfiles, remove them immediately:
+```bash
+rm package-lock.json yarn.lock
+rm -rf node_modules
+pnpm install
+```
+
+## 1. Core Architecture Principles
+
+This project uses a specific, decoupled architecture. Adhere to these roles strictly:
+
+-   **Next.js (App Router):** Handles **ALL** frontend UI and **ALL** backend logic via **Server Actions**. We **DO NOT** use Next.js API Routes.
+-   **Convex:** Used **ONLY** as the real-time database. All data reads and writes go through Convex queries and mutations.
+-   **Clerk:** Used **ONLY** for user authentication (Google Sign-In).
+-   **Vercel AI SDK:** The glue for the chat interface. It connects the frontend `useChat` hook directly to our Next.js Server Action.
+-   **OpenRouter:** The LLM provider, accessed from the Server Action.
+
+## 2. Authentication Flow (Clerk -> Convex)
+
+This is a critical security rule. The flow is:
+
+1.  Clerk authenticates the user on the client-side.
+2.  The Convex backend is configured to trust JWTs from Clerk via its JWKS endpoint URL.
+3.  All authenticated calls to Convex from the client are automatically validated by Convex, which securely identifies the user.
+
+## 3. Backend Logic (Server Actions ONLY)
+
+All server-side logic for the chat happens in a Next.js Server Action located in `app/actions.ts`.
+
+-   The frontend `useChat` hook calls this Server Action directly.
+-   The Server Action uses the Vercel AI SDK's `streamText` function to call the OpenRouter API.
+-   The action streams the response directly back to the client.
+
+## 4. Data Persistence Flow
+
+Saving messages to the Convex database is a strict two-step process:
+
+1.  **User Prompt:** When the user submits the form, **immediately** call the `saveMessage` Convex mutation to save the user's prompt.
+2.  **AI Response:** After the AI stream is complete, use the `onFinish` callback from the `useChat` hook to call the `saveMessage` mutation **again** to save the AI's full response.
+
+## 5. Key File Locations
+
+-   **Master Plan:** `implementation.md`
+-   **Server Logic:** `app/actions.ts`
+-   **Database Schema:** `convex/schema.ts`
+-   **Database Functions:** `convex/messages.ts`
+-   **Main UI Component:** `src/components/ChatUI.tsx`
+
+## 6. Component and Hook Naming Convention
+
+**CRITICAL:** All React components and hooks must use **kebab-case** for their file names.
+
+### Components
+-   **Component Files:** Use kebab-case naming (e.g., `chat-ui.tsx`, `message-list.tsx`, `delete-chat-dialog.tsx`)
+-   **Component Names:** The actual React component name should remain PascalCase (e.g., `ChatUI`, `MessageList`, `DeleteChatDialog`)
+-   **Consistency:** This applies to all components in the `src/components/` directory and its subdirectories
+
+### Hooks
+-   **Hook Files:** Use kebab-case naming (e.g., `use-chat-navigation.ts`, `use-message-input.ts`, `use-local-storage.ts`)
+-   **Hook Names:** The actual hook name should remain camelCase (e.g., `useChatNavigation`, `useMessageInput`, `useLocalStorage`)
+-   **Consistency:** This applies to all hooks in the `src/hooks/` directory and its subdirectories
+
+Examples:
+-   ✅ `chat-ui.tsx` exports `ChatUI`
+-   ✅ `message-list.tsx` exports `MessageList`
+-   ✅ `delete-chat-dialog.tsx` exports `DeleteChatDialog`
+-   ✅ `use-chat-navigation.ts` exports `useChatNavigation`
+-   ✅ `use-message-input.ts` exports `useMessageInput`
+-   ❌ `ChatUI.tsx`
+-   ❌ `MessageList.tsx`
+-   ❌ `useChatNavigation.ts`
+-   ❌ `useMessageInput.ts`
+
+## 7. Learning System Protocol
+
+**IMPORTANT:** Only add learning lessons to README.md when the user explicitly requests it with commands like:
+- "I want to learn about [concept]"
+- "Save this concept for later review"
+- "Add this to learning lessons"
+- "Help me understand [concept]"
+
+**Never automatically add lessons.** Wait for explicit user instruction.
+
+When adding lessons to README.md:
+1. Add under the "📚 Learning Lessons" section
+2. Use the lesson template format
+3. **CRITICAL:** Use only targeted, specific resources - never general documentation links
+4. Focus on the exact concept the user wants to learn
+5. Resources must be specific tutorials, guides, or targeted documentation pages
+6. **Always add new lessons chronologically at the end** - never insert between existing lessons

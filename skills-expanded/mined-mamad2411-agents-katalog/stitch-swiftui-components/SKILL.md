@@ -1,0 +1,471 @@
+---
+name: stitch-swiftui-components
+description: Converts a Stitch mobile screen, a local HTML file, or a URL into SwiftUI views for native iOS apps — VStack/HStack/ZStack layout mapping, Color asset tokens with dark mode, NavigationStack/TabView routing, and Xcode project structure. Only the Stitch route needs an API key.
+allowed-tools:
+  - "stitch*:*"
+  - "Bash"
+  - "Read"
+  - "Write"
+---
+
+# Stitch → SwiftUI (Native iOS)
+
+You are a Swift/SwiftUI engineer. You convert mobile UI layouts — a Stitch screen generated with `deviceType: MOBILE`, a local HTML file, or a URL — into native iOS SwiftUI views — `.swift` files that build and run in Xcode. You follow Apple's Human Interface Guidelines and produce code that feels like it belongs on iOS.
+
+## When to use this skill
+
+Use this skill when:
+- The user wants **native iOS** output from an existing design
+- The user mentions "SwiftUI", "Xcode", "iOS", "native iOS app"
+- The source is a **mobile layout** — narrow, vertical, touch-sized targets (a Stitch screen with `deviceType: MOBILE`, or a local file/URL that reads as mobile)
+
+**Note:** This skill targets iOS 16+ with SwiftUI. For cross-platform (iOS + Android), use `stitch-react-native-components` instead.
+
+## Prerequisites
+
+A mobile-layout source, read as structural and visual reference only — nothing here ships, SwiftUI views get written from scratch. Any one of these works:
+
+- A **Stitch screen** — needs Stitch MCP access and a screen generated with `deviceType: MOBILE`
+- A **local HTML file** of a mobile layout — no Stitch account required
+- A **URL** rendering a mobile layout — no Stitch account required
+
+Desktop layouts don't map well to SwiftUI without significant rethinking, regardless of which route you took.
+
+Also:
+- Xcode 15+ on macOS
+- Swift 5.9+
+
+## Step 1: Resolve the source
+
+Everything downstream reads one file: `temp/source.html`. Get the HTML there by whichever route matches what the user gave you, then continue at Step 2 — the rest of this skill is identical regardless of where the markup came from.
+
+This skill only works on a **mobile layout** — narrow, vertical, touch-sized targets. Desktop layouts don't map well to SwiftUI without significant rethinking, regardless of source. How you confirm mobile-ness depends on where the HTML came from:
+
+- **Stitch screen** — check it was generated with `deviceType: MOBILE`. If the screenshot shows a desktop layout, stop and tell the user to regenerate with `deviceType: MOBILE` first.
+- **Local HTML file or URL** — inspect the markup: a `<meta name="viewport">` tag, mobile-first media queries, a narrow `max-width` on the root container, touch-sized tap targets. If it's clearly a desktop layout (wide multi-column grid, hover-only interactions, no viewport meta), stop and tell the user the source isn't a mobile layout — don't tell them to "regenerate with deviceType: MOBILE," that instruction is meaningless outside Stitch.
+
+**From a Stitch screen:**
+
+1. **Namespace discovery** — `list_tools` to find the Stitch MCP prefix
+2. **Fetch metadata** — `[prefix]:get_screen` for the design JSON
+3. **Download HTML** — GCS URLs need the reliable downloader:
+   ```bash
+   bash scripts/fetch-stitch.sh "[htmlCode.downloadUrl]" "temp/source.html"
+   ```
+4. **Visual audit** — check `screenshot.downloadUrl` before converting. Append `=s0` to that URL for full resolution; the bare URL serves a 512px thumbnail regardless of the `width`/`height` the API reports. Confirm it's a mobile layout, per the check above.
+
+**From a local HTML file:**
+
+```bash
+mkdir -p temp && cp "path/to/design.html" temp/source.html
+```
+
+Open it and confirm it's a mobile layout, per the check above.
+
+**From a URL:**
+
+```bash
+bash scripts/fetch-stitch.sh "https://example.com/page" "temp/source.html"
+```
+
+Despite the name, that script is a generic hardened downloader — follows redirects, retries transient failures, handles gzip, and fails loudly on an empty result. It does not care whether the URL points at Stitch. Confirm the page is a mobile layout, per the check above.
+
+**From a screenshot:** there's no upload route — the Stitch MCP API has no image-upload tool. Either recreate the design from a text prompt via `stitch-mcp-generate-screen-from-text`, or hand-write the HTML and use the local-file route above.
+
+> Only the Stitch route needs an API key. Converting a local file or a URL works with no Google account at all.
+
+## Step 2: Xcode project structure
+
+```
+MyApp/
+├── MyApp.swift              ← @main entry point
+├── ContentView.swift        ← Root view (TabView or NavigationStack)
+├── Theme/
+│   ├── ThemeTokens.swift    ← Design token constants
+│   └── Color+App.swift      ← Color extension with semantic names
+├── Views/
+│   ├── [ScreenName]View.swift   ← One file per screen
+│   └── Components/
+│       └── [Name]View.swift     ← Reusable component views
+├── Models/
+│   └── MockData.swift       ← Static preview data
+└── Assets.xcassets/
+    └── Colors/              ← Color assets for light/dark mode
+```
+
+## Step 3: The HTML/CSS → SwiftUI layout mapping
+
+This is the core translation. Apply these rules to every element in the source HTML:
+
+### Layout containers
+
+| HTML/CSS pattern | → SwiftUI |
+|---|---|
+| `display:flex; flex-direction:column` | `VStack(alignment: .leading, spacing: 16)` |
+| `display:flex; flex-direction:row` | `HStack(alignment: .center, spacing: 12)` |
+| `display:flex; justify-content:space-between` | `HStack { Spacer() }` pattern |
+| `position:absolute` overlay | `ZStack` with layered views |
+| `display:grid` (2-column) | `LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16)` |
+| `overflow-y: scroll` | `ScrollView(.vertical, showsIndicators: false)` |
+| Repeated list of items | `List` or `ForEach` inside `ScrollView + LazyVStack` |
+| `position:fixed` bottom nav | `TabView` (preferred) or explicit `VStack` with `Spacer()` |
+
+### Spacing mapping
+
+SwiftUI uses points (1pt ≈ 1dp on non-retina, 2px on Retina @2x):
+
+```swift
+// Spacing from Tailwind → SwiftUI points
+// p-1(4px)→4  p-2(8px)→8  p-3(12px)→12  p-4(16px)→16
+// p-6(24px)→24  p-8(32px)→32  p-12(48px)→48  p-16(64px)→64
+```
+
+### Geometry mapping
+
+```swift
+// Tailwind rounded- → SwiftUI cornerRadius
+// rounded-sm → .cornerRadius(4)
+// rounded-md → .cornerRadius(8)
+// rounded-lg → .cornerRadius(12)
+// rounded-xl → .cornerRadius(16)
+// rounded-full → .clipShape(Capsule())  or .cornerRadius(9999)
+```
+
+### Content elements
+
+| HTML | → SwiftUI |
+|---|---|
+| `<p>`, `<span>`, text | `Text("content")` |
+| `<h1>` | `Text("title").font(.largeTitle).fontWeight(.bold)` |
+| `<h2>` | `Text("title").font(.title2).fontWeight(.semibold)` |
+| `<h3>` | `Text("title").font(.headline)` |
+| `<p>` body | `Text("body").font(.body)` |
+| `<small>` / caption | `Text("caption").font(.caption).foregroundStyle(.secondary)` |
+| `<img>` | `AsyncImage(url: URL(string: "..."))` for remote, `Image("name")` for asset |
+| `<button>` primary | `Button("Label") { action() }.buttonStyle(.borderedProminent)` |
+| `<button>` secondary | `Button("Label") { action() }.buttonStyle(.bordered)` |
+| `<button>` ghost/text | `Button("Label") { action() }.buttonStyle(.plain)` |
+| `<input type="text">` | `TextField("Placeholder", text: $binding)` |
+| `<input type="password">` | `SecureField("Password", text: $binding)` |
+| `<select>` | `Picker("Label", selection: $binding) { ForEach(...) }` |
+| `<toggle>` / checkbox | `Toggle("Label", isOn: $binding)` |
+| Icon-only button | `Button { action() } label: { Image(systemName: "xmark") }` |
+
+### Navigation patterns
+
+| Pattern | SwiftUI implementation |
+|---------|----------------------|
+| Bottom tab bar | `TabView` with `tabItem { Label("Home", systemImage: "house") }` |
+| Stack navigation | `NavigationStack { ... NavigationLink(destination: ...) }` |
+| Modal / sheet | `.sheet(isPresented: $showModal) { ModalView() }` |
+| Full screen modal | `.fullScreenCover(isPresented: $show) { FullView() }` |
+| Back navigation | Automatic with `NavigationStack` |
+| Action sheet | `.confirmationDialog("Title", isPresented: $show) { ... }` |
+
+## Step 4: Design tokens in SwiftUI
+
+Resolve the hex values below from whatever token source the HTML actually has, in this order:
+
+1. **Inline `tailwind.config`** in `<head>` (what Stitch emits) — use it directly if present.
+2. **CSS custom properties** (`:root { --color-primary: ... }`) — common in hand-written and templated HTML.
+3. **A linked or inline stylesheet** — parse declared colors, font-families, radii, spacing.
+4. **Last resort** — derive tokens from the most frequent computed values in the markup (dominant background, text color, accent, heading/body font, border radius), and tell the user what you inferred so they can correct it.
+
+The URL route only downloads the single HTML response — externally-linked stylesheets may not come along for the ride. If none of the above resolves a token, say so instead of inventing a palette.
+
+### Color extension (semantic tokens)
+
+```swift
+// Theme/Color+App.swift
+
+import SwiftUI
+
+extension Color {
+  // Extract these hex values using the token fallback chain above
+
+  // Backgrounds
+  static let appBackground = Color("AppBackground")    // Asset catalog
+  static let appSurface = Color("AppSurface")
+
+  // Brand
+  static let appPrimary = Color("AppPrimary")
+  static let appPrimaryFg = Color("AppPrimaryForeground")
+
+  // Text
+  static let appText = Color("AppText")
+  static let appTextMuted = Color("AppTextMuted")
+
+  // Borders
+  static let appBorder = Color("AppBorder")
+}
+```
+
+### Color asset catalog (light + dark)
+
+Create named Color Sets in `Assets.xcassets/Colors/`:
+
+For each color (e.g., `AppPrimary`):
+- **Any Appearance:** `#6366F1` (the light mode value)
+- **Dark Appearance:** `#818CF8` (lighter shade for dark bg)
+
+Alternatively, define programmatically (no asset catalog needed):
+
+```swift
+// Theme/ThemeTokens.swift
+
+import SwiftUI
+
+struct ThemeTokens {
+  let background: Color
+  let surface: Color
+  let primary: Color
+  let primaryFg: Color
+  let text: Color
+  let textMuted: Color
+  let border: Color
+
+  static let light = ThemeTokens(
+    background: Color(hex: "#FFFFFF"),
+    surface:    Color(hex: "#F4F4F5"),
+    primary:    Color(hex: "#6366F1"),
+    primaryFg:  Color(hex: "#FFFFFF"),
+    text:       Color(hex: "#09090B"),
+    textMuted:  Color(hex: "#71717A"),
+    border:     Color(hex: "#E4E4E7")
+  )
+
+  static let dark = ThemeTokens(
+    background: Color(hex: "#09090B"),
+    surface:    Color(hex: "#18181B"),
+    primary:    Color(hex: "#818CF8"),   // Lightened for dark bg
+    primaryFg:  Color(hex: "#09090B"),
+    text:       Color(hex: "#FAFAFA"),
+    textMuted:  Color(hex: "#A1A1AA"),
+    border:     Color(hex: "#27272A")
+  )
+}
+
+// Convenience: Color from hex string
+extension Color {
+  init(hex: String) {
+    let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+    var int: UInt64 = 0
+    Scanner(string: hex).scanHexInt64(&int)
+    let r = Double((int & 0xFF0000) >> 16) / 255
+    let g = Double((int & 0x00FF00) >> 8) / 255
+    let b = Double(int & 0x0000FF) / 255
+    self.init(red: r, green: g, blue: b)
+  }
+}
+```
+
+### Environment-based theme access
+
+```swift
+// Anywhere in a view — automatic dark mode
+@Environment(\.colorScheme) var colorScheme
+
+var theme: ThemeTokens {
+  colorScheme == .dark ? .dark : .light
+}
+
+// Usage
+Text("Hello")
+  .foregroundStyle(theme.text)
+  .background(theme.surface)
+```
+
+## Step 5: Component template
+
+```swift
+// Views/Components/StitchComponentView.swift
+
+import SwiftUI
+
+/// StitchComponent — [describe purpose in one sentence]
+struct StitchComponentView: View {
+  // MARK: - Properties (equivalent to props)
+  let title: String
+  var description: String = ""
+  var onAction: (() -> Void)? = nil
+
+  // MARK: - Environment
+  @Environment(\.colorScheme) private var colorScheme
+
+  private var theme: ThemeTokens {
+    colorScheme == .dark ? .dark : .light
+  }
+
+  // MARK: - State
+  @State private var isPressed = false
+
+  // MARK: - Body
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title)
+        .font(.headline)
+        .foregroundStyle(theme.text)
+
+      if !description.isEmpty {
+        Text(description)
+          .font(.subheadline)
+          .foregroundStyle(theme.textMuted)
+      }
+
+      if let action = onAction {
+        Button("Action", action: action)
+          .buttonStyle(.borderedProminent)
+          .tint(theme.primary)
+      }
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(theme.surface)
+    .clipShape(RoundedRectangle(cornerRadius: 12))
+    .overlay(
+      RoundedRectangle(cornerRadius: 12)
+        .stroke(theme.border, lineWidth: 1)
+    )
+    // Minimum touch target — 44pt Apple HIG requirement
+    .frame(minHeight: 44)
+  }
+}
+
+// MARK: - Preview
+#Preview {
+  VStack(spacing: 16) {
+    StitchComponentView(title: "Card Title", description: "Supporting text")
+    StitchComponentView(title: "With Action", description: "Tap the button", onAction: {})
+  }
+  .padding()
+}
+```
+
+## Step 6: Main app entry point
+
+```swift
+// MyApp.swift
+import SwiftUI
+
+@main
+struct MyApp: App {
+  var body: some Scene {
+    WindowGroup {
+      ContentView()
+    }
+  }
+}
+
+// ContentView.swift — root with TabView
+struct ContentView: View {
+  var body: some View {
+    TabView {
+      HomeView()
+        .tabItem {
+          Label("Home", systemImage: "house")
+        }
+      ProfileView()
+        .tabItem {
+          Label("Profile", systemImage: "person")
+        }
+    }
+  }
+}
+```
+
+## Step 7: Accessibility in SwiftUI
+
+SwiftUI handles much of this automatically, but always verify:
+
+```swift
+// Image accessibility
+Image("hero-photo")
+  .accessibilityLabel("Team collaborating in a modern office")
+
+// Decorative images (screen reader skips)
+Image(decorative: "background-pattern")
+
+// Buttons — label is automatic if using Text inside
+Button("Sign In") { ... }  // VoiceOver reads "Sign In, button"
+
+// Custom accessibility label when button label is ambiguous
+Button { deleteItem() } label: {
+  Image(systemName: "trash")
+}
+.accessibilityLabel("Delete item")
+
+// Group elements (treats as single unit)
+VStack {
+  Text("Sarah Johnson")
+  Text("Product Designer")
+}
+.accessibilityElement(children: .combine)
+
+// Dynamic type support — always use semantic fonts
+Text("Headline")
+  .font(.headline)   // ✅ Scales with user's text size
+  // NOT .font(.system(size: 17, weight: .semibold))  // ❌ Fixed size
+```
+
+## Step 8: SwiftUI animations
+
+SwiftUI has excellent built-in animations — use them for the micro-interactions:
+
+```swift
+// Button press spring
+Button(action: primaryAction) {
+  Text("Get Started")
+    .padding(.horizontal, 24)
+    .padding(.vertical, 14)
+    .background(theme.primary)
+    .foregroundStyle(theme.primaryFg)
+    .clipShape(Capsule())
+    .scaleEffect(isPressed ? 0.96 : 1.0)
+    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
+}
+.simultaneousGesture(
+  DragGesture(minimumDistance: 0)
+    .onChanged { _ in isPressed = true }
+    .onEnded { _ in isPressed = false }
+)
+
+// Card appear transition
+VStack { /* card content */ }
+  .transition(.move(edge: .bottom).combined(with: .opacity))
+
+// Respect reduced motion
+@Environment(\.accessibilityReduceMotion) var reduceMotion
+
+var animation: Animation {
+  reduceMotion ? .none : .spring(response: 0.3, dampingFraction: 0.7)
+}
+```
+
+## Execution steps
+
+1. **Verify** the source is a mobile layout (see Step 1)
+2. **Create Xcode project** — File → New → App, SwiftUI interface, Swift language
+3. **Data layer** — create `Models/MockData.swift` from static content in the design
+4. **Theme** — create `Theme/ThemeTokens.swift` with extracted hex values, and `Color+App.swift`
+5. **Components** — convert the HTML sections to SwiftUI views, file by file
+6. **Navigation** — wire up `TabView` (tab bar) or `NavigationStack` (stack)
+7. **Build and run** — in Xcode, Cmd+R. Test on both light and dark mode (⌃⌘A toggles appearance in Simulator)
+
+## Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| View overflows screen | Add `.frame(maxWidth: .infinity)` + parent `ScrollView` |
+| Text truncates unexpectedly | Add `.lineLimit(nil)` or `.fixedSize(horizontal: false, vertical: true)` |
+| Color looks wrong in dark mode | Ensure the Color Set in Assets.xcassets has a Dark appearance set |
+| Image not loading | For `AsyncImage`, check URL is valid. For local images, file must be in Assets.xcassets |
+| TabView items don't show label | Content must be directly inside `.tabItem { }` — no wrapping views |
+| Sheet not dismissible | Add `@Environment(\.dismiss) var dismiss` and call `dismiss()` in the sheet |
+| Preview crashes | Check `#Preview` has valid mock data — never optional-unwrap without fallback |
+
+## References
+
+- `resources/component-template.swift` — Boilerplate SwiftUI view
+- `resources/layout-mapping.md` — Full HTML/CSS → SwiftUI reference
+- `resources/architecture-checklist.md` — Pre-ship checklist
+- `scripts/fetch-stitch.sh` — Reliable GCS HTML downloader

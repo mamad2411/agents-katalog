@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/aws-idle-resource-detector/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Detect AWS idle and zombie resources consuming cost with zero meaningful utilization"

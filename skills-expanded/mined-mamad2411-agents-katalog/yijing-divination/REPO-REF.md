@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-aaaaqwq-agi-super-team/yijing-divination/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 易经占卜系统。支持铜钱法、蓍草法起卦，生成本卦、互卦、变卦，提供Oracle Voice诠释。当用户请求占卜、问卦、易经解读、或寻求决策指引时使用。

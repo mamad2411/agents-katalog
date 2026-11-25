@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/name-checker/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Check product/brand names for trademark, domain, and social media conflicts. Use when users ask to "check this name", "validate a product name", "is this name available", or need to assess naming risk

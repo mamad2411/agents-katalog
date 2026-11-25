@@ -1,0 +1,272 @@
+---
+name: create-skill
+description: Generate a complete new skill from a one-line prompt and ship it as a PR
+metadata:
+  title: Create Skill
+  category: evolution
+  var: ""
+  tags:
+    - dev
+    - meta
+---
+> **${var}** — A natural-language description of the skill to create. **Required.** Example: `"monitor Hacker News for AI papers and send a summary"` or `"track gas prices on Ethereum and alert when below 10 gwei"`.
+
+<!-- autoresearch: variation B — sharper output via PR-first workflow + quality enforcement + exit taxonomy + new-secret guard -->
+
+If `${var}` is empty, exit `CREATE_SKILL_NO_VAR`:
+```bash
+./notify "create-skill aborted: var empty — pass a description e.g. \"monitor X for Y\""
+```
+Then stop.
+
+Today is ${today}. Your task is to generate a complete, production-ready skill from `${var}`, score it against a quality bar, and ship it as a PR — **never commit directly to `main`**.
+
+## Steps
+
+1. **Parse the request.** Extract from `${var}`:
+   - Core action verb (monitor, fetch, generate, analyze, alert, track, scan, etc.)
+   - Data source(s) — APIs, websites, RSS, on-chain, GitHub, etc.
+   - Output format — notification, article, file, PR, dashboard, etc.
+   - Configurable parameter(s) the new skill will accept via its own `${var}`
+   - Suggested cadence (daily, hourly, weekly, on-demand)
+
+   Save a one-paragraph structured request summary; you'll use it in the PR body.
+
+2. **Duplicate detection (deep — not just `ls`).** Find functional overlap, not just name collision.
+   Pick the keywords yourself (no shell text tools; see **Shell shape** in the Network note): lowercase `${var}`, keep each word of 4+ letters, drop `send with from that this when each into over some like just than then also will have been using monitor track fetch alert`, and dedupe. Then one call per keyword, written in literally:
+   ```bash
+   grep -liE "<KEYWORD>" skills/*/SKILL.md | head -5
+   ```
+   Read the top 3 candidates fully. For each, judge: does it already do this? Could the request be solved by running an existing skill with a different `var=`?
+   - **Near-duplicate exists** → exit `CREATE_SKILL_DUPLICATE`. Notify with the existing skill name and a one-line suggestion ("use existing `{skill}` with `var={...}` instead"). Stop.
+   - **Functionally adjacent** → design the new skill to complement (different angle/cadence/output). Document the boundary in the PR body.
+
+3. **Research the data sources.** For every API or data source the new skill needs:
+   - **WebSearch** for the current API documentation. Cross-check against a secondary source when feasible (a recent GitHub repo using it, an official changelog, or a Stack Overflow answer dated ≥2026) to confirm the endpoint isn't deprecated.
+   - **WebFetch** the canonical docs URL — record it as a comment in the SKILL.md and in the PR body's "Sources researched" section.
+   - Identify exact endpoints, required headers, auth scheme, response schema, and rate limits.
+   - Note every required environment variable / API key.
+   - Determine fallback strategy when an optional API key isn't set (WebSearch / WebFetch / cached data / public endpoint).
+
+   **Research bar (soft):** at least one confirmed source URL or exemplar (a working docs page or a public repo using the API). If none, do **not** hard-abort — log `CREATE_SKILL_INSUFFICIENT_RESEARCH`, ask the operator via `./notify` with what was tried and why each source failed, and stop. The operator can re-dispatch with a clearer prompt or a source hint.
+
+4. **New-secret guard.** Secrets values are never inspectable from the workflow — only names are listed. Use `gh api repos/:owner/:repo/actions/secrets --jq '.secrets[].name'` to read the **names** of secrets already configured (this endpoint returns names only, never values). Cross-reference with env-var usage in `aeon.yml` and existing workflows. For each env var the new skill needs:
+   - **Name present** → continue.
+   - **Name missing** → record as `NEW_SECRET_REQUIRED`. The generated skill **must** gracefully degrade or skip when the secret is absent (no hard crash). Add a `### Required secrets` section to the PR body listing what the operator must add to GitHub Actions secrets before enabling.
+
+   If the secret has no graceful fallback, the generated skill's step 1 must say: read the "Keys set for this run" line in your run notes, never a shell test (those are refused and cost a turn); when `VAR` is not on that line, send `./notify "{skill} skipped: VAR not set"` and stop. Declare `VAR` in the generated skill's `requires:`: that is what puts it on the line.
+
+5. **Design the skill.** Decide:
+   - **Skill name** — lowercase, hyphenated, 2-3 words max (e.g., `gas-alert`, `hn-papers`). Must not collide with any existing entry under `skills/`.
+   - **Description** — one sentence, starts with a verb, ≤90 chars.
+   - **Tags** — pick from: `content`, `crypto`, `dev`, `meta`, `news`, `research`, `social`. Max 3.
+   - **Variable behavior** — what `${var}` controls; what happens when empty (sane default OR clean abort with notify).
+   - **Steps** — 4-8 numbered, following the standard pattern: read context → fetch/search → process/analyze → write output → log → notify.
+   - **Schedule suggestion** — choose a cron slot. Read existing schedules in `aeon.yml`; avoid co-scheduling at the same minute as heavy skills (article, repo-scanner, deep-research, telegram-digest) unless the new skill is lightweight (<30s expected). Prefer a `:30` minute offset if the natural hour is already crowded.
+   - **Model** - default `claude-sonnet-5-5`. Pick `claude-haiku-5-5` if the skill is high-frequency aggregation/digestion (cost optimization), or `claude-opus-5-5` if it needs the strongest reasoning. Document the choice in the PR body.
+   - **Category** - the pack the skill joins. Pick exactly one of `core` `evolution` `basics` `dev` `crypto` `productivity` (the set `scripts/check-skill-categories.sh` enforces; anything else, or a missing category, fails CI). For a new user-facing skill that is usually `basics`, `dev`, `crypto`, or `productivity`. See `docs/skill-packs.md`.
+
+6. **Write the SKILL.md draft** at `skills/{skill-name}/SKILL.md` with this exact structure:
+
+   ```markdown
+   ---
+   name: {skill-name}
+   description: {One-sentence description starting with a verb}
+   metadata:
+     title: {Display Name}
+     category: {category}
+     var: ""
+     tags:
+       - {tag}
+   ---
+   > **${var}** - {What the variable controls}. {If-empty behavior}.
+
+   Today is ${today}. {One sentence describing the task.}
+
+   ## Steps
+
+   1. **{Step title}.** {Specific instructions - endpoints, commands, formats.}
+
+   2. **{Step title}.** {More instructions. Code blocks for curl/bash when relevant.}
+
+   ...
+
+   N-1. **Log.** Append to `memory/logs/${today}.md`:
+   - Skill: {skill-name}
+   - What was done and key outputs
+
+   N. **Notify.** Send via `./notify`:
+   {Output format template - specify ≤4000 chars, clickable URLs}
+
+   ## Network note
+
+   {How this skill reaches the network - ./secretcurl with an {ENV_NAME} placeholder for auth'd APIs, gh api for GitHub, curl + WebFetch fallback for public}
+   ```
+
+   Hard rules for the generated content:
+   - Complete `curl` commands with proper headers and URL encoding (no pseudo-code).
+   - `jq` parsing for JSON APIs.
+   - Notification character limit explicitly stated (under 4000 chars total).
+   - Every link clickable (full URLs, not placeholders).
+   - Fallback behavior defined for every optional secret.
+   - Use only `${var}` and `${today}` template variables — no other invented variables.
+   - No TODOs, no placeholders, no "fill in later".
+   - Mandatory `## Network note` section (accurate model — see the `## Network note` in this skill for the canonical wording; there is no network sandbox).
+
+7. **Quality enforcement (self-edit pass).** Score the draft 1-5 across:
+
+   | Criterion | What to check |
+   |-----------|---------------|
+   | Frontmatter complete | `name`, `category`, `description`, `var`, `tags` present and well-formed |
+   | Var doc | Single `>` block-quote line; if-empty behavior defined |
+   | API calls complete | Curl + headers + jq, not pseudo-code |
+   | Fallback behavior | Graceful degradation for every optional secret |
+   | Output spec | Char limits, clickable URLs, format template explicit |
+   | Network note | Present and matches the auth pattern of the API used (`./secretcurl` for auth'd, `gh api` for GitHub, WebFetch fallback for public) |
+
+   Any criterion <4 → rewrite that section once. Still <4 after one rewrite → exit `CREATE_SKILL_VALIDATION_FAILED` with a notify listing failed criteria. **Do not ship a low-quality skill.**
+
+8. **Post-write validation.** Re-read the SKILL.md from disk and verify:
+   - Frontmatter YAML is parseable; required keys present.
+   - No literal substring matches: `TODO`, `FIXME`, `XXX`, `placeholder`, `fill in`, `lorem`, `<your-`, `your_api_key_here`, `example.com`.
+   - Every `${...}` template variable resolves to `${var}` or `${today}`.
+   - At least one `./notify` invocation appears in the body.
+   - At least one `memory/logs/${today}.md` write appears.
+   - `## Network note` section exists.
+
+   Any failure → delete the partial file and any other writes, exit `CREATE_SKILL_VALIDATION_FAILED` with a notify listing the failed checks. No partial state.
+
+9. **Register in `aeon.yml`.** Insert the new skill in the appropriate time-slot section:
+   - Format: `  {skill-name}: { enabled: false, schedule: "{suggested_cron}" }`
+   - Add `model: "claude-haiku-5-5"` (or `"claude-opus-5-5"`) if chosen in step 5.
+   - Add `var: ""` if the skill takes a default var.
+   - Add a brief trailing comment if the name doesn't make purpose obvious.
+   - Place near related skills (crypto with crypto, content with content, etc.).
+   - **Always** `enabled: false`. Operator decides when to turn it on.
+
+   Verify YAML still parses after the edit. If parsing fails, revert the change and exit `CREATE_SKILL_VALIDATION_FAILED`.
+
+9b. **Dry-run gate (blocks a broken generated skill from auto-merge).** Before opening the PR, execute the new skill once with **synthetic** secrets, so a generated skill never reaches production having only ever run with real credentials:
+    ```bash
+    ./scripts/dry-run.sh run "{skill-name}"
+    ```
+    - The script writes its verdict to `output/.dry-run/{skill-name}.json` by default. A non-zero exit is expected on a failed gate; read the verdict either way.
+    - The script self-checks the `SKILL_DRYRUN` repo variable (default on) and returns a `skipped` verdict when it is `0`.
+    - Read `output/.dry-run/{skill-name}.json`. `passed: true` (or `skipped: true`) means continue. `passed: false` means **delete `skills/{skill-name}/`, revert the `aeon.yml` edit, and exit `CREATE_SKILL_DRYRUN_FAILED`** with a notify listing the verdict `reasons[]`. Do not open the PR.
+    - Put the verdict JSON in the PR body under a `## Dry-run` section either way, so a reviewer sees the gate ran.
+    The gate is **structural** (exit 0, non-empty output, no write outside the declared `mode`, no secret outside `requires:`), and no real credential is ever placed in the run's environment. It does not re-score content; the Haiku scorer already does that.
+
+9c. **Registration checklist (a new skill trips four CI gates; a red one blocks the merge).** The PR must also carry:
+    - `bash scripts/check-skill-categories.sh` passing (category from step 5).
+    - `catalog/skills.json` + `catalog/packs.json` regenerated with `bin/generate-skills-json` and `bin/generate-packs-json`, in a **separate commit after** the SKILL.md commit (the catalog's `sha`/`updated` come from git history).
+    - An `eyebrowlock.json` entry for the new skill: `ci-skill-integrity` hard-fails any skill without one. Run `eyebrow scan` with the version pinned in `.github/workflows/ci-skill-integrity.yml` and splice **only** the new skill's artifact into the committed lockfile.
+    - `node scripts/validate-readme-catalog.mjs` passing (README and docs skill counts include the new skill).
+    - The disabled `aeon.yml` entry from step 9.
+    If this run can't execute a step (e.g. no `eyebrow` binary), list the missing steps under a `## Before merge` heading in the PR body instead of skipping them silently.
+
+10. **Open as a PR (never commit to `main`).** Each command is its own call, with the skill name written in literally where it shows `{skill-name}`:
+    ```bash
+    git checkout -b create-skill/{skill-name}
+    ```
+    ```bash
+    git add skills/{skill-name}/SKILL.md aeon.yml
+    ```
+    ```bash
+    git commit -m "create skill: {skill-name}
+
+    {one-sentence description}
+
+    Generated by create-skill from var: \"{request summary, ≤80 chars}\""
+    ```
+    ```bash
+    git push -u origin create-skill/{skill-name}
+    ```
+    Write the PR body to `/tmp/create-skill-pr-body.md` with Write:
+    ````markdown
+    ## Skill
+    **Name**: `{skill-name}`
+    **Description**: {description}
+    **Tags**: {tags}
+    **Schedule**: `{cron}` (disabled by default)
+    **Model**: {model}
+    **Var**: {var-doc}
+
+    ## Request
+    ```
+    ${var}
+    ```
+
+    ## Sources researched
+    - {URL 1}
+    - {URL 2}
+    - {URL 3}
+
+    ## Required secrets
+    {list of NEW_SECRET_REQUIRED env vars OR "None - uses existing secrets"}
+
+    ## Quality scores
+    | Criterion | Score |
+    |-----------|-------|
+    | Frontmatter | X/5 |
+    | Var doc | X/5 |
+    | API calls | X/5 |
+    | Fallback behavior | X/5 |
+    | Output spec | X/5 |
+    | Network note | X/5 |
+
+    ## Trigger manually
+    Workflow dispatch with `skill={skill-name}` and `var={example-var}`.
+    ````
+    Then open the PR:
+    ```bash
+    gh pr create --title "create skill: {skill-name}" --body-file /tmp/create-skill-pr-body.md
+    ```
+    Capture the PR URL.
+
+11. **Log.** Append to `memory/logs/${today}.md`:
+    ```
+    ### create-skill
+    - Request: {var, ≤80 chars}
+    - Created: skills/{skill-name}/SKILL.md
+    - Registered in aeon.yml: schedule={cron}, model={model}
+    - Required secrets: {list or "none"}
+    - Quality scores: F/V/A/Fb/O/N = X/X/X/X/X/X
+    - PR: {url}
+    - Exit: CREATE_SKILL_OK (or CREATE_SKILL_NEW_SECRET_REQUIRED)
+    ```
+
+12. **Notify.** Send via `./notify`:
+    ```
+    *create-skill - {skill-name}*
+    {one-line description}
+    Schedule: `{cron}` (disabled by default)
+    {Required secrets line if any}
+    PR: {url}
+    Trigger: dispatch skill=`{skill-name}` var=`{example}`
+    ```
+
+## Exit taxonomy
+
+| Code | When | Action |
+|------|------|--------|
+| `CREATE_SKILL_OK` | New skill created, validated, PR opened | Notify with PR link |
+| `CREATE_SKILL_NEW_SECRET_REQUIRED` | Same as OK plus operator must add a new secret before enabling | Notify with PR link + secret call-out |
+| `CREATE_SKILL_NO_VAR` | `${var}` empty | Notify abort reason; stop |
+| `CREATE_SKILL_DUPLICATE` | Existing skill covers the request | Notify with existing-skill suggestion; stop |
+| `CREATE_SKILL_INSUFFICIENT_RESEARCH` | Couldn't confirm ≥1 working data source after WebSearch + WebFetch | Notify with what was tried; stop |
+| `CREATE_SKILL_VALIDATION_FAILED` | Quality enforcement or post-write checks failed | Delete partial files; revert aeon.yml; notify with failed criteria; stop |
+| `CREATE_SKILL_DRYRUN_FAILED` | The dry-run gate (step 9b) returned `passed: false` | Delete partial files; revert aeon.yml; notify with verdict reasons; do NOT open the PR; stop |
+
+## Network note
+
+There is no network sandbox — `curl` works, with **WebFetch** as the fallback for a flaky public GET during research. For an auth'd API the new skill will call, route it through `./secretcurl` with a `{ENV_NAME}` placeholder (the key injected via the skill's `requires:`), and `gh api` for GitHub. **Irreversible side-effects** (email, spend, on-chain writes, deploys) run **in-run** via `./secretcurl` as the skill's final, fail-closed action — there is no deferred/postprocess step, and never defer a read (see CLAUDE.md).
+
+**Shell shape.** Each Bash call is one allowed command (pipes are fine). The run refuses a call that sets a variable (`X=$(...)`, `name=...`, `VAR=... cmd`), uses `for` / `if`, contains `$(...)`, starts with `bash`, or joins commands with `;`, `&&` or `||`, and each refusal costs a model turn. So pick the duplicate-check keywords yourself and grep once per keyword, run each `git` step as its own call with the skill name written in literally, and pass the PR body with `--body-file` (written with Write) instead of `--body "$(cat <<'EOF' ...)"`. The key check in step 4 is text for the generated skill, not a command this run executes.
+
+## Constraints
+
+- **Never** commit a generated skill directly to `main`. Always open a PR.
+- **Never** enable a generated skill in `aeon.yml` (`enabled: false` always — operator decides).
+- **Never** add an API key/secret to the workflow that isn't already there. Surface as `NEW_SECRET_REQUIRED` and document in the PR body.
+- **Never** ship a skill that fails validation. Aborting cleanly is always better than shipping broken.
+- **Never** overwrite an existing `skills/{name}/SKILL.md` — name collisions are blocking errors.

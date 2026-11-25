@@ -1,0 +1,58 @@
+---
+name: song-arrangement
+description: Use when the user wants a loop turned into a song, sections (intro, verse, chorus, break, outro), variations, fills, a build or a drop, or asks how scenes and songs play.
+---
+
+# Arranging a song from scenes
+
+## How the OP-XY plays a song
+
+A scene says which pattern each track plays and records the track volumes and mutes; it lasts as
+long as its longest pattern. A song is the scenes in order (up to 96 entries; 99 scenes). Plain play
+runs the song from its first scene, also outside song mode, and after a stop it starts again from the
+first. Picking a scene in arrange (`shift` and its black key) takes over at once and then repeats
+that scene: the song stops moving on until song mode is opened ([howto.loop-one-scene]). A queued
+change (`shift`, tap `play`, then the scene's black key) waits instead of switching mid-bar
+([arrange.scene-queue]).
+
+A piece meant to play once and stop (a jingle, a sting, an intro for a video) is a song with loop
+off, even of one scene (write_arrangement's song, scenes [1], loop false): play then runs it once
+and stops, and the transport's result gives its length in seconds. A loop plays on until stopped.
+
+## Shaping sections
+
+A section is a scene; its difference from the one before is what the listener hears as form. Change
+little between neighbouring sections and a lot at the big moments:
+
+- **Intro:** fewer tracks (the drums alone, or the pad and the hats), so the full groove lands later.
+- **Verse and chorus:** the same drums, a different bass or chord pattern; the chorus adds the lead
+  or opens the filter.
+- **Break or breakdown:** take the kick and bass out; keep one melodic part and space.
+- **Build:** a pattern with a snare roll or rising hats in its last bar, just before the drop.
+- **Outro:** the intro's tracks, or a fade: scenes of the last section, each with its levels a step
+  lower (write_arrangement's mix, 74 is unity; 62, 48, 32, 16 is a four-step fade), the song not
+  looping so it ends on the quietest. A scene lasts as long as its longest pattern, so a fade in
+  one-bar steps takes one-bar patterns: write_pattern copy with copy_bar makes a bar of the section
+  a pattern of its own (one lab program does every track's at once and sets the scenes). A smooth
+  fade instead locks each track's volume (param "volume": shift `M2`'s, not the mixer's level) on
+  the outro's steps, lower bar by bar from the track's own (read_sound's play mode page), and sets
+  each faded pattern's shape so the level glides between the locks (area bar, param shape, 0–99,
+  with pattern; the lab's set with step places the locks).
+
+Four-bar scenes give a clear form; repeat a scene in the song rather than lengthening its patterns.
+A part left out of a section rests: pattern 0 for its track in that scene (an empty pattern).
+A scene's mutes and levels hold for all of it; a change for one bar of a section (the drums out for
+the chorus's first bar) is a pattern of its own: copy the part's pattern and write that bar anew
+in the copy (write_pattern copy with bar; notes "" clears that bar), then let that
+scene play the copy.
+
+## Building it
+
+Write the patterns a section needs (a variation is usually a copy with a few changes: a fill in the
+last bar, the bass up a fifth, the hats doubled), then the scenes, then the song order, then play from
+the top. Variations made from what is already there (every part's copy, a breakdown's mutes) are
+easiest in one lab program, which reads the patterns, writes the copies and sets the scenes
+together, as one change the user can undo. Say the form in one line afterwards ("intro 4 bars, verse 8, chorus 8, break 4,
+chorus 8") and what changes at each boundary; do not list every pattern.
+
+The manual's recipe for a song from scenes is [howto.song-from-scenes].

@@ -1,0 +1,290 @@
+---
+name: sentinel-design
+description: Use when designing, reviewing, or classifying an agent that guards the human — defines the sentinel category, the three-part signature (S1 read-only, S2 advisory-to-human, S3 explicit honesty rule), the near-miss gallery that explains why read-only-plus-advisory is not sufficient, the honesty-rule-before-detection-logic discipline, and the three anti-patterns that eject an agent from the category
+---
+
+# Sentinel Design
+
+Most agents in this plugin act on an artefact. The spec-writer edits a
+spec, the tdd-agent writes tests, the integration-agent commits and
+merges, the harness-gc rewrites stale documentation. Their object of
+care is a thing in the repository, and you judge them by what they did
+to that thing.
+
+A **sentinel** is different. Its object of care is not the codebase, the
+pipeline, or the harness — it is **the human**. A sentinel protects and
+supports the understanding and judgement of the person in the workflow.
+It informs, challenges, surfaces, or warns. It never fixes, writes,
+merges, or decides.
+
+> **Sentinel** — any agent whose primary purpose is to protect and
+> support the understanding and judgement of the human in the workflow.
+
+The category emerged organically. Four agents — the decision-discipline
+triad (`carpaccio`, `advocatus-diaboli`, `choice-cartographer`) plus the
+`reservoir-warden` — and later the `cost-estimator` were all built to
+the same shape without anyone naming the shape. This skill names it, so
+that the next one can be built deliberately rather than rediscovered.
+
+## Why sentinels exist: the debts AI moves upstream
+
+The category has a reason to exist, and it comes from Margaret-Anne
+Storey's **triple-debt model** (*From Technical Debt to Cognitive and
+Intent Debt: Rethinking Software Health in the Age of AI*, 2026;
+arXiv:2603.22106, expanded in ACM Queue). Storey argues that generative
+AI produces code faster than a team can comprehend it, which shifts where
+the real risk to software health lives. Three debts interact:
+
+- **Technical debt** lives in the **code** — the debt the pipeline and
+  harness agents already fight.
+- **Cognitive debt** lives in the **people** — the erosion of shared
+  understanding, leaving inadequate mental models for safely changing the
+  system.
+- **Intent debt** lives in the **artefacts** — the absence of the
+  explicit rationale, goals, and constraints humans and agents need to
+  evolve the system safely.
+
+In AI-assisted development, cognitive and intent debt may matter *more*
+than technical debt — and neither is paid down by cleaner code. They are
+paid down by protecting the human's grip on the system. **A sentinel is
+the agent pattern that services the human side of that ledger.** It works
+to establish and protect the human's **understanding, judgement, and
+discernment** so those two debts do not silently accrue.
+
+These are three edges of one commitment, each holding back a debt:
+
+- **Understanding** — the shared mental model of what the system does and
+  why (holds back cognitive debt). Guarded by `carpaccio` (keeps each
+  decision holdable) and `choice-cartographer` (surfaces implicit
+  decisions).
+- **Judgement** — the quality of the human's *yes* at the gate (cognitive
+  debt). Guarded by `reservoir-warden` (watches the decider) and
+  `advocatus-diaboli` (steel-mans the objections).
+- **Discernment** — the ability to tell a *good* AI output from a
+  *plausible-but-wrong* one (cognitive + intent debt). This is the
+  sharpest edge and the one AI erodes most quietly: a plausible spec, a
+  confident estimate, and a clean-looking diff all *read* as correct.
+  Guarded by `advocatus-diaboli` (names what could be wrong) and
+  `cost-estimator` (refuses an ungroundable estimate rather than
+  fabricating a confident one).
+
+A sentinel's advisory record also pays down intent debt directly: a
+choice-story or objection record *is* externalised rationale — the very
+artefact whose absence Storey names as intent debt. Keep this in view
+when authoring: prefer emitting a durable "why" the next human or agent
+can read over a verdict that evaporates once the gate closes.
+
+## The sentinel signature
+
+An agent is a sentinel if and only if it satisfies all three criteria.
+
+### S1 — Read-only trust boundary
+
+The agent's frontmatter denies `Write` and `Edit`. It may hold `Read`,
+`Glob`, `Grep`, and `Bash` — `Bash` is permitted for read-only
+inspection (`git log`, `date`), not for mutation. A sentinel that can
+write can change the thing it is supposed to be watching from the
+outside, and the boundary that keeps it honest is gone.
+
+S1 is the one criterion a machine can check. The
+`sentinel-integrity-check.sh` script parses every agent's `role:` tag
+and `tools:` list; a `role: sentinel` agent granted `Write` or `Edit`
+fails CI. This is what makes the category load-bearing rather than
+decorative: mislabel an agent and the build goes red.
+
+### S2 — Advisory output for a human
+
+The agent's output is a record, an objection, a story, an estimate, or a
+recommendation that a **human** disposes. It triggers no automated
+action. Nothing downstream reads the sentinel's output and *acts* on it
+without a person in between. The reservoir-warden's stop recommendation,
+the diaboli's objection record, the cartographer's choice stories, the
+carpaccio's slice dispositions, the cost-estimator's estimate record —
+each is deposited in front of a human who decides what to do with it.
+
+### S3 — Explicit epistemic honesty rule
+
+The agent declares the *status* of its claims. It does not launder
+inference as observation. Concretely, each existing sentinel carries
+its own honesty discipline:
+
+- **reservoir-warden** — `observed` / `inferred` / `asked` flags on
+  every proxy; every `inferred` claim must sit on an `observed` one;
+  never a combined fatigue score.
+- **advocatus-diaboli** — six objection categories, each with an
+  evidence requirement; discloses what it did *not* challenge.
+- **choice-cartographer** — a six-lens map that declares what was found
+  in the spec versus what was inferred.
+- **cost-estimator** — ranges with a disclosed confidence label;
+  refuses rather than fabricating an ungroundable estimate.
+
+The common thread: a sentinel would rather say "I don't know" than
+invent a number, and always tells the human which of its claims are
+solid and which are precaution under uncertainty.
+
+## The roster
+
+| Agent | Guards |
+| ----- | ------ |
+| `reservoir-warden` | The decider — the verifier's cognitive reservoir |
+| `advocatus-diaboli` | Decisions at both gates — spec-time premises, code-time risks |
+| `choice-cartographer` | Understanding of the implicit decisions a spec has made |
+| `carpaccio` | Judgement scale — keeps each decision small enough to hold |
+| `cost-estimator` | The decision's inputs — what a choice will cost before it is made |
+| `coda` | The ending — that a session stops by decision rather than by attrition |
+| `mast` | The pact — that a limit set in clear weather survives the moment it governs |
+| `wip-warden` | The count — how much is open at once, against a line the person drew |
+| `convener` | The room — that a spec is not decided by everyone it affects being absent |
+
+Narrative: the decision-discipline triad guards *decisions*; the
+reservoir-warden guards *the decider*; the cost-estimator guards *the
+decision's inputs*. The four cadence sentinels guard the shape of the
+work around those decisions — the `coda` *the ending*, the `mast` *the
+pact*, the `wip-warden` *the count*, and the `convener` *the room*.
+
+## The near-miss gallery
+
+The signature has a trap. **Read-only plus advisory is not sufficient.**
+Two agents in this plugin satisfy S1 and S2 and are still not sentinels,
+because the category turns on the *object of care*, not the trust
+boundary.
+
+- **code-reviewer** — read-only (S1 ✓), reports findings to a human
+  (S2 ✓). Not a sentinel: its object of care is **the code**. Its
+  finding is "this function violates the joinability property", not
+  "you, the human, are about to approve something you do not
+  understand".
+- **harness-auditor** — read-only on everything but the Status section
+  (S1 ✓ in spirit), reports to a human (S2 ✓). Not a sentinel: its
+  object of care is **the harness** — whether declared enforcement
+  matches reality. Its finding is about an artefact that happens to be
+  reported to a person.
+
+The test: does the finding describe *what the human can or should hold
+in mind* (sentinel), or *the state of an artefact* that is merely
+reported to a human (near-miss)? If you catch yourself justifying a new
+agent's sentinel status with "well, it's read-only and a human reads its
+output", you have found a near-miss, not a sentinel.
+
+## Design discipline: honesty rule before detection logic
+
+When you author a new sentinel, **write S3 before you write what it
+detects.** This mirrors the `cognitive-reservoir` skill's
+contested-versus-robust science discipline: the reservoir-warden's
+honesty rule (which findings are precaution, which claims are never
+asserted as fact) was fixed *before* its proxy-counting logic, so the
+counting could never quietly outrun what the evidence supports.
+
+A sentinel that grows its detection logic first, and bolts on an honesty
+rule afterwards, will always be tempted to over-claim — the detection
+found something, so surely it can be stated plainly. Fixing the honesty
+rule first bounds what the detection is *allowed* to say. Decide what
+you will refuse to assert, then build only what you can honestly report.
+
+## Anti-patterns
+
+An agent that does any of these has left the category, whatever its
+`role:` tag says:
+
+1. **Scores the human.** A sentinel reports proxies and precautions; it
+   never emits a single number that grades the person (a "fatigue score",
+   a "judgement quality index"). Composite scores invite the human to
+   argue with the number instead of attending to their own state.
+2. **Persists a record of the human's state.** The reservoir-warden has
+   no `Write` *by design* — it never writes down that the human was
+   tired at 21:00. A sentinel that files human-state records has built a
+   surveillance artefact, not a guardrail. (This is also why S1 is
+   enforced, not merely recommended.)
+3. **Gates automatically.** A sentinel feeds an existing human gate; it
+   does not become one. The moment its output blocks or advances the
+   pipeline without a person disposing it, S2 is violated and the human
+   has been removed from their own decision.
+
+### The boundary of anti-pattern 2: *by* the person versus *about* them
+
+"Persist nothing about the human" is not "persist nothing the human
+appears in". The line runs between two kinds of claim, and a sentinel
+author needs it drawn before they design any record:
+
+- **About the person — forbidden.** Anything the *agent* concluded:
+  inference, telemetry, scoring, an assertion about capacity, attention,
+  or state. "Tired at 21:00" is the canonical violation, and it stays a
+  violation however softly it is worded.
+- **By the person — permitted, and often required.** A declaration the
+  *human* authored: a budget, a stop hour, a disposition, a next action
+  they wrote themselves. A pact that is not durable is not a pact, so
+  refusing to persist these would not protect anyone — it would only make
+  the person's own decisions unenforceable by them.
+
+`## Cognitive reservoir` has always sat on the permitted side: it holds a
+self-declared `chronotype` in a file the human edits, while its own prose
+forbids recording any claim about cognitive state. The pact file
+(`~/.claude/pacts.md`) generalises that shape, and it is why parking
+records and consultation dispositions are legitimate durable artefacts.
+
+Two tests, when a record is in question. **Who authored the claim?** If
+the agent did, it is about the person. **Would the person recognise it as
+something they said?** If not, it is about them.
+
+### The third category: hook-authored operational state
+
+Those two tests are necessary and not sufficient, because they classify one
+legitimate artefact wrongly. A hook that records *that a session exists* —
+its id, when it started, which project it is in — was authored by an agent,
+and no human would recognise the entry as something they said. Both tests say
+"about the person". Yet a concurrency limit cannot be honoured without knowing
+how many sessions are live, and knowing that is not an assessment of anyone.
+
+So there are three categories, not two:
+
+| Category | Example | Rule |
+| --- | --- | --- |
+| **By the person** | a budget, a stop hour, a disposition, a next action | Durable and reviewable. Often required. |
+| **About the person** | inference, telemetry, scoring, a claim about capacity or state | Forbidden, however softly worded. |
+| **Operational state** | the session registry | Permitted **only** under the four conditions below. |
+
+Operational state is permitted only when all four hold. Fail any one and it is
+a record about the person wearing a different hat:
+
+1. **Local and never committed.** It lives outside every work tree and enters
+   no repository's history.
+2. **Bounded.** It expires on a declared schedule rather than accumulating. A
+   record with no expiry is an archive, and an archive of where someone worked
+   is a surveillance artefact whatever it was built for.
+3. **Nothing in it judges.** It records facts about *sessions* — exists,
+   started, last active — never about the person running them. No score, no
+   assessment, no derived state.
+4. **Disclosed and declinable.** What it contains, how long it persists, and
+   how to switch it off are documented where the person will find them.
+
+The session registry (`~/.claude/sessions/`) is the worked example and meets
+all four. It was nearly not disclosed, which is what prompted this section: the
+pact file — the *permitted*, human-authored side of the line — shipped with a
+careful adoption ramp, while the registry was going to be created for every
+user silently. That asymmetry was backwards. The artefact on the contested side
+of a boundary needs *more* disclosure than the one safely inside it, not less.
+
+**When in doubt, this category does not apply.** It is a narrow carve-out for
+plumbing a sentinel needs and cannot infer, not a route around the rule. If you
+are reaching for it to justify storing something you find useful, you are in
+the second category.
+
+One corollary for anything a sentinel may *reach*, not merely write: a
+shared library that exposes a mutation function to a sentinel breaches
+this boundary through a channel the frontmatter check cannot see, because
+`Bash` is permitted and the check reads only the declared `tools:` list.
+Split such libraries — a read surface a sentinel may source, a write
+surface only hooks and commands may. The boundary should hold by what an
+agent *can* reach, not by what it is trusted not to call.
+
+## When you have a candidate
+
+1. Check S1, S2, S3 against the candidate. All three, or it is not a
+   sentinel.
+2. Run it past the near-miss test: object of care is the human's
+   understanding, not an artefact.
+3. Write the honesty rule first.
+4. Add `role: sentinel` to the frontmatter, confirm no `Write`/`Edit`,
+   and let `sentinel-integrity-check.sh` enforce it.
+5. Add it to the roster in the README Sentinels section and the
+   `explanation/sentinels.md` docs page.

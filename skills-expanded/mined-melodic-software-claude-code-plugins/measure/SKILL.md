@@ -1,0 +1,98 @@
+---
+description: "Verify a measurable-improvement claim against a baseline captured BEFORE the change. Two metric families (`performance`: wall time, memory, allocations, throughput, latency; `metrics`: complexity, coverage, coupling), each with a `baseline` phase at planning time and a `compare` phase after the change. Never claims improvement without a baseline (no baseline → honest 'cannot quantify'). Use when: 'is it faster', 'before/after', 'prove the improvement', 'did that actually speed it up', 'how much faster is it', 'measure this', 'capture a baseline', 'benchmark before and after', 'did complexity go down'; applies to a code-shape or metrics claim, or a baseline-and-compare of the change, while a host whose wall-clock spread makes a duration comparison meaningless goes to /performance:snapshot; intent/outcome confirmation stays with /verification:confirm."
+user-invocable: true
+argument-hint: "[performance|metrics] [baseline|compare]"
+disable-model-invocation: false
+metadata:
+  workflow-stage: verify
+  summary: Verify an improvement claim against a pre-change baseline
+---
+
+**Arguments.** `[performance|metrics] [baseline|compare]`. e.g., /verification:measure performance, /verification:measure metrics baseline
+
+## Purpose
+
+`/verification:measure` answers **"did the claimed improvement actually happen, by how much?"**. It measures a delta (before → after) against a baseline captured before the change. It is the measurable-delta twin of `/verification:confirm` (which confirms intent/outcome) and is distinct from a review gate (which reviews design quality for ship-readiness on an absolute axis).
+
+Core rule: **never claim improvement without a baseline captured before the change.** If no baseline exists, report honestly, "Baseline not captured. Current measurement: X. Cannot quantify improvement.", and never fabricate a delta.
+
+## Two-phase model
+
+The measurement mechanism is SSOT here; the planning stage *routes* to it when a plan states a measurable goal, `/verification:confirm` *redirects* improvement claims to it.
+
+| Phase | Stage | Who invokes | What it does |
+|-------|-------|-------------|--------------|
+| `baseline` | planning time (plan states a measurable goal) | `/verification:measure <family> baseline` | Capture pre-change measurements → store under the topic's memory-tier `baselines/` + record baseline + target in the plan |
+| `compare` | after the change (default phase) | `/verification:measure <family>` | Re-measure under the same conditions → compare to the stored baseline → verify the claim |
+
+Baseline storage: the topic's memory tier. `<memory_dir>/<slug>/baselines/` (default `.work/`), placed per the lifecycle artifact protocol ([`${CLAUDE_PLUGIN_ROOT}/reference/artifact-protocol.md`](${CLAUDE_PLUGIN_ROOT}/reference/artifact-protocol.md)). Baselines are machine-bound measurements and are **never committed**, and the plan never cites their path. The plan (`<memory_dir>/<slug>/PLAN.md`) records the baseline values + target; the comparison summary surfaces in the plan and the PR body.
+
+**Behavior baselines.** Recorded outputs captured before a rewrite, the old-implementation side of `/verification:confirm refactor`'s differential evidence for a Replace, are not a third family: they use this same `baselines/` storage and the same rule, captured before the change and never after the fact. Outputs recorded from the new implementation compare it with itself and are not a baseline. Such a baseline proves sameness with the old behavior, not correctness.
+
+**Measurement tooling:** use whatever harness the consuming project wires; when none exists, run both phases manually per the context-file discipline. Do not add a harness speculatively.
+
+## Mode dispatch
+
+Parse `$ARGUMENTS` for a metric family first, then a phase (`baseline` / `compare`; default `compare`).
+
+| Signal | Family | Read |
+|--------|--------|------|
+| `performance`, "is it faster", "before/after" runtime numbers, memory / allocations / throughput / latency | **performance** | [context/performance.md](context/performance.md) |
+| `metrics`, "is it simpler/cleaner", complexity / coverage / CRAP / coupling / duplication | **metrics** | [context/metrics.md](context/metrics.md) |
+
+No family argument → infer from the claim: runtime-resource claims → `performance`; code-shape claims → `metrics`. If the claim is ambiguous ("more efficient"), ask which resource before measuring.
+
+Each context file owns its family's full discipline: claim-to-metric mapping, measurement methodology, report template, verdict vocabulary, and pitfalls.
+
+## Prerequisite. Green mechanical state (both phases)
+
+Measuring broken code is meaningless, and a baseline captured on a broken tree poisons every later comparison. Before either phase, `baseline` capture or `compare`, confirm the mechanical pass is green: reuse a `/toolchain:check` or `/verification:confirm` Stage-1 result from this conversation if nothing changed since; otherwise invoke `/toolchain:check` via the Skill tool when the `toolchain` plugin is enabled, or run the project's own build/test command when it is absent. Do not reimplement build/test/lint here.
+
+## Integration
+
+| Condition | Action |
+|-----------|--------|
+| An approved plan states a measurable goal | Run the `baseline` phase before implementation |
+| Improvement claimed without data (in `/verification:confirm`, review, or conversation) | Redirect here. `performance` or `metrics` per the claim |
+| Verdict is DEGRADED or NOT CONFIRMED | Surface immediately; the claim does not hold. Fix or withdraw it |
+| Measurement complete | Feed the comparison table into the `/verification:confirm` outcome report; surface the summary in the plan artifact / PR body |
+
+## Record the verdict for the head it judged
+
+Once a `compare` verdict is final, store it for the commit it judged, so the pull request `ready`
+report can name it:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/confirm-verdict.sh" record --of measure --head <sha> --verdict '<verdict>' --claim '<claim>'
+```
+
+- `<sha>` is the full `git rev-parse HEAD`, run as its own call.
+- `<verdict>` is `CANNOT QUANTIFY` whenever no baseline was captured before the change, in place of
+  the `NOT CONFIRMED` or `INCONCLUSIVE` the family file gives that case; otherwise the family's
+  verdict word.
+- `<claim>` is the improvement claim judged, on one line.
+- Skip the record when the working tree was not clean at measurement: the verdict then judged
+  uncommitted changes, not that head. Say it was not recorded and why.
+- A non-zero exit leaves no record; report it, and the verdict stands.
+
+The record is advisory. It never gates the `ready` flip, and a commit after it leaves the new head
+with no verdict. A `baseline` phase records nothing.
+
+## What this skill does not do
+
+- **Does not confirm intent/outcome**. "did we build the right thing" is `/verification:confirm` (`outcome` / `fix` / `refactor` criteria).
+- **Does not review for ship-readiness**. That's the project's review gate; the measure-delta vs review-for-ship boundary is stated in "Purpose" above.
+- **Does not capture baselines after the fact**, a post-change "baseline" is not a baseline. Missing baseline → honest "cannot quantify", plus a current-state measurement for the record.
+- **Does not run the mechanical pass**. `/toolchain:check` owns build+test+lint; this skill only requires its result to be green.
+
+## Next
+
+- Confirm the outcome: /verification:confirm. The outcome report takes the comparison table as its evidence.
+- Host whose wall-clock spread makes a duration comparison meaningless: /performance:snapshot.
+
+## Gotchas
+
+- **Baseline before the change, compared under the same conditions after.** Condition drift invalidates the comparison, the run/warm-up/conditions methodology is owned by [context/performance.md](context/performance.md).
+- **Noise floor first.** If the projected saving sits within run-to-run variance, the change is unmeasurable. Surface that before the work, not after (detail: [context/performance.md](context/performance.md)).
+- **A drifting host needs more than a noise-floor warning.** When the machine's own spread makes a wall-clock comparison meaningless (a bimodal no-op-spawn signature, arms that cannot be run in one pass, no drift-immune counter agreed), route to `/performance:snapshot` when the `performance` plugin is enabled: it qualifies the host before measuring, interleaves the arms within one run, ranks a drift-immune counter above any duration, and refuses a wall-clock claim this skill would still report with a warning. This skill remains SSOT for baseline capture, storage, and the compare mechanics that plugin builds on.
+- **Never fabricate numbers.** No baseline, high variance, or differing conditions → INCONCLUSIVE / NOT CONFIRMED, stated plainly.

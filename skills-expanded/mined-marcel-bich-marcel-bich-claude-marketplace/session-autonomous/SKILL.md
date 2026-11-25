@@ -1,0 +1,1015 @@
+---
+name: session-autonomous
+description: >
+  The credo behavior for a session running in AUTONOMOUS mode - work approved GO items
+  unattended while the user is away, hook-enforced self-scheduled keep-alive, budget caps always on.
+  Load this the MOMENT the user hands off full-autonomy, unattended, or AFK work - EVEN BEFORE the
+  mode is set - so this skill can bootstrap autonomous mode itself. Trigger on a semantic
+  full-autonomy / AFK-handoff grant (match the intent, not a rigid phrase list); the skill itself
+  then only ENTERS autonomous mode on an unambiguous, explicit grant and confirms first when unsure.
+  Examples of an unambiguous grant, in any language: "go fully autonomous", "I'm afk, keep going",
+  "run this unattended" (German e.g. "voll autonom", "bin afk mach weiter", "mach autonom weiter").
+  A vague or casual "keep going / carry on" is NOT such a grant. Also load it when the session-mode
+  inject line says "Load skill session-autonomous", right after the /credo:session-autonomous
+  command, or whenever you are working autonomously and unattended.
+  Shares the canonical common core defined in the credo session-active skill, then adds the
+  autonomous-mode specifics: steward not initiator, ScheduleWakeup keep-alive, the
+  deferred-question flow, end-of-run hibernate with veto, and per-task ntfy. This is the
+  umbrella skill of the credo building blocks - it references them, never duplicates them.
+  The keep-alive and hibernate RULES apply only while this session's autonomy flag is set, but the skill
+  should still LOAD on the grant intent so it can enter the mode. One mode is active at a time.
+---
+
+# session-autonomous - work approved GO items unattended
+
+A credo session runs in exactly one mode - `active`, `passive`, or `autonomous` - set by
+the `/credo:session-*` commands and surfaced on every prompt by the session-mode inject
+line. This skill is the umbrella for **autonomous** mode: the user is away, you work
+approved GO items on your own, keep the session alive, respect the budget caps, notify via
+ntfy, and hibernate cleanly at the end. It is the dach / umbrella over the credo building
+blocks - it wires them together and adds the unattended-run machinery, and it duplicates
+none of their content.
+
+Autonomous mode is only in force while THIS session's autonomy flag is set - the file
+`credo/autonomy/<session_id>/active` under the Claude config dir
+(`${CLAUDE_CONFIG_DIR:-$HOME/.claude}`), which is what the `/credo:session-autonomous` command
+sets (and it lifts the session's `paused` opt-out). All autonomy state (`active`, `paused`,
+`wake-scheduled`) is keyed by session_id: autonomy in one session never keeps another session
+alive, never throttles it, and an autonomy-off in another session never ends this run. If that
+flag is not set, do not run the keep-alive or hibernate behavior below.
+
+## Bootstrap - enter the mode only on an unambiguous grant
+
+This skill may LOAD on a full-autonomy / AFK-handoff intent, but entering autonomous mode
+requires an unambiguous, explicit user grant. If this skill loaded because the user just handed
+off full-autonomy / unattended / AFK work and the mode is NOT yet set (no autonomy
+flag for this session), FIRST enter autonomous mode by running `/credo:session-autonomous`. That command runs
+`session-mode-set.sh autonomous`, sets the flag, and activates the rules below - which resolves the
+chicken-and-egg problem of needing the mode set before this skill's keep-alive can apply. Then
+follow the rules below. If the mode is already autonomous, skip this and continue.
+
+Do NOT enter autonomous mode on a vague or casual signal (for example a bare "keep going",
+"carry on", "work on this"); only on an unambiguous full-autonomy / AFK grant such as
+"run this unattended", "go fully autonomous", or a clear AFK handoff. If unsure whether the user
+really wants unattended autonomy, stay in normal (non-autonomous) collaboration and confirm with
+the user first rather than setting the flag. A user who never asks for autonomy is never put into
+autonomous mode.
+
+**Capture and persist a suspend-on-idle directive on entry.** If the grant (the
+`/credo:session-autonomous` argument or the user's natural-language handoff) includes an
+explicit suspend-on-idle order, in any language ("suspend when done", "power down at the end",
+"hibernate afterwards"; German e.g. "am Ende suspend", "danach runterfahren"), record it durably right now:
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-directive.sh" set
+```
+
+An explicit revocation, in any language ("no suspend", "leave it on"; German e.g. "kein
+suspend", "lass an") clears
+it (`... clear`). A directive already set in THIS session stays in force across a re-invoke of
+`/credo:session-autonomous` and across context compaction - do NOT drop it just because the
+latest invocation carried no argument (that persistence is the whole point; it fixes the bug
+where a standing order was silently forgotten on re-invoke). The directive is per-session,
+stored on disk keyed by session_id, and re-injected on every prompt by the session-mode inject
+hook, so it survives compaction. It changes only the end-of-run power-down gate (see "Suspend
+directive: persistence, presence, and the attended/unattended split" below). Never set it from
+mere user presence or a casual remark - only an explicit order.
+
+## Common core (shared - read the session-active skill)
+
+Autonomous mode uses the same **canonical common core** as every credo session skill. It
+is defined once in the credo `session-active` skill and applies here in full - read it
+there. It covers: CLARIFY-FIRST and the go-gate; clarify via Ask (G1 - in autonomous mode
+there is no Ask tool, questions become text with Q codes, see below); bug report is not
+an immediate fix (G2); read-back scaled to complexity (A4); the soft old-item reminder; no
+silent rename / restructure plus consistency sweep (G6) and independent evaluation of
+foreign handoffs (G7); the authority order (E5); the ntfy hybrid model (D); the git-push
+policy (G5); the `safety` skill always; and the building blocks a session ties together.
+The autonomous specifics below narrow or extend that core - they do not replace it.
+
+Where the core points at a building block, that still holds here. In particular, ALL
+budget cap / reset / 09:00-guard / task-sizing / weekly-99 / commit-identity rules live in
+the credo `budget` skill; this skill references it and never restates a cap value.
+
+## Output convention - item references in inline code
+
+Item references are always written in inline-code style: `#37`, `#90`, `#91` (backticks) -
+never bold or plain. This improves scannability of item numbers.
+
+## Autonomous-mode specifics (A3)
+
+### Steward, not initiator
+
+In autonomous mode you are a steward of already-approved work, not an initiator. Build ONLY
+items in `1_todo/2_go` - approved, buildable GO items (credo `items` go-gate). Do NOT start
+new features, invent scope, or make product decisions on the user's behalf. A human-owned
+clarify item (`clarify_owner: human` or missing - the user's own request) is never GO'd
+autonomously: it waits for the user (or its open question becomes a deferred question,
+below).
+
+Owner-owned clarify items (`clarify_owner: human`, or the field missing) are never decided in an
+autonomous run: they stay in `1_clarify` and go into the end-of-run report for the owner (credo
+`items`, "Clarify owner and the agent decision rule"). The rules below cover agent-owned items
+and the build-time details of GO items only.
+
+Agent-owned clarify items (`clarify_owner: agent` - slices, follow-ups, build questions,
+audit findings of approved work, with `parent:`) are part of the approved work: apply the
+agent decision rule (credo `items`, "Clarify owner and the agent decision rule"). With no
+plan agent peer known, you take the pseudo plan role for the moment (your real role does
+not change): decide the uncritical questions per the active mainagent-prompt; GO a feasible
+item with `(GO: agent decision, <reason>)` and build it; log every decision in the item
+History, and list a decision the owner notices in the product in the end-of-run report with a veto
+code (see "No Ask tool: questions and vetos as text" below). Park the escalated
+questions (the user's taste or preference, deleting user data, installs beyond the item's `## Freigaben`, money beyond an
+approved budget, the hard safety rules, anything that would change or narrow the verbatim
+requirement, points the preset says to note and present) for the end-of-run report - never
+adopt a default for them.
+
+go=go: a `2_go` item IS buildable by the folder - build it (best effort), never self-skip or
+self-demote it for size, UI, or "not sure it is verifiable". See the go=go build-side anchor
+in the credo `items` skill for the full rule and the hypothesis-vs-open-decision line. A
+stale-looking, open-looking body is not "not buildable" either: before treating a `2_go`
+item as still-open, read the WHOLE body plus the requirements log and audit reports (the
+read/build-gate in the credo `items` skill).
+
+Work the WHOLE queue, not just one thread. After you finish an item, immediately pick the next
+buildable `2_go` item and continue - keep going until the buildable queue is empty (confirmed by
+the fresh listing in "Empty buildable queue = end-of-run" below). Building every buildable GO
+item IS the mandate of autonomous mode, not over-reach. "I built the thread I started with" is
+NOT a reason to stop while other buildable items remain.
+
+Start builders for buildable GO items as soon as there is idle capacity. The idle capacity
+rule and the per-area limits `builders.min_per_area` / `builders.max_per_area` live in credo
+`orchestration`. Build in parallel where it is safe: before spawning builders, run the overlap check
+(`credo-touches-check.sh` over the candidate `2_go` items; overlapping items run
+sequentially) and, before each spawn, the resource gate (`credo-resource-check.sh`; a `heavy: true` item still never runs next to another heavy item). On `wait`, start nothing new and
+re-check on the next completion notification. Full procedure: credo `orchestration` skill,
+"Parallel code tracks: touches and resource gate". The batch shape (plan once, builders
+within the per-area limits plus 1 bundle, fresh audit per item) and its budget gate follow
+the measured default: credo `orchestration`, "Default batch workflow". Releases follow
+`release.auto` (see "Release when nothing is buildable" below).
+
+Each parallel code track gets its own worktree, chosen by `credo-worktree-flow.sh` (hydra's
+flow on `[x] use Hydra for 2+ independent tasks` with hydra installed, else native
+`git worktree add`); a `flow=ask` result is treated as native here - never ask in
+autonomous mode. Run the printed `setup=` script right after every `git worktree add`, and
+put the absolute main-checkout path (its `main=` line) plus the read-only lookup rule into
+every builder brief (credo `orchestration`, "Worktrees for every code track"). Closing
+an item or a release cleans up merged worktrees per the DOGMA-PERMISSIONS checkbox; with `[?]` or
+no checkbox the removal waits for the user (credo `items`, "Worktree cleanup at item
+close"). Locked worktrees (`git worktree lock --reason "keep: owner"`) are kept; in
+autonomous mode you may unlock a `keep: owner` lock yourself once the keep instruction is
+fulfilled or revoked (log it in the run report), never a lock with another reason (credo
+`items`, "Keeping a worktree"). Check `credo-worktree-cleanup.sh --list-locked` before an
+item close and name the kept worktrees in the report.
+
+Autonomous / AFK runs are read-heavy, so isolated writing pre-work has room here: for a clarify
+item blocked by a missing measurement, mockup, or feasibility proof, use the `sandbox` skill
+(`.credo/sandbox-tmp/`, no production code, no commit) rather than making a product decision.
+
+### A non-buildable item in 2_go
+
+An item is normally clarified when it is in `2_go` (GO=GO). First rule out mere staleness: a
+head or note that merely reads "open / not built" is NOT a non-build reason - read the whole
+body plus the requirements log and audit reports before judging (read/build-gate, credo
+`items` skill), because the clarification or build is often already there. Only if the item
+is genuinely non-buildable, act by the reason:
+
+- **Genuine user-only decision** (the Named-Decision-Test in the credo `items` skill passes -
+  typically surfacing mid-build): do NOT guess and do NOT build on an invented decision.
+  Raise a deferred question (below) AND move the item `2_go -> 1_clarify` marked URGENT - the
+  sanctioned carve-out (credo `items`). It probably leaves something broken, so it is top of
+  the clarify queue for when the user returns.
+- **Hard block on another unbuilt item**: this is the `3_blocked` path (credo `items`), not a
+  self-demote.
+- **Anything else** (placement / hygiene, "too big / too hard"): do NOT self-demote -
+  placement is a move-side axis owned by the entry gate (credo `migrate`). FLAG it (in the
+  digest and the handoff) rather than silently skipping it.
+
+Auto-unblock (credo `items`) still applies during the run: when an item reaches `2_done`,
+check its `blocks` and return any now-unblocked `3_blocked` item to `2_go`.
+
+### Audit gate per item (autonomous)
+
+Every finished item still goes through the mandatory dedicated-subagent audit before
+`2_done`. When spawning it, pick the tier per the credo `audit` skill ("Audit depth (risk
+tiers)"): `full` by default and always for UI, security, writes outside the repo or running
+commands, shared core files, migration, large scope, or `audit: full`; `lean` only for small
+low-risk items. A bundle gets one audit; other lean items finished in the same stretch may
+be batched into one audit subagent (one verdict per item); `full` items are audited singly.
+The auditor fixes small findings itself after recording them (credo `audit`, "Fixing small
+findings"). Run the dogma `relevant` test stage per item where defined; the full suite runs
+only where dogma places it (only at the release when DOGMA-PERMISSIONS §8eyz is `[x]`),
+else once per batch, not per item (credo `orchestration`, "When the full suite runs"). Pending human-only
+tests do not hold an item in `2_go` (credo `items`, "Human-only checks do not block done").
+
+### Bringing up a local surface to verify (autonomous)
+
+A `ui: true` item is not verify-dead in autonomous mode. If its runtime surface is down, and
+you can POSITIVELY verify the target is local (a process on THIS machine, bound to localhost -
+not a deployed, remote, or shared environment), bring it up or restart it per the
+project-declared procedure and then run the credo `verify` skill. Locality is judged by where
+the process runs, NOT by the git branch: a checkout named `main` / `develop` / `prod` does not
+make it remote. If locality cannot be positively established, do NOT restart - defer the
+visual verify as human-only. See the credo `verify` skill for the full rule and the config key.
+
+### After a plugin update: self-reload first, self-restart (cc-up) only as fallback
+
+A full restart is not always needed. After pushing or receiving a plugin update the
+session itself needs, run `/credo:self-reload` first: `run --auto` (add `--update` when the
+new version is not installed yet), then END THE TURN. Its worker types `/reload-plugins` and
+`/reload-skills` into this session's own tmux pane and then `.` to wake the session (60 s
+fallback re-send). No background work of any kind blocks it. On the woken turn the injected
+`[credo-self-reload]` note compares the loaded with the newest installed credo version:
+check that and whether the expected new command, skill or hook is listed. Only when the
+reload was not enough (or outside tmux) fall back to `/credo:self-restart --update` (cc-up)
+as described below.
+
+### Self-restart: announced, never asked (owner rule)
+
+In autonomous mode `/credo:self-restart` runs WITHOUT the Ask tool, but always announced at
+least 5 minutes ahead: `run --announce 300 --no-background-work` (the default; less is refused) sends an ntfy push
+and prints the reason plus the cancel command, so the user can still react. Outside
+autonomous mode it is never run on the agent's own initiative - only after the user's
+explicit yes via the Ask tool (`run --user-confirmed --no-background-work`), because an unannounced restart could
+discard a prompt the user is typing. Never with running background subagents.
+
+### Never interrupt an autonomous run for a mode change (hard rule)
+
+In autonomous mode the agent NEVER asks via the Ask tool about switching mode - not even
+if the user keeps prompting during the autonomous run. An autonomous run must not be
+interrupted for a mode-awareness question. At most, the agent may mention in normal output
+that a mode change has to be made manually (via a `/credo:session-*` command) or on an
+explicit user request; it never raises an Ask round to propose one. A mode switch happens
+only on an explicit user instruction. This is the exception to the common core's
+"Suggest a session mode when none is set" rule: that Ask-based suggestion logic applies
+only in presence or no-mode sessions, never in autonomous.
+
+### No Ask tool: questions and vetos as text
+
+No Ask tool in autonomous mode at all - not for a clarify point, not for the power-down, not
+for the budget. Nobody is there to answer, so an Ask would block the run. A question that
+needs the user goes into the end-of-run report as text with a Q code (credo `verify`,
+"Typed codes"); the deferred-question flow below covers the bounded wait before that.
+
+Veto codes only for decisions the owner notices in the product (behaviour, visible text, money, taste, data) with real consequences (a changed scope,
+money spent inside an approved budget, a lock removed, a default adopted for an open
+point). Internal process, measurement, test-set and tooling decisions (a GO the agent gave, a skipped audit, a preset rule) go only into the History and the report, no veto code. Each veto states the
+consequences for the user when they are not obvious.
+
+### Never build a skill autonomously (hard guarantee)
+
+The credo `skill-capture` skill is mode-gated, and autonomous mode takes its strictest
+branch: autonomous mode NEVER builds a skill from a recurring workflow, no matter how often
+the pattern recurs. Building a skill needs an explicit user GO, which an autonomous run does
+not have; a build-on-detection rule would be a showstopper. When you notice the same
+multi-step workflow recur (about three times), append ONE candidate note to
+`.credo/skill-candidates.md` and continue the actual work - do not stop, do not ask, do not
+create the skill. A later presence-mode session picks the candidate up. This is consistent
+with steward-not-initiator: noticing a pattern is fine, acting on it into new tooling is not.
+
+### Budget caps are always on
+
+Guardrail-availability gate (autonomy never runs without budgets/limits). At autonomous-mode
+entry, and before any autonomous start, check budget-data availability via the read-only
+`"${CLAUDE_PLUGIN_ROOT}/scripts/credo-budget-read.sh"`:
+
+- Exit 0 (fresh data): percentage caps are measurable and MANDATORY - proceed as today.
+- Exit 3 or 4 (no cache / stale cache): percentage caps CANNOT be enforced (credo `budget`
+  skill, B8 - the fail-safe caps are percentages too, so they are equally unenforceable).
+  Do NOT run blind, do NOT silently ignore budgets, and use no Ask tool. If the grant or an
+  earlier user statement already picks one of the options below, apply it. Otherwise do not
+  start building. Treat it as a showstopper (end-of-run per the rules below) and put the
+  three options into the end-of-run report as text with a Q code:
+  a. Install the `limit` plugin for real budget safety, then re-check availability.
+  b. Run with a wall-clock timebox (max X hours / until a clock time) - the only guardrail
+     enforceable without the cache. Record the deadline and self-enforce it: end the run via
+     `credo-autonomy-off.sh` when the clock reaches it.
+  c. Proceed without budget guardrails - an explicit, user-accepted risk.
+
+This gate is what makes "autonomy never runs without budgets/limits" true. Send the
+come-to-PC ntfy for this question (per the ntfy hybrid).
+
+Budget enforcement is unconditional in autonomous mode. Apply the credo `budget` skill in
+full: the daily cap schedule, the critical 09:00 guard, the 5-hour guard (skill behavior,
+check frequently including while subagents run, stop subagents with TaskStop before the
+ceiling), the task-sizing recommendation, the absolute fail-safe caps, and the
+commit-identity gate before every commit. Before starting an autonomous run, the main agent
+applies the schedule defaults plus any cap override the user already gave, with its end (per
+the budget skill; no Ask tool, an open budget question goes into the end-of-run report as
+text with a Q code), and performs the mandatory budget-start read-back (see
+"Budget-start read-back" below) - show the schedule row in force and reflect the
+understanding back before starting (full read-back on the first start, at least the short
+form on every start). Never exceed a cap to finish "just one more thing".
+
+### Keep-alive (hook-enforced, only while this session's autonomy flag is set)
+
+Keep the session awake so an unattended run does not fall asleep while there is open work
+and budget. "Open work" means BUILDABLE work - at least one buildable item remaining - NOT
+"any file physically in `2_go`" (see "Empty buildable queue = end-of-run" below). When no
+buildable item is left, that is an end-of-run condition, not a reason to keep the keep-alive
+spinning. This discipline is now hook-enforced. A registered `Stop` hook
+(`credo-autonomy-keepalive.sh`, wired in `hooks/hooks.json`) fires when you try to end the
+turn: if autonomy is active and no self-wake is marked, it blocks the stop and instructs you
+to call ScheduleWakeup now (and mark it). Paired with the registered `UserPromptSubmit` hook
+(`credo-autonomy-clear.sh`), any real user message turns autonomy off. The enforcement is a
+nudge, not a guarantee of infinite wakefulness: the hook forces the block plus instruction,
+but actually staying awake still relies on you then calling ScheduleWakeup. It is loop-safe -
+the hook forces AT MOST ONE continuation per stop attempt (via the `stop_hook_active` guard)
+and lets the stop through once a future wake is marked, so it can NOT spin forever. Outside
+autonomous mode (no flag set) the hook is completely inert - a plain no-op stop.
+
+- ScheduleWakeup is the PRIMARY self-wake mechanism. Its single delay is clamped to
+  [60, 3600] seconds, so for a longer pause CHAIN several wake-ups rather than one long one.
+- Record each planned wake with `credo-autonomy-wake-mark.sh` (same delaySeconds as the
+  ScheduleWakeup call). This is what the Stop hook checks to let the turn stop, so marking the
+  wake is what satisfies the enforcement. The marker is per session
+  (`credo/autonomy/<session_id>/wake-scheduled`); like `credo-autonomy-on.sh` and
+  `credo-autonomy-off.sh`, the script resolves the session_id from an explicit argument, else
+  `$CREDO_SESSION_ID`, else `$CLAUDE_CODE_SESSION_ID`, and refuses (exit 1, nothing written)
+  when none is available. The Stop hook message prints the exact commands with this session's id.
+- On each wake, re-check the flag. If autonomy has been turned off (the user returned, or
+  the run ended), do not keep building - end quietly.
+- Never end a turn without a scheduled wake-up while the flag is set and there is open work
+  plus budget. The Stop hook enforces this nudge, but uphold the duty yourself rather than
+  relying on the block.
+- When the run is truly finished, on a showstopper, or at the weekly hard limit, end the mode
+  deliberately with `credo-autonomy-off.sh` - it clears the flag and sets the paused opt-out
+  so the Stop hook stays inert and you may stop. EXCEPTION: if a suspend-on-idle directive is
+  set, that same deliberate exit MUST first run the power-down sequence (see "Empty buildable
+  queue = end-of-run"); a bare `credo-autonomy-off.sh` refuses (exit 1) while the directive
+  stands, and the clean exit is `credo-autonomy-off.sh --after-suspend` as the final step of
+  the power-down (or `--override` on an explicit user "leave it on"). announced = committed:
+  no deliberate end-of-run - clean-done, showstopper, or weekly hard limit - ends a directive
+  session without the power-down or an explicit override.
+
+Wake-up offsets after a limit reset (default 5 minutes, fallback 1) come from the budget
+skill's `wakeup.*` config - use them when you pause for a limit to reset.
+
+### 5h-budget-guard (autonomous only, hook-enforced)
+
+Autonomous runs pace the 5h axis on a staggered ladder that the `credo-5h-budget-guard.sh`
+PreToolUse hook enforces (it fires in the main agent AND inside subagents). This applies
+ONLY in autonomous mode; active and passive are unchanged. The ladder OVERRIDES the budget
+skill's soft/hard band on the 5h axis (no double-firing); everything else in the budget
+skill still holds. Full rationale: `docs/TODO-credo-5h-budget-guard-concept.md`.
+
+Two tracks (the main agent orchestrates - spawns, commits, schedules; a subagent runs ONE
+task and reports back):
+
+- **Main track:** 83 soft, 87 soft, 90 soft-strong, 92 HARD, 97 Lockdown.
+- **Subagent track:** 83 soft, 90 HARD, 92 HARD.
+
+Zones:
+
+- **Soft zone** = recommendation only. The hook injects a throttled, concrete instruction
+  (wind down, no big new fan-outs, wrap up running subagents, secure results); the agent
+  stays at the wheel and judges. It does NOT block. Do not capitulate early - the hard zone
+  is the safety net, so exploit the budget deliberately up to it.
+- **Hard zone** = the hook BLOCKS disallowed tool-calls. Still allowed in the hard zone:
+  `git` commit / push, writing under `.credo/`, `TaskStop`, `ScheduleWakeup`, and
+  `credo-autonomy-wake-mark.sh`. New agent spawns and builds are blocked. At 92 the main
+  agent hard-kills running subagents via `TaskStop`, then does only organisational work
+  (commit / push, write the resume block, task status). At 97 (Lockdown) everything is
+  dropped - even an open commit / push - and only the resume wake-up is set.
+
+### resume-after-reset.md protocol
+
+Location `.credo/process/resume-after-reset.md` (durable, git-excluded like the other
+`.credo` process files). It is a ROLLING log of at most TWO blocks: the newest block always
+on top, the previous one below it, and the oldest drops out entirely when a new one is
+added. Each block records:
+
+- the write timestamp (date + time + TZ),
+- the exact 5h-reset time this block is waiting for,
+- the open remaining work + next steps (folded in from the subagents' PAUSE reports and the
+  main agent's own state).
+
+After the wake-up the main agent works EXCLUSIVELY the newest block (the one written just
+before the reset that just happened), never the older one below it; it marks done points as
+done. If it runs into the limit again it writes a new block on top and the oldest drops out.
+
+Exception - 97 % Lockdown: write NO protocol (it costs tokens that are already scarce at
+97 %). Instead set the resume wake-up IMMEDIATELY and stop; after the reset, continue from
+the session context.
+
+### Auto-resume - only the credo method
+
+Pausing across a 5h reset and coming back uses ONLY the credo-documented keep-alive / wake
+method described in the Keep-alive section above: `ScheduleWakeup` as the primary self-wake,
+marked with `credo-autonomy-wake-mark.sh` (same `delaySeconds`) so the Stop hook lets the
+turn stop, and the offset AFTER a reset taken from the budget skill's `wakeup.*` config
+(default 5 minutes, fallback 1). Do not invent any other wake mechanism.
+
+### compact-plus precedence (5h reset wins)
+
+The 5h-reset wake-up takes PRECEDENCE over compact-plus. On a collision - the 5h axis is
+near its cap AND the session-context threshold has been reached - do NOT run compact-plus
+before the reset (it costs tokens and could blow the 5h limit). Set the reset wake-up, stop,
+and run compact-plus only AFTER the reset, once it is safe. The same applies to the weekly
+axis.
+
+### Per-task and per-question ntfy
+
+Autonomous mode is where the common-core ntfy hybrid does the most work. Send every ntfy
+push through the helper `${CLAUDE_PLUGIN_ROOT}/scripts/credo-ntfy-send.sh "message"` (with
+`-t "Title"` and `CREDO_NTFY_PRIORITY=high` as needed); it resolves the relay/topic/server
+through the cascade internally (`personal.ntfy_relay`, `personal.ntfy_topic`,
+`personal.ntfy_server`) and is a silent no-op when ntfy is not configured, so you never touch
+the topic directly. A non-zero exit means the push was NOT sent (reason on stderr): log it in
+the transcript and treat the run as blind on notifications until a later push succeeds.
+Send an immediate `high` ntfy for come-to-PC events (a deferred question, a blocker /
+showstopper, a budget cap reached, run completion, the pre-hibernate veto) and BEFORE the
+blocking action.
+A disk wait (credo `orchestration`, "Disk space") sends ONE `default` ntfy per item, "waiting for
+disk space", with the item id, the free space and the need; further waits of that item stay
+silent. It is not a come-to-PC event: the item retries itself once space is free.
+Progress is bundled into one digest per `ntfy.digest_interval_minutes`, and - when ntfy is
+configured (a `personal.ntfy_topic` or `personal.ntfy_relay` is set) - sending that digest is MANDATORY per interval
+whenever there is progress; it is NOT the agent's discretion to judge it "not important
+enough" and stay silent (this is what fixes digests arriving far too rarely). With no topic
+set, ntfy stays silently skipped (see the end of this paragraph). Every completed item in the
+digest is one line in the common core's "ntfy content standard" format
+(`#N <title>: <one sentence what was done> (<version>)`, pushed in the owner's language with
+umlauts); a bare item number or "done" is never enough, and meta information appears only
+when it concerns the owner. Prefer one message; if it exceeds ntfy's size limit, split into
+`n/m` messages. If `personal.ntfy_topic` and `personal.ntfy_relay` are both empty, skip ntfy silently - but then note that
+autonomy is running blind on notifications. Run completion is `high`, with the run's item
+lines as its body (see "Empty buildable queue" for the end-of-run report).
+
+### Deferred-question flow (core of autonomous mode)
+
+When you hit a previously-unknown question that genuinely needs the user - one you cannot
+self-resolve up to authority level 3 - do NOT stop the whole run and do NOT guess. First
+confirm it is genuinely still open: read the WHOLE item body plus the requirements log and
+existing audit reports before raising it (read/build-gate, credo `items` skill) - a question
+that merely looks open in a stale head is often already clarified there, and must not be
+re-raised. Only if it is truly unanswered:
+
+1. State the question in the reply as text with a Q code (credo `verify`, "Typed codes";
+   no Ask tool) and send an immediate ntfy `high` stating it clearly (come to the PC).
+2. Schedule a wake-up for the deferred-question window - `windows.deferred_question_minutes`
+   (default 5) - to check for an answer:
+
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get windows.deferred_question_minutes
+   ```
+
+3. If the answer arrives within the window: incorporate it and continue. Log it verbatim
+   (credo `requirements-verbatim`).
+4. If no answer arrives: for an uncritical question, decide it by the agent decision rule
+   (credo `items`, per the active mainagent-prompt) as the documented default - record the decision
+   and its rationale in the item History / handoff so it is auditable - and continue fully
+   autonomously. A question on the escalation list (the
+   user's taste or preference, deleting user data, installs beyond the item's `## Freigaben`, money beyond an
+   approved budget, the hard safety rules, a change to the verbatim requirement) or the GO of
+   a human-owned item is NEVER defaulted: park it (the item stays where it is), continue with
+   other work, and put it into the end-of-run report with its Q code. A defaulted decision
+   the owner notices in the product gets a veto code there too. Do not block the run on an absent user.
+
+This replaces blocking on the user with a bounded wait plus a safe, documented fallback. If
+a subagent is the one that hit the question, use return-and-resume (credo `orchestration`):
+the subagent returns `{status: needs_decision, question}`, the main agent obtains the answer
+(user, verbatim log, or documented default) and passes it back via SendMessage so the
+subagent continues with full context.
+
+### Release when nothing is buildable
+
+`release.auto` (default false, `credo-config.sh get release.auto`) decides whether this
+session releases finished changes on its own:
+
+- false: no automatic release; finished changes wait for a release by the user.
+- true: when no GO item is buildable and changelog fragments exist, release them before the
+  end-of-run sequence below. As a fallback while GO items stay buildable, release anyway once
+  `release.fallback_fragments` fragments (default 15) exist or `release.fallback_days` days
+  (default 7) have passed since the last release, whichever comes first.
+
+The release uses the project's own procedure (for example the changelog fragment script or
+dogma versioning); credo invents none. Without such a procedure, do not release and note it
+in the end-of-run report. Git rules still apply (no push or merge unless the repo
+rules allow it).
+
+After the release, run the worktree cleanup as at item close (credo `items` skill, "Worktree
+cleanup at item close"). Merged and clean worktrees go per the DOGMA-PERMISSIONS checkbox, and
+every owner question it reports (`(ask owner)`) goes into the end-of-run report. Never remove
+or unlock such a worktree yourself.
+
+### Empty buildable queue = end-of-run (kills the idle loop)
+
+No buildable item remaining is an END-OF-RUN condition. The keep-alive notion of "open work"
+means BUILDABLE work, not "any file physically in `2_go`". This closes the limbo where an
+agent keeps the keep-alive alive while refusing to build (the RETRO's ~7h idle loop). A file
+in `2_go` that the agent is treating as non-buildable does NOT count as open work - flag it
+(the section above) and, if it is the only thing left, the buildable queue is empty.
+
+**"Buildable" = can be advanced RIGHT NOW.** An item is buildable only if it can, at this
+moment, actually be built further and moved toward `2_done`. A `2_go` item whose remaining
+work hangs ONLY on an unbuilt dependency, or ONLY on a still-open user decision, is NOT
+buildable - it counts as empty for this gate, exactly like an empty folder. Do NOT read such
+leftovers as "GO is not empty, therefore not finished, therefore no suspend". "GO is not
+empty", a self-declared showstopper (a context showstopper included), and "I was not finished
+yet" are NONE of them a reason to bypass a standing suspend-on-idle directive when nothing is
+factually buildable any more. If the only thing keeping you awake is blocked or
+decision-gated remnants, the buildable queue is empty and end-of-run is reached.
+
+**Classify stalled GO items before any idle or nothing-to-do report.** Before you leave the
+keep-alive idle, report "nothing to do", or start the end-of-run sequence, run
+`"${CLAUDE_PLUGIN_ROOT}/scripts/credo-go-stall.sh"` and classify every listed GO item as
+buildable (build it), Named-Decision (to `1_clarify`, URGENT), human-only verify only (to
+`2_done`) or blocked (to `3_blocked` with `blocked_by`), as in the credo `items` skill ("GO
+stall classification"). Before a Named-Decision is parked, the grant check of credo `rules`
+and `safety` applies. The report names the class of each item; "all GO items wait on the
+owner" is not a valid report.
+
+**Fresh-listing backstop (mandatory before declaring done or powering down).** Before an
+autonomous run declares itself "finished" OR starts the power-down / suspend sequence, it
+MUST FRESHLY list the GO folder right then - do not trust an earlier snapshot:
+
+```
+ls -1 .credo/items/1_todo/2_go/
+```
+
+Judge the actual current contents:
+
+- Also list `1_todo/1_clarify/` for agent-owned items (`clarify_owner: agent`) whose
+  questions the agent decision rule can settle - they are autonomous-eligible work (Steward
+  section above), not leftovers.
+- If buildable, open, autonomous-eligible items are there, the run may NOT stop without a
+  reason. Either build them, or - for every remaining item - name the concrete non-build
+  reason explicitly (a user-only decision, a hard block, or a placement / hygiene flag; see
+  "A non-buildable item in 2_go" above). "I thought I was done" is not a reason.
+- Only once the listing is FACTUALLY empty, or every remaining item is flagged
+  non-buildable WITH its reason, is the buildable queue empty and the end-of-run /
+  power-down sequence allowed to proceed.
+
+When the buildable queue is empty (confirmed by the fresh listing above), first run the
+release step when `release.auto` is true ("Release when nothing is buildable" above), then
+this end-of-run sequence. The ORDER matters: whether a suspend directive is set decides whether
+`credo-autonomy-off.sh` may flip the flag on its own or must ride the power-down first.
+
+**No suspend directive set (and `sleep.enabled` false):**
+
+1. Send an immediate `default`-priority ntfy stating nothing was buildable - `default`, not
+   `high`, because it need not wake the user. Add one line per item finished in this run
+   (common core "ntfy content standard"), or say that none finished.
+2. End autonomous mode via `credo-autonomy-off.sh` (clears the flag, makes the Stop hook
+   inert so the run can stop). The machine stays on.
+
+**A suspend directive IS set (or `sleep.enabled` true) AND `sleep.command` present:** a bare
+`credo-autonomy-off.sh` will REFUSE (exit 1) while the directive stands - the flag flip is the
+LAST step, not the first. Run the power-down sequence:
+
+1. Send an end-of-run ntfy (`default` for nothing-buildable, `high` for all-work-completed).
+   Its body is the end-of-run report: one line per item finished in this run (common core
+   "ntfy content standard"), then only the owner-relevant meta (open questions, decisions
+   with consequences, the power-down posture).
+2. Schedule a ~20 min wake (`windows.veto_minutes`) as a veto window.
+3. No veto within the window -> power down, gated by the combined end-of-run gate below:
+   autonomous AND buildable-queue-empty AND (a suspend directive is set OR `sleep.enabled` is
+   true) AND `sleep.command` is present. A set directive OVERRIDES `sleep.enabled: false`.
+   This REUSES the existing power-down procedure below (veto window, retry plus success
+   detection, secure-work-first, the exact `sleep.command`) - do not duplicate it.
+4. As the FINAL step, AFTER `sleep.command` has run, flip the flag with the bypass:
+   `credo-autonomy-off.sh --after-suspend`. Only an explicit user "leave it on" justifies
+   ending with `credo-autonomy-off.sh --override` instead (that is a revocation - clear the
+   directive too). Never end a directive run with a bare `credo-autonomy-off.sh`; it is
+   designed to refuse.
+
+Distinction: "all work genuinely completed / built" stays a `high` ntfy (come see results).
+Only the nothing-was-buildable case uses `default`. Both are end-of-run and feed the same
+power-down gate below.
+
+### Power down the machine at the end (I9)
+
+The machine power-down can be EITHER suspend (standby / suspend-to-RAM) OR hibernate
+(suspend-to-disk), per `sleep.mode`; refer to it generically as "power down / sleep the
+machine". The global "never auto power-down" rule lives HERE now, scoped by mode:
+
+- Non-autonomous modes (active, passive): NEVER auto power-down. Only sleep the machine on an
+  explicit user request.
+- Autonomous mode: the end-of-run triggers are EITHER everything is done (which includes an
+  empty buildable queue - see the section above), OR a showstopper occurs, OR the weekly axis
+  hits its power-down trigger. On the weekly axis the reset is NOT
+  a default showstopper: first PREFER the credo `budget` skill's weekly pause-and-resume
+  (when the reset is near - same local calendar day - and weekly is at or above
+  `switch_percent`, pause via chained ScheduleWakeup across the reset and resume with a fresh
+  weekly budget). Only the weekly last-resort net (99 percent) or a pause path that does not
+  apply (the reset is on a different calendar day) reaches an end-of-run trigger on the
+  weekly axis. The weekly triggers are set by the credo `budget` skill; this skill owns what
+  happens on a trigger - and whether that powers down the machine is gated below.
+
+Power-down is OFF by default - it must be opted into (server-safe), OR ordered for this
+session via an explicit suspend directive. Whether an end-of-run trigger sleeps the machine is
+decided by the combined gate below (`sleep.enabled` true OR a set directive, plus a non-empty
+`sleep.command`):
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get sleep.enabled
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get sleep.command
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-directive.sh" get
+```
+
+**Combined end-of-run gate.** The power-down fires when ALL hold: autonomous mode AND the
+buildable queue is empty (fresh-listing backstop above) AND (`sleep.enabled` is true OR an
+explicit suspend directive is set for this session) AND `sleep.command` is non-empty. A set
+directive OVERRIDES `sleep.enabled: false` (the server-safe default): it is the user's
+explicit, durable order to power down at end-of-run, and announced = committed. The override
+does NOT extend to a missing `sleep.command` - with no command the MISCONFIG guard below still
+wins (end cleanly, warn, never guess a command). The directive persists until an explicit
+revocation; user presence does NOT revoke it (see the presence carve-out below).
+
+- `sleep.enabled` false (the DEFAULT) AND no suspend directive set: NEVER power down the
+  machine. This is what keeps a SERVER running autonomous work from being powered down
+  unexpectedly. On every end-of-run trigger (all done / showstopper / weekly cap reached) do
+  NOT sleep - instead end the autonomous run CLEANLY via `credo-autonomy-off.sh` and send a
+  `high` ntfy stating why (run complete, showstopper, or weekly cap reached), with the
+  end-of-run report lines of the items finished in this run. The machine stays on.
+  BUT if a suspend directive IS set, the override applies: run the power-down
+  procedure below (provided `sleep.command` is non-empty), exactly as if `sleep.enabled` were
+  true.
+- `sleep.enabled` true (opt-in, personal machine only): run the power-down procedure below
+  (veto window, double-fire protection, secure-work-first, then run the EXACT command from
+  `sleep.command`) on those same end-of-run triggers.
+- MISCONFIG guard: if `sleep.enabled` is true but `sleep.command` is EMPTY, that is a
+  misconfiguration. Do NOT guess or hardcode a command. End the run cleanly via
+  `credo-autonomy-off.sh` and send a `high` ntfy warning that sleep is enabled but no command
+  is configured (re-run `/credo:setup`). Never sleep the machine on a guessed command.
+
+Default OFF means autonomous work never powers down the machine unless the user opted in at
+setup (`/credo:setup`). The weekly pause-and-resume path (budget skill) is unaffected either
+way - it never powers down anyway; this gate governs only the last-resort 99 net and the
+end-of-run / showstopper power-down.
+
+Power-down procedure (only when the combined end-of-run gate above holds - (`sleep.enabled`
+true OR a suspend directive is set) AND `sleep.command` non-empty; the directive path routes
+here too, so this is NOT re-gated on `sleep.enabled` alone;
+with retry plus timestamp-based success detection so a repeated trigger cannot fire the
+power-down twice and a successful sleep is never miscounted as a failure):
+
+1. Send an ntfy `high` announcing the pending power-down and open a veto window -
+   `windows.veto_minutes` (default 20):
+
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get windows.veto_minutes
+   ```
+
+2. During the veto window, watch for the user coming back. If the user responds or
+   otherwise signals presence, CANCEL the power-down - do not sleep the machine out from
+   under an active user.
+3. Before powering down, make sure work is secured (git-push policy and, where relevant, the
+   credo `compact-plus` securing) so nothing is lost across the sleep.
+4. Retry with success detection (applies to BOTH power-down modes - `suspend` on native
+   Linux and `hibernate` on WSL / Windows). Read the three thresholds from config, with the
+   named defaults as fallback:
+
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get sleep.retry_count       # default 3
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get sleep.retry_spacing_s   # default 30
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get sleep.success_gap_min   # default 5
+   ```
+
+   - BEFORE the first power-down attempt, write the pending-suspend timestamp marker:
+
+     ```
+     "${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-mark.sh" write
+     ```
+
+   - Then run the EXACT command from `sleep.command` (read via the config above) to power
+     down. Do NOT hardcode or guess the command - it is platform- and mode-specific and set
+     at setup.
+   - Retry the command up to `sleep.retry_count` times (default 3), waiting
+     `sleep.retry_spacing_s` seconds (default 30) between attempts - but ONLY while the
+     machine is still obviously awake. A further attempt is made only when we clearly did
+     NOT fall asleep (the turn kept running); the moment the machine actually sleeps, the
+     process is frozen and no further attempt is issued.
+
+5. Success detection on the next turn / wakeup (this replaces the old double-fire flag).
+   Ask the helper how long ago the marker was written and compare the jump:
+
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-mark.sh" elapsed   # seconds, or exit != 0 / empty if no marker
+   ```
+
+   - If the elapsed jump is GREATER than `sleep.success_gap_min` minutes (default 5, set
+     deliberately well above the retry window) - the helper reports seconds, so compare
+     `elapsed_seconds > success_gap_min * 60` - the machine really slept - the power-down
+     SUCCEEDED. Clear the marker, drop the power-down intent, and do NOT re-suspend and do
+     NOT score it as aborted / failed:
+
+     ```
+     "${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-mark.sh" clear
+     ```
+
+   - If the marker is absent (helper exits non-zero / prints nothing), there is no pending
+     power-down - do nothing.
+   - If a user interrupt arrives right after waking (a real user message, which also turns
+     autonomy off), do NOT re-suspend - clear the marker and stay awake for the user.
+   - Only a small elapsed jump (at or below `sleep.success_gap_min`) with the intent still
+     open and no user present means the earlier attempts did not take effect - only then may
+     the power-down be attempted again under the same retry budget.
+
+Never power down the machine on your own initiative outside these autonomous triggers.
+
+### Suspend directive: persistence, presence, and the attended/unattended split
+
+The suspend-on-idle directive (stored by `credo-suspend-directive.sh`, re-injected every
+prompt by the session-mode inject hook) is the durable memory that the user ORDERED a
+power-down at end-of-run. It feeds the combined end-of-run gate above; these rules keep it from
+being silently lost - the exact failure that motivated it (a standing AFK+suspend order was
+dropped on re-invoke, and the agent read user presence as "better hold off" and never
+suspended even though it had announced it would).
+
+- **Persistence.** The directive lasts the whole session and survives re-invokes of
+  `/credo:session-autonomous` and context compaction. A later invocation with no argument does
+  NOT clear it. It is cleared ONLY by an explicit revocation (below). An `credo-autonomy-off`
+  at end-of-run does NOT delete it either - it must outlive each run.
+- **Announced = committed (hard rule).** If you declared in the read-back that you will power
+  down, you MUST carry it out at end-of-run. A read-back that promises a power-down is a
+  commitment, not a maybe. Do not announce a suspend and then not do it.
+- **Presence does NOT revoke it (carve-out).** Active user fixes, context messages, or other
+  user presence DURING the build phase do NOT clear the directive. The user being at the
+  keyboard while you build is not a cancellation of the end-of-run suspend they ordered. The
+  20-minute veto window right before the actual power-down (see the power-down procedure)
+  REMAINS the intervention chance: the user can cancel there. This is not a contradiction -
+  presence mid-build keeps the directive; a veto in the window cancels this one power-down.
+- **Anti-self-talk (hard rule against the reported failure).** You may NOT reason yourself out
+  of a set directive by reading user presence as an implicit "they probably do not want the
+  suspend after all". Presence is not a silent cancellation. When the directive is set and the
+  veto window passes with no cancellation, you power down - full stop.
+- **Explicit revocation** = a natural-language user statement that clearly cancels the order
+  in any language ("no suspend", "do not power down", "leave it on"; German e.g. "kein
+  suspend", "lass an"). On such
+  a statement run `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-directive.sh" clear`. Nothing
+  else clears it.
+
+**Trigger split - how end-of-run reaches the power-down differs by attendance:**
+
+- **Unattended (real autonomy / AFK):** end-of-run reached with NO real user prompt in the
+  turn - the keep-alive wake fired, or a self-scheduled wake carrying the `[CREDO-AUTONOMY-WAKE]`
+  marker. This is the EXISTING path: send the `high` ntfy, open the 20-minute veto window
+  (`windows.veto_minutes`), and power down if not vetoed. Do NOT use the Ask tool here - there
+  is no one to answer it, so an Ask would run into the void.
+- **Attended (autonomy-off with the user reachable):** end-of-run reached because a real user
+  prompt ended the run and the user is present and reachable (a real user message just paused
+  autonomy via `credo-autonomy-clear.sh`, as opposed to a `[CREDO-AUTONOMY-WAKE]` self-wake).
+  No Ask tool here either, also not for the power-down. Announce the pending power-down in
+  the reply as a veto (`### ✋✋ V<n>) Veto possible: power down the machine ✋✋`, credo
+  `verify`, "Typed codes") that names the directive and the veto window, then run the same
+  path as unattended - the `high` ntfy, the `windows.veto_minutes` veto window, power down if
+  not vetoed, and `credo-autonomy-off.sh --after-suspend` as the final step (the directive
+  still stands, so a bare off would refuse). An objection to that veto, or any other explicit
+  revocation, clears the directive (`credo-suspend-directive.sh clear`), after which a plain
+  `credo-autonomy-off.sh` (or `--override`) ends the run cleanly. This attended branch lives
+  HERE, in the skill; the fail-safe hook `credo-autonomy-off.sh` never touches the
+  directive.
+
+### Authority order when the user is away
+
+The common-core authority order (E5) applies, with the away-user branch active: self-
+resolve up to level 3 (the verbatim log and committed docs); if that is not enough, either
+raise a deferred question (above) when it truly needs the user, or fall back to a
+documented default (levels 4-5, for agent-owned questions the agent decision rule in credo
+`items`) and continue. Do not silently invent a requirement; a question that would change
+or narrow the verbatim requirement is parked, never defaulted.
+
+### Owner actions while away
+
+The owner-presence rule of the session-active skill ("Owner actions in full while the owner is
+present") applies here with one autonomous detail: the keep-alive wake and the
+`[CREDO-AUTONOMY-WAKE]` self-wake are NOT owner prompts, so they never make the owner present.
+While the owner is away, an owner action (a command, an install, a test, a click) stays open in
+the item or the handoff, without the full write-up, because the owner is not reading. At the
+first owner prompt after the absence it is presented in full again.
+
+### Git-push: atomic per slice
+
+Per the common-core git-push policy, in autonomous mode commit ATOMICALLY per slice and
+push per the granted authorization, so each unit of work is secured as it completes. The
+commit-identity gate (credo `budget` skill) must pass before every commit. If commit or
+push is forbidden by permissions, that is a SHOWSTOPPER for autonomous work - the work
+cannot be secured - so warn via ntfy and stop; do not keep building unsecured work.
+
+### Handoff-rules check (before every autonomous start)
+
+Before the run starts, as part of the read-back, compare the handoff's `## Rules (temporary)`
+lines with `.credo/RULES.md` (credo `rules`, "Handoff rules (temporary) vs RULES.md"), helped
+by `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-handoff-rules.py" check .credo/process/handoffs/HANDOFF.md .credo/RULES.md`.
+Name aloud in the read-back every conflict and every handoff rule without a source or an
+`until` (it does not apply), and send the same as one ntfy line, so the owner can correct it
+before the run. Then start anyway, no Ask. On a conflict a valid owner rule from the handoff
+(owner quote with date, `until` not yet reached) beats RULES.md while it lasts; RULES.md wins
+over agent-decision rules and invalid handoff rules (missing or invalid source or `until`,
+expired). Agent-decision rules are never treated as owner orders. Do the same
+after every compact or rehydrate during the run.
+
+### Budget-start read-back (mandatory before any autonomous start)
+
+Before starting an autonomous run - always, not only overnight - the agent MUST give a
+read-back and only then start: the COMPLETE five-part read-back below on the FIRST start, and
+AT LEAST the short form on every start (see "Timing" below - never start without at least the
+short form). The full read-back has five parts (a scattered or late partial read-back is not
+acceptable):
+
+**(0) Read the real numbers first (mandatory - before naming ANY budget figure).** Before
+you state ANY budget number in the read-back - a cap OR a live figure - you MUST read BOTH
+of these fresh, in this moment. A number that was not just read is not stated:
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get budget.schedule   # the active profile's real caps, overrides included
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-budget-read.sh"                    # live 5h% / weekly% + resets
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" paths                  # which config layers exist for this profile
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" source budget.schedule # which layer supplies the caps
+echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"                             # the active profile
+```
+
+- **Show the provenance (hard MUST).** The read-back MUST also show, verbatim, the active
+  profile line, the `paths` output, the `source budget.schedule` line and the `cache_file=`
+  line of `credo-budget-read.sh`. This makes a wrong profile, a missing profile override or
+  a cap inherited from the shipped default visible at a glance, before any cap is applied.
+  `CLAUDE_PLUGIN_ROOT` may point into another profile's directory when profiles share a
+  symlinked `plugins/` dir; that is harmless (same files). State and caps always follow the
+  active profile above, never the plugin path.
+
+- The binding cap axis and every cap value named in the read-back come ONLY from
+  `budget.schedule` (via `credo-config.sh`) - the active profile's own rows, overrides
+  included. NEVER a number from memory, and NEVER a number copied from the credo `budget`
+  skill's worked examples or defaults.
+- The live 5h% / weekly% come ONLY from `credo-budget-read.sh`. If it exits 3 or 4 (no
+  cache / stale cache), do NOT guess the live figures: report them honestly as "not readable
+  (no/stale cache)", still name the static caps from `budget.schedule` (always readable),
+  and act conservatively.
+- **Show the output (proof obligation, hard MUST).** Reading fresh is not enough - a prose
+  number is indistinguishable from remembered vs. read. The read-back MUST make the raw
+  command output VISIBLE as the evidence: at minimum the applicable line from
+  `credo-config.sh get budget.schedule` AND the `credo-budget-read.sh` live figures,
+  verbatim as printed. EVERY cap or live number named ANYWHERE in the read-back MUST appear
+  in that shown output. A number that does not appear in the output shown in THIS turn is
+  invalid and MUST NOT be stated - never a value from the config template
+  (`config.default.yaml`), from the defaults or annotations of this or the `budget` skill,
+  or from memory. Same standing as "A number that was not just read is not stated": if it is
+  not in the output you just showed, you do not state it.
+- This does NOT replace the guardrail-availability gate above (which decides WHETHER to
+  start at all); it governs the read-back numbers - what may be named, and from where.
+
+1. **(a) Show the schedule row that applies now.** Read the cap schedule and print the ONE
+   row in force for the current local weekday and hour (day, window, `five_hour_cap`,
+   `weekly_cap`), plus the current live budgets:
+
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get budget.schedule
+   ```
+
+   Pick the applicable row exactly as the credo `budget` skill's row-selection rule
+   describes (B1); do not re-invent caps. The printed row IS the raw
+   `get budget.schedule` output (the applicable line from it, shown verbatim), NOT a line you
+   typed or recalled yourself - the caps you name come from that shown output only.
+2. **(b) Reflect the understanding back - COMPLETE, not a one-liner.** State, in one short
+   read-back, what the current row means for this run - specifically whether there is
+   anything to conserve and, if so, how much headroom is left before the cap. This read-back
+   must not be a vague one-liner: it MUST print, explicitly, BOTH live figures (the current
+   5h% AND the weekly%) AND BOTH applicable row caps (`five_hour_cap` AND `weekly_cap`), in
+   addition to naming the binding axis in (c).
+3. **(c) Name the binding axis (the current brake).** The read-back MUST state explicitly
+   which axis is the brake right now = the SCHEDULE-CAPPED axis with the LEAST headroom to
+   its row cap. Read each axis against the correct reference:
+   - The 5h axis is read against the enforced autonomous LADDER rung
+     (`budget.autonomous_5h.main_ladder`), NOT the soft/hard band - in autonomous mode the
+     ladder OVERRIDES that band on the 5h axis (see the "5h-budget-guard" section above and
+     its ladder-overrides-the-band note).
+   - The weekly axis is read against the applicable schedule row's `weekly_cap`.
+   - Binding = whichever CAPPED axis has the LEAST headroom to its cap. If the applicable
+     row imposes no real cap on an axis, that axis is NOT binding; if neither axis is really
+     capped, state plainly "nothing binding right now". This MUST stay consistent with the
+     mental model below - the schedule row decides. Never present the raw 7-day / weekly
+     utilization number as the brake when no row caps it: it is context, not a cap.
+4. **(d) Declare the suspend posture (one line, ALWAYS present - every case, including
+   `sleep.enabled` false).** Before you declare this posture you MUST read BOTH the sleep
+   config AND the persisted suspend directive fresh, right now: `sleep.enabled`, `sleep.mode`
+   and `sleep.command` (each via `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get <key>`)
+   plus `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-suspend-directive.sh" get`. NEVER state the
+   suspend/hibernate posture from memory or a default: `suspend` vs `hibernate` comes ONLY
+   from a freshly read `sleep.mode`, and whether a power-down happens at all comes ONLY from
+   the freshly read `sleep.enabled` / `sleep.command` plus the directive. Then declare, in one
+   line, the posture the combined end-of-run gate (see "Power down the machine at the end"
+   above) will produce. This DECLARES what that gate will do; it does not restate, fork, or
+   duplicate the mechanism or the veto machinery - it reuses them. Read the directive FIRST,
+   because a set directive OVERRIDES `sleep.enabled: false` and is announced = committed:
+   - **Directive set** (any `sleep.enabled`) AND `sleep.command` present: "a suspend-on-idle
+     directive is IN FORCE; at end-of-run I WILL `sleep.mode` (suspend or hibernate) per
+     `sleep.command`, with a `windows.veto_minutes` veto window - this overrides
+     `sleep.enabled`." Once declared, this is committed: I carry it out unless explicitly
+     revoked or vetoed in the window.
+   - No directive, `sleep.enabled` false (the DEFAULT): "I will NOT power down; the machine
+     stays on; at end-of-run I end cleanly via `credo-autonomy-off.sh`."
+   - No directive, `sleep.enabled` true: "at end-of-run I will `sleep.mode` (suspend or
+     hibernate) per `sleep.command`, gated on `sleep.enabled`, with a `windows.veto_minutes`
+     veto window."
+   - Directive set OR `sleep.enabled` true, but `sleep.command` EMPTY (misconfig): state it
+     will end WITHOUT powering down (per the misconfig guard above) - the directive override
+     does not extend to a missing command.
+5. **(e) Declare the ntfy posture - proof-obliged like the budget numbers.** State, in one
+   line, whether ntfy is active for this run. The status comes ONLY from the resolving
+   command, read fresh right now:
+
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get personal.ntfy_topic
+   "${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get personal.ntfy_relay
+   ```
+
+   ntfy is active when EITHER is non-empty (a relay owns its own topic, so a relay alone is
+   enough).
+
+   This is the command that resolves the FULL cascade (global < profile < project), including
+   the global -> profile inheritance - a topic set only in the global config still resolves
+   under a non-default profile. NEVER determine the ntfy status by reading a profile config
+   file directly (e.g. `$CLAUDE_CONFIG_DIR/credo/config`) or from memory: an inherited topic
+   has no entry in the profile file itself, so a direct look wrongly reports "not configured"
+   - that is exactly the inheritance trap this element exists to close.
+   - **Show the output (proof obligation, hard MUST)** - same standing as part (0). A prose
+     "ntfy is set" is indistinguishable from a guess; the read-back MUST make the raw
+     `get personal.ntfy_topic` output VISIBLE as the evidence (empty / exit 3 = not
+     configured; non-empty = configured). The proof is present-vs-empty, NOT the plaintext
+     topic: the topic is a push address (mildly sensitive), so the VALUE MAY be masked - show
+     only "set / non-empty", or just its first / last few characters. Masking the value is
+     allowed; skipping the real command output is not - the "configured vs empty" claim MUST
+     rest on output actually shown in THIS turn, never on memory or a profile-file glance.
+   - If it reads as empty / not configured, say so plainly: ntfy is then silently skipped and
+     the run is BLIND on notifications (no digests, no come-to-PC pushes - see the ntfy
+     consequence around "running blind on notifications" above). Do not restate the mechanism,
+     just declare it.
+
+**Timing - full read-back on the first start, AT LEAST the short form EVERY time.** The
+COMPLETE five-part read-back above is mandatory before the FIRST autonomous start (whenever
+you have not already given it in this session). On EVERY invocation of
+`/credo:session-autonomous` - including a re-entry, a resume, or a repeat after autonomy was
+turned off - you MUST emit AT LEAST the short form, and NEVER start autonomous work without
+it. The short form is a compact minimum that is ALWAYS present, in every case - three axes:
+
+- **Budget:** the binding axis (part c) AND BOTH current live figures (5h% AND weekly%). The
+  live figures AND any caps named come from the command output shown in THIS turn (per the
+  show-the-output proof obligation in part (0)); a number not present in that shown output is
+  not stated.
+- **Suspend/hibernate:** the posture (part d), one line - ALWAYS, even when unchanged. Read
+  `sleep.enabled` / `sleep.mode` / `sleep.command` plus the persisted suspend directive fresh
+  per part (d); never state it from memory or a default. A set directive is announced =
+  committed and overrides `sleep.enabled: false`.
+- **ntfy:** whether ntfy is active AND what will be reported. Active-or-not is decided ONLY
+  by running `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-config.sh" get personal.ntfy_topic` and
+  `... get personal.ntfy_relay` fresh at this moment - active when EITHER is non-empty, exit 3
+  or empty for both means not configured.
+  NEVER state ntfy's status from memory, from a profile-file glance, or by assumption; read
+  it via that command (the value MAY be masked - "set / non-empty" or a few edge characters
+  - the proof is present-vs-empty from the real output, not the plaintext topic). The value
+  cascades (global < profile < project), so a topic set only in the global config still
+  resolves under a non-default profile - do not conclude "not configured" without the read. When active,
+  what will be reported: normally one line per finished item (`#N <title>: <what was done>`,
+  on each go -> done transition, bundled per the digest interval), plus immediate come-to-PC
+  pushes for questions / blockers. If it reads as not configured, say so plainly (autonomy then runs
+  silent - no pushes). See "Per-task and per-question ntfy" above; do not restate the
+  mechanism, just declare it.
+
+The same show-the-output proof obligation from part (0) applies to the non-budget reads too:
+the ntfy line (`get personal.ntfy_topic`) and the suspend-posture reads (`sleep.enabled` /
+`sleep.mode` / `sleep.command` plus `credo-suspend-directive.sh get`) - state each value only
+from the freshly shown output of that command, never from memory or a default.
+
+So the rule is: first start -> the full five-part read-back; any later
+start -> at minimum the three-axis short form above. In ADDITION, give a fresh short
+read-back whenever the binding situation actually changes mid-run - specifically on a
+schedule-row transition (e.g. entering `work_hours`), a user cap-override taking effect or
+expiring, or crossing into a hard / ladder-enforced zone; there the (new) binding axis + the
+numbers that changed + the suspend posture (if it changed) suffice. This is NOT per-turn
+spam - the short form fires on each autonomous start and on those genuine transitions, never
+every turn.
+
+Mental model (this is the point, and it is user-agnostic): the schedule (`budget.schedule`)
+is the SINGLE SOURCE OF TRUTH for how budget is apportioned. Whether there is anything to
+conserve at all is DERIVED FROM THE SCHEDULE, never assumed:
+
+- If the applicable row sets a real cap (some profiles do), budget IS to be conserved -
+  pace against that cap.
+- If the applicable row sets practically no cap, there is nothing to conserve - do not
+  throttle work for a limit the plan does not impose.
+
+Never invent a conservation duty the schedule does not create. In particular, do NOT read a
+weekly / 7-day utilization figure as "budget that must be conserved" when no schedule row
+caps it - that misreads a raw usage number as a self-imposed ceiling the plan never set. The
+schedule row decides; the 7-day number is context, not a cap.
+
+Per the common-core read-back (A4), a large / overnight run additionally reads back the
+next day's schedule rows and the planned rest state before it starts, so the whole
+unattended run stays inside the intended envelope.
+
+### Marker plus compact-plus
+
+Secure progress across context compaction via the credo `compact-plus` skill, driven by the
+limit plugin's session-context threshold signal (config `compact.thresholds`). Do not
+self-trigger compact-plus proactively - only on the injected ACTION line or a manual
+invocation. Pair the keep-alive wake marker with this securing so a long unattended run
+neither falls asleep nor loses approved work.
+
+Already at the FIRST compact-plus ACTION: run compact-plus, and right after its green report
+set the `ScheduleWakeup` plus wake mark the keep-alive demands, then run the self-compact
+(`credo-self-compact.py run --auto`, see compact-plus "After a green report") without
+asking - unless something important speaks against it. The ACTION is for the main session
+only; a subagent that sees one ignores it and does not run compact-plus.

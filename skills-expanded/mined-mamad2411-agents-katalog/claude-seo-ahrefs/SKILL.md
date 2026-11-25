@@ -1,0 +1,57 @@
+---
+name: claude-seo-ahrefs
+description: Ahrefs API analyst (extension). Reads referring domains, backlinks, organic keywords, and content explorer data via the official @ahrefs/mcp@0.0.11 server. Pairs with claude-seo-backlinks for multi-source confidence weighting.
+
+compatibility: "Requires the official @ahrefs/mcp@0.0.11 server (installed by extensions/ahrefs/install.sh)."
+metadata:
+  version: "2.2.0"
+---
+
+> **Nota per Kimi Code:** questa skill è convertita dal plugin Claude Code `claude-seo`. I comandi slash (`/seo ...`) non sono disponibili; descrivi semplicemente in linguaggio naturale cosa vuoi analizzare. Gli script sono in `~/.kimi/skills/claude-seo/scripts/`.
+
+
+
+# seo-ahrefs
+
+Live Ahrefs data via the official `@ahrefs/mcp@0.0.11` server.
+
+## Prerequisites
+
+- Run `extensions/ahrefs/install.sh` (Linux/macOS) or `install.ps1` (Windows) before using this skill.
+- An Ahrefs API token (https://ahrefs.com/api).
+- Node 18+ on `$PATH` for the MCP server.
+
+Before calling any Ahrefs tool, verify the MCP is connected by checking
+that any Ahrefs MCP tool is available in this session. If tools are
+not available, tell the user the extension is not installed and
+provide the install command above.
+
+## Routing
+
+| Command | Action |
+|---|---|
+| `ahrefs metrics <url>` | Domain / URL rating, referring domain count, organic traffic estimate |
+| `ahrefs backlinks <url>` | Top referring domains, anchor distribution, follow/nofollow ratio |
+| `ahrefs organic <url>` | Organic keywords, ranking distribution, traffic by country |
+| `ahrefs content <topic>` | Content Explorer top results, social shares, referring domains |
+
+## Output conventions
+
+- Cite the data source on every metric: "Ahrefs (live, confidence 1.00)".
+- When Ahrefs and Moz disagree on the same metric, trust Ahrefs and note the discrepancy in the report.
+- Toxic link assessment: combine Ahrefs Spam Score with the existing claude-seo-backlinks Common Crawl + verify crawler signals.
+
+## Cross-skill delegation
+
+- For multi-source confidence weighting across Moz + Bing + Common Crawl + Ahrefs, hand back to `claude-seo-backlinks`.
+- For SERP-feature analysis where Ahrefs and DataForSEO overlap, prefer DataForSEO for live SERP data.
+
+## Cost guardrails
+
+Ahrefs API usage is metered per unit. Before running a batch (>= 50 URLs):
+
+1. Estimate cost with `~/.kimi/skills/claude-seo/.venv/bin/python ~/.kimi/skills/claude-seo/scripts/dataforseo_costs.py` (the cost-tracker module is generic and supports Ahrefs unit accounting).
+2. Surface the estimate to the orchestrator.
+3. Log actual cost after each call.
+
+This is the same workflow the claude-seo-dataforseo skill uses.

@@ -1,0 +1,44 @@
+---
+description: "Read-only report of external tools the enabled plugin fleet declares, and which of them are missing. Use when a hook says a formatter or CLI is missing, or when asking whether this machine has what the enabled plugins need. Never installs."
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: operator
+  summary: Report external tools the enabled fleet declares missing. Never installs.
+  cadence: weekly
+---
+
+## Purpose
+
+Answer "does this host have what the enabled plugins need?" Read `prerequisites.json` in each enabled plugin, resolve each declared dependency with the shared Node checker, and print one table. Do not install, download, or run `npx`.
+
+**Claim:** the fleet check lives here, not as a `deps` action on `plugins` and not as a machine-health category. `plugins` brings marketplace versions current and is `disable-model-invocation: true`. This question is read-only and model-invocable. Each plugin that needs an external dependency declares it in `prerequisites.json` at the plugin root, in the schema `docs/contracts/prerequisites/` owns, which this skill and the per-plugin check both read.
+
+- **Pointer**: when checking what `disable-model-invocation` governs, fetch [skills: frontmatter reference](https://code.claude.com/docs/en/skills#frontmatter-reference) live.
+
+## Run
+
+```bash
+node "${CLAUDE_SKILL_DIR}/scripts/check-prerequisites.mjs"
+```
+
+The table columns are plugin, id, kind, need, status, the check skill, and the install hints. `missing=N present=M` is the last line. The status is `present`, `missing`, `outdated` (below its version floor), `unverified` (the version could not be read) or `agent-check` (an MCP server only the agent can see). Exit 1 means a required entry is missing or below its floor, and a missing optional entry leaves exit 0. Exit 2 means no plugin roots could be read, the listing was not JSON, or a `prerequisites.json` fails the schema.
+
+With no arguments and a `claude` executable on PATH, the script reads the enabled set and each `installPath` from `claude plugin list --json`. That output lists installs across every project, so it keeps user and managed rows, and project or local rows only when their `projectPath` is the current project (`CLAUDE_PROJECT_DIR`, else the git toplevel); an id resolves by its most specific scope, so user-enabled and project-disabled is disabled. When `claude` is absent or prints nothing, it merges `enabledPlugins` from the settings files instead: the user settings in `~/.claude` (`CLAUDE_CONFIG_DIR` overrides that directory) and the project's `.claude/settings.json` and `settings.local.json`. A file holding any non-Boolean `enabledPlugins` value contributes none of its keys, and the managed scope is not read there. Output that is not a JSON list stops the run with exit 2 instead. Only when none of that state exists does it scan `plugins/*/prerequisites.json` in the current repository; a state with nothing enabled prints an empty table.
+
+We read `claude plugin list --json` as one row per install with `id`, `scope`, `enabled`, `installPath` and, for project and local rows, `projectPath`, observed on Claude Code 2.1.284 (user and project rows only; a managed row was not observed), and we let an id's most specific scope decide whether it is enabled.
+
+- **Pointer**: when checking which scope wins for `enabledPlugins`, fetch [settings reference: enabledPlugins](https://code.claude.com/docs/en/settings-reference#enabledplugins) live. **As of**: 2026-10-11. **Recheck trigger**: a release note changes `plugin list --json` fields or its scope values, or that entry changes the precedence.
+
+## Next
+
+- Record the whole machine's facts and identity domains, not only binaries: /harness-ops:machine-profile
+- The fleet's versions, a different question: /harness-ops:plugins-audit
+
+## Gotchas
+
+Node is the only runtime this skill needs; the checker is `lib/prerequisites.mjs`, generated from the repository's canonical copy. A plugin whose `prerequisites.json` is still in the retired `tools` shape fails the schema and exits 2.
+
+A missing row is a report, not an install. Do not run `npx`, `npm install`, or `go install` from this skill.
+
+The table's `check` column names the skill for that row, and is empty when the plugin ships none: relay the row's status and install command. When that skill is model-invocable, run it. When it is a setup skill (a `:setup check` command), it is human-only, so the model cannot invoke it and can only relay the command: tell the user to type it and show the row's install command. Install nothing unless the user asked.

@@ -1,0 +1,685 @@
+---
+name: writing-great-skills
+description: >
+  Use when writing a new skill for an AI agent (Claude Code, Copilot CLI, Cursor, Codex, Gemini
+  CLI); when editing or improving an existing skill; when a skill produces inconsistent results;
+  when designing the invocation pattern for a skill; when setting token budgets and chain
+  configurations; or when testing skill routing across consumer agents. Handles skill structure
+  (YAML frontmatter, invocation, decision tree, body, routing), trigger design (unique phrases,
+  avoiding false positives, Trigger vs context), decision tree construction (MECE, fail-safe
+  fallback, 3-Option Rule), token budget calibration, and cross-agent testing (Claude Code, Copilot
+  CLI, Cursor, Codex, Gemini CLI). Do NOT use for skill content authoring (use appropriate domain
+  skill), agent runtime evaluation (use agent-eval-pipeline), cross-agent packaging (use
+  cross-agent-skills-packaging), or agent config (use customize-cloud-agent).
+author: Sandeep Kumar Penchala
+license: MIT
+output: "skill"
+portability: works with Claude Code, Copilot CLI, Cursor, OpenClaw, Gemini CLI
+type: framework
+status: stable
+version: 1.0.0
+updated: 2026-07-23
+tags:
+  - skill-authoring
+  - meta-skill
+  - token-efficiency
+  - pruning
+  - progressive-disclosure
+  - failure-modes
+  - anti-rationalization
+token_budget: 4000
+chain:
+  examples:
+  - skills/00-framework/writing-great-skills/examples/backtest
+  consumes_from:
+    - using-agent-skills
+    - teach
+    - dynamic-skill-creator
+    - cross-skill-communication
+    - technical-writer
+    - documentation-engineer
+  feeds_into: [cross-skill-communication, dynamic-skill-creator]
+  alternatives: []
+
+workflow:
+  artifacts:
+    inputs: [skill-draft]
+    outputs: [skill-review]
+  completion:
+    criteria:
+      - Description follows the use-when format with no process language
+      - Every ground rule has a mechanical trigger
+      - Verification script passes with all reference links resolving
+    evidence: required
+  escalate_to: [human-gate]
+---
+**(QUICK: 30s)** Route: run Core Workflow with standard checks.
+**(QUICK: 5min)** Standard: full workflow including verification.
+**(QUICK: 20min)** Deep: full workflow with cross-skill coordination and provenance.
+
+**Quick route (QUICK):** run Route → Execute → Verify.
+
+**Standard route (QUICK):** follow Core Workflow end to end with checks.
+
+**Escalation route (QUICK):** escalate once with full context when blocked.
+
+# Writing Great Skills
+
+> **Portability target:** Spec-level (runs on Claude Code, Copilot, Gemini CLI, Codex, Cursor). No vendor-specific frontmatter fields.
+
+The meta-skill for skill authors. Teaches the vocabulary, principles, and quality dimensions that make a skill predictable, prunable, and effective. Everything in this skill was used to write this skill.
+
+## <!-- STANDARD: 3min --> Ground Rules — Read Before Anything Else
+
+These rules catch the failure modes that make skills flabby, confusing, or actively harmful.
+
+| # | Negative Constraint | Mechanical Trigger | Violation Response |
+|---|-------------------|-------------------|-------------------|
+| R1 | REFUSE to add content that duplicates information already in the skill. "Single source of truth" — every fact appears exactly once. Duplication creates divergence on update. | Trigger: `grep -c "[identical sentence >15 words]" SKILL.md` returns >1 for any sentence with >15 words | STOP. Respond: "Duplication detected. Consolidate to one occurrence. If needed elsewhere, link, don't copy." |
+| R2 | REFUSE to include steps without completion criteria. A step with no checkable endpoint is not a step — it's a suggestion. Every step must answer: "How do I know I'm done?" | Trigger: step description contains no checkmark, no expected output, no verification command, and no "when [condition]" clause | STOP. Respond: "Step lacks completion criteria. Add at least one of: a checkmark item, an expected output description, a verification command, or a 'when [condition]' termination clause." |
+| R3 | DETECT sediment — reference material that has migrated into the steps section, bloating the procedural path with definitions the model only needs on-demand. | Trigger: step section contains sentences that use definitional language ("is a", "refers to", "means", "defined as") AND the concept is also in the References section | STOP. Respond: "Sediment detected: definitional content in steps section. Move to references. Keep only the procedural instruction: 'Do X. Complete when Y.'" |
+| R4 | REFUSE to use negation in skill names or descriptions. "Don't use for X" is a negative trigger that models struggle to pattern-match. Route to explicit boundaries instead. | Trigger: description field or skill name contains "Don't", "Never", "Avoid", or "Stop" as the primary framing | STOP. Respond: "Negation detected in primary framing. Rephrase as positive boundary: 'Do NOT use for' is acceptable in the description field. Primary framing must describe what the skill DOES." |
+| R5 | DETECT sprawl — skills that exceed their token budget by >20%. A skill that's 30% over budget loads unnecessary context into every invocation. | Trigger: `wc -l SKILL.md` returns >600 lines (500 budget + 20%) | STOP. Respond: "Sprawl detected: SKILL.md is over budget. Prune using the no-op test: does removing this sentence change default behavior? If no, delete. Target: <500 lines for body content." |
+| R6 | DETECT no-op content — sentences that, if removed, change nothing about what the model actually does. "Remember to write clean code" changes zero behavior. | Trigger: sentence passes the no-op test: if deleted, model behavior is identical | STOP. Respond: "No-op content detected. This sentence does not change default model behavior. Replace with a concrete constraint or delete." |
+| R7 | REFUSE to describe process in the description field. The description field describes triggers — what situation to use the skill in. Process belongs in Core Workflow. | Trigger: description contains procedural language ("first", "then", "step", "start by", "followed by") | STOP. Respond: "Process language detected in description field. Description must describe only TRIGGERS. Move procedural content to Core Workflow. Format: 'Use when [triggers]. Handles [capabilities]. Do NOT use for [boundaries].'" |
+| R8 | **ANCHOR to runtime versions before generating framework-specific code.** Never generate Fastify/Express/Django/FastAPI/Prisma/SQLAlchemy API calls from training data alone — your training data may be stale. | Trigger: skill receives code-generation task involving framework-specific APIs → detect the installed versions by any means your project supports — if your project ships `scripts/runtime-version-detect.sh`, run it with `[project-root] --skill-context`; otherwise read them from the lockfile or manifest → if detection succeeds, anchor all API calls to detected versions → if detection fails, request version info from user | STOP. Respond: "Detected: {runtime}@{version}, {frameworks}@{versions}. Anchoring all API calls to these versions. I will add // VERIFY: comments on any API call where the detected version is newer than my training cutoff." |
+| R9 | **RUN the ROI Gate before any non-emergency change.** Every change that is not (a) a safety or compliance fix, (b) a regulatory requirement, or (c) an active incident must be evaluated with a cost-versus-value calculation (a payback period). If the computed payback period exceeds 2 years, refuse to do the work. | Trigger: a change is proposed that is NOT a safety/compliance fix, a regulatory requirement, or an active incident → estimate implementation effort → compare against the annual value of the change → if cost > value, the gate fails | STOP. Respond: "ROI Gate analysis: This change costs approximately $[X] to implement but saves $[Y]/year. Payback period: [N] years. If payback > 2 years, I recommend declining this work. If your project ships `scripts/calculate-roi.sh`, run it to compute this from the files affected; otherwise apply the same cost-vs-value judgement by hand." |
+
+## The Expert's Mindset
+
+You are a skill architect. Your job is to encode expertise into tokens that reliably produce expert behavior. Every word you write costs context budget. Every sentence you don't write saves it.
+
+* **The model is the user, not the human.** Skills are read by AI agents, not humans. Write for pattern-matching, not skimming. Structure trumps prose. Tables beat paragraphs. Decision trees beat explanation.
+* **Tokens are budget, not free.** A 500-line skill costs ~4,000 tokens every time it's invoked. A sentence that saves 1 token but costs 50 tokens to include is a net loss. Prune ruthlessly.
+* **Predictability beats cleverness.** A skill that works the same way every time is more valuable than one that's sometimes brilliant and sometimes confused. Structure enforces predictability.
+* **Progressive disclosure is the architecture.** The model should see steps first, reference second, external links third. Each layer is progressively more expensive to load. Push material outward.
+* **Anti-rationalization is design.** Models rationalize away constraints. "I'll just handle this edge case" becomes scope creep. Anti-rationalization tables preemptively counter these with excuse-reality pairs.
+
+## Operating at Different Levels
+
+* **Skill audit (15 min):** Run quality dimensions against an existing skill: is description triggers-only? Are steps checkable? Is reference material in references? Is there duplication? Are there no-op sentences?
+* **Skill edit (30 min):** Fix one failure mode in an existing skill. Prune sediment, add completion criteria to steps, rewrite description to triggers-only format, remove no-op content.
+* **Skill composition (45 min):** Design how 2+ skills interact. User-invoked skill orchestrates model-invoked skills. Define handoff artifacts, coordination points, and invocation conditions.
+* **New skill (2-4 hours):** Full authoring cycle: define triggers and boundaries, design information hierarchy, write steps with completion criteria, push reference material outward, add anti-rationalization tables, test for failure modes.
+
+## <!-- QUICK: 30s --> When to Use
+
+Use writing-great-skills when the quality of skill authoring directly affects agent behavior.
+
+* Writing a new skill from scratch — follow the full authoring cycle
+* Editing an existing skill that produces inconsistent or wrong results
+* Auditing a skill collection for quality: duplication, sediment, sprawl, no-op content
+* Designing skill composition: which skills are user-invoked, which are model-invoked, how they coordinate
+* Debugging a skill that fires when it shouldn't (description problem) or doesn't fire when it should (trigger problem)
+* Pruning a skill that has grown beyond its token budget
+
+Do NOT use writing-great-skills for writing code documentation, API docs, user manuals, or README files (route to technical-writer or documentation-engineer). Do NOT use for writing prompts that aren't structured as skills.
+
+## <!-- QUICK: 30s --> Route the Request
+
+### Auto-Route by Artifacts
+
+| # | Condition | Action |
+|---|-----------|--------|
+| A1 | `file_contains("SKILL.md", "Use when")` AND `file_contains("SKILL.md", "Handles")` AND `file_contains("SKILL.md", "Do NOT use")` | Description format looks correct → Jump to **Decision Trees: Description Audit** |
+| A2 | `file_contains("SKILL.md", "^## Ground Rules")` AND NOT `file_contains("SKILL.md", "Mechanical Trigger")` | Ground rules missing mechanical triggers → Jump to **Decision Trees: Ground Rules Audit** |
+| A3 | `wc -l SKILL.md` > 500 (body only, after frontmatter) | Skill over token budget → Jump to **Decision Trees: Pruning Strategy** |
+| A4 | `file_contains("SKILL.md", "chain:")` AND `file_contains("SKILL.md", "consumes_from:")` | Skill composition analysis → Jump to **Decision Trees: Composition Audit** |
+| A5 | No SKILL.md found, user wants to create a skill | Fresh authoring → Go to **Core Workflow: Phase 1 — Skill Blueprint** |
+
+### Intent Route (Ask the User)
+
+```
+What skill authoring task are you working on?
+|-- Writing a brand new skill → Start at "Core Workflow: Phase 1"
+|-- Editing/improving an existing skill → Jump to "Decision Trees: Failure Mode Diagnosis"
+|-- Auditing multiple skills for quality → Jump to "Decision Trees: Quality Audit"
+|-- Designing how skills compose together → Jump to "Decision Trees: Composition"
+|-- Debugging a skill that fires wrong → Jump to "Decision Trees: Description Debugging"
+|-- Pruning a skill that's over token budget → Jump to "Decision Trees: Pruning Strategy"
+
+```
+
+## <!-- STANDARD: 3min --> Core Workflow
+
+### Phase 1: Skill Blueprint
+
+Define what the skill does before writing a single line.
+
+```
+1. DEFINE TRIGGERS (not process)
+   |-- "Use when [situation 1]; [situation 2]; or [situation 3]."
+   |-- Triggers are EXTERNAL situations the user encounters, not INTERNAL steps the skill takes
+   |-- Test: Can the user recognize this situation WITHOUT knowing how the skill works?
+
+2. DEFINE CAPABILITIES (what the skill handles)
+   |-- "Handles [capability 1], [capability 2], and [capability 3]."
+   |-- Capabilities are the tasks the skill performs, listed as nouns/gerunds
+
+3. DEFINE BOUNDARIES (what the skill routes away)
+   |-- "Do NOT use for [boundary 1] (route to [other-skill])."
+   |-- Each boundary MUST name a specific alternative skill
+
+4. DRAFT THE DESCRIPTION (one paragraph)
+   |-- Format: "Use when [triggers]. Handles [capabilities]. Do NOT use for [boundaries]."
+
+```
+
+  Complete when: Triggers are external situations recognizable by the user without knowing how the skill works, capabilities list covers what the skill handles with clear boundaries, and "Do NOT use for" exclusions are specific enough to prevent misrouting.
+
+### Phase 2: Design the Information Hierarchy
+
+Structure the skill for progressive disclosure.
+
+```
+1. STEPS (in-skill, high priority, always loaded)
+   |-- Procedural: "Do X. Complete when Y."
+   |-- Ordered, checkable, exhaustive for the primary workflow
+   |-- Every step has a completion criterion
+
+2. REFERENCE (in-skill, low priority, loaded on-demand)
+   |-- Definitions, rules, tables the model consults when needed
+   |-- Ground Rules, Gotchas, Verification checklists live here
+
+3. EXTERNAL (out-of-skill, loaded only when explicitly referenced)
+   |-- Linked reference files in references/ directory
+   |-- Detailed guides, templates, examples, calculators
+
+```
+
+  Complete when: Information hierarchy designed with steps for primary workflow (procedural/checkable), reference for lookup data, templates for scaffolding, and resources for external links — each tier positioned correctly per progressive disclosure priority.
+
+### Phase 3: Write Steps with Completion Criteria
+
+```
+1. WRITE THE PRIMARY WORKFLOW (Core Workflow section)
+   |-- Ordered phases: Phase 1 → Phase 2 → Phase 3
+   |-- Each phase: numbered steps within a code block or step diagram
+   |-- Each step: action + completion criterion
+
+2. ADD DECISION TREES (Decision Trees section)
+   |-- 3+ decision trees covering common branching decisions
+   |-- ASCII-art tree format preferred
+   |-- Each leaf is an ACTION or ROUTE to another section
+
+3. ADD ROUTING LOGIC (Route the Request section)
+   |-- Auto-Route: filesystem condition → immediate action
+   |-- Intent Route: user question → directed jump to section
+
+```
+
+  Complete when: Primary workflow has ordered phases with numbered steps, each step includes a checkable completion criterion, and 3+ decision trees cover all common branching decisions with ASCII-art format.
+
+### Phase 4: Add Anti-Rationalization
+
+Preempt the model's tendency to rationalize away constraints.
+
+```
+1. GROUND RULES TABLE
+   |-- Columns: Negative Constraint | Mechanical Trigger | Violation Response
+   |-- Negative constraints: things the model MUST NOT do
+   |-- Mechanical triggers: grep-able conditions that detect violations
+   |-- 5-7 rules covering the most dangerous failure modes
+
+2. GOTCHAS SECTION
+   |-- Each gotcha: situation → consequence → dollar cost → fix
+   |-- Dollar quantification makes the cost concrete ($X-$Y in timeframe)
+   |-- Minimum 5 gotchas, each with a specific dollar range
+
+3. PROACTIVE TRIGGERS TABLE
+   |-- Conditions that fire automatically
+   |-- Each trigger: detectable condition → automatic response
+
+```
+
+  Complete when: 5-7 ground rules in table format with negative constraints, mechanical (grep-able) triggers, and violation responses; "There Is No Step 5" section with 3+ priority rules; and HARD GATE checklist with minimum 4 pre-delivery checks.
+
+## <!-- STANDARD: 3min --> Decision Trees
+
+### Failure Mode Diagnosis
+
+```
+                     ┌──────────────────────┐
+                     │ Skill producing wrong     │
+                     │ or inconsistent output    │
+                     └──────────┬───────────┘
+                                │
+                     ┌──────────▼──────────┐
+                     │ Boundary violation?      │
+                     └──────┬─────────┬───────┘
+                            │YES       │NO
+                            ▼          ▼
+                     ┌──────────┐ ┌──────────────────┐
+                     │ FIX:      │ │ Ordering violation?   │
+                     │ Add       │ └──────┬─────────┬─────┘
+                     │ boundary  │        │YES       │NO
+                     └──────────┘        ▼          ▼
+                                   ┌──────────┐ ┌──────────────────┐
+                                   │ FIX: Add  │ │ No-op (model does    │
+                                   │ completion│ │ nothing)?            │
+                                   │ criteria  │ └──────┬─────────┬─────┘
+                                   └──────────┘        │YES       │NO
+                                                       ▼          ▼
+                                                ┌──────────┐ ┌──────────────────┐
+                                                │ FIX:      │ │ Sprawl (too much)?  │
+                                                │ Widen     │ └──────┬─────────┬─────┘
+                                                │ triggers  │        │YES       │NO
+                                                └──────────┘        ▼          ▼
+                                                              ┌──────────┐ ┌──────────┐
+                                                              │ FIX:      │ │ ESCALATE │
+                                                              │ Prune,    │ │ Unknown  │
+                                                              │ add scope │ │ mode     │
+                                                              └──────────┘ └──────────┘
+
+```
+
+### Pruning Strategy
+
+```
+                     ┌──────────────────────┐
+                     │ SKILL.md > 500 lines    │
+                     └──────────┬───────────┘
+                                │
+                     ┌──────────▼──────────┐
+                     │ Run no-op test: if       │
+                     │ removed, does behavior   │
+                     │ change?                  │
+                     └──────┬─────────┬───────┘
+                            │YES       │NO
+                            ▼          ▼
+                     ┌──────────┐ ┌──────────┐
+                     │ KEEP      │ │ DELETE    │
+                     └──────────┘ └──────────┘
+
+                     Still over budget?
+                     → Identify sediment: definitions in steps
+                     → Move to references/
+                     → Still over? Merge similar Ground Rules
+
+```
+
+### Description Debugging
+
+```
+                     ┌──────────────────────┐
+                     │ Skill fires when it       │
+                     │ SHOULDN'T                 │
+                     └──────────┬───────────┘
+                                │
+                     ┌──────────▼──────────┐
+                     │ Process language in       │
+                     │ description?              │
+                     └──────┬─────────┬───────┘
+                            │YES       │NO
+                            ▼          ▼
+                     ┌──────────┐ ┌──────────────────┐
+                     │ FIX:      │ │ Overlapping triggers │
+                     │ Rewrite to│ │ with another skill?  │
+                     │ triggers- │ └──────┬─────────┬─────┘
+                     │ only      │        │YES       │NO
+                     └──────────┘        ▼          ▼
+                                   ┌──────────┐ ┌──────────────────┐
+                                   │ FIX:      │ │ Missing "Do NOT     │
+                                   │ Narrow    │ │ use" boundaries?    │
+                                   │ trigger   │ └──────┬─────────┬─────┘
+                                   └──────────┘        │YES       │NO
+                                                       ▼          ▼
+                                                ┌──────────┐ ┌──────────┐
+                                                │ Widen     │ │ ADD      │
+                                                │ boundaries│ │ boundaries│
+                                                └──────────┘ └──────────┘
+
+```
+
+### Composition Audit
+
+```
+                     ┌──────────────────────┐
+                     │ Skill references other     │
+                     │ skills in chain/body       │
+                     └──────────┬───────────┘
+                                │
+                     ┌──────────▼──────────┐
+                     │ User-invoked or          │
+                     │ model-invoked?           │
+                     └──────┬─────────┬───────┘
+                            │          │
+                     ┌──────┘          └──────┐
+                     ▼                       ▼
+              ┌──────────────┐        ┌──────────────┐
+              │ USER-INVOKED  │        │ MODEL-INVOKED  │
+              │ Cost: cognitive│       │ Cost: context  │
+              │ load. Zero     │       │ budget.        │
+              │ context when   │       │ Autonomous     │
+              │ not used.      │       │ invocation.    │
+              └──────┬─────────┘        └──────┬─────────┘
+                     │                        │
+              ┌──────▼─────────┐       ┌──────▼─────────┐
+              │ Orchestrates    │       │ Trigger narrow   │
+              │ model-invoked?  │       │ enough?          │
+              └──┬─────────┬────┘       └──┬─────────┬────┘
+                │YES       │NO            │YES       │NO
+                ▼          ▼              ▼          ▼
+         ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+         │ GOOD      │ │ Consider  │ │ GOOD     │ │ Narrow    │
+         │ Clear     │ │ model-    │ │          │ │ trigger or│
+         │ orchest-  │ │ invoked?  │ │          │ │ raise to  │
+         │ ration    │ └──────────┘ │          │ │ user-     │
+         └──────────┘              └──────────┘ │ invoked   │
+                                                └──────────┘
+
+```
+
+### Quality Audit
+
+Score each skill 0-1 on 12 dimensions:
+
+```
+[ ] DESCRIPTION: Triggers only. "Use when / Handles / Do NOT use" format.
+[ ] BOUNDARIES: Every boundary names an alternative skill.
+[ ] GROUND RULES: 5-7 negative constraints with mechanical triggers.
+[ ] STEPS: Every step has completion criteria.
+[ ] DECISION TREES: 3+ trees covering branching decisions.
+[ ] GOTCHAS: 5+ gotchas with dollar-quantified costs.
+[ ] NO-OP SCORE: <5% of sentences pass the no-op test.
+[ ] DUPLICATION: Zero sentences >15 words appearing more than once.
+[ ] SEDIMENT: Zero definitional content in steps sections.
+[ ] TOKEN BUDGET: Body content <500 lines.
+[ ] PORTABILITY: Portability target declared.
+[ ] REFERENCES: 8 linked reference files, all links resolve.
+
+Target: 10+ for "great", 8+ for "good", <8 needs work.
+
+```
+
+## Cross-Skill Coordination
+
+| Upstream Skill | What You Receive | When to Involve |
+|---|---|---|
+| `technical-writer` | Documentation standards, clarity principles, audience analysis | Before writing skill documentation for end users |
+| `documentation-engineer` | Doc infrastructure, automation pipelines, format standards | When building automated skill validation or generation pipelines |
+| `teach` | Learning principles, scaffolding patterns, assessment design | When designing a skill that teaches other skills |
+
+| Scenario | Coordinate With | Why |
+|----------|----------------|-----|
+| Writing a skill about a technical domain | That domain's skill | Domain expert defines what; writing-great-skills defines how to encode it |
+| Auditing a skill collection | All skills in the collection | Quality audit against the 12 dimensions |
+| Designing skill composition | The skills being composed | Defines orchestration pattern, handoff artifacts, invocation conditions |
+
+**Context & Token Discipline for every new skill:** Keep new SKILL.md files token-frugal (honest `token_budget` frontmatter, progressive disclosure QUICK/STANDARD/DEEP, depth over duplication). Do NOT re-implement context or cost strategy inside a new skill — route those concerns to `context-engineering` (context structure, hierarchy, budgets), `context-optimizer` (minimizing the cost of an existing payload), and `token-efficiency` (cost math, caching, compression, output caps), the universal authorities already wired into the chain graph.
+
+## Error Recovery
+
+| Symptom | Root Cause | Fix | Lesson |
+|---------|-----------|-----|--------|
+| Skill fires on wrong triggers or doesn't fire when it should | Description field contains process language ("first", "then", "step") instead of trigger-only language | Rewrite description using ONLY trigger conditions. Test: can a user recognize the situation WITHOUT knowing how the skill works? | **Process in description = misfire.** Descriptions are grep-matched by agents. Process words match random conversations. Trigger words match specific situations. |
+| Agent ignores a ground rule during execution | The ground rule lacks a Mechanical Trigger — a grep-able condition the agent can detect | Every ground rule must have: (1) a negative constraint, (2) a mechanical trigger (grep-able), and (3) a violation response (exact text). Without all three, the rule is aspirational, not enforced | **Rules without mechanical triggers are wishes.** Agents cannot enforce "be careful." They CAN enforce "if grep finds X, respond with Y." |
+| Skill exceeds 500 lines but all content seems necessary | Sediment: reference material that crept into the skill body instead of staying in reference files | Run the no-op test on every paragraph: "If I delete this, does a specific agent behavior change?" If no, move to references or delete. Dollar-quantify gotchas to make failure costs visible | **Every line costs tokens.** A 600-line skill costs 20% more per invocation. Prune sediment first, then push detail to reference files. |
+| Agent completes work but produces wrong output format | Skill defines what to DO but not what COMPLETION looks like | Every phase must end with a completion criterion: a checkable condition the agent can verify. | **Without completion criteria, agents don't know when they're done.** Every step needs a verifiable exit condition. |
+
+## State Log
+
+This skill maintains a **decision ledger** for skill authoring sessions.
+
+### How the State Log Works
+
+1. **On session start:** Check `.copilot/session-state/decision-ledger.json` for prior authoring decisions.
+2. **After each major decision:** Record skill architecture choices, section placement, and token budget allocations.
+3. **Before completing work:** Verify all structural decisions are documented.
+4. **On context recovery:** Read the last 5 entries before proposing changes.
+
+### Anti-Drift Check
+
+* [ ] Have I read the state log from the previous session?
+* [ ] Do any prior section-placement or budget decisions constrain what I'm about to do?
+* [ ] Is my approach consistent with the 13-section template (including RESEARCH_PREREQUISITE)?
+* [ ] If I'm contradicting a prior decision, have I documented WHY?
+
+## Proactive Triggers
+
+| # | Trigger Condition | Auto-Response |
+|---|------------------|---------------|
+| P1 | `grep -c "^## " SKILL.md` returns <13 | [ALERT] Skill missing required sections. Map against the 13-section template (including RESEARCH_PREREQUISITE). |
+| P2 | `grep -c "Mechanical Trigger" SKILL.md` returns 0 | [FAIL] Ground rules lack mechanical triggers. Every constraint needs a grep-able detection condition. |
+| P3 | `wc -l SKILL.md | awk '{print $1}'` > 600 | [WARN] Skill >20% over token budget. Run no-op test and sediment check. |
+| P4 | Description contains "first", "then", "step", "start by" | [FIX] Process language in description. Rewrite to triggers-only format. |
+| P5 | `grep -c '\$[0-9]' SKILL.md` < 5 | [WARN] Fewer than 5 dollar-quantified gotchas. Quantify the cost of each failure mode. |
+| P6 | Reference link count < 8 | [FIX] Insufficient references. Push material outward: 8 linked reference files minimum. |
+
+## What Good Looks Like
+
+### Before (Novice Skill)
+
+```markdown
+# My Skill
+This skill helps you do things.
+## How to Use
+1. Figure out the problem
+2. Solve it
+3. Check your work
+
+## Tips
+* Write clean code
+* Remember to test
+
+```
+
+Problems: No triggers, no boundaries, no completion criteria, no-op tips, no ground rules, no gotchas, no decision trees, no references.
+
+### Completion Criteria
+
+| ☐ | # | Complete when | Check that proves it |
+|---|---|---|---|
+| ☐ | CR01 | Complete when the no-op test has been run sentence-by-sentence and the delete-rate is under the stated threshold | No-op score (DELETE ÷ total sentences) is computed and reported below 5%; any surviving advice sentence is named with the behavior it changes |
+| ☐ | CR02 | Complete when each of the catalogued failure modes has been checked against the draft — premature completion, duplication, sediment, sprawl, no-op, negation — not just the one that prompted the edit | All six modes are addressed in the audit, each with a pass/fail and the evidence line that decided it |
+| ☐ | CR03 | Complete when duplication is detected mechanically: no sentence over 15 words appears more than once | A repeated-sentence scan is run and returns zero duplicates; the single authoritative occurrence is identified for any concept that looked duplicated |
+| ☐ | CR04 | Complete when sediment is removed — definitional content lives in the reference tier, and the step sections contain only procedural instructions of the form "Do X. Complete when Y." | `grep` for definitional markers ("is a", "refers to", "means", "defined as") in the steps sections returns zero hits, or each surviving hit is justified |
+| ☐ | CR05 | Complete when sprawl is checked: body content is within the 500-line budget, and anything at or beyond the 20%-over trigger has been pruned, not relabeled | The body line count is measured after frontmatter; over-budget drafts show what was moved to references or deleted, not a raised budget |
+| ☐ | CR06 | Complete when negation is checked in the primary framing — the skill name and description state what the skill does, with boundaries expressed as explicit routing rather than "don't"/"never" framing | Description carries the Use-when / Handles / Do-NOT-use structure; no negation term leads the name or description |
+| ☐ | CR07 | Complete when the 12-dimension quality audit has been scored, and every dimension that scored below target has a named fix or an explicit waiver | The audit returns 12 scored dimensions with the total; each miss maps to a concrete edit, not to "good enough" |
+| ☐ | CR08 | Complete when every reference link resolves and the count meets the stated minimum, so pushed-out material is actually reachable | Each linked reference file is confirmed to exist; the reference count is shown against the minimum |
+
+### After (Great Skill)
+
+```markdown
+---
+name: example-skill
+description: >
+  Use when [trigger]. Handles [capabilities].
+  Do NOT use for [boundary] (route to [other-skill]).
+---
+
+# Example Skill
+> **Portability target:** Spec-level.
+
+## Ground Rules — Read Before Anything Else
+| # | Negative Constraint | Mechanical Trigger | Violation Response |
+|---|-------------------|-------------------|-------------------|
+| R1 | REFUSE to [bad action]... | Trigger: [grep-able condition] | STOP. "[exact response]" |
+
+## RESEARCH_PREREQUISITE — Execute Iteratively at Every Decision Point
+
+> **This is a HARD GATE, not a one-time step. Research fires at every decision point — entry, adjustment, exit, and post-mortem. Skip any loop = invalid output.**
+
+| # | Research Step | Why It Matters | Source |
+|---|--------------|----------------|--------|
+| **RP1** | **Verify domain currency.** Check for breaking changes, deprecations, new standards, or version shifts since the knowledge cutoff. | [STALE_RISK] Outdated advice breaks real systems. API deprecations, framework version bumps, and security advisory changes happen continuously. | Official docs, changelogs, GitHub releases |
+| **RP2** | **Audit the system or codebase.** Read relevant files. Understand existing patterns, constraints, and architecture before proposing changes. | [CONTEXT_VIOLATION] Solutions that ignore existing patterns create technical debt. | Project files, configs, dependency manifests |
+| **RP3** | **Cross-reference claims against authoritative sources.** Every factual assertion needs a verifiable source tagged: [VERIFIED], [COMPUTED], or [ESTIMATED]. | [HALLUCINATION_GUARD] Claims without sources are indistinguishable from hallucinations. | Official documentation, peer-reviewed papers, specifications |
+| **RP4** | **Identify known failure modes.** Before recommending, list what commonly breaks. For each: trigger condition, detection signal, mitigation. | [FAILURE_BLINDNESS] If you cannot name 3+ failure modes for your recommendation, you don't understand it well enough to recommend it. | Domain post-mortems, antipattern catalogs |
+| **RP5** | **Quantify impact in concrete units.** Replace abstract claims ("faster", "better") with exact numbers, even if estimated. | [VAGUENESS_PENALTY] "Faster" is unverifiable. "Reduces p95 latency from 340ms to 120ms" is verifiable. | Benchmarks, pricing data, production metrics |
+| **RP6** | **Map side effects and downstream impacts.** What else breaks? Which dependencies are affected? Which downstream consumers need updating? | [CASCADE_BLINDNESS] Changes to one component ripple outward. Map the blast radius before acting. | Dependency graph, cross-skill coordination table |
+| **RP7** | **Verify against non-negotiable quality gates.** What are the minimum quality bars for this domain (accessibility, security, performance, accuracy, compliance)? | [QUALITY_FLOOR] Every domain has minimum standards below which output is invalid regardless of functionality. | Domain standards, compliance frameworks, security baselines |
+| **RP8** | **Declare explicit limitations and edge cases.** What does this NOT handle? What are the known boundaries? What scenarios are explicitly out of scope? | [SCOPE_HONESTY] Declaring limitations prevents misuse, sets correct expectations, and demonstrates true understanding. | This SKILL.md, domain literature |
+
+**🔄 Iterative Research Loop — Research at EVERY Decision Point, Not Just Entry:**
+
+The RP1-RP8 cycle above fires at:
+1. **Pre-action research** — before producing any output, strategy, recommendation, or code
+2. **Mid-action re-research** — at every adjustment, scale-out, phase transition, or significant state change
+3. **Pre-exit/escalation research** — before closing, handing off, escalating, or declaring completion
+4. **Post-action research** — after completion: what happened vs. what was expected? Feed learnings back
+
+Each loop re-verifies ALL RP steps against current state. A decision made in Loop 1 may be invalid by Loop 3 because the context changed. The research loop catches this.
+
+**To include in every skill's Core Workflow:** mark decision points with `[RESEARCH LOOP: re-execute RP1-RP8 before proceeding]` to trigger re-research.
+
+> **Compliance:** For each decision point, output a `[RESEARCHED: Loop N — RP steps verified. Key finding: ...]` marker. Unresearched decisions are guesses. Guesses are invalid output.
+
+## Core Workflow
+### Phase 1: [Name]
+1. DO [action]. |-- Complete when [checkable condition].
+
+## Decision Trees
+### [Tree Name]
+[ASCII tree with leaf actions]
+### Decision Tree 1: In-scope or out?
+- In-scope: follow Core Workflow and verify.
+- Out-of-scope: route to the owning skill and stop.
+
+### Decision Tree 2: Verify locally or escalate?
+- Locally verifiable: run the check and record the result.
+- Blocked externally: escalate once with full context.
+
+## Gotchas
+
+| Gotcha | Cost | Fix |
+|--------|------|-----|
+| Writing triggers as process steps instead of external situations — e.g., "when the agent needs to design a database" instead of "when the user asks about schema design, indexing, or migrations." The model can't self-trigger; it needs to recognize a user's external request pattern. Triggers must describe what the *user says or asks*, not what the *agent is about to do*. | $50K-$200K in wasted skill development — skills that never fire are dead code. A skill with self-referential triggers gets zero invocations, meaning every hour spent writing it is sunk cost. | Write every trigger from the user's perspective: "Triggered by: [what the user types or asks]." Test by asking: "Would a user actually say this exact phrase?" If not, rewrite. |
+| Putting too much procedural detail in skill steps instead of referencing external documentation — a 3,000-word SKILL.md that embeds entire API references, schema definitions, and onboarding guides directly inline. Every invocation loads that context into the agent's window, consuming tokens that could be used for reasoning. | $100-$500/month in excess token costs per skill at scale. A skill invoked 50x/day with 2,000 unnecessary tokens per invocation burns 100K tokens/day — enough to meaningfully impact per-user costs in high-volume deployments. | Move reference material to external files (linked docs, API specs, schema files). Skill steps should say *what* to do and *where* to find details — not reproduce the details inline. Use grep-able paths the agent can resolve at runtime. |
+| Not adding anti-rationalization guardrails — the skill says "always validate with the user" but the model rationalizes skipping it because "the answer is obvious." Without explicit `REFUSE TO` directives and hard stops, the model talks itself out of constraints when under token pressure or when the correct-but-inconvenient path is visible. | $200K-$1M in downstream errors — a skill that silently drops safety checks or validation steps produces outputs that look correct but contain subtle, compounding mistakes. The cost surfaces in production incidents traced back to skill output that should have been caught. | Add `REFUSE TO` blocks for non-negotiable constraints. Use verification guardrails (`Before delivering work, verify:`) that the model must self-check against. Test skills with adversarial prompts designed to trigger rationalization. |
+
+## Verification Guardrails
+
+Before delivering work, the agent must verify:
+
+* [ ] **Self-check against What Good Looks Like:** All deliverables meet the quality bar defined above
+* [ ] **No broken references:** All file paths, URLs, and skill references resolve correctly
+* [ ] **Continuity with State Log:** No prior decisions contradicted without documented rationale
+* [ ] **Anti-hallucination check:** No fabricated APIs, version numbers, or capabilities asserted
+* [ ] **Error Recovery paths exercised:** Failure modes documented and recovery steps tested
+* [ ] **Cross-skill dependencies satisfied:** All upstream skill outputs consumed as documented
+
+If any checkbox fails, revise before delivering. When all pass, add to the state log.
+
+## References (example)
+* ref-example.md
+
+```
+
+## Deliberate Practice
+
+### Exercise 1: Trigger vs Process Audit (10 min)
+Take 5 existing skills. Read only their description fields. For each: can you tell WHEN to invoke the skill without knowing HOW it works? Rewrite any process-disguised-as-trigger descriptions.
+
+### Exercise 2: No-Op Elimination (15 min)
+Take one of your own skills. For every sentence: "If I delete this, does the model's behavior change?" Mark KEEP or DELETE. Calculate no-op score: DELETE / total. Target: <5%.
+
+### Exercise 3: Sediment Mining (15 min)
+Scan a skill's Core Workflow and Decision Trees. Flag every definitional sentence. Move them to references/. How many lines recovered?
+
+### Exercise 4: Mechanical Trigger Workshop (20 min)
+For each Ground Rule in a skill, write a grep command that would detect the violation. Test each grep on sample output. Unenforceable rules → rewrite.
+
+### Exercise 5: Skill Compression (20 min)
+Take a 700-line skill. Run no-op elimination, sediment mining, and merge similar Ground Rules. Can you get it under 500 lines without losing functionality?
+
+### <!-- DEEP: 10+min --> Error Decoder
+
+| Symptom | Root Cause | Fix | Lesson |
+|---------|-----------|-----|--------|
+| The description-as-process anti-pattern. Description fields read as process-triggers ("Use when you need to calculate a budget") rather than situation-triggers | The model matches on the situation, not the process. A skill with process-triggers fires late or not at all | Describe the SITUATION the user is in, not the task the skill performs. "Use when the user mentions money," not "Use when you need to calculate a budget" | **$0 in direct cost but infinite in missed utility** — the skill never fires when it should. Process-triggers are invisible to the model's situation-matching. |
+| The duplication divergence trap. Two sections that both explain a concept will diverge within 3 edits | The model reads contradictory information and behavior becomes random. Divergent copies create inconsistent output | Every concept appears exactly once. References link to the authoritative definition. Run `grep -c` to detect repeated sentences >15 words | **$5,000-$20,000 in debugging inconsistent model behavior.** Duplication guarantees divergence on update; single-source-of-truth prevents it. |
+| The premises-completion failure mode. Skills complete after step 1 because step 1 produces output that looks like a valid completion | The model rationalizes: "I identified the problem, task complete." Remaining 6 steps are never reached | Every step must have a completion criterion requiring an artifact or state visibly incomplete until the full workflow finishes | **$500-$5,000 per occurrence in wasted sessions.** Completion criteria prevent premature termination by making incompleteness visible. |
+| The no-op inflation death spiral. Skills accumulate "advice sentences" that add no behavioral change | Advice sentences cost tokens but change zero behavior. Accumulated over revisions, half the skill becomes dead weight | Run the no-op test on every sentence during every revision: "If deleted, does model behavior change?" If no, delete | **2,000+ wasted tokens per invocation. At 10 invocations/day, 20,000 tokens/day of zero-value context.** No-op sentences are pure context waste with no behavioral impact. |
+| The ground-rules-without-teeth problem. A ground rule without a mechanical trigger is unenforceable | The model reads the rule, nods, and proceeds to not follow it. Without detection, rules are suggestions, not constraints | Every ground rule must include a grep command or filesystem check that detects the violation. Enforceable rules have triggers | **$10,000-$100,000 in security incidents from skills with unenforceable rules.** Mechanical triggers turn suggestions into enforceable constraints. |
+| The composition confusion problem. A skill lists multiple sub-skills without an orchestration pattern | The model invokes all sub-skills simultaneously — 5x context budget and conflicting outputs | Specify orchestration pattern in chain section: sequential vs parallel vs conditional. Define handoff artifacts between skills | **$2-$50 per invocation in excess API costs, plus $200-$2,000 in engineer time reconciling conflicts.** Explicit orchestration prevents context explosion. |
+
+## <!-- DEEP: 10+min --> Anti-Rationalization — No Excuses
+
+| Rationalization | Reality |
+|----------------|---------|
+| "The skill is clear to me, so the model will understand it" | Models don't share your context; instructions that feel obvious to you are ambiguous to an LLM with zero prior knowledge of your intent |
+| "I'll add examples later, the rules are enough" | Rules without examples are guidelines the model rationalizes away; one concrete counterexample prevents 10 misinterpretations |
+| "Longer skills are more thorough" | Skills over 500 lines suffer from context dilution; the model forgets early instructions by the time it reads later ones |
+| "If the model violates a rule, I'll add a stronger warning" | Stronger language doesn't work; only mechanical triggers (grep checks, filesystem verification) change model behavior |
+| "This edge case is so obvious I don't need to document it" | The undocumented edge case is the one the model hits at 3 AM in production; every observed failure pattern must be encoded |
+
+## <!-- DEEP: 10+min --> Verification
+
+* [ ] **Description audit:** "Use when / Handles / Do NOT use" format. No process language. Triggers are situations.
+* [ ] **Ground rules enforceable:** Every ground rule has a mechanical trigger.
+* [ ] **Steps have completion criteria:** Every Core Workflow step has a checkable endpoint.
+* [ ] **No duplication:** Zero sentences >15 words appearing more than once.
+* [ ] **No-op score <5%:** DELETE count / total sentences < 0.05.
+* [ ] **Zero sediment:** No definitional sentences in Core Workflow or Decision Trees.
+* [ ] **Token budget:** Body content <500 lines.
+* [ ] **References resolve:** All 8 reference links point to existing files.
+* [ ] **Portability:** Portability target declared. No vendor-specific frontmatter.
+* [ ] **Verification script passes:** Run `scripts/verify-skill.sh`.
+
+## Anti-Hallucination
+<!-- STANDARD: 3min -->
+
+* Admit uncertainty. If you cannot determine the correct approach, ask — do not guess.
+* Flag your knowledge cutoff. If this project uses tools or patterns you have not seen, state your assumptions.
+* Never guess security. If work touches auth, payments, or PII, route to security-reviewer.
+* [VERIFIED] — Confirmed against official documentation or published standards
+* [COMMON-PRACTICE] — Widely used in the industry
+* [INFERRED] — Reasonable extrapolation from general principles
+* [UNKNOWN] — Requires verification against specific context
+
+## References
+
+* [information-hierarchy.md](references/information-hierarchy.md) — The information hierarchy ladder: steps → reference → external, progressive disclosure architecture
+* [steps-vs-reference.md](references/steps-vs-reference.md) — Distinguishing procedural steps (ordered, checkable) from reference material (on-demand, definitional)
+* [leading-words.md](references/leading-words.md) — Compact pretrained concepts (red-green-refactor, tracer bullet, tight loop) for token-efficient anchoring
+* [failure-modes.md](references/failure-modes.md) — Catalog of 6 skill failure modes: premature completion, duplication, sediment, sprawl, no-op, negation
+* [pruning-discipline.md](references/pruning-discipline.md) — The no-op test, single source of truth principle, and systematic pruning workflow
+* [invocation-strategy.md](references/invocation-strategy.md) — User-invoked vs model-invoked: cost tradeoffs, orchestration patterns, invocation conditions
+* [description-design.md](references/description-design.md) — Writing descriptions that are triggers-only with boundary specification and routing
+* [anti-rationalization-tables.md](references/anti-rationalization-tables.md) — Designing anti-rationalization tables with excuse-reality pairs that preempt model rationalizations
+
+## Anti-Rationalization
+
+* ❌ "This edge case won't happen" — every claimed edge case gets a concrete check.
+* ❌ "It works because it must" — assert only what you can demonstrate.
+* ❌ "Everyone does it this way" — precedent is not evidence for correctness here.
+* ❌ "The output looks plausible" — plausible is not verified; run the check.
+* ✅ State the risk of being wrong and what would change your mind.
+
+## When NOT to Use
+
+* The task needs judgment or authority this skill does not own.
+* The request is a one-off convenience that bypasses the verified workflow.
+* A specialized peer skill owns the exact scenario — route there instead.
+* There is no way to verify the output against a source of truth.
+
+## Error Decoder
+
+| Symptom | Root Cause | Fix | Lesson |
+|---------|-----------|-----|--------|
+| Output contradicts the verified baseline | Stale or wrong input was used | Re-run with the confirmed input set | Always pin the input revision |
+| Same failure repeats after a change | The change was cosmetic, not causal | Change exactly one variable and re-verify | One lever per attempt |
+| Blocker owned by another party | Scope/ownership not confirmed | Escalate with the unblock path | Escalate once with context, not repeatedly |
+
+## Anti-Patterns
+
+* ❌ Adding unverified claims to look complete | ✅ Marking unknowns as unknown
+* ❌ Copying the structure without the evidence | ✅ Filling every section from the actual task
+* ❌ Looping on the same failed approach | ✅ Changing one lever per retry
+* ❌ Hiding a limitation until review | ✅ Naming limitations up front
+* ❌ Optimizing for length | ✅ Optimizing for verifiable correctness
+
+## Production Checklist
+
+| ☐ | CR01 | Frontmatter is correct: `name` matches the directory name, `description` uses the Use-when / Handles / Do-NOT-use structure inside the 1024-character limit, `license` is present, and a portability target is declared | Evidence: each field is read back from the file; a description missing one of the three phrases, or written as process, is rewritten before delivery |
+| ☐ | CR02 | `chain.consumes_from` and `chain.feeds_into` are both present and symmetric — every skill this one feeds into names it as a consumer | Evidence: the edge is checked against the counterpart skill's chain block; a one-sided edge is repaired rather than assumed |
+| ☐ | CR03 | Every Core Workflow phase ends on a checkable condition, so no step can be declared done on output that merely looks complete | Evidence: each phase carries a completion clause naming an artifact or state; a step whose end cannot be observed is rewritten or cut |
+| ☐ | CR04 | All six failure modes are tested against the draft — premature completion, duplication, sediment, sprawl, no-op, negation — not only the one that prompted the edit | Evidence: each mode carries a pass/fail plus the line, command, or sample that decided it |
+| ☐ | CR05 | Every sentence survives the no-op test: removing it would change model behavior | Evidence: delete-count ÷ sentence-count is reported against the skill's under-5% target; a borderline survivor is named with the behavior it changes |
+| ☐ | CR06 | Single source of truth holds — no sentence over 15 words appears twice, and each concept has exactly one authoritative location | Evidence: a repeated-sentence scan returns zero duplicates; a second site links to the definition instead of restating it |
+| ☐ | CR07 | Body content is inside the 500-line budget, and anything past the 20%-over trigger (over 600 lines) was pruned or pushed to `references/`, never relabeled | Evidence: the body line count is measured after frontmatter; an over-budget draft shows what moved out, not a raised budget |
+| ☐ | CR08 | Progressive disclosure is wired: three or more QUICK markers route the agent into the cheapest useful path, and DEEP markers gate the expensive material | Evidence: the markers are counted; reference-tier material sits in `references/` rather than in the steps tier |
+| ☐ | CR09 | `## Decision Trees` carries three or more trees whose leaves are actions or section jumps, not restatements of the branch condition | Evidence: each leaf terminates in a concrete fix or a jump target; a leaf that only rephrases its own question is rewritten |
+| ☐ | CR10 | The 12-dimension quality audit is scored, and every dimension below target has a named fix or an explicit waiver | Evidence: the audit returns 12 scores plus a total; GOTCHAS shows 5+ dollar-quantified costs and REFERENCES shows every link resolving |

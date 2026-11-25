@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/ghscan-jan-bogaerts-md2/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use for any question about a codebase, its architecture, file relationships, or project content — especially when graphify-out/ exists, where the question should be treated as a graphify query first. 

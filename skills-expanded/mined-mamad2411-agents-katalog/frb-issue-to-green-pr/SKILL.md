@@ -1,0 +1,106 @@
+---
+name: frb-issue-to-green-pr
+description: "Use when implementing a GitHub issue, bug fix, or feature in flutter_rust_bridge end-to-end: develop the change, add regression coverage, prepare and open a PR, and use the user's tom-ci skill to monitor CI until the PR is ready."
+---
+
+# FRB Issue to Green PR
+
+Use this skill as the top-level workflow when the user asks you to implement an issue, fix a bug, add a feature, or otherwise "handle it end to end" in `flutter_rust_bridge`, especially when they ask for an automatic PR or CI monitoring.
+
+This skill orchestrates the narrower FRB skills. Do not duplicate their detailed instructions in memory; read them when their phase begins.
+
+## Required Subskills
+
+Always read these first:
+
+1. `frb-dev-env` and any applicable user-level environment rules.
+2. `frb-develop-feature` for the reproduce -> fix -> final regression workflow.
+
+Read these when entering the matching phase:
+
+- `frb-code-generation` before running generation or changing Rust APIs, codegen, or example APIs.
+- `frb-test` before running local tests.
+- `frb-lint` before lint or format checks.
+- `frb-prepare-pr` before pushing or opening the PR.
+- `frb-pr-review` before treating a non-trivial PR as ready.
+- `frb-fix-ci` before diagnosing any CI failure.
+- The user's `tom-ci` skill for CI waiting, status inspection, and GitHub Actions logs.
+- `frb-manual-test` before writing a manual regression test report under `tools/manual_tests/`.
+- `frb-ci-filter` before creating an intentional red CI reproduction PR or using filtered CI.
+- `frb-debugging` when generated code is surprising or codegen behavior is unclear.
+
+## Workflow
+
+### 1. Start the completion loop
+
+- Keep the task active until all stop conditions are met.
+- Once the PR URL is known, follow the waiting workflow in the user's `tom-ci` skill between CI processing actions until the PR is ready.
+
+### 2. Understand the GitHub issue or requested change
+
+- Fetch the issue body and comments if the user gave an issue link or number.
+- Identify the smallest observable failing behavior or missing capability.
+- Check `git status --short` and do not disturb unrelated user or multi-agent changes.
+
+### 3. Reproduce the issue in an independent reproduction PR
+
+- Read and follow the reproduction parts of `frb-develop-feature`.
+- For bug fixes, do this before changing fix code or opening the fix PR.
+- Create an independent reproduction PR whose only purpose is to prove the bad behavior. The branch name, PR title, and PR body must say clearly that it is an intentional reproduction PR, not a real fix PR.
+- For intentional red CI reproduction PRs, use the title `Reproduce ISSUE_SUMMARY with intentional red CI`.
+- For manual-test reproduction PRs, use the title `Add manual reproduction for ISSUE_SUMMARY`.
+- If CI can reproduce the bad behavior, read `frb-ci-filter` and make the reproduction PR an intentional red CI PR: unchanged fix code, minimal reproducer or workflow adjustment, mandatory focused `ci_filter` run, and a failure whose error matches the user's report.
+- If CI cannot realistically reproduce the bad behavior, read `frb-manual-test` and make the independent reproduction PR add or update `tools/manual_tests/NAME.md` with a normal manual test procedure and mechanical execution steps an agent or human can run.
+- Do not proceed to the fix PR until the reproduction PR exists and has either a matching red CI run or a precise manual test report.
+- Save the reproduction PR URL, red CI run URL when applicable, job name or manual-test path, and matching error text for the fix PR reproduction report.
+
+### 4. Fix the issue
+
+- Read and follow the fix, iteration, local verification, regression coverage, and final placement parts of `frb-develop-feature`.
+- Implement the smallest change that fixes the reproduced behavior.
+- Add final regression coverage with the fixed behavior as the expected result.
+- Make atomic commits as soon as each completed logical unit is written; do not wait until the end of the task.
+- Stage only files intentionally changed for this task.
+- Always create a new commit unless the user explicitly asks to amend.
+- Before considering the change ready, explicitly pass the `frb-develop-feature` Final Placement Gate: final regression coverage belongs in `frb_example/pure_dart` with generated `pure_dart_pde` coverage, not only in `frb_example/dart_minimal`.
+- Keep generated-file edits produced by the appropriate generator, not by hand.
+
+### 5. Prepare and open the PR
+
+- Follow `frb-prepare-pr`.
+- Re-check that no final regression or feature coverage remains only in `frb_example/dart_minimal`. If it does, stop PR preparation and migrate it to `frb_example/pure_dart` first.
+- Push with upstream tracking.
+- Before drafting a PR title, inspect the user's recent PR titles and mimic the repo style.
+- Create the PR according to the active PR workflow and repository/user PR body rules.
+- If the work comes from a GitHub issue, ensure the PR body includes the appropriate closing keyword such as `Close #1234`, unless the active PR workflow explicitly requires an empty body.
+
+### 6. Run the review gate
+
+- Follow `frb-pr-review` for the full PR review gate, including correctness review and test-weakening review.
+
+### 7. Monitor CI until terminal
+
+- After the PR is opened or updated, do not leave the PR in an unknown queued or in-progress state.
+- On each wake-up, inspect the latest PR checks, not stale runs.
+- For bug-fix PRs with an intentional red CI reproduction PR, explicitly find the same job family or CI path that failed in the reproduction branch and verify that it is now green on the fix PR.
+- For bug-fix PRs with a manual-test report PR, state whether the manual regression was re-run, who or what ran it, and whether the observed behavior now matches the fixed expectation.
+- If CI fails, read `frb-fix-ci` and the user's `tom-ci` skill, diagnose the latest relevant failure, fix it, commit, push, and continue monitoring.
+- If CI appears flaky, rerun only failed jobs when appropriate, then keep monitoring.
+
+### 8. Stop only when ready
+
+- The PR checks are green or all remaining non-green checks are clearly unrelated and explained.
+- The branch is pushed, commits are present on the PR, and the final status is reported to the user with the PR URL.
+
+## Automation Rules
+
+- Follow the user's `tom-ci` skill to wait on the PR URL after each push, rerun, or handled CI event.
+- Treat its return as a wake-up signal, not a CI verdict. Inspect the reported checks, fix or rerun as required, then call the waiter again.
+- Do not add a separate time-based heartbeat or detached polling loop for the same PR.
+- Stop invoking the waiter once the stop conditions are met.
+
+## Failure Handling
+
+- If blocked by permissions, missing credentials, a required external reviewer delay, or unavailable infrastructure, explain the concrete blocker and keep the PR state explicit.
+- If a CI run is queued for a long time, continue bounded waits using the user's `tom-ci` skill.
+- If new user instructions arrive, let the newest instruction steer the workflow while preserving already-completed work.

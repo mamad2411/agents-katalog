@@ -1,0 +1,394 @@
+---
+name: aws-best-practices
+description: >-
+  No-web local AWS best-practices catalog. Use the local catalog files first and
+  do not browse, search the web, open AWS docs, or use live documentation tools
+  for ordinary answers unless the user explicitly asks for live/current
+  verification or the local file is missing. Trigger when the user needs AWS
+  best practices for any AWS service, based on their use case: security,
+  reliability, performance, cost, operations, or sustainability. Trigger on
+  "best practices for <AWS service>", "how should I configure <service>", "is
+  my <service> setup correct", "AWS Well-Architected guidance for <service>",
+  "harden / optimize / secure my <service>", or any question about recommended
+  ways to run an AWS service. Also covers cross-service AWS best practices
+  (account baseline, multi-account, cost governance, DR, observability,
+  tagging). Consult it for any "how should I set up / secure / harden /
+  optimize / run my <AWS service>" question, even when the user never says the
+  words "best practice". This skill contains ONLY best practices and nothing
+  else about the services.
+---
+
+# AWS Best Practices
+
+A curated, source-linked collection of **AWS best practices** for every AWS
+service, plus cross-service general guidance. Organized so you can find what
+matters **for a specific use case**.
+
+> **No live web for ordinary answers:** use the local files in this repository.
+> Do not search the web, open AWS documentation URLs, or use live documentation
+> tools unless the user explicitly asks for a current/live refresh or the local
+> catalog is missing the requested service/topic.
+
+> **Unofficial project:** this skill is independently maintained. It is not an
+> official AWS skill, AWS product, or AWS-maintained resource, and it is not
+> affiliated with or endorsed by Amazon Web Services.
+
+## What this contains / does NOT contain
+
+- ✅ **Only best practices**, per service, organized by the 6 AWS Well-Architected
+  pillars, each practice tagged with a `[when-it-applies]` context and linked to
+  the official AWS source.
+- ❌ No service descriptions/overviews, no pricing or cost estimates, no
+  tutorials or getting-started guides, no extended code samples. If you need
+  those, go to the AWS docs directly; this skill is best practices only.
+
+## How to use this skill
+
+1. From the user's use case, identify **(a)** the AWS service(s) involved and
+   **(b)** the concern/pillar that matters (security, reliability, performance,
+   cost, operations, sustainability).
+2. Open [`catalog.md`](catalog.md) (or the index below) and find the service's
+   file path.
+3. Open `services/<category>/<service>.md`.
+4. Read the **`## Common scenarios`** block first to map the use case to the
+   relevant pillars, then read those pillar sections. Each bullet's
+   `[context]` tag tells you whether it applies to the user's situation.
+5. For cross-service questions (account setup, multi-account, cost governance,
+   DR, observability, tagging), use the **General** section under `general/`.
+6. When you cite a best practice, include the source URL already present in the
+   local file. Copy the URL text from the local Markdown; do not open it.
+
+## Web access policy
+
+For ordinary best-practice answers, use this repository as the source of truth:
+read `SKILL.md`, `catalog.md`, and the relevant local `services/` or `general/`
+file. Do **not** call web search, open AWS documentation URLs, fetch pages, or
+use live documentation tools just to verify or cite a bullet that is already in
+the local file. The `[doc](...)` URLs in those files are pre-recorded citations:
+copy them from the local Markdown when useful, but do not visit them.
+
+Use live web/documentation access only when the user explicitly asks for a
+current/live refresh, asks you to verify whether AWS changed something, or when
+the requested service/topic is not covered by the local catalog.
+
+If a service is not yet covered, say so plainly; do not invent best practices.
+
+## Use-case targeting
+
+Prefer a targeted answer over an exhaustive dump. If the user gives a specific
+scenario, workload, constraint, or concern, select only the best practices that
+apply to that case.
+
+Examples:
+- "secure my S3 bucket" → focus on Security, access control, encryption,
+  public access prevention, audit, and network restrictions.
+- "SQS queue in production" → give a production baseline across reliability,
+  security, performance, cost, and operations.
+- "reduce DynamoDB cost" → focus on Cost Optimization and any performance or
+  operational practices that directly affect spend.
+- "is this Lambda setup production-ready?" → structure the answer as gaps,
+  risks, and concrete fixes.
+
+If the user does **not** provide a specific scenario, give the general
+production baseline for that service: the most broadly useful practices across
+Security, Reliability, Performance Efficiency, Cost Optimization, and
+Operational Excellence. Do not list every bullet in the file unless the user
+asks for a complete/deep-dive answer.
+
+## Answer style
+
+Default to an actionable production baseline, not an encyclopedia. Use this
+shape unless the user asks for another format:
+
+1. Start with one sentence that names the local service file used.
+2. Give a short "baseline consigliata" / "recommended baseline" list of the
+   highest-impact settings or practices.
+3. Add "decisioni chiave" / "key decisions" when the service has important
+   trade-offs (for example Standard vs FIFO, SSE-S3 vs SSE-KMS, single-Region
+   vs replication).
+4. Group additional guidance by relevant Well-Architected pillars only when it
+   helps the user act.
+5. Add caveats for special cases, such as Lambda consumers, FIFO ordering,
+   sensitive data, private networking, compliance, or high throughput.
+6. End with the local file path and last_reviewed date when available. Include
+   only a few source URLs, copied from the local Markdown, unless the user asks
+   for full citations.
+
+Avoid very wide tables by default because they often wrap poorly in terminals.
+Use compact bullets unless the user explicitly asks for a table.
+
+## File layout
+
+```
+services/<category>/<service>.md   # per-service best practices (pillar-organized)
+general/<topic>.md                 # cross-service best practices
+catalog.md                         # human index (generated)
+catalog.json                       # machine-readable source of truth
+```
+
+## Index
+<!-- BEGIN:INDEX (generated by scripts/check.py --write-index) -->
+### Compute
+- [AWS App Runner](services/compute/app-runner.md)
+- [AWS Batch](services/compute/batch.md)
+- [AWS Elastic Beanstalk](services/compute/elastic-beanstalk.md)
+- [AWS Lambda](services/compute/lambda.md)
+- [AWS Outposts](services/compute/outposts.md)
+- [AWS Parallel Computing Service](services/compute/parallel-computing-service.md)
+- [Amazon EC2](services/compute/ec2.md)
+- [Amazon EC2 Auto Scaling](services/compute/ec2-auto-scaling.md)
+- [Amazon Elastic VMware Service](services/compute/evs.md)
+- [Amazon Lightsail](services/compute/lightsail.md)
+- [VMware Cloud on AWS](services/compute/vmware-cloud-on-aws.md)
+
+### Containers
+- [AWS Fargate](services/containers/fargate.md)
+- [Amazon ECR](services/containers/ecr.md)
+- [Amazon ECR Public](services/containers/ecr-public.md)
+- [Amazon ECS](services/containers/ecs.md)
+- [Amazon EKS](services/containers/eks.md)
+- [Amazon EKS Anywhere](services/containers/eks-anywhere.md)
+- [Red Hat OpenShift Service on AWS (ROSA)](services/containers/rosa.md)
+
+### Storage
+- [AWS Backup](services/storage/backup.md)
+- [AWS Elastic Disaster Recovery](services/storage/elastic-disaster-recovery.md)
+- [AWS Snow Family](services/storage/snow-family.md)
+- [AWS Storage Gateway](services/storage/storage-gateway.md)
+- [Amazon EBS](services/storage/ebs.md)
+- [Amazon EFS](services/storage/efs.md)
+- [Amazon FSx](services/storage/fsx.md)
+- [Amazon File Cache](services/storage/file-cache.md)
+- [Amazon S3](services/storage/s3.md)
+- [Amazon S3 Glacier](services/storage/s3-glacier.md)
+
+### Database
+- [Amazon Aurora](services/database/aurora.md)
+- [Amazon Aurora DSQL](services/database/aurora-dsql.md)
+- [Amazon DocumentDB](services/database/documentdb.md)
+- [Amazon DynamoDB](services/database/dynamodb.md)
+- [Amazon DynamoDB Accelerator (DAX)](services/database/dax.md)
+- [Amazon ElastiCache](services/database/elasticache.md)
+- [Amazon Keyspaces](services/database/keyspaces.md)
+- [Amazon MemoryDB](services/database/memorydb.md)
+- [Amazon Neptune](services/database/neptune.md)
+- [Amazon Neptune Analytics](services/database/neptune-analytics.md)
+- [Amazon RDS](services/database/rds.md)
+- [Amazon Redshift](services/database/redshift.md)
+- [Amazon Timestream](services/database/timestream.md)
+- [Oracle Database@AWS](services/database/oracle-database-at-aws.md)
+
+### Networking & Content Delivery
+- [AWS App Mesh](services/networking-content-delivery/app-mesh.md)
+- [AWS Cloud Map](services/networking-content-delivery/cloud-map.md)
+- [AWS Cloud WAN](services/networking-content-delivery/cloud-wan.md)
+- [AWS Direct Connect](services/networking-content-delivery/direct-connect.md)
+- [AWS Global Accelerator](services/networking-content-delivery/global-accelerator.md)
+- [AWS Network Firewall](services/networking-content-delivery/network-firewall.md)
+- [AWS PrivateLink](services/networking-content-delivery/privatelink.md)
+- [AWS Transit Gateway](services/networking-content-delivery/transit-gateway.md)
+- [AWS Verified Access](services/networking-content-delivery/verified-access.md)
+- [Amazon API Gateway](services/networking-content-delivery/api-gateway.md)
+- [Amazon Application Recovery Controller (ARC)](services/networking-content-delivery/route53-arc.md)
+- [Amazon CloudFront](services/networking-content-delivery/cloudfront.md)
+- [Amazon Route 53](services/networking-content-delivery/route-53.md)
+- [Amazon VPC](services/networking-content-delivery/vpc.md)
+- [Amazon VPC Lattice](services/networking-content-delivery/vpc-lattice.md)
+- [Elastic Load Balancing](services/networking-content-delivery/elastic-load-balancing.md)
+
+### Security, Identity & Compliance
+- [AWS Artifact](services/security-identity-compliance/artifact.md)
+- [AWS Audit Manager](services/security-identity-compliance/audit-manager.md)
+- [AWS Certificate Manager](services/security-identity-compliance/certificate-manager.md)
+- [AWS CloudHSM](services/security-identity-compliance/cloudhsm.md)
+- [AWS Directory Service](services/security-identity-compliance/directory-service.md)
+- [AWS Firewall Manager](services/security-identity-compliance/firewall-manager.md)
+- [AWS IAM](services/security-identity-compliance/iam.md)
+- [AWS IAM Access Analyzer](services/security-identity-compliance/iam-access-analyzer.md)
+- [AWS IAM Identity Center](services/security-identity-compliance/iam-identity-center.md)
+- [AWS KMS](services/security-identity-compliance/kms.md)
+- [AWS Payment Cryptography](services/security-identity-compliance/payment-cryptography.md)
+- [AWS Secrets Manager](services/security-identity-compliance/secrets-manager.md)
+- [AWS Security Hub](services/security-identity-compliance/security-hub.md)
+- [AWS Security Incident Response](services/security-identity-compliance/security-incident-response.md)
+- [AWS Shield](services/security-identity-compliance/shield.md)
+- [AWS WAF](services/security-identity-compliance/waf.md)
+- [Amazon Cognito](services/security-identity-compliance/cognito.md)
+- [Amazon Detective](services/security-identity-compliance/detective.md)
+- [Amazon GuardDuty](services/security-identity-compliance/guardduty.md)
+- [Amazon Inspector](services/security-identity-compliance/inspector.md)
+- [Amazon Macie](services/security-identity-compliance/macie.md)
+- [Amazon Security Lake](services/security-identity-compliance/security-lake.md)
+- [Amazon Verified Permissions](services/security-identity-compliance/verified-permissions.md)
+
+### Management & Governance
+- [AWS Auto Scaling](services/management-governance/auto-scaling.md)
+- [AWS CloudFormation](services/management-governance/cloudformation.md)
+- [AWS CloudTrail](services/management-governance/cloudtrail.md)
+- [AWS Compute Optimizer](services/management-governance/compute-optimizer.md)
+- [AWS Config](services/management-governance/config.md)
+- [AWS Control Tower](services/management-governance/control-tower.md)
+- [AWS Fault Injection Service](services/management-governance/fault-injection-service.md)
+- [AWS Health](services/management-governance/health.md)
+- [AWS License Manager](services/management-governance/license-manager.md)
+- [AWS Organizations](services/management-governance/organizations.md)
+- [AWS Resilience Hub](services/management-governance/resilience-hub.md)
+- [AWS Resource Access Manager](services/management-governance/resource-access-manager.md)
+- [AWS Service Catalog](services/management-governance/service-catalog.md)
+- [AWS Systems Manager](services/management-governance/systems-manager.md)
+- [AWS Trusted Advisor](services/management-governance/trusted-advisor.md)
+- [AWS Well-Architected Tool](services/management-governance/well-architected-tool.md)
+- [Amazon CloudWatch](services/management-governance/cloudwatch.md)
+- [Amazon DevOps Guru](services/management-governance/devops-guru.md)
+- [Amazon Managed Grafana](services/management-governance/managed-grafana.md)
+- [Amazon Managed Service for Prometheus](services/management-governance/managed-prometheus.md)
+
+### Application Integration
+- [AWS B2B Data Interchange](services/application-integration/b2b-data-interchange.md)
+- [AWS Step Functions](services/application-integration/step-functions.md)
+- [Amazon AppFlow](services/application-integration/appflow.md)
+- [Amazon EventBridge](services/application-integration/eventbridge.md)
+- [Amazon MQ](services/application-integration/mq.md)
+- [Amazon MWAA](services/application-integration/mwaa.md)
+- [Amazon SNS](services/application-integration/sns.md)
+- [Amazon SQS](services/application-integration/sqs.md)
+- [Amazon SWF](services/application-integration/swf.md)
+
+### Analytics
+- [AWS Clean Rooms](services/analytics/clean-rooms.md)
+- [AWS Data Exchange](services/analytics/data-exchange.md)
+- [AWS Data Pipeline](services/analytics/data-pipeline.md)
+- [AWS Entity Resolution](services/analytics/entity-resolution.md)
+- [AWS Glue](services/analytics/glue.md)
+- [AWS Lake Formation](services/analytics/lake-formation.md)
+- [Amazon Athena](services/analytics/athena.md)
+- [Amazon Data Firehose](services/analytics/data-firehose.md)
+- [Amazon DataZone](services/analytics/datazone.md)
+- [Amazon EMR](services/analytics/emr.md)
+- [Amazon FinSpace](services/analytics/finspace.md)
+- [Amazon Kinesis Data Streams](services/analytics/kinesis-data-streams.md)
+- [Amazon Kinesis Video Streams](services/analytics/kinesis-video-streams.md)
+- [Amazon MSK](services/analytics/msk.md)
+- [Amazon Managed Service for Apache Flink](services/analytics/managed-flink.md)
+- [Amazon OpenSearch Service](services/analytics/opensearch.md)
+- [Amazon QuickSight](services/analytics/quicksight.md)
+- [Amazon S3 Tables](services/analytics/s3-tables.md)
+
+### Machine Learning
+- [AWS HealthImaging](services/machine-learning/healthimaging.md)
+- [Amazon Bedrock](services/machine-learning/bedrock.md)
+- [Amazon Bedrock AgentCore](services/machine-learning/bedrock-agentcore.md)
+- [Amazon Comprehend](services/machine-learning/comprehend.md)
+- [Amazon Comprehend Medical](services/machine-learning/comprehend-medical.md)
+- [Amazon Forecast](services/machine-learning/forecast.md)
+- [Amazon Fraud Detector](services/machine-learning/fraud-detector.md)
+- [Amazon HealthLake](services/machine-learning/healthlake.md)
+- [Amazon Kendra](services/machine-learning/kendra.md)
+- [Amazon Lex](services/machine-learning/lex.md)
+- [Amazon Omics](services/machine-learning/omics.md)
+- [Amazon Personalize](services/machine-learning/personalize.md)
+- [Amazon Polly](services/machine-learning/polly.md)
+- [Amazon Q](services/machine-learning/q.md)
+- [Amazon Rekognition](services/machine-learning/rekognition.md)
+- [Amazon SageMaker](services/machine-learning/sagemaker.md)
+- [Amazon Textract](services/machine-learning/textract.md)
+- [Amazon Transcribe](services/machine-learning/transcribe.md)
+- [Amazon Translate](services/machine-learning/translate.md)
+
+### Developer Tools
+- [AWS CloudShell](services/developer-tools/cloudshell.md)
+- [AWS CodeArtifact](services/developer-tools/codeartifact.md)
+- [AWS CodeBuild](services/developer-tools/codebuild.md)
+- [AWS CodeCommit](services/developer-tools/codecommit.md)
+- [AWS CodeDeploy](services/developer-tools/codedeploy.md)
+- [AWS CodePipeline](services/developer-tools/codepipeline.md)
+- [AWS Infrastructure Composer](services/developer-tools/infrastructure-composer.md)
+- [AWS X-Ray](services/developer-tools/x-ray.md)
+- [Amazon CodeCatalyst](services/developer-tools/codecatalyst.md)
+- [Amazon CodeGuru](services/developer-tools/codeguru.md)
+
+### Migration & Transfer
+- [AWS Application Migration Service](services/migration-transfer/application-migration-service.md)
+- [AWS DataSync](services/migration-transfer/datasync.md)
+- [AWS Database Migration Service](services/migration-transfer/database-migration-service.md)
+- [AWS Mainframe Modernization](services/migration-transfer/mainframe-modernization.md)
+- [AWS Migration Hub](services/migration-transfer/migration-hub.md)
+- [AWS Migration Hub Refactor Spaces](services/migration-transfer/refactor-spaces.md)
+- [AWS Transfer Family](services/migration-transfer/transfer-family.md)
+
+### Front-End Web & Mobile
+- [AWS Amplify](services/frontend-web-mobile/amplify.md)
+- [AWS AppSync](services/frontend-web-mobile/appsync.md)
+- [AWS Device Farm](services/frontend-web-mobile/device-farm.md)
+- [Amazon Location Service](services/frontend-web-mobile/location-service.md)
+- [Amazon Pinpoint](services/frontend-web-mobile/pinpoint.md)
+
+### Internet of Things
+- [AWS IoT Core](services/iot/iot-core.md)
+- [AWS IoT Device Defender](services/iot/iot-device-defender.md)
+- [AWS IoT Device Management](services/iot/iot-device-management.md)
+- [AWS IoT ExpressLink](services/iot/iot-expresslink.md)
+- [AWS IoT FleetWise](services/iot/iot-fleetwise.md)
+- [AWS IoT Greengrass](services/iot/iot-greengrass.md)
+- [AWS IoT SiteWise](services/iot/iot-sitewise.md)
+- [AWS IoT TwinMaker](services/iot/iot-twinmaker.md)
+- [FreeRTOS](services/iot/freertos.md)
+
+### Media Services
+- [AWS Deadline Cloud](services/media-services/deadline-cloud.md)
+- [AWS Elemental MediaConnect](services/media-services/mediaconnect.md)
+- [AWS Elemental MediaConvert](services/media-services/mediaconvert.md)
+- [AWS Elemental MediaLive](services/media-services/medialive.md)
+- [AWS Elemental MediaPackage](services/media-services/mediapackage.md)
+- [AWS Elemental MediaStore](services/media-services/mediastore.md)
+- [AWS Elemental MediaTailor](services/media-services/mediatailor.md)
+- [Amazon IVS](services/media-services/ivs.md)
+
+### End User Computing
+- [Amazon WorkSpaces](services/end-user-computing/workspaces.md)
+- [Amazon WorkSpaces Applications](services/end-user-computing/appstream.md)
+- [Amazon WorkSpaces Secure Browser](services/end-user-computing/workspaces-web.md)
+- [Amazon WorkSpaces Thin Client](services/end-user-computing/workspaces-thin-client.md)
+
+### Business Applications
+- [AWS AppFabric](services/business-applications/app-fabric.md)
+- [AWS Supply Chain](services/business-applications/supply-chain.md)
+- [AWS Wickr](services/business-applications/wickr.md)
+- [Amazon Chime SDK](services/business-applications/chime-sdk.md)
+- [Amazon Connect](services/business-applications/connect.md)
+- [Amazon SES](services/business-applications/ses.md)
+- [Amazon WorkMail](services/business-applications/workmail.md)
+
+### Cloud Financial Management
+- [AWS Billing Conductor](services/cloud-financial-management/billing-conductor.md)
+- [AWS Budgets](services/cloud-financial-management/budgets.md)
+- [AWS Cost Anomaly Detection](services/cloud-financial-management/cost-anomaly-detection.md)
+- [AWS Cost Explorer](services/cloud-financial-management/cost-explorer.md)
+- [AWS Cost Optimization Hub](services/cloud-financial-management/cost-optimization-hub.md)
+- [AWS Cost and Usage Report](services/cloud-financial-management/cost-and-usage-report.md)
+
+### Blockchain
+- [Amazon Managed Blockchain](services/blockchain/managed-blockchain.md)
+
+### Quantum Technologies
+- [Amazon Braket](services/quantum-technologies/braket.md)
+
+### Satellite
+- [AWS Ground Station](services/satellite/ground-station.md)
+
+### Game Tech
+- [Amazon GameLift Servers](services/game-tech/gamelift.md)
+- [Amazon GameLift Streams](services/game-tech/gamelift-streams.md)
+
+### General AWS Best Practices
+- [AWS Well-Architected Framework](general/well-architected.md)
+- [Account Security Baseline](general/security-baseline.md)
+- [Cost Governance](general/cost-governance.md)
+- [Multi-Account & AWS Organizations](general/multi-account-organizations.md)
+- [Networking Baseline](general/networking-baseline.md)
+- [Observability](general/observability.md)
+- [Reliability & Disaster Recovery](general/reliability-dr.md)
+- [Sustainability](general/sustainability.md)
+- [Tagging Strategy](general/tagging-strategy.md)
+
+<!-- END:INDEX -->

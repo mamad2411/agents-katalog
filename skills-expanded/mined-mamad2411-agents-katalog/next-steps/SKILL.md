@@ -1,0 +1,107 @@
+---
+name: next-steps
+description: >
+  Have the Product Owner survey the project's current state — shipped
+  features, in-flight work, open findings, standing goals — and propose one
+  concrete next feature ready to hand to /story-time or /spark. Use when the
+  user has no idea in hand and asks "what should we build next", when a loop
+  just closed and the next cycle needs a starting point, or when the backlog
+  feels stale and needs a grounded suggestion instead of a guess.
+---
+
+# /next-steps — Propose the Next Feature (Product Owner)
+
+You are running an **advisory** ceremony, not a gated one. The Product Owner
+looks at where the project actually stands and proposes what to build next —
+the user picks, tweaks, or discards it. Nothing here gets written to
+`.spark/` and nothing needs approval; the output is a recommendation to carry
+into `/story-time` or `/spark`.
+
+## Input
+
+None required. Optionally the user may point at a theme or constraint (e.g.
+"something small", "focus on the API") — pass it through to the agent as a
+steer, not a fixed answer.
+
+## Steps
+
+1. **Gather the loop state yourself — don't delegate this.** The
+   `product-owner` agent cannot run `git` or walk `.spark/`. Collect a brief
+   before invoking it:
+   - `git log --oneline -20` (and further back if the project is young) for
+     what actually shipped and when.
+   - Every `.spark/<feature-name>/` directory: for `spec.md`, `plan.md`,
+     `review.md`, `qa.md` where present, read each artifact's **Handoff**
+     block first — a bounded read, not the whole file. Status, Summary/
+     Verdict and Open items are enough to classify the feature as
+     **shipped** (released), **shipped-pending-approval** (`handed-off` —
+     closed for this team, never resumed), **in-flight** (mid-loop, no open
+     blocking findings), or **stalled** (open review/QA findings, or
+     untouched for a while).
+   - Any *unresolved* findings sitting in the newest `review.md` or `qa.md` —
+     these are open points, not just status flags. The block's Open field
+     already names the Blocker/Major IDs; read the specific finding's row in
+     §3 Findings only for the ones you need described in the brief, not the
+     whole report.
+   - `.spark/constitution.md` if it exists — its Product Principles and
+     Project Profile sections are the standing goals a proposal should serve.
+   - **If `.spark/constitution.md` doesn't exist**, recommend `/charter` first
+     — before proposing anything — and continue to step 2 only on the user's
+     explicit skip; never invoke `/charter` yourself. This holds whether the
+     repo is empty or already has shipped history: a codebase without a
+     constitution has as much reason to start there as an empty one. On an
+     empty `.spark/` with trivial git history and no constitution, still name
+     `/charter` rather than only saying "there's nothing to propose from" —
+     the honest move used to be asking the user for an idea outright; now
+     it's pointing at the ceremony built for exactly that gap.
+   - If nothing exists yet in `.spark/` and git history is empty or trivial,
+     say so plainly — there is no "state" to read yet — and ask the user for
+     the first idea rather than fabricate one. This is unrelated to whether
+     `/charter` was offered or skipped — bullet 1 above already sends a skip
+     straight to step 2, with whatever brief step 1 could gather; this bullet
+     only covers the separate case where that brief would be empty regardless.
+     **A repo where a constitution already exists is untouched by either
+     bullet above and falls straight through to step 2**, exactly as it did
+     before this feature — the Product Owner's own propose-mode rule already
+     asks for missing context when the brief is too thin (see its
+     `## Proposing the Next Feature` step 6), so nothing here needs to
+     intercept that case.
+2. **Delegate to the Product Owner.** Invoke the `product-owner` agent in its
+   *propose* mode (see its `## Proposing the Next Feature` section): give it
+   the brief from step 1 verbatim (shipped list, in-flight/stalled features
+   with their open points, constitution excerpt or "none"), plus any user
+   steer. Point it at `.spark/constitution.md` if present.
+3. **Relay, don't guess.** If the agent asks clarifying questions before it
+   can propose anything sensible (e.g. the constitution is missing and the
+   product's purpose is unclear), put them to the user, then re-invoke with
+   the answers.
+4. **Present the result as a conversation, not a report dump.** Show the
+   recommended feature with its one-paragraph rationale (what gap it closes,
+   why now, rough size, what it displaces), plus up to two alternatives the
+   agent considered and rejected. Lead with the recommendation, not the list.
+5. **Let the user decide.** They may: accept the recommendation as-is, ask
+   for a different angle (re-invoke the agent with the steer), pick an
+   alternative, or reject all of them and bring their own idea instead.
+6. **Hand off on confirmation.** Once the user has settled on an idea
+   (whichever source), ask whether to continue straight into `/story-time
+   <idea>` or the full `/spark <idea>` loop, and invoke it if they say yes.
+   Do not invoke either automatically — this skill only produces the idea.
+
+## Rules
+
+- Never write or modify files under `.spark/` — this ceremony produces a
+  recommendation in conversation, not an artifact.
+- Never treat the agent's proposal as chosen. It is a suggestion until the
+  user says which one (or their own idea) to run with.
+- If every existing feature is `released` or `handed-off` and nothing is stalled, say that explicitly before proposing something new — a clean state is worth naming,
+  not skipped past.
+- If a stalled feature (open review/QA findings, or a plan sitting unbuilt)
+  exists, the agent must weigh *finishing it* against *starting something
+  new* as one of the candidates — half-shipped work is a real cost.
+
+## Handoff
+
+- User picks a proposal or brings their own idea → **`/story-time <idea>`**
+  or **`/spark <idea>`**, on their explicit go.
+- No idea survives, or the user wants to think first → stop here; nothing to
+  persist.

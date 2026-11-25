@@ -1,0 +1,333 @@
+---
+description: "Count ratchet: freezes a lint violation, suppression, check, performance or telemetry count at today's value as a checked-in CI ceiling that fails on a rise and is lowered as the count falls. Counters only, never durations; proposes files for a human to merge. Use when asked to 'ratchet' a lint rule or suppressions, freeze a violation count, or 'stop this count from growing' in CI."
+user-invocable: true
+argument-hint: "[<counter, rule or claim>]"
+disable-model-invocation: false
+allowed-tools: ["Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/ratchet.py:*)", "Bash(python3 \"${CLAUDE_SKILL_DIR}/scripts/ratchet.py\":*)", "Bash(git grep:*)", "Bash(git ls-files:*)"]
+metadata:
+  workflow-stage: review
+  summary: Hold a count in CI with a checked-in ceiling a human merges
+---
+
+**Arguments.** `[<counter, rule or claim>]`. e.g. /toolchain:ratchet the no-floating-promises rule
+
+## Purpose
+
+Answers **"how do we stop this count from growing while we pay it down?"**
+
+A new lint rule with 300 existing violations cannot fail the build today, and a rule that does not
+fail the build lets violation 301 in. A ceiling fixed at today's count fails the next change that
+adds one, while the existing ones are fixed at whatever pace the team picks. Each fix lowers the
+ceiling, so the count only moves down.
+
+The check is `scripts/ratchet.py` (one standard-library file) and a number: no model runs in CI.
+This skill writes the proposed files into the working tree and commits nothing. It never merges.
+
+## 1. Take the counter
+
+The counter arrives from one of five places:
+
+| Source | What it hands over |
+|---|---|
+| `/performance:protect` | a verified counter: name, command, field, and the goal with its Correlation value |
+| the ratchet offer on a counting rung's proposal from `/corrections:codify` | a lint rule, once it exists, whose violation count is above zero |
+| `/code-metrics:audit-suppressions`, when that skill is available | a command that prints the suppression count |
+| the user, from a telemetry store | a command that queries one run's count and prints it |
+| `/performance:target` on slow checks | a check count that grows with the repository: checks per hook stage or CI job, files a check scans, or test suites a change selects |
+
+A check count holds a lane's growth where its duration cannot be held: a ceiling on files scanned
+or checks per stage fails the change that adds one, and the lane's speed is measured separately.
+
+Each needs a command that prints a `<field>=<number>` token on stdout, run through the shell from
+the repository root.
+
+- **Counters only.** A wall-clock time, a latency percentile or a memory high-water mark moves with
+  the host, so a ceiling on it fails at random and trains people to raise it. Refuse it and name a
+  count that moves only when the code does (calls, queries, spawns, violations). When none exists,
+  say so: there is nothing to ratchet yet.
+- **The command fails when its subject fails.** A linter that cannot parse its config reports no
+  violations; a crashed program spends fewer calls. Either one passes any ceiling. Make the command
+  exit non-zero in that case: check the linter's own exit status, or filter on the subject's status.
+- **Measure in CI's state.** A count behind a cache reads lower on a warm machine than on a fresh
+  runner. Pin the cache state in the command (unset or empty its location) before measuring.
+
+## 2. The lint rollout rule
+
+A lint rule lands at error severity. Run the command once and take the first path that fits:
+
+1. **Zero lands the rule.** A lint count of `0` needs no ceiling: turn the rule on at error
+   severity in the linter's config so the build fails on the first violation, and stop. Report that
+   the rule landed and that no ceilings entry was written.
+2. **A mechanical fix gets a codemod, then error.** When the linter's autofix or a codemod rewrites
+   every violation with no judgment call, run it across the repository in the same change and turn
+   the rule on at error severity. No ceiling.
+3. **Otherwise, a per-file baseline at error severity.** The rule runs at error severity, and each
+   file may keep only the violations it has today, so a fix in one file never pays for a new
+   violation in another. When the linter has a native per-file baseline, use it and write no
+   ceilings entry: the linter fails a new violation itself. When it has none, record a per-file
+   counter (section 4) whose command runs the rule at error severity.
+
+**Warn severity is only a dated step.** A rule may run at warn severity only on the way to one of
+the paths above, and its ceilings entry's `--goal` ends with the date it moves to error (`warn
+until <YYYY-MM-DD>, then error`). A warn rule with no end date is a rule nobody enforces.
+
+Native per-file baselines, read live from each linter's own docs:
+
+| Linter | Pointer |
+|---|---|
+| ESLint | [Bulk Suppressions, Suppressions File](https://eslint.org/docs/latest/use/suppressions#suppressions-file) |
+| PHPStan | [The Baseline, Generating the baseline](https://phpstan.org/user-guide/baseline#generating-the-baseline) |
+
+A linter not in the table: read its docs for a checked-in per-file baseline before falling back to
+the ratchet.
+
+A suppression count of `0` lands the same way only when the tool has a rule that forbids the
+suppression comment itself (for example an ESLint rule that reports every disable directive): turn
+that rule on at error severity. When no such rule exists, nothing in the linter fails on the first
+new suppression, so ratchet the count at `0` like any other counter.
+
+A counter from `/performance:protect` with a value of `0` is also ratcheted at `0`, since no linter
+stands behind it.
+
+On the per-file path with no native baseline, run the rule in its own linter invocation, the one
+the counter command reads, so the existing violations do not fail the main lint step: the ceiling
+is what fails it.
+
+### Replacing a lint tool
+
+Use this only when the new tool lacks rules the old one enforces. When it covers every one, switch
+directly: no ratchet.
+
+1. **Run both side by side.** The old tool keeps its own step, so nothing it enforces lapses.
+2. **Freeze the new tool's count.** Record its violation count as a counter (section 4).
+3. **Pay it down.** Tighten as fixes land (section 6).
+4. **Delete the old tool at zero.** When the new tool's count reaches `0`, its rules land at error
+   severity (path 1) in place of the ceiling. The old tool's step, config and dependency go only
+   once the new tool covers every rule the old one enforced; until then, cut the old tool down to
+   the rules the new one lacks.
+
+The vendor's own side-by-side setup, read live:
+[Oxlint, Running Oxlint and ESLint together](https://oxc.rs/docs/guide/usage/linter/migrate-from-eslint#running-oxlint-and-eslint-together).
+
+## 3. The ceilings file
+
+Add to the file the repository's CI already checks. Find the calls with
+`git grep -n -E 'ratchet\.py.{0,2} check'`, which covers workflow files and any script they run:
+
+- **A `check` call with `--file <path>`:** add to `<path>`, and use the `ratchet.py` that call runs.
+- **A `check` call with no `--file`:** the file is `.performance/ratchets.json`, the script's
+  default, with the vendored script at the path the call names (usually `.performance/ratchet.py`).
+  Add to it; propose no second file.
+- **Calls naming different files:** ask which file this counter joins.
+- **No call:** propose `.ratchets.json` at the repository root and vendor `ratchet.py` beside it.
+  Every `add`, `check` and `propose-tighten` call then passes `--file .ratchets.json`, because the
+  script's own default is the `.performance/` path.
+
+CI has no plugin installed, so the repository carries its own copy of the script. Vendor
+`${CLAUDE_SKILL_DIR}/scripts/ratchet.py` without its first two lines (the generated-file header),
+unless the repository already carries one. A vendored copy older than the `--runs` flag exits 2 on
+it, and one older than per-file mode exits 2 on a `ceilings` entry or a `break_glass` key: refresh
+the copy before using either.
+
+**A suppression counter** needs the scanner in CI too. Vendor
+`${CLAUDE_SKILL_DIR}/scripts/suppression-scan.py` beside the vendored `ratchet.py`, also without its
+first two lines, and make the counter command run that copy with `--count`, for example
+`python3 <dir>/suppression-scan.py --count`. It prints `suppressions=<n>` and `unjustified=<n>`;
+ratchet `unjustified` to stop new suppressions without a reason, or `suppressions` to stop any new
+one. With no path it reads every file git does not ignore, so a fresh checkout counts exactly what
+was committed. The vendored scanner needs Python 3.11 or later and exits 2 with a one-line message
+below it, so the CI job must provide that version.
+
+## 4. Record the ceiling
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/ratchet.py" add --file <ceilings file> \
+  --name <name> --field <field> --command '<command>' --goal '<goal>'
+```
+
+- `add` runs the command twice by default and refuses a counter whose runs disagree. `--runs N`
+  changes the count (at least 1). A counter that varies on an unchanged tree fails at random; fix
+  what varies first.
+- The ceiling is the measured value. A ceiling above it is room for a regression to land unnoticed.
+- `--goal` says what the ceiling protects. For a lint rule: the rule id and the direction ("no new
+  `no-floating-promises` violations; fix existing ones down to 0"). For a counter from
+  `/performance:protect`: the verified goal, ending with its Correlation value exactly as protect
+  passed it.
+
+### Per-file counters
+
+A lint rule's violation count is a per-file counter: one repository-wide count lets a fix in one
+file pay for a new copy elsewhere. Keep the single count for a counter no file owns (a spawn, query
+or telemetry count), and for a suppression count from `suppression-scan.py --count`, which prints
+only the repository-wide `suppressions=<n>` and `unjustified=<n>` lines, so `add --per-file` exits
+`2` on it. Add `--per-file`, with a command that prints one `<path> <field>=<number>` line
+per file with a count above `0` and no other non-blank line. The command exits `0` when it finds
+violations, since a linter's own non-zero exit on a violation would read as a failed measurement
+(exit `2`), and non-zero only when the linter itself could not run:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/ratchet.py" add --file <ceilings file> --per-file \
+  --break-glass <on|off> --name <name> --field <field> --command '<command>' --goal '<goal>'
+```
+
+The entry records the ceiling for each file the command printed. A file with no ceiling has a
+ceiling of `0`, so a new file's first violation fails. `check` exits `1` naming each file above its
+ceiling even when the total fell, and `propose-tighten` lowers each file's ceiling as its count
+falls and drops a file that reached `0`.
+
+### Break glass
+
+Break glass lets a person approve one violation above a file's ceiling. It is an inline comment in
+that file, one per held violation:
+
+```text
+ratchet-break-glass(<counter name>): reason=<why>; expires=<YYYY-MM-DD>; approved-by=<person>
+```
+
+- **The setting is the ceilings file's `break_glass` key**, `true` or `false`, and CI's `check`
+  reads it there. When the file has no key, pass `--break-glass` from the `ratchet_break_glass`
+  option, rendered here as `${user_config.ratchet_break_glass}`: `true` passes `on`, `false` passes
+  `off`, and a value still reading `${user_config.…}` or empty passes `off`, the option's default.
+  When the file has the key, omit `--break-glass`: the repository's setting wins.
+- **An exception missing the reason, the expiry or the approving person, or past its expiry,
+  fails the check**, printed as `BROKEN` with its file and line, even in a file at its ceiling.
+  `check` reads exceptions in each file the command prints or the counter has a ceiling for. Each
+  valid one holds one violation for its counter only.
+- **With the key `false` or absent, exceptions are not read**, so the file above its ceiling fails.
+- **Per-file counters only.** A native baseline uses the linter's own inline disable comment.
+- **This skill never writes an exception.** The approving person is a human who read the
+  violation; propose the fix instead.
+
+### Telemetry counters
+
+The command flushes the store, queries the run it started, and prints the token; `ratchet.py`
+only runs the command and reads stdout.
+
+- **Query by a run id the command generates,** never a time window: a late batch from an earlier
+  run lands inside a window.
+- **Fail when the run's completion record is missing.** Lost telemetry must not read as `0`; a
+  real `0` with the record present is a valid count.
+- **Flush, or poll until the record is complete, before printing.** `add` measures more than once;
+  a read taken before the flush gives a partial count.
+- **CI needs the store.** `check` exits 2 when the command fails. Either the CI job starts the
+  store and its exporter, or the counter stays out of the required check.
+
+## 5. The CI step
+
+`check` exits `0` at or below every ceiling, `1` naming each counter or file above its ceiling and
+each broken break-glass exception, and `2` when it could not measure. Add one step inside the job the repository requires for merge (branch
+protection or a ruleset names it; ask when neither can be read):
+
+```yaml
+      - name: Check count ceilings
+        run: python3 <vendored ratchet.py> check --file <ceilings file>
+```
+
+When the repository already has a `check` step for this file, add nothing: the new entry is
+checked by it. A step in a job that is not required turns red and blocks nothing.
+
+## 6. Tightening
+
+`check` prints `propose-tighten can lower` when a counter, or a file of a per-file counter, sits
+below its ceiling.
+`propose-tighten --write` records the lower value and never raises one.
+
+- **The count drops only when code changes it** (a lint rule, a suppression count): tighten in the
+  same PR that fixed the violations. No schedule.
+- **The count can drop with no PR touching it** (a dependency upgrade, a data-driven count): propose
+  a scheduled workflow that opens a draft PR and stops. Keeping the file is the setting; deleting it
+  means tightening by hand.
+
+```yaml
+on:
+  schedule:
+    - cron: "41 5 * * 2"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      ceilings: ${{ steps.lower.outputs.ceilings }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: lower
+        run: |
+          python3 <vendored ratchet.py> propose-tighten --file <ceilings file> --write
+          git diff --quiet -- <ceilings file> && exit 0
+          echo "ceilings=$(jq -c . <ceilings file>)" >> "$GITHUB_OUTPUT"
+  draft-pr:
+    needs: measure
+    if: needs.measure.outputs.ceilings != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          CEILINGS: ${{ needs.measure.outputs.ceilings }}
+        run: |
+          jq . <<<"$CEILINGS" > <ceilings file>
+          git switch -c "ratchet/lower-$GITHUB_RUN_ID"
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "chore: lower count ceilings"
+          git push origin HEAD
+          gh pr create --draft --fill
+```
+
+The counter commands run in `measure`, with a read-only token and no stored credentials, because a
+counter can run third-party code. Only `draft-pr`, which runs no counter, can write.
+
+A `GITHUB_TOKEN` opens that PR only when the repository turns on the "Allow GitHub Actions to
+create and approve pull requests" setting, and runs on a PR it opens can wait for approval. A GitHub
+App token or a personal access token stored as a secret avoids the wait.
+
+- **Pointer:** for the setting's default and the approval rule, fetch [Actions settings: creating or approving pull requests](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)
+  and [when GITHUB_TOKEN triggers workflow runs](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs) live.
+- **Stored value:** the setting name quoted above, copied from the first linked docs section, as of
+  2026-11-14; recheck when that section renames the setting.
+
+## Output
+
+```text
+Rollout:   zero | codemod then error | native baseline (<linter>) | per-file ceiling | warn until <date>
+Counter:   <name> = <measured> (<field>), agreed across <runs> runs | 0: rule landed, no ceiling
+Ceiling:   <value | N file ceilings> in <ceilings file> (<existing | new>)    Script: <vendored ratchet.py path>
+Break glass: <on | off> (<ceilings file key | ratchet_break_glass option>)
+CI step:   <workflow file and job>                         Required check: <name>
+Tighten:   same-PR | scheduled draft PR (<workflow file>)
+Files:     <each proposed file, uncommitted>
+Awaiting:  human approval of the files above
+```
+
+## Boundary
+
+- **Does not choose the rule.** `/corrections:codify` proposes rungs; this holds a count
+  once a rule or counter exists.
+- **Does not prove a performance win.** `/performance:verify` does; this takes the verified counter.
+- **Does not commit, push or merge,** under any autonomy setting. The scheduled job opens a draft
+  PR and stops.
+- **Does not check in a duration** or run a model in CI.
+
+## Next
+
+`/source-control:pull-request` with the approved files.
+
+## Gotchas
+
+- **A second ceilings file splits the check.** Add to the file CI already checks; a new file needs
+  its own step, and one that never gets it is never checked.
+- **A call that omits `--file` uses `.performance/ratchets.json`.** In a repository whose ceilings
+  are in `.ratchets.json`, `add` starts a second file there and `check` exits 2 because that path
+  does not exist.
+- **A raised ceiling is a decision.** State the reason in the PR body; never raise one to turn a
+  build green.
+- **A count measured warm fails on every fresh runner.** Pin the cache state in the command.
+- **A baseline or allowlist at zero entries is deleted** with its reading code: [reference/zero-entries.md](reference/zero-entries.md).

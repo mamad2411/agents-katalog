@@ -1,0 +1,365 @@
+---
+name: wicked-garden-jam-council
+description: "Runs structured multi-model council evaluations using external LLM CLIs. Use when: multi-model evaluation, council verdict on defined options, high-stakes decision needing genuinely independent model perspectives — handed off by the wicked-garden-jam skill's council sub-action."
+metadata:
+  role: worker
+---
+
+# Council
+
+You orchestrate structured multi-model evaluations using external LLM CLIs.
+
+## Runtime
+Script-backed steps use the `wicked-garden` launcher: `wicked-garden run <plugin-root-relative path, e.g. scripts/…> [args]`. It is on PATH after `npm i -g wicked-garden`; otherwise use `npx wicked-garden run …`; inside a wicked-crew run it is `"$WICKED_GARDEN_ROOT/scripts/wicked-garden"`.
+If none of these is available, or Python 3 is missing, skip the script-backed step, say so, and follow the manual alternative where one is given next to it — never invent the script's output.
+Relative paths in this skill are relative to the directory that contains this SKILL.md.
+
+## Your Role
+
+Run council sessions that produce independent evaluations from multiple AI models, then synthesize into an actionable verdict.
+
+## Council Protocol
+
+### 1. Parse Input
+
+Extract from the user's prompt:
+- **topic**: The decision to be made (required)
+- **options**: 2-4 candidate solutions (strongly recommended)
+- **criteria**: Evaluation dimensions (optional, auto-infer if missing)
+
+If `--options` is missing, nudge the user:
+```
+Council works best with defined options to evaluate.
+Consider running the jam skill's brainstorm sub-action (wicked-garden-jam
+brainstorm) first to generate candidates, then come back with 2-4 specific
+options.
+
+Proceeding with open-ended evaluation...
+```
+
+### 2. Detect + Probe Available CLIs (registry-driven)
+
+Do NOT hand-maintain a `which` list. The set of agentic CLIs, their headless
+invocation forms, trust flags, and auth requirements live in the registry
+(`scripts/jam/agentic_cli_registry.py`, 20+ CLIs). Detection AND a usability
+**probe** are driven by `scripts/jam/detect_clis.py`:
+
+```bash
+wicked-garden run \
+  scripts/jam/detect_clis.py --probe --json
+```
+
+Run this detection first. If it reports `seat`, do not call or look for other
+CLIs. Give one model's evaluation, disclose `seat.reason` in the summary instead
+of naming CLIs as missing, and stop before the quorum and fallback steps.
+
+This returns:
+```json
+{
+  "detected":   [{"key","display_name","binary","resolved_path","version", ...}],
+  "usable":     ["gemini","copilot", ...],
+  "unusable":   [{"cli":"codex","reason":"auth: 401 ..."}, ...],
+  "collisions": [{"binary":"grok","keys":["grok","grok-cli"]}]
+}
+```
+
+**Why probe, not just detect:** a binary on PATH is not a usable council seat.
+A CLI can be installed yet have its auth revoked (401), no provider configured,
+or a local daemon down. The probe runs each detected CLI's headless form — with
+the registry's trust/auth flags applied first (e.g. codex `--skip-git-repo-check`,
+gemini `--skip-trust`, copilot `--allow-all-tools`) — on a trivial prompt,
+**sandboxed** in a fresh tempdir, **stdin from devnull**, under a per-CLI
+**timeout**, and classifies each:
+
+- **usable** — sane reply came back.
+- **installed-but-unusable** — recognised failure signature (`auth` / `no-provider`
+  / `daemon-down` / `quota` / `timeout`). These do NOT count toward quorum.
+
+The probe also captures each CLI's **version string** to disambiguate **binary
+collisions** (`grok` is both xAI's and the community CLI; `agent`, `forge`, `q`
+collide with unrelated tools; `q` was renamed `kiro-cli` in Nov 2025).
+
+Only the `usable` external CLIs are convened. The host seat — the CLI you are
+running as — always participates in-process (it is the host, not an external seat).
+
+### 3. Quorum Check (on USABLE external CLIs)
+
+Quorum is counted over **usable external** CLIs (from the probe's `usable`
+list), never raw detections.
+
+| Usable External CLIs | Behavior |
+|----------------------|----------|
+| 0 | No external seats. **Fall back to the separate-worker tier** (step 3.5) — never refuse outright. If even that is unavailable, suggest the jam skill's brainstorm sub-action instead. |
+| 1 | Run with a "single external guest" warning — note this isn't a true multi-vendor council. Optionally top up with separate-worker seats (step 3.5). |
+| 2+ | Full council mode. |
+
+If zero usable external CLIs were found, state what was detected-but-unusable
+and why, so the user can fix auth/config:
+```
+Council found {detected} installed CLI(s) but {unusable} are unusable
+(e.g. codex: auth revoked; goose/llm: no provider configured; ollama: daemon down).
+Filling council seats with separate-worker seats instead (see below).
+To get real external models, fix the auth/config above or install more CLIs.
+```
+
+### 3.5. Fallback: the separate-worker tier
+
+**A council must always have a real, plural set of independent perspectives.**
+If fewer than 2 **usable external** CLIs are available, fill the empty seats
+with separate-worker seats so deliberation still happens. These are *in-harness*
+seats (the host's own model family), so they are a weaker form of diversity than
+external vendors — label them as such in the synthesis. Each worker seat:
+
+- gets the SAME question scaffold (step 4),
+- runs in isolation — one separate worker per seat, no seat sees another's
+  output; an inline invocation is not a seat,
+- is given a distinct framing persona so the perspectives differ
+  (e.g. "architect", "security reviewer", "operator/SRE", "skeptic").
+
+**Hand-off (required for seat independence).** If your harness can run a separate
+worker, hand each seat to one with the brief below, in parallel, and continue when
+all return; keep only their answers in your context. If it cannot isolate seats —
+loading a fork-less skill inline is NOT isolation — do not fill the seats yourself:
+an inline invocation is not a seat. Count only the seats you can isolate (usable
+external CLIs + separate workers); with fewer than 2 distinct seats in total, report
+"no quorum" instead of synthesizing and suggest the jam skill's brainstorm sub-action
+(the step-3 row-0 behaviour).
+
+Brief: "Follow the `wicked-garden-governed-worker` skill, Evaluator section. You are
+the COUNCIL's {persona} seat. Answer the 4 questions in the scaffold below
+independently and concisely. {scaffold}"
+
+Aim to reach at least 2-3 total seats (external + separate workers). Always disclose
+in the synthesis which seats were external CLIs vs separate-worker fallbacks, and
+name any seat that could not be isolated — it is not a seat, is not counted toward
+quorum, and is not synthesized.
+
+### 4. Build Question Scaffold
+
+Every external model answers the **same fixed question set**. This enforces comparability.
+
+```
+Topic: {topic}
+Options under evaluation: {options}
+Evaluation criteria: {criteria}
+
+Answer these 4 questions:
+
+1. RECOMMENDATION: Which option do you recommend and why? Be specific about trade-offs.
+
+2. TOP RISK: What is the single biggest risk in your recommended option?
+
+3. WHAT WOULD CHANGE YOUR MIND: What evidence or condition would reverse your recommendation?
+
+4. DISQUALIFIER: Is any option fundamentally unviable? If so, which one and why? If all are viable, say "None."
+```
+
+### 5. Convene the Usable External CLIs (ISOLATION ENFORCED, registry-driven)
+
+**Non-negotiable**: Each model responds independently. No model sees another
+model's output. No CLI sees another CLI's output. All calls run in parallel,
+each **sandboxed** in its own tempdir, **timeboxed**, with **stdin from
+devnull**.
+
+Do NOT hardcode a per-CLI bash block. Render each invocation from the registry
+so the dispatch can never drift from the detection. For each `key` in the
+probe's `usable` list, look up its record in `agentic_cli_registry.py` and
+build the command from `headless_invocation` + `trust_flags`, feeding the
+scaffold per the record's `input_mode`:
+
+| `input_mode` | How the scaffold is delivered |
+|--------------|-------------------------------|
+| `prompt-arg` | substitute the scaffold into `{PROMPT}` in the template |
+| `stdin`      | pipe the scaffold file into the command on stdin |
+| `at-file`    | attach the scaffold file (e.g. pi `@"$SCAFFOLD_FILE"`) |
+| `message-file` | pass the scaffold via the tool's file flag (e.g. aider `--message-file`) |
+| `model-arg`  | local runners — insert `{MODEL}` then the prompt (probe skips these unless a model is known) |
+
+Write the scaffold to a temp file once (avoids shell-quoting issues with
+apostrophes / special chars in the topic), then render+dispatch per CLI:
+
+```bash
+SCAFFOLD_FILE="$(python3 -c 'import tempfile,os;print(os.path.join(tempfile.gettempdir(),"council-scaffold.md"))')"
+cat > "$SCAFFOLD_FILE" <<'SCAFFOLD_EOF'
+{question_scaffold_content}
+SCAFFOLD_EOF
+```
+
+The registry already encodes the trust/auth flags each CLI needs for headless
+use (codex `--skip-git-repo-check`, gemini `--skip-trust`, copilot
+`--allow-all-tools`, aider's inline `--yes-always --no-git --no-auto-commits
+--no-stream --no-analytics`, amp `--dangerously-allow-all`, etc.). Apply them;
+do not re-derive them by hand. Example renders for `prompt-arg` CLIs (gemini,
+copilot, opencode-run, codex-exec) — substitute the scaffold text for
+`{PROMPT}`:
+
+```bash
+gemini -p "<scaffold>" --skip-trust
+copilot -p "<scaffold>" --allow-all-tools
+opencode run "<scaffold>"
+codex exec "<scaffold>" --skip-git-repo-check
+```
+
+For `message-file` (aider) and `at-file` (pi) CLIs, pass the scaffold file
+rather than inlining it. Run ALL usable CLIs in parallel where your harness can
+issue concurrent shell commands — launch every seat's command before waiting on any
+of them, each with its own timeout; where it cannot, run them one at a time and record
+`serial_reason: harness has no parallel shell`. No seat sees another's output either way.
+
+### 6. The Host Seat's Own Evaluation
+
+You — the host seat — also answer the same 4 questions independently (you already have the scaffold). Answer BEFORE reading external responses to maintain independence.
+
+### 6.5. Persist Council Responses as Transcript Entries
+
+After collecting all external model responses AND the host seat's own evaluation, persist them as transcript entries so they are retrievable via `jam.py transcript`. Run once after all responses are in hand:
+
+```bash
+wicked-garden run scripts/jam/save_transcript.py \
+  --session-id "{session_id}" \
+  --entries '{json_array_of_entries}'
+```
+
+Each model's response becomes one entry:
+```json
+{
+  "session_id": "{session_id}",
+  "round": 1,
+  "persona_name": "Gemini",
+  "persona_type": "council",
+  "raw_text": "{full raw response from that model}",
+  "timestamp": "{ISO timestamp}",
+  "entry_type": "council_response"
+}
+```
+
+- Use `persona_name` = the CLI's `display_name` from the registry (e.g.
+  "Claude", "Codex", "Gemini", "Copilot", "OpenCode", "Pi", "Antigravity", …). For
+  your OWN host-seat row use your own display name from that same registry — the seat
+  you are actually running as, never a hardcoded "Claude".
+  For a separate-worker fallback seat (step 3.5), use the persona framing and mark it,
+  e.g. `persona_name: "Worker seat: architect"`.
+- `persona_type` is always `council` for these entries.
+- After synthesis is complete, also append a synthesis entry: `entry_type: synthesis`, `persona_name: Council`, `round: 0`.
+
+If `save_transcript.py` is unavailable, skip transcript storage silently.
+
+After synthesis, emit to wicked-bus. Payload rule: IDs + counts + outcomes only (no raw model text, no full prompts). `agreement_ratio` is a float in `[0.0, 1.0]`.
+```bash
+wicked-garden run scripts/_bus_emit.py wicked.garden.council.voted '{"session_id":"{session_id}","models_count":{N},"agreement_ratio":{R}}' 2>/dev/null || true
+```
+
+### 7. Synthesize Three-Stage Output
+
+#### Stage 1: Independent Responses
+
+Present each seat's raw answers, clearly separated. State isolation only when it
+is true — every counted seat was a usable external CLI or a separate worker (step
+3.5 hand-off). If any seat was not isolated, do not emit the line: name those seats,
+exclude them, and re-check quorum before synthesizing.
+
+```markdown
+## Council Evaluation: {topic}
+
+*Each seat responded independently — one external CLI or one separate worker per seat; no seat saw another's output. Synthesis follows.*
+
+### {host seat display name}
+{the host seat's 4 answers}
+
+### Codex
+{Codex's 4 answers}
+
+### Gemini
+{Gemini's 4 answers}
+
+[etc. for each participating model]
+```
+
+#### Stage 2: Synthesis Matrix
+
+```markdown
+## Synthesis Matrix
+
+| Model | Recommendation | Top Risk | Disqualifier |
+|-------|---------------|----------|-------------|
+| {host seat} | {option} | {risk} | {disqualifier or None} |
+| Codex | {option} | {risk} | {disqualifier or None} |
+| Gemini | {option} | {risk} | {disqualifier or None} |
+
+### Risk Convergence
+
+**High signal** (3+ models cite): {risks appearing in 3+ responses}
+**Notable** (1-2 models cite): {risks from 1-2 responses}
+```
+
+#### Stage 3: Verdict
+
+Either consensus or no-consensus:
+
+**Consensus** (majority agrees):
+```markdown
+## Verdict
+
+**Council recommends {Option X}** ({count}-{dissent}).
+Primary risk: {most-cited risk}.
+{One sentence on the key dissenting concern if any.}
+```
+
+**No consensus**:
+```markdown
+## Verdict
+
+**No consensus.** Fault lines: {Option A} ({reasoning}) vs {Option B} ({reasoning}).
+Key disagreement: {the fundamental question the models disagree on}.
+Recommendation: {suggest what additional information would break the tie}.
+```
+
+The verdict should be copy-pasteable into a Slack message or ticket.
+
+### 7.5. Assemble the Output Envelope (raw per-model votes, Issue #584)
+
+Default output carries both the synthesised verdict AND a `raw_votes` list so
+callers can see per-model nuance even on unanimous verdicts. Assemble the
+envelope via `scripts/jam/consensus.py::build_council_output(votes, synthesized)`
+— it returns `{"synthesized": {...}, "raw_votes": [{"model", "verdict", "confidence", "rationale"}, ...]}`
+where each `rationale` is the model's own one-liner (or the first 240 chars of
+its response) and missing confidences stay `null`, not `0.0`.
+
+Operator override: `WG_COUNCIL_OUTPUT=both|synth|raw` (default `both`). Use
+`synth` for the legacy single-key shape; use `raw` when tooling only wants the
+unvarnished per-model layer.
+
+Caller-side heuristics for acting on the verdict live in
+the `wicked-garden-jam` skill's `refs/council-verdict.md` — the parent applies
+them after this worker returns; the council itself does not gate.
+
+### 8. Store Decision Record
+
+Store the council outcome via the wicked-garden-mem skill (store action, if available).
+
+**Hand-off** — open the `wicked-garden-mem` skill and run its `store` action with `Council: {topic} → {verdict_summary}` (kind=fact, about=[council, {topic_slug}]); on Claude Code this is the Skill tool, on any other seat open the named skill from your catalog and carry it out inline, then continue here.
+
+## Important Rules
+
+1. **No confidence scores** — LLMs produce uncalibrated numbers. Use risk convergence instead.
+2. **No rounds** — Single structured pass. Rounds break isolation.
+3. **No editorial gloss on Stage 1** — Present raw answers without interpretation.
+4. **Parallel by default** — never let one seat's output reach another; where the harness cannot issue concurrent shell commands, run them one at a time on the same scaffold and record `serial_reason`.
+5. **The host participates** — the host seat is always a council member, answering the same scaffold.
+
+## Persistent Access
+
+The inline path above is the supported way to run a council. To persist or query
+council outcomes across sessions, use the decision record written in step 8
+(`wicked-garden-mem` store action), then recall it with `wicked-garden-mem`
+recall / answer (e.g. tag `council`).
+
+> **Note (2026-06):** an earlier `daemon/council.py` + `POST /council` HTTP daemon
+> (v8 PR-4, issue #594) was retired — no source ships in `daemon/` (only stale
+> `.pyc` remained). Use the inline council path plus brain persistence instead.
+
+## Dispatch
+
+Worker skill, reached by its name — `wicked-garden-jam-council` — through a
+Hand-off from the `wicked-garden-jam` skill's council sub-action or any caller. The pre-v12.25
+subagent-delegation form is retired with the fork frontmatter.

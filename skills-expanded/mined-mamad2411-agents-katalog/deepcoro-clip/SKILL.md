@@ -1,0 +1,128 @@
+Directory structure:
+└── heartwise-ai-deepcoro_clip/
+    ├── README.md                      # Project documentation and overview
+    ├──  .cursorrules                  # Cursor editor rules
+    ├── generate_dataset.ipynb         # Notebook for dataset generation
+    ├── plot_result_example.ipynb      # Notebook for visualizing results
+    ├── pyproject.toml                 # Python project dependencies and settings
+    ├── run_sweep.ipynb                # Notebook for hyperparameter sweeps
+    ├── run_sweep.py                   # Script for hyperparameter sweeps
+    ├── text_embeddings.pkl            # Cached text embeddings
+    ├── uv.lock                        # Lock file for dependencies
+    ├── .cursorrules                   # Cursor editor rules
+    ├── .pre-commit-config.yaml        # Pre-commit hook configurations
+    ├── config/                        # Configuration files directory
+    │   ├── base_config.yaml           # Base configuration settings
+    │   ├── base_config_bk.yaml        # Backup of base configuration
+    │   ├── runner.sh                  # Runner script for training
+    │   ├── sweep_config.yaml          # Hyperparameter sweep configuration
+    │   └── sweep_config_3.yaml        # Additional sweep configuration
+    ├── dataloaders/                   # Data loading modules
+    │   ├── __init__.py               # Package initialization
+    │   ├── multi_video_dataset.py    # Multiple video handling dataset
+    │   ├── simple_text_dataset.py    # Text data loading
+    │   ├── stats_dataset.py          # Statistics dataset
+    │   └── video_dataset.py          # Video data loading
+    ├── models/                        # Neural network models
+    │   ├── text_encoder.py           # Text encoding model
+    │   ├── video_aggregator.py       # Video feature aggregation
+    │   └── video_encoder.py          # Video encoding model
+    ├── projects/                      # Project-specific implementations
+    │   ├── __init__.py               # Package initialization
+    │   └── contrastive_pretraining.py # Contrastive learning implementation
+    ├── runners/                       # Training runners
+    │   ├── __init__.py               # Package initialization
+    │   └── video_constrative_learning.py # Video contrastive learning runner
+    ├── scripts/                       # Training and utility scripts
+    │   ├── run_sweep.sh              # Script for running parameter sweeps
+    │   ├── train.sh                  # Training script
+    │   └── train_model_multi_gpu.py  # Multi-GPU training script
+    └── utils/                         # Utility functions and helpers
+        ├── config.py                  # Configuration handling
+        ├── ddp.py                     # Distributed data parallel utilities
+        ├── enums.py                   # Enumeration definitions
+        ├── files_handler.py           # File operations handling
+        ├── logging.py                 # Logging utilities
+        ├── losses.py                  # Loss function implementations
+        ├── metrics.py                 # Evaluation metrics
+        ├── parser.py                  # Command line argument parsing
+        ├── parser_typing.py           # Type definitions for parser
+        ├── registry.py                # Model and component registry
+        ├── schedulers.py              # Learning rate schedulers
+        ├── seed.py                    # Random seed management
+        ├── text_encoder.py            # Text encoding utilities
+        └── video.py                   # Video processing utilities
+
+### Rules
+- Use the project structure to navigate the codebase.
+- Use the README.md file to get an overview of the project.
+- Use the pyproject.toml file to get an overview of the dependencies.
+- Use the uv.lock file to get an overview of the dependencies.
+- Use the config/ directory to get an overview of the configurations.
+- Use the models/ directory to get an overview of the models.
+- Use the scripts/ directory to get an overview of the scripts.
+
+ALWAYS ACTIVATE THE VENV BEFORE RUNNING ANY COMAMND
+```source .venv/bin/activate```
+
+# Ignore patterns below:
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+wandb/
+outputs/
+*.ipynb_checkpoints/
+lightning_logs/
+
+# Data and models
+*.pkl
+*.pth
+*.ckpt
+*.pt
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db 

@@ -1,0 +1,183 @@
+---
+name: visualization-ops-skill
+description: >
+  **输出可视化，必加载**。当 prompt 涉及新闻/资讯/行情/排行/报告/总结/分析/对比/选型/推荐/盘点/复盘，或预计返回 3 条以上可结构化条目时，**必须先于（或同轮于）数据获取工具加载本 skill**。加载后**禁止用纯 markdown 文本收尾**——必须用 JsxCreate 或 ChartRender 渲染。典型："搜最新伊朗新闻"、"对比 Obsidian/Notion/Logseq"、"推荐几本书"、"最近股市怎么样"。**不用于**：单句事实问答、纯代码输出、在画布里增删节点（由画布子 Agent 处理）。
+tools: [JsxCreate, ChartRender]
+---
+
+# 可视化渲染
+
+## 工具清单
+
+| 工具 | 职责 | 只读 |
+|------|------|------|
+| `JsxCreate` | JSX 组件实时渲染（卡片 / 列表 / 表格 / 富文本等结构化输出） | 否 |
+| `ChartRender` | ECharts 图表渲染（折线 / 柱状 / 饼图 / 散点 / 雷达 / 热力图 / 地图） | 是 |
+
+> **加载**：全部为 deferred 工具，调用前须先 `ToolSearch(names: "JsxCreate,ChartRender")` 激活 schema。
+
+## 静默渲染通道（读完再动手）
+
+把你的输出想成两条平行通道：
+
+- **text 通道**：你写的 markdown，按顺序插在对话里
+- **渲染通道**：`JsxCreate` / `ChartRender` 的输出作为独立气泡在聊天里直接呈现给用户
+
+用户**同时**看到这两条通道。所以像一个人写完信不会补一句"我刚把信写完了"一样——调用这两个工具**之前**不要预告（"让我先整理数据 / 我将创建一个折线图 / 现在让我再做一个汇总卡片"），**之后**也不要总结（"图表已渲染 / 卡片已生成"）。用户早就看见了，这些话只是噪音。
+
+对应地，你的 step 级 `text` 在大多数情况下应该是**空**的，直到最后一次工具调用之后，才**一次性**写一段总结性 text——而且仅在以下任意一种情况才写：
+- 真正需要补充的**数据解读**：结论、异常、趋势含义、下一步建议
+- 气泡里看不到但用户需要的**上下文**：数据来源、覆盖范围、置信度、时效性
+
+如果这些都没有，不写 text 也完全可以——工具气泡本身就是答案。
+
+**反例**（这是实际会话里出现过的、应该避免的流水账）：
+
+> step 2: "搜索结果返回了一些股市行情相关的信息，但主要是行情中心的入口页面，缺少具体的股市数据。让我再搜索更具体的…"
+> step 3: "很好，现在我有了一些具体的股市数据。让我整理一下最近一周的股市行情数据…"
+> step 4: "现在我已经加载了 ChartRender 和 JsxCreate 工具。让我创建一个折线图…"
+> step 5: "图表已渲染。现在让我用 JsxCreate 创建一个汇总卡片…"
+> step 6: "已完成。我用 ChartRender 渲染了 … 并用 JsxCreate 创建了 …"
+
+这 5 段 text 全部应该删掉，只在最后保留"从数据来看，最近一周 A 股整体震荡上行…"那段真正的解读。
+
+## 决策树
+
+```
+需要可视化输出
+├── 数据图表（折线/柱状/饼图/散点/雷达/热力图/地图）？
+│   └── ChartRender（ECharts option）
+├── 自定义卡片/面板/布局/状态展示/信息汇总？
+│   └── JsxCreate（JSX 组件）
+└── 不确定？
+    ├── 有数值趋势/对比/分布数据 → ChartRender
+    └── 其他结构化信息展示 → JsxCreate
+```
+
+## ChartRender — ECharts 图表渲染
+
+提交 ECharts option 在消息中渲染图表。前端使用 ECharts 库渲染，支持 ECharts 全部图表类型。
+
+**参数**：
+- `option`（必填）：完整的 ECharts option 对象或 JSON 字符串
+- `title`（可选）：图表标题
+- `height`（可选）：图表高度（像素）
+
+**ECharts option 编写要点**：
+- 完整的 ECharts option 结构，包含 `xAxis`/`yAxis`/`series` 等
+- 支持所有 ECharts 图表类型：line、bar、pie、scatter、radar、heatmap、treemap、sunburst、sankey、gauge 等
+- 建议设置 `tooltip`、`legend` 提升可读性
+- 配色会自动适配 light/dark 主题
+
+**示例**：
+
+柱状图：
+```json
+{
+  "option": {
+    "xAxis": { "type": "category", "data": ["Mon", "Tue", "Wed", "Thu", "Fri"] },
+    "yAxis": { "type": "value" },
+    "series": [{ "type": "bar", "data": [120, 200, 150, 80, 70] }],
+    "tooltip": { "trigger": "axis" }
+  },
+  "title": "Weekly Data"
+}
+```
+
+饼图：
+```json
+{
+  "option": {
+    "series": [{
+      "type": "pie",
+      "radius": "60%",
+      "data": [
+        { "value": 335, "name": "Direct" },
+        { "value": 234, "name": "Email" },
+        { "value": 154, "name": "Search" }
+      ]
+    }],
+    "tooltip": { "trigger": "item" },
+    "legend": { "orient": "vertical", "left": "left" }
+  }
+}
+```
+
+## JsxCreate — JSX 组件渲染
+
+在聊天界面中实时渲染 JSX 组件。适合展示自定义卡片、状态面板、信息汇总等结构化内容。
+
+**参数**：
+- `content`（必填）：JSX 字符串
+
+**核心规则**：
+1. 只写 JSX 片段，**顶层必须是一个或多个元素节点**，不要写 `import`/`export`/`const`/`let`/`function`/函数定义
+2. **禁止 IIFE**：不能用 `{() => { ... return (...) }()}` 或 `{(function(){...})()}` 把整体内容包在立即执行函数里——校验器会拒绝，这是 MiniMax 等模型最常见的反模式
+3. 需要构造数据用行内表达式：`{[{name:'A'},{name:'B'}].map(x => <div key={x.name}>{x.name}</div>)}`
+4. 允许 `{}` 表达式、`map`、条件渲染、`style={{...}}`
+5. 不支持 `{...props}` 展开语法
+6. 每条回复只调用一次 JsxCreate
+
+**错误示范 vs 正确示范**：
+
+```jsx
+// ❌ 错：顶层是函数，校验失败
+{() => {
+  const items = [{title: 'A'}, {title: 'B'}]
+  return <div>{items.map(i => <p>{i.title}</p>)}</div>
+}()}
+
+// ✅ 对：顶层是元素，数据写成行内表达式
+<div className="flex flex-col gap-2 p-3">
+  {[{title: 'A'}, {title: 'B'}].map((item, i) => (
+    <div key={i} className="rounded-lg bg-card p-2 text-sm">{item.title}</div>
+  ))}
+</div>
+```
+
+**校验失败后**：工具会返回绝对路径和错误原因。**优先重新调用 JsxCreate 提交完整修正内容**（整体重写比 Edit 局部修改更不易出错）；只有在明确是个别字符问题时才用 Edit 改该绝对路径。不要 Glob/Read 去找文件——错误提示里已经给了绝对路径。
+
+**配色规范**：
+
+OpenLoaf 采用 Apple 扁平色系，所有颜色通过语义 token 适配 light/dark 主题。直接写 `bg-white` 或 `text-gray-800` 在深色模式下会变成刺眼的白块或不可见的文字——所以只用语义 token：
+
+基底色：`bg-card`、`bg-muted`、`text-foreground`、`text-muted-foreground`
+
+语义强调色（低透明度背景 + 扁平文字，在两种主题下都清晰可读）：
+- 蓝/信息：`bg-ol-blue/10 text-ol-blue`
+- 绿/成功：`bg-ol-green/10 text-ol-green`
+- 黄/警告：`bg-ol-amber/10 text-ol-amber`
+- 红/错误：`bg-ol-red/10 text-ol-red`
+- 紫/特殊：`bg-ol-purple/10 text-ol-purple`
+
+标签/徽章：`rounded-full px-2.5 py-0.5 text-xs` + 上述扁平色组合
+
+不使用渐变（`bg-gradient-*`）、阴影（`shadow-*`）和外框（`border`/`ring`）——JSX 组件嵌入在聊天消息流中，这些装饰会让卡片看起来像独立弹窗而非消息的一部分，破坏阅读连贯性。
+
+**风格规范**：
+- 圆角 `rounded-lg`/`rounded-xl`，间距紧凑（`p-3`~`p-4`、`gap-2`~`gap-3`）
+- 优先 `text-sm`/`text-xs` 小字号、横向宽布局——聊天窗口宽度有限，纵向过长会让用户滚动很久才能看完
+
+**可用组件白名单**（大小写敏感）：
+Message, MessageContent, Panel, Snippet, SnippetAddon, SnippetText, SnippetInput, SnippetCopyButton, CodeBlock, Checkpoint, Task, TaskTrigger, TaskContent, TaskItem, TaskItemFile, Image, Attachments, Attachment, AudioPlayer, AudioPlayerElement, AudioPlayerControlBar, AudioPlayerPlayButton, AudioPlayerSeekBackwardButton, AudioPlayerSeekForwardButton, AudioPlayerTimeDisplay, AudioPlayerTimeRange, AudioPlayerDurationDisplay, AudioPlayerMuteButton, AudioPlayerVolumeRange, WebPreview, WebPreviewNavigation, WebPreviewNavigationButton, WebPreviewUrl, WebPreviewBody, WebPreviewConsole
+
+不建议使用 Message/Panel/Snippet 等带外框的组件作为外层容器。
+
+**校验与修正**：
+- 服务端会校验 JSX 语法，违规直接报错
+- 校验失败仍会写入文件，错误信息包含 path，用 `Edit` 修正后刷新预览
+- 失败后必须用 `Edit` 修正，不要重新调用 JsxCreate
+
+**写入位置**：`[<sessionId>]/asset/jsx/<messageId>.jsx`（在 session 的 asset 目录下，可直接用 `Edit` 局部修改）
+
+**交互式表单**：需要收集用户输入时直接用文字向用户提问并等待回复，JsxCreate 仅负责展示。
+
+## 何时用 ChartRender vs JsxCreate
+
+| 场景 | 推荐工具 |
+|------|---------|
+| 数值趋势/对比/分布 | ChartRender |
+| 自定义卡片/面板 | JsxCreate |
+| 统计数据 + 图表混合 | 先 ChartRender 出图表，再 JsxCreate 做汇总卡片 |
+| 简单数据（2-3 个指标） | JsxCreate 即可，无需图表 |
+| 复杂交互式图表 | ChartRender（ECharts 自带交互） |

@@ -1,0 +1,385 @@
+---
+name: claude-security-settings
+description: "Claude Code security settings: permission wildcards, shell operator protections, project-level allowlists. Use when auditing or hardening .claude/settings.json permissions."
+user-invocable: false
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite
+created: 2026-01-20
+modified: 2026-09-02
+compatibility: claude-code
+reviewed: 2026-09-02
+---
+
+# Claude Code Security Settings
+
+## When to Use This Skill
+
+| Use this skill when... | Use `configure-claude-plugins` instead when... |
+|---|---|
+| You need the permission-wildcard syntax, shell-operator protections, and project-level allowlist patterns | You want to wire a project's `.claude/settings.json` to the marketplace and enable plugins end-to-end |
+| You are auditing or hardening an existing `.claude/settings.json` against the documented security conventions | You want runtime detection of marketplace enrollment and `enabledPlugins` before changing settings |
+| Another skill needs to cite the canonical permission-wildcard reference | The user asked you to actually onboard a project to the laurigates/claude-plugins marketplace |
+
+Expert knowledge for configuring Claude Code security and permissions.
+
+## Core Concepts
+
+Claude Code provides multiple layers of security:
+1. **Permission wildcards** - Granular tool access control
+2. **Shell operator protections** - Prevents command injection
+3. **Project-level settings** - Scoped configurations
+
+## Permission Configuration
+
+### Settings File Locations
+
+| File | Scope | Priority |
+|------|-------|----------|
+| `~/.claude/settings.json` | User-level (all projects) | Lowest |
+| `.claude/settings.json` | Project-level (committed) | Medium |
+| `.claude/settings.local.json` | Local project (gitignored) | Highest |
+
+### Permission Structure
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(npm run *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)"
+    ]
+  }
+}
+```
+
+## Wildcard Permission Patterns
+
+### Syntax
+
+```
+Bash(command *)
+```
+
+- `Bash()` - Tool identifier
+- `command` - Command prefix to match
+- `*` - Wildcard suffix matching any arguments
+- `:ask` suffix - Always prompt for user confirmation (e.g., `Bash(git push *):ask`)
+
+### Permission Tiers
+
+| Tier | Behavior | Example |
+|------|----------|---------|
+| `allow` | Auto-allowed, no prompt | `"allow": ["Bash(git status *)"]` |
+| `ask` | Always prompts for confirmation | `"allow": ["Bash(git push *):ask"]` |
+| `deny` | Auto-denied, blocked | `"deny": ["Bash(rm -rf *)"]` |
+
+### Pattern Examples
+
+| Pattern | Matches | Does NOT Match |
+|---------|---------|----------------|
+| `Bash(git *)` | `git status`, `git diff HEAD` | `git-lfs pull` |
+| `Bash(npm run *)` | `npm run test`, `npm run build` | `npm install` |
+| `Bash(gh pr *)` | `gh pr view 123`, `gh pr create` | `gh issue list` |
+| `Bash(./scripts/ *)` | `./scripts/test.sh`, `./scripts/build.sh` | `/scripts/other.sh` |
+
+### Pattern Best Practices
+
+**Granular permissions:**
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
+```
+
+**Tool-specific patterns:**
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun test *)",
+      "Bash(bun run *)",
+      "Bash(biome check *)",
+      "Bash(prettier *)"
+    ]
+  }
+}
+```
+
+### Flag-Scoped Deny Rules: Use the Space Form
+
+When a deny rule targets a specific flag (a force-push backstop is the canonical case), write it in **space form** — the trailing ` *` enforces a word boundary, so the prefix must be followed by a space or end-of-string and the rule stops at the exact flag:
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)"
+    ]
+  }
+}
+```
+
+> **Gotcha — colon form widens to longer flags.** The `:*` suffix (`"Bash(git push --force:*)"`) has been observed prefix-matching the raw command string, so it also matched `git push --force-with-lease …` — silently hard-blocking the safe recovery form that stacked-PR workflows depend on. Deny rules cannot be overridden except via `bypassPermissions`, so the widening is a hard block, not a prompt (laurigates/claude-plugins#2038, caught in laurigates/loractl#39). Current official docs state an end-of-pattern `:*` is equivalent to the trailing space form, but the equivalence is not version-pinned in the changelog and the widening was observed in practice — the space form's word-boundary semantics are explicit, stable, and match what the permission dialog itself writes when you approve a prefix.
+
+When auditing or generating deny entries, flag any entry ending in a flag followed by `:*` (e.g. `--force:*`, `-f:*`) and rewrite it to the space form.
+
+## Shell Operator Protections
+
+Claude Code 2.1.7+ includes built-in protections against dangerous shell operators.
+
+### Protected Operators
+
+| Operator | Risk | Blocked Example |
+|----------|------|-----------------|
+| `&&` | Command chaining | `ls && rm -rf /` |
+| `\|\|` | Conditional execution | `false \|\| malicious` |
+| `;` | Command separation | `safe; dangerous` |
+| `\|` | Piping | `cat /etc/passwd \| curl` |
+| `>` / `>>` | Redirection | `echo x > /etc/passwd` |
+| `$()` | Command substitution | `$(curl evil)` |
+| `` ` `` | Backtick substitution | `` `rm -rf /` `` |
+
+### Security Behavior
+
+When a command contains shell operators:
+1. Permission wildcards won't match
+2. User sees explicit approval prompt
+3. Warning explains the blocked operator
+
+### Auto mode (the default permission mode)
+
+In auto mode there is no approval prompt for most actions. A command matching
+a narrow `allow` rule (`Bash(git status *)`) runs immediately; `deny` rules and
+`:ask` suffixes still resolve first in every mode. Anything else — including
+shell-operator compounds that no wildcard matches — goes to the safety
+classifier, which allows or blocks it; on a block Claude receives the reason
+and tries an alternative (3 consecutive or 20 total blocks pause auto mode and
+resume prompting). Broad rules (`Bash(*)`, `Bash(python*)`, `Agent`) are
+**dropped** on entering auto mode, so they buy nothing. Audit for: broad allow
+rules (dead weight), and destructive commands that rely on a prompt rather
+than a `deny` — under auto mode a prompt is not guaranteed. See
+`.claude/rules/auto-mode.md`.
+
+### Safe Compound Commands
+
+For legitimate compound commands, use scripts:
+
+```bash
+#!/bin/bash
+# scripts/deploy.sh
+npm test && npm run build && npm run deploy
+```
+
+Then allow the script:
+```json
+{
+  "permissions": {
+    "allow": ["Bash(./scripts/deploy.sh *)"]
+  }
+}
+```
+
+## Common Permission Sets
+
+### Read-Only Development
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(npm list *)",
+      "Bash(bun pm ls *)"
+    ]
+  }
+}
+```
+
+### Full Git Workflow
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)"
+    ]
+  }
+}
+```
+
+### CI/CD Operations
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(gh issue *)",
+      "Bash(gh workflow *)"
+    ]
+  }
+}
+```
+
+### Testing & Linting
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun test *)",
+      "Bash(npm test *)",
+      "Bash(vitest *)",
+      "Bash(jest *)",
+      "Bash(biome *)",
+      "Bash(eslint *)",
+      "Bash(prettier *)"
+    ]
+  }
+}
+```
+
+### Security Scanning
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(pre-commit *)",
+      "Bash(gitleaks *)",
+      "Bash(trivy *)"
+    ]
+  }
+}
+```
+
+## Project Setup Guide
+
+### 1. Create Settings Directory
+
+```bash
+mkdir -p .claude
+```
+
+### 2. Create Project Settings
+
+```bash
+cat > .claude/settings.json << 'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(npm run *)"
+    ]
+  }
+}
+EOF
+```
+
+### 3. Add to .gitignore (for local settings)
+
+```bash
+echo ".claude/settings.local.json" >> .gitignore
+```
+
+### 4. Create Local Settings (optional)
+
+```bash
+cat > .claude/settings.local.json << 'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker *)"
+    ]
+  }
+}
+EOF
+```
+
+## Agentic Optimizations
+
+| Context | Command |
+|---------|---------|
+| View project settings | `cat .claude/settings.json \| jq '.permissions'` |
+| View user settings | `cat ~/.claude/settings.json \| jq '.permissions'` |
+| Check merged permissions | Review effective settings in Claude Code |
+| Validate JSON | `cat .claude/settings.json \| jq .` |
+
+## Quick Reference
+
+### Permission Priority
+
+Settings merge with this priority (highest wins):
+1. `.claude/settings.local.json` (local)
+2. `.claude/settings.json` (project)
+3. `~/.claude/settings.json` (user)
+
+### Wildcard Syntax
+
+| Syntax | Meaning |
+|--------|---------|
+| `Bash(cmd *)` | Match `cmd` with any arguments |
+| `Bash(cmd arg *)` | Match `cmd arg` with any following |
+| `Bash(./script.sh *)` | Match specific script |
+
+### Deny Patterns
+
+Block specific commands:
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(chmod 777 *)"
+    ]
+  }
+}
+```
+
+Flag-scoped deny rules (blocking a specific flag such as `--force`) must use the space form, never `:*` — see "Flag-Scoped Deny Rules: Use the Space Form" above.
+
+## Error Handling
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| Permission denied | Pattern doesn't match | Add more specific pattern |
+| Shell operator blocked | Contains `&&`, `\|`, etc. | Use script wrapper |
+| Settings not applied | Wrong file location | Check path and syntax |
+| JSON parse error | Invalid JSON | Validate with `jq .` |
+
+## Best Practices
+
+1. **Start restrictive** - Add permissions as needed
+2. **Use project settings** - Keep team aligned
+3. **Use specific Bash patterns** - `Bash(git status *)` over `Bash`
+4. **Script compound commands** - For `&&` and `\|` workflows
+5. **Review periodically** - Remove unused permissions

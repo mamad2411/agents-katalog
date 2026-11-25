@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-LegalSkillsKlotzkette/agb-und-ipr-art-6-rom-i-verbraucher/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Agb Und Ipr Art 6 Rom I Verbraucher in AGB-Recht-Prüfer geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten. Aus

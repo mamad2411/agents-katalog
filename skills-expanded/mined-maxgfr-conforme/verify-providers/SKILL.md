@@ -1,0 +1,426 @@
+---
+allowed-tools: Read Grep Glob Bash WebFetch WebSearch Edit Write
+description: Verify conforme's provider adapters online, against each tool's live docs, changelog and source fetched during the run; prove every tool's copy of every skill matches the source; fix what drifted, restamp every provider doc and ship it, merged, without stopping to ask
+disable-model-invocation: true
+name: verify-providers
+---
+
+conforme duplicates one source config into every tool and switches a project
+from one tool to another. This audit proves that each tool, as it ships
+**today**, loads what conforme writes for it.
+
+The ground truth is online. A fact counts only with a **proof URL**: a vendor
+page, changelog entry or source file opened during this run, with a short
+quote (or `file:line` for source). This repository's `docs/providers/`, the
+adapter code, earlier audits and memory are the claims under test, never
+evidence. A claim no fetched page backs is **unconfirmed**: list it, never fix
+on it.
+
+The audit is exhaustive when every registered adapter has a fact sheet in
+which every line carries a proof URL, every drift is merged with a regression
+test, and every copy of every skill matches its source.
+
+**Run it end to end, without stopping to ask.** A run updates everything
+itself: it fixes every drift it proves, adds the new official pages, corrects
+the provider docs, restamps every `Last verified online` line, regenerates the
+dogfooded copies, runs the gate, then ships (step 13): signed commit, PR,
+merge once CI is green, release checked, worktree removed. The only decision
+left to the user is a breaking change, deleting or renaming a tool id (step
+10): everything else in that run still ships, and the report names it. When
+nothing moved upstream (step 2) and every check passes, the run still
+restamps the dates and ships that.
+
+Work in a worktree. Run the full gate before touching anything so a failure
+later is attributable to the audit:
+
+```bash
+cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt -- --check && cargo run --release -- check
+```
+
+## 1. Inventory the adapters
+
+The registry is the source of truth, never a list written in this file:
+
+```bash
+grep -n 'Box::new' src/adapters/mod.rs
+git log -1 --format='%as %s' --grep='verify-providers\|match upstream'   # date of the last audit
+```
+
+Done when: one audit row exists per registered adapter, the date of the last
+audit is known, and the adapter count matches `README.md` ("Supported tools
+(N)" and "to N-1 others"), `src/cli.rs` (`long_about`) and `CLAUDE.md`
+(project overview and Skills section).
+
+## 2. Find what changed upstream
+
+Start from the web, not from `docs/providers/`: the first question is what
+moved since the last audit. First ask the registries:
+
+```bash
+python3 .claude/skills/verify-providers/scripts/provider_versions.py .
+```
+
+It fetches each tool's latest version (npm, PyPI, GitHub releases, VS Code's
+update API) and prints one row per provider doc: CURRENT when the version is
+already in its `Last verified online` line, STALE when the tool shipped since,
+MANUAL with the changelog to read for a tool no registry publishes (Cursor,
+Devin, Kiro), ERROR when a fetch failed (a registry or repository moved: find
+the new one and update `PROVIDERS` in the script). A new adapter needs an
+entry there too. Every STALE and MANUAL row is a changelog to read below;
+a CURRENT one still gets its pages re-read in step 3. Then, for each adapter:
+
+- **Search.** `WebSearch` (mode `standard`; `extended` when results are thin,
+  old or the tool is niche) for the product name with "changelog",
+  "release", "renamed", "deprecated" and the current month. A rename, a fork,
+  a shutdown or a new major version shows up here first.
+- **Changelog.** Open the release notes (vendor page, or
+  `gh release list -R <owner>/<repo>` and `gh release view`) and read every
+  entry since the last audit for config paths, frontmatter keys, MCP keys,
+  instruction files, reserved names, trust rules.
+- **New pages.** Find the docs pages the provider doc does not list yet.
+  `scripts/uncited_pages.sh . <scratch dir>` reads every vendor's docs index
+  (`llms.txt` or `sitemap.xml`) and lists the on-topic pages no provider doc
+  cites; a search restricted to the vendor's domain (`allowed_domains`)
+  covers what an index misses. Keep a page only if it documents a format
+  conforme reads or writes, or a CLI command that shows what the tool loads,
+  and only after opening it; add it to the provider doc's official docs.
+
+Verdict per adapter, each with its proof URL:
+
+- **alive**;
+- **renamed**: ships under a new name and still reads the paths conforme
+  writes (Windsurf became Devin Desktop, and the `windsurf` id became
+  `devin`). Update the docs and any paths the new name prefers; keeping or
+  renaming the tool id is the user's call in step 10;
+- **forked**: the original is retired but a maintained fork reads the same
+  files (Roo Code, continued by Zoo Code). Rename the adapter to the fork in
+  step 11 rather than deleting working output;
+- **absorbed by `<successor adapter>`** or **retired**: deleted outright in
+  step 11; conforme carries no deprecation flags.
+
+Done when: every adapter has a verdict, its latest version and release date,
+and the list of config-relevant changes since the last audit, each line with
+a proof URL.
+
+## 3. Build the fact sheet from the online sources
+
+Open every URL in `docs/providers/<tool>.md` and every new page from step 2
+with the host's web reader (`WebFetch` on Claude Code). When the tool's
+source is public, read it too (`gh api repos/<owner>/<repo>/contents/<path>`
+on the default branch): docs lag code. When the two disagree, the source is
+what the tool does: follow it, and record the disagreement in the provider
+doc with both proofs. A page that fails or answers another question is
+replaced by the vendor's current one, found by search. A web reader stops at a
+page's first part: for a long one, read on with its offset or fetch the source
+(GitHub docs: `https://docs.github.com/api/article/body?pathname=<path>`), so
+that a list at the end of the page is not reported as missing.
+
+Per tool, one fact sheet, each line a value (or "not supported") plus its
+proof:
+
+- rules: directory, extension, recursive discovery or not, frontmatter
+  fields and their types, activation values;
+- skills: every directory the tool loads skills from (its own and shared ones
+  such as `.agents/skills`), `SKILL.md` frontmatter (required and optional
+  keys, name character set and length, description length), bundled files
+  beside `SKILL.md`, manual-invocation mechanism, reserved names;
+- agents: directory, extension, frontmatter keys and accepted values (tool
+  names, model ids), built-in agent names;
+- MCP: file path, top-level key, transport values, remote URL key, env and
+  headers keys, env-var syntax, whether the file is project-scoped, what a
+  project entry does to a user entry of the same name;
+- instruction file: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.rules`, and the
+  fallback order;
+- plugins: the bundle directory and manifest paths (and which wins when
+  several exist), manifest keys and their types (a `homepage` that must be a
+  URL), which components a bundle holds, how a bundle's agents are named when
+  frontmatter is missing or broken, the marketplace file and the setting that
+  enables a plugin, and which other tools' plugin settings the tool reads;
+- hooks: the file and its shape (matcher groups or flat entries), every event
+  name the tool accepts (from its source when it has one: an unknown key may
+  be ignored without a word, or reject the whole file), the matcher syntax
+  (`|`, `,`, regex) and tool names, the timeout unit, the working directory
+  and the plugin-root variable a bundle's hook may use, and which other tools'
+  hooks files the tool runs itself.
+
+The research fans out well: one subagent per two or three tools, each given
+the brief in [`references/online-brief.md`](references/online-brief.md).
+Their reports are leads. Before a fix relies on a claim, open its proof URL
+yourself and find the quote: earlier audits caught subagents misreading
+defaults and incomplete key lists this way.
+
+Done when: every fact-sheet line of every alive adapter has a value and a
+proof URL fetched in this run, and every unconfirmed claim is listed.
+
+## 4. Compare the adapter to the fact sheet
+
+Read `src/adapters/<tool>.rs`, plus the tool's generators in `src/skills.rs`
+and `src/mcp.rs`. For each fact-sheet line, one of three findings:
+
+- **match**: nothing to do;
+- **drift**: paths, keys, values or types differ, fix in step 11;
+- **deliberate deviation**: conforme emits something the tool tolerates but
+  does not document (for example a `type: "http"` the tool ignores). Keep it
+  only if `docs/providers/<tool>.md` already records it as deliberate and the
+  tool provably accepts it; otherwise it is drift.
+
+Add these checks, which the fact sheet alone does not cover:
+
+- **Consumed output**: every file `generate()` writes is read by the tool at
+  that path. A best-effort file nobody consumes is drift, and the fix is to
+  stop writing it, drop the capability, and let `sync` warn that the feature
+  is skipped.
+- **Source files**: every file or directory `read()` loads outside the tool's
+  managed directories (a native or fallback `AGENTS.md` / `CLAUDE.md`, a
+  context file named in settings, a fallback skills root, a rules directory)
+  is returned by `source_files()` exactly when it is read, and listed in
+  `watch::source_locations`.
+- **User-owned locations**: orphan cleanup deletes every top-level file of a
+  `managed_directories()` entry that carries the entry's suffix and that the
+  current config did not generate. A directory the user authors in with the
+  same file kind (`.github/prompts/`, the top-level `.opencode/`) must not be
+  listed; a skills root is only safe as `ManagedDir::subdirs`.
+- **Merged settings**: every MCP or settings file `generate()` writes is
+  merged, not owned (`is_shared_file()`, no `gitignore` pattern, JSON through
+  `json_settings`), keeps the keys the tool writes into it on its own, and is
+  left untouched by a source with no server.
+- **Orphan suffixes**: every `ManagedDir` names the suffix conforme writes
+  there; list the file kinds the tool accepts in that directory and confirm
+  none that conforme does not write shares it.
+- **Required fields and vocabularies**: which keys the tool requires for a
+  skill or agent and which values it accepts. Anything copied verbatim from
+  another host must be valid in this one.
+- **Round-trip**: every feature `generate()` writes, `read()` parses back,
+  including bundled skill files and the layouts the tool reads that conforme
+  does not write (nested directories, flat files, alternate spellings).
+- **Blank output**: an empty config yields no file, and a full config yields
+  no blank file (`test_no_adapter_writes_blank_files` guards it).
+- **Warnings**: a value conforme writes that the tool will not use as written
+  (a `${VAR}` it does not expand or reads as empty, a reserved skill or MCP
+  server name, a custom agent shadowed by a built-in one, a project file it
+  refuses) is named by the adapter's `warnings()`, which `sync` and `migrate`
+  print, and the advice it gives works upstream; a silent loss is drift.
+
+Done when: the audit table has a finding for each fact-sheet line and each
+check above, for every adapter.
+
+## 5. Prove the skills conform
+
+Duplicated skills are the product: every tool's copy of every skill must be
+the source's, current, and loadable there. Check it on the repository itself
+and on a fixture:
+
+```bash
+cargo run --release -- sync && python3 .claude/skills/verify-providers/scripts/skills_conformity.py .
+```
+
+The script compares each copy root (`.agents/skills`, `.cursor/skills`,
+`.gemini/skills`, …) with `.claude/skills`, the dogfooded source: missing
+copies, a `name` that is not the folder, a missing or over-long
+`description`, different instructions, bundled files missing, different or
+extra, a copy without conforme's `.conforme` marker, and a marked copy whose
+skill left the source. It knows plugins too: a source bundle's
+(`.claude/skills/<p>/.claude-plugin/plugin.json`) skills are compared with
+each bundle copy (`.vibe/plugins/<p>/skills`, `.codex/plugins/<p>/skills`,
+`.agents/plugins/<p>/skills`) and with the tools that get them as their own.
+Then build a fixture whose source skills cover a bundled script, a manual
+skill, a nested skill, a long description and a plugin bundle, sync it to
+every tool, run the script with `--source <its skills dir>`, and repeat after
+editing a skill body, deleting a bundled file, deleting a whole skill, editing
+a plugin's skill and deleting the plugin. A nested skill (`group/<name>/SKILL.md`) needs a source that loads
+one (Codex's `.agents/skills`, Cursor, OpenCode, Kilo) and `--nested`; Claude
+Code documents only top-level skill folders, and conforme reads only those.
+
+Done when: the script exits 0 on the repository and on the fixture after
+each edit and sync, and every UNMANAGED line (a skill written by hand in one
+tool) is explained.
+
+## 6. Confirm with the tools' own CLIs
+
+The online facts say what a tool should load; its CLI, at the latest version
+from step 2, says what it does load. Install or update each tool (prefer
+`brew`; remove what you installed at the end), then follow
+[`references/live-cli.md`](references/live-cli.md): MCP servers resolved with
+their env and headers, skills and agents accepted, a manual skill kept out of
+automatic use. A witness file proves each validator actually checked.
+
+Then check switching, conforme's other job: set up the full fixture in each
+tool's own format (`migrate --source claude --output <tool>`), migrate it
+into every installed tool, and ask that tool's CLI the same questions.
+`tests/migrate_matrix.rs` covers every pair offline; this run proves each
+output is what the real tool loads.
+
+Plugins and hooks get the same proof: sync a Claude Code bundle holding a
+skill, an agent, an MCP server and hooks (a `${CLAUDE_PLUGIN_ROOT}` script on
+`PreToolUse`, a `Stop` and a `SessionStart`), then run `agy plugin validate
+--strict` on `.agents/plugins/<p>`, Vibe's own `PluginResolver` and
+`load_hooks_file` (its Python, found from the `vibe` script's shebang) on
+`.vibe/plugins/<p>`, and `codex plugin marketplace add` then `codex plugin add`
+on the Codex bundle. With `hooks = true`, every project hooks file conforme
+writes must load in its tool too. A tool whose CLI ships only as a compiled
+binary (Copilot CLI) cannot be read this way: rely on its docs and its own
+`help config`, and list what they leave open as unconfirmed.
+
+Done when: each adapter is **verified** (with the command and version),
+**not installed** or **needs login**, every source migrated into each
+installed tool loads its MCP servers, skills and agents there, and every
+rejection or warning the tools print is a finding.
+
+## 7. Run every command, then a second pass
+
+Unit tests cover what their author thought of. Run the CLI against the
+fixture with each tool as source in turn: `sync` twice (the second changes
+nothing), `check`, `status`, `diff`, `migrate` to tools that share a
+directory (Codex, Zed) and to one that keeps its instructions in
+`AGENTS.md`, `remove`, `gitignore install`. Look for lost files, blank files,
+a source file rewritten, and commands that disagree with `sync`. Enter each
+source with `migrate --source <previous> --output <tool>`: a generated
+`AGENTS.md` names its source on line 1, so editing `source =` alone is refused
+on purpose and tests nothing else.
+
+Then audit again with a different slicing: by concern across all adapters
+(`watch`, `detect`, `gitignore`, `validate`, `status`/`check`/`diff`, `add`,
+`migrate`) rather than adapter by adapter. A second pass sliced this way has
+found what the first missed every time.
+
+Done when: every command has run with every tool as source and the
+second-pass concerns each have a verdict.
+
+## 8. Keep secrets out of the copies
+
+Every MCP header and env value is copied into each tool's file, and those
+files are committed. A value in clear in `.mcp.json` (gitignored) once leaked
+an API key through every target. Check the tracked files:
+
+```bash
+git ls-files | grep -E '^\.[^/]+/.*(mcp|settings|config\.toml|hooks|marketplace)|^(\.opencode/)?opencode\.jsonc?$|^kilo\.jsonc?$|^\.mcp\.json$' \
+  | xargs grep -nE '"[^"]*([Kk]ey|[Tt]oken|[Ss]ecret|[Aa]uth)[^"]*"\s*[:=]\s*"[^"$\{][^"]*"' \
+  | grep -v '"authentication": "ON_' || echo "no literal secret"
+```
+
+(A Codex marketplace entry's `"authentication": "ON_INSTALL"` is its install
+policy, not a credential.)
+
+Done when: no tracked file holds a credential in clear (every one is a
+`${VAR}` reference in that tool's syntax), and `validate` warns about such a
+value in the source.
+
+## 9. Check every documentation link
+
+A mechanical complement to step 3: a `200` only says the page exists, not
+that it still says what the doc cites.
+
+```bash
+grep -oh 'https://[^ )>,`"]*' docs/providers/*.md docs/architecture.md README.md CLAUDE.md | sed 's/[?!.,:*_~]*$//' | sort -u > urls.txt
+awk '{print "url = \"" $0 "\"\noutput = \"/dev/null\""}' urls.txt > curl.cfg
+curl -K curl.cfg -sS -Z --parallel-max 6 -L -A 'Mozilla/5.0' --max-time 60 -w '%{http_code} %{url}\n' 2>/dev/null | sort | grep -v '^200'
+```
+
+The `sed` drops only the trailing punctuation GitHub leaves out of a bare
+link ("?, !, ., ,, :, *, _, and ~", https://github.github.com/gfm/); a `;`
+stays in the rendered link, so `https://…;` is a broken link: put a comma or a
+space after the URL. GitHub answers `429` under a burst and slow sites time
+out (`000`); retry those alone. An example endpoint in a config snippet (an MCP server URL) may
+answer `401`. Any other non-200 is a broken link: find the replacement on the
+vendor domain and fix it in step 11. Done when: the command prints nothing
+unexplained.
+
+## 10. Classify every finding
+
+Before fixing, sort the audit table into four lists, which the report shows.
+Apply the first one without asking; only the third waits for the user:
+
+- **fix now**: drift with a proof URL, broken links, failed safety,
+  conformity or CLI checks;
+- **leave**: deliberate deviations already documented as such;
+- **delete or rename the adapter**: absorbed, retired, forked or renamed
+  upstream (step 2). Update the docs and the paths the tool now reads right
+  away (non-breaking), but deleting or renaming a tool id is a breaking change
+  that ships as a major release: it goes in its own PR, left open for the
+  user, its commit with `!` and a `BREAKING CHANGE:` footer holding the
+  migration;
+- **unconfirmed**: claims no fetched page backs, with what was searched.
+
+## 11. Fix, with a regression test per finding
+
+For each "fix now" and "delete" item, update every affected location. The
+checklist in `.claude/rules/adapter-consistency.md` is authoritative; the
+usual set is:
+
+1. `src/adapters/<tool>.rs`, `src/skills.rs`, `src/mcp.rs`, `src/sync.rs`,
+   `src/validate.rs`, `src/gitignore.rs`, `src/watch.rs`;
+2. `docs/providers/<tool>.md`: the facts with their proof URLs, deviations,
+   source-versus-docs disagreements, new URLs, and its `Last verified online`
+   line (date, upstream version);
+3. `README.md` tables and tool count, `docs/architecture.md`, `CLAUDE.md` MCP
+   tables, `src/help_ai.rs`, `src/cli.rs` tool count and tool list, this
+   skill's description;
+4. tests: `tests/roundtrip.rs` for round-trips, `tests/error_cases.rs` and
+   `tests/integration.rs` for behaviour, `src/mcp.rs` unit tests for MCP
+   shapes, `tests/migrate_matrix.rs` for switching. A safety finding (user
+   files deleted, blank file, settings file removed) gets an integration test
+   that reproduces the loss and asserts the file survives; each new test
+   fails on the code before the fix;
+5. a deleted adapter also leaves the registry, `all_adapters()` order-based
+   tests, `.gitignore` templates, and the dogfooded output directory; a
+   renamed one changes its module, struct, id, `docs/providers/` file and
+   every test fixture that names it.
+
+Restamp each provider once its fact sheet was re-verified in this run, with
+the versions step 2 found (a MANUAL one with the version its changelog gave):
+
+```bash
+python3 .claude/skills/verify-providers/scripts/provider_versions.py . --stamp all
+python3 .claude/skills/verify-providers/scripts/provider_versions.py . --stamp cursor --against "Cursor 3.29.15 and Cursor CLI 2026.11.11"
+python3 .claude/skills/verify-providers/scripts/provider_versions.py .   # every row CURRENT or MANUAL
+```
+
+Other dated claims in a provider doc ("Verified … against Antigravity CLI
+1.5.6", "checked with Vibe 3.1.2") move with it when they were re-checked.
+Then regenerate the dogfooded configs, prove the skills again, and run the
+full gate:
+
+```bash
+cargo run --release -- sync && cargo run --release -- check
+python3 .claude/skills/verify-providers/scripts/skills_conformity.py .
+cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt -- --check
+```
+
+Done when: the gate is green, the conformity script exits 0, every provider
+doc's `Last verified online` line carries today's date, `sync` prints no
+"Codex reads only the first 32 KiB" warning on this repository (the module map
+stays in `docs/architecture.md` for that reason), `git status` shows only
+intended files, and a `grep -rni '<old tool id>'` returns only sentences
+that describe the removal or rename (release notes live on GitHub Releases,
+not in the tree).
+
+## 12. Report
+
+One table, one row per adapter:
+
+| Tool | Upstream (version, proof URL) | Changed since last audit | Findings | Fixed | Unconfirmed | CLI check |
+
+followed by the four lists from step 10 and the PR link. State plainly what
+was not verified (a page that could not be read, a tool not installed here, a
+behaviour only a manual run in the IDE would confirm).
+
+## 13. Ship
+
+The run ends merged, not with a diff waiting:
+
+1. One signed commit (`git log --format='%G?' -1` prints `G`), typed by what
+   it holds: `fix:` when code changed, `docs:` when only docs and dates did;
+   it closes the run's issue.
+2. Push the branch, open the PR with the step 12 table, and wait for every CI
+   check (`gh pr checks <n> --watch`). A red check is a finding: fix it on the
+   branch and push again.
+3. Merge once green (`gh pr merge <n> --squash --delete-branch`), then confirm
+   the merge commit is verified and the issue closed.
+4. When the commit type releases (`fix:`, `feat:`), wait for the Release
+   workflow on `main` and check that semantic-release published the expected
+   version with its binaries attached (`gh release view`).
+5. Remove the worktree and the local branch, and pull `main`.
+
+Done when: the PR is merged, the release (if any) is published, `git
+worktree list` shows no audit worktree, and the only open item is a breaking
+rename or deletion from step 10, if there was one.

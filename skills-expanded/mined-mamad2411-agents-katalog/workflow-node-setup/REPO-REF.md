@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-aiskillstore-marketplace/workflow-node-setup/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Configure, adjust, debug, and verify React Flow workflow nodes. Use when working on custom node components, especially for node handles, multi-channel connections, edge ids/styles, NodeResizer behavio

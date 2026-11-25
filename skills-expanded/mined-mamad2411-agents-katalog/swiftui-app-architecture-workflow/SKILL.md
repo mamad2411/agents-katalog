@@ -1,0 +1,181 @@
+---
+name: swiftui-app-architecture-workflow
+description: Guide SwiftUI app-structure decisions for Apple apps across `App`, scenes, commands, focus, environment, preferences, window and document coordination, and reusable view composition. Use when the user wants help deciding where ownership belongs in a SwiftUI app, which data-flow mechanism fits a responsibility, or how to correct wrapper-heavy and state-scattering SwiftUI shapes without drifting into generic styling or execution work.
+---
+
+# SwiftUI App Architecture Workflow
+
+## Purpose
+
+Provide a docs-first workflow for SwiftUI app-structure decisions in Apple apps. This skill owns ownership-boundary guidance, direct concrete feature-service guidance, transport-choice guidance, focused-context guidance, and anti-pattern correction for SwiftUI app composition across scenes, commands, focus, environment, preferences, and reusable view structure.
+
+It is not the Apple-docs router, not the accessibility workflow, and not the Xcode execution workflow.
+
+## SwiftUI View File Rule
+
+SwiftUI is declarative component UI, closer to React, F# Fabulous, and Elm than to imperative AppKit or UIKit code. Each independently reusable `View` must stand on its own: render from its inputs and framework-managed state, own its local presentation state, and expose intent through narrow actions. Do not make an external ViewModel, store, coordinator, manager, service, or observable object part of a reusable view's public API.
+
+Use the project's explicit three-letter prefix for every project-owned view file and declaration. Name a view `GEAWhateverView.swift` and an extracted custom modifier `GEAWhateverViewModifier.swift`. Never use `+` filenames. Prefer the memberwise initializer Swift synthesizes for a view's stored value, binding, and action properties; do not write an explicit initializer unless it adds real behavior that a memberwise initializer cannot express.
+
+A view component that is complex enough to edit or preview independently must have its own file. Simple private computed view properties and small private helper views may remain in the owning file while they keep that component easy to preview, navigate, and edit. Extract them as soon as they clutter that workflow.
+
+Name an extracted child from its complete composition owner: a toggle card inside `GEASettingsSheetView.swift` becomes `GEASettingsSheetToggleCard.swift`. This rule also applies outside views, such as `GEAWhateverServiceAdapter.swift`.
+
+Extract a custom `ViewModifier` when a view accumulates more than eight chained modifiers, or earlier when a coherent chain is reusable or obscures the view body. Use view-local `@Observable` state only when plain `@State`, derived values, bindings, and small local helpers no longer keep the component readable; create and own that state inside the component with `@State`, never as an external ViewModel dependency. Runtime/domain values use bare names such as `GEAWhatever`; persistence `Model` naming belongs to `swiftdata-workflow`.
+
+## When To Use
+
+- Use this skill when the user wants help structuring a SwiftUI app across `App`, `Scene`, `WindowGroup`, `Window`, `Settings`, or `DocumentGroup`.
+- Use this skill when the user wants help deciding where app-level, scene-level, and view-level responsibilities belong.
+- Use this skill when the user wants help choosing between explicit values, bindings, actions, environment values, focused values, scene-focused values, preference keys, or local state.
+- Use this skill when the user wants to decide whether a feature needs a direct concrete service, where that service belongs, or whether it honestly belongs in SwiftUI environment.
+- Hand SwiftData persistence and integration decisions to `swiftdata-workflow` while retaining ownership of the view composition around that data.
+- Use this skill when the user wants help with `FocusState`, `focusable`, focus scopes, focus sections, default focus, focused objects, or other focused-context design that changes ownership or data-flow choices.
+- Use this skill when the user wants help with command ownership, command menus, command groups, focused command handling, or desktop-oriented SwiftUI command surfaces.
+- Use this skill when the user wants help cleaning up giant root views, wrapper-heavy architecture, environment abuse, hidden control flow in modifiers, or state scattering in SwiftUI code.
+- Use this skill when the user wants SwiftUI composition guidance that stays grounded in current Apple scene and lifecycle behavior instead of framework-agnostic UI theory.
+- Recommend `explore-apple-swift-docs` when the user primarily needs Apple or Swift documentation lookup rather than architecture guidance.
+- Recommend `xcode-build-run-workflow` when the work becomes build, run, preview, diagnostics, file-membership, or guarded mutation work in an existing Xcode-managed project.
+- Recommend `xcode-testing-workflow` when the work becomes Swift Testing, XCTest, XCUITest, `.xctestplan`, or test diagnosis.
+- Recommend `apple-ui-accessibility-workflow` when the work is primarily about accessibility-specific implementation or review instead of absorbing that surface here.
+
+## When Not To Use
+
+- Do not use this skill as the primary path for raw Apple-docs search or source selection.
+- Do not use this skill as the primary path for SwiftUI styling, animation, or general component-library advice when the real issue is not app structure.
+- Do not use this skill as the primary path for execution-heavy validation of a proposed scene or command structure.
+- Do not use this skill as a generic dumping ground for every SwiftUI question just because a `View` is involved.
+
+## Single-Path Workflow
+
+1. Classify the request:
+   - app and scene structure
+   - commands
+   - focus and focused context
+   - environment and dependency flow
+   - upward data flow and preferences
+   - view-composition cleanup
+2. Apply the Apple docs gate before recommending structure:
+   - read the relevant SwiftUI documentation first
+   - state the documented behavior being relied on before giving architecture guidance
+   - if Apple docs and the current code disagree, stop and surface that conflict
+   - if no relevant Apple docs can be found, say that explicitly before proceeding
+3. Choose the ownership boundary:
+   - app-level
+   - scene-level
+   - focused-scene-level
+   - view-tree-level
+   - local view
+4. Choose the transport that fits the responsibility:
+   - the SwiftData path selected by `swiftdata-workflow`
+   - explicit values, bindings, and action closures
+   - `Binding`
+   - environment value
+   - `FocusState`
+   - focused value
+   - focused object
+   - focused scene value
+   - focused scene object
+   - preference key
+   - local state only
+   - a direct concrete feature service, created at the owning app or scene boundary and installed in environment only when independent descendants need to invoke it or observe it directly
+5. Check the anti-patterns before finalizing guidance:
+   - repositories, stores, service layers, mirrored DTOs, view-model cache layers, or wrapper objects inserted between SwiftData and SwiftUI
+   - app responsibilities stuffed into a leaf view
+   - scene responsibilities stuffed into a global environment object
+   - environment used as a dependency dump
+   - an umbrella `AppService`, a service facade that only forwards to other services, or a repository/protocol/adapter stack inserted between a feature and its real boundary
+   - a service installed into environment even though one feature root can own it directly
+   - preference keys used as a general state bus
+   - giant root views with unrelated lifecycle, command, and rendering concerns mixed together
+   - wrapper-heavy layers added only to look architectural
+   - control flow hidden in modifiers that obscure who owns the action
+   - independently editable or previewable components buried inside a larger view file
+   - external ViewModels, stores, coordinators, managers, services, or observable objects injected into reusable views
+   - explicit initializers that duplicate a sufficient memberwise initializer
+   - `+` filenames or child-component names that omit their composition owner
+   - long modifier chains left inline after they obscure the view body
+6. Return one recommendation path with:
+   - the ownership boundary
+   - the chosen transport
+   - the documented behavior being relied on
+   - the anti-pattern correction when relevant
+   - one handoff when the work is really docs lookup, execution, or accessibility work
+
+## Inputs
+
+- `request`: optional free-text task description used to classify the SwiftUI architecture question.
+- `scope`: optional explicit scope such as `app-scene-structure`, `commands`, `focus`, `environment`, `preferences`, or `composition`.
+- `platform_context`: optional platform emphasis such as `macos`, `ios`, `ipados`, or `mixed-apple`.
+- `repo_shape`: optional high-level repo context such as `xcode-app`, `document-app`, `multiwindow-app`, or `unknown`.
+- Defaults:
+  - docs-first guidance always applies
+  - desktop-oriented SwiftUI concerns stay in scope when they materially affect scene or command ownership
+  - explicit injection is preferred over broader implicit channels when both are viable and the narrower path is clearer
+
+## Outputs
+
+- `status`
+  - `success`: the request belongs to this workflow and a structure recommendation is ready
+  - `handoff`: the request belongs to another skill after SwiftUI-aware classification
+  - `blocked`: the request lacks enough context to recommend a boundary honestly
+- `path_type`
+  - `primary`: the recommendation comes from a directly supported architecture path
+  - `fallback`: the recommendation depends on limited request context because repo or platform shape is unclear
+- `output`
+  - resolved request class
+  - chosen ownership boundary
+  - chosen transport
+  - documented SwiftUI behavior relied on
+  - anti-pattern findings when relevant
+  - recommended skill when handing off
+  - one concise next step
+
+## Guards and Stop Conditions
+
+- Do not recommend external ViewModels as a SwiftUI shape or pass collaborating objects between reusable views.
+- Do not recommend environment values as a default substitute for local values, bindings, and actions.
+- Prefer a direct concrete feature service when a capability needs state or operations beyond a view's local concern. The service must own one capability or cohesive related group, call its real boundary directly, and have a named lifecycle owner.
+- Put a service in environment only when independent descendants need direct invocation or observable state. Do not install an umbrella app-service container into environment.
+- Keep services concrete by default. A protocol, adapter, repository, or wrapper must solve a demonstrated alternate implementation or test boundary; it is not default architecture.
+- Prefer existing SwiftUI environment actions before inventing equivalent custom routing or command layers. Add a custom environment value or action only when it is genuinely shared by multiple independent components or must vary dynamically across the hierarchy.
+- Hand SwiftData-specific architecture to `swiftdata-workflow` instead of duplicating its persistence rules here.
+- Do not recommend preference keys for ordinary downward or lateral data flow.
+- Do not collapse commands, focus, and scene ownership into a single shared mutable object just because it is easy to wire.
+- Do not present a giant root view or extra wrapper layer as architectural improvement unless it clearly removes a real ownership problem.
+- Do not silently absorb accessibility-specific work, raw Apple-docs lookup, or Xcode execution work.
+- Stop with `blocked` when the request is too vague to determine whether the issue is app-level, scene-level, or local-view structure.
+
+## Fallbacks and Handoffs
+
+- Recommend `photos-library-editing-workflow` for direct `PhotosPicker` bindings, picker item loading, PhotoKit authorization, assets, requests, changes, and editing rather than introducing a Photos view model or repository.
+
+- Prefer explicit scope and platform context when the user provides them.
+- Fall back to request-text inference when repo shape and platform shape are unclear.
+- Recommend `explore-apple-swift-docs` when the real need is broader Apple or Swift docs lookup.
+- Recommend `xcode-build-run-workflow` when the next honest step is build, run, preview, diagnostics, file-membership follow-through, or guarded mutation.
+- Recommend `xcode-testing-workflow` when the next honest step is test execution or test diagnosis.
+- Recommend `apple-ui-accessibility-workflow` when the next honest step is accessibility-specific implementation or review.
+
+## Fixed Policy
+
+Keep the first release focused on the decision model and the documented boundary. If future iterations add a real deterministic need for runtime knobs, document them explicitly before letting runtime behavior depend on them.
+
+## References
+
+### Workflow References
+
+- `references/app-and-scene-structure.md`
+- `references/navigation-splitview-sidebar-and-inspector.md`
+- `references/commands-and-focus.md`
+- `references/focus-and-focused-context.md`
+- `references/environment-and-preferences.md`
+- `references/architecture-decision-rules.md`
+- `references/anti-patterns-and-corrections.md`
+
+### Support References
+
+- Recommend `explore-apple-swift-docs` when the user needs direct Apple-docs lookup instead of SwiftUI architecture guidance.
+- Recommend `references/snippets/apple-xcode-project-core.md` when the user needs reusable repo policy rather than a one-off architecture recommendation.
+
+### Script Inventory

@@ -1,0 +1,49 @@
+---
+name: symfony-cache
+description: Implement caching with the Symfony Cache component; configure pools, use tags for invalidation, prevent stampede
+capabilities: [read, search, edit, shell]
+tags: [architecture, cache, performance]
+# projected by `bun run build` — do not edit by hand
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Write
+  - Edit
+  - Bash
+---
+# Symfony Cache (Symfony)
+
+## Use when
+- Caching expensive reads: repository results, computed values, third-party responses.
+- Choosing or configuring a pool and its adapter (filesystem, Redis, APCu, chained).
+- Invalidating by tag rather than clearing everything.
+- A hot key expires under load and every request recomputes it at once.
+- Adding HTTP cache headers, a cache warmer, or clearing pools on deploy.
+
+## Default workflow
+1. Identify what is recomputed and how often, and whether it can go stale.
+2. Pick the pool and adapter for the access pattern and the deployment shape.
+3. Read through `CacheInterface::get()` with an explicit expiry.
+4. Tag every entry by the data it derives from, and invalidate by tag on write.
+5. Enable early expiration on keys whose recomputation is expensive.
+
+## Guardrails
+- Set an expiry on every entry. An entry without one never leaves the pool.
+- Never put user input in a cache key unhashed, and never put secrets in one.
+- Invalidate by tag, not by clearing the pool: a full clear is a cold start.
+- A cached value is stale by definition. Do not cache what must be exact.
+- Tag invalidation needs a tag-aware adapter, so decide it when configuring the pool.
+
+## Progressive disclosure
+- Use this file for execution posture and risk controls.
+- Open references when deep implementation details are needed.
+
+## Output contract
+- Pool and adapter configuration, with the expiry chosen for each entry.
+- The tag map: which write invalidates which tags.
+- Stampede protection where recomputation is expensive.
+- Evidence that a write invalidates what it should.
+
+## References
+- `reference.md`

@@ -1,0 +1,62 @@
+---
+name: lore-ul
+description: Use when a conversation hits a vague or overloaded term, the same word means different things in different places, the user quietly rewords something you said, the user keeps using a word the glossary doesn't have, or code names disagree with how the user talks — align the term into the project's glossary (a root CONTEXT.md when present, docs/lore/glossary.md otherwise). Also bootstraps a glossary for a project that has none.
+---
+
+# Lore UL (Ubiquitous Language)
+
+Read `${CLAUDE_PLUGIN_ROOT}/reference/lore-spec.md` first — its Glossary section defines the file location, the term-entry meta, collision handling, and the split rule.
+
+The other lore skills key knowledge by code location; this one keys it by concept. A shared vocabulary is what lets rules hang off concepts instead of file paths, lets the user and the agent challenge each other's wording, and gives `lore-guard` something to check names against.
+
+## Which file, and whose flow
+
+Resolve the glossary source per lore-spec before reading or writing anything. When a root `CONTEXT.md` / `CONTEXT-MAP.md` exists — or a dedicated domain-modeling / grilling skill is available in this session — let that system lead: a relentless-interview flow extracts terms better than reactive alignment, so this skill's job shrinks to spotting the drift signals below and kicking that flow off. When a term settles mid-conversation without a full interview, apply the alignment moves yourself but write into `CONTEXT.md` in its native format (`**Term**:` + `_Avoid_:` — rejected candidates go to `_Avoid_:` instead of `not:`, and no lore meta is injected). Never create `docs/lore/glossary.md` alongside an external glossary. Everything below assumes the fallback case: no external glossary and no such skill, so lore's own format applies.
+
+## When to use
+
+- A conversation hits a vague or overloaded term ("account" — the Customer or the User?).
+- The user's words and the code's names disagree, or the same word is being used for two different things.
+- The project has no glossary yet and wants one (bootstrap).
+- The user explicitly asks to define, align, or clean up terminology.
+
+Softer, earlier signals count too — by the time a term is visibly overloaded, the language has already drifted. Any of these is reason enough to start aligning:
+
+- The user keeps using a word the glossary doesn't have.
+- The user quietly rewords something you said — a gentle correction is a concept surfacing.
+- The same constraint keeps coming up in conversation but lives in code only as scattered `if` checks — a rule without a name.
+
+## Two modes
+
+Look at the resolved glossary source: missing or empty → bootstrap mode; otherwise → alignment mode. Bootstrap only ever creates `docs/lore/glossary.md` — an external `CONTEXT.md` is grown in place by its own flow, never bootstrapped around.
+
+### Alignment mode (the everyday one)
+
+Work the ambiguity one question at a time, and attach your recommended answer to every question:
+
+1. **Sharpen fuzzy words.** When a term is vague or overloaded, propose precise candidates: "You said account — do you mean the Customer or the User? Those are different things here."
+2. **Challenge against the glossary.** When the user's usage conflicts with an existing entry, call it out immediately: "The glossary defines cancellation as voiding the whole order, but you seem to mean partial — which is it?"
+3. **Probe boundaries with concrete scenarios.** Invent edge cases that force precision: "A company subscribes and an employee logs in — who is the Customer in that sentence?"
+4. **Cross-check the code.** When the user states what a term means, check whether the code agrees, and surface contradictions. If a question can be answered by reading the codebase, read the codebase instead of spending a question on it.
+5. **Mine awkwardness and contradiction.** When an implementation keeps coming out clumsy, or a discussion keeps circling the same spot, ask whether an unnamed concept is missing — clumsy code is often a concept the model lacks. When two statements about a term contradict, don't pick a side: ask in which situation each holds; the answer usually splits the concept in two.
+6. **Write the term the moment it settles.** Update `glossary.md` inline, entry by entry — never batch. Rejected candidates go into the winning term's `not:` list so `lore-guard` can enforce the choice later.
+
+### Bootstrap mode (cold start)
+
+1. Scan the README, the lore areas, and the main type/model names for candidate terms. Cap the list at ~10 — it is an interview agenda, not a generated glossary.
+2. Walk the candidates one at a time with the user, using the alignment moves above. Confirmed terms get written; unclear ones are dropped or parked.
+3. When the first term settles, create `docs/lore/glossary.md` from `${CLAUDE_PLUGIN_ROOT}/reference/templates/glossary.md.tmpl` and add a `glossary.md` line to the Optional section of `docs/lore/README.md`.
+
+## Collisions and splits
+
+Follow the spec: a cross-area collision stays in the global file with area-qualified headings (`## Customer (billing)`) and `area:` mandatory on both entries; a collision inside one area means the concept must be split into two differently-named terms. Propose moving an area's terms to `<area>/terms.md` only once it holds ~10+ of them, and only with the user's confirmation.
+
+## Adoption feedback (best-effort)
+
+Per lore-spec's feedback log: when you challenge usage with an existing entry, append a `surfaced` event keyed `glossary.md#<Term>` (or `<area>/terms.md#<Term>` after a split; `CONTEXT.md#<Term>` when the external glossary is canonical), then reconcile it — `heeded` (the wording changed to follow it, or the entry was sharpened), `redundant` (usage already matched), or `ignored` (the user overrode it). Never let logging block or delay the session.
+
+## Guardrail
+
+Terms are aligned, never generated — every entry is confirmed by the user before it is written. The glossary holds language only: definitions, boundaries, examples. No implementation details, no specs, no plans. `updated:` dates follow lore-spec's date rule.
+
+Two gates, not one. The boundary test decides whether knowledge is worth recording at all; a second test decides whether a word belongs in the glossary: is it something the user (or the domain) would actually say out loud, or only a name for a technical mechanism? A cache policy, a retry loop, a worker pool — however important — are not glossary terms. Only domain language goes in.

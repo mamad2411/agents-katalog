@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/spec-product-prd/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when 需要在 sdlc-dev 的产品需求 Spec 流程执行 R2，将 requirements/solution.md 转写为可交付、可验收、可测试的 requirements/prd.md，且需要避免猜路径、在缺少 solution.md 时仍继续生成、或用“待确认问题/Open Questions”替代验证清单。

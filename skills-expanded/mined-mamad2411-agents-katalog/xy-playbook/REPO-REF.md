@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-xyaz1313-xyskill-xy-playbook/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 【赛道打法】赛道打法推演——输入行业、客单价、现状，输出这个赛道的钱从哪个心智阶段流出来、内容三类职能怎么配比、产品怎么分层、流量怎么进私域、在哪成交、合规红线在哪、可复用的账号结构长什么样。内置 8 张赛道模板（减脂/体重、中医养生精油、服装穿搭与快消、微商转直营与代理制改造、知识付费小班课、大健康私域直营、留学等高决策成本非标服务、英语启蒙等买用分离型教育），其它赛道走通用推演并标 🔴 假设。

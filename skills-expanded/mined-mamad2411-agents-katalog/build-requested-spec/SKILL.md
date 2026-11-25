@@ -1,0 +1,22 @@
+---
+name: build-requested-spec
+description: Turn a natural-language request into a shipped spec.
+metadata:
+  aiddbot-kind: orchestrator
+user-invocable: true
+---
+# build-requested-spec
+
+Your goal is to turn a natural-language request into a shipped spec.
+
+Route as the **Architect**: spawn one **Architect**, one **Builder**, and one **Craftsman** for the whole run, or use those a calling orchestrator hands you; continue each with messages, relay their questions to the human, and stop only the agents you started. You run this flow yourself and never hand it whole to one agent: an agent you spawn cannot spawn others.
+
+Journal every handoff between agents when you send the work, with `node .agents/aidd/aidd.mjs log handoff "<from> → <to>: <what>"` (and `--spec <id>` once the spec exists), so the journal times each agent's turn: log it before each of the three steps below, and again before each repair sent back to the **Builder**.
+
+Have the **Architect** execute the `define-spec` skill with the request, and relay its proposal to the human; nothing is built before approval.
+
+Have the **Builder** execute the `implement-project` skill for each affected production project, from lower to higher levels of abstraction, and then for the E2E project whenever the spec has requirements, whether or not its Solution lists E2E work, because every requirement needs its tagged acceptance test.
+
+Have the **Craftsman** execute the `verify-behavior` skill, then `review-implementation` once verification is green, then `ship-spec`. A red verification sends its finding-only report to the **Builder** for repair, and verification starts again. When the Builder changes nothing because it cannot reproduce a failure, have it record that failure with `node .agents/aidd/aidd.mjs debt add` and its evidence before verification starts again, so a green retry never hides it. A failing test tagged with another spec is a regression the Builder repairs in production. Only when a requirement of this spec contradicts it is the old requirement obsolete: unless in YOLO mode, relay that product change to the human first, then have the **Architect** add `Replaces: {global ID}` to the spec's Problem and the Builder update that test. Qualification is never sent back for repair and its findings ship as debt, except a failed Security gate: send that report to the **Builder** once for repair, then verification and qualification run again, and whatever the second qualification still finds ships as debt. A verification still red at its third revision is not repaired again: the delivery goes on, qualified if it has not been, and ships with every unresolved failure and finding recorded as technical debt. Only a product question from verification, or acceptance that cannot run at all, stops the delivery; a failing or missing test is a failure that counts toward revision 3, never missing evidence. Relay the question to the human; once answered, have the **Architect** write the answer into the spec, as a requirement, then continue from the Builder's repair and verification.
+
+The result is one shipped spec, or the reason it could not ship.

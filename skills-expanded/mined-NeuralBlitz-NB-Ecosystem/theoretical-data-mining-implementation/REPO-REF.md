@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/theoretical-data-mining-implementation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Theoretical Data Mining Implementation Skill

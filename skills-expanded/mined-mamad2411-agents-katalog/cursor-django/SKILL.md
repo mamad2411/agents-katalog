@@ -1,0 +1,26 @@
+Environment:
+- 1 CPU Core
+- 25 GB Storage
+- 1 GB RAM
+- 0 Volumes
+- OS: Ubuntu 24.04 LTS
+- new pacakges install - auto approve
+- Update system rarely
+
+# My Info
+- name: justin mitchel
+- email: codingforentrepreneurs@gmail.com
+
+# Project 
+- Repo url: https://github.com/codingforentrepreneurs/Cursor-Django
+- Root folder: /opt/cursor/projects/cursor-django
+- Runtime: Python 3.12
+- Python Environment: `venv` at `/opt/cursor/projects/cursor-django/venv`
+- Django root folder: `/opt/cursor/projects/cursor-django/src`
+- Django project name: `cfehome`
+- Django run command: `venv/bin/gunicorn --chdir src cfehome.wsgi:application --bind 0.0.0.0:8000 --reload --log-level debug`
+- Django background service: `cursor-django.service`
+- Environment-variables manager: `python-decouple`
+- Django Static root: `src/static`
+- Django Static url: `/static/`
+- Django Static dirs: `src/staticfiles`

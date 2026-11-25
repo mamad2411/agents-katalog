@@ -1,0 +1,139 @@
+---
+name: faffter-noon-spec
+description: "Default `spec` producer — turns an issue plus explore findings into a buildable lite-nlspec spec (WHY-WHAT-HOW-DONE) with a confidence self-rating. The light default. Runs via faff-prep, not the user `/` menu."
+user-invocable: false
+judgement_seam: confidence, marker, specqual
+---
+
+# faffter-noon-spec
+
+The default spec producer. Turns an issue plus explore findings into a buildable spec following the **lite nlspec arc** (WHY → WHAT → HOW → DONE). Lightweight by design — the minimum a coding agent needs to build without re-litigating decisions.
+
+This is the implicit default for the `spec` slot when none is configured. It's the light counterpart to `faffter-dark-nlspec` (the heavy, formal full-nlspec producer): same slot, same contract, less ceremony. Extracted here so it can be invoked standalone, tested, and swapped.
+
+```yaml
+slots:
+  spec: faffter-noon-spec   # the default — explicit for clarity
+```
+
+## When it runs
+
+Invoked by faff-prep as the configured `spec` skill (the default when the slot is unset). Can also be invoked standalone: "write the spec for SHF-123" produces the spec body for review without the tracker lifecycle.
+
+## Input
+
+The caller provides:
+
+- Issue title, description, acceptance criteria, labels, dependencies
+- Explore findings (codebase state, architecture, relevant files)
+- The spec contract from the gateway (_Spec readiness (fixed)_) — the canonical markers and writing-style rules this output must satisfy
+
+## Output
+
+A single markdown document following the four-phase arc below, ending with a confidence self-rating line. The caller (faff-prep) validates it via `faff contract spec-readiness`, then attaches it to the issue. This skill produces the body; it does not define the marker contract (that's the gateway _Spec readiness (fixed)_ section) and does not handle attachment or lifecycle (that's faff-prep).
+
+## The lite nlspec arc
+
+Motivation to verifiable done, in four phases. Every non-trivial decision carries a canonical marker (`**Chosen:**` / `**Punt:**` / `**Assumes:**`) per the gateway Spec-readiness contract.
+
+### 1. WHY — Problem and scope
+
+- One paragraph: status quo → pain → what this change does about it.
+- Design principles — any non-obvious constraints that should govern implementation, as bold-lead sentences. Omit when there are none.
+- Out of scope — what this deliberately does NOT do, each with a one-line note on where it could be added later (extension point).
+
+### 2. WHAT — Data and interfaces
+
+- Type shapes, API surfaces, component props, data schemas the build agent needs to know exist. Prose where precision doesn't matter; a shape sketch where it does.
+- Key technical decisions with brief pros/cons — each concluded with a canonical marker.
+- Open questions collected in an "Open Questions" section (`**Punt:**`); external prerequisites in an "Assumptions" section (`**Assumes:**`).
+
+### 3. HOW — Behaviour
+
+- Architecture and approach — how the pieces connect.
+- Pseudocode at ambiguity points — anywhere prose alone could be read two ways, add a setup/action/assert or step-by-step block.
+- Risks, edge cases, what could go wrong.
+
+### Scenarios — born-verifiable main objectives
+
+- A dedicated `## Scenarios` section, after HOW and before DONE. For each **main objective above the complexity bar**, render the objective as Given-When-Then so what the work must achieve is expressed as a scenario, not just prose — the objective is born verifiable:
+
+  ```
+  Given <precondition>
+  When <the change/action>
+  Then <the observable, testable outcome>
+  ```
+
+- **Proportionate, not always-on.** Emit a scenario only for a non-trivial behavioural objective with a non-obvious observable outcome. Trivial objectives get none — a scenario for them is bloat, and the house skimmability rule outranks blanket consistency. The producer judges the bar; many small specs will have a short `## Scenarios` section or, legitimately, none.
+- **Non-functional objectives → assertions, not scenarios.** A constraint like "no PII in logs" or "p99 < 200ms" is an assertion/constraint line, not a forced Given-When-Then — two complementary forms, one for behaviour, one for non-functional.
+- This is the same language as holdout BDD; a holdout is just the withheld subset of these scenarios.
+- **Anti-pattern:** restating the DONE checklist as Given-When-Then. Why: DONE already mirrors the body; scenarios sharpen the WHAT's main objectives, they don't duplicate DONE. The dedicated section + complexity bar exist to avoid exactly this.
+- **Marking a holdout (optional).** Withhold a scenario from the builder for the code-blind evaluator by marking it in place — a fenced GWT block whose fence-info is `holdout` (```` ```holdout ```` / `~~~holdout`), or a bullet prefixed `holdout:` (stripped before classification). Mark a minority (never more than half, never all — the builder keeps at least one visible scenario), and only a scenario whose behaviour the body already requires — never the sole statement of a requirement. DONE items are never marked.
+
+### 4. DONE — Definition of Done (closed-loop)
+
+- A testable checklist mirroring the body sections 1:1. Every WHY/WHAT/HOW requirement gets a matching DONE item. Missing DONE items reveal untestable requirements; orphaned DONE items reveal ungrounded ones.
+- Each item concrete enough to write a test against. "Works correctly" is not a DONE item; "returns 401 with body `{ error: \"session_expired\" }`" is.
+- **Eval coverage.** If the work introduces or changes an LLM-judgement seam, add a DONE item to register its grader `KIND` + ≥1 eval case + the seam-registry row in this same ticket (recording the baseline value is a separate human step, never blocked on here).
+- If the work spans a structural boundary (two independent concerns), recommend a split instead of speccing both.
+
+## Self-review before returning (mandatory, all sizes)
+
+Before emitting the spec + self-rating, dispatch a **clean-context subagent** to review the freshly drafted spec against the codebase. By the time the spec is drafted this skill's context is saturated with explore findings and the framing it locked in early — that makes it hard to spot missed conventions, decisions that don't fit the architecture, vague ACs, `**Punt:**` items the codebase actually answers, false `**Assumes:**`, or scope creep. A reviewer with fresh context — given only the spec and the codebase — sees the spec the way `/faff-graft` will. This is the producer's own quality bar (the gateway makes a delegated `spec` skill responsible for its own quality; this is how the default discharges it), and it runs for **every** fresh spec regardless of size, in both interactive and autonomous mode, in addition to marker conformance and self-rating. **When this producer is itself dispatched as a subagent** (gateway → **Sibling-skill invocation → Producer dispatch**), run this verify **in-context** — a fresh-reasoning pass within the same subagent, given the spec and the codebase — rather than dispatching a further subagent, so nesting stays single-level; its purpose (every claim checked against the codebase before the spec is trusted) is unchanged.
+
+**No size threshold.** Small specs go wrong in the same ways large ones do (vague ACs, false `**Assumes:**`, missed convention) — they're just shorter, which makes the review faster, not unnecessary. "It's a one-line change, the review is overkill" is the same capacity-shaped rationalisation banned by the gateway's forbidden-park-reasons list. Just dispatch.
+
+**Dispatch.** `Agent` tool with `subagent_type: Explore` (read-only — the reviewer must not edit the spec; it returns findings, this skill applies them). The prompt includes the full spec (markers and all), the issue title/description/dependency context, and an explicit brief to read the spec then verify each claim against the codebase, returning structured findings (one per issue, each with severity `blocker` / `major` / `minor` and a one-line fix). Keep findings under ~400 words. The reviewer must check:
+
+- **Codebase fit** — does each `**Chosen:**` match how the codebase already does similar things? Flag new patterns where an established one exists, or ignored existing utilities.
+- **Assumes-validity** — for every `**Assumes:**`, does the assumed thing actually exist in the repo? Flag any that don't.
+- **Punt-resolvability** — for every `**Punt:**`, is the answer already findable in the codebase? If so it should be a `**Chosen:**`.
+- **AC testability** — is each AC concrete and testable? Flag "works correctly", "is performant", or anything lacking a clear pass condition.
+- **Skimmability** — flag invented labelling schemes (`F2`, `R3`, `Phase 4`) that should be descriptive subjects; flag sections that assume the reader holds a source ADR / parent ticket in their head. Tracker IDs (`SHF-247`) are fine.
+- **Scope creep** — anything outside the issue's stated intent (an opportunistic refactor smuggled in).
+- **Missing surface** — obvious code paths / edge cases the spec omits that the codebase shows are relevant.
+- **Interface mismatch** — do proposed API shapes / props / schemas match how callers already work?
+
+**Acting on findings.** `blocker` (spec is wrong about a codebase fact, false `**Assumes:**`, or a `**Chosen:**` that contradicts established convention) → revise: apply the fix, or convert the affected `**Chosen:**` to a `**Punt:**` noting the conflict; if it can't be fixed without architectural reframing, return a `low` rating with the blocker noted so the caller parks. `major` (vague AC, scope creep, missed edge case) → fix where mechanical, else leave as `**Punt:**` with the reviewer's note. `minor` → fold where trivial, else note.
+
+**Self-rating downgrade rule.** If the review surfaces ≥1 `blocker` or ≥3 `major` findings, the spec **cannot** self-rate `high` regardless of how it felt pre-review — cap at `medium`. This stops rationalising past honest findings. Applies to every spec, regardless of size.
+
+**Return the review.** Emit the review's findings + the resolution decisions (what was applied, what was left as `**Punt:**`, what was dismissed and why) alongside the spec, so the caller can log the audit trail. A missing review record is a process failure.
+
+**When NOT to run.** Only when the caller signals a **narrowing-only refresh** — the original spec was already vetted and is being scoped down to a remaining delta, not redrafted whole-cloth. The caller owns that signal; absent it, the review runs.
+
+## Confidence self-rating
+
+End the output with a confidence line on its own:
+
+```
+confidence: high | medium | low
+```
+
+The three levels and the gate each maps to are part of the **fixed spec-readiness contract** in the gateway (_Spec readiness (fixed)_), which also defines the line's format. Either way, this skill emits it, it does not define it. In short: `high` = every decision marked, no open questions, DONE mirrors the body; `medium` = non-blocking `**Punt:**` items or patchy explore findings; `low` = significant unknowns or possible split.
+
+This line is consumed by faff-prep for its autonomous gate decision (`high` → promote; `medium` → attach + flag for human review; `low` → park) and is **retained on the attached spec** — it is durable provenance and a re-spec signal, not stripped. `/faff-tidy`'s spec-health pass reads the retained rating and reconciles it against later comments and codebase drift; the routing verdict treats a retained `confidence: medium` as `needs-decision-first`. It is both a signal to the caller and a lasting property of the spec.
+
+## Contract artifact
+
+After the prose spec and the `confidence:` line, append **one** fenced code block — tagged `faff-contract:spec-readiness`, as the **last** thing in the output — declaring the markers you just wrote, so faff-prep (the consumer) parses them **deterministically** (no LLM re-read of your prose) and pipes them to `faff contract spec-readiness`. You authored the markers and the confidence token, so you declare them directly; the block mirrors the prose, it is not a second source of truth.
+
+````
+```faff-contract:spec-readiness
+{ "confidence": "<your confidence token: high|medium|low>",
+  "decisions": [ { "marker": "chosen" | "punt" | "assumes" | "none" }, ... one per non-trivial decision section, in document order ] }
+```
+````
+
+- **One** block, at the very end. `decisions` lists each non-trivial decision section's canonical marker in order (`chosen` / `punt` / `assumes`; `none` only if a multi-option section is missing one — a clean spec has none).
+- Do **not** include `provenance_present` — faff-prep computes that from the provenance stamp it adds at attach time.
+- The block is machine-only (a human reader can ignore it). **Always emit it** — it is the deterministic path; a present-but-malformed block fails loud downstream (producer breakage), so emit valid JSON matching the shape exactly. (Omitting it falls back to faff-prep reading your prose — the absent-block fallback.)
+
+## Rules
+
+- This is the **minimum** structure. Richer producers (like `faffter-dark-nlspec`) may add formal types, appendices, and rationale sections — as long as they satisfy the same gateway spec-readiness contract.
+- The canonical markers are mandatory and defined in the gateway Spec-readiness contract — this skill uses them, it does not define them. If the contract is unavailable, fall back to `**Chosen:**` / `**Punt:**` / `**Assumes:**`.
+- **Punt ownership.** When a `**Punt:**`'s class is clear — a product-scope call, an architecture pick, a test-strategy question, a security decision — emit the optional `(decides: <owner>)` suffix per the gateway Spec-readiness contract (`product | architecture | qa | security | any`, or a free-form handle). Omit it when the class is ambiguous; never guess. The `faff-contract:spec-readiness` block is unchanged either way — a tagged punt still emits `{ "marker": "punt" }`.
+- Pseudocode is language-agnostic. Do not write in a specific programming language — the build agent translates to the project's language.
+- The spec must be buildable by a coding agent with only the spec as context. If a section needs external knowledge not in the explore findings, mark it `**Assumes:**`.
+- Write to be skimmed: no invented labelling schemes, restate subjects on cross-reference (the writing-style rules live in the gateway Spec-readiness contract and apply fully).

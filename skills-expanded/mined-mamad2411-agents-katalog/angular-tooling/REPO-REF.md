@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ComeOnOliver-skillshub/angular-tooling/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use Angular CLI and development tools effectively in Angular v20+ projects. Use for project setup, code generation, building, testing, and configuration. Triggers on creating new projects, generating 

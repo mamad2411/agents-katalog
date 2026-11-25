@@ -1,0 +1,193 @@
+---
+created: 2025-12-16
+modified: 2026-06-18
+reviewed: 2026-04-29
+description: "Load testing: k6, Artillery, Locust. Use when setting up load tests, auditing smoke/stress/spike/soak coverage, or adding CI performance regression detection."
+allowed-tools: Glob, Grep, Read, Write, Edit, Bash, AskUserQuestion, TodoWrite
+args: "[--check-only] [--fix] [--framework <k6|artillery|locust>]"
+argument-hint: "[--check-only] [--fix] [--framework <k6|artillery|locust>]"
+name: configure-load-tests
+---
+
+# /configure:load-tests
+
+Check and configure load and performance testing infrastructure for stress testing, benchmarking, and capacity planning.
+
+## When to Use This Skill
+
+| Use this skill when... | Use another approach when... |
+|------------------------|------------------------------|
+| Setting up load testing infrastructure from scratch (k6, Artillery, Locust) | Running existing load tests — use `k6 run` or `artillery run` directly |
+| Auditing current load testing coverage (smoke, stress, spike, soak) | Writing unit or integration tests — use `/configure:tests` |
+| Adding CI/CD pipelines for performance regression detection | Profiling application memory usage — use `/configure:memory-profiling` |
+| Migrating between load testing frameworks | Benchmarking individual functions — use language-specific benchmark tools |
+| Ensuring load test thresholds and reporting are properly configured | Testing API contracts — use `/configure:api-tests` |
+
+## Context
+
+- Project root: !`pwd`
+- k6 tests: !`find . -maxdepth 3 \( -name '*.k6.js' -o -name '*.k6.ts' \)`
+- Load test directory: !`find . -maxdepth 2 -type d -name 'load'`
+- Artillery config: !`find . -maxdepth 2 -name 'artillery.yml' -o -name 'artillery.yaml'`
+- Locust files: !`find . -maxdepth 2 -name 'locustfile.py'`
+- Package files: !`find . -maxdepth 1 \( -name 'package.json' -o -name 'pyproject.toml' \)`
+- CI workflows: !`find . -path '*/.github/workflows/*' -maxdepth 3 -name '*load*' -o -name '*perf*'`
+- k6 binary: !`k6 version`
+
+## Parameters
+
+Parse from `$ARGUMENTS`:
+
+- `--check-only`: Report load testing compliance status without modifications
+- `--fix`: Apply all fixes automatically without prompting
+- `--framework <k6|artillery|locust>`: Override framework detection
+
+**Framework preferences:**
+
+| Framework | Best For |
+|-----------|----------|
+| k6 (recommended) | Complex scenarios, CI/CD integration, TypeScript support |
+| Artillery | Quick YAML configs, simple API testing |
+| Locust | Python teams, distributed testing, custom behavior |
+
+## Execution
+
+Execute this load testing configuration check:
+
+### Step 1: Detect existing load testing infrastructure
+
+Read the context values above and identify:
+
+| Indicator | Component | Status |
+|-----------|-----------|--------|
+| `k6` binary or `@grafana/k6` | k6 | Installed |
+| `*.k6.js` or `load-tests/` | k6 tests | Present |
+| `artillery.yml` | Artillery config | Present |
+| `locustfile.py` | Locust tests | Present |
+| `.github/workflows/*load*` | CI integration | Configured |
+
+If `--framework` flag is set, use that framework regardless of detection.
+
+### Step 2: Analyze current load testing setup
+
+Check for complete setup coverage:
+
+**Installation:** k6 installed (binary or npm), TypeScript support if applicable.
+
+**Test Scenarios:** Check which test types exist:
+- Smoke tests (minimal load validation)
+- Load tests (normal load)
+- Stress tests (peak load)
+- Spike tests (burst traffic)
+- Soak tests (endurance)
+
+**Configuration:** Thresholds, environment-specific configs, data files.
+
+**Reporting:** Console output, JSON/HTML reports, trend tracking.
+
+**CI/CD:** GitHub Actions workflow, scheduled runs, PR gate.
+
+### Step 3: Generate compliance report
+
+Print a compliance report covering:
+- Framework installation status and version
+- Test scenario coverage (smoke, load, stress, spike, soak)
+- Threshold configuration (response time, error rate)
+- Environment configuration (staging, production)
+- CI/CD integration (workflow, schedule, PR gate)
+- Reporting setup (console, JSON, HTML, Grafana Cloud)
+
+End with overall issue count and recommendations.
+
+If `--check-only` is set, stop here.
+
+### Step 4: Configure load testing framework (if --fix or user confirms)
+
+Apply configuration using templates from [REFERENCE.md](REFERENCE.md):
+
+1. Install k6 (or chosen framework)
+2. Create directory structure: `tests/load/{config,scenarios,helpers,data}`
+3. Create base configuration with shared thresholds and headers
+4. Create test scenarios (smoke, load, stress, spike)
+5. Add npm/package scripts for running tests
+
+### Step 5: Configure CI/CD integration
+
+1. Create `.github/workflows/load-tests.yml` with:
+   - Smoke tests on PRs
+   - Full load tests via workflow_dispatch
+   - Scheduled weekly runs
+   - Results artifact upload
+2. Add HTML reporting via k6-reporter
+3. Use templates from [REFERENCE.md](REFERENCE.md)
+
+### Step 6: Update standards tracking
+
+Update `.project-standards.yaml`:
+
+```yaml
+components:
+  load_tests: "2025.1"
+  load_tests_framework: "k6"
+  load_tests_scenarios: ["smoke", "load", "stress"]
+  load_tests_ci: true
+  load_tests_thresholds: true
+```
+
+### Step 7: Print final compliance report
+
+Print a summary of framework installed, scenarios created, scripts added, CI/CD configured, thresholds set, and next steps for the user.
+
+For detailed k6 test scripts, CI workflow templates, and reporting configuration, see [REFERENCE.md](REFERENCE.md).
+
+## Agentic Optimizations
+
+| Context | Command |
+|---------|---------|
+| Quick compliance check | `/configure:load-tests --check-only` |
+| Auto-fix all issues | `/configure:load-tests --fix` |
+| Run smoke test quickly | `k6 run --vus 1 --duration 10s tests/load/scenarios/smoke.k6.js` |
+| Run with JSON output | `k6 run --out json=results.json tests/load/scenarios/load.k6.js` |
+| Check k6 version | `k6 version` |
+| List test scenarios | `find tests/load -name '*.k6.js' -type f` |
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--check-only` | Report status without offering fixes |
+| `--fix` | Apply all fixes automatically without prompting |
+| `--framework <framework>` | Override framework (k6, artillery, locust) |
+
+## Examples
+
+```bash
+# Check compliance and offer fixes
+/configure:load-tests
+
+# Check only, no modifications
+/configure:load-tests --check-only
+
+# Auto-fix all issues
+/configure:load-tests --fix
+
+# Force specific framework
+/configure:load-tests --fix --framework artillery
+```
+
+## Error Handling
+
+- **k6 not installed**: Provide installation instructions for platform
+- **No target URL**: Prompt for BASE_URL configuration
+- **Docker not available**: Suggest local app startup
+- **CI secrets missing**: Provide setup instructions for k6 Cloud
+
+## See Also
+
+- `/configure:tests` - Unit testing configuration
+- `/configure:integration-tests` - Integration testing
+- `/configure:api-tests` - API contract testing
+- `/configure:all` - Run all compliance checks
+- **k6 documentation**: https://k6.io/docs
+- **k6 examples**: https://github.com/grafana/k6/tree/master/examples
+- **Grafana k6 Cloud**: https://grafana.com/products/cloud/k6

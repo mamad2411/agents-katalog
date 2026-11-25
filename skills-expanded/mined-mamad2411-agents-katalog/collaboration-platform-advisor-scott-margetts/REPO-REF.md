@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-lawve-ai-awesome-legal-skills/collaboration-platform-advisor-scott-margetts/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Collaboration platform configuration methodology for legal matter sites. Site architecture, workflow identification, dashboard design, data quality governance, and user adoption for SharePoint, Teams,

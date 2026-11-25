@@ -1,0 +1,192 @@
+---
+description: "Gate a finished design for /planning:plan: FAILs on any design thread left unresolved and untagged, then emits a coverage table, the plan-ready summary, and a resume prompt. Use when: 'design handoff', 'hand off the design', 'is the design ready', 'plan-ready summary', 'design gate', or design rounds stop surfacing gaps. Still exploring: /planning:design. Mid-session save-point: a session-handoff capability."
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: design
+  summary: Gate a finished design and package it for planning
+---
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+
+## Purpose
+
+The seam between design and planning: produce the design-gate evidence `/planning:plan`'s
+prerequisite check blocks on. A binary check read off the artifact, then a handoff summary sourced
+from the artifacts, never recalled from conversation memory.
+
+Takes no arguments. Reads the design-threads artifact in the topic's design slice and, on PASS,
+writes the `## Design` section of the topic's PLAN.md.
+
+Design artifacts live in `<memory_dir>/<topic-slug>/design/` (default `.work/`), never committed;
+placement per the lifecycle artifact protocol
+[`${CLAUDE_PLUGIN_ROOT}/reference/artifact-protocol.md`](${CLAUDE_PLUGIN_ROOT}/reference/artifact-protocol.md).
+Derive `<topic-slug>` from the task or branch name (kebab-case, ≤40 chars; shared with
+`/planning:design` and `/planning:plan`).
+
+## Binary gate. Check the artifact, not your memory
+
+Read `design-threads.md` in the topic's design slice and confirm, thread by thread, that
+**every** design thread is one of:
+
+- **RESOLVED**. The deciding rationale is recorded in the artifact (not merely "decided"), or
+- **directional**. Direction agreed and the remaining detail carries a research tag, or
+- **TAGGED-DEFERRED**. An explicit research tag naming the external investigation needed.
+
+Two threads are required, each in one of those states:
+
+- **Principles**: which design principles, or consumer overrides recorded as
+  `Overrides bundled default <principle> per <standards file>`, shaped the design, and how
+  generalize-now-or-wait was settled (citing the Brief's `Variation intent:` line counts).
+- **Lifecycle and reversibility**: the door calls `/planning:design` "Lifecycle and
+  reversibility" requires at the Brief's quality bar, in a thread of that name or as `Door:` lines
+  in the decision threads.
+
+At quality bar `prototype` both are skipped and named: a thread reading `deferred (prototype)`
+counts as TAGGED-DEFERRED. Stumble: the gate judged only the threads present, so a design that
+never weighed principles or reversibility passed.
+
+A thread that is unresolved and untagged, or a required thread that is missing, is a silent gap →
+**FAIL**: open the reply with the verdict sentence (`Gate: FAIL`, naming each offending or missing
+thread) and the coverage table, then route back by invoking `/planning:design` via the Skill tool
+(its design-threads and discussion rounds) to resolve or tag, and do not hand off. Stumble: routing
+first let the design round replace the verdict, so the reply never said the gate failed. Read the verdict off
+`design-threads.md`, never from a "did we cover enough?" recap of your own: a producing model
+rubber-stamps its own recap.
+
+If `design-threads.md` does not exist, check for `design-resolution.md` at the same path (the
+`/planning:design` early-exit artifact). Early-exit slices hand off on that artifact alone. A
+`tier: B` artifact with no type sketch → FAIL: route back by invoking `/planning:design` via the
+Skill tool to record one. A `type-inventory.md` on its own is not a gate artifact. Neither present →
+FAIL: no design evidence; route back by invoking `/planning:design` via the Skill tool.
+
+## Coverage report (advisory)
+
+After the verdict sentence (on a FAIL, before routing back), emit one table reporting
+coverage across the six dimensions a design answers: what, how, where, who, when, why. Emit it on
+PASS and on FAIL alike. It never contributes to the pass/fail determination, it never blocks a
+handoff, no flag makes it block, and the table is never written to disk.
+
+Read it over `design-threads.md`, or over `design-resolution.md` when the early-exit artifact is
+what the gate read. A row is **covered** when a thread whose status is RESOLVED or directional
+records a decision about that dimension, and the row then names that thread and its status. A
+TAGGED-DEFERRED thread never covers a row.
+
+`design-resolution.md` has no threads and no statuses. There a row is covered when the artifact
+itself records a decision about that dimension; the `Covered by` cell names the recorded decision
+and the `Status` cell reads `recorded`.
+
+The artifact carries no dimension field (a thread is a name, options, a status, and a rationale), so coverage is a judgment read over the whole artifact.
+The reading rule per dimension is the table's second column:
+
+| Dimension | Covered by | Status |
+| --- | --- | --- |
+| what | the thread naming the thing being built or changed | RESOLVED |
+| how | the thread recording the mechanism or algorithm | RESOLVED |
+| where | the thread recording location, topology, or runtime placement | directional |
+| who | the thread recording the actor, owner, operator, or caller | RESOLVED |
+| when | the thread recording timing, sequencing, or lifecycle | directional |
+| why | the thread recording the rationale behind the decision | RESOLVED |
+
+In a real emission each `Covered by` cell carries the thread's own name and each `Status` cell that
+thread's own status. An uncovered row reads `none` in both.
+
+## Write the plan's Design section (gate passed)
+
+On PASS, and only on PASS, write the design into `## Design` of the topic's
+`<memory_dir>/<topic-slug>/PLAN.md` (default `.work/`). This is the copy that reaches the
+implementer: `/planning:plan` keeps it and audits its phases against it, and `/implementation:implement-dispatch`
+and `/work-items:decompose` quote from it, because a worker's worktree and a tracker item never
+see the design directory. The section anatomy is
+`/planning:plan`'s PLAN.md template; fill its four subsections from the artifacts, never from
+memory:
+
+- **Module layout**: modules or packages, what goes where, and dependency direction (from the
+  topology, boundary, or component artifact the scope produced)
+- **Contracts**: interfaces, type shapes, and signatures, quoted from the type inventory or
+  contracts artifact; a typed artifact's first fenced block is copied verbatim with its info string
+- **Variation verdicts**: for each variation point, configurability, or extension thread, its
+  verdict (abstract now, contain now, or leave inline, per
+  [`${CLAUDE_PLUGIN_ROOT}/reference/variation-points.md`](${CLAUDE_PLUGIN_ROOT}/reference/variation-points.md)),
+  the seam or containing module, and the recorded reason; an abstraction question left to a human
+  is listed with its arbiter
+- **Conventions followed**: repository paths of the existing patterns, rules, and ADRs the design
+  follows. Never a memory-slice path: PLAN.md is published, and that path would dangle. Under them,
+  from the resolved threads' rationale: one `Net new:` line listing each part no existing pattern
+  covers and why none fits, and one `Challenges a pattern:` line listing each pattern the design
+  departs from or questions, its path and the reason; `none` when a line has nothing to list
+
+An early exit (`design-resolution.md`) writes the section as one line naming the early exit and
+its reason. A Tier B early exit adds a `### Contracts` subsection under that line, quoting the
+artifact's type sketch verbatim (or, when the artifact links `type-inventory.md`, that file's
+sketch). Re-read PLAN.md from disk before writing and replace only the `## Design` section;
+when PLAN.md does not exist yet, create it holding that section alone, for `/planning:plan` to
+complete. Write no other section.
+
+## Handoff summary (gate passed)
+
+Hand off by invoking `/planning:plan` via the Skill tool. Sourced from the artifacts, not recalled from memory:
+
+- Resolved decisions with their recorded rationale (from `design-threads.md`)
+- **ADR candidates.** List each resolved decision whose thread records a rejected alternative,
+  with that alternative quoted from `design-threads.md`; a decision with none is not listed.
+  "None" is the entry when no decision qualifies. When the `architecture` plugin is enabled, offer
+  to invoke `/architecture:adr` via the Skill tool for each listed decision, passing
+  the decision, its recorded rationale and the rejected alternative. That skill owns and applies
+  the admission test, the template and convention discovery; this step carries no copy of the test
+  and judges none. Without the `architecture` plugin, list the
+  decisions under an "ADR candidates" heading for a human to judge. The offer never blocks the
+  handoff: it runs beside the next step, not in place of it
+- Deferred research items with tags
+- Design artifacts produced, and that PLAN.md's `## Design` section now holds them
+- Dependency order for implementation (which decisions block others)
+- Extension / config / observability, principle and reversibility threads **RESOLVED** or
+  **TAGGED-DEFERRED**.
+  `/planning:plan` next walks its design-default checklist against the plan
+- **Review-routing notes**. When the consuming project declares review checklists (architecture,
+  code-design, security, multi-tenancy, messaging, and the like), list which apply to this slice
+  so `/planning:plan` and the implementation stage inherit proactive review targets
+- **Mechanization notes** (optional). When the project distinguishes deterministic mechanization
+  from human judgment, mark per capability whether a sub-step is script-, hook-, agent-, or
+  human-owned; a trivial early-exit records "no deterministic sub-steps"
+- **Uncovered dimensions**. The dimensions the coverage table read as `none`, listed verbatim, so
+  `/planning:plan` can raise them as Step 1 Open Decisions. Record "none" when all six are covered
+- **Risks**. When `design-threads.md` has a `Risks` thread (`/planning:design` "System-scope
+  steps"), its rows quoted in its `Risk | Likelihood | Impact | Mitigation` columns, which
+  `/planning:plan` seeds its `### Risks and Mitigations` from. Omit the item when there is no such
+  thread
+
+Emit a resume prompt so a fresh cleared session can pick up at `/planning:plan` reading only the
+persisted artifacts. The resume prompt carries the uncovered dimensions and any Risks rows
+verbatim; the coverage table stays in the emitted output and is never written to disk.
+
+## What this skill does not do
+
+- **Design exploration or thread resolution**. That's `/planning:design` (a FAILed gate routes
+  there; this skill never resolves threads itself)
+- **Implementation planning**. That's `/planning:plan` (this skill packages its input)
+- **Mid-session save-point**. That's a session-handoff capability (a journal entry plus status for a later clear-and-resume); this skill is the design→plan
+  stage seam, not a pause-point
+
+## Next
+
+- The gate passed: /planning:plan, reading the plan-ready summary and PLAN.md's `## Design`.
+- The gate failed: /planning:design.
+
+## Gotchas
+
+- A thread marked "decided" without recorded rationale is not RESOLVED. FAIL it back by invoking
+  `/planning:design` via the Skill tool to record the why
+- Do not soften a FAIL into a warning because the offending thread "feels minor". Silent gaps are
+  exactly what the binary gate exists to catch
+- A coverage gap is information for the human, not a FAIL; do not promote it
+- `/planning:design`'s `handoff` action is an in-session shortcut that delegates here; this skill
+  is the single canonical gate, so gate criteria change here only

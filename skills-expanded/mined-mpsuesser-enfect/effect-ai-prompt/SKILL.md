@@ -1,0 +1,835 @@
+---
+name: effect-ai-prompt
+description: Build prompts for Effect AI using messages, parts, and composition operators. Covers the complete Prompt API for constructing, merging, and manipulating conversations with language models.
+---
+
+# Effect AI Prompt Construction
+
+Master the Effect AI Prompt API for building type-safe conversations with language models.
+
+Baseline: `effect@4.1.0`; inspect that tag in the Effect source reference.
+`effect/ai` APIs remain `@stability unstable` and can break in minor releases.
+Keep provider packages on the same version as `effect`.
+
+## Import Patterns
+
+**CRITICAL**: Always use namespace imports:
+
+```typescript
+import * as Prompt from 'effect/ai/Prompt';
+import * as Response from 'effect/ai/Response';
+import { pipe } from 'effect';
+```
+
+## When to Use This Skill
+
+- Constructing messages for language model requests
+- Building multi-turn conversation history
+- Adding system instructions to prompts
+- Integrating tool calls and results into conversations
+- Converting streaming responses to prompt history
+- Managing file/image attachments in messages
+- Implementing custom chat interfaces
+
+## Conceptual Model
+
+```haskell
+-- Message hierarchy
+type Message = SystemMessage | UserMessage | AssistantMessage | ToolMessage
+type Part =
+  | TextPart
+  | ReasoningPart
+  | FilePart
+  | ToolCallPart
+  | ToolResultPart
+  | ToolApprovalRequestPart
+  | ToolApprovalResponsePart
+
+-- Composition
+Prompt.make       :: RawInput → Prompt
+Prompt.concat      :: (Prompt, RawInput) → Prompt
+Prompt.setSystem  :: (Prompt, String) → Prompt
+
+-- History transformation
+fromResponseParts :: ReadonlyArray<Response.Part> → Prompt
+```
+
+The Effect v4 module also exports runtime schemas for every part and each role-specific part union: `TextPart`, `ReasoningPart`, `FilePart`, `ToolCallPart`, `ToolResultPart`, `ToolApprovalRequestPart`, `ToolApprovalResponsePart`, `UserMessagePart`, `AssistantMessagePart`, and `ToolMessagePart`. Use these schemas to decode unknown persisted or provider-adapter input instead of relying only on `isPart`.
+
+## Message Types
+
+Each message has `role` and `content`. System content is a string; other roles
+contain arrays of the parts allowed for that role.
+
+### System Messages
+
+```typescript
+import * as Prompt from 'effect/ai/Prompt';
+
+// String content only
+const system = Prompt.makeMessage('system', {
+	content: 'You are a helpful assistant specialized in mathematics.'
+});
+
+// Shorthand constructor
+const systemShorthand = Prompt.systemMessage({
+	content: 'You are a helpful assistant specialized in mathematics.'
+});
+
+// System message with options
+const systemWithOptions = Prompt.makeMessage('system', {
+	content: 'You are an expert coder.',
+	options: {
+		anthropic: { cacheControl: { type: 'ephemeral' } }
+	}
+});
+```
+
+### User Messages
+
+```typescript
+// Text-only user message
+const userText = Prompt.makeMessage("user", {
+  content: [
+    Prompt.makePart("text", { text: "What is 2+2?" })
+  ]
+})
+
+// Shorthand constructor
+const userShorthand = Prompt.userMessage({
+  content: [
+    Prompt.makePart("text", { text: "What is 2+2?" })
+  ]
+})
+
+// Multimodal user message (text + file)
+const userMultimodal = Prompt.makeMessage("user", {
+  content: [
+    Prompt.makePart("text", { text: "What's in this image?" }),
+    Prompt.makePart("file", {
+      mediaType: "image/jpeg",
+      fileName: "photo.jpg",
+      data: new Uint8Array([...])
+    })
+  ]
+})
+```
+
+### Assistant Messages
+
+```typescript
+// Assistant response with text and tool call
+const assistant = Prompt.makeMessage('assistant', {
+	content: [
+		Prompt.makePart('reasoning', {
+			text: 'I need to check the weather using the tool.'
+		}),
+		Prompt.makePart('tool-call', {
+			id: 'call_123',
+			name: 'get_weather',
+			params: { city: 'Paris' },
+			providerExecuted: false
+		}),
+		Prompt.makePart('tool-approval-request', {
+			approvalId: 'approval_123',
+			toolCallId: 'call_123'
+		}),
+		Prompt.makePart('text', {
+			text: 'The weather in Paris is sunny, 22°C.'
+		})
+	]
+});
+
+// Shorthand constructor
+const assistantShorthand = Prompt.assistantMessage({
+	content: [
+		Prompt.makePart('text', {
+			text: 'The weather in Paris is sunny, 22°C.'
+		})
+	]
+});
+```
+
+### Tool Messages
+
+```typescript
+// Tool execution results
+const toolMessage = Prompt.makeMessage('tool', {
+	content: [
+		Prompt.makePart('tool-result', {
+			id: 'call_123',
+			name: 'get_weather',
+			isFailure: false,
+			result: { temperature: 22, condition: 'sunny' }
+		})
+	]
+});
+
+// Shorthand constructor
+const toolShorthand = Prompt.toolMessage({
+	content: [
+		Prompt.makePart('tool-result', {
+			id: 'call_123',
+			name: 'get_weather',
+			isFailure: false,
+			result: { temperature: 22, condition: 'sunny' }
+		})
+	]
+});
+```
+
+## Part Types
+
+### Text Part
+
+```typescript
+const textPart = Prompt.makePart('text', {
+	text: 'Hello, world!'
+});
+```
+
+### Reasoning Part
+
+```typescript
+const reasoningPart = Prompt.makePart('reasoning', {
+	text: 'Let me think step by step...'
+});
+```
+
+### File Part
+
+```typescript
+// From URL
+const fileFromUrl = Prompt.makePart('file', {
+	mediaType: 'image/png',
+	fileName: 'screenshot.png',
+	data: new URL('https://example.com/image.png')
+});
+
+// From bytes
+const fileFromBytes = Prompt.makePart('file', {
+	mediaType: 'application/pdf',
+	fileName: 'report.pdf',
+	data: new Uint8Array([1, 2, 3])
+});
+
+// From base64
+const fileFromBase64 = Prompt.makePart('file', {
+	mediaType: 'image/jpeg',
+	data: 'data:image/jpeg;base64,/9j/4AAQ...'
+});
+```
+
+For OpenAI file parts, strings are provider file IDs only when `OpenAiLanguageModel.Config.fileIdPrefixes` matches the string prefix (for example `file-`). Use `URL` or `Uint8Array` for inline content; the OpenAI adapter encodes bytes as base64 data.
+
+### Tool Call Part
+
+```typescript
+const toolCall = Prompt.makePart('tool-call', {
+	id: 'call_abc123',
+	name: 'calculate',
+	params: { expression: '2 + 2' },
+	providerExecuted: false
+});
+```
+
+### Tool Result Part
+
+```typescript
+const toolResult = Prompt.makePart('tool-result', {
+	id: 'call_abc123',
+	name: 'calculate',
+	isFailure: false,
+	result: 4
+});
+```
+
+### Tool Approval Parts
+
+```typescript
+const approvalRequest = Prompt.makePart('tool-approval-request', {
+	approvalId: 'approval_abc123',
+	toolCallId: 'call_abc123'
+});
+
+const approvalResponse = Prompt.toolApprovalResponsePart({
+	approvalId: 'approval_abc123',
+	approved: true
+});
+
+const denialResponse = Prompt.toolApprovalResponsePart({
+	approvalId: 'approval_def456',
+	approved: false,
+	reason: 'Operation not allowed'
+});
+```
+
+Tool approval requests live in assistant messages. Approval responses live in tool messages and are collected on the next model call.
+
+## Prompt Construction
+
+### From String
+
+```typescript
+// Creates a user message with text part
+const prompt = Prompt.make('Hello, how are you?');
+```
+
+### From Encoded Messages
+
+```typescript
+const prompt = Prompt.make([
+	{ role: 'system', content: 'You are helpful.' },
+	{ role: 'user', content: [{ type: 'text', text: 'Hi!' }] }
+]);
+```
+
+`Prompt.RawInput` is exactly `string | Iterable<Prompt.MessageEncoded> | Prompt.Prompt`: strings become one user text message, iterables are decoded encoded messages, and existing prompts pass through unchanged.
+
+### From Existing Prompt
+
+```typescript
+const copy = Prompt.make(existingPrompt);
+```
+
+### Empty Prompt
+
+```typescript
+const empty = Prompt.empty;
+```
+
+### From Messages Array
+
+```typescript
+// Using fromMessages constructor
+const messages: ReadonlyArray<Prompt.Message> = [
+	Prompt.systemMessage({ content: 'You are an expert.' }),
+	Prompt.userMessage({
+		content: [Prompt.makePart('text', { text: 'Help me.' })]
+	})
+];
+
+const prompt = Prompt.fromMessages(messages);
+
+// Alternative: Using make with messages array
+const prompt2 = Prompt.make([
+	Prompt.makeMessage('system', { content: 'You are an expert.' }),
+	Prompt.makeMessage('user', {
+		content: [Prompt.makePart('text', { text: 'Help me.' })]
+	})
+]);
+```
+
+## Prompt Composition
+
+### Merge Prompts
+
+```typescript
+import { pipe } from 'effect';
+
+const systemPrompt = Prompt.make([
+	{
+		role: 'system',
+		content: 'You are a coding assistant.'
+	}
+]);
+
+const userPrompt = Prompt.make('Write a function');
+
+// Data-last (pipeline)
+const combined = pipe(systemPrompt, Prompt.concat(userPrompt));
+
+// Data-first
+const combined2 = Prompt.concat(systemPrompt, userPrompt);
+```
+
+### System Message Manipulation
+
+```typescript
+import { pipe } from 'effect';
+
+const prompt = Prompt.make([
+	{ role: 'system', content: 'You are helpful.' },
+	{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }
+]);
+
+// Replace system message
+const replaced = pipe(
+	prompt,
+	Prompt.setSystem('You are an expert in TypeScript.')
+);
+
+// Prepend to system message
+const prepended = pipe(prompt, Prompt.prependSystem('IMPORTANT: '));
+// Result: "IMPORTANT: You are helpful."
+
+// Append to system message
+const appended = pipe(prompt, Prompt.appendSystem(' Be concise.'));
+// Result: "You are helpful. Be concise."
+```
+
+## History Management
+
+### Convert AI Response to Prompt
+
+```typescript
+import * as Response from 'effect/ai/Response';
+
+const responseParts: ReadonlyArray<Response.AnyPart> = [
+	Response.makePart('text-start', { id: 'text_1' }),
+	Response.makePart('text-delta', { id: 'text_1', delta: 'Hello' }),
+	Response.makePart('text-delta', { id: 'text_1', delta: '!' }),
+	Response.makePart('text-end', { id: 'text_1' }),
+	Response.makePart('tool-call', {
+		id: 'call_1',
+		name: 'get_time',
+		params: {},
+		providerExecuted: false
+	}),
+	Response.makePart('tool-approval-request', {
+		approvalId: 'approval_1',
+		toolCallId: 'call_1'
+	}),
+	Response.makePart('tool-result', {
+		id: 'call_1',
+		name: 'get_time',
+		isFailure: false,
+		result: '10:30 AM',
+		encodedResult: '10:30 AM',
+		providerExecuted: false,
+		preliminary: false
+	})
+];
+
+// Folds streaming text/reasoning and splits assistant/tool messages.
+const historyPrompt = Prompt.fromResponseParts(responseParts);
+```
+
+`Prompt.fromResponseParts` folds streaming text/reasoning by matching IDs and
+preserves their **start order**, even when end markers arrive out of order. It
+retains nonempty text without an end marker, but drops unended reasoning because
+providers may require signatures or encrypted replay metadata from the end part.
+Pass accumulated start/delta/end parts rather than isolated deltas. It places tool calls and approval requests
+in assistant messages and skips preliminary tool results. For final tool results
+it always uses `encodedResult`: framework-executed results
+(`providerExecuted: false`) become tool messages, while provider-executed results
+(`providerExecuted: true`) remain in the assistant message with that flag preserved.
+
+This distinction matters for hosted tools such as provider web search or code execution. Moving their results into a tool message changes the conversation shape expected by the provider.
+
+### Effect-Returning Prompt/Message Helpers
+
+Keep pure prompt helpers pure. But when prompt or message transformation depends on services, model metadata, truncation policy, storage, or other runtime state, wrap the transformation in `Effect.fn(...)` so orchestrators can `yield*` it directly.
+
+```typescript
+import { Effect } from 'effect';
+
+export const toModelMessagesEffect = Effect.fn('Prompt.toModelMessages')(
+	function* (messages: ReadonlyArray<AppMessage>) {
+		const policy = yield* MessagePolicy.Service;
+		return convertMessages(messages, policy);
+	}
+);
+```
+
+This keeps prompt assembly inside the Effect graph instead of forcing Promise islands through session orchestration code.
+
+### Typical Chat Pattern
+
+```typescript
+import { Effect } from 'effect';
+import * as SubscriptionRef from 'effect/SubscriptionRef';
+import * as LanguageModel from 'effect/ai/LanguageModel';
+
+const chat = Effect.gen(function* () {
+	const history = yield* SubscriptionRef.make(Prompt.empty);
+
+	const generateText = Effect.fn('Chat.generateText')(function* (userInput: string) {
+		const currentHistory = yield* SubscriptionRef.get(history);
+		const prompt = pipe(currentHistory, Prompt.concat(userInput));
+
+		const response = yield* LanguageModel.generateText({ prompt });
+
+		// Update history with user input + response
+		const newHistory = pipe(
+			prompt,
+			Prompt.concat(Prompt.fromResponseParts(response.content))
+		);
+		yield* SubscriptionRef.set(history, newHistory);
+
+		return response;
+	});
+
+	return { generateText };
+});
+```
+
+## Usage with LanguageModel
+
+### Generate Text
+
+```typescript
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import { Effect } from 'effect';
+
+const program = Effect.gen(function* () {
+	const prompt = Prompt.make([
+		{ role: 'system', content: 'You are helpful.' },
+		{ role: 'user', content: [{ type: 'text', text: 'Explain Effect' }] }
+	]);
+
+	const response = yield* LanguageModel.generateText({ prompt });
+
+	return response.content;
+});
+```
+
+### Stream Text
+
+```typescript
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import { Effect, Stream } from 'effect';
+
+const program = Effect.gen(function* () {
+	const prompt = Prompt.make('Write a story');
+
+	yield* LanguageModel.streamText({ prompt }).pipe(
+		Stream.runForEach((part) =>
+			part.type === 'text-delta'
+				? Effect.sync(() => process.stdout.write(part.delta))
+				: Effect.void
+		)
+	);
+});
+```
+
+### Generate Object
+
+```typescript
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import { Effect, Schema } from 'effect';
+
+const Contact = Schema.Struct({
+	name: Schema.String,
+	email: Schema.String,
+	phone: Schema.optional(Schema.String)
+});
+
+const program = Effect.gen(function* () {
+	const prompt = Prompt.make('Extract: John Doe, john@example.com, 555-1234');
+
+	const response = yield* LanguageModel.generateObject({
+		prompt,
+		schema: Contact
+	});
+
+	return response.value;
+});
+```
+
+## Provider-Specific Options
+
+### OpenAI Responses explicit cache breakpoints
+
+With `@effect/ai-openai` loaded, system-message, text-part, and file-part options accept
+`openai.promptCacheBreakpoint`. This requires GPT-5.6 or later; earlier models
+may reject it. Provider config uses snake_case; Prompt metadata uses camelCase.
+
+```typescript
+import { OpenAiLanguageModel } from '@effect/ai-openai';
+import { Effect } from 'effect';
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import * as Prompt from 'effect/ai/Prompt';
+
+const program = LanguageModel.generateText({
+	prompt: Prompt.make([
+		Prompt.systemMessage({
+			content: 'Stable instructions',
+			options: { openai: { promptCacheBreakpoint: { mode: 'explicit' } } }
+		}),
+		Prompt.userMessage({
+			content: [Prompt.textPart({ text: 'Question for this turn' })]
+		})
+	])
+}).pipe(Effect.provide(OpenAiLanguageModel.model('gpt-5.6', {
+	prompt_cache_key: 'assistant:v1',
+	prompt_cache_options: { mode: 'explicit', ttl: '30m' }
+})));
+```
+
+A text or file part can carry the same breakpoint after reusable user context.
+The adapter forwards it as `prompt_cache_breakpoint` on input text, image, or
+file items. Model config also supports `prompt_cache_retention` and
+`prompt_cache_options.comparison_response_id`; inspect finish metadata for cache
+diagnostics rather than treating a breakpoint as proof of a hit. Supply the
+OpenAI client layer at the runtime boundary (see `effect-ai-provider`).
+
+### Other provider metadata
+
+```typescript
+// Load the provider's existing metadata augmentation; do not redeclare it.
+import '@effect/ai-anthropic/AnthropicLanguageModel';
+import * as Prompt from 'effect/ai/Prompt';
+
+// Use in parts
+const cachedPart = Prompt.makePart('text', {
+	text: 'Large document...',
+	options: {
+		anthropic: { cacheControl: { type: 'ephemeral' } }
+	}
+});
+
+// Use in messages
+const cachedMessage = Prompt.makeMessage('system', {
+	content: 'You are an expert.',
+	options: {
+		anthropic: { cacheControl: { type: 'ephemeral' } }
+	}
+});
+```
+
+Anthropic Prompt metadata is camelCase `anthropic.cacheControl`, not wire-level
+`cache_control`. Assistant-message breakpoints attach to the last eligible
+non-thinking block; explicit part-level cache control takes precedence. All
+system instructions are preserved. If mid-conversation placement is impossible,
+the adapter keeps all system blocks top-level in order. Separately, provider
+fallback blocks appear on response metadata under `anthropic.fallback` with the
+fallback `modelId`. Inspect
+`LanguageModel.supportsSystemMessagesInHistory` in the request context when
+choosing prompt placement; see `effect-ai-provider` for the override.
+
+## Serialization
+
+### Export/Import
+
+```typescript
+import * as Schema from 'effect/Schema';
+import { Effect } from 'effect';
+
+// Prompt.Prompt is a Schema.Codec<Prompt, PromptEncoded>
+const encode = Schema.encodeEffect(Prompt.Prompt);
+const decode = Schema.decodeUnknownEffect(Prompt.Prompt);
+
+const program = Effect.gen(function* () {
+	const prompt = Prompt.make('Hello');
+
+	// Export to structured data
+	const exported = yield* encode(prompt);
+
+	// Import from structured data
+	const imported = yield* decode(exported);
+
+	return imported;
+});
+```
+
+### JSON Serialization
+
+Use `Schema.fromJsonString` with `Prompt.Prompt` to create a JSON codec:
+
+```typescript
+import * as Schema from 'effect/Schema';
+import { Effect } from 'effect';
+
+const PromptJson = Schema.fromJsonString(Prompt.Prompt);
+const encodeJson = Schema.encodeEffect(PromptJson);
+const decodeJson = Schema.decodeUnknownEffect(PromptJson);
+
+const program = Effect.gen(function* () {
+	const prompt = Prompt.make([
+		{ role: 'system', content: 'You are helpful.' },
+		{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }
+	]);
+
+	// To JSON string
+	const json = yield* encodeJson(prompt);
+	yield* Effect.log(json); // string
+
+	// From JSON string
+	const restored = yield* decodeJson(json);
+
+	return restored;
+});
+```
+
+**Note**: There is no `Prompt.FromJson` in v4. Use `Schema.fromJsonString(Prompt.Prompt)` instead.
+
+File data is JSON-safe through the prompt codec: bytes encode as
+`{ _tag: 'Uint8Array', base64 }` and URLs as `{ _tag: 'URL', href }`, then decode
+back to their original types. Strings remain strings. Raw bytes and URL instances
+remain accepted decoder input; do not directly stringify runtime file parts or
+expect to recover bytes already lost in an older malformed export.
+
+<!-- typecheck -->
+```ts
+import * as Prompt from 'effect/ai/Prompt';
+import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
+
+const PromptJson = Schema.fromJsonString(Prompt.Prompt);
+const roundTrip = Effect.gen(function* () {
+  const prompt = Prompt.fromMessages([
+    Prompt.userMessage({ content: [Prompt.filePart({
+      mediaType: 'image/png',
+      data: new URL('https://example.com/image.png')
+    })] })
+  ]);
+  const json = yield* Schema.encodeEffect(PromptJson)(prompt);
+  return yield* Schema.decodeUnknownEffect(PromptJson)(json);
+});
+```
+
+## Common Patterns
+
+### Multi-turn Conversation
+
+```typescript
+const conversation = Prompt.make([
+	{ role: 'system', content: 'You are a math tutor.' },
+	{ role: 'user', content: [{ type: 'text', text: 'What is 2+2?' }] },
+	{ role: 'assistant', content: [{ type: 'text', text: '2+2 equals 4.' }] },
+	{ role: 'user', content: [{ type: 'text', text: 'What about 3+3?' }] }
+]);
+```
+
+### Dynamic System Prompt
+
+```typescript
+import { pipe } from 'effect';
+
+function withSystemPrompt(content: string) {
+	return (prompt: Prompt.Prompt) => pipe(prompt, Prompt.setSystem(content));
+}
+
+const userPrompt = Prompt.make('Help me code');
+const withContext = pipe(
+	userPrompt,
+	withSystemPrompt('You are an expert TypeScript developer.')
+);
+```
+
+`Tool.make` / `Tool.dynamic` can use `toModelOutput` to keep a typed application
+result while sending text/file parts to the model. `Prompt.ToolResultPart` carries
+the optional model output; `Prompt.toolModelOutputToText` renders a text fallback
+with file placeholders for providers without native support.
+
+### Tool Interaction History
+
+```typescript
+const toolInteraction = Prompt.make([
+	{ role: 'user', content: [{ type: 'text', text: "What's the weather?" }] },
+	{
+		role: 'assistant',
+		content: [
+			{
+				type: 'tool-call',
+				id: '1',
+				name: 'weather',
+				params: {},
+				providerExecuted: false
+			}
+		]
+	},
+	{
+		role: 'tool',
+		content: [
+			{
+				type: 'tool-result',
+				id: '1',
+				name: 'weather',
+				isFailure: false,
+				result: 'Sunny, 22°C'
+			}
+		]
+	},
+	{
+		role: 'assistant',
+		content: [{ type: 'text', text: "It's sunny and 22°C." }]
+	}
+]);
+```
+
+## Type Guards
+
+```typescript
+import * as Prompt from 'effect/ai/Prompt';
+
+declare const value: unknown;
+
+if (Prompt.isPrompt(value)) {
+	// value: Prompt.Prompt
+	value.content; // narrowed to Prompt.Prompt
+}
+
+if (Prompt.isMessage(value)) {
+	// value: Prompt.Message
+	value.role; // narrowed to Prompt.Message
+}
+
+if (Prompt.isPart(value)) {
+	// value: Prompt.Part
+	value.type; // narrowed to Prompt.Part
+}
+```
+
+## Anti-Patterns
+
+```typescript
+// DON'T: Manually construct messages without constructors
+const bad = {
+	role: 'user',
+	content: [{ type: 'text', text: 'Hello' }]
+} as Prompt.UserMessage;
+
+// DO: Use constructors
+const good = Prompt.makeMessage('user', {
+	content: [Prompt.makePart('text', { text: 'Hello' })]
+});
+
+// DO: Use shorthand constructors
+const better = Prompt.userMessage({
+	content: [Prompt.makePart('text', { text: 'Hello' })]
+});
+
+// DON'T: Mutate prompt content
+const prompt = Prompt.make('Hi');
+prompt.content.push(someMessage); // Error: readonly
+
+// DO: Use merge for composition
+const extended = Prompt.concat(prompt, 'Additional message');
+
+// DON'T: Manually filter response parts
+const filtered = responseParts.filter((p) => p.type === 'text');
+
+// DO: Use fromResponseParts (handles streaming deltas, tool results, etc.)
+const historyPrompt = Prompt.fromResponseParts(responseParts);
+```
+
+### Decoding Unknown Parts
+
+```typescript
+import * as Schema from 'effect/Schema';
+
+const decodeAssistantPart = Schema.decodeUnknownEffect(
+	Prompt.AssistantMessagePart
+);
+
+const decoded = yield* decodeAssistantPart(unknownPart);
+```
+
+Use `Prompt.Part` for the unrestricted part union or a role-specific schema when the destination message role is already known.
+
+## Related Skills
+
+- effect-ai-language-model - Using prompts with LanguageModel service
+- effect-ai-streaming - Converting streaming responses to prompt history
+- effect-ai-tool - Integrating tool call/result messages
+
+## Quality Checklist
+
+- [ ] Messages use `Prompt.makeMessage` or shorthand constructors
+- [ ] Parts use `Prompt.makePart` constructors
+- [ ] System messages managed with `setSystem`/`prependSystem`/`appendSystem`
+- [ ] History updates use `Prompt.fromResponseParts`
+- [ ] Prompt composition uses `Prompt.concat` (not mutation)
+- [ ] Namespace imports for all Effect AI modules

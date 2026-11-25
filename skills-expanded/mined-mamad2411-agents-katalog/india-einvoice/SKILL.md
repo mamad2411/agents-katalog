@@ -1,0 +1,353 @@
+---
+name: india-einvoice
+description: "> Use this skill whenever asked about India GST e-invoicing, Invoice Registration Portal (IRP), IRN generation, e-invoice JSON schema, NIC portal, GST INV-01 format, e-invoice threshold, B2B invoice reporting under GST, QR code on invoices, GSTR-1 auto-population, e-way bill integration with e-invoice, or any question about generating, validating, or troubleshooting Indian e-invoices. Also trigger when advising on e-invoice compliance for businesses crossing Rs 5 crore turnover, configuring ERP/billing software for IRP integration, or handling IRP rejections. ALWAYS read this skill before touching any India e-invoice work."
+license: AGPL-3.0-or-later (code) / OpenAccountants Guide License v1.0 (content)
+metadata:
+  source: openaccountants
+  jurisdiction: IN
+  category: invoicing
+  quality: source-cited draft
+  openaccountants_url: "https://openaccountants.com/skills/india-einvoice"
+  obligation: EINV
+---
+
+# India GST E-Invoice Skill v1.0
+
+> **General reference only.** This skill is general tax/accounting reference material for AI-assisted workflows. It has not been reviewed for any specific person's facts, documents, elections, deadlines, residency, filing status, or local procedures. Do not rely on it to file, pay, amend, or take a tax position without review by a qualified professional in the relevant jurisdiction.
+
+---
+
+## Section 1 -- Quick Reference
+
+| Field | Value |
+|---|---|
+| Country | India (Republic of India) |
+| Currency | INR (Indian Rupee) |
+| E-Invoicing System | Invoice Registration Portal (IRP) under GST |
+| Governing Body | Goods and Services Tax Network (GSTN) / Central Board of Indirect Taxes and Customs (CBIC) |
+| Key Legislation | CGST Act 2017, Rule 48(4)/(5) of CGST Rules 2017, Notification 10/2023-CT |
+| Schema Standard | GST INV-01 JSON (proprietary schema, not UBL) |
+| Current Threshold | Aggregate Annual Turnover (AATO) > Rs 5 crore in any FY since 2017-18 |
+| Implementation Start | 1 October 2020 (phased rollout by turnover) |
+| Current Status | Fully operational; mandatory for AATO > Rs 5 crore since 1 August 2023 |
+| Approved IRPs (2026) | NIC (primary), Cygnet, Clear, IRIS, BDO, EY |
+| Filing Portal | einvoice1.gst.gov.in (production); einv-apisandbox.nic.in (sandbox) |
+
+### Turnover Phase-In Timeline
+
+| Turnover Threshold | Mandatory From |
+|---|---|
+| > Rs 500 crore | 1 October 2020 |
+| > Rs 100 crore | 1 January 2021 |
+| > Rs 50 crore | 1 April 2021 |
+| > Rs 20 crore | 1 April 2022 |
+| > Rs 10 crore | 1 October 2022 |
+| > Rs 5 crore | 1 August 2023 |
+
+---
+
+## Section 2 -- Mandate Scope
+
+### Who Must Comply
+
+- Any GST-registered taxpayer whose **aggregate annual turnover (AATO)** exceeded Rs 5 crore in **any financial year from FY 2017-18 onwards**
+- Once the threshold is crossed in any past year, the obligation is **permanent** even if current-year turnover drops below Rs 5 crore
+- Covers: B2B supply invoices, B2B credit notes, B2B debit notes, exports, supplies to SEZ units
+
+### Document Types Covered
+
+| Document | IRP Document Type Code |
+|---|---|
+| Tax Invoice | INV |
+| Credit Note | CRN |
+| Debit Note | DBN |
+
+### Exempted Categories
+
+- B2C invoices (not reportable to IRP)
+- SEZ units themselves (when issuing)
+- Insurance companies, banking companies, financial institutions, NBFCs
+- Goods transport agencies (GTA)
+- Passenger transport services
+- Cinema ticket admissions
+
+### Time Limit for Reporting
+
+| Taxpayer AATO | Reporting Deadline |
+|---|---|
+| > Rs 100 crore | Within 7 days of invoice date |
+| > Rs 10 crore | Within 30 days of invoice date (from 1 April 2025) |
+| Up to Rs 10 crore | No specific time limit (expected to extend) |
+
+After the deadline expires, the IRP permanently rejects IRN generation for that document.
+
+---
+
+## Section 3 -- Technical Format
+
+### Schema Specification
+
+| Aspect | Detail |
+|---|---|
+| Format | JSON (not XML) |
+| Schema Name | GST INV-01 |
+| Current API Version | v1.04 |
+| Character Encoding | UTF-8 |
+| Date Format | DD/MM/YYYY |
+| Decimal Precision | 2 decimal places for amounts |
+
+### JSON Structure (Top-Level Objects)
+
+```json
+{
+  "Version": "1.1",
+  "TranDtls": { },
+  "DocDtls": { },
+  "SellerDtls": { },
+  "BuyerDtls": { },
+  "DispDtls": { },
+  "ShipDtls": { },
+  "ItemList": [ ],
+  "ValDtls": { },
+  "PayDtls": { },
+  "RefDtls": { },
+  "AddlDocDtls": [ ],
+  "ExpDtls": { },
+  "EwbDtls": { }
+}
+```
+
+### IRN Generation Algorithm
+
+The IRN is a **64-character SHA-256 hash** computed by the IRP from four fields:
+1. Supplier GSTIN
+2. Financial Year (derived from invoice date)
+3. Document Type Code
+4. Document Number
+
+The taxpayer does NOT generate the IRN — the IRP returns it after successful validation.
+
+---
+
+## Section 4 -- Mandatory Fields
+
+### Transaction Details (TranDtls)
+
+| Field Path | Description | Values |
+|---|---|---|
+| TranDtls.TaxSch | Tax scheme | Always "GST" |
+| TranDtls.SupTyp | Supply type | B2B, SEZWP, SEZWOP, EXPWP, EXPWOP, DEXP |
+| TranDtls.RegRev | Reverse charge | Y / N |
+| TranDtls.IgstOnIntra | IGST on intra-state | Y / N |
+
+### Document Details (DocDtls)
+
+| Field Path | Description | Constraints |
+|---|---|---|
+| DocDtls.Typ | Document type | INV, CRN, DBN |
+| DocDtls.No | Document number | Max 16 chars, alphanumeric + / - |
+| DocDtls.Dt | Document date | DD/MM/YYYY, cannot be future date |
+
+### Seller Details (SellerDtls)
+
+| Field Path | Description |
+|---|---|
+| SellerDtls.Gstin | 15-char GSTIN |
+| SellerDtls.LglNm | Legal name (as per PAN) |
+| SellerDtls.Addr1 | Address line 1 |
+| SellerDtls.Loc | City/Location |
+| SellerDtls.Pin | 6-digit PIN code |
+| SellerDtls.Stcd | State code (01-37) |
+
+### Buyer Details (BuyerDtls)
+
+| Field Path | Description |
+|---|---|
+| BuyerDtls.Gstin | Buyer GSTIN (or URP for unregistered) |
+| BuyerDtls.LglNm | Legal name |
+| BuyerDtls.Pos | Place of supply (state code) |
+| BuyerDtls.Addr1 | Address line 1 |
+| BuyerDtls.Loc | Location |
+| BuyerDtls.Pin | PIN code |
+| BuyerDtls.Stcd | State code |
+
+### Item Details (ItemList[])
+
+| Field Path | Description |
+|---|---|
+| SlNo | Serial number (1-based) |
+| PrdDesc | Product description |
+| IsServc | Is service (Y/N) |
+| HsnCd | HSN/SAC code (min 4 digits; 8 digits if AATO > Rs 5 Cr) |
+| Qty | Quantity |
+| Unit | Unit of measurement (UQC code) |
+| UnitPrice | Unit price |
+| TotAmt | Total amount (Qty × UnitPrice) |
+| AssAmt | Assessable amount (after discount) |
+| GstRt | GST rate (IGST or CGST+SGST combined rate) |
+| IgstAmt / CgstAmt / SgstAmt | Tax amounts |
+| TotItemVal | Total item value including tax |
+
+### Value Details (ValDtls)
+
+| Field Path | Description |
+|---|---|
+| ValDtls.AssVal | Total assessable value |
+| ValDtls.IgstVal | Total IGST |
+| ValDtls.CgstVal | Total CGST |
+| ValDtls.SgstVal | Total SGST/UTGST |
+| ValDtls.TotInvVal | Total invoice value (INR) |
+
+---
+
+## Section 5 -- Transmission Method
+
+### API Integration (Recommended)
+
+| Parameter | Value |
+|---|---|
+| Production Base URL | https://einvapi.gst.gov.in |
+| Sandbox Base URL | https://einv-apisandbox.nic.in |
+| Auth Endpoint | /eivital/v1.04/auth |
+| Invoice Generation | POST /eivital/v1.04/Invoice |
+| Cancel IRN | POST /eivital/v1.04/Invoice/Cancel |
+| Get Invoice by IRN | GET /eivital/v1.04/Invoice/irn/{irn} |
+
+### Authentication
+
+| Header | Description |
+|---|---|
+| client-id | Issued by IRP on registration |
+| client-secret | Issued by IRP on registration |
+| user_name | Taxpayer's IRP portal username |
+| Gstin | Taxpayer's GSTIN |
+| AuthToken | Session token (valid 6 hours / 360 minutes) |
+
+Auth token must be refreshed after 6 hours. Use `ForceRefreshAccessToken: true` within last 10 minutes of token life.
+
+### Alternative Submission Methods
+
+1. **GSP/ASP route** — GST Suvidha Provider acts as middleware (recommended for 50+ invoices/day)
+2. **Bulk upload** — JSON file upload via IRP web portal (small-volume fallback)
+3. **Offline tool** — Excel-to-JSON converter on IRP portal (emergency/testing only)
+
+---
+
+## Section 6 -- Validation Rules
+
+### IRP Pre-Checks (Real-Time)
+
+1. GSTIN validity — both seller and buyer must be active GSTINs
+2. Duplicate check — combination of seller GSTIN + doc type + doc number + FY must be unique
+3. Date validation — invoice date cannot be future; cannot exceed time limit
+4. HSN validation — must exist in master; 8-digit for goods if AATO > Rs 5 crore
+5. Mathematical validation — line item totals must sum to document totals (tolerance: Rs 1)
+6. State code / PIN code consistency
+7. Tax rate validation — GST rate must be a valid rate (0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 14, 18, 28)
+
+### Common Rejection Reasons
+
+| Error Code | Description | Fix |
+|---|---|---|
+| 2150 | Duplicate IRN | Invoice already reported — check if IRN exists |
+| 2163 | Document date exceeds time limit | Cannot fix; issue fresh invoice with new number |
+| 2174 | GSTIN not enabled for e-invoicing | Verify IRP registration |
+| 2283 | HSN code invalid | Update to valid 4/6/8 digit HSN |
+| 2269 | Item value mismatch | Recalculate: TotAmt = Qty × UnitPrice |
+| 2287 | Total invoice value mismatch | Verify ValDtls.TotInvVal = sum of all components |
+
+---
+
+## Section 7 -- Tax Computation Rules
+
+### Tax Amount Calculation
+
+- **Intra-state supply**: Split into CGST + SGST (each = half of applicable GST rate)
+- **Inter-state supply**: Full IGST (= full applicable GST rate)
+- Place of supply (BuyerDtls.Pos) determines intra vs inter-state
+
+### Rounding Rules
+
+- All amounts rounded to 2 decimal places
+- Rounding tolerance at document level: Rs 1 (IRP accepts ±1 difference between sum of line items and document total)
+- Round each line item independently, then sum
+
+### Multi-Rate Invoice
+
+- Each line item carries its own GstRt
+- ValDtls aggregates all IGST/CGST/SGST across items
+- No restriction on mixing rates within a single invoice
+
+### Discount Handling
+
+- Discount applied at item level: AssAmt = TotAmt - Discount
+- Tax calculated on AssAmt (assessable amount), not gross amount
+
+---
+
+## Section 8 -- Archiving Requirements
+
+| Requirement | Detail |
+|---|---|
+| Retention Period | Minimum 6 years from due date of annual return (GSTR-9) for the relevant FY; 8 years recommended |
+| Format | Original JSON submitted + signed JSON returned by IRP (with IRN and QR) |
+| Digital Signature | IRP signs the returned payload with its private key; retain the signed response |
+| QR Code | Must appear on printed/PDF invoice; contains IRN, invoice date, supplier GSTIN, buyer GSTIN, invoice value, number of line items, HSN codes, unique hash |
+| Storage Medium | No specific medium mandated; must be producible on demand during audit |
+| GSTR-1 Linkage | IRP auto-pushes e-invoice data to GSTR-1; retain confirmation of auto-population |
+
+---
+
+## Section 9 -- Penalties for Non-Compliance
+
+| Offence | Penalty | Legal Basis |
+|---|---|---|
+| Issuing invoice without valid IRN when required | Rs 10,000 per invoice OR 100% of tax involved, whichever is higher | Section 122(1)(i) CGST Act |
+| Issuing incorrect or false invoice | Up to Rs 25,000 per invoice | Section 122(3) CGST Act |
+| Fake invoicing (invoice without actual supply) | 100% of tax evaded or ITC availed (min Rs 10,000) | Section 122(1)(ii) CGST Act |
+| General penalty (no specific clause) | Up to Rs 25,000 | Section 125 CGST Act |
+| Buyer consequence — ITC denial | Buyer cannot claim Input Tax Credit on invoice without valid IRN | Rule 48(5) CGST Rules |
+| Repeated default | GSTIN suspension possible | Section 29(2) CGST Act |
+
+### Cascading Impact
+
+An invoice without IRN is not a valid tax invoice under Rule 48(5). The buyer's ITC claim is denied, which creates commercial pressure on the supplier to comply.
+
+---
+
+## Section 10 -- Interaction with Tax Skills
+
+### GSTR-1 Auto-Population
+
+- IRP pushes validated e-invoice data to GSTR-1 the next day
+- Supplier does NOT need to manually enter these invoices in GSTR-1
+- If discrepancies exist between e-invoice and manually entered GSTR-1 data, the e-invoice data prevails
+
+### E-Way Bill Integration
+
+- If supply value > Rs 50,000 and goods are being transported, e-way bill can be generated in the same API call
+- Set EwbDtls fields (TransId, TransName, Distance, TransDocNo, TransDocDt, VehNo, VehType)
+- Single API call generates both IRN and EWB number
+
+### GSTR-2B / ITC Matching
+
+- Buyer's GSTR-2B auto-populated from supplier's e-invoices
+- Facilitates ITC matching and reconciliation
+- Discrepancies flagged automatically in GSTR-2B
+
+### Annual Return (GSTR-9)
+
+- E-invoice data feeds into annual return reconciliation
+- Auditors can cross-verify GSTR-9 figures against IRP-reported data
+
+---
+
+## Disclaimer
+
+This skill and its outputs are provided for informational and computational purposes only and do not constitute tax, legal, or financial advice. Open Accountants and its contributors accept no liability for any errors, omissions, or outcomes arising from the use of this skill. All outputs must be reviewed and signed off by a qualified professional (such as a CA, CPA, or equivalent licensed practitioner in your jurisdiction) before filing or acting upon.
+
+The most up-to-date, verified version of this skill is maintained at [openaccountants.com](https://openaccountants.com).
+
+---
+
+_Source: [OpenAccountants](https://openaccountants.com/skills/india-einvoice) — open tax Guides for AI, reviewed by named CPAs/CAs/EAs. Quality: **source-cited draft**. For always-current figures and named-accountant backing, connect the OpenAccountants MCP server (`openaccountants-mcp`)._

@@ -1,0 +1,68 @@
+---
+name: local-setup-and-run
+description: Explain and validate local setup paths for this repo with Docker and without Docker. Use when developers need exact prerequisites, startup commands, health checks, and troubleshooting steps.
+---
+
+# Local Setup And Run Skill
+
+## Mission
+
+Provide accurate, repo-grounded local run instructions for both Docker and non-Docker workflows.
+
+## Scope (strict)
+
+In scope:
+- setup/run documentation and runbook updates
+- command verification based on `README.md`, `justfile`, `just/`, `docker-compose.yml`, and `docker-compose.knowledge.yml`
+- prerequisites and dependency matrix guidance
+
+Out of scope:
+- modifying runtime feature code for APIs/UI
+- changing provider integrations unrelated to setup
+
+## Source of truth files
+
+- `README.md`
+- `justfile` and `just/*.just`
+- `docker-compose.yml`
+- `docker-compose.knowledge.yml`
+- env templates under `docker/*/*.env` (when present)
+
+## Required output sections
+
+1. Prerequisites (Docker path + non-Docker path).
+2. Docker quick start commands (recommended path).
+3. Optional knowledge-stack startup path.
+4. Non-Docker run path (`deps` + `run-*` commands).
+5. Health-check URLs/ports.
+6. Common failure modes and fixes.
+
+## Defaults to minimize interruptions
+
+- Prefer Docker flow as default recommendation.
+- Use Just recipes when available.
+- If non-Docker dependencies are missing, call them out explicitly (PostgreSQL/Redis/OpenSearch).
+
+## Lifecycle integration
+
+- `development-lifecycle` owns tier selection and the repository-level change contract.
+- Use `change-analysis` when ownership, consumers, or blast radius is not already proven.
+- This skill owns its domain evidence and boundaries; `developing-change` owns implementation discipline.
+- Use `debugging` for unexplained failures and `writing-documentation` for documentation changes.
+- Use `reviewing-change` for independent review and `responding-to-review` for its findings.
+- Use `preparing-delivery` only when the user explicitly requests a delivery action.
+
+## Governed lifecycle
+
+- Classify work as Fast, Standard, or Governed using `DEVELOPMENT_PROCESS.md`; use the full gated lifecycle only for Governed work.
+- This skill operates only in its assigned phase and path ownership; it may not approve its own plan or code review.
+- Governed repository edits start only from a coordinator-attested approved plan; Fast and Standard work follows its lighter documented lifecycle.
+- Return documentation and verification evidence to the coordinator, then route the complete verified diff to the read-only `code-reviewer`.
+
+## Validation commands
+
+- `just --list`
+- `just up-all`
+- `just up-all-with-knowledge`
+- `just deps run-web` (example non-Docker path)
+- `docker compose ps`

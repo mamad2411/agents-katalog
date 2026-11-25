@@ -1,0 +1,206 @@
+---
+name: package-spec
+description: >-
+  Package specification compliance for Elastic integration packages. Covers
+  manifest structure (format_version, conditions, variables, var_groups,
+  provider_permissions, routing rules), changelog schema and semantic version
+  bumps, and alignment with the upstream elastic/package-spec. Use when building
+  or reviewing manifest.yml, changelog.yml, or debugging elastic-package
+  lint/check errors on package metadata.
+license: Apache-2.0
+metadata:
+  author: elastic
+  version: "1.0"
+synced_from: sit-llm/knowledge/skills/manifest/
+---
+
+# package-spec
+
+## Skill authority
+
+The rules and patterns defined in this skill and its reference files are the **authoritative source of truth**. When examining existing integrations in the `elastic/integrations` repository for reference, you may encounter patterns that conflict with what is specified here -- many integrations contain legacy patterns that predate current standards. **Always follow this skill over patterns observed in other integrations.** If a reference integration uses a deprecated or prohibited pattern, do not copy it.
+
+## When to use
+
+Use this skill when tasks include:
+- building or reviewing `manifest.yml` at root or data stream level
+- adding or validating `changelog.yml` entries
+- selecting the correct change type and semantic version bump
+- configuring policy templates, inputs, and variable declarations
+- declaring `var_groups` or `provider_permissions` (schema and floors)
+- debugging `elastic-package lint` or `elastic-package check` errors on manifests or changelogs
+- reviewing variable scoping across package, policy template, input, and data stream levels
+- validating Handlebars template variables against manifest declarations
+- configuring routing rules and their required manifest flags
+- determining which `format_version` is needed for a package's features
+
+## When NOT to use
+
+- Package scaffolding and directory layout (`create-integration`)
+- End-to-end Federated Identity / Cloud Connectors enablement on an AWS package (`input-configurations` -> `references/federated-identity-aws.md`)
+- Ingest pipeline design (`ingest-pipelines`)
+- Field mapping and ECS compliance (`ecs-field-mappings`)
+- CEL programs (`cel-programs`)
+- Transform configuration (see `review-integration` skill's `references/transform-guide.md`)
+
+## Handoff
+
+For package directory layout and required files, see `create-integration` -> `references/package-layout.md`. For `elastic-package` CLI commands and troubleshooting, see `elastic-package-cli`. For enabling Federated Identity (Cloud Connectors) on an AWS integration, see `input-configurations` -> `references/federated-identity-aws.md`.
+
+---
+
+## format_version
+
+The `format_version` field in `manifest.yml` declares which [elastic/package-spec](https://github.com/elastic/package-spec) version the package conforms to. The current **default** for new packages is `"3.4.2"`.
+
+**Use the minimum version that supports the features the package actually uses**, not the latest available spec version. Bumping without needing new features:
+- forces users to run a newer Kibana than necessary
+- breaks backward compatibility for no reason
+- makes it harder to determine which features the package depends on
+
+Only bump when the package uses a feature introduced in a newer spec version:
+
+| Feature | Minimum format_version |
+|---------|----------------------|
+| Basic package structure | 1.0.0 |
+| Input-level variables | 2.0.0 |
+| `elasticsearch.privileges` | 2.3.0 |
+| `routing_rules.yml` support | 2.9.0 |
+| `lifecycle` field | 3.0.0 |
+| Secret variables (`secret: true`) | 3.0.0 |
+| `elasticsearch.source_mode` | 3.0.3 |
+| `var_groups` | 3.6.1 |
+| `provider_permissions` (Federated Identity IAM declarations) | 3.6.4 |
+
+**Justified exception — Federated Identity:** packages that declare `provider_permissions` (and typically `var_groups`) must use `format_version: "3.6.4"`. That bump activates 3.6.0+ pipeline validators; land pipeline hygiene first if lint surfaces pre-existing violations. See `references/var-groups-and-provider-permissions.md` and `input-configurations` -> `references/federated-identity-aws.md`.
+
+See `references/format-version-features.md` for the full feature-to-version table including recent spec additions (3.6.0+), and `references/manifest-rules.md` for the review procedure.
+
+---
+
+## conditions.kibana.version
+
+The current **default** constraint is `"^8.19.0 || ^9.1.0"`. This is set in the **root** `manifest.yml` only -- data stream manifests must NOT set their own `conditions`.
+
+When an integration uses features that require a newer agent (e.g., CEL functions introduced in v9.3.0), the constraint must be adjusted accordingly. For systematic version verification of CEL features, see the `review-integration` skill's version check references.
+
+**Justified exception — Federated Identity / `use_cloud_connectors`:** set `conditions.kibana.version` to `"^9.6.0"` and `conditions.agent.version` to `"^9.4.0"` (or higher). If the current Kibana constraint still covers a line that `^9.6.0` would drop, do **not** bump silently — escalate per **Floors and hygiene** in `input-configurations` -> `references/federated-identity-aws.md`.
+
+---
+
+## Variable scoping
+
+Fleet variables exist at four levels:
+
+1. **Package level** -- `manifest.yml` top-level `vars:`
+2. **Policy template level** -- `manifest.yml` under `policy_templates[].vars:`
+3. **Input level** -- `manifest.yml` under `policy_templates[].inputs[].vars:`
+4. **Data stream level** -- `data_stream/*/manifest.yml` under `streams[].vars:`
+
+A variable declared in an inner scope **must not** reuse the name of a variable in an outer scope. This is variable shadowing and is rejected by `elastic-package` validation.
+
+See `references/manifest-rules.md` -> **Variable shadowing** for full rules, examples, and common patterns.
+
+---
+
+## Manifest rules (brief)
+
+- **Every Handlebars `{{var}}` must be declared in a manifest** -- undeclared variables silently resolve to empty strings. Handlebars helpers (`{{#if}}`, `{{#each}}`, `{{#unless}}`, `{{#contains}}`) and built-in variables (`{{data_stream.type}}`, `{{data_stream.dataset}}`, `{{data_stream.namespace}}`, `{{output}}`) are exempt.
+
+- **Routing rules require dynamic flags** -- when a data stream uses `routing_rules.yml`, the data stream manifest must declare `elasticsearch.dynamic_dataset: true` and `elasticsearch.dynamic_namespace: true`.
+
+- **Use proper YAML nesting, not dotted keys** -- `elasticsearch.dynamic_dataset` as a literal key name creates a single flat key, not a nested object. Use nested `elasticsearch:` -> `dynamic_dataset:` structure.
+
+See `references/manifest-rules.md` for complete rules, correct/incorrect examples, and the review checklist.
+
+---
+
+## Changelog schema
+
+`changelog.yml` is a version-grouped array; newer versions go on top:
+
+```yaml
+- version: "1.2.0"
+  changes:
+    - description: Added example parsing for edge-case payloads.
+      type: enhancement
+      link: https://github.com/elastic/integrations/pull/12345
+```
+
+Each entry requires `description`, `type`, and `link`. Valid types: `enhancement`, `bugfix`, `breaking-change`.
+
+## Version bump rules
+
+- **patch** (`x.y.Z`): bug fixes and low-risk fixes
+- **minor** (`x.Y.z`): new content -- new data streams, new fields, new features
+- **major** (`X.y.z`): breaking changes -- field type changes or removals on existing integrations, ECS mapping conflicts, required config/auth changes that break existing policies, data stream restructuring, default behavior changes that alter collected or normalized data
+
+### When a bump is NOT required
+
+Internal metadata-only changes that do not alter what ships to users need **no version bump and no changelog entry**: `owner.github` reassignment, CODEOWNERS updates, CI/dev-tooling files outside the built package. Reviewers must not flag the absence of a bump for such diffs.
+
+Related bump conventions from elastic/integrations practice (see `review-integration/references/repo-conventions.md` for the dated details):
+
+- `owner.type` changes ARE published package metadata -- **minor** bump.
+- Adding the top-level `group:` manifest field -- **patch** bump + changelog entry.
+- Bot-authored `requires:` dependency bumps arrive with their own patch bump and changelog entry; never ask a human to redo or justify them.
+- `kibana.version` constraint updates are NOT breaking changes.
+
+### Changelog `type` calibration (for reviewers)
+
+Flag an entry's `type` only when the diff or the entry's own description shows an observable compatibility or behavior change: dropped stack support, dataset/field rename or removal, field type change, default-behavior change, policy-breaking config moves. Re-bucketing between `bugfix` and `enhancement`, or splitting/merging entries, is editorial judgment for the author -- not a review finding.
+
+## Adding changelog entries
+
+Edit `changelog.yml` directly, or use `elastic-package changelog add` (see `elastic-package-cli` skill for command flags and `--next patch|minor|major` usage).
+
+## Common changelog pitfalls
+
+- Adding the entry under the wrong version or not at the top
+- Missing or wrong `link` field -- the link must be the pull request URL of the PR that introduces the change (`https://github.com/elastic/integrations/pull/<n>`), not an issue URL. `elastic-package lint` only validates that the number is a positive integer and **rejects** `pull/0`; use a real PR number or `pull/99999` as a development placeholder and replace before merge. Review tooling recognizes placeholder shapes (a repeated digit such as `1` or `9999`, zeros, `99999`, `12345`) and CI fails any number other than the PR's own, so both keep flagging a placeholder until it is replaced -- that is expected pre-merge behavior, not noise
+- Bumping manifest/package version inconsistently with changelog intent
+- **Forgetting to swap the placeholder link back in** -- see below
+
+See `references/changelog-patterns.md` for detailed patterns, breaking-change checklist, and CI examples.
+
+## Updating the changelog link after PR creation
+
+The changelog `link` field must point to the PR that introduces the change, but the
+real PR number is only known once a PR has actually been opened -- everything up to
+that point necessarily uses the `pull/99999` placeholder from the pitfall above. This
+step is easy to skip because it happens *after* the rest of the package work is done,
+outside the usual build/test loop.
+
+Once the PR exists on GitHub:
+
+1. Get the real PR number (from `gh pr create` output or the PR URL).
+2. In `changelog.yml`, replace every placeholder link
+   (`https://github.com/elastic/integrations/pull/99999`) with
+   `https://github.com/elastic/integrations/pull/<real-number>`.
+3. Run `elastic-package lint` to confirm the link now validates.
+4. Commit and push the update to the same PR branch -- the placeholder must not be
+   present in the version that gets merged.
+
+---
+
+## Upstream: elastic/package-spec
+
+The [elastic/package-spec](https://github.com/elastic/package-spec) repository is the upstream authority for package structure, manifest schema, and validation rules. The `spec/changelog.yml` in that repo documents which features were added in each spec version.
+
+Key points from the package-spec versioning model:
+- Packages must specify `format_version` in root `manifest.yml`
+- A package at `format_version: x.y.z` must be valid against specs in the range `[x.y.z, X.0.0)` where `X = x + 1`
+- Patch versions may add stricter validations (e.g., 3.6.0 added pipeline tag and on_failure validation)
+- Minor versions add new feature support
+- Major versions are reserved for significant format changes
+
+See `references/format-version-features.md` for the curated feature-to-version table.
+
+## Reference files
+
+| File | Contains |
+|------|----------|
+| `references/manifest-rules.md` | Full rules for format_version selection, variable shadowing, Handlebars variable declarations, routing rules, YAML structure, and severity-tagged review checklist |
+| `references/changelog-patterns.md` | Changelog entry patterns, semver rules, breaking-change checklist, CI examples |
+| `references/format-version-features.md` | Feature-to-version table sourced from elastic/package-spec, including recent spec additions |
+| `references/var-groups-and-provider-permissions.md` | Schema for `var_groups` and `provider_permissions`, floors, validators; handoff to Federated Identity procedure |

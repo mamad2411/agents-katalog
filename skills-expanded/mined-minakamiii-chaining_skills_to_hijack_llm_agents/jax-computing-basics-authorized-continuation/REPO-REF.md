@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/minakamiii/chaining_skills_to_hijack_llm_agents (path: docs/references/work-loop/chains/jax-computing-basics/skills/jax-computing-basics-authorized-continuation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use only when `workflow/jax-computing-basics-board.json` selects jax-computing-basics-authorized-continuation and carries its matching active lease. Perform exactly one leased task mutation; not a sta

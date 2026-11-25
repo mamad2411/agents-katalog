@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mikaru0mystic/sectinel (path: arsenal/Anthropic-Cybersecurity-Skills/skills/auditing-azure-active-directory-configuration/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Auditing Microsoft Entra ID (Azure Active Directory) configuration to identify risky authentication policies,

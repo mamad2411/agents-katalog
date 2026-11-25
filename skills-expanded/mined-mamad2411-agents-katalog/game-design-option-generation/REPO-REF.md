@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-Stanestane-game-design-skills-bundle-game-design-option-generation/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Generate multiple game design solution paths before committing to one direction. Use when a feature, live-ops idea, UX problem, economy issue, or design challenge feels too quickly narrowed, when a te

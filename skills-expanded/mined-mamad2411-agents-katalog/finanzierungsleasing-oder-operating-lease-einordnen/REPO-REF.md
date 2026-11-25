@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-LegalSkillsKlotzkette/finanzierungsleasing-oder-operating-lease-einordnen/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Finanzierungsleasing oder Operating-Lease: Systematische Einordnung in Leasingrecht Praxis geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und R

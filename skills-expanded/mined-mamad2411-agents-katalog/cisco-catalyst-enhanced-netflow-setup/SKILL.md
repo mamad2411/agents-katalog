@@ -1,0 +1,217 @@
+---
+name: cisco-catalyst-enhanced-netflow-setup
+description: Use when installing or validating Cisco HSL/IPFIX mappings and Enhanced NetFlow dashboards in Splunk.
+compatibility: >-
+  Splunk Cloud Platform 10.5.2605: conditional. Follow documented package,
+  entitlement, topology, and customer-managed runtime guardrails; self-managed
+  paths use the separate Enterprise 10.6 compatibility contract.
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Cisco Catalyst Enhanced Netflow Add-on Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run setup, receiver planning, and validation | `bash --version && python3 --version` |
+| Splunk admin access | Install app ID 6872 | Confirm target-tier access |
+| Flow receiver owner | Supply decoded HSL/IPFIX | Name the Stream, SC4S, or external owner |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌────────────────┐   ┌───────────────┐
+│ Preflight │ → │ Plan receiver │ → │ Install add-on │ → │ Validate data │
+└───────────┘   └───────────────┘   └────────────────┘   └───────────────┘
+```
+
+## When to Activate
+
+- Install Splunk app ID 6872 for Cisco enhanced NetFlow mappings.
+- Map Cisco High Speed Logging (HSL) or IPFIX fields for companion dashboards.
+- Diagnose empty enhanced NetFlow panels after the base Cisco app is installed.
+
+## Scope
+
+This skill installs and validates mapping content. It does not create device
+export policies or silently replace the existing flow receiver. Keep exporter
+and receiver changes with their current owners.
+
+## Examples
+
+Preview the receiver planner before installation:
+
+```bash
+python3 skills/cisco-catalyst-enhanced-netflow-setup/scripts/stream_receiver_plan.py --help
+```
+
+Expected output: supported receiver and mapping options are listed without
+changing Splunk or network devices.
+
+Run the completion gate after mapped flow data is available:
+
+```bash
+bash skills/cisco-catalyst-enhanced-netflow-setup/scripts/validate.sh --completion
+```
+
+Expected output: app, source type, mapped-field, and dashboard evidence checks
+report `[PASS]`; missing flow evidence exits nonzero.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Empty dashboards | No compatible flow events | Validate exporter and receiver first |
+| Missing mapped fields | Unsupported source type | Align with the receiver plan |
+| Duplicate flows | Multiple receiver paths | Keep one ingest owner |
+| Installation fails | Package access or topology is unresolved | Use the rendered manual handoff and retry validation |
+
+## TA Completion Gate
+
+For every TA/add-on or dashboard companion run, satisfy the shared
+[TA completion gate](../shared/ta_completion_gate.md): configure and enable the
+data ingest path owned by this skill or its required companion, validate events
+or metrics in the target indexes/source types, and verify any
+pre-built/package-shipped dashboards are visible, macro-aligned, and returning
+data. If the package ships no dashboards, record that evidence explicitly and
+hand off dashboard use to the consuming app, ES/ITSI/ARI content, or readiness
+doctor.
+
+Automates installation and validation of the **Cisco Catalyst Enhanced Netflow
+Add-on for Splunk** (`splunk_app_stream_ipfix_cisco_hsl`).
+
+## Package Model
+
+**Pull from Splunkbase first (latest version), fall back to `splunk-ta/`.**
+Use `skills/cisco-catalyst-enhanced-netflow-setup/scripts/setup.sh --install`
+to install the add-on through the shared app installer. The script resolves the
+latest Splunkbase release for app ID `6872` and falls back to the local package
+cache when needed.
+
+This add-on is **optional**. It adds Cisco HSL/IPFIX element mappings for extra
+NetFlow-focused dashboards in Cisco Enterprise Networking. It does **not**
+create accounts, inputs, or indexes of its own.
+
+## Agent Behavior
+
+**The agent must NEVER ask for passwords or secrets in chat.**
+
+Splunk credentials are read automatically from the project-root `credentials`
+file (falls back to `~/.splunk/credentials`). If neither exists, guide the user
+to create it:
+
+```bash
+bash skills/shared/scripts/setup_credentials.sh
+```
+
+The agent may ask non-secret questions such as:
+- whether the user wants the optional NetFlow-focused dashboards
+- whether a NetFlow/IPFIX receiver already exists
+- whether the target is a standalone Splunk instance or a forwarder/heavy forwarder
+
+## Environment
+
+This add-on targets **forwarder-side or standalone Splunk deployments**. The
+package manifest declares `_forwarders` as the target workload.
+
+Run this skill against the Splunk instance that parses or receives the
+NetFlow/IPFIX data. In a hybrid environment that also has Splunk Cloud
+credentials, set:
+
+```bash
+export SPLUNK_PLATFORM=enterprise
+```
+
+before using this skill so the scripts target the forwarder-side management API
+instead of the Cloud search tier.
+
+| Item | Value |
+|------|-------|
+| Search-tier API | `SPLUNK_SEARCH_API_URI` env var (legacy alias: `SPLUNK_URI`) |
+| Preferred install target | Standalone Splunk or customer-controlled HF/UF |
+| App name | `splunk_app_stream_ipfix_cisco_hsl` |
+| Splunkbase ID | `6872` |
+| Credentials | Project-root `credentials` file (falls back to `~/.splunk/credentials`) |
+| Skill scripts | `skills/cisco-catalyst-enhanced-netflow-setup/scripts/` |
+
+## Setup Workflow
+
+### Step 1: Install The Add-on
+
+```bash
+bash skills/cisco-catalyst-enhanced-netflow-setup/scripts/setup.sh --install
+```
+
+This installs the optional add-on from Splunkbase first, then falls back to the
+local package cache in `splunk-ta/` if needed.
+
+### Step 2: Review The NetFlow Receiver Context
+
+```bash
+bash skills/cisco-catalyst-enhanced-netflow-setup/scripts/setup.sh
+```
+
+The setup script confirms that the add-on is installed and reports whether the
+same target also has `Splunk_TA_stream` configured with a NetFlow receiver.
+If the receiver still needs to be created, render the Stream handoff plan:
+
+```bash
+bash skills/cisco-catalyst-enhanced-netflow-setup/scripts/setup.sh \
+  --stream-receiver-plan \
+  --forwarder-ip 10.0.10.25 \
+  --splunk-web-url https://splunk.example.com:8000 \
+  --netflow-ip 0.0.0.0 \
+  --netflow-port 9995
+```
+
+The handoff uses `splunk-stream-setup` because `Splunk_TA_stream` owns the
+NetFlow/IPFIX receiver settings.
+
+### Step 3: Validate
+
+```bash
+bash skills/cisco-catalyst-enhanced-netflow-setup/scripts/validate.sh --completion
+```
+
+Checks: app installation, Stream forwarder context, NetFlow receiver settings,
+and optional consumer apps.
+
+## What This Add-on Does
+
+- Ships static IPFIX mappings in `default/ipfixmap.conf`
+- Ships Cisco HSL field metadata in `default/cisco.hsl.json` and `default/cisco.hsl.xml`
+- Requires a Splunk restart after install
+- Does not expose custom REST handlers, account stanzas, or input stanzas
+
+## Key Learnings / Known Issues
+
+1. **No app-local setup surface**: There are no accounts or inputs to configure
+   inside this add-on. Installation plus receiver-path planning/validation is
+   the real workflow.
+2. **Forwarder-side target**: The package manifest targets `_forwarders`, so do
+   not treat this like a Cloud search-tier app.
+3. **Existing NetFlow path required**: This add-on only contributes field
+   mappings. Receiver creation is delegated to the generated
+   `splunk-stream-setup` handoff.
+4. **Stream alignment matters**: If the host should receive NetFlow/IPFIX,
+   render the Stream receiver plan and run it against the forwarder-side target.
+5. **Dashboard consumption is optional**: The add-on is most often used to add
+   extra dashboard coverage for `cisco-catalyst-app`, but it can be installed
+   independently on the parsing tier.
+
+## Additional Resources
+
+- [reference.md](reference.md) — package contents, topology, and validation notes
+
+## Validation Modes
+
+Run `scripts/validate.sh` for diagnostics. Use `--completion` (alias `--strict`)
+on the Stream parsing target to require the Stream forwarder and NetFlow/IPFIX
+receiver address, port, decoder configuration, and `stream:netflow` event
+evidence in the `netflow` index. Override those defaults with `--index` and
+`--sourcetype` when the Stream deployment routes data elsewhere.

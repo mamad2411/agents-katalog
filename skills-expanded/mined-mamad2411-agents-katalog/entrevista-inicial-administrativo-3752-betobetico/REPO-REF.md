@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ThomasMoreAI-legal-skills-open/entrevista-inicial-administrativo-3752-betobetico/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Ejecuta la entrevista de configuración inicial del plugin de derecho administrativo. Aprende tu práctica y escribe CLAUDE.md a partir de tus procedimientos habituales, experiencia en contratación públ

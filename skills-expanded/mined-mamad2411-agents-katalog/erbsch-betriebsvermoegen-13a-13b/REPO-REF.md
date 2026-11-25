@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/19135-erbsch-betriebsvermoegen-13a-13b/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Erbschaftsteuerliche Verschonung Betriebsvermoegen — Paragrafen 13a 13b ErbStG in Steuerrecht – Steuerberater und Anwälte geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahm

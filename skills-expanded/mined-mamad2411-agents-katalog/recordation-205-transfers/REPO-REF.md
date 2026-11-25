@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/13412-recordation-205-transfers/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Recordation Paragraf 205 Transfers in US Copyright Act und Registrierung für deutsche Verlage geht: ordnet Sachverhalt, Norm, Beweislast, Gegenargumente und nächsten Schritt; liefert ein di

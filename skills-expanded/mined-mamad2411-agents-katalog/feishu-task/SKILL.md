@@ -1,0 +1,88 @@
+---
+name: feishu-task
+description: When 飞书任务 (tasks/todos) need managing → CRUD tasks, subtasks, and task lists.
+triggers:
+  intent_patterns:
+    - "任务|待办|task|todo"
+    - "创建任务|完成任务|任务清单|子任务"
+    - "帮我.*记一下|note.*this|加.*待办|add.*todo"
+    - "我.*要做|I need to|还有.*没做|not.*done.*yet"
+    - "分配.*任务|assign.*task|指派|delegate.*to"
+    - "任务.*进度|task.*progress|完成.*情况|completion.*status"
+    - "今天.*要做|today.*todo|优先级|priority|截止.*日期|deadline|due.*date"
+  context_signals:
+    keywords: ["task", "任务", "待办", "todo", "subtask", "tasklist", "进度", "优先级", "截止", "分配", "deadline", "priority"]
+  confidence_threshold: 0.5
+priority: 9
+requires_tools: [bash]
+max_tokens: 300
+cooldown: 15
+---
+
+# Feishu Task Skill
+
+## 快速索引
+
+| 用户意图 | module | tool_action | 必填参数 |
+|---------|--------|-------------|---------|
+| 列出任务 | task | list | - |
+| 创建任务 | task | create | summary |
+| 更新任务 | task | update | task_id + 字段 |
+| 删除任务 | task | delete | task_id |
+| 列出子任务 | task | list_subtasks | parent_task_id |
+| 创建子任务 | task | create_subtask | task_id, summary |
+
+## 调用示例
+
+### 创建任务
+
+```bash
+python3 skills/feishu-cli/run.py '{
+  "action": "tool",
+  "module": "task",
+  "tool_action": "create",
+  "summary": "完成 Q1 OKR 回顾",
+  "due_date": "2026-03-15",
+  "description": "回顾 Q1 各项 KR 的完成情况",
+  "assignee_ids": ["ou_xxx"]
+}'
+```
+
+### 列出任务
+
+```bash
+python3 skills/feishu-cli/run.py '{"action":"tool","module":"task","tool_action":"list"}'
+```
+
+### 完成任务
+
+```bash
+# 通过 complete 动作直接标记完成（推荐）
+python3 skills/feishu-cli/run.py '{
+  "action": "tool",
+  "module": "task",
+  "tool_action": "complete",
+  "task_id": "t_xxx"
+}'
+```
+
+### 创建子任务
+
+```bash
+python3 skills/feishu-cli/run.py '{
+  "action": "tool",
+  "module": "task",
+  "tool_action": "create_subtask",
+  "task_id": "t_xxx",
+  "summary": "整理 KR1 数据"
+}'
+```
+
+## 核心约束
+
+- **需要 user OAuth token**：task 模块操作基于用户身份，需先完成 OAuth 授权（`auth oauth_url` → 登录 → `auth exchange_code`）
+- **due_date 格式**：支持 `"2026-03-15"` 或 `"2026-03-15 18:00"` 等字符串
+- **assignee_ids**: 指派人 open_id（`ou_` 开头），数组格式
+- **任务状态**: 完成用 `complete` 动作；撤销完成用 `uncomplete` 动作；`update` 不支持 status 字段
+- **只能操作有权限的任务**：作为成员的任务
+- **重复规则**: 只有设置了截止时间的任务才能设置重复规则

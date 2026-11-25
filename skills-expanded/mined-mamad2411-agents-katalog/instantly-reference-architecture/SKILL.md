@@ -1,0 +1,90 @@
+---
+name: instantly-reference-architecture
+description: >-
+  Design an Instantly API v2 integration with tenant isolation, durable jobs, webhooks, and governance boundaries. Use when choosing system boundaries before implementation or reviewing an existing design. Trigger with "design an Instantly architecture", "review Instantly tenant isolation", or "plan an Instantly integration platform".
+argument-hint: "[system-context-path]"
+allowed-tools: Read, Glob, Grep, WebFetch, Write, Edit
+version: 1.13.0
+author: Jeremy Longshore <jeremy@intentsolutions.io>
+license: MIT
+tags:
+- saas
+- instantly
+- reference-architecture
+model: inherit
+effort: high
+compatibility: Designed for Claude Code; live verification requires network access and an approved Instantly workspace and API v2 key
+---
+# Instantly Integration Reference Architecture
+
+## Overview
+
+Produce a repo-grounded architecture that separates control-plane approvals from outreach mutations. Record assumptions, evidence, approval state, and rollback ownership so another operator can reproduce the result.
+
+## Prerequisites
+
+- The target repository, Instantly workspace, environment, and accountable owner
+- Current security, privacy, compliance, capacity, and change-control requirements
+- An approved API v2 key only when a bounded live verification is necessary
+
+## Tool Discipline
+
+Use `Read`, `Glob`, and `Grep` to inspect code, configuration, and evidence. Use `WebFetch` only for current first-party Instantly documentation and package metadata. Use `Write` or `Edit` only when implementation was requested and exact target files are known; never write credentials, lead data, email content, or unrestricted environment output.
+
+## Current Contract
+
+- Use official API v2, the beta TypeScript SDK when appropriate, or the official CLI/MCP deliberately.
+- Model workspace-wide throttling, cursor pagination, background jobs, and webhook delivery as first-class components.
+- Keep campaign activation, account connection, key changes, and data deletion behind separate approvals.
+
+## Authentication
+
+Use an API v2 key as `Authorization: Bearer <key>` against `https://api.instantly.ai/api/v2`. Grant only the endpoint-specific scopes needed, inject the key from an approved server-side secret manager, and never print, persist, commit, or place it in a URL. Treat key creation, rotation, revocation, member changes, workspace delegation, and production access as owner-approved actions.
+
+## Instructions
+
+1. Map callers, workspaces, data stores, queues, secret managers, webhook receivers, and owners.
+2. Define a typed client boundary with scoped authentication, redaction, timeouts, and rate control.
+3. Separate read models, command handlers, background-job polling, and webhook idempotency.
+4. Define tenant/workspace identity checks and x-as-workspace safeguards.
+5. Trace lead and email data through retention, suppression, audit, and deletion controls.
+6. Deliver topology, failure paths, capacity assumptions, approval boundaries, and rollback.
+
+## Approval Boundaries
+
+Do not create, rotate, reveal, or revoke keys; invite or remove members; delegate across workspaces; connect sending accounts; create or activate campaigns; import or delete leads; change suppression or retention; register, patch, resume, or delete webhooks; alter plans or paid capacity; transmit diagnostics; or perform another production mutation without explicit approval from the accountable owner. Keep diagnosis read-only unless implementation was requested.
+
+## Output
+
+Return the workspace-safe scope, files and contracts inspected, exact API v2 routes and required scopes, evidence collected, validation result, sensitive fields redacted, remaining risk, accountable owner, approval state, and rollback or next action.
+
+## Error Handling
+
+| Condition | Response |
+|---|---|
+| `401` | Stop and verify that the bearer key exists, is current, and was not revoked. |
+| `403` | Stop and compare the operation with its exact required scope; do not broaden to `all:all` by default. |
+| `429` | Coordinate the workspace-wide budget, honor endpoint overrides, and bound retries. |
+| Schema or tenant mismatch | Fail closed, preserve redacted evidence, and do not retry a mutation. |
+
+## Examples
+
+Use a compact handoff that makes scope, mutation authority, and evidence reviewable.
+
+Input:
+
+```text
+system=outreach-orchestrator; workspaces=3; mutations=approval-gated
+```
+
+Expected handoff:
+
+```text
+artifacts=context-map,sequence,failure-table,rollback
+```
+
+## Resources
+
+- [Skill-specific official documentation](references/official-docs.md)
+- [Instantly API v2 documentation](https://developer.instantly.ai/)
+- [Instantly API v2 OpenAPI document](https://api.instantly.ai/openapi/api_v2.json)

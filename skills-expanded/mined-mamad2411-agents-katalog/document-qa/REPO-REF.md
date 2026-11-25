@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/document-qa/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 文档问答流程，基于知识库文档回答问题，提供引用和置信度

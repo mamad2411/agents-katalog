@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-agent-skills-hub-agent-skills-hub/multi-platform-apps-multi-platform/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Build and deploy the same feature consistently across web, mobile, and desktop platforms using API-first architecture and parallel implementation strategies."

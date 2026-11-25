@@ -1,0 +1,174 @@
+---
+name: keel-continue
+description: Work out what this session should do NEXT and continue from it — resume half-done work, or pick up the lane's newly assigned task, or report that there is nothing to do and go idle. Cross-checks the auto-loaded memory against PLAN.md + git. Role-aware: read-only in a worker/solo session (so any session type may run it); in the ORCHESTRATOR it also SYNCS worker boards into the shared files, ROUTES what waits in Review and ASSIGNS the next item — §10.42 makes it their sole writer.
+---
+
+# /keel-continue — decide what this session does next, then do it
+
+When: at session start, after a compaction, after `--resume`, when a message from another session
+wakes this one, or any time "what should I be doing?" needs an ACTIVE answer. The SessionStart hook
+only REMINDS you what to re-read; this skill does the reading, cross-checks it against reality (git),
+and ends in exactly one of three verdicts.
+
+(Renamed from `/keel-start` in v0.8.28: it answers more than "how do I start" — resuming, taking new
+work, and going idle are the same decision, taken from the same evidence.)
+
+**Read-only in a worker/solo session** — it writes no file there, so EVERY session type may run it:
+owner, developer, co-agent (rules §10.42 walls co-agents off the WRITE rituals; this isn't one).
+**The ORCHESTRATOR branch (§3) is the exception and it is deliberate:** syncing boards, routing reviews
+and assigning work are writes only the orchestrator may make (§10.42), and no other skill carries them —
+so an orchestrator that ends this skill having only *described* a non-empty queue has stopped halfway.
+
+## 1. Gather — cheap, no double-reads
+`CLAUDE.md` `@`-imports HANDOVER.md · LESSONS.md · TASKS.md · rules.md, re-injected from disk after
+every compaction — they are ALREADY in context: do not re-Read them wholesale. Exception: if
+`git status` shows one of them MODIFIED (this session's earlier writes, or a parallel co-agent's —
+§10.42), re-Read that file: the imported copy predates the edit. Then read only what is NOT auto-loaded:
+- `PLAN.md` — the wip phase, its gate, _Current focus_ (skip if the project doesn't use PLAN).
+- `git log --oneline -10` + `git status` — what actually landed vs. what is in flight; uncommitted
+  edits are the surest marker of a half-finished item.
+- Multi-user (`.claude/project-owner` exists): note `git config user.name` — the brief scopes to
+  YOUR `@tag` items; foreign-owned work is surfaced, never picked up (TASKS ownership).
+- Agent-team session (the reground hook injected "this session is @<agent>"): scope the brief to
+  that agent's `### <agent>` lane and charter paths; re-adopt the identity silently
+  (see `/keel-agent-team-start` — do not re-run it when the hook already named you).
+
+## 2. Cross-check — the 60-second drift pass
+- HANDOVER top block vs `git log`: do its (c)/(d) lines still describe HEAD? A block that predates
+  the last ~10 commits is suspect — flag it as stale in the brief instead of trusting it (§1.4).
+- TASKS `## Now` vs `git status`: which open item owns the uncommitted files? That item is the
+  resume point — name its next micro-step from the actual diff, not from memory.
+- Fold in whatever the SessionStart hook already flagged (caps, overdue `due:`, Review queue,
+  missing evidence files, stale Discovered) — don't re-derive it, don't drop it.
+
+## 3. Decide — exactly one of three verdicts
+
+Take them in order; the FIRST that matches wins.
+
+1. **RESUME** — uncommitted work, or an open `## Now` item that is yours and already started.
+   Continue it. Name the next micro-step from the actual diff, not from memory.
+2. **TAKE** — nothing in flight, but your lane has an assigned, unblocked item. Do NOT open the
+   editor: go to the §10.41 **comprehension gate** first — read the spec's `## Required reading`
+   (the 3–5 artifacts THIS task needs: relevant ADRs, doc sections, scoped rules — read those,
+   never the whole `docs/adr/` tree "to be safe"; no spec? route via `LESSONS.md ## Index` + the
+   ADR README's `when:` column) and its `## Comprehension log` (an answered question is never
+   re-asked), then brief the task and answer 2–3 questions that are specific to THIS task's
+   done-when. Work starts after that, not before.
+   **Then measure the PREMISE — the gate proved you understood the task, not that it is TRUE.**
+   Before the first line of code, run the cheapest READ-ONLY check of the claim the task rests on
+   (grep the file that supposedly lacks the field, run the test that supposedly fails, read the
+   endpoint that supposedly returns TR). Three outcomes: it holds → build; it is already done → the
+   delivery is that measurement, `closed refuted`; it holds elsewhere → say WHERE and stop, do not
+   silently retarget the task. Whoever assigned it is not the authority on the premise — the
+   measurement is. Record it in the spec's `## Premise`.
+   **A CLASS-shaped task (§10.39) starts with a SURFACE SEARCH instead:** if the done-when is a
+   property that must hold everywhere (a language, a permission, a unit), grep for every surface that
+   carries it, list them in the spec, and make that list the done-when — otherwise you will fix one
+   surface per round and the owner will find the next one by testing.
+3. **IDLE** — nothing in flight and nothing assigned. Say so plainly and STOP. Do not invent work,
+   do not poll in a loop, do not sleep: on an agent team the orchestrator wakes this session with a
+   message when there is something to do, and that wake re-runs SessionStart, so the identity and
+   memory come back from disk on their own (measured 2026-08-19 —
+   docs/steering.md "Agent teams: how a waiting agent gets woken"). Idle is a legitimate end state.
+
+### If this session is the ORCHESTRATOR
+The verdicts differ, because the orchestrator takes no work items of its own (§10.42):
+1. **SYNC** — any `reports/team/*/board.md` newer than `TASKS.md` (the reground hook counts them):
+   read the boards, then write the shared files — statuses and `## Review` moves into TASKS,
+   findings into LESSONS with `@<name>` attribution, index lines into `reports/team/README.md`.
+2. **ROUTE** — anything sitting in `## Review`: routing is yours alone (a deliverer never picks its
+   own reviewer). **First apply the TIER the item was assigned at (§10.41):** a T0 (measurement ·
+   doc · 0 product code) or T1 (product code, behaviour unchanged) delivery does not belong in
+   `## Review` at all — run its done-when ONCE, close it, and its one-liner goes straight to the
+   index + HANDOVER (a). Only T2 (behaviour/number changes · security · ADR-touching · contracts ·
+   prompts) gets routed review + the owner's half. Delegate the mechanical half to the `verifier`
+   subagent (or to a routed review session when the deliverer's policy closes sub-agents); keep the
+   owner's list to what only a human can do — and **SLICE that list before handing it over:** group
+   the items that close on the SAME observation (one question, one screen, one restart serves all
+   of them), write each item's OBSERVATION line (what the owner should SEE, not PASS/FAIL), and check
+   the partition SUMS to the item count. Field measurement: 17 items → 6 questions + 3 desk lines,
+   because the axis that splits an owner round is the QUESTION, not the item.
+   **The owner's step must be able to FAIL.** Each owner line names the string that should appear on
+   screen AND the one that means FAIL — "is it visible?" is not a step (a new section satisfies it
+   whatever the fix did). **Rehearse it first:** before a live step reaches the owner, the reviewing
+   session runs it on the real stack/model with TWO DIFFERENT inputs of the same shape — never the
+   owner's exact input, because learning memories and caches learn from the rehearsal and turn the owner's
+   round into a cache hit. Input 1 fails → the step goes back to its lane, not to the owner; a
+   behaviour that could not be produced goes as "not produced in rehearsal", never as an expected
+   PASS. Field: the first time a gate met a real model sentence was on the owner's screen.
+   **Boundary sweep on every T2 before the owner sees it** (findings, not a fix round): the smallest
+   and largest value of any limit argument · a value that does not exist · the same concept in a
+   second spelling (case, language, underscore) — through the entry point the USER hits, not a
+   hand-written twin of it.
+   **Round cap — the third FAIL stops the patch loop.** When the same item comes back FAIL for the
+   third time, do not queue r4: reopen the APPROACH — is this an epic (§10.40), is the layer wrong,
+   does it need an owner desk decision or an `observer` look? Each round closing one escape while the
+   review finds the next is the signature of patching an open class with a closed list. Field: two
+   items ran to r9 and r11 on hand-written grammar rules, every round correct, the class never closed.
+   **One channel to the owner:** desk decisions reach the owner through the ORCHESTRATOR only; lanes
+   (the reviewer included) MEASURE the options and hand them up, and bring the owner nothing but live
+   test steps. Two channels ask the same question twice.
+   **EPIC step-over:** if the round closed an `E-<name>/<n>` sub-item, READ the epic's body (its ADR
+   or spec) before anything else, update it from what was learned, then open `E-<name>/<n+1>` or
+   close the epic. An epic whose body is not re-read at each close becomes a stale plan — this
+   project's most frequent defect, in the field, was stale item text.
+3. **ASSIGN** — a lane is free OR its queue is <2 deep, and `## Next` has work for it: allocate the next id in that lane's
+   series (§9.32) and tell the worker. **How you actually reach one:** resolve its address with
+   `python3 .claude/team-addresses.py` (identity ≠ address — a reopened window can be live but
+   unnamed), then `SendMessage` with `to:` set to that NAME. The message is a POINTER — id, spec
+   path, done-when, `## Required reading` — the delivery itself is the file (§10.40); a wake with no
+   file behind it gives the worker nothing to resume from after its next compaction.
+   **Write the task's PREMISE and say where it came from** — "owner said X" · "RV12 measured X" ·
+   "I inferred X from Y". That attribution is the whole point: an inference of yours is the assignee's
+   FIRST thing to measure, and a premise you cannot source you have probably invented. Field: 26
+   deliveries in one project refuted their assignment's premise, some after a full lane round spent
+   reproducing an invented one. A refuted premise costs one cheap read; an invented one costs a round.
+   Mark the premise `H:` in the item text — it is a hypothesis, not a fact — and write the item's
+   TIER (T0/T1/T2, §10.41) on the line: the tier decides how much ceremony the delivery gets.
+   **An item proposal carries four things before it reaches the board:** the problem in one sentence
+   (the owner's words verbatim if they said it) · a SURFACE COUNT found by search, not memory (does the
+   product already have this kind of surface? then the item IMPROVES it, it does not add one) · the
+   owner step written so it CAN fail · the tier. Field: an item that named no surface added a fourth
+   progress section where the owner wanted the existing three improved — rejected, and the product
+   was not at fault, the item was. A project may add the owner's approval before an item is written
+   (team boards often do); record that choice in the orchestrator's charter.
+   **Keep every lane's queue ≥2 deep** (the running item + the next one): a worker's LAST step on a
+   delivery is to take its next item, so it must already be on the board — a lane that delivers and
+   waits for a message is a lane the owner has to hand-crank (field: four lanes idled that way for a
+   weekend). Nothing left to queue for a lane? Say so to the owner in the brief ("lane X empty") —
+   an empty lane is information, a silent one is a stall.
+   **Before calling a lane "free", check the MAPPING, not `/list-agents` names** (field case
+   2026-08-19): `.claude/agent-team-sessions`' date column is a last-seen heartbeat, touched by the
+   reground hook on every resolve — grep the lane's agent there. A line dated within ~2 days means
+   a session is quietly alive; `/list-agents` failing to show a reachable name for it is an
+   ADDRESSING problem (the client-side display name reset — e.g. a VS Code restart — while the
+   session and its identity mapping stayed intact), not proof the worker died. Message the lane's
+   last-known name first; only treat the lane as truly free once the heartbeat itself has gone
+   stale. Never assign the SAME lane to a second freshly-adopted session while its heartbeat is
+   recent — that is the double-ownership risk the start skill's double-claim guard exists for.
+4. **IDLE** — none of the above. Report the board state in one line and stop; a worker's delivery
+   message will wake this session.
+
+## 4. Brief, then act
+Reply with a four-part brief, one screen max:
+1. **Where you left off** — wip phase + one-line status.
+2. **In-flight** — the half-done `## Now` item: what's already done on it, the next micro-step.
+3. **Warnings** — only what changes today's plan (test status, overdue items, Review queue waiting,
+   cap overflows, stale handover). Nothing to warn = say "none".
+4. **Next step** — the verdict from §3 and ONE concrete action; then start it. On IDLE,
+   the next step is "waiting for an assignment" — that is a complete answer, not a failure.
+
+**As the orchestrator the brief has a different shape** — you own no in-flight item, so parts 1–2
+are the BOARD, not your work: (1) **Lanes** — who is on what, plus any lane whose heartbeat has gone
+stale; (2) **Queues** — what waits in `## Review`, what is unrouted, which `board.md` files are newer
+than TASKS; (3) **Warnings** as above; (4) **Next step** — the SYNC/ROUTE/ASSIGN verdict and the ONE
+action, *then perform it*: the sync writes the shared files, the routing and assignment messages go
+out. Reporting a non-empty queue and stopping is not a completed run.
+
+Resuming a half-done item continues directly; STARTING NEW work first verifies tests pass
+(CLAUDE.md session protocol). If the memory files contradict each other or git, surface the
+conflict in the brief and ask which wins (§10.36) — never silently pick a side.
+
+Boundaries: a worker/solo run writes nothing (blocks/board/lessons are `/keel-handover`'s and
+`/keel-distill`'s job; the orchestrator's SYNC/ROUTE/ASSIGN writes are the §3 exception) ·
+never auto-picks a foreign-owned item · never flips PLAN statuses (that's `/keel-phase-review`).

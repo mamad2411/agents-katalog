@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-open-legal-products-mike-workflows/compare-documents/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Compare the uploaded documents in a structured table, highlighting key similarities, differences, risks, and follow-up points."

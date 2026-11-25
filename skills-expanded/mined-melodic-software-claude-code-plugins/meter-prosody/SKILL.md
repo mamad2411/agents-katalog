@@ -1,0 +1,101 @@
+---
+description: "Make structure serve meaning with Pat Pattison's methods: meter (scansion, Paradigms I/II/III, Pentad, Goldilocks, the 'into' rule, In Memoriam, pitch-stress), prosody (motion-emotion, greedy spots, tone-of-voice, three phrasing types), section stability and lyric-melody fit. Use when: 'scan this line', 'can this be common meter', 'is this verse stable or unstable', 'my words don't fit the music', 'greedy spot in line 2', 'set lyrics to this tune', 'does my song feel right'. For song sections/form use /songwriting:song-form; for rhyme use /songwriting:rhyme."
+argument-hint: "[meter|prosody|phrasing|stability|align-melody] [args]"
+user-invocable: true
+disable-model-invocation: false
+---
+
+**Arguments.** `[meter|prosody|phrasing|stability|align-melody] [args]`. e.g.,
+/songwriting:meter-prosody meter "...", /songwriting:meter-prosody stability chorus. Full actions in
+body.
+
+## Mandatory pre-flight. Response Filter
+
+Before emitting a scansion verdict, stability call, phrasing judgment, or any rewrite, run
+**§3 Critique filter** of [response-filter](../../context/pat-pattison/research/response-filter.md)
+(add **§2 Line-writing** when producing lines). Name each box's pass / fail / skip-with-reason
+(aloud or in reasoning); correct before emission. Skips are valid; silent skips are not.
+
+§3 is the filter for findings delivered on a draft, which is what this skill emits. §6 Form is not
+the gate here: its boxes decide song shape (chorus versus refrain, whether a bridge is needed), and
+this skill's own boundary forbids it from making that call.
+
+## Purpose
+
+Scope: whether the number, placement and stress of syllables, and the stability of each section,
+support the meaning and emotion.
+
+Method content is Pat Pattison's, under the plugin-root `../../context/pat-pattison/`; a future
+author's method plugs in at `context/<author>/` without changing this skill, the author seam per
+the plugin-root `../../README.md` "Method content and the author seam".
+
+## Action Router
+
+`/songwriting:meter-prosody <action> [args]`. Parse `$ARGUMENTS`: first token = action when it
+matches a listed action, remainder = args; otherwise treat all of `$ARGUMENTS` as payload for the
+default. No action → route on context (a pasted line → `meter`; a "does this feel right" →
+`stability`).
+
+| Action | Use when the user asks for | Load |
+| --- | --- | --- |
+| `meter` | scansion, tetrameter, common meter, stress, Paradigms, Pentad, Goldilocks, 'into' rule, In Memoriam, pitch-stress | [meter](../../context/pat-pattison/research/meter.md) |
+| `prosody` | whether structure supports meaning, motion, greedy spots, tone-of-voice | [prosody](../../context/pat-pattison/research/prosody.md), [meter](../../context/pat-pattison/research/meter.md), [stable-unstable-meta](../../context/pat-pattison/research/stable-unstable-meta.md) |
+| `phrasing` | the three phrasing types, front/back-heavy lines, breath and pacing | [phrasing](../../context/pat-pattison/research/phrasing.md), [meter](../../context/pat-pattison/research/meter.md), [prosody](../../context/pat-pattison/research/prosody.md) |
+| `stability` | section-level stable/unstable scan, "does my song feel right" | [stable-unstable-meta](../../context/pat-pattison/research/stable-unstable-meta.md) |
+| `align-melody` | lyric-melody mismatch, setting words to a tune, roadmap problems, greedy spots, fitting a replacement line to a demo's or cover's sung melody | [lyric-melodic-roadmaps](../../context/pat-pattison/research/lyric-melodic-roadmaps.md), [phrasing](../../context/pat-pattison/research/phrasing.md), [prosody](../../context/pat-pattison/research/prosody.md), [meter](../../context/pat-pattison/research/meter.md) "fitting a replacement line to an already-sung melody" |
+
+## Handlers
+
+- Scan concretely: mark stresses, name the paradigm, and say what the meter does for the meaning,
+  not scansion for its own sake.
+- Stability is a tool, not a verdict: name whether a section reads stable or unstable and whether
+  that serves the section's job; the writer chooses.
+- Stress-alignment failures route through `align-melody` + `prosody`. Name the frame, because the
+  scope differs:
+  - **Lyric against a model lyric** (matching verse 2 to verse 1): "greed" is one-directional: a
+    stressed syllable forced into a position the model leaves unstressed. The chapter's other
+    failure, "too cold," is **not** a mirror-image stress error and not a stress error at all: the
+    stresses land correctly and the strong positions carry filler. No stress check finds it, so do
+    not scan for it; read what stands on each strong position instead.
+  - **Lyric against a melody**: a mismatch in *either* direction is a greedy spot, a stressed
+    syllable on a weak beat or an unstressed syllable riding a strong one. Both distort the natural
+    shape of the language.
+- Replacement lines over an already-sung melody (demo, cover, AI-generated track) get a
+  **positional template** first: the sung line's syllables numbered with its stressed slots
+  bracketed, per [meter](../../context/pat-pattison/research/meter.md) "fitting a replacement line
+  to an already-sung melody". Matching the stress count is not fitting: the positions are the
+  template, and the singer's actual phrasing outranks the inferred grid. This skill emits the
+  template, never the fitted line; the line goes to `/songwriting:co-write` per the boundary table
+  below.
+
+## Persistence and template overrides
+
+Write generated files to the paths in
+[artifact-persistence](../../context/pat-pattison/research/artifact-persistence.md) "Where
+generated work persists", and honor a consuming project's own songwriting layout when it defines
+one. Before loading any bundled `templates/<name>.md`, check
+`${CLAUDE_PROJECT_DIR}/songwriting/templates/pat-pattison/<name>.md` first: a project-level
+override wins over the bundled default, first match, per that file's "Template override".
+
+## Boundary. What this skill must not emit
+
+This skill measures. It does not write the line it measures, and it does not choose the words that
+fix a bad scan.
+
+| If you are about to emit | STOP and route to |
+| --- | --- |
+| A rewritten line that scans better | `/songwriting:co-write` line-brainstorm |
+| A replacement word chosen for its stress pattern and rhyme | `/songwriting:rhyme` |
+| A judgment that a section is the wrong length or shape | `/songwriting:song-form` |
+
+**Measure in stressed syllables, never raw syllables.** Line length in this method is the count of
+stressed syllables; a raw-syllable count answers a different question, and reporting one as the
+other invents symmetry. A chorus that reads 8/9/9/8 by raw syllables can be 3/4/3/3 by stress. If
+the stress map has not been marked, the length claim has not been made: mark it, or say the box
+was skipped.
+
+## Related skills
+
+- Section identification, form-fit, hook placement → `/songwriting:song-form`
+- Rhyme position and stability → `/songwriting:rhyme strategy`
+- Whole-draft diagnosis → `/songwriting:diagnose`

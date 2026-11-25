@@ -1,0 +1,375 @@
+---
+name: qa-edge-hunter
+description: "Use this skill for the post-PASS exploratory QA pass — Shape Up's \"QA is for the edges\", made explicit for the harness. Triggers on: \"hunt edge cases\", \"QA pass on this feature\", \"exploratory test the running app\", \"edge hunt before ship\", \"run qa-edge-hunter\", \"the evaluator passed — what did it miss?\". the loop invokes it after the run's first PASS at the Verdict gate, before ship; it also runs standalone given a spec folder, a PASS EVAL report, and a running app, or on a loop --order dispatch. It charters edges OUTSIDE what the evaluator probed and hunts them through six fixed lenses. NOT for checking AC (spec-evaluator), deriving test cases (ba), or fixing bugs (task-executor)."
+---
+
+# QA Edge Hunter — the post-PASS edge pass (v1.1)
+
+Shape Up, Ch. 13: QA comes in **toward the end**, hunts **edge cases outside the core**,
+and its issues are **nice-to-haves by default** that the team triages. This skill is that
+role for the harness. It exists because the judge (`spec-evaluator`) is skeptical only
+*within the spec it is handed* — absence of evidence is a FAIL, but absence of a *test
+case* is invisible to it. The Hunter covers exactly that blind spot: behavior the spec
+never wrote down.
+
+```
+the loop: ... GATE L2 → EVAL → GATE L3 PASS ──► QA EDGE HUNT (you) ──► SHIP S.0 triage → L4
+                                                  charters · hunts · ~ findings → ledger
+            GATE L3 FAIL → fix round (never reaches you — conformance first, edges after)
+```
+
+**Division of labor (a settled design decision, not a convention):**
+
+| Tier | Owner | When |
+|---|---|---|
+| Derivable tests (boundaries, error codes, no-go breaches the spec implies) | the plan step's `## Test Surface` + evaluator `test-surface-conformance` | spec time / every EVAL |
+| **Exploratory edges (this skill)** | `/qa-edge-hunter` | once, post-first-PASS |
+
+---
+
+## What the Hunter is and is not
+
+| Does | Does NOT |
+|------|----------|
+| Read EVAL-*.md to map covered territory — then hunt OUTSIDE it | Re-probe anything the evaluator already graded |
+| Charter edges via six fixed lenses, minus covered territory | Author or extend `## Test Surface` (that is the planner's `retrofit-surface` spec mode) |
+| Execute charters against the **running deliverable** (session-based exploratory) | Read-only speculate from code ("this looks racy") — every finding needs a live repro |
+| Return each finding in the WorkResult's `discoveries[]`, **always `~`** | Promote `~` → must-have (PO/TL at SHIP S.0; severity-hint is advice, not a decision) |
+| Emit `qa/hunt-report.md` — charters run/cut, findings by lens | Render a verdict, score, or PASS/FAIL of any kind |
+
+Pure worker (harness rule: stateless workers, one stateful orchestrator). Its WorkOrder
+carries `payload.feature`, `payload.spec_folder`, `payload.eval_report`, `payload.app_url`,
+`payload.launch_cmd`, `payload.build_gate`, `payload.kb_rules_path`, and `payload.ledger` (the discovery ledger, READ-ONLY — covered-territory
+context so a hunt does not re-report what is already known). **`app_url` is null when the
+deliverable is not served over HTTP** — a CLI, a library, a batch job, a mobile app. That is a normal
+order, not a malformed one: drive the built entry point instead, exactly as the Test Surface's process
+rows do. When the order carries `launch_cmd`, that is how the app is brought up — run it, and treat a
+zero exit as the deliverable reached; `build_gate` records that the round's gate already launched it.
+Drive it with the tools the project's knowledge base names, by the path it gives.
+Do not refuse the hunt, and do not invent a URL. Its write surface is
+`.shapeup/<feature>/qa/**` only. The Hunter never touches the discovery ledger itself —
+the loop appends its `discoveries[]` under a `## Discovered` section, preserving single-writer
+mechanically.
+
+---
+
+## Workflow
+
+```
+⏸ GATE Q0 │ Preflight ────► hard: deliverable reachable (one real request at `app_url`, or one
+          │                 real invocation of the entry point when it is null)? EVAL PASS? ledger?
+          │                 soft: Test Surface present? absent → DEGRADED MODE offer
+Phase Q1  │ Charter Map ──► 6 lenses × UC tree − covered territory (EVAL-probed rows/AC)
+⏸ GATE Q1 │ Charter Review► PO/TL hammer the charter list (QA's own appetite is fixed too)
+Phase Q2  │ Hunt ─────────► session per charter on the running app; findings → ledger LIVE
+Phase Q3  │ Report ───────► qa/hunt-report.md — no score, no verdict
+```
+
+---
+
+## GATE Q0 — Preflight
+
+```
+FIRST: read `payload.kb_rules_path` for the tool paths it names — a device tool that is not on PATH is
+  named there by its full path, and a bare-name lookup (`which`, a bare call) proves nothing.
+HARD (any miss → STOP, report which):
+  ✅ deliverable reachable: one real request at `app_url`, or `launch_cmd` run and exit 0, or one
+     real invocation of the entry point (not a ping, not a guess that a tool is missing). When the
+     order carries `launch_cmd`, run it before concluding anything; the report names the command
+     and its exit. A hunt that reached nothing returns `status: failed`, never `done`. A hunt that
+     reached the app runs at least one charter: the loop sends back a `done` whose report says
+     `charters: 0/…` while the order carried `launch_cmd` or `app_url`.
+  ✅ EVAL-FEATURE-<slug>.md exists with verdict: PASS
+  ✅ if discovery/ledger.md exists: ledger.feature == <feature> (read-only context check —
+     a missing ledger is fine; the loop creates it when your findings land)
+SOFT:
+  ⚠️ any usecases/UC-*.md has `## Test Surface`?
+     NO → DEGRADED MODE:
+       "Test Surface absent — derivable cases (boundaries, error codes, no-go breaches)
+        were never systematically probed. Lenses ① and ⑤ will widen to compensate
+        (charters tagged [derivable-fallback]). Better: run
+        a plan spec step in `retrofit-surface` mode + one evaluator pass first, then hunt
+        with a narrower charter. Continue degraded? [y/n]"
+     Degraded is first-class, not an error — for old specs, a degraded hunt beats no hunt.
+Questions: max 2. The standing one: "Any areas OUT OF BOUNDS for exploratory testing?
+(e.g. real payments, real emails, production data)" — out-of-bounds areas are excluded
+from charters and listed in the report, never silently skipped.
+```
+
+If there is no PASS verdict yet, say so and stop — QA before PASS is the evaluator's job done out of order.
+
+**Output:**
+```
+⏸ GATE Q0 — Preflight
+App       : [url] ✅ reachable
+EVAL      : EVAL-FEATURE-[slug].md — PASS (dims: [...])
+Ledger    : [✅ feature match | absent — the loop will create it]
+Surface   : [present | ABSENT → degraded mode]
+Out-of-bounds? (max 2 questions) …
+```
+
+---
+
+## Phase Q1 — Charter Map
+
+A **charter** is a hunting ground + a mission — NOT a test case (test cases are the
+derivable tier; writing them here would re-do the plan step's job badly). Generate charters by
+crossing the UC tree with the **six fixed lenses**, then subtract covered territory.
+
+| Lens | Mission | Typical prey |
+|---|---|---|
+| ① Boundary overflow | Inputs the contract never bounded | very long strings, unicode/emoji, 0/negative where unstated, paste-bombs, huge files |
+| ② Concurrency | Same action, twice, at once | double-submit, two tabs editing one aggregate, rapid re-click on mutation CTAs |
+| ③ State interruption | Break the flow mid-stride | refresh mid-wizard, back button after submit, session expiry mid-form, network drop on save |
+| ④ Cross-UC journey | Chain UCs end-to-end | create→edit→delete→recreate same entity; output of UC-A as adversarial input to UC-B |
+| ⑤ No-go probing | Is the excluded path truly absent? | direct URLs, API calls bypassing the UI, role escalation to no-go'd features |
+| ⑥ Data residue | What survives that shouldn't? | deleted data via old links/exports, prior-session state bleeding, cache after logout |
+
+The six lenses are **fixed** (simplicity as a hard constraint) — scoping happens by
+cutting charters at GATE Q1, not by configuring lenses.
+
+Tag every finding with its lens by name — `boundary`, `concurrency`, `interruption`, `cross-uc`, `no-go`,
+`residue`. Those six are the `qa.lens.*` values of the signal vocabulary in the plugin's
+`domain.schema.json`, which is how a rule written for one lens finds the findings it was written for.
+
+**Charter quality** — before generating, internalize the target altitude:
+- Good: "What happens to the order record if the user refreshes the page after clicking
+  Confirm but before the server responds?" → one specific risk, concrete mission,
+  achievable in one session, requires a running app to test.
+- Too broad: "Test the checkout flow" → maps 1:1 with a UC; that is the evaluator's job.
+- Too narrow: "Verify the Confirm button is disabled after click" → this is a derivable
+  test case; it belongs in `## Test Surface`, not a charter.
+A charter is a license to deviate within a hunting ground; a test case is a script.
+
+```
+Q1.0  Read team guidelines: the file at `payload.kb_rules_path` (if present; absent field = none).
+      retro-distilled edge classes that kept biting past features (e.g. "session-expiry
+      mid-form keeps surfacing"). Steering, never spec and never a verdict: use them to
+      PRIORITIZE charters within the six fixed lenses — never to add a seventh lens, skip
+      covered-territory subtraction, or promote a finding on their say-so. Absent = none recorded.
+Q1.1  Parse EVAL-*.md → covered set: every TS row probed (test-surface-conformance
+      section) + every AC/Done-when graded (spec-conformance section).
+Q1.2  Per UC × lens: draft a charter ONLY where the covered set leaves territory.
+      Lens ⑤ vs Test Surface D4: TS-NOGO rows probe the no-go AS SPECIFIED; the charter
+      hunts UNSPECIFIED breach routes (other URLs, API bypass, role tricks) — overlap
+      with a probed row = drop the charter.
+Q1.3  Degraded mode: add [derivable-fallback] charters for the uncovered derivable tier
+      (lens ① boundary basics; lens ⑤ no-go-as-specified) — tagged so GATE Q1 sees
+      exactly which bulk is owed to the missing surface.
+Q1.4  Drop charters touching Q0 out-of-bounds areas; list them in the report as
+      "excluded (out of bounds)".
+Q1.5  Time-box each charter (default 1 session unit ≈ one focused pass; a charter that
+      wants more must say why).
+```
+
+---
+
+## ⏸ GATE Q1 — Charter Review
+
+The scope hammer applied to QA itself — the Hunter's appetite is as fixed as everyone
+else's.
+
+```
+⏸ GATE Q1 — Charter Review               [DEGRADED MODE]   ← shown only when degraded
+Charters: [N] ([D] derivable-fallback) · est: [N] session units
+  C-01 [①boundary]  UC-04 amount field beyond contract silence …
+  C-02 [②concurr]   UC-04 double-submit Confirm …
+  C-03 [⑤no-go]     export via unauthenticated direct URL …      [derivable-fallback]
+  …
+Excluded (out of bounds): [list from Q0]
+Question (max 1): "Cut or add any charters? (ids / add <desc> / none)"
+```
+
+Cut charters appear in the report under "Hammered out (not hunted)" — visible cuts, never
+silent ones.
+
+---
+
+## Phase Q2 — Hunt
+
+Session-based exploratory testing per approved charter, on the running app.
+
+```
+Per charter:
+  H.1  Execute the mission within its time box. Vary, provoke, chain — follow the scent;
+       a charter is a license to deviate INSIDE its ground, not a script.
+  H.2  Suspected finding → reproduce it (≥1 clean repro) before recording. No repro →
+       log in session notes as "unconfirmed observation", NOT a finding.
+       - A claim that something is GONE / vanished / missing from the screen is not
+         reproduced by one tree read (DOM/layout dump) showing no match. Rule out that it
+         is merely COVERED first: dismiss whatever sits in front of it — keyboard, dialog,
+         sheet, toast, modal — and recheck, or confirm with a second signal (a screenshot,
+         scrolling it into view). A node absent from one read and present the moment the
+         overlay closes was never gone; that is not a finding, on any platform.
+       - A claim that a value SURVIVES a restart/relaunch is not reproduced by observing it
+         once after relaunching. Diff it against what a fresh instance shows from its own
+         seed/reset state first. A value that matches the seed is the app re-seeding
+         correctly, not evidence that anything persisted.
+  H.3  Confirmed → record it IMMEDIATELY (in the growing WorkResult, not batched to the end
+       of the hunt — a crashed session must not lose confirmed findings):
+
+       { "marker": "~",
+         "lens": "②concurrency",
+         "line": "[QA-NNN] [UC-04] Double-click \"Confirm\" creates 2 orders",
+         "repro": "<numbered steps, shortest path>",
+         "severity_hint": "data-integrity | boundary-breach | ux-degradation | cosmetic",
+         "test_gap": "unit | integration | exploratory-only" }
+
+       Always `~` — the loop appends these to the discovery ledger verbatim; you never open
+       the ledger file. severity_hint is the Hunter's advice to triage — the promotion
+       decision is PO/TL's at SHIP S.0, never made here.
+       test_gap is advisory for reconciliation: unit = a targeted unit test would have
+       caught this; integration = a cross-layer test would; exploratory-only = only
+       discoverable through live session dynamics.
+  H.4  A finding that contradicts a PASSED criterion (the evaluator graded it PASS, the
+       hunt shows otherwise) → set `"contradicts": "<EVAL criterion id>"` on the entry.
+       Do NOT edit EVAL-*.md or un-tick anything — the judge's record is the judge's; the
+       contradiction flag routes it back through triage.
+  H.5  Time box expires mid-scent → stop, note "charter exhausted time with open scent"
+       in the report. The circuit breaker applies to hunting too.
+```
+
+### Lens-specific hunting techniques
+
+Use these as your toolbox when executing a charter. The goal is to provoke the app
+in ways a spec author wouldn't think to write down.
+
+**① Boundary overflow** — things the contract never bounded
+- Strings: paste 10 KB of text, emoji sequences (🏳️‍🌈 multi-codepoint), RTL Unicode (؀؁),
+  null bytes (`\x00` via DevTools console injection), leading/trailing whitespace
+- Numbers: try -1, 0, 2147483647 (MAX_INT), 2147483648 (MAX_INT+1), floats where
+  integers are expected, strings that look like numbers ("1e9", "Infinity")
+- Files: 0-byte file, file with wrong extension but correct MIME type, size exactly at
+  the stated limit and size+1 byte above it
+- API: send the field missing entirely vs. `null` vs. `""` — three different cases even
+  if the UI treats them the same
+
+**② Concurrency** — same action, twice, at once
+- Open two tabs or two browsers sharing the same session; navigate both to the same
+  mutation form; submit within milliseconds of each other
+- Rapid double-click on a mutation CTA: check DevTools → Network for duplicate POSTs
+- Optimistic UI: click Save, navigate away immediately before the response arrives;
+  return — was state lost, duplicated, or correctly reconciled?
+- Two different roles editing the same aggregate simultaneously — last-write-wins vs.
+  conflict detection
+
+**③ State interruption** — break the flow mid-stride
+- Browser Back after submitting step N of a multi-step wizard; then Forward again —
+  is unsaved state preserved, lost, or doubled?
+- Refresh immediately after clicking Submit (before the response) — race between
+  browser reload and server confirmation
+- Network drop mid-save: DevTools → Network → Offline → toggle back; does the app
+  retry, error gracefully, or show stale data?
+- Session expiry mid-form: delete the session cookie (DevTools → Application →
+  Cookies → Delete) then attempt to submit — graceful redirect or silent failure?
+- Tab sleep: leave the tab idle for 10–15 minutes, return, and try a mutation
+
+**④ Cross-UC journey** — chain UCs end-to-end
+- Create → Edit → Delete → Re-create the same entity with the same name/ID — does
+  the second Create fail with an ID collision, ghost the deleted record, or succeed?
+- Use the output of UC-A as adversarial input to UC-B: if UC-A allows a 500-char name,
+  does UC-B's display truncate, wrap, or break layout?
+- Partial completion of UC-A → switch to UC-B → return to UC-A — is the partial state
+  saved, cleared, or corrupted?
+
+**⑤ No-go probing** — is the excluded path truly absent?
+- Direct URL: type a protected route into the address bar while unauthenticated or as a
+  lower-privilege role
+- API replay: in DevTools → Network, copy a privileged request as cURL, strip the auth
+  cookie, replay — does the server reject it?
+- DOM enable: find a disabled/hidden UI element, `element.disabled = false` or
+  `element.style.display = 'block'` in the console, submit — does the server validate
+  server-side?
+- Path traversal in URL params (`../`, `%2F..`) for file/export endpoints
+
+**⑥ Data residue** — what survives that shouldn't?
+- Delete an entity, then navigate to its detail URL via browser history — 404, redirect,
+  or stale cached data?
+- Log out, log back in (same browser, same session storage) — does the new session show
+  any leftover state from the prior session?
+- DevTools → Application → Cache Storage / Local Storage / IndexedDB after logout —
+  is sensitive data cleared?
+- Re-download a previously generated export URL after the source data was deleted —
+  does the export still serve the old data?
+
+---
+
+## Phase Q3 — Report + WorkResult
+
+Write `.shapeup/<feature>/qa/hunt-report.md` (your substrate) and, when dispatched with
+an order, the WorkResult envelope `.shapeup/<feature>/results/<order-suffix>.json`:
+`status: done`, `discoveries[]` (every confirmed finding from H.3), `artifacts:
+["qa/hunt-report.md"]`. The report:
+
+```markdown
+# Hunt Report — [feature] (round [r], [date])
+charters: [run]/[approved] · session units spent: [n]
+out of bounds (excluded): […]
+hammered out at GATE Q1 (not hunted): […]
+
+## Findings by lens
+| Lens | Hunted | Findings | Of which contradicts-EVAL |
+|---|---|---|---|
+| ① Boundary | C-01, C-05 | 2 | 0 |
+| … | | | |
+→ details live in .shapeup/<feature>/discovery/ledger.md under the `## Discovered` section
+  the loop appends for this hunt's order
+
+## Shaping-quality signal (advisory, for the PO — next cycle's input)
+- lens ⑤ findings ≈ No-gos written loosely (breach routes left open)
+- lens ④ findings ≈ UC decomposition cut too disjointly (journeys fall in the seams)
+- lens ① in degraded mode ≈ owed to the missing Test Surface, not to shaping
+
+## Session notes
+[per charter: what was tried, unconfirmed observations, open scents]
+```
+
+No verdict line exists in this file by design. The Hunter's last words:
+`✅ hunt complete — [N] findings (all ~) → ledger · triage at SHIP S.0 / GATE L4.`
+
+---
+
+## Invocation
+
+```bash
+/qa-edge-hunter --feature checkout-vnpay --spec shapeup/checkout-vnpay/spec/ --app http://localhost:3000
+# (--eval/--ledger default to the conventional paths under the LOCAL root .shapeup/<feature>/)
+
+# Escape hatch
+--auto            # skip GATE Q1 pause (charter list logged, not reviewed) — Q0 hard
+                  # checks and the out-of-bounds question are NEVER skipped
+
+# There is deliberately NO --lenses flag: the 6 lenses are fixed; narrow by cutting
+# charters at GATE Q1 (or --auto + report).
+```
+
+### Progress Markers
+```
+⏸ GATE Q0   Preflight (hard + soft checks, out-of-bounds question)
+▶ Phase Q1  Charter Map        ⏸ GATE Q1 Charter Review
+▶ Phase Q2  Hunt — C-01 ✅ C-02 🔍 …   (findings stream to ledger live)
+▶ Phase Q3  Report
+✅ hunt complete — [N] findings (all ~) → ledger · triage at SHIP S.0 / GATE L4
+```
+
+---
+
+## Hard rules (the never-list)
+
+1. **Never a verdict.** The run's verdict is the evaluator's PASS. One judge.
+2. **Never promote.** Every finding is born `~`. severity-hint advises; PO/TL decide.
+3. **Never fix.** Read-only on code; execute-only on the app; write-only to
+   qa/hunt-report.md + its own WorkResult (findings return as data; the loop owns the ledger).
+4. **Never block ship.** A hunt with 40 findings and a hunt with 0 both end the same way:
+   report, then triage at L4. The circuit breaker outranks the Hunter.
+5. **Never re-probe covered territory.** EVAL-*.md territory is subtracted at Q1; an
+   exception requires a `contradicts:` suspicion arising mid-hunt, not curiosity.
+6. **Never run on FAIL.** Conformance first; edges after.
+7. **Never invent severity from code reading.** Every finding has a live repro on the
+   running app.
+8. **Never gate on Test Surface.** Its absence degrades the hunt; it never blocks it.
+9. **Never call something gone from one tree read.** A DOM/layout dump has no concept of
+   what covers a node — rule out an overlay (keyboard, dialog, sheet, toast) before an
+   absence counts as reproduced (H.2).
+10. **Never call a value "surviving" a relaunch without diffing the seed.** A value that
+    matches the fresh/reset state after a restart is not persistence (H.2).

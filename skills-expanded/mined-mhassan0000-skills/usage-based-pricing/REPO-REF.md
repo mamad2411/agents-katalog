@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mhassan0000/skills (path: Claude/antigravity skills/agentic-awesome-skills/skills/usage-based-pricing/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Design pricing models that developers understand, accept, and can predict. Trigger phrases: usage-based pricing, API pricing, metered billing, developer pricing, pricing page, cost calculator, pay as 

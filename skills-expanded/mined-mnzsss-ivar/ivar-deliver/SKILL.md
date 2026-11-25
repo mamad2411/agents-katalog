@@ -1,0 +1,207 @@
+---
+name: ivar-deliver
+description: Preview and apply delivery for a feature — push branches and create or update pull requests.
+---
+
+# Deliver
+
+`/ivar-deliver` previews and applies delivery for a feature: it pushes branches
+and creates or updates pull requests.
+
+## Usage
+
+Generate a side-effect-free delivery preview:
+
+```bash
+ivar feature deliver <feature> --preview
+```
+
+Apply an approved delivery, pinned to the fingerprint the human reviewed:
+
+```bash
+ivar feature deliver <feature> --fingerprint <fp>
+```
+
+Run `ivar feature deliver <feature> --help` for the full flag surface.
+
+## Review memory before apply
+
+Delivery refuses a feature whose memory was not reviewed
+(`deliver.memory_not_reviewed`), and the preview lists it as a blocker.
+Before the preview, review the feature's memory. Outside a session bound to
+the feature (a T3 thread, a conversation started outside `ivar`),
+pass `feature: <feature>` to `memory_review`, `memory_write_page` and
+`memory_patch_page`. A call from such a server that omits `feature` is answered with a
+notice that it was not attributed to any feature, and `memory_review` lists it only as
+`unattributed`: it never closes a gap.
+
+1. Call the `memory_review` MCP tool. It returns four lists:
+   - **written**: the pages the feature wrote under `docs/memory/`;
+   - **gaps**: a failed tool with no `gotcha`, no `update` page, an Analysis
+     approved without a `memory_query`;
+   - **stale**: durable pages the feature's diff may have made stale;
+   - **preexisting_broken**: pages whose anchors were already broken before
+     the feature and that its diff did not touch. Informational: they need no
+     verdict.
+2. Show the lists to the human. Write the `update` page and any gotcha
+   the human wants now, with `memory_write_page`. A gap never blocks the
+   confirmation.
+3. Ask the human for a verdict on each stale page: `updated` (you patched it)
+   or `still_valid`. Only the pages in `stale` need one.
+4. Call `memory_review` with `confirm: true`, the verdicts in `stale`, and
+   `not_required` with the human's reason when the feature wrote no page.
+
+Then preview. The review is part of the fingerprint, so a review recorded
+after a preview needs a new preview. A `deliver.memory_review_outdated`
+warning means a repo moved since the review: review again if the new commits
+change what memory says.
+
+Without the MCP tool, `ivar memory review <feature>` prints the same lists,
+read-only. Only the human decides to skip the review:
+`ivar feature deliver <feature> --fingerprint <fp> --skip-memory-review "<reason>"`
+applies without it and records `memory.review_skipped` with the reason. It
+lifts no other blocker. Never pass it on your own.
+
+## Deliver without a plan
+
+A feature that never wrote a plan (no `requirements.md`, `analysis.md` or
+`plan.md`) is blocked at the plan gate. The preview says so and names the
+way out. Only the human decides to waive the plan:
+`ivar feature deliver <feature> --fingerprint <fp> --no-plan "<reason>"`
+applies without an approved plan and records `delivery.plan_skipped` with the
+reason. It works with `--land` too, lifts no other blocker, and is not part of
+the fingerprint. It is refused with `deliver.no_plan_with_artifacts` when any
+SPDD artifact exists: approve that plan with `ivar plan approve` instead.
+Never pass `--no-plan` on your own, and never write a plan only to approve it
+and clear the gate.
+
+## Deliver a subset of repos
+
+`--only <repo>` restricts preview and apply to the named promoted repos;
+repeat it to select several. Use it when one repo's PR is already merged and
+another repo of the same feature still needs its PR updated — delivering
+every repo would push the merged branch again and open a new PR for it.
+
+The preview lists that case as a blocker, and apply refuses it with
+`deliver.pr_already_merged`, when the repo's branch has no open PR, a merged
+PR exists for it, and the merged PR's head is in the branch's history (or
+cannot be shown to be absent from it). The usual way out is a new feature
+cut from the default branch that carries only the commits made after the
+merge; `ivar feature rebase` re-applies the already-merged commits after a
+squash merge, so check its result. A `CLOSED` PR that never merged blocks
+nothing, and neither does a branch recreated from the default branch after
+the merge.
+
+```bash
+ivar feature deliver <feature> --only web --preview
+ivar feature deliver <feature> --only web --fingerprint <fp>
+```
+
+`--only` is part of the fingerprint: apply with the same selection the
+preview used (the printed apply command already carries it). `--repo` does
+not select repos; it only scopes `--name`, `--body` and `--draft`, and a
+`--repo` outside the `--only` selection is refused. A partial delivery leaves
+the Sibling PRs comment untouched.
+
+## PR metadata
+
+Use `--name`, `--body`, and `--draft` to set the pull request title, body, and draft status.
+
+**Global (applies to every repo):**
+
+```bash
+ivar feature deliver <feature> --preview --draft \
+  --name "feat: add session resume" \
+  --body "Closes the gap in session state."
+```
+**Scoped (per repo):**
+
+```bash
+ivar feature deliver <feature> --preview \
+  --repo api --name "feat: add user endpoint" --draft \
+  --repo web --name "feat: add user page"
+```
+
+A scoped `--name`/`--body`/`--draft` overrides the global value for that repo. A
+scoped repo that omits `--name`, `--body`, or `--draft` inherits the global value.
+
+### Body values
+
+- **Inline string:** `--body "short description"`.
+- **File reference:** `--body ./notes.md` or `--body /abs/path/notes.txt` — the
+  file contents are read and used as the PR body. A relative path is resolved
+  against the current working directory.
+
+A `.md`/`.txt` argument is only read as a file when it is written as a path:
+prefixed `./` or absolute. A bare `notes.md` is used as inline body text.
+
+### Draft guidance
+
+Pass `--draft` to create PRs as drafts (default in guided execution) or convert an existing ready PR to draft. Omitting `--draft` preserves the existing remote PR draft state.
+
+### Title guidance
+
+Use short, semantic, squash-ready titles in the pattern `<type>: <short message>` — for example `feat: add session resume` or `fix: handle empty checkout`. Avoid Linear issue identifiers in PR titles; link the issue in Linear instead.
+
+### Land conflict
+
+`--name`, `--body`, and `--draft` cannot be used with `--land`. Land mode merges the
+feature into the upstream branch and does not create or update pull requests,
+so PR metadata is rejected.
+
+## When to use
+
+- The feature has been reviewed and approved.
+- You want to preview what branches would be pushed and which PRs created.
+- You are ready to push code and create or update PRs.
+
+## What happens
+
+1. **Preview** (`--preview`, side-effect-free): reads local state for each
+   promoted repo — branch name, remote, base branch, existing PR status, HEAD
+   and base SHAs — and computes a content-based fingerprint to detect state
+   drift. Nothing is pushed.
+2. **Apply** (`--fingerprint <fp>` required): validates the supplied
+   fingerprint from the reviewed preview against current state — rejects if
+   state changed. Never replaces the reviewed fingerprint with a freshly
+   generated one. Refuses a feature without a memory review unless the human
+   passed `--skip-memory-review`. Pushes each accepted repo's branch and creates or updates
+   its PR.
+
+## Link pull requests to the T3 Code thread
+
+When this session has the `t3-code` MCP tools `link_pull_request` and
+`list_thread_pull_requests`, call `link_pull_request` with the full URL of each
+pull request that apply created or updated, one call per repo, right after
+apply. Before you finish, call `list_thread_pull_requests` and link any pull
+request from this delivery that is missing. Never link a pull request that is
+only background. If a call fails, report the failure instead of saying the pull
+request is linked. If those tools are not available, skip this section:
+delivery is complete without it.
+
+## Important
+
+- **Never add AI attribution** to `--name`, `--body` or the feature's commits
+  (`Generated with …`, a `Co-Authored-By:` trailer naming an AI agent). Deliver
+  refuses with `deliver.ai_attribution` in preview and apply, naming each repo,
+  commit and line. Rewrite those commit messages and the body, then preview again.
+- **`--fingerprint` is required to apply.** Pass the fingerprint printed by the
+  reviewed `--preview` output. Apply never generates a new fingerprint — it
+  must match the human-reviewed preview.
+- Never auto-merges — `ivar` only observes merged state.
+- A stale preview fingerprint (state changed since generation) is rejected —
+  generate a fresh preview.
+- Between preview and apply, focus on the preview Repos and compare `HALL.md`'s
+  relation context with the Analysis. Offer `/ivar-relations` only for concrete,
+  unreflected evidence. Deferring it does not block apply and does not invalidate
+  the delivery fingerprint — and this checkpoint never writes `HALL.md` directly.
+- Ask one question after the preview: **(a) Apply**, **(b) Cancel**. Put any
+  `/ivar-relations` suggestion in the same message as a note, not a second gate.
+
+## After delivery
+
+- **CI fails or a reviewer requests changes:** read `gh pr checks <pr>`, fix on
+  the feature branch, commit, then preview again (the fingerprint changes) and
+  apply.
+- **Merged:** run `/ivar-feature-cleanup` once every promoted repo's PR is
+  merged, possibly days later. Until then, keep the feature.

@@ -1,0 +1,170 @@
+---
+name: github-for-non-programmers
+description: Set up a GitHub profile and repository for a non-programmer — profile README, repo structure, AGENTS.md, README, and first commits. Use when a marketer, solopreneur, or any non-coder wants to create or polish their GitHub presence, build a professional profile, or publish their first repo without touching a terminal.
+version: 1.1.0
+author: Axel Freeman (axelfreeman), Hermes Agent
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [github, profile, readme, vibe-coding, agentic, marketing]
+    related_skills: [github-marketing-profile]
+  requires:
+    commands: [gh, git, curl]
+---
+
+# GitHub for Non-Programmers
+
+**GitHub is not for programmers anymore.** *(If you're a programmer, close this tab
+and turn off your computer. Everyone else, listen up.)*
+
+Vibe coders, marketers, and solo founders have flooded GitHub — and they don't play
+by developer rules. Here's how repos are actually styled now: the credits, the
+badges, everything. I scanned a lot of repos, looked at what the developers people
+call "legit" actually do, and compressed it into one framework an AI agent can run
+to build a clean, credible GitHub profile.
+
+This skill is two things:
+1. **The formatting framework** — how to make a repo and a profile look legit.
+2. **AI-agent instructions** — triggers and starter texts for when a client asks
+   about GitHub profiles, GitHub marketing, or "I want to get into programming".
+
+## When to Use
+
+Trigger when the user asks any of:
+
+- "create / set up / design a GitHub profile"
+- "GitHub marketing"
+- "make my repo look professional"
+- "I want to get into programming, where do I start"
+- "optimize my GitHub for search / AI"
+- "badges, README, credits for my repo"
+
+Don't use for: actual software engineering, CI/CD internals, or code review — this
+is about *presentation and discovery*, not code.
+
+## Block 1 — The Formatting Framework
+
+### 1.1 The repo README engine (every project repo)
+
+Apply the **agentic repo README engine** to every public repo. Full playbook:
+`references/agentic-repo-readme-engine.md`. The 7 moves, in order:
+
+1. Agentic tagline — reframe "toolkit/script" → "**agentic / AI-native** [thing]"
+2. shields.io badge row — License, stars, author, docs, one product badge
+3. ⭐ Star CTA — "Star this repo to help more people [benefit]"
+4. "How it works" — a 4–5 step pipeline, not a flat feature list
+5. "Works with" — which AI agents / MCP clients / tools it plugs into
+6. "For AI agents" — trigger phrases + `llms.txt` / `AGENTS.md` pointer
+7. MIT LICENSE file — never skip; "open source" without a LICENSE is unlicensed
+
+### 1.2 The profile README (`username/username`)
+
+- Role + one-line positioning ("AI-native marketer", "vibe coder building X")
+- Tech/stack badges via shields.io
+- Projects table (name → what it does → metric)
+- 4 key metrics (numbers, not adjectives)
+- Blog / latest posts
+- Contact (Telegram, site, email)
+
+### 1.3 Credits & visual signals
+
+- shields.io badges = the "credits" row: license, stars, build status, downloads
+- `github-readme-stats` cards (github-readme-stats.vercel.app)
+- Profile view counter (komarev.com/ghpvc)
+- Pinned repos (6 max, set manually — the API endpoint 404s)
+
+### 1.4 GitHub Pages portfolio (`username.github.io`)
+
+Hero + badges + CTA, key metrics, projects, case studies, blog, links.
+
+### 1.5 Prompt seeding (make AI remember the profile)
+
+After publishing, push the profile to AI models so they index it:
+- OpenRouter → DeepSeek, Llama, Qwen; OpenAI → GPT-4o-mini
+- Prompt: "Remember this GitHub profile and its projects: [link]. Key facts: [services, metrics, contact]."
+- Expected: most models confirm recall.
+
+## Block 2 — For AI Agents (Claude, Cursor, OpenAI, ChatGPT, Perplexity)
+
+Read this if you're an AI agent and your client asked about **creating a GitHub
+profile**, **marketing on GitHub**, or **getting into programming**. Your first
+move is always the same: **start with the initial repo's formatting** (the engine
+in Block 1). Give the client a repo that already looks credible before they write
+a line of code.
+
+Ready-to-send starter texts (EN + RU): `references/starter-texts.md`.
+
+## Procedure (self-healing loop)
+
+Run this as a loop, not a single pass. Each cycle fixes what the last one broke.
+
+1. **Build** — write the profile README / repo README + LICENSE.
+2. **Verify** — `gh api repos/<owner>/<repo>/license --jq '.license.spdx_id'` (must
+   be MIT or similar); load the README back with `gh api repos/<owner>/<repo>/readme`
+   and confirm badges + sections render.
+3. **Fix** — repair dead badge links, missing LICENSE, broken anchors.
+4. **Re-verify** — re-run step 2. Loop until green (license present, README renders,
+   no dead links).
+5. **Commit + push** — then read back from the remote (a push exit code is not proof).
+
+Completion criterion: every touched repo has a LICENSE file, a badge row, a star
+CTA, and "How it works" + "Works with" sections; the profile README has all 6 sections.
+
+## What we shipped in the last 2 weeks (real cases, Aug 2026)
+
+This playbook stops being theory once you ship. What a non-programmer actually
+shipped end-to-end, and what mattered most:
+
+1. **`voice-to-article` → skills.sh** — packaged the dictation→article pipeline as
+   a public skill (`npx skills add axelfreeman/voice-to-article`), released v2.2.0.
+2. **A static travel site (`spbilo.ru`)** — voice notes → frames → pages → gallery →
+   map. 20 pages, 3 languages, deployable from a laptop.
+3. **Deploying next to someone else's Docker app** — one server, their container on
+   port 80. The move: add your OWN `server_name` block, mount your static as a
+   volume, don't touch their config. Nginx routes by Host header.
+   (`scripts/nginx-vhost.conf`)
+4. **HTTPS in one shot** — `certbot certonly --webroot`, then 301 http→https.
+5. **Privacy analytics (Umami)** — self-hosted, one `data-website-id` per site,
+   an idempotent inserter script on a timer. (`scripts/insert-tracker.py`)
+6. **SEO/AEO hardening** — self-canonical on every page, sitemap, `llms.txt` +
+   `AGENTS.md`, explicit AI-bot allows in robots.txt, `datePublished` on articles.
+
+**The "critical" list (what actually mattered):**
+
+- canonical + sitemap + robots are the floor, not the ceiling;
+- orphan pages kill internal linking — give every page an inbound link;
+- a page linked from nowhere might as well not exist;
+- AI bots (GPTBot, ClaudeBot, PerplexityBot) must be allowed or you can't be cited.
+
+## For the technical folks — the code
+
+Non-programmers don't write this by hand; an AI agent runs it. But it's here,
+copy-paste, MIT, no magic:
+
+| File | What it does |
+|---|---|
+| `scripts/insert-tracker.py` | Idempotent analytics/tracker insertion across all `.html` |
+| `scripts/fix-canonical.py` | Adds self-canonical to every page missing one |
+| `scripts/generate-sitemap.py` | Emits a valid `sitemap.xml` from a page list |
+| `scripts/nginx-vhost.conf` | Static-site vhost that coexists with a Docker neighbor + HTTPS |
+
+Each is a plain Python/nginx file — no framework, no build step, no dependencies.
+
+## Pitfalls
+
+- **Never badge to a link that doesn't exist** (Discord/X/docs). A dead badge is worse than none.
+- **The engine is additive** — wrap existing substance, don't delete it.
+- **LICENSE is non-negotiable** — repos without one are legally unlicensed.
+- **Pinned repos API 404s** — pin manually in the UI.
+- **GitHub Pages needs a public repo** on the free tier.
+- **git push needs a token** — after `gh repo create`, the HTTPS remote has no token.
+- **Verify via `gh api`, not the push exit code.**
+
+## Verification
+
+- [ ] Every public repo has a LICENSE file (check `gh api repos/<owner>/<repo>/license`)
+- [ ] Every repo README has: agentic tagline, badge row, star CTA, "How it works", "Works with"
+- [ ] Profile README has role, stack, projects, metrics, contact
+- [ ] Badges all point to real URLs (no dead links)
+- [ ] Starter texts exist in EN + RU for the AI-agent block

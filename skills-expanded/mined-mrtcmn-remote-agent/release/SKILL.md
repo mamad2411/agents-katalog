@@ -1,0 +1,47 @@
+---
+name: release
+description: Cut a Remote Agent server release - a GitHub release (vX.Y.Z) on main that makes the Docker workflow push versioned ghcr.io images, so /api/version, the UpdateBanner, and scripts/upgrade.sh see an update. Use when the user says "release", "cut a release", "publish a version", or "ship vX.Y.Z". Not for the desktop (Electrobun) app.
+---
+
+# Release
+
+The update check (`packages/api/src/routes/version.routes.ts`) and `scripts/upgrade.sh` read
+`api.github.com/repos/mrtcmn/remote-agent/releases/latest`. With no release, both report
+"Could not fetch latest version". A release fixes that.
+
+## How the pipeline works
+
+- `.github/workflows/docker-publish.yml` runs on the `release: published` event.
+- The app version is the root `package.json` `version`, and only that. The desktop client, the Docker image, and the host install all read it (`packages/api/src/config/version.ts`, `packages/desktop/electrobun.config.ts`). No env var or image tag changes it.
+- The workflow fails the release if the tag is not `v` + the `package.json` version.
+- It pushes `ghcr.io/mrtcmn/remote-agent:vX.Y.Z`, `:X.Y`, and `:X`. It does not move `:latest` (`flavor: latest=false` in the workflow; v1.3.0 and v1.3.1 were built before that and did move it). Only a push to main, or a manual run with no tag, moves `:latest`.
+- `isNewerVersion` compares only numeric tags. Use `vX.Y.Z` exactly. A tag like `v1.3.0-rc1` never counts as an update.
+
+## Steps
+
+Confirm the version and the target commit with the user before step 4. A release is public and pushes images.
+
+1. Make sure the work is on `main`: `git fetch origin && git log origin/main --oneline -5`.
+2. Find the last release: `gh release list -R mrtcmn/remote-agent -L 5`. Pick the next semver.
+3. Set that version in the root `package.json` `version` field. Commit it to main and push. Wait until the main run is green: `gh run list -R mrtcmn/remote-agent -L 3`.
+4. Create the release:
+   ```bash
+   gh release create vX.Y.Z -R mrtcmn/remote-agent --target main --generate-notes
+   ```
+5. Watch the workflow: `gh run watch -R mrtcmn/remote-agent $(gh run list -R mrtcmn/remote-agent -e release -L 1 --json databaseId -q '.[0].databaseId')`.
+6. Verify:
+   ```bash
+   curl -s https://api.github.com/repos/mrtcmn/remote-agent/releases/latest | jq .tag_name
+   docker buildx imagetools inspect ghcr.io/mrtcmn/remote-agent:vX.Y.Z
+   ```
+
+## If the workflow fails
+
+- `No space left on device` on the ARM64 self-hosted runner: the build cache filled the disk. The workflow runs `docker buildx prune -af` first. If it still fails, old images fill the disk. Ask the user before you prune images on that host.
+- Rerun the failed jobs: `gh run rerun <id> --failed -R mrtcmn/remote-agent`. Do not delete and re-create the release for a CI failure.
+- A rerun uses the workflow file from the tagged commit. If the workflow itself was wrong at that commit, a rerun fails the same way. Fix the workflow on main, then build the images for the existing tag from main's workflow:
+  ```bash
+  gh workflow run docker-publish.yml -R mrtcmn/remote-agent --ref main -f tag=vX.Y.Z
+  ```
+  This checks out the tag's source and pushes `:vX.Y.Z`, `:X.Y` and `:X`. It does not move `:latest`.
+- The self-hosted ARM64 runner is a bare machine: it has no `jq`. A step in the `build` job must use only tools that are sure to be there (`sed`, `grep`, `git`, `docker`). v1.3.1 failed on this.

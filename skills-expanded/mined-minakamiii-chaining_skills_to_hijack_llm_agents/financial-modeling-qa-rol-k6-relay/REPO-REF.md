@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/minakamiii/chaining_skills_to_hijack_llm_agents (path: docs/references/work-loop/ablations/counts/financial-modeling-qa/K6/skills/financial-modeling-qa-rol-k6-relay/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Board-only inert relay for a physical skill-count ablation."

@@ -1,0 +1,92 @@
+---
+name: media-tools
+description: "图片生成。用户要求生成图片、插画、头像、封面、背景、banner、海报或其他视觉素材时使用。优先 SenseNova U1 Fast，其次 SiliconFlow Kolors；密钥只从环境变量或 ~/.dsh/secrets/media-tools.env、~/.codex/secrets/media-tools.env 读取，不内置、不写入任何密钥。"
+---
+
+# Media Tools（图片生成）
+
+通过用户自行配置的服务商生成图片素材。优先使用 SenseNova U1 Fast；未配置 SenseNova key 时，使用 SiliconFlow Kolors。面板里配置的自定义提供方（任意 OpenAI 兼容 `/images/generations`）也能用。
+
+## 用法
+
+```bash
+python3 scripts/generate.py "<提示词>" <输出路径.png> [尺寸]
+```
+
+示例：
+
+```bash
+python3 scripts/generate.py "云海中的中国宫殿，写实电影感，气势恢宏" palace.jpg 16:9
+python3 scripts/generate.py "简洁科技感产品发布会背景，深蓝渐变" banner.png 2752x1536
+```
+
+## 没有 Key 也能用
+
+Pollinations 不需要注册也不需要 Key（同一 IP 每 45 秒一张，最大 768×768，角落有小 logo）：
+
+```bash
+MEDIA_API_URL=https://image.pollinations.ai/prompt python3 scripts/generate.py "..." out.png 1:1
+```
+
+## 密钥边界
+
+Key 只从环境变量、`~/.dsh/secrets/media-tools.env`（权限 600）或旧的 `~/.codex/secrets/media-tools.env` 读取；脚本只把它放进请求头发给用户自己选的服务商，不写日志、不上传、不内置在仓库里。
+
+## 尺寸
+
+- SenseNova 支持常见横版、竖版和方形比例，可传 `16:9`、`9:16`、`1:1`、`3:4`、`4:3` 等比例。
+- 也可传精确尺寸；脚本会映射到最接近宽高比的 SenseNova 支持尺寸。
+- SiliconFlow 会把第三参数作为 `image_size` 传给 Kolors。
+- 缺省尺寸为 `1024x1024`。
+
+## 选择服务商
+
+脚本默认按 key 是否存在自动挑。要指定服务商，用环境变量（面板里选的服务商和模型，走的就是这几个变量）：
+
+```bash
+MEDIA_PROVIDER=siliconflow python3 scripts/generate.py "..." out.png 16:9   # 指定内置服务商
+MEDIA_MODEL=other-model    python3 scripts/generate.py "..." out.png 16:9   # 换模型 ID
+
+# 任意 OpenAI 兼容端点（面板里的「自定义提供方」走的就是这条）
+MEDIA_API_URL=https://api.example.com/v1/images/generations \
+MEDIA_API_KEY=sk-... MEDIA_MODEL=my-model \
+python3 scripts/generate.py "..." out.png 1024x1024
+
+# 免 Key 的 Pollinations（同一 IP 每 45 秒一张，最大 768×768，右下角带它的小 logo）
+MEDIA_API_URL=https://image.pollinations.ai/prompt \
+python3 scripts/generate.py "..." out.jpg 1024x576
+```
+
+自定义端点不填 `MEDIA_API_KEY` 时不发 `Authorization` 头，所以像 Pollinations 这种不需要 Key 的服务也能直接接。
+
+尺寸可以写比例简写（`16:9`）、精确像素（`1024x576`），或者不传 —— 不传时由服务商决定画布大小。
+
+自定义端点按 OpenAI 兼容格式发送 `{"model","prompt","size","n"}`，接受 `data[0].url`、`data[0].b64_json`、`images[0].url` 三种返回。
+
+Cloudflare Workers AI 的地址（`.../ai/run/@cf/...`）自动换成它自己的请求体 `{"prompt","steps"}`，并解析 `result.image` 的 base64 返回。
+
+## 密钥来源
+
+按顺序读取：
+
+1. 进程环境变量；
+2. `~/.dsh/secrets/media-tools.env`；
+3. `~/.codex/secrets/media-tools.env`（历史兼容）。
+
+支持的 key：
+
+- `SENSENOVA_API_KEY`：优先使用 SenseNova U1 Fast。
+- `SILICONFLOW_API_KEY`：未配置 SenseNova 时使用 SiliconFlow Kolors。
+
+Secrets 文件每行一个 `KEY=value`，建议权限 `600`。本技能不读取或修改 DSH 模型配置，也不内置任何 key。
+
+## 输出和隐私
+
+- 生成文件只写到命令指定的输出路径。
+- 不要自动上传、复制到公开目录或提交到仓库。
+- 提示词中不要包含证件号、客户资料、未公开商业信息等敏感内容，除非用户明确授权并确认服务商合规。
+- 避免在未授权情况下要求复现可识别个人、私有参考图或许可受限的角色/品牌素材。
+
+## 故障排查
+
+如果提示缺少 key，请在环境变量或 `~/.dsh/secrets/media-tools.env` 中配置 `SENSENOVA_API_KEY` 或 `SILICONFLOW_API_KEY`。如果服务商返回模型、余额或限流错误，按对应服务商控制台提示处理。

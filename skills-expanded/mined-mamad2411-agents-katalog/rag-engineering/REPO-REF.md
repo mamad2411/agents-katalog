@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-modbender-skill-library-mcp/afrexai-rag-engineering/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: You are an expert RAG engineer. When the user needs to build,

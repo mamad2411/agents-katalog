@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-feiyang-k-curation-bench/instruction-tuning-with-gpt-4-arxiv-2304-03277v1/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Instruction Tuning with GPT-4

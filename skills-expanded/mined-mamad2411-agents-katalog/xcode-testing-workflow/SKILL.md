@@ -1,0 +1,154 @@
+---
+name: xcode-testing-workflow
+description: Guide Swift Testing, XCTest, XCUITest, XCUIAutomation-oriented mechanics, code coverage, xctestplan matrices, accessibility-verification follow-through, test filtering, retries, diagnostics, and test-specific fallback work in existing Xcode-managed projects and workspaces. Use when Xcode-aware execution is needed and the task is primarily about testing rather than build or run work.
+---
+
+# Xcode Testing Workflow
+
+## Purpose
+
+Use this skill as the primary execution workflow for test-focused work in or around Xcode-managed projects and workspaces. Keep it focused on Swift Testing, XCTest, XCUITest, XCUIAutomation-oriented mechanics, code coverage, `.xctestplan`, destinations, launch arguments, interruption handling, attachments, accessibility-verification follow-through, Instruments profiling, `xctrace` trace capture, filters, retries, diagnostics, and test-specific Debug/Release validation instead of broad build/run or toolchain work. `scripts/run-workflow.fsx` is the runtime entrypoint for MCP-first test execution, official CLI fallback planning, and the remaining `.pbxproj` warning boundary when mutation enters project-file territory.
+
+## When To Use
+
+- Use this skill for Xcode test execution, test diagnosis, test filtering, retries, destination selection, and test-plan work.
+- Use this skill for Swift Testing, XCTest, XCUITest, XCUIAutomation-oriented mechanics, `.xctestplan`, flaky-test diagnosis, accessibility-verification follow-through, and test-only configuration validation.
+- Use this skill for Instruments and `xctrace` follow-through when performance-sensitive tests need Time Profiler, Metal System Trace, Allocations, VM Tracker, Points of Interest, signpost-aligned traces, or `.trace` artifact interpretation.
+- Use this skill for Xcode MCP operations and official Apple CLI fallback when the work is primarily about tests rather than build/run.
+- Use this skill when direct filesystem mutation around tests or test plans may be required.
+- Recommend `xcode-coding-intelligence-workflow` when the request is primarily about Xcode Intelligence setup, Xcode-hosted agents, external-agent access through `xcrun mcpbridge`, command/tool permissions, or Xcode-only agent configuration homes.
+- Do not use this skill as the default path for ordinary build, run, preview, archive, or general project-integrity work.
+- Recommend `xcode-build-run-workflow` when the task is primarily about build, run, previews, file membership, archives, toolchains, or guarded non-test mutation work.
+- Recommend `explore-apple-swift-docs` when the user needs Apple or Swift documentation lookup rather than execution work.
+- Recommend `swift-package-testing-workflow` when the task is package-first testing outside Xcode-managed execution.
+- Recommend `bootstrap-xcode-workspace --operation align` when an existing Apple product workspace needs managed guidance alignment rather than active engineering work.
+
+## Single-Path Workflow
+
+1. Classify the request into one operation type:
+   - read, search, or diagnostics
+   - test
+   - mutation
+2. Apply the Apple docs gate before any Apple design, architecture, implementation, or refactor guidance:
+   - use `explore-apple-swift-docs` to gather the relevant Apple documentation first
+   - state the documented API behavior, lifecycle rule, or workflow requirement being relied on before proposing changes
+   - do not rely on memory as the primary source when Apple docs exist
+   - if the docs and the current code conflict, stop and report that conflict
+   - if no relevant Apple docs can be found, say that explicitly before proceeding
+3. Apply the shared Swift policy before giving implementation guidance:
+   - apply the detailed local policy in `references/snippets/apple-xcode-project-core.md`
+   - preserve its simplicity-first, shape-preserving, and anti-ceremony Swift guidance
+   - preserve its project-appropriate logging, telemetry, and SwiftUI architecture guidance
+4. Run `scripts/run-workflow.fsx` to apply runtime configuration, `.pbxproj` warning safeguards, and CLI fallback planning.
+5. Use the focused references for the right testing surface:
+   - `references/code-coverage.md` for Xcode coverage collection, `.xcresult` artifacts, `xccov` reporting, comparison, and the Xcode 27 MCP boundary
+   - `references/xctestplan-configurations-and-matrix.md` for `.xctestplan`, launch-argument matrices, named configurations, and Debug/Release test coverage
+   - `references/xcuitest-and-xcuiautomation.md` for UI automation mechanics, waits, interruption handling, activities, and attachments
+   - `references/ios-ui-automation-destinations.md` for iOS simulator-versus-physical-device XCUITest decisions, destination evidence, and physical-device debugging handoffs
+   - `references/ui-accessibility-verification.md` for accessibility-specific runtime verification expectations and coordination with `apple-ui-accessibility-workflow`
+   - `references/macos-ui-test-permission-ownership.md` for macOS prompt attribution, test-host ownership, app launch/restore boundaries, and opt-in prompt-heavy test plans
+   - `references/instruments-performance-profiling.md` for Instruments, `xctrace`, Time Profiler, Metal System Trace, Allocations, VM Tracker, Points of Interest, and signpost-aligned trace evidence
+   - `references/testing-plans-file-membership-and-configurations.md` for the condensed cross-cutting summary and file-membership reminder
+6. Use `references/xcodegen-project-maintenance.md` when the repo is XcodeGen-backed and the task touches generated test targets, scheme test actions, test-plan references, launch arguments, environment variables, or test bundle membership.
+7. If MCP fails, use the structured fallback output from `scripts/run-workflow.fsx` together with `references/cli-fallback-matrix.md`.
+8. Report which parts were agent-executed, which parts were locally enforced by script, the Apple docs relied on, any tracked `.pbxproj` diff that must be staged and committed with the branch, and any required next step.
+
+## Inputs
+
+- `operation_type`: one of the operation types listed above.
+- `request`: optional short natural-language request text used to infer `operation_type` when the explicit operation is omitted.
+- `workspace_path`: optional absolute path for the target Xcode or Swift workspace.
+- `tab_identifier`: optional MCP tab identifier when already known.
+- `mcp_failure_reason`: optional input when continuing from an earlier MCP failure.
+- `direct_pbxproj_edit`: optional flag when the requested mutation would directly edit a `.pbxproj` file.
+- `direct_pbxproj_edit_opt_in`: optional explicit opt-in after the user has been warned about direct `.pbxproj` edit risks.
+- Defaults:
+  - runtime entrypoint: executable `scripts/run-workflow.fsx`
+  - the runtime may infer `operation_type` from `--request` text when the request wording is clear enough
+  - agent-side MCP retries once for transient failures
+  - direct edits are allowed by default when they do not directly edit `.pbxproj`
+
+## Outputs
+
+- `status`
+  - `success`: the workflow completed on its primary or fallback path
+  - `handoff`: the workflow is handing off to another skill because the request is actually build/run-focused
+  - `blocked`: prerequisites, policy, or mutation safeguards prevented completion
+- `path_type`
+  - `primary`: the guided agent-side MCP path completed successfully
+  - `fallback`: the official CLI fallback path completed successfully
+- `output`
+  - operation type
+  - `guard_result`
+  - `fallback_commands`
+  - one next step payload when needed
+
+## Guards and Stop Conditions
+
+- Apply the mutation safeguard from `references/mutation-risk-policy.md` only when the operation type is `mutation`.
+- Do not skip the explicit warning path for direct `.pbxproj` edits.
+- In XcodeGen-backed repos, edit the XcodeGen spec set and regenerate the project instead of hand-editing generated `.pbxproj` files.
+- Stop with `handoff` when the request is really build/run or toolchain work.
+- Stop with `blocked` when the required workspace context cannot be resolved and the operation cannot safely continue.
+- Stop with `blocked` when allowlist or sandbox rules prevent the official CLI fallback and no safe alternative exists.
+
+## Fallbacks and Handoffs
+
+- Official CLI execution is the only fallback path when the primary agent-side MCP path cannot complete.
+- Use `references/mcp-failure-handoff.md` for the canonical fallback and handoff payload.
+- Use `references/allowlist-guidance.md` when a safe official CLI fallback is blocked by local rules.
+- Recommend `xcode-coding-intelligence-workflow` when the request becomes Xcode Intelligence setup, Xcode-hosted agent setup, external-agent MCP configuration, or command/tool permission work.
+- Hand off to `xcode-build-run-workflow` when the request becomes primarily about build, run, previews, archives, file membership, or toolchains.
+- Recommend `explore-apple-swift-docs` directly when the task becomes Apple or Swift docs exploration work.
+- Recommend `swift-package-testing-workflow` directly when the task becomes package-first test execution, package workload design, signpost placement, or SwiftPM-first profiling harness work.
+- Recommend `apple-ui-accessibility-workflow` directly when the task is primarily about accessibility semantics or review rather than runtime test execution.
+- Recommend `format-swift-sources` directly when the task becomes SwiftLint or SwiftFormat setup, config export, or style-tooling maintenance work.
+- Recommend `structure-swift-sources` directly when the task becomes structural source cleanup work.
+- Recommend `bootstrap-xcode-workspace --operation align` directly when the repo needs Xcode-specific guidance alignment rather than execution.
+- `scripts/run-workflow.fsx` plans fallback commands; MCP execution itself remains agent-side tool usage guided by this skill.
+- When maintaining this repository itself, refresh repo-guidance consumers after substantial Xcode-testing-policy changes and keep the top-level export-surface docs aligned. Do not tell users to rely on repo-local installer workflows; this repository does not ship them.
+
+## Fixed Policy
+
+- `scripts/run-workflow.fsx` enforces the fixed MCP-first execution policy.
+- MCP tool execution itself remains agent-side and is not performed by the local runtime entrypoint or by the skill as a direct runtime.
+
+## References
+
+### Workflow References
+
+- `references/workflow-policy.md`
+- `references/mcp-tool-matrix.md`
+- `references/cli-fallback-matrix.md`
+- `references/code-coverage.md`
+- `references/xctestplan-configurations-and-matrix.md`
+- `references/xcuitest-and-xcuiautomation.md`
+- `references/ios-ui-automation-destinations.md`
+- `references/ui-accessibility-verification.md`
+- `references/macos-ui-test-permission-ownership.md`
+- `references/instruments-performance-profiling.md`
+- `references/testing-plans-file-membership-and-configurations.md`
+- `references/xcodegen-project-maintenance.md`
+- `references/mutation-risk-policy.md`
+- `references/mutation-via-mcp.md`
+
+### Contract References
+
+- `references/mcp-failure-handoff.md`
+
+### Support References
+
+- Recommend `explore-apple-swift-docs` when the user needs Apple or Swift docs exploration or Dash-compatible docs access.
+- Recommend `format-swift-sources` when the user needs SwiftLint or SwiftFormat setup rather than active Xcode testing work.
+- Recommend `structure-swift-sources` when the user needs structural Swift source cleanup rather than active Xcode testing work.
+- Recommend `bootstrap-xcode-workspace --operation align` when the user needs repo guidance aligned inside an existing Apple product workspace.
+- Recommend `references/snippets/apple-xcode-project-core.md` when the user needs to add or merge the shared Xcode-project guidance into an end-user repo.
+- `references/allowlist-guidance.md`
+- `references/skills-installation.md`
+- `references/skills-discovery.md`
+- `references/snippets/apple-xcode-project-core.md`
+
+### Script Inventory
+
+- `scripts/run-workflow.fsx`
+- `scripts/detect-xcode-managed-scope.fsx`

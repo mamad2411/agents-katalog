@@ -1,0 +1,127 @@
+---
+description: "Re-anchors actually using the session's skills: maps the task to the listing, invokes the fitting skill instead of reinventing it, names skills when delegating, and audits for one that should have fired. Use when: 'use your skills', 'you have a skill for that', 'did you check your skills', 'there's a skill for this', 'you reinvented that', 'you skipped the skill', 'invoke your skills', or at conversation start to set the posture that available skills get used."
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  discipline-batch: core  # every session carries a skill listing to act on
+  discipline-batch-rank: 10
+  workflow-stage: anytime
+  summary: Map the task to available skills and invoke them instead of reinventing
+---
+
+# Use your skills
+
+A drift corrector for skill-use discipline: the skills are in context to be
+used, not ignored. The shared method (re-anchor, audit the work in flight,
+correct forward, report) lives in
+[`${CLAUDE_PLUGIN_ROOT}/context/re-anchor-audit-correct.md`](../../context/re-anchor-audit-correct.md).
+Read it; this file adds only what is specific to discovering and invoking the
+skills already available.
+
+## The discipline this re-anchors
+
+A skill listing is loaded into context so the model knows which
+**model-invocable** skills are available; what the listing carries for each
+skill, and when the full body loads:
+[Control who invokes a skill](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill).
+This corrector audits only a **model-visible** skill that sat in the listing
+and went unused, its procedure reinvented or skipped instead of invoked. It
+does not fault the model for not auto-firing a **manual-only** skill, which is
+the user's to invoke; which frontmatter makes a skill manual-only, and which
+only hides it from the `/` menu while leaving it model-visible:
+[Control who invokes a skill](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill).
+
+The discipline, at each of the three surfaces where skills apply:
+
+- **This conversation.** Before doing multi-step or specialized work, scan the
+  in-context listing for a skill that already owns it, and invoke that skill
+  rather than improvising the procedure. Read a skill's description as a
+  routing signal, not decoration.
+- **The current task.** Map the task's shape to the skills that fit it, often
+  more than one across a task's phases (research, plan, implement, review),
+  and invoke each at its moment rather than carrying the whole task by hand.
+- **Delegated (subagent) work.** Never assume a delegated subagent knows
+  which skills fit its task: **name the relevant skills in the delegation
+  prompt**. For a custom subagent that
+  should always carry a discipline, recommend its `skills:` frontmatter, after
+  checking the preload section below for which skills it can carry; a skill it
+  cannot preload goes into the prompt directly. This is guidance, not a config
+  change the skill performs.
+  - **Pointer**: when deciding between naming a skill in the prompt and
+    preloading it, fetch
+    <https://code.claude.com/docs/en/sub-agents#preload-skills-into-subagents>
+    live; for what a non-fork subagent's context holds at startup, fetch
+    <https://code.claude.com/docs/en/sub-agents#what-loads-at-startup> live.
+
+## Audit. What to look for
+
+Name concrete, located findings (per the method doc's step 2, self-audit; on load-bearing work a fresh-context subagent, or a review skill that runs in its own context, confirms a clean result, a declared delta: either one audits the work without this context's reasoning. Running the change's code or tests is this audit's own work and re-reading it inline is self-audit, so neither confirms):
+
+- a multi-step or specialized task carried by hand where a skill in the
+  listing already owns that exact procedure;
+- a procedure reinvented from scratch that a listed skill would have supplied;
+- a task phase (research, planning, review, verification) done ad hoc where a
+  fitting skill went unconsulted;
+- a delegation prompt to a subagent that names no skills, leaving the subagent
+  to rediscover, or miss, a discipline it should have carried;
+- a custom subagent that repeatedly needs a discipline but does not preload it
+  via `skills:`.
+
+Correct each forward now: **invoke the skill this turn** and let it govern the
+work rather than merely noting it existed; re-issue the delegation prompt with
+the relevant skills named; and where a subagent should always carry a
+discipline, recommend the `skills:` preload.
+
+Resolve the verification level once with
+`bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin discipline --skill use-your-skills --file docs/conventions/discipline.yaml`
+and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)):
+`light` and `off` skip the method doc's step 2 and step 3 subagents, as it says, and the review skill that would stand in for one, and the final reply then carries the line `verification: skipped (<level>)` verbatim, such as `verification: skipped (light)`.
+
+## Out of scope. Routed, not owned
+
+This skill corrects session behavior: *what should have fired and didn't*. It
+does **not** own the levers that decide whether a skill *can* surface. Route
+those:
+
+- **A skill's description quality** (key use case first, natural trigger
+  keywords, within the per-entry character cap) is skill-authoring QA. Route
+  to `/skill-quality:check`, invoked via the Skill tool (degrade to prose
+  guidance when the `skill-quality` plugin is not enabled).
+- **The listing budget across all installed skills.** A real skill whose
+  trigger keywords are missing from the listing may be a budget problem, not a
+  description problem (how the budget is set and what it cuts:
+  [Skill descriptions are cut short](https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short)).
+  That machine-level budget problem is a configuration concern; route to
+  `/harness-config:audit`, invoked via the Skill tool (degrade to prose).
+  `/doctor` estimates the listing's cost
+  ([skills: check your setup with /doctor](https://code.claude.com/docs/en/skills#check-your-setup-with-%2Fdoctor)).
+- **Deterministic per-prompt routing.** A `UserPromptSubmit` hook that injects a
+  task-to-skill mapping on every message is an always-on mechanism with a
+  per-prompt token cost, owned by a hooks-capable plugin, not by this corrector.
+  Recommend it to the user only when the soft re-anchor repeatedly fails to
+  surface a skill that was in the listing.
+
+The dividing line: if a skill was in the listing and simply went unused, that
+is this skill. If a skill could not surface because its description was thin or
+the listing overflowed its budget, that is the routed territory above.
+
+## What this skill does not do
+
+- **Does not force-invoke an ill-fitting skill.** The goal is to use the skill
+  that *fits*, not to fire one for its own sake; "no skill fits, proceeding
+  directly" is a valid outcome.
+- **Does not mutate config or frontmatter at runtime.** The subagent `skills:`
+  preload and hook options are recommendations routed to the user, not changes
+  the skill makes.
+
+## Gotchas
+
+- A skill whose description looks absent from the listing may be
+  budget-dropped, not missing. That is a routed concern (above), not evidence
+  the skill does not exist.
+- A subagent's silence on skills is easy to miss: it will not error, it will
+  just do the work without the discipline the parent took for granted. The fix
+  lives in the *delegation prompt* (name the skills) or the *agent definition*
+  (`skills:` preload), not in the subagent's own run.
+- Invoking a skill is the re-anchor. Reading its description and then
+  improvising the procedure anyway is the exact drift this corrects.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/consulting-slide-generator/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: コンサルティングファーム品質のスライド図解をHTML+Tailwindで生成。McKinsey/BCG風のビジネス資料、提案書、プレゼンテーション用の図解を作成する際に使用。対応: (1) 課題提起スライド（数字+プログレスバー）, (2) ソリューションフロー（ステップ図）, (3) 2x2マトリクス（軸に意味あり）, (4) 比較表・Do/Don't, (5) プロセスフロー（ゲート付き）。出

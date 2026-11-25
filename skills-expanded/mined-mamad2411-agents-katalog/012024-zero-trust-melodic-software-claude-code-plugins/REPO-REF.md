@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-maji-fast/012024-zero-trust-melodic-software-claude-code-plugins/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: zero-trust-melodic-software-claude-code-plugins

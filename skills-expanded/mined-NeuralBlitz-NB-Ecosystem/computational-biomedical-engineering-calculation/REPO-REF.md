@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/computational-biomedical-engineering-calculation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Computational Biomedical Engineering Calculation Skill

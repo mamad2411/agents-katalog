@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/cursor-edit/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Cursor CLI를 통해 실제 코드 수정 수행. 분석/계획 결과를 받아 cursor-agent에게 전달하여 코드 편집을 위임한다. 코드 수정, 리팩토링, 기능 추가, 버그 수정 등 실제 파일 변경이 필요할 때 사용.

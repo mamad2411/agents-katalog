@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-agentskillexchange-skills/automattic-wordpress-remote-mcp/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Automattic WordPress Remote MCP connects MCP clients to live WordPress sites using OAuth, JWT, or application passwords. It is aimed at agents that need to read or operate against WordPress content an

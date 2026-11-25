@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-nomadamas-k-skill/biz-health-check/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 사업자등록번호 하나로 "이 사업자, 실제 문제 없나"를 확인한다 — 국세청 사업자등록 상태·국민연금 가입 사업장·국세 체납 명단·금융위 법인개요·조달청 부정당제재·지방행정 인허가 영업상태를 무료 공공 데이터로 교차 조회해 사실만 병렬하는 실사 리포트(점수·등급·위험 판정 없음).

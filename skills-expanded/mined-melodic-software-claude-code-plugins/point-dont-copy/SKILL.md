@@ -1,0 +1,148 @@
+---
+description: "Re-anchors pointer-over-copy discipline: audits the work in flight for copied content, internal-name coupling, and closed capability lists, and corrects by pointing at the living source. Use when: 'point don't copy', 'you copied that', 'don't duplicate the docs', 'cite instead of paste', 'link don't restate', 'you enumerated the tools', 'that couples to internal names', 'this will drift', or at conversation start on documentation work."
+argument-hint: "[target] [--repo <repo> ...]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  discipline-batch: situational  # only when producing docs/content that cites sources
+  discipline-batch-rank: 50
+  workflow-stage: anytime
+  summary: Audit for copied content and correct by pointing at the living source
+---
+
+**Arguments.** `[target] [--repo <repo> ...]`. e.g., /discipline:point-dont-copy the new setup guide, or empty to audit the work in flight. A target form (`--repo <repo>` and the others) audits those repositories instead; see [Several repositories](#several-repositories).
+
+# Point, don't copy
+
+A drift corrector for pointer-over-copy discipline. The shared method
+(re-anchor, audit the work in flight, correct forward, report) lives in
+[`${CLAUDE_PLUGIN_ROOT}/context/re-anchor-audit-correct.md`](../../context/re-anchor-audit-correct.md).
+Read it; this file adds only what is specific to duplication discipline.
+
+## The discipline this re-anchors
+
+Point at the living source; do not copy what it owns. Convention docs
+already own this doctrine: re-anchor them, do not restate them. Resolve the
+source of truth per the method doc's ladder:
+
+- **Facts you own (in-repo).** Your organization's reference-don't-duplicate
+  convention. Every fact has one source of truth; consumers cite it by a
+  stable anchor rather than restate it; literal versus semantic duplication;
+  the describe / use / expose roles a file plays toward a fact.
+- **Facts an upstream owns (external).** Your organization's
+  documentation-and-citations convention. Cite the upstream and fetch it at
+  read time; do not recap upstream-owned catalogs, schemas, flag
+  inventories, or defaults into tracked files; place the citation at the
+  sentence that defers to it; a stored external value needs a recheck
+  trigger.
+
+Read those where they live. When a consuming project declares none of them,
+re-anchor the portable baseline: provide a link or citation to the living
+source and never restate the facts it owns: **a reworded paraphrase drifts
+exactly as a verbatim copy does**, because both are a second copy that goes
+stale when the source moves.
+
+### This skill's own pins. Beyond what the conventions state
+
+- **Threshold two.** Whatever count the resolved convention's smell signals fire
+  at, this skill pins the trigger at **two**: the second copy is already
+  duplication to resolve by pointing, not something to tolerate until a third
+  appears. Weigh a genuine case for local divergence on its merits, but the
+  default at two copies is to consolidate to one source and point at it.
+- **Point at public contracts, not internals.** Reference the stable public
+  contract (a tool's invocation surface, the command and its arguments),
+  never the internal script or file names behind it, which break every
+  citation the moment they move.
+- **No capability enumeration.** Phrase your own duties open-ended, not just
+  upstream-owned inventories. A closed list of what something can do goes
+  stale as the surface evolves; name current mechanisms only as
+  clearly-marked examples. "mechanisms such as X and Y (examples, not a
+  fixed list)", never as the definition.
+
+### What is not a copy
+
+Owning a fact is not copying it. A config genuinely adapted for this repo, a
+constraint this project itself pins, a one-shot dated research deliverable,
+and an error string empirically observed in this environment are content
+this project authors and owns. They follow the conventions' "describe" and
+"empirical findings / operator recipes the repo records" carve-outs, not the
+copy prohibition. Do not flatten them into pointers.
+
+## Audit. What to look for
+
+Name concrete, located findings (per the method doc's step 2, self-audit; on load-bearing work a fresh-context subagent confirms a clean result):
+
+- copied or paraphrased content, external, local, or cross-repo, that a
+  named source already owns;
+- extracted value tables or verbatim config blocks lifted from a source's
+  docs;
+- hard-coded tool schemas or capability lists in a durable doc;
+- a reference to an internal script or file name where the public
+  invocation contract would do;
+- a closed enumeration of duties or mechanisms that will drift as the
+  surface evolves;
+- the same passage, literal, or concept appearing in two or more places;
+- in a port from another stack or language: a source-side primitive with no
+  target-side analogue (a language feature, a library guarantee, an
+  implicit runtime behavior) whose invariant the port silently drops. The
+  port must name the convention now carrying that invariant, or the
+  finding stands.
+
+Correct each forward now: replace the copy with a pointer to its owner,
+swap an internal-name reference for the public contract, and reopen a
+closed enumeration into a general duty with marked examples. Where content
+is genuinely this project's own to hold (an adapted config, a self-pinned
+constraint, a dated research deliverable), say so and leave it.
+
+Resolve the verification level once with
+`bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin discipline --skill point-dont-copy --file docs/conventions/discipline.yaml`
+and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)):
+`light` and `off` skip the method doc's step 2 and step 3 subagents, as it says, and the final reply then carries the line `verification: skipped (<level>)` verbatim, such as `verification: skipped (light)`.
+
+## Several repositories
+
+A target form from
+[`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md)
+runs the loop once per repository, per the method doc's "Several
+repositories"; with none, the skill audits the work in flight as above. Each
+repository's pass audits that repository's tracked
+documentation and instruction files (and, with a `[target]` too, the
+matching path in each repository) for the findings above. A cross-repository
+copy is the second copy this skill pins at two, and one repository naming
+another's internal paths breaks the public-contracts pin: get both from the
+contract's "Cross-repository signals" by running
+`/coupling:reduce dry-run` with the same target forms (no edits, branches or
+PRs; it records its candidates in each repository's coupling ledger,
+`.work/coupling/coupling-ledger.md`, which is never committed). When that skill is
+not enabled, report `cross-repository copies: not measured` rather than a
+clean result. Weigh each diverged copy against "What is not a copy" above
+before treating it as a finding, since a repository may own its adapted
+variant.
+
+## External-reference ports. Semantics map + confirmation gate
+
+**Scope.** This section governs external-reference ports only: work whose source of truth
+lives outside this repo's tree: vendored, foreign-language, other-repo. In-tree
+corrections stay on the method doc's do-it-now side; nothing here changes that.
+
+**Declared step delta** (per the method doc's "Declared step deltas" allowance): for an
+external-reference port, insert between the loop's steps 2 and 3 a semantics map and a
+confirmation gate, because a port that starts before the semantics are agreed bakes
+misreads into working code, where the audit can no longer see them as findings:
+
+- **Semantics map**, externalized, five sections: what the source does; side-by-side
+  pairs (source construct against port construct); a preserved / changed / dropped
+  ledger; an edge-case parity table; the open questions the port cannot settle alone.
+  The no-analogue trap check above feeds the dropped ledger: every dropped source
+  primitive names the convention now carrying its invariant.
+- **Confirmation gate.** Stop and wait for the user to confirm the map before port work
+  proceeds. A reply of "semantics confirmed" is the recommended token, not a required
+  one; any clear confirmation opens the gate.
+
+## Gotchas
+
+- The subtle case is the paraphrase. It reads as original prose but
+  restates a fact another source owns. Judge by ownership, not by whether
+  the words match.
+- A pointer is only durable if it targets the public contract. Pointing at
+  an internal name trades a copy-drift problem for a rename-drift one.

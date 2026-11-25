@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/football-predictor/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 足球预测与分析Agent。自动采集比赛数据、分析赔率、生成预测推荐、追踪结果、学习优化。适用于足球彩民、分析师、需要赛事预测的应用场景。当用户询问足球预测、比赛分析、投注建议时自动触发。"

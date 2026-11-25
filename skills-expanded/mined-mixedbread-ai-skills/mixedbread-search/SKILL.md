@@ -1,0 +1,454 @@
+---
+name: mixedbread-search
+description: >-
+  Build and query managed search indexes (Stores) using the Mixedbread Python and TypeScript SDKs.
+  Use when creating knowledge bases, uploading documents, performing semantic or vector search,
+  asking questions over documents, using agentic multi-step retrieval, combining store search with
+  web results, filtering by metadata, reranking, or discovering metadata facets.
+---
+
+# Mixedbread Search
+
+Create and search managed knowledge bases using the Stores API. Stores are multimodal search indexes that handle text, images, tables, audio, and video across 100+ languages.
+
+Docs: https://www.mixedbread.com/docs/stores/overview.md
+Agent-readable docs: https://www.mixedbread.com/docs/llms.txt
+Latest docs search: https://www.mixedbread.com/question?q=stores&section=docs
+
+## Setup
+
+```bash
+pip install mixedbread          # Python
+npm install @mixedbread/sdk     # TypeScript
+```
+
+```bash
+export MXBAI_API_KEY=your_api_key
+```
+
+## Quick Start
+
+**Python:**
+```python
+import os
+from mixedbread import Mixedbread
+
+mxbai = Mixedbread(api_key=os.environ["MXBAI_API_KEY"])
+
+store = mxbai.stores.create(name="my-docs", description="Product documentation")
+
+mxbai.stores.files.upload(
+    store_identifier=store.id,
+    file=open("guide.pdf", "rb"),
+    metadata={"category": "guides", "version": "2.0"},
+)
+
+results = mxbai.stores.search(
+    query="How does authentication work?",
+    store_identifiers=["my-docs"],
+    top_k=5,
+)
+for chunk in results.data:
+    print(f"{chunk.score:.3f} | {chunk.filename}: {chunk.text[:100]}")
+```
+
+**TypeScript:**
+```typescript
+import { Mixedbread } from '@mixedbread/sdk';
+import fs from 'fs';
+
+const mxbai = new Mixedbread({
+    apiKey: process.env.MXBAI_API_KEY!,
+});
+
+const store = await mxbai.stores.create({
+    name: 'my-docs',
+    description: 'Product documentation',
+});
+
+await mxbai.stores.files.upload({
+    storeIdentifier: store.id,
+    file: fs.createReadStream('guide.pdf'),
+    body: { metadata: { category: 'guides', version: '2.0' } },
+});
+
+const results = await mxbai.stores.search({
+    query: 'How does authentication work?',
+    store_identifiers: ['my-docs'],
+    top_k: 5,
+});
+```
+
+## Decision Tree
+
+- **What kind of retrieval do you need?**
+  - Simple keyword/semantic lookup → Standard `search()` with `top_k`
+  - Natural-language answer with citations → `question_answering()` (citations are on by default)
+  - Complex multi-hop question or retrieval that benefits from adaptive semantic, exact, metadata, and document-level exploration → `search()` with `agentic` enabled
+  - Exact token/regex match (error codes, identifiers, literal phrases) → `POST /v1/stores/grep`. See [Grep and Chunk Listing](#grep-and-chunk-listing-rest).
+  - Combine internal docs with live web → Add `"mixedbread/web"` to `store_identifiers`
+- **Do you need metadata filtering?**
+  - Don't know what metadata exists → Call `metadata_facets()` first
+  - Know the fields → Build `filters` with `all`/`any`/`none` combinators
+- **Do you need higher relevance?**
+  - Yes → Set `"rerank": true` in `search_options` (uses the default model, `mixedbread-ai/mxbai-rerank-v3-listwise`), or pass a config object: `{"rerank": {"model": "...", "with_metadata": true, "top_k": 10}}` to choose a model, include metadata in reranking, or cap post-rerank results.
+- **Do you need OCR, summaries, or transcriptions from files?**
+  - Yes → Upload files with `config: {"parsing_strategy": "high_quality"}`. Stores auto-extract OCR text, summaries, and transcriptions — no separate parsing needed. For PDFs, slides, Word documents, and images, chunks additionally carry per-page layout in `generated_metadata.layout`: each detected element with its bounding box (`[x1, y1, x2, y2]` in page-image pixels), element type, and OCR text, in reading order.
+  - No / text-only documents → Default `parsing_strategy` (`"fast"`) is sufficient.
+- **Does the user's query language overlap with metadata fields (titles, categories, authors)?**
+  - Yes → Enable `contextualization` at store creation so embeddings carry that metadata. See [Contextualization](#contextualization).
+  - No → Leave it off (the default).
+- **Do you need the exact stored chunks for a known file (not a query)?**
+  - Yes → Call `stores.files.retrieve()` with `return_chunks=True` (or a list of indices). See [Retrieve Chunks by File](#retrieve-chunks-by-file).
+  - No, you want relevance ranking → Use `search()`.
+- **Is the store temporary (e.g., PR review)?**
+  - Yes → Set `expires_after` with a day limit at creation
+
+## Workflows
+
+### Build a Searchable Knowledge Base
+
+Create a store, upload documents, and search. Most of the time you do not need to poll for finished files. Only gate on processing when the workflow depends on complete batch coverage, such as benchmarks or recall evaluation.
+
+**Python:**
+```python
+store = mxbai.stores.create(
+    name="product-docs",
+    description="Product documentation",
+    config={"contextualization": {"with_metadata": ["title", "category"]}},
+)
+
+mxbai.stores.files.upload(
+    store_identifier=store.id,
+    file=open("guide.pdf", "rb"),
+    metadata={"title": "Setup Guide", "category": "guides"},
+)
+mxbai.stores.files.upload(
+    store_identifier=store.id,
+    file=open("faq.md", "rb"),
+    metadata={"title": "FAQ", "category": "support"},
+)
+
+results = mxbai.stores.search(
+    query="How do I reset my password?",
+    store_identifiers=["product-docs"],
+    top_k=5,
+    search_options={"rerank": True},  # file metadata is returned by default
+)
+for chunk in results.data:
+    print(f"{chunk.score:.3f} | {chunk.filename}: {chunk.text[:100]}")
+
+# Optional: poll store.file_counts if you need deterministic full-batch coverage (benchmarks, migrations).
+```
+
+**TypeScript:**
+```typescript
+const store = await mxbai.stores.create({
+    name: 'product-docs',
+    description: 'Product documentation',
+    config: { contextualization: { with_metadata: ['title', 'category'] } },
+});
+
+await mxbai.stores.files.upload({
+    storeIdentifier: store.id,
+    file: fs.createReadStream('guide.pdf'),
+    body: { metadata: { title: 'Setup Guide', category: 'guides' } },
+});
+await mxbai.stores.files.upload({
+    storeIdentifier: store.id,
+    file: fs.createReadStream('faq.md'),
+    body: { metadata: { title: 'FAQ', category: 'support' } },
+});
+
+const results = await mxbai.stores.search({
+    query: 'How do I reset my password?',
+    store_identifiers: ['product-docs'],
+    top_k: 5,
+    search_options: { rerank: true },  // file metadata is returned by default
+});
+
+// Optional: poll store.file_counts if you need deterministic full-batch coverage (benchmarks, migrations).
+```
+
+### Filter-Driven Search
+
+Discover available metadata, then build targeted filters.
+
+**Python:**
+```python
+facets = mxbai.stores.metadata_facets(store_identifiers=["product-docs"])
+for key, values in facets.facets.items():
+    print(f"{key}: {values}")
+
+results = mxbai.stores.search(
+    query="deployment guide",
+    store_identifiers=["product-docs"],
+    top_k=10,
+    filters={
+        "all": [
+            {"key": "category", "operator": "eq", "value": "guides"},
+            {"key": "status", "operator": "not_eq", "value": "archived"},
+        ]
+    },
+    search_options={"rerank": True},
+)
+```
+
+**TypeScript:**
+```typescript
+const facets = await mxbai.stores.metadataFacets({
+    store_identifiers: ['product-docs'],
+});
+for (const [key, values] of Object.entries(facets.facets ?? {})) {
+    console.log(`${key}: ${JSON.stringify(values)}`);
+}
+
+const results = await mxbai.stores.search({
+    query: 'deployment guide',
+    store_identifiers: ['product-docs'],
+    top_k: 10,
+    filters: {
+        all: [
+            { key: 'category', operator: 'eq', value: 'guides' },
+            { key: 'status', operator: 'not_eq', value: 'archived' },
+        ],
+    },
+    search_options: { rerank: true },
+});
+```
+
+Filter operators: `eq`, `not_eq`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `like`, `not_like`, `contains`, `starts_with`, `regex`. Combine with `all` (AND), `any` (OR), `none` (NOT).
+
+### Web-Augmented Search
+
+Include `"mixedbread/web"` in `store_identifiers` to combine store search with live web results. This is a reserved store identifier — no setup required. You can also search the web alone.
+
+**Python:**
+```python
+results = mxbai.stores.search(
+    query="latest best practices",
+    store_identifiers=["my-docs", "mixedbread/web"],
+)
+```
+
+**TypeScript:**
+```typescript
+const results = await mxbai.stores.search({
+    query: 'latest best practices',
+    store_identifiers: ['my-docs', 'mixedbread/web'],
+});
+```
+
+### Contextualization
+
+Appends selected file metadata to chunk text before embedding, so queries that overlap with fields like `title`, `category`, or `author` rank more accurately. Configured on the store's `config.contextualization` at creation time and only affects files uploaded afterward. Look up the modes (`false` / `true` / `{"with_metadata": [...]}`) in the Stores docs — fetch `llms.txt` (linked at the top of this skill) and follow the link to the Stores configuration page.
+
+### Retrieve Chunks by File
+
+When you already know the file (preview, export, ingestion debugging) and don't need ranking, call `stores.files.retrieve()` with `return_chunks=True` (all chunks) or `return_chunks=[indices]` (specific `chunk_index` positions). For the exact request/response shape, look up the "Get Store File" endpoint in the API reference — fetch `llms.txt` and follow the link, or search the docs.
+
+### Grep and Chunk Listing (REST)
+
+Two endpoints without dedicated SDK methods yet — call them over HTTP (or the SDK's generic `post`):
+
+- **`POST /v1/stores/grep`** — match chunks against an RE2 regular expression instead of semantic search. Finds chunks containing a literal token, identifier, error code, or phrase. Body: `pattern` (regex, up to 1024 chars), `store_identifiers` (exactly one store), `targets` (default `["text", "generated"]` — original chunk text vs. ingestion-derived OCR text, transcriptions, and summaries), `case_sensitive` (default `false`), `top_k`, `filters`. No pagination — raise `top_k` for more matches. Response chunks come back under `data`.
+- **`POST /v1/stores/list-chunks`** — list chunks by metadata `filters` without a search query, optionally ordered by a metadata field: `sort_by: "price"` or `["price", false]` for descending (unprefixed paths target file metadata, `generated_metadata.*` targets chunk metadata). Single store only.
+
+### Question Answering
+
+Get a generated answer with cited sources. The answer may contain `<cite i="n"/>` tags referencing the sources list. Citations (`qa_options.cite`) and multimodal context (`qa_options.multimodal`) are both on by default. Optional top-level parameters: `instructions` (up to 8,000 chars) to steer answer style and focus, and `stream: true` to stream the answer.
+
+**Python:**
+```python
+result = mxbai.stores.question_answering(
+    query="What are the rate limits?",
+    store_identifiers=["my-docs"],
+    top_k=10,
+    search_options={"rerank": True},
+)
+print(result.answer)
+for source in result.sources:
+    print(f"  {source.filename} (score: {source.score:.3f})")
+```
+
+**TypeScript:**
+```typescript
+const result = await mxbai.stores.questionAnswering({
+    query: 'What are the rate limits?',
+    store_identifiers: ['my-docs'],
+    top_k: 10,
+    search_options: { rerank: true },
+});
+console.log(result.answer);
+for (const source of result.sources) {
+    console.log(`  ${source.filename} (score: ${source.score.toFixed(3)})`);
+}
+```
+
+### Question Answering with Agentic Fallback
+
+When QA returns no sources, retry with agentic search for deeper retrieval. Always re-call `question_answering()` — do not fall back to raw `search()`, which loses the generated answer.
+
+**Python:**
+```python
+result = mxbai.stores.question_answering(
+    query="Compare the pricing tiers and their feature differences",
+    store_identifiers=["my-docs"],
+    top_k=10,
+    search_options={"rerank": True},
+)
+
+if not result.sources:
+    result = mxbai.stores.question_answering(
+        query="Compare the pricing tiers and their feature differences",
+        store_identifiers=["my-docs"],
+        top_k=10,
+        search_options={"agentic": True},
+    )
+
+print(result.answer)
+for source in result.sources:
+    print(f"  {source.filename} (score: {source.score:.3f})")
+```
+
+### Agentic Search
+
+For complex questions requiring multi-step retrieval. Enabling `agentic` delegates retrieval and ranking to Mixedbread's managed search-agent harness. It begins with the original query and metadata inspection, then adaptively chooses among semantic search, exact/regex matching, metadata filtering, corpus overview, and chunk or document expansion before submitting a final evidence ranking. It can fan searches out in parallel and deduplicates evidence across calls. Works in both `search()` and `question_answering()`.
+
+The exact internal tool sequence is implementation detail: do not assume a fixed number of generated sub-queries or build client logic around trace tool names. The public response remains the usual ranked chunk list; `question_answering()` uses that list to generate its cited answer.
+
+**Python:**
+```python
+results = mxbai.stores.search(
+    query="Compare the pricing tiers and their feature differences",
+    store_identifiers=["product-docs"],
+    top_k=10,
+    search_options={
+        "rerank": True,
+        "agentic": {
+            "instructions": (
+                "Prioritize official pricing pages over blog posts. "
+                "Surface tier names, monthly cost, and included feature lists."
+            ),
+        }
+    },
+)
+```
+
+**TypeScript:**
+```typescript
+const results = await mxbai.stores.search({
+    query: 'Compare the pricing tiers and their feature differences',
+    store_identifiers: ['product-docs'],
+    top_k: 10,
+    search_options: {
+        rerank: true,
+        agentic: {
+            instructions:
+                'Prioritize official pricing pages over blog posts. ' +
+                'Surface tier names, monthly cost, and included feature lists.',
+        },
+    },
+});
+```
+
+#### Agentic options
+
+- `agentic: true` — enable with defaults.
+- `agentic: { ... }` — use the currently active request controls:
+  - `instructions` (string, up to 5000 chars) — additional retrieval and ranking guidance. Tell the agent which entities, metrics, time ranges, source types, or authority rules matter and what to ignore. The top-level `query` remains the user's question.
+  - `strict_top_k` (boolean, default `true` if `top_k` is set, else `false`): when `true`, the agent returns the `top_k` most relevant chunks it found. Requires `top_k`. When `false`, the agent returns only the chunks it considers relevant, at most `top_k` when it is set. Set it to `false` when precision matters and non-relevant chunks must stay out of the result.
+
+The managed harness honors the top-level `query`, `store_identifiers`, `top_k`, `filters`, and `file_ids`. `filters` and `file_ids` are hard scope constraints ANDed into every retrieval the agent makes, while `instructions` are soft planning and ranking guidance.
+
+The request schema still accepts `max_rounds`, `queries_per_round`, and `media_content` for compatibility with the previous agentic implementation, but the managed harness does not currently forward these request-level values. Do not use them for tuning. Retrieved image content is currently disabled for the managed agent, and request-level `score_threshold` is not forwarded either.
+
+When `agentic` is enabled, `search_options.rewrite_query` is unnecessary because the managed agent plans its own queries. `rerank` may be enabled alongside agentic search; it reranks results returned by the agent's semantic-search tool before the agent performs its final evidence ranking.
+
+#### Writing good agentic `instructions`
+
+- Prefer directive phrases ("prioritize X", "ignore Y", "treat Z as authoritative") over restating the question.
+- Name concrete entities, fields, metrics, time ranges, or document types so exploration and ranking are grounded in what you care about.
+- Use top-level `filters` or `file_ids` for enforceable scope. Do not rely on instructions such as "only search team=growth" when a metadata filter can express the constraint.
+- Keep the question itself in `query`; put ranking/planning guidance in `instructions`.
+
+## Response Shapes
+
+**Search results** (`search()` returns):
+```python
+response.data  # list of chunks
+chunk.text       # str — the matched text
+chunk.score      # float — relevance score (0–1)
+chunk.filename   # str — source file name
+chunk.file_id    # str — source file ID
+chunk.store_id   # str — store the chunk belongs to
+chunk.metadata   # dict — attached file metadata (returned by default; disable with return_metadata=False)
+chunk.type       # str — chunk type (e.g. "text", "image_url")
+chunk.image_url  # dict | None — image payload for image chunks
+chunk.ocr_text   # str | None — OCR text for image-heavy chunks
+chunk.summary    # str | None — auto-generated summary for image chunks (high_quality mode)
+chunk.transcription # str | None — transcription for audio/video chunks (high_quality mode)
+chunk.generated_metadata # dict | None — ingestion-derived metadata (page counts, dimensions, headings, ...)
+```
+
+In `high_quality` mode, PDF, slides, Word, and image chunks also expose the OCR layout in `generated_metadata.layout`: the page-image `width`/`height` plus `elements` in reading order, each with `bbox` (`[x1, y1, x2, y2]` in page-image pixel coordinates), `type` (e.g. `table`, `figure`, `text`), and the element's OCR `text`. Use it to highlight evidence regions or map answers back to a location on the page.
+
+**QA results** (`question_answering()` returns):
+```python
+result.answer    # str — generated answer, may contain <cite i="n"/> tags
+result.sources   # list of source objects
+source.filename  # str
+source.score     # float
+source.file_id   # str
+source.text      # str — the source chunk text
+source.image_url # dict | None — image payload with url/format for image chunks
+```
+
+## Store Management
+
+```python
+stores = mxbai.stores.list(limit=20)
+for store in stores.data:
+    print(store.name)
+
+store = mxbai.stores.retrieve(store_identifier="my-docs")
+print(store.file_counts)  # {"completed": 5, "in_progress": 2, "failed": 0}
+
+mxbai.stores.delete(store_identifier="my-docs")
+
+files = mxbai.stores.files.list(store_identifier="my-docs", limit=20)
+for file in files.data:
+    print(file.filename, file.status)
+```
+
+## Rules
+
+### CRITICAL
+- **Store names must be lowercase letters, numbers, hyphens, and periods only.** Invalid names cause creation to fail. No spaces, underscores, or uppercase.
+- **For field-level contextualization, use the documented `{"with_metadata": [...]}` form.** The other documented modes are `true` (all metadata) and `false` (none). Dot notation is supported for nested fields.
+
+### HIGH
+- **Do not block on full ingestion unless completeness matters.** Stores process files asynchronously, and completed files become searchable as they finish. Most of the time, especially for interactive flows, upload and search immediately without polling. Poll file status or `file_counts` only when the workflow depends on complete batch coverage, such as benchmarks, migrations, or sync verification.
+- **Use `metadata_facets()` before building filters.** Don't guess metadata keys — discover them. Typos in filter keys silently return no results.
+- **Enable `rerank` for production search.** Reranking significantly improves relevance. Only skip it for latency-sensitive prototyping.
+- **Use `parsing_strategy: "high_quality"` to enable automatic content extraction.** When set in per-file config at upload time, high quality mode extracts OCR text and summaries for images, and transcriptions for audio and video. These fields are directly usable as LLM context. It also populates `generated_metadata.layout` on PDF, slides, Word, and image chunks — per-element bounding boxes alongside the OCR text. The default `"fast"` strategy indexes content without these additional extractions.
+- **Use standard search for simple lookups.** Agentic search adds latency from multiple retrieval rounds. Only use it for complex, multi-hop questions.
+
+### MEDIUM
+- **Set `expires_after` for temporary stores.** PR review stores, demo stores, and test stores should auto-expire to avoid accumulating unused indexes.
+- **One store per knowledge domain, not per query.** Stores are persistent indexes meant to be reused. Create once, search many times.
+- **Use `score_threshold` to filter low-relevance noise in standard search.** Set `search_options: {"score_threshold": 0.3}` to drop chunks below a minimum relevance server-side — no need to post-filter on `chunk.score` client-side. It is not currently forwarded in agentic search.
+- **Use only active agentic controls.** Tune `top_k`, hard-scope with `filters`/`file_ids`, and steer with `agentic.instructions`. Request-level `max_rounds`, `queries_per_round`, and `media_content` are compatibility fields and are not currently forwarded to the managed harness.
+- **Use `agentic.instructions` to steer retrieval, not `query`.** Keep `query` as the user's natural-language question. Put "prioritize X", "ignore Y", source-type preferences, and ranking hints in `search_options.agentic.instructions` (up to 5000 chars).
+- **Image queries only support plain semantic search.** Combining an image query with `rerank`, `rewrite_query`, or `agentic` raises a validation error.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| No results returned | Newly uploaded files are still processing, or the store name/query is wrong | Retry after processing completes for at least one file. For completeness-sensitive runs, verify the expected files are `completed` before evaluating results. |
+| No results returned | Score cutoff too high | Lower or remove `search_options.score_threshold` (or any client-side cutoff). |
+| No results returned | Wrong `store_identifiers` | Verify the store name or ID matches exactly. |
+| Metadata filters return nothing | Wrong key name or value | Use `metadata_facets()` to discover actual keys and values. |
+| Slow agentic search | Managed multi-step exploration adds model and retrieval calls | Use standard search if the query is simple, reduce `top_k` when fewer final chunks are sufficient, and make `agentic.instructions` more focused. Do not try to tune compatibility-only `max_rounds` or `queries_per_round`. |
+| API key error | Invalid or missing key | Verify `MXBAI_API_KEY` is set. Get a key at https://platform.mixedbread.com/platform?next=api-keys |

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-pengchujin-livecanvas-livecanvas/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 将主题或材料经搜索核实制成苹果 Live Photo 信息动效卡。用 Remotion 编排图片、PNG、emoji、场景、时间线和可选图表，适用于知识解释、产品比较、变化过程及数据故事；制作可预览动效与配对实况资源，说明接收端兼容性。

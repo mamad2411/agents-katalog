@@ -1,0 +1,36 @@
+---
+name: spring-boot-data-access
+description: 'Best practices for JPA, Hibernate, and Database interactions in Spring Boot. Use when implementing JPA entities, repositories, or database access in Spring Boot. (triggers: **/*Repository.java, **/*Entity.java, jpa-repository, entity-graph, transactional, n-plus-1)'
+---
+
+# Spring Boot Data Access
+
+## **Priority: P0**
+
+## Implementation Guidelines
+
+### JPA & Hibernate (Spring Data JPA)
+
+- **Read-Only**: Default to **`@Transactional(readOnly = true)`** on Services to optimize DB resources.
+- **Projections**: Use **`Java Records`** for **Read-Only** query results. Avoid fetching full **`@Entity`** objects when not necessary.
+- **Pagination**: ALWAYS use **`Pageable`** and **`Slice`** (or `Page`) to prevent loading massive datasets.
+- **Spring Data**: Prefer **`JpaRepository`** and **`Query methods`**. Use **`@Query`** with JPQL for complex logic. Use Flyway or Liquibase for migrations; never use `spring.jpa.hibernate.ddl-auto=create` (`ddl-auto`) in production.
+
+### Query & Transaction Optimization
+
+- **N+1 Problem**: Fix **`N+1`** selects using **`JOIN FETCH`** (JPQL) or **`@EntityGraph`**.
+- **Open-In-View**: Set `spring.jpa.open-in-view=false` in **`application.yaml`**.
+- **Bulk Operations**: Use **`@Modifying`** with `@Query` for updates/deletes to bypass EntityManager overhead.
+- **Connection Pool**: Configure **`HikariCP`** with explicit `maximum-pool-size`. Tune Hikari pool-size based on expected concurrent queries.
+
+## Anti-Patterns
+
+- **No N+1 Selects**: Use **`JOIN FETCH`** or **`@EntityGraph`** instead of lazy-loading in loops.
+- **Entity Inflation**: Don't use `@Data` (Lombok) on Entities as it breaks Proxy and `hashCode`/`equals` performance.
+- **Transactional Leak**: Don't put `@Transactional` on public `Repository` methods if the `Service` is already transactional.
+- **Raw SQL**: Avoid native SQL unless JPQL/Criteria API is insufficient.
+
+## References
+
+- [Implementation Examples](references/implementation.md)
+

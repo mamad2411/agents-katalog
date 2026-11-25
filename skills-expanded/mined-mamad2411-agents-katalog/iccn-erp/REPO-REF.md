@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/iccn-erp/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 【零壹问界IC ERP外贸管理系统】，提供查询数据的技能。当用户提到查询订单、采购单、需求单、入库单、出库单、客户、供应商、库存、现货等任何ERP业务数据时，必须使用此技能。触发词包括但不限于：\"查订单\"、\"采购单详情\"、\"需求单\"、\"入库记录\"、\"出库情况\"、\"客户信息\"、\"供应商\"、\"现货库存\"、\"有没有货\"、\"库存多少\"等，应立即触发此技能。"

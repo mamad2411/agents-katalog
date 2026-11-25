@@ -1,0 +1,577 @@
+---
+name: melonjs-camera-and-drawing
+description: "Use this skill for camera control and immediate-mode drawing in melonJS — following a target, viewport bounds, shake and fade, secondary cameras and what each one draws, and drawing shapes, lines and gradients inside a custom draw(). Covers world versus screen coordinate conversion, clipping and masking, baking with CanvasRenderTarget, and reading pixels back. Triggers on: Camera2d, viewport, follow, offset, look ahead, setBounds, minimap, second camera, split screen, cullMask, visibilityLayer, hide from a camera, zoom, roll, shake, fadeIn, fadeOut, CameraEffect, addCameraEffect, MaskEffect, iris, image mask, PixelateTransitionEffect, worldToLocal, localToWorld, worldToScreen, screenToRay, screenToWorld, colorMatrix, renderer.fill, renderer.stroke, setGlobalAlpha, fillArc, Rect, Ellipse, Polygon, Line, Path2D, SVG path, Gradient, clipRect, mask, CanvasRenderTarget, NoiseTexture2d, lookAt, setBasis, orbit, toImageData, getImageData, toBlob, toDataURL, screenshot, read pixels."
+license: MIT
+---
+
+# Camera and immediate-mode drawing
+
+## Following a target
+
+```js
+app.viewport.follow(player, app.viewport.AXIS.BOTH, 0.1);
+```
+
+**Pass the renderable, not `renderable.pos`.** `follow()` accepts a `Renderable`,
+a `Vector2d` or a `Vector3d` and **throws** `invalid target for me.Camera2d.follow`
+for anything else. A renderable's `pos` is an `ObservableVector3d`, which is not
+a `Vector3d` subclass, so `follow(player.pos, …)` throws.
+
+The third argument is a damping factor in `[0 .. 1]` — lower is smoother and
+laggier, `1` snaps. Omit it for a hard lock (it defaults to `1`). It is
+frame-rate independent since 19.7. `AXIS.HORIZONTAL` / `AXIS.VERTICAL` /
+`AXIS.BOTH` / `AXIS.NONE`.
+
+Call it from the followed entity's `onActivateEvent`, using `this.parentApp`.
+
+**To frame the target off centre, set `offset`; do not follow a helper
+object.** It shifts the view without moving the camera, in world units, and is
+applied after following and the bounds, so the view can show past them:
+
+```js
+app.viewport.follow(player, app.viewport.AXIS.BOTH, 0.1);
+app.viewport.offset.set(0, -70);   // look a little above the feet
+
+// or ahead of where the player faces, eased (see math.damp below)
+const ahead = facingLeft ? -80 : 80;
+app.viewport.offset.x = math.damp(app.viewport.offset.x, ahead, 4, dt / 1000);
+```
+
+Culling, tile layers, parallax `ImageLayer`s, lights and the pointer
+(`localToWorld`, `worldToLocal`) all count it. `shake()` adds its jitter on top
+and gives the value back when it ends, so setting it before or during a shake
+is fine. `reset()` clears it.
+
+**For anything that is NOT the camera, the same smoothing is `math.damp`.**
+`follow()` is frame-rate independent for you; a value you smooth yourself is
+not, and `lerp(current, target, alpha)` once per frame moves further on a slow
+frame than on a fast one, so the feel changes with the frame rate:
+
+```js
+import { math } from "melonjs";
+
+// dt is milliseconds, damp wants seconds
+this.speed = math.damp(this.speed, targetSpeed, 5, dt / 1000);
+this.turret.angle = math.damp(this.turret.angle, wanted, 8, dt / 1000);
+```
+
+`damp(current, target, lambda, dt)`. Higher `lambda` converges faster; it is
+the rate, not a per-frame fraction.
+
+**For a DIRECTION rather than a scalar, the tool is `slerp`**, on `Vector2d`
+and `Vector3d` alike. Two reasons, and the second is the one that bites:
+
+```js
+// a turret, a ship, a camera: a facing that chases another facing
+facing.slerp(toTarget, 1 - Math.exp((-6 * dt) / 1000));
+```
+
+1. Damping a facing component by component drags it through the inside of the
+   circle, so it slows at the ends, rushes the middle and comes out shorter
+   than it went in.
+2. **Damping a scalar heading goes the wrong way round the wrap.** From 170
+   degrees to -170 degrees is 20 degrees apart, and the numbers are 340 apart,
+   so the turret sweeps all the way round the back. `slerp` works on the
+   directions, takes the shorter arc by construction, and has no wrap to cross.
+
+See `melonjs-3d` for the rest, including what happens between two exactly
+opposite directions. Use it for camera pans you drive yourself,
+turret tracking, zoom, input smoothing and any value that should chase another
+one — it is the tool that is easy to miss and easy to hand-write slightly
+wrong.
+
+## Bounds are the thing people forget
+
+The camera's bounds default to the **renderer size**, so it cannot scroll until
+you widen them to the world:
+
+```js
+app.viewport.setBounds(0, 0, mapWidth, mapHeight);
+```
+
+Symptom: `follow()` is called, looks right, and the view never moves. Note a
+canvas resize resets the default camera's bounds to `(0, 0, w, h)`, so re-apply
+them from a `CANVAS_ONRESIZE` handler if your game resizes. Loading a Tiled map
+sets them for you from the map size.
+
+## Camera effects
+
+```js
+app.viewport.shake(4, 200);                       // intensity, ms
+app.viewport.fadeIn("#000000", 500);              // fade TO black
+app.viewport.fadeOut("#000000", 500);             // start black, fade back to normal
+app.viewport.colorMatrix.contrast(1.1).saturate(1.1);
+app.viewport.addPostEffect(new VignetteEffect(app.renderer));
+```
+
+The fade pair is named from the *colour's* point of view, not the scene's:
+`fadeIn` fades the colour in (screen goes to `color`), `fadeOut` fades it out
+(screen starts at `color` and clears). Both default to a 1000 ms duration and
+take an optional completion callback.
+
+`shake()` while a shake is still running is ignored, unless its fifth
+argument, `force`, is `true`, which replaces the running one:
+
+```js
+app.viewport.shake(8, 300, app.viewport.AXIS.BOTH, undefined, true);
+```
+
+**`fadeIn` does not HOLD the colour.** The effect completes, the camera's own
+update destroys it, and the screen snaps back — which is why the engine's
+idiom does the work in the completion callback and then calls `fadeOut`. To
+keep a filled screen across a state change, own the effect: a completed one
+marked `isPersistent` is left alone, and taking it away again is yours to do.
+
+```js
+const hide = camera.addCameraEffect(
+    new FadeEffect(camera, { color: "#000", duration: 400, direction: "in" }),
+);
+hide.isPersistent = true;          // survives completion AND Camera2d#reset()
+// ... later, once the new stage is up
+camera.removeCameraEffect(hide);   // which destroys it for you
+```
+
+That is exactly what `state.transition()` is built on, so a hand-rolled
+transition behaves the same way. Before 20.9 a persistent effect was destroyed
+on completion like any other, which is why a transition used to flash the
+scene it had just covered.
+
+`colorMatrix` (`brightness` / `contrast` / `saturate` / `hueRotate` / `sepia` /
+`invertColors`, all chainable) is the cheap way to grade a whole camera: the
+camera appends it as a final post-effect pass by itself whenever the matrix is
+non-identity, and drops it again after the frame. It is **not** shader-free —
+it is a `ColorMatrixEffect`, i.e. a `ShaderEffect`, so like every post effect it
+is inert on the Canvas renderer.
+
+### The camera effects, and your own
+
+Each is a `CameraEffect`, added with `camera.addCameraEffect(effect)` (which
+returns it), found with `getCameraEffect(Class)` and taken off with
+`removeCameraEffect(effect)`, which destroys it:
+
+| effect | options | what it does |
+|---|---|---|
+| `ShakeEffect` | `intensity`, `duration`, `axis`, `onComplete` | jitters `offset`; what `shake()` adds. Several can run at once this way |
+| `FadeEffect` | `color`, `duration` (1000), `direction: "in" \| "out"`, `onComplete` | what `fadeIn()` / `fadeOut()` add |
+| `MaskEffect` | `shape`, `color`, `duration` (500), `direction: "hide" \| "reveal"`, `center`, `invert`, `onComplete` | an iris (the default) or a wipe through a unit-sized `Ellipse` or `Polygon`, an image's silhouette (the image, or a preloaded one's name) or a `Sprite`'s current frame (a `NineSliceSprite` at its full size), closing on `center` (a renderable or a screen point; the screen's centre by default). `invert` fills the shape instead and grows it to cover. Plain images and fills: the same on Canvas, WebGL and WebGPU |
+| `PixelateTransitionEffect` | `renderer`, `size` (32), `duration` (500), `direction: "hide" \| "reveal"`, `onComplete` | the view breaks into blocks up to `size` screen pixels, or comes back from them. A shader: on Canvas it keeps its timing and draws nothing |
+
+```js
+// the player's own silhouette closing on the player, then a heart image
+// growing out of it until it covers the screen
+camera.addCameraEffect(new MaskEffect(camera, {
+    shape: player, center: player, color: "#000", duration: 500,
+}));
+camera.addCameraEffect(new MaskEffect(camera, {
+    shape: "heart_mask", center: player, invert: true, color: "#000", duration: 400,
+}));
+```
+
+A sprite or renderable is read once, when the effect is made: its frame, its
+facing and its place on screen (not its scale or rotation: the shape is grown
+to the screen's size anyway). The shape grows about its thickest part, which
+sits on `center`. An image is read through a canvas, so a compressed texture
+or a cross-origin image without CORS cannot shape a mask (it warns and uses an
+iris).
+
+`state.transition("fade" | "mask" | "pixelate", …)` drives the last three
+for a state change (see `melonjs-scenes-and-state`). A `Trigger` that loads a
+level transitions only with both a `color` and a `duration`, and takes only
+`transition: "fade"` (the default) or `"mask"` with a `shape` (and `center`,
+`invert`; `"touching"` for either is whoever walked in): anything else,
+`"pixelate"` included, is a fade.
+
+For an effect of your own, extend `CameraEffect`: `update(dt)` runs every
+frame (`dt` in ms), `draw(renderer, width, height)` draws over the camera's
+view, and `destroy()` frees what it holds. Set `isComplete = true` and the
+camera's update destroys it that frame, unless it is `isPersistent`.
+
+## Zoom and roll
+
+```js
+app.viewport.zoom = 2;              // above 1 zooms in, below 1 out
+app.viewport.roll = Math.PI / 32;   // a slight dutch angle, in radians
+```
+
+A zoomed camera follows, keeps to its bounds and centres on `focusOn` in world
+units, and `localToWorld` / `worldToLocal` count the zoom. A zoom of 0 or less
+is taken as 1.
+
+`roll` is absolute (assigning the same angle twice changes nothing), and the
+pointer conversions undo it, so picking under a rolled camera needs nothing.
+It OWNS the camera's `currentTransform`: each assignment rebuilds it, so a
+`rotate()` or `scale()` called on the camera itself is lost at the next one.
+`reset()` puts it back to 0. On a `Camera3d` the same `roll` banks the view
+(see below).
+
+## Coordinate conversion
+
+```js
+app.viewport.worldToLocal(x, y);   // world → screen
+app.viewport.localToWorld(x, y);   // screen → world
+```
+
+They agree with where the camera draws: a level smaller than the view is
+centred by offsetting the world container (`world.pos`), which the default
+camera draws and a minimap, corner or zoomed camera leaves out, and each
+camera's conversions follow suit (20.13 and later; before, a minimap's were off
+by `world.pos`).
+
+Both return a `Vector2d`; with no third argument that vector comes from the
+shared pool, so in a per-frame path pass your own `v` as the third argument, or
+release it with `getPool("vector2d").release(v)`.
+
+Pointer events already carry every frame of reference: `gameWorldX`/`gameWorldY`
+(world), `gameScreenX`/`gameScreenY` (screen), `gameLocalX`/`gameLocalY`
+(relative to the registered region's container) and `gameX`/`gameY`, which is
+whichever of world/screen matches the region — screen for a `floating` region,
+world otherwise. Use the screen pair for anything that *moves* the camera, or
+the drag feeds back on itself.
+
+### In 3D: `Camera3d#worldToScreen`
+
+`worldToLocal` is a 2D camera's offset subtraction — it knows nothing about a
+perspective projection. To pin a label, damage number or marker to a point in a
+3D scene, project it:
+
+```js
+const p = camera.worldToScreen(target);    // a Vector3d; view + projection, divide included
+if (p !== null) {                          // null = at or BEHIND the camera
+    label.pos.set(p.x, p.y);
+}
+```
+
+It returns canvas pixels with the origin top-left and **y down**, which is the
+engine's own 2D draw space — so the result feeds a `floating` renderable or the
+immediate-mode API directly, with no flip.
+
+**Always check for `null`.** A point at or behind the camera (clip `w <= 0`)
+has no honest screen position, and projecting it anyway yields a mirrored
+coordinate that puts your label on the wrong side of the screen. Skip it.
+
+Do not hand-roll this with `Matrix3d` — the perspective divide and the behind-
+camera case are exactly what gets it wrong.
+
+The other way round, a screen point is not a world point under perspective but
+a whole line of them (20.16):
+
+```js
+const ray = camera.screenToRay(pointer.gameScreenX, pointer.gameScreenY); // a Ray3d
+const onFloor = camera.screenToWorld(pointer.gameScreenX, pointer.gameScreenY, FLOOR_Y);
+const hit = camera.pick(pointer.gameScreenX, pointer.gameScreenY, app.world);
+```
+
+Feed them the **screen** pair (`gameScreenX` / `gameScreenY`), never
+`gameWorldX`, which a `Camera3d` can only approximate. `melonjs-3d` covers all
+three.
+
+## Pointing a 3D camera
+
+A 2D camera's only rotation is `roll`. A 3D one can be pointed at a target, and
+optionally banked at the same time:
+
+```js
+camera.lookAt(target);                  // pitch and yaw; roll untouched
+camera.lookAt(target, up);              // and bank, where `up` is what should
+                                        // appear UP ON SCREEN
+camera.setBasis(right, up, forward);    // or pose it from a basis outright
+camera.orbit(target, yaw, pitch, distance); // or circle the target, looking
+                                        // at it: a model viewer, an overview
+```
+
+`orbit` is `lookAt` the other way round: it keeps the angles you give it and
+works out the position, so a drag or the wheel turns and zooms by changing the
+three numbers. A negative `pitch` looks down, from above. `melonjs-3d` covers
+it, with a drag-and-wheel sample.
+
+`up` has no default, so the one-argument form behaves exactly as it always
+did. Because this engine renders Y-down, a level horizon is `(0, -1, 0)`.
+`setBasis` is the writable counterpart of `getBasis` and takes the camera's
+own columns, whose `up` points down the screen: the opposite sense, one
+negation apart. See `melonjs-3d` for the full account.
+
+## Secondary cameras
+
+Cameras are first-class — a minimap is a second camera with `autoResize = false`
+and an overridden `postDraw`:
+
+```js
+this.cameras.set("minimap", new MinimapCamera());
+```
+
+A stage's cameras draw in the order they were added, each over the ones before
+it, so a full-screen second camera is a layer: a `Camera3d` drawing a 3D
+background first, the game's own camera over it, each kept to its part of the
+world with `visibilityLayer` / `cullMask` (below). A camera's post effects
+apply to what that camera draws: the first camera's pass starts the frame, and
+a later camera's is blended over what is already there (20.13 and later;
+before, it wiped out the cameras before it).
+
+View state is per camera, not per scene: a `Camera3d` carries its own distance
+fog (`setFog`), so a minimap or split-screen view fogs independently of the main
+one — and a `Camera2d` never fogs. See `melonjs-3d`.
+
+### What each camera draws: `visibilityLayer` and `cullMask`
+
+Every camera draws the whole world. To keep something off one camera only, put
+it on a layer that camera leaves out. A renderable's `visibilityLayer` is the
+layers it is on, as bits (1, 2, 4...); a camera's `cullMask` is the layers it
+draws. A camera draws a renderable only if the two share a bit:
+
+```js
+const PARTICLES = 2;
+emitter.visibilityLayer = PARTICLES;   // the particles go on layer 2
+minimap.cullMask = ~PARTICLES;         // the minimap draws every layer but 2
+```
+
+- By default every renderable is on layer 1 and every camera draws every layer
+  (`cullMask` is `-1`), so nothing changes until a game sets one.
+- A container left out is left out with everything inside it, however deep:
+  set it on an emitter and none of its particles are drawn. The world itself
+  obeys it too, and so does what it contains: a child is drawn only if it and
+  every container above it share a bit with the camera.
+- Particles are on their emitter's layers, and follow a change to them on the
+  emitter's next update, so a camera that draws only the emitter's layer draws
+  its particles too.
+- A renderable on layer `0` is drawn by no camera; a `cullMask` of `0` draws
+  nothing.
+- It decides drawing only: what a camera leaves out still updates, collides and
+  receives pointer events.
+- A `Light2d` a camera leaves out, itself or a container it is in, neither
+  glows, nor cuts its hole in the darkness, nor lights normal-mapped sprites in
+  that camera. A `Light3d` lights the meshes of every camera.
+- It adds to the floating rule: a floating renderable is drawn by a secondary
+  camera only with `visibleInAllCameras`, and only if the layers match as well.
+- On a Tiled object, set it as an `int` custom property named
+  `visibilityLayer`.
+
+## Immediate-mode drawing
+
+Inside a custom `draw(renderer)` you can draw shapes directly. Remember the two
+renderable rules: read `this.pos`, and zero the anchor.
+
+```js
+draw(renderer) {
+    renderer.setColor("#ff8800");
+    renderer.fillRect(this.pos.x, this.pos.y, this.width, this.height);
+
+    renderer.setColor("#ffffff");
+    renderer.lineWidth = 2;                 // property, not setLineWidth()
+    renderer.stroke(new Line(0, 0, [/* … */]));
+}
+```
+
+**The colour's alpha and the global alpha are two things**, as on a 2D
+context. A fill or a stroke is drawn at the alpha of `setColor` times
+`setGlobalAlpha` (which is where the renderable's opacity comes in), an image at
+the global alpha (times the tint) alone, and `getGlobalAlpha()` never moves with
+`setColor`. So to fade a translucent shape, lower the global alpha and keep the
+colour; folding the colour's alpha into `setGlobalAlpha` as well counts it twice.
+
+`lineWidth`, `lineJoin`, the colour and the global alpha are all part of what
+`save()` / `restore()` keep, and every renderable's `draw()` runs between the
+two, so set them freely there: the next renderable gets them back.
+
+`fillArc` / `strokeArc` read their angles like `CanvasRenderingContext2D.arc`:
+an end before the start wraps round (`end + 2π`), and a span of 2π or more in
+the arc's own direction is the whole circle. A filled part-circle differs by
+backend, though: Canvas closes it with a straight chord, the GPU renderers fill
+a pie slice from the centre.
+
+Geometry available: `Rect`, `RoundRect`, `Ellipse`, `Polygon`, `Line`, `Point`
+(and a `Bounds`), plus the 3D `Box3d` and `Sphere`, drawn as their footprint
+and their circle on the screen plane. `renderer.fill(shape)` and
+`renderer.stroke(shape)` take any of them and throw `Invalid geometry for
+fill/stroke` for anything else.
+
+### Paths and SVG strings
+
+For any other outline, build a path on the renderer's own `renderer.path2D`,
+then call `fill()` / `stroke()` with no argument:
+
+```js
+renderer.path2D.parseSVGPath("M 50 0 L 100 100 L 0 100 Z");
+renderer.setColor("#4CAF50");
+renderer.fill();
+```
+
+`renderer.path2D` also takes the methods of the browser's `Path2D`
+(`beginPath`, `moveTo`, `lineTo`, `arc`, `arcTo`, `ellipse`, `rect`,
+`roundRect`, `quadraticCurveTo`, `bezierCurveTo`, `closePath`).
+
+- **Every `moveTo`, every `M`, starts a sub-path, and filled, each one after
+  the first is a HOLE**: a donut, the counter of an "O". Wind a hole the
+  opposite way to the outline, as Canvas fills by the non-zero rule, where a
+  hole wound the same way fills in. Draw separate shapes with separate fills.
+- **`parseSVGPath` reads absolute commands only** (`M L H V Q C A Z`). A
+  lowercase, relative command is read as its absolute twin, so a path
+  exported with relative commands comes out scrambled, and `H` / `V` take an
+  OFFSET from the pen, not the coordinate SVG means. Export absolute
+  coordinates.
+- **The engine's `Path2D` class is not exported.** `new Path2D()` in a game is
+  the browser's own, which `fill()` / `stroke()` refuse as invalid geometry:
+  use `renderer.path2D`.
+
+`Gradient` gives linear and radial fills, built with
+`renderer.createLinearGradient(x0, y0, x1, y1)` /
+`createRadialGradient(x0, y0, r0, x1, y1, r1)` and then handed to
+`renderer.setColor(gradient)`. `NoiseTexture2d` generates cellular and simplex
+noise — including seamless tiling and `asNormalMap` — so you rarely need to ship
+noise PNGs.
+
+Two things to get right when one is animated:
+
+- **Drive it yourself.** `update(dt)` advances the time axis and re-bakes; the
+  engine never calls it. An `animated: true` texture nobody updates is a still
+  image, with no error to say so.
+- **Hand consumers the texture, not its canvas.** Re-baking bumps the
+  `Texture2d`'s `version`, and that bump is what tells the renderer to
+  re-upload. `getTexture()` returns the baked canvas, which carries no version
+  — so a mesh given the canvas shows frame one forever.
+
+Set `seamless: true` for anything tiled by UVs past 1, or every repeat carries a
+visible seam.
+
+**And it still will not animate on a `Mesh`.** Driving `update(dt)` genuinely
+re-bakes the field — the pixels change, the version increments — but the mesh
+path does not pick the new copy up, so a 3D surface textured with an animated
+noise renders frozen while every counter reports success. Verify with a
+checksum of `getTexture()` before concluding the animation is broken; it is the
+upload that is missing, not the bake. For a moving 3D surface, scroll the UVs
+or move the geometry instead.
+
+## Clipping and masking
+
+```js
+renderer.clipRect(x, y, w, h);        // rectangular clip
+renderable.mask = new Ellipse(/* … */);  // shape mask on an object
+```
+
+Note that a `Container` with `clipping` enabled clips **after** its own
+`translate(pos)`, in container-local coordinates — `clipRect(0, 0, width,
+height)`. It also silently does nothing unless the container is non-root and has
+a finite `width`/`height`: a `Container` built with no explicit size is
+`Infinity × Infinity`, and `clipping = true` on it is a no-op.
+
+## Bake once, draw many
+
+When you would otherwise issue hundreds of identical draws every frame, render
+them once into a `CanvasRenderTarget` and draw the result:
+
+```js
+const rt = new CanvasRenderTarget(width, height, { context: "2d" });
+const ctx = rt.context;          // a CanvasRenderingContext2D — draw into it once…
+// then draw the backing canvas, not the target object:
+renderer.drawImage(rt.canvas, x, y);
+// or wrap it: new Sprite(0, 0, { image: rt.canvas })
+```
+
+Pass `rt.canvas`, never `rt` — a `CanvasRenderTarget` is a wrapper, not a
+drawable, and the engine's own bakes (the particle emitter's default texture)
+hand `.canvas` on for exactly that reason.
+
+**Create it once and keep it.** On a GPU backend, once drawn, its texture stays
+on the GPU until `rt.destroy(renderer)` frees it: a stage change does not, and
+`destroy()` without the renderer frees the canvas but not that copy. A target
+made for every level, every restart or every spawned object and never
+destroyed leaks one texture each time, so make it once (at module level, say)
+and clear it for reuse. If you paint into it again after it has
+been drawn, call `rt.invalidate(renderer)` before the next draw so the GPU copy
+is refreshed.
+
+This is the sanctioned performance idiom before reaching for a custom shader.
+
+**For a solid fill you do not need a canvas at all.** `Renderer.getWhitePixel()`
+is a shared, lazily-created 1x1 white canvas, and stretching it is how you get
+a coloured rectangle, a bar, a flat screen overlay, or a blank carrier for an
+effect that paints from scratch:
+
+```js
+const bar = new Sprite(0, 0, { image: Renderer.getWhitePixel() });
+bar.anchorPoint.set(0, 0);
+bar.setTint("#39d0ff");
+bar.scale(width, height);     // a 1x1 texture, so scale IS the size in pixels
+```
+
+It is also the right texture under a `ShaderEffect` whose body ignores the
+incoming colour, and it keeps the quad batched with everything else using it.
+When you DO need a real canvas, `Renderer.createCanvas(width, height)` is the
+engine's allocator: it hands back an `OffscreenCanvas` where that is safe and
+throws on a zero dimension, instead of `document.createElement("canvas")`.
+
+`renderer.toFrameTexture()` is the related tool for capturing the *current frame*
+into a texture for a shader to sample.
+
+## Reading pixels back
+
+To grab what a render target holds, as pixels or as a file:
+
+```js
+const pixels = await rt.toImageData();      // ImageData, any backend
+const blob   = await rt.toBlob();           // Blob, "image/png" by default
+const url    = await rt.toDataURL();        // data: URL string
+const bitmap = await rt.toImageBitmap();    // ImageBitmap
+```
+
+All four are promises, and that is not decoration. **WebGPU cannot read a
+texture back synchronously** — it has to map a buffer, which only completes on
+a later tick. So `toImageData()` is the portable readback and the other three
+are built on it.
+
+There is also a synchronous `getImageData()` on `CanvasRenderTarget` and
+`WebGLRenderTarget`, because those two genuinely can. It is **not** part of the
+`RenderTarget` contract and it **throws on a WebGPU target**. Reach for it only
+in code that already knows which backend it is on; anything backend-agnostic
+should await `toImageData()`.
+
+```js
+// fine in canvas-only or WebGL-only code
+const data = rt.getImageData(0, 0, w, h);
+
+// the version that works wherever the game runs
+const data = await rt.toImageData(0, 0, w, h);
+```
+
+## Symptom → cause
+
+| symptom | cause |
+|---|---|
+| a second camera's post effect wipes out what the first camera drew | before 20.13 a later camera's post-effect pass replaced the whole frame; update, or put the effects on a container instead of the camera |
+| `follow()` set but the view never moves | viewport bounds still at renderer size |
+| `invalid target for me.Camera2d.follow` | passed `player.pos` — pass the renderable, a `Vector2d` or a `Vector3d` |
+| camera drag jumps around | using world (`gameWorldX`) instead of screen (`gameScreenX`) coordinates |
+| `colorMatrix` does nothing | it is a shader effect — inert on the Canvas renderer |
+| custom drawing appears at the origin | `draw()` not reading `this.pos` |
+| custom drawing offset by half its size | centred `anchorPoint` not zeroed |
+| `setLineWidth` is not a function | it is the `lineWidth` property |
+| after a translucent `setColor`, images, later colours and the next renderables come out faded (WebGL / WebGPU) | before 20.13 the colour's alpha leaked into the global alpha; update |
+| a translucent colour comes out fainter than asked | its alpha folded into `setGlobalAlpha` as well, so it counts twice |
+| a `lineWidth` set in one `draw()` thickens everything drawn after it (WebGL / WebGPU) | before 20.13 `restore()` did not put `lineWidth` back; update, or put it back yourself |
+| `fillArc` with the end angle before the start fills the wrong part of the circle (WebGL / WebGPU) | before 20.13 the GPU renderers did not wrap the angles like Canvas; update |
+| a minimap's `worldToLocal` / `localToWorld` are off by the level's centring offset | before 20.13 they applied `world.pos`, which a non-default camera does not draw; update |
+| clipping in the wrong place inside a container | container clips in local coordinates, after its own translate |
+| `container.clipping = true` does nothing | container has no explicit size, so `width`/`height` are `Infinity` |
+| baked target draws nothing / throws | passed the `CanvasRenderTarget`, not its `.canvas` |
+| `getImageData()` throws on one machine but not another | that one is on the WebGPU renderer, which cannot read back synchronously — `await toImageData()` instead |
+| frame rate drops with many static draws | bake into a `CanvasRenderTarget` instead |
+| GPU memory grows with every level or restart | a `CanvasRenderTarget` created each time: make one and reuse it, or `destroy(renderer)` the old one |
+| a second `shake()` does nothing | one is still running: pass `force` (the fifth argument) to replace it |
+| a `Trigger` with `transition: "pixelate"` fades instead | a trigger takes only `"fade"` or `"mask"`; add a `PixelateTransitionEffect` yourself |
+| a `Trigger` loads its level with no transition | it needs both `color` and `duration` |
+| an image or sprite `MaskEffect` is a plain circle, with a console warning | the shape could not be used: an unknown image name, a compressed texture, a cross-origin image without CORS, a fully transparent image or frame, a destroyed sprite, a renderable that is not a `Sprite`, or a value that is not a shape at all |
+| a `MaskEffect` closes on the middle of the screen | it closes on `center`, the screen's centre by default: pass the renderable or point |
+| a `rotate()` or `scale()` on the camera is lost | `roll` owns the camera's `currentTransform` and rebuilds it; use `roll` and `zoom` |
+| an SVG path from an editor comes out scrambled | `parseSVGPath` reads absolute commands only, and `H` / `V` as offsets |
+| a hole in a path fills in, on Canvas only | it is wound the same way as the outline; wind it the opposite way |
+| `fill(new Path2D(...))` throws `Invalid geometry for fill/stroke` | that is the browser's `Path2D`; build on `renderer.path2D` and call `fill()` |
+| a repainted `CanvasRenderTarget` still shows the old pixels | call `rt.invalidate(renderer)` after painting |
+| a 3D camera should circle a point at a distance, turned by a drag or zoomed by the wheel | `camera.orbit(target, yaw, pitch, distance)` with the three numbers in your own state; see `melonjs-3d` |
+| a 3D camera cannot be given an arbitrary up | `Camera3d#lookAt(target, up)` or `setBasis(right, up, forward)`; see `melonjs-3d` |
+| particles or effects clutter a minimap | every camera draws everything: put them on their own `visibilityLayer` and leave it out of the minimap's `cullMask` |
+| something is missing from one camera only | its `visibilityLayer`, or a container's above it, shares no bit with that camera's `cullMask` |
+| a renderable shows in no camera at all | its `visibilityLayer` is `0`, or the world's own layer is left out |
+
+## Related skills
+
+- `melonjs-renderables` — the `draw()` contract and anchors
+- `melonjs-3d` — `Camera3d`, which extends `Camera2d` and keeps all of the above

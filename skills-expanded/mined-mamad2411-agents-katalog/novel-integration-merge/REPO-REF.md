@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/novel-integration-merge/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 用 Novel 的 fix/niudieyi-merge-issue 过渡分支处理开发或功能分支合入 dev/test 的冲突。用于“走过渡分支合 dev/test”“重置到 origin/dev 或 origin/test 后合源分支并强推”等完整集成请求，也支持只报告冲突范围。不用于直接发布 dev/test/master 或普通功能分支同步。

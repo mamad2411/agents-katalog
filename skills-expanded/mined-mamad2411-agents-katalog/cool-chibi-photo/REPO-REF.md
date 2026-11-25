@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/cool-chibi-photo/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 编辑已有照片并在右下角合成同款Q版。用于：(1) 按 cool-chibi-photo 处理、真人加Q版、右下角小人、宠物Q版；(2) 参考图锁定画风与比例、还原情境和动作；(3) 自然调光调色、按需清理或更换背景及重新构图；(4) 单人竖版候选、轻贴纸点缀和随场景变化的短文案。保留原照片主体，不默认整图动漫化。

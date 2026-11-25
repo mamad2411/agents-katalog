@@ -1,0 +1,316 @@
+---
+description: "Iteratively reduce coupling at any altitude (documents, code modules, applications, repositories): scan for change-transmitting dependencies typed against a coupling model, verify each finding, apply a budgeted batch of safe behavior-preserving reductions, and ledger structural candidates for design routing so repeated runs continue where the last stopped; after a value changes, find and classify every site stating it. Use when: 'reduce coupling', 'decouple', 'loosen coupling', 'too tightly coupled', 'high cohesion low coupling', 'break this dependency', 'dependency injection pass', 'externalize this config', 'connascence', 'coupling scan', 'these files always change together', 'stop copying between repos', 'I changed this value everywhere'. Skip when: reviewing a diff before merge (review tools), designing one chosen boundary (/architecture:improve), general structural tidyings with no coupling focus (/code-tidying:tidy), or a docs noise or dedup pass (docs-hygiene)."
+argument-hint: "[<scope>|dry-run [<scope>]|change [apply] <old> <new> [<scope>]|status|help] [--repo <repo> ...]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Scan for change-transmitting coupling, apply safe reductions in a budgeted batch, route the rest
+---
+
+## Repository context. Gather first
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+- Recent commits, `git log --oneline -10`
+- Working tree status (empty = clean), `git status --porcelain | head -10`
+
+## Variables
+
+Arguments: `$ARGUMENTS`
+
+## Purpose
+
+Answer one question, repeatedly: **which dependency in the target transmits the most
+unnecessary change, and what is the smallest mechanism that stops the transmission?** The target
+is this repository unless the arguments or the request name several; then it is those
+repositories and the dependencies between them, per
+[`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md). Each
+invocation is one pass. Scan, verify, reduce what is safely reducible within a scope budget,
+surface what is not, and record everything in a durable ledger so the next invocation resumes
+instead of restarting. Coupling goes down monotonically across runs; no single run tries to
+finish the job.
+
+Two lanes, split by the nature of the finding, never by convenience:
+
+- **Apply lane.** Mechanical, contained, behavior-preserving reductions (weaken a
+  connascence form, de-duplicate a stated fact into a pointer, inject a hard-wired volatile
+  collaborator, name a magic value). Applied this run, verified, shipped as one
+  structure-only change set.
+- **Route lane.** Cross-file remediation and architectural judgment (move a boundary,
+  introduce a seam, split a shared database, merge two repos' duplicated logic). Coupling
+  findings of this shape exist to inform a human: they are surfaced, ranked, and routed,
+  never auto-applied.
+
+This is not a diff reviewer, not a designer of one chosen boundary, and not a general tidy
+pass. See "What this skill does not do".
+
+## Actions
+
+| Argument | Action |
+|----------|--------|
+| *(empty)* | Full pass over an inferred scope: scan → verify → apply lane → route lane → ledger |
+| `<scope>` | Same pass narrowed to a path, module, or altitude keyword (`docs`, `code`, `app`, `repo`) |
+| `dry-run [<scope>]` | Scan, verify, rank, and ledger only. Do not edit, branch, push, or file tracker items |
+| `change <old> <new> [<scope>]` | Change mode, read-only: find every site that states `<old>`, classify each, and propose what happens to it. No edits |
+| `change apply <old> <new> [<scope>]` | Change mode with edits: the same inventory, then, once the human confirms the site list, change the setup sites and convert them to a reference form |
+| `status` | Read the ledger and report open candidates, applied reductions, and what the next run should take |
+| `--repo <repo>` (and the other target forms) | Any action above, over several repositories: one pass per repository plus the cross-repository scan in phase B |
+| `help` | Print this table with one worked example per action |
+
+## The model
+
+Hub-and-spoke; read the spoke before the phase that needs it:
+
+- [`reference/coupling-model.md`](reference/coupling-model.md). What counts as coupling, the
+  strength ladder, connascence axes, volatility weighting, per-altitude mechanisms, and the
+  not-a-finding list. Read before scanning; findings are typed against it.
+- [`reference/remediations.md`](reference/remediations.md). Mechanism per finding kind, each
+  with its over-abstraction counterweight and the sequencing rule (smallest mechanism first).
+  Read before applying or routing anything.
+- [`reference/ledger.md`](reference/ledger.md). Ledger entry schema, status lifecycle, and
+  re-run semantics. Read at phase A and phase H.
+- [`reference/change-mode.md`](reference/change-mode.md). The `change` action: how the inventory
+  finds every form of a value, the site classes and what happens to each, reference forms, the
+  apply sequence, and its pitfalls. Read before any `change` run.
+- [`reference/cross-repo-copies.md`](reference/cross-repo-copies.md). Files copied between the
+  repositories in scope: what to exclude, how to measure, and how to route. Read before phase B
+  of a run over two or more repositories.
+
+## Workflow
+
+Phases run in order; each gate is hard. `dry-run` stops after D (ledger write included).
+
+**A. Orient.** Resolve the repositories first: this one, unless a target form or the request
+names several, which resolve, count and list as `target-scope.md` "Resolving repositories" says.
+Over several repositories, every phase below runs once per repository with its root anchored
+(`git -C <root>`), one subagent per repository ("Fan-out" there), and the report merges them
+("Merging findings" there). Then resolve the scope within each from the argument, else infer from
+the conversation, else pick the hottest area by commit frequency. The ledger path is the memory tier's constant slug `coupling`, default
+`.work/coupling/coupling-ledger.md` (`.work/` unless the repo's instructions declare another working-docs root),
+never committed, one ledger per repo regardless of scope. The slug is constant because coupling
+reduction is repo-scoped and spans many scopes and short-lived branches; a scope- or
+branch-derived slug would fragment the one ledger successive runs must resume. On the session's
+first write, verify the memory root contains a `.gitignore` with `*`, creating it (announced) when
+absent, and create the slice directory when absent. Create or resume the ledger. Discover the consuming repo's
+own review/engineering conventions (a review-criteria file such as `REVIEW.md`, a
+`docs/conventions/` or standards directory, CLAUDE.md rules) and align finding vocabulary and
+severity with them; the bundled model is the fallback, never an override of the consumer's
+own standards.
+
+**B. Scan.** Fan out fresh-context Explore subagents over the scope, each briefed with the
+coupling model and returning findings in ledger-entry form (edge, kind, mechanism, strength,
+degree, locality, evidence). Each is done when its slice of the scope has been read; it returns
+early with what it has when a finding needs a file outside that slice. In parallel, mine co-change evidence from version-control
+history: file pairs that repeatedly change in the same commits without a declared dependency
+are coupled through a channel the import graph cannot see, and they outrank most statically
+visible findings.
+
+Beside co-change, measure collision hotspots when the repository is hosted on GitHub: run
+`bash "${CLAUDE_SKILL_DIR}/scripts/collision-hotspots.sh" --prs <n>` from the repository root
+(add `--repo <owner>/<repo>` when `gh`'s default repository is not the one that holds the pull
+requests, `--exclude <glob>` for more files that change on every release, `--max-pairs <m>` to
+cap the replays, and `--dry-run` to see the pairs before fetching anything). The script lists
+pull requests from that one repository and fetches their heads from `origin` when `origin` names
+it, otherwise from the URL `gh` reports for it. Size `--prs` by the
+days of history wanted: count the merges into the default branch over the last few days with
+`git log --first-parent --since='<n> days ago' --format=%h <default-branch>`, one line per merge,
+and multiply the daily rate by the days. The script
+pairs pull requests that were open at the same time and share a file, replays each pair with
+`git merge-tree`, and prints `conflicts<TAB>pairs<TAB>path` for every file at least 3 pairs
+touched; read each ranked file as a candidate typed against the model's collision hotspot entry
+and verify it in phase C like any other finding. Carry its `gap:` lines into the report: a pull
+request whose file list stopped at the host's limit is undercounted, and a head that could not
+be fetched was not replayed. The `known bump hotspots` line names release files that conflict
+for version bumps, not design; report it once and do not ledger those files. When the script
+exits 2 (no `gh`, no `jq`, a `git` without `merge-tree --write-tree`, no host data), rank by
+co-change alone and record `gap: collision hotspots not measured: <the script's message>` in
+the report.
+
+- Pointer: the 100-file cap per pull request comes from
+  <https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api#node-limit>;
+  the exit codes the script reads are in <https://git-scm.com/docs/git-merge-tree#OUTPUT> and
+  <https://git-scm.com/docs/git-merge-tree#_exit_status>.
+- As of: 2026-11-10.
+- Recheck trigger: the forge's pull-request file list returns more than 100 files for one pull request,
+  or `git merge-tree --write-tree` changes its exit status meanings.
+
+Then check the ranked files for a second list. Ranked paths come from pull requests and are
+untrusted: never type one into a command. Pipe the ranking straight in from the repository root,
+`bash "${CLAUDE_SKILL_DIR}/scripts/collision-hotspots.sh" --prs <n> | awk -F'\t' 'NF == 3 && \$1 ~
+/^[0-9]+$/ { print \$3 }' | python3 "${CLAUDE_SKILL_DIR}/scripts/derivable-list.py" --paths-from -`
+(same flags as the ranking run), or write the paths one per line to a file with the Write tool
+and pass `--paths-from <file>`; with no ranking, write the files co-change mining ranked highest
+the same way. It prints `candidate`
+for a file holding a list of at least 5 entries where at least 80% of the entries name a file or
+folder git tracks, `below` or `no-list` otherwise, an `unnamed` row for each candidate entry that
+names nothing (a stale entry is how such a list drifts), and `skip` for a path it did not read.
+Both numbers are judgment values, not settings: 80% leaves room for the stale entries a drifting
+list carries while ruling out a list whose entries mostly hold data the tree does not, and below 5
+entries a list matches paths by chance and costs little to keep by hand. Verify each candidate in
+phase C (a list a generator already writes is already derived), then report it with the
+Design-It-Twice comparison in [`reference/remediations.md`](reference/remediations.md) "Second
+lists". A second list is always a route-lane ledger entry, report-only, never part of the apply
+batch.
+
+Over two or more repositories, also list what they copy from each other, per
+[`reference/cross-repo-copies.md`](reference/cross-repo-copies.md), whose measuring step is
+`python3 "${CLAUDE_SKILL_DIR}/scripts/cross-repo-dups.py" --managed <file> <root>...`. Each copy
+it finds is a phase C candidate and, once confirmed, a route-lane entry.
+
+Brief the scan agents to list duplicate writers too: one durable key, path or table that more
+than one owner writes (the model's common-coupling entry). Use `value-sites.py find` for a literal
+key. A confirmed duplicate writer always goes to the route lane as a structural ledger entry and
+never into the apply batch; phase H hands off its ownership rule per the remediation catalog's
+"Duplicate writers" section.
+
+**C. Verify (hard gate).** Scan agents have a demonstrated error rate. Reproduce every
+finding against the actual artifacts before it reaches the ledger or the user. Confirm the
+edge exists, the mechanism is what the scan claims, and the depended-on side actually changes
+(volatility from history, not vibes). Drop or downgrade what does not reproduce, and record
+that the ledger reflects verified state, not raw scan output.
+
+**D. Partition and rank.** Every verified finding gets a lane. Apply lane requires all of:
+mechanical, contained in scope, behavior-preserving, and reversible by revert. Anything
+cross-file in remediation or architectural in judgment is route lane, and so is any finding not shown to meet all four.
+Rank by `strength × degree × distance × volatility`, on one scale across every repository in scope; a weak-but-everywhere coupling on a hot
+path outranks a strong-but-local one in cold code. Write the full ranked set to the ledger.
+
+**E. Apply (apply lane only, scope-budgeted).** Over several repositories, apply, verify and ship
+each repository's batch on its own, in a worktree of that repository made by its convention, as
+`target-scope.md` "Writes stay per repository" says; the budget and every rule below hold per
+repository. Work on a short-lived branch created from
+the repository's default branch. Resolve that branch (remote HEAD or the repo's own
+convention), never assume its name, and never base the batch on whatever feature branch the
+session happens to be on: inherited unrelated commits would break the structure-only
+invariant. Never commit directly on the default branch. Before editing any target, require
+it clean in `git status --porcelain`; a target carrying pre-existing local modifications
+defers its finding with the reason recorded. Foreign edits are never mixed into the batch.
+Budget per run: the target and hard cap in
+[`${CLAUDE_PLUGIN_ROOT}/reference/pr-scope-budget.md`](../../reference/pr-scope-budget.md); overflow stays
+`proposed` in the ledger for the next run. A confirmed `change apply` site set is the one
+exception (see the Apply sequence in [`reference/change-mode.md`](reference/change-mode.md)). Use the Edit tool; one atomic commit per logical
+reduction; stage listed paths only and inspect the staged diff before each commit. Never
+touch CI workflow files, hook or settings files, lint configs, database migrations, or
+any published contract surface (API shapes, message schemas, tool schemas). Those are route
+lane by definition.
+
+**F. Verify the batch.** Invoke `/toolchain:check` via the Skill tool for the affected
+ecosystems when the `toolchain` plugin is enabled; otherwise run the consuming project's
+own build, test, and lint commands (its CLAUDE.md or rules may name them). A reduction that
+breaks a test was secretly behavioral: revert that reduction, reclassify it as route lane,
+and continue. Never ship red.
+
+**G. Ship.** Present the verified diff, or when the session should open a pull request,
+invoke `/source-control:pull-request create` via the Skill tool when that plugin is enabled; otherwise use the
+repo's own PR convention with a body listing each reduction as `edge → mechanism → why safe`.
+One coupling pass per PR; structure-only, no behavioral riders. A human merges. This skill
+never auto-merges.
+
+**H. Ledger update and report.** Update statuses (`applied`, `deferred`, `routed`,
+`rejected`). Schema in [`reference/ledger.md`](reference/ledger.md). A cross-repository finding
+goes in the ledger, and is filed in the tracker, of the repository that owns the source. For route-lane
+candidates: hand the top one to `/architecture:improve`, invoked via the Skill tool (if that plugin is enabled), for
+design exploration, and file the rest by invoking `/work-items:track add` via the Skill tool
+when that plugin is enabled, else the repo's own tracker, else present the list to the user. For each confirmed
+duplicate writer, write the ownership-rule findings file under `<memory_dir>/coupling/<branch-slug>/`
+per [`reference/remediations.md`](reference/remediations.md) "Duplicate writers", name it in the
+ledger entry's `outcome`, and offer `/corrections:codify findings <file>` when that skill is
+available; never invoke it unasked. Close by reporting
+what waits on the human first (the PR to merge, any candidate needing a decision), then the ledger
+path, what was applied, what was routed where, and the recommended next-run scope.
+
+## Change mode
+
+The `change` action starts from a value, not a scan: `<old>` changed or must become `<new>`, and
+every place that states it has to be found and handled by what kind of place it is. It runs its own
+path, not phases B to D. Read [`reference/change-mode.md`](reference/change-mode.md) first.
+
+1. **Inventory.** Run `python3 "${CLAUDE_SKILL_DIR}/scripts/value-sites.py" find --old '<old>'
+   --format summary` from the repository root (add scope paths after the flags), then the same
+   with `--format tsv` for the rows: `class, path, line, col, form, reason, anchor, text`, plus a
+   `skip, path, reason` row for each file it did not read. The script finds every spelling of the
+   value and classifies each site; do not repeat that work by hand.
+2. **Review the classes.** Read each non-setup row and any setup row whose file says otherwise;
+   reclassify with a stated reason. Handle each class per the spoke's Site classes table.
+3. **Propose.** For each setup site, name the reference form it converts to. Report the counts,
+   every non-setup row, and the proposals. `change` without `apply` stops here.
+4. **Apply** (`change apply` only). Wait for the human to confirm the site list and each
+   conversion, then follow the spoke's Apply sequence, which runs phases E and F. `apply` takes
+   each confirmed site as `path:line:col:anchor` from its row and refuses the run if that line
+   changed since `find`.
+5. **Ledger and report.** Record converted and flagged sites in the ledger and report what waits
+   on the human first.
+
+## Fresh-eyes note
+
+Phase B/C findings are judged against artifacts this session did not author, and phase F's
+verdict is a deterministic build/test/lint pass. The fresh-context scan agents plus the
+objective gate carry the independence; a separate fresh-context reviewer is owed only if this
+skill is ever extended to judge work its own session produced outside those gates.
+
+## What this skill does not do
+
+- **Does not review a diff.** Pre-merge review is a review tool's job; this hunts standing
+  coupling in existing artifacts.
+- **Does not deep-design one boundary.** A route-lane candidate needing interface
+  exploration goes to `/architecture:improve` (when enabled) or a design session.
+- **Does not apply general tidyings.** Rename/inline/extract without a coupling edge is
+  `/code-tidying:tidy` territory.
+- **Does not enforce.** Blocking a new literal for a value that already has an owner is a
+  write-time guard's job; `change` cleans up after a change, it does not prevent the next copy.
+- **Does not chase decoupling for its own sake.** A dependency on something stable and owned
+  is not a finding; see the not-a-finding list in the model.
+
+## Composition
+
+Graceful degradation: where a named collaborator is not enabled, inline the equivalent
+work or present the handoff manually; never skip silently. Every skill named in the `Then` column
+is invoked via the Skill tool.
+
+| When | Then |
+|------|------|
+| Route-lane candidate needs design exploration | `/architecture:improve` when enabled; else summarize the candidate for a design session |
+| Deferred or route-lane items need tracking | `/work-items:track add` when enabled; else the repo's own tracker; else present the list |
+| Batch needs build/test verification | `/toolchain:check` when enabled; else the project's own commands |
+| Shipping a PR | `/source-control:pull-request create` when enabled; else the repo's own PR convention |
+| A docs finding is pure prose dedup | `/docs-hygiene:extract-ssot` when enabled owns the extraction; else apply per the remediation catalog |
+| A `change` is an identifier rename, not a value | `/docs-hygiene:rename-references` when enabled owns the sweep; else run `change` and review each row; records still stay |
+
+## Next
+
+/verification:confirm
+
+It checks the batch against the repo's own build, test and lint gates.
+
+## Gotchas
+
+The counterweights this skill exists to hold. Add here when a new one surfaces.
+
+- **Over-abstraction is decoupling's own disease.** An interface with one implementation, an
+  event bus for a one-to-one call, a config knob nothing varies. Each adds indirection while
+  the coupling remains. Every remediation entry carries a *not when*; honor it. The deletion
+  test: if removing the new indirection tomorrow would change nothing but line count, it earned
+  nothing.
+- **Cross-file and architectural findings are never auto-applied.** They are designed to
+  inform a human; surfacing them ranked is the success state, not a failure to finish.
+- **Identical text encoding different knowledge is coincidence, not duplication.** Two
+  documents (or functions) that happen to read the same but would change for different
+  reasons must not be consolidated. Consolidation actively harms. Test what changes
+  together, not what looks alike.
+- **Unverified scan claims do not ship.** A scan claim inherits the report's authority, so
+  phase C reproduces every finding against the artifacts before it reaches the ledger or the
+  user.
+- **A reduction that breaks a test was secretly behavioral.** Revert it and reclassify;
+  never patch the test to keep the reduction.
+- **A record that states the old value is correct.** Changelogs, evidence, and decision logs
+  record what was true then; rewriting them to the new value falsifies them. Setup sites change,
+  fixtures only when the human chooses, and contracts only through a proposal.
+- **The ledger records what a re-scan currently finds; it never replays.** Re-emitting stale
+  findings re-injects problems that may already be fixed. Statuses advance, evidence gets
+  re-checked, and a finding that no longer reproduces is closed, not repeated.

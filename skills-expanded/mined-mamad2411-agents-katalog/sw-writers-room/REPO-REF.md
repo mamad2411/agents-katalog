@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-jtydhr88-screenwriting-skills/sw-writers-room/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: How episodic television actually gets made by a group (编剧室与制作现实) — merged from Goldberg & Rabkin (pitch as audition, leave-behind, cracking the story, beat sheet, notes discipline, production rewrites

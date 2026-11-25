@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/terraform-writer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Write Terraform infrastructure-as-code — providers, modules, state management, and cloud resource definitions.

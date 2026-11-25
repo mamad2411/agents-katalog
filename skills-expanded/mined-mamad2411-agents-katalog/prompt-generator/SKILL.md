@@ -1,0 +1,304 @@
+---
+name: prompt-generator
+description: >
+  Write or improve one-off LLM prompts, system prompts, and prompt templates from rough notes.
+license: MIT
+compatibility: "Model-agnostic. Optional: tailor output format to Claude, GPT, or Gemini when target is known"
+metadata:
+  source: iuliandita/skills
+  date_added: "2026-03-25"
+  effort: medium
+  argument_hint: "<notes-or-description>"
+---
+
+# Prompt Generator
+
+Take the user's rough thoughts, scattered notes, or half-formed ideas and turn them into a clean, well-structured LLM prompt. This is a **formatter and structurer**, not a brainstorming tool - the user already knows what they want, they just need help wording and organizing it.
+
+## When to use
+
+- User has rough notes, bullet points, or a brain dump they want turned into a clean LLM prompt
+- Refining, rewriting, or optimizing an existing prompt that isn't performing well
+- Structuring a system prompt, one-off task prompt, reusable template, evaluator prompt,
+  code-review prompt, or delegation prompt from scattered requirements
+- Creating prompt templates with variable placeholders for repeated use
+- User says anything like "write me a prompt for...", "turn this into a prompt", "system prompt for..."
+
+## When NOT to use
+
+- Brainstorming features or creative ideation - this skill structures prompts, not ideas
+- Creating reusable skill files or agent instruction bundles (use **skill-creator**)
+- Configuring schedules, recurring runs, and event triggers - use the host's automation capabilities.
+- Writing inline prompt strings inside application code - that's just coding
+- The user wants code that calls an LLM API (use **llm-app-development** for SDK integration)
+- Security review of prompts for injection risks (use **security-audit**)
+- Reviewing code quality of prompt-related code (use **code-review** or **code-simplification**)
+
+---
+
+## AI Self-Check
+
+Before returning any generated or modified prompt file, verify:
+
+- [ ] **Frontmatter complete for saved files**: a persisted prompt file carries `name`, `description`, `target_model`, `prompt_type`, and `date_created`. Inline drafts, reviews, and unsaved output need no frontmatter
+- [ ] **Faithful to input**: prompt reflects what the user said, not what you think they should have said
+- [ ] **Structure matches complexity**: simple tasks get plain prose, not XML-tagged multi-section prompts
+- [ ] **Variables consistent**: every `{{PLACEHOLDER}}` in the prompt body appears in the Variables table and vice versa
+- [ ] **No unrelated instructions**: preserve the user's semantics; add only the minimum output structure needed by the stated use, not unrelated error handling, disclaimers, or constraints
+- [ ] **Untrusted text delimited**: source text, user examples, logs, web pages, and documents are clearly fenced or labeled before the prompt tells the model what to do
+- [ ] **No slop phrases**: no "certainly", "I'd be happy to", "great question", or other filler in the prompt text
+- [ ] **Output format specified**: if the prompt expects structured output, the format is explicit (JSON schema, XML tags, delimiters)
+- [ ] **Evaluator criteria explicit**: evaluator prompts define pass/fail criteria, required evidence, and common failure modes
+- [ ] **Delegation contract clear**: delegation prompts define ownership, scope, files, allowed edits, and expected final answer shape
+- [ ] **Model-appropriate syntax**: provider-specific features (assistant prefills, `\n\nHuman:` formatting) appear only when the user named that provider. XML delimiters and markdown headers are both fine across models
+- [ ] Cross-cutting agent hygiene applied - see `references/agent-hygiene.md`
+
+---
+
+## Performance
+
+- Keep prompts as short as the task allows; remove redundant role prose and repeated constraints.
+- Use variables for repeated dynamic content instead of duplicating long blocks.
+- Prefer explicit output schemas over long narrative instructions when structure matters.
+
+---
+
+## Best Practices
+
+- Include success criteria for complex prompts so outputs can be evaluated.
+- Match the prompt family to the intended use; see `references/prompt-families.md`.
+- For evaluator prompts, use a rubric with observable evidence; see `references/evaluator-prompts.md`.
+
+## Workflow
+
+### Step 1: Read the brain dump
+
+The user will give you rough notes, bullet points, or a stream-of-consciousness description of what they want the prompt to do. Parse it for:
+
+- **Core task**: What should the prompted model actually do?
+- **Target model**: Which LLM? Default: model-agnostic unless the user names one.
+- **Prompt type**: System prompt vs. task prompt
+- **Constraints**: Any rules, format requirements, or behavioral boundaries mentioned
+- **Variables**: Any dynamic content that should become `{{PLACEHOLDERS}}`
+
+Don't add things the user didn't mention. The goal is to **faithfully structure their intent**, not to "improve" it with your own ideas.
+
+### Step 2: Clarify only if stuck
+
+If something is genuinely ambiguous (you can't tell if it's a system prompt or task prompt, or the target model matters for technique choice), ask. Batch questions, max 1 round. If you can reasonably infer it, just infer it. If ambiguity remains after the one round, pick the most reasonable default and note your assumption so the user can correct it during review.
+
+Most of the time, skip this step entirely.
+
+### Step 3: Structure and present
+
+1. Turn the rough notes into a clean prompt, applying structure proportional to complexity:
+   - **Simple** (one task, no variables): plain prose, 3-10 lines. No XML, no sections.
+   - **Medium** (multiple steps or constraints): numbered steps, clear sections.
+   - **Complex** (agentic, multi-document, behavioral rules): clear section delimiters, variable placeholders, explicit output format.
+   - **Reusable template**: include a variables table and stable `{{VARIABLE_NAME}}` placeholders.
+   - **Evaluator prompt**: define rubric dimensions, pass/fail threshold, failure examples, and required evidence.
+   - **Delegation prompt**: define task, ownership, files in scope, files out of scope, allowed edits, and output contract.
+2. Check the draft against the AI Self-Check. Fix any failed item and re-check until all pass.
+3. For an inline draft or review request, present the prompt in conversation without writing files.
+4. If the user requested creating, saving, or editing a local file, complete that write using
+   the existing authorization. Otherwise, save only after the user asks to save the draft.
+5. Revisions: edit in place, don't create new files.
+
+### Step 4: Save
+
+1. Use an exact user-specified filename unchanged. Otherwise resolve output directory:
+   user-specified directory > `docs/local/prompts/` > `docs/` > ask
+2. Only when no filename was specified, scan for `NNN-*.md` files, increment the highest
+   number, zero-pad to 3 digits, and infer a topic slug (e.g., `code-review`).
+3. Write to the specified filename or the resolved `<output-dir>/NNN-slug.md`.
+
+---
+
+## Output File Format
+
+```markdown
+---
+name: Descriptive Prompt Name
+description: One-line summary
+target_model: model-agnostic
+prompt_type: system | task
+date_created: YYYY-MM-DD
+---
+
+## Purpose
+
+What this prompt does and when to use it.
+
+## Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `{{VAR}}` | What it is | Yes/No |
+
+## Prompt
+
+The actual prompt content here.
+```
+
+Only include sections that apply. A simple prompt with no variables skips the Variables table.
+
+The frontmatter block applies to the saved file only. An inline draft or a review output has no
+frontmatter, because there is no persisted artifact to describe.
+
+Optional frontmatter additions: `tags: [...]`, `related: [NNN-other.md]` - only when genuinely useful.
+
+**Target model values**: `claude`, `gpt`, `gemini`, `llama`, `mistral`, `model-agnostic`
+
+---
+
+## Structuring Guidelines
+
+**Route by prompt family.** Simple task prompts should stay inline. Reusable prompts need variables.
+Evaluator prompts need rubrics and failure cases. Delegation prompts need ownership and return
+shape. Code-review prompts lead with findings and require file and line references.
+
+**Match complexity to content.** A 3-line task doesn't need XML tags and numbered steps. A multi-document agentic system prompt does. The user's rough notes give you the complexity signal.
+
+**Long content goes on top.** If the prompt will receive large documents or data at runtime, position the data slot at the top and the task instructions at the bottom. Up to 30% better performance on multi-document tasks.
+
+**Explain WHY, not just WHAT.** When the user's notes include a rule ("don't use markdown"), turn it into a motivated constraint ("write in plain prose because the output feeds a TTS engine"). Models generalize from motivation.
+
+**Agentic prompts need boundaries.** If the prompt is for a coding agent or automation, separate what it can do freely (reads, searches) from what needs confirmation (deletes, publishes, pushes).
+
+**Anti-hallucination is a sentence, not a paragraph.** "Only make claims verifiable from the provided context. If unsure, say so." That's it.
+
+### Model-Specific Formatting
+
+When the target model is known, adapt format to its strengths:
+
+| Target | Preferred structure | Notes |
+|--------|-------------------|-------|
+| Claude | XML tags for sections, markdown for content | Verify prefill support for the selected model/API; delimiters do not enforce an output schema |
+| GPT | Markdown headers, JSON schema for structured output | Native JSON mode available - use it over prose format instructions |
+| Gemini | Markdown sections, explicit output examples | Separate instructions for text vs. attached files/images |
+| Model-agnostic | Markdown headers + explicit delimiters | Avoid prefills, model-specific tags, or format-mode flags |
+
+Aggressive shouting ("CRITICAL!", "YOU MUST", "NEVER EVER") usually hurts more than it helps. Use calm, explicit instructions.
+
+For a model upgrade, compare the existing prompt with a shorter variant on the same tasks,
+using fixed success criteria and the same evaluator. Preserve evidence requirements, untrusted
+input boundaries, and the user's scope. Add model-specific rules only for observed failures;
+a newer model is not a reason to add more scaffolding.
+
+When the user wants bounded agent work, state completion and stop conditions: finish the
+requested change and relevant checks, then stop. Name when clarification is necessary and
+which actions need approval. Measure unnecessary pauses, repeated checks, and unrelated edits
+alongside answer quality. Keep effort settings in the host/API configuration, not prose that
+pretends to control them. Sonnet 5.5 guidance starts well-specified agent work at `medium` and
+harder work at `high`; re-evaluate these settings rather than copying the old effort level.
+See [Sonnet prompting](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5).
+Haiku 5.5 at `low` effort skips searches, stops early in long agent prompts, and skips
+verification more often: give it the current date for search tasks and explicit completion and
+check criteria. If it needs `xhigh`/`max`, compare against Sonnet 5.5
+([Haiku prompting](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5)).
+The [GPT-6 family guidance](https://developers.openai.com/api/docs/guides/latest-model)
+describes Astra observations; test its recommendations on the selected model before adopting them.
+
+### Structured Output Guidance
+
+When the prompt is for agent consumption (not human reading), specify output format explicitly:
+- **JSON mode**: if the tool supports native JSON mode or schema-constrained output, use it. Otherwise instruct the model to return valid JSON and seed with `{` only when the tool supports assistant prefills.
+- **XML structure**: wrap output in tags like `<result>`, `<analysis>`, `<decision>`.
+- **Delimiter-based**: for simple key-value, use `KEY: value` format.
+
+Include a concrete output example in the prompt whenever possible - models generalize better from examples than from format descriptions.
+
+### The Four-Block Pattern
+
+For medium-to-complex prompts, structure into four clear blocks:
+1. **INSTRUCTIONS** - what to do (role, task, constraints)
+2. **CONTEXT** - background information, reference data
+3. **TASK** - the specific request for this invocation
+4. **OUTPUT FORMAT** - exact structure of the expected response
+
+Keep blocks visually separated with XML tags, markdown headers, or other clear delimiters. Place long context documents before shorter task instructions (see "Long content goes on top" above).
+
+---
+
+## Refining Existing Prompts
+
+If the user gives you an existing prompt to improve (not rough notes):
+
+1. Read it
+2. Diagnose gaps - check for these common prompt weaknesses:
+   - **Missing scope**: no clear boundary on what the model should and shouldn't do
+   - **No output format**: model guesses structure instead of following a spec
+   - **Vague role**: "helpful assistant" tells the model nothing useful
+   - **Missing constraints**: no anti-patterns, no "do not" list, no quality criteria
+   - **Over-specified**: drowning the model in rules when 2-3 clear constraints would work
+3. For review-only requests, present specific changes with reasoning without editing.
+4. For an authorized refinement of a local file, edit in place and summarize the changes.
+
+**Example refinement:**
+
+Before: `You are a helpful assistant that reviews code.`
+
+After: `You are a senior code reviewer. For each file, check for: bugs, edge cases, security issues, and performance problems. Report findings as a list with priority (P0/P1/P2/P3/info), file:line, and a one-line description. Skip style nitpicks. If nothing is wrong, say "No issues found."` - added: scope, output format, priority scale, constraint against noise.
+
+## Example: Creation from Scratch
+
+**User input (brain dump):**
+> I want an AI that helps me write better emails. It should fix grammar, make things more concise,
+> and match the tone I want. Sometimes formal, sometimes casual.
+
+**Structured output:**
+
+```
+You are an email editor. You receive a draft email and a target tone, then return an improved
+version.
+
+Your edits:
+- Fix grammar and spelling errors
+- Make the text more concise - cut filler words and redundant phrases
+- Match the requested tone (formal, casual, or neutral)
+
+Preserve the sender's intent and meaning. Do not add information they didn't include.
+Do not change the greeting or sign-off style unless it clashes with the requested tone.
+
+Input format:
+  TONE: {{TONE}}
+  DRAFT:
+  {{EMAIL_DRAFT}}
+
+Return only the improved email. No commentary, no explanations, no "Here's your improved email:".
+```
+
+Note: simple task, so plain prose - no XML sections, no numbered steps, no bloated preamble.
+
+---
+
+## Output Contract
+
+See `references/output-contract.md` for the full contract.
+
+- **Skill name:** PROMPT-GENERATOR
+- **Deliverable bucket:** `prompts`
+- **Mode:** conditional. When invoked to **analyze, review, audit, or improve** existing repo content (e.g., review an existing prompt for quality), apply the reporting size and evidence rules in `references/output-contract.md` and write the deliverable to `docs/local/prompts/prompt-generator/<YYYY-MM-DD>-<slug>.md`. When invoked to **answer a question, teach a concept, build a new artifact, or generate content** (its primary mode - producing a prompt for the user), respond freely without the contract.
+- **Severity scale:** `P0 | P1 | P2 | P3 | info` (see shared contract; only used in audit/review mode).
+
+## Related Skills
+
+- **skill-creator** - creates reusable skill files (SKILL.md) for AI tools and coding agents. Skills are
+  structured prompts, but they follow different conventions (frontmatter, workflow sections,
+  rules) than standalone prompts. If someone says "create a skill", use skill-creator.
+- Use the host's automation capabilities for schedules and event triggers. This skill can
+  help write the prompt body; it does not configure the recurring job.
+- Application code - if the user needs a prompt string inside application code (for example a
+  TypeScript `const systemPrompt = ...`), that's coding, not this skill.
+- **code-simplification** - if the user asks to "clean up" or "simplify" a prompt embedded in code, that's
+  a code quality issue, not prompt structuring.
+
+---
+
+## Rules
+
+1. **Faithful structuring.** Preserve the user's facts and intent. If output structure is unstated, infer only the minimum structure made necessary by the stated downstream use; when that choice could change semantics or no use makes it evident, ask or leave it open. During refinement, flag a missing output contract when it prevents reliable evaluation.
+2. **Honor existing authorization.** A request to create, save, or edit a local prompt file
+   authorizes that write. Inline drafts and reviews stay in conversation. Follow the user's
+   explicit instructions over this skill's defaults; retain approval for destructive or external actions.
+3. **Respect their voice.** If the rough notes have a specific tone or personality, preserve it in the structured version.

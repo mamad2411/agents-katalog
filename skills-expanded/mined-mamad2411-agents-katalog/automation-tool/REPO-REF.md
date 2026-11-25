@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/automation-tool/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 自动化内容生成工具 - 文章/报告/脚本批量生成"

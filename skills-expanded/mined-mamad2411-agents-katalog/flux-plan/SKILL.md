@@ -1,0 +1,256 @@
+---
+name: flux-plan
+description: Create structured build plans from feature, bugfix, upgrade, or refactor requests, or from Flow IDs. Use when planning implementation after the workflow envelope is explicit. Triggers on /flux:plan with text descriptions or Flow IDs (fn-1-add-oauth, fn-1-add-oauth.2, or legacy fn-1, fn-1.2, fn-1-xxx, fn-1-xxx.2).
+user-invocable: false
+---
+
+# Flow plan
+
+Turn a rough idea into an epic with tasks in `.flux/`. This skill does not write code.
+
+Follow this skill and linked workflows exactly. Deviations cause drift, bad gates, retries, and user frustration.
+
+**IMPORTANT**: This plugin uses `.flux/` for ALL task tracking. Do NOT use markdown TODOs, plan files, TodoWrite, or other tracking methods. All task state must be read and written via `fluxctl`.
+
+**CRITICAL: fluxctl is BUNDLED — NOT installed globally.** `which fluxctl` will fail (expected). Always use:
+```bash
+PLUGIN_ROOT="${DROID_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ ! -d "$PLUGIN_ROOT/scripts" ] && PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/nairon-flux/flux/*/ 2>/dev/null | head -1)
+FLUXCTL="${PLUGIN_ROOT}/scripts/fluxctl"
+$FLUXCTL <command>
+```
+
+## Session Phase Tracking
+
+On entry, set the session phase:
+```bash
+$FLUXCTL session-phase set plan
+```
+On completion, reset:
+```bash
+$FLUXCTL session-phase set idle
+```
+
+## Pre-check: Local setup version
+
+If `.flux/meta.json` exists and has `setup_version`, compare to plugin version:
+```bash
+SETUP_VER=$(jq -r '.setup_version // empty' .flux/meta.json 2>/dev/null)
+PLUGIN_JSON="${PLUGIN_ROOT}/.claude-plugin/plugin.json"
+PLUGIN_VER=$(jq -r '.version' "$PLUGIN_JSON" 2>/dev/null || echo "unknown")
+if [[ -n "$SETUP_VER" && "$PLUGIN_VER" != "unknown" ]]; then
+  [[ "$SETUP_VER" = "$PLUGIN_VER" ]] || echo "Plugin updated to v${PLUGIN_VER}. Run /flux:setup to refresh local scripts (current: v${SETUP_VER})."
+fi
+```
+Continue regardless (non-blocking).
+
+## Pre-check: Improvement nudge
+
+Check if `/flux:improve` was run recently:
+```bash
+LAST_IMPROVE="$HOME/.flux/last_improve"
+if [[ -f "$LAST_IMPROVE" ]]; then
+  LAST_DATE=$(cat "$LAST_IMPROVE")
+  LAST_TS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LAST_DATE" +%s 2>/dev/null || date -d "$LAST_DATE" +%s 2>/dev/null || echo 0)
+  NOW_TS=$(date +%s)
+  DAYS_AGO=$(( (NOW_TS - LAST_TS) / 86400 ))
+  if [[ $DAYS_AGO -ge 7 ]]; then
+    echo "Tip: It's been ${DAYS_AGO} days since you ran /flux:improve. New tools may help."
+  fi
+else
+  echo "Tip: Run /flux:improve to discover tools that match your workflow."
+fi
+```
+Continue regardless (non-blocking).
+
+**Role**: product-minded planner with strong repo awareness.
+**Goal**: produce an epic with tasks that match existing conventions and reuse points.
+**Task size**: every task must fit one `/flux:work` iteration (~100k tokens max). If it won't, split it.
+
+## Mandatory Approval Gate
+
+Before any `epic create` or `task create` call, get explicit developer approval.
+
+- Prefer the question tool / AskUserQuestion when available.
+- If you cannot use a question tool, require the developer to type exactly: `I_APPROVE_CREATING_EPICS_AND_TASKS`
+- Until approval is explicit, do not create any epic or task. You may research, propose the structure, and wait.
+- After approval, pass `--approve "I_APPROVE_CREATING_EPICS_AND_TASKS"` on every `fluxctl epic create` and `fluxctl task create` call in this run.
+
+Every non-trivial plan must include a future-pressure pass: forecast likely follow-on features, failure modes, reuse pressure, and reversal cost before tasks are finalized. Do not turn this into a giant ceremony for trivial changes; go deep only on one-way doors and shared surfaces.
+
+## The Golden Rule: No Implementation Code
+
+**Plans are specs, not implementations.** Do NOT write the code that will be implemented.
+
+### Code IS allowed:
+- **Signatures/interfaces** (what, not how): `function validate(input: string): Result`
+- **Patterns from this repo** (with file:line ref): "Follow pattern at `src/auth.ts:42`"
+- **Recent/surprising APIs** (from docs-scout): "React 19 changed X — use `useOptimistic` instead"
+- **Non-obvious gotchas** (from practice-scout): "Must call `cleanup()` or memory leaks"
+
+### Code is FORBIDDEN:
+- Complete function implementations
+- Full class/module bodies
+- "Here's what you'll write" blocks
+- Copy-paste ready snippets (>10 lines)
+
+**Why:** Implementation happens in `/flux:work` with fresh context. Writing it here wastes tokens in planning, review, AND implementation — then causes drift when the implementer does it differently anyway.
+
+## Input
+
+Full request: $ARGUMENTS
+
+Accepts:
+- Feature/bug/upgrade/refactor description in natural language
+- Flow epic ID `fn-N-slug` (e.g., `fn-1-add-oauth`) or legacy `fn-N`/`fn-N-xxx` to refine existing epic
+- Flow task ID `fn-N-slug.M` (e.g., `fn-1-add-oauth.2`) or legacy `fn-N.M`/`fn-N-xxx.M` to refine specific task
+- Chained instructions like "then review with /flux:plan-review"
+
+Examples:
+- `/flux:plan Add OAuth login for users`
+- `/flux:plan fn-1-add-oauth`
+- `/flux:plan fn-1` (legacy formats fn-1, fn-1-xxx still supported)
+- `/flux:plan fn-1-add-oauth then review via /flux:plan-review`
+
+If empty, ask: "What should I plan? Give me the feature, bug, upgrade, or refactor in 1-5 sentences."
+
+## Workflow Envelope Gate
+
+Before detailed planning, make the workflow envelope explicit.
+
+Always confirm:
+- **Objective kind**: `feature`, `bug`, `upgrade`, or `refactor`
+- **Technical level**: `non_technical`, `semi_technical`, or `technical`
+- **Planning path**: shallow planning directly in `/flux:plan`, or escalate to deep Double Diamond scoping first via `/flux:scope --deep`
+
+Rules:
+- If the user is **non-technical / stakeholder**, route to `flux-propose` instead of continuing in `flux-plan`.
+- If the user wants **deep Double Diamond**, switch to `/flux:scope --deep` and stop the direct plan flow there.
+- If the user wants **shallow planning**, continue in `/flux:plan`.
+- If the request is improving an existing feature rather than creating a net-new one, classify it as **`upgrade`**.
+- Do not silently assume shallow planning just because the user did not say `--deep`.
+
+## FIRST: Parse Options or Ask Questions
+
+Check configured backend:
+```bash
+REVIEW_BACKEND=$($FLUXCTL review-backend)
+```
+Returns: `ASK` (not configured), or `rp`/`codex`/`none` (configured).
+
+### Option Parsing (skip questions if found in arguments)
+
+Parse the arguments for these patterns. If found, use them and skip questions:
+
+**Research approach**:
+- `--research=rp` or `--research rp` or "use rp" or "context-scout" or "use repoprompt" → context-scout (errors at runtime if rp-cli missing)
+- `--research=grep` or `--research grep` or "use grep" or "repo-scout" or "fast" → repo-scout
+
+**Review mode**:
+- `--review=codex` or "review with codex" or "codex review" or "use codex" → Codex CLI (`gpt-5.3-codex`)
+- `--review=rp` or "review with rp" or "rp chat" or "repoprompt review" → RepoPrompt chat (via `fluxctl rp chat-send`)
+- `--review=export` or "export review" or "external llm" → export for external LLM
+- `--review=none` or `--no-review` or "no review" or "skip review" → no review
+
+### If options NOT found in arguments
+
+**Plan depth** (this is the plan artifact depth after the workflow envelope has already established whether shallow planning is sufficient or whether deep scope should run first):
+- `--depth=short` or "quick" or "minimal" → SHORT
+- `--depth=standard` or "normal" → STANDARD
+- `--depth=deep` or "comprehensive" or "detailed" → DEEP
+- Default: SHORT (simpler is better)
+
+**If REVIEW_BACKEND is rp, codex, or none** (already configured): Only ask research question. Show override hint:
+
+```
+Quick setup: Use RepoPrompt for deeper context?
+a) Yes, context-scout (slower, thorough)
+b) No, repo-scout (faster)
+
+(Reply: "a", "b", or just tell me)
+(Tip: --depth=short|standard|deep, --review=rp|codex|none)
+```
+
+**If REVIEW_BACKEND is ASK** (not configured): Ask all questions (do NOT use AskUserQuestion tool):
+
+```
+Quick setup before planning:
+
+1. **Plan depth** — How detailed?
+   a) Short — problem, acceptance, key context only
+   b) Standard (default) — + approach, risks, test notes
+   c) Deep — + phases, alternatives, rollout plan
+
+2. **Research** — Use RepoPrompt for deeper context?
+   a) Yes, context-scout (slower, thorough)
+   b) No, repo-scout (faster)
+
+3. **Review** — Run Carmack-level review after?
+   a) Codex CLI
+   b) RepoPrompt
+   c) Export for external LLM
+   d) None (configure later)
+
+(Reply: "1a 2b 3d", or just tell me naturally)
+```
+
+Wait for response. Parse naturally — user may reply terse ("1a 2b") or ramble via voice.
+
+**Defaults when empty/ambiguous:**
+- Depth = `standard` (balanced detail)
+- Research = `grep` (repo-scout)
+- Review = configured backend if set, else `none`
+
+## Workflow
+
+Read [steps.md](steps.md) and follow each step in order.
+
+**CRITICAL — Step 1 (Research)**: You MUST launch ALL scouts listed in steps.md in ONE parallel Task call. Do NOT skip scouts or run them sequentially. Each scout provides unique signal.
+
+If user chose review:
+- Option 2a: run `/flux:plan-review` after Step 4, fix issues until it passes
+- Option 2b: run `/flux:plan-review` with export mode after Step 4
+
+## Output
+
+All plans go into `.flux/`:
+- Epic: `.flux/epics/fn-N-slug.json` + `.flux/specs/fn-N-slug.md`
+- Tasks: `.flux/tasks/fn-N-slug.M.json` + `.flux/tasks/fn-N-slug.M.md`
+
+**Never write plan files outside `.flux/`. Never use TodoWrite for task tracking.**
+
+## Output rules
+
+- Only create/update epics and tasks via fluxctl
+- No code changes
+- No plan files outside `.flux/`
+
+## Gotchas
+
+- Planning is not implementation. Do not write code, create TODO files, or drift into execution while the user asked for a plan.
+- All task and epic state must go through `fluxctl`. Hand-editing `.flux/` files creates state drift that breaks downstream flows.
+- Keep plans proportional to uncertainty. Over-specifying trivial work wastes context; under-specifying risky work guarantees churn later.
+
+---
+
+## Update Check (End of Command)
+
+**ALWAYS run at the very end of /flux:plan execution:**
+
+```bash
+PLUGIN_ROOT="${DROID_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ ! -d "$PLUGIN_ROOT/scripts" ] && PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/nairon-flux/flux/*/ 2>/dev/null | head -1)
+UPDATE_JSON=$("$PLUGIN_ROOT/scripts/version-check.sh" 2>/dev/null || echo '{"update_available":false}')
+UPDATE_AVAILABLE=$(echo "$UPDATE_JSON" | jq -r '.update_available')
+LOCAL_VER=$(echo "$UPDATE_JSON" | jq -r '.local_version')
+REMOTE_VER=$(echo "$UPDATE_JSON" | jq -r '.remote_version')
+```
+
+**If update available**, append to output:
+
+```
+---
+Flux update available: v${LOCAL_VER} → v${REMOTE_VER}
+Update Flux from the same source you installed it from, then restart your agent session.
+---
+```

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-aminalam-meddev-agent-skills/embedded-c/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Embedded C Coding Standards for Medical Devices

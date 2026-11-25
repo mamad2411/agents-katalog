@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-hexbee-hello-skills/research-content-router/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 将“研究 + 内容生产”任务按 A/B/C 分级调度，先收敛受众/目标/载体/角度，再走 Research→Synthesis→Content 流水线，输出可发布内容与证据链。适用于需要结论可信、结构稳定、可复用素材沉淀的写作任务。

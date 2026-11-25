@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/alphai-smart/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Alph.ai 智能功能 API - 聪明钱包、tracker 追踪、信号源、Bot 机器人等高级智能功能。当用户询问智能分析、钱包追踪、信号监控、机器人相关问题时使用。

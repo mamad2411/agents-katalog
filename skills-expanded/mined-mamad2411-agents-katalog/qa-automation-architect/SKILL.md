@@ -1,0 +1,185 @@
+---
+name: qa-automation-architect
+description: Design the test-automation architecture that implements a QA strategy — tool/runner selection per layer with rationale, test project structure and naming, fixture/helper/factory layers, auth-state handling, parallelization and isolation rules, reporting/artifact conventions, CI pipeline placement (what runs on PR vs merge vs nightly, sharding, retry policy, per-layer test-timeout policy), and the flake-management policy. Produces the automation blueprint and migration steps from the current setup — it does not write the individual tests. Use when asked to design or overhaul a test framework/harness, choose test tooling, structure a test codebase, fix an automation setup that is slow/tangled/unparallelizable, or wire test suites into CI properly. Do NOT use to define WHAT to test (qa-strategy-architect / test-plan-designer), implement specific tests (the engineer skills), or diagnose one flaky test (flaky-test-detective).
+---
+
+# QA Automation Architect
+
+**Reading key:** Quality assurance (QA) is the testing discipline;
+continuous integration (CI) runs automated checks; end-to-end (E2E)
+tests exercise a whole user journey; a database (DB) stores application
+data; a pull request (PR) proposes a repository change.
+
+## Purpose
+
+Produce the automation blueprint that turns layer decisions into a working,
+maintainable machine: which tools run each layer, how the test code is
+structured, how fixtures and auth state are shared without coupling, how
+suites run in parallel without collisions, what artifacts they emit,
+exactly where each suite sits in CI, and the per-layer test-timeout policy
+that keeps one hung suite from eating a tier's budget. The blueprint includes migration steps
+from the current setup; individual test implementation stays with the
+engineer skills.
+
+## Use When
+
+- Use when: asked to design/set up/overhaul a test framework, harness, or
+  automation stack.
+- Use when: choosing tooling (runner, assertion, browser automation) for one
+  or more layers.
+- Use when: an existing automation setup is slow, serially-bound, tangled
+  (shared mutable fixtures), or produces no useful artifacts.
+- Use when: wiring suites into CI — tiers, sharding, retries, caching.
+- Use when: designing or overhauling a per-layer test-timeout or test-duration
+  policy (per-suite limits derived from CI tier budgets).
+- Do NOT use when: deciding WHAT should be tested — `qa-strategy-architect`
+  (product) or `test-plan-designer` (per change).
+- Do NOT use when: implementing tests — `vitest-unit-component-engineer`
+  *(manual-only)*, `playwright-e2e-engineer` *(manual-only)*, etc.
+- Do NOT use when: diagnosing a specific flaky test — `flaky-test-detective`
+  *(manual-only)*
+  (this skill sets the flake POLICY; the detective works cases).
+- Do NOT use when: designing test data itself — `test-data-architect`
+  (this skill defines where fixtures LIVE, that skill defines what they ARE).
+- Do NOT use when: classifying a CI run that already timed out — that is
+  `ci-failure-classifier` (read-only; classifies finished runs).
+- Do NOT use when: editing pipeline definitions' job-level time limits — that
+  is `ci-pipeline-architect` *(manual-only)*.
+
+## Inputs to Inspect
+
+1. The QA strategy layer decisions (`qa-strategy-architect` output) — the
+   blueprint implements them; no strategy → note assumptions explicitly.
+2. Current automation reality: existing runners, configs (vitest/playwright/
+   jest configs), test directory layout, package scripts, how long suites take.
+3. CI workflows: what runs where today, runtime, flake/retry settings,
+   artifact upload, and past `TIMEOUT-ONLY` classifications
+   (`ci-failure-classifier` output).
+4. App architecture constraints: monorepo vs single package, framework
+   (affects component-test tooling), how auth works (affects auth-state
+   strategy), database availability in CI.
+5. Team conventions: naming, lint rules, existing helper patterns worth
+   keeping.
+
+## Workflow
+
+When a human must choose a test tooling or infrastructure with spend or
+migration impact, define unfamiliar terms and each viable option and why it
+fits. Compare case-specific coverage, runtime, migration effort, money,
+setup time, and ongoing upkeep; state unknown costs instead of guessing.
+Recommend one from the existing stack and named deficiencies and explain why
+it fits the user's goals and what fact would change the recommendation
+before one atomic decision question. Ask for a missing deciding fact first
+when needed. Keep routine design choices within this skill; a preference
+does not authorize purchases or migration execution.
+
+1. **Confirm the layers to implement** from the strategy; list them with
+   their risk owners. The blueprint covers exactly these — no speculative
+   tooling.
+2. **Select tools per layer with rationale** (default stack table in
+   [references/automation-blueprint.md](references/automation-blueprint.md)):
+   prefer tools already in the repo unless a named deficiency justifies
+   change; every choice records the alternative rejected and why.
+3. **Design the structure:** directory layout per layer, naming conventions,
+   where fixtures/factories/helpers live, import boundaries (tests must not
+   import app internals across layers). Auth-state strategy: how tokens/
+   sessions per persona are minted once and reused safely.
+4. **Design isolation & parallelization:** per-worker data namespacing
+   (compose `test-data-architect` for the data design), no shared mutable
+   state, port/resource allocation, DB strategy per layer (transaction
+   rollback vs schema-per-worker vs truncation).
+5. **Define reporting & artifacts:** report formats, failure artifacts
+   (traces, screenshots, logs) per layer, retention, and where evidence
+   conventions from `screenshot-evidence-planner` plug in.
+6. **Place suites in CI:** PR / merge / nightly tiers with runtime budgets,
+   sharding plan, cache strategy, retry policy (retries mask flakes —
+   bounded, logged, and always fed to `flaky-test-detective` *(manual-only)*), and the
+   quarantine mechanism governed by `regression-suite-curator`. If a merge
+   deploys automatically, any required release gate runs before merge;
+   post-merge checks verify the deployment rather than decide whether to
+   permit it. Derive the per-layer test-timeout policy from the tier
+   budgets: per-suite execution limits per layer, timeout behavior
+   (kill/fail/quarantine and the evidence the run emits), and the
+   timeout↔retry interaction — a timeout is not by itself a retry reason.
+   TIMEOUT-ONLY evidence routes to `flaky-test-detective` *(manual-only)* and
+   `ci-failure-classifier`. The policy never masks failures.
+7. **Write the migration plan:** ordered, small steps from current state to
+   the blueprint, each independently shippable and verifiable.
+
+## Output Format
+
+When asking for this build choice, show each option's meaning, reason,
+case-specific benefits and limits, money/setup/upkeep or unknowns, and
+a justified recommendation before the one decision question.
+
+```
+AUTOMATION BLUEPRINT — <repo/product>
+Layers implemented: <layer → runner/tooling → rationale + rejected alternative>
+Structure: <directory layout, naming, fixture/helper/factory placement>
+Auth-state strategy: <persona token minting + reuse rules>
+Isolation & parallelization: <per-worker namespacing, DB strategy, resource rules>
+Reporting & artifacts: <per layer: report format, failure artifacts, retention>
+CI placement: <tier map (PR/merge/nightly), runtime budgets, sharding,
+              retry policy + flake routing, per-layer timeout policy>
+Flake policy: <detection → quarantine (curator) → diagnosis (detective) → expiry>
+Environment assumptions: <what CI/local must provide per layer>
+Migration plan: <ordered steps from current state, each verifiable>
+Handoffs: <test implementation → engineer skills; data design → test-data-architect>
+```
+
+## Validation Checklist
+
+- [ ] User-facing build choices explain terms, reasons, costs or unknowns,
+      pros/cons, and a justified recommendation before one atomic question.
+- [ ] Every tool choice has rationale and a named rejected alternative.
+- [ ] Structure covers all strategy layers; no speculative extra tooling.
+- [ ] Isolation rules make parallel runs collision-free (data, ports, state).
+- [ ] Auth-state strategy avoids per-test re-login without sharing mutable
+      sessions across workers.
+- [ ] Artifacts named per layer; failure evidence is automatic, not manual.
+- [ ] CI placement has runtime budgets, a bounded, logged retry policy, AND
+      a per-layer test-timeout policy derived from those budgets; no masking.
+- [ ] Flake policy routes to detection/quarantine/diagnosis owners.
+- [ ] Migration plan is ordered small steps, each independently verifiable.
+- [ ] No individual tests written here.
+
+## Gotchas
+
+- Tool churn is expensive: replacing a working runner for marginal developer-experience gains
+  costs more than it returns — bias to incumbent tools unless a deficiency is
+  named.
+- Unbounded CI retries convert flakes into invisible product risk; retries
+  must be counted and reported or the flake policy is fiction.
+- Shared login state across parallel workers causes heisenbugs (one worker's
+  logout kills another's session) — persona state must be per-worker or
+  immutable.
+- A beautiful blueprint with a big-bang migration never lands — steps must be
+  small enough to ship between feature work.
+- Fixture layers that import application services couple tests to internals
+  and break en masse on refactor — enforce import boundaries.
+- Runtime budgets without per-suite timeouts let one hung suite eat the tier
+  budget; every tier needs per-layer limits derived from its budget.
+- A suite whose assertions failed before the limit is a failure, not a
+  timeout; classification of a finished timed-out run stays with
+  `ci-failure-classifier`.
+
+## Stop Conditions
+
+- No strategy exists and layer choices would be arbitrary → run
+  `qa-strategy-architect` first or record explicit layer assumptions and get
+  them confirmed.
+- The blueprint requires infrastructure decisions above this scope
+  (provisioning CI runners, buying tooling) → present options via
+  `human-approval-boundary` rather than assuming budget.
+- Executing the migration (moving files, rewriting configs) is requested in
+  the same pass → that is an implementation change; confirm scope and
+  classification first.
+
+## Supporting Files
+
+- [references/automation-blueprint.md](references/automation-blueprint.md) —
+  default stack table per layer, directory layout patterns, DB isolation
+  options compared, and CI tier/sharding worksheets incl. the per-layer test-timeout policy.
+- `evals/evals.json` — trigger + behavior cases.
+- `evals/trigger-evals.json` — discrimination within the strategy/plan/coverage
+  cluster (architecture vs strategy vs plan vs audit).

@@ -1,0 +1,518 @@
+---
+name: certificate-renewal-automator
+description: Designs and implements ACM certificate renewal automation pipelines. Detects expiring certificates via CloudWatch alarms on DaysToExpiry, wires EventBridge scheduled rules for daily cert scans, deploys Lambda functions that request new certificates, validate DNS via Route 53 CNAME records, update ALB/NLB listeners, rotate API Gateway custom domain certificates, and update CloudFront distributions. Covers private CA (ACM PCA) lifecycle, cross-account cert sharing via IAM, SNI verification, wildcard vs SAN renewal, exported-private-key manual renewal, and CloudTrail audit. Emits AUTOMATION_DEPLOYED with a full IaC template or REVIEW_REQUIRED with the specific gap.
+license: Apache-2.0
+compatibility: Agent runtime that reads SKILL.md (Claude Code, Cursor, Windsurf, Codex, Gemini). No AWS CLI required for offline workflow design. Live deployment uses aws acm describe-certificates, request-certificate, get-certificate, aws acm-pca issue-certificate, aws elbv2 modify-listener, aws apigateway update-domain-name, aws cloudfront update-distribution, aws route53 change-resource-record-sets, aws events put-rule/put-targets, aws lambda create-function — AWS CLI v2.
+metadata:
+  domain: aws-cloudops
+  complexity: high
+  requires_llm: 'true'
+  phase: '4'
+  supports_pipeline: 'true'
+  family: Security
+  task_type: automate
+  skill_class: capability
+  lifecycle_status: active
+  verdict_shape: AUTOMATION_DEPLOYED | REVIEW_REQUIRED
+  when_to_use: Building ACM certificate renewal automation, wiring CloudWatch alarms for cert expiry, deploying EventBridge + Lambda renewal pipelines, managing PCA certificate lifecycles, rotating certs on ALB/NLB/CloudFront/API Gateway, or auditing cert API calls.
+  activation_triggers: automate certificate renewal, ACM expiry alarm, DaysToExpiry CloudWatch, certificate rotation Lambda, DNS validation Route 53, ACM PCA lifecycle, ALB listener certificate update, CloudFront certificate renewal, API Gateway custom domain cert, SNI verification, cross-account certificate sharing
+  invocation_schema: 'Input: either (a) a list of ACM certificate ARNs with associated services and renewal status, OR (b) a cert renewal automation requirement. Output: deterministic RENEWAL block per certificate — DETECTION/RENEWAL_FLOW/VALIDATION/NOTIFICATION/AUDIT/VERDICT — where VERDICT is AUTOMATION_DEPLOYED or REVIEW_REQUIRED.'
+  version: 0.1.0
+  author: Jacky Chan — AWS Community Builder
+  keywords: ACM, certificate renewal, DaysToExpiry, CloudWatch alarm, EventBridge scheduled rule, Lambda renewal, DNS validation, Route 53 CNAME, ACM PCA, ALB listener certificate, CloudFront distribution, API Gateway custom domain, SNI verification, wildcard certificate, SAN certificate, CloudTrail audit
+  tags: aws-acm, certificate-renewal, tls, security, cloudwatch, eventbridge, lambda, automate
+---
+
+# Certificate Renewal Automator
+
+## Mindset
+
+**One-line takeaway:** every certificate renewal pipeline is a
+five-stage chain — **detect** (CloudWatch DaysToExpiry alarm) →
+**trigger** (EventBridge scheduled scan) → **renew** (ACM managed
+renewal or Lambda custom flow) → **validate** (DNS CNAME in Route 53)
+→ **verify** (SNI check + listener/distribution update confirmation).
+A gap in ANY stage produces a silent expiry.
+
+- **ACM managed renewal is NOT universal.** It covers only
+  DNS/email-validated certs attached to supported services (ALB, NLB,
+  CloudFront, API Gateway). Exported private keys, orphaned certs, and
+  PCA-exported certs require manual or custom renewal.
+- **PCA-managed certs have a separate lifecycle.** The CA cert itself
+  has its own renewal path — two renewal pipelines, not one.
+- **DNS validation is the only path to zero-touch renewal.** Email
+  validation requires human interaction on every renewal.
+
+## Quick navigation
+
+| You want to... | Go to |
+|---|---|
+| Detect expiring certs | Step 2 (CloudWatch alarm) |
+| Wire daily cert scan | Step 3 (EventBridge) |
+| Build Lambda renewal | Step 4 (renewal flow) |
+| Automate DNS validation | Step 5 (Route 53 CNAME) |
+| Rotate ALB/NLB certs | Step 6 (listener rotation) |
+| Rotate CloudFront certs | Step 7 (distribution update) |
+| Handle API Gateway domains | Step 8 (API GW rotation) |
+| Manage PCA private certs | Step 9 (PCA lifecycle) |
+| Share certs cross-account | Step 10 (cross-account IAM) |
+| Verify renewal via SNI | Step 11 (SNI check) |
+| Audit cert API calls | Step 12 (CloudTrail) |
+
+## Critical rules at a glance
+
+1. **ACM managed renewal fires at 60 days pre-expiry for DNS-validated
+   certs attached to a supported service.** If not attached (orphaned),
+   ACM does NOT renew. Always verify cert-to-resource association.
+2. **Exported private-key certs cannot auto-renew.** ACM has no stored
+   private key. Renewal requires re-import. REVIEW_REQUIRED by default.
+3. **PCA CA cert renewal is separate from end-cert renewal.** An
+   expiring CA breaks ALL certs it issues, regardless of their own
+   expiry.
+4. **CloudFront certs must be in us-east-1.** Any other region silently
+   fails the distribution update.
+5. **DNS validation CNAME records must persist for the cert's lifetime.**
+   Deleting them after issuance breaks managed renewal silently.
+
+## Pre-flight: data requirements
+
+| Input | Source | Why |
+|---|---|---|
+| Cert ARN + domain | `acm describe-certificates` | Renewal target |
+| Status + validation method | `DomainValidationOptions` | Drives renewal path |
+| Associated service | `InUseBy[]` | Managed vs manual |
+| DaysToExpiry metric | CloudWatch `AWS/CertificateManager` | Detection |
+| Route 53 hosted zone | `route53 list-hosted-zones` | DNS validation |
+| PCA CA ARN | `acm-pca list-certificate-authorities` | Private CA lifecycle |
+
+## Process — Renewal pipeline design
+
+### Step 0: Expert knowledge — non-obvious ACM + PCA behaviors
+
+All Step 0 behaviors moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand when classifying non-obvious ACM/PCA behaviors (60-day window, InUseBy, wildcards/SAN, SNI, idempotency).
+
+### Step 1: Classify the certificate
+
+| Cert class | Validation | Attached | Renewal path |
+|---|---|---|---|
+| Public ACM | DNS | ALB/NLB/CF/API GW | **Managed** (automatic) |
+| Public ACM | DNS | Orphaned | **Custom pipeline** (re-associate or manual) |
+| Public ACM | Email | Supported service | **Semi-manual** (email approval) |
+| Imported | N/A | Any | **Manual** (re-import) |
+| PCA-issued via ACM | DNS | ALB/NLB/API GW | **Custom pipeline** |
+| PCA-exported | N/A | On-prem/IoT | **Full manual pipeline** |
+
+Imported certs (private key) are REVIEW_REQUIRED by construction.
+
+### Step 2: CloudWatch alarm on DaysToExpiry
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name acm-cert-expiring-30-days \
+  --namespace AWS/CertificateManager \
+  --metric-name DaysToExpiry \
+  --dimensions Name=CertificateArn,Value=arn:aws:acm:us-east-1:111111111111:certificate/abc-123 \
+  --statistic Minimum --period 86400 --threshold 30 \
+  --comparison-operator LessThanThreshold --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:us-east-1:111111111111:cert-expiry-alerts
+```
+
+Fleet-wide alarm variant moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand when wiring detection across the whole cert fleet.
+
+**Threshold matrix:**
+
+| Threshold | Purpose | Action |
+|---|---|---|
+| 45 days | Early warning | Notify Slack; verify managed renewal will fire |
+| 30 days | Action required | If managed renewal hasn't fired, investigate |
+| 14 days | Urgent | Manual renewal path; engage on-call |
+| 7 days | Critical | Page on-call; exec escalation |
+
+The metric updates once daily. PENDING_VALIDATION and EXPIRED certs do
+NOT emit this metric. A fleet-wide alarm identifies that SOME cert is
+expiring but not WHICH — pair with the scan Lambda.
+
+### Step 3: EventBridge daily cert scan
+
+```bash
+aws events put-rule \
+  --name acm-daily-cert-scan \
+  --schedule-expression "rate(1 day)" --state ENABLED
+
+aws events put-targets \
+  --rule acm-daily-cert-scan \
+  --targets '[{"Id":"cert-scan-lambda","Arn":"arn:aws:lambda:us-east-1:111111111111:function:acm-cert-scan","DeadLetterConfig":{"Arn":"arn:aws:sqs:us-east-1:111111111111:cert-scan-dlq"}}]'
+```
+
+Cert-scan Lambda implementation moved verbatim to [references/diagnostic-commands.md](references/diagnostic-commands.md).
+Load on demand when deploying the EventBridge scan target (the risk table below stays).
+
+| Risk | Criteria | Action |
+|---|---|---|
+| CRITICAL | < 7 days | Page on-call |
+| HIGH | < 30 days AND INELIGIBLE | Manual renewal |
+| MEDIUM | < 45 days AND orphaned | Re-associate or delete |
+| LOW | < 60 days, managed renewal should fire | Verify status |
+| OK | >= 60 days AND ELIGIBLE | No action |
+
+### Step 4: Lambda renewal function (custom renewal flow)
+
+For certs requiring custom renewal (orphaned, imported, PCA-issued):
+
+Full `renew_certificate` implementation moved verbatim to [references/acm-renewal-paths.md](references/acm-renewal-paths.md) (Path 2: custom renewal pipeline).
+Load on demand when emitting the custom renewal function (the decision tree below stays).
+
+**Renewal flow decision tree:**
+
+```
+DNS-validated + attached to supported service?
+├─ Yes → ACM managed renewal. Verify RenewalEligibility = ELIGIBLE.
+└─ No → Custom pipeline: request → validate → attach → verify.
+    If imported → MANUAL re-import flow.
+    If PCA-issued → issue from PCA + validate + attach.
+```
+
+### Step 5: DNS validation via Route 53
+
+```bash
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:us-east-1:111111111111:certificate/abc-123 \
+  --query 'Certificate.DomainValidationOptions[].ResourceRecord'
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z1ABCDEF23456 \
+  --change-batch '{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{
+    "Name":"_abc123.example.com.","Type":"CNAME","TTL":300,
+    "ResourceRecords":[{"Value":"_xyz789.acm-validations.aws."}]
+  }}]}'
+```
+
+**Wildcard and SAN:** A wildcard cert (`*.example.com`) needs ONE CNAME.
+A SAN cert needs ONE CNAME PER domain. A SAN combining `example.com` +
+`*.example.com` needs TWO CNAMEs.
+
+**Common DNS validation failures:**
+
+Table moved verbatim to [references/error-handling.md](references/error-handling.md).
+Load on demand when DNS validation stalls or renewal fails later.
+
+### Step 6: ALB/NLB listener certificate rotation
+
+For managed renewal, the listener automatically uses the renewed cert
+(ARN unchanged). For custom rotation (new ARN):
+
+```bash
+# Single cert
+aws elbv2 modify-listener \
+  --listener-arn arn:aws:elasticloadbalancing:us-east-1:111111111111:listener/app/my-alb/abc/def \
+  --certificates CertificateArn=arn:aws:acm:us-east-1:111111111111:certificate/new-abc
+
+# SNI (multiple certs — FIRST is default)
+aws elbv2 modify-listener \
+  --listener-arn arn:aws:elasticloadbalancing:us-east-1:111111111111:listener/app/my-alb/abc/def \
+  --certificates \
+    CertificateArn=arn:aws:acm:us-east-1:111111111111:certificate/default-abc \
+    CertificateArn=arn:aws:acm:us-east-1:111111111111:certificate/sni-www-def \
+    CertificateArn=arn:aws:acm:us-east-1:111111111111:certificate/sni-api-ghi
+```
+
+**NEVER** replace the entire cert list without preserving SNI order.
+Use `add-listener-certificates` to add the new cert, verify, then
+`remove-listener-certificates` to remove the old one.
+
+### Step 7: CloudFront distribution certificate update
+
+```bash
+aws cloudfront update-distribution \
+  --id E1ABCDEF23456 --if-match ETVWXYZ \
+  --distribution-config '{"CallerReference":"rotation-001",...,
+    "ViewerCertificate":{
+      "CloudFrontDefaultCertificate":false,
+      "ACMCertificateArn":"arn:aws:acm:us-east-1:111111111111:certificate/new-cert",
+      "SSLSupportMethod":"sni-only",
+      "MinimumProtocolVersion":"TLSv1.2_2021"}}'
+```
+
+**Rules:** Fetch current ETag via `get-distribution` first. `CallerReference`
+must be unique per update. Propagation takes 5-60 min — check for
+`Status: Deployed`. Cert MUST be in us-east-1.
+
+### Step 8: API Gateway custom domain rotation
+
+```bash
+# REST API (v1)
+aws apigateway update-domain-name \
+  --domain-name api.example.com \
+  --patch-operations op=replace,path=/certificateArn,value=arn:aws:acm:us-east-1:111111111111:certificate/new
+
+# HTTP API (v2)
+aws apigatewayv2 update-domain-name \
+  --domain-name api.example.com --domain-name-id abc123 \
+  --domain-name-configurations CertificateArn=arn:aws:acm:us-east-1:111111111111:certificate/new
+```
+
+Edge-optimized APIs require us-east-1 certs. Regional APIs require
+same-region certs. API mappings are independent of cert rotation.
+
+### Step 9: ACM PCA private certificate lifecycle
+
+```bash
+# Check CA validity
+aws acm-pca describe-certificate-authority \
+  --certificate-authority-arn arn:aws:acm-pca:us-east-1:111111111111:certificate-authority/abc \
+  --query 'CertificateAuthority.{Status:Status,NotAfter:NotAfter}'
+
+# Issue new end-certificate
+aws acm-pca issue-certificate \
+  --certificate-authority-arn arn:aws:acm-pca:us-east-1:111111111111:certificate-authority/abc \
+  --csr file://csr.pem --signing-algorithm SHA256WITHRSA \
+  --validity Value=365,Type=DAYS --idempotency-token pca-renewal-001
+```
+
+**PCA gotchas:** PCA-issued certs via ACM CAN be managed-renewed IF
+attached to a supported service and the CA is active. PCA-exported
+certs have no managed renewal. The CA itself has a validity period (1-10
+years subordinate, up to 25 root) and must be renewed manually.
+
+### Step 10: Cross-account certificate sharing
+
+CloudFront auto-shares us-east-1 certs across the org. ALB/NLB/API
+Gateway do NOT support cross-account certs — request separately in each
+account.
+
+Consumer IAM role needs:
+
+```json
+{"Effect":"Allow","Action":["acm:GetCertificate","acm:DescribeCertificate"],
+ "Resource":"arn:aws:acm:us-east-1:111111111111:certificate/*"}
+```
+
+### Step 11: SNI verification
+
+```bash
+openssl s_client -connect my-alb-123.us-east-1.elb.amazonaws.com:443 \
+  -servername www.example.com </dev/null 2>/dev/null | openssl x509 -noout -subject -dates
+```
+
+The `notAfter` must reflect the NEW cert. If it shows the old cert's
+expiry, propagation is incomplete — wait and retry.
+
+### Step 12: CloudTrail audit
+
+CloudTrail lookup + anomaly-metric-filter commands moved verbatim to [references/diagnostic-commands.md](references/diagnostic-commands.md).
+Load on demand when auditing cert API calls (Step 12).
+
+## STRICT output contract
+
+Every renewal design MUST emit a single block using these literal labels, in
+this order. Do NOT substitute markdown headings or camelCase variants —
+assertion-based evals and downstream automation parse the literal labels
+`CERTIFICATE:`, `VERDICT:`, `CHECKLIST:`, `GAP:`, `TEMPLATE:`.
+
+```text
+CERTIFICATE: <certificate-arn>
+VERDICT: AUTOMATION_DEPLOYED | REVIEW_REQUIRED
+CHECKLIST:
+  [x] DaysToExpiry: <countdown> (NotBefore <YYYY-MM-DD>, NotAfter <YYYY-MM-DD>)
+  [x] Renewal method: ACM_AUTO | MANUAL_REIMPORT | PCA_ISSUE | EMAIL_APPROVAL | CUSTOM_PIPELINE
+  [x] RenewalEligibility: ELIGIBLE | INELIGIBLE
+  [x] DNS validation: VALIDATED | PENDING | FAILED | N/A (CNAME <record> -> <target>)
+  [x] InUseBy: ALB <arn> | CloudFront <dist-id> | API Gateway <domain> | ORPHANED
+  [x] RenewalStatus: PENDING_AUTO_RENEWAL | IN_PROGRESS | SUCCESS | FAILED
+  [x] Detection: CloudWatch DaysToExpiry < <threshold> + EventBridge scan rate(1 day)
+GAP: <if REVIEW_REQUIRED, the specific gap and remediation>
+TEMPLATE: <CLI snippet or YAML; "(held in draft)" if blocked>
+```
+
+### FORBIDDEN output patterns — NEVER
+
+1. NEVER emit `VERDICT: AUTOMATION_DEPLOYED` while any CHECKLIST item is
+   `[ ]` (unchecked). Any unmet requirement forces `REVIEW_REQUIRED`.
+
+2. NEVER claim `Renewal method: ACM_AUTO` for an imported (private-key)
+   cert. ACM holds no stored private key — those are `MANUAL_REIMPORT` by
+   construction, regardless of `RenewalEligibility`.
+
+3. NEVER report a renewal as complete without a fresh SNI check
+   (`openssl s_client -servername <domain> -connect <endpoint>:443`)
+   showing the new `notAfter`. CloudFront propagation is 5-60 min; ALB
+   is immediate but verify anyway.
+
+4. NEVER report `DNS validation: VALIDATED` unless the CNAME
+   (`_abc.www.example.com -> _xyz.acm-validations.aws.`) is still
+   resolvable via `dig`. A deleted CNAME silently breaks the next
+   managed renewal even when the cert is currently `ISSUED`.
+
+5. NEVER emit a CloudFront renewal where the cert is outside `us-east-1`.
+   CloudFront silently ignores certs in any other region — the
+   distribution continues serving the old cert with no error.
+
+6. NEVER omit the `InUseBy` classification. An orphaned cert
+   (`InUseBy: []`) disables ACM managed renewal even when
+   `RenewalEligibility: ELIGIBLE`. Always classify explicitly.
+
+7. NEVER emit `DaysToExpiry` as a bare number — always pair it with the
+   detection wiring (CloudWatch alarm threshold + EventBridge scan). A
+   countdown with no alarm is noise, not automation.
+
+### Worked example — AUTOMATION_DEPLOYED (cert at 14 days, auto-renewal in progress)
+
+```text
+CERTIFICATE: arn:aws:acm:us-east-1:111111111111:certificate/abc-123-def-456
+VERDICT: AUTOMATION_DEPLOYED
+CHECKLIST:
+  [x] DaysToExpiry: 14 (NotBefore 2025-08-11, NotAfter 2026-08-26; managed-renewal window opened at 60d on 2026-06-27)
+  [x] Renewal method: ACM_AUTO (DNS-validated cert attached to ALB — managed renewal path)
+  [x] RenewalEligibility: ELIGIBLE
+  [x] DNS validation: VALIDATED (CNAME _abc123.www.example.com -> _xyz789.acm-validations.aws., TTL 300, dig confirmed)
+  [x] InUseBy: arn:aws:elasticloadbalancing:us-east-1:111111111111:listener/app/prod-alb/abc/def (ALB HTTPS :443, SNI default cert)
+  [x] RenewalStatus: PENDING_AUTO_RENEWAL (ACM has fired daily renewal attempts since 60d window; CNAME propagation delayed; EventBridge scan + CloudWatch alarm < 30d both active)
+  [x] Detection: CloudWatch alarm acm-www-expiring-14d (DaysToExpiry < 30, SNS arn:aws:sns:us-east-1:111111111111:cert-expiry-alerts) + EventBridge acm-daily-cert-scan rate(1 day)
+GAP: None
+TEMPLATE:
+  # CloudWatch alarm — urgent tier (< 30 days) on the specific cert ARN
+  aws cloudwatch put-metric-alarm \
+    --alarm-name acm-www-expiring-14d --namespace AWS/CertificateManager \
+    --metric-name DaysToExpiry \
+    --dimensions Name=CertificateArn,Value=arn:aws:acm:us-east-1:111111111111:certificate/abc-123-def-456 \
+    --statistic Minimum --period 86400 --threshold 30 --comparison-operator LessThanThreshold \
+    --evaluation-periods 1 --alarm-actions arn:aws:sns:us-east-1:111111111111:cert-expiry-alerts
+
+  # EventBridge daily scan (catches gaps managed renewal cannot — orphaned, imported, PCA CA expiry)
+  aws events put-rule --name acm-daily-cert-scan --schedule-expression "rate(1 day)" --state ENABLED
+
+  # No re-import needed; managed renewal rotates the cert in place (ARN unchanged).
+  # Confirm renewal completion via SNI after RenewalStatus flips to SUCCESS:
+  openssl s_client -connect prod-alb-123.us-east-1.elb.amazonaws.com:443 -servername www.example.com \
+    </dev/null 2>/dev/null | openssl x509 -noout -subject -dates
+```
+
+### Worked example — REVIEW_REQUIRED (imported orphaned cert)
+Full block moved verbatim to [references/worked-examples.md](references/worked-examples.md).
+Load on demand when the verdict is REVIEW_REQUIRED (imported/orphaned cert).
+
+### Decision tree — renewal path classification
+
+```
+Start: cert with DaysToExpiry ≤ 60
+├─ Imported cert (Status: ISSUED, RenewalEligibility: INELIGIBLE)?
+│   └─ Yes → MANUAL_REIMPORT → VERDICT: REVIEW_REQUIRED
+│            (external CA + aws acm import-certificate + re-attach)
+├─ RenewalEligibility = ELIGIBLE AND InUseBy ≠ []?
+│   ├─ Yes → Validation method?
+│   │       ├─ DNS + CNAME resolvable → ACM_AUTO → VERDICT: AUTOMATION_DEPLOYED
+│   │       │                           (verify SNI post-rotation)
+│   │       └─ DNS CNAME missing OR EMAIL → REVIEW_REQUIRED
+│   │                                     (fix CNAME or migrate EMAIL→DNS)
+│   └─ No (orphaned or INELIGIBLE) → go to next branch
+├─ PCA-issued via ACM (Status: ISSUED, CertificateAuthorityArn present)?
+│   ├─ CA Status = ACTIVE AND cert attached → ACM_AUTO with CA-health check
+│   └─ CA expired OR cert orphaned → REVIEW_REQUIRED (renew CA first)
+└─ PCA-exported (used outside AWS)?
+    └─ Full manual pipeline → REVIEW_REQUIRED (issue from PCA + export + ship)
+```
+
+## Anti-Patterns — NEVER do these
+
+- NEVER assume ACM managed renewal covers all certificates. It covers
+  ONLY DNS/email-validated certs attached to supported services. Always
+  check `RenewalEligibility`.
+
+- NEVER delete DNS validation CNAMEs after issuance. They must persist
+  for the cert's lifetime for ACM to re-validate during renewal.
+
+- NEVER request a new certificate without checking for existing ones.
+  `request-certificate` creates duplicates. Use `list-certificates` first.
+
+- NEVER put a CloudFront cert outside us-east-1. It silently fails.
+
+- NEVER update an ALB listener cert list without preserving SNI order.
+  `modify-listener --certificates` REPLACES the entire list.
+
+- NEVER use email validation for new certificates. It requires human
+  action on every renewal. Use DNS validation.
+
+- NEVER forget PCA CA expiry. An expired CA breaks all certs it issued
+  even if end-certs haven't reached their own expiry. Check CA
+  `NotAfter` 90+ days in advance.
+
+- NEVER update a CloudFront distribution with a stale ETag. It fails
+  silently. Always `get-distribution` for the current ETag first.
+
+- NEVER omit the DLQ on the EventBridge cert-scan target. Without a
+  DLQ, failed scans are silently dropped.
+
+- NEVER skip SNI verification after rotation. The config may show the
+  new cert but the TLS handshake may still serve the old cert during
+  propagation.
+
+- NEVER share certs cross-account for ALB/NLB. They require same-account
+  certs. Request separately in each account.
+
+- NEVER rotate all certs simultaneously. Rotate one, verify, then
+  proceed. A batch failure leaves the fleet inconsistent.
+
+- NEVER omit CloudTrail auditing. A compromised credential can
+  `delete-certificate` to disrupt renewal.
+
+## Pre-flight safety checks
+
+- **CONFIRMATION GATE** before any state-changing operation:
+  `CONFIRM: About to <action> for certificate <domain> in account
+  <account>. Proceed? (yes/no)`
+
+- **Back up configs:** Save listener/distribution config before
+  modifying.
+
+- **Before production rotation:** verify new cert status is `issued`:
+  `aws acm describe-certificate --certificate-arn <new> --query 'Certificate.Status'`
+
+- **Before deleting old cert:** verify `InUseBy` is `[]`.
+
+- **For PCA rotation:** verify CA is `ACTIVE`.
+
+## Appendix A — Renewal eligibility matrix
+
+Matrix moved verbatim to [references/acm-renewal-paths.md](references/acm-renewal-paths.md).
+Load on demand for the full renewal-path classification.
+
+## Appendix B — Decision tree
+Tree moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand for the condensed renewal-path decision logic (the main decision tree under STRICT output contract stays).
+
+## Appendix C — CloudFormation skeleton
+Full CloudFormation skeleton moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand when emitting IaC for the renewal pipeline.
+
+## Recent AWS features (2024-2026)
+
+Moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand for 2024-2026 ACM/PCA/CloudFront feature coverage.
+
+## Expert heuristic: renewal coverage gap
+
+Heuristic + verification protocol moved verbatim to [references/advanced-patterns.md](references/advanced-patterns.md).
+Load on demand when deciding detection depth for a cert fleet.
+
+## References (load on demand)
+
+- [references/acm-renewal-paths.md](references/acm-renewal-paths.md) — renewal-path CLI references; custom-pipeline Lambda implementation; renewal eligibility matrix.
+- [references/imported-cert-manual-renewal.md](references/imported-cert-manual-renewal.md) — manual re-import flow for imported private-key certs.
+- [references/advanced-patterns.md](references/advanced-patterns.md) — Step 0 expert knowledge, appendices (decision tree, CloudFormation skeleton), 2024-2026 features, coverage-gap heuristic.
+- [references/diagnostic-commands.md](references/diagnostic-commands.md) — cert-scan Lambda and CloudTrail audit commands.
+- [references/worked-examples.md](references/worked-examples.md) — REVIEW_REQUIRED worked example (secondary).
+- [references/error-handling.md](references/error-handling.md) — DNS validation failure table.
+
+## Domain
+
+AWS CloudOps / Security Automation — TLS certificate lifecycle.
+
+## AWS documentation
+
+- **ACM Managed Renewal** — https://docs.aws.amazon.com/acm/latest/userguide/managed-renewal.html
+- **ACM DNS Validation** — https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html
+- **AWS Private CA** — https://docs.aws.amazon.com/acm-pca/latest/userguide/PcaWelcome.html
+- **CloudFront Viewer Certificates** — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-https-alternate-domain-names.html
+- **ALB SNI** — https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listeners.html

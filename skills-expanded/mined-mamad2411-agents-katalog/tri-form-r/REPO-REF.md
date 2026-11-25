@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-ThomasMoreAI-legal-skills-open/tri-form-r/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Drafts EPA Toxic Release Inventory (Form R) reports under EPCRA Section 313 and 40 CFR Part 372. Covers facility identification, chemical threshold determinations, release quantification, off-site tra

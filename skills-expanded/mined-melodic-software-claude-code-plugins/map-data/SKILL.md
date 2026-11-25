@@ -1,0 +1,260 @@
+---
+description: "Entity-relationship diagram from committed schema declarations, with no database connection: Prisma models win over a stated subset of Entity Framework fluent mappings, which win over SQL migrations read from a stated subset of statements, and a disagreement is reported. Use when 'map data', 'ERD', 'entity relationship', 'schema diagram', 'cardinality from mappings', or 'which tables relate'. Skip when the question is deployment topology, runtime state, or data volume."
+argument-hint: "[--scope module|all|<module>] [--include-columns] [--dialect mermaid|dbml] [--out <dir>]"
+user-invocable: true
+disable-model-invocation: false
+shell: bash
+metadata:
+  workflow-stage: explore
+  summary: Draw an ERD from a committed schema, offline
+---
+
+## Repository context
+
+The current repository is both the consumer, whose convention home declares where artifacts land,
+and the default subject, whose tracked files declare the schema.
+
+Collect with an **individual** Bash call, one command per call: the project root,
+`git rev-parse --show-toplevel`. Treat a failure (not a repository, git unavailable) as an unknown
+value and carry on; `${CLAUDE_PROJECT_DIR}` is the resolver's `--root` either way.
+
+## Purpose
+
+Answer "what are the entities and how do they relate" from declarations in the tree. Every entity
+and every cardinality traces to a named file. The scripts collect and render. Do not draw a box the
+script did not emit, and do not invent a cardinality the script did not record.
+
+This is not a C4 diagram: an entity-relationship diagram is not one of the C4 views (the record
+is under Gotchas).
+
+## Resolve home and dialect
+
+Read `${CLAUDE_PLUGIN_ROOT}/reference/config.md` first. This skill writes into `architecture_dir`.
+It does not read `landscape_dialect` and adds no dialect key: the diagram dialect is
+`diagram_dialect.data` from the authoring-formats topic doc.
+
+Run `bash "${CLAUDE_PLUGIN_ROOT}/lib/resolve-convention-home.sh" --root "${CLAUDE_PROJECT_DIR}"` and
+follow the exit code; never parse the root instruction file yourself. Exit 0: read
+`<home>/architecture/README.md` for `architecture_dir`. Exit 1, 2, or 3: no declared home.
+
+Per key, in order: `--out <dir>` wins for this run alone, then a declared `architecture_dir`, then
+one question. `architecture_dir` has no default. An undeclared and unconfirmed home, including
+every non-interactive run, stops and points at `/architecture:setup`. Do not invent a directory.
+
+Resolve `diagram_dialect.data` by restating this ladder, then running the resolver rather than
+parsing the topic doc yourself. The ladder is a resolution order, not a task list:
+
+```markdown
+1. Anchor at the repository root: `${CLAUDE_PROJECT_DIR}` when set, otherwise
+   `git rev-parse --show-toplevel`. Never a CWD-relative read.
+2. Resolve the convention home `<home>` with the bundled resolver above. Never hand-parse the root
+   file.
+3. The printed home is repo-relative: join it to the root, then pass
+   `<root>/<home>/authoring-formats/README.md` to the resolver.
+4. Layer order is one layer deep: an explicit `--dialect` argument, then the team convention doc,
+   then the documented default `mermaid`. There is no personal override.
+5. Default: `diagram_dialect.data` is `mermaid`. Allowed values are `mermaid` and `dbml`.
+6. Degrade soft, and say so. No pointer, no doc, no key, or an unrecognized value each resolve to
+   `mermaid`. The resolver names the cause on stderr. Do not hard-fail and do not ask the operator
+   to create the surface mid-task.
+7. Report provenance: the key, the value, and the layer (`argument`, `team convention doc <path>`,
+   or `default`).
+```
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/lib/resolve-diagram-dialect.sh" --kind data \
+  --formats "<root>/<home>/authoring-formats/README.md"
+```
+
+Omit `--formats` when no convention home resolved. Stdout is `mermaid` or `dbml`. An explicit
+`--dialect` on the invocation wins and the resolver is not required.
+
+This skill never writes the consumer's root instruction file or its topic doc.
+
+## Build the record
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/collect-data.sh" \
+  --repo "<subject-repo>" --out "<architecture_dir>/data-model.json" \
+  --generated-on "<YYYY-MM-DD|unknown>"
+```
+
+Pass `--generated-on` from `git -C <root> log -1 --format=%cs`, or `unknown` when that fails.
+Pass `--live` only when the invocation asked for a live connection: the script opens none, writes a
+refusal, and does not read the schema.
+
+The record is schema_version 1, one object per line. `status` is `drawn` or `refused`; a refusal
+names `reason` and writes no relationships. Shipped tiers, first present wins the diagram:
+
+- **model / prisma.** `*.prisma` model blocks.
+- **orm / ef-fluent.** A stated subset of one-to-many and one-to-one chains. The chain starts at
+  `Entity<T>()` or, in a file that declares exactly one `class X : IEntityTypeConfiguration<T>`
+  (also among several base types), at the `Configure` builder parameter. `HasOne`/`HasMany` take a
+  generic argument or, for one-to-many, a lambda navigation (`HasMany(e => e.Posts).WithOne(e => e.Blog)`,
+  `HasOne(e => e.Blog).WithMany(e => e.Posts)`); the navigation's target comes from the property
+  declared on the configured entity's class in the scanned `.cs` files (`ICollection`, `List`,
+  `IList`, `IEnumerable` or `HashSet` of one identifier for a collection, `T` or `T?` for a
+  reference). `HasForeignKey` and `HasPrincipalKey` take one string literal or one single-member
+  lambda. Requiredness is an explicit `IsRequired()`, `IsRequired(true)` or `IsRequired(false)`;
+  with none, it is the foreign-key property's declared type on the dependent class: `T?`,
+  `Nullable<T>` and `string?` are optional, and `int`, `uint`, `long`, `ulong`, `short`, `ushort`,
+  `byte`, `sbyte`, `Guid`, `DateTime` and `DateTimeOffset` are required.
+- **migration / sql-migration.** `*.sql` under a `migrations` directory at any depth, including one
+  at the repository root, replayed in path order. The readable statements are `CREATE TABLE`
+  (with inline `REFERENCES`, table-level `FOREIGN KEY`, `UNIQUE` and `PRIMARY KEY`),
+  `CREATE UNIQUE INDEX`, `DROP INDEX`, `DROP TABLE`, and `ALTER TABLE` with `ADD COLUMN`,
+  `DROP COLUMN`, `ADD [CONSTRAINT n] FOREIGN KEY | UNIQUE | PRIMARY KEY`, and `DROP CONSTRAINT`
+  naming a constraint the migrations declared. Any other `ALTER TABLE` action (`RENAME`,
+  `ALTER COLUMN`, a `DROP CONSTRAINT` it cannot map) refuses the tier with `sql-alter-unreadable`.
+
+A second shipped tier that disagrees becomes a mismatch row. The diagram stays on the winning tier.
+A tier that loses and cannot be read (an EF chain outside the subset, an unreadable migration) does
+not refuse the record: it is left out of the comparison and listed as a `not-compared` row.
+Django models, SQLAlchemy columns, EF `[ForeignKey]` annotations, and a Prisma many-to-many with no
+`fields:` list refuse the record (`partial-read` or a named reason), as does an EF chain outside the
+subset when EF is the winning tier (`ef-fluent-unreadable`), a migration outside the subset when
+SQL is the winning tier (`sql-alter-unreadable`), and a composite foreign key with no unique column
+set inside it (`unknown-cardinality`). A shipped diagram beside an unread mechanism would be a
+partial read.
+
+A module is the first path segment of the declaring file, or `.` at the repository root. It is
+listed only when the winning tier declares an entity in it.
+
+## Render
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/render-data.sh" \
+  --record "<architecture_dir>/data-model.json" --out "<architecture_dir>" \
+  --dialect "<mermaid|dbml>" --scope "<module|all|id>"
+```
+
+Add `--include-columns` only when the invocation asked for columns. The default scope is `module`:
+one module is drawn; several modules write a refusal that lists them and the script exits 3. Draw
+nothing until the operator passes `--scope <id>` or `--scope all`. In a non-interactive run, stop
+after that refusal. Do not pick a module. With more than one module in scope, every node is named
+`module/Entity`, so `orders/User` and `billing/User` stay two nodes.
+
+Mermaid writes an `erDiagram` inside `data-model.md`. DBML writes `data-model.dbml` and points at
+it from `data-model.md`. Column names and types appear in the diagram only with `--include-columns`;
+the relationship list and the mismatch list are not a column dump.
+
+The script prints one summary line. Keep it:
+
+`data: status=<drawn|refused> reason=<reason|none> tier=<tier> tool=<tool> modules=<n> entities=<n> relationships=<n> mismatches=<n> columns=<yes|no> dialect=<mermaid|dbml> scope=<id|all|unresolved|none>`
+
+Exit 1 means the record is unreadable or not schema_version 1 in the one-object-per-line layout;
+nothing was written. Report that message. Do not reformat the record by hand.
+
+## Close with the report
+
+End every run with this block, in this order:
+
+- **Artifacts**: each path written, or `none written` when the run stopped before a home existed.
+- **Status**: `drawn` or `refused`, and the reason when it is a refusal.
+- **Source**: the tier and the tool, quoted from the summary, or `none` on a refusal.
+- **Dialect**: `mermaid` or `dbml`, and the layer it came from.
+- **Scope**: the module, `all`, or `unresolved` with the module list.
+- **Columns**: omitted, or included.
+- **Mismatches**: the count. A mismatch is reported, not silently resolved.
+- **Live**: not requested, or requested and refused. No connection was opened.
+
+## Interactive view
+
+After the report, offer an interactive view of `data-model.json` in one sentence. The markdown and
+the record stay authoritative. Build it only with `${CLAUDE_PLUGIN_ROOT}/scripts/build-view.mjs data`,
+never hand-written; the shared medium resolver decides the destination, with this plugin's `medium`
+option `${user_config.medium}`, or `""` when that reads empty or unsubstituted (never put a
+`${user_config.*}` string in a shell command), and its report line is printed. Procedure:
+[`${CLAUDE_PLUGIN_ROOT}/reference/rendered-view.md`](${CLAUDE_PLUGIN_ROOT}/reference/rendered-view.md).
+
+## What this skill does not do
+
+- Open a database connection, read production data, or compare live rows to the declaration.
+- Indexes, data volumes, query plans, lineage, or ETL.
+- A C4 view, or a new dialect key. The dialect is the existing `diagram_dialect.data`.
+- Adapters other than Prisma models, the EF fluent subset above, and the SQL statements listed
+  above. Other mechanisms refuse. Within EF, these refuse: a composite key, `HasOne(lambda)` paired
+  with `WithOne`, a navigation with no single declared type (an expression-bodied property, a
+  positional record member, an undeclared name), two declarations of one class property in the
+  same module, a file with zero or several `IEntityTypeConfiguration<T>` classes, an `IsRequired`
+  argument other than `true` or `false`, and, when `IsRequired` is absent, a foreign key that is
+  undeclared or has a plain `string`, enum or other type, because its nullability depends on the
+  project's nullable setting. A `[ForeignKey]` annotation is not read.
+- Guess a cardinality the declaration does not state. Implicit Prisma many-to-many and a composite
+  foreign key with no unique column set refuse.
+- Invent a home. No declared, no `--out`, and no confirmed `architecture_dir` is a stop.
+
+## Next
+
+- The schema settles a decision worth keeping: `/architecture:adr`.
+- The schema needs a data-model change decided: `/planning:design data`.
+- The question is which systems the repository sits among: `/architecture:map-landscape`.
+
+## Gotchas
+
+- **The picture is not a C4 diagram.** An entity-relationship diagram is not a C4 view, so this
+  skill adds no C4 dialect key and reads `diagram_dialect.data` (`mermaid` or `dbml`). Pointer:
+  when checking which views C4 defines, fetch
+  [C4 diagrams § Static structure diagrams](https://c4model.com/diagrams#static-structure-diagrams)
+  and [§ Supporting diagrams](https://c4model.com/diagrams#supporting-diagrams) live.
+- **A Prisma one-to-many is read from `@relation(fields:, references:)`.** The reader takes the
+  scalar that `fields` names as the foreign key, and reads the relation as required when neither
+  the relation field nor that scalar carries `?`. Pointer: when
+  checking where Prisma stores a one-to-many foreign key or what makes it required, fetch
+  [one-to-many relations § 1-n in the database](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/one-to-many-relations#1-n-in-the-database)
+  and
+  [§ Required vs optional relation fields](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/one-to-many-relations#required-vs-optional-relation-fields)
+  live.
+- **The EF reader is a stated subset of the fluent chain.** It reads `HasMany`/`HasOne`,
+  `WithOne`/`WithMany`, `HasForeignKey`, and `IsRequired`, including the lambda form. Without
+  `IsRequired` it takes requiredness from the foreign-key property's nullability alone, whatever
+  the navigation's: `int? BlogId` is optional and `int BlogId` required, even beside
+  `Blog Blog = null!`. That reading was observed in an EF Core 10.0.0 probe with nullable
+  reference types on; the probe is not recorded in this repository. Pointer: when checking how EF
+  sets requiredness, fetch
+  [foreign and principal keys § Non-nullable foreign key columns](https://learn.microsoft.com/en-us/ef/core/modeling/relationships/foreign-and-principal-keys#non-nullable-foreign-key-columns)
+  and
+  [one-to-many § Required one-to-many](https://learn.microsoft.com/en-us/ef/core/modeling/relationships/one-to-many#required-one-to-many)
+  live. The script's stderr names the property or chain that stopped a refused read; the
+  record's reason stays `ef-fluent-unreadable`. A declaration in the configuration file's own
+  module is preferred over the rest of the repository. A chain outside the subset refuses the
+  record only when EF is the winning tier. Beside a Prisma schema it is a `not-compared` row, so a
+  test or sample file cannot block the diagram.
+- **The SQL reader replays a stated subset.** It reads the statements listed under the tiers and
+  refuses the tier with `sql-alter-unreadable` on any other `ALTER TABLE` action, because a renamed
+  table or a changed column would leave the replayed shape wrong. A migration it cannot read never
+  produces a mismatch claim against the winning tier.
+- **Two modules can declare the same short name.** Nodes are keyed by module and name. The
+  diagram names a node `module/Entity` whenever more than one module is in scope, quoted in
+  Mermaid (`"orders/User"`). Pointer: when checking which entity names Mermaid needs quoted, fetch
+  [entity relationship diagrams § Entities and relationships](https://mermaid.js.org/syntax/entityRelationshipDiagram.html#entities-and-relationships)
+  live.
+- **A required relationship does not mean the principal has at least one dependent.** The diagram
+  uses `||--o{` for a required foreign key. That matches both Prisma and EF: the many side may be
+  empty. The same EF page states there is no standard way to require a minimum number of
+  dependents. Do not draw `||--|{` from a required foreign key.
+- **A foreign key covered by a unique column set is one-to-one, drawn `||--o|` or `|o--o|`.** The
+  referenced entity is on the left, so `||` says each dependent row names exactly one principal,
+  and `o|` says the principal has zero or one dependent. A required unique foreign key is
+  `||--o|`; an optional one is `|o--o|`. Never `||--||`, which would demand a dependent for every
+  principal. Uniqueness is a Prisma `@unique`, `@id`, `@@unique([..])` or `@@id([..])`, or a SQL
+  `UNIQUE`, `PRIMARY KEY`, `CREATE UNIQUE INDEX` or `ALTER TABLE ... ADD UNIQUE`, whose columns
+  lie inside the foreign-key columns. A composite foreign key with no such set has no readable
+  cardinality, so the record refuses with `unknown-cardinality` rather than drawing one-to-many.
+  Pointer: when checking the cardinality markers or what makes a relation one-to-one, fetch
+  [entity relationship diagrams § Relationship syntax](https://mermaid.js.org/syntax/entityRelationshipDiagram.html#relationship-syntax)
+  and
+  [one-to-one relations § 1-1 in the database](https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/one-to-one-relations#1-1-in-the-database)
+  live.
+- **DBML names the referenced column the declaration names.** Prisma `references: [..]` and SQL
+  `REFERENCES t(col)` fill it, and EF `HasPrincipalKey("Col")` does. Where the declaration names
+  none, the `Ref` becomes a `//` comment that says so, because DBML needs a column on both sides;
+  the script never assumes `id`.
+- **A reformatted record reads as empty unless the reader refuses it.** Render exits 1 on any
+  layout other than one object per line and writes nothing.
+- **Tracked files only.** `git ls-files` is the source list. An untracked schema is not a
+  declaration. A directory that is not a git repository is a refusal.
+- **`--live` is a refusal.** No connection string is read and no client is invoked. Offline tiers
+  are not silently substituted.
+- **Two mechanisms are not half-read.** Django, SQLAlchemy, and EF data annotations are recognized
+  and then the run stops, even when a Prisma schema is also present.

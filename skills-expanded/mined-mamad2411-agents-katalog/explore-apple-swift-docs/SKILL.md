@@ -1,0 +1,127 @@
+---
+name: explore-apple-swift-docs
+description: Explore Apple and Swift documentation across Xcode MCP docs, Dash, source repositories, generated docs, and readable official web docs, including search, browse, source selection, local-docs fallback, and optional Dash install or generation follow-up. Use when Codex needs Apple or Swift docs help rather than Xcode execution or repo-guidance sync work.
+---
+
+# Explore Apple Swift Docs
+
+## Purpose
+
+Explore Apple and Swift documentation through one top-level entry point. Prefer direct docs access methods in this order: Xcode MCP `DocumentationSearch` first, Dash.app MCP second, Dash localhost HTTP only when the Dash.app MCP is unavailable or incomplete, then checked-out source, generated DocC, GitHub/source repositories, or release notes, and finally readable online documentation. `scripts/run-workflow.fsx` remains a maintainer helper for structured dry runs, fallback planning, and Dash follow-up automation, but it is not the primary way the agent should perform ordinary Apple or Swift docs lookup.
+
+## When To Use
+
+- Use this skill for Apple or Swift API reference lookup requests.
+- Use this skill for Apple or Swift guide, tutorial, symbol, or concept search requests.
+- Use this skill when the user wants local docs first, wants official docs first, or wants to compare available Apple or Swift docs sources.
+- Use this skill when the user wants Dash-compatible Apple or Swift docs access, install guidance for a missing Dash docset, or generation guidance when a Dash docset is unavailable.
+- Recommend `xcode-build-run-workflow` when the user needs Apple or Swift execution, diagnostics, build, run, toolchain help, or mutation decisions inside an existing Xcode project.
+- Recommend `xcode-testing-workflow` when the user needs Swift Testing, XCTest, XCUITest, `.xctestplan`, or test diagnosis inside an existing Xcode project.
+- Recommend `bootstrap-xcode-workspace` when the user is starting a native Apple product or aligning an existing canonical workspace.
+
+## Single-Path Workflow
+
+1. Classify the request into one docs workflow mode:
+   - `explore`
+   - `dash-install`
+   - `dash-generate`
+2. If no mode is explicit, start at `explore`.
+3. For `explore`, use the documented direct docs path instead of routing ordinary lookups through a wrapper script:
+   - `xcode-mcp-docs`: use Xcode MCP `DocumentationSearch` first when it is available and the user has not asked for another source
+   - `dash`: use the Dash.app MCP directly after Xcode MCP when its installed docsets cover the question
+   - `dash-http`: use the documented Dash localhost HTTP structure directly when Dash MCP is unavailable or incomplete
+   - `source-repo`: use GitHub/source repositories, generated DocC, release notes, or checked-out source when the request is about open source Swift projects, tools, or packages
+   - `official-web`: use official Apple or Swift web docs when the local-docs and source-repo paths are unavailable, the user explicitly prefers the web source, and the page content is actually readable through the available tool
+4. Use `scripts/run-workflow.fsx` only when a structured non-interactive planning result is useful, or when the request is specifically about `dash-install` or `dash-generate` follow-up behavior.
+5. If the selected mode cannot complete, hand off forward through one clear next step:
+   - `explore -> dash-install`
+   - `dash-install -> dash-generate`
+6. Return one `status`, one `path_type`, one `source_used`, and one output contract for the mode that ran.
+
+## Inputs
+
+- `mode`: `explore`, `dash-install`, or `dash-generate`
+- `query`: required for `explore`
+- `docs_kind`: optional for `explore`; use `api-reference`, `guide`, `symbol`, or `search` when the user intent is clear
+- `preferred_source`: optional for `explore`; use `auto`, `xcode-mcp-docs`, `dash`, `dash-http`, `source-repo`, or `official-web`
+- `mcp_failure_reason`: optional for `explore` when Xcode MCP docs were expected but are currently unavailable
+- `docset_request`: required for `dash-install` and `dash-generate`
+- `approval`: required before side-effectful Dash install actions
+- Defaults:
+  - `explore` source order is `xcode-mcp-docs,dash,dash-http,source-repo,official-web`
+  - Dash install source priority is `built-in,user-contributed,cheatsheet`
+  - default search result limit is `20`
+  - default search snippets setting is `true`
+  - maintainer helper entrypoint: executable `scripts/run-workflow.fsx`
+
+## Outputs
+
+- `status`
+  - `success`: the selected mode completed on its primary or fallback path
+  - `blocked`: prerequisites, approval, or usable docs sources are missing
+  - `handoff`: the current mode is handing off to the next docs mode
+- `path_type`
+  - `primary`: the selected mode completed normally
+  - `fallback`: the selected mode completed through its documented fallback path
+- `output`
+  - `mode`
+  - `source_used`
+  - `configured_order` or `source_path`
+  - `matches`
+  - install result or generation guidance when applicable
+  - one next step when follow-up is required
+
+## Guards and Stop Conditions
+
+- Do not run Dash install actions without explicit user approval.
+- Do not invent Apple or Swift doc sources, Dash identifiers, or catalog matches.
+- Do not present `scripts/run-workflow.fsx` as the required first step for ordinary Apple or Swift docs lookup when direct Xcode MCP or Dash MCP/HTTP access is available.
+- Do not treat generic no-JS web search or no-JS page extraction as a readable source for Apple Developer documentation. Apple Developer pages often require JavaScript-rendered payloads; if the content cannot be read through Xcode MCP, Dash, source repositories, generated docs, or a capable browser/source path, say that plainly instead of claiming the docs were checked.
+- Do not cite an Apple Developer URL as evidence unless the relevant documentation text was actually read through a usable source. A URL alone is only a citation target, not proof that the guidance was verified.
+- Stop with `blocked` when `explore` has no usable docs source after applying the documented fallback order.
+- Stop with `blocked` when `dash-install` or `dash-generate` lacks a concrete docset request.
+- Keep `explore`, `dash-install`, and `dash-generate` in forward order; do not blend them into competing primary workflows.
+
+## Fallbacks and Handoffs
+
+- `explore` falls back in this order: Xcode MCP `DocumentationSearch`, then Dash.app MCP, then Dash localhost HTTP only when its MCP is unavailable or incomplete, then checked-out source, generated DocC, GitHub/source repositories, or release notes, then readable online documentation.
+- Explicit user preference overrides the default source order when that preference is usable.
+- `dash-install` hands off to `dash-generate` when no installable catalog match exists.
+- `dash-generate` falls back from stable automation guidance to deterministic manual guidance.
+- Recommend `xcode-build-run-workflow` directly when the user’s task shifts from docs exploration to Apple or Swift build, run, diagnostics, toolchain, or mutation work.
+- Recommend `xcode-testing-workflow` directly when the user’s task shifts from docs exploration to Apple or Swift test work.
+- Recommend `bootstrap-xcode-workspace` directly when the user needs a new native product scaffold or existing-workspace alignment.
+- `scripts/run-workflow.fsx` is the shared local helper for structured planning, install gating, and follow-up behavior; helper scripts remain implementation details behind it.
+
+## References
+
+### Workflow References
+
+- `references/xcode_mcp_docs.md`
+- `references/dash_mcp_tools.md`
+- `references/dash_call_library.md`
+- `references/apple-framework-docs-guide.md`
+- `references/dash-apple-docset-triage.md`
+- `references/dash-swift-package-shortlist.md`
+- `references/dash_http_api.md`
+- `references/dash_url_and_service.md`
+- `references/official_web_docs.md`
+
+### Contract References
+
+- `references/stage-handoff-contract.md`
+- `references/automation-prompts.md`
+
+### Support References
+
+- Recommend `references/snippets/apple-xcode-project-core.md` when the user needs a reusable Apple and Xcode-project baseline snippet in their own repo alongside Apple or Swift docs workflows.
+- `references/catalog_built_in_docsets.json`
+- `references/catalog_user_contrib_docsets.json`
+- `references/catalog_cheatsheets.json`
+- `references/snippets/apple-xcode-project-core.md`
+
+### Script Inventory
+
+- These are maintainer helpers behind the public docs workflow, not the primary lookup path for ordinary Apple or Swift docs exploration.
+- `scripts/run-workflow.fsx`
+- `scripts/run-workflow.fsx`: fixed-source-order planning and confirmation-gated Dash follow-up.

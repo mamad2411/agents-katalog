@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-baneeishaque-ljt-520-openclaw-backup/xiaolongxia-feishu-card/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 飞书互动卡片发送技能（国际版 Feishu 兼容）。当需要发送格式丰富的飞书卡片消息时使用。支持标题、Markdown 内容、颜色主题。关键：必须使用 schema 2.0 格式 + 双重 JSON stringify，否则国际版飞书（Feishu）无法渲染。

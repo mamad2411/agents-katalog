@@ -1,0 +1,245 @@
+---
+name: zotagent
+description: Search, retrieve, inspect, add, or edit Zotero literature via the `zotagent` CLI. Load this skill whenever the user wants to query their Zotero library (keyword / semantic / metadata), pull quotations or context from indexed papers, add items by DOI, web page URL, ISBN / PMID / arXiv identifier, Semantic Scholar paperId, JSON, or manual metadata, change existing items (fix a field, add or remove tags, file into a collection, attach a note, trash an item), inspect recent Zotero items, or diagnose indexed attachments. Use it even on indirect requests — any mention of references, citations, bibliography checks, PDF passages, or literature discovery. Do not guess at zotagent's flags — consult this reference first.
+---
+
+# zotagent
+
+`zotagent` is a CLI for a Zotero library: search and retrieve indexed attachments (PDF / EPUB / HTML / TXT) and bibliography metadata, add items by DOI, web page URL, identifier (ISBN / PMID / arXiv), Semantic Scholar paperId, JSON, or manual fields, follow a paper's references and citations through Semantic Scholar, and inspect recent Zotero items. Task commands emit JSON (`{ok: true, data, meta?}` on success, `{ok: false, error, meta?}` + exit 1 on failure).
+
+Don't invent citation keys, item keys, or passage text. If a query returns nothing, say so.
+
+## Three search layers — pick the right one
+
+| Command | Searches over | Good for |
+|---|---|---|
+| `zotagent search "<q>" [--semantic] [--tag <tag>] [--collection-key <key>] [--limit n] [--min-score n]` | Indexed full text only — body, not title (FTS5 keyword by default; qmd vector search with `--semantic`; optional Zotero tag and/or collection filter for keyword search) | Finding passages that discuss a topic across the library or within a tagged or collection-scoped subset |
+| `zotagent search-in "<q>" --key <k> [--limit n]` | Full text of one item's indexed attachments | Drilling into a single paper for terms or quoted phrases |
+| `zotagent metadata ["<q>"] [metadata filters...] [--tag <tag>] [--collection-key <key>] [--field f] [--abstract] [--indexed] [--limit n]` | Bibliography fields: title / author / year / journal / publisher / abstract, optionally filtered by Zotero tags or collections | Finding papers by metadata or by title, verifying existence, resolving an `itemKey` |
+
+Metadata quick rules:
+
+- Positional query, field filters (`--author` / `--year` / `--title` / `--journal` / `--publisher`), or both are valid.
+- `--field` scopes only the positional query; filter flags AND together.
+- `--tag "PhD Thesis"` fetches matching top-level item keys from the Zotero Web API, then filters local results — so put workflow tags on the parent item, not the PDF attachment. Repeat `--tag` to AND tags. Requires Zotero read API config.
+- `--collection-key ABCD1234` filters to top-level items directly in the named Zotero collection (the 8-char key shown at the end of `zotero.org/<user>/collections/<key>`). Repeat `--collection-key` to union across collections; combine with `--tag` for an intersection. Direct members only — sub-collections are not included. Requires Zotero read API config.
+- `--abstract` includes abstract text in the output (omitted by default to keep responses compact). To search abstract text, use a positional query with `--field abstract`.
+- Each result reports `indexed` / `indexedFiles`, read from the shared full-text index: whether `search-in` / `fulltext` can read the item. This is device-independent — it says nothing about whether attachment files exist on the current machine, and a `file` entry in Zotero alone does not make it true; the attachment must have been extracted by a `sync`. `--indexed` keeps only indexed items.
+- `metadata "Pratt 1985"` generally returns empty (year is not OR'd in) — split into `--author "Pratt" --year "1985"`.
+
+Keyword syntax — `search` and `search-in` both run SQLite FTS5 with a porter stemmer over a Trad→Simp folded index:
+
+| Operator | Example | Notes |
+|---|---|---|
+| Exact phrase | `"institutional change"` | Token-adjacent match. Quotes a multi-word phrase. |
+| AND (default) | `alpha beta` | Implicit between bare tokens. |
+| OR | `Acemoglu OR Robinson` | Must be uppercase. Lowercase `or` is a literal term, not an operator. |
+| NOT | `alpha NOT beta` | Excludes the right-hand expression. Same uppercase rule. |
+| Proximity | `"土地" NEAR/20 "开发"` | Within N tokens, unordered. Use `NEAR/<n>`, not bare `NEAR` or `NEAR(...)`. |
+| Prefix wildcard | `Pete*` | Matches any token starting with `Pete`: `Peter`, `Petersen`, etc. Wildcard only at the end. |
+
+Both `search` and `search-in` evaluate most queries against per-block FTS. `search-in` returns matching blocks from the targeted document up to `--limit`, and also runs a manifest-level cross-block scan for a single quoted phrase. `search` returns one row per matched document — each doc's best-ranking block (by FTS5 bm25) is the surfaced passage.
+
+**`NEAR/<n>` is the best first pass** when you have 2–3 anchor terms that should co-occur but not necessarily adjacent — e.g. `"土地" NEAR/20 "利用"`. It is usually more precise than plain keyword and much faster than `--semantic`.
+
+Keyword vs semantic heuristic: start with keyword (exact phrases, `OR`, `NEAR`) for names, anchor terms, quotations, or `--tag` / `--collection-key` scoping; switch to `--semantic` when phrasing is fuzzy or you want conceptual neighbors. `--tag` and `--collection-key` cannot be combined with `--semantic`. `NEAR/<n>` is especially useful on OCR'd or scanned materials (Republican China vertical-layout texts, old gazetteers, etc.), where one keyword often drowns in noise.
+
+Chinese trad/simp folding: keyword `search`, `search-in`, and `metadata` match across 繁 ↔ 简 both ways (汉字 ≡ 漢字), so one form is enough. `search --semantic` does NOT fold because it uses qmd embeddings over the source text. Returned text (`passage`, `blocks`, `fulltext`, `expand`) preserves the original form as stored in the attachment.
+
+## Citing passages
+
+Paraphrase by default and cite in **Pandoc source form** using the returned `itemKey` with `pageStart` / `pageEnd` as the locator. Reach for a verbatim quote only when the exact wording matters (a distinctive phrase, primary-source quotation, or a definition) — quoting indiscriminately turns the document into a transcript.
+
+- Paraphrase + locator: `[@itemKey, p. 23]`
+- Page range: `[@itemKey, p. 23-25]`
+- No page available: `[@itemKey]` (EPUB, some scans, and multi-attachment hits near a separator may set no page numbers)
+- Verbatim phrase when wording is load-bearing: `... a "non-trivial role" [@itemKey, p. 137]`
+- Narrative reference: `@itemKey says ...`
+
+Do not cite `charOffset` or block indices in user-facing prose. `charOffset` is what you pass to `expand` to fetch more context; block indices appear in `blocks` output but no PDF/EPUB reader navigates by them.
+
+Don't invent quotes. If the returned `passage` looks truncated (`…` markers) or garbled (OCR noise, mid-word cuts), call `expand` to fetch a clean slice before quoting.
+
+## Typical workflows
+
+### Find passages, then retrieve surrounding context
+
+```bash
+# Library-wide search — keyword by default; --semantic for fuzzy/conceptual queries
+zotagent search "party secretary governance"
+zotagent search "informal political networks in contemporary China" --semantic --limit 20
+zotagent search "local fiscal capacity" --tag "PhD Thesis"
+
+# Scope by Zotero collection key (8-char ID at the end of the collection URL).
+# Repeatable for union; combine with --tag for an intersection.
+zotagent search "local fiscal capacity" --collection-key ABCD1234
+zotagent search "land reform" --collection-key ABCD1234 --tag "PhD Thesis"
+
+# Drill into one paper. A bare surname catches both in-text "Acemoglu and
+# Robinson 2012" and bibliography "Acemoglu, Daron. 2012".
+zotagent search-in 'Acemoglu' --key CMJ3N8TL
+
+# Expand around a returned hit. `--offset` is the `charOffset` from a search
+# result; `--radius` is the half-window in characters (default 1000). Increase
+# the radius when the search passage looks truncated or you need more context.
+zotagent expand --key KG326EEI --offset 18432 --radius 1500
+zotagent fulltext --key KG326EEI --clean
+```
+
+### Look up a paper's metadata
+
+```bash
+# Search selected fields with a positional query
+zotagent metadata "aging in China" --field title --field abstract
+
+# Narrow by specific metadata fields
+zotagent metadata --author "Pratt" --year "1985"
+
+# Use a year prefix for a range; `--year 198` matches the 1980s
+zotagent metadata --author "Pratt" --year "198"
+
+# Combine a positional query with a filter
+zotagent metadata "imperial" --author "Pratt"
+
+# Narrow to manually tagged Zotero items
+zotagent metadata --tag "PhD Thesis"
+zotagent metadata "land reform" --tag "PhD Thesis"
+
+# Narrow to a Zotero collection (or intersect a collection with a tag)
+zotagent metadata --collection-key ABCD1234
+zotagent metadata "land reform" --collection-key ABCD1234 --tag "PhD Thesis"
+
+# Keep only indexed items; include abstract text only when needed
+zotagent metadata "dangwei shuji" --indexed
+zotagent metadata "aging in China" --abstract
+
+# Use a returned key with retrieval commands
+zotagent fulltext --key KG326EEI --clean
+zotagent blocks --key KG326EEI --limit-blocks 40    # paginated structured view; rarely needed
+```
+
+### Add a paper to Zotero
+
+Source priority when adding: a DOI → `--doi` (an arXiv ID works as `--doi 10.48550/arXiv.<id>`; a PMID resolves to a DOI on PubMed); CNKI or other pre-extracted metadata → `--json`; a web page → find the DOI on the page (citation block, meta tags) and use `--doi`, otherwise extract the metadata yourself into `--json` or manual fields; an ISBN → Open Library / Google Books metadata into `--json` or manual fields with `--item-type book`; a paper with no DOI at all → `s2` search, then `add --s2-paper-id`.
+
+```bash
+# Add by DOI (arXiv IDs have a DOI form)
+zotagent add --doi "10.1111/dech.70058"
+zotagent add --doi "10.48550/arXiv.2406.01234"
+
+# Search Semantic Scholar, then add by paperId
+zotagent s2 "state-owned enterprise governance" --limit 5
+zotagent add --s2-paper-id <paperId>
+
+# --s2-paper-id also takes a DOI, an arXiv id, or a prefixed identifier
+zotagent add --s2-paper-id "10.1093/ajae/aaq063"
+zotagent add --s2-paper-id "ARXIV:2106.15928"
+
+# Manual fallback — authors go in Zotero "Last, First" form; repeat --author for multiple
+zotagent add --title "Title of a paper" --author "Zhang, San" --year 2026 --publication "Journal of Important Studies"
+
+# Add a book — pass --item-type, otherwise manual adds default to journalArticle
+# (URL-only manual adds become webpage)
+zotagent add --title "Fifty Years of Land Reform" --author "Hsiao, Cheng" --year 1980 --publication "China Land Policy Institute" --item-type book
+
+# Add from pre-shaped JSON (best for CNKI)
+zotagent add --json paper.json
+zotagent add --json batch.json --collection-key COLL1234
+your-extractor | zotagent add --json -
+
+# Attach a local PDF as a linkMode=linked_file child (file stays on disk;
+# no Zotero storage quota used). When the path is under attachmentsRoot,
+# zotagent stores it as 'attachments:<rel>' for cross-device portability.
+zotagent add --title "Paper" --author "Doe, Jane" --attach-file ~/Downloads/foo.pdf
+# In --json mode, each item carries its own attachFile / attach-file field.
+echo '{"itemType":"journalArticle","title":"...","attachFile":"/path/to/foo.pdf"}' | zotagent add --json -
+```
+
+`add --json` always returns `data` as an array, even for one input object. Per-item failures are returned in-place as `{ok: false, error: ...}` and do not abort the rest of a batch; parse/config/empty-input failures fail the whole envelope.
+
+`AddResult.attachmentItemKey` is set when an attachment was created. A bad
+`--attach-file` path fails *before* the parent item is written, so it cannot leave an orphan citation in Zotero (per-item failure code: `INVALID_ATTACH_FILE`). If the parent item creates but the attachment POST fails, the parent itemKey is still returned and the failure is surfaced as a warning. Other `add` flags not shown above: `--url, --url-date` (alias `--access-date`), `--collection-key`.
+
+`s2` results include `openAccessPdfUrl` when available — surface it to the user as a free PDF link alongside the `add` suggestion.
+
+**S2 rate limit**: 1 request/second, cumulative across Semantic Scholar endpoints (`s2`, `s2-refs`, `s2-citations`, `add --s2-paper-id`). Run these sequentially, never in parallel — parallel calls will 429. zotagent retries a 429 on its own (up to 2 retries, honoring `Retry-After`, each wait capped at 10s), so an occasional collision is absorbed; if the retries run out the command fails with `RATE_LIMITED` and the fix is to slow down, not to retry harder. Spacing between separate tool calls is usually enough; no sleep needed. All four commands need `semanticScholarApiKey` in the config; without it they fail with `SEMANTIC_SCHOLAR_NOT_CONFIGURED` — a config problem, never worth retrying.
+
+`add --from-url` / `add --identifier` exist but assume a self-hosted Zotero translation server, which is normally not configured — expect `TRANSLATION_SERVER_NOT_CONFIGURED` and reroute by the source priority above instead of retrying. Set `translationServerUrl` only while a server is actually running (configured-but-dead fails `--doi` too); server-mode details are in the README.
+
+### Explore a paper's references and citations
+
+Citation chaining is the strongest discovery signal in a literature review: `s2-refs` returns the papers a work cites (its bibliography, i.e. backward in time), `s2-citations` the papers that cite it (forward in time).
+
+```bash
+# Backward: what does this paper build on?
+zotagent s2-refs "10.18653/v1/N18-1022" --limit 20
+
+# Forward: who has cited it since?
+zotagent s2-citations "DOI:10.18653/v1/N18-1022" --limit 20
+
+# Page through a long bibliography — data.next is the offset for the next call
+zotagent s2-refs 649def34f8be52c8b66281af98ae884c09aef38b --limit 50 --offset 50
+
+# Quote URLs so the shell does not eat the ? and &
+zotagent s2-refs "https://arxiv.org/abs/2106.15928" --limit 10
+```
+
+Both take **one identifier, never a title**: a 40-character `paperId`, a DOI, an arXiv id, a prefixed id (`DOI:`, `ARXIV:`, `PMID:`, `CorpusId:`, `URL:`), or a doi.org / arxiv.org / semanticscholar.org URL. For a paper you only know by title, run `s2 "<title>"` first and pass a returned `paperId`. A bad identifier fails locally with `INVALID_ARGUMENT` and spends no request.
+
+Rows carry `isInfluential: true` when Semantic Scholar marks the edge influential — a useful ranking hint on a long bibliography. Rows deliberately **omit the abstract**; to read one, feed that row's `paperId` to `add --s2-paper-id` (which fetches the full record) or look the paper up in the library with `metadata`. Entries Semantic Scholar has no record for are dropped and reported in `data.warnings`.
+
+An empty `results` with `ok: true` is a real answer, not a failure: some publishers withhold reference lists from Semantic Scholar, so `s2-refs` on such a paper returns nothing while `s2-citations` on it still works. Don't retry it — try the other direction, or a different identifier for the same work.
+
+### List recently added or modified items
+
+```bash
+# Most recent 10 additions (default)
+zotagent recent
+
+# Top 20 most recently modified items
+zotagent recent --limit 20 --sort modified
+```
+
+`recent` hits the Zotero Web API directly (no index required), so items just created with `add` show up immediately — useful for confirming an `add` landed, or for orienting yourself in the library. Returns regular top-level bibliography items only; standalone notes and attachments are skipped. Max `--limit` is 100.
+
+### Check or repair the local index
+
+**Never run `sync` unprompted — only when the user explicitly asks for it.** The device you are running on may not hold the complete attachment set (e.g. PDFs in `attachmentsRoot` still cloud placeholders or mid-download): a sync from an incomplete copy rewrites the shared index/data files and can corrupt them as they replicate to other devices. A stale index is the user's call to refresh, not yours.
+
+```bash
+# Counts, paths, and qmd status
+zotagent status
+
+# Rebuild / refresh local full-text indexes
+zotagent sync
+
+# Retry unchanged files that previously failed extraction
+zotagent sync --retry-errors
+
+# Tune heavy PDF extraction on large libraries
+zotagent sync --pdf-concurrency 1 --pdf-batch-size 4 --pdf-timeout-ms 900000
+
+# Surface suspicious extraction output before quoting heavily from a corpus
+zotagent diagnose --limit 20
+```
+
+Sync exclusions are driven by a Zotero tag, not a local file: tag a top-level item `zotagent:exclude` in Zotero and the next `sync` skips it entirely (no extraction, no indexing) and removes it from the local indexes. The tag name can be changed via `excludeTag` in `~/.zotagent/config.json` or the `ZOTAGENT_EXCLUDE_TAG` environment variable; resolving tagged items requires the Zotero read API config (`zoteroLibraryId` + `zoteroApiKey`). Use `diagnose` to find candidates such as OCR-failed scans, vertical-CJK PDFs, or multi-column gazetteers, then tag or re-OCR them before re-syncing.
+
+## Output-shape gotchas
+
+- **`passage` is a compact character window centered on the hit**, capped at ~500 tokens. A leading/trailing `…` means there is more text outside the returned slice or the token cap was hit; call `expand --key <k> --offset <charOffset>` (with a bigger `--radius`) to fetch a longer slice.
+- **`charOffset` is item-global, not per-attachment.** When an item has multiple indexed attachments, offsets run monotonically across them with `# Attachment: <name>` dividers in the merged markdown. Feed `charOffset` from any search result straight into `expand`.
+- **`--key` accepts `itemKey` or `citationKey`**, with or without a leading `@` (so Pandoc `@citekey` pastes straight in). Output always identifies items by `itemKey` only — `citationKey` is accepted as input but never emitted, so chain subsequent calls on `itemKey`.
+- **`search-in` on a chapter key may miss.** `SEARCH_IN_FAILED: No indexed attachment found` usually means the chapter's PDF is indexed only inside its parent volume. Look the parent up with `metadata`, then `search-in` against the parent's key and locate the chapter by its heading. Common for edited collections and proceedings.
+- **`search-in` returns scoped matches; `search` returns one passage per item.** Most `search-in` rows are single-block FTS matches; a single quoted phrase can span blocks via the manifest-level exact scanner. A `search` result means *this document* matches and here is one representative passage. When the user asks "does this paper say X" or "where in this paper does Y appear", reach for `search-in`.
+- **`search-in --limit` caps the returned matching blocks.** Default 10 is usually enough — you're already scoped to one document. Increase it to inspect more lower-ranked matches; change the query when the returned blocks do not match the user's intent.
+
+## Index freshness
+
+`search` / `search-in` / `blocks` / `expand` / `fulltext` read a local index. On "No indexed documents found", suggest `zotagent sync`. `metadata` / `add` / `s2` / `s2-refs` / `s2-citations` / `recent` work without the local index (`metadata` then reports `indexed: false` everywhere and warns that the index catalog is empty). After `add`, the new paper isn't full-text searchable until the next `sync`.
+
+## Editing Zotero, and fields the CLI doesn't return
+
+`zotagent` reads a local index plus a local bibliography export, and its only write is creating items with `add`. Go to the Zotero API directly for one item's complete field set (DOI, volume, pages, URL, tags, collections, dates), for collection keys and the tag list, and for every edit — changing a field, adding or removing a tag, filing into a collection, attaching a note, trashing an item. Read [`references/zotero-web-api.md`](references/zotero-web-api.md) before the first such call: it carries the credential handling, the read-modify-write rule that keeps an edit from wiping the fields you didn't send, and the confirmation gate on deletions.
+
+If you need a command or flag not covered here, run `zotagent help`.

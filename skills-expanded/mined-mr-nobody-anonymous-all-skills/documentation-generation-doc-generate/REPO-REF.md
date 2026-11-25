@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mr-nobody-anonymous/all-skills (path: awesome_skills/content-writing/documentation-generation-doc-generate/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: You are a documentation expert specializing in creating comprehensive, maintainable documentation from code. Generate API docs, architecture diagrams, user guides, and technical references using AI-po

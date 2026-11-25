@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/static-functional-analysis-design/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Static Functional Analysis Design Skill

@@ -1,0 +1,142 @@
+---
+name: ops-ar
+description: "OPS on-demand: This skill should be used when the user asks to \"A&R this track\", \"demo verdict\", or…"
+argument-hint: '<audio file | URL/Dropbox | "latest" | <file1> <file2> ... | inbox [from <sender>...]>'
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Grep
+  - Glob
+  - Agent
+  - TeamCreate
+  - SendMessage
+  - AskUserQuestion
+  - WebSearch
+effort: high
+---
+
+# /ops:ops-ar — A&R Command
+
+Load `ops-rules` before acting. Public repo (no personal data). Outbound: one draft → one approval → one send. If `AskUserQuestion` / `Workflow` are missing, follow Rule 10 in `ops-rules` (Hermes: numbered options / two-turn Telegram card; `delegate_task`).
+
+A&R the given record(s) like a pop/dance-hit label owner + master producer. The deliverable is always the full A&R card per track:
+
+**VERDICT (hit/10 + sign / develop / pass) → WHAT'S WORKING → WHAT'S HOLDING IT BACK → THE PLAN (producer moves) → REFERENCE & POSITIONING → NEXT.**
+
+## Configuration (templatable — no hardcoded personal data)
+
+| Setting                                                          | Source                                                   | Default                     |
+| ---------------------------------------------------------------- | -------------------------------------------------------- | --------------------------- |
+| Audio analysis stack home                                        | `$AUDIO_AR_HOME` env or `ar.stack_home` in `$PREFS_PATH` | `~/audio-ai`                |
+| Python venv                                                      | `$AUDIO_AR_HOME/venv/bin/python`                         | —                           |
+| Music.ai workflow slug                                           | `$MUSICAI_WORKFLOW` env or Doppler                       | (required for Music.ai)     |
+| Cyanite / Music.ai / Soundcharts keys                            | env / Doppler / `~/.mcp-secrets.env`                     | —                           |
+| A&R taste profile (label lane, reference acts, tempo sweet spot) | `ar.profile` in `$PREFS_PATH`                            | dance-pop / feel-good house |
+
+The skill must read these at runtime — never hardcode user names, mailboxes, label names, or absolute `/Users/...` paths.
+
+### Taste profile injection (mandatory when `ar.profile` exists)
+
+Before spawning any ar-producer agent, read the profile once:
+
+```bash
+PREFS="${CLAUDE_PLUGIN_DATA_DIR:-$HOME/.claude/plugins/data/ops-ops-marketplace}/preferences.json"
+jq '.ar.profile // empty' "$PREFS"
+```
+
+If non-empty, inject the **whole JSON object verbatim** into every ar-producer spawn prompt, with the instruction: *"Judge as the A&R for THIS owner/label. Calibrate the verdict per `verdict_calibration`. Weigh hooks and toplines against `songwriting_taste`. REFERENCE & POSITIONING must position against `catalog_recent`, `signature_classics`, and `label_roster_third_party` — name the closest catalog comparison, not generic genre acts. Check tempo against `tempo_sweet_spot` and brand fit against `lane`. If `signing_structure` is present, the NEXT section of a sign/develop verdict must state which entity signs the master."*
+
+Fields the profile may carry (all optional): `owner`, `label`, `lane`, `tempo_sweet_spot`, `ar_team`, `signing_structure`, `reference_acts`, `catalog_recent`, `signature_classics`, `label_roster_third_party`, `songwriting_taste`, `verdict_calibration`. If the profile is absent, fall back to the generic dance-pop / feel-good house default and say so in the card header.
+
+### Imprint gate (mandatory when `ar.imprints` is non-empty)
+
+Imprints are data, not code. Never hardcode an imprint's name, sound, or test — read them:
+
+```bash
+jq -r '.ar.imprints // {} | keys[]' "$PREFS"          # imprint keys
+jq '.ar.imprints["<key>"]' "$PREFS"                   # one imprint
+```
+
+For each imprint whose lane the track falls in, inject that object verbatim into the ar-producer spawn prompt **except `brand_book_corpus`** (the full scraped brand-book text — too large for a spawn prompt; consult it only when a card needs exact brand-book language, via `jq '.ar.imprints["<key>"].brand_book_corpus.pages | keys'` then the specific page). Always inject `sound_description` — it is the imprint's sonic north star and the tiebreaker on the subjective points.
+
+Add an **IMPRINT** section to the A&R card between VERDICT and WHAT'S WORKING: score the track against that imprint's own `ten_point_test` per its `scoring_rule` (one line per point, pass/fail/N-A, with the failing evidence named), then one routing line — eligible for `<imprint display_name>`, or route to parent label. An imprint is a strict subset of the label: a failed gate never downgrades the main verdict, it only routes the release. Owner's own tracks always get the scorecard; third-party demos get it only when they are in that imprint's lane.
+
+Each imprint object may carry: `display_name`, `lane`, `sound_description`, `ten_point_test`, `scoring_rule`, `brand_book_corpus`. If `ar.imprints` is absent or empty, skip the IMPRINT section entirely — do not invent an imprint.
+
+## Modes
+
+### 1. Single track — `/ops:ops-ar <file|url|latest>`
+
+Spawn the **ar-producer** agent (Opus) with the track:
+
+- Local file → pass the path directly.
+- URL/Dropbox → agent downloads first (Dropbox: append `&dl=1`; YouTube: `yt-dlp -x --audio-format mp3`).
+- `latest` / empty → newest audio file (`.mp3`, `.wav`, `.m4a`, `.aiff`, `.flac`, `.ogg`, `.aac`) in `~/.claude/jobs/*/tmp/` by mtime — ignore JSON, PNG, and other non-audio artifacts.
+- **Subagent MCP rule:** the spawn prompt MUST name the audio-ar tools and include the literal instruction `ToolSearch select:mcp__audio-ar__full_ar_report,mcp__audio-ar__analyze_track,mcp__audio-ar__mood_score,mcp__audio-ar__transcribe_vocals,mcp__audio-ar__separate_stems,mcp__audio-ar__render_visuals,mcp__audio-ar__analyze_stems,mcp__audio-ar__cyanite_analyze,mcp__audio-ar__musicai_analyze,mcp__audio-ar__soundcharts_lookup` — subagents don't inherit MCP discovery.
+- Relay the agent's A&R card back verbatim.
+
+### 2. Batch — `/ops:ops-ar <file1> <file2> ...` (or multiple URLs)
+
+A&R multiple local paths or URLs in one invocation:
+
+1. **Collect inputs** — every argument after the skill name is a track (local file or URL/Dropbox). Download URLs first (same rules as single-track).
+2. **Dedupe** by md5 (same file copied under different names counts once).
+3. **Analyze per track** — spawn **ar-producer** (Opus) per deduped track, in waves of ≤2 (stem separation is CPU-heavy; check `nproc`/`uptime` first). Same subagent MCP rule as single-track mode (include the full `ToolSearch select:mcp__audio-ar__...` list). Relay each agent's full A&R card back verbatim.
+4. **Summarize** — compile a ranked verdict table from the per-track cards.
+
+### 3. Inbox sweep — `/ops:ops-ar inbox [from <sender> ...]`
+
+Pull every demo/song from the user's Gmail inbox and A&R them all:
+
+1. **Find demos:** `gog gmail search 'has:attachment (filename:mp3 OR filename:wav OR filename:m4a OR filename:aiff OR filename:flac OR filename:ogg OR filename:aac)'` (add `from:` filters if senders given). Confirm scope with the user if the set is large (>10 threads).
+2. **Download attachments to disk** without flooding context: per thread, `gog gmail thread get <tid> -j` → message ids from `thread.messages[].id` (envelope `{downloaded, thread: {messages: [...]}}` — NOT top-level `messages`) → `gog gmail raw <mid> -j` piped to `jq` for audio parts (filename + attachmentId) → `gog gmail attachment <mid> <aid> --out <dir>/<label>__<file>`. Also grep text parts for external links (postal.music, disco.ac, wetransfer, dropbox) — flag link-only demos that need a login as NOT ANALYZED and tell the user to request a file re-send.
+3. **Dedupe** by md5 (forwarded demos repeat across threads).
+4. **Analyze per track** — spawn **ar-producer** (Opus) per deduped demo, in waves of ≤2 (stem separation is CPU-heavy; check `nproc`/`uptime` first). Same subagent MCP rule as single-track mode (include the full `ToolSearch select:mcp__audio-ar__...` list). Relay each agent's full A&R card back verbatim.
+5. **Summarize** — compile a ranked verdict table from the per-track cards.
+
+### 4. Email delivery — "send the verdict to my email"
+
+**House rule: every A&R email ALWAYS includes (a) a per-track DIRECT LISTEN LINK and (b) the FULL A&R card per track — never just the ranked summary.**
+
+- DIRECT listen link (mandatory): a link that actually PLAYS the audio — any external streaming link found in the thread (postal.music, disco.ac, …), OR upload the demo to Google Drive (`gog drive upload <file>` → share → direct link). An email-thread link alone is NOT sufficient.
+- Also include the Gmail deep-link (`gog gmail url <threadId>`) — both direct + email link is ideal.
+- Rule 6 applies in full: stage the final draft, get explicit per-message approval, then send (one approval = one send).
+
+## Pro APIs (Cyanite / Music.ai / Soundcharts) — operational notes
+
+- **Cyanite** (`$AUDIO_AR_HOME/venv/bin/python pro_apis.py cyanite <file>`): returns genreTags, subgenreTags, moodTags, instrumentTags, bpmRangeAdjusted, `bpmPrediction{value confidence}`, `keyPrediction{value confidence}`, timeSignature, energyLevel, valence, arousal, voicePresenceProfile, predominantVoiceGender, musicalEraTag, transformerCaption and per-mood scores (`mood{happy uplifting energetic dark sad calm epic romantic}`). **Free/trial plans have a LIFETIME library cap — deleting tracks does NOT free quota.** On `librarySizeLimitExceededError`, route through Music.ai instead.
+  - **Schema drift (2026-10):** `fileUploadRequest` now returns `{ uploadUrl id }` (the field was `uploadId`), then `libraryTrackCreate(input: { uploadId: $id })` with `$id: ID!`. Older `pro_apis.py` copies that read `uploadId`, send a String id, or query removed fields fail validation — fix the stack, not the card.
+  - **Auth test:** `query { ping }` answers without a valid key. Prove a key with `libraryTracks(first: 1) { edges { node { id } } }` and check that `data.libraryTracks` is an object.
+  - **API access needs a webhook URL** on the Cyanite integration, even if you only poll. Point it at an HTTPS endpoint you control, and verify the `Signature` header (HMAC-SHA512 of the raw body with the webhook secret) before processing any payload; reject mismatches. A tiny Cloudflare Worker is enough.
+  - **Mood scores beat CLAP on dark/bright.** When CLAP says "dark" but Cyanite `mood.dark` is low (< 0.2) and happy/uplifting are high, report the Cyanite reading.
+- **Music.ai** (`pro_apis.py musicai <file>`, needs `$MUSICAI_WORKFLOW`, e.g. a "Metadata Suite" workflow): same Cyanite engine on separate billing + extras — `ai_voice` (Real vs AI-GENERATED — always flag AI guide vocals: they're placeholders needing a real singer), `voice_gender`, `instruments`. Implementation gotchas (already handled in pro_apis.py): requests need a browser `User-Agent` (Cloudflare 1010 blocks default python-urllib), and the upload-URL request must be a clean GET with no body. Convert `.m4a` to mp3 before upload.
+- **Soundcharts** (`pro_apis.py soundcharts <query>`): released-catalogue lookup only — useless for unreleased demos; use it for reference-track benchmarking in the REFERENCE section. Auth is the `x-app-id` + `x-api-key` pair, and both must come from the **same** console app — a key from one app with another app's id fails auth and looks like an expired key. `song/{uuid}` gives `audio.key`/`audio.mode`/`audio.tempo`, handy for checking that a remix keeps the original's key.
+
+## Interpretation guardrails (carry into every card)
+
+- Demo bounces are loud and dull on top — judge song/topline/lane, not the demo master.
+- Never infer missing verses / song incompleteness from a sparse Whisper transcript (low vocal in the bounce ≠ unwritten song).
+- librosa BPM can read doubled/halved — trust the pro-layer `bpmRangeAdjusted` (the prediction folded into 60–180 BPM, so it can differ from raw `bpmPrediction.value`, e.g. 200 vs 100) and use `bpmPrediction.confidence` to judge how sure it is, when available; otherwise confirm by groove.
+- Verify hit-claims with data (CLAP commercial lean, valence/arousal), but the verdict is producer judgment, not a printout.
+
+## Fallback
+
+If `mcp__audio-ar__*` is unavailable, run the stack directly via Bash from `$AUDIO_AR_HOME` (`venv/bin/python analyze.py <file>`, `clap_score.py`, `transcribe.py`, `pro_apis.py`). Never fabricate analysis — if nothing ran, say so.
+
+## Agent Teams support
+
+If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set, use **Agent Teams** when dispatching multiple ar-producer agents in batch or inbox-sweep mode. This enables:
+
+- Agents share partial findings in real time (e.g., one agent finds a stem issue → others adjust their verdict framing accordingly)
+- You can steer mid-sweep: "prioritize the demo from sender X first"
+- Progress is visible per track as agents report back
+
+**Team setup** (only when flag is enabled, batch/inbox dispatch phase):
+
+```
+TeamCreate("ar-batch")
+Agent(team_name="ar-batch", name="ar-[track-slug]", ...)
+```
+
+If the flag is NOT set, use standard parallel subagents (fire-and-forget, waves of ≤2).

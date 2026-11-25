@@ -1,0 +1,308 @@
+---
+description: "C4 container diagram of one software system: deployables, the stores and brokers their tracked configuration binds, and the edges those endpoints resolve to. Use when 'what actually runs', 'deployables and databases', 'modular monolith', 'which services bind to which broker'. Skip for which repositories exist (map-landscape), inside one deployable (map-components), or environment topology."
+argument-hint: "[system] [--dialect likec4|c4-plantuml] [--out <dir>]"
+user-invocable: true
+disable-model-invocation: false
+shell: bash
+metadata:
+  workflow-stage: explore
+  summary: Chart deployables, the stores they bind, and contained modules
+---
+
+## Repository context
+
+The current repository is both the consumer, whose convention home declares where artifacts land,
+and the default subject, the repository whose tracked files name deployables and stores.
+
+Collect with an **individual** Bash call, one command per call: the project root,
+`git rev-parse --show-toplevel`. Treat a failure (not a repository, git unavailable) as an unknown
+value and carry on; `${CLAUDE_PROJECT_DIR}` is the resolver's `--root` either way.
+
+An optional `[system]` argument is only a focal label. It does not select a subdirectory and it
+does not walk for nested repositories. Pass it to the collector as `--focal`. When it is absent,
+the focal name is the github.com origin repository name, otherwise the directory basename.
+
+## Purpose
+
+Answer "what actually runs, and which stores does it bind" from tracked project files, Dockerfiles,
+process manifests, and configuration, dirty files flagged. Every deployable cites the fact that made
+it a container. Every store cites a config key. The scripts collect and render. Do not draw a node
+the script did not emit, and do not turn a directory name into a service.
+
+This is the C4 container rung. `map-landscape` is the rung above it. What is inside one deployable
+is `/architecture:map-components`. A request trace is `/architecture:map-flow`.
+
+## Resolve home and dialect
+
+Read `${CLAUDE_PLUGIN_ROOT}/reference/config.md` first. This skill writes into `architecture_dir`.
+It does not read `landscape_dialect` and it does not add a dialect key. The diagram dialect is
+`diagram_dialect.system` from the authoring-formats topic doc.
+
+Run `bash "${CLAUDE_PLUGIN_ROOT}/lib/resolve-convention-home.sh" --root "${CLAUDE_PROJECT_DIR}"` and
+follow the exit code. Never parse the root instruction file yourself. Exit 0 means read
+`<home>/architecture/README.md` for `architecture_dir`. Exit 1, 2, and 3 mean there is no declared
+home to read.
+
+In order: `--out <dir>` wins for this run alone, then a declared `architecture_dir`, then one
+question. `architecture_dir` has no default. An undeclared and unconfirmed home, including every
+non-interactive run, stops and points at `/architecture:setup`. Do not invent a directory.
+
+Resolve `diagram_dialect.system` by restating this ladder, then running the resolver rather than
+parsing the topic doc yourself. The ladder is a resolution order, not a task list:
+
+```markdown
+1. Anchor at the repository root: `${CLAUDE_PROJECT_DIR}` when set, otherwise
+   `git rev-parse --show-toplevel`. Never a CWD-relative read.
+2. Resolve the convention home `<home>` with the bundled resolver above. Never hand-parse the root
+   file.
+3. The printed home is repo-relative: join it to the root, then pass
+   `<root>/<home>/authoring-formats/README.md` to the resolver.
+4. Layer order is one layer deep: an explicit `--dialect` argument, then the team convention doc.
+   There is no personal override.
+5. `diagram_dialect.system` has no default. Allowed values are `likec4` and `c4-plantuml`. When it
+   is unset, write `containers.json` and `containers.md` with the tables, and draw no diagram block.
+6. Degrade soft, and say so. No pointer, no doc, no key, or an unrecognized value (mermaid
+   included, which the convention refuses) each resolve to emitting no view. The resolver names
+   the cause on stderr. Do not hard-fail and do not ask the operator to create the surface
+   mid-task.
+7. Report provenance: the key, the value, and the layer (`argument`, `team convention doc <path>`,
+   or `unset (no C4 view emitted)`).
+```
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/lib/resolve-diagram-dialect.sh" --kind system \
+  --formats "<root>/<home>/authoring-formats/README.md"
+```
+
+Omit `--formats` when no convention home resolved. Stdout is `likec4`, `c4-plantuml`, or `none`.
+An explicit `--dialect likec4|c4-plantuml` on the invocation wins and the resolver is not required.
+
+This skill never writes the consumer's root instruction file or its topic doc. `/architecture:setup
+apply` owns both.
+
+## Build the record
+
+When `<architecture_dir>/dependency-graph.json` already exists and is schema_version 1, pass it as
+`--graph`. Containment then comes from that graph's project edges and is not re-derived. Otherwise
+omit `--graph`. The collector reads `ProjectReference` Include attributes itself and records
+`containment` as `project-references`.
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/collect-containers.sh" \
+  --repo "<subject-repo>" --out "<architecture_dir>/containers.json" \
+  --focal "<system-or-omit>" --graph "<dependency-graph.json-or-omit>"
+```
+
+Keep the `${CLAUDE_SKILL_DIR}` anchor;
+[`${CLAUDE_PLUGIN_ROOT}/reference/config.md` § Script paths](${CLAUDE_PLUGIN_ROOT}/reference/config.md#script-paths)
+says why.
+
+The record is schema_version 1 in the one-object-per-line layout the script writes. Container lines
+start with `{"id":`. Module lines start with `{"container":`. Edge lines start with `{"from":`.
+Finding lines, in an optional `findings` array, start with `{"kind":`. A deployable `kind` is
+`web`, `api`, `worker`, `cli`, `function`, or `process`. A store `kind` is `store`. `technology` is
+a runtime, framework, or image, or the literal `unknown`. An edge `kind` is `uses` or
+`shared-infrastructure`. A store with three owners is three `shared-infrastructure` edges, one per
+pair of owners, and each cites the config keys of both. A `uses` edge runs from a deployable to
+another deployable and cites the config key that names the endpoint and the fact that resolved it.
+
+The store kinds read are `sql` (a relational or document database), `storage` (a blob storage
+account), `broker` (a message broker), `cache`, and `search` (a search index service). A compose
+service whose image is postgres, mysql, mariadb, mssql, mongo, redis, rabbitmq, nats, kafka,
+elasticsearch, or opensearch is a store of the matching kind. Any other kind of store is not read,
+so none is drawn.
+
+A `search` store's `technology` is `Azure AI Search`, `OpenSearch`, `Elasticsearch`, or `unknown`,
+chosen from the host by `store_technology` in `collect-containers.sh`; a compose service's is its
+image. A search store is drawn as a database element.
+
+An `http` or `https` URL is a search store, not an endpoint, when its host is a search-service domain
+`store_technology` names or when the last segment of its config key contains `elasticsearch`,
+`opensearch`, `searchendpoint`, or `searchservice`. Such a URL with a bare host, such as
+`ElasticsearchUrl: http://elasticsearch:9200` naming a compose service, draws no store, edge, or
+finding; the compose service's image charts the store, and nothing links a deployable to it.
+
+An endpoint is an `http` or `https` URL a deployable's own configuration names. It is an edge only
+when it resolves to exactly one other deployable through a cited fact: a compose service whose
+build context is that deployable's directory (the URL host is the service name and any declared
+port equals the URL's, or is 80 for an `http` URL and 443 for an `https` URL that names no port),
+or a `launchSettings.json` `applicationUrl` on that deployable (host
+`localhost` or `127.0.0.1`, same port). A name's resemblance to a deployable resolves nothing. An
+endpoint that resolves to no deployable or to several draws no edge and is an `external-endpoint`
+finding carrying its redacted host. A deployable naming itself draws no edge.
+
+A `sql` store is one host, port, and database. The database comes from `Initial Catalog` or
+`Database` in a connection string, or the first path segment of a `postgres://`, `postgresql://`,
+`mysql://`, or `mongodb://` URL. Two databases on one server are two stores and no shared edge. A
+connection that names no database is the store `database unknown`, and a shared edge between its
+owners says `same server, database unknown`. A `sql` store's `technology` is its URL scheme
+(`mongodb`, `postgres`, `mysql`), `Azure SQL` for a `database.windows.net` host, and otherwise
+`unknown`. A connection string names no scheme, so it is never labeled SQL.
+
+Redaction is `${CLAUDE_PLUGIN_ROOT}/lib/redact-connection.sh` (the awk beside it). A password,
+token, account key, or URL userinfo must not appear in the record, the diagram, or stdout. A
+database name is kept only when it is a plain identifier that carries no credential.
+
+The collector matches tracked files. It does not execute them. It lists the files at HEAD and reads
+each one from the working tree, so an edit to a tracked file is charted. When `git status` reports
+tracked files that differ from HEAD, the record carries a `dirty-tracked-files` finding with their
+count, and the collector says so on stderr. Untracked files are never read. A class library is a
+contained module, not a container, even when its directory name sounds like a service.
+
+A test project is not a deployable. A project that sets `IsTestProject` to true, or references
+`Microsoft.NET.Test.Sdk` or a package whose id starts with `xunit`, `NUnit`, `MSTest`, or
+`Microsoft.Testing.Platform`, is left off the diagram even when it would otherwise be one (an
+`OutputType` Exe, or a web, worker, or functions SDK). The record carries an
+`excluded-test-projects` finding with their count and paths.
+
+## Render
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/render-containers.sh" \
+  --record "<architecture_dir>/containers.json" --out "<architecture_dir>" \
+  --dialect "<likec4|c4-plantuml|none>"
+```
+
+Write `containers.json` first, then render from it. `c4-plantuml` writes `containers.md` with one
+fenced `plantuml` block (`C4_Container`: a `System_Boundary` holding `Container`, `ContainerDb`, and
+`ContainerQueue` elements). `likec4` writes `containers.md` with one fenced `likec4` block (the same
+elements nested in the software system, and a container view). `none` writes `containers.md`
+with the tables and no diagram block. Contained modules are named on their deployable. They are
+not drawn as containers.
+
+The script prints one summary line on stdout:
+`containers: focal=<name> deployables=<n> stores=<n> modules=<n> edges=<n> shared=<n> unknown_technology=<n> thin=<yes|no> dialect=<likec4|c4-plantuml|none> excluded_tests=<n> dirty_tracked_files=<n>`.
+Keep it for the report. A result is thin when `deployables=0`. `shared=` counts
+`shared-infrastructure` edges, so it counts owner pairs, not stores.
+
+Exit 1 means the record is unreadable, not schema_version 1, or not in the one-object-per-line
+layout. Nothing was written. Report that message. Do not reformat the record by hand and do not
+treat a layout failure as an empty diagram.
+
+## Close with the report
+
+End every run with this block, in this order, filled from the record and the script exits:
+
+- **Artifacts**: each path written, or `none written` when the run stopped before a home existed.
+- **Focal**: the system name, and that it is the repository being charted.
+- **Deployables**: the summary's `deployables=` count, and that kind came from output type, host
+  builder, Dockerfile, or process manifest.
+- **Stores**: the summary's `stores=` count, and that the kinds read are sql, storage, broker,
+  cache, and search. Every store cites a file and a config key.
+- **Edges**: the summary's `edges=` count, which includes `uses` and `shared-infrastructure` edges,
+  and the count of `external-endpoint` findings. Each `uses` edge cites the config key and the
+  resolving fact.
+- **Modules**: the summary's `modules=` count. A modular monolith is one container.
+- **Shared**: the summary's `shared=` count. Each shared-infrastructure edge is one pair of owners
+  and cites the config keys of both.
+- **Excluded**: the summary's `excluded_tests=` count of test projects left off the diagram.
+- **Working tree**: the summary's `dirty_tracked_files=` count. Above zero, say the record charts
+  the working-tree content of those files, not HEAD.
+- **Dialect**: `diagram_dialect.system`, its value, and the layer: `argument`,
+  `team convention doc <path>`, or `unset (no C4 view emitted)`.
+- **Technology**: `unknown_technology=` from the summary. `unknown` is literal, not a guess.
+- **Containment source**: `dependency-graph.json` or `project-references`.
+- **Thin result**: `no`, or `yes` because no deployable was found. Name `/architecture:map-landscape`
+  when the question was which repositories exist.
+- **Redaction**: the record keeps host, service kind, and a sql database name. It does not keep the
+  raw value.
+
+## Interactive view
+
+After the report, offer an interactive view of `containers.json` in one sentence. The markdown and the record
+stay authoritative. Build it only with `${CLAUDE_PLUGIN_ROOT}/scripts/build-view.mjs containers`, never
+hand-written; the shared medium resolver decides the destination, with this plugin's `medium` option
+`${user_config.medium}`, or `""` when that reads empty or unsubstituted (never put a
+`${user_config.*}` string in a shell command), and its report line is printed. Procedure:
+[`${CLAUDE_PLUGIN_ROOT}/reference/rendered-view.md`](${CLAUDE_PLUGIN_ROOT}/reference/rendered-view.md).
+
+## What this skill does not do
+
+- Draw environment topology, replicas, or scaling. That is `/architecture:map-deployment`.
+- Chart the modules inside one deployable as their own diagram. That is `/architecture:map-components`.
+- Trace a request. That is `/architecture:map-flow`.
+- Add a dialect key, read `landscape_dialect`, or draw mermaid C4.
+- Execute configuration, fetch anything, or edit a project file. The only writes are
+  `containers.json` and `containers.md` under the resolved output directory.
+- Invent a home. No declared, no `--out`, and no confirmed `architecture_dir` is a stop, not a
+  default.
+- Treat two projects in one repository as an edge. An edge needs a cited store binding or a
+  configured endpoint that resolves to a charted deployable. An endpoint that resolves to none is
+  an `external-endpoint` finding, not an edge.
+
+## Next
+
+- Inside one deployable, or one request's path through it: `/architecture:map-components` or
+  `/architecture:map-flow`.
+- Neighboring repositories need a landscape: `/architecture:map-landscape`.
+- The view opens a topology or binding change to decide: `/planning:design system`.
+- The view settles a decision worth keeping: `/architecture:adr`.
+
+## Gotchas
+
+- **A container diagram is one software system.** It draws the containers inside that one system,
+  and no deployment concerns. Pointer: when checking a container view's scope or elements, fetch
+  [C4 container diagram § Scope](https://c4model.com/diagrams/container#scope),
+  [§ Primary elements](https://c4model.com/diagrams/container#primary-elements) and
+  [§ Notes](https://c4model.com/diagrams/container#notes) live.
+- **C4-PlantUML container syntax: read against the README, never run.** The renderer writes the
+  macros. No PlantUML run has parsed this output. Pointer: when checking the macros or the
+  include the renderer writes, fetch
+  [C4-PlantUML README § Container diagram](https://github.com/plantuml-stdlib/C4-PlantUML/blob/master/README.md#container-diagram)
+  and
+  [§ Including the C4-PlantUML library](https://github.com/plantuml-stdlib/C4-PlantUML/blob/master/README.md#including-the-c4-plantuml-library)
+  live.
+- **LikeC4 container syntax: parsed by the CLI.** The record is a probe: `likec4@1.59.4
+  validate` exits 0 on the golden blocks in `${CLAUDE_PLUGIN_ROOT}/lib/likec4-golden/`
+  (`containers.c4`, `containers-stores.c4`, `containers-broker.c4`, `containers-endpoints.c4`),
+  which `collect-containers.test.sh` diffs against. Pointer: when checking the syntax the
+  collector writes, fetch
+  [LikeC4 specification § Element kind](https://likec4.dev/dsl/specification/#element-kind),
+  [model § Element](https://likec4.dev/dsl/model/#element),
+  [views § Scoped views](https://likec4.dev/dsl/views/#scoped-views) and
+  [styling § Shape](https://likec4.dev/dsl/styling/#shape) live. As of: 2026-11-10. Recheck
+  trigger: any of those sections changes that syntax, or a newer `likec4` release ships: set
+  `LIKEC4_VALIDATE=1` when running the test to re-run the CLI.
+- **A search store is read from a host or a compose image.** A host ending
+  `.search.windows.net` is labeled `Azure AI Search`. Pointer: when checking the service's
+  endpoint form, fetch
+  [Create a search service § Name your service](https://learn.microsoft.com/en-us/azure/search/search-create-service-portal#name-your-service)
+  live. The other hosts the collector labels are listed in
+  `store_technology`; a search service on any other host is labeled `unknown`.
+- **An endpoint is not an edge until it resolves.** A `localhost` URL with no `applicationUrl` on a
+  charted deployable, a service name with no compose build context, and a URL naming an external
+  service are all `external-endpoint` findings. A `uses` edge is one per ordered pair.
+- **Directory names are not deployables.** `Microsoft.NET.Sdk.Web` in a directory named Worker is a
+  web host. A class library in a directory named Api is a module. Host-builder usage is read only
+  for a project that is already an entry point (web SDK, worker SDK, functions, or `OutputType` Exe).
+- **A modular monolith is one container.** Libraries reached by project references are listed as
+  contained modules. They are not drawn as containers. When `dependency-graph.json` is passed, those
+  edges are the only containment. A `ProjectReference` the graph does not have is not a module.
+- **Shared infrastructure cites both keys.** Two deployables that name the same broker host produce
+  one `shared-infrastructure` edge whose evidence lists both config keys. Three produce three, one
+  per pair. Sitting in the same repository does not. Two deployables on one SQL server with
+  different databases share nothing.
+- **Redaction keeps the shape.** Host, service kind, and a sql database name are the fact. Userinfo,
+  passwords, account keys, and secret-only values produce no field. The raw value is not stored.
+  `package.json` is not scanned. `containers.json` is not scanned again.
+- **A URL that names several hosts is not read.** `mongodb://a:27017,b:27017/db` yields no store.
+  Report it as a gap when the repository uses that form.
+- **`unknown` is a technology value.** A Dockerfile with no `FROM`, a `FROM` that names a build
+  variable (`$BASE`), a compose service with no image, or a SQL connection string with no URL scheme
+  is technology `unknown`. Do not invent a runtime from the service name. The image is the last
+  `FROM`, without its digest and without `--platform` and other options. A last `FROM` that names an
+  earlier stage takes that stage's image.
+- **The dialect key is `diagram_dialect.system`, and it has no default.** Every C4 view of the
+  code reads the key the authoring-formats convention assigns to C4 system views, the same key `/planning:design` reads for its design container view. It refuses
+  mermaid. Unset, `containers.md` carries the tables and no diagram,
+  and the report says no view was emitted. The key is documented in
+  `${CLAUDE_PLUGIN_ROOT}/reference/config.md`.
+  Mermaid stays out, and `render-containers.sh` has no mermaid C4 path. The decision, its pointer
+  and its recheck trigger live in the convention's
+  [record](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/authoring-formats/README.md#why-mermaid-is-not-offered-for-the-system-key).
+- **A reformatted record reads as empty unless the reader refuses it.** `render-containers.sh`
+  exits 1 on any other shape and writes nothing.
+- **Configuration is untrusted text.** The assignment scanner matches it. It does not source it,
+  eval it, or interpolate it into a command.
+- **A quote in repository-controlled text is replaced, not preserved.** A name lands inside a
+  quoted diagram literal. The delimiter is swapped for one that cannot close the literal.

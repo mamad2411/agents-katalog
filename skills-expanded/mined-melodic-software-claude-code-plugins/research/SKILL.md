@@ -1,0 +1,367 @@
+---
+description: "Multi-source external research with source tiers, recency checks, and a coverage ledger. Use when: 'research this', 'verify a technical claim', 'evaluate libraries or approaches', 'compare X vs Y', 'is this still current', 'find the authoritative source', 'what do the official docs say', 'deep research', 'research these N topics', 'migration research', 'exhaustive research on X'. Also a local folder outside any repository, or machine state. breadth=low narrows; deep or multi-topic asks take the deep tier."
+argument-hint: "[breadth=low|medium] [deep] [--unattended] [topic]"
+user-invocable: true
+disable-model-invocation: false
+allowed-tools: ["Workflow(discovery:research-sweep)"]
+metadata:
+  workflow-stage: research
+  summary: Multi-source external research with source tiers and a coverage ledger
+---
+
+**Arguments.** `[breadth=low|medium] [deep] [--unattended] [topic]`. e.g., /discovery:research breadth=low <lib> changelog, /discovery:research deep <topic>
+
+## Routing. Dispatch by default
+
+**From the main conversation, this skill dispatches the `discovery:researcher` subagent**, which returns a file pointer plus a short summary, not the transcript, so its reading stays out of this context. The parent resolves the **pre-dispatch envelope** and baseline first ("Pre-dispatch envelope and baseline" below) and owns the **post-dispatch boundary** after: re-surfacing `open_questions`, dispatching the sibling verifier, applying project fit, and **writing both results back into the index** (`verification: pending` says the producer may not self-grade, not that the question is open). Inline runs, and why an un-runnable gate is no reason for one: "Running inline" below.
+
+**Discipline-liveness token.** The dispatched agent echoes this token as `preload_token`, and a missing or mismatched one is a **hard failure: the parent discards the run**.
+
+```text
+discovery-research-preload-4c1f9a
+```
+
+The disk fallback Reads this same file, so a matching token is file-identity, **not** proof that preload fired. Provenance is `preload: fired | fallback`; `fallback` is the accepted recovery. Why a token at all: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/dispatch.md` ("Discipline liveness: why a token at all").
+
+**Post-dispatch acceptance gate. Parent-side, before the payload is believed.** `status: complete` and `coverage: complete` are the agent's claims about its own run, and a claim is not evidence. Grade the run **off disk**, against the memory-slice path the parent's own envelope named (**carry it across the dispatch: it is this gate's input**), never a path read out of the payload, which may carry no pointer. In order:
+
+1. **The payload is well-formed**. `preload_token` matches the token verbatim, `preload:` is `fired` or `fallback`, and an `artifact:` pointer is present. Missing token or artifact is a **failed dispatch** whatever the `status` field says. A missing or unrecognized `preload:` field is an out-of-date agent definition, not a pass.
+
+   **And `topic_as_received` matches the topic the parent actually sent**. Compare it with the envelope as written, not as meant. A mismatch is a **failed dispatch**: re-dispatch with the topic restated in a form that survives the trip (see "Topic caveats"); do not accept the artifact and mentally translate it. A well-formed payload carrying no `topic_as_received` is an out-of-date agent definition, not a pass.
+
+2. **The artifact set is actually on disk, and this run put it there**, graded against the `.research-dispatch` baseline touched before dispatch:
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/scripts/check-dispatch-artifact.sh" <the retained memory-slice path> \
+     --index-name RESEARCH.md \
+     --newer-than <that slice>/.research-dispatch --expect-index <the payload's artifact: value>
+   ```
+
+   Cite the **exit status**, 0 usable, 1 no usable artifact set, 2 ungradeable, not a reading of the directory: the context most motivated to call the dispatch finished would be the reader. Only the slice path and `--index-name` are required; the bare form is still a real gate, each optional check reporting `unchecked`, never a quiet pass. Append `--expect-sidecars <n>` when the payload reported a `sidecars:` count, and **drop any flag whose value the payload did not supply**. **The `index=` path in that output is authoritative** downstream: the verifier's `target` and the handoff pointer come from it, not from `artifact:`.
+
+   On an N-topic fan-out, grade each sub-slice before the synthesis, then send the synthesis to a fresh verifier for the verifier-owned rows (the one exception, and the rest: "The deep tier" below).
+
+3. **The coverage claim is graded from the ledger, not from the payload.** `coverage: complete` mirrors outcome-gate criterion 11, which the run graded on **itself**. When a `research-checklist.md` sits beside the index step 2 named, run `"${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-complete.sh"` (or the `.py` twin) on `<that index's directory>/research-checklist.md` and cite its exit status. 0 complete, 1 unmarked rows, 2 ungradeable, and **both non-zero values are FAILs**. No ledger on disk is correct **only** when the artifact records the corpus as unbounded; a bounded corpus with no ledger is a Phase 0 that never ran, whatever the payload says.
+
+4. **Source applicability is graded from the headers, not from the payload.** `applicability:` mirrors criterion 13. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/check-source-applicability.py" <that index's directory> --expect-evidence-use <the envelope's Evidence use value>` and cite its exit status: 0 pass, 1 a violation, 2 ungradeable, and both non-zero values are FAILs.
+
+5. **Restatements and claim eligibility are graded by script, not left to the verifier.** Run `"${CLAUDE_PLUGIN_ROOT}/scripts/check-restatement-labels.py" <that index's directory>` and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-claim-eligibility.py" <that index's directory>` and cite each exit status, read as in step 4. The researcher already ran both fail-closed before hand-back; this is the re-run. What each checks: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/dispatch.md` ("The restatement and eligibility checks").
+
+**Any non-zero exit halts the workflow, and a gate that could not run at all is a FAIL, never a skip.** An invocation that is denied, declined at a prompt, or errors out halts the same way; do not fall back to reading the directory. Do **not** proceed to planning, a decision, or an edit on research that did not happen. Recovery ladder, and the resume-before-discard ordering it takes: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/dispatch.md`. Clear the slice before any re-dispatch: `--newer-than` binds the **index**, never the ledger, and the ledger gate reads marks, not provenance.
+
+**One named exception, to the halt, not to the gate:** exit 1 with `persistence: by-value` in the payload. The parent **writes the slice itself** and proceeds only when every check that applied, re-run, returns 0. Read the by-value rung first: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/dispatch.md` ("Recovery ladder").
+
+**Then dispatch the sibling verifier**, once every gate above exits 0, for every row the outcome gate's Owner column marks verifier:
+
+```text
+Agent({
+  subagent_type: "discovery:research-verifier",
+  description: "Verify research: <topic>",
+  prompt: "Target: <the index= path the artifact gate printed>
+           Rows: 4, 7, 12, 14
+           Corroborators: <research_corroborators>
+           Claims: <under Evidence use: internal, the claim IDs a stated decision cites>"
+})
+```
+
+**Verification scales to the evidence use.** Under `Evidence use: internal`, the verifier grades rows 4, 7 and 12 only for the claims a stated decision cites, named on the `Claims:` line, and no rework round runs. Under `publish` the line is omitted and the full loop runs. Detail: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/dispatch.md` ("Scale it to the evidence use").
+
+Write its `verification_line` over `verification: pending`; a FAIL row returns to its phase (bounded: "Effort, source breadth"). **Skipping the verifier for cost**, write `verification: skipped (cost)`; never leave `pending` after this boundary. First run `bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin discovery --skill research --file docs/conventions/discovery.yaml` and report its line; dispatch.md ("The verification level") says what each level does. Values: `${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md` ("The `verification:` values"). Brief, write-back, project fit: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/dispatch.md` ("The orchestration boundary").
+
+## Outcome gate (run before presenting)
+
+Research is done when it passes this gate, not when the phases finish. Check what the run achieved against what good research requires, **grounded in the run's own artifacts** (the evidence table, the Phase 1/2 written gap lists, the fetch log), not in your recollection of "did I do a good job." The context that ran the phases is the one grading them, so only artifact-grounded binary criteria bite.
+
+Each criterion is binary. **Any FAIL returns to the named phase (a verifier-owned row's rework is bounded: "Effort, source breadth"); do not present until all pass.** **The Owner column binds.** Rows the run can read off an artifact stay with the run. A row where the run would judge the quality of *its own choices* belongs to a **verifier**, a fresh sibling context that never saw the run. One row needs the consuming project's conventions and belongs to the **parent**. So a dispatched run returns `verification: pending` and renders no verdict on a verifier row; an inline run hands those rows to a fresh context too. The Owner column governs over any enumeration of these rows in an agent definition or sibling skill.
+
+| # | Binary criterion | Owner | FAIL → |
+|---|---|---|---|
+| 1 | Every claim row has ≥1 Tier 0/1 source whose URL/command was captured this turn | run | Phase 2. Fetch the primary directly |
+| 2 | No claim row's sources are all Tier-2 secondary | run | Phase 2. Get a primary |
+| 3 | Every Phase 2/3 query traces to a numbered gap/conflict in a written analysis block | run | re-run the phase chained to the list |
+| 4 | Every accepted claim has ≥`research_corroborators` (default 2) INDEPENDENT `current` corroborators (not 2 cites of one upstream pool, as in the discipline file's "Single-publisher facts"; a `historical` source never counts), or is a first-party content claim flagged `single source` that states why only one publisher exists (for a paper's reports-claim, the reason also names the paper's publisher and the product it owns that the paper measured, per the discipline file's "A paper's reported result can be a content claim"); a repost is not a second source, and a behavior claim gets no flag | **verifier** | Phase 2. Widen sources |
+| 5 | The Phase 2 falsification query ran and is recorded | run | Phase 2. Run it |
+| 6 | Recency gate satisfied for every tool/library/API claim: the latest upstream changelog/release was fetched this turn and cross-checked against the claim. Read the confirmed-latest release and the verdict off the fetch log's changelog entry, an absent verdict or an `invalidated` one FAILs, and `unresolved` passes only as an enumerated Gap, never under an accepted claim. Windows, and what a major bump invalidates: the discipline file's "Recency gate" | run | Phase 2. Fetch changelog |
+| 7 | Every accepted claim is HIGH confidence, or `HIGH (single source)` under row 4's flag, including a paper's reports-claim whose `single_source:` reason names the paper's publisher and the product it owns that the paper measured; a MEDIUM or LOW claim listed in the Gaps section is not accepted | **verifier** | Phase 4 follow-up (one rework round), or list as a Gap |
+| 8 | Project fit checked against the consuming project's own conventions and stated direction | **parent** | revisit before presenting |
+| 9 | For every accepted claim taken from any publisher's own artifacts, vendor, OSS maintainer, standards body alike, the fetch log accounts for every artifact-ladder rung above the one the claim came from, each carrying one of the outcome values and none left unaccounted. Rungs, outcome vocabulary, and what earns nonexistence rather than `unresolved`: the discipline file's "Primary-source-first protocol". A rung that exists, is reachable, and carries the claim is where the claim comes from | run | Phase 2. Walk the ladder from rung 1, fetching and searching each reachable rung and recording its outcome |
+| 10 | Every reported absence names both the sources checked and the sources left unchecked. No bare "unsourced" / "not found" | run | revisit before presenting |
+| 11 | **Coverage ledger fully marked**, when Phase 0 wrote `research-checklist.md`, `${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-complete.sh <ledger>` (or `.py`) exits 0. Cite the **exit status**, not a reading of the table: the context that wants to be finished is the one grading it. It fails closed, a ledger it cannot parse exits 2, and 2 is a FAIL; a script that could not run at all is the same FAIL, never a skip or a hand-grade. Not applicable when Phase 0 recorded the corpus as unbounded | run, **script verdict** | Phase 0. Cover the unmarked items, or narrow the corpus explicitly |
+| 12 | Every accepted claim follows jointly from its cited sources: the claim's primary source measures the claim's variable and population, every cited source passes the variable, population, era and scenario checks or is recorded and not counted toward criterion 4, counter-evidence already read is resolved, and every recorded qualifier survives. Under `evidence_use: publish`, the answer quotes only `current` sources as support. Recipe: the discipline file's "Joint-inference check" | **verifier** | Phase 2. Fetch a source that measures the claim's variable, population, version and scenario, or reattach the qualifier or resolve the counter-evidence in the artifact; else a Gap or Conflicts entry |
+| 13 | **Source applicability recorded and consistent**: `${CLAUDE_PLUGIN_ROOT}/scripts/check-source-applicability.py <slice>` exits 0. It checks that every claim names its target `applies_to:`, every source its `published:`, `applies_to:` and `standing:`, that each stored `standing:` matches the one derived from those fields, and each non-Gap primary is dated and `current`. Cite the **exit status**; 1 and 2 FAIL, and so does a script that could not run. Applies to every run with claims, inline included | run, **script verdict** | Phase 2. Record the fields, or relabel the source, or find a `current` primary |
+| 14 | The index's `accepted:` counts the claims neither in Gaps nor unresolved in Conflicts; at 0 the Summary opens `Inconclusive: no claim accepted.` A zero with that line passes; a missing or wrong count, or a bare zero, FAILs | **verifier** | revisit before presenting |
+
+**A claim that cannot pass the gate is a Gap, not a finding**, never laundered into the answer. Report the gate result (pass, or which criterion failed and what you re-ran); rework bounds: "Effort, source breadth"; Tier-3 returns: "Reconciling sources at the gate".
+
+## Topic
+
+Research the following topic: $ARGUMENTS
+
+Non-topic tokens (`breadth=`, `deep`, `--unattended`), a dispatched run, and a run with no topic: "Topic caveats" below.
+
+## Disciplines
+
+Full recipes and rationale: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/discipline.md` (also the canonical source-tier table for this plugin). The Effort row is the ceiling over discipline 8: "Effort, source breadth" below.
+
+1. **3 phases minimum**. Phase 1 (broad), Phase 2 (targeted, informed by Phase 1, includes falsification), Phase 3 (preferred-sources / tool-ecosystem fallback)
+2. **Queries scale to open questions: the floor is a starting point, not a target.** Phase 1 opens with ≥3 queries to seed the evidence base; Phase 2 and Phase 3 each run **one query per unresolved gap/conflict** surfaced by the prior phase's written analysis (≥3, no upper cap). A run that stops at the floor while numbered gaps remain has not finished the phase
+3. **3 distinct tool types minimum per phase**. One search engine plus one synthesis tool does not meet it; mix in direct fetches, doc-MCP servers, `gh api`, or documentation agents your environment provides
+4. **4+ distinct tool types across the topic**. Phases cannot share the same 3 tools end-to-end. Cross-phase tool diversity is the consensus-driving mechanism
+5. **Source-tier ratio per claim**. Every accepted claim has ≥1 Tier 0/1 (primary source captured this turn) plus ≥`research_corroborators` (default 2) independent corroborators that cover the claim's target version (a `historical` source is recorded, never counted), however authoritative the primary (a canonical doc can be stale). Three synthesis-tool citations of three blogs = 1 Tier 2 source, not 3. Track diversity per claim. This is criterion 4's floor; acceptance also needs HIGH (criterion 7). The one exception to the floor: the discipline file's "Single-source first-party content claims"
+6. **Recency gate, first-party docs lag releases**, one query fetches the latest upstream changelog or release notes this turn and confirms the claims are current as of it. A major version bump invalidates prior docs, first-party included; treat any doc-vs-changelog lag as a conflict to resolve, not a closed answer. The 14/30/90-day default staleness windows: the discipline file's "Recency gate"
+7. **One falsification query in Phase 2**. Phase 2 includes exactly one query that attempts to falsify the leading hypothesis from Phase 1; without it Phase 2 confirms Phase 1 by default
+8. **Broad-topic auto-detect → doubled minimums**, when the topic involves 2+ vendors / 2+ tools / 3+ proper-noun products / comparison ("X vs Y") / migration ("X replaces Y") → 6+ queries per phase, 12+ total, 5+ tool types, 4+ Tier 0/1 sources per claim
+9. **Phases chain through a written analysis**. Phase 2 consumes the gap/conflict/leading-hypothesis list emitted at the end of Phase 1; each Phase 2 query maps to a named entry in it. Phase 3 chains the same way off the Phase 1+2 list. A query not traceable to a prior-phase gap is unchained, the written list is the broad→deep link, intent is not
+10. **Task size does not reduce phase count**, a one-line config change gets the same treatment as a multi-file feature. Only the Effort table reduces it, at the row caller effort or a `breadth=` token selects
+11. **Confidence tracked per claim**. HIGH / MEDIUM / LOW per the discipline file's "Confidence calibration." A LOW-confidence claim is not a basis for a code edit; iterate to HIGH or list it as a Gap
+12. **Primary source fetched directly, not via the SERP**. For every accepted claim, name the canonical doc home and fetch it directly, top-down through the discipline file's artifact ladder (an announcement page is not the vendor's deepest artifact); SERP + synthesis tools only discover what to fetch and find corroborators, never serve as the terminal source
+13. **Outcome gate before presenting**: the run grades its rows off its own artifacts; verifier rows go to a fresh-context verifier
+14. **Bounded corpora are enumerated before they are searched**, when the topic has a finite, knowable set of things to cover, Phase 0 writes `research-checklist.md` naming every item and its per-item depth criterion before any query runs, and the gate fails on any unmarked row. Distinct from discipline 9: the gap list chases *unknowns* surfaced by searching, this covers every item of a set knowable up front. Recipe: the discipline file's "Corpus enumeration"
+15. **Every accepted claim follows from its sources jointly**, name what each source measures and why the claim follows from them together; verbatim quotes are not that evidence. Recipe: the discipline file's "Joint-inference check"
+
+### Effort, source breadth
+
+Rationale for the ceiling over discipline 8, and skipped-phase N/A: the discipline file's "Effort, source breadth".
+
+Caller effort for this run is `${CLAUDE_EFFORT}`. If that still begins with `${`, this body was read
+directly and the substitution never ran: run as `high`, every phase below. A value the table below
+does not name also runs as `high`.
+Record: `${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md`,
+"Harness facts the dispatch design rests on". A dispatched run follows envelope `Source breadth:`
+from this load, not the researcher pin. Missing line: `high`, named in the artifact.
+
+| Effort | Source breadth |
+|---|---|
+| `low` | Phase 0 if bounded, Phase 1 at existing floors and under the cap below, Phase 2 as the mandatory falsification query only (no per-gap expansion). Skip Phase 3 and Phase 4 |
+| `medium` | Phase 0 through 2 in full (per-gap Phase 2 queries plus falsification). Skip Phase 3 and Phase 4 |
+| `high`, `xhigh`, `max` | Current full workflow |
+
+**`breadth=` narrows, never widens.** A `breadth=low` or `breadth=medium` token in `$ARGUMENTS`
+selects that row when it is below caller effort; source breadth is the lower of the two, and
+nothing here widens the researcher's `maxTurns: 40`. A dispatched run writes the resolved row to `Source breadth:` and the matching word
+to `Budget:` (parent contract, "`Budget:` vocabulary"). Without the token, lowering session effort
+before invoking is the other lever. Use `low` for a question about one named artifact, folder, or
+version.
+
+**Phase 1 at `low` is capped at 6 web queries and fetches combined**, above the 3-query floor and
+below the doubled minimums. For a single named artifact or folder, read it directly first (`Read`,
+`Glob`, `Grep`, or a listing) and let what it shows choose the queries; local reads do not count
+against the cap. A claim still short of its sources at the cap is a gap named in the artifact, not
+a reason to search on.
+
+**The verify-and-rework loop is bounded at every budget.** At `low`, and at any budget under `Evidence use: internal`, a verifier FAIL on a verifier-owned row (Owner
+column, "Outcome gate") is not reworked: no `SendMessage` resume of the researcher. Record it in the
+artifact as a Gap or Conflicts entry, lowering `accepted:` to match (criterion 14), or leave it as the named `verification: fail rows` value, and
+present the result with that caveat. Under `publish`, medium and above return a FAIL row to its phase as the gate
+routes, for **one rework round**: the rework, then one re-verify. A row still FAIL after that
+re-verify is not reworked again: record it in the artifact as a Gap or Conflicts entry, lowering
+`accepted:` to match (criterion 14), or leave it as the named `verification: fail rows` value, and
+present the result with that caveat. Rows the run owns and gate exit codes stay mandatory at every
+budget, and an ungradeable or missing artifact still takes the recovery ladder, resume before discard. A `strict` verification level gives `low` and `internal` the `publish` loop (dispatch.md, "The verification level").
+
+## The deep tier
+
+In the main conversation, take the deep tier when any of these holds, and read [context/deep-tier.md](context/deep-tier.md) before dispatching anything:
+
+- **Two or more separable topics** (they share no claims): one `discovery:researcher` per topic, each in its own sub-slice, never one engine over the combined blob.
+
+  **Fanning out over N topics, grade each run against the sub-slice it was assigned, before synthesizing the slice-root index.** The artifact gate (acceptance gate step 2) grades exactly the path it is given, so a slice-root invocation grades only the synthesis, never a dispatched run. The synthesis then goes to a fresh verifier for the verifier-owned rows before it is surfaced. A slice-root synthesis that adds no claims and cites by ID needs no verifier: run the restatement check with `--sub-slice` per sub-slice, check its `accepted:`, and if both pass write `verification: skipped (cost)`. Both: the dispatch contract's fan-out section.
+- **One topic that needs adversarial verification**: contested, high-stakes, or broad enough (multi-vendor, comparison, migration) that independent skeptics should try to refute each claim. The `discovery:research-sweep` workflow runs it when the Workflow tool is observed in this session's toolset; otherwise one researcher does.
+- **A leading `deep` token** in the arguments: strip it from the topic, then route as above. A `breadth=` token with it wins, and the run takes the standard dispatch.
+
+Otherwise the standard dispatch runs: one researcher, whatever the task's size. A dispatched or forked run never selects the deep tier, because it cannot count on `Workflow` or a dependable `Agent` spawn (pointers: [context/deep-tier.md](context/deep-tier.md), the "Main context only" paragraph under its title, which has no heading anchor): it runs inline, and never promises the workflow engine.
+
+**Who writes `RESEARCH.md`.** In the standard dispatch the `discovery:researcher` subagent writes it
+into its slice (the parent authors none of it; on the by-value rung it only persists what the researcher returned). In the deep tier's workflow path the workflow cannot
+write files, so this session writes it from the sweep result; on the multi-topic path each topic's
+researcher writes its own sub-slice index and this session writes only the slice-root synthesis.
+
+## Tunable defaults
+
+Four numbers in the disciplines are settings (key contract: `${CLAUDE_PLUGIN_ROOT}/reference/config.md`). Resolve each lowest layer first, a later one winning: the default, then the `userConfig` value, then the key in `docs/conventions/discovery.yaml` at the project root, read with the Read tool.
+
+| Key | Default | `userConfig` value | Sets |
+|---|---|---|---|
+| `research_corroborators` | 2 | `${user_config.research_corroborators}` | corroborators per accepted claim (discipline 5, row 4) |
+| `research_recency_active_days` | 14 | `${user_config.research_recency_active_days}` | recency window, very active project |
+| `research_recency_standard_days` | 30 | `${user_config.research_recency_standard_days}` | recency window, standard library, tool, CLI or API |
+| `research_recency_guide_days` | 90 | `${user_config.research_recency_guide_days}` | recency window, tool- or vendor-specific architecture guide |
+
+A literal unexpanded token is unset. A value that is not a whole number of 1 or more is named with its file or `userConfig`, key and value, and that layer is dropped: a valid higher layer still wins, else the default. Report one line, e.g. `research config: corroborators 2 (default); recency 14/30/90 days (default)`, naming the layer behind any other value. A dispatched researcher takes the envelope's `Research config:` line; without it, it resolves the keys as above. The key sets the base floor only: discipline 8's doubled minimum and the single-source exception stand, each claim keeps one primary, and HIGH still needs three Tier 0/1 pools (criterion 7).
+
+## Pre-dispatch envelope and baseline
+
+Resolve these before dispatching. The envelope is six shared fields (topic, reason, memory-slice path, memory root, budget, capability flags) plus research-only `Source breadth:`, `Research config:` ("Tunable defaults") and `Evidence use:` (`publish` when the output will be quoted outside this session, such as a pull-request reply, an issue, or a document for a third party; else `internal`), written into the dispatch prompt as the labeled lines below, not as prose the agent has to parse:
+
+```text
+Topic: <the resolved topic>
+Reason: <the decision this feeds, and who the output is for>
+Memory slice: <memory_dir>/<slug>/              # the sub-slice on a fan-out or a collision
+Memory root: <memory_dir>
+Budget: <low|medium|full>, optionally followed by words on the depth this session authorized
+Turn budget: <turns of gathering before the agent writes and hands back; at or below the agent's default stop turn (30)>
+Capability flags: nested spawning <available|unavailable>
+Source breadth: <low|medium|high|xhigh|max>
+Evidence use: <internal|publish>
+Research config: corroborators=<n> recency=<active>/<standard>/<guide>
+```
+
+At `Budget: low` the parent contract's "`Budget:` vocabulary" sets the `Turn budget:` value. `Source breadth:` is `${CLAUDE_EFFORT}` as this load rendered it (a literal placeholder means the body was read from disk: write `high`). Why each field exists and how a missing one degrades: [`${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md`](${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md), which the dispatch does not need.
+
+**Each spawn's `model`**, researcher and research-verifier alike, follows that file's "The worker's model is the parent's call": pass one only when a multi-agent config layer moves the agent's role off its pin.
+
+**Pre-dispatch:** create the memory slice and touch `<that slice>/.research-dispatch` as the gate's freshness baseline, then hand that file to the gate as `--newer-than`. Without it a slice that already holds an earlier run's index passes every on-disk check even when this dispatch wrote nothing at all. On an N-topic fan-out one baseline at the slice root serves every sub-slice. Run the form matching this session's shell, because the POSIX form's `touch` is not a command in PowerShell and its directory flag is a parameter error there:
+
+```bash
+# POSIX shells (bash, zsh, Git Bash)
+mkdir -p <memory-slice path> && touch <memory-slice path>/.research-dispatch
+```
+
+```powershell
+# PowerShell
+New-Item -ItemType Directory -Force -Path '<memory-slice path>' | Out-Null
+New-Item -ItemType File -Force -Path '<memory-slice path>/.research-dispatch' | Out-Null
+```
+
+The one obligation the acceptance gate does not grade (the memory root's `.gitignore` guard) is in [`${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md`](${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md).
+
+## Running inline
+
+**Run inline instead when any of these holds**, and inline runs the identical discipline; the escape hatch relaxes nothing in this skill:
+
+- **Tight turn-by-turn iteration**. You will redirect the queries as they land. Dispatch is a pre-run choice; the steering loss is mid-run.
+- **Cost**, a dispatched run pays full depth every time, including for a one-line version lookup whose doc you can already name. Inline moves that cost into this context without reducing it; `breadth=low` (see "Effort, source breadth") is what reduces it.
+- **The invoking context is already a subagent**. Dispatch-by-default is scoped to the main-conversation boundary, so a subagent invoking this skill runs it inline. The outer dispatch already supplied the fresh context. Hoisting, not nesting.
+
+**Not an escape-hatch reason:** an un-runnable research gate. Before **dispatching**, probe `--help` on the artifact checker, the coverage checker, and the source-applicability checker, chained in one call so an unconfigured session sees one prompt; before an **inline** research run, probe the coverage and source-applicability checkers (criteria 11 and 13 still apply inline). A denied or errored probe **halts**. The allow rules `/discovery:setup check` prints cover the probes and the gates alike. Do not take inline to dodge an un-runnable post-dispatch gate, and do not self-grade the coverage ledger by reading the table. Invocation forms (shebang path, `bash`, PowerShell / Python twin) and the halt rule: [`${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md`](${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md).
+
+## Reconciling sources at the gate
+
+**Authoritative + consensus, reconciled:** the primary is the spine of a claim and independent corroborators are the confirmation, so when blog consensus contradicts the primary the primary wins and the conflict is flagged. Subagent returns are Tier 3 until their cited primaries are fetched this turn.
+
+**A practitioner is recognized by proof of shipped work.** Before weighing a person's post, talk, profile or repository as a recognized author (Tier 2, or the discipline file's "Tool-ecosystem Phase 3 fallback" authority), read `${CLAUDE_PLUGIN_ROOT}/skills/research/reference/practitioner-test.md` and apply its test.
+
+> **Scoped exception, a dispatched run of this skill is not a Tier-3 subagent return**, because the tier attaches to the artifact and the sources captured in it, never to the transport that carried the pointer. Its exact width, and the two returns it does not cover: the discipline file's "Source tiers".
+
+## Topic caveats
+
+A leading `breadth=low` or `breadth=medium` token is not part of the topic: strip it before writing `Topic:` and apply it under "Effort, source breadth". `--unattended`, anywhere in the arguments, is not part of the topic either: it is the caller declaring that nobody is present, which governs the `/deep-research` offer under "Boundary, the bundled `deep-research` workflow". Strip it first, so the other tokens count as leading without it.
+
+**A dispatched run does not read the `Research the following topic:` line**, so **do not rely on seeing an unfilled slot**. Whatever the `## Topic` line renders as, a dispatched run takes its topic from the dispatch prompt, and an absent one is a parent-envelope failure the agent reports rather than repairs. A leading `deep` token in that topic is not part of the subject: `topic_as_received` quotes the topic as sent, token included, and the research works on the topic without it. What argument substitution fills is [skills: available string substitutions](https://code.claude.com/docs/en/skills#available-string-substitutions)'s to say; what we found documented about that path: [`${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md`](${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md), "Scope and topic do not arrive by argument substitution". Running **inline** with no topic supplied under `## Topic`, infer it from the conversation. Identify the claim, decision, or implementation being worked on and research that.
+
+**Caveat, a `${CLAUDE_…}`-shaped token in a topic may not arrive as you typed it**, which is a different question from the paragraph above and not evidence for or against it. What was observed, what is documented, what is not, and the practical rule: [`${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md`](${CLAUDE_PLUGIN_ROOT}/reference/parent-contract.md) ("A different question"). The `topic_as_received` echo-back in the acceptance gate is what catches it whichever way the substitution actually runs.
+
+## Repository context. Gather first
+
+**Only when no topic argument was supplied** (the line under `## Topic` above renders no topic)
+gather this. The branch is only a topic fallback: the topic comes from an explicit argument first
+and the branch last, so a run with a topic argument makes no `git branch` call.
+
+<!-- BEGIN GENERATED: gather-block. Edit docs/conventions/gather-block/block.md, then run scripts/sync-gather-block.py -->
+Run each command below as its own Bash call, all sent together in one message ([worktree isolation](https://code.claude.com/docs/en/worktrees#how-claude-code-enforces-isolation)).
+Keep any bound in the command's own pipe ([output limits](https://code.claude.com/docs/en/tools-reference#output-limits)).
+Unless this section says otherwise, treat a failure (not a repository, git unavailable) as an unknown value and carry on. Keep these as body calls, never `## Pre-computed context` lines ([gather-block convention](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/conventions/gather-block/README.md#the-pre-compute-block-runs-as-one-shell-invocation)).
+<!-- END GENERATED: gather-block -->
+
+- Current branch, `git branch --show-current`
+
+## Purpose
+
+External research is mandatory before acting on external facts, and its sources are authoritative and official ones fetched this session. Training data drifts, library APIs change, SEO content farms outrank authoritative sources, and AI synthesis tools repackage the same secondary blogs as "multi-source", so cross-tool consensus, primary-source priority and recency verification are what drive accuracy.
+
+Local counterpart: `/discovery:explore` (what is in the repo); this skill covers what should be. A local folder outside any repository (a vendor install directory) or machine state is this skill's too: read it directly and cite those reads as Tier 0 primaries. A multi-topic or adversarially verified pass is this skill's deep tier ("The deep tier").
+
+## Phases
+
+**Fan out per gap when nesting is available.** When the dispatch prompt says nested spawn is available, follow the per-gap recipe in [context/discipline.md](context/discipline.md). Phase 0 through Phase 4, the queries and the lists each phase must write before the next: [context/phases.md](context/phases.md). Load that file when you are the worker, before the first query.
+
+## Output Format
+
+Present research findings as, and if invoked standalone present them directly, while inside a larger workflow they feed the subsequent planning step:
+
+1. **Summary**. 2-3 sentence answer to the research question, preceded by one line naming any decision the findings leave to the user (e.g. two primary sources conflict, or a gap blocks the answer), or omitted when none. A run with no accepted claim opens instead with `Inconclusive: no claim accepted.` (criterion 14)
+2. **Evidence table**. `Claim | Sources (Tier 0/1 entries cite the URL/command fetched this turn) | Tier | Tool diversity | Confidence`. A source whose `standing:` is `historical` carries the label historical in its Sources cell, and a flagged claim's Confidence cell reads `HIGH (single source)`
+3. **Fetch log**, the written record criteria 6 and 9 are graded against, so it is written, not recalled. One entry per fetch per claim: `Claim | URL or command | artifact-ladder rung | tool used | outcome`, and each accepted claim carries the entry for the rung it came from and one for every rung above it. **The outcome vocabulary is a parsed schema, not free text**. Five values, three of which look interchangeable and are not, plus the composite changelog entry criterion 6 grades. Write it to the spec in `${CLAUDE_PLUGIN_ROOT}/skills/research/context/artifact-shape.md` ("The fetch log")
+4. **Conflicts**. Disagreements between sources (flagged explicitly; primary wins over blog consensus)
+5. **Gaps**. Claims below HIGH (criterion 7; `HIGH (single source)` under row 4's flag counts) or below the criterion-4 floor of ≥1 primary + `research_corroborators` independent corroborators (or a holding `single source` flag), flagged for follow-up; a single-publisher claim is listed under its label (the discipline file's "Single-publisher facts"). A gap asserting absence names the sources checked and the sources left unchecked, never a bare "not found"
+6. **Recency status**. Primary-source age per tool/library claim
+7. **Project fit**. How findings align with the consuming project's conventions and stated direction
+8. **Outcome gate result**. Pass, or which criterion failed and what was re-run, plus effort and any skipped phases
+
+**Cite by link wherever you present findings.** This binds the parent after the verifier write-back, in the Summary, the Evidence table and any shorter recap in conversation. Each accepted claim carries its primary source and its counted corroborators as inline Markdown links, `[label](url)`, with the URL taken from the claim's `sources[].url` in the findings sidecar. A Tier 0 local probe has no URL, so it cites the artifact sidecar file that holds its command. A source name without its URL is not a citation.
+
+When dispatched work returns after you presented open questions and before the user answers, the next message that presents anything ends with every open item in full: `docs/contracts/async-round-presentation/README.md` in the marketplace.
+
+## Final step: persist artifact for handoff
+
+Write the research output to `<memory_dir>/<slug>/RESEARCH.md`, a memory-tier artifact, never committed, and the authoritative summary of the stage: a fresh session must be able to resume planning reading only it. Destination and slug resolve per the lifecycle artifact protocol ([`${CLAUDE_PLUGIN_ROOT}/reference/artifact-protocol.md`](${CLAUDE_PLUGIN_ROOT}/reference/artifact-protocol.md)). **No project root** (no git toplevel or project marker, such as a session started in the home directory): an interactive run asks before writing (create under the current directory, or an explicit path); a non-interactive run writes under `${CLAUDE_PLUGIN_DATA}/artifacts/<slug>/` and announces the absolute path. Never create a `.work/` under the home directory unasked.
+
+**`RESEARCH.md` is always an index**, at every size, not only past an overflow threshold. It carries the Task restatement, a one-line abstract per sidecar copied verbatim from that sidecar's header as `- <section>: <abstract>`, the value unquoted, a section → file + anchor table, and the Next-stage-handoff. The Output Format's content lives in sibling `RESEARCH-<section>.md` sidecars in the same directory, each opening with a machine-readable YAML header so a consumer can grep headers, then read exactly one file.
+
+**One writer per slice.** The index and `research-checklist.md` have fixed names, so two runs writing one slice overwrite each other. When the slice root is occupied, or a parent is running several topics in parallel, **each run writes its whole set into its own sub-slice** `<memory_dir>/<slug>/<topic-slug>/` under the normal filenames and reports the path it used. The parent assigns those sub-slices; a worker never picks its own. Why renaming the index instead is not an option: the artifact-shape file.
+
+**Read [`${CLAUDE_PLUGIN_ROOT}/skills/research/context/artifact-shape.md`](${CLAUDE_PLUGIN_ROOT}/skills/research/context/artifact-shape.md) before writing the first sidecar**, the sidecar header and the fetch log are both schemas a verifier parses, and an improvised one silently costs criteria 4, 6, 9, 12 and 13 their evidence. Carry this much into the read: `claims[]` is a list, each entry with its own `id` that every restatement cites, its own `confidence`, `claim_kind` and `source_owner`, its own target `applies_to`, its own `sources[]` of `{url, tier, pool, measures, role, published, applies_to, standing}`, and its own `inference` and `qualifiers`, plus `subject_pool` on a single-publisher claim; the index records `evidence_use` and `accepted`.
+
+**Intra-task pivot. Delete stale research, don't layer.** If the approach you researched is abandoned mid-task for a different direction *before shipping*, delete the now-stale section and re-run on the new direction; a superseded section makes the planning step plan against a dead approach. Failure modes this skill has actually hit: `${CLAUDE_PLUGIN_ROOT}/skills/research/context/gotchas.md`.
+
+## What this skill does not do
+
+- **Does not make decisions**. Presents verified evidence; the planning step (or user) decides
+- **Does not write code**. Researches only; execution is a separate step
+- **Does not skip phases for "simple" topics**. Task size does not reduce depth; only the Effort table may skip later phases, at the row caller effort or a `breadth=` token selects
+- **Does not present training-data knowledge as current fact**. Tier 3 recall must be promoted to Tier 0/1 before claim acceptance
+
+## Spoke paths
+
+The `context/` files write the plugin's root directory as `<plugin-root>`, which is
+`${CLAUDE_PLUGIN_ROOT}`. Put that path in place of the placeholder before running a command or
+writing it into a brief: we never rely on a `${…}` token in a file read from disk being expanded
+later.
+
+- **Pointer**: when deciding whether a `${…}` reference in a supporting file resolves, fetch
+  [plugin manifest reference: where each variable resolves](https://code.claude.com/docs/en/plugins/manifest-reference#where-each-variable-resolves)
+  live.
+
+## Boundary, the bundled `deep-research` workflow
+
+A native workflow also answers "research this deeply" with a cited report, so a request for deep
+research can mean either surface.
+
+- **`deep-research` (bundled workflow)**: `/deep-research <question>`, a native workflow that
+  answers one question with a cited report. It is reserved for the person to run: the model does
+  not start it and the deep tier does not dispatch it. What it does and who starts it is
+  [workflows: bundled workflows](https://code.claude.com/docs/en/workflows#bundled-workflows)'s to
+  say.
+- **This skill (marketplace plugin).** Splits a multi-topic ask across per-topic
+  `discovery:researcher` workers under this discipline (source tiers, recency gate, coverage
+  ledger), and grades every run off disk with a fresh verifier before surfacing it.
+
+**Routing.** When the deep tier is selected, offer it to the person at the start of the run,
+before dispatching. For a single-topic ask that wants one deep cited report:
+If /deep-research is available in your session (gate basis: the bundled-workflows pointer above;
+records in
+[reference/native-deep-research.md](reference/native-deep-research.md)), you can run
+`/deep-research <question>` instead of or alongside this skill. For a multi-topic ask, offer it
+only as an addition for one topic that needs adversarial claim-checking. If the person takes it instead, stop.
+When the caller passes `--unattended`, the run records the offer in its output
+instead of asking, and dispatches; without that flag it asks.
+
+**Mutation gate.** This skill writes only its own research slice. It never starts the workflow on
+the person's behalf, and a report from the person's own run is not a graded `RESEARCH.md`.
+
+**Availability is never assumed.** This section states what to offer, never that the workflow is
+present. What it requires is
+[workflows: bundled workflows](https://code.claude.com/docs/en/workflows#bundled-workflows)'s to
+say. The
+four-part records live in [reference/native-deep-research.md](reference/native-deep-research.md).
+
+## Next
+
+- Findings feed work with no locked contract whose diff will not be quick to review and cheap to retry: `/planning:interview`.
+- Findings settle a type, contract, or boundary choice: `/planning:design`.
+- Unsure where this leaves the work, or arrived mid-flow: `/session-flow:workflow`.
+
+## See also
+
+- `${CLAUDE_PLUGIN_ROOT}/skills/research/context/discipline.md`. Source tiers, recency gates, broad-topic recipe, effort ceiling over that doubling, falsification recipe, tool-ecosystem fallback, confidence calibration, source-quality red flags, observed failure patterns
+- `${CLAUDE_PLUGIN_ROOT}/skills/research/reference/practitioner-test.md`. The proof-of-shipped-work test for a practitioner source, and how to treat a profile or repository that asks to be rated an authority

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-jacob-balslev-skill-graph/link-rot-detection/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when authoring or reviewing a periodic-scan job that walks every external link in a markdown content set and flags 404s, redirects to unrelated content, and connection failures. Activate this skil

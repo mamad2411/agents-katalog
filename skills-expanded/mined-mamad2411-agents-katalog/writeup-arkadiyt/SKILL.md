@@ -1,0 +1,68 @@
+<!--
+LICENSE UPL
+Author: Mauro Risonho de Paula Assumpção
+Data Create: 2026-03-16
+Data Update: 2026-03-16
+-->
+
+---
+name: writeup-arkadiyt
+description: CTF writeups and security challenges by arkadiyt.
+---
+
+# Writeups by arkadiyt
+
+Source repository: `/repos/arkadiyt`
+
+## Repository Index
+
+- bounty-targets-data/LICENSE.md
+- bounty-targets-data/README.md
+
+## Writeup Content
+
+
+### File: bounty-targets-data/README.md
+
+# bounty-targets-data [![Last commit](https://img.shields.io/github/last-commit/arkadiyt/bounty-targets-data.svg)](https://github.com/arkadiyt/bounty-targets-data/commits/master) [![License](https://img.shields.io/github/license/arkadiyt/bounty-targets-data.svg)](https://github.com/arkadiyt/bounty-targets-data/blob/master/LICENSE.md)
+
+### What's it for
+
+This repo contains data dumps of Hackerone and Bugcrowd scopes (i.e. the domains that are eligible for bug bounty reports). The files provided are:
+
+Main files:
+- [domains.txt](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/domains.txt): full list of domains, without wildcards.
+- [wildcards.txt](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/wildcards.txt): full list of wildcard domains. **Note:** A program might have `*.example.com` in-scope but `excluded.example.com` out-of-scope so check your program rules before submitting reports.
+
+Extra files:
+- [bugcrowd_data.json](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/bugcrowd_data.json): raw [Bugcrowd](https://bugcrowd.com) data.
+- [hackerone_data.json](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/hackerone_data.json): raw [Hackerone](https://hackerone.com) data.
+- [federacy_data.json](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/federacy_data.json): raw [Federacy](https://federacy.com) data.
+<!-- - [hackenproof_data.json](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/hackenproof_data.json): raw [Hackenproof](https://hackenproof.com) data. -->
+- [intigriti_data.json](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/intigriti_data.json): raw [Intigriti](https://www.intigriti.com) data.
+- [yeswehack_data.json](https://github.com/arkadiyt/bounty-targets-data/blob/master/data/yeswehack_data.json): raw [YesWeHack](https://www.yeswehack.com/) data.
+
+### Status
+
+The last change was detected on `Friday 03/13/2026 17:30 (UTC)`. New changes (if any) are picked up every 30 minutes.
+
+### Code
+
+The code used to generate these files lives in the [bounty-targets](https://github.com/arkadiyt/bounty-targets) repo.
+
+### Getting in touch
+
+Feel free to contact me on Signal: @arkadiyt.01
+
+
+
+### File: bounty-targets-data/LICENSE.md
+
+Copyright (c) 2017 Arkadiy Tetelman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

@@ -1,0 +1,164 @@
+---
+name: smart-sub-agents
+description: Creates and routes portable subagents by harness, provider, model, and effort, with optional calibrated typed-decision routing and safety floors. Use when a task needs explicit model selection, multi-provider delegation, dynamic effort, parallel subagents, probability-based routing, or configuration for Claude Code, Codex, OpenCode, Antigravity, Gemini CLI, or lemon-code.
+---
+
+# Smart Sub-Agents
+
+Use this skill to turn a vague delegation request into a reproducible route:
+
+```yaml
+harness: opencode
+provider: deepseek
+model: deepseek-v4-flash
+effort: max
+```
+
+The source of truth is [`references/provider-matrix.json`](references/provider-matrix.json). It separates two concepts that are often incorrectly mixed:
+
+- **Harness**: the tool that owns the subagent (`claude-code`, `codex`, `opencode`, `antigravity`, `gemini-cli`, or `lemon-code`).
+- **Provider/model**: the model service and model ID used by that harness (`anthropic/claude-opus-5`, `openai/gpt-5.6`, and so on).
+
+It also separates the optional **decision scorer** from the executor. A scorer may choose a route, but it never appears as a worker model because it does not generate the task result. Read [`references/decision-routing.md`](references/decision-routing.md) before enabling probability-based routing.
+
+## Routing protocol
+
+1. Select the harness that can actually execute the work. Use `opencode` when the requested provider is not native to the current harness.
+2. Select a profile: `budget`, `balanced`, `quality`, or `research`.
+3. Apply explicit `provider`, `model`, and `effort` overrides. Explicit values win over profile defaults.
+4. Validate the exact model ID against the matrix. Never silently replace an unavailable model with a similarly named one.
+5. Map the normalized effort to the provider's native control. If the provider only supports a boolean thinking switch or model-specific variants, record that limitation in the route.
+6. Emit one `ROUTE-MAP v1` block and, when requested, render the harness-specific subagent configuration.
+
+### Fast decision path
+
+Use the cheapest path whose overhead can pay for itself:
+
+1. Bypass model routing for deterministic local commands and tiny tasks; execute them locally.
+2. Use the static `taskRouting` table by default. It adds no network hop and remains the fail-open path.
+3. Use a learned decision router only for substantive turns where model or effort choice can materially change cost, latency, or quality.
+4. Apply an explicit user route override when present; explicit values win over scorer preferences.
+5. Otherwise, if confidence is below the calibrated gate, the router times out, or its output is invalid, use the configured balanced fallback. Do not jump to the most expensive model merely because the router is uncertain.
+6. Apply `decisionRouting.safetyFloor` as the final monotonic clamp. It may raise, but never lower, the effective route.
+7. Reassess at phase boundaries (plan, implementation, verification), not after every tool call. De-escalate when the remaining work becomes mechanical, subject to the safety floor.
+
+Ask independent typed questions together: tier, effort, task risk, tool complexity, and whether parallel reasoning will amortize startup cost. Reuse the shared task state across those questions when the scorer supports prefix caching or parallel suffixes. Treat option probabilities as routing signals, not proof of correctness. Start in `shadow`, measure against validation outcomes, calibrate per workload, then move to `advisory` or `enforce`. Never copy the example confidence gate into production without local calibration.
+
+Recommended profile defaults:
+
+| Profile | Effort | Use for |
+| --- | --- | --- |
+| `budget` | `low` | Formatting, bounded checks, repetitive work |
+| `balanced` | `medium` | Normal implementation and integration |
+| `quality` | `high` | Architecture, security, difficult debugging |
+| `research` | `max` | Long-horizon research or adversarial synthesis |
+
+`max` is a quality/cost choice, not a promise that every provider accepts a literal `max` request parameter. The renderer preserves the requested level and exposes the effective native mapping.
+
+## Normalizing the examples
+
+The following common inputs are normalized only when the catalog has an explicit alias:
+
+| Input | Canonical route |
+| --- | --- |
+| `openai / gpt-5.6 lunce` | `openai / gpt-5.6-luna` |
+| `opencode / kimi k3` | `moonshotai / kimi-k2` (Kimi K3 is not in the verified matrix) |
+| `anthropic / Opus %` | `anthropic / claude-opus-5` |
+| `deepseek api / deepseek v4 flash` | `deepseek / deepseek-v4-flash` |
+| `google / Gemini 3.5 Pro` | `google / gemini-2.5-pro` or `google / gemini-3.1-pro-preview` |
+
+These are corrections, not fuzzy guesses. If an alias is not listed, ask for the exact provider/model ID or run the catalog validator before routing.
+
+## Harness configuration
+
+Use the local renderer to generate artifacts without mutating global configuration:
+
+```bash
+python3 plugins/smart-sub-agents/scripts/validate_catalog.py
+python3 plugins/smart-sub-agents/scripts/render_agents.py \
+  --harness opencode \
+  --provider deepseek \
+  --model deepseek-v4-flash \
+  --effort max \
+  --output-dir .smart-sub-agents/generated
+```
+
+To create one route for every supported harness using a profile:
+
+```bash
+python3 plugins/smart-sub-agents/scripts/render_agents.py \
+  --harness all --profile balanced --output-dir .smart-sub-agents/generated
+```
+
+The renderer is deliberately non-destructive. Inspect generated files before copying them to `~/.claude/agents/`, `~/.codex/agents/`, `~/.config/opencode/agents/`, or another harness-specific location. API keys are never read or written by this skill.
+
+Native behavior covered by the renderer:
+
+- **Claude Code**: Markdown subagents with `model` and `effort`; native provider is Anthropic.
+- **Codex**: TOML custom agents with `model` and `model_reasoning_effort`; native provider is OpenAI.
+- **OpenCode**: `opencode.json` agent entries using `provider/model`; it can route across the matrix, but effort options remain model/provider-specific.
+- **Antigravity/Gemini CLI**: JSON handoff manifests because the managed agent surface does not expose the same local custom-agent file contract.
+- **lemon-code**: JSON route manifest for its provider-agnostic dispatcher.
+
+## Contract returned to smart-dispatch
+
+When this skill is combined with `smart-dispatch`, return exactly one route contract for the selected subagent:
+
+```text
+ROUTE-MAP v1
+harness: opencode
+provider: deepseek
+model: deepseek-v4-flash
+effort: max
+native_effort: thinking=true
+provider_fallback: openrouter/auto
+router: heuristic|typed-scorer
+router_mode: heuristic|shadow|advisory|enforce
+router_confidence: 0.00-1.00|unavailable
+router_fallback: ask|static-catalog|balanced|none
+reason: quality-first coding route with DeepSeek V4 Flash thinking mode
+```
+
+Do not add secrets, invent provider support, or fall back after an explicit cancellation. `provider_fallback` is only a declared route for a provider outage or unavailable model; `router_fallback` explains a decision-router failure or uncertainty. Both must be visible to the caller.
+
+## Worker matrix (named agents)
+
+Install the full tier × effort worker grid into local harnesses:
+
+```bash
+python3 plugins/smart-sub-agents/scripts/validate_catalog.py
+python3 plugins/smart-sub-agents/scripts/install_worker_matrix.py
+python3 plugins/smart-sub-agents/scripts/install_worker_matrix.py --validate-only
+```
+
+Naming contract:
+
+| Harness | Pattern | Example |
+| --- | --- | --- |
+| Claude (canonical) | `{haiku\|sonnet\|opus}_worker_{effort}` | `sonnet_worker_high` |
+| Codex | `{luna\|terra\|sol}_worker_{effort}` | `luna_worker_max` |
+| OpenCode Zen | `zen_{family}_worker_{effort}` | `zen_sol_worker_max` |
+| OpenCode Go | `go_{family}_worker_{effort}` | `go_luna_worker_high` |
+| MiniMax Token Plan | `mm_{fast\|m3\|flash}_worker_{effort}` (OpenCode `mode: all` + lean tools; Claude/Agy bridges relay via `mm-run`) | `mm_flash_worker_high` |
+| Agy | symlink → Claude workers + Codex-named aliases | `opus_worker_high` → `~/.claude/agents/...` |
+
+Claude bodies are canonical. Codex gets native TOML (`model` + `model_reasoning_effort`). OpenCode gets adapted markdown (`mode/permission/model`). Agy symlinks Claude.
+
+## Sync models/providers (monthly/weekly drift)
+
+```bash
+# Dry report against live `opencode models`
+python3 plugins/smart-sub-agents/scripts/sync_provider_matrix.py
+
+# Persist discovered/stale flags + bump updated date
+python3 plugins/smart-sub-agents/scripts/sync_provider_matrix.py --write
+
+# Reinstall workers after promoting discovered models
+python3 plugins/smart-sub-agents/scripts/install_worker_matrix.py
+```
+
+Discovered models stay `status: discovered` until a human promotes them into `workerMatrix` / profiles. Never auto-delete.
+
+## Refresh policy
+
+The matrix is a curated snapshot, not a live provider API. Check the linked official documentation before production rollout and update `updated` plus the affected source URL when a model is added, deprecated, renamed, or changes effort semantics. Run the validator and tests after every matrix change. Prefer `sync_provider_matrix.py` for OpenCode Zen/Go drift.

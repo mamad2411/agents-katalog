@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-clorem-fine-kimi-code-skill-adapters/cybersec-auditing-azure-active-directory-configuration/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Auditing Microsoft Entra ID (Azure Active Directory) configuration to identify risky authentication policies, overly permissive role assignments, stale accounts, conditional access gaps, and guest use

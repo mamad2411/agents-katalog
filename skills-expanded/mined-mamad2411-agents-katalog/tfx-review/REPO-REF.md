@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-tellang-triflux-tfx-review/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 코드 리뷰가 필요할 때 사용한다. 'review', '리뷰해줘', '코드 봐줘', '이거 괜찮아?', 'PR 리뷰', '변경사항 확인', '꼼꼼히 리뷰', 'deep review', '심층 리뷰', '보안까지 리뷰', '다각도 리뷰', '코드 검증', '전방위 검증' 같은 요청에 반드시 사용."

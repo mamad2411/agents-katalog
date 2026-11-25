@@ -1,0 +1,114 @@
+---
+name: einreichung-papierform-sozialgericht-mit-abschriften
+description: "Wenn es um Klage und Schriftsatz per Post beim SG einreichen in selbstvertreter-sozialgericht geht: erstellt den passenden Entwurf aus Sachverhalt, Norm, Beweis und Antrag; liefert einen verwertbaren Entwurf mit Anträgen, Begründung und Anlagenlogik."
+---
+
+# Klage und Schriftsatz per Post beim SG einreichen
+
+
+## Arbeitsweg
+
+- Rolle, Ziel und gewünschtes Arbeitsprodukt klären: Wer handelt, welche Entscheidung steht an, welche Frist läuft und welcher Output wird gebraucht?
+- Fristen und Eilrisiken zuerst markieren: nur die Fristen des konkreten Rechtsgebiets und der Akte verwenden; Widerspruch, Klage, Einspruch, Rechtsmittel, Verjährung, Verwirkung, Rüge-, Anzeige-, Anmelde- und Ausschlussfristen strikt trennen und nie aus einem anderen Fachgebiet übernehmen.
+- Tragende Normen verifizieren: SGG §§ 51, 78, 87, 90, 130a, 144, 160, 183, 193, SGB I, II, III, V, VI, IX, X — Fundstellen über gesetze-im-internet.de, dejure.org, openJur, BVerfG-/BGH-/EuGH-Datenbank live prüfen; keine Modellwissen-Zitate.
+- Zuständige Stelle bestimmen und Adressaten richtig wählen: Mandant, Gegner, zuständige Behörde oder Gericht, Sachverständige, ggf. EU-/internationale Stelle (siehe Skill-Detail).
+- Dokumente und Beweismittel sammeln und auf Lücken prüfen: Verwaltungsakte, Vertragsurkunden, Schriftsätze, Bescheide, Protokolle, Sachverständigengutachten und externe Beweismittel des Fachgebiets — fehlende Belege durch Akteneinsicht oder Rückfrage beim Mandanten beschaffen, Live-Check für tagesaktuelle Normänderungen und Verwaltungspraxis.
+
+**Fokus:** Klage und Schriftsatz per Post beim SG einreichen. Abschriften für Gegner und Akte. Adressierung Einschreiben Empfangsbestätigung. Praktischer Versandweg für Buerger.
+
+### Klage per Post einreichen — mit Abschriften
+
+## Fachlicher Kern — Sozialrecht und Sozialversicherungsrecht
+- **Problemfokus dieses Skills:** Bleibe beim konkreten Titel `Klage per Post einreichen — mit Abschriften` und löse die dort angelegte Fachfrage; arbeite mit konkreten Tatbestandsmerkmalen, Beweisfragen und dem unmittelbar benötigten Arbeitsprodukt. Routingfragen bleiben Hilfsmittel, wenn Frist, Zuständigkeit oder Verfahrensart offen sind.
+- **Normenradar:** SGB I, IV § 7 und § 7a, V, VI, VII, IX, X §§ 20, 24, 44, 45, 48, 50, 60 ff.; SGB II, XII; SGG §§ 54, 86a, 86b, 87, 90, 103, 109, 144, 151, 160; Pflegebegutachtung/MD-Richtlinien live prüfen.
+- **Verifizierte Anker:** BSG, Urteil vom 05.11.2024 - B 12 BA 3/23 R (Lehrer/Dozenten: Status immer einzelfallabhängig); BSG, Urteil vom 23.04.2024 - B 12 BA 9/22 R (Pilot/Freelancer, Eingliederung und unternehmerisches Risiko); BSG, Urteil vom 01.02.2022 - B 12 KR 37/19 R und Urteil vom 20.02.2024 - B 12 KR 1/22 R (GmbH-Geschäftsführer, Sperrminorität/mittelbare Beteiligung).
+- **Arbeitsmodus:** Immer Verwaltungsakt, Frist, Widerspruch/Klage/eA, Amtsermittlung, medizinische Tatsachen, Mitwirkungspflichten und Beweisgutachten trennen; bei Status § 7 SGB IV: tatsächliche Eingliederung, Weisung, Rechtsmacht und Unternehmerrisiko abgleichen.
+- **Outputpflicht:** Bescheidanalyse in einfacher Sprache, Widerspruch, eA-Antrag, Statusmatrix, medizinische Beweisfragen, Belegliste, Fristenplan oder SG-Schriftsatz.
+- **Fehlerbremse:** Tragende Normen/Entscheidungen live oder aus der Akte verifizieren; Rechtsprechung nur mit Gericht, Entscheidungsform, Datum, Aktenzeichen und frei prüfbarer Quelle. Keine BeckRS-, juris-, Kommentar- oder Aufsatz-Blindzitate aus Modellwissen.
+
+## Worum geht es?
+
+Auch ohne Internet und Fax können Sie klagen. Per Post. Dabei müssen Sie aber an Abschriften denken, damit das Gericht den Schriftsatz auch der Gegenseite schicken kann.
+
+## In einfacher Sprache
+
+Sie können Ihre Klage per Brief schicken. Das ist immer noch ok. Wichtig: das Gericht braucht den Brief mehrfach. Einmal für sich, einmal für den Gegner.
+
+## Wann brauchen Sie diese Skill?
+
+- Sie wollen klassisch per Post einreichen.
+- Sie haben kein MJP-Konto.
+- Sie wollen einen Brief, den Sie anfassen können.
+
+## Fachbegriffe (kurz erklaert)
+
+- **Abschrift**: Kopie eines Schriftsatzes für die Gegenseite.
+- **Original**: Mit Unterschrift versehenes Exemplar für das Gericht.
+- **Einschreiben mit Rueckschein**: Brief, Empfaenger unterschreibt; Sie bekommen Beleg.
+- **Einwurf-Einschreiben**: Brief, Auslieferung wird dokumentiert.
+
+## Rechtsgrundlagen
+
+- **§ 90 SGG** — Klage schriftlich.
+- **§ 92 SGG** — Inhalt der Klage.
+- **§ 93 SGG** — Abschriften.
+- **§ 65a SGG** — Elektronische Alternative (siehe MJP).
+
+## Schritt-für-Schritt-Anleitung
+
+### Schritt 1 — Schriftsatz fertigstellen
+
+Erstellen Sie die Klage am Computer oder schreiben sie sauber per Hand. Unterzeichnen Sie das Original.
+
+### Schritt 2 — Abschriften anfertigen
+
+Pro Beklagter eine Abschrift, plus eine für das Gericht (Akte), plus eine für Sie:
+
+- Bei 1 beklagter Behörde: 3 Exemplare (1 Original + 1 für Behörde + 1 für Sie)
+- Bei 2 beklagten Behörden: 4 Exemplare
+
+Das Gericht braucht: 1 mit Originalunterschrift + Abschriften zur Zustellung an die Behörde(n).
+
+Sie machen einfach Kopien (kein Notar oder so noetig). Auf den Abschriften "Abschrift" oben drueber schreiben.
+
+### Schritt 3 — Anlagen ebenfalls in Abschrift
+
+Alle Anlagen einmal für das Gericht (Original-Kopie reicht) und einmal je Beklagter.
+
+### Schritt 4 — Versand vorbereiten
+
+- Adresse aus www.sozialgerichtsbarkeit.de
+- Umschlag entsprechend groß
+- Fragen Sie in der Post nach dem Porto für Maxibrief / Paketchen, je nach Umfang.
+
+### Schritt 5 — Versandweg waehlen
+
+- **Einschreiben mit Rueckschein**: sichers, ca. 5,50 EUR
+- **Einwurf-Einschreiben**: ca. 4 EUR
+- **Persoenliche Abgabe** mit Empfangsstempel: gratis, sicherster Weg
+- **Normaler Brief**: vermeiden, kein Beweis
+
+### Schritt 6 — Quittung aufheben
+
+- Einlieferungsschein (mit Sendungsnummer)
+- Rueckschein (wenn er zurueckkommt)
+- Empfangsstempel auf Ihrer Kopie
+
+Aufheben min. 5 Jahre.
+
+## Worauf Sie besonders achten müssen
+
+- **Original mit Unterschrift** ist Pflicht. Eine Kopie der Unterschrift reicht meist nicht.
+- **Abschriften nicht vergessen**: ohne Abschriften kann das Gericht nicht zustellen — und fragt erst nach, was Zeit kostet.
+- **Frist sichern**: Bei letzter Tag Versand: prüfen, ob Briefkasten-Leerung am selben Tag erfolgt.
+
+## Typische Fehler
+
+- Nur ein Exemplar geschickt → Gericht muss nachfordern
+- Keine Unterschrift auf dem Original → unzulaessig
+- Falsche Adresse (LSG statt SG) → Verweisung; Zeitverlust
+- Normaler Brief am letzten Tag → riskant
+
+## Quellen und Aktualitaet
+
+Stand: 05/2026. § 93 SGG zu Abschriften. Postpreise variieren, aktuell prüfen.

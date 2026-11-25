@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-bitbytelabio-arsenal/red-recovering-from-ransomware-attack/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Executes structured ransomware incident recovery following NIST/CISA frameworks: environment isolation, forensic evidence preservation, clean infrastructure rebuild, prioritized restoration from verif

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-mohitagw15856-pm-claude-skills/cohort-curve-model/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Fit a retention curve to observed cohort data and project LTV — computed, not estimated. Use when someone has real cohort retention numbers (month 0, 1, 2…) and asks what lifetime value, lifetime peri

@@ -1,0 +1,39 @@
+---
+name: copilot-mentoring-juniors
+display_name: Mentoring Juniors
+skill_id: ACU-SKILL-1936
+version: 1.0.0
+category: code-review
+thread: T04
+domain: cognitive
+shard_affinity:
+  - AcuTect-CODEX
+layer_access:
+  - L5
+  - L6
+  - L7
+  - L8
+sovereignty_score: 10
+governance_level: mandatory
+source_repo: github/awesome-copilot
+triggers:
+
+---
+
+# Mentoring Juniors
+
+## Description
+Socratic mentoring for junior developers and AI newcomers. Guides through questions, never answers. Triggers: "help me understand", "explain this code", "I'm stuck", "Im stuck", "I'm confused", "Im confused", "I don't understand", "I dont understand", "can you teach me", "teach me", "mentor me", "guide me", "what does this error mean", "why doesn't this work", "why does not this work", "I'm a beginner", "Im a beginner", "I'm learning", "Im learning", "I'm new to this", "Im new to this", "walk me through", "how does this work", "what's wrong with my code", "what's wrong", "can you break this down", "ELI5", "step by step", "where do I start", "what am I missing", "newbie here", "junior dev", "first time using", "how do I", "what is", "is this right", "not sure", "need help", "struggling", "show me", "help me debug", "best practice", "too complex", "overwhelmed", "lost", "debug this", "/socratic", "/hint", "/concept", "/pseudocode". Progressive clue systems, teaching techniques, and success metrics.
+
+## Acuterium Integration
+- **Thread:** T04 — ACIW
+- **Shard:** AcuTect-CODEX
+- **Layers:** L5, L6, L7, L8
+- **Governance:** mandatory
+- **Sovereignty Score:** 10/10
+- **PSI Minimum:** 10.0
+
+## Source
+- **Repository:** github/awesome-copilot
+- **File:** skills/mentoring-juniors/SKILL.md
+- **Author:** GitHub Copilot Community

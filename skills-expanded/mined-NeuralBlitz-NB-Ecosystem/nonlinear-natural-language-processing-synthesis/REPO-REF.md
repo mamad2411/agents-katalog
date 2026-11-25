@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/nonlinear-natural-language-processing-synthesis/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Nonlinear Natural Language Processing Synthesis Skill

@@ -1,0 +1,71 @@
+---
+name: setup
+description: Set up and check Codex context capture into Memgraph.
+---
+
+# Memgraph Context Graph
+
+Use this skill when the user asks whether Codex activity is being captured, how Memgraph Context Graph hooks work, or why graph facts are missing.
+
+## Model
+
+Codex Plugin -> Codex Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph.
+
+The plugin only installs runtime hook wiring. It must not assign graph meaning. Graph connectors decide which normalized events matter.
+
+## Checks
+
+For first-time setup, for example when the session started with a note that the `memgraph-context-graph` tool isn't installed, run the plugin bootstrap once. It installs the CLI with uv and runs `memgraph-context-graph setup codex --no-tui`, which finds or starts Memgraph (in Docker by default), sets the user's identity and checks the hooks. Ask the user first: it installs software and may start a container. The script is `scripts/bootstrap.sh` in this plugin's folder, two levels above this skill's folder:
+
+```bash
+bash <this plugin's folder>/scripts/bootstrap.sh
+```
+
+If setup reports a failure, show the user its "To fix" line; it is the exact command to run next.
+
+Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
+
+```bash
+memgraph-context-graph doctor --runtime codex
+```
+
+If `doctor` is not available, use the strict hook smoke:
+
+```bash
+printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
+  | memgraph-context-graph hook run codex --strict
+```
+
+Do not check `skills_graph` with system `python3`; `memgraph-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.
+
+## Configuration
+
+Connection settings live in `~/.config/context-graph/config.toml`. Hook subprocesses read from this file (not environment variables).
+
+setup writes `memgraph.url` and `identity.user_id`; other values (credentials, keys) are set with `config set`.
+
+View current config:
+
+```bash
+memgraph-context-graph config show
+```
+
+Set values:
+
+```bash
+memgraph-context-graph config set identity.user_id "username"
+memgraph-context-graph config set memgraph.url "neo4j://coordinator:7687"
+memgraph-context-graph config set memgraph.user "username"
+memgraph-context-graph config set memgraph.password
+memgraph-context-graph config set memgraph.database "dbname"
+```
+
+For HA clusters, use the `neo4j://` scheme pointing to any coordinator. The driver handles routing and failover automatically:
+
+```bash
+memgraph-context-graph config set memgraph.url "neo4j://memgraph-coordinator-1:7687"
+```
+
+Supported keys: `identity.user_id`, `memgraph.url`, `memgraph.user`, `memgraph.password`, `memgraph.database`.
+
+If skill usage is missing, inspect whether the session actually read or invoked a skill. Search/list results can be surfacing, not proven usage.

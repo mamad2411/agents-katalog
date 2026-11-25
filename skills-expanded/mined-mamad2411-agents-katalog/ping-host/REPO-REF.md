@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-keyargo-custodian-kernel/ping-host/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Send ICMP pings to a host and report RTT and packet loss"

@@ -1,0 +1,1126 @@
+---
+name: effect-schema-composition
+description: Master Effect Schema composition patterns including Schema.decodeTo, transformations, filters, and validation. Use this skill when working with complex schema compositions, multi-step transformations, or when you need to validate and transform data through multiple stages.
+---
+
+# Schema Composition Skill
+
+Expert guidance for composing, transforming, and validating data with Effect Schema (v4).
+
+## Effect Source Reference
+
+Baseline: **Effect 4.1.0**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read `git show effect@4.1.0:<path>`; main may be newer. Check the consuming
+project's installed version before using these contracts.
+
+Reference this for:
+
+- Full Schema API: `packages/effect/SCHEMA.md`
+- Schema source: `packages/effect/src/Schema.ts`
+- SchemaTransformation source: `packages/effect/src/SchemaTransformation.ts`
+- Migration guide: `MIGRATION.md`
+- Effect source: `packages/effect/src/`
+
+## Core Concepts
+
+### The Schema Type
+
+Use `Schema.Schema<Type>` when only the decoded type matters, or
+`Schema.Codec<Type, Encoded, DecodingServices, EncodingServices>` to retain the
+full codec contract:
+
+- **Type**: The validated, decoded output type (what you get after successful decoding)
+- **Encoded**: The raw input type (what you provide for decoding)
+- **DecodingServices**: Services needed to decode (default `never`)
+- **EncodingServices**: Services needed to encode (default `never`)
+
+**Example:**
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+// Schema.Codec<number, string, never, never>
+const NumberFromString = Schema.NumberFromString;
+```
+
+### Decoding vs Encoding
+
+- **Decoding**: Transform `Encoded` → `Type` (e.g., string "123" → number 123)
+- **Encoding**: Transform `Type` → `Encoded` (e.g., number 123 → string "123")
+
+Effect Schema follows "parse, don't validate" — schemas transform data into the desired format, not just check validity.
+
+## Schema.decodeTo — Chaining Transformations
+
+Use `Schema.decodeTo` to chain schemas with **different types** at each stage. It connects the output type of one schema to the input type of another. This replaces the v3 `Schema.compose`.
+
+**When to Use:**
+
+- Multi-step transformations where each stage changes the type
+- Connecting parsing and validation steps
+- Building pipelines from `Encoded → Intermediate → Type`
+
+**Example — Schema composition (no transformation):**
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+// Convert meters → kilometers → miles via schema composition
+const KilometersFromMeters = Schema.Finite.pipe(
+	Schema.decode(
+		SchemaTransformation.transform({
+			decode: (meters) => meters / 1000,
+			encode: (kilometers) => kilometers * 1000
+		})
+	)
+);
+
+const MilesFromKilometers = Schema.Finite.pipe(
+	Schema.decode(
+		SchemaTransformation.transform({
+			decode: (kilometers) => kilometers * 0.621371,
+			encode: (miles) => miles / 0.621371
+		})
+	)
+);
+
+// Compose the two schemas — no explicit transformation needed
+const MilesFromMeters = KilometersFromMeters.pipe(
+	Schema.decodeTo(MilesFromKilometers)
+);
+```
+
+**Example — Boolean from String via Literal:**
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+const BooleanFromString = Schema.Literals(['on', 'off']).pipe(
+	Schema.decodeTo(
+		Schema.Boolean,
+		SchemaTransformation.transform({
+			decode: (literal) => literal === 'on',
+			encode: (bool) => (bool ? 'on' : 'off')
+		})
+	)
+);
+```
+
+### Schema.pipe with .check() — Sequential Refinements
+
+Use `.check()` to apply **filters and refinements** to the same type. It doesn't change the type, just adds validation constraints.
+
+**When to Use:**
+
+- Adding validation rules to an existing schema
+- Chaining multiple filters on the same type
+- Refining without transformation
+
+**Example — Number Validation:**
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const PositiveInt = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThan(0)
+);
+
+// Type: Schema.Codec<number, number, never, never>
+// Both Type and Encoded are `number`
+```
+
+**Example — String Validation:**
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const ValidEmail = Schema.String.check(
+	Schema.isTrimmed(),
+	Schema.isLowercased(),
+	Schema.isMinLength(5),
+	Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+);
+```
+
+### Key Differences
+
+| Aspect          | Schema.decodeTo            | .check()                   |
+| --------------- | -------------------------- | -------------------------- |
+| **Purpose**     | Chain transformations      | Apply refinements          |
+| **Type Change** | Changes type at each stage | Type stays the same        |
+| **Example**     | `string → number`          | `number → positive number` |
+| **Use Case**    | Multi-step parsing         | Validation constraints     |
+
+## Built-in Filters (Checks)
+
+Filters add validation constraints without changing the schema's type. Apply them with `.check()`.
+
+### String Filters
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+// Length constraints
+Schema.String.check(Schema.isMaxLength(5));
+Schema.String.check(Schema.isMinLength(5));
+Schema.String.check(Schema.isNonEmpty()); // non-empty string
+Schema.String.check(Schema.isBetweenLength(2, 4));
+
+// Pattern matching
+Schema.String.check(Schema.isPattern(/^[a-z]+$/));
+Schema.String.check(Schema.isStartingWith('prefix'));
+Schema.String.check(Schema.isEndingWith('suffix'));
+Schema.String.check(Schema.isIncluding('substring'));
+
+// Case and whitespace validation
+Schema.String.check(Schema.isTrimmed()); // No leading/trailing whitespace
+Schema.String.check(Schema.isLowercased()); // All lowercase
+Schema.String.check(Schema.isUppercased()); // All uppercase
+Schema.String.check(Schema.isCapitalized()); // First letter capitalized
+
+// String formats
+Schema.String.check(Schema.isUUID());
+Schema.String.check(Schema.isULID());
+Schema.String.check(Schema.isBase64());
+Schema.String.check(Schema.isBase64Url());
+```
+
+For string length, choose the unit deliberately: `isMinLength`, `isMaxLength`,
+and `isBetweenLength` count UTF-16 code units; `isMinCodePoints`,
+`isMaxCodePoints`, and `isBetweenCodePoints` count Unicode code points, not
+grapheme clusters. The latter match JSON Schema length semantics and guide
+native Arbitrary generation. Cardinality bounds must be finite.
+
+JSON Schema export can approximate runtime checks. Use the Effect decoder as
+the final authority; see `effect-schema-v4` for exact/approximate check exporters,
+Unicode patterns, and `oneOf` fallback semantics.
+
+### Number Filters
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+// Range constraints
+Schema.Number.check(Schema.isGreaterThan(5));
+Schema.Number.check(Schema.isGreaterThanOrEqualTo(5));
+Schema.Number.check(Schema.isLessThan(5));
+Schema.Number.check(Schema.isLessThanOrEqualTo(5));
+Schema.Number.check(Schema.isBetween({ minimum: -2, maximum: 2 }));
+
+// Type constraints
+Schema.Number.check(Schema.isInt()); // integer
+Schema.Number.check(Schema.isInt32()); // 32-bit integer
+Schema.Number.check(Schema.isFinite()); // not Infinity/NaN
+Schema.Number.check(Schema.isMultipleOf(5));
+Schema.Natural; // canonical non-negative safe integer
+
+// Sign constraints (use comparison filters)
+Schema.Number.check(Schema.isGreaterThan(0)); // positive (> 0)
+Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)); // non-negative (>= 0)
+Schema.Number.check(Schema.isLessThan(0)); // negative (< 0)
+Schema.Number.check(Schema.isLessThanOrEqualTo(0)); // non-positive (<= 0)
+```
+
+Prefer `Schema.Natural` over a hand-built combination of integer, safe-integer, and non-negative checks when that is the domain invariant.
+
+### Array Filters
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+Schema.Array(Schema.Number).check(Schema.isMinLength(2));
+Schema.Array(Schema.Number).check(Schema.isMaxLength(5));
+Schema.Array(Schema.Number).check(Schema.isBetweenLength(2, 5));
+```
+
+### Combining Multiple Filters
+
+Pass multiple filters to a single `.check()` call:
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const schema = Schema.String.check(Schema.isMinLength(3), Schema.isTrimmed());
+```
+
+With `{ errors: "all" }`, all filters are evaluated and multiple issues can be reported at once.
+
+## Custom Filters
+
+Define custom validation logic using `Schema.makeFilter()`:
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const LongString = Schema.String.check(
+	Schema.makeFilter(
+		(s) => s.length >= 10 || 'a string at least 10 characters long'
+	)
+);
+```
+
+### Filter Return Types
+
+The filter predicate can return:
+
+| Return Type                            | Meaning                                      |
+| -------------------------------------- | -------------------------------------------- |
+| `true` or `undefined`                  | Validation passes                            |
+| `false`                                | Validation fails (no error message)          |
+| `string`                               | Validation fails with error message          |
+| `SchemaIssue.Issue`                    | Validation fails with a structured issue     |
+| `{ path, issue }`                      | Validation fails at a nested path            |
+| `ReadonlyArray<Schema.FilterIssue>`    | Reports multiple filter issues together      |
+
+### Filter Annotations
+
+Add metadata to filters for better error messages:
+
+A filter's `message` annotation takes precedence over its returned issue
+message (even when the annotation is empty). Nested issue paths are retained
+by both default and Standard Schema formatters.
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const LongString = Schema.String.check(
+	Schema.makeFilter(
+		(s) => s.length >= 10 || 'a string at least 10 characters long',
+		{
+			title: 'LongString',
+			description: 'A string with at least 10 characters'
+		}
+	)
+);
+```
+
+### Filter Groups
+
+Group filters into a reusable unit with `Schema.makeFilterGroup`:
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const isInt32 = Schema.makeFilterGroup(
+	[
+		Schema.isInt(),
+		Schema.isBetween({ minimum: -2147483648, maximum: 2147483647 })
+	],
+	{
+		title: 'isInt32',
+		description: 'a 32-bit integer'
+	}
+);
+
+Schema.Number.check(isInt32);
+```
+
+### Error Paths for Form Validation
+
+Associate errors with specific fields using `path` in `makeFilter`:
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const Password = Schema.Trimmed.check(Schema.isMinLength(2));
+
+const MyForm = Schema.Struct({
+	password: Password,
+	confirm_password: Password
+}).check(
+	Schema.makeFilter((input) => {
+		if (input.password !== input.confirm_password) {
+			return {
+				path: ['confirm_password'],
+				issue: 'Passwords do not match'
+			};
+		}
+	})
+);
+```
+
+### Effectful Filters
+
+Use `SchemaGetter.checkEffect` for async validation inside a `Schema.decode` transformation:
+
+<!-- typecheck -->
+```typescript
+import {
+	Effect,
+	Option,
+	Result,
+	Schema,
+	SchemaGetter,
+	SchemaIssue
+} from 'effect';
+
+async function validateUsername(username: string) {
+	return Promise.resolve(username === 'gcanti');
+}
+
+const ValidUsername = Schema.String.pipe(
+	Schema.decode({
+		decode: SchemaGetter.checkEffect((username, options) =>
+			Effect.promise(() =>
+				validateUsername(username).then((valid) =>
+					valid
+						? undefined
+						: new SchemaIssue.InvalidValue(
+								{ message: 'Invalid username' }, username, options
+							)
+				)
+			)
+		),
+		encode: SchemaGetter.passthrough()
+	})
+);
+```
+
+## Built-in Transformations
+
+Transformations are first-class reusable objects in v4. Apply them with `Schema.decode` (same source/target type) or `Schema.decodeTo` (different types).
+
+### JSON String Transformations
+
+`Schema.fromJsonString(schema, options)` accepts a `JSON.parse` `reviver` for decoding and `replacer` / `space` options for encoding. Because a reviver may produce arbitrary values, the supplied schema remains responsible for validating the revived result.
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const PayloadJson = Schema.fromJsonString(
+	Schema.Struct({ value: Schema.String }),
+	{
+		reviver: (key, value) => key === 'value' ? 'revived' : value,
+		space: 2
+	}
+);
+```
+
+### String Transformations
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+// Whitespace and case transformations (applied with Schema.decode)
+Schema.String.pipe(Schema.decode(SchemaTransformation.trim()));
+Schema.String.pipe(Schema.decode(SchemaTransformation.toLowerCase()));
+Schema.String.pipe(Schema.decode(SchemaTransformation.toUpperCase()));
+
+// Capitalize / Uncapitalize require decodeTo with a checked target
+Schema.String.pipe(
+	Schema.decodeTo(
+		Schema.String.check(Schema.isCapitalized()),
+		SchemaTransformation.capitalize()
+	)
+);
+Schema.String.pipe(
+	Schema.decodeTo(
+		Schema.String.check(Schema.isLowercased()),
+		SchemaTransformation.toLowerCase()
+	)
+);
+
+// Pre-built transformation schemas
+Schema.Trimmed; // checks an already-trimmed string; does not trim input
+Schema.NonEmptyString; // checks a non-empty string
+```
+
+### Number Transformations
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+// Parse numbers from strings (built-in)
+Schema.NumberFromString; // "123" → 123
+Schema.FiniteFromString; // "123" → 123 (finite only)
+
+// Custom inline
+Schema.Finite.pipe(
+	Schema.decode(
+		SchemaTransformation.transform({
+			decode: (meters) => meters / 1000,
+			encode: (km) => km * 1000
+		})
+	)
+);
+```
+
+### Duration Transformations
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+// Built-in duration parsing, including "Infinity" and "-Infinity"
+Schema.DurationFromString; // "1 second" → Duration.Duration
+Schema.DurationFromIsoString; // "PT1S" → Duration.Duration
+
+const DurationFromString = Schema.String.pipe(
+	Schema.decodeTo(Schema.Duration, SchemaTransformation.durationFromString)
+);
+```
+
+`Duration.fromIso` and `Duration.formatIso` return `Option` values for exact
+ISO 8601 durations: weeks, days, hours, minutes, and seconds. Years and months
+are rejected because their length varies. Use `Schema.DurationFromIsoString`
+at a decoding boundary; `Duration.toMicros` converts a duration to microseconds.
+
+### Split (manual implementation)
+
+`Schema.split` was removed in v4. Implement it manually:
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+function split(separator: string) {
+	return Schema.String.pipe(
+		Schema.decodeTo(
+			Schema.Array(Schema.String),
+			SchemaTransformation.transform({
+				decode: (s): ReadonlyArray<string> => s.split(separator),
+				encode: (as) => as.join(separator)
+			})
+		)
+	);
+}
+```
+
+## Custom Transformations
+
+### Schema-derived binary boundaries
+
+Use `SchemaBinary.toCodec(schema)` from `effect/encoding` for a compact
+`Uint8Array` representation. It derives the wire layout from the schema's
+**encoded side**, preserving transformations, checks, and decoding/encoding
+services. Use public Schema encode/decode adapters; `toCodecDirect` and the
+module's internal fast-path functions are not application APIs.
+
+<!-- typecheck -->
+```ts
+import { Effect } from 'effect';
+import * as Schema from 'effect/Schema';
+import { SchemaBinary } from 'effect/encoding';
+
+class Reading extends Schema.Class<Reading>('Reading')({
+	id: Schema.String,
+	value: Schema.NumberFromString
+}) {}
+
+const ReadingBinary = SchemaBinary.toCodec(Reading);
+const roundTrip = Effect.gen(function* () {
+	const bytes = yield* Schema.encodeEffect(ReadingBinary)(
+		new Reading({ id: 'sensor-1', value: 12 })
+	);
+	return yield* Schema.decodeUnknownEffect(ReadingBinary)(bytes);
+});
+```
+
+One codec call handles one complete frame. For arbitrary stream chunks, use
+`SchemaBinary.parser`, `encode` / `decode` Channels, or `duplex` (see
+`effect-stream`). Encoded bytes are arena-backed views; copy with `bytes.slice()`
+when independent ownership is required. Default mode supports compatible schema
+evolution; `{ fingerprint: true }` uses positional layouts and an 8-byte layout
+hash, requiring matching schema definitions. A fingerprint is a compatibility
+check, not authentication or encryption.
+
+The connection-scoped `encoder` / `parser` pair accepts `{ dictionary: true }`
+for repeated strings. Both peers must use the same schema/options and process
+frames in order; dictionary frames do not stand alone. This mode throws during
+construction if the binary layer cannot fully validate that schema itself.
+`parser.feed` lifts the synchronous parser into Effect; it does not make schema
+transformations asynchronous or add their services. Use codec adapters or
+`encode` / `decode` channels for async/service-dependent transformations. A parser
+is spent after failure; call `end` at EOF to detect an incomplete trailing frame.
+Use `maxFrameSize` to bound buffered frames. `SchemaBinary.fieldId` can assign
+stable IDs to fields for compatible evolution; changing established IDs is a
+wire-contract change.
+
+Use JSON codecs for JSON contracts and binary codecs only when the transport
+contract permits them. RPC selects a payload codec through `codecFor`; use
+`RpcSerialization.layerSchemaBinary()` instead of manually wrapping RPC envelopes.
+
+### SchemaTransformation.transform — Simple Transformations
+
+Use `SchemaTransformation.transform` when the transformation always succeeds:
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+const BooleanFromString = Schema.Literals(['on', 'off']).pipe(
+	Schema.decodeTo(
+		Schema.Boolean,
+		SchemaTransformation.transform({
+			decode: (literal) => literal === 'on',
+			encode: (bool) => (bool ? 'on' : 'off')
+		})
+	)
+);
+```
+
+### SchemaTransformation.transformEffect — Transformations That Can Fail
+
+Use `SchemaTransformation.transformEffect` when transformation might fail:
+
+<!-- typecheck -->
+```typescript
+import {
+	Effect,
+	Number,
+	Option,
+	Schema,
+	SchemaGetter,
+	SchemaIssue
+} from 'effect';
+
+const NumberFromString = Schema.String.pipe(
+	Schema.decodeTo(Schema.Number, {
+		decode: SchemaGetter.transformEffect((s, options) =>
+			Option.match(Number.parse(s), {
+				onNone: () =>
+					Effect.fail(
+						new SchemaIssue.InvalidValue({ expected: 'a number' }, s, options)
+					),
+				onSome: (n) => Effect.succeed(n)
+			})
+		),
+		encode: SchemaGetter.String()
+	})
+);
+```
+
+### SchemaTransformation.transformOptional — Optional Key Transforms
+
+Use `SchemaTransformation.transformOptional` for optional key transformations:
+
+<!-- typecheck -->
+```typescript
+import { Option, Schema, SchemaTransformation } from 'effect';
+
+const OptionFromNonEmptyString = Schema.optionalKey(Schema.String).pipe(
+	Schema.decodeTo(
+		Schema.Option(Schema.NonEmptyString),
+		SchemaTransformation.transformOptional({
+			decode: (oe) =>
+				Option.isSome(oe) && oe.value !== ''
+					? Option.some(Option.some(oe.value))
+					: Option.some(Option.none()),
+			encode: (ot) => Option.flatten(ot)
+		})
+	)
+);
+```
+
+## Streamlined Effect Patterns
+
+### Direct flatMap with Schema.decodeUnknownEffect
+
+`Schema.decodeUnknownEffect(schema)` returns a function that can be passed directly to `Effect.flatMap`:
+
+```typescript
+import { Effect, Schema } from 'effect';
+
+declare const self: Effect.Effect<unknown, unknown, unknown>;
+declare const schema: Schema.Codec<unknown, unknown>;
+declare const toError: (e: unknown) => unknown;
+
+// Streamlined
+self.pipe(
+	Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+	Effect.mapError(toError)
+);
+```
+
+### Extract Schema Factories
+
+Create reusable schema factories for common patterns:
+
+```typescript
+import { Effect, Schema } from 'effect';
+
+declare const toAssertionError: (e: unknown) => Error;
+
+const createGreaterThanSchema = (n: number) =>
+	Schema.Number.check(Schema.isGreaterThan(n));
+
+export const beGreaterThan =
+	(n: number) =>
+	<E, R>(self: Effect.Effect<number, E, R>) =>
+		self.pipe(
+			Effect.flatMap(
+				Schema.decodeUnknownEffect(createGreaterThanSchema(n))
+			),
+			Effect.mapError(toAssertionError)
+		);
+```
+
+## Decoding and Encoding
+
+### Constructor vs Boundary Decoder
+
+`make`, `makeOption`, and `makeEffect` return an existing class
+instance unchanged. Use `new` when a distinct instance is required. Pass parsing
+options at the adapter call, not in annotations; options apply operation-wide.
+Products support parsing concurrency but union alternatives stay sequential.
+Retain extra object fields with Record/StructWithRest; excess-property modes are
+`ignore` or `error`. See `effect-schema-v4` for inherited-field, template-literal,
+JSON Schema, Getter composition, and optional JIT/AOT contracts.
+
+Keep decoded shapes schema-first with `Schema.Class`. Choose construction and decoding APIs by input trust and failure semantics:
+
+| API | Use Case | Failure |
+| --- | --- | --- |
+| `schema.make` | Construct from typed constructor input; trusted data or abort-on-invalid paths | Throws on failed type-side checks |
+| `schema.makeEffect` | Construct from typed constructor input inside Effect | `Effect` failure with `SchemaIssue.Issue` |
+| `Schema.decodeUnknownEffect(schema)` | Default for unknown boundary input | `Effect` failure with `Schema.SchemaError` |
+| `Schema.decodeUnknownSync(schema)` | Scripts, tests, or startup paths where throwing is acceptable | Throws `Schema.SchemaError` |
+| `Schema.decodeUnknownOption(schema)` | Only when mismatch details are intentionally discarded | `Option.none()` for schema mismatches |
+| `Schema.decodeUnknownResult(schema)` | Pure code needing explicit success or failure without Effect | `Result` failure with `Schema.SchemaError` |
+
+`make` and `makeEffect` apply constructor defaults and type-side checks. They are constructors, not substitutes for decoding unknown external input.
+
+Expected rejection belongs in `SchemaIssue.Issue`. A synchronous throw inside
+a transformation, filter, middleware, or declaration callback is a defect in
+Effect/Exit/Promise adapters, not a schema mismatch. Option/Result adapters do
+not turn defects into absence or validation errors; sync boundaries may throw.
+Schema initialization/compilation errors are outside that callback boundary.
+
+### Decoding APIs
+
+| API                    | Return Type                          | Use Case                        |
+| ---------------------- | ------------------------------------ | ------------------------------- |
+| `decodeUnknownSync`    | `Type` (throws on error)             | Sync decoding, immediate error  |
+| `decodeUnknownOption`  | `Option<Type>`                       | Sync decoding, no error details |
+| `decodeUnknownResult`  | `Result<Type, Schema.SchemaError>`           | Pure, explicit success/failure  |
+| `decodeUnknownExit`    | `Exit<Type, Schema.SchemaError>`            | Sync decoding, error handling   |
+| `decodeUnknownPromise` | `Promise<Type>`                      | Async decoding                  |
+| `decodeUnknownEffect`  | `Effect<Type, Schema.SchemaError, Context>` | Full Effect-based decoding      |
+
+**Example:**
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const Person = Schema.Struct({
+	name: Schema.String,
+	age: Schema.Number
+});
+
+// Sync with error throwing
+const person1 = Schema.decodeUnknownSync(Person)({ name: 'Alice', age: 30 });
+
+// Sync with Exit
+const result = Schema.decodeUnknownExit(Person)({ name: 'Alice', age: 30 });
+
+// Effect-based (required for async schemas)
+const asyncResult = Schema.decodeUnknownEffect(Person)({
+	name: 'Alice',
+	age: 30
+});
+```
+
+### Encoding APIs
+
+| API                 | Return Type                             | Use Case                        |
+| ------------------- | --------------------------------------- | ------------------------------- |
+| `encodeSync`        | `Encoded` (throws on error)             | Sync encoding, immediate error  |
+| `encodeOption`      | `Option<Encoded>`                       | Sync encoding, no error details |
+| `encodeUnknownExit` | `Exit<Encoded, Schema.SchemaError>`            | Sync encoding, error handling   |
+| `encodePromise`     | `Promise<Encoded>`                      | Async encoding                  |
+| `encodeEffect`      | `Effect<Encoded, Schema.SchemaError, Context>` | Full Effect-based encoding      |
+
+## Struct and Object Schemas
+
+### Basic Struct
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const Person = Schema.Struct({
+	name: Schema.String,
+	age: Schema.Number
+});
+
+// Type: { readonly name: string; readonly age: number }
+```
+
+### Optional Fields
+
+Optionality describes the encoded contract, not constructor convenience. Use `optionalKey` only when the key may be absent, `optional` only when explicit `undefined` is accepted, and nullish schemas only when those values are valid encoded inputs.
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const User = Schema.Struct({
+	username: Schema.String,
+	email: Schema.optional(Schema.String), // key?: string | undefined
+	bio: Schema.optionalKey(Schema.String) // key?: string (exact)
+});
+```
+
+### Nullable Fields
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const Data = Schema.Struct({
+	value: Schema.NullOr(Schema.String)
+});
+
+// Type: { readonly value: string | null }
+```
+
+### Partial and Required (via mapFields)
+
+<!-- typecheck -->
+```typescript
+import { Schema, Struct } from 'effect';
+
+const User = Schema.Struct({
+	username: Schema.String,
+	email: Schema.optional(Schema.String)
+});
+
+// Make all fields optional (allows undefined)
+const PartialUser = User.mapFields(Struct.map(Schema.optional));
+
+// Make all fields optional (exact — key can be absent)
+const ExactPartialUser = User.mapFields(Struct.map(Schema.optionalKey));
+
+// Make all fields required
+const RequiredUser = PartialUser.mapFields(Struct.map(Schema.requiredKey));
+```
+
+### Picking and Omitting (via mapFields)
+
+<!-- typecheck -->
+```typescript
+import { Schema, Struct } from 'effect';
+
+const Recipe = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	ingredients: Schema.Array(Schema.String)
+});
+
+const JustTheName = Recipe.mapFields(Struct.pick(['name']));
+const NoIDRecipe = Recipe.mapFields(Struct.omit(['id']));
+```
+
+### Extending Structs (via mapFields or fieldsAssign)
+
+<!-- typecheck -->
+```typescript
+import { Schema, Struct } from 'effect';
+
+const Dog = Schema.Struct({
+	name: Schema.String,
+	age: Schema.Number
+});
+
+// Method 1: Using mapFields + Struct.assign
+const DogWithBreed = Dog.mapFields(Struct.assign({ breed: Schema.String }));
+
+// Method 2: Using fieldsAssign (more succinct)
+const DogWithBreed2 = Dog.pipe(Schema.fieldsAssign({ breed: Schema.String }));
+
+// Method 3: Spreading fields (still works)
+const DogWithBreed3 = Schema.Struct({
+	...Dog.fields,
+	breed: Schema.String
+});
+```
+
+### Semantic Contract Reuse
+
+- Reuse `.fields`, `Schema.fieldsAssign(...)`, and `.mapFields(...)` only when the resulting contracts are genuinely related. Keep external and domain shapes as named `Schema.Class` models rather than building one oversized inheritance-by-schema object.
+- Apply `Schema.encodeKeys({ decodedName: 'encoded_name' })` after assembling the full shape when wire or storage key names are the only difference. Keep an explicit boundary mapping when behavior, joins, validation, or domain translation differs.
+- Use `Schema.extendTo(fields, derive)` sparingly for structural projections with decoded-only derived fields. Derived fields are removed during encoding; do not use it to hide a distinct domain contract or replace a schema class.
+
+`StructWithRest` requires an object-shaped Encoded base and forbids whole-object
+transformations even with an empty rest list. Assemble the object first, then
+apply `fromJsonString` or another whole-object codec. Field transformations are
+supported. Class `.extend` replaces same-name fields without checking compatibility
+with the parent contract.
+
+For Go JSON boundaries, use unstable `Schema.toCodecGoJson` only when nil/empty
+normalization is intentional. It recursively treats optional-key `null` as missing
+and required Array/Record `null` as empty; already-accepted nulls remain values.
+See `effect-schema-v4` for exclusions and protocol schema additions.
+
+## Advanced Composition Patterns
+
+### Combining Arrays and Transformations
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+const ReadonlySetFromArray = <A, I, RD, RE>(
+	itemSchema: Schema.Codec<A, I, RD, RE>
+): Schema.Codec<ReadonlySet<A>, ReadonlyArray<I>, RD, RE> =>
+	Schema.Array(itemSchema).pipe(
+		Schema.decodeTo(
+			Schema.ReadonlySet(Schema.toType(itemSchema)),
+			SchemaTransformation.transform({
+				decode: (items): ReadonlySet<A> => new Set(items),
+				encode: (set) => Array.from(set.values())
+			})
+		)
+	);
+
+const schema = ReadonlySetFromArray(Schema.String);
+// Schema.Codec<ReadonlySet<string>, readonly string[], never, never>
+```
+
+### Multi-Stage Transformations
+
+<!-- typecheck -->
+```typescript
+import { Schema, SchemaTransformation } from 'effect';
+
+const CentsFromDollars = Schema.Number.pipe(
+	Schema.decodeTo(
+		Schema.Number,
+		SchemaTransformation.transform({
+			decode: (dollars) => dollars * 100,
+			encode: (cents) => cents / 100
+		})
+	)
+);
+```
+
+### Optional Field Transformations
+
+v4 replaces `optionalToRequired`, `optionalToOptional`, and `requiredToOptional` with `Schema.decodeTo` + `SchemaGetter.transformOptional`:
+
+<!-- typecheck -->
+```typescript
+import { Option, Predicate, Schema, SchemaGetter } from 'effect';
+
+// optionalKey → required with default (null for missing)
+const schema = Schema.Struct({
+	a: Schema.optionalKey(Schema.String).pipe(
+		Schema.decodeTo(Schema.NullOr(Schema.String), {
+			decode: SchemaGetter.transformOptional(
+				Option.orElseSome(() => null)
+			),
+			encode: SchemaGetter.transformOptional(
+				Option.filter((value) => value !== null)
+			)
+		})
+	)
+});
+```
+
+### Decoding Defaults
+
+`Schema.withDecodingDefaultKey` / `Schema.withDecodingDefault` take defaults on the **Encoded** side. For `Schema.FiniteFromString`, that means a string default such as `'1'`.
+
+`Schema.withDecodingDefaultTypeKey` / `Schema.withDecodingDefaultType` take defaults on the decoded **Type** side, such as `1`. Default effects may require services and may fail with `Schema.SchemaError`.
+
+Already-successful defaults (`Effect.succeed`) work with synchronous decoding.
+Use Effect decoders for asynchronous or service-dependent defaults. Constructor
+defaults are a separate contract and fail directly with `SchemaIssue.Issue`.
+
+Keep fields required in the normalized decoded model when a default guarantees their value. Apply the default during construction or decoding; do not make domain values optional merely to make construction easier.
+
+<!-- typecheck -->
+```typescript
+import { Effect, Schema } from 'effect';
+
+const schema = Schema.Struct({
+	encodedDefault: Schema.FiniteFromString.pipe(
+		Schema.withDecodingDefault(Effect.succeed('1'))
+	),
+	typeDefault: Schema.FiniteFromString.pipe(
+		Schema.withDecodingDefaultType(Effect.succeed(1))
+	),
+	typeKeyDefault: Schema.FiniteFromString.pipe(
+		Schema.withDecodingDefaultTypeKey(Effect.succeed(10))
+	)
+});
+
+Schema.decodeUnknownSync(schema)({});
+// { encodedDefault: 1, typeDefault: 1, typeKeyDefault: 10 }
+Schema.decodeUnknownSync(schema)({ encodedDefault: '2' });
+// { encodedDefault: 2, typeDefault: 1, typeKeyDefault: 10 }
+```
+
+## Common Patterns
+
+### Email Validation
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const Email = Schema.String.check(
+	Schema.isLowercased(),
+	Schema.isTrimmed(),
+	Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+);
+```
+
+### UUID Validation
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const UserId = Schema.String.check(Schema.isUUID()).pipe(
+	Schema.brand('UserId')
+);
+```
+
+### Clamping Numbers
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const Percentage = Schema.Number.check(
+	Schema.isBetween({ minimum: 0, maximum: 100 })
+).pipe(Schema.brand('Percentage'));
+```
+
+### Template Literal Parsing
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+// Parse Bearer tokens
+const authTemplate = Schema.TemplateLiteral([
+	'Bearer ',
+	Schema.String.pipe(Schema.brand('Token'))
+]);
+
+const AuthToken = Schema.TemplateLiteralParser(authTemplate.parts);
+// Decodes: "Bearer abc123" → ["Bearer ", "abc123"]
+```
+
+### Branded Types
+
+Brands are type-only: `Schema.brand` does not add checks or change the runtime
+AST. Pass a single concrete string literal and apply it repeatedly to compose
+brands. `Schema.fromBrand` additionally applies a constructor's checks, and its
+identifier must be that constructor's sole brand key. Representation round trips
+preserve checks, but not nominal brands; reapply brands after rebuilding.
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const PositiveInt = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThan(0)
+).pipe(Schema.brand('PositiveInt'));
+
+// Type: number & Brand<"PositiveInt">
+```
+
+### Form Validation
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const LoginForm = Schema.Struct({
+	email: Schema.String.check(
+		Schema.isLowercased(),
+		Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+	),
+	password: Schema.String.check(
+		Schema.isMinLength(8),
+		Schema.isPattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+	)
+});
+```
+
+### API Response Parsing
+
+<!-- typecheck -->
+```typescript
+import { Schema } from 'effect';
+
+const User = Schema.Struct({
+	id: Schema.NumberFromString,
+	name: Schema.String,
+	email: Schema.String,
+	createdAt: Schema.DateTimeUtcFromString
+});
+
+const UsersResponse = Schema.Struct({
+	users: Schema.Array(User),
+	total: Schema.Number
+});
+```
+
+## Quality Checklist
+
+When creating schemas, ensure:
+
+- [ ] Use `Schema.decodeTo` for type transformations, `.check()` for refinements
+- [ ] Apply filters with `.check(Schema.isXxx())` — not the old `.pipe(Schema.xxx())` pattern
+- [ ] Use `SchemaTransformation.transform` for custom transformations as first-class objects
+- [ ] Extract reusable schemas as constants or factory functions
+- [ ] Use `Schema.decodeUnknownEffect` directly in `Effect.flatMap` (no wrapper lambda)
+- [ ] Place error mapping outside `flatMap` for cleaner composition
+- [ ] Add annotations (`title`, `description`) to custom filters via `Schema.makeFilter`
+- [ ] Use `Schema.toType` when composing to avoid double decoding
+- [ ] Handle async operations with `Schema.decodeUnknownEffect`, not sync alternatives
+- [ ] Return detailed error paths for form validation
+- [ ] Use branded types for domain-specific values
+- [ ] Use `schema.mapFields(Struct.pick(...))` instead of `schema.pick(...)`
+- [ ] Use `schema.mapFields(Struct.omit(...))` instead of `schema.omit(...)`
+- [ ] Use `schema.annotate({...})` instead of `schema.annotations({...})`
+- [ ] Use `Schema.revealCodec(schema)` instead of `Schema.asSchema(schema)`
+
+## Key Principles
+
+1. **Composition over custom logic** — Leverage `Schema.decodeTo` and `.check()` instead of manual validation
+2. **Transformations are first-class** — Define with `SchemaTransformation.transform` and reuse across schemas
+3. **Reusability** — Extract schemas as constants or factory functions
+4. **Type safety** — Let Schema handle type inference and refinement
+5. **Streamlined Effect chains** — Minimize lambda wrappers, use direct function passing
+6. **Built-in filters first** — Use Effect's built-in `Schema.isXxx()` filters before creating custom ones
+7. **Parse, don't validate** — Transform data into the desired format, not just check it
+8. **Fail fast, fail clearly** — Provide detailed error messages with paths and context
+
+## References
+
+- Effect Schema is imported from `effect/Schema` or `{ Schema } from "effect"`
+- `SchemaTransformation` is imported from `effect/SchemaTransformation` or `{ SchemaTransformation } from "effect"`
+- `SchemaGetter` is imported from `effect/SchemaGetter` or `{ SchemaGetter } from "effect"`
+- `SchemaIssue` is imported from `effect/SchemaIssue` or `{ SchemaIssue } from "effect"`
+- `Struct` is imported from `{ Struct } from "effect"` for `mapFields` operations
+- Type-only schema: `Schema.Schema<Type>`; full codec: `Schema.Codec<Type, Encoded, DecodingServices, EncodingServices>`
+- All schemas return `readonly` types by default
+- Use `Schema.revealCodec(schema)` to expose its full `Schema.Codec` contract
+- Use `Schema.toType(schema)` to get the type-side schema (replaces v3 `Schema.typeSchema`)
+- Access struct fields with `.fields` property
+- Filters preserve schema type — `.check()` on a `Schema.Struct` returns a `Schema.Struct`

@@ -1,0 +1,257 @@
+---
+name: plugin-generator
+description: Generate a Claude Code plugin package from the current project's dotforge configuration, ready for marketplace submission.
+context: fork
+---
+
+# Plugin Generator
+
+Generate a distributable Claude Code plugin from the current project's dotforge configuration. The output is a standalone directory ready for `claude --plugin-dir` testing or marketplace submission.
+
+## Input
+
+`$ARGUMENTS` may contain:
+- Output directory path (default: `./dotforge-plugin/`)
+- `--name <name>` to override plugin name (default: project directory name)
+
+## Step 1: Validate source
+
+Verify the current project has dotforge configuration:
+- `CLAUDE.md` must exist
+- `.claude/settings.json` must exist
+- `.claude/rules/` should exist (warn if missing)
+
+If missing, error: "No dotforge configuration found. Run `/forge bootstrap` first."
+
+## Step 2: Detect components
+
+Scan the project's `.claude/` directory and catalog:
+
+```
+Component scan:
+  CLAUDE.md          → will become commands/context.md
+  .claude/rules/     → will become skills (one per rule with globs preserved)
+  .claude/hooks/     → will become hooks/hooks.json + script files
+  .claude/commands/  → will become commands/
+  .claude/agents/    → will become agents/ (if present)
+  .claude/settings.json → will extract deny list → settings.json
+```
+
+Show the scan results and ask for confirmation before generating.
+
+## Step 3: Generate plugin structure
+
+Two shapes — pick by component count:
+
+**Flat (single-skill plugin, v2.1.142+)** — when the plugin exposes ONE skill and no other components, put `SKILL.md` at the root. Claude Code surfaces it automatically since v2.1.142. Less boilerplate, no `skills/` directory needed.
+
+```
+{output-dir}/
+├── .claude-plugin/
+│   └── plugin.json
+├── SKILL.md                  (root-level, single skill)
+├── README.md
+└── LICENSE
+```
+
+**Structured (default, multi-component plugin)** — when the plugin ships ≥2 skills, or any combination of hooks, agents, commands:
+
+```
+{output-dir}/
+├── .claude-plugin/
+│   └── plugin.json
+├── skills/
+│   └── {rule-name}/
+│       └── SKILL.md          (one per rule, with globs as description context)
+├── agents/                   (copy from .claude/agents/ if exists)
+│   └── *.md
+├── hooks/
+│   ├── hooks.json            (converted from settings.json hook wiring)
+│   └── *.sh                  (hook scripts)
+├── commands/
+│   └── *.md                  (from .claude/commands/)
+├── settings.json             (deny list only)
+├── README.md                 (auto-generated usage guide)
+└── LICENSE                   (copy from project root if exists)
+```
+
+Default to **structured** unless the source project has exactly 1 rule, 0 hooks, 0 agents, 0 commands.
+
+### 3a. Generate plugin.json
+
+```json
+{
+  "name": "{project-slug}",
+  "version": "1.0.0",
+  "description": "Claude Code plugin generated from {project-name} configuration by dotforge",
+  "author": {
+    "name": "{git user.name or 'Unknown'}"
+  },
+  "repository": "{git remote origin url or ''}",
+  "license": "{detected license or 'MIT'}",
+  "keywords": ["claude-code", "{stack1}", "{stack2}", "dotforge"],
+  "dependencies": []
+}
+```
+
+**Dependencies (v2.1.143+)**: if the generated plugin imports skills, agents, hooks, or commands from another plugin, declare it in `dependencies`. Since v2.1.143, `claude plugin disable <name>` refuses to disable a plugin that others depend on (shows the disable-chain). `claude plugin enable <name>` force-enables transitive deps. Failing to declare dependencies means users may install a broken plugin that silently misses runtime components.
+
+If the source project's `.claude/` references files from third-party plugins (e.g. `~/.claude/plugins/<name>/...`), detect those names and add them to `dependencies`. If unsure, leave `[]` and document the manual install steps in the generated README.
+
+### 3b. Convert hooks
+
+Read `.claude/settings.json` hooks section. For each hook entry:
+
+1. Copy the .sh script to `hooks/`
+2. Create the corresponding entry in `hooks/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "{Event}": [
+      {
+        "matcher": "{Matcher}",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/{script-name}.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Use `${CLAUDE_PLUGIN_ROOT}` for all script paths — this is resolved by Claude Code at runtime.
+
+### 3c. Convert rules to skills
+
+For each `.claude/rules/*.md`:
+
+1. Read the frontmatter (globs/paths, description)
+2. Create `skills/{rule-name}/SKILL.md`:
+
+```markdown
+---
+name: {rule-name}
+description: "{description from frontmatter or first heading}"
+---
+
+{rule content without frontmatter}
+```
+
+### 3d. Copy agents
+
+If `.claude/agents/` exists, copy all `.md` files to `agents/`.
+
+### 3e. Copy commands
+
+Copy all `.md` files from `.claude/commands/` to `commands/`.
+
+### 3f. Extract settings
+
+From `.claude/settings.json`, extract only the deny list into `settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf /)",
+      "Read(**/.env)",
+      ...
+    ]
+  }
+}
+```
+
+Do NOT include allow list or hooks (those are handled by hooks.json).
+
+### 3g. Generate README.md
+
+```markdown
+# {plugin-name}
+
+Claude Code plugin generated by [dotforge](https://github.com/luiseiman/dotforge).
+
+## Install
+
+```bash
+claude plugin install {plugin-name}@{marketplace}
+```
+
+Or test locally:
+```bash
+claude --plugin-dir ./{output-dir}
+```
+
+## Components
+
+- **Skills:** {N} contextual rules
+- **Agents:** {N} specialized subagents
+- **Hooks:** {N} event handlers (block-destructive, lint, etc.)
+- **Commands:** {N} custom commands
+
+## Generated from
+
+- Project: {project-name}
+- Stacks: {detected stacks}
+- dotforge version: {version}
+- Date: {YYYY-MM-DD}
+```
+
+## Step 4: Validate output
+
+Run validation on the generated plugin:
+
+```bash
+# Check plugin.json is valid JSON
+python3 -c "import json; json.load(open('{output}/plugin.json'))"
+
+# Check hooks.json is valid JSON
+python3 -c "import json; json.load(open('{output}/hooks/hooks.json'))"
+
+# Check all .sh files are executable
+find {output}/hooks -name "*.sh" ! -perm -111
+
+# Check skills have SKILL.md
+for d in {output}/skills/*/; do ls "$d/SKILL.md"; done
+```
+
+## Step 5: Report
+
+```
+═══ PLUGIN GENERATED ═══
+Output: {output-dir}/
+Name: {plugin-name}
+Version: 1.0.0
+
+Components:
+  Skills:   {N}
+  Agents:   {N}
+  Hooks:    {N}
+  Commands: {N}
+
+── NEXT STEPS ──
+1. Test locally:
+   claude --plugin-dir ./{output-dir}
+
+2. Validate:
+   claude plugin validate ./{output-dir}
+
+3. Submit to marketplace:
+   - Claude.ai: claude.ai/settings/plugins/submit
+   - Console: platform.claude.com/plugins/submit
+
+4. Or distribute via your own marketplace:
+   See https://code.claude.com/docs/en/plugin-marketplaces
+```
+
+## Constraints
+
+- NEVER include `.env`, `*.key`, `*.pem`, or credentials in the output
+- NEVER include `settings.local.json` in the output
+- NEVER include `.forge-manifest.json` in the output
+- If the project has a `.gitignore`, respect it when copying files
+- Hook scripts must be `chmod +x` in the output
+- All paths in hooks.json must use `${CLAUDE_PLUGIN_ROOT}` prefix

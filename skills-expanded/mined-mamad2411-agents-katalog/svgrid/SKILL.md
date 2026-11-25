@@ -1,0 +1,193 @@
+---
+name: svgrid
+description: Writes, fixes, and reviews SvGrid data-grid code in Svelte 5 projects - columns, features, inline editing, filtering, theming with --sg-* tokens, server-side data, the built-in AI helpers, and the enterprise add-on (export/import/pivot, the <SvSheet> spreadsheet shell). Provides project context, the ColumnDef and <SvGrid> API surface, and correct-vs-incorrect patterns. Applies when working with @svgrid/grid, @svgrid/enterprise, <SvGrid>, <SvSheet>, ColumnDef, SvGridApi, or any project that imports from @svgrid/*.
+user-invocable: false
+allowed-tools: Bash(npm create @svgrid@latest *), Bash(pnpm create @svgrid *), Bash(yarn create @svgrid *), Bash(npx @svgrid/mcp *), Bash(pnpm dlx @svgrid/mcp *)
+---
+
+# SvGrid
+
+SvGrid is a modern **Svelte 5** data grid: a headless core engine paired
+with a render component (`<SvGrid>`). It scales from a 10-row read-only
+table to a virtualized 100k-row editing surface with grouping, filtering,
+server-side data, and full keyboard + screen-reader support. Two packages:
+`@svgrid/grid` (MIT) and `@svgrid/enterprise` (commercial add-on).
+
+> **This is a library, not a source-copy CLI.** You `import` from
+> `@svgrid/grid`; there is no "add component" step. Write correct code
+> against the API below and ground uncertain details in the live docs
+> (see [Grounding](#grounding-look-it-up-dont-guess)).
+
+## Current project context
+
+Before writing grid code, read the project to learn what it has:
+
+1. **Which packages are installed** - check `package.json` for
+   `@svgrid/grid` and `@svgrid/enterprise`. Never use an enterprise
+   symbol (`installEnterprise`, pivot, export) in a
+   project that only has `@svgrid/grid`.
+2. **Svelte version** - SvGrid requires **Svelte 5**. Use runes
+   (`$state`, `$derived`, `$effect`), never legacy stores or `export let`.
+3. **How the app themes** - grep for `--sg-` in the app's CSS, and for a
+   dark-mode attribute (`data-theme`, `.dark`). Match the existing
+   convention instead of inventing a new one. See [theming.md](./rules/theming.md).
+4. **Existing grids** - if the project already renders `<SvGrid>`, copy
+   its column/feature conventions rather than introducing a second style.
+
+## The minimal grid
+
+The smallest correct grid is two arrays and a component. **The shortcut
+props inject their own features** - you do *not* need `tableFeatures`
+for the common cases:
+
+```svelte
+<script lang="ts">
+  import { SvGrid, type GridColumns } from '@svgrid/grid'
+
+  type Row = { id: number; name: string; amount: number }
+  const data = $state<Row[]>([/* ...rows... */])
+
+  const columns: GridColumns<Row> = [
+    { id: 'id',     field: 'id',     header: 'ID',     width: 80 },
+    { id: 'name',   field: 'name',   header: 'Name' },
+    { id: 'amount', field: 'amount', header: 'Amount', cellDataType: 'number' },
+  ]
+</script>
+
+<SvGrid {data} {columns} sortable filterable pageable />
+```
+
+**Typing the columns array.** Use `GridColumns<Row>` (or `GridColumnDef<Row>`
+for a single column). The underlying `ColumnDef` takes *two* type parameters -
+a phantom feature bag first, your row type second - so `ColumnDef<Row>` is a
+compile error and `ColumnDef<{}, Row>[]` is the long form you will see in
+older docs. All three describe the same shape.
+
+## Critical rules
+
+These are **always enforced**. Each links to a file with Incorrect/Correct
+code pairs.
+
+### Columns & cells → [columns.md](./rules/columns.md)
+
+- **Every column needs a stable `id`.** `field` maps to the data key;
+  `id` is the identity used by state, sorting, and the API. They can match.
+- **Custom cells are `{#snippet}`s assigned to `cell`**, not raw HTML in
+  the column. Snippet params are `{ value, row, column }`.
+- **Set widths in `ColumnDef` (`width` / `minWidth` / `flex`)**, never
+  with CSS on the grid's internal nodes - the renderer owns those.
+- **Use `cellDataType: 'number' | 'date' | 'boolean'`** for alignment,
+  parsing, and the right default editor, instead of hand-formatting. (The
+  member is `cellDataType`, not `type`.)
+
+### Features & props → [data-and-features.md](./rules/data-and-features.md)
+
+- **Prefer the shortcut props** (`sortable`, `filterable`, `pageable`,
+  `editable`, `groupable`) for the common path - each injects the matching
+  feature. Reach for `tableFeatures({ ... })` only when you need a feature
+  with no shortcut, or want explicit control.
+- **Get the imperative API via `onApiReady`**, hold it in `$state`, and
+  call methods (`api.setFilter`, `api.exportToCsv`, ...) from handlers.
+- **Server-side data uses `createServerDataSource`** implementing the
+  `ServerDataSource` contract, passed as `rowModel={ctl}` - the grid emits
+  intent, your source fetches the page or block. Don't filter/sort
+  locally in server mode. Server-side grouping, tree, pivot, transactions
+  and select-all across unloaded rows are `createServerRowModel` in
+  `@svgrid/enterprise`, on the same contract and the same prop.
+
+### Theming → [theming.md](./rules/theming.md)
+
+- **Theme with `--sg-*` CSS custom properties**, declared at `:root` or on
+  a wrapper - never by targeting Svelte-mangled internal class names.
+- **For a design system (shadcn, Tailwind, Material)**, either import a
+  shipped preset (`@svgrid/grid/themes/<id>.css`) or bridge `--sg-*` to the
+  app's own tokens so dark mode flips for free.
+- **Dark mode** = redeclare the same `--sg-*` tokens under the app's dark
+  selector. The grid reads tokens at paint time; no JS listener needed.
+
+### The spreadsheet shell → [sheet.md](./rules/sheet.md)
+
+- **`<SvSheet>` is a component in `@svgrid/enterprise`**, not a mode of
+  `<SvGrid>`: it owns a document. Anything beyond plain cells (formats,
+  rules, comments, protection) goes on a `SheetDocument` passed as
+  `document`, read once at mount.
+- **Writes from outside go through `cmd.setCellValue` in `onAction`**, or
+  are followed by `sheet.refresh()`; several cells go in one `cmd.batch`.
+- **Qualify addresses in `formats`** to reach another sheet
+  (`'Orders!F2'`); `onAction` returning `true` takes an action over.
+
+## Grounding: look it up, don't guess
+
+SvGrid ships machine-readable grounding so you never invent an API. When a
+detail is uncertain, **fetch, don't hallucinate**:
+
+| Resource | Use for |
+| --- | --- |
+| `https://svgrid.com/llms.txt` | Topic map with one-line summaries - the index to fetch first |
+| `https://svgrid.com/llms-full.txt` | Every doc page concatenated - deep API detail |
+| `https://svgrid.com/schemas/column-def.json` | JSON Schema for `ColumnDef` - validate generated columns against it |
+| `https://svgrid.com/schemas/svgrid-options.json` | JSON Schema for `<SvGrid>` props |
+
+If the project uses an MCP client (Claude Desktop, Cursor, Zed, Claude
+Code), the **`@svgrid/mcp`** server exposes the same facts as callable
+tools (`svgrid_search`, `svgrid_get`) - prefer it for
+version-pinned answers. It needs no API key and runs locally.
+
+When that server is available, **run `svgrid_check_code` on every file you
+write** before showing it to the user. It validates the file against the
+exported surface of the installed version and compiles it, and returns the
+exact replacement for each problem. It is the difference between code that
+looks right and code that is right.
+
+## Package boundary
+
+- **`@svgrid/grid`** (MIT) - the grid, all features, theming, server data,
+  headless engine. Everything in the rules files is here unless marked.
+- **`@svgrid/enterprise`** (commercial) - `installEnterprise(api)` adds
+  export, import, pivot, the Kanban board + scheduler renderers, and the
+  `<SvSheet>` spreadsheet shell with its formula engine. Runs
+  unlicensed with a watermark, so it is safe to scaffold - but only use it
+  when the package is actually a dependency.
+- **AI helpers are FREE and live in `@svgrid/grid`** - `setAIProvider`,
+  `aiFilter`, `aiSmartFill`, `aiSummarize`, `aiClassify`,
+  `aiFindAnomalies`, `mockAIProvider`. Import them from `@svgrid/grid`,
+  never from `@svgrid/enterprise`.
+
+**Never** import from `@sv-grid/core`, `svelte-grid`, or `sv-grid` - those
+are unrelated projects. The only import specifiers are `@svgrid/grid`,
+`@svgrid/grid/themes/*.css`, and `@svgrid/enterprise`.
+
+## Scaffolding a new project
+
+To start a fresh app with the grid already wired up:
+
+```bash
+npm create @svgrid@latest my-app        # interactive
+npm create @svgrid@latest my-app -- --template admin-dashboard
+```
+
+Templates: `minimal` (Vite + Svelte 5) and `admin-dashboard` (SvelteKit +
+Tailwind). Use the project's package runner (`npm create` / `pnpm create` /
+`yarn create`).
+
+## Workflow
+
+1. **Read context** - installed `@svgrid/*` packages, Svelte 5, theming
+   convention, any existing grid.
+2. **Write against the API** - start from the minimal grid, add shortcut
+   props, then columns/cells/editing as needed.
+3. **Ground the uncertain bits** - fetch `llms.txt` / a schema, or use the
+   `@svgrid/mcp` tools, before inventing a prop or method name.
+4. **Match the theme** - reuse the app's `--sg-*` tokens or a preset; wire
+   dark mode through the existing selector.
+5. **Review** - confirm every column has an `id`, no CSS targets internal
+   nodes, and no enterprise symbol leaks into a grid-only project.
+6. **Verify** - if the `@svgrid/mcp` server is connected, run
+   `svgrid_check_code` on each file and fix everything it reports. Do not
+   hand over code that has not passed it.
+
+## Detailed references
+
+- [rules/columns.md](./rules/columns.md) - ColumnDef, custom cells, widths, types, formatting, editors
+- [rules/data-and-features.md](./rules/data-and-features.md) - feature toggles, the SvGridApi, selection, server-side data
+- [rules/theming.md](./rules/theming.md) - `--sg-*` tokens, dark mode, design-system presets, the shadcn bridge

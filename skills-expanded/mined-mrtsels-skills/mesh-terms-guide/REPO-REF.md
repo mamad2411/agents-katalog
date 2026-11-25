@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mrtsels/skills (path: research/search-skills/mesh-terms-guide/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Navigate MeSH vocabulary for precise PubMed and MEDLINE searches"

@@ -1,0 +1,54 @@
+---
+name: risikobewertung-enisa-schweregrad
+description: "Wenn es um ENISA-Methodik zur Schweregradbewertung von Datenschutzverletzungen in Datenschutzrecht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# ENISA-Methodik zur Schweregradbewertung von Datenschutzverletzungen
+
+## Triage — kläre vor der Bearbeitung
+
+1. Welche Verarbeitungskontextstufe (DPC) liegt vor — einfach, behavior, sensitive, oder highly sensitive?
+2. Wie leicht sind Betroffene identifizierbar (EI von 0,25 bis 1)?
+3. Welche Umstände erhöhen oder mindern das Risiko (CB-Faktoren)?
+4. Welche Daten sind besonders schutzbedürftig?
+5. Wie ist die quantitative Bewertung zu kommunizieren?
+- Was will der Mandant wirklich erreichen? (objektivierte Bewertung; Verteidigung gegen Behörde)
+
+## Rechtsgrundlagen
+
+- **Art. 33 Abs. 1 DSGVO** Meldepflicht.
+- **Art. 34 Abs. 1 DSGVO** Benachrichtigung.
+- **Erwägungsgrund 75; 76 DSGVO**.
+- **ENISA Recommendations for a methodology of the assessment of severity of personal data breaches** (2013, weiterhin in Praxis verwendet).
+- **Art. 5 Abs. 2 DSGVO** Rechenschaftspflicht.
+
+## Aktuelle Rechtsprechung
+
+Nicht aus Modellwissen; insbesondere zur Akzeptanz der ENISA-Methodik durch deutsche Aufsichtsbehörden vor Ausgabe verifizieren.
+
+## Zentrale Normen
+
+Art. 33 Abs. 1; Art. 34 Abs. 1; Art. 5 Abs. 2 DSGVO; ENISA-Methodik 2013.
+
+## Praxisformulierung — ENISA-Berechnung
+
+DPC: simple data 1; behavioural data 2; sensitive data 3; highly sensitive data 4.
+
+EI: negligible 0,25; limited 0,5; significant 0,75; maximum 1.
+
+CB: -2 bis +0,5 je nach Umständen (Loss of confidentiality, integrity, availability; malicious intent; etc.).
+
+SE = DPC × EI + CB.
+
+Stufen: SE < 2 Low; 2-3 Medium; 3-4 High; > 4 Very High.
+
+Conclusion: Meldung Art. 33 ab Medium; Benachrichtigung Art. 34 ab High.
+
+## Abgrenzung zu anderen Skills
+
+- `dsv-aufnahme-statusinformation` bildet die strukturierte Erstaufnahme; dieser Skill setzt darauf auf.
+- `dsv-meldung-art-33-pflichtangaben` deckt die Behördenmeldung ab; bei Bedarf zusätzlich ziehen.
+- `dsv-benachrichtigung-art-34-betroffene` deckt die Benachrichtigung Betroffener ab.
+- `dsv-bussgeldverteidigung-art-83` und `dsv-schadensersatz-art-82` decken die anwaltliche Nachbearbeitung ab.
+
+- `dsv-risikobewertung-edsa-leitlinie` ergaenzt um qualitative Beispielfallgruppen.

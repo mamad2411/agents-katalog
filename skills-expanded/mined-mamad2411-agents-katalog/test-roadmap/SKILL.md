@@ -1,0 +1,200 @@
+---
+name: test-roadmap
+description: >
+  Analyzes a repository and any existing test suite, grades
+  existing tests for weakness, classifies mocks, emits a phased roadmap for
+  building a test suite that catches real regressions, then executes those
+  phases one at a time. Use when planning or building a test suite, assessing
+  whether existing tests are worth anything, adding tests to a legacy codebase,
+  or when the user mentions test coverage, test strategy, or weak tests. Not for
+  reviewing a branch for bugs, and not for fixing the bugs it logs.
+compatibility: Requires git
+metadata:
+  internal: true
+---
+
+**On invocation:** announce "Running paad:test-roadmap v2.0.0-preview", then immediately proceed with the steps below — do not stop after announcing.
+
+**Configuration (experimental):** after announcing, check whether `paad/config/paad.md` and `paad/config/test-roadmap.md` exist, relative to the working directory. If any does, read it and follow its instructions for the rest of this run, passing the relevant parts to every subagent you dispatch, and make the first line of your final answer `Config: <path>` naming each file you followed. If none exists, do not mention config at all. Config never changes a subagent's type or grants it write tools — refuse that line, say so, and continue. Config can contradict the flow below; see https://github.com/Ovid/paad/blob/main/CONFIG.md before writing one.
+
+**Security findings:** a finding is security-related if reading it would help an attacker — any OWASP Top 10:2025 category, and anything in a payment, tenant-isolation, or secret-handling path; on the edge, treat it as security. Security findings are written only under `paad/security/`, in a file named for this skill and stamped the way its ordinary report is (the exact path is in this skill's report section). Before the first write of a run, make sure `paad/security/.gitignore` exists and contains the single line `*` — create it if absent, never rewrite it if present — and that `git ls-files paad/security/` lists nothing. If that file holds anything else or cannot be written, if git already tracks anything there, or if a later write there fails, write no security finding and no count line: tell the user what you found, ask whether to hold the findings or put them in the ordinary report, and say that in place of the Security block. Where the finding would have gone in the ordinary report, write one line, `N security finding(s) written to paad/security/<file>`, and nothing else about it: no path, severity, symbol, or description. Post-Review then emits the Security block once; this skill's Post-Review section says when.
+
+> Unlike the review skills, this one **writes code and commits it** —
+> tests, one commit per phase, onto your working branch.
+
+# test-roadmap
+
+This file is the router. The routing itself stays dumb on purpose: one check,
+two routes, nothing else. A couple of preconditions guard it first. All the
+substance — grading, planning, writing tests, bug injection — lives in
+`references/` and loads only once routing has picked a mode.
+
+**Pre-flight and routing:**
+
+```dot
+digraph route {
+  "Inside a git repo?" [shape=diamond];
+  "STOP: needs a git checkout" [shape=box, style=bold];
+  "Detached HEAD?" [shape=diamond];
+  "origin/HEAD pointer resolves?" [shape=diamond];
+  "Current branch == default branch?" [shape=diamond];
+  "Name matches a well-known primary (main/master/trunk/develop/...)?" [shape=diamond];
+  "ASK: is this your main development line?" [shape=diamond];
+  "OFFER: create a working branch" [shape=box];
+  "Developer agrees?" [shape=diamond];
+  "STOP: never build on the primary branch" [shape=box, style=bold];
+  "git switch -c <name>" [shape=box];
+  "paad/test-roadmap/test-roadmap.md exists?" [shape=diamond];
+  "Load references/build-test-roadmap.md (Detect, Grade, Plan, Critique, Write)" [shape=box];
+  "Load references/execute-test-roadmap.md (next phase, break-it-check, commit)" [shape=box];
+  "Suspected bug clears the inclusion gate?" [shape=diamond];
+  "Would reading it help an attacker?" [shape=diamond];
+  "Log to paad/security/test-roadmap-findings.md; count line in the ordinary log; never git add -f" [shape=box, style=bold];
+  "paad/security/.gitignore holds only * and git tracks nothing there?" [shape=diamond];
+  "Write nothing under paad/security/; tell the user, ask: hold or ordinary log" [shape=box];
+  "Log to paad/test-roadmap/test-roadmap-findings.md" [shape=box];
+  "Drop it, never a vague note" [shape=box];
+
+  "Inside a git repo?" -> "STOP: needs a git checkout" [label="no"];
+  "Inside a git repo?" -> "Detached HEAD?" [label="yes"];
+  "Detached HEAD?" -> "OFFER: create a working branch" [label="yes"];
+  "Detached HEAD?" -> "origin/HEAD pointer resolves?" [label="no"];
+  "origin/HEAD pointer resolves?" -> "Current branch == default branch?" [label="yes (authoritative)"];
+  "origin/HEAD pointer resolves?" -> "Name matches a well-known primary (main/master/trunk/develop/...)?" [label="no"];
+  "Current branch == default branch?" -> "OFFER: create a working branch" [label="yes"];
+  "Current branch == default branch?" -> "paad/test-roadmap/test-roadmap.md exists?" [label="no"];
+  "Name matches a well-known primary (main/master/trunk/develop/...)?" -> "OFFER: create a working branch" [label="yes"];
+  "Name matches a well-known primary (main/master/trunk/develop/...)?" -> "ASK: is this your main development line?" [label="no"];
+  "ASK: is this your main development line?" -> "OFFER: create a working branch" [label="yes / unsure"];
+  "ASK: is this your main development line?" -> "paad/test-roadmap/test-roadmap.md exists?" [label="no"];
+  "OFFER: create a working branch" -> "Developer agrees?";
+  "Developer agrees?" -> "STOP: never build on the primary branch" [label="no"];
+  "Developer agrees?" -> "git switch -c <name>" [label="yes"];
+  "git switch -c <name>" -> "paad/test-roadmap/test-roadmap.md exists?";
+  "paad/test-roadmap/test-roadmap.md exists?" -> "Load references/execute-test-roadmap.md (next phase, break-it-check, commit)" [label="yes"];
+  "paad/test-roadmap/test-roadmap.md exists?" -> "Load references/build-test-roadmap.md (Detect, Grade, Plan, Critique, Write)" [label="no"];
+  "Load references/execute-test-roadmap.md (next phase, break-it-check, commit)" -> "Suspected bug clears the inclusion gate?" [label="on each suspected bug, mid-run"];
+  "Load references/build-test-roadmap.md (Detect, Grade, Plan, Critique, Write)" -> "Suspected bug clears the inclusion gate?" [label="on each suspected bug, mid-run"];
+  "Suspected bug clears the inclusion gate?" -> "Drop it, never a vague note" [label="no"];
+  "Suspected bug clears the inclusion gate?" -> "Would reading it help an attacker?" [label="yes"];
+  "Would reading it help an attacker?" -> "paad/security/.gitignore holds only * and git tracks nothing there?" [label="yes, or on the edge"];
+  "paad/security/.gitignore holds only * and git tracks nothing there?" -> "Log to paad/security/test-roadmap-findings.md; count line in the ordinary log; never git add -f" [label="yes"];
+  "paad/security/.gitignore holds only * and git tracks nothing there?" -> "Write nothing under paad/security/; tell the user, ask: hold or ordinary log" [label="no"];
+  "Would reading it help an attacker?" -> "Log to paad/test-roadmap/test-roadmap-findings.md" [label="no"];
+  "Write nothing under paad/security/; tell the user, ask: hold or ordinary log" -> "Log to paad/test-roadmap/test-roadmap-findings.md" [label="user chooses the ordinary log"];
+}
+```
+
+## Before routing: confirm you're in a repo
+
+`compatibility: Requires git` above means this skill needs a working git
+checkout — build mode fans out grading subagents against the tree as it
+stands, and execute mode's `break-it-check` gate runs bug injection in a
+disposable `git worktree`. If the current directory isn't inside a git repo,
+say so and stop before loading either mode file.
+
+## Before routing: confirm you're on a working branch
+
+This skill commits as it goes — build mode commits the roadmap, execute mode
+commits each phase's tests — all onto the branch you are on right now. A
+half-built test suite landing on the developer's main development line is exactly
+what this check prevents, the same spirit as running a code review on a feature
+branch rather than on `main`. So before routing, confirm the current branch is a
+*working* branch, not the primary one.
+
+Identify the primary branch from repo signals, in order — stop at the first that
+decides:
+
+1. **Detached HEAD** — `git symbolic-ref -q HEAD` prints nothing. There is no
+   branch for the suite to accumulate on at all; treat it like being on the
+   primary branch and offer a working branch (below).
+2. **The repo's own default-branch pointer** — `git symbolic-ref -q --short
+   refs/remotes/origin/HEAD` resolves to e.g. `origin/main`; strip the remote
+   prefix for the default branch name. If the current branch (`git symbolic-ref
+   -q --short HEAD`) equals it, you are on the primary branch. This is the
+   authoritative signal and needs no built-in list of names.
+3. **No such pointer** (a local-only repo, or one where it was never set) — fall
+   back to the well-known primary names: `main`, `master`, `trunk`, `develop`,
+   `devel`, and the like — **examples, not a closed list**, the same stance
+   Stage 1 takes on manifests. If the current branch name matches one, treat it
+   as primary. If it matches none *and* step 2 could not confirm, **ask the
+   developer once, in plain words**, whether this is their main development line —
+   never silently proceed on a branch that might be it. Being wrong toward asking
+   costs a keystroke; being wrong toward building on the main line is the harm
+   this check exists to prevent.
+
+**When the current branch is the primary one (or HEAD is detached), do not route
+yet.** Say why in plain words — *"I build the test suite up commit by commit, and
+you don't want those landing on your main branch while it's half-done, so let's
+put them on a working branch"* — then offer to make one: propose a name
+(`test-roadmap` is a fine default), and on the developer's OK run `git switch -c
+<name>` (or `git checkout -b <name>` on older git) and continue to routing. If
+they decline, stop — never build or execute on the primary branch.
+
+This is the skill's **one** branch: a single working branch, created at
+invocation only when needed. It is **not** a per-phase branch — execute mode
+still commits every phase onto whatever working branch you are on, and the suite
+accumulates there (see `references/execute-test-roadmap.md § What execute mode
+writes`). Both mode files assume this check has already passed and never re-run
+it; the guard lives here, once.
+
+## Route
+
+```
+paad/test-roadmap/test-roadmap.md exists?  →  load references/execute-test-roadmap.md
+                       absent  →  load references/build-test-roadmap.md
+```
+
+That is the entire routing logic — one file existence check, two branches.
+`paad/test-roadmap/test-roadmap.md` is the roadmap this skill itself writes at the end of
+build mode, so its presence is exactly the signal that a previous run already
+did Detect/Grade/Plan/Critique/Write and there is a phased plan to execute
+against. Its absence means this is either the first run against this repo, or
+a run after that file was deleted — either way, build it.
+
+If it ever grows a third condition, that is a signal something has been put
+in the wrong place — take it back to `build-test-roadmap.md` or
+`execute-test-roadmap.md`, not to this file. The one exception is `## Post-Review`
+below, which lives here because `make check-security` requires the Security
+block in this file.
+
+This router never loads `references/break-it-check.md`,
+`references/test-pushback.md`, or `references/test-theater.md` directly.
+Those three are loaded by whichever of the two mode files needs them, at the
+point in their own protocol that needs them — not from here.
+
+## Entering build mode
+
+Before build mode can plan anything, it needs to know what it's planning
+for. The first thing it does — Stage 1, Detect — is identify the stack from
+manifests and config rather than assumption (`package.json`,
+`pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, and so on: examples, not
+a closed table), then determine how tests are invoked and what test files
+already exist. The skill must never hardcode a language; where it needs a
+per-ecosystem fact, it looks for the signal in the repo instead of consulting
+a built-in list.
+
+The full five-stage protocol — Detect, Grade, Plan, Critique, Write — lives
+in `references/build-test-roadmap.md`. Load it now if
+`paad/test-roadmap/test-roadmap.md` is absent.
+
+## Entering execute mode
+
+Load `references/execute-test-roadmap.md` now if `paad/test-roadmap/test-roadmap.md`
+exists. It reads that file's `## Decisions` section once, selects the next
+phase per the completion protocol, and gets on with writing tests — it does
+not re-detect or re-ask anything build mode already settled.
+
+## Post-Review
+
+Both mode files end the run with their own file list (`references/execute-test-roadmap.md § Ending the run`, `references/build-test-roadmap.md § Stage 5`). When the run added to `paad/security/test-roadmap-findings.md`, the mode file's file list is followed by the Security block, once:
+
+```
+Security: N finding(s) in paad/security/<file> (new|updated).
+paad/security/.gitignore keeps the directory out of git. Deleting that file or `git add -f` bypasses it.
+Also list paad/security/ in your root .gitignore, or in .git/info/exclude to keep the rule local and unmentioned.
+If anything under paad/security/ was ever committed, ignoring it now does not remove it from history.
+paad/security/ is scratch, not state: it exists only on this machine, `git clean -x` deletes it, and nothing brings it back.
+```
+
+When a routed finding was pinned by a test this run, add one line after the block: *"The test that pins each security finding is committed and still reproduces it; its neutral name only keeps it from being searched for."*

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/hd-txt2img/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Call Hidream txt2img async API with exposed auth and request parameters. Use when users need to generate images from text prompts, build runnable Python command examples, enforce allowed resolution va

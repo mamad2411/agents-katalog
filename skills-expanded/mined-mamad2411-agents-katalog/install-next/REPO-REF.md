@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/topic-foxted-rsc-boundary-install-next/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Install RSC Boundary in a Next.js app

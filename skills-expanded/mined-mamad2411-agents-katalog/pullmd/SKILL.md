@@ -1,0 +1,143 @@
+---
+name: pullmd
+description: "Read any web page, document, or YouTube video as clean Markdown using PullMD. Use this skill whenever you need to fetch, read, extract, or summarize content from a URL — web articles, Reddit threads, PDF/Word/PowerPoint/Excel/EPUB documents, or YouTube transcripts. This includes when the user says 'read this page', 'what does this URL say', 'fetch this article', 'summarize this PDF', 'get the transcript of this video', or when you need web content as context for another task. Also use this when WebFetch fails or returns poor results — PullMD produces cleaner Markdown than raw HTML parsing. Do NOT use this for GitHub URLs (use gh CLI instead) or for API endpoints that return JSON."
+---
+
+# PullMD Integration
+
+Read web pages, documents, and YouTube videos as clean, structured Markdown
+via the self-hosted PullMD service. Falls back gracefully to WebFetch if
+PullMD is unavailable.
+
+## Why PullMD over WebFetch
+
+PullMD routes each URL through the extraction path that fits it:
+
+1. **Reddit** — auto-detected URLs go through Reddit's JSON API with full comment trees.
+2. **Hacker News** — auto-detected item pages, comment permalinks, and listings (`/news`, `/newest`, `/ask`, `/show`, `/jobs`, `/best`) go through the HN API and come back as a clean nested comment tree.
+3. **Cloudflare** — sites that support `Accept: text/markdown` get native Markdown directly.
+4. **Static HTML** — Mozilla Readability and Trafilatura run in parallel; the higher-quality output wins.
+5. **Headless Chromium fallback** — when static extraction returns body-soup or low-quality output (typical for Next.js / SPA pages), the page is rendered in a real browser before extracting.
+6. **Documents** — direct links to PDF, Word, PowerPoint, Excel, EPUB, ZIP, CSV, JSON, or XML files are converted to Markdown (requires the markitdown sidecar on the instance).
+7. **YouTube** — video URLs return title, description, and the transcript with clickable timecodes (when enabled on the instance).
+8. **Images & audio** — captioned / transcribed when the instance has a vision or STT provider configured; metadata-only otherwise.
+
+The result is much cleaner than the raw HTML that WebFetch returns, and it
+works on JavaScript-heavy sites and binary formats that WebFetch can't
+handle at all.
+
+## How to use
+
+### Step 1: Fetch via PullMD
+
+Use Bash to curl the PullMD API. This is preferred over WebFetch because it returns clean Markdown directly:
+
+```bash
+curl -s "__PULLMD_URL__/api?url=<URL>"
+```
+
+The response is `text/markdown` — ready to use as-is.
+
+**Available parameters:**
+
+| Param           | Default | Notes                                                                       |
+| --------------- | ------- | --------------------------------------------------------------------------- |
+| `url`           | —       | Required.                                                                   |
+| `comments`      | `true`  | Include Reddit / Hacker News comments. Ignored for other URLs.              |
+| `comment_depth` | `3`     | Comment nesting depth (1–10), Reddit and Hacker News.                       |
+| `comment_limit` | none    | Max top-level Reddit comments (Reddit returns ~200 without a cap).          |
+| `frontmatter`   | `false` | Prepend YAML metadata (title, source, quality, share id, …).                |
+| `format`        | `md`    | `text` strips Markdown; `json` returns a structured response with metadata. |
+| `nocache`       | `false` | Bypass the 1-hour cache and refetch from source.                            |
+| `render`        | auto    | `force` → always render via Playwright. `skip` → never render. Bypasses cache. |
+| `extractor`     | auto    | Force `readability` / `trafilatura` / `playwright`, skipping the quality pick. Bypasses cache. |
+| `pdf`           | —       | `ocr` → high-quality OCR conversion for PDFs (table-grade output; needs a server-side OCR key). Bypasses cache. |
+| `yt_timecodes`  | `links` | YouTube transcripts: `links` (clickable timestamps), `plain` (`[MM:SS]`), `none`. |
+| `yt_chunk`      | `30`    | YouTube transcript block size in seconds; `0` = per original snippet.       |
+| `query`         | —       | Set this when you need specific information from a page rather than the whole document: pass the question you are trying to answer, in natural language, and get back only the matching sections - typically 70-95% fewer tokens on long pages. No LLM involved. Empty/absent = full page, unchanged. |
+| `max_tokens`    | `600`   | Token budget for `query` (64–20000). No effect without `query`. Raise it when the answer likely spans several sections; leave the default for single-fact lookups. Only validated when `query` is set. |
+| `lang`          | `de`    | Language for the comments-section header (`de` or `en`).                    |
+
+**Response headers worth checking:**
+
+- `X-Source` — `reddit` · `hackernews` · `cloudflare` · `readability` · `readability-fallback` · `trafilatura` · `playwright` · `recipe-content` · `coverage-guard` · `markitdown` · `youtube` · `image-caption` · `audio-transcript` · `pdf-ocr`
+- `X-Quality` — `0.0–1.0` extraction confidence (low values mean the static extraction was thin or noisy)
+- `X-Share-Id` — 8-hex permalink, openable as `__PULLMD_URL__/s/<id>` (absent for `/api/html` — local conversions are never cached or shared)
+- `X-Suggested-Filename` — a ready-made filename for this conversion (e.g. `YT-some-talk-dQw4w9WgXcQ.md`); use it when you save the output to a file instead of inventing a name.
+- `X-Transcript-Status` — YouTube only: `ok` / `none` / `blocked` / `error`. `blocked` and `error` are transient (rate limit) and not cached — retry later; `none` means the video has no transcript at all.
+- `X-Extracted` / `X-Extract-Confidence` / `X-Extract-Sections` / `X-Extract-Original-Tokens` / `X-Extract-Returned-Tokens` — only when `query` is active; the last two show how much context the extraction saved.
+
+**Example calls:**
+
+```bash
+# Read an article
+curl -s "__PULLMD_URL__/api?url=https://example.com/article"
+
+# Read a Reddit post with comments
+curl -s "__PULLMD_URL__/api?url=https://reddit.com/r/node/comments/abc/title/&comments=true"
+
+# Convert a PDF / Office document by URL
+curl -s "__PULLMD_URL__/api?url=https://example.com/report.pdf"
+
+# Table-heavy PDF via the OCR tier (if enabled on the instance)
+curl -s "__PULLMD_URL__/api?url=https://example.com/report.pdf&pdf=ocr"
+
+# YouTube transcript with clickable timecodes (if enabled on the instance)
+curl -s "__PULLMD_URL__/api?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Long page, but you only need one thing: get just the relevant sections
+curl -s "__PULLMD_URL__/api?url=https://example.com/long-doc&query=rate+limit+headers&max_tokens=800"
+
+# Get fresh (uncached) content
+curl -s "__PULLMD_URL__/api?url=https://example.com/news&nocache=true"
+
+# Force the Playwright fallback for a JS-rendered page that didn't trigger
+# the auto-detection (or where you want to be sure)
+curl -s "__PULLMD_URL__/api?url=https://mistral.ai/pricing&render=force"
+
+# Convert a local HTML file you already have (never cached, no share link; X-Filename keeps the name out of access logs)
+curl -s -X POST --data-binary @page.html -H 'Content-Type: text/html' -H 'X-Filename: page.html' "__PULLMD_URL__/api/html"
+
+# Upload a local document (PDF/DOCX/…, max 25 MB)
+curl -s -X POST --data-binary @report.pdf -H 'Content-Type: application/pdf' -H 'X-Filename: report.pdf' "__PULLMD_URL__/api/file"
+```
+
+### Step 2: Check if it worked
+
+If curl returns valid Markdown (starts with `#` or contains readable text), use that content. The `X-Source` response header tells you which extraction method was used. If `X-Source: playwright`, the page needed JavaScript rendering — that's normal for SPAs (Next.js, React, Vue dashboards, …).
+
+### Step 3: Fallback to WebFetch
+
+If PullMD fails (network error, timeout, empty response), fall back to the built-in WebFetch tool:
+
+```
+WebFetch(url="<URL>", prompt="Extract the main content of this page")
+```
+
+This still works but produces noisier output since it processes raw HTML.
+(For document and YouTube URLs there is no WebFetch equivalent — report the
+failure instead.)
+
+## Decision flow
+
+```
+Need to read a URL?
+├── Is it a GitHub URL? → Use `gh` CLI instead
+├── Is it a JSON API? → Use curl/fetch directly
+└── Anything else (web page, PDF/Office doc, YouTube, image, audio):
+    ├── Try: curl PullMD API
+    │   ├── Success (got Markdown) → Use it
+    │   └── Failed (error/timeout/empty) → Fallback below
+    └── Fallback: WebFetch tool (web pages only)
+```
+
+## Tips
+
+- PullMD caches results for 1 hour. Use `nocache=true` if you need the latest version. `render=force|skip`, `extractor=`, `pdf=ocr`, and explicit `yt_*` params also bypass the cache.
+- For pages with important comments or discussions (forums, HN, Reddit), add `comments=true` to include the discussion below the post. Reddit and Hacker News URLs are auto-detected and use dedicated pipelines; `comment_depth` controls how deep the tree goes.
+- When you need specific information from a page rather than the whole document, add `query=<the question you are trying to answer>`, phrased in natural language - it returns just the matching sections (typically 70-95% fewer tokens on long pages) and reports the saving in `X-Extract-*`. It falls back to the full page when nothing matches, so it is safe to try. Omit it only when you genuinely need the complete document - summarizing, translating, archiving.
+- For JS-rendered apps where the auto-fallback didn't fire (e.g. content lives in a tab the heuristic didn't reach), `render=force` re-extracts via headless Chromium.
+- Reddit URLs are automatically detected (incl. `redd.it` short links and `/r/<sub>/s/<id>` share links) and use a specialized extraction pipeline that handles posts, comments, galleries, and videos.
+- Add `frontmatter=true` when you want metadata: extraction source and quality always; for Reddit posts also subreddit, author, upvotes, and publish date; for media/YouTube/OCR results duration, image size, and LLM token usage (cost tracking).
+- The `/api/history` endpoint shows recent conversions — useful for checking what's been fetched: `curl -s "__PULLMD_URL__/api/history?limit=5"`.
+- Persistent share links: every successful conversion gets an 8-hex `share_id`. `GET __PULLMD_URL__/s/<id>` returns the cached markdown and re-fetches from source if older than one hour — useful as a stable URL that always returns fresh content.

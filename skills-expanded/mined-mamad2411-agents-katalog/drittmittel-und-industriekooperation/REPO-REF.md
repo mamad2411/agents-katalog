@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-fast/22975-drittmittel-und-industriekooperation/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Drittmittel Und Industriekooperation in Hochschulrecht der Bundesländer geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofo

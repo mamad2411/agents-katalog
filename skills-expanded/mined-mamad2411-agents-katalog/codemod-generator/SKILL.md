@@ -1,0 +1,455 @@
+---
+name: codemod-generator
+description: "Generate tested jscodeshift/postcss codemods for design system migrations: token renames, prop renames or removals, import paths, component swaps. Triggers: codemod, migration script, rename this prop everywhere. Deprecation planning: deprecation-process. Release notes: change-communication."
+allowed-tools: Read, Write, Grep, Glob, Bash(cat:*), Bash(find:*), Bash(head:*), Bash(ls:*), Bash(node:*), Bash(sort:*), Bash(tail:*), Bash(wc:*), Bash(npx tsc:*), Bash(npx jscodeshift:*), Bash(npx jest:*), Bash(npx vitest:*)
+references:
+  - ../../knowledge-notes/component-governance.md
+  - ../../knowledge-notes/design-to-code-contract.md
+  - ../../knowledge-notes/output-discipline.md
+---
+
+# Codemod Generator
+
+A skill for producing automated code transformation scripts that apply design system changes across consuming codebases. When a token is renamed, a component API changes, or an import path moves, this skill generates the script that makes the change everywhere — safely, consistently, and with a dry-run option.
+
+**Output type:** File creation. This skill produces executable transformation scripts (JavaScript/TypeScript) and documentation. It does not apply the transformations to the team's code — it generates scripts that teams run in their own codebases. Where you can execute commands, it does run the tests and a dry run (Step 5b).
+
+---
+
+## Before you begin: verify references
+
+Confirm that every path in this skill's frontmatter `references:` exists relative to this SKILL.md. If any is missing, stop: the install is incomplete, usually because a flattening installer (for example `npx skills install`) dropped the repo-root `knowledge-notes/` directory. Tell the user to reinstall by a method in `1-INSTALL.md` and run `verify-install.sh` from the install root. Proceed without the references only if the user explicitly says to, and then say in the output that it was produced without the pack's reference material.
+
+## Why this exists
+
+A design system change without a migration path is a breaking promise, and the manual find-and-replace is where upgrade debt accumulates until teams stop upgrading. A codemod does the mechanical part deterministically across every file. This skill generates the script and its tests; the deprecation plan and the migration guide stay with `deprecation-process` and `change-communication`.
+
+---
+
+## Configuration
+
+If `.ds-ops-config.yml` exists, follow the configuration-and-recurring knowledge note (`../../knowledge-notes/configuration-and-recurring.md`). This skill reads:
+
+```yaml
+codemods:
+  language: "typescript"              # typescript, javascript, or both
+  transform_engine: "jscodeshift"     # jscodeshift, ts-morph, or custom
+  output_directory: "codemods/"
+  test_framework: "jest"              # jest or vitest for codemod tests
+  style_dictionary_format: false      # If tokens use Style Dictionary format
+  css_custom_properties: true         # If tokens are consumed as CSS custom properties
+```
+
+If no configuration exists, use these defaults:
+- Language: TypeScript
+- Transform engine: jscodeshift
+- Output directory: `codemods/`
+- Test framework: jest
+
+---
+
+## Codemod types
+
+This skill generates five types of codemods:
+
+### Type 1: Token rename
+Renames a design token across all consuming files.
+
+**Scope:** CSS custom properties, JavaScript/TypeScript token imports, Sass variables, style objects, className references, and template-literal CSS in styled-components and Emotion (`css\`...\``, `styled.div\`...\``), which is where most CSS-in-JS token references live.
+
+**Example input:**
+```
+Rename: color.brand.primary → color.action.primary
+Affects: CSS custom properties (--color-brand-primary → --color-action-primary)
+         JS token imports (tokens.color.brand.primary → tokens.color.action.primary)
+         Sass variables ($color-brand-primary → $color-action-primary)
+```
+
+### Type 2: Component prop rename
+Renames a component prop across all usage sites.
+
+**Example input:**
+```
+Component: Button
+Rename prop: type → variant
+Value mapping: type="primary" → variant="primary" (no value change)
+```
+
+### Type 3: Component prop removal
+Removes a deprecated prop with a safe fallback or migration.
+
+**Example input:**
+```
+Component: Button
+Remove prop: disableRipple
+Migration: Delete the attribute (the ripple effect has been removed from the system).
+If the value is dynamic (disableRipple={flag}), leave it and add a TODO comment,
+since removing it may drop logic the consumer relies on.
+```
+
+### Type 4: Import path update
+Updates import paths when packages are restructured.
+
+**Example input:**
+```
+Old: import { Button } from '@myds/components'
+New: import { Button } from '@myds/react/Button'
+```
+
+### Type 5: Component replacement
+Replaces one component with another, mapping props.
+
+**Example input:**
+```
+Replace: DatePicker → DatePickerNext
+Prop mapping:
+  - value → selectedDate
+  - onChange → onDateChange
+  - format → dateFormat (default: "yyyy-MM-dd")
+  - minDate → min
+  - maxDate → max
+Removed props: locale (now uses system locale)
+New required props: none
+```
+
+---
+
+## Step 0: Determine the codemod type
+
+From the user's request, determine:
+
+1. **What is changing?** Token name, prop name, import path, or component replacement
+2. **What are the before and after states?** Exact old and new values
+3. **What is the scope?** CSS, JS/TS, Sass, all of the above
+4. **Are there edge cases?** Conditional logic, dynamic values, spread props
+5. **Is there a value mapping?** Or is it a straight rename
+
+If the request is unclear on any of these, ask before generating. A codemod that transforms the wrong thing is worse than no codemod at all.
+
+---
+
+## Step 1: Generate the transform script
+
+**Pick the engine for the change.** jscodeshift for syntactic changes (renames, attribute edits, import paths), which is most of them. ts-morph when the transform needs type information, for example renaming a prop only on components whose props extend a given interface, or telling two same-named components from different packages apart. ast-grep is a fast alternative for simple pattern rewrites when the team already uses it. Say which was chosen and why in the file header.
+
+### For jscodeshift transforms (JavaScript/TypeScript)
+
+Each codemod is a single file following the jscodeshift API:
+
+```javascript
+/**
+ * Codemod: [description]
+ * Generated by Design System Ops — codemod-generator
+ *
+ * Usage:
+ *   npx jscodeshift --transform codemods/[name].js --extensions=tsx,ts,jsx,js --parser=tsx src/
+ *
+ * Dry run (preview changes without writing):
+ *   npx jscodeshift --transform codemods/[name].js --extensions=tsx,ts,jsx,js --parser=tsx --dry --print src/
+ *
+ * Use the same --extensions and --parser flags for both commands: jscodeshift only
+ * reads .js files by default, so a dry run without them previews nothing.
+ *
+ * What this codemod does:
+ *   [Clear description of the transformation]
+ *
+ * What this codemod does NOT do:
+ *   [Explicit list of things this codemod will not catch]
+ */
+
+module.exports = function transformer(file, api) {
+  const j = api.jscodeshift;
+  const root = j(file.source);
+  let hasChanges = false;
+
+  // [Transform logic]
+
+  if (!hasChanges) {
+    return undefined; // Return undefined when no changes — jscodeshift skips the file
+  }
+
+  return root.toSource(); // don't force a quote style; recast keeps untouched code as written
+};
+
+module.exports.parser = 'tsx'; // or 'babel' for JS-only codebases
+```
+
+**Template literals.** A transform that visits only `StringLiteral` and `JSXAttribute` nodes misses token references inside `css\`...\`` and `styled.x\`...\``. Token-rename codemods also visit `TemplateLiteral` nodes and apply the anchored regex to each quasi's `value.raw` (and `value.cooked`), setting `hasChanges` when anything matched. Add a test whose input is a styled-component.
+
+### For CSS/Sass transforms
+
+CSS transforms cannot use jscodeshift (which is for JS ASTs). Generate a Node.js script using postcss for CSS, and postcss-scss for Sass. If you fall back to a regex for Sass variables, anchor the end of the name so `$color-brand-primary` doesn't also match `$color-brand-primary-light`: `/\$color-brand-primary(?![\w-])/g`. The same applies to custom properties: `/--color-brand-primary(?![\w-])/g`.
+
+```javascript
+/**
+ * Codemod: [description] (CSS)
+ * Generated by Design System Ops — codemod-generator
+ *
+ * Usage:
+ *   node codemods/[name]-css.js --dir src/ [--dry-run]
+ */
+
+const postcss = require('postcss');
+const fs = require('fs');
+const path = require('path');
+const glob = require('glob');
+
+// [PostCSS-based transform logic]
+```
+
+### For Style Dictionary token transforms
+
+If tokens use Style Dictionary format, generate a Style Dictionary pre-processor that transforms the token source files:
+
+```javascript
+/**
+ * Token migration: [description]
+ * Generated by Design System Ops — codemod-generator
+ *
+ * Usage:
+ *   node codemods/[name]-tokens.js --dir tokens/ [--dry-run]
+ */
+
+// [JSON/YAML transform logic for token source files]
+```
+
+---
+
+## Step 2: Generate test cases
+
+Every codemod must include tests. Generate a test file alongside the transform:
+
+```javascript
+/**
+ * Tests for: [codemod name]
+ * Generated by Design System Ops — codemod-generator
+ */
+
+const { applyTransform } = require('jscodeshift/dist/testUtils');
+const transform = require('./[name]');
+
+describe('[codemod name]', () => {
+  // Test 1: Basic transformation
+  it('transforms [basic case]', () => {
+    const input = `[before code]`;
+    const expected = `[after code]`;
+    const result = applyTransform(transform, {}, { source: input });
+    expect(result).toBe(expected.trim()); // applyTransform trims its output
+  });
+
+  // Test 2: No-op case (file without the pattern)
+  it('does not modify files without [pattern]', () => {
+    const input = `[unrelated code]`;
+    const result = applyTransform(transform, {}, { source: input });
+    expect(result).toBe(''); // applyTransform returns (output || '').trim(), so a no-op is ''
+  });
+
+  // Test 3: Edge case — dynamic values
+  it('handles [edge case description]', () => {
+    const input = `[edge case code]`;
+    const expected = `[expected result]`;
+    const result = applyTransform(transform, {}, { source: input });
+    expect(result).toBe(expected.trim());
+  });
+
+  // Test 4: Edge case — spread props
+  it('flags [untransformable case] with a comment', () => {
+    const input = `[untransformable code]`;
+    const result = applyTransform(transform, {}, { source: input });
+    expect(result).toContain('/* TODO: Manual migration needed');
+  });
+});
+```
+
+### Test coverage requirements
+
+Scale the tests to the change. A prop rename, prop removal or component replacement needs all eight cases below. A straight token rename or import-path update needs cases 1, 2, 3, 7 and 8 (dynamic values, spread props and conditional rendering don't arise), plus the template-literal case for token renames. Don't pad a simple codemod with tests for situations it can't meet.
+
+Each codemod must have tests for:
+1. **Basic case** — The simple, expected transformation
+2. **No-op case** — A file that does not contain the pattern (should be untouched)
+3. **Multiple occurrences** — File with the pattern appearing multiple times
+4. **Edge case: dynamic values** — When the value is a variable, not a literal
+5. **Edge case: spread props** — When props are spread (`{...props}`)
+6. **Edge case: conditional rendering** — When the component/token is used conditionally
+7. **Edge case: aliased imports** — When the import is renamed (`import { Button as Btn }`)
+8. **Untransformable case** — When the pattern is too complex for automated transformation (should add a TODO comment, not transform incorrectly)
+
+---
+
+## Step 3: Generate the migration runner
+
+Produce a `migrate.js` script that orchestrates running all codemods for a version upgrade:
+
+```javascript
+/**
+ * Migration runner: [system name] v[X] → v[Y]
+ * Generated by Design System Ops — codemod-generator
+ *
+ * Usage:
+ *   node codemods/migrate.js --dir src/ [--dry-run] [--verbose]
+ *
+ * This script runs all codemods for the v[X] → v[Y] migration in the correct order.
+ * Run with --dry-run first to preview changes.
+ */
+
+const { execSync } = require('child_process');
+const path = require('path');
+
+const CODEMODS = [
+  {
+    name: '[codemod 1]',
+    file: '[name-1].js',
+    description: '[what it does]',
+    order: 1,
+  },
+  {
+    name: '[codemod 2]',
+    file: '[name-2].js',
+    description: '[what it does]',
+    order: 2,
+    dependsOn: '[codemod 1]', // Must run after codemod 1
+  },
+];
+
+// [Runner logic: execute codemods in order, report results, handle failures]
+```
+
+### Order matters
+
+Some codemods must run before others:
+- Token renames before component prop updates (if components reference tokens by name)
+- Import path changes before component replacements (so the codemod finds the right imports)
+- Prop renames before prop removals (to avoid losing context)
+
+The migration runner enforces this ordering.
+
+---
+
+## Step 4: Generate documentation
+
+Produce a `MIGRATION.md` file alongside the codemods:
+
+```markdown
+# Migration guide: v[X] → v[Y]
+
+## What changed
+[Summary of all changes covered by these codemods]
+
+## Automated migration
+Run the migration script:
+\`\`\`bash
+# Preview changes (recommended first step)
+node codemods/migrate.js --dir src/ --dry-run
+
+# Apply changes
+node codemods/migrate.js --dir src/
+\`\`\`
+
+## What the codemods handle
+| Change | Codemod | Scope |
+|---|---|---|
+| [change 1] | [codemod file] | JS/TS/CSS |
+| [change 2] | [codemod file] | JS/TS only |
+
+## What requires manual attention
+These changes cannot be fully automated:
+- [manual item 1 — why it cannot be automated]
+- [manual item 2 — why it cannot be automated]
+
+For each manual item, search your codebase for:
+\`\`\`bash
+grep -r "[pattern]" src/
+\`\`\`
+
+## Verification
+After running the codemods:
+1. Run your test suite: \`npm test\`
+2. Run type checking: \`npx tsc --noEmit\`
+3. Visually review the changed files: \`git diff\`
+4. Run your application and test the affected components
+
+## Rollback
+Run the codemods on their own branch and commit their output as a single commit (or one commit per codemod), separate from any manual fixes. To undo, \`git revert <commit>\`.
+Steps that aren't reversible this way:
+- [e.g. Figma variable renames, published package versions, or "none"]
+```
+
+---
+
+## Step 5: Handle untransformable patterns
+
+Not everything can be automated. When the codemod encounters a pattern it cannot safely transform, it must:
+
+1. **Leave the original code untouched** — Never guess. Never transform incorrectly.
+2. **Add a TODO comment** at the exact location:
+   ```javascript
+   /* TODO: Manual migration needed — [description of what needs to change]
+    * Old pattern: [what the code currently does]
+    * New pattern: [what it should become]
+    * Why this was not automated: [reason — dynamic value, complex logic, etc.]
+    * Generated by Design System Ops — codemod-generator
+    */
+   ```
+3. **Report it** in the migration runner output:
+   ```
+   ⚠ [file.tsx:42] — Manual migration needed: [description]
+   ```
+
+### Common untransformable patterns
+
+- **Dynamic prop values:** `<Button variant={getVariant()}>` — the codemod cannot know what `getVariant()` returns
+- **Spread props:** `<Button {...buttonProps}>` — the codemod cannot know what `buttonProps` contains
+- **Computed token access:** `tokens[`color.${category}.${variant}`]` — the codemod cannot resolve template literals
+- **Re-exported components:** When a component is re-exported through an intermediary module with different prop types
+- **Test files with mocked props:** Mock objects may need different handling than production code
+
+---
+
+## Step 5b: Run what you generated
+
+If you can execute commands in the target repository, run the codemod's test file and a dry run over the consumer code before handing over. Report the results in the summary: tests passed and failed, files the dry run would change, and TODO flags added for manual migration. If you can't execute, say plainly that the codemods are untested and list the commands the user should run first.
+
+---
+
+## With other skills
+
+`deprecation-process` supplies the mapping table these codemods implement; `change-communication` puts the run commands in the migration guide; `cicd-integration` runs the codemod tests in the system's CI.
+
+---
+
+## Step 6: Two-sided migration (when Figma Console MCP is available)
+
+If the Figma Console MCP from Southleft is connected (check for `figma_rename_variable` and `figma_update_variable` tool availability), extend the migration to include Figma variable renames alongside the code codemods. This ensures design and code stay in sync during the migration.
+
+**Token renames:** For Type 1 (token rename) codemods, use `figma_rename_variable` to rename the corresponding Figma variables. Map each code-side rename to its Figma-side equivalent. Figma renames preserve all values, modes, and alias references — only the name changes.
+
+**Prop renames that affect Figma:** For Type 2 (prop rename) codemods where the renamed prop maps to a Figma component property, use `figma_edit_component_property` to update the property name in the Figma component. This keeps the Figma component's exposed properties in sync with the code API.
+
+**Workflow:**
+1. Generate the code-side codemods and tests (Steps 1–5) first
+2. Present the full migration plan, including which Figma variables or properties will be renamed
+3. Ask the user to confirm before applying Figma changes: "This migration will rename [n] tokens in code and [n] matching Figma variables. Apply both?"
+4. Apply Figma renames
+5. Verify by reading back the renamed variables
+6. Note any Figma-side changes in the MIGRATION.md documentation alongside the code changes
+
+**When the standard Figma MCP is connected (read-only):** The code-side codemods work normally. Include a section in MIGRATION.md listing the Figma variables that need to be renamed manually, with old name → new name mapping.
+
+---
+
+## Quality checks
+
+- Every codemod has a test file with the cases that apply to its type (all eight for prop and component codemods; the reduced set for renames), and token renames test a template-literal input
+- Every codemod includes a dry-run command with the same `--extensions` and `--parser` flags as the apply command
+- Tests and a dry run were executed and their results reported, or the output says "untested"
+- MIGRATION.md includes a Rollback section, naming any steps `git revert` won't undo
+- Every codemod handles untransformable patterns with TODO comments, not incorrect transforms
+- The migration runner enforces correct ordering based on dependencies
+- The MIGRATION.md clearly separates automated from manual steps
+- All generated files include provenance comments
+- The codemod preserves source code formatting (indentation, quotes, semicolons)
+- The transformer returns `undefined` for files that do not need changes (jscodeshift skips them); tests expect `''` from `applyTransform` for that case
+- Test cases cover: basic, no-op, multiple occurrences, dynamic values, spread props, conditional rendering, aliased imports, and untransformable patterns
+- The CSS/Sass transform handles both custom properties (`--token-name`) and Sass variables (`$token-name`)
+- If Figma variables were renamed, each rename was verified by reading back the variable

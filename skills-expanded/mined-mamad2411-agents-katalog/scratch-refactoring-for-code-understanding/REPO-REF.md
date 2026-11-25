@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-bookforge-ai-bookforge-skills/scratch-refactoring-for-code-understanding/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Guide a developer through throwaway refactoring — restructure code freely without tests to understand it, then DISCARD. Use whenever a developer says 'I don't understand this code', 'this code is too 

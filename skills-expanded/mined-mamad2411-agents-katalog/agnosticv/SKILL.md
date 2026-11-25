@@ -1,0 +1,2722 @@
+---
+name: agnosticv:validator
+description: This skill should be used when the user asks to "validate my catalog", "check my AgnosticV config", "review common.yaml", "validate my RHDP catalog", "check for errors in my catalog", "lint my AgnosticV files", or "verify my catalog before submitting".
+---
+
+---
+context: main
+model: claude-sonnet-4-6
+---
+
+# Skill: agnosticv-validator
+
+**Name:** AgnosticV Catalog Validator
+**Description:** Validate AgnosticV configurations against best practices and deployment requirements
+**Version:** 2.0.0
+**Last Updated:** 2026-06-29
+
+---
+
+## PH Headless Mode (ph_payload)
+
+When invoked by the Publishing House automation skill (phase 7b) — typically right after `agnosticv:catalog-builder` writes files — a `ph_payload` JSON block is present. In headless mode skip Steps 1-2 (interactive setup), run validation automatically, and return JSON only.
+
+### Detecting Headless Mode
+
+At the very start — before Step 0 — check for `ph_payload` in the invocation context. If found → `HEADLESS_MODE = true`. Skip Steps 1-2. Proceed directly to Step 3 using payload values.
+
+### ph_payload Schema
+
+```json
+{
+  "catalog_path": "/abs/path/to/agnosticv/agd_v2/my-workshop",
+  "agv_path": "/abs/path/to/agnosticv",
+  "validation_scope": "standard",
+  "event_context": "none",
+  "lab_id": ""
+}
+```
+
+`validation_scope`: `quick` | `standard` | `full` (default: `standard`)
+
+### Headless Execution
+
+1. Parse `catalog_path`, `agv_path`, `validation_scope`, `event_context`, `lab_id` from payload.
+2. Run Step 0 (schema + commitv detection) using `agv_path` from payload — do NOT auto-detect from config files. The payload `agv_path` takes precedence over `~/CLAUDE.md` detection.
+3. Skip Steps 1-2. Explicitly set these variables from payload before running checks:
+   - `catalog_path` ← payload `catalog_path`
+   - `event_context` ← payload `event_context` (replaces Step 1.5 directory detection)
+   - `lab_id` ← payload `lab_id` (replaces Step 1.5 extraction)
+   - `validation_scope` ← payload `validation_scope`
+4. Run all checks for the specified scope (Step 3).
+5. Return JSON only — no prose, no follow-up menu:
+
+```json
+{
+  "status": "passed",
+  "catalog_path": "/abs/path/to/agnosticv/agd_v2/my-workshop",
+  "validation_scope": "standard",
+  "errors": [],
+  "warnings": [
+    {
+      "check": "best_practices",
+      "message": "No keywords defined",
+      "recommendation": "Add 3-4 specific technology keywords"
+    }
+  ],
+  "suggestions": [],
+  "passed_checks": ["✓ UUID format valid", "✓ Category valid: Labs"],
+  "summary": "0 errors, 1 warning, 0 suggestions, 12 checks passed"
+}
+```
+
+`status` values: `passed` (0 errors), `passed_with_warnings` (0 errors, N warnings), `failed` (1+ errors)
+
+**Never ask questions in headless mode.** Never run Step 4 (report format) or Step 5 (follow-up menu). Exit immediately after JSON output.
+
+---
+
+## Orchestrator Mode (v2.0.0)
+
+Starting v2.0.0, this skill is an **orchestrator**. It builds a shared context, then dispatches parallel subagents for each check domain. The 27+ checks are no longer run inline — they are owned by specialist agents.
+
+### Pre-Flight (ALWAYS — before spawning any agent)
+
+Run these steps in order. Do not skip any.
+
+**1. Detect agv_path** — from config files or ph_payload (payload wins).
+
+**2. Parse common.yaml** using `yaml.safe_load`. If parse fails:
+```
+→ Return immediately: {"status": "failed", "errors": [{"check": "yaml_syntax", "message": "YAML parse error: <details>"}]}
+→ STOP. Do NOT spawn any subagent.
+```
+
+**3. Classify CI type** — resolve once, pass as `ci_type` in shared_context. Subagents never re-derive it:
+
+| Condition | ci_type |
+|-----------|---------|
+| `config: namespace` | `tenant_namespace` |
+| `config: openshift-cluster` + `cloud_provider: openshift_cnv` | `shared_pool_cluster` |
+| `config: openshift-cluster` + aws/azure/gcp cloud_provider + no `-tenant` pair | `per_user_dedicated` |
+| `config: openshift-workloads` + `cloud_provider: none` + `__meta__.components` present | `binder` |
+| `config: zero-touch-base-rhel` OR in zt-* repo | `zero_touch` |
+| All others | `per_user_dedicated` |
+
+**4. Check for commitv** at `$agv_path/.claude/skills/commitv/SKILL.md`. Set `commitv_available: true/false`.
+
+**5. Check for babylon schema** at `$agv_path/.schemas/babylon.yaml`. Set `schema_loaded: true/false`.
+
+**6. Detect event context** from catalog directory path. Set `event_context` and `lab_id`.
+
+**7. Build shared_context** per `@agnosticv/docs/shared-context-schema.md` (validator section).
+
+### Subagent Dispatch
+
+After pre-flight completes (no YAML error), spawn agents in parallel using the Task tool:
+
+**All scopes — always spawn:**
+- `agnosticv:schema-checker` — pass shared_context
+- `agnosticv:metadata-checker` — pass shared_context
+
+**Standard + Full scope only (not quick):**
+- `agnosticv:workload-checker` — pass shared_context
+- IF `ci_type == tenant_namespace` OR `ci_type == shared_pool_cluster` → `agnosticv:sandbox-checker`
+- ELSE → `agnosticv:ocp-infra-checker`
+
+**Wait for all spawned agents to complete.**
+
+### Result Merge
+
+Collect all agent JSON outputs. Merge into a single report:
+
+```python
+all_errors = []
+all_warnings = []
+all_suggestions = []
+all_passed = []
+
+for agent_result in agent_results:
+    all_errors.extend(agent_result.get("errors", []))
+    all_warnings.extend(agent_result.get("warnings", []))
+    all_suggestions.extend(agent_result.get("suggestions", []))
+    all_passed.extend(agent_result.get("passed_checks", []))
+
+# Deduplicate by (check_id, location)
+# Apply cross-agent suppression: if schema-checker has has_yaml_parse_error,
+# filter out all workload/infra/metadata findings (they are false positives)
+```
+
+**Cross-agent suppression rules:**
+- If schema-checker returns `has_yaml_parse_error: true` → keep only YAML parse error, discard all other agent findings
+- If `ci_type == zero_touch` → suppress Check 14 (deployer), Check 15a (anarchy namespace), Check 19 (password pattern for common_password)
+- Deduplicate findings with same `check_id` + `location` from different agents (keep highest severity)
+
+### Interactive Output (non-headless)
+
+After merging → run Step 4 (generate report) and Step 5 (follow-up actions) as normal, using the merged findings as input.
+
+### Headless Output (ph_payload mode)
+
+Return merged JSON per ph_payload output contract. Do not run Step 4 or Step 5.
+
+---
+
+## Purpose
+
+Comprehensive validation of AgnosticV catalog configurations before deployment. Checks UUID format, YAML syntax, workload dependencies, category correctness, and best practices to prevent deployment failures.
+
+## Workflow Diagram
+
+![Workflow](workflow.svg)
+
+## What You'll Need Before Starting
+
+Have these ready before running this skill:
+
+**Required:**
+- 📁 **Path to catalog directory** - Location of the catalog you want to validate
+  - Example: `~/work/code/agnosticv/agd_v2/my-workshop`
+  - Example: `/path/to/agnosticv/catalogs/my-demo`
+  - Can be relative path if you're in the AgV repo
+
+**The catalog should have:**
+- ✅ **common.yaml** (minimum requirement)
+- 📋 Optional: dev.yaml, prod.yaml, description.adoc
+
+**Access needed:**
+- ✅ Read permissions to the catalog directory
+- ✅ Read permissions to AgnosticV repository
+
+**What gets validated:**
+- UUID format and uniqueness
+- YAML syntax (common.yaml, dev.yaml, prod.yaml)
+- Workload dependencies and availability
+- Category correctness and structure
+- Infrastructure recommendations
+- Best practices compliance
+- Asset metadata completeness
+
+**Good to know:**
+- Validation produces errors (must fix), warnings (should fix), and suggestions (nice to have)
+- Best run BEFORE creating a PR
+- Can run multiple times as you fix issues
+
+---
+
+## When to Use This Skill
+
+Use `/agnosticv-validator` when you need to:
+
+- Validate a new catalog before creating PR
+- Troubleshoot catalog deployment failures
+- Check catalog quality before testing in RHDP
+- Verify updates to existing catalogs
+- Ensure best practices compliance
+
+**Prerequisites:**
+- AgnosticV repository cloned locally
+- Catalog files exist (common.yaml minimum)
+- Git configured and repository accessible
+
+---
+
+## Skill Workflow Overview
+
+```
+Step 0: Detect private AgV validator (if present, use it instead)
+  ↓
+Step 1: Path Detection (Auto-detect or ask)
+  ↓
+Step 2: Validation Scope Selection
+  ↓
+Step 3: Run Validation Checks
+  ↓
+Step 4: Generate Report (Errors/Warnings/Suggestions)
+  ↓
+Step 5: Offer Follow-up Actions
+```
+
+---
+
+## Step 0: Schema and Private Validator Detection
+
+### Step 0a — AgV Babylon Schema (AUTHORITATIVE — check FIRST)
+
+Detect AgV path from config files. Then:
+
+```bash
+schema_path="$agv_path/.schemas/babylon.yaml"
+if [ -f "$schema_path" ]; then
+  echo "📐 Babylon schema found: $schema_path — using as authoritative source"
+  # Load schema — this defines:
+  # - __meta__ additionalProperties: false (flag any unknown fields)
+  # - category enum: ["Demos", "Labs", "Open_Environments", "Workshops", "Brand_Events"]
+  #   NOTE: "Sandboxes" is NOT in the schema — flag it as ERROR
+  # - asset_uuid pattern: ^[0-9A-Fa-f]{8}-...-[0-9A-Fa-f]{12}$
+  # - All __meta__.catalog field types and enums
+  schema_loaded=true
+fi
+```
+
+When validating any catalog:
+- Use schema-defined category enum (NOT hardcoded list)
+- Enforce additionalProperties: false on __meta__ (flag any unknown __meta__ fields as ERROR)
+- Derive field-type constraints from schema, not memory
+
+**Known schema values (current as of babylon.yaml):**
+- Valid categories: Demos, Labs, Open_Environments, Workshops, Brand_Events
+- WARNING: Do NOT include "Sandboxes" — it is NOT in the schema
+
+### Step 0b — Private AgV Validator (if present)
+
+**After** checking for the babylon schema, check for the `commitv` skill stored in the private AgV repo.
+
+```bash
+# Check for commitv — the private AgV validation skill
+commitv_skill="$agv_path/.claude/skills/commitv/SKILL.md"
+
+if [ -f "$commitv_skill" ]; then
+  echo "🔐 AgV commitv skill found at: $commitv_skill"
+  echo "Using detailed internal validation..."
+fi
+```
+
+**If commitv exists:**
+- Load it with `@{commitv_skill}` and follow its instructions alongside (or instead of) the checks below.
+- The commitv skill lives in the private AgV repo and may contain internal RHDP-specific checks and conventions not appropriate to expose publicly.
+- This public skill's built-in checks still run as a baseline, but commitv is authoritative where it overlaps.
+
+**If commitv is not found:**
+- Continue with this skill's built-in checks only.
+- Tell the user: "Running public baseline checks. For full internal validation, ensure the AgV repo's `.claude/skills/commitv/SKILL.md` is present."
+
+---
+
+## Configuration Detection
+
+### Get AgnosticV Repository Path (For Full Repo Validation)
+
+Detect AgV path automatically by checking config files (`~/CLAUDE.md`, `~/claude/*.md`, `~/.claude/*.md`) for a line containing `agnosticv` with a path. If found, confirm with user. If not found, ask when needed for full repository validation.
+
+See `@agnosticv/docs/AGV-COMMON-RULES.md` for the full detection procedure.
+
+---
+
+## Step 1: Setup
+
+### Auto-detect AgnosticV Repository Path
+
+Silently check `~/CLAUDE.md`, `~/claude/*.md`, `~/.claude/*.md` for a line containing `agnosticv` with a path. If found, confirm with user. If not found, ask.
+
+See `@agnosticv/docs/AGV-COMMON-RULES.md` for full detection procedure.
+
+### Ask which catalog to validate
+
+```
+🔍 AgnosticV Catalog Validator
+
+AgnosticV repo: {{ agv_path }}
+
+Q: Which catalog do you want to validate?
+   Provide the path relative to the AgV repo root, or full path.
+
+   Examples:
+   - agd_v2/my-workshop
+   - openshift_cnv/my-demo
+   - summit-2026/lb2298-ibm-fusion-aws
+
+Catalog path:
+```
+
+**Validate the provided path:**
+
+```bash
+full_path="$AGV_PATH/$catalog_input"
+
+if [ -f "$full_path/common.yaml" ]; then
+  echo "✅ Found: $full_path"
+  echo "   common.yaml ✓"
+  [ -f "$full_path/dev.yaml" ] && echo "   dev.yaml ✓" || echo "   dev.yaml (not found)"
+  [ -f "$full_path/description.adoc" ] && echo "   description.adoc ✓" || echo "   ⚠ description.adoc (missing)"
+else
+  echo "❌ No common.yaml found at: $full_path"
+  echo "   Check the path and try again."
+fi
+```
+
+**Store validated path** for all subsequent checks.
+
+---
+
+## Step 1.5: Event Context Detection
+
+Auto-detect event from the catalog directory path. Then confirm with user.
+
+**Detection logic:**
+
+```bash
+# Extract parent directory from catalog path
+# e.g., /path/to/agnosticv/summit-2026/lb2298-ibm-fusion → summit-2026
+parent_dir=$(basename $(dirname $CATALOG_PATH))
+# e.g., lb2298-ibm-fusion → lb2298
+lab_id=$(echo $(basename $CATALOG_PATH) | grep -oP '^lb\d+')
+```
+
+| Detected parent | Conclusion |
+|---|---|
+| `summit-2026` | Event: summit-2026 |
+| `rh1-2026` | Event: rh1-2026 |
+| anything else | No event detected |
+
+**Ask ONE question:**
+
+```
+🎪 Event Context
+
+{% if event_detected %}
+Detected event catalog: {{ parent_dir }}/{{ catalog_slug }}
+Lab ID detected: {{ lab_id }}
+
+Is this for event: {{ parent_dir }}? [Yes/No]
+{% else %}
+Is this catalog for a specific event?
+
+1. Red Hat Summit 2026  (summit-2026)
+2. Red Hat One 2026     (rh1-2026)
+3. No event
+
+Choice [1/2/3]:
+{% endif %}
+```
+
+Store: `event_context` (summit-2026 | rh1-2026 | none), `lab_id` (lbxxxx | empty).
+
+If event confirmed → run **Check 16a: Event Catalog Validation** (event-specific checks).
+
+---
+
+## Step 2: Validation Scope Selection
+
+```
+Q: What level of validation do you want?
+
+1. ⚡ Quick check (file structure, UUID, basic YAML)
+   Duration: ~5 seconds
+   Checks: Essential blocking issues only
+   
+2. ✅ Standard validation (recommended)
+   Duration: ~15-30 seconds
+   Checks: Files, UUID, YAML, workloads, schema, best practices
+   
+3. 🔬 Full validation (everything + GitHub API)
+   Duration: ~30-60 seconds
+   Checks: Standard + GitHub tag/branch validation, collection URLs
+
+Recommended: 2 (Standard)
+
+Your choice: [1/2/3]
+```
+
+**Set validation scope:**
+
+```python
+if choice == 1:
+  validation_scope = "quick"
+  checks_to_run = ["file_structure", "uuid", "yaml_syntax"]
+  
+elif choice == 2:
+  validation_scope = "standard"
+  checks_to_run = ["file_structure", "uuid", "yaml_syntax", "category",
+                   "workloads", "authentication", "showroom", "infrastructure",
+                   "stage_files", "multiuser", "bastion", "collections",
+                   "deployer", "reporting_labels", "components", "asciidoc",
+                   "anarchy_namespace", "best_practices",
+                   "litemaas", "event_restriction", "duplicate_includes",
+                   "event_catalog",   # event_catalog only runs if event_context != none
+                   "password_pattern", "showroom_namespace", "ee_image_date",
+                   "requirements_content_position", "untagged_images",
+                   "catalog_name_length",
+                   "runtime_automation", "litellm_placement", "showroom_placement"]
+
+elif choice == 3:
+  validation_scope = "full"
+  checks_to_run = ["file_structure", "uuid", "yaml_syntax", "category",
+                   "workloads", "authentication", "showroom", "infrastructure",
+                   "stage_files", "multiuser", "bastion", "collections",
+                   "deployer", "reporting_labels", "components", "asciidoc",
+                   "anarchy_namespace", "best_practices",
+                   "litemaas", "event_restriction", "duplicate_includes",
+                   "event_catalog",   # event_catalog only runs if event_context != none
+                   "github_api", "collection_urls", "scm_refs",
+                   "runtime_automation", "litellm_placement", "showroom_placement"]
+```
+
+---
+
+## Step 3: Run Validation Checks
+
+### Initialize Error Collection
+
+```python
+errors = []         # ERRORS (must fix) - Block deployment
+warnings = []       # WARNINGS (should fix) - May cause issues  
+suggestions = []    # SUGGESTIONS (nice to have) - Best practices
+passed_checks = []  # Passed checks for summary
+```
+
+### Check 1: File Structure
+
+**IMPORTANT — path verification rule:** Before flagging any file as missing, run `ls {catalog_path}` via Bash and verify against the actual directory listing. Do NOT rely on path string construction alone — AgnosticV catalog paths can have unexpected prefixes (summit-2026/, agd_v2/, etc.). If the file appears in the `ls` output, it exists — do not flag it as missing regardless of what `os.path.exists()` would return on a constructed path.
+
+```python
+def check_file_structure(catalog_path):
+  """Required files validation"""
+  
+  required_files = ["common.yaml"]
+  recommended_files = ["description.adoc", "dev.yaml"]
+  
+  # Check required
+  for file in required_files:
+    filepath = f"{catalog_path}/{file}"
+    if os.path.exists(filepath):
+      passed_checks.append(f"✓ Required file present: {file}")
+    else:
+      errors.append({
+        'check': 'file_structure',
+        'severity': 'ERROR',
+        'message': f'Missing required file: {file}',
+        'location': catalog_path,
+        'fix': f'Create {file} in catalog directory'
+      })
+  
+  # Check recommended
+  for file in recommended_files:
+    filepath = f"{catalog_path}/{file}"
+    if not os.path.exists(filepath):
+      warnings.append({
+        'check': 'file_structure',
+        'severity': 'WARNING',
+        'message': f'Recommended file missing: {file}',
+        'location': catalog_path,
+        'fix': f'Create {file} for better catalog quality'
+      })
+```
+
+### Check 2: UUID Format and Uniqueness
+
+```python
+import re
+import yaml
+
+def check_uuid(catalog_path, agv_repo_path):
+  """UUID validation - CRITICAL"""
+  
+  # Load common.yaml
+  with open(f"{catalog_path}/common.yaml") as f:
+    config = yaml.safe_load(f)
+  
+  # Check if UUID exists
+  if '__meta__' not in config:
+    errors.append({
+      'check': 'uuid',
+      'severity': 'ERROR',
+      'message': 'Missing __meta__ section',
+      'location': 'common.yaml',
+      'fix': 'Add __meta__ section with asset_uuid'
+    })
+    return
+  
+  if 'asset_uuid' not in config['__meta__']:
+    errors.append({
+      'check': 'uuid',
+      'severity': 'ERROR',
+      'message': 'Missing __meta__.asset_uuid',
+      'location': 'common.yaml:__meta__',
+      'fix': 'Generate UUID with: uuidgen'
+    })
+    return
+  
+  uuid = config['__meta__']['asset_uuid']
+  
+  # Validate UUID format (RFC 4122)
+  uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  
+  if not re.match(uuid_pattern, str(uuid).lower()):
+    errors.append({
+      'check': 'uuid',
+      'severity': 'ERROR',
+      'message': f'Invalid UUID format: {uuid}',
+      'location': 'common.yaml:__meta__.asset_uuid',
+      'fix': 'Generate proper UUID with: uuidgen',
+      'example': '5ac92190-6f0d-4c0e-a9bd-3b20dd3c816f'
+    })
+    return
+  
+  # Check for UUID collision
+  collision = search_uuid_in_repo(uuid, agv_repo_path, current_catalog=catalog_path)
+  
+  if collision:
+    errors.append({
+      'check': 'uuid',
+      'severity': 'ERROR',
+      'message': f'UUID collision detected',
+      'location': 'common.yaml:__meta__.asset_uuid',
+      'details': f'UUID {uuid} already used in: {collision["path"]}',
+      'catalog': collision["name"],
+      'fix': 'Generate new unique UUID with: uuidgen'
+    })
+    return
+  
+  passed_checks.append(f"✓ UUID format valid: {uuid}")
+  passed_checks.append(f"✓ UUID is unique")
+
+def search_uuid_in_repo(uuid, repo_path, current_catalog):
+  """Search for UUID in all catalogs"""
+  import glob
+  
+  for catalog in glob.glob(f"{repo_path}/**/common.yaml", recursive=True):
+    if os.path.dirname(catalog) == current_catalog:
+      continue  # Skip current catalog
+    
+    with open(catalog) as f:
+      try:
+        config = yaml.safe_load(f)
+        if config.get('__meta__', {}).get('asset_uuid') == uuid:
+          return {
+            'path': catalog,
+            'name': config.get('__meta__', {}).get('catalog', {}).get('display_name', 'Unknown')
+          }
+      except:
+        continue
+  
+  return None
+```
+
+### Check 3: Category Validation
+
+```python
+def check_category(config):
+  """Category correctness validation"""
+
+  valid_categories = ["Workshops", "Labs", "Demos", "Open_Environments", "Brand_Events"]
+
+  if '__meta__' not in config or 'catalog' not in config['__meta__']:
+    errors.append({
+      'check': 'category',
+      'severity': 'ERROR',
+      'message': 'Missing __meta__.catalog section',
+      'location': 'common.yaml',
+      'fix': 'Add __meta__.catalog section with category'
+    })
+    return
+
+  category = config['__meta__']['catalog'].get('category')
+
+  if not category:
+    errors.append({
+      'check': 'category',
+      'severity': 'ERROR',
+      'message': 'Missing __meta__.catalog.category',
+      'location': 'common.yaml:__meta__.catalog',
+      'fix': f'Add category: {valid_categories}'
+    })
+    return
+
+  if category not in valid_categories:
+    errors.append({
+      'check': 'category',
+      'severity': 'ERROR',
+      'message': f'Invalid category: "{category}"',
+      'location': 'common.yaml:__meta__.catalog.category',
+      'current': category,
+      'valid_options': valid_categories,
+      'fix': f'Use one of: {", ".join(valid_categories)} (case-sensitive)'
+    })
+    return
+
+  passed_checks.append(f"✓ Category valid: {category}")
+
+  # Validate category alignment with configuration
+  multiuser = config['__meta__']['catalog'].get('multiuser', False)
+
+  # Workshops can be single-user or multi-user — no restriction enforced
+  # Only Demos are always single-user
+
+  if category == "Demos" and multiuser:
+    errors.append({
+      'check': 'category',
+      'severity': 'ERROR',
+      'message': 'Category "Demos" should not be multi-user',
+      'location': 'common.yaml:__meta__.catalog',
+      'current': 'multiuser: true',
+      'expected': 'multiuser: false',
+      'fix': 'Set multiuser: false for demos'
+    })
+
+  # Check workshopLabUiRedirect - should NOT be enabled for demos
+  workshop_ui_redirect = config['__meta__']['catalog'].get('workshopLabUiRedirect', False)
+
+  if category == "Demos" and workshop_ui_redirect:
+    errors.append({
+      'check': 'category',
+      'severity': 'ERROR',
+      'message': 'Demos should not have workshopLabUiRedirect enabled',
+      'location': 'common.yaml:__meta__.catalog',
+      'current': 'workshopLabUiRedirect: true',
+      'fix': 'Remove workshopLabUiRedirect or set to false for demos'
+    })
+```
+
+### Check 4: YAML Syntax
+
+```python
+def check_yaml_syntax(catalog_path):
+  """YAML syntax validation"""
+  
+  files_to_check = ["common.yaml", "dev.yaml"]
+  
+  for filename in files_to_check:
+    filepath = f"{catalog_path}/{filename}"
+    
+    if not os.path.exists(filepath):
+      continue
+    
+    try:
+      with open(filepath) as f:
+        yaml.safe_load(f)
+      passed_checks.append(f"✓ {filename} syntax valid")
+    except yaml.YAMLError as e:
+      errors.append({
+        'check': 'yaml_syntax',
+        'severity': 'ERROR',
+        'message': f'YAML syntax error in {filename}',
+        'location': f'{filename}:line {e.problem_mark.line if hasattr(e, "problem_mark") else "?"}',
+        'details': str(e),
+        'fix': 'Fix YAML syntax errors'
+      })
+```
+
+### Check 5: Workload Dependencies
+
+```python
+def check_workload_dependencies(config):
+  """Workload and collection dependency validation"""
+  
+  if 'workloads' not in config:
+    errors.append({
+      'check': 'workloads',
+      'severity': 'ERROR',
+      'message': 'No workloads defined',
+      'location': 'common.yaml',
+      'fix': 'Add workloads list'
+    })
+    return
+  
+  workloads = config.get('workloads', [])
+  collections = config.get('requirements_content', {}).get('collections', [])
+  
+  # Extract collection names
+  collection_names = []
+  for coll in collections:
+    if 'name' in coll:
+      # Extract org/repo from GitHub URL or collection name
+      if 'github.com' in coll['name']:
+        # https://github.com/agnosticd/core_workloads.git → core_workloads
+        repo_name = coll['name'].split('/')[-1].replace('.git', '')
+        collection_names.append(repo_name)
+      else:
+        collection_names.append(coll['name'])
+  
+  # Check each workload format and dependencies
+  for workload in workloads:
+    # Validate format: namespace.collection.role
+    parts = workload.split('.')
+    
+    if len(parts) < 3:
+      errors.append({
+        'check': 'workloads',
+        'severity': 'ERROR',
+        'message': f'Invalid workload format: {workload}',
+        'location': 'common.yaml:workloads',
+        'expected': 'namespace.collection.role_name',
+        'example': 'agnosticd.core_workloads.ocp4_workload_authentication',
+        'fix': 'Use fully qualified workload name'
+      })
+      continue
+    
+    namespace, collection, role = parts[0], parts[1], '.'.join(parts[2:])
+    
+    # Check if collection is in requirements
+    if collection not in collection_names and collection not in ['showroom']:
+      warnings.append({
+        'check': 'workloads',
+        'severity': 'WARNING',
+        'message': f'Workload "{workload}" requires collection "{collection}"',
+        'location': 'common.yaml:requirements_content.collections',
+        'fix': f'Add collection to requirements_content.collections',
+        'example': f'''
+requirements_content:
+  collections:
+  - name: https://github.com/{namespace}/{collection}.git
+    type: git
+    version: main
+'''
+      })
+  
+  if workloads:
+    passed_checks.append(f"✓ Workload format correct ({len(workloads)} workloads)")
+```
+
+### Check 6: Infrastructure — Config Type Gate
+
+Detect `config:` type from `common.yaml` and route to the appropriate infra-specific check file.
+
+```python
+config_type = config.get('config', '')
+cloud_provider = config.get('cloud_provider', '')
+num_users = config.get('num_users', None)
+
+if config_type == 'cloud-vms-base':
+    # → Run checks from @agnosticv/docs/cloud-vms-base-validator-checks.md
+    #   Covers: Check 6A (instances, bastion image, multiuser isolation warning)
+    #           Check 7  (authentication SKIP — no OCP auth on VMs)
+    #           Check 8  (VM showroom only, no ocp_console_embed)
+    #           Check 11 (multiuser isolation warning only)
+    pass
+
+elif config_type == 'namespace':
+    # Sandbox API Tenant CI — config: namespace, cloud_provider: none
+    # → Run checks from @agnosticv/docs/sandbox-validator-checks.md
+    #   Covers: Check 6C (sandboxes block, kind: OcpSandbox, cloud_selector)
+    #           Check 6D (sandbox_api.actions.destroy.catch_all: false required)
+    #           Check 6E (namespaced_workloads collection, tenant workloads)
+    #           Check 6F (remove_workloads present and correct)
+    #           Check 6G (deployer.actions.status + update disabled)
+    pass
+
+elif config_type == 'openshift-workloads' and cloud_provider == 'none' and num_users == 0:
+    # Sandbox API Cluster CI — shared cluster for tenant placements
+    # → Run checks from @agnosticv/docs/sandbox-validator-checks.md
+    #   Covers: Check 6H (sandbox-api.yaml + access-restriction-admins-only includes)
+    #           Check 6I (propagate_provision_data complete)
+    #           Check 6J (deployer.actions.status + update disabled)
+    pass
+
+elif config_type == 'openshift-cluster' and cloud_provider == 'openshift_cnv':
+    # CNV Pool CI — provisions pool clusters for sandbox allocation, not user-facing labs
+    # → Run checks from @agnosticv/docs/ocp-validator-checks.md
+    #   Covers: Check 6B (OCP infra only)
+    #   SKIPS:  Check 7  (no auth workload needed — pool clusters handle auth at sandbox level)
+    #           Check 11 (worker_instance_count: 0 is correct — SNO/compact, no separate workers)
+    pass
+
+else:
+    # config: openshift-workloads — standard OCP lab with cloud_provider: cnv or aws
+    # → Run checks from @agnosticv/docs/ocp-validator-checks.md
+    #   Covers: Check 6B (OCP version, GPU, SNO limits)
+    #           Check 7  (unified auth role, deprecated roles, RHSSO block)
+    #           Check 8  (both OCP showroom workloads together, dev_mode)
+    #           Check 11 (num_users param, worker scaling, workshopLabUiRedirect)
+    #           Check 15 (component propagation for OCP cluster component)
+    #           Check 17 (LiteMaaS — OCP-only workload)
+    pass
+
+# --- CI Type Classification ---
+# IMPORTANT: Correctly classify the CI type before applying workload placement,
+# category, and structural checks. Misclassification causes false positives.
+#
+# 1. Shared pool cluster (cluster CI in a tenant/cluster pair):
+#   - CI name ends in "-cluster" (has a corresponding -tenant CI)
+#   - OR config_type == 'openshift-cluster' and cloud_provider == 'openshift_cnv'
+#   - Per-user workloads (showroom, auth, litellm) do NOT belong here
+#
+# 2. Per-user dedicated cluster:
+#   - config: openshift-cluster with a real cloud_provider (aws, azure, gcp)
+#   - Each user gets their own cluster — NOT shared
+#   - NO corresponding -tenant CI
+#   - Per-user workloads (showroom, auth, workshopLabUiRedirect) BELONG here
+#   - Treat like a standalone lab for workload placement checks
+#
+# 3. Binder CI (user-facing entry point that uses a pool cluster):
+#   - config: openshift-workloads with __meta__.components referencing a pool item
+#   - cloud_provider: none (no own infra — gets a cluster from the pool)
+#   - This IS user-facing — category 'Workshops' or 'Brand_Events' is CORRECT
+#   - Showroom, auth, litellm, workshopLabUiRedirect all BELONG here
+#   - Do NOT flag as "cluster provisioner CI" — it is NOT a cluster provisioner
+#   - sandbox_api.actions.destroy.catch_all: false is correct for binders
+#
+# 4. Zero-touch CI (zero-touch-base-rhel / zt-* repos):
+#   - config: zero-touch-base-rhel, or catalog lives in a zt-* agnosticv repo
+#   - Fundamentally different structure from standard AgnosticV catalogs:
+#     * deployer.type may be null — this is CORRECT, not an error
+#     * No top-level workloads list — workloads are in component parameter_values
+#     * No top-level requirements_content or tag: variable
+#     * common_password using hash/GUID generation is the standard pattern
+#   - SKIP: deployer completeness, workloads presence, collections, tag variable,
+#     password_pattern for common_password, anarchy_namespace confirmation
+#   - APPLY: uuid format, category, event_catalog keywords/labels, reporting_labels,
+#     display_name length (these metadata checks apply to all CIs)
+#
+# 5. Tenant namespace (config: namespace):
+#   - Per-user workloads belong here
+#   - workshopLabUiRedirect: true with multiuser: false IS valid — routes user
+#     to their Showroom UI. Do NOT flag this combination as an error.
+#
+# When evaluating Checks 26, 27, and authentication placement, only flag workloads
+# as misplaced in SHARED POOL cluster CIs. All other CI types either own their
+# workloads or are not cluster provisioners.
+#
+# CORRECTION — asset_uuid: The correct path is __meta__.asset_uuid (direct child
+# of __meta__). Do NOT flag it as wrong. __meta__.__meta__.asset_uuid and
+# __meta__.catalog.asset_uuid are INCORRECT paths — never suggest them.
+#
+# CORRECTION — anarchy.namespace: Only flag as ERROR if it IS DEFINED in the config.
+# If the key is absent, that is CORRECT — mark as PASSED.
+```
+
+After infra-specific checks complete, continue with shared checks below.
+
+### Check 9: Best Practices
+
+```python
+def check_best_practices(config):
+  """Best practice recommendations"""
+  
+  # Check for display_name
+  display_name = config.get('__meta__', {}).get('catalog', {}).get('display_name', '')
+  
+  if len(display_name) > 60:
+    warnings.append({
+      'check': 'best_practices',
+      'severity': 'WARNING',
+      'message': f'Display name too long ({len(display_name)} chars) — must be 60 characters or fewer',
+      'location': 'common.yaml:__meta__.catalog.display_name',
+      'current': display_name,
+      'fix': 'Shorten the display name to 60 characters or fewer'
+    })
+  elif display_name:
+    passed_checks.append(f"✓ Display name length OK ({len(display_name)} chars)")
+  
+  # Check keywords exist and are meaningful
+  # Count doesn't matter — search indexes display_name and description already.
+  # Keywords must add specific discriminating value beyond what category/title implies.
+  keywords = config.get('__meta__', {}).get('catalog', {}).get('keywords', [])
+
+  if not keywords:
+    suggestions.append({
+      'check': 'best_practices',
+      'message': 'No keywords defined',
+      'recommendation': 'Add 3-4 specific technology keywords (e.g., "mcp", "leapp", "tekton", "cnpg")'
+    })
+  else:
+    if len(keywords) > 4:
+      suggestions.append({
+        'check': 'best_practices',
+        'message': f'Too many keywords ({len(keywords)}) — keep to 3-4 meaningful terms',
+        'current': keywords,
+        'recommendation': 'Trim to 3-4 specific technology keywords. More is not better — '
+                          'dilutes discoverability and search relevance.'
+      })
+
+    generic_keywords = {'workshop', 'demo', 'lab', 'sandbox', 'openshift', 'ansible',
+                        'rhel', 'tutorial', 'training', 'course', 'test', 'example'}
+    generic_found = [k for k in keywords if k.lower() in generic_keywords]
+    if generic_found:
+      suggestions.append({
+        'check': 'best_practices',
+        'message': f'Keywords contain generic terms that add no value: {generic_found}',
+        'recommendation': 'Replace with specific technology terms (e.g., "mcp", "leapp", "tekton") — '
+                          'generic words like "workshop" or "openshift" are already implied by category and title'
+      })
+
+  # Check for owners/maintainers
+  if 'owners' not in config.get('__meta__', {}):
+    suggestions.append({
+      'check': 'best_practices',
+      'message': 'No maintainer/owner defined',
+      'recommendation': 'Add __meta__.owners.maintainer for accountability'
+    })
+
+  # VS Code without authentication — security risk
+  # (flagged by Ops repeatedly; Mitesh + tagged Prakhar in team-rhdp-troubleshooting)
+  workloads = config.get('workloads', [])
+  has_vscode = any('vscode' in str(w).lower() for w in workloads)
+  if has_vscode:
+    vscode_auth_type = config.get('ocp4_workload_vscode_auth_type',
+                       config.get('vscode_auth_type',
+                       config.get('vscode_auth-type', None)))
+    if vscode_auth_type is None or str(vscode_auth_type).lower() == 'none':
+      warnings.append({
+        'check': 'best_practices',
+        'severity': 'High',
+        'message': 'VS Code workload present with no authentication (auth-type: none) — security risk',
+        'location': 'common.yaml',
+        'current': f'ocp4_workload_vscode_auth_type: {vscode_auth_type}',
+        'fix': 'Remove VS Code workload or set authentication: ocp4_workload_vscode_auth_type: password',
+        'note': 'Ops recommends removing VS Code entirely if auth cannot be configured'
+      })
+    else:
+      passed_checks.append(f"✓ VS Code authentication configured: {vscode_auth_type}")
+```
+
+### Check 10: Stage Files Validation
+
+**IMPORTANT — same path verification rule as Check 1:** Run `ls {catalog_path}` before flagging any stage file as missing. If a file appears in the directory listing, it exists — report it as present regardless of path construction.
+
+```python
+def check_stage_files(catalog_path):
+  """Validate stage-specific override files"""
+
+  stage_files = {
+    'dev.yaml': {
+      'required': True,
+      'expected_purpose': 'development'
+    },
+    'event.yaml': {
+      'required': False,
+      'expected_purpose': 'events'
+    },
+    'prod.yaml': {
+      'required': False,
+      'expected_purpose': 'production'
+    }
+  }
+
+  for filename, requirements in stage_files.items():
+    filepath = f"{catalog_path}/{filename}"
+
+    if os.path.exists(filepath):
+      try:
+        with open(filepath) as f:
+          stage_config = yaml.safe_load(f)
+
+        # purpose: field is no longer required in stage files — do not check or warn.
+        # Per Nate Stencell (issue #11): this field has not been required for some time.
+
+        # Check scm_ref differentiation for event/prod
+        if filename in ['event.yaml', 'prod.yaml']:
+          scm_ref = stage_config.get('__meta__', {}).get('deployer', {}).get('scm_ref')
+
+          if scm_ref == 'main':
+            suggestions.append({
+              'check': 'stage_files',
+              'message': f'{filename} uses scm_ref: main',
+              'recommendation': 'Consider using tagged release (e.g., catalog-name-1.0.0) for production stability'
+            })
+
+      except yaml.YAMLError:
+        # YAML syntax errors handled elsewhere
+        pass
+
+    elif requirements['required']:
+      warnings.append({
+        'check': 'stage_files',
+        'severity': 'WARNING',
+        'message': f'Missing {filename}',
+        'location': catalog_path,
+        'fix': f'Create {filename} for development overrides'
+      })
+```
+
+### Check 11: Multi-User Configuration
+
+Handled by the infra-specific check file loaded in Check 6:
+
+- **OCP** → `@agnosticv/docs/ocp-validator-checks.md` (Check 11: num_users param, worker scaling, workshopLabUiRedirect, SNO conflict)
+- **cloud-vms-base** → `@agnosticv/docs/cloud-vms-base-validator-checks.md` (Check 11: isolation warning only, no worker scaling)
+
+### Check 12: Bastion Configuration
+
+```python
+def check_bastion_config(config):
+  """Bastion instance validation for CNV/AWS catalogs"""
+
+  cloud_provider = config.get('cloud_provider', '')
+  config_type = config.get('config', '')
+
+  # cloud-vms-base bastion is validated in Check 6A (instances block) — skip here
+  if config_type == 'cloud-vms-base':
+    return
+
+  # Only check bastion for OCP CNV and AWS
+  if cloud_provider not in ['openshift_cnv', 'aws', 'none']:
+    return
+
+  # Check bastion image
+  bastion_image = config.get('bastion_instance_image', config.get('default_instance_image', ''))
+
+  if bastion_image:
+    valid_images = ['rhel-9.4', 'rhel-9.5', 'rhel-9.6', 'rhel-10.0', 'RHEL-10.0-GOLD-latest']
+
+    if not any(img in bastion_image for img in valid_images):
+      warnings.append({
+        'check': 'bastion',
+        'severity': 'WARNING',
+        'message': f'Unusual bastion image: {bastion_image}',
+        'location': 'common.yaml:bastion_instance_image',
+        'valid_images': valid_images,
+        'recommendation': 'Use supported RHEL 9.x or 10.x images'
+      })
+    else:
+      passed_checks.append(f"✓ Bastion image valid: {bastion_image}")
+
+  # Check bastion resources
+  bastion_cores = config.get('bastion_cores')
+  bastion_memory = config.get('bastion_memory')
+
+  if bastion_cores and int(str(bastion_cores).replace('G', '').replace('i', '')) < 2:
+    warnings.append({
+      'check': 'bastion',
+      'severity': 'WARNING',
+      'message': f'Bastion has low CPU: {bastion_cores}',
+      'location': 'common.yaml:bastion_cores',
+      'recommendation': 'Minimum 2 cores recommended for bastion'
+    })
+
+  if bastion_memory and int(str(bastion_memory).replace('G', '').replace('i', '')) < 4:
+    warnings.append({
+      'check': 'bastion',
+      'severity': 'WARNING',
+      'message': f'Bastion has low memory: {bastion_memory}',
+      'location': 'common.yaml:bastion_memory',
+      'recommendation': 'Minimum 4Gi recommended for bastion'
+    })
+```
+
+### Check 13: Collection Versions (tag pattern)
+
+```python
+def check_collection_versions(config, agv_repo_path, catalog_path):
+  """Validate tag pattern, showroom fixed version, and standard collection versions"""
+  import glob, re
+
+  collections = config.get('requirements_content', {}).get('collections', [])
+
+  if not collections:
+    warnings.append({
+      'check': 'collections',
+      'severity': 'WARNING',
+      'message': 'No collections defined',
+      'location': 'common.yaml:requirements_content.collections',
+      'recommendation': 'Add required collections for workloads'
+    })
+    return
+
+  # --- Check 1: tag: variable must be defined ---
+  tag_defined = 'tag' in config
+  if not tag_defined:
+    errors.append({
+      'check': 'collections',
+      'severity': 'ERROR',
+      'message': 'Missing top-level tag: variable',
+      'location': 'common.yaml',
+      'fix': 'Add: tag: main  # Override in prod.yaml with specific release tag'
+    })
+  else:
+    passed_checks.append(f"✓ tag variable defined: {config['tag']}")
+
+  # --- Check each collection ---
+  showroom_found = False
+
+  for coll in collections:
+    coll_name = coll.get('name', '')
+    coll_version = str(coll.get('version', ''))
+
+    if 'github.com' not in coll_name:
+      continue
+
+    is_showroom = 'agnosticd/showroom' in coll_name
+
+    if is_showroom:
+      showroom_found = True
+
+      # Showroom must NOT use {{ tag }} — must be a fixed pinned version
+      if '{{' in coll_version and 'tag' in coll_version:
+        errors.append({
+          'check': 'collections',
+          'severity': 'ERROR',
+          'message': 'Showroom collection must use a fixed pinned version, not {{ tag }}',
+          'location': 'common.yaml:requirements_content.collections',
+          'current': coll_version,
+          'fix': 'Set version: v1.6.0 (or highest in use across AgV)'
+        })
+        continue
+
+      # Showroom should be v1.6.8 or above (warning only — teams control upgrade pace)
+      version_nums = re.findall(r'\d+', coll_version)
+      if version_nums:
+        major, minor, patch = (int(version_nums[i]) if i < len(version_nums) else 0
+                               for i in range(3))
+        if (major, minor, patch) < (1, 6, 8):
+          warnings.append({
+            'check': 'collections',
+            'severity': 'WARNING',
+            'message': f'Showroom collection version below recommended: {coll_version} (recommend v1.6.8+)',
+            'location': 'common.yaml:requirements_content.collections',
+            'fix': 'Set version: v1.6.8 or above'
+          })
+        else:
+          passed_checks.append(f"✓ Showroom collection version: {coll_version} (≥ v1.6.8)")
+
+    else:
+      # Standard collections should use {{ tag }}
+      if '{{' in coll_version and 'tag' in coll_version:
+        passed_checks.append(f"✓ Collection uses tag pattern: {coll_name.split('/')[-1]}")
+      elif coll_version == 'main':
+        warnings.append({
+          'check': 'collections',
+          'severity': 'WARNING',
+          'message': f'Collection hardcodes "main" instead of using tag pattern: {coll_name}',
+          'location': 'common.yaml:requirements_content.collections',
+          'fix': 'Use version: "{{ tag }}" — allows prod.yaml to override with release tag'
+        })
+      elif coll_version == 'HEAD':
+        errors.append({
+          'check': 'collections',
+          'severity': 'ERROR',
+          'message': f'Collection uses HEAD: {coll_name}',
+          'location': 'common.yaml:requirements_content.collections',
+          'fix': 'Use version: "{{ tag }}"'
+        })
+      elif not coll_version:
+        errors.append({
+          'check': 'collections',
+          'severity': 'ERROR',
+          'message': f'Git collection missing version: {coll_name}',
+          'location': 'common.yaml:requirements_content.collections',
+          'fix': 'Add version: "{{ tag }}"'
+        })
+
+  # For cloud-vms-base, showroom is optional — only warn if vm_workload_showroom is in use
+  config_type = config.get('config', '')
+  workloads = config.get('workloads', [])
+  vm_showroom_in_use = any('vm_workload_showroom' in w for w in workloads)
+  ocp_showroom_in_use = any('ocp4_workload_showroom' in w for w in workloads)
+
+  if not showroom_found:
+    if config_type == 'cloud-vms-base' and not vm_showroom_in_use:
+      passed_checks.append("✓ No showroom collection (VM catalog without showroom — correct)")
+    elif config_type == 'cloud-vms-base' and vm_showroom_in_use:
+      warnings.append({
+        'check': 'collections',
+        'severity': 'WARNING',
+        'message': 'vm_workload_showroom in use but showroom collection missing',
+        'location': 'common.yaml:requirements_content.collections',
+        'fix': '''Add:
+  - name: https://github.com/agnosticd/showroom.git
+    type: git
+    version: v1.6.0'''
+      })
+    else:
+      warnings.append({
+        'check': 'collections',
+        'severity': 'WARNING',
+        'message': 'Showroom collection not found in requirements_content',
+        'location': 'common.yaml:requirements_content.collections',
+        'fix': '''Add:
+  - name: https://github.com/agnosticd/showroom.git
+    type: git
+    version: v1.6.0'''
+      })
+
+  passed_checks.append(f"✓ Collections defined ({len(collections)} collections)")
+```
+
+### Check 14: Deployer Configuration
+
+```python
+def check_deployer_config(config):
+  """Validate deployer configuration"""
+
+  deployer = config.get('__meta__', {}).get('deployer', {})
+
+  if not deployer:
+    errors.append({
+      'check': 'deployer',
+      'severity': 'ERROR',
+      'message': 'Missing __meta__.deployer section',
+      'location': 'common.yaml:__meta__',
+      'fix': 'Add deployer section with scm_url, scm_ref, execution_environment'
+    })
+    return
+
+  # Check required fields
+  required_fields = {
+    'scm_url': 'https://github.com/agnosticd/agnosticd-v2',
+    'scm_ref': 'main',
+    'execution_environment': {'image': 'quay.io/agnosticd/ee-multicloud:*'}
+  }
+
+  for field, example in required_fields.items():
+    if field not in deployer:
+      errors.append({
+        'check': 'deployer',
+        'severity': 'ERROR',
+        'message': f'Missing deployer.{field}',
+        'location': 'common.yaml:__meta__.deployer',
+        'fix': f'Add {field}',
+        'example': example
+      })
+
+  # Validate EE image
+  ee_image = deployer.get('execution_environment', {}).get('image', '')
+
+  if ee_image:
+    if not ee_image.startswith('quay.io/agnosticd/ee-multicloud:'):
+      warnings.append({
+        'check': 'deployer',
+        'severity': 'WARNING',
+        'message': 'Non-standard execution environment image',
+        'location': 'common.yaml:__meta__.deployer.execution_environment.image',
+        'current': ee_image,
+        'recommendation': 'Use quay.io/agnosticd/ee-multicloud:chained-YYYY-MM-DD'
+      })
+    else:
+      passed_checks.append(f"✓ Execution environment image valid")
+
+  passed_checks.append(f"✓ Deployer configuration present")
+```
+
+### Check 14a: Reporting Labels (Critical)
+
+```python
+def check_reporting_labels(config):
+  """Validate reporting labels for business unit tracking"""
+
+  catalog = config.get('__meta__', {}).get('catalog', {})
+  reporting_labels = catalog.get('reportingLabels', {})
+
+  if not reporting_labels:
+    warnings.append({
+      'check': 'reporting_labels',
+      'severity': 'WARNING',
+      'message': 'Missing reportingLabels section',
+      'location': 'common.yaml:__meta__.catalog',
+      'recommendation': 'Add reportingLabels with primaryBU for tracking/reporting'
+    })
+    return
+
+  # Check for primaryBU (very important for reporting)
+  primary_bu = reporting_labels.get('primaryBU')
+
+  if not primary_bu:
+    errors.append({
+      'check': 'reporting_labels',
+      'severity': 'ERROR',
+      'message': 'Missing reportingLabels.primaryBU',
+      'location': 'common.yaml:__meta__.catalog.reportingLabels',
+      'fix': 'Add primaryBU field for business unit tracking',
+      'example': 'primaryBU: Hybrid_Platforms'
+    })
+    return
+
+  # Validate primaryBU value — must match known values
+  # Canonical list — keep in sync with @agnosticv/docs/constants.md
+  valid_bus = [
+    'Hybrid_Platforms',
+    'Artificial_Intelligence',
+    'Automation',
+    'Application_Developer',
+    'RHEL',
+    'Edge',
+    'RHDP',
+  ]
+
+  if primary_bu not in valid_bus:
+    warnings.append({
+      'check': 'reporting_labels',
+      'severity': 'WARNING',
+      'message': f'Unusual primaryBU value: {primary_bu}',
+      'location': 'common.yaml:__meta__.catalog.reportingLabels.primaryBU',
+      'current': primary_bu,
+      'common_values': valid_bus,
+      'recommendation': 'Verify primaryBU is correct business unit for tracking'
+    })
+
+  passed_checks.append(f"✓ Reporting labels configured: primaryBU={primary_bu}")
+
+  # Check workshop_user_mode if present — must be valid value (JK added to babylon schema Feb 2026)
+  workshop_user_mode = config.get('__meta__', {}).get('catalog', {}).get('workshop_user_mode')
+  valid_modes = ['multi', 'single', 'none']
+  if workshop_user_mode is not None:
+    if workshop_user_mode not in valid_modes:
+      errors.append({
+        'check': 'multiuser',
+        'severity': 'ERROR',
+        'message': f'Invalid workshop_user_mode: {workshop_user_mode}',
+        'location': 'common.yaml:__meta__.catalog.workshop_user_mode',
+        'valid_values': valid_modes,
+        'fix': f'Set to one of: multi (multiple students), single (one student), none (admin-only/no users)'
+      })
+    else:
+      passed_checks.append(f"✓ workshop_user_mode valid: {workshop_user_mode}")
+
+```
+
+### Check 15: Component Propagation
+
+OCP-specific check — handled by `@agnosticv/docs/ocp-validator-checks.md` (Check 15).
+Not applicable to cloud-vms-base catalogs (no `__meta__.components` cluster component).
+
+### Check 15a: Anarchy Namespace (ALL catalogs)
+
+```python
+def check_anarchy_namespace(config):
+  """anarchy.namespace must never be defined in catalog files"""
+
+  if config.get('__meta__', {}).get('anarchy', {}).get('namespace'):
+    errors.append({
+      'check': 'anarchy_namespace',
+      'severity': 'ERROR',
+      'message': 'anarchy.namespace must NOT be defined in catalog common.yaml',
+      'location': 'common.yaml:__meta__.anarchy.namespace',
+      'fix': 'Remove __meta__.anarchy.namespace entirely — it is set at the AgV top level',
+      'details': 'Defining anarchy.namespace here overrides the platform setting and causes routing failures'
+    })
+  else:
+    passed_checks.append("✓ anarchy.namespace not defined (correct)")
+```
+
+### Check 16a: Event Catalog Validation (only if event_context is set)
+
+```python
+def check_event_catalog(config, event_context, lab_id, catalog_path):
+  """Event-specific validation based on Developer Guidelines naming standards"""
+
+  if event_context == 'none':
+    return
+
+  catalog = config.get('__meta__', {}).get('catalog', {})
+  labels = catalog.get('labels', {})
+  keywords = catalog.get('keywords', [])
+
+  # --- Brand_Event label ---
+  brand_event_map = {
+    'summit-2026': 'Red_Hat_Summit_2026',
+    'rh1-2026':    'Red_Hat_One_2026',
+  }
+  expected_brand_event = brand_event_map.get(event_context)
+  actual_brand_event = labels.get('Brand_Event')
+
+  if not actual_brand_event:
+    errors.append({
+      'check': 'event_catalog',
+      'severity': 'ERROR',
+      'message': f'Missing Brand_Event label for {event_context} catalog',
+      'location': 'common.yaml:__meta__.catalog.labels',
+      'fix': f'Add: Brand_Event: {expected_brand_event}',
+    })
+  elif actual_brand_event != expected_brand_event:
+    errors.append({
+      'check': 'event_catalog',
+      'severity': 'ERROR',
+      'message': f'Incorrect Brand_Event label',
+      'location': 'common.yaml:__meta__.catalog.labels.Brand_Event',
+      'current': actual_brand_event,
+      'expected': expected_brand_event,
+      'fix': f'Change Brand_Event to: {expected_brand_event}',
+    })
+  else:
+    passed_checks.append(f"✓ Brand_Event label correct: {actual_brand_event}")
+
+  # --- Event keyword ---
+  if event_context not in keywords:
+    errors.append({
+      'check': 'event_catalog',
+      'severity': 'ERROR',
+      'message': f'Missing event keyword: {event_context}',
+      'location': 'common.yaml:__meta__.catalog.keywords',
+      'fix': f'Add "{event_context}" to keywords list',
+    })
+  else:
+    passed_checks.append(f"✓ Event keyword present: {event_context}")
+
+  # --- Lab ID keyword ---
+  if lab_id and lab_id not in keywords:
+    errors.append({
+      'check': 'event_catalog',
+      'severity': 'ERROR',
+      'message': f'Missing lab ID keyword: {lab_id}',
+      'location': 'common.yaml:__meta__.catalog.keywords',
+      'fix': f'Add "{lab_id}" to keywords list',
+    })
+  elif lab_id:
+    passed_checks.append(f"✓ Lab ID keyword present: {lab_id}")
+
+  # --- No generic keywords (same list as Check 9) ---
+  generic_keywords = ['workshop', 'demo', 'lab', 'sandbox', 'openshift', 'ansible',
+                      'rhel', 'tutorial', 'training', 'course', 'test', 'example']
+  bad_keywords = [k for k in keywords if k.lower() in generic_keywords]
+
+  if bad_keywords:
+    warnings.append({
+      'check': 'event_catalog',
+      'severity': 'WARNING',
+      'message': f'Generic keywords should not be in event catalogs: {bad_keywords}',
+      'location': 'common.yaml:__meta__.catalog.keywords',
+      'fix': f'Remove generic keywords: {", ".join(bad_keywords)}',
+      'reason': 'Generic keywords add noise to search; event name and lab ID are enough',
+    })
+
+  # --- Directory naming convention ---
+  # Expected: <event-name>/<lab-id>-<short-name>-<cloud_provider>
+  # cloud_provider suffix: -aws (AWS pools) or -cnv (CNV/OpenStack pools)
+  catalog_slug = os.path.basename(catalog_path)
+
+  if lab_id and not catalog_slug.startswith(lab_id):
+    warnings.append({
+      'check': 'event_catalog',
+      'severity': 'WARNING',
+      'message': f'Directory name does not follow naming convention',
+      'location': catalog_path,
+      'current': catalog_slug,
+      'expected_pattern': f'{lab_id}-<short-name>-<cloud_provider>',
+      'example': f'{lab_id}-my-lab-aws  OR  {lab_id}-my-lab-cnv',
+      'fix': 'Rename directory to match: <lab-id>-<short-name>-<cloud_provider>',
+    })
+  else:
+    passed_checks.append(f"✓ Directory starts with lab ID: {catalog_slug}")
+
+  # --- Cloud provider suffix check ---
+  # Detect expected suffix from config or component reference
+  components = config.get('__meta__', {}).get('catalog', {}).get('components', [])
+  component_str = ' '.join(str(c) for c in components)
+  cloud_provider_var = config.get('cloud_provider', '')
+
+  if 'aws' in component_str.lower() or cloud_provider_var == 'ec2':
+    expected_suffix = '-aws'
+  elif 'cnv' in component_str.lower() or cloud_provider_var in ('openstack', 'azure'):
+    expected_suffix = '-cnv'
+  else:
+    expected_suffix = None  # cloud-vms-base or unknown — skip suffix check
+
+  if expected_suffix:
+    if catalog_slug.endswith(expected_suffix):
+      passed_checks.append(f"✓ Directory ends with correct cloud provider suffix: {expected_suffix}")
+    else:
+      warnings.append({
+        'check': 'event_catalog',
+        'severity': 'WARNING',
+        'message': f'Directory name missing cloud provider suffix',
+        'location': catalog_path,
+        'current': catalog_slug,
+        'expected_suffix': expected_suffix,
+        'fix': f'Rename to: {catalog_slug}{expected_suffix}  (or correct existing suffix)',
+      })
+
+  # --- Showroom repo naming ---
+  # OCP catalogs use ocp4_workload_showroom_content_git_repo
+  # VM catalogs use showroom_git_repo (verified against real vllm-playground-aws catalog)
+  showroom_repo = (config.get('ocp4_workload_showroom_content_git_repo', '') or
+                   config.get('showroom_git_repo', ''))
+  repo_var = ('ocp4_workload_showroom_content_git_repo'
+              if config.get('ocp4_workload_showroom_content_git_repo')
+              else 'showroom_git_repo')
+  if showroom_repo:
+    # Extract repo name from URL
+    repo_name = showroom_repo.rstrip('/').split('/')[-1].replace('.git', '')
+    if not repo_name.endswith('-showroom'):
+      warnings.append({
+        'check': 'event_catalog',
+        'severity': 'WARNING',
+        'message': f'Showroom repo name does not follow convention',
+        'location': f'common.yaml:{repo_var}',
+        'current': repo_name,
+        'expected_pattern': '<short-name>-showroom',
+        'example': 'ocp-fish-swim-showroom',
+      })
+    else:
+      passed_checks.append(f"✓ Showroom repo naming correct: {repo_name}")
+
+  # --- Showroom collection version ---
+  collections = config.get('requirements_content', {}).get('collections', [])
+  showroom_coll = next((c for c in collections
+                        if 'agnosticd/showroom' in c.get('name', '')), None)
+
+  # cloud-vms-base: showroom is optional — only error if a showroom workload is in use
+  # config_type must be assigned before use here
+  config_type = config.get('config', '')
+  workloads = config.get('workloads', [])
+  showroom_in_use = any('showroom' in w for w in workloads)
+
+  if not showroom_coll:
+    if config_type == 'cloud-vms-base' and not showroom_in_use:
+      passed_checks.append("✓ No showroom collection (cloud-vms-base without showroom — correct)")
+    else:
+      errors.append({
+        'check': 'event_catalog',
+        'severity': 'ERROR',
+        'message': 'Showroom collection missing from requirements_content',
+        'location': 'common.yaml:requirements_content.collections',
+        'fix': '''Add:
+  - name: https://github.com/agnosticd/showroom.git
+    type: git
+    version: v1.6.0''',
+      })
+  else:
+    version = showroom_coll.get('version', '')
+    version_nums = re.findall(r'\d+', version)
+    if version_nums:
+      major, minor, patch = (int(version_nums[i]) if i < len(version_nums) else 0
+                             for i in range(3))
+      if (major, minor, patch) < (1, 6, 8):
+        warnings.append({
+          'check': 'event_catalog',
+          'severity': 'WARNING',
+          'message': f'Showroom collection version below recommended: {version} (recommend v1.6.8+)',
+          'location': 'common.yaml:requirements_content.collections',
+          'current': version,
+          'expected': 'v1.6.8',
+          'fix': 'Set version: v1.6.8 for showroom collection',
+        })
+      else:
+        passed_checks.append(f"✓ Showroom collection version: {version} (≥ v1.6.8)")
+
+  # --- ocp4_workload_ocp_console_embed present (OCP only — skip for cloud-vms-base) ---
+  workloads = config.get('workloads', [])
+  config_type = config.get('config', '')
+  has_console_embed = any('ocp_console_embed' in w for w in workloads)
+
+  if config_type != 'cloud-vms-base':
+    if not has_console_embed:
+      warnings.append({
+        'check': 'event_catalog',
+        'severity': 'WARNING',
+        'message': 'Missing ocp4_workload_ocp_console_embed workload',
+        'location': 'common.yaml:workloads',
+        'fix': 'Add: agnosticd.showroom.ocp4_workload_ocp_console_embed',
+        'reason': 'Required for embedding OCP console and other UIs in Showroom',
+      })
+    else:
+      passed_checks.append("✓ ocp4_workload_ocp_console_embed present")
+  else:
+    if has_console_embed:
+      errors.append({
+        'check': 'event_catalog',
+        'severity': 'ERROR',
+        'message': 'ocp4_workload_ocp_console_embed found in cloud-vms-base event catalog',
+        'location': 'common.yaml:workloads',
+        'fix': 'Remove — this workload requires an OCP cluster',
+      })
+    else:
+      passed_checks.append("✓ ocp_console_embed correctly absent from cloud-vms-base catalog")
+
+  # --- category must be Brand_Events for event catalogs ---
+  category = catalog.get('category', '')
+  if category != 'Brand_Events':
+    errors.append({
+      'check': 'event_catalog',
+      'severity': 'ERROR',
+      'message': f'Event catalog must use category: Brand_Events',
+      'location': 'common.yaml:__meta__.catalog.category',
+      'current': category,
+      'expected': 'Brand_Events',
+      'fix': 'Set category: Brand_Events',
+    })
+  else:
+    passed_checks.append("✓ Category correct: Brand_Events")
+```
+
+### Check 16: AsciiDoc Templates
+
+```python
+def check_asciidoc_templates(catalog_path):
+  """Validate AsciiDoc template files"""
+
+  templates = {
+    'description.adoc': True,  # Required
+    'info-message-template.adoc': False,  # Recommended — only generated when catalog uses agnosticd_user_info
+    'user-message-template.adoc': False  # Optional but recommended for multi-user
+  }
+
+  for template, required in templates.items():
+    filepath = f"{catalog_path}/{template}"
+
+    if os.path.exists(filepath):
+      try:
+        with open(filepath) as f:
+          content = f.read()
+
+        # Check for variable substitution syntax
+        if template.endswith('-template.adoc'):
+          if '{' not in content and '}' not in content:
+            warnings.append({
+              'check': 'asciidoc',
+              'severity': 'WARNING',
+              'message': f'{template} has no variable substitutions',
+              'location': template,
+              'recommendation': 'Add UserInfo variables like {bastion_public_hostname}'
+            })
+          else:
+            passed_checks.append(f"✓ {template} has variable substitutions")
+
+      except Exception as e:
+        warnings.append({
+          'check': 'asciidoc',
+          'severity': 'WARNING',
+          'message': f'Cannot read {template}: {e}',
+          'location': template
+        })
+
+    elif required:
+      warnings.append({
+        'check': 'asciidoc',
+        'severity': 'WARNING',
+        'message': f'Missing {template}',
+        'location': catalog_path,
+        'fix': f'Create {template} for catalog documentation'
+      })
+```
+
+---
+
+## Step 4: Generate Validation Report
+
+### Interactive Report Format
+
+```
+╔═══════════════════════════════════════════════════════════╗
+║         AgV Catalog Validation Report                     ║
+╚═══════════════════════════════════════════════════════════╝
+
+Catalog: {{ catalog_display_name }}
+Location: {{ catalog_path }}
+Validation Level: {{ validation_scope }}
+Timestamp: {{ current_timestamp }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{% if errors %}
+ERRORS (must fix before deployment):
+
+{% for error in errors %}
+❌ {{ error.message }}
+   Location: {{ error.location }}
+   {% if error.current %}Current: {{ error.current }}{% endif %}
+   {% if error.fix %}Fix: {{ error.fix }}{% endif %}
+   {% if error.example %}Example: {{ error.example }}{% endif %}
+
+{% endfor %}
+{% endif %}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{% if warnings %}
+WARNINGS (should fix to avoid issues):
+
+{% for warning in warnings %}
+⚠️  {{ warning.message }}
+   Location: {{ warning.location }}
+   {% if warning.recommendation %}Recommendation: {{ warning.recommendation }}{% endif %}
+   {% if warning.fix %}Fix: {{ warning.fix }}{% endif %}
+
+{% endfor %}
+{% endif %}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{% if suggestions %}
+SUGGESTIONS (nice to have):
+
+{% for suggestion in suggestions %}
+💡 {{ suggestion.message }}
+   {% if suggestion.recommendation %}Why: {{ suggestion.recommendation }}{% endif %}
+
+{% endfor %}
+{% endif %}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASSED ({{ passed_checks|length }} checks):
+
+{% for check in passed_checks %}
+{{ check }}
+{% endfor %}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SUMMARY:
+  {% if errors %}❌ {{ errors|length }} error(s) (must fix){% endif %}
+  {% if warnings %}⚠️  {{ warnings|length }} warning(s) (should fix){% endif %}
+  {% if suggestions %}💡 {{ suggestions|length }} suggestion(s) (nice to have){% endif %}
+  ✓ {{ passed_checks|length }} check(s) passed
+
+STATUS: {% if errors %}❌ FAILED - Fix errors before deploying to RHDP{% elif warnings %}⚠️ PASSED WITH WARNINGS{% else %}✅ PASSED{% endif %}
+
+Next steps:
+{% if errors %}
+1. Fix the {{ errors|length }} error(s) listed above
+2. Run validation again: /agnosticv-validator
+3. Address warnings for better quality
+4. Test in RHDP Integration environment
+{% elif warnings %}
+1. Review and address warnings for better quality
+2. Test in RHDP Integration environment
+3. Create PR when ready
+{% else %}
+1. Catalog looks good! Test in RHDP Integration
+2. Create PR for review
+3. Request merge after successful testing
+{% endif %}
+```
+
+---
+
+## Step 5: Follow-up Actions
+
+```
+Would you like me to:
+
+1. 💾 Create validation report file (validation-report.txt)
+2. 🔧 Show detailed fix instructions for errors
+3. 🔄 Re-run validation after you fix issues
+4. 📋 Generate checklist for manual review
+5. ❌ Exit
+
+Your choice: [1/2/3/4/5]
+```
+
+### Option 1: Create Report File
+
+```bash
+cat > {{ catalog_path }}/validation-report.txt << 'EOF'
+{{ full_validation_report }}
+EOF
+
+✅ Validation report saved
+
+File: {{ catalog_path }}/validation-report.txt
+
+You can:
+- Review offline
+- Share with team
+- Attach to PR
+- Track fixes over time
+```
+
+### Option 2: Detailed Fix Instructions
+
+```
+🔧 Detailed Fix Instructions
+
+{% for i, error in enumerate(errors) %}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Error {{ i+1 }}: {{ error.message }}
+
+Location: {{ error.location }}
+
+Problem:
+{{ error.details if error.details else error.message }}
+
+How to fix:
+
+1. Open file: {{ error.location.split(':')[0] }}
+
+2. {% if 'UUID' in error.message %}
+   Generate new UUID:
+   $ uuidgen
+   
+   Update common.yaml:
+   __meta__:
+     asset_uuid: <paste-uuid-here>
+
+{% elif 'category' in error.message %}
+   Update category to valid option:
+   __meta__:
+     catalog:
+       category: {{ error.valid_options[0] if error.valid_options else 'Workshops' }}
+   
+   Valid options: {{ error.valid_options|join(', ') }}
+
+{% elif 'workload' in error.message %}
+   Add missing collection:
+   requirements_content:
+     collections:
+     - name: {{ error.example if error.example else 'https://github.com/agnosticd/collection.git' }}
+       type: git
+       version: main
+
+{% else %}
+   {{ error.fix }}
+{% endif %}
+
+3. Save file
+
+4. Re-run validation: /agnosticv-validator
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{% endfor %}
+```
+
+### Option 3: Re-validation Loop
+
+```
+Re-run validation now? [Yes/No]
+
+{% if Yes %}
+🔄 Re-validating catalog...
+
+(Re-run all validation checks from Step 3)
+
+{% endif %}
+```
+
+### Option 4: Manual Review Checklist
+
+```
+📋 Manual Review Checklist
+
+Save this checklist for comprehensive review:
+
+## Catalog Information
+- [ ] Display name is clear and descriptive
+- [ ] Abstract explains purpose (starts with product name)
+- [ ] Category is correct (Workshops/Demos/Sandboxes)
+- [ ] Keywords are relevant (3-5 keywords)
+- [ ] UUID is unique and valid format
+
+## Infrastructure
+- [ ] Infrastructure type matches requirements (CNV/SNO/AWS)
+- [ ] Cluster size appropriate for workload
+- [ ] GPU configuration if needed (AWS only)
+- [ ] Multi-user setting aligns with category
+
+## Workloads
+- [ ] All required workloads included
+- [ ] Authentication workload present
+- [ ] Showroom workload for content delivery
+- [ ] All workload collections in requirements
+
+## Configuration
+- [ ] Showroom git repository URL is HTTPS format
+- [ ] All workload variables defined
+- [ ] No hardcoded values (use variables)
+- [ ] dev.yaml exists for development overrides
+
+## Testing
+- [ ] Tested in RHDP Integration
+- [ ] All workloads provision successfully
+- [ ] Showroom content loads correctly
+- [ ] UserInfo variables available
+- [ ] Exercises work as documented
+
+## Documentation
+- [ ] description.adoc explains catalog purpose
+- [ ] Prerequisites listed
+- [ ] Learning outcomes defined
+- [ ] Environment details specified
+- [ ] User access instructions (if multi-user)
+
+## Git & PR
+- [ ] Branch created (no feature/ prefix)
+- [ ] Files committed with clear message
+- [ ] PR created with test plan
+- [ ] PR description includes test results
+- [ ] Ready for RHDP team review
+
+## Event Catalog (summit-2026 / rh1-2026 only)
+- [ ] Directory name: <lab-id>-<short-name>-<cloud_provider>
+- [ ] catalog.category: Brand_Events
+- [ ] catalog.labels.Brand_Event: Red_Hat_Summit_2026 or Red_Hat_One_2026
+- [ ] catalog.keywords includes event name (summit-2026 or rh1-2026)
+- [ ] catalog.keywords includes lab ID (lbxxxx)
+- [ ] No generic keywords (workshop, openshift, demo, lab)
+- [ ] anarchy.namespace NOT defined
+- [ ] Showroom repo named: <short-name>-showroom
+- [ ] Showroom repo in github.com/rhpds organization
+- [ ] showroom collection version: v1.6.0
+- [ ] Both workloads present: ocp4_workload_ocp_console_embed + ocp4_workload_showroom
+- [ ] ocp4_workload_showroom_antora_enable_dev_mode: "true" in dev.yaml
+```
+
+### Check 17: LiteMaaS Configuration
+
+Workload validation (models, duration) is OCP-specific — handled by `@agnosticv/docs/ocp-validator-checks.md` (Check 17).
+
+**Required includes — applies to ALL catalog types (OCP and cloud-vms-base):**
+
+If any LiteMaaS usage is detected (workload `litellm_virtual_keys` present, OR any `litellm`/`litemaas` variable set, OR one of the two includes already present), both includes are required:
+
+```python
+def check_litemaas_includes(config, includes):
+  """Both LiteMaaS includes required for any catalog using LiteMaaS — OCP or VM"""
+
+  has_workload = any('litellm_virtual_keys' in w for w in config.get('workloads', []))
+  has_vars = any(k.startswith('ocp4_workload_litellm') or 'litemaas' in k.lower()
+                 for k in config.keys())
+  has_either_include = any('litemaas-master_api' in i or 'litellm_metadata' in i
+                           for i in includes)
+
+  if not (has_workload or has_vars or has_either_include):
+    return  # Not using LiteMaaS
+
+  has_master_api = any('litemaas-master_api' in i for i in includes)
+  has_metadata = any('litellm_metadata' in i for i in includes)
+
+  if not has_master_api:
+    errors.append({
+      'check': 'litemaas',
+      'severity': 'ERROR',
+      'message': 'LiteMaaS in use but litemaas-master_api include is missing',
+      'location': 'common.yaml',
+      'fix': 'Add: #include /includes/secrets/litemaas-master_api.yaml'
+    })
+  else:
+    passed_checks.append("✓ LiteMaaS master API include present")
+
+  if not has_metadata:
+    errors.append({
+      'check': 'litemaas',
+      'severity': 'ERROR',
+      'message': 'LiteMaaS in use but litellm_metadata include is missing',
+      'location': 'common.yaml',
+      'fix': 'Add: #include /includes/parameters/litellm_metadata.yaml'
+    })
+  else:
+    passed_checks.append("✓ LiteMaaS metadata include present")
+```
+
+### Check 17a: Event Restriction Include
+
+```python
+def check_event_restriction_include(catalog_path, event_context):
+  """Warn if event catalog is missing access restriction include.
+
+  IMPORTANT: Check account.yaml first — if the event directory already has
+  an account.yaml that includes the restriction, adding it to common.yaml
+  would create an include loop error (seen as 'included more than once').
+  """
+
+  if event_context == 'none':
+    return
+
+  expected_includes = {
+    'summit-2026': 'access-restriction-summit-devs.yaml',
+    'rh1-2026':    'access-restriction-rh1-2026-devs.yaml',
+  }
+  expected = expected_includes.get(event_context)
+  if not expected:
+    return
+
+  # Check if account.yaml in the event directory already includes the restriction
+  # e.g. summit-2026/account.yaml may already carry this include at directory level
+  event_dir = os.path.dirname(catalog_path)
+  account_yaml = os.path.join(event_dir, 'account.yaml')
+  covered_by_account = False
+  try:
+    with open(account_yaml) as f:
+      if expected in f.read():
+        covered_by_account = True
+  except:
+    pass
+
+  try:
+    with open(f"{catalog_path}/common.yaml") as f:
+      content = f.read()
+
+    in_common = expected in content
+
+    if covered_by_account and in_common:
+      # Duplicate — account.yaml + common.yaml both have it → include loop
+      errors.append({
+        'check': 'event_restriction',
+        'severity': 'ERROR',
+        'message': f'Duplicate event restriction include — causes include loop',
+        'location': 'common.yaml',
+        'detail': f'{expected} is already in {account_yaml} — adding it to common.yaml too causes the "included more than once" error',
+        'fix': f'Remove #include /includes/{expected} from common.yaml (account.yaml already covers it)'
+      })
+    elif covered_by_account and not in_common:
+      # Account.yaml covers it — common.yaml correctly omits it
+      passed_checks.append(f"✓ Event restriction covered by account.yaml: {expected}")
+    elif not covered_by_account and in_common:
+      # common.yaml has it and account.yaml doesn't — correct
+      passed_checks.append(f"✓ Event restriction include present in common.yaml: {expected}")
+    else:
+      # Neither has it — warn
+      warnings.append({
+        'check': 'event_restriction',
+        'severity': 'WARNING',
+        'message': f'Event catalog missing access restriction include for {event_context}',
+        'location': 'common.yaml',
+        'fix': f'Add: #include /includes/{expected}',
+        'note': 'Only add to common.yaml if account.yaml does not already include it'
+      })
+  except:
+    pass
+```
+
+---
+
+### Check 18: Duplicate Includes (causes include loop errors)
+
+```python
+def check_duplicate_includes(catalog_path, agv_path):
+  """Detect duplicate #include lines across all files in the catalog.
+
+  AgnosticV errors with 'included more than once / include loop' when the
+  same include appears in multiple files that are loaded together. Common case:
+  account.yaml in the event directory + common.yaml both including the same file.
+  """
+
+  import re
+
+  def extract_includes(filepath):
+    """Return list of include paths from a file."""
+    try:
+      with open(filepath) as f:
+        content = f.read()
+      return re.findall(r'^#include\s+(.+)$', content, re.MULTILINE)
+    except:
+      return []
+
+  # Collect all includes from files that are loaded together:
+  # account.yaml (event/parent dir), common.yaml, dev.yaml
+  files_to_check = {
+    'common.yaml': os.path.join(catalog_path, 'common.yaml'),
+    'dev.yaml':    os.path.join(catalog_path, 'dev.yaml'),
+  }
+
+  # Check parent directory account.yaml (e.g. summit-2026/account.yaml)
+  parent_dir = os.path.dirname(catalog_path)
+  account_yaml = os.path.join(parent_dir, 'account.yaml')
+  if os.path.exists(account_yaml):
+    files_to_check['account.yaml (parent dir)'] = account_yaml
+
+  # Also check AgV root account.yaml
+  root_account = os.path.join(agv_path, 'account.yaml')
+  if os.path.exists(root_account):
+    files_to_check['account.yaml (root)'] = root_account
+
+  # Collect all includes with their source file
+  all_includes = {}  # include_path → [source_files]
+  for label, filepath in files_to_check.items():
+    for inc in extract_includes(filepath):
+      inc = inc.strip()
+      if inc not in all_includes:
+        all_includes[inc] = []
+      all_includes[inc].append(label)
+
+  # Check within common.yaml itself for duplicates
+  try:
+    with open(files_to_check['common.yaml']) as f:
+      content = f.read()
+    includes_in_common = re.findall(r'^#include\s+(.+)$', content, re.MULTILINE)
+    seen = set()
+    for inc in includes_in_common:
+      inc = inc.strip()
+      if inc in seen:
+        errors.append({
+          'check': 'duplicate_includes',
+          'severity': 'ERROR',
+          'message': f'Duplicate #include in common.yaml: {inc}',
+          'location': 'common.yaml',
+          'fix': f'Remove the duplicate #include {inc} line',
+        })
+      seen.add(inc)
+  except:
+    pass
+
+  # Check for cross-file duplicates
+  for inc, sources in all_includes.items():
+    if len(sources) > 1:
+      errors.append({
+        'check': 'duplicate_includes',
+        'severity': 'ERROR',
+        'message': f'Include appears in multiple files — causes include loop',
+        'include': inc,
+        'found_in': sources,
+        'fix': f'Remove #include {inc} from common.yaml (already included via {sources[0]})',
+        'detail': 'AgnosticV errors: "included more than once / include loop"'
+      })
+    else:
+      passed_checks.append(f"✓ No duplicate include: {inc}")
+```
+
+---
+
+### Check 19: Password Pattern
+
+Applies to **all credential-like variables** — any key containing `password`, `passwd`, `secret`, `token`, `access_key`, `api_key`, or `credential` (excluding benign suffixes like `_length`, `_policy`, `_type`).
+
+Enforces four rules:
+1. No hash/GUID-based generation (`hash()`, `sha`, `md5`)
+2. No plain static strings — every credential must use `lookup('password')`, reference `{{ common_password }}`, or be empty (`""` for workload auto-generation)
+3. No duplicate `output_dir` lookup paths (two vars with same path generate identical passwords)
+4. No clear text credentials in `dev.yaml` or `test.yaml` — these files are committed to git
+
+```python
+def check_password_pattern(config):
+  """Password variables must use lookup('password') with unique file paths.
+  No hashes, no GUIDs, no plain static strings."""
+
+  import re
+
+  # Bad patterns: hash filter, guid-derived passwords, base64 encoding of weak input
+  bad_patterns = [
+    r'hash\(',
+    r'\bsha\b',
+    r'\bmd5\b',
+    r'\bguid\b.*hash',
+    r'\bpassword_hash\b',
+    r'\bb64encode\b',       # e.g. guid|md5|int|b64encode pattern
+    r'sha256',
+    r'sha1\b',
+  ]
+
+  # Collect all credential-like variables by key name
+  # Covers: password, passwd, secret, token, access_key, api_key, credential
+  # Excludes: variables that are clearly non-secret (e.g. 'token_length', 'password_policy')
+  credential_words = ['password', 'passwd', 'secret', 'token', 'access_key', 'api_key', 'credential']
+  skip_suffixes = ['_length', '_policy', '_type', '_format', '_expires', '_name', '_url', '_path', '_label']
+
+  def collect_credential_vars(obj, prefix=''):
+    """Walk the full YAML tree — catches nested passwords in lists and dicts."""
+    found = {}
+    if isinstance(obj, dict):
+      for k, v in obj.items():
+        full_key = f'{prefix}.{k}' if prefix else k
+        if any(word in k.lower() for word in credential_words) \
+            and not any(k.lower().endswith(s) for s in skip_suffixes) \
+            and isinstance(v, str) and v.strip():
+          found[full_key] = v
+        found.update(collect_credential_vars(v, full_key))
+    elif isinstance(obj, list):
+      for i, item in enumerate(obj):
+        found.update(collect_credential_vars(item, f'{prefix}[{i}]'))
+    return found
+
+  password_vars = collect_credential_vars(config)
+
+  jinja2_pattern = re.compile(r'\{\{.*?\}\}')
+
+  for var_name, var_val in password_vars.items():
+    val = var_val.strip()
+    uses_lookup = "lookup('password'" in val or 'lookup("password"' in val
+    has_bad = any(re.search(p, val) for p in bad_patterns)
+    is_jinja2 = bool(jinja2_pattern.search(val))
+
+    # Rule 1: hash/GUID-based generation
+    if has_bad and not uses_lookup:
+      errors.append({
+        'check': 'password_pattern',
+        'severity': 'ERROR',
+        'message': f'{var_name} uses hash/GUID-based generation — not allowed',
+        'location': f'common.yaml:{var_name}',
+        'current': val[:80],
+        'fix': f'''{var_name}: >-
+  {{{{ lookup(\'password\', output_dir ~ \'/{var_name}\', length=12, chars=[\'ascii_letters\', \'digits\']) }}}}''',
+        'reason': 'Hash-based passwords are predictable. Use lookup("password") instead.'
+      })
+
+    # Rule 2: plain static string (no Jinja2 at all)
+    # Exempt: empty string (auto-generated by workload), variables that reference secrets via #include
+    elif not is_jinja2 and val and val not in ('""', "''", ''):
+      errors.append({
+        'check': 'password_pattern',
+        'severity': 'ERROR',
+        'message': f'{var_name} is a hardcoded static password — not allowed',
+        'location': f'common.yaml:{var_name}',
+        'current': val[:80],
+        'fix': f'''{var_name}: >-
+  {{{{ lookup(\'password\', output_dir ~ \'/{var_name}\', length=12, chars=[\'ascii_letters\', \'digits\']) }}}}''',
+        'reason': 'Static passwords are predictable and violate platform standards (Nate Stencell review standard). '
+                  'Use lookup("password") with a unique output_dir path and length >= 12.'
+      })
+
+  # Rule 3: duplicate lookup paths — two vars with same path generate identical passwords
+  path_pattern = re.compile(r"lookup\(['\"]password['\"],\s*output_dir\s*~\s*['\"]([^'\"]+)['\"]")
+  lookup_paths = {}
+
+  for var_name, var_val in password_vars.items():
+    match = path_pattern.search(var_val)
+    if match:
+      path = match.group(1)
+      if path in lookup_paths:
+        errors.append({
+          'check': 'password_pattern',
+          'severity': 'ERROR',
+          'message': f'Duplicate lookup path "{path}" used by both {lookup_paths[path]} and {var_name}',
+          'location': f'common.yaml:{var_name}',
+          'fix': f'{var_name}: >-\n'
+                 f'  {{{{ lookup(\'password\', output_dir ~ \'/{var_name}\', length=12, chars=[\'ascii_letters\', \'digits\']) }}}}',
+          'reason': 'Two variables using the same lookup path generate identical passwords'
+        })
+      else:
+        lookup_paths[path] = var_name
+
+  if lookup_paths and not errors:
+    passed_checks.append(f"✓ All {len(lookup_paths)} password variable(s) use lookup('password') with unique paths")
+
+  # Rule 4: scan dev.yaml and test.yaml for clear text passwords
+  # Developers sometimes hardcode passwords in stage override files for convenience and forget to remove them.
+  # These files are committed to git — clear text passwords in them are just as dangerous as in common.yaml.
+  for stage_file in ['dev.yaml', 'test.yaml']:
+    stage_path = os.path.join(catalog_path, stage_file)
+    if not os.path.exists(stage_path):
+      continue
+    try:
+      with open(stage_path) as f:
+        stage_config = yaml.safe_load(f) or {}
+    except:
+      continue
+
+    stage_password_vars = {
+      k: str(v) for k, v in stage_config.items()
+      if any(word in k.lower() for word in credential_words)
+      and not any(k.lower().endswith(s) for s in skip_suffixes)
+      and isinstance(v, str)
+      and v.strip()
+    }
+
+    for var_name, var_val in stage_password_vars.items():
+      val = var_val.strip()
+      is_jinja2 = bool(jinja2_pattern.search(val))
+      uses_lookup = "lookup('password'" in val or 'lookup("password"' in val
+
+      if not is_jinja2 and not uses_lookup and val not in ('""', "''", ''):
+        errors.append({
+          'check': 'password_pattern',
+          'severity': 'ERROR',
+          'message': f'{var_name} is a clear text password in {stage_file} — never commit credentials to git',
+          'location': f'{stage_file}:{var_name}',
+          'current': val[:80],
+          'fix': f'Remove from {stage_file}. Use lookup("password") in common.yaml or leave empty ("") for workload auto-generation.',
+          'reason': f'{stage_file} is committed to git. Clear text passwords in any stage file are a security risk.'
+        })
+```
+
+---
+
+### Check 20: Showroom Namespace Override (Tenant Catalogs Only)
+
+This check applies only to **Sandbox API Tenant CI** catalogs (`config: namespace`). The Showroom workload creates and manages its own namespace — catalog files must not override `ocp4_workroom_showroom_namespace` or add a showroom namespace entry to `ocp4_workload_tenant_namespace_namespaces`.
+
+```python
+def check_showroom_namespace(config):
+  """Showroom namespace must not be manually set in tenant (config: namespace) catalogs"""
+
+  config_type = config.get('config', '')
+
+  # Only applies to Sandbox API Tenant CI catalogs
+  if config_type != 'namespace':
+    return
+
+  # Check 1: ocp4_workload_showroom_namespace must not be set
+  if 'ocp4_workload_showroom_namespace' in config:
+    warnings.append({
+      'check': 'showroom_namespace',
+      'severity': 'WARNING',
+      'message': 'ocp4_workload_showroom_namespace should not be set in tenant catalogs',
+      'location': 'common.yaml:ocp4_workload_showroom_namespace',
+      'current': config['ocp4_workload_showroom_namespace'],
+      'fix': 'Remove — the Showroom workload creates and manages its own namespace',
+      'reason': 'Users only get a route. Showroom namespace creation is handled by the workload.'
+    })
+  else:
+    passed_checks.append("✓ ocp4_workload_showroom_namespace not set (correct for tenant catalog)")
+
+  # Check 2: showroom suffix in ocp4_workload_tenant_namespace_namespaces must not exist
+  tenant_namespaces = config.get('ocp4_workload_tenant_namespace_namespaces', [])
+  showroom_ns = [ns for ns in tenant_namespaces if ns.get('suffix') == 'showroom']
+
+  if showroom_ns:
+    warnings.append({
+      'check': 'showroom_namespace',
+      'severity': 'WARNING',
+      'message': 'showroom namespace entry in ocp4_workload_tenant_namespace_namespaces — not needed',
+      'location': 'common.yaml:ocp4_workload_tenant_namespace_namespaces',
+      'fix': 'Remove the "- suffix: showroom" entry and its quota/limit_range block',
+      'reason': 'Showroom creates its own namespace with its own resource limits. '
+                'Users do not need access to it — they only get the Showroom route.'
+    })
+  else:
+    passed_checks.append("✓ No showroom namespace entry in tenant namespaces (correct)")
+```
+
+---
+
+### Check 21: Execution Environment Image Date
+
+```python
+import re
+from datetime import datetime
+
+def check_ee_image_date(config):
+  """Warn if execution environment image date is more than 3 months old"""
+
+  ee_image = config.get('__meta__', {}).get('deployer', {}).get(
+    'execution_environment', {}).get('image', '')
+
+  if not ee_image:
+    return  # No EE image — caught by Check 14
+
+  # Extract date from chained-YYYY-MM-DD tag
+  match = re.search(r'chained-(\d{4}-\d{2}-\d{2})', ee_image)
+  if not match:
+    return  # Non-standard tag — skip date check
+
+  image_date = datetime.strptime(match.group(1), '%Y-%m-%d')
+  today = datetime.today()
+  age_days = (today - image_date).days
+
+  # Recommended current image
+  recommended = 'quay.io/agnosticd/ee-multicloud:chained-2026-02-23'
+
+  if age_days > 90:
+    warnings.append({
+      'check': 'ee_image_date',
+      'severity': 'WARNING',
+      'message': f'Execution environment image is {age_days} days old',
+      'location': 'common.yaml:__meta__.deployer.execution_environment.image',
+      'current': ee_image,
+      'recommended': recommended,
+      'fix': f'Update to: image: {recommended}'
+    })
+  else:
+    passed_checks.append(f"✓ EE image date is recent: {match.group(1)} ({age_days} days old)")
+```
+
+---
+
+### Check 22: requirements_content Position
+
+Enforces Nate Stencell's review standard: `requirements_content` (collections list) must appear near the **top** of `common.yaml` — before workload-specific variables — so it is immediately visible during troubleshooting without scrolling through hundreds of lines.
+
+**Rule:** `requirements_content:` must appear within the first 200 lines of `common.yaml`. If it is buried lower, flag it as a WARNING.
+
+```python
+def check_requirements_content_position(catalog_path):
+  """requirements_content must appear near the top of common.yaml (within first 200 lines).
+  Per Nate Stencell: 'It is something we should be able to see quickly since it is one of the
+  first things that would be looked at when troubleshooting or figuring out what is being used.'"""
+
+  common_yaml = os.path.join(catalog_path, 'common.yaml')
+  if not os.path.exists(common_yaml):
+    return
+
+  with open(common_yaml, 'r') as f:
+    lines = f.readlines()
+
+  req_line = None
+  for i, line in enumerate(lines, start=1):
+    if line.strip().startswith('requirements_content:'):
+      req_line = i
+      break
+
+  if req_line is None:
+    # Absence of requirements_content is caught by the collections check — skip here
+    return
+
+  if req_line > 200:
+    errors.append({
+      'check': 'requirements_content_position',
+      'severity': 'WARNING',
+      'message': f'requirements_content found at line {req_line} — must be within the first 200 lines',
+      'location': f'common.yaml:{req_line}',
+      'fix': 'Move the requirements_content block (collections list) and workloads list to '
+             'appear immediately after the mandatory vars section (config, cloud_provider, tag). '
+             'This makes collections immediately visible during troubleshooting.',
+      'reason': 'Platform standard (Nate Stencell): collections must be near the top, '
+                'not buried in a large config file.'
+    })
+  else:
+    passed_checks.append(f"✓ requirements_content at line {req_line} (within first 200 lines)")
+```
+
+---
+
+### Check 23: Untagged External Images
+
+Images used in workloads or as VM base images must be explicitly tagged. Untagged images (`:latest`, no tag, or `main`/`master` as a tag in prod/event stage) are not allowed in production or event catalogs.
+
+**Applies to:** Any variable containing `image:` whose value references a container image. Specifically catches `image_pull_policy` counterparts and the EE image in `__meta__`.
+
+```python
+def check_untagged_images(config, stage):
+  """All container image references must use explicit version tags in prod/event catalogs.
+  Per Nate Stencell: 'We should never allow anything to be deployed via RHDP that doesn't have a tag.'"""
+
+  import re
+
+  # Only enforce strictly on prod and event stages
+  if stage not in ('prod', 'event'):
+    return
+
+  # Image variable patterns to check
+  image_keys = [k for k in config if 'image' in k.lower()]
+
+  # Also check __meta__.deployer.execution_environment.image (already in Check 21)
+  # This check covers workload-level image vars
+
+  unacceptable_tags = {'latest', 'main', 'master', 'stable', 'edge', 'nightly'}
+  image_ref_pattern = re.compile(r'^[\w.\-/]+/[\w.\-/]+(:.+)?$')
+
+  for key in image_keys:
+    val = str(config.get(key, '')).strip()
+
+    # Skip Jinja2 templates — dynamic values are evaluated at runtime
+    if '{{' in val:
+      continue
+    # Skip non-image-looking values
+    if not image_ref_pattern.match(val):
+      continue
+
+    if ':' not in val:
+      errors.append({
+        'check': 'untagged_images',
+        'severity': 'ERROR',
+        'message': f'{key} has no tag — all images must be explicitly tagged in {stage} catalogs',
+        'location': f'common.yaml:{key}',
+        'current': val,
+        'fix': f'Add a specific version tag: {val}:<version>',
+        'reason': 'Untagged images cause non-reproducible deployments. '
+                  'Platform standard: all images must be tagged (Nate Stencell review standard).'
+      })
+    else:
+      tag = val.split(':')[-1]
+      if tag.lower() in unacceptable_tags:
+        errors.append({
+          'check': 'untagged_images',
+          'severity': 'ERROR',
+          'message': f'{key} uses tag ":{tag}" — not allowed in {stage} catalogs',
+          'location': f'common.yaml:{key}',
+          'current': val,
+          'fix': f'Replace :{tag} with a specific pinned version tag',
+          'reason': f'Tag :{tag} is mutable — image content can change without notice. '
+                    'Use a pinned digest or version tag for reproducible deployments.'
+        })
+
+  if not errors:
+    passed_checks.append(f"✓ All image references use explicit version tags")
+```
+
+---
+
+### Check 24: Catalog Directory Name Length
+
+The platform (`babylon_checks.py`) enforces a maximum component name length of 52 characters. The skill enforces **50 characters** (two chars under the platform limit) so developers catch it before CI does.
+
+Per JK's request: 50 characters maximum.
+
+```python
+def check_catalog_name_length(catalog_path):
+  """Catalog directory name must be 50 characters or fewer.
+  Platform limit is 52 (babylon_checks.py check_component_name).
+  Skill enforces 50 to catch violations before CI."""
+
+  name = os.path.basename(catalog_path)
+  name_len = len(name)
+
+  if name_len > 50:
+    errors.append({
+      'check': 'catalog_name_length',
+      'severity': 'ERROR',
+      'message': f'Catalog directory name too long ({name_len} chars) — maximum is 50',
+      'location': catalog_path,
+      'current': name,
+      'fix': f'Rename the directory to 50 characters or fewer',
+      'reason': 'Platform limit is 52 characters (babylon_checks.py). '
+                'The skill enforces 50 to catch violations before CI fails.'
+    })
+  else:
+    passed_checks.append(f"✓ Catalog directory name length OK ({name_len}/50 chars): {name}")
+```
+
+---
+
+### Check 25: Runtime Automation Consistency
+
+When `ocp4_workload_showroom_runtime_automation_enable: true` is set, the catalog must also provide the runner image and include the FTL runtime automation workload. Missing either produces a broken solve/validate experience at runtime.
+
+**Applies to:** OCP catalogs (`config: openshift-workloads`) and tenant catalogs (`config: namespace`) — not cloud-vms-base (uses `showroom_ansible_runner_image` / `showroom_ansible_runner_image_tag` instead — Check 25b).
+
+Note: summit/event catalogs may have `runtime_automation_enable: true` in AgV — this is fine. The solve/validate **buttons in the showroom adoc files** are what must be removed before summit tagging — that is checked by `showroom:verify-content`, not here.
+
+```python
+EXPECTED_ZT_RUNNER = "quay.io/rhpds/zt-runner"
+EXPECTED_ZT_RUNNER_TAG = "v2.4.2"     # bump this when a new tag ships
+RUNTIME_AUTOMATION_WORKLOAD = "rhpds.ftl.ocp4_workload_runtime_automation_k8s"
+
+def check_runtime_automation(config):
+  """runtime_automation_enable: true requires image var and FTL workload."""
+  config_type = config.get('config', '')
+  cloud_provider = config.get('cloud_provider', '')
+
+  # Cluster provisioner CIs — skip entirely, E2E lives on tenant/standalone
+  # Detected by: __meta__.components list OR display_name containing "cluster"
+  has_components = bool(config.get('__meta__', {}).get('components', []))
+  display_name = config.get('__meta__', {}).get('catalog', {}).get('display_name', '').lower()
+  is_cluster_provisioner = has_components or 'cluster' in display_name
+  if is_cluster_provisioner:
+    return  # cluster provisioner — no E2E check here
+
+  # Check 25a — tenant (namespace) and standalone OCP catalogs only
+  if config_type in ('openshift-workloads', 'namespace'):
+    enabled = config.get('ocp4_workload_showroom_runtime_automation_enable', False)
+    if not enabled:
+      warnings.append({
+        'severity': 'WARNING',
+        'check': 'runtime_automation',
+        'message': 'E2E testing (solve/validate buttons) not configured',
+        'recommendation': f'Add ocp4_workload_showroom_runtime_automation_enable: true and ocp4_workload_showroom_runtime_automation_image: "{EXPECTED_ZT_RUNNER}:{EXPECTED_ZT_RUNNER_TAG}" to enable solve/validate buttons in Showroom',
+      })
+      return
+
+    image = config.get('ocp4_workload_showroom_runtime_automation_image', '')
+    if not image:
+      warnings.append({
+        'check': 'runtime_automation',
+        'severity': 'WARNING',
+        'message': 'ocp4_workload_showroom_runtime_automation_enable: true but ocp4_workload_showroom_runtime_automation_image is not set',
+        'location': 'common.yaml',
+        'fix': f'Add: ocp4_workload_showroom_runtime_automation_image: "{EXPECTED_ZT_RUNNER}:{EXPECTED_ZT_RUNNER_TAG}"',
+      })
+    else:
+      tag = image.split(':')[-1] if ':' in image else ''
+      if tag != EXPECTED_ZT_RUNNER_TAG:
+        warnings.append({
+          'check': 'runtime_automation',
+          'severity': 'WARNING',
+          'message': f'ocp4_workload_showroom_runtime_automation_image tag is {tag!r}, expected {EXPECTED_ZT_RUNNER_TAG!r}',
+          'location': 'common.yaml:ocp4_workload_showroom_runtime_automation_image',
+          'fix': f'Update to: "{EXPECTED_ZT_RUNNER}:{EXPECTED_ZT_RUNNER_TAG}"',
+        })
+      else:
+        passed_checks.append(f"✓ runtime_automation_image: {image}")
+
+    workloads = config.get('workloads', [])
+    has_ra_workload = any(RUNTIME_AUTOMATION_WORKLOAD in str(w) for w in workloads)
+    if not has_ra_workload:
+      warnings.append({
+        'check': 'runtime_automation',
+        'severity': 'WARNING',
+        'message': f'runtime_automation enabled but {RUNTIME_AUTOMATION_WORKLOAD} missing from workloads',
+        'location': 'common.yaml:workloads',
+        'fix': f'Add: {RUNTIME_AUTOMATION_WORKLOAD}',
+        'reason': 'This workload provisions the runtime automation SA and RBAC required for solve/validate.',
+      })
+    else:
+      passed_checks.append(f"✓ {RUNTIME_AUTOMATION_WORKLOAD} present in workloads")
+
+  # Check 25b — cloud-vms-base uses different var names (vm_workload_showroom)
+  elif config_type == 'cloud-vms-base':
+    runner_image = config.get('showroom_ansible_runner_image', '')
+    runner_tag = config.get('showroom_ansible_runner_image_tag', '')
+    if not runner_image and not runner_tag:
+      warnings.append({
+        'severity': 'WARNING',
+        'check': 'runtime_automation',
+        'message': 'E2E testing (solve/validate buttons) not configured for VM lab',
+        'recommendation': f'Add showroom_ansible_runner_image: {EXPECTED_ZT_RUNNER} and showroom_ansible_runner_image_tag: {EXPECTED_ZT_RUNNER_TAG} to enable solve/validate buttons in Showroom',
+      })
+      return
+    if runner_tag and runner_tag != EXPECTED_ZT_RUNNER_TAG:
+      warnings.append({
+        'check': 'runtime_automation',
+        'severity': 'WARNING',
+        'message': f'showroom_ansible_runner_image_tag is {runner_tag!r}, expected {EXPECTED_ZT_RUNNER_TAG!r}',
+        'location': 'common.yaml:showroom_ansible_runner_image_tag',
+        'fix': f'Update to: {EXPECTED_ZT_RUNNER_TAG}',
+      })
+    else:
+      passed_checks.append(f"✓ showroom_ansible_runner_image_tag: {runner_tag}")
+```
+
+### Check 26: LiteLLM Virtual Keys in Wrong CI Type
+
+`ocp4_workload_litellm_virtual_keys` provisions per-user API keys — it is a **tenant-level** workload. It must not appear in **shared pool** cluster CIs. Per-user dedicated clusters are fine — each user gets their own cluster, so per-user workloads belong there.
+
+**Rule:** Flag as ERROR only in **shared pool cluster CIs** (those with a corresponding `-tenant` CI). Tenant CIs (`config: namespace`), per-user dedicated OCP clusters, and cloud-vms-base CIs are fine.
+
+**Shared pool cluster detection:** The CI name ends in `-cluster` (indicating a tenant/cluster pair), OR `config: openshift-cluster` with `cloud_provider: openshift_cnv` (CNV pool). A `config: openshift-cluster` with a real cloud provider (aws, azure, gcp) and no corresponding `-tenant` CI is a **per-user dedicated cluster** — do NOT flag it.
+
+```python
+def check_litellm_placement(config):
+  """litellm_virtual_keys belongs in tenant/dedicated/VM CIs, not shared pool cluster CIs."""
+  workloads = config.get('workloads', [])
+  has_litellm = any('litellm_virtual_keys' in str(w) for w in workloads)
+  if not has_litellm:
+    return
+
+  # Shared pool cluster detection:
+  # - CI name ends in "-cluster" (tenant/cluster pair)
+  # - OR openshift-cluster with openshift_cnv (CNV pool)
+  # Per-user dedicated clusters (openshift-cluster with aws/azure/gcp, no -tenant pair) are NOT shared pool.
+  config_type = config.get('config', '')
+  cloud_provider = config.get('cloud_provider', '')
+  ci_name = config.get('__meta__', {}).get('deployer', {}).get('entry_point', '')
+  is_shared_pool = (
+    ci_name.endswith('-cluster')
+    or (config_type == 'openshift-cluster' and cloud_provider == 'openshift_cnv')
+  )
+
+  if is_shared_pool:
+    errors.append({
+      'check': 'litellm_placement',
+      'severity': 'ERROR',
+      'message': 'ocp4_workload_litellm_virtual_keys found in a shared pool cluster CI',
+      'location': 'common.yaml:workloads',
+      'fix': 'Move ocp4_workload_litellm_virtual_keys to the tenant CI (config: namespace)',
+      'reason': 'This workload provisions per-student API keys — it must run in the tenant deployer, not the shared cluster provisioner.',
+    })
+  else:
+    passed_checks.append("✓ ocp4_workload_litellm_virtual_keys in correct CI type (tenant/dedicated/VM)")
+```
+
+---
+
+### Check 27: Showroom Workload in Shared Pool Cluster CI
+
+`ocp4_workload_showroom` (and `vm_workload_showroom`) are per-user workloads. They must not appear in **shared pool** cluster CIs. Shared pool cluster CIs provision shared infrastructure — Showroom belongs on tenant, per-user dedicated OCP, or cloud-vms-base CIs.
+
+**IMPORTANT:** Per-user dedicated clusters (e.g., `config: openshift-cluster` with `cloud_provider: aws` and no corresponding `-tenant` CI) are NOT shared pool clusters. Each user gets their own cluster, so Showroom belongs there. Do NOT flag these.
+
+**Shared pool cluster detection:** The CI name ends in `-cluster` (tenant/cluster pair), OR `config: openshift-cluster` with `cloud_provider: openshift_cnv` (CNV pool).
+
+```python
+def check_showroom_placement(config):
+  """Showroom workloads must not be in shared pool cluster CIs."""
+  workloads = config.get('workloads', [])
+  remove_workloads = config.get('remove_workloads', [])
+  all_workloads = workloads + remove_workloads
+
+  has_showroom = any(
+    'ocp4_workload_showroom' in str(w) or 'vm_workload_showroom' in str(w)
+    for w in all_workloads
+  )
+  if not has_showroom:
+    return
+
+  # Shared pool cluster detection:
+  # - CI name ends in "-cluster" (tenant/cluster pair)
+  # - OR openshift-cluster with openshift_cnv (CNV pool)
+  # Per-user dedicated clusters (openshift-cluster with aws/azure/gcp, no -tenant pair) are NOT flagged.
+  config_type = config.get('config', '')
+  cloud_provider = config.get('cloud_provider', '')
+  ci_name = config.get('__meta__', {}).get('deployer', {}).get('entry_point', '')
+  is_shared_pool = (
+    ci_name.endswith('-cluster')
+    or (config_type == 'openshift-cluster' and cloud_provider == 'openshift_cnv')
+  )
+
+  if is_shared_pool:
+    errors.append({
+      'check': 'showroom_placement',
+      'severity': 'ERROR',
+      'message': 'ocp4_workload_showroom found in a shared pool cluster CI — Showroom is a per-user workload',
+      'location': 'common.yaml:workloads',
+      'fix': 'Remove ocp4_workload_showroom from the cluster CI. Showroom belongs in the tenant CI (config: namespace).',
+      'reason': 'Shared pool cluster CIs provision shared infrastructure. Showroom must run per-user in the tenant deployer.',
+    })
+  else:
+    passed_checks.append("✓ Showroom workload in correct CI type (tenant/dedicated/VM)")
+```
+
+---
+
+## Related Skills
+
+- `/agnosticv:catalog-builder` -- Create or update catalog files if validation fails

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-microsoft-microsoft-sql/analyze-readiness-at-scale/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Use when analyzing migration assessment readiness at scale or showing an estate-wide migration assessment dashboard for Azure Arc SQL Server instances.

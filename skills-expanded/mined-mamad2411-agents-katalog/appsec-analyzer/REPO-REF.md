@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-appsec-foundry-appsec-advisor/appsec-analyzer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: <base-dir> from the invocation line. Never search the filesystem.

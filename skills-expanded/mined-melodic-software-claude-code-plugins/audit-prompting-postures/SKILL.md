@@ -1,0 +1,264 @@
+---
+description: "Find posture guidance an instruction component lacks that the official prompting guide says its purpose needs: delegation, guardrails, stop rules, destructive-action confirmation. Report-only. Use when: 'posture audit', 'audit prompting postures', 'is my skill missing guardrails', 'missing delegation criteria', 'should this component confirm destructive actions', 'does my CLAUDE.md say when to stop', 'align my components with the prompting guide'. Text present and wrong: audit-instructions."
+argument-hint: "[skills|agents|hooks|output-styles|claude-md|rules|all]"
+disallowed-tools: Edit, NotebookEdit
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  workflow-stage: anytime
+  summary: Find posture guidance the prompting guide says a component needs but does not carry
+---
+
+**Arguments.** `[skills|agents|hooks|output-styles|claude-md|rules|all]`. default: all
+
+## Purpose
+
+The official prompting guide prescribes posture guidance that agentic components should carry:
+delegation criteria, scope guardrails, grounding instructions, autonomy postures, confirmation
+gates. `audit-instructions` detects instruction text that is present and wrong; this skill detects
+text that is absent and needed. It classifies each component by purpose, checks the postures that
+purpose calls for, and proposes additions with wording taken from a live fetch of the guide, never
+from this file.
+
+## Read-only contract
+
+Report-only. No `--fix`: every proposed addition is applied by the human (or explicitly delegated
+afterward). A clean audit is a valid outcome, and with well-authored components it is the expected
+one. The default verdict per posture is NOT-APPLICABLE, not MISSING.
+
+**Instruction-held, not tool-enforced. Never tell an operator this skill *cannot* edit their files.**
+`disallowed-tools: Edit, NotebookEdit` narrows the surface, nothing more: `Write` stays in the tool
+set for Phase D's report file and Phase B has already read every audited component, so it can overwrite one; `Bash` stays for
+Phase D's persist script, and a shell mutates files too. That closes the likeliest accidental path, not the
+capability, and a skill auditing assurance must not overstate its own. We treat the restriction as
+clearing on the human's next message, so whoever accepts a proposal can apply it (Pointer: when
+deciding how long the restriction lasts, fetch
+[skills: frontmatter reference](https://code.claude.com/docs/en/skills#frontmatter-reference)
+live).
+
+## Scope boundary (route out)
+
+- Text that is present and wrong, covering over-prescription, stale claims, emphasis language and
+  retired parameters, is `audit-instructions`. When one sweep wants both lanes, run both skills; a
+  coordinated pass (`audit-pass`, when enabled) composes them.
+- Structural skill lint is `skill-quality:check`; token brevity is `docs-hygiene:compress`.
+- Upstream-owned surfaces (installed plugin cache, managed materializations) produce routing
+  recommendations to the owning repository, never in-place proposals, the same exclusion
+  `audit-instructions` applies.
+
+## Phase A: Fetch the guide
+
+The posture catalog in [reference/postures.md](reference/postures.md) carries, per posture, an
+applicability predicate and a pointer to the guide section that states the recommended wording.
+It carries no copied sample text, so no proposal is written before the page it cites is in hand. It
+names two kinds of page, fetched at different times and failing differently.
+
+**The best-practices page: fetched here, every run, before any judging.** It is this skill's one
+non-negotiable input: nearly every posture points at it. If it cannot be fetched,
+**abort the run**, naming the URL and the failure; continuing would emit a catalog of
+`wording-unverified` postures, a report shaped like an audit that audited nothing. Same posture the sibling takes on its
+own single input (`audit-instructions/SKILL.md`, "Fail loud on ambiguity").
+
+**Model-specific subpages and the usage guide: fetched lazily, in Phase C, per applicable row**,
+when a posture whose predicate matched points at one, not once per catalog row, since a row names
+its subpage whether or not anything in scope matches. A failed subpage fetch degrades only the
+postures citing it: mark those `wording-unverified`, carry the pointer instead of wording, never
+invent text. One page is fatal; the rest are local, and "before judging anything" does not mean
+holding every page at once.
+
+## Phase B: Inventory and classify
+
+Parse `$ARGUMENTS` for an optional scope filter (`skills`, `agents`, `hooks`, `output-styles`,
+`claude-md`, `rules`, or `all`, the default). It narrows which surfaces may produce findings, never
+which pages Phase A fetches.
+
+Enumerate locally-owned instruction components in scope. **This skill names its own surface set**;
+it shares the *resolution* procedure with `audit-instructions` Phase A, not the list. Resolve
+`${CLAUDE_CONFIG_DIR:-~/.claude}` and project `.claude/`, and apply the same liveness and
+upstream-ownership exclusions. The set, one entry per scope token above: skill bodies (and the
+context/reference files a skill instructs the model to read), agent definition markdown, hook
+instruction text of both kinds, output-style markdown, CLAUDE.md / a natively read AGENTS.md or
+`.claude/AGENTS.md` / CLAUDE.local.md, `.claude/rules/`. **Whether an `AGENTS.md` is read natively
+depends on whether `AGENTS.md` support is available in the session and on the instruction-files mode, and this body does not
+restate the condition**: the four-part record for both questions is this plugin's
+[reference/agents-md-liveness.md](../../reference/agents-md-liveness.md); resolve it there, not from
+a copy that can drift. **The set follows the effective mode, not the default mode's answer**: an
+`AGENTS.md` beside a `CLAUDE.md` belongs in the set whenever the effective mode loads it. The record
+says which scopes honor the setting; resolve the **effective** value across them, not one scope's
+copy, which answers the wrong question whichever way the override runs.
+**The mode is the second question, not the only one, and either can rule the file out.** Availability
+comes first and is not a mode question: a session where support is unavailable, for a reason the
+liveness record lists, reads no `AGENTS.md` under any mode, and inventorying one would let Phase C
+propose posture additions to a surface nothing loads. No hooks setting is among those reasons. A
+mode that loads no `AGENTS.md` rules it out the same way. Exclude on a condition
+known to rule it out; most are readable, so resolve before falling back.
+**Where a condition stays unresolved, inventory the file but carry the doubt into the finding.**
+Phase C judges every inventoried component and emits a `MISSING` posture for it, so silently
+including a surface of unknown residency proposes work on a file the session may not load. Any
+posture finding anchored on such an `AGENTS.md` is emitted `NOT-APPLICABLE` with the unresolved
+condition as its failed predicate, the verdict the closed token set below reserves for a predicate
+that did not hold. That keeps the surface in the report without asserting a gap the reader cannot
+act on. Only where the file is genuinely not read does it reach context as an import, which the
+importing record already covers.
+
+- **Pointer**: when deciding which files a mode loads, fetch
+  [memory: choose which instruction files load](https://code.claude.com/docs/en/memory#choose-which-instruction-files-load)
+  live.
+
+**The inventory bounds what may produce a finding, not what counts as evidence.** Phase C's
+mechanical-gate rule reads outside it to establish presence, which can only turn a MISSING into a
+PRESENT, never add a finding on an excluded surface.
+
+For each component, classify its purpose from its own description and body. The classification
+vocabulary and its tie to each posture's predicate live in the catalog. A component can match several
+purposes or none; none is the common case, and unclassified components go in the coverage line,
+never force-fitted.
+
+## Phase C: Judge postures
+
+For each component × applicable posture: does the component (or a file it instructs the model to
+read) already carry the posture, in any wording? Judge substance, not phrasing. A numeric
+concurrency cap satisfies the delegation-criteria posture without quoting the guide. Only a genuine
+absence on a component whose purpose clearly needs it becomes a finding. Three standing fences:
+
+- **Do not manufacture.** The predicate must match the component's actual purpose, not a
+  conceivable use. When in doubt, NOT-APPLICABLE.
+- **Mechanical gates are presence evidence and do not live in the inventory.** P7, and only P7,
+  blesses a deny-by-default hook **or script** gate "without any prose", while Phase B inventories
+  instruction *text*, so those gates sit outside that set. Before judging a
+  `destructive-capable` component MISSING on P7, look in all three: settings scopes Phase B resolved
+  (`permissions.deny` / `ask`), hook config registering a PreToolUse matcher over the action, and
+  **the script the component delegates the action to**, following the invocation and reading it, since a
+  component whose destructive step runs through a script that performs the approval check is gated.
+  Any one of the three is PRESENT, cited by file and rule, or by script and line. For a MISSING
+  P7, the catalog's P7 "Proposal when MISSING" line names who picks the mechanism.
+- **Repo conventions win on wording.** The proposal adapts the guide's substance to the
+  component's own voice and the repo's terseness conventions; it never pastes a guide block
+  verbatim into a proposal without trimming to what the component needs.
+
+## Phase D: Verify and report
+
+Dispatch one fresh-context, non-fork verifier per surface batch, prompted to refute each proposed
+addition: "argue this component's purpose does not need this posture, or that it already carries
+it." A refuted finding is **demoted to `info` and kept, never dropped**. It stays a row carrying its
+refutation, because deleting it erases the evidence that Phase D ran and disagreed.
+
+**A run with no proposed addition still runs Phase D, on the verdicts.** Refuting proposals can only
+remove findings, so on a clean run the same verifier is prompted the other way: "argue that a
+component needs a posture it was judged not to need, that its purpose classification is wrong, or
+that a `PRESENT` citation does not carry the posture." Each reversal becomes a row with its
+corrected verdict and the verifier's argument; a reversal to `MISSING` carries its proposed addition
+like any other finding. A clean audit is reported clean only after this check.
+
+**Verification level.** Before Phase D, run `bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin harness-config --skill audit-prompting-postures`
+and copy its line into the report header ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)).
+`standard` and `strict` are the two paragraphs above. Under `light`, and `off`, which acts as
+`light` here, dispatch no Phase D verifier, on proposals or on verdicts, and never refute inline
+in its place: follow "When dispatch is unavailable" below with the reason
+`verification: skipped (<level>)`, and a run with no proposed addition is reported unverified,
+never clean.
+
+### When dispatch is unavailable
+
+Phase D **requires** fresh-context, non-fork verifier dispatch. When the Agent tool is blocked,
+unavailable, or the session cannot spawn subagents:
+
+1. **Disclose in the report header** that Phase D did not run and why.
+2. **Mark unverified proposals.** Every proposed addition that did not receive an independent
+   verifier carries an `(unverified)` marker and is never presented as a confident finding.
+3. **The verifier attestation line** at the report tail says Phase D did not run, and names the
+   surface batches verified inline or skipped.
+
+Persist the report to `${CLAUDE_PLUGIN_DATA}/audit-prompting-postures/<state-key>/last-audit.md`.
+
+**Write the report with the Write tool first**, to a scratch file outside the plugin data directory
+and outside every audited component (a file under the session's temporary directory), so the
+report passes the Write tool's content guards like every other file this skill writes. **Then
+persist it by running this script** on that file; the script derives `<state-key>`, creates the
+directory and writes `last-audit.md` atomically, then prints the path it wrote:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/lib/persist-report.sh" \
+  --plugin-data "${CLAUDE_PLUGIN_DATA}" --component audit-prompting-postures --report <report-file>
+```
+
+`--report -` (the body on stdin) is the fallback for a session where the Write tool is unavailable,
+never the main route. Pass the data directory as the `--plugin-data` argument shown, never through
+the environment. **Persist only through this script: never run a standalone `mkdir`, or any command
+of your own, against the plugin data directory.** (Pointer: when deciding where `${CLAUDE_PLUGIN_DATA}`
+resolves, fetch
+[plugins manifest reference: where each variable resolves](https://code.claude.com/docs/en/plugins/manifest-reference#where-each-variable-resolves)
+live; for why an inline command against the data directory is avoided, read the eval-trace
+evidence in melodic-software/claude-code-plugins#12039.)
+
+We key the report per project because one data directory serves every project on the machine, so
+a fixed `last-audit.md` would be silently overwritten by the next run from any other root, this
+skill's only durable deliverable, destroyed by ordinary use of it (Pointer: when deciding the data
+directory's scope, fetch
+[plugins manifest reference: environment variables](https://code.claude.com/docs/en/plugins/manifest-reference#environment-variables)
+live). The scheme is `<repo-identity>/<worktree-discriminator>`, defined by the
+marketplace's `plugin-data-report-keying` convention and reused rather than reinvented, and it
+lives in one executable rather than being restated per skill,
+[`lib/state-key.sh`](../../lib/state-key.sh), with `lib/state-key.test.sh` beside it, which the
+persist script runs. Run `bash "${CLAUDE_PLUGIN_ROOT}/lib/state-key.sh" --explain` when the report
+should say which rung produced the key. **The key stops overwrites, not reaping.**
+An uninstall can delete the plugin's data directory, so when a report must outlive the plugin the
+closing line says to copy it out of the data directory (Pointer: when deciding whether a report
+survives an uninstall, fetch
+[plugins CLI reference: what an uninstall deletes and keeps](https://code.claude.com/docs/en/plugins/cli-reference#what-an-uninstall-deletes-and-keeps)
+live).
+
+Let the script derive the key. Do **not** express the path as a condition over `${CLAUDE_PROJECT_DIR}`
+"when set": where that placeholder is substituted (pointer below) makes the condition not yours
+to evaluate. Derive the key from a command you run.
+
+- **Pointer**: when deciding where a skill placeholder is substituted, fetch
+  [skills: available string substitutions](https://code.claude.com/docs/en/skills#available-string-substitutions)
+  live.
+
+**Open the report with a three-line header**, so a file that survives is self-describing:
+
+```
+Resolved root: <absolute path audited>
+Scope filter:  <the scope argument this run used, or "all">
+Run (UTC):     <ISO-8601 timestamp>
+```
+
+Then summarize in chat:
+
+| # | Posture | Component | Verdict | Proposed addition or pointer |
+|---|---------|-----------|---------|------------------------------|
+
+Verdicts are a closed set of four tokens: `MISSING` (finding, with proposed addition as a fenced diff;
+a MISSING P7 instead carries the catalog's P7 "Proposal when MISSING": the named
+`/corrections:codify "<the rule>"` call when that skill is available, otherwise the strongest
+mechanism as a fenced diff of the file that would carry it, marked unproven),
+`PRESENT` (where it is), `NOT-APPLICABLE` (with the failed predicate), `info` (a Phase D verifier
+refuted it, always kept as a row, never dropped, never a proposal to apply). Two markers are
+orthogonal and ride **alongside** a verdict, never in place of one: `wording-unverified` (a subpage
+fetch failed in Phase C, so the fifth column carries the guide pointer, and a pointer is never
+dressed up as guide wording) and `(unverified)` (Phase D could
+not verify this proposal; see "When dispatch is unavailable"). End with a coverage line naming components
+inventoried, classified and unclassified, and a Sources line citing the pages fetched this run with
+dates. End every run with a verifier attestation line naming the surface batches verified, verified
+inline, or skipped, and which check the verifier ran on each: `proposals` or `verdicts`.
+
+## Gotchas
+
+- **Presence can live one file away.** A SKILL.md that routes to a context file the model must
+  read counts as carrying whatever that file carries. Follow the component's own read
+  instructions before judging absence.
+- **Human-gated designs are not missing autonomy postures.** A report-only skill that ends at a
+  human gate needs no autonomous-pipeline branch; the autonomy posture applies to components that
+  claim unattended operation.
+- **Model-conditional postures stay conditional.** Where the guide ties a posture to specific
+  models, the proposal must be model-neutral or carry the same condition, since components here run on
+  any consumer model.
+
+## What this skill does not do
+
+- Never edits a component and never auto-applies a proposal. This is held by instruction, since
+  `disallowed-tools` narrows the surface but `Write` and `Bash` remain and both can mutate a file.
+- Never copies guide text into its own catalog; wording comes from the run's live fetch.
+- Does not judge existing text (that is `audit-instructions`), lint structure
+  (`skill-quality:check`), or compress prose (`docs-hygiene:compress`).

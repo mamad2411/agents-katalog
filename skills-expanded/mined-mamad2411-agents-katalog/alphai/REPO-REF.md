@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/alphai/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Alph.ai API 主导航 - 帮助查找合适的 API 模块、生成调用代码、提供 API 使用建议。当用户不确定使用哪个模块或需要 API 总览时使用。

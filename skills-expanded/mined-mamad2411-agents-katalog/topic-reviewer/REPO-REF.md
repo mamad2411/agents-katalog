@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/topic-reviewer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 选题审核工具。检查选题是否符合发布标准，给出通过/不通过判断及修改建议。当用户说"审核选题"、"这个选题行不行"、"帮我看看这个能不能写"时触发。

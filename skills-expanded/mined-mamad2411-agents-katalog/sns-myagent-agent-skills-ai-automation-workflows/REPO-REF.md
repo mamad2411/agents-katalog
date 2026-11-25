@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/sns-myagent-agent-skills-ai-automation-workflows-skill/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Build automated AI workflows combining multiple models and services. Patterns: batch processing, scheduled tasks, event-driven pipelines, agent loops. Tools: inference.sh CLI, bash scripting, Python S

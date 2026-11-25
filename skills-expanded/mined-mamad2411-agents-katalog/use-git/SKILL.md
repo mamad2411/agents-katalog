@@ -1,0 +1,57 @@
+---
+name: use-git
+description: >-
+  Apply git and gh CLI conventions: tmpfile bodies, signed commits, and safe
+  pushes. Use when running git or gh, or passing them PR or issue bodies.
+---
+
+# Use Git
+
+Conventions for running git and GitHub CLI (`gh`) commands in Claude Code. These rules keep Bash commands short, avoid unnecessary permission prompts, and prevent destructive operations.
+
+## Core Principles
+
+1. **Tmpfiles for long content**: Write long strings (PR bodies, issue bodies, release notes, review replies) to a tmpfile via the Write tool, then pass the path to the command's file flag, such as `--body-file` or `--notes-file`. Keeps Bash commands short and avoids permission prompts. Generate the path with `mktemp -u` so the file does not already exist, and never batch the Write call together with the `gh` call that reads it. Both rules are scoped to this pattern, which carries non-secret content; `references/tmpfile-pattern.md` explains why `-u` is the wrong choice for security-sensitive temp files.
+1. **HEREDOCs for short content**: Commit messages use `$(cat << 'EOF' ... EOF)`. Single-quoted `'EOF'` prevents variable expansion.
+1. **GPG sign every commit**: Always `git commit -S`. The sandbox cannot access GPG keys, so resort immediately to the unsandboxed command.
+1. **Never amend**: Always create new commits. Pre-commit hook failures mean the commit did not happen, so `--amend` would modify the wrong commit.
+1. **Never use force or override flags**: Never use `git push --force`, `git push -f`, `--no-verify`, or similar override flags without explicit user instruction. If the user explicitly requests a force push, use `git push --force-with-lease` (add `--force-if-includes` when the installed Git version supports it, v2.30+). Investigate root causes rather than forcing through.
+1. **Parallel tool calls over chained commands**: Use separate Bash tool calls for independent commands instead of chaining with `;` or `&&`, which trigger permission prompts. This applies only to commands with no dependencies between them. A Write that produces a tmpfile and the `gh` call that consumes it through a file flag (`--body-file`, `--notes-file`, and the like) are **dependent**: issue them in separate, sequential messages, never in one parallel batch. See `references/tmpfile-pattern.md`.
+1. **Exclude secret files from staging**: Never stage `.env`, `credentials.json`, `*.pem`, `*.key`, or similar secret files.
+1. **Use clean diff output**: Always pass `--no-ext-diff --no-color` (and `--no-pager` before the subcommand) on diff-producing commands (`git diff`, `git log -p`, `git show`). User configs may route diffs through external tools like difftastic, producing output that is harder to parse. These flags ensure standard unified diff format.
+
+## Quick Decision Table
+
+| Scenario                            | Pattern                  | Reason                                |
+| ----------------------------------- | ------------------------ | ------------------------------------- |
+| Commit messages                     | HEREDOC                  | Short, predictable length             |
+| PR bodies (`gh pr create`)          | Tmpfile + `--body-file`  | Can be long; HEREDOC triggers prompts |
+| Issue bodies (`gh issue create`)    | Tmpfile + `--body-file`  | Can be long                           |
+| Release notes (`gh release create`) | Tmpfile + `--notes-file` | Can be long                           |
+| Review replies                      | Tmpfile + `--body-file`  | Variable length                       |
+| Worktree prompts                    | Pipe through stdin       | Avoids shell escaping and a tmpfile   |
+| Tag messages                        | Inline `-m`              | Typically one line                    |
+| Listing API results                 | `gh api --paginate`      | One page silently truncates results   |
+
+## Workflow
+
+1. **Quick reference:** Check the decision table above
+1. **Tmpfile details:** Read `references/tmpfile-pattern.md`
+1. **HEREDOC details:** Read `references/heredoc-pattern.md`
+1. **Safety rules:** Read `references/safety-rules.md`
+1. **Common operations:** Read `references/common-operations.md`
+1. **Diff output:** Read `references/diff-output.md`
+
+## Reference Navigation
+
+**Quick reviews (default):**
+
+- The decision table above and the core principles cover most situations
+
+**Deep dives by topic:**
+
+- `references/tmpfile-pattern.md` - When and how to use tmpfiles for long content
+- `references/heredoc-pattern.md` - When and how to use HEREDOCs for commit messages
+- `references/safety-rules.md` - GPG signing, never amend, never force, secret exclusion, parallel calls
+- `references/common-operations.md` - Base branch detection, push with upstream fallback, conventional commits, branch naming, paginated `gh api` reads
+- `references/diff-output.md` - Clean diff output flags for bypassing external diff tools, colors, and pagers

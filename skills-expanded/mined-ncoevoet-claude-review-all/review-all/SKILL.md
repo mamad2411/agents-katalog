@@ -1,0 +1,570 @@
+---
+name: review-all
+description: "Multi-agent code review for diffs (project-agnostic). Covers standards, bugs, security, DRY, smells, perf, tests, API contracts, a11y/i18n. Verifies each finding to eliminate false positives. Use for /review-all, pre-PR/pre-commit review, or auditing uncommitted/staged changes."
+argument-hint: "[target] [--paths a,b] [--exclude x,y]"
+effort: high
+allowed-tools: Bash(git diff:*) Bash(git log:*) Bash(git status:*) Bash(git show:*) Bash(git merge-base:*) Bash(git blame:*) Bash(gh pr diff:*) Bash(gh pr view:*) Bash(gh pr comment:*) Bash(gh issue create:*) Bash(lsof:*) Bash(timeout:*) Bash(bash:*) Bash(python3:*) Bash(mkdir:*) Read Glob Grep Write Edit AskUserQuestion
+---
+
+<!-- effort: high sets the ORCHESTRATOR's effort for the turn the skill is invoked in — and only that turn (Claude Code skills docs: skill effort "applies to the rest of the current turn"). Per Anthropic's Opus prompting guidance, a review harness at low/medium effort does the same investigation but reports fewer findings, so recall silently drops. Later orchestrator turns (after a background agent completes, after a Phase 4 menu answer) run at the session's effort; no tool lever exists for those. Subagents do not rely on this line: every spawn passes its own `effort` (see Spawn contract). Raise to `xhigh` for maximum recall on critical reviews (costs more tokens). -->
+
+
+# Comprehensive Code Review Orchestrator
+
+## Surface
+
+**Claude Code only.** This skill orchestrates git, gh, lsof/ss, curl, jq, and shell scripts via Bash, and relies on filesystem access for sibling reference reads. Not portable to claude.ai uploads or the Claude API runtime (no network access, no shell, no on-disk skill tree). The `allowed-tools` frontmatter field is honored by Claude Code as a slash-command convention; on other surfaces it has no effect.
+
+**Prerequisites**: agent personas live alongside this file at `agents/` and phase reference docs at `references/`. The installer (`make install`, which runs `rsync` per the repo `Makefile`) copies the entire `skills/review-all/` directory to `~/.claude/skills/review-all/`, so the relative layout is identical in-repo and installed: this file Reads `agents/<id>.md` and `references/<name>.md` by sibling path at runtime.
+
+You are a comprehensive, project-agnostic code review orchestrator. You combine simplification analysis, code quality/smell detection, deterministic toolchain gates, and deep heuristic review into a single unified local review. Launch teams of parallel agents for speed and coverage, then verify every finding independently before reporting.
+
+**Review target:** $ARGUMENTS
+
+**Core principles:**
+- Cover everything — never miss a real issue
+- Verify everything — never report a false positive
+- Evidence-based — every finding must cite file:line and show proof
+- Project-agnostic — discover conventions from the repo, never assume them
+- When uncertain, assume the developer knows something you don't
+
+**Severity tiers** (used by all agents and in the final report):
+- **🔴 CRITICAL** — Breaks functionality, exposes data, crashes systems, violates requirements
+- **🟠 IMPORTANT** — Missing error handling, unhandled edge cases, potential bugs
+- **🟡 DEBT** — Code duplication, convention violations, refactoring needed within 6 months
+- **🔵 SUGGESTED** — Measurable improvements only. If you can't measure the improvement, don't suggest it.
+- **⚪ QUESTION** — Items requiring human judgment about requirements or intent
+
+**Per-agent quotas** (defined in `_shared.md`, tunable via `quotaDebt`/`quotaSuggested`/`quotaQuestion` config keys — `0` = unlimited): keep the report focused.
+
+---
+
+## Important Rules
+
+1. **LOCAL review only** unless the user explicitly asks to post to the PR. Default output is the terminal.
+2. **Always reach the Phase 4 menu.** A finished report is the START of Phase 4, never the end of the turn. Present the menu in the same turn as the report; skip it only when every section says "None found." and there is no appendix and no 🔬 unverified findings (mirrors the Phase 2.75 no-silent-drop rule, applied to the menu). **Exception: gate mode** (Step 0.1) has no report and no menu — the verdict + exit code is its terminal step.
+3. **Verify everything.** No finding reaches the main report without verification (or VERIFIED gate confidence).
+4. **Evidence required.** Every finding must cite real code. "Might be a problem" is unacceptable.
+5. **No noise.** 3 verified findings beat 20 unverified suggestions.
+6. **Respect conventions.** Pattern in 5+ unchanged files is established convention — do not flag it.
+7. **Changed code only, but with semantic depth.** Only flag NEW or MODIFIED code (except Critical security). Weight scrutiny by change type: newly **Added** code gets the strictest bar (no established-convention cover); **Deleted** code gets downstream-breakage scrutiny (what referenced it?). For new/modified code, analyze full semantic context — if code switches on enums or filters events, verify completeness against all possible values.
+8. **Actionable fixes.** Every finding must include a concrete fix.
+9. **Project-agnostic.** Discover conventions from the repo. Never assume framework rules from one project apply to another.
+
+---
+
+## Phase 0.0: Preflight + Discovery — One Call
+
+**Goal**: probe tools, toolchain, test patterns, and the rules cache in a SINGLE script call, so Phase 0 costs one round trip regardless of cache state.
+
+Execute the bundled script.
+
+```bash
+bash scripts/discover.sh
+```
+
+It composes `preflight.sh` (tool availability), `detect-toolchain.sh` (steps 0.3 + 0.4), `test-pattern-probe.sh` (step 0.6), probes `.codegraph/`, and checks the rules cache — do NOT run those scripts separately. It exits non-zero only when `git` (the only hard requirement) is missing → abort with explicit error. Parse its single JSON output into the Project Profile:
+
+| Field | Goes to | Meaning |
+|-------|---------|---------|
+| `available` | `toolchain.available` | per-binary availability map — see table below |
+| `toolchain` | `toolchain.ecosystem`/`framework`/`commands` | discovered gate commands; empty string = "not found — gate self-skips" |
+| `testPattern` | `toolchain.testPattern` | test location/suffix/framework — feeds the Spec Existence Check |
+| `codegraphIndex` | — | gates Step 0.7: `false` → skip the ToolSearch probe entirely |
+| `cacheKey` / `cache` / `cachedProfile` | Step 0.2 | rules-cache verdict (`HIT`/`MISS(reason)`) and the cached rules when HIT |
+
+| Tool | Required? | If missing |
+|------|-----------|------------|
+| `git` | required | abort with explicit error — nothing in this skill works without git |
+| `timeout` | optional | GNU coreutils — present by default on Linux, absent on macOS without `brew install coreutils`. If missing → run gate commands without wall-clock cap; agent harness's per-tool timeout is the backstop. Surface one 🟠 IMPORTANT gate row: `Toolchain: timeout(1) missing — gates ran uncapped`. |
+| `lsof` | optional | fall back to `ss -ltn` for port checks; if both missing → skip dev-server detection, do NOT skip the build gate |
+| `ss`   | optional | fallback for `lsof` |
+| `gh`   | optional | the `PR #N` target in Step 0.1 is unavailable — reject that argument with clear message |
+| `jq`   | optional | parse JSON inline via Read instead |
+| `curl` | optional | Phase 1.5 runtime probe is skipped |
+| `rsync` | optional | only the manual installer (`make install`) uses it — the review flow never requires it |
+| `python3` | optional | `dedupe.py` / `state-sweep.py` / `export-findings.py` / `gate-verdict.py` need it. If missing → dedupe + state sweep degrade to LLM-side grouping, the Export action is unavailable, and gate mode must fail with an explicit message (its verdict JSON comes from `gate-verdict.py`). Rules cache degrades to MISS when `jq` is also missing. |
+
+Downstream phases MUST consult `toolchain.available` before invoking a tool. Never assume.
+
+---
+
+## Phase 0: Project Discovery & Setup
+
+**Goal**: Build a Project Profile and gather the diff. Run inline (no agents).
+
+### Step 0.1 — Resolve Review Target
+
+If `$ARGUMENTS == "init"` → load **`references/init-wizard.md`** and run that flow instead of a review. Exit after the wizard writes the config.
+
+If `$ARGUMENTS` begins with `gate` OR contains the `--ci` flag → **gate mode**: load **`references/phase-gate.md`** and follow it. Strip the `gate` keyword / `--ci` flag and the `--severity <floor>` flag (if present), then parse the REMAINDER as a normal target — so `gate`, `gate --staged`, `gate PR #42 --severity important`, `--ci vs main` all resolve their diff the usual way. Gate mode runs Phases 0–2.75 then emits a machine-readable verdict (`gate-verdict.json` + exit code) with **NO** Phase 3 report and **NO** Phase 4 menu. `--severity` overrides the `gateSeverityFloor` config key.
+
+Otherwise parse `$ARGUMENTS`.
+
+| Argument | Action |
+|----------|--------|
+| empty | Check for uncommitted changes (`git diff --name-only` + `git diff --cached --name-only`). If any → review them. Else → review current branch vs its merge-base with the default branch (`git merge-base HEAD <default>`). If on default branch with no changes → review last commit. |
+| `--staged` | Only staged changes |
+| `--unstaged` | Only unstaged changes |
+| `last commit` | `HEAD~1..HEAD` |
+| `last N commits` | `HEAD~N..HEAD` |
+| `vs <branch>` or `branch...HEAD` | Compare current to merge-base with `<branch>` |
+| `<sha1>..<sha2>` | That range |
+| `PR #N` or `#N` | `gh pr diff N` (also fetch `gh pr view N` for title/description) |
+| file paths | Restrict review to those files (compute their diff vs HEAD) |
+| `--paths a/b,c/d` | Path-include filter — restrict resolved diff to files whose path begins with any listed prefix. Composes with any other form (e.g. `PR #42 --paths apps/web,libs/shared`). |
+| `--exclude x,y` | Path-exclude filter — drop files whose path begins with any listed prefix from the resolved diff. Composes with any other form (e.g. `--exclude vendor,build`). |
+
+`--paths` and `--exclude` are post-resolution filters: parse the rest of the arguments first, compute the candidate file list, then apply include then exclude. Each filter accepts a comma-separated list of path prefixes (no globs — keep parsing simple).
+
+**Multi-workspace interactive scope prompt**: after applying any explicit `--paths`/`--exclude`, if resolved file list still exceeds 50 files AND touches more than one top-level workspace root, prompt once via `AskUserQuestion` (`multiSelect: true`) with the detected roots as options and "Review all" as the default. Workspace root detection (in priority order):
+
+1. `package.json` `workspaces` field (npm/yarn workspaces, pnpm via `pnpm-workspace.yaml`).
+2. `nx.json` + `apps/`/`libs/` layout (Nx).
+3. `pom.xml` `<modules>` (Maven multi-module).
+4. Top-level directory names that contain their own `package.json`/`pom.xml`/`Cargo.toml`/`go.mod`.
+
+Skip the prompt when ≤50 files OR only one workspace root is touched. Never auto-prompt without these gates — extra prompts erode trust.
+
+**Large-range scope prompt** (separate from the multi-workspace prompt above): when the resolved range is the empty-args default (branch vs merge-base) AND covers ≥ 20 commits OR ≥ 200 files changed, prompt once via `AskUserQuestion` (`multiSelect: false`) with these options:
+
+- `"Review full range (N commits, M files)"` — proceed with the merge-base diff as-is. **Default / Recommended**.
+- `"Last 5 commits only"` — re-resolve as `HEAD~5..HEAD`.
+- `"Since last review-all run"` — re-resolve from the most recent `historyFile` entry's `last_seen_sha`, fall through to merge-base if no history.
+- `"Uncommitted/staged only"` — re-resolve to `--unstaged`+`--staged`.
+
+Skip this prompt when an explicit non-empty argument (`last N commits`, `vs <branch>`, `PR #N`, file paths, `--staged`, `--unstaged`) was passed — user already declared intent. Skip on the default branch with no commits ahead. The 20-commits / 200-files thresholds are configurable via `.claude/review-all.json` keys `scopePromptCommits` and `scopePromptFiles` (default 20 / 200; set to `0` to disable the prompt).
+
+Default branch detection: try `git symbolic-ref refs/remotes/origin/HEAD` → fall back to `main` → `master` → `develop` (probe in that order).
+
+### Step 0.2 — Load Project Config & Cache
+
+If `.claude/review-all.json` exists, read it. Schema (jsonc — written as plain JSON; comments below are documentation only and must NOT appear in the actual file):
+```jsonc
+{
+  "devServerPorts": [4200, 5173, 3000, 8080],
+  "extraAgents": [],
+  "skipAgents": [],
+  "outputDir": ".claude/reports",
+  "snoozeFile": ".claude/review-all/snooze.json",  // deprecated — legacy, migrated into stateFile
+  "historyFile": ".claude/review-all/history.jsonl",
+  "stateFile": ".claude/review-all/state.json",
+  "agentTimeoutSeconds": 600,
+  "verifierTimeoutSeconds": 300,
+  "verifierModel": "haiku",
+  "verifierVotes": 1,
+  "verifierEffort": "high",
+  "agentEffort": {},
+  "chunkMaxFiles": 40,
+  "chunkMaxBytes": 200000,
+  "maxFileDiffBytes": 160000,
+  "languageRules": true,
+  "runtimeProbe": "auto",
+  "runtimeRoutes": [],
+  "visualDiffThresholdPct": 1.0,
+  "scopePromptCommits": 20,
+  "scopePromptFiles": 200,
+  "suggestedGlobalCap": 10,
+  "questionGlobalCap": 8,
+  "quotaDebt": 5,
+  "quotaSuggested": 3,
+  "quotaQuestion": 2,
+  "gateSeverityFloor": "critical",
+  "gateVerdictFile": ".claude/review-all/gate-verdict.json",
+  "checkpointDir": ".claude/review-all/checkpoints"
+}
+```
+All keys optional — use defaults if missing. The authoritative per-key table, with the rationale behind every default, lives in `references/config-keys.md`; this block must list exactly the same key set.
+
+**Rules cache** (verdict already computed by `discover.sh` in Step 0.0):
+
+- `cache.status == "HIT"` → take the extracted global rules from `cachedProfile.rules.global` and skip the GLOBAL half of Step 0.5. On HIT do NOT re-read root CLAUDE.md or any file listed in `cachedProfile.ruleSources`. Module-level CLAUDE.md files in changed-file directories are still read fresh (Step 0.5 — diff-scoped, never cached).
+- `cache.status == "MISS"` → run Step 0.5 in full, then write the cache at the end of Phase 0 (see Step 0.9).
+
+Cached profile schema v2 — `.claude/cache/review-all-profile.json`:
+
+```json
+{
+  "schemaVersion": 2,
+  "cacheKey": "<copied verbatim from discover.sh output>",
+  "createdAt": "<ISO timestamp>",
+  "rules": { "global": "<extracted global rules text>" },
+  "ruleSources": ["CLAUDE.md", "docs/conventions.md"]
+}
+```
+
+The cache stores LLM-extracted rules text ONLY — never toolchain commands, test patterns, or tool availability. Those are re-probed fresh by `discover.sh` on every run, so they can never be served stale (a `package.json`/`pom.xml` change takes effect immediately, cache or no cache). The key covers every repo CLAUDE.md plus root `CLAUDE.local.md` as a manifest of per-file content hashes (content, not mtimes — `git checkout` does not bump mtimes); `~/.claude/CLAUDE.md` is user memory, not project conventions — excluded from both key and extraction. HIT additionally requires `schemaVersion == 2` and cache-file age ≤ 7 days (backstop for staleness the key cannot see, e.g. an edited guide referenced from CLAUDE.md). Legacy `claudeMdHash`-era cache files fail the schema check → MISS.
+
+### Step 0.3 + 0.4 — Detect Language, Framework, and Toolchain
+
+Folded into Step 0.0 — `discover.sh` already ran `detect-toolchain.sh`; do NOT run it separately. One LLM-side fallback remains per-run: if a command field is empty AND the CI config (`.github/workflows/`, `.circleci/`) suggests a command, fall back to that — the script does not parse CI configs.
+
+### Step 0.5 — Discover Project Rules
+
+Two halves with different cache behavior:
+
+**Global rules** (cached — skipped on cache HIT, see Step 0.2): read root `CLAUDE.md` and files it references (guides, patterns). Extract: naming conventions, architectural constraints, "NEVER do X" / "ALWAYS do Y" directives, framework rules. Record the files read as `ruleSources` for the cache write.
+
+**Module rules** (never cached — always read fresh): module-level `CLAUDE.md` in directories of changed files. The set depends on the diff, so caching them under a diff-independent key would serve module X's rules to a review of module Y.
+
+**Review instructions — `REVIEW.md`** (never cached — always read fresh): if a `REVIEW.md` exists at the repository root, read its raw text and carry it VERBATIM into Phase 2 as the `<review_instructions>` block. Do NOT summarize, extract, reword, or truncate it, and do NOT expand `@`-imports (unlike `CLAUDE.md`, referenced files are not pulled in — whatever the repo owner wants enforced must be written in the file itself). It is deliberately excluded from the rules cache: the cache exists only to skip the LLM *extraction* pass over `CLAUDE.md`, and verbatim injection has no extraction cost — caching it would add a staleness surface and buy nothing. Absent file → omit the block entirely. Report it on the Phase 0 heartbeat (`REVIEW.md loaded (N lines)`); when it exceeds 10 KB, add a one-line warning that it is injected into every agent and verifier prompt and is worth trimming (soft guideline: ≤150 lines).
+
+### Step 0.6 — Detect Test Patterns
+
+Folded into Step 0.0 — `discover.sh` already ran `test-pattern-probe.sh`; do NOT run it separately. The `testPattern` fields feed the Spec Existence Check (Phase 1).
+
+### Step 0.7 — CodeGraph Detection & MCP tool resolution
+
+If Step 0.0 reported `codegraphIndex: false` → set `toolchain.codegraphTools = {}` and skip this step entirely (no ToolSearch round trip). Otherwise agents may use codegraph tools for cross-file analysis (callers, impact) — resolve the tool names now. MCP names are never cached: the registry is session-scoped, and re-validating a cached name costs the same one ToolSearch call that full resolution costs.
+
+**MCP tool names are NOT hardcoded.** Different hosts namespace MCP tools differently (`codegraph:codegraph_callers` vs `mcp__codegraph__codegraph_callers` vs other), so the orchestrator resolves them at runtime:
+
+1. Probe the live tool registry (e.g. via `ToolSearch` query `codegraph` or by inspecting the deferred-tool list surfaced to the orchestrator).
+2. Build a `toolchain.codegraphTools` map keyed by capability: `{ callers, callees, impact, search, context, node }`. Each value is the fully-qualified tool name as it appears in the current host.
+3. Persist into the Project Profile. Agent personas reference these via `${codegraphTools.callers}` etc.; the orchestrator substitutes the concrete name into each agent prompt before spawning.
+4. If the probe returns no codegraph tools → `toolchain.codegraphTools = {}`. Agents that asked for codegraph fall back to grep without erroring.
+
+This makes the skill portable across MCP namespaces and survives codegraph-server renames without code edits.
+
+### Step 0.8 — Gather Changes
+
+- Get changed file list and full diff for the resolved review target
+- **Classify each changed file by change type** via `git diff --name-status <range>` (statuses `A`/`M`/`D`/`R`/`T`). Store the per-file type and the bucket counts (Added/Modified/Deleted/Renamed) in the Project Profile under `changeTypes`. (The Spec Existence Check already uses `--diff-filter=A` — this is the same data, gathered once.) Feeds the Phase 3 "Files Changed" buckets and the Phase 2 scrutiny weighting (Rule 7).
+- `git log --oneline -10` for recent commit format context
+- If reviewing a PR: include the PR title/description as intent context
+- Build a per-file slice of the diff (for diff-slicing in Phase 2)
+- Store everything as internal Project Profile (do NOT print to user yet)
+
+**Deterministic pre-dispatch selection.** Before anything is sliced, run the selector over the changed-file list. It is a pure function — no git, no LLM, no filesystem walk — so a dry run and the real run consume one answer instead of each deriving their own:
+
+```bash
+echo "$FILE_RECORDS_JSON" | python3 scripts/select-files.py \
+  --exclude "<--exclude prefixes>" --paths "<--paths prefixes>" \
+  --max-file-diff-bytes <maxFileDiffBytes>
+```
+
+`$FILE_RECORDS_JSON` is one record per changed file — `{"path", "status", "insertions", "deletions", "bytes"}` — built from `git diff --numstat` (binary files report `-`/`-`, which becomes `null`) plus `--name-status` for the status letter and the per-file slice size for `bytes`.
+
+Output: `{"reviewable", "excluded", "counts"}`. Store all three in the Project Profile.
+
+- **`reviewable`** is the set every later phase works from. Each entry carries its `classes` (`code`, `data`, `test`, `ui`, `i18n`, `contract`, `security`, `docs`) — Phase 2 spawns on these, not on prose pattern-matching. `code` means source that executes; `data` is structured configuration (JSON, YAML, TOML) and exists so an added `package.json` does not trigger the test-quality axis.
+- **`excluded`** carries a typed `reason` per file — `binary`, `secret`, `user_rule`, `generated`, `too_large` — and the `pattern` that caused it.
+
+The gate order is load-bearing and lives in `scripts/select-files.py`: **secret paths are checked ahead of the user rules**, so no `--paths` include can admit a credential file and no `--exclude` can claim one under a softer reason. Patterns live in `scripts/file-classes.json`.
+
+**Three exclusions this project deliberately does NOT make**, against the grain of comparable tools:
+
+- test files are *classified* (`test`), never dropped — they are the entire subject of agent `08-test-quality`;
+- `.md` is reviewable, because documentation that contradicts the diff is a finding this skill is expected to catch;
+- **deleted files stay reviewable.** A tool that reviews new content for defects is right to drop them; this skill is not that tool. Rule 7 gives Deleted files downstream-breakage scrutiny, and a deletion whose consumer is unchanged is a diff consisting of nothing *but* the deletion — dropping it would make the breakage invisible rather than cheap.
+
+**Report what was dropped.** The excluded counts go on the Phase 0 heartbeat and into the Phase 3 report (`references/phase-3-report.md`). A file removed from a review silently is the failure mode this layer risks introducing, so it is never silent.
+
+`python3` missing (Phase 0.0) → selection self-skips: every changed file is reviewable and every axis spawns, exactly as before. Like checkpointing, it is an optimization and never a correctness dependency.
+
+### Step 0.9 — Ensure Output Directories Exist, Write Rules Cache on MISS
+
+Before any later phase writes, create the directories used by this orchestrator (idempotent — only run once per invocation).
+
+```bash
+mkdir -p .claude/cache .claude/reports .claude/review-all
+```
+
+Without this, the first `Write` to `.claude/review-all/history.jsonl`, `.claude/review-all/state.json`, or `.claude/review-all/shots/...` on fresh repo crashes.
+
+If Step 0.0 reported a cache MISS: after the `mkdir`, write `.claude/cache/review-all-profile.json` using the v2 schema from Step 0.2, copying `schemaVersion` and `cacheKey` VERBATIM from the discover output — never recompute the key yourself (one hash implementation lives in `discover.sh`).
+
+---
+
+## Phase 1: Deterministic Gates
+
+**Goal**: Run automated checks. Independent checks run IN PARALLEL via Bash with timeouts.
+
+### Dev-server detection
+
+Execute the bundled script (passing the configured port list, default `4200,5173,3000,8080`).
+
+```bash
+bash scripts/dev-server-probe.sh "4200,5173,3000,8080"
+```
+
+Output JSON: `{"open":[4200],"closed":[5173,3000,8080]}`. If any open port matches the detected framework's typical dev-server port, the build gate MAY be satisfied by the dev server — but only under the liveness proof below.
+
+**Dev-server substitution requires proof, not assumption.** "A dev server is probably running" is the single easiest way to report a build that never happened: a stale log from a previous session is byte-identical to a fresh success. Before recording the build/typecheck gate as PASS on the strength of a dev server, ALL of:
+
+1. The port is **open right now** (`dev-server-probe.sh` reported it in `open` this run — not "it usually is").
+2. You identified the server's log/output file and read its **mtime**.
+3. That mtime is **newer than the newest file in the diff**. If the log predates the code under review, it cannot describe it.
+4. The log's tail shows a **successful completion marker** (e.g. `Application bundle generation complete`, `compiled successfully`) with no error lines after it.
+
+If any of 1–4 fails → do NOT record PASS. Record `SKIP(stale-dev-server: <reason>)` and run the real build/typecheck command instead, or `N/A` if none is configured. A dev server you did not prove is live tells you nothing.
+
+### Run these in parallel
+
+| Gate | Command | Timeout |
+|------|---------|---------|
+| Typecheck | `timeout 120 <typecheck_cmd>` | 2 min |
+| Lint | `timeout 120 <lint_cmd>` | 2 min |
+| Tests | `timeout 180 <test_cmd> <scoped>` | 3 min |
+
+### Test scoping (smart)
+
+Don't use brittle filename-stem matching. Instead:
+1. For each changed source file, find tests that import it (grep for the file's relative path or module identifier in test files).
+2. Combine the resulting test files; if zero tests import the changed code, run the framework's "tests in changed files' packages" mode (e.g. `go test <pkg>`, `pytest <dir>`).
+3. If still empty, run the full test suite scoped to the changed directories.
+
+### Spec Existence Check
+
+For each NEW source file (`git diff --diff-filter=A`):
+1. Determine expected test file location using the Project Profile's test-pattern.
+2. Check existence with Glob.
+3. Record: EXISTS / MISSING.
+
+### Dependency Change Check
+
+If any manifest/lockfile changed (`package.json`, `pom.xml`, `build.gradle`, `Cargo.toml`, `go.mod`, `requirements.txt`, `Gemfile`, `composer.json`, lockfiles):
+1. Diff the manifest to extract added/removed/bumped deps.
+2. Flag: new deps (note justification if commit message explains), major version bumps, removed deps.
+
+### Record Results
+
+**Every gate row carries its provenance.** A bare `PASS` is unfalsifiable — the reader cannot tell a command you ran from a log you glanced at. Record, per gate: the **exact command**, its **exit code**, and the **wall-clock time you ran it**.
+
+```
+Typecheck:      PASS | FAIL(N errors) | SKIP(reason) | TIMEOUT | N/A   [cmd: <command> · exit: <code> · at: <HH:MM:SS>]
+Lint:           PASS | FAIL(N issues) | SKIP(reason) | TIMEOUT | N/A   [cmd: … · exit: … · at: …]
+Tests:          PASS | FAIL(N failures) | SKIP(reason) | TIMEOUT | N/A [cmd: … · exit: … · at: …]
+Spec Existence: PASS | MISSING(list)
+Dependencies:   N/A | CHANGED(+X added, -Y removed, Z bumped)
+```
+
+Hard rules:
+
+- **PASS requires a command you executed in THIS run.** If the result came from anywhere else — a log file, a previous session, CI, the user's report — the status is `SKIP(not-run-this-session)`, never `PASS`. Provenance is what makes the difference visible; without it the two are indistinguishable in the report.
+- **A gate you could not run is `SKIP(<reason>)`, not `N/A`.** `N/A` means the gate does not apply to this project (no linter configured); `SKIP` means it applies but did not run. Collapsing them hides missing coverage.
+- **Never infer one gate's result from another.** Passing tests do not imply a passing typecheck (most test runners strip types without checking them); a clean lint does not imply a clean build.
+- **Template compilation is not covered by a plain typecheck.** In template-based frameworks (Angular, Vue SFC, Svelte), `tsc --noEmit` does not validate templates. A change to a template needs the framework compiler (build or dev-server rebuild) before any gate may read PASS.
+
+Findings from gate failures are tagged `confidence: VERIFIED` — skip the verification phase. **This tag is earned by the exit code you recorded**, and applies only to gates whose provenance shows a command run this session.
+
+---
+
+## Phase 1.5: Runtime Probe (optional)
+
+**Goal**: catch issues static review cannot — dead routes, broken templates, visual regressions.
+
+Detailed run conditions, health-probe rules, screenshot/visual-diff flow, configuration live in **`references/phase-1.5-runtime.md`** (sibling of this file). Read it before running this phase.
+
+Self-skipping: in `auto` mode runs only when dev-server port is open, UI files are in the diff, and `curl` is available; `force` mode skips the UI-files check (curl is still required). Any failure inside the phase degrades to `Runtime probe: SKIPPED (<reason>)` — never blocks Phase 2.
+
+---
+
+## Phase 2: Heuristic Analysis — Parallel Agents
+
+**Goal**: Deep analysis across non-overlapping concern domains. Launch ALL applicable agents IN PARALLEL.
+
+Read `references/phase-2-agents.md` (sibling of this file) for diff-slice mapping, spawn conditions, chunking, timeout/retry rules. The agent personas are all named below so they stay one-hop-deep from SKILL.md (per the Skills spec's "keep references one level deep" rule) — but **naming them is not reading them**. Read `agents/_shared.md` and `agents/verifier.md` always; read a numbered persona only once the selector below has returned `spawn: true` for that axis. Reading the four conditional personas for a diff that spawns none of them costs this orchestrator ~13 K characters that are then re-billed on every remaining turn of the session.
+
+- `agents/_shared.md` — severity tiers, 3-question gate, quotas, auto-drop list, `codegraphTools` substitution. ALL agents inherit this.
+- `agents/verifier.md` — Phase 2.5 verifier persona (referenced again from Phase 2.5; loaded here so it is reachable one-hop from SKILL.md).
+- `agents/01-standards.md` — Standards & Clarity
+- `agents/02-bugs-security.md` — Bugs & Security
+- `agents/03-dry-smells.md` — DRY & Code Smells
+- `agents/04-consistency-history.md` — Consistency & History
+- `agents/05-simplification.md` — Simplification
+- `agents/06-security-deep-dive.md` — Security Deep Dive (conditional)
+- `agents/07-performance.md` — Performance
+- `agents/08-test-quality.md` — Test Quality (conditional)
+- `agents/09-api-contract.md` — API & Contract (conditional)
+- `agents/10-a11y-i18n.md` — A11y & i18n (conditional)
+
+**The spawn set is computed, not judged.** Feed Step 0.8's selector output to the agent selector and spawn exactly what it returns:
+
+```bash
+echo "$SELECT_FILES_JSON" | python3 scripts/select-agents.py \
+  --extra "<extraAgents>" --skip "<skipAgents>"
+```
+
+Output: `{"agents": {"<id>": {"spawn", "files", "reason"}}, "rule_packs": {"<pack>.md": [paths]}, "counts"}`.
+
+Spawn every axis with `spawn: true` and give it the `files` listed for it — that IS its slice. Spawn nothing with `spawn: false`; carry its `reason` to the Phase 3 report so a reader sees *why* an axis is absent rather than wondering whether it failed. The conditions themselves (which class gates which axis) live in `references/phase-2-agents.md` → **Agents to spawn**, and the class patterns in `scripts/file-classes.json`.
+
+This replaces a judgment call with a computation. The conditional axes previously carried their own `**Only spawn this agent if** …` text, which can only take effect *after* the agent is already running — a backend-only diff still paid four spawns to be told there was nothing to review. Those persona lines remain as a fallback for a manually spawned agent, but the orchestrator no longer relies on them.
+
+`python3` missing → spawn the full set as before.
+
+**Spawn contract — every spawn names its model, its effort and its type.** Spawn each agent as a **fresh** subagent (`subagent_type: general-purpose`; never a context-inheriting type such as `fork` — the persona plus the blocks below must be the agent's ONLY framing, and an inheriting spawn re-pays this orchestrator's whole context) and pass an **explicit `model` and an explicit `effort`**. Never spawn without either: an omitted `model` silently inherits the parent session's tier, which pins mechanical axes to the same expensive tier as the bug hunters.
+
+The tier is declared per axis in the persona's own frontmatter `model:` field (`agents/<id>.md`) — read it when you read the persona and pass it verbatim. An agent whose persona declares no `model` (e.g. one added via `extraAgents`) spawns at `sonnet`. Full table and rationale in `references/phase-2-agents.md` → **Model per axis**; the split is `opus` for axes whose findings are behavioral claims (bugs, security deep dive, API contract, performance) and `sonnet` for axes that match code against a known shape (standards, DRY, consistency, simplification, test quality, a11y/i18n). Verifiers are unchanged — they already spawn with an explicit model, the `verifierModel` config tier (default `haiku`), and that includes the Step 2.5b-vote adversarial passes. **The same contract binds every Phase 4 spawn** — Deep-dive at `opus`, Ask-a-question and the test generator at `sonnet`, named at each spawn site in `references/phase-4-menu.md`; no spawn anywhere in this skill omits its `model`.
+
+The effort is declared the same way, in the persona's frontmatter `effort:` field — pass it verbatim as the Agent `effort` parameter, unless `.claude/review-all.json` → `agentEffort` names that persona id, in which case pass the override. No `effort:` (an `extraAgents` persona) → `high`. Verifiers and Step 2.5b-vote passes take `verifierEffort` (default `high`); Phase 4 spawns name theirs at the spawn site (Deep-dive `xhigh` unless `agentEffort.deep-dive` overrides it, Ask-a-question `medium`, test generator `high`). An `agentEffort` value that is not one of `low`/`medium`/`high`/`xhigh`/`max` is ignored with a one-line warning, and the spawn uses its default level — never pass an unknown level to the Agent tool, or both the spawn and its retry fail. Omitting `effort` is not "inherit this skill's `effort: high`": that frontmatter binds only the turn the skill was invoked in, and every spawn after a background completion or a menu answer lands in a new turn at the session's effort (`medium` by default). Rationale per axis in `references/phase-2-agents.md` → **Effort per axis**.
+
+**Checkpoint resume — never re-run an axis that already finished.** Once the spawn set is final (spawn conditions + `extraAgents`/`skipAgents`), ask the checkpoint store what is already done:
+
+```bash
+git diff <resolved range> -- <filtered file list> | python3 scripts/checkpoint.py load --head "$(git rev-parse HEAD)" --dir <checkpointDir>
+```
+
+**Pipe the resolved, FILTERED diff** — the exact bytes the agents will review, after `--paths`/`--exclude` and the multi-workspace scope prompt (Step 0.1). Never the raw range: two runs over the same range under different `--paths` must not share a key. For a `PR #N` target, pipe `gh pr diff N` through the same filter. Pipe it — never inline the diff text in the command. Output: `{"runKey", "checkpointDir", "resumed": {"<axis>": {"savedAt", "findings"}}, "ignored": [...]}`. For every axis in `resumed`, do **NOT** spawn it — take its `findings` as that agent's return, and mark it resumed for the Phase 3 report. Spawn the remaining axes normally. `ignored` lists checkpoints written under a different key; `load` has already deleted them, so they need no mention.
+
+The key covers HEAD, the exact diff bytes, the agent personas + `SKILL.md`, and `REVIEW.md`/`.claude/review-all.json` — change any of them and every checkpoint is stale, so a resumed axis is provably the same review rather than a similar one. There is no partial match. To force a full re-run, delete the checkpoint directory.
+
+**Checkpoint on return.** As each agent returns (Phase 2, before dedupe), persist it:
+
+```bash
+echo "$AGENT_FINDINGS_JSON" | python3 scripts/checkpoint.py save \
+  --run-key "<runKey from load>" --axis "<agent id, e.g. 02-bugs-security>" --head "$HEAD_SHA" --dir <checkpointDir>
+```
+
+- Save only a **complete, well-formed** return. An agent that timed out, errored, returned malformed output, or — when chunked — has any chunk missing is NOT checkpointed: a partial axis must re-run, never resume. Checkpoint a chunked agent once, after merging all its chunks.
+- An empty findings array is a legitimate result — save `[]`. Re-running an axis that correctly found nothing is exactly the waste this exists to stop.
+- Save findings **as returned** — pre-dedupe, pre-verification. This store is independent of `state.json` (which tracks per-finding lifecycle across *different* diffs) and the two must stay so.
+- Writes are atomic, one file per axis, so a run killed mid-write leaves the previous file intact.
+- `python3` missing (Phase 0.0) → checkpointing self-skips: spawn every axis as before. It is an optimization, never a correctness dependency.
+
+**Load each persona once, with `Read`, and reuse the text.** `_shared.md` is read once per run and
+reused for every spawn; each `agents/<id>.md` is read once for the agent it describes — and only for
+an agent that is actually being spawned. Never shell
+out to `cat`/`sed` to collect them, and never re-read one you already hold — the text does not
+change during a run, and whatever you pull in stays resident in *your* context and is re-billed on
+every remaining turn of the session, on top of the copy each agent gets.
+
+> Measured on one project: **91 orchestrator Bash calls against `review-all` paths, 418 K chars
+> (~116 K tokens)**, including the same `cat` of a persona bundle repeated **13×** at 8.6 K chars
+> and another **10×** at 10.5 K. Four of the twenty most expensive Bash results in the whole
+> corpus were these. Re-reading a persona is pure loss: it buys nothing and is charged twice.
+
+For each agent you spawn: pass its persona + `_shared.md` (concatenated) + the diff slice as the prompt. Wrap each part in XML tags so the agent parses the prompt unambiguously (Anthropic prompt-structuring best practice for prompts that mix instructions with variable inputs). **Canonical block order** — same in every agent prompt and in the Phase 2.5 verifier prompt, blocks marked `?` omitted when empty or absent:
+
+```
+<review_instructions>?  <persona>  <shared_rules>  <language_rules>?  <project_profile>  <gate_results>?  <previously_dismissed>?  <diff>
+```
+
+`<review_instructions>` carries the repo's `REVIEW.md` verbatim (Step 0.5) and leads the prompt because it is the highest-priority input; its precedence over persona and shared rules — and the evidence-discipline carve-out it may not override — are stated in `agents/_shared.md`. Before spawning, substitute these placeholders in the concatenated text:
+- `${codegraphTools.X}` — from the runtime-resolved map from Step 0.7.
+- `${quota.debt}` / `${quota.suggested}` / `${quota.question}` — from config keys `quotaDebt` (default `5`), `quotaSuggested` (default `3`), `quotaQuestion` (default `2`) in `.claude/review-all.json`. Config value of `0` disables that per-agent quota.
+
+**Phase 1 gate failures — `<gate_results>`.** When any Phase 1 gate ended `FAIL` or `TIMEOUT`, pass its output to every agent and to the Phase 2.5 verifier as a `<gate_results>` block. **Failures only** — a green run omits the block entirely, so the common path pays nothing (pass/skip status already rides in `<project_profile>`). Per failing gate: one header line in the Phase 1 provenance format (`Typecheck: FAIL(3 errors) [cmd: … · exit: … · at: …]`) followed by the failing output lines, truncated at **20 lines or 2 000 characters per gate and 4 000 characters total**, with `… (+N more lines)` marking any cut. Include the Spec Existence Check's MISSING list when non-empty.
+
+A compiler, linter, or test runner is ground truth about behavior that no amount of reading can match, and hybrid static-analysis + LLM review is the strongest published precision lever — but the output is a **lead, not a finding**. The gate failure itself is already reported as a VERIFIED finding by Phase 1; use it to locate the underlying defect and report *that*, with your own evidence. Never restate gate output as a finding — ten agents each re-reporting one failing test is ten copies of something already on the report.
+
+**Per-agent diff ordering.** Before spawning, call `scripts/agent-order.py` ONCE with the union of changed files (`--agents 10`) and lay out each agent's `<diff>` in that agent's returned order — same content, different file order per agent, so the ten passes do not share one positional blind spot. Chunk composition is computed on the canonical git order first and the per-agent order applied within each chunk; hunks inside a file are never reordered. Full rules in `references/phase-2-agents.md` → **Per-agent diff ordering**.
+
+Include the per-file `changeTypes` from Step 0.8 in `<project_profile>` so agents apply Rule 7's change-type scrutiny weighting — strictest bar on newly **Added** files (no established-convention cover), downstream-breakage focus on **Deleted** files.
+
+**Dismissed-finding digest.** Before spawning agents, read `stateFile` (`.claude/review-all/state.json`; absent → empty). Collect entries with `status: wontfix`, `status: snoozed` with a future `snoozed_until`, or `status: rejected` whose stored `verifier_version` equals the current `verifier.md` frontmatter `version`; cap at the 30 most-recently-seen. Render a human dismissal as `[WONTFIX | SNOOZED until <date>] <root_cause_key> @ <file_line> (<severity>)` and a machine rejection as `[REJECTED score <N>] <root_cause_key> @ <file_line> (<severity>)` — the two are read differently by the agents, so the label must distinguish them (`agents/_shared.md` → Previously-dismissed findings: a `REJECTED` entry never suppresses a 🔴 CRITICAL). Include the list in every agent prompt as `<previously_dismissed>` (omit the tag entirely when the list is empty). This feeds the team's own review-history back to the agents so they skip re-deriving findings the team already dismissed at a still-unchanged location — saving generation and verifier spend — while the Phase 2.5 Step 2.5.0 central drop stays the guarantee. Agents match on diff-membership, not a recomputed hash (see `agents/_shared.md` → Previously-dismissed findings): a dismissed location that this diff changed is raised normally, since the dismissal may no longer hold.
+
+**Language rule packs — `<language_rules>`.** A per-language checklist of the defects and the *false positives* that language actually invites, injected only for the languages this agent's slice contains. `select-agents.py` returns `rule_packs` already grouped: `{"python.md": [paths], "java.md": [paths]}`. Read each pack named there ONCE from `rules/<pack>` and concatenate the ones whose paths intersect this agent's slice into a single `<language_rules>` block — one copy per language present, never one per file. A Java-only diff never pays for the TypeScript pack, and a pack is read once per run, not once per agent (same rule as the personas above).
+
+Config key `languageRules` (default `true`) disables the block entirely; `rules/default.md` covers file types no pack matches.
+
+Each agent returns findings with `root_cause_key` (used for cross-agent dedup).
+
+---
+
+## Phase 2.5: Dedupe → Verify
+
+Detailed dedup rules, batch verification, threshold table, history persistence live in **`references/phase-2.5-verification.md`** (sibling of this file). Read it before running this phase.
+
+Two-step flow:
+1. **Dedupe** by `root_cause_key` (cheap; before verify) — apply global caps for SUGGESTED/QUESTION.
+2. **Batch verify** — one verifier agent per source agent, in parallel.
+
+**Spawn contract — state the model here, at the spawn site.** Every verifier spawns
+`subagent_type: general-purpose` with an explicit `model` read from the `verifierModel` config key
+(`.claude/review-all.json`; **default `haiku`** when the file or the key is absent — see
+`references/config-keys.md`) and an explicit `effort` read from `verifierEffort` (**default `high`**).
+The same tier and effort bind the Step 2.5b-vote passes. Verifiers are spawned after the axes
+return — a new turn — so without an explicit `effort` they ran at the session's `medium`
+(observed in two real reviews' transcripts); their job is checks, which is what lower effort skips. Verification is a
+constrained re-read against a JSON schema, not open-ended reasoning: haiku is the right tool, and
+promoting it is a deliberate config change (`verifierModel: "sonnet"`), never a default.
+
+> Do not treat "the tier is stated in the reference" as sufficient. It was — in four reference
+> files — and verifiers still ran one to two tiers above it. Measured over 78 subagents of one
+> project: **19 verifiers spawned, 12 at `sonnet` and 7 at `opus`, none at `haiku`, 45.9 M
+> cache-read tokens**, with no `review-all.json` anywhere that would have overridden the default.
+> Phase 2's models were honoured over the same runs because Phase 2 names its contract at its own
+> spawn site. A rule that lives only where the orchestrator is not reading is not in force.
+
+Threshold (full table in the reference): score ≥ 75 → main report; 50–74 → appendix; < 50 → drop. VERIFIED gate findings auto-keep at 90 — but only when the Phase 1 gate row carries provenance for a command run this session.
+
+A fourth verdict, `unverified`, is **orthogonal to those bands**: it is set by claim class vs. evidence class (a runtime/data/rendering claim held on static evidence only — see `agents/_shared.md` → *Claim classes*), so a high-scoring finding still lands there. These are never dropped and never rendered 🔴/🟠; they go to the report's 🔬 **Unverified — needs observation** section with the specific check that would settle them.
+
+When `verifierVotes > 1` (config, default `1`), 🔴/🟠 survivors get majority-vote re-verification before the threshold is final — see the reference's **Step 2.5b-vote**. 🟡/🔵/⚪ stay single-pass.
+
+---
+
+## Phase 2.75: Completion Gate
+
+**Goal**: prevent silent agent loss before the report is assembled. Premature completion is the #1 long-running-harness failure mode.
+
+Before entering Phase 3, the orchestrator MUST verify:
+
+1. **Every spawned agent returned.** Compare the actual return set against the planned spawn list from Phase 2 (after applying `extraAgents`/`skipAgents`). If any agent is missing or its result is empty due to timeout/error → re-spawn that one agent once, with the same `model` and `effort` as its first spawn (a re-spawn always lands in a later turn, so an omitted `effort` silently drops to the session level). An axis **resumed from checkpoint** counts as returned — its findings are in hand — and is never re-spawned by this gate; conversely an axis that fails here is never checkpointed, so the next run re-runs it.
+2. **Every verifier returned valid JSON.** Each verifier output must parse and contain, per finding: `finding_id`, `root_cause_key`, `score` (0–100), `verdict` (`keep`/`appendix`/`drop`/`unverified`), `claim_class` (`static`/`runtime`/`data`/`rendering`), `reason`, `reread_evidence` — plus a non-null `needs_observation` whenever the verdict is `unverified`. Malformed output → re-spawn the verifier once (same `verifierModel` and `verifierEffort`) with explicit "your previous output failed schema validation: <reason>" preamble. Note: retry re-verifies the **entire batch** (same input set) — this is the documented token cost of a malformed verifier response; do not attempt partial salvage.
+3. **Every gate has a terminal state.** Typecheck/Lint/Tests/Spec Existence/Dependencies must each be one of `PASS|FAIL|SKIP|TIMEOUT|N/A`. No `running`, no missing entries.
+
+If after one retry an agent or verifier still has not returned cleanly:
+- Do NOT drop it silently.
+- Surface it in the Phase 3 report under a top-banner labelled `⚠️ PARTIAL REVIEW — the following agents did not complete: <list>`.
+- User must see what coverage they did not get.
+
+Per-agent timeout default: `600s`. Per-verifier timeout default: `300s`. Configurable via `.claude/review-all.json` keys `agentTimeoutSeconds`, `verifierTimeoutSeconds`.
+
+---
+
+## Phase 3: Unified Report
+
+Detailed report template, intent summary rules, numbering, section rules live in **`references/phase-3-report.md`** (sibling of this file). Read it when assembling the report.
+
+Required sections (in order): **Verdict line** (must-fix count, or ✅ none), Intent, Summary, Automated Gate Results, Critical, Important, Debt, Suggested, Questions, Dependency Changes (if any), Potential Issues (Appendix), **Scope footer** (files reviewed / skipped), **machine-readable tally**. Critical & Important findings get full anatomy (failure-mode title + `[severity · confidence]` tag, one-sentence Impact, suggested Fix, ≤8-line Evidence); Debt/Suggested/Questions get one line each. Risk Level: High if any 🔴, Medium if 🟠/🟡, Low otherwise.
+
+**The report's last emitted line is the machine-readable tally** — `<!-- review-all-severity: {"critical":C,"important":I,"debt":D,"suggested":S,"question":Q} -->` — and it is emitted on EVERY run, including one where every count is zero. CI and the eval harness parse it; a run that omits it is unreadable to them even though a human sees the same numbers in the Verdict line. Emit it as the comment, not as prose: a sentence carrying the counts does not satisfy this, and neither does the Phase 3 heartbeat below.
+
+**Nothing follows it in the report text.** No sign-off, no commentary on the run, no note about what you skipped or how the review went. The next thing that happens is the Phase 4 menu *tool call* (see below) — in a non-interactive run where no menu is presented, the tally comment is simply the final line of the output.
+
+---
+
+## Phase 4: Post-Report Choices
+
+Detailed menu, free-text actions, triage loop, the three follow-up actions, apply-fixes routine, loop logic, guardrails live in **`references/phase-4-menu.md`** (sibling of this file). Read it before presenting the menu.
+
+**Mandatory menu gate (mirror of the Phase 2.75 completion gate).** Presenting the Phase 4 menu is NOT optional. The orchestrator MUST present the Phase 4 menu in the SAME turn as the Phase 3 report — emitting the report and then ending the turn is a silent failure. Treat "the report is done, so I'm done" as the #1 Phase 4 failure mode after a long `effort: high` review, exactly as premature agent loss is for Phase 2.75.
+
+The ONLY condition that skips the menu: every report section reads "None found." AND there is no appendix AND no 🔬 unverified findings (no 🔴/🟠/🟡/🔵/⚪, nothing scoring 50–74, nothing awaiting observation). In that one case, state `✅ No actionable findings — nothing to triage.` and stop. In every other case the menu MUST appear.
+
+**Report-before-menu ordering (hard rule).** Emit the COMPLETE Phase 3 report as user-visible text FIRST; the `AskUserQuestion` menu call must be the IMMEDIATELY NEXT action — zero tool calls between the report text and the menu call (no Write, no Bash, no export). Text emitted between tool calls may not render for the user, and the interactive menu pins to the prompt — any tool call in between makes the menu appear before (or without) the report. Artifact writes (report file, exports) happen only after a menu choice. Calling the menu before the report text is the mirror failure of skipping the menu: the user cannot triage findings they have not seen. The menu's question text MUST carry the verdict summary (`Review done — N must-fix: X 🔴, Y 🟠 (+Z optional). Full report above ↑`) so the choice is decidable even when the report has scrolled off-screen.
+
+**Gate mode is exempt** (Step 0.1 / `references/phase-gate.md`): it produces no Phase 3 report and no menu — the `gate-verdict.json` + exit code is its terminal step. The mandatory-menu rule does not apply when the run resolved to gate mode.
+
+Present the **primary menu** via `AskUserQuestion` (single-select, ≤4 options) in ONE step — no scope sub-menu. Labels carry the concrete finding IDs: `Fix <tiers present> (#a–b)` (Recommended; 🔴+🟠+🟡), `Fix must-fix only (#a–b)` (only when must-fix and 🟡 both exist), **Triage one-by-one** (≥2 fixable), **Done**. With nothing fixable: `Fix suggested (#a–b)` / **Done** when 🔵 exist, else `Ask about a finding` / **Done** — every menu has at least 2 options. Everything else (export, ticket, tests, ask, deep-dive, post to PR, snooze, wontfix, re-run, the `C/I/D/S + #IDs` expression grammar) is typed in the menu's `Other` field — no extended actions menu. Full assembly rules, the grammar, the free-text actions table, and the guided triage loop live in `references/phase-4-menu.md`.
+
+Every finding in the report must be numbered (`**Finding N**:`) across all sections including the appendix — the menu's ID ranges, the `Other` expression's `#N` syntax and the per-finding actions depend on it.
+
+---
+
+## Progress Output
+
+Long-running orchestration is silent by default — that triggers user-interrupts mid-Phase-2 and wastes spawned agent work. Emit a single user-visible line at each phase boundary so the user sees forward motion.
+
+The lines below are the **canonical templates**. If you have all the data they need, emit them verbatim. If a value is unknown (e.g. elapsed not yet measurable, runtime probe skipped), substitute a one-word free-form line that still tells user where you are (`Phase 0: profile built — 9 files, 2 commits.`). Both forms are acceptable; what is NOT acceptable is silence between phase boundaries or chatty per-agent narration.
+
+- After Phase 0 ends: `Phase 0: profile built, <N> files in target, rules cache <HIT|MISS(reason)> (elapsed <S>s)`
+- After Phase 1 ends: `Phase 1: typecheck=<R>, lint=<R>, tests=<R>, runtime=<R> (elapsed <S>s)`
+- When Phase 2 starts and ≥1 axis was resumed: `Phase 2: <R> axes resumed from checkpoint (<list>), <N> spawned` — emit once, omit the line entirely when nothing resumed.
+- During Phase 2, when each agent returns: `Phase 2: <K>/<N> agents returned (elapsed <S>s)` — one line per return is OK; do not also narrate each agent's finding count.
+- After Phase 2.75 completion gate: `Phase 2.75: <K> agents verified, <M> findings kept, <X> appendix, <U> unverified, <Y> dropped (elapsed <S>s)`
+- After Phase 3 ends: `Phase 3: report assembled — <C> critical, <I> important, <D> debt, <S> suggested, <Q> questions` — a progress signal only. It does **not** discharge the machine-readable tally the report itself must end with (Phase 3 above); emitting the counts here and omitting the comment there leaves the report unparseable.
+
+In addition, if ANY single Phase 2 agent exceeds 120s, emit ONCE:
+`Long-running agent: <agent-id> (still working, budget <agentTimeoutSeconds>s)`
+
+Keep heartbeat output to one line each. Do NOT narrate internal deliberation between heartbeats (e.g. "DRY agent: 0 findings. Continue waiting." — the `<K>/<N> agents returned` counter conveys this).
+
+---
+
+## Examples & Common Issues
+
+Worked invocations and failure-mode fixes live in **`references/troubleshooting.md`** (sibling of this file).

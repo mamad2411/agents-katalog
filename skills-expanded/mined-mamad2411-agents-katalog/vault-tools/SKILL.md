@@ -1,0 +1,183 @@
+# Vault Access Tools Reference
+
+Agents interact with Obsidian vaults through several tool tiers. Direct
+file operations handle the vast majority of work — CLI and MCP tools are
+optional supplements, not requirements.
+
+---
+
+## Tool Tiers
+
+### 1. Direct File Operations (Always Available — Primary Tool)
+
+Read, Write, and Edit tools work on `.md` files directly. These are the
+primary tool for virtually all vault work — available in every agent
+environment (Claude Code, Cowork, Cursor, etc.).
+
+**Capabilities:**
+- Read any file in the vault
+- Create new notes with frontmatter, content, and links
+- Edit existing notes (surgical string replacement)
+- Full control over file content and structure
+- Rename/move files and batch-update links via Grep + Edit (works well
+  for both single files and bulk operations — hundreds of renames and link
+  updates in one pass)
+- Write Tasks plugin emoji dates (➕, ✅, ❌, etc.) directly — produces
+  identical results to what the plugin's own UI writes
+- Append to any section by finding the heading and inserting after it
+
+**Limitations:**
+- No awareness of Obsidian's runtime state (which note is open, sidebar
+  state, etc.)
+- Cannot trigger plugin UI behaviors (Templater processing on file creation,
+  Tasks plugin auto-date via checkbox toggle) — but this rarely matters in
+  practice since agents write the same content directly
+- Rename/move requires manually finding and updating links in other files
+  (via Grep + Edit), whereas Obsidian's own rename updates links
+  automatically — but the manual approach is equally effective and often
+  faster for bulk operations
+
+**When to use:** Default for everything. Most agent sessions use direct
+file ops exclusively and never need CLI or MCP.
+
+### 2. Obsidian CLI (Local Shell Access Only)
+
+The Obsidian CLI (`obsidian` command) provides a bridge to the running
+Obsidian app. **Requires Obsidian to be running on the same machine** and
+is only available in environments with direct shell access to the user's
+system (Claude Code in a local terminal, other terminal-based agents). Not
+available in sandboxed environments (Cowork's shell runs in a sandbox
+without access to the user's Obsidian instance).
+
+**Capabilities:**
+- `obsidian open <path>` — open a note in Obsidian
+- `obsidian search <query>` — full-text search the vault
+- `obsidian move <from> <to>` — rename/move with automatic link updates
+- `obsidian task done path=<path> line=<N>` — toggle task checkbox
+  (triggers Tasks plugin auto-dates if configured)
+- `obsidian show-file <path>` — reveal file in Obsidian
+
+**Limitations:**
+- Only available when Obsidian is running locally
+- Not available in sandboxed environments (Cowork's shell has no access to
+  user's Obsidian)
+- Single-file operations only — for bulk work, scripted direct file ops
+  are faster
+
+**When to use:**
+- Opening a specific note in Obsidian for the user
+- Single-file rename when you want zero-effort link propagation (but
+  direct file ops + Grep work just as well)
+- Full-text search as a complement to Grep
+
+### 3. Vault Cortex MCP (Works in Any Environment — Recommended When Available)
+
+[Vault Cortex](https://github.com/aliasunder/vault-cortex) is an MCP server
+that gives agents access to your vault without requiring Obsidian to be
+running. Deploy it locally via Docker or remotely on a VPS — either way,
+it works directly with vault files on disk. Vault Cortex delivers vault
+content; the obsidian-vault skill ensures it renders correctly.
+
+**Detection:** Look for `vault_*` tools (e.g. `vault_read_note`,
+`vault_search`, `vault_write_note`) in the available tool list. MCP tools
+can be easily marked as allowed in agent settings, unlike shell commands
+which often require manual approval for each invocation.
+
+**Capabilities:**
+- **Read** — full note, individual sections, heading outlines, or
+  properties only (see `vault_read_note` tool description for modes)
+- **Write** — create new notes with frontmatter and body content
+- **Search** — full-text (ranked by relevance), by tag, by property, by folder
+- **Edit** — heading-targeted patches (append, prepend, replace within a
+  section) and find-and-replace
+- **Tasks** — create tasks with correct field ordering (`vault_create_task`),
+  update status/priority/dates/description/heading (`vault_update_task`),
+  and query across the vault with structured filters (`vault_list_tasks`)
+- **Graph** — backlink and outgoing-link discovery
+- **Properties** — read and update frontmatter properties
+- **Daily notes** — read today's daily note
+
+**When to prefer over direct file ops:**
+- Full-text search (ranked by relevance, better than Grep for discovery)
+- Property and tag queries across the vault
+- Heading-targeted edits (no need to find and match text manually)
+- Convention detection — search by property, list tags, and retrieve
+  user preferences faster than scanning files manually
+
+**When direct file ops are still better:**
+- Bulk operations across many files (Grep + Edit in one pass)
+- Creating files outside the vault
+- Working with non-markdown files
+
+---
+
+## Environment Detection
+
+At the start of a vault session, determine which tools are available:
+
+| Check | How | Result |
+|---|---|---|
+| Direct file ops | Always available | ✓ primary tool |
+| Vault Cortex | Look for `vault_*` tools in the tool list | Use for vault I/O when available |
+| Obsidian CLI | Try `obsidian --version` in shell | Nice-to-have for opening notes in Obsidian |
+
+If only direct file ops are available, that covers the vast majority of
+vault work. If Vault Cortex is available, use it for reads, writes, and
+searches — fall back to direct file ops for bulk operations.
+
+---
+
+## Decision Matrix
+
+| Task | Tool | Notes |
+|---|---|---|
+| Create a new note | Direct file ops | Vault Cortex: `vault_write_note` |
+| Edit note content | Direct file ops | Vault Cortex: `vault_patch_note` for heading-targeted edits |
+| Read a note | Direct file ops | Vault Cortex: `vault_read_note` (supports targeted read modes) |
+| Search vault | Grep | Vault Cortex: `vault_search` (ranked by relevance) |
+| Rename/move a note | Direct file ops (rename + Grep + Edit for links) | CLI `obsidian move` is a convenience, not a requirement |
+| Create/complete tasks with dates | Direct file ops (write emoji dates directly) | Vault Cortex: `vault_create_task` + `vault_update_task` (atomic lane moves, correct field ordering) |
+| Append to a heading | Direct file ops (find heading, insert after) | Vault Cortex: `vault_patch_note` |
+| Open note in Obsidian | CLI `obsidian open` | Requires Obsidian desktop running; or let the user open it |
+
+---
+
+## Reading Large Notes
+
+Some notes grow large over time — Kanban boards with a long Done section,
+meeting logs, reference docs with extensive archives. Reading the full file
+wastes context on content you don't need. The principle is the same
+regardless of tooling: check the note's structure first, then read only
+the sections that matter.
+
+**With direct file ops:**
+- Grep for heading markers (`^## `) to see the note's section structure
+- Use `Read` with `offset` and `limit` to read specific line ranges
+- Count lines first (`wc -l`) to gauge overall size
+
+**With Vault Cortex:**
+- `vault_read_note` has built-in modes for outline, single-section, and
+  properties-only reads — check the tool description for parameters
+
+**Common patterns:**
+- **Kanban boards** — the Done lane often holds 80%+ of the file's content.
+  Read the active lanes individually; skip Done unless you need
+  completed-task history.
+- **Meeting logs / journals** — read recent entries by heading; skip older
+  sections.
+- **Large reference docs** — read the specific topic section rather than
+  the full document.
+
+---
+
+## Combining Tools
+
+Some workflows benefit from combining tiers:
+
+1. **Create + open:** Direct file ops to create the note, then CLI to
+   open it in Obsidian for the user (or just tell them the path)
+2. **Search + edit:** Grep to find relevant notes, then direct file ops to
+   read and edit them (or Vault Cortex `vault_search` + `vault_patch_note`)
+3. **Bulk rename:** Direct rename of files + Grep to find all references +
+   batch Edit to update links — handles hundreds of files in one pass,
+   often faster than one-at-a-time CLI renames

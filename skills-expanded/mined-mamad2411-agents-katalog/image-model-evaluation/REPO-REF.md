@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/image-model-evaluation/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 评估图像生成模型的效果。对指定模型进行全面的文生图、图生图测试，包括不同参数、不同提示词、人物一致性等测试项，生成详细的HTML测试报告。当用户想要测试、评估、对比图像模型效果时使用此 skill。"

@@ -1,0 +1,705 @@
+---
+description: "Run a structured pre-mortem on a plan or approach BEFORE execution. Per-step risk enforcement, active evidence-sourcing pass (autonomous lookups + targeted user-asks for anything that could become objective), simpler-alternative discipline, plan-formation diagnosis, action verdicts (PROCEED/SHRINK/SPLIT/DEFER/KILL), and a growing failure-mode pattern library. Triggers: '/prospect' (defaults to plan scope), '/prospect plan', '/prospect session', '/prospect todos', '/prospect file {path}', '/prospect ticket {id}', '/prospect branch {name}'. Backward-compat flags and legacy 'linear' spellings still accepted. (Code port — ADR-094.)"
+argument-hint: "[<scope>] [<scope-arg>] [--ticket-post] [--no-source] [--lens=overbuild] [--cold] [--summary]"
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
+---
+
+# /prospect — Plan pre-mortem with risk enforcement
+
+Run a structured pre-mortem on a plan or approach that has been *created but not yet executed*. Forward-looking counterpart to `/retrospect`. Produces a 10-section markdown report with per-step verdicts, risk status, action recommendations, and process pre-mortem when the plan-formation itself was thin. Writes findings to `knowledge/logs/prospect/` and runs aria's standard intake.
+
+The discipline this enforces: before the first edit lands, every planned step gets named, its evidence base examined, its smallest viable version identified, and its action gated on the strength of the underlying hypothesis. Mirrors `/retrospect`'s shape so the same review muscle works in both directions.
+
+## Runtime Gate (per ADR-094)
+
+**Canonical resolution:** This is the Claude Code variant. When both `plugin-claude-code` and `plugin-claude-cowork` are loaded in the same session (most common in Claude Desktop), bare `/prospect` resolves to this skill — aria-knowledge (Code) is the canonical owner of all 24 dual-port skills per ADR-094 §Part 1. The Cowork variant is namespaced-only: `/aria-cowork:prospect`.
+
+**Before Step 0 — runtime self-correction.** Check whether the `Bash` tool is available in this session. If `Bash` is NOT available (you are running in Claude Cowork or another non-Code runtime), this invocation reached the wrong variant for the runtime. **Do not ask — redirect.** Announce it in one line, then use the `Skill` tool to invoke `aria-cowork:prospect` with the same arguments the user provided, and do not run this skill's steps:
+
+> ↪️ **Redirecting to `/aria-cowork:prospect` — you invoked the aria-knowledge (Code) variant, but you are running in Claude Cowork or another non-Code runtime.**
+>
+> Behavior is largely the same in both runtimes; for the Cowork-native variant (skips Step 11 CODEMAP/STITCH surfacing per ADR-005, uses in-memory dedup instead of `/tmp/` ledger), use `/aria-cowork:prospect`.
+
+⛔ **The redirect is unconditional** — every mode including `auto`, and no opt-out. Reaching this variant under that condition is always a mis-invocation, so there is nothing for the user to decide. Design record: `docs/superpowers/specs/2026-08-28-runtime-gate-auto-redirect-design.md` (D2 auto-redirect, D3 no escape hatch, D6 announce-don't-swap-silently).
+
+If `Bash` is available, proceed to Step 0.
+
+## When to use
+
+- After a multi-step plan is articulated (in chat, in TodoWrite, in a `.md` plan file) but no code has been written yet
+- After `/brainstorming` concludes with an action plan
+- After `/distill` produces a task spec that's about to be executed
+- After a ticket's Technical Intake is drafted and the implementer is about to begin
+- Before kicking off a long autonomous run (e.g., `combined go`) on a non-trivial plan
+- As a soft-suggested response to "let me implement…", "I'll just code it…", "ok ship it" when no validation exists yet
+
+If code has already been written/committed (even in-session), use `/retrospect` instead — that pivots from forward-looking to backward-looking validation.
+
+## Step 0: Inputs & Mode Detection
+
+Parse the invocation arguments. The first positional argument is the **scope keyword**; subsequent positional arguments are scope-specific. Six scopes plus a no-args default:
+
+| Scope | Trigger | Backward-compat flag (still accepted) | Plan source |
+|---|---|---|---|
+| **plan** (default) | `/prospect plan` or `/prospect` | (was the no-arg default) | Current conversation's articulated plan — combine the active TodoWrite list, the most recent assistant plan/approach message, and any in-session plan file Claude has written. If ambiguous, ask user "Which of these is the plan you want me to pre-mortem?" with a short list. |
+| **session** | `/prospect session` | `--session` | Synonym for **plan**. Reserved for cases where the user wants to emphasize "everything articulated this conversation" rather than a single plan artifact. |
+| **todos** | `/prospect todos` | `--todos` | Just the active TodoWrite list — a thin mode for quick checks |
+| **file** | `/prospect file <path>` | `--plan <path>` | Read the markdown file at `<path>` as the plan |
+| **ticket** | `/prospect ticket <id>` | `--ticket <id>`, `linear`/`--linear` (legacy) | Read the ticket's Technical Intake (and Product Intake for goal context) via the connected project-tracker MCP — Linear, Jira/Atlassian, Asana, Monday, ClickUp, Notion-as-tracker, GitHub Issues. If no tracker MCP is connected, ask the user to paste. |
+| **branch** | `/prospect branch <name>` | `--branch <name>` | Uncommitted/unpushed local changes on the branch — `git diff <main-branch>...<name>` — treated as a plan-in-progress (NOT shipped yet) |
+
+**Argument parsing rules:**
+- If the first positional arg matches a scope keyword (case-insensitive), use it. Otherwise treat it as an arg to the default `plan` scope.
+- Backward-compat flag forms (`--plan`, `--ticket`, `--branch`, `--todos`, `--session`) remain accepted indefinitely. Both `/prospect ticket ABC-123` and `/prospect --ticket ABC-123` resolve identically.
+- **Legacy vendor spellings still work.** The `ticket` scope was named `linear` before the surface was made tracker-agnostic, so `/prospect linear <id>` and `--linear <id>` resolve exactly as `ticket`/`--ticket` do, and `--linear-post` resolves as `--tracker-post`. They are aliases, not separate behaviour — never advertise them as the canonical form.
+- Modifier flags (apply to any scope): `--ticket-post` (post the prospect verdict to detected tickets at end; alias `--linear-post`), `--no-source` (skip Step 3.5's Evidence-Sourcing Pass), `--lens=overbuild` (run the over-build review pass — see "Over-build lens" section; opt-in, off by default), `--cold` (one fresh-reader review round — Step 3.6; opt-in, off by default. It starts ~1 subagent per round, and that reader loads your own startup instruction files, so a round costs at least their size plus the plan), `--summary` (chat shows only the summary; the full report still goes to the log — Step 6).
+
+After mode detection, gather:
+
+1. **Goal** — Ask the user: "What is this plan supposed to accomplish? (One sentence is fine.)" If they don't reply, fall back to the plan's first heading or stated objective.
+2. **Tickets** — Scan plan text/commits/branch name with regex `\b([A-Z]{2,}-\d+)\b` for ticket IDs (the pattern is vendor-neutral — it matches DEV-123, PROJ-45, JIRA-9 alike). If found AND a project-tracker MCP is available, fetch each ticket's Product/Technical Intake + acceptance criteria to use as the goal-anchor in §4.6. If a project-tracker MCP is unavailable, note "ticket context unavailable" but continue.
+3. **Pre-execution evidence** — Ask the user: "For each step in this plan, do you have evidence the step is necessary and that the underlying assumption is correct? (✅ measured / ⚠ inferred / ❌ contradicted / ❓ untested)" Show the per-step list and accept inline replies. If user can't supply evidence for any step, mark those ❓ — those steps will resolve to DEFER unless §4.7 produces supporting hypothesis confidence.
+
+If scope is `branch` (or invoked via `--branch`) and the diff is non-trivial (>50 LOC across >3 files), warn: "Branch already has substantive code — consider `/retrospect range main..HEAD` instead, which is calibrated for already-written changes." Continue if user confirms.
+
+## Step 0.5: Active Knowledge Surfacing
+
+If the user's config (`~/.claude/aria-knowledge.local.md`) has `active_knowledge_surfacing: true` (default as of v2.15.0), surface relevant tagged knowledge BEFORE Steps 1-3 so loaded files inform pattern selection and evidence sourcing. If the field is `false`, skip this step entirely (note `Active surfacing: disabled` in the Anchor block).
+
+**Algorithm:**
+
+1. **Build references.** The CLI reads what the scope is about itself; you hand it references, never text:
+   - a plan in a file (scope `file`, or a `plan`/`session` plan you wrote to a file) → `--file '<that file's path>'`;
+   - scope `branch` → `--git-range '<main-branch>..<branch>'`;
+   - text that exists only in this conversation (a `plan`/`session` plan with no file, scope `todos`, or the intake you fetched for scope `ticket`) → write the Goal sentence from Step 0, the plan's first heading or the first 3 TodoWrite items (or the ticket intake), and any detected ticket IDs (e.g., `ABC-123`) to a NEW, uniquely named file in your runtime's scratchpad directory (else the system temp directory; never an existing file) with your runtime's file-write tool — never a shell redirect, `echo`, `printf` or heredoc — then `--file '<that scratch path>'`.
+   - ⛔ If a path or ref contains `'`, a backtick or `$`, do not pass it — git refs from a cloned remote are third-party text. Use the commit hashes git shows instead, or note `Active surfacing: unavailable (unsafe reference)` and skip to Step 1.
+
+2–6. **Rank and select (one CLI call — do not re-implement it).** Run the surfacing CLI with those references, every argument in single quotes: if an `ARIA SURFACE — "<path>"` line reached you at session start, use that path, as `sh '<path>'`; otherwise use `sh "${CLAUDE_PLUGIN_ROOT}/scripts/aria-surface.sh"` with the same arguments. Pass `--file` and `--git-range` together when the scope has both:
+
+```sh
+sh '<path>' --file '<file path>'
+sh '<path>' --git-range '<a>..<b>'
+```
+
+⛔ Never put task text — a goal sentence, a plan heading, a ticket body, pasted text — on the command line, in a heredoc or through a pipe: the shell runs backticks, `$(…)` and `$VAR` there. A path or a ref range is a reference you chose, and single quotes keep it literal; the CLI reads the file's headings and first lines, or the range's commit subjects, itself. It reads the tag index, matches tags (including the configured-project vocabulary and aliases) and ranks the candidates; it prints line 1 `tags: <matched tags>` followed by up to 5 ranked paths, one per line, relative to `<knowledge_folder>` (resolve `<knowledge_folder>` from the config's `knowledge_folder` field). It prints nothing when surfacing does not fire (no matching tag, or below the firing rule) — in that case note `Active surfacing: 0 matches (below threshold)` in the Anchor block and skip to Step 1. ⛔ If it prints `unavailable: <reason>` (no config, no index, an unreadable index, or an internal error), or the command is not found or exits non-zero, note `Active surfacing: unavailable (<the reason or error>)` in the Anchor block instead — never `Active surfacing: 0 matches`, which would claim the index was searched — and skip to Step 1. The ranking lives in that script alone: never re-order, re-cap or re-filter its output.
+
+7. **Ledger filter (best-effort).** The ledger is the file named by `ledger=` in this session's `ARIA CONFIG` line — the session-start hook names it, in the private per-user state directory, with this session's own id. If that file exists, read it and drop any matched paths already listed there — they were surfaced by an earlier hook/skill in this session. ⛔ If `ledger=` is `none`, or no `ARIA CONFIG` line reached you, or the file is absent, skip nothing: proceed **UNFILTERED** and say so in the surfacing block (`Ledger: none for this session — proceeding unfiltered`). ⛔ Never substitute a path of your own: another session's ledger DROPS files never surfaced to this session, so the filter would suppress exactly the knowledge this step exists to load. The ledger records paths RELATIVE to `<knowledge_folder>`, the same form the index lists them in and (in Claude Code) the CLI prints them in, so compare paths against ledger lines exactly as printed; do not resolve them first.
+
+8. **Read matched files.** For each remaining path (up to 5), resolve it against `<knowledge_folder>` to an absolute path before `Read` (the tool needs an absolute path; paths come relative), then `Read` the full file into context.
+
+9. **Summarize.** Before Step 1's Anchor Block, emit a 3-line surfacing block:
+
+    ```
+    Active Knowledge Surfacing:
+      Tags matched: <tag1> <tag2> ...
+      Files loaded: <N> (<file1>, <file2>, ...)
+      Relevance: <one sentence per file: why this informs the prospect>
+    ```
+
+10. **Carry-forward.** These loaded files become input to Step 2 (Load Pattern Libraries — past prospects/retros tagged with the same topic may already catalog the relevant patterns) and Step 3.5 (Evidence-Sourcing Pass — they may already validate or falsify assumptions in the plan, converting ⚠/❓ to ✅/❌ before the verdict round).
+
+11. **Tracked artifacts surfacing (added v2.16.1).** After Step 10's carry-forward, ALSO surface CODEMAP + STITCH for the plan's project. The shared lib at `${CLAUDE_PLUGIN_ROOT}/scripts/lib-tracked-artifacts.sh` implements equivalent logic for hooks; this step inlines the algorithm for skill-context portability.
+
+    a. **Detect project tag.** Try in order: `--group=<tag>` from Step 0 if provided → first ticket-ID prefix that maps to a `projects_list` tag → first `projects_list[<tag>].path` whose `path` appears as substring in the plan source path (from Step 0 `Source:` field). If no detection, skip the rest of Step 11.
+
+    b. **Resolve project root via Bash.** Parse `projects_list:` from `~/.claude/aria-knowledge.local.md` frontmatter (comma-separated `tag:path`). For the detected tag, compute `project_root = $HOME/Projects/<path>`. If directory doesn't exist, skip.
+
+    c. **CODEMAP directory load** (if `{project_root}/CODEMAP.md` exists). Compute boundary via `awk '/^## [0-9]+\.|^---$/ && NR>5 {print NR; exit}' "{project_root}/CODEMAP.md"`; Read limit = `(end - 1)` (fallback 50 if awk empty). Compute `age = (today - mtime).days`; read `codemap_staleness_threshold_days` (default 14). If `age > 2*threshold`, refuse and emit `[refused — run /codemap update first]`. Else if `age > threshold`, annotate `[STALE — consider /codemap update]`. Else `fresh`. Unless refused: `Read {project_root}/CODEMAP.md offset=0 limit=<end-1>`.
+
+    d. **STITCH load** (only if `{project_root}/STITCH.md` exists — multi-repo signal). Same staleness logic with `stitch_staleness_threshold_days` (default 30). Unless refused: `Read {project_root}/STITCH.md` (full file).
+
+    e. **Ledger dedup.** Use the same ledger — the file named by `ledger=` in `ARIA CONFIG` (see item 7). Before loading in (c)/(d), grep ledger for each artifact path; if found, silent skip (already surfaced by earlier T-1/T-2/T-3 trigger) and emit `Tracked artifacts: (already loaded earlier this session for {tag})` in the surfacing block. After loading, append loaded paths to the ledger. If `ledger=` is `none` or absent, skip the dedup and load.
+
+    f. **Output.** Extend the Step 9 surfacing block with a 4th line:
+        ```
+        Tracked artifacts: CODEMAP directory + STITCH for {tag} ({N} / {M} days fresh)
+        ```
+        Variants: `CODEMAP directory only` for single-repo (no STITCH); `(no CODEMAP for {tag})` if missing; `[STALE — consider /codemap update]` annotation; `(already loaded earlier this session)` if ledger-deduped; `(none — no project detected)` if (a) returned nothing.
+
+    g. **Carry-forward.** The loaded artifacts become available to Steps 3+ — particularly Step 3 (Enumerate Steps; CODEMAP directory aids file-path resolution for plan steps) and Step 3.5 (Evidence-Sourcing Pass; CODEMAP sections can validate or falsify assumptions about codebase structure).
+
+    Skip Step 11 entirely if `active_knowledge_surfacing: false` (already gated above).
+
+## Step 1: Print the Anchor Block
+
+Before producing any verdict, emit the anchor so the rest of the report can be traced to inputs:
+
+```
+Anchor:
+  Goal:    <stated goal>
+  Mode:    <plan | session | todos | file | ticket | branch>
+  Source:  <plan file path | TodoWrite snapshot | ticket-id | branch-name | session messages>
+  Scope:   <step count, files-to-touch estimate, repos-affected>
+  Tickets: <ABC-123 (Acceptance: ...), ABC-456 (...) | (none) | (unavailable)>
+  Evidence: <user-supplied per-step evidence table | (untested)>
+```
+
+## Step 2: Load Pattern Libraries
+
+Read the canonical pattern library at `<knowledge_folder>/rules/retrospect-patterns.md` (resolved per `~/.claude/aria-knowledge.local.md` `knowledge_folder`). The retrospect pattern library is intentionally shared — most failure-mode patterns (theory-driven refactor, scope creep, abstraction-first, etc.) apply forward as well as backward.
+
+If a `<knowledge_folder>/rules/prospect-patterns.md` file exists, also load that (forward-only patterns may emerge over time and be catalogued separately). Do not require it.
+
+If the plan is detected to belong to a known project (file paths or ticket IDs match a configured `projects_list[<tag>].project_root`), additionally read `<knowledge_folder>/projects/<tag>/retrospect-patterns.md` if it exists, and `<knowledge_folder>/projects/<tag>/prospect-patterns.md` if it exists.
+
+Hold all loaded pattern lists in context for use in §4.4 (Failure-Mode Pattern Check). Do not run pattern detection yet — this step is just loading.
+
+## Step 3: Enumerate Steps & Preliminary Triage
+
+For the loaded plan, enumerate each *step*. A step is one of:
+- A numbered or bulleted action item in the plan
+- A TodoWrite entry
+- A discrete change in a Technical Intake's "How" section
+- A logical sub-task implied by the plan even if not explicitly numbered
+
+Number them `#1, #2, …` in execution order. For each step, capture:
+- One-line description (verb + object, e.g., "Add `--branch` arg to /prospect")
+- Files-to-touch (path list, best estimate from plan; "TBD" allowed)
+- Estimated LOC range (S < 20, M 20-100, L > 100)
+- Underlying assumption (one sentence — "this works because …")
+- **Preliminary Risk?** — initial classification using Step 5's taxonomy (✅ / ⚠ / ❌ / ❓ / 🚫). This is a draft that Step 3.5 will attempt to upgrade; it is NOT the value emitted in §4.3.
+
+If a step has no identifiable underlying assumption (it's pure execution, e.g., "rename file"), write "Mechanical — no hypothesis." Mechanical steps default to ✅ Pre-validated and skip Step 3.5.
+
+**Command receipts.** Every command the plan hands to someone else carries a receipt, written in this order:
+1. `$ <command>`
+2. `expected:` — what a correct run prints or exits, written **before** running it (a receipt with no declared expectation is a printout, not a check);
+3. `exit <n>` and the first output line, from actually running it — or `not run: <reason>`.
+
+`not run` is the expected answer for a command that changes something outside the machine (push, deploy, writes to shared data); Step 3.5.2's read-only limit is unchanged. A handed-over command with neither `exit` nor `not run` is an unverified assumption: its step's Preliminary Risk? is at least ⚠ — never ✅.
+
+After preliminary triage, list every step whose Preliminary Risk? is ⚠ Theory-driven, ❓ Unsupported, or 🚫 Unverifiable-yet — these are the *candidates* for Step 3.5's evidence-sourcing pass. ❌ Falsified steps skip Step 3.5 (they go directly to KILL in §4.3 unless the user contests the falsification).
+
+## Step 3.5: Evidence-Sourcing Pass
+
+For each candidate from Step 3 (every step with Preliminary Risk? of ⚠ / ❓ / 🚫), attempt to upgrade or falsify the risk by sourcing evidence. The goal: convert as many ⚠/❓/🚫 to ✅ or ❌ as possible *before* §4.3 emits final verdicts and §4.10 surfaces residual asks.
+
+This step can be skipped with the `--no-source` flag (e.g., for a quick pass where the user just wants the structural review). When skipped, all Preliminary Risk? values pass through to §4.3 unchanged and §4.10 lists every gap as NOT-ATTEMPTED.
+
+### 3.5.1: Generate the Evidence Question
+
+For each candidate step, name the **single most decisive question** whose answer would upgrade the Risk? to ✅ Pre-validated or ❌ Falsified. Format:
+
+```
+Step #N: <description>
+  Preliminary Risk?:  <⚠/❓/🚫 with sub-tag>
+  Decisive question:  <one-line — "what would change this verdict?">
+  Answer source:      AUTO-SOURCEABLE | USER-INPUT | MIXED
+  Sourcing plan:      <one-line — what tool/lookup/ask will be used>
+```
+
+Source categorization:
+
+| Category | Means | Examples |
+|---|---|---|
+| **AUTO-SOURCEABLE** | The skill can answer it itself with available tools | Codebase reads (Read/Grep/Glob), git log/diff/blame, public web docs (WebFetch/WebSearch), Bash probes (curl, gh, grep on logs), MCP queries that don't require new credentials (e.g., `supabase__list_tables`, `linear__get_issue` if MCP is connected) |
+| **USER-INPUT** | Requires Mike's judgment, local-only knowledge, or a decision he hasn't made yet | Acceptance criteria interpretation, scope/priority calls, choosing between viable design options, info that lives only in his head (a conversation with a teammate, a constraint he hasn't documented) |
+| **MIXED** | Auto-sourceable to narrow the option space, then user picks | "Grep finds 3 candidate canonical-nav definitions; ask user which is current" |
+
+**Inherited claims first.** A claim the plan inherited — from a handoff, ticket, earlier doc or memory, not measured this session — is an evidence candidate ahead of everything else: give it a decisive question first, and check it against the system before the report repeats it.
+
+If a step has multiple decisive questions, list them as 3.5.1.a, 3.5.1.b, etc., and run each through 3.5.2 / 3.5.3 independently.
+
+### 3.5.2: Auto-Source What's Accessible
+
+For each AUTO-SOURCEABLE (or the auto-portion of MIXED) question, execute the sourcing plan and record findings. Permissible tools:
+
+- **Codebase**: Read, Grep, Glob — for file content, references, structure
+- **Version control**: Bash with `git log`, `git diff`, `git show`, `git blame`
+- **Public web**: WebFetch (specific URL — library docs, official spec) and WebSearch (when the URL is unknown). Per Rule 33, prefer official sources over inferred ones; per Rule 27, verify identifiers/versions are still current
+- **Local probes**: Bash for `curl`, `gh`, log-tail, file-existence checks
+- **MCP queries** that don't require new credentials and that the user has already authorized in this session (a project tracker — Linear, Jira, Asana, etc. — Supabase, and so on). If a query would require new auth or interactive consent, demote to USER-INPUT instead
+
+Record findings in this format:
+
+```
+Step #N — sourcing result:
+  Question:           <repeat decisive question>
+  Tool used:          <Read | Grep | WebFetch <url> | Bash <command> | mcp__<server>__<tool>>
+  Finding:            <one-paragraph factual summary, with file:line citations or URL anchors>
+  Verdict:            UPGRADED-TO-✅ | UPGRADED-TO-❌ | NO-MOVEMENT-CAPABILITY | NO-MOVEMENT-STRUCTURAL | INCONCLUSIVE
+  New Risk?:          <new tag, or unchanged if either NO-MOVEMENT>
+```
+
+⛔ **A no-movement verdict MUST pick one of the two, and the distinction is not cosmetic.** The two respond to a better model in **opposite** directions, so pooling them makes the aggregate uninterpretable — a rising resolution rate can then be a shift in premise mix rather than any gain in capability.
+
+| Verdict | Means | Test |
+|---|---|---|
+| `NO-MOVEMENT-CAPABILITY` | You attempted it and could not settle it — ran out of search paths, time-boxed out, sources disagreed, the trace got too deep | **A more capable or less time-constrained pass could plausibly settle this from the same inputs.** |
+| `NO-MOVEMENT-STRUCTURAL` | The answer does not exist in reachable inputs — needs code *executed*, a package *installed*, live/production data, a device, or a named human's decision | **No amount of reasoning settles it. Something must happen in the world first.** |
+
+⚠ **Do not infer the category from the residual's `Attempt status` label after the fact.** Measured 2026-08-22 on 5 such entries: **3 were mislabelled** — carrying `ATTEMPTED-FAILED` while describing an on-device recording, an `npm pack`, and an SSH read of a live box. Classify at the moment you stop, when you still know why you stopped.
+
+⚑ There is a third case worth naming when you hit it: **the premise's subject does not exist** (you searched correctly and the thing it asks about is absent at this commit). That is `NO-MOVEMENT-STRUCTURAL` with a note — not a capability failure, and a positive control on the search is required before claiming it.
+
+Constraints:
+- **Rule 33 — verify against current docs**: When sourcing third-party API/SDK behavior, read the official current docs (via WebFetch or `context7` MCP if loaded), not memory or analogy.
+- **No credential reads** without explicit per-session permission. If a question requires reading `.env` or similar, demote to USER-INPUT.
+- **Receipts**: a read-only command the plan hands over without a receipt (Step 3) is a candidate to run here; run it and record its receipt in the plan's order (`$`, `expected:`, `exit` + first line).
+- **No destructive probes** — read-only commands only. `git status`, `git log`, `curl GET`, `grep`, `find` are fine. No `rm`, `git reset`, `git push`, `gh pr merge`, etc.
+- **Time-box per step**: if a single question consumes more than ~5 tool-call rounds without converging, mark INCONCLUSIVE and demote the residual to USER-INPUT.
+- **Evidence quality bar**: a single corroborating source upgrades to ⚠ Theory-driven (with sub-tag `single-source-inferred`). Two independent sources are required to upgrade to ✅ Pre-validated. One contradicting authoritative source falsifies to ❌.
+
+### 3.5.3: Surface USER-INPUT Asks
+
+For each USER-INPUT question (and the user-portion of MIXED), pause the pre-mortem and surface the ask using the format below. Default to ONE ask at a time unless the user requests a batch. This is a synchronous barrier — do not proceed until the user responds or explicitly chooses Skip.
+
+Standard ask format:
+
+```
+[ASK #M of K] Step #N — <step description>
+
+Why this matters:
+  <one-line — what changes about Step #N's verdict if we know this>
+
+What I tried autonomously (if MIXED):
+  <one-line — e.g., "Grep'd /proj-c-working/playground for canonical examples; found 3 candidates at <paths>. Need your call on which is current.">
+
+Citations / context inline:
+  <file:line excerpts, URL pulls, or quoted plan fragments — whatever the answer depends on>
+
+Options:
+  1) <option, with one-line consequence — e.g., "Use blueprint-loader.ts:645 (last touched 36c9a5f25). Step #N stays as planned, Risk? upgrades to ✅.">
+  2) <option, with one-line consequence>
+  3) Other — describe in reply
+  4) Skip — leave Step #N at <preliminary risk>; it will DEFER in §4.10
+```
+
+Rules for the ask:
+- Frame neutrally. No baked recommendation in the framing. A separate "Recommendation: <N> — <reason>" line is acceptable AFTER the options block, but not required, and never inside an option's text.
+- Each ask requires its own explicit pick. Don't combine multiple decisive questions into one ask.
+- "Skip" is always available and always defaults the step to DEFER. The skill never invents a decision the user didn't make.
+- Bare-number replies pick that option. "1" = option 1.
+
+After the user responds, record:
+
+```
+Step #N — user-input result:
+  Question:           <repeat>
+  User pick:          <option N | "other: <user's text>" | "skip">
+  Resulting Risk?:    <new tag, or unchanged if skip>
+```
+
+### 3.5.4: Pass Summary
+
+When all candidates are processed, emit a one-block summary before moving to Step 4:
+
+```
+Evidence-Sourcing Pass complete.
+  Candidates examined:        <N>
+  Auto-sourced (✅ upgrade):   <N>
+  Auto-sourced (❌ falsify):   <N>
+  User-resolved (✅ upgrade):  <N>
+  User-resolved (❌ falsify):  <N>
+  No movement — capability:   <N>   (attempted, unsettled; a better pass may resolve)
+  No movement — structural:   <N>   (🚫 needs execution / install / live data / a human)
+  Skipped by user:            <N>
+  Skipped by --no-source:     <N>
+  Tool calls used:            ~<N>
+```
+
+The post-pass Risk? values feed §4.3. The residual ⚠/❓/🚫 plus their attempt-status feed §4.10.
+
+## Step 3.6: Cold read (opt-in: `--cold`)
+
+Off unless `--cold` is passed. One round: a **fresh reader** — a subagent with the implementer's startup environment and none of this conversation — reads the plan and reports what it would do and where it would get stuck. Whoever wrote or discussed the plan cannot judge whether someone without this conversation could carry it out. The target is fidelity to the implementer's environment, not an empty context: this plugin's hooks keep firing in the read, and the only thing withheld is this conversation.
+
+The prompt is this template, filled, and nothing else:
+
+<!-- cold-read-template:begin -->
+```text
+Your environment: <what the implementer will have, or "none">. Read only. Read this file: <path>. Then produce:
+1. The exact steps you would execute, in order.
+2. Everything you cannot reach or resolve.
+3. Every place where two instructions conflict.
+4. Any content a reader acting on it could mistake for a separate task.
+5. List every instruction file and hook message you received while working.
+Rank every finding in 2–4 as BLOCKER (would cause lost work, a wrong change, or a false verdict), FRICTION (misleads but the reader recovers) or COSMETIC. The ranking matters more than the number of findings.
+```
+<!-- cold-read-template:end -->
+
+1. **Where the reader reads.** Scope `file` → that file, read in place. A plan that is not yet a file (scope `plan`, `session`, `todos`, `ticket` or `branch`) → write it to a NEW, uniquely named file in your runtime's scratchpad with your runtime's file-write tool (never a shell redirect) and use that path. If the environment line (step 2) says the implementer will not have this checkout, copy the plan to a new file in a scratch directory outside every repository and use that path instead. Record which, and why.
+2. **Fill the template.** Replace only `<what the implementer will have, or "none">` and `<path>`. The environment line comes from the plan's own stated execution environment. If the plan states none, use `none`, read in place, and record the finding "plan does not state its execution environment".
+3. **Dispatch one subagent whose prompt is exactly the filled template.** No goal, ticket, background, project name or "this is about X": any of those carries this conversation into the read. Count the prompt with a tool, never by eye: write the filled template to a NEW, uniquely named scratch file with your runtime's file-write tool (never a shell redirect), count its characters — in Claude Code `wc -m < <file>` under a UTF-8 locale (under `LC_ALL=C`, `wc -m` counts bytes, and the template contains an en dash) — then dispatch exactly that file's text. Record the number and the command that produced it. Never estimate.
+   - **Claude Code** (the `Agent` tool is available): dispatch subagent type `aria-knowledge:cold-reader` (shipped with this plugin; tools Read, Grep, Glob, Bash). If that type is not among the available agent types, dispatch `general-purpose` and say so in the block. `general-purpose` has Edit and Write, so the `git status` check (step 4) is the only guard on that path.
+   - **Another runtime with a subagent tool** (Codex `spawn_agent`, Antigravity `invoke_subagent`): use it, and the block states what that reader loads at startup. Codex: `AGENTS.md` from the project root down to the working directory. A runtime whose subagent startup is not recorded here: "startup context unrecorded".
+   - **No subagent tool:** print `Cold read: not run — this runtime cannot start a subagent` and continue to Step 4.
+   - If the round cannot run for any other reason (a cap or budget gate stops it, or the subagent errors), print `Cold read: not run — <reason>`. Never skip it silently.
+
+   **What the Claude Code reader receives** (Claude Code docs read 2026-11-15; measured on 2.1.325): the project's startup instruction files and the user's rules files, as the implementer does; nested instruction files when it opens a file beneath them; this plugin's PreToolUse and PostToolUse hooks on its tool calls. **Five known gaps — print them in the block every time:**
+   - (a) auto memory: the docs say a subagent does not get the main session's, but this reader was measured receiving the project's `MEMORY.md` at startup (Claude Code 2.1.326, 2026-11-16), as the implementer does. On another host version the item-5 list shows what arrived.
+   - (b) it runs under its own short system prompt, not the main session's.
+   - (c) SubagentStart hooks reach it and not the implementer. Do not add `aria-knowledge:cold-reader` to `subagent_selfreport_types`.
+   - (d) its startup instruction files follow this session's working directory, not the plan's location. If the implementer will start somewhere else, the two sets differ.
+   - (e) SessionStart hook output (the `ARIA CONFIG` line, rules notices) reaches the main session only. It is named here, never pasted into the prompt.
+4. **Capability, not intent.** "Read only" in a prompt constrains nothing; the reader has a shell. Run `git status --porcelain` in the repository before the dispatch and after it returns. Any difference is a finding and flags the round. `git status` cannot see writes outside the repository; say so in the block.
+5. **Findings are leads.** Check each finding against the plan before it counts, and mark it confirmed or refuted (with the refutation). A confirmed BLOCKER sets that step's §4.3 Action to something other than PROCEED, and §4.8's overall verdict cannot be PROCEED while one stands. Compare the reader's item-5 list with what the implementer would load and name any difference.
+6. **Report.** §4.8 prints the Cold read block: round number; subagent type (and why, if the fallback was used); where the plan was read (in place, or a scratch copy and why); the environment line used; findings by rank, each confirmed or refuted; the `git status` before/after result; the item-5 list compared with the implementer's expected set; the five known gaps; the dispatched prompt's character count — the number counted in step 3 plus the command that produced it, never an estimate.
+
+## Step 4: Produce the 10-Section Pre-Mortem Report
+
+Render a markdown document with the 10 sections below in order. Each section heading uses `### N. <title>` format. Sections that don't apply to the current scope are emitted with a one-line "N/A: <reason>" — never silently skipped.
+
+### 4.1. Section 1 — Anchor & Inputs
+
+Re-emit the anchor block from Step 1, verbatim, as Section 1 of the report. This makes the report self-contained when read outside the chat.
+
+### 4.2. Section 2 — Plan-Specificity Gate
+
+For each step from Step 3, ask: is the step concrete enough that an implementer could execute it without further design decisions?
+
+Acceptable evidence of concreteness:
+- Specific file path(s) named (or a precise pattern that resolves to a small set)
+- Specific function/section/component named
+- Acceptance signal stated (test passes, log line emitted, screen renders, etc.)
+
+If a step is still goal-stage ("improve performance," "clean up the auth flow," "make it work"), mark it 🌫 **Under-specified** in this section. Under-specified steps do NOT receive a Risk? status in §4.3 — instead, they're flagged here and their action defaults to DEFER-PENDING-DESIGN.
+
+If the entire plan is under-specified, emit "STOP: plan is goal-stage. Run `/distill` to convert to executable spec, then re-run `/prospect`." and skip remaining sections.
+
+### 4.3. Section 3 — Per-Step Verdict
+
+For each step from Step 3 that passed §4.2 (concrete or partially concrete), emit a horizontal-rule-separated block with these fields. Mirror the formatting style of `/retrospect`'s per-fix verdict.
+
+Required fields:
+- **Concreteness tag** — one of ✅ specific / ⚠ partial / ⚠ scope-large / ⚠ assumption-stacked / ⚠ duplicates-existing
+- **Necessary?** — YES / NO / UNCLEAR with one-sentence reason. Unnecessary steps map to KILL.
+- **Smallest viable version** — "the smallest version of this step that would address the goal." If the step is already minimal, write "This is the minimal version." Forces Rule 13. If smaller version exists, the step's action defaults to SHRINK unless user has a stated reason for the larger scope.
+- **Maintenance cost (if executed)** — "what future contributors must know / maintain because of this change." Forces Rule 12 / Rule 14.
+- **Risk?** — one of the 5 statuses from Step 5 (or 🌫 if §4.2 flagged it under-specified). This is the **post-Step-3.5 final value**, not the preliminary classification from Step 3. If Step 3.5 upgraded or falsified the risk, that change is reflected here.
+- **Action** — one of: PROCEED / SHRINK / SPLIT / DEFER / KILL / DEFER-PENDING-DESIGN (under-specified only)
+
+Optional fields:
+- **Evidence sourced** — when Step 3.5 produced a verdict-changing finding, summarize it in one line with citation. Example: "Auto-sourced via Read blueprint-loader.ts:645-662 — confirms canonical nav rule applies; upgraded ⚠→✅." If Step 3.5 produced no movement OR was skipped, omit this field.
+- **Rule cite** — if a complication maps to a Universal Rule overstep, cite it inline (e.g., "violates Rule 14 — abstraction beyond purposeful layers")
+
+Render each step as a block, not a wide table:
+
+```
+Step #N: <description>
+Concreteness:        <tag>
+Necessary?:          <YES/NO/UNCLEAR> — <reason>
+Smallest version:    <description>
+Maintenance cost:    <description>
+Risk?:               <status>  (post-Step-3.5)
+Evidence sourced (optional): <one-line with citation>
+Action:              <action>
+Rule cite (optional): <rule>
+────────────────────────────────────────
+```
+
+**Hard rule:** A step's Action cannot be PROCEED unless its Risk? status is ✅ Pre-validated, OR ⚠ Theory-driven WITH an explicit one-line "Acceptable risk because: <reason>" appended to the Action line. ❌ Falsified → KILL. ❓ Unsupported → DEFER. 🚫 Unverifiable-yet → SHRINK (smallest version that produces evidence). 🌫 Under-specified → DEFER-PENDING-DESIGN.
+
+Two more hard rules: a step with a **confirmed cold-read BLOCKER** (Step 3.6) cannot be PROCEED. A step that depends on an unanswered row of the plan's **"Decisions only the human can make"** table is DEFER, citing the row.
+
+The theory-driven carve-out exists because every plan is theory-driven by definition — you're imagining, not measuring. The carve-out forces the planner to *name the risk* rather than block all forward motion.
+
+### 4.4. Section 4 — Failure-Mode Pattern Check
+
+Run the plan against all loaded pattern libraries from Step 2. Detection is judgment-based — read each pattern's "Detection cues" and assess whether the plan, hypotheses, or session transcript exhibits them.
+
+Patterns from `retrospect-patterns.md` apply forward in their *prospective* form. For example:
+- "Theory-driven refactor" pattern → fires if a step rewrites working code based on a hypothesis about a problem location, not a confirmed observation
+- "Scope creep" pattern → fires if the plan now spans more than the goal requires
+- "Abstraction-first" pattern → fires if the plan introduces a new abstraction layer before establishing >2 concrete use cases
+- "Pushback-as-cue" pattern → does not fire forward (it's a backward-looking cue), N/A
+
+For each pattern hit, emit:
+
+```
+[PATTERN] <pattern-name> (source: rules/retrospect-patterns.md | rules/prospect-patterns.md | projects/<proj>/...)
+  Evidence: <what in the plan/transcript triggered the hit>
+  Counter-discipline: <one-line reminder of the pattern's counter-discipline>
+```
+
+If no patterns hit, emit: "No catalogued failure-mode patterns detected. (See §9 for novel patterns.)"
+
+### 4.5. Section 5 — Cross-Step Tally
+
+Emit raw counts only — no interpretation in v1.
+
+```
+Tally:
+  Steps planned:                     <N>
+  Pre-validated (✅):                 <N>   (post-Step-3.5)
+  Theory-driven (⚠):                  <N>   (post-Step-3.5)
+  Falsified (❌):                     <N>   (post-Step-3.5)
+  Unsupported (❓):                   <N>   (post-Step-3.5)
+  Unverifiable-yet (🚫):              <N>   (post-Step-3.5)
+  Under-specified (🌫):               <N>
+  Theory-driven refactors:           <N>
+  Tied to ticket acceptance:         <N>
+  Discovered-during-planning:        <N>
+  Pattern hits this run:             <N>
+
+Evidence-Sourcing Pass:
+  Candidates examined:               <N>
+  Auto-sourced (✅ upgrade):          <N>
+  Auto-sourced (❌ falsify):          <N>
+  User-resolved (✅ upgrade):         <N>
+  User-resolved (❌ falsify):         <N>
+  No movement — capability:          <N>
+  No movement — structural:          <N>
+  Skipped by user:                   <N>
+  Skipped by --no-source:            <N>
+```
+
+A "theory-driven refactor" is a step that proposes rewriting working code based on a hypothesis rather than a confirmed bug location or measurement. Discovered-during-planning means a step the plan added beyond the original goal (often surfaces scope creep).
+
+Interpretation of these counts is left to §4.6, §4.7, and §4.9.
+
+### 4.6. Section 6 — Frame Check
+
+Four questions, in order. Answer each in 1–2 sentences with the supporting evidence.
+
+1. **Is the problem statement right?** Does the plan target the user's actual problem, or has it drifted to an adjacent problem during planning?
+2. **Is the bug/feature correctly scoped?** Single goal, or has the plan accreted multiple goals presenting as one?
+3. **Is the success signal stated?** When the plan finishes, what observable evidence will indicate it worked? If you can't state it, you can't validate it after.
+
+4. **What in-flight work edits the files this plan touches, and does each unit ship before or after it?** Instruments: recent commits on other branches and worktrees touching the same paths, and open handoffs naming them. "None found" names the instrument used.
+
+If the answer to #1 is "no," explicitly note: "Re-frame triggered. Hold all steps targeting the *drifted* problem statement pending re-frame discussion. Return to the original goal."
+
+If the answer to #3 is "no," explicitly note: "No success signal stated. Add a measurable post-execution check before any step PROCEEDs."
+
+### 4.7. Section 7 — Diagnosis Confidence
+
+List the **driving hypotheses** behind the plan (only run this section if any step's *post-Step-3.5* Risk? is ⚠ Theory-driven, ❓ Unsupported, or §4.6 #1 triggered re-frame). For each hypothesis:
+
+```
+Hypothesis: <one-line statement of what the plan assumes is true>
+  Used by steps: <#1, #3, #5>
+  Evidence FOR:    <observations consistent with this hypothesis — INCLUDE Step 3.5 sourced findings with citations>
+  Evidence AGAINST: <observations inconsistent — INCLUDE Step 3.5 sourced findings>
+  Sourcing attempted: <YES (see Step 3.5 result for steps #N) | NO (auto-sourcing skipped or not categorized as auto-sourceable)>
+  Confidence:      LOW / MEDIUM / HIGH
+  To upgrade to ✅: <specific signal to look for — feeds §4.10>
+```
+
+Evidence FOR/AGAINST must integrate any findings from Step 3.5's sourcing pass. If Step 3.5 produced a finding that moved the step to ⚠ Theory-driven (e.g., `single-source-inferred` upgrade from ❓), cite that finding here as soft Evidence FOR. If Step 3.5 produced a contradicting finding that the user contested or overrode, note both perspectives.
+
+Hypotheses that the plan-formation conversation OR Step 3.5 already ruled out (alternative explanations considered and discarded) are listed separately under "Hypotheses ruled out during planning or sourcing" with one-line reasons and source citations where applicable. This is *learning*, not waste — captures what was considered AND what evidence retired it.
+
+If all steps are ✅ Pre-validated and §4.6 didn't trigger, this section emits "N/A: all steps pre-validated."
+
+### 4.8. Section 8 — Action Verdict
+
+Per step, the action determined in §4.3. Render as a clear list:
+
+```
+Action verdict:
+  Step #1: <ACTION>  — <one-line reason>
+  Step #2: <ACTION>  — <one-line reason>
+  ...
+```
+
+For SHRINK actions, provide the exact smaller-scope description (from §4.3's "Smallest version"). For SPLIT actions, provide the proposed sub-step breakdown with a checkpoint between sub-steps. For DEFER actions, name the specific evidence/decision needed first. For KILL actions, give the one-line rationale and confirm there's no orphaned downstream step that depended on it.
+
+End with an **Overall verdict** in 1–3 sentences: PROCEED / PROCEED-WITH-CHANGES / HOLD / KILL. PROCEED-WITH-CHANGES means at least one step requires SHRINK or SPLIT before any execution. HOLD means at least one step is DEFER and blocks downstream steps. The overall verdict cannot be PROCEED while a confirmed cold-read BLOCKER stands.
+
+With `--cold`, print the Cold read block (Step 3.6) after the overall verdict:
+
+```
+Cold read (round <N>):
+  Subagent type:     <type, and why if the fallback was used | not run — <reason>>
+  Plan read:         <in place: <path> | scratch copy: <path> — <why>>
+  Environment line:  <as filled>
+  Prompt chars:      <N>  (<the count command, e.g. wc -m < <file>>; the filled template only)
+  git status:        <unchanged | changed: <paths>>  (cannot see writes outside the repository)
+  Findings:          BLOCKER <n> · FRICTION <n> · COSMETIC <n>
+    - <rank> <finding> — confirmed | refuted: <why>
+  Item 5 vs implementer: <the reader's list> — differs from the expected set by: <difference | none>
+  Known gaps:        (a) auto memory · (b) own system prompt · (c) SubagentStart hooks · (d) startup files follow the working directory · (e) no SessionStart hook output
+```
+
+### 4.9. Section 9 — Process Pre-mortem
+
+What the plan-formation process should have done differently. Format per item:
+
+```
+What planning produced:    <observed plan shape>
+What it should produce:    <better plan shape>
+Trigger condition:         <how to detect this situation in the future>
+Pattern reference:         <pattern-name from library | (novel)>
+```
+
+Examples of plan-formation issues this section catches:
+- Plan jumped to solution without stating the problem (skip Rule 22 step 1)
+- Plan considered only one solution (skip Rule 22 step 4)
+- Plan has steps with no acceptance signal (skip Rule 22 step 6)
+- Plan exceeds the agreed scope (no-unsolicited-scope-reduction's reverse — silent scope expansion)
+- Brainstorming was skipped before a creative-work plan
+- /distill was skipped before a complex task plan
+
+If a behavior matches an existing pattern in the library, cite it. If a behavior is *novel*, prompt the user:
+
+> "Identified a new plan-formation failure pattern: `<pattern-name>`. Add to:
+>   1) Canonical (`rules/prospect-patterns.md` — creates if missing) — applies project-agnostic
+>   2) Project-specific (`projects/<proj>/prospect-patterns.md`)
+>   3) No — surface in this report only
+> Choose: "
+
+If user chooses 1 or 2, append a new entry to the corresponding file using the same "Pattern entry format" defined in `rules/retrospect-patterns.md`. The new entry's "First identified" field is today's date and the current prospect's filename.
+
+### 4.10. Section 10 — Pre-Execution Evidence Ask (Residual)
+
+Anti-speculation barrier. This section lists ONLY the **residual** evidence asks — the questions Step 3.5 either could not source autonomously, the user deferred, or were not attempted. Items resolved during Step 3.5 (✅ upgrades or ❌ falsifications) DO NOT appear here — they're recorded in §4.3 (`Evidence sourced` field), §4.7 (Evidence FOR/AGAINST), and §4.5 (Evidence-Sourcing Pass tally).
+
+For each remaining ⚠/❓/🚫 step, emit the residual ask with its **attempt-status**:
+
+```
+Before Step #N can PROCEED (Hypothesis A: <short label>):
+  Attempt status:    NOT-ATTEMPTED | ATTEMPTED-FAILED | DEFERRED-BY-USER | SKIPPED-BY--no-source
+  Why residual:      <one-line — e.g., "Auto-source attempted via WebFetch <url>; doc was 404. Demoted to USER-INPUT.">
+  What's needed:     - <specific check 1 — file read, log query, schema inspection, decision required, etc.>
+                     - <specific check 2>
+                     - <add a unique [<TAG>-PRE] marker in the planned change so post-execution validation is possible>
+  Who can resolve:   <USER | AUTOMATED-RETRY-LATER | EXTERNAL-PARTY <name>>
+```
+
+Attempt-status meanings:
+- **NOT-ATTEMPTED** — Step 3.5 did not generate a sourcing plan for this question (rare; usually means a misclassified candidate)
+- **ATTEMPTED-FAILED** — Step 3.5 ran tools but the answer wasn't found / source was unreachable / two corroborating sources couldn't be obtained
+- **DEFERRED-BY-USER** — Step 3.5 surfaced a USER-INPUT ask and the user picked "Skip"
+- **SKIPPED-BY--no-source** — entire pass was skipped via the `--no-source` flag
+
+If all steps are ✅ Pre-validated post-Step-3.5, emit: "N/A: all steps pre-validated (Step 3.5 closed all gaps). Proceed to execution."
+
+If Step 3.5 was skipped via `--no-source`, prefix every entry with "(Sourcing pass skipped — re-run `/prospect` without `--no-source` to attempt autonomous resolution.)"
+
+End the section with this verbatim warning when any DEFER or HOLD action exists:
+
+> **Do not begin execution until at least one item in this section is satisfied for each DEFER step. If execution is started without new evidence, the eventual `/retrospect` will mark those steps unvalidated. Plan accordingly.**
+
+## Step 5: Risk Status Taxonomy (reference)
+
+When assigning Risk? in §4.3, choose one of the 5 statuses below. Under-specified (🌫) is a precondition gate handled in §4.2, not a status.
+
+| Status | Definition | Required sub-tag (in report) |
+|---|---|---|
+| ✅ **Pre-validated** | Evidence already supports the planned step's underlying assumption | **Evidence type**: log/measurement \| reproduction-then-confirm \| code-read-and-traced \| existing-test-coverage. "Plausible argument" is **not** evidence. |
+| ⚠ **Theory-driven** | Plan rests on a hypothesis that's reasonable but unmeasured | **Sub-tag**: `single-source-inferred` \| `analogous-system-reasoning` \| `documentation-claim-untested` |
+| ❌ **Falsified** | Known evidence contradicts the planned step's assumption | **Sub-tag**: `prior-attempt-failed` \| `evidence-shows-otherwise` \| `documented-anti-pattern` |
+| ❓ **Unsupported** | No evidence yet, but the skill can describe the specific check that would gather it | (none) |
+| 🚫 **Unverifiable-yet** | Cannot be validated until execution begins (requires running the change to know) | (none) |
+
+When emitting a Risk? value, always include the required sub-tag where applicable. Examples:
+
+- `Risk?: ✅ Pre-validated (code-read-and-traced: blueprint-loader.ts:645-662 confirms canonical nav rule applies)`
+- `Risk?: ⚠ Theory-driven (single-source-inferred: only one API route was inspected; assumption that all NDJSON routes share the shape is inferred)`
+- `Risk?: ❌ Falsified (prior-attempt-failed: 2026-04-22 retrospect on this same approach showed it doesn't address the bug)`
+- `Risk?: ❓ Unsupported: needs <specific check>`
+- `Risk?: 🚫 Unverifiable-yet: requires running migration in staging to surface schema collision`
+
+## Step 6: Write Outputs
+
+After Step 4 produces the report, write outputs to the configured destinations:
+
+### Always
+- Render the full report to terminal (chat) — unless `--summary` was passed. With `--summary`, chat shows only the Anchor block, §4.8's overall verdict and action list, any residual asks, and the log path; the full report still goes to the log. If no log is written, `--summary` is ignored and the report says so.
+
+### Default
+- **Persistent log:** Write the full report to `<knowledge_folder>/logs/prospect/<YYYY-MM-DD>-<scope>-<slug>.md` where `<scope>` is the resolved scope keyword from Step 0 (`plan`, `session`, `todos`, `file`, `linear`, or `branch`) and `<slug>` is derived from the goal or referenced ticket(s). Resolve `<knowledge_folder>` from the config's `knowledge_folder` field. Create the `logs/prospect/` subfolder lazily on first use. Mirror retrospect's logging convention. Existing files written under the older `<YYYY-MM-DD>-<slug>.md` pattern are grandfathered (no rename).
+
+  Prepend a structured YAML frontmatter block to the report before writing. Schema:
+
+  ```yaml
+  ---
+  type: prospect
+  date: <YYYY-MM-DD>
+  scope: <plan | session | todos | file | ticket | branch>
+  goal: <one-line stated goal from §4.1 Anchor>
+  tickets: [<ABC-123>, <ABC-456>]   # empty list if none
+  steps_count: <N>
+  model: <model executing this gate, e.g. claude-opus-5 — or `unrecorded` if unknown>
+  effort: <output of printf '%s\n' "${CLAUDE_EFFORT:-unrecorded}" — run it, copy verbatim; never infer or guess>
+  sourcing_pass:
+    candidates: <N>
+    upgraded_validated: <N>
+    upgraded_falsified: <N>
+    no_movement: <N>                  # pooled total; MUST equal the two fields below
+    no_movement_capability: <N>       # attempted, could not settle — a better model may resolve it
+    no_movement_structural: <N>       # 🚫 needs execution / install / live data / a named human
+  patterns_hit: [<pattern-name-1>, <pattern-name-2>]   # from §4.4; empty list if none
+  overall_verdict: <PROCEED | PROCEED-WITH-CHANGES | HOLD | KILL>   # from §4.8
+  related: [<paths to overlapping prior runs — see below>]
+  tags: [prospect, <scope>, <project-tag-if-detected>, <pattern-tag-if-applicable>]
+  ---
+  ```
+
+  **`effort:` is read, never inferred.** Run `printf '%s\n' "${CLAUDE_EFFORT:-unrecorded}"` in Bash and copy the output verbatim. Where the runtime sets `$CLAUDE_EFFORT` (Claude Code does, in each Bash subprocess, to the effort level in effect when it starts; a subagent sees its own level), that output is the recorded level; where it is unset the command prints `unrecorded` — record that rather than a guess. You cannot see your own effort setting (self-reported values disagreed with the harness record on 24% of 140 matched logs).
+
+  **`related` auto-detection (Q1.2=1, ticket-based):** Before writing, glob `<knowledge_folder>/logs/prospect/*.md` AND `<knowledge_folder>/logs/retrospect/*.md` for files whose frontmatter `tickets:` array shares at least one ticket ID with the current report's tickets. Record their paths (relative to `<knowledge_folder>/`) in the `related:` array. If no tickets in the current report, leave `related:` empty. Only the most recent 10 are kept if many overlap (cap on bloat).
+
+  **`tags:` field:** always includes `prospect` and the scope keyword. Add a project tag when the plan is detected to belong to a configured project (commits/files match a `projects_list[<tag>].project_root`). Add pattern-name tags for any §4.4 hits. These tags make the file discoverable via `/index` and `/context` (per Q1.3=1 — `/index` extends its scan to `logs/{prospect,retrospect}/`).
+- **Aria intake:** Suggest entries for the four backlogs based on the report content:
+  - Insights → observations like "step #N's hypothesis was thinly supported because <evidence>"
+  - Decisions → "Pre-mortem moved step #N from PROCEED to SHRINK; smallest version is <X>" with rationale
+  - Approaches → instrumentation patterns to use during execution (e.g., "[<TAG>-PRE] marker pattern for forward verification")
+  - Working rules → if §4.9 identified a plan-formation behavior that should become a Universal Rule, suggest it (do not persist without user approval per Rule 23)
+
+  Project-scoped intake goes to `projects/<proj>/`; agnostic intake goes to the shared knowledge tree. Follow the standard aria intake confirmation flow (suggest, user reviews, write on approval).
+
+### Opt-in
+- **Tracker comment:** Only when invoked with `--ticket-post` (legacy alias `--linear-post`). Post the Overall verdict from §4.8 + the action verdict list to each ticket detected. Use a project-tracker MCP `save_comment`. Never post the full report — too much detail for the ticket.
+
+### Pattern library write-backs
+If §4.9 produced a novel pattern and the user approved adding it, the pattern entry is written to either:
+- `<knowledge_folder>/rules/prospect-patterns.md` (canonical — created if missing), or
+- `<knowledge_folder>/projects/<proj>/prospect-patterns.md` (project-specific — created if missing)
+
+Pattern write-backs are *separate* from intake — they go directly to the patterns file, not through backlog review.
+
+## Step 7: Soft-Suggest Trigger Logic (Claude-side judgment)
+
+When the skill is *not* directly invoked, Claude monitors user messages and the conversation state for cues that suggest a pre-mortem is warranted. When detected AND the current session has produced a multi-step plan with no execution yet, Claude offers — never auto-executes — `/prospect`.
+
+Cues (non-exhaustive, judgment-based):
+
+- "let me implement…", "I'll just code it", "ok let's do it", "ship it", "going to start now"
+- "combined go" or any compound execution authorization across a multi-step plan that hasn't been validated
+- A long planning conversation has produced a coherent plan but no edits have happened yet
+- Brainstorming concluded with an action plan
+- /distill produced a task spec
+- A ticket's Technical Intake was just drafted and the user is about to begin
+- The plan touches >3 files OR >1 repo OR has any step rated L (>100 LOC)
+- The plan rewrites working code without naming a measured problem location
+
+Standard offer (paraphrase as appropriate):
+
+> "Before you start: this plan has <N> steps and at least one rests on an unmeasured hypothesis. Want me to run `/prospect` first? It'll force a per-step risk check + smallest-version pass before any code lands. Cheap insurance against a `/retrospect` later."
+
+Cue weight is judgment, not regex. When the cue is faint, just acknowledge and proceed. When the cue is clear, offer. Never auto-execute from a cue — always ask.
+
+This logic is the forward-looking twin of `/retrospect`'s `pushback-as-cue` pattern — they share the same trigger surface but fire at opposite ends of the development cycle.
+
+## Over-build lens (opt-in: `--lens=overbuild`)
+
+Off unless `--lens=overbuild` is passed. When on, after the standard per-step pass, check each PLANNED step against `rules/overbuild-patterns.md`:
+
+1. Load the ladder + smells.
+2. For each step, find the lowest ladder rung that would resolve its need. If the step proposes a higher rung than necessary (e.g. adds a dependency where a one-liner works), it fails that rung.
+3. A failing step yields a SHRINK verdict (existing vocabulary) citing the failed rung + the concrete leaner alternative; an unnecessary step yields KILL. A step whose smaller form cannot be named is NOT flagged.
+4. Findings fold into §4.3 per-step verdicts (the Action becomes SHRINK/KILL with the over-build reason) — no separate section needed, since prospect is already per-step.
+
+Forward counterpart of `/retrospect --lens=overbuild`; same rubric, applied to a plan instead of a diff.
+
+## Step 8: Validation Gates
+
+Before finalizing the pre-mortem, verify:
+
+1. **Anchor printed?** §4.1 must contain Goal, Mode, Source, Scope, Tickets, Evidence lines.
+2. **Plan-specificity gate run?** §4.2 must address every step from Step 3.
+3. **Evidence-Sourcing Pass run (or explicitly skipped)?** Step 3.5 must have addressed every preliminary ⚠/❓/🚫 candidate from Step 3 — each must end with one of: UPGRADED-TO-✅ / UPGRADED-TO-❌ / NO-MOVEMENT / INCONCLUSIVE / DEFERRED-BY-USER / SKIPPED-BY--no-source. No silent skips. The pass summary (Step 3.5.4) must be emitted.
+4. **Per-step verdicts complete?** Every step has all required fields (Concreteness, Necessary?, Smallest version, Maintenance cost, Risk?, Action). Risk? values reflect post-Step-3.5 state. Missing field = incomplete report.
+5. **Risk hard rule respected?** No step has Action: PROCEED unless post-Step-3.5 Risk? is ✅ Pre-validated, OR ⚠ Theory-driven WITH explicit "Acceptable risk because: …" appended. Verify before emitting.
+6. **Pattern check ran?** §4.4 must reference all loaded pattern libraries (canonical retrospect + canonical prospect if exists + project-specific if applicable).
+7. **Tally consistent?** Counts in §4.5's risk-status block must match the per-step data in §4.3 (post-Step-3.5). Counts in §4.5's Evidence-Sourcing Pass block must match Step 3.5.4's summary.
+8. **Hypotheses present when needed?** §4.7 is required if any step is post-Step-3.5 ⚠ Theory-driven, ❓ Unsupported, or §4.6 #1 triggered re-frame. Evidence FOR/AGAINST must integrate Step 3.5 findings where applicable.
+9. **Action verdict complete?** §4.8 must have an action for every step in §4.3, plus an Overall verdict.
+10. **Residual evidence asks correctly scoped?** §4.10 must list ONLY residual items (NOT-ATTEMPTED / ATTEMPTED-FAILED / DEFERRED-BY-USER / SKIPPED-BY--no-source). Items resolved by Step 3.5 (✅ upgrades or ❌ falsifications) must NOT appear in §4.10. Cross-check: every §4.10 entry's step must have post-Step-3.5 Risk? of ⚠/❓/🚫.
+11. **Outputs written?** Confirm the persistent log was written to disk and intake suggestions were surfaced.
+
+12. **Cold read accounted for?** With `--cold`, Step 3.6 ran and §4.8 printed its Cold read block, or the report printed `Cold read: not run — <reason>`.
+
+If any check fails, self-correct once. If self-correction can't close the gap (e.g., the user must supply evidence), surface the gap explicitly in the report rather than silently skipping.

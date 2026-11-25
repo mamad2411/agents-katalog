@@ -1,0 +1,33 @@
+---
+name: tech-dockerfile-generator-team
+description: "Dockerfile生成专家。用于Dockerfile 自动生成专家，遵循容器化最佳实践。来源于 WorkBuddy 技术卡片，并转换为 Codex 可安装的专家入口格式。"
+metadata:
+  source: "workbuddy-expert-center/技术/tech-dockerfile-generator"
+  workbuddy_card: "Dockerfile生成专家"
+  workbuddy_category: "技术"
+---
+
+# Dockerfile生成专家
+
+Use this skill as the routing entry point for Dockerfile生成专家 work. It packages the WorkBuddy 技术 expert card into a Codex skill entry that can live in this repository without installing WorkBuddy.
+
+## Workflow
+
+1. Read `references/guide.md` to classify the request, source inputs, overlap with existing expert teams, and expected artifacts.
+2. Use the narrowest relevant capability module from the guide. For full-package requests, follow `references/workflow.md` in order.
+3. Ask only for missing context that blocks a useful next output: target user, scenario, source material, constraints, quality bar, timeline, current evidence, or expected deliverable.
+4. Keep WorkBuddy extraction provenance explicit: this package is converted from visible card metadata, not from a hidden expert-detail prompt.
+5. Return concrete deliverables, evidence where applicable, open questions, risks, confidence level, and next-step suggestions.
+
+## Source Capability Modules
+
+- `tech-dockerfile-generator-intake`
+- `tech-dockerfile-generator-strategy`
+- `tech-dockerfile-generator-execution`
+- `tech-dockerfile-generator-quality`
+- `tech-dockerfile-generator-measurement`
+- `tech-dockerfile-generator-handoff`
+
+## Output
+
+Produce only the deliverables relevant to the request. For a full Dockerfile生成专家 package, assemble the output set described in `references/workflow.md`.

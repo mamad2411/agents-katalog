@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/event-code-of-conduct/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Write a technical event's code of conduct and build the enforcement pipeline behind it - what the policy has to say, who and which spaces it binds (attendees, speakers, volunteers, sponsor and booth s

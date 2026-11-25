@@ -1,0 +1,184 @@
+---
+name: splunk-cloud-data-manager-setup
+description: "Use when the user asks to set up Splunk Cloud Data Manager, onboard cloud data sources through Data
+  Manager, validate Data Manager prerequisites, handle Data Manager CloudFormation or ARM or Terraform
+  templates, diagnose Data Manager ingestion health, migrate Azure Event Hubs from MSCS, promote
+  historical AWS S3 data, or onboard CrowdStrike FDR data. Render, doctor, apply supported cloud-side
+  artifacts for, and validate Splunk Cloud Platform Data Manager onboarding across AWS, Azure, GCP, and
+  CrowdStrike with Data Manager 1.16 source coverage, HEC ACK/token guardrails, Data Manager-generated
+  CloudFormation/ARM/Terraform template handling, provider prerequisite checks, health searches, migration
+  warnings, and secret-file-only handoffs."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-08"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Cloud Data Manager Setup
+
+## Enterprise applicability
+
+Data Manager is a built-in Splunk Cloud app; generated customer-cloud resources support that Cloud control plane. The default workflow does not configure a self-managed Enterprise
+10.6 feature. Keep its Splunk Cloud validation separate. See the
+[documented service scope](https://help.splunk.com/en/data-management/ingest-data-from-cloud-sources/use-data-manager/1.16/getting-data-in-gdi/set-up-data-manager).
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Set up Splunk Cloud Data Manager, onboard cloud data sources through Data Manager, validate Data Manager
+  prerequisites, handle Data Manager CloudFormation or ARM or Terraform templates, diagnose Data Manager ingestion
+  health, migrate Azure.
+- Preview and review the splunk cloud data manager setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-cloud-data-manager-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-cloud-data-manager-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+This skill is a render-first workflow for Splunk Cloud Platform Data Manager.
+It covers AWS, Azure, GCP, and CrowdStrike onboarding guardrails, but it does
+not claim private Data Manager APIs or Terraform CRUD for Data Manager inputs.
+When Data Manager requires UI creation, render the exact handoff and validate
+the surrounding prerequisites and generated artifacts.
+
+## Safety Rules
+
+- Never ask for or print Splunk tokens, Azure client secrets, GCP keys,
+  CrowdStrike/FDR AWS secret access keys, passwords, or API keys.
+- Never pass secrets as command-line arguments or environment-variable prefixes.
+- Use spec file fields such as `azure.client_secret_file`,
+  `gcp.json_key_file`, `crowdstrike.aws_access_key_id_file`, and
+  `crowdstrike.aws_secret_access_key_file`.
+- Reject specs that contain raw `password`, `secret`, `token`, `api_key`,
+  `access_key`, or `private_key` values unless the field name ends in `_file`
+  or `_path`.
+- Do not invent Data Manager REST endpoints or Terraform resources. Splunk
+  Cloud input creation remains a UI handoff unless Splunk publishes a supported
+  API.
+
+## Workflow
+
+1. Copy or adapt `template.example` with only non-secret values and secret file
+   paths.
+2. Render a plan:
+
+   ```bash
+   bash skills/splunk-cloud-data-manager-setup/scripts/setup.sh \
+     --phase render \
+     --spec skills/splunk-cloud-data-manager-setup/template.example
+   ```
+
+3. Review `splunk-cloud-data-manager-rendered/`, especially
+   `coverage-report.json`, `apply-plan.json`, provider runbooks, and
+   `doctor-report.md`.
+4. Run offline validation:
+
+   ```bash
+   bash skills/splunk-cloud-data-manager-setup/scripts/validate.sh
+   ```
+
+5. Apply only supported user-supplied or Data Manager-downloaded artifacts:
+
+   ```bash
+   bash skills/splunk-cloud-data-manager-setup/scripts/setup.sh \
+     --phase apply \
+     --spec my-data-manager.yaml \
+     --accept-apply
+   ```
+
+   GCP Terraform destroy additionally requires `--accept-destroy`; apply and
+   destroy cannot be enabled in the same reviewed plan.
+
+## Phases
+
+- `render` - default. Writes deterministic artifacts and never mutates.
+- `doctor` - render plus prioritized issue/fix report.
+- `status` - summarizes rendered status commands and health checks.
+- `apply` - requires `--accept-apply`, a fresh apply plan, and enabled
+  Data Manager-generated artifact paths.
+- `validate` - checks rendered artifacts and policy guardrails.
+- `all` - render, doctor, validate.
+
+## What It Renders
+
+Under `splunk-cloud-data-manager-rendered/`:
+
+- `README.md` - operator summary and safe next commands.
+- `coverage-report.json` - `ui_handoff`, `artifact_validate`,
+  `artifact_apply`, `splunk_validate`, `cloud_validate`, `handoff`, or
+  `not_applicable` for every covered feature.
+- `apply-plan.json` - apply ordering, required accept gates, and artifact paths.
+- `doctor-report.md` - prioritized readiness and drift findings.
+- `health-searches.spl` - source-type/index searches for post-onboarding checks.
+- `provider-runbooks/` - AWS, Azure, GCP, CrowdStrike, HEC, source catalog, and
+  migration runbooks.
+- `scripts/` - validation/apply wrappers for Data Manager-generated
+  CloudFormation, ARM, and Terraform artifacts.
+
+## References
+
+Read only the reference needed for the user request:
+
+- [reference.md](reference.md) - complete workflow, source coverage, and guardrails.
+- [references/aws.md](references/aws.md) - AWS CloudFormation, StackSets, S3,
+  custom logs, Organizations/OUs, and S3 Promote.
+- [references/azure.md](references/azure.md) - Azure ARM, Entra ID, Activity
+  Logs, Event Hubs, Monitor, and MSCS migration.
+- [references/gcp.md](references/gcp.md) - GCP Terraform templates, Pub/Sub,
+  Dataflow, project/folder/org overlap checks, and edit/delete.
+- [references/crowdstrike.md](references/crowdstrike.md) - CrowdStrike FDR
+  S3/SQS onboarding, event families, and delete cleanup.
+- [references/source-catalog.md](references/source-catalog.md) - official source
+  type and HEC ACK/token catalog.
+- [references/iac-and-terraform.md](references/iac-and-terraform.md) - what is
+  supported vs adjacent Terraform.
+- [references/research-ledger.md](references/research-ledger.md) - source URLs
+  used to build this skill.

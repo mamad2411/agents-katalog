@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-starchild-ai-agent-official-skills/ui-templates/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: UI Templates — Human-Designed Template Library

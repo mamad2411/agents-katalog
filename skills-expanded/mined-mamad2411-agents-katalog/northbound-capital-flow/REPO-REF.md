@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-wind-alice-alicemarket/northbound-capital-flow/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 追踪北向资金或外资偏好的变化、行业流向与风格迁移，帮助判断资金面支持、抱团方向与潜在反转线索。适用于A股资金观察、风格判断与板块验证。

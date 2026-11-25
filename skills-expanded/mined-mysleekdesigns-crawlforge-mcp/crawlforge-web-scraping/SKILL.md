@@ -1,0 +1,233 @@
+---
+name: crawlforge-web-scraping
+description: "Scrapes web pages and returns clean Markdown, HTML, plain text, links, or metadata using CrawlForge's scrape, fetch_url, extract_content, extract_text, extract_links, extract_metadata, map_site, and crawl_deep tools. Use when the user wants to scrape a URL, fetch a page, get the markdown or text of a website, extract links or metadata, read an article, map a site's URLs, generate a sitemap, or crawl a whole website or documentation site. Prefer the unified scrape tool to get multiple formats in one call; use map_site to discover URLs and crawl_deep to walk an entire site."
+metadata:
+  version: 6.25.1
+  source: crawlforge-mcp-server
+---
+
+# CrawlForge Web Scraping
+
+Fetch and clean web content with the CrawlForge MCP server. This skill covers
+single-page scraping (one URL → Markdown / HTML / text / links / metadata),
+site discovery (sitemaps and URL maps), and whole-site crawling.
+
+## When to use
+
+- "Scrape this URL" / "get the markdown of this page" / "read this article" → `scrape`
+- "Just give me the raw HTML / JSON / headers" → `fetch_url`
+- "Give me the clean article text, no nav or ads" → `extract_content`
+- "Get the plain text / markdown body" → `extract_text`
+- "List every link on this page" → `extract_links`
+- "Get the title / meta / Open Graph / SEO tags" → `extract_metadata`
+- "Map all the URLs on this site" / "generate a sitemap" → `map_site`
+- "Crawl the whole docs site" / "index every page" → `crawl_deep`
+- "Read more of that truncated result" → `read_result`
+
+## Tool selection (fastest path first)
+
+1. **`scrape`** is the default for single pages. One fetch returns many formats
+   at once — no N-request fan-out. Ask for exactly the formats you need.
+2. Use the **single-purpose basic tools** (`fetch_url`, `extract_text`,
+   `extract_links`, `extract_metadata`) when you only want one cheap thing.
+3. **`extract_content`** when you specifically want Readability-cleaned article
+   body (strips ads, nav, footers) — better than `extract_text` for articles.
+4. **`map_site`** before a crawl to estimate scope / find section URLs.
+5. **`crawl_deep`** to walk an entire site and (optionally) extract content.
+
+If a page returns 403/429, a CAPTCHA, or empty "enable JavaScript" content,
+switch to the **crawlforge-stealth-browsing** skill (`stealth_mode`). When the
+site is *known* to block, use `scrape` with `escalate: true` instead of two
+calls — still never `stealth_mode` first.
+
+## scrape — unified multi-format (cost: 2)
+
+Get markdown + links + metadata in a single call:
+
+```json
+{
+  "tool": "scrape",
+  "params": {
+    "url": "https://example.com/article",
+    "formats": ["markdown", "links", "metadata"],
+    "onlyMainContent": true
+  }
+}
+```
+
+`formats` accepts: `"markdown"`, `"html"`, `"rawHtml"`, `"text"`, `"links"`,
+`"metadata"`, `"screenshot"`, or an object `{ "type": "json", "schema": {...},
+"prompt": "..." }` for LLM-structured extraction. Partial success is supported:
+a failing format adds a `warnings[]` entry instead of failing the whole call.
+`onlyMainContent` (default `true`) strips boilerplate via Readability.
+
+### escalate — one call for a site that blocks (projected 7, charged 2 when it doesn't)
+
+`escalate: true` keeps the plain fetch first and retries in the stealth browser
+only if that fetch comes back walled (403/429, a challenge page, an empty
+shell). The escalated page goes through the same formats, so `markdown`,
+`highlights` and the rest work exactly as they do on a plain read.
+
+```json
+{
+  "tool": "scrape",
+  "params": {
+    "url": "https://www.producthunt.com/",
+    "formats": ["markdown"],
+    "escalate": true
+  }
+}
+```
+
+The result adds `escalated: true|false`, and `stealth: { engine,
+vendor_detected }` when the escalation ran. `engine` is `impit` when a Chrome
+TLS handshake with the honest User-Agent got the page before any browser
+launched (default `escalate_engine: "auto"` only). The projection is `2 + 5`,
+whichever step got the page; the charge
+falls back to the base when the plain fetch succeeded and nothing escalated.
+robots.txt is respected on the escalated path too, and a second call to a host
+that blocked within the last 24 hours skips the doomed plain fetch and says so
+in `warnings[]`. That call is charged the full `2 + 5` once the browser runs,
+because no plain fetch ran that could have lowered it. The memory is kept for 24
+hours from the block, in the running server only, and a `scrape` without
+`escalate` that gets a clean page from that host clears it sooner.
+
+`escalate_engine` defaults to `"auto"`: Camoufox (Firefox, the engine that gets
+through Cloudflare Turnstile and Akamai) when its binary is installed, Chromium
+with a warning when it is not. Pin `"playwright"` (the only spelling for
+Chromium here — `"chromium"` is rejected) when the page just needs rendering and
+you want the faster, lighter browser; pin `"camoufox"` to require the stronger
+engine — it errors rather than falling back. `stealth.engine` in the result says
+which one ran, and a fallback is reported in `warnings[]`.
+
+Query-scoped formats return only the parts of the page that match, verbatim,
+with offsets into the `markdown` of the same call:
+
+```json
+{
+  "tool": "scrape",
+  "params": {
+    "url": "https://example.com/pricing",
+    "formats": [
+      "markdown",
+      { "type": "highlights", "query": "professional plan price", "max_highlights": 5 },
+      { "type": "question", "question": "How much is the professional plan per month?" }
+    ]
+  }
+}
+```
+
+`{ "type": "highlights", "query", "max_highlights"?, "mode"? }` returns
+`content.highlights: [{ text, kind, offset, length, score }]`, best first;
+`kind` is `sentence`, `table_row` or `code_block`, and
+`markdown.slice(offset, offset + length) === text`. `{ "type": "question",
+"question", "mode"? }` returns `content.answer: { text, grounded, evidence }`,
+with `text` the evidence joined; evidence can also be a `heading`, and
+`grounded` is false when nothing matched (`text` empty). Either adds 1 credit
+once per call and calls no model. `"mode": "model"` adds 3 once per call: the
+model chooses the highlights (never rewrites them) or writes the answer, and
+`grounded` is false when the model finds no answer in the evidence or the
+answer holds a number or a name the evidence does not. Ask for `"markdown"` in the same call to quote with a
+locator.
+
+CLI equivalent:
+
+```bash
+crawlforge scrape https://example.com/article --extract --format markdown
+```
+
+## fetch_url — raw HTTP (cost: 1)
+
+```json
+{ "tool": "fetch_url", "params": { "url": "https://example.com", "timeout": 15000 } }
+```
+
+Returns headers + body. Use it for JSON/XML APIs; for HTML you will read, one
+`scrape` call replaces a `fetch_url` + `extract_*` pair. Supports `headers` (e.g. auth tokens).
+
+## extract_content vs extract_text
+
+```json
+{ "tool": "extract_content", "params": { "url": "https://blog.example.com/post" } }
+```
+
+```json
+{ "tool": "extract_text", "params": { "url": "https://example.com/article", "output_format": "markdown" } }
+```
+
+`extract_content` (cost 2) = Readability-cleaned article body, best for RAG.
+`extract_text` (cost 1) = faster, strips tags; pass `output_format:"markdown"`
+for RAG-friendly output.
+
+`extract_text` and `extract_links` take `escalate:true` for a site known to
+block: the plain fetch runs first and the stealth browser re-reads the page
+only if it is walled (projected 6, charged 1 when the plain fetch worked).
+
+## extract_links / extract_metadata (cost: 1 each)
+
+```json
+{ "tool": "extract_links", "params": { "url": "https://example.com", "filter_external": true } }
+```
+
+```json
+{ "tool": "extract_metadata", "params": { "url": "https://example.com" } }
+```
+
+## map_site — discover URLs (cost: 2)
+
+```json
+{
+  "tool": "map_site",
+  "params": { "url": "https://example.com", "include_sitemap": true, "max_urls": 500 }
+}
+```
+
+Reads `sitemap.xml` when available. Pass `search:"pricing"` to rank discovered
+URLs by relevance and get a `ranked_urls:[{url,score}]` array (default output
+is unchanged when `search` is omitted).
+
+CLI: `crawlforge map https://example.com --pretty` (add `--format xml` for a sitemap file).
+
+## crawl_deep — walk a whole site (cost: 4, scales with pages)
+
+```json
+{
+  "tool": "crawl_deep",
+  "params": {
+    "url": "https://docs.example.com",
+    "max_depth": 3,
+    "max_pages": 200,
+    "extract_content": true
+  }
+}
+```
+
+BFS crawl up to depth 5 / 1000 pages. Use `include_patterns` /
+`exclude_patterns` (regex) to scope, `respect_robots` to honor robots.txt
+(on by default). Crawls projected over ~500 pages trigger a confirmation
+prompt (elicitation). CLI: `crawlforge crawl https://docs.example.com --depth 3 --max-pages 200`.
+
+## Large results — `max_inline_chars` and `read_result` (cost: 1)
+
+`scrape`, `fetch_url`, `extract_content`, `extract_links`, `extract_metadata`,
+`map_site` and `crawl_deep` accept `max_inline_chars` (default 40,000), as do
+`search_web`, `scrape_template`, `agent`, `generate_llms_txt` and the list
+operations of `track_changes`. A larger result comes back as its scalar
+fields plus `preview` (the first `max_inline_chars` characters of its text
+view), `result_handle`, `total_chars`, `truncated: true` and `expires_at`; the
+full result stays 1 hour on the local machine, never uploaded. Read it with
+`read_result` instead of fetching again: `operation:"search"` with a `query`
+finds offsets, then `operation:"slice"` with `offset`/`length` reads around one;
+`operation:"json_path"` with a `path` picks one field (`"lines"` reads by line).
+
+## Cost note
+
+`scrape` (2 credits) is the default page read: one fetch returns every format
+you ask for. `fetch_url`, `extract_text`, `extract_links`, `extract_metadata`
+(1 each) are cheaper only when one of them is the whole job; `fetch_url` followed
+by an `extract_*` call on the same URL is a double fetch that costs more than one
+`scrape`. `extract_content`, `map_site` = 2 · `crawl_deep` = 4 (grows with
+`max_pages`) · `read_result` = 1 (reads a stored result, no fetch). Never re-fetch
+a page whose content is already in the conversation.
+
+See [tool reference](references/tool-reference.md) for the full parameter list.

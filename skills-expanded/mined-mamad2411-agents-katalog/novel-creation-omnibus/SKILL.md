@@ -1,0 +1,593 @@
+---
+name: novel-creation-omnibus
+description: >
+  小说创作全能工坊v10.0——46套工具，从0到完本一条龙。覆盖：长篇正文写作、大纲细纲规划、世界观搭建与人物塑造、短篇故事、虐心BE发刀、玩梗热梗、去AI味反套话（含Claude/DeepSeek/GPT/Qwen/Kimi/豆包各策略+DeepSeek句式黑名单734条+51意象词+白名单系统+L1-L4四层硬门禁+L3方法论三节+6类逐句审查判据+段落功能二分法）、衔接修复与因果分析、状态追踪与伏笔管理、质量门控、同人创作与OOC控制、网文生产流水线、番茄爆文与系统流爽文、白描克制与现实主义平庸、模型适配优化、通感痛觉描写、规则怪谈、无限流、直播文、末世废土、悬疑推理、种田日常、细节真实感体系（五感/口语化/小动作/食物/环境）、对话写作大师（潜台词/声线/群像/吵架表白告别专项+MBTI 16型对白声线档案+4气质组对照+群戏冲突设计+MBTI情绪表达契合）、开篇钩子工坊（12种爆款开篇/300字生死线/章末钩子库）、情节工程（番茄循环/反转7式/冲突6级/节奏曲线+Dramatica 11拍节拍结构+钩子真假4维判定+伪因果5大典型+节拍×伏笔×角色协同矩阵+章末钩子4型）、读者心理学（代入感/爽点/虐点/弃书TOP10对策）、场景写作（场景四要素/6大类型/进出衔接技巧）、人物弧光（正向弧7阶段/负向弧/关系弧）、长篇连载管理（存稿策略/断更恢复/读者留存）、平台写作规则（起点/飞卢/晋江三大平台写作标准+签约门槛+跨平台改编）、情绪高潮设计（燃/泪/甜/震四类高潮+七步结构+长篇规划+语言温度词库8类热词+冷词库+温度递进原则+MBTI契合）、灵感生成器（8种灵感生成法+人物公式+30个情节模板+灵感仓库管理）、字数统计工具（scripts/word-count-tool.py）。+v5.9新增：描写技法/多线叙事/节奏动力学/世界体系/修改工作流/副线编织法/氛围渲染术/市场战略。+v6.0集成：审计工作流（五专家面板E1-E5/11维评估/6阶段流程/交叉审计CC1-CC6/跨会话状态机）、伏笔库5态状态机、16维事实快照、8类CT一致性检查、Dramatica节拍系统。+v6.1强化：去AI味L1-L4四层硬门禁+L3方法论三节+6类逐句审查判据+段落功能二分法；剧情设计新增钩子真假4维判定+伪因果5大典型+节拍×伏笔×角色协同矩阵+章末钩子4型；上下文流程新增三库协同+5态伏笔状态机详细迁移+跨会话状态机meta_review_log；审计工作流新增spawn/solo双路径+11维×5专家完整映射+Phase 0-5详细操作清单+finding完整schema。+v6.2新增：风格配置系统（8风格维度+7题材路由+风格漂移检测+8典型档位+题材×11维评估器权重调整）；审计工作流强化（评分治理红线P0四禁令+5档band+复评纪律+预算护栏+完整专家输出schema+E3/E5完整角色卡+5专家主审速查）；对话大师集成MBTI 16型对白声线档案；情绪高潮集成语言温度词库（8类热词+冷词库+4类高潮应用）；多线叙事集成16维事实快照完整schema+CT对照+抽取流程。+v7.0新增：技能自进化引擎（SkillOpt六步循环Rollout→Reflect→Aggregate→Select→Update→Evaluate+EditOp有界编辑ADD/DELETE/REPLACE+验证门Validation Gate+学习率预算三档衰减+拒绝编辑缓冲三态迁移+best_skill.md版本管理+五维验证分数D1-D5+训练/验证集70/30隔离+epoch级目录归档）。+v8.0新增：离线自进化引擎（SkillOpt-Sleep四阶段Harvest→Mine→Replay→Consolidate+夜间离线+跨书籍迁移三条件+降级策略四态+归档保留策略+sleep_history索引+Replay三态判定resolved/persistent/regression+模式挖掘频次≥3过滤+会话数<10降级）。+v9.0新增：多目标元优化器（四维帕累托质量×速度×token×留存+composite_score加权公式+Dream-Rollout三步探索Speculate→Rollout→Filter+SlowUpdate EMA慢更新三档α+正则化项巨变预警+元反思五问每10epoch+跨书迁移三模式直接/抽象/能力+增强版验证门四action accept/reject/tie/pareto_dominated+transfer_log.jsonl）。+v10.0新增：自适应技能压缩与零成本部署（SkillOpt distill/compact/cross-benchmark-transfer+Distill蒸馏提取能力骨架+Cross-Benchmark三基准迁移验证bench_A_long/bench_B_short/bench_C_commerce+Compact四类内容差异化处理+Rollback-Guard版本回滚兜底三态accept/accept_with_warning/rollback+Converge终态收敛三判据compact_converged/train_converged/pareto_converged+模块数冻结46+三档部署full/standard/minimal+8k token零成本部署+元能力模块不可压缩+回滚黑名单ban_until+训练降频策略成长期/收敛期/维护期）。触发词包括但不限于：全流程、创作、写小说、写长篇、写短篇、一条龙、开始写、写章节、写正文、写细纲、续写、搭世界观、做人设、发刀、玩梗、去AI味、润色、修衔接、因果分析、全检、状态追踪、断更重启、黄金三章、爽文开头、系统流、番茄爆文、群像、众生相、网文生产、锁稿、审稿、通感痛、白描、克制写作、反差塑造、留白、现实主义、规则怪谈、无限流、末世、废土、悬疑、推理、侦探、直播、种田、日常、模型优化、有味道、写得真、接地气、生活感、实感、克苏鲁、怪谈、快穿、多题材、对话、对白、潜台词、开篇、钩子、情节、反转、节奏、伏笔、读者、代入感、爽点、情绪、场景、人物弧光、连载、起点、飞卢、晋江、平台、字数、高潮、燃、催泪、甜、震惊、灵感、脑洞、卡文、创意、写作瓶颈、描写、动作、环境、外貌、战斗、打斗、多线、POV、视角、时间线、线索、世界体系、力量体系、经济、修改、改文、精修、反馈、副线、支线、氛围、渲染、市场、平台选择、签约、IP、审计、审稿、体检、诊断、专家会诊、多视角审查、质量评估、逐句审查、电报体、解说腔、段落功能二分法、伪因果、机械降神、节拍、Dramatica、伏笔状态机、三库协同、跨会话状态、风格配置、写作风格、定调、题材路由、风格维度、风格统一、声口统一、风格漂移、定档风格、风格档、风格配置文件、统一调性、风格一致性、MBTI、声线档案、温度词、微表情、情绪温度、评分治理、预算护栏、技能压缩、skill compaction、蒸馏、distill、跨基准迁移、版本回滚、零成本部署、minimal skill、技能瘦身、知识沉淀、收敛判定、终态冻结、模块数冻结。 负触发（不要用于）：不要用于从零创建非小说类写作技能（用writing-skills）；不要用于代码注释或技术文档写作（用code-writing）；不要用于诗歌/歌词创作（用creative-writing）；不要用于翻译任务（用translation-skill）。
+triggers:
+  - 全流程
+  - 创作
+  - 写小说
+  - 写短篇
+  - 写长篇
+  - 一条龙
+  - 开始写
+  - 写作
+  - 写章节
+  - 写正文
+  - 写细纲
+  - 续写
+  - 搭世界观
+  - 做人设
+  - 发刀
+  - 玩梗
+  - 去AI味
+  - 润色
+  - 修衔接
+  - 因果分析
+  - 全检
+  - 状态追踪
+  - 断更重启
+  - 黄金三章
+  - 爽文开头
+  - 系统流
+  - 番茄爆文
+  - 群像
+  - 众生相
+  - 网文生产
+  - 锁稿
+  - 审稿
+  - 通感痛
+  - 白描
+  - 克制写作
+  - 反差塑造
+  - 留白
+  - 现实主义
+  - 写痛
+  - 扎心
+  - 对话
+  - 对白
+  - 声线
+  - 潜台词
+  - 开篇
+  - 开头
+  - 钩子
+  - 章节开头
+  - 情节
+  - 剧情
+  - 反转
+  - 节奏
+  - 伏笔
+  - 冲突升级
+  - 读者
+  - 代入感
+  - 爽点
+  - 情绪
+  - 留存
+  - 场景
+  - 场景写作
+  - 人物成长
+  - 人物弧光
+  - 角色变化
+  - 黑化
+  - 洗白
+  - 成长线
+  - 连载
+  - 长篇连载
+  - 更新
+  - 断更恢复
+  - 存稿
+  - 读者留存
+  - 大纲调整
+  - 规则怪谈
+  - 无限流
+  - 末世
+  - 废土
+  - 悬疑
+  - 推理
+  - 侦探
+  - 直播
+  - 种田
+  - 日常
+  - 模型优化
+  - 有味道
+  - 写得真
+  - 接地气
+  - 生活感
+  - 实感
+  - 克苏鲁
+  - 怪谈
+  - 快穿
+  - 多题材
+  - 题材
+  - 高潮
+  - 情绪高潮
+  - 燃
+  - 催泪
+  - 甜
+  - 震惊
+  - 灵感
+  - 脑洞
+  - 卡文
+  - 创意
+  - 写作瓶颈
+  - 描写
+  - 描写技法
+  - 动作
+  - 动作描写
+  - 环境描写
+  - 外貌描写
+  - 战斗
+  - 打斗
+  - 切视角
+  - 多线
+  - POV
+  - 视角切换
+  - 时间线
+  - 闪回
+  - 线索
+  - 铺设伏笔
+  - 回收伏笔
+  - 世界体系
+  - 力量体系
+  - 修炼体系
+  - 等级
+  - 经济
+  - 社会
+  - 势力
+  - 修改
+  - 改文
+  - 精修
+  - 初稿
+  - 改稿
+  - 重写
+  - 反馈
+  - 读者反馈
+  - 副线
+  - 支线
+  - 多线剧情
+  - 氛围
+  - 渲染
+  - 气氛
+  - 悬念
+  - 压抑
+  - 市场
+  - 平台选择
+  - 签约
+  - IP
+  - 商业
+  - 趋势
+  - 风格配置
+  - 写作风格
+  - 定调
+  - 题材路由
+  - 风格维度
+  - 风格统一
+  - 声口统一
+  - 风格漂移
+  - 定档风格
+  - 风格档
+  - 风格配置文件
+  - 统一调性
+  - 风格一致性
+  - MBTI
+  - 声线档案
+  - 温度词
+  - 微表情
+  - 情绪温度
+  - 评分治理
+  - 预算护栏
+  - 训练技能
+  - 自进化
+  - skill evolution
+  - 验证门
+  - 学习率预算
+  - 拒绝编辑缓冲
+  - 回滚技能
+  - 查看缓冲池
+  - 夜间自进化
+  - sleep evolution
+  - 离线训练
+  - 会话收割
+  - 模式挖掘
+  - 任务重放
+  - 技能巩固
+  - skillopt-sleep
+  - 多目标优化
+  - meta optimizer
+  - 帕累托
+  - dream rollout
+  - 做梦探索
+  - 突破探索
+  - 慢更新
+  - SlowUpdate
+  - EMA
+  - 元反思
+  - 训练健康度
+  - 跨书迁移
+  - cross book transfer
+  - 查看帕累托前沿
+  - pareto frontier
+  - 技能压缩
+  - skill compaction
+  - best_skill 压缩
+  - 蒸馏
+  - distill
+  - 跨基准迁移
+  - cross benchmark
+  - 版本回滚
+  - rollback skill
+  - 零成本部署
+  - minimal skill
+  - 蒸馏版
+  - compact skill
+  - 技能瘦身
+  - 知识沉淀
+  - 收敛判定
+  - 终态冻结
+  - 模块数冻结
+  - 证据链
+  - evidence chain
+  - evidence.jsonl
+  - 决策重建
+  - 提示模板注册
+  - prompt registry
+  - user overrides
+  - 用户覆盖
+  - 每晚证据
+  - sleep evidence
+  - 审计重建
+  - replay evidence
+  - 解冻
+  - unfreeze
+  - handoff backend
+  - 交接后端
+  - 无模型 Sleep
+  - 无 API key Sleep
+  - PROMPTS.md
+  - pending.json
+  - exit code 3
+  - fresh-context subagent
+  - 无凭证自进化
+  - 多轮对比反思
+  - contrastive reflection
+  - 失败 vs 成功
+  - 对照样本
+  - 正负样本对照
+  - 通用 Edit
+  - 频次排序
+  - LLM 矿工
+  - llm miner
+  - 智能模式挖掘
+  - 模式抽象
+  - 模式泛化
+  - 频次+置信度双门
+  - 语义聚类
+  - 模式骨架
+  - 观察池
+  - 自主学习率
+  - autonomous LR
+  - lr_autonomous
+  - 动态学习率
+  - accept 率自适应
+  - 学习率自调度
+  - LR 回升
+  - 回升探测
+  - 局部最优逃逸
+  - 技能感知反思
+  - skill-aware reflection
+  - 反思带技能上下文
+  - 按模块反思模板
+  - 技能段定位反思
+  - 段落级 Edit
+  - 语义密度
+  - semantic density
+  - 信息密度门
+  - density gate
+  - 稀薄文本检测
+  - 水分检测
+  - density_score
+  - 暂存预算
+  - staging budget
+  - edit staging
+  - 批量提交
+  - atomic apply
+  - 暂存区
+  - atomic commit
+  - 整批回滚
+  - 交叉冲突检测
+  - 三向切分
+  - 3-way split
+  - 三向门控
+  - meta hold-out
+  - meta 验证集
+  - 三层隔离
+  - meta gate
+  - 过拟合检测
+  - skill 过拟合
+  - 假收敛
+  - meta_score
+  - 二阶收敛
+  - final convergence
+  - 第二阶段终态
+  - 模块数冻结55
+  - 七判据
+  - 解冻七问
+  - 维护期
+  - 季度元反思
+version: 11.0
+last_updated: 2026-07-25
+---
+
+# 小说创作全能工坊 🖋️
+
+> **写小说，从0到完本，一个Skill搞定。**
+> 长篇网文、短篇虐文、番茄爆文、白描写作、规则怪谈、无限流、悬疑推理、末世废土——55套创作工具+模型专属优化+平台适配+审计工作流+技能自进化引擎+夜间离线自进化+多目标元优化+自适应技能压缩+证据链与决策重建+无模型交接后端+多轮对比反思+LLM矿工+自主学习率+技能感知反思+语义密度验证门+暂存与预算+三向切分门控+**v11.0 二阶段终态收敛**，按需加载，即用即走。
+
+---
+
+## 🚨 总纲铁律（6条）
+
+```
+① 不加载外部技能——所有模块已内嵌在 references/modules/ 中
+② 先通过路由表判定任务类型，再跳对应模块
+③ 写作前必须确认：连续性规则+模型优化+去AI味+题材标准+细纲读取
+④ 流程必须走完，不得跳过任何步骤
+⑤ 冲突看裁决表（conflict-fusion模块），不自作主张
+⑥ 写完必须自检，不过不交差
+```
+
+---
+
+## 📋 任务路由表
+
+| 用户说 | 加载模块 |
+|:-------|:---------|
+| "写第X章" / "写下一章" | `core-writing` |
+| "黄金三章" / "爽文开头" | `golden-three` + `core-writing§1.2` |
+| "续写" / "接上文" | `core-writing§1.5（简化版）` |
+| "写细纲" / "写章纲X" | `planning§2.2` |
+| "搭世界观" | `world-characters`（第3章部分） |
+| "做人设" / "反派" / "设计角色" | `world-characters`（第4章部分）|
+| "群像" / "众生相" | `world-characters§4.9` |
+| "做大纲" / "规划剧情" | `planning` |
+| "写短篇" / "短故事" | `short-stories` |
+| "发刀" / "虐文" / "BE" | `angst-writing` |
+| "玩梗" / "加梗" | `memes-trends` |
+| "去AI味" / "润色" | `anti-ai-polish` |
+| "修衔接" | `transitions-causality` |
+| "因果分析" / "逻辑检查" | `transitions-causality` |
+| "查状态" / "更新台账" / "伏笔" | `state-tracking` |
+| "结构设计" / "质检" | `quality-control` |
+| "同人" / "二创" / "OOC" | `fan-fiction` |
+| "网文生产" / "锁稿" / "审稿" | `production-line` |
+| "快速档/标准档/深度档" | `adaptive-scheduling` |
+| "系统流" / "番茄爽文" | `viral-writing§16.3` |
+| "爆文" / "番茄爆款" | `viral-writing` |
+| "白描" / "克制写作" | `restrained-writing`（第17章）|
+| "平庸" / "现实向" | `restrained-writing`（第18章）|
+| "断更重启" | `resume-skill-creation` |
+| "创技能" / "新技能" | `resume-skill-creation` |
+| "仪表盘" / "进度" | `adaptive-scheduling§15.6` |
+| "写痛" / "通感痛" / "扎心" | `pain-synaesthesia` |
+| "热梗" / "更新仓库" | `memes-trends` |
+| "规则怪谈" / "怪谈" / "克苏鲁" | `new-genres§28.1` |
+| "无限流" / "快穿" | `new-genres§28.2` |
+| "直播文" / "直播" / "主播" | `new-genres§28.3` |
+| "末世" / "废土" | `new-genres§28.4` |
+| "悬疑" / "推理" / "侦探" | `new-genres§28.5` |
+| "种田" / "田园" / "日常" | `new-genres§28.6` |
+| "模型优化" / "针对XXX模型" | `model-optimization` |
+| "有味道" / "写得真" / "接地气" / "生活感" | `flavorful-writing` |
+| "写对话" / "对话优化" / "对白" / "潜台词" / "声线" | `dialogue-mastery` |
+| "开篇" / "开头" / "钩子" / "章末钩子" / "第一章" | `opening-hooks` |
+| "情节" / "剧情" / "反转" / "节奏" / "伏笔" / "冲突升级" | `plot-engineering` |
+| "读者" / "代入感" / "爽点" / "情绪" / "弃书" / "留存" | `reader-psychology` |
+| "场景" / "写场景" / "场景设计" / "场景衔接" | `scene-crafting` |
+| "人物成长" / "角色变化" / "弧光" / "黑化" / "洗白" / "转变" | `character-arcing` |
+| "连载" / "长篇连载" / "更新" / "存稿" / "断更恢复" / "读者留存" | `serial-management` |
+| "起点" / "飞卢" / "晋江" / "平台" / "签约" / "上架" / "商业化" | `platform-rules` |
+| "高潮" / "情绪高潮" / "燃" / "催泪" / "甜" / "震惊" | `emotional-climax` |
+| "灵感" / "脑洞" / "卡文" / "创意" / "写作瓶颈" / "没灵感" | `idea-generator` |
+| "描写" / "动作描写" / "环境描写" / "外貌" / "战斗" / "打斗场面" | `descriptive-craft` |
+| "多线" / "POV" / "切视角" / "时间线" / "闪回" / "线索" | `narrative-weaving` |
+| "节奏" / "快慢" / "节奏控制" / "阅读疲劳" / "章节长度" | `pacing-dynamics` |
+| "力量体系" / "修炼等级" / "经济系统" / "势力" / "社会阶层" | `world-systems` |
+| "修改" / "改文" / "精修" / "重写" / "初稿修改" / "读者反馈" | `revision-workflow` |
+| "副线" / "支线" / "感情线" / "多线剧情" / "收束" | `subplot-craft` |
+| "氛围" / "渲染" / "气氛" / "悬念" / "压抑" / "紧张" | `atmosphere-mood` |
+| "市场" / "平台选择" / "签约" / "IP" / "商业" / "趋势" / "短剧" | `market-strategy` |
+| "审计" / "审稿" / "体检" / "诊断" / "专家会诊" / "多视角审查" / "质量评估" | `audit-workflow` |
+| "风格配置" / "写作风格" / "定调" / "题材路由" / "风格漂移" / "风格档" / "风格统一" / "声口统一" / "统一调性" / "风格一致性" | `style-configuration` |
+| "训练技能" / "自进化" / "skill evolution" / "验证门" / "学习率预算" / "拒绝编辑缓冲" / "回滚技能" / "查看缓冲池" | `skill-evolution` |
+| "夜间自进化" / "sleep evolution" / "离线训练" / "会话收割" / "模式挖掘" / "任务重放" / "技能巩固" / "skillopt-sleep" / "查看 sleep 历史" | `sleep-evolution` |
+| "多目标优化" / "meta optimizer" / "帕累托" / "dream rollout" / "做梦探索" / "突破探索" / "慢更新" / "SlowUpdate" / "EMA" / "元反思" / "训练健康度" / "跨书迁移" / "cross book transfer" / "查看帕累托前沿" / "pareto frontier" | `meta-optimizer` |
+| "技能压缩" / "skill compaction" / "best_skill 压缩" / "蒸馏" / "distill" / "跨基准迁移" / "cross benchmark" / "版本回滚" / "rollback skill" / "零成本部署" / "minimal skill" / "蒸馏版" / "compact skill" / "技能瘦身" / "知识沉淀" / "收敛判定" / "终态冻结" / "模块数冻结" | `skill-compaction` |
+| "证据链" / "evidence chain" / "evidence.jsonl" / "决策重建" / "提示模板注册" / "prompt registry" / "user overrides" / "用户覆盖" / "每晚证据" / "sleep evidence" / "审计重建" / "replay evidence" / "解冻" / "unfreeze" | `evidence-chain` |
+| "handoff backend" / "交接后端" / "无模型 Sleep" / "无 API key Sleep" / "PROMPTS.md" / "pending.json" / "exit code 3" / "fresh-context subagent" / "无凭证自进化" / "/skillopt-sleep-handoff" | `handoff-backend` |
+| "多轮对比反思" / "contrastive reflection" / "失败 vs 成功" / "对照样本" / "正负样本对照" / "通用 Edit" / "频次排序" / "multi-rollout" / "对比反思" / "对照组反思" | `contrastive-reflection` |
+| "LLM 矿工" / "llm miner" / "智能模式挖掘" / "模式抽象" / "模式泛化" / "频次+置信度双门" / "语义聚类" / "模式骨架" / "观察池" / "Sleep 矿工升级" / "替代纯频次" | `llm-miner` |
+| "自主学习率" / "autonomous LR" / "lr_autonomous" / "动态学习率" / "accept 率自适应" / "学习率自调度" / "LR 回升" / "回升探测" / "局部最优逃逸" / "训练健康度自适应" | `lr-autonomous` |
+| "技能感知反思" / "skill-aware reflection" / "skill_grounded_reflect" / "反思带技能上下文" / "按模块反思模板" / "reflection grounding" / "技能段定位反思" / "段落级 Edit" / "反思模板路由" | `skill-aware-reflection` |
+| "语义密度" / "semantic density" / "信息密度门" / "density gate" / "novelty per token" / "信息熵验证" / "稀薄文本检测" / "水分检测" / "density_score" / "空心文本" / "论点密度" / "实体密度" | `semantic-density` |
+| "暂存预算" / "staging budget" / "edit staging" / "批量提交" / "atomic apply" / "token 预算" / "时间预算" / "暂存区" / "staging area" / "atomic commit" / "整批回滚" / "交叉冲突检测" | `staging-budget` |
+| "三向切分" / "3-way split" / "三向门控" / "meta hold-out" / "meta 验证集" / "训练/验证/元验证" / "三层隔离" / "meta gate" / "过拟合检测" / "skill 过拟合" / "假收敛" / "meta_score" | `three-way-split` |
+| "二阶收敛" / "final convergence" / "第二阶段终态" / "模块数冻结55" / "七判据" / "解冻七问" / "维护期" / "季度元反思" / "v11.0 收敛" / "二阶段收敛判定" | `skill-compaction§46.14` |
+| 模糊指令 | 追问 |
+
+---
+
+## 📦 模块索引
+
+所有模块文件位于 `references/modules/`，按需加载即可。
+
+| 模块 | 文件 | 内容 | 适用场景 |
+|:-----|:-----|:-----|:---------|
+| 📝 长篇正文 | `core-writing.md` | 6步流程：读取状态→写正文→优化→同步→每5章更新→每10章因果 | 日常写章节 |
+| 📐 大纲与细纲 | `planning.md` | 总大纲模板+单章细纲+文件管理+9维全检 | 规划剧情 |
+| 🏛️ 世界观与人物 | `world-characters.md` | 八维世界观+五维人物骨架+群像引擎+反派设计+跨卷弧光 | 搭设定、做人设 |
+| 📖 短篇故事 | `short-stories.md` | 字数结构+黄金开篇+人物三维+冲突升级+核心意象+结尾七选一 | 写短篇 |
+| 💔 虐心写作 | `angst-writing.md` | 日常化死亡+开放式BE+人设反转+刀力评分+节奏铁律 | 发刀、BE |
+| 🔥 玩梗与热梗 | `memes-trends.md` | 梗分类+融入技法+热梗仓库管理+6小时更新规则 | 搞笑、沙雕 |
+| ✨ 去AI味 | `anti-ai-polish.md` | 六大门禁+三刀流+八类必查+分级处理+检测报告+模型感知去AI味 | 润色、改文 |
+| 🔗 衔接与因果 | `transitions-causality.md` | 断裂等级修复+水文处理+因果链分析+信息差分析 | 修衔接、逻辑检查 |
+| 📊 状态追踪 | `state-tracking.md` | 上下文追踪+记忆台账+伏笔管理+对话记忆 | 查状态、追伏笔 |
+| ✅ 质量门控 | `quality-control.md` | 体量适配+三层质检（字词/句段/篇章） | 质检、错别字 |
+| 🎭 同人创作 | `fan-fiction.md` | 同人6阶段+OOC量化评分+历史考据+读者模拟 | 二创、AU |
+| 🏭 网文生产 | `production-line.md` | 14节点生产流程+反方审稿+锁稿6条件 | 锁稿、审稿、交接 |
+| ⚡ 自适应调度 | `adaptive-scheduling.md` | 三档切换+6种触发检测+仪表盘+执行预览 | 快速/标准/深度档 |
+| 🚀 番茄爆文 | `viral-writing.md` | 平台认知+标题公式+导语模板+八步法+脑洞+数据评级 | 爆款、系统流 |
+| 🖋️ 白描与平庸 | `restrained-writing.md` | 双线叙事+反差塑造+物象象征+留白克制+细节定锚+代际叙事 | 白描、现实向 |
+| 🔄 断更与技能创建 | `resume-skill-creation.md` | 断更4步恢复+技能创建流程 | 断更重启、创技能 |
+| 🏆 黄金三章 | `golden-three.md` | 三章逐章标准+字数完读率目标 | 爽文开头 |
+| ⚖️ 冲突裁决与三法融合 | `conflict-fusion.md` | 跨规则冲突裁决+爽文/白描/平庸三法融合对照表 | 规则冲突、多法融合 |
+| 🌊 通感痛觉描写 | `pain-synaesthesia.md` | 通感四式+六大原型+三段式递进+剂量管控+意象库+多题材适配 | 写痛、扎心、隐痛 |
+| 🧠 模型适配优化 | `model-optimization.md` | 6大模型分支+负面提示专属+模型-题材匹配矩阵+跨模型触发器 | 针对不同模型优化写作 |
+| 🎨 多题材写作模板 | `new-genres.md` | 规则怪谈/无限流/直播文/末世废土/悬疑推理/种田日常/跨题材融合 | 尝试新题材 |
+| 🌟 细节真实感体系 | `flavorful-writing.md` | 五感缺失检测+口语化技术+小动作体系+环境互动+食物描写+具体化技术 | 写得更真更有味 |
+| 💬 对话写作大师 | `dialogue-mastery.md` | 对话8大功能/语速4档/潜台词3级/声线5维/动作穿插/群像管理/AI对话修正 | 写对话、对白 |
+| 🎣 开篇钩子工坊 | `opening-hooks.md` | 12种爆款开篇/300字生死线/章首衔接5式/章末钩子4型/黄金第一章清单 | 开篇、钩子 |
+| 🔧 情节工程 | `plot-engineering.md` | 番茄循环/起点卷轴/密度4档/反转7式/伏笔回收/冲突6级/节奏曲线 | 情节、节奏 |
+| 🧠 读者心理学 | `reader-psychology.md` | 情绪闭环/代入感三要素/爽点心理学/虐点公式/弃书TOP10/情绪仪表盘 | 读者留存 |
+| 🎬 场景写作 | `scene-crafting.md` | 场景四要素/六大场景类型/场景进出技巧/场景衔接/内部节奏/AI味自查 | 场景设计、场景衔接 |
+| 🔄 人物弧光 | `character-arcing.md` | 正向弧七阶段/负向弧五阶段/扁平弧/关系弧/多人物弧光交织/弧光一致性检查 | 人物成长、角色变化 |
+| 📅 长篇连载管理 | `serial-management.md` | 存稿策略/更新节奏/滚动大纲/读者留存/断更恢复/大纲调整/连载AI味自查 | 连载、更新、存稿 |
+| 🏢 平台写作规则 | `platform-rules.md` | 起点/飞卢/晋江三大平台读者画像/题材偏好/前三章/签约标准/风格/跨平台适配 | 起点、飞卢、晋江、平台 |
+| 🔥 情绪高潮设计 | `emotional-climax.md` | 四大高潮类型(燃/泪/甜/震)/高潮公式/七步结构/题材匹配/长篇高潮规划 | 高潮、燃、催泪、甜 |
+| 💡 灵感生成器 | `idea-generator.md` | 8种灵感生成法/人物公式/30个情节模板/世界观公式/灵感评估清单 | 脑洞、创意、卡文 |
+| ✍️ 描写技法 | `descriptive-craft.md` | 动作三拍式/环境五感矩阵/外貌三原则/战斗三秒规则/细节具象化/AI味自查 | 动作、环境、战斗、外貌 |
+| 🧵 多线叙事 | `narrative-weaving.md` | POV三大视角/切换规则/平行汇流回溯三结构/时间锚点/线索铺设回收 | 多线、POV、时间线、闪回 |
+| ⏱️ 节奏动力学 | `pacing-dynamics.md` | 三档基础节奏/四级密度标准/读者疲劳曲线/长短章交替/题材节奏模板 | 节奏、快慢、阅读疲劳 |
+| 🌍 世界运转体系 | `world-systems.md` | 力量等级设计/经济系统/政治势力三角/组织设计/社会阶层/编年史冰山原则 | 力量体系、等级、经济 |
+| 🔨 修改工作流 | `revision-workflow.md` | 四层修改(结构→章节→句子→校对)/打乱重排法/五问法/七刀精修/读者反馈分级 | 修改、改文、精修、重写 |
+| 🧶 副线编织法 | `subplot-craft.md` | 四大副线类型(浪漫/成长/阴谋/日常)/主副线比例/副线生命周期/支线轮换 | 副线、支线、感情线 |
+| 🌫️ 氛围渲染术 | `atmosphere-mood.md` | 五种基础氛围(压抑/紧张/温暖/诡异/悲伤)/构建三阶段/三叠法/氛围反转 | 氛围、渲染、悬念、压抑 |
+| 📊 市场战略 | `market-strategy.md` | 平台格局/读者画像分层/差异化三问/竞争分析/平台选择/IP评估/短剧化特征 | 市场、平台、签约、IP |
+| 🔍 审计工作流 | `audit-workflow.md` | 五专家面板(E1-E5)/11维评估/6阶段流程/交叉审计/跨会话状态机/评分治理红线/预算护栏/完整专家schema | 审计、审稿、体检、诊断 |
+| 🎨 风格配置系统 | `style-configuration.md` | 8风格维度+7题材路由+8典型档位+风格漂移检测+题材×11维评估器权重调整 | 风格配置、定调、题材路由、风格统一 |
+| 🧬 技能自进化引擎 | `skill-evolution.md` | SkillOpt六步循环(Rollout→Reflect→Aggregate→Select→Update→Evaluate)+EditOp有界编辑(ADD/DELETE/REPLACE)+验证门+学习率预算+拒绝编辑缓冲+best_skill版本管理 | 训练技能、自进化、验证门、回滚、缓冲池 |
+| 😴 离线自进化引擎 | `sleep-evolution.md` | SkillOpt-Sleep四阶段(Harvest→Mine→Replay→Consolidate)+夜间离线+跨书籍迁移+降级策略+归档保留+sleep_history索引 | 夜间自进化、会话收割、模式挖掘、任务重放、技能巩固 |
+| 🎯 多目标元优化器 | `meta-optimizer.md` | 四维帕累托(质量×速度×token×留存)+Dream-Rollout探索+SlowUpdate EMA慢更新+元反思五问+跨书迁移三模式+增强版验证门 | 多目标优化、帕累托、dream rollout、慢更新、元反思、跨书迁移 |
+| 📦 自适应技能压缩 | `skill-compaction.md` | Distill蒸馏+Cross-Benchmark三基准迁移+Compact四类差异化+Rollback-Guard版本回滚+Converge终态收敛+三档部署(full/standard/minimal)+8k token零成本部署 | 技能压缩、蒸馏、跨基准迁移、版本回滚、零成本部署、收敛判定 |
+| 🔗 证据链与提示注册 | `evidence-chain.md` | 每夜evidence.jsonl五阶段链(harvest/mine/replay/reflect/gate)+hash完整性+prompt-template registry+user overrides三态+决策重建replay-evidence+解冻五问 | 证据链、决策重建、提示词覆盖、审计重建、解冻 |
+| 🤝 Handoff Backend 交接后端 | `handoff-backend.md` | 无模型/API key的Sleep+PROMPTS.md/pending.json+exit code 3协议+无状态恢复+mined tasks每夜锁定+fresh-context subagent保护held-out gate+3-6轮/夜 | 交接后端、无凭证自进化、无API key Sleep、PROMPTS.md |
+| 🔀 多轮对比反思 | `contrastive-reflection.md` | 失败vs成功配对+七维差异特征提取+频次≥3聚合+token/时间预算三档+通用Edit(scope=universal)+与v7.0并行 | 对比反思、失败vs成功、通用Edit、频次排序 |
+| ⛏️ LLM 矿工 | `llm-miner.md` | 语义聚类(LLM判定同义)+抽象(模式骨架)+泛化(适用范围)+频次≥3 AND LLM置信度≥0.7双门+观察池三夜升级 | LLM矿工、智能模式挖掘、模式抽象、语义聚类、双门过滤 |
+| 📈 自主学习率 | `lr-autonomous.md` | accept率滑动窗口(N=10)+四档multiplier(1.2/1.0/0.8/2.0)+LR回升探测(持续低accept触发)+局部最优逃逸+状态机(NORMAL/PROBING/ESCAPED/STUCK) | 自主学习率、动态LR、accept率自适应、回升探测、局部最优逃逸 |
+| 🎯 技能感知反思 | `skill-aware-reflection.md` | skill_section_anchor段落定位+按模块族路由4模板(writing/evolution/audit/data)+段落级Edit(target_skill_section+old_text+new_text)+grounding_skill_hash校验+与v7.0/v10.3并行协同 | 技能感知反思、反思带技能上下文、段落级Edit、技能段定位、反思模板路由 |
+| 🌡️ 语义密度验证门 | `semantic-density.md` | 三维密度(info_entropy+entity_density+claim_density)+四态门控(ACCEPT/ACCEPT_WITH_WARNING/REJECT_DILUTE/REJECT_HOLLOW)+稀薄段定位+watermark追溯+与v7.0串联+v10.6反思协同 | 语义密度、信息密度门、稀薄文本检测、水分检测、density_score、空心文本 |
+| 📦 暂存与预算 | `staging-budget.md` | 三预算(token/time/count)+暂存区状态机(STAGING→CHECKING→APPLYING→COMMITTED/ROLLED_BACK)+五类冲突检测(同段/矛盾/累计越界/引用断裂/结构破坏)+atomic apply+整批回滚+与v7.0Update/v10.6反思/v10.7密度协同 | 暂存预算、批量提交、atomic apply、整批回滚、交叉冲突检测、暂存区 |
+| 🪞 三向切分门控 | `three-way-split.md` | 60/20/20切分(train/val/meta-hold-out)+meta仅3场景查询+过拟合信号(val升meta停滞→回滚)+4态判定(过拟合/真提升/双停滞/异常)+meta_converged加Converge第4判据+假收敛检测 | 三向切分、meta hold-out、过拟合检测、假收敛、meta_score、三层隔离 |
+| 🏁 **v11.0 二阶段终态收敛** | `skill-compaction.md§46.14-46.15` | 七判据(compact/train/pareto/evidence/reflection/gate/meta)+FinalConvergeResult+模块数冻结55+维护期(训练每月/Sleep每周/Dream季度/元反思季度)+三档重切(full36k/standard18k/minimal8k)+解冻七问(加严:55协同饱和+meta-hold-out非过拟合) | 二阶收敛、final convergence、第二阶段终态、模块数冻结55、七判据、解冻七问、维护期、季度元反思 |
+
+---
+
+## ⚖️ 跨规则冲突裁决
+
+```
+对话占比≥50% vs 标签≤40% → 多用动作穿插，对话≥40%
+句号≤30% vs 短句快节奏 → 短句用逗号+破折号
+爽点密度 vs 剧情推进 → 爽点服务于剧情
+世界观 vs 剧情需要 → 世界观优先
+去AI味 vs 角色风格 → 角色风格优先（口头禅不可删）
+HE+三级刀 → HE只能用微小缺口
+OOC vs AU自由 → AU内标注后允许
+考据 vs 创作自由 → 强制标注AU/架空
+白描留白 vs 爽文钩子 → 按题材选，可融合
+平庸不解决 vs 爽文打脸 → 按题材选
+快速档 vs 深度质检 → 按章节分类自动选档
+系统流短章 vs 通用2000字 → 按任务类型选标准
+三笔活人 vs 五维骨架 → 生态层用三笔，核心层用五维
+白描法 vs 爽文法 → 开篇爽文→中段白描→结尾催泪可融合
+平庸书写 vs 虐心写作 → 平庸写日常磨损，虐心写戏剧破碎
+通感痛觉 vs 虐心写作 → 通感痛觉写日常隐痛，虐心写作写戏剧大悲，可递进联动
+模型优化 vs 基础写作 → 先按模型优化调整策略，再执行基础写作
+描写技法 vs 节奏控制 → 关键场面用描写，推进情节用节奏，描写不拖慢关键剧情
+多线叙事 vs 代入感 → 多线叙事中首尾用主角POV保代入感，中间段可切他人POV
+氛围渲染 vs 信息密度 → 氛围章节降低信息密度，信息章节压缩氛围
+修改流程 vs 更新压力 → 日更模式只做L2-L3修改，周更模式做L1-L4全流程
+```
+
+---
+
+## 🛡️ 安全边界
+
+- **不动源文件**：写作前必须读取状态文件，但不覆盖/删除用户原始数据
+- **不自作主张**：所有关键决策（大纲方向、剧情转折、人物命运）必须等用户确认
+- **不泄露隐私**：不将用户的小说内容、人设、世界观写入公开文件
+- **不越权操作**：不自动删除/修改用户已有的创作文件
+- **断更重启不破坏上下文**：只读取和恢复，不清空任何已有数据
+
+---
+
+## 📂 文件结构
+
+```
+novel-creation-omnibus/
+├── SKILL.md                          # 主路由文件（任务调度+模块索引）
+├── README.md                         # 安装说明与展示
+├── CHANGELOG.md                      # 版本更新记录
+├── LICENSE                           # MIT
+├── examples/
+│   └── test-prompts.json             # 测试用例
+├── assets/                           # 截图/GIF（待补充）
+├── scripts/
+│   ├── novel-tools.py                # 章节验证/字数统计/大纲生成
+│   ├── word-count-tool.py            # 字数统计与分析工具
+│   └── install.sh                    # 一键安装脚本
+└── references/modules/
+    ├── core-writing.md               # 长篇正文写作
+    ├── planning.md                   # 大纲与细纲
+    ├── world-characters.md           # 世界观与人物
+    ├── short-stories.md              # 短篇创作
+    ├── angst-writing.md              # 虐心写作
+    ├── memes-trends.md               # 玩梗与热梗
+    ├── anti-ai-polish.md             # 去AI味（含模型感知）
+    ├── transitions-causality.md      # 衔接与因果
+    ├── state-tracking.md             # 状态追踪
+    ├── quality-control.md            # 质量门控
+    ├── fan-fiction.md               # 同人创作
+    ├── production-line.md            # 网文生产
+    ├── adaptive-scheduling.md        # 自适应调度
+    ├── viral-writing.md              # 番茄爆文
+    ├── restrained-writing.md         # 白描与平庸
+    ├── resume-skill-creation.md      # 断更与技能创建
+    ├── golden-three.md               # 黄金三章
+    ├── conflict-fusion.md            # 冲突裁决与三法融合
+    ├── pain-synaesthesia.md          # 通感痛觉描写
+    ├── model-optimization.md         # 模型适配优化（v5.4）
+    ├── new-genres.md                 # 多题材写作模板（v5.4）
+    ├── flavorful-writing.md          # 细节真实感体系（v5.4）
+    ├── dialogue-mastery.md           # 对话写作大师（v5.5）
+    ├── opening-hooks.md              # 开篇钩子工坊（v5.5）
+    ├── plot-engineering.md           # 情节工程（v5.5）
+    ├── reader-psychology.md          # 读者心理学（v5.5）
+    ├── scene-crafting.md             # 场景写作（v5.6）
+    ├── character-arcing.md           # 人物弧光（v5.6）
+    ├── serial-management.md          # 长篇连载管理（v5.6）
+    ├── platform-rules.md             # 平台写作规则（v5.7）
+    ├── emotional-climax.md           # 情绪高潮设计（v5.8）
+    ├── idea-generator.md             # 灵感生成器（v5.8）
+    ├── descriptive-craft.md          # 描写技法（v5.9）
+    ├── narrative-weaving.md          # 多线叙事（v5.9）
+    ├── pacing-dynamics.md            # 节奏动力学（v5.9）
+    ├── world-systems.md              # 世界运转体系（v5.9）
+    ├── revision-workflow.md          # 修改工作流（v5.9）
+    ├── subplot-craft.md              # 副线编织法（v5.9）
+    ├── atmosphere-mood.md            # 氛围渲染术（v5.9）
+    ├── market-strategy.md            # 市场战略（v5.9）
+    ├── audit-workflow.md             # 审计工作流（v6.0 集成，v6.2 强化）
+    ├── style-configuration.md        # 风格配置系统（v6.2 新增）
+    ├── skill-evolution.md            # 技能自进化引擎（v7.0 新增，SkillOpt 集成）
+    ├── sleep-evolution.md            # 离线自进化引擎（v8.0 新增，SkillOpt-Sleep 集成）
+    ├── meta-optimizer.md             # 多目标元优化器（v9.0 新增，帕累托+Dream+EMA）
+    ├── skill-compaction.md           # 自适应技能压缩（v10.0 新增，Distill+Compact+Rollback+Converge）
+    ├── evidence-chain.md             # 证据链与提示注册（v10.1 新增，解冻后第47个模块）
+    ├── handoff-backend.md            # Handoff Backend 交接后端（v10.2 新增，第48个模块）
+    ├── contrastive-reflection.md     # 多轮对比反思（v10.3 新增，第49个模块）
+    ├── llm-miner.md                  # LLM 矿工（v10.4 新增，第50个模块）
+    ├── lr-autonomous.md              # 自主学习率（v10.5 新增，第51个模块）
+    ├── skill-aware-reflection.md     # 技能感知反思（v10.6 新增，第52个模块）
+    ├── semantic-density.md           # 语义密度验证门（v10.7 新增，第53个模块）
+    ├── staging-budget.md             # 暂存与预算（v10.8 新增，第54个模块）
+    ├── three-way-split.md            # 三向切分门控（v10.9 新增，第55个模块）
+    └── skill-compaction.md§46.14-46.15  # v11.0 二阶段终态收敛（模块数冻结55，不新增功能模块）
+```

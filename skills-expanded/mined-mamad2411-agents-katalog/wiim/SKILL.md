@@ -1,0 +1,521 @@
+# WiiM Home Assistant Integration - Development Rules
+
+## Documentation
+
+- **Developer Guide**: See `/development/README.md` for architecture and contribution guidelines
+- **Testing Guide**: See `/development/TESTING.md` for test requirements and examples
+- **HA Integration Guide**: See `/development/HA_INTEGRATION_GUIDE.md` for Home Assistant specific patterns (references upstream guides)
+- **User Documentation**: See `/docs/` for user-facing guides
+
+**Do not create new documentation files without being explicitly asked.**
+
+**Always reference upstream pywiim documentation** (see "Reference Upstream Documentation" section below) instead of duplicating content.
+
+## CRITICAL: Do not edit pywiim from this workspace
+
+When working on **this** WiiM **Home Assistant integration** repository only:
+
+- **Never** modify files under a **separate pywiim checkout** (e.g. `../pywiim`, `core/pywiim`, or any path outside `custom_components/wiim` / this repo’s integration code).
+- **Use released pywiim**: `pip install pywiim==<version>`, keep `manifest.json` and `custom_components/wiim/pywiim-version.txt` in sync.
+- **Library bugs / new APIs** → fix in **[mjcumming/pywiim](https://github.com/mjcumming/pywiim)** in that repo, release, then bump the pin here.
+
+Human-readable policy: **docs/DEVELOPMENT-RULES.md — Rule 2c**.
+
+## CRITICAL: Never Work Around pywiim Issues
+
+**NEVER create workarounds or fallbacks in the HA integration for missing pywiim functionality.**
+
+If pywiim is not providing something it should (like EQ capabilities, available presets, etc.):
+
+1. **FIX IT IN PYWIIM** - Go fix the pywiim library directly
+2. **DO NOT** add fallback detection logic in the HA integration
+3. **DO NOT** add conditional checks for "if pywiim doesn't provide X, try Y"
+4. **DO NOT** work around pywiim bugs with HA integration code
+
+### Why This Matters
+
+- pywiim is THE source of truth for device capabilities
+- Working around pywiim issues creates technical debt
+- Fixes belong in pywiim so ALL users benefit
+- The HA integration should be a thin wrapper, not compensating for pywiim
+
+### Examples of What NOT To Do
+
+❌ **WRONG:**
+
+```python
+def _is_eq_supported(self) -> bool:
+    # Check capabilities first
+    if capabilities.get("supports_eq"):
+        return True
+    # Fallback: check if player has presets (WORKAROUND)
+    if player.available_eq_presets:
+        return True
+```
+
+✅ **RIGHT:**
+
+```python
+def _is_eq_supported(self) -> bool:
+    # pywiim MUST provide this via capabilities
+    return capabilities.get("supports_eq", False)
+```
+
+If pywiim doesn't set `supports_eq` correctly → **FIX PYWIIM**
+
+### When You Discover a pywiim Issue
+
+1. Document it clearly
+2. Create a test case that demonstrates the issue
+3. Fix it in pywiim
+4. Update pywiim dependency version
+5. Remove any temporary workarounds from HA integration
+
+## Reference Upstream Documentation
+
+**ALWAYS reference upstream pywiim documentation guides instead of duplicating content.**
+
+**CRITICAL: Before writing any code that uses pywiim, you MUST review the pywiim API and HA integration documentation.**
+
+### Required Documentation Review
+
+**Before writing or modifying code that uses pywiim:**
+
+1. **MUST review** `/development/HA_INTEGRATION_GUIDE.md` for Home Assistant integration patterns
+2. **MUST review** the upstream [HA Integration Guide](https://github.com/mjcumming/pywiim/blob/main/docs/integration/HA_INTEGRATION.md) for detailed patterns
+3. **MUST review** the upstream [API Reference](https://github.com/mjcumming/pywiim/blob/main/docs/integration/API_REFERENCE.md) for API documentation
+4. **DO NOT** write code based on assumptions about pywiim API behavior
+5. **DO NOT** guess attribute names, method signatures, or data structures - check the docs first
+
+**This applies to:**
+
+- Using any `player.*` attributes or methods
+- Using any `client.*` methods
+- Accessing capabilities or device information
+- Working with presets, EQ, groups, or any pywiim features
+- Any code that interacts with pywiim Player or Client objects
+
+When working with pywiim integration patterns or API usage:
+
+1. **Reference** `/development/HA_INTEGRATION_GUIDE.md` for Home Assistant integration patterns
+2. **Reference** the upstream [HA Integration Guide](https://github.com/mjcumming/pywiim/blob/main/docs/integration/HA_INTEGRATION.md) for detailed patterns
+3. **Reference** the upstream [API Reference](https://github.com/mjcumming/pywiim/blob/main/docs/integration/API_REFERENCE.md) for API documentation
+4. **DO NOT** duplicate upstream documentation content in this repository
+5. **DO NOT** create local copies of upstream guides (they become stale)
+
+**When pywiim version is updated:**
+
+1. **Update** the review date in `/development/HA_INTEGRATION_GUIDE.md`
+2. **Update** the pywiim version tracked in that file (if documented)
+3. **Check** if upstream guides have changed and note any breaking changes
+4. **Update** `manifest.json` with the new minimum pywiim version requirement
+5. **Document** in CHANGELOG.md the pywiim version update
+
+**Why:**
+
+- Upstream documentation is maintained alongside library changes
+- Prevents documentation drift and stale information
+- Single source of truth reduces maintenance burden
+- Version tracking ensures compatibility awareness
+
+## File Naming Conventions
+
+- No underscores in directory or file names
+- Use hyphens for multi-word names: `eq-detection.md`, not `eq_detection.md`
+- Document files: YYYY.MM.DD format preferred
+
+## Home Assistant Automation Style
+
+- One automation per file
+- No dash before `id` field (avoid `- id:`)
+
+## Project Structure
+
+- Core functionality in `/custom_components/wiim/`
+- Tests in `/tests/` with proper fixtures
+- Documentation in `/docs/`
+- Keep integration simple - complexity belongs in pywiim
+
+## Logging Philosophy
+
+- Use appropriate log levels:
+  - DEBUG: Normal operation details
+  - INFO: State changes, setup completion
+  - WARNING: Recoverable issues, deprecated features
+  - ERROR: Actual problems requiring attention
+- Include device name in log messages: `[Device Name] message`
+- Log pywiim capability detection results for debugging
+
+## Testing Requirements
+
+- **CRITICAL: Always add tests for new code** - Codecov requires 75% patch coverage
+  - Every new function, method, or feature must have corresponding tests
+  - Every code change must include tests for the modified functionality
+  - Codecov will fail if new/changed code lacks test coverage
+  - Patch coverage (new code) is separate from project coverage (overall)
+  - **NEVER skip writing tests to "fix Codecov later"** - tests must be written WITH the code
+- Test pywiim integration, not device hardware
+- Mock pywiim Player and Client objects
+- Test error handling and edge cases
+- No integration tests that require actual hardware
+- When adding new code:
+  1. Write the code
+  2. Write tests for the new code immediately
+  3. Ensure all new lines are covered by tests
+  4. **ALWAYS test locally before pushing** - Run `./scripts/check-before-push.sh` or `pytest --cov` to verify everything works
+  5. **NEVER push with `--no-verify`** unless explicitly debugging CI infrastructure
+  6. **NEVER push to see if it works** - fix issues locally first
+
+### Codecov Patch Coverage Requirements
+
+**CRITICAL: Codecov enforces 77.40% patch coverage (as of Dec 2025)**
+
+**What is patch coverage?**
+
+- Patch coverage = coverage of NEW or CHANGED lines in a PR/commit
+- This is separate from overall project coverage
+- Codecov compares your changes against the baseline commit
+
+**What happens if patch coverage is too low?**
+
+- CI will fail with: `**28.20% of diff hit (target 77.40%)**`
+- The release process will be blocked
+- You cannot merge until coverage is fixed
+
+**Common causes of low patch coverage:**
+
+1. **Adding new code without tests** - Most common! Every new function/method needs tests
+2. **Skipping tests for "complex" code** - No exceptions! Complex code needs MORE tests
+3. **Error paths not tested** - If you add error handling, test it!
+4. **Conditional logic not fully covered** - Test all branches (if/else, try/except)
+5. **Disabled code still counts** - Even if a function is `pass`, it needs a test
+
+**How to fix low patch coverage:**
+
+1. Identify uncovered lines: `pytest --cov=custom_components/wiim --cov-report=term-missing`
+2. Write tests for ALL uncovered lines
+3. Test both success and error paths
+4. Test edge cases (None, empty lists, invalid inputs)
+5. Re-run coverage until >77.40%
+
+**Example: Join service fix (Dec 2025)**
+
+- Added new coordinator lookup logic → Needed 5+ new tests
+- Added error handling paths → Each error path needed a test
+- Result: Coverage went from 28.20% → 77%+ after adding comprehensive tests
+
+**Golden Rule: If you write code, you MUST write tests. No exceptions.**
+
+### Real-World Testing for pywiim Updates
+
+**CRITICAL: When pywiim library is updated, real-world tests must be run for affected functionality.**
+
+**Why:**
+
+- pywiim has its own unit tests, but real-world integration testing catches issues that unit tests miss
+- API format bugs (like `line_in` vs `line-in`) can silently fail - device accepts command but doesn't work
+- End-to-end testing verifies the full integration path works correctly
+
+**When to run real-world tests:**
+
+1. **ALWAYS** when pywiim version is updated in `manifest.json` or `requirements.txt`
+2. **ALWAYS** when CHANGELOG mentions pywiim bug fixes or new features
+3. **ALWAYS** for functionality that affects user-visible behavior (source selection, playback, volume, etc.)
+4. **ALWAYS** for API format changes or normalization fixes
+
+**What to test:**
+
+- Review pywiim CHANGELOG to identify what changed
+- Run `scripts/test-automated.py` with FULL_TESTS (or at minimum, test affected areas)
+- Source selection is included in FULL_TESTS - **must be tested** when pywiim source handling changes
+- Test the specific functionality mentioned in the pywiim update
+
+**Real-World Test Suite:**
+
+- Located in `scripts/test-automated.py`
+- `CRITICAL_TESTS`: Fast tests run before every release (device discovery, playback, volume, state sync)
+- `FULL_TESTS`: Comprehensive tests including source selection, multiroom, EQ, etc.
+- Source selection is in FULL_TESTS (not critical path) - run when pywiim source handling changes
+
+**Practice:**
+
+- Don't duplicate pywiim's unit tests (they test pywiim library)
+- DO run real-world integration tests when pywiim updates affect functionality
+- Document in CHANGELOG which areas were tested for each pywiim update
+- If a pywiim bug fix addresses a specific issue, test that specific functionality
+
+**Example:**
+
+- pywiim 2.1.57 fixes source selection (`line-in` format) → Run `test-automated.py` with source_selection test
+- pywiim 2.1.56 fixes playlist clearing → Run queue_management test
+- pywiim adds new EQ feature → Run eq_control test
+
+## Code Quality
+
+- Type hints required
+- Docstrings for public methods
+- Follow Home Assistant development guidelines
+- Keep methods focused and single-purpose
+
+## Documentation Files
+
+**CRITICAL: Do not create documentation files unless explicitly requested or needed for long-term reference.**
+
+### Documentation Rules
+
+1. **Do NOT create "progress" or "summary" files**
+
+   - ❌ No "TEST-SUITE-SUMMARY.md", "COVERAGE-PROGRESS.md", "FINAL-SUMMARY.md"
+   - ❌ No "look what I did" documentation
+   - ❌ No temporary status files
+   - ❌ No session summaries
+   - ✅ Update existing documentation instead
+
+2. **Only create documentation when:**
+
+   - ✅ Explicitly requested by user
+   - ✅ Needed for long-term reference (architecture, rules, guides)
+   - ✅ Replacing/consolidating existing documentation
+   - ✅ User-facing documentation (user guides, FAQs)
+
+3. **Update existing files instead:**
+
+   - ✅ Update `tests/README.md` with test info
+   - ✅ Update `docs/TESTING-CONSOLIDATED.md` with testing strategy
+   - ✅ Update `docs/ARCHITECTURE.md` with architecture changes
+   - ✅ Update `docs/DEVELOPMENT-RULES.md` with new rules
+
+4. **Use Git for progress tracking:**
+
+   - ✅ Git commits for progress
+   - ✅ Test output for status (`pytest --cov`)
+   - ✅ CI/CD reports for coverage
+   - ❌ Don't create files for status updates
+
+5. **Documentation structure:**
+   - `/docs/` - User and developer documentation (long-term reference only)
+   - `/tests/README.md` - Test quick reference only
+   - `/development/` - Developer guides
+   - Code comments and docstrings - Inline documentation
+
+### When to Create vs Update
+
+**Create new file only if:**
+
+- It's a completely new topic not covered elsewhere
+- User explicitly requests it
+- It's replacing multiple redundant files
+
+**Update existing file if:**
+
+- Information belongs in an existing document
+- It's a status update or progress report
+- It's temporary or session-specific information
+
+**Examples:**
+
+- ❌ Creating `TEST-SUITE-COMPLETE.md` when `tests/README.md` exists
+- ✅ Updating `tests/README.md` with new test information
+- ❌ Creating `COVERAGE-PROGRESS.md` for status updates
+- ✅ Running `pytest --cov` to see coverage (no file needed)
+- ❌ Creating `FINAL-SUMMARY.md` for session summary
+- ✅ Using git commits and test results for progress tracking
+
+**See `docs/DOCUMENTATION-GUIDELINES.md` and `docs/DOCUMENTATION-BEST-PRACTICES.md` for detailed guidance.**
+
+## Dependencies
+
+- pywiim is the ONLY library for WiiM device communication
+- Use Home Assistant's shared aiohttp session
+- No direct device HTTP calls - always through pywiim
+
+## pywiim API Usage
+
+Always use pywiim's actual attribute names:
+
+### EQ Control
+
+- **Capability**: `capabilities.get("supports_eq")` (NOT "eq_supported")
+- **Presets list**: `player.eq_presets` (NOT "available_eq_presets")
+- **Current preset**: `player.eq_preset`
+- **Set preset**: `await player.set_eq_preset(name.lower())`
+
+### Group/Multiroom
+
+**Device API = Source of Truth:**
+
+- **Check group state**: `player.is_master`, `player.is_slave`, `player.is_solo` (booleans)
+- **Role string**: `player.role` ("master"/"slave"/"solo")
+- **Get slave info**: `await player.client.get_device_group_info()`
+
+**Group object = Player references for operations:**
+
+- `player.group.master` - Player object reference to master
+- `player.group.slaves` - list[Player] for operations
+- `player.group.all_players` - list[Player] for operations
+- **WARNING**: These require `player_finder` callback to be populated!
+
+**How to check if device has slaves:**
+
+- ✅ Check `player.is_master` (boolean, preferred)
+- ✅ Check `player.role == "master"` (string alternative)
+- ❌ DO NOT check `len(player.group.all_players) > 1` (requires player_finder)
+
+**Enable group operations:**
+
+- ✅ Provide `player_finder` callback when creating Player
+- This allows pywiim to link Player objects into `group.all_players`
+
+### Common Mistakes to Avoid
+
+❌ `player.available_eq_presets` - Does not exist
+❌ `capabilities.get("eq_supported")` - Wrong key name
+❌ `player.group.slaves` - Exists but not populated, use `all_players` instead
+✅ `player.eq_presets` - Correct
+✅ `capabilities.get("supports_eq")` - Correct
+✅ `player.group.all_players` - Correct
+
+## Release Workflow - CRITICAL
+
+**ALWAYS test locally before pushing to CI.**
+
+The release workflow is designed to identify and solve issues **locally**, not push-and-see.
+
+### Pre-Push Requirements
+
+1. **Run local tests**: `./scripts/check-before-push.sh` (runs same checks as CI)
+   - This script runs: ruff, flake8, mypy, pytest with coverage
+   - Matches `.github/workflows/tests.yaml` exactly
+2. **Fix all issues locally** before pushing
+3. **NEVER push with `--no-verify`** unless explicitly debugging CI infrastructure
+4. **NEVER push to "see if it works"** - test locally first
+
+### Why This Matters
+
+- CI is for **verification**, not **debugging**
+- Pushing broken code wastes CI resources and time
+- Local testing catches 99% of issues before they hit CI
+- The pre-push hook exists to enforce this - respect it!
+
+### If Tests Fail Locally
+
+1. Fix the issue
+2. Re-run `./scripts/check-before-push.sh`
+3. Only push when ALL checks pass locally
+4. CI should be a formality, not a debugging session
+
+## Development Environment
+
+### ⚠️ CRITICAL: Starting Home Assistant
+
+**ALWAYS activate the venv first, then start Home Assistant:**
+
+```bash
+# 1. Activate the Home Assistant virtual environment
+source /home/vscode/.local/ha-venv/bin/activate
+
+# 2. Start Home Assistant
+cd /workspaces/core
+hass -c /workspaces/core/config --open-ui
+```
+
+**Or as a one-liner (for background execution):**
+
+```bash
+cd /workspaces/core && source /home/vscode/.local/ha-venv/bin/activate && nohup hass -c /workspaces/core/config > /tmp/ha_startup.log 2>&1 &
+```
+
+**Why this is critical:**
+
+- The venv at `/home/vscode/.local/ha-venv` contains all required dependencies with correct versions
+- Without venv activation, HA may fail with dependency errors (e.g., `aiodns`/`pycares` Python 3.13 compatibility issues)
+- The config directory `/workspaces/core/config` contains symlinks to the wiim integration
+- Symlink: `/workspaces/core/config/custom_components/wiim` → `/workspaces/wiim/custom_components/wiim`
+- **DO NOT use `~/.homeassistant`** - that config doesn't have the symlinks
+- **DO NOT use `python3 -m homeassistant`** - use the `hass` command with venv activated
+- **DO NOT run from `~`** - the environment and symlinks are set up in the workspace
+
+**Optional but recommended:**
+
+```bash
+# Run quick checks first (catches syntax/lint errors)
+cd /workspaces/wiim
+make pre-run
+```
+
+**Other useful commands:**
+
+- Web interface: `http://localhost:8123`
+- Stop HA: `pkill -f "hass.*config"`
+- Check if running: `ps aux | grep -E "[h]ass.*config"`
+- Check if HA is ready: `curl -s -o /dev/null -w "%{http_code}" http://localhost:8123/api/` (should return 200 or 401)
+- View startup logs: `tail -f /tmp/ha_startup.log`
+
+**To view terminal output when running in background:**
+
+- Output is written to: `/home/vscode/.cursor/projects/workspaces-core/terminals/[SHELL_ID].txt`
+- View with: `tail -f /home/vscode/.cursor/projects/workspaces-core/terminals/[SHELL_ID].txt`
+- Or run HA directly in a terminal (not background) to see output in real-time
+
+### Running Real-World Tests
+
+**When to run real-world tests:**
+
+- When pywiim library is updated (check CHANGELOG for changes)
+- Before releases (especially after pywiim updates)
+- When testing specific functionality that was fixed/added in pywiim
+- After making changes that affect device communication
+
+**How to run real-world tests:**
+
+```bash
+# 1. Ensure Home Assistant is running (see above)
+#    Wait for HA to be ready: curl http://localhost:8123/api/ should return 200 or 401
+
+# 2. Activate venv and run tests
+cd /workspaces/wiim
+source /home/vscode/.local/ha-venv/bin/activate
+
+# 3. Run full test suite (includes source selection)
+python scripts/test-automated.py --config scripts/test.config --mode full
+
+# Or run critical tests only (faster, excludes source selection)
+python scripts/test-automated.py --config scripts/test.config --mode critical
+```
+
+**Test configuration:**
+
+- Test config file: `scripts/test.config` (contains HA URL and access token)
+- This file is in `.gitignore` for security (contains long-lived access token)
+- If missing, create it with:
+  ```bash
+  echo "HA_URL=http://localhost:8123" > scripts/test.config
+  echo "HA_TOKEN=your_long_lived_access_token" >> scripts/test.config
+  ```
+- Get token from: Home Assistant → Profile → Long-Lived Access Tokens
+
+**What the tests verify:**
+
+- `critical` mode: Device discovery, playback controls, volume, state sync (fast, ~2 min)
+- `full` mode: All critical tests + source selection, multiroom, EQ, presets, etc. (~5 min)
+- Source selection test: Verifies hardware inputs (Line In, Optical, etc.) change correctly
+- Tests use real devices via Home Assistant REST API
+
+**Troubleshooting:**
+
+- **HA not responding**: Check if HA is running: `ps aux | grep hass`
+- **Connection refused**: Wait longer for HA to start (can take 30-60 seconds)
+- **401 Unauthorized**: Token in `scripts/test.config` may be expired - create new token
+- **No devices found**: Ensure WiiM devices are configured in Home Assistant
+- **Source selection fails**: This is exactly what we're testing for - check if pywiim update fixed the issue
+
+**See `/development/README.md` for complete development setup instructions.**
+
+## When to Update This File
+
+- When asked to remember something important
+- When architectural decisions are made
+- When patterns are established
+- When bugs reveal design issues
+
+**If asked to remember something, update this file or the appropriate documentation immediately.**

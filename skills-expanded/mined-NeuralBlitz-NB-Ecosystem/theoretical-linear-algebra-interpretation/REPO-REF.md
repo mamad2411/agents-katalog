@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeuralBlitz/NB-Ecosystem (path: ncx/.opencode/skills/theoretical-linear-algebra-interpretation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Theoretical Linear Algebra Interpretation Skill

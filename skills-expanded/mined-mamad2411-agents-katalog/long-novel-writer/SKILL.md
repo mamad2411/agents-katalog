@@ -1,0 +1,66 @@
+---
+name: long-novel-writer
+description: 当用户需要写长篇小说、扩展小说创意、构建小说架构、生成正文章节或进行章节定稿更新时使用。此技能提供了一套完整的五阶段工作流，通过外部文档驱动状态机的方式，保障百万/千万级别小说的连贯性。
+---
+
+# 长篇小说写作器
+
+## 核心定位
+
+按"架构先行、分卷推进、状态驱动、检索校验"的方式创作百万至千万字级别小说。
+
+不要一次性生成整部长篇正文。每次只推进一个明确层级：整书架构、卷规划、3-5 章小单元、单章正文、记忆更新、修订审校。
+
+## 工作流
+
+1. **作品初始化**
+   - 读取或创建作品目录时，先看 `references/file-contract.md`（文件布局 + 立项 checklist + 导入 checklist）与 `references/memory-protocol.md`（记忆协议）。
+   - **场景分支**：
+     - 用户只有一句创意 → 走 dev 分支的"AI 创建小说"链路：扩展创意 → 提炼构思 → 故事核心 → 小说整体设定；然后走「立项 checklist」。
+     - 用户已有设定（无正文）→ 直接走「立项 checklist」：metadata → 设定正典 → 实体档案 → 网文额外项 → 章节目录 → 空壳文件。
+     - **用户已有正文但无记忆结构 → 走「导入既有作品 checklist」（13 步）**，用 `reverse_story_bible_prompt` / `extract_entities_prompt` / `canon_backfill_prompt` 等反推记忆层，然后从 N+1 章继续写。
+   - `story-bible.md` 立项/导入时即写定并视为冻结基线，后续修订必须追加「变更记录」。
+
+2. **百万字架构**
+   - 将故事拆成：整书主线 -> 卷 -> 篇章单元 -> 3-5 章 chunk -> 单章。
+   - 每卷必须有显性目标、隐藏危机、阶段反派或阻力、角色状态变化、伏笔回收表。
+   - 对千万字目标，默认启用 `memory-protocol.md` 的分层摘要（L0–L5）+ 实体档案 + 章节索引。禁止只靠"一份不断覆盖的前文摘要"撑长篇。
+
+3. **章节生成**
+   - 写正文前先按 `memory-protocol.md` 第四节「写前组装协议」加载上下文（9 个固定步骤），不要凭感觉读文件。
+   - 上下文至少覆盖：story-bible、当前卷/篇章摘要（前期缺失时以 story-bible 替代）、当前 + 下一章 blueprint、最近 3-5 章 L1 brief、上一章结尾段原文、出场实体档案、活跃伏笔、禁用桥段、关键词反查到的相关章节 brief。
+   - 选择提示词按 `references/prompt-workflow.md`。第一章用 `first_chapter_draft_prompt_v2`，后续章节用 `next_chapter_draft_prompt_v2`。
+   - 单章正文只输出正文，除非用户要求分析或拆解。
+
+4. **章节落盘与记忆更新**
+   - 正文生成后先跑 `memory-protocol.md` §5「写后校验闭环」：**前置字数门**（机械检查 `[word_min, word_max]`，偏短调 `enrich_prompt_v2`、偏长调 `condense_prompt_v2`、偏离 >30% 直接重写）+ 正典冲突检测、硬约束违背、桥段重复、伏笔账本对齐。
+   - 通过后按固定顺序落盘：
+     1. `chapter-NNNN.md`（L0 正文）
+     2. `chapter-NNNN.brief.md`（L1，300-500 字，写完即冻结）
+     3. `chapter-NNNN.index.md`（YAML 章节索引）
+     4. `canon/facts.jsonl` 追加本章约束性事实（含 `known_by`）
+     5. `canon/promises.jsonl` 追加本章承诺/誓言变化
+     6. `canon/progression.jsonl` 追加本章境界/能力进阶
+     7. `canon/timeline.md` / `canon/rules.md` 追加更新
+     8. 相关实体档案追加「关键节点」+「变更记录」，更新「最后出场」「已知秘密」
+     9. `foreshadowing-ledger.md` + `subplots.md` 状态更新
+   - 到达 chunk/arc/volume 末章时，生成对应 L2/L3/L4 摘要；卷结束时重生成 L5 `summaries/global.md`（旧版归档到「历史版本」段）。
+   - **禁止回改已冻结的 L1/L2/L3/L4**。事实纠错走 `continuity-issues.md` + canon retraction 条目 + 实体档案变更记录。
+
+5. **一致性审校**
+   - 对长篇连载，默认进行"设定冲突、角色 OOC、伏笔遗漏、节奏断裂、重复桥段"检查。
+   - 如果用户接入外部 RAG API 或知识库，保留外部检索能力；不要把"没有本地向量库"理解为不需要长期记忆。本项目的 `chapter-*.index.md` + 实体档案 + keywords 检索已足够支撑。
+
+## 提示词使用原则
+
+- 原始提示词全文在 `references/prompts/`，先查 `references/prompt-index.md`。
+- 旧分支提示词适合完整写作链路：角色、世界观、剧情架构、章节目录、章节正文、摘要、知识库、角色状态、一致性。
+- dev 分支提示词适合从一句创意生成结构化小说基础信息。
+- 可以组合提示词，但不要机械拼贴。先判断任务层级，再选择最小必要 prompt。
+- 用户要求百万/千万字时，优先使用 `references/long-serial-method.md` 的长篇机制，而不是只放大章节数。
+- 体裁模式由 `metadata.md` 的 `体裁模式` 字段控制（网文/严肃文学/通用），决定提示词的写作约束分支。网文模式启用爽点密度、打脸循环、章末钩子等专用规则；严肃文学模式保留潜台词、心理深度等要求。
+- 摘要类提示词在新协议下的用法：`chapter_brief_prompt` 生成 L1；`chunk/arc/volume/global_summary_prompt` 分别生成 L2-L5；`update_character_state_prompt_v2` 输出落入实体档案「当前状态」段 +「变更记录」追加。
+
+## 输出习惯
+
+用中文回应中文请求。先给可执行结果，再给必要说明。创作时少讲道理，多产出可直接进入作品档案的内容。规划要清晰、有阶段、有回收点；正文要有场景推进、人物行动和情绪压力。

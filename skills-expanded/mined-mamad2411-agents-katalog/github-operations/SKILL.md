@@ -1,0 +1,327 @@
+---
+name: github-operations
+license: MIT
+compatibility: "Claude Code 2.1.251+. Requires gh CLI."
+author: OrchestKit
+description: GitHub CLI operations for issues, PRs, milestones, and Projects v2. Covers gh commands, REST API patterns, and automation scripts. Use when managing GitHub issues, PRs, milestones, or Projects with gh.
+context: fork
+version: 1.1.0
+tags: [github, gh, cli, issues, pr, milestones, projects, api]
+user-invocable: false
+complexity: medium
+persuasion-type: guidance
+metadata:
+  category: workflow-automation
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Bash
+  - Write
+  - Edit
+  - TaskCreate
+  - TaskUpdate
+  - TaskList
+---
+
+# GitHub Operations
+
+Comprehensive GitHub CLI (`gh`) operations for project management, from basic issue creation to advanced Projects v2 integration and milestone tracking via REST API.
+
+## Overview
+
+- Creating and managing GitHub issues and PRs
+- Working with GitHub Projects v2 custom fields
+- Managing milestones (sprints, releases) via REST API
+- Automating bulk operations with `gh`
+- Running GraphQL queries for complex operations
+
+---
+
+## CRITICAL: Task Management is MANDATORY (CC 2.1.16)
+
+**BEFORE doing ANYTHING else, create tasks to track progress:**
+
+```python
+# 1. Create main task IMMEDIATELY
+TaskCreate(
+  subject="GitHub Operations: {target}",
+  description="Managing GitHub issues, PRs, milestones, or Projects",
+  activeForm="Managing GitHub resources"
+)
+
+# 2. Create subtasks matching the operation scope
+TaskCreate(subject="Issue management", activeForm="Creating/updating issues")
+TaskCreate(subject="PR management", activeForm="Managing pull requests")
+TaskCreate(subject="Milestone tracking", activeForm="Updating milestones")
+
+# 3. Set dependencies if operations are sequential
+TaskUpdate(taskId="3", addBlockedBy=["2"])
+TaskUpdate(taskId="4", addBlockedBy=["3"])
+
+# 4. Update status as you progress
+TaskUpdate(taskId="2", status="in_progress")  # When starting
+TaskUpdate(taskId="2", status="completed")    # When done
+```
+
+## Quick Reference
+
+### Issue Operations
+
+```bash
+# Create issue with labels and milestone
+gh issue create --title "Bug: API returns 500" --body "..." --label "bug" --milestone "Sprint 5"
+
+# List and filter issues
+gh issue list --state open --label "backend" --assignee @me
+
+# Edit issue metadata
+gh issue edit 123 --add-label "high" --milestone "v2.0"
+```
+
+### PR Operations
+
+```bash
+# Create PR with reviewers
+gh pr create --title "feat: Add search" --body "..." --base dev --reviewer @teammate
+
+# Watch CI status and auto-merge
+gh pr checks 456 --watch
+gh pr merge 456 --auto --squash --delete-branch
+
+# Resume a session linked to a PR (CC 2.1.27)
+claude --from-pr 456           # Resume session with PR context (diff, comments, review status)
+claude --from-pr https://github.com/org/repo/pull/456
+```
+
+> **Tip (CC 2.1.27):** Sessions created via `gh pr create` are automatically linked to the PR. Use `--from-pr` to resume with full PR context.
+
+### Milestone Operations (REST API)
+
+> **Footgun:** `gh issue edit --milestone` takes a **NAME** (string), not a number. The REST API uses a **NUMBER** (integer). Never pass a number to `--milestone`. Load `Read("references/cli-vs-api-identifiers.md")`.
+
+```bash
+# List milestones with progress
+gh api repos/:owner/:repo/milestones --jq '.[] | "\(.title): \(.closed_issues)/\(.open_issues + .closed_issues)"'
+
+# Create milestone with due date
+gh api -X POST repos/:owner/:repo/milestones \
+  -f title="Sprint 8" -f due_on="2026-02-15T00:00:00Z"
+
+# Close milestone (API uses number, not name)
+MILESTONE_NUM=$(gh api repos/:owner/:repo/milestones --jq '.[] | select(.title=="Sprint 8") | .number')
+gh api -X PATCH repos/:owner/:repo/milestones/$MILESTONE_NUM -f state=closed
+
+# Assign issues to milestone (CLI uses name, not number)
+gh issue edit 123 124 125 --milestone "Sprint 8"
+```
+
+### Projects v2 Operations
+
+```bash
+# Add issue to project
+gh project item-add 1 --owner @me --url https://github.com/org/repo/issues/123
+
+# Set custom field (requires GraphQL)
+gh api graphql -f query='mutation {...}' -f projectId="..." -f itemId="..."
+```
+
+---
+
+## JSON Output Patterns
+
+```bash
+# Get issue numbers matching criteria
+gh issue list --json number,labels --jq '[.[] | select(.labels[].name == "bug")] | .[].number'
+
+# PR summary with author
+gh pr list --json number,title,author --jq '.[] | "\(.number): \(.title) by \(.author.login)"'
+
+# Find ready-to-merge PRs (statusCheckRollup is an ARRAY, so fold it first)
+gh pr list --json number,reviewDecision,statusCheckRollup \
+  --jq '[.[] | select(.reviewDecision == "APPROVED"
+        and ([(.statusCheckRollup // [])[] | .conclusion // .state]
+             | length > 0 and all(IN("SUCCESS","SKIPPED","NEUTRAL"))))]'
+```
+
+---
+
+## Key Concepts
+
+### Milestone vs Epic
+
+| Milestones | Epics |
+|------------|-------|
+| Time-based (sprints, releases) | Topic-based (features) |
+| Has due date | No due date |
+| Progress bar | Task list checkbox |
+| Native REST API | Needs workarounds |
+
+**Rule**: Use milestones for "when", use parent issues for "what".
+
+### Projects v2 Custom Fields
+
+Projects v2 uses GraphQL for setting custom fields (Status, Priority, Domain). Basic `gh project` commands work for listing and adding items, but field updates require GraphQL mutations.
+
+---
+
+## Rules Quick Reference
+
+| Rule | Impact | What It Covers |
+|------|--------|----------------|
+| issue-tracking-automation (load `rules/issue-tracking-automation.md`) | HIGH | Auto-progress from commits, sub-task completion, session summaries |
+| issue-branch-linking (load `rules/issue-branch-linking.md`) | MEDIUM | Branch naming, commit references, PR linking patterns |
+
+## Batch Issue Creation
+
+When creating multiple issues at once (e.g., seeding a sprint), use an array-driven loop:
+
+```bash
+# Define issues as an array of "title|labels|milestone" entries
+SPRINT="Sprint 9"
+ISSUES=(
+  "feat: Add user auth|enhancement,backend|$SPRINT"
+  "fix: Login redirect loop|bug,high|$SPRINT"
+  "chore: Update dependencies|maintenance|$SPRINT"
+)
+
+for entry in "${ISSUES[@]}"; do
+  IFS='|' read -r title labels milestone <<< "$entry"
+  NUM=$(gh issue create \
+    --title "$title" \
+    --label "$labels" \
+    --milestone "$milestone" \
+    --body "" \
+    --json number --jq '.number')
+  echo "Created #$NUM: $title"
+done
+```
+
+> **Tip:** Capture the created issue number with `--json number --jq '.number'` so you can reference it immediately (e.g., add to Projects v2, link in PRs).
+
+---
+
+## Best Practices
+
+1. **Always use `--json` for scripting** - Parse with `--jq` for reliability
+2. **Non-interactive mode for automation** - Use `--title`, `--body` flags
+3. **Check rate limits before bulk operations** - `gh api rate_limit`. On CC ≥ 2.1.116, the Bash tool surfaces a rate-limit hint in the transcript when `gh` hits 403 — **treat that hint as authoritative and back off**, don't blind-retry. Before 2.1.116, agents had no signal and would burn all retry attempts in ~13 s.
+4. **Use heredocs for multi-line content** - `--body "$(cat <<'EOF'...EOF)"`
+5. **Link issues in PRs** - `Closes #123`, `Fixes #456` — GitHub auto-closes on merge
+6. **Use ISO 8601 dates** - `YYYY-MM-DDTHH:MM:SSZ` for milestone due_on
+7. **Close milestones, don't delete** - Preserve history
+8. **`--milestone` takes NAME, not number** - Load `Read("references/cli-vs-api-identifiers.md")`
+9. **Never `gh issue close` directly** - Comment progress with `gh issue comment`; issues close only when their linked PR merges to the default branch
+
+---
+
+## 2026 CLI changes — what to know
+
+### `gh-copilot` extension is retired
+
+GitHub retired the `gh-copilot` extension in **October 2025**. Copilot is now a standalone binary:
+
+```bash
+# OLD — no longer supported
+gh extension install github/gh-copilot   # fails
+gh copilot suggest "revert last commit"   # fails
+
+# NEW — standalone `copilot` binary
+copilot suggest "revert last commit"
+copilot explain "git rebase -i HEAD~5"
+```
+
+Install from `cli.github.com/copilot` or via Homebrew (`brew install github/gh/copilot`). Authentication is shared with `gh auth` when both are installed.
+
+### `gh agent-task` (2026)
+
+New subcommand for managing Copilot coding-agent tasks:
+
+```bash
+gh agent-task create --repo owner/repo --title "Fix flaky login test"
+gh agent-task list --state open
+gh agent-task view 42 --log          # stream agent log
+gh agent-task watch 42                # live-follow until completion
+gh agent-task cancel 42
+```
+
+Pairs with the REST endpoint `POST /repos/{owner}/{repo}/agent-tasks` for CI-driven task creation.
+
+### Sub-issues (native, 2026)
+
+Sub-issues are now a native GitHub concept — no extension required:
+
+```bash
+# List sub-issues of parent #123
+gh api repos/{owner}/{repo}/issues/123/sub_issues
+
+# Add an existing issue #456 as sub-issue of #123
+gh api -X POST repos/{owner}/{repo}/issues/123/sub_issues \
+  -f sub_issue_id=$(gh api repos/{owner}/{repo}/issues/456 --jq .node_id)
+
+# Remove a sub-issue relationship
+gh api -X DELETE repos/{owner}/{repo}/issues/123/sub_issue \
+  -F sub_issue_id=<id>
+```
+
+The old `gh-sub-issue` third-party extension still works but is superseded. GraphQL sub-issue mutations still require the issue `node_id` (see `references/cli-vs-api-identifiers.md`).
+
+---
+
+## Related Skills
+
+- `ork:create-pr` - Create pull requests with proper formatting and review assignments
+- `ork:review-pr` - Comprehensive PR review with specialized agents
+- `ork:release-management` - GitHub release workflow with semantic versioning and changelogs
+- `ork:commit` - Stacked-PR workflow and rebase coordination live in `src/skills/commit/rules/` (`stacked-pr-workflow`, `stacked-pr-rebase`). There is no `stacked-prs` skill.
+- `ork:issue-progress-tracking` - Automatic issue progress updates from commits
+
+## Key Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| CLI vs API | gh CLI preferred | Simpler auth, better UX, handles pagination automatically |
+| Output format | --json with --jq | Reliable parsing for automation, no regex parsing needed |
+| Milestones vs Epics | Milestones for time | Milestones have due dates and progress bars, epics for topic grouping |
+| Projects v2 fields | GraphQL mutations | gh project commands limited, GraphQL required for custom fields |
+| Milestone lifecycle | Close, don't delete | Preserves history and progress tracking |
+
+## Upstream coverage (do not restate)
+
+These topics are documented first-party. Fetch them there instead of growing a copy
+in this skill.
+
+| Topic | Source |
+|-------|--------|
+| `gh issue` bulk create / edit / list loops, templates, transfer and pin | https://cli.github.com/manual/gh_issue |
+| Cross-repo label create / edit / clone | https://cli.github.com/manual/gh_label |
+| Org-wide issue search qualifiers | https://cli.github.com/manual/gh_search_issues |
+| Milestone REST CRUD: endpoints, payload fields, list filters and sorting | https://docs.github.com/en/rest/issues/milestones |
+| Projects v2 field mutations, value unions, field and option ID discovery | https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects |
+| Sub-issue endpoint payloads and pagination | https://docs.github.com/en/rest/issues/sub-issues |
+| Rate-limit headers, reset semantics, secondary limits | https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api |
+
+**What still stays ours, in full, in this skill:** PR review / merge gating including
+the `statusCheckRollup` array fold (`references/pr-workflows.md`); GraphQL queries,
+pagination, and node-id lookup (`references/graphql-api.md`); the CLI-NAME vs
+API-NUMBER identifier mapping for milestones and Projects v2
+(`references/cli-vs-api-identifiers.md`); the sub-issue quick reference above; and
+the rate-limit pre-flight guard (`examples/automation-scripts.md`). House rules with
+their rationale are collected in `references/ork-delta.md`.
+
+## References
+
+Load on demand with `Read("references/<file>")`:
+| File | Content |
+|------|---------|
+| `ork-delta.md` | House rules: hook contracts, close-don't-delete, rate-limit discipline, the file-set contract |
+| `pr-workflows.md` | Reviews, merge strategies, auto-merge, statusCheckRollup folding |
+| `graphql-api.md` | Complex queries, pagination, bulk operations |
+| `cli-vs-api-identifiers.md` | NAME vs NUMBER footguns, milestone/project ID mapping |
+| `issue-management.md` | Pointer stub: issue delta plus upstream links |
+| `milestone-api.md` | Pointer stub: milestone delta plus upstream links |
+| `projects-v2.md` | Pointer stub: Projects v2 delta plus upstream links |
+
+## Examples
+
+Load: `Read("examples/automation-scripts.md")` - Rate-limit discipline for long `gh` loops, plus pointers for the bulk-loop recipes

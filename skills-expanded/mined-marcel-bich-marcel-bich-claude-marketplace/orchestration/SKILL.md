@@ -1,0 +1,600 @@
+---
+name: orchestration
+description: Delegate work to subagents safely and efficiently - follow the measured default batch workflow (plan once, builders.min_per_area to builders.max_per_area writing builders per independent area, default 2-4, in worktrees, fresh audit per item, one release per batch), decide how many subagents to run, pick model and effort per role from the active model preset (credo-preset.sh stage, with its attempt chains), keep parallel tracks on disjoint files (item `touches:` overlap check) and within machine resources (resource gate, `heavy:` items), give each code track a set-up git worktree (hydra or native, automatic), monitor them without flooding your context, inherit security to every subagent, and use return-and-resume so a subagent can ask a question and continue with full context. Use whenever you are about to spawn one or more subagents, run work in parallel, or coordinate delegated tasks. Applies to any agent that delegates, including subagents that spawn their own helpers.
+---
+
+# orchestration
+
+How to delegate work to subagents so results come back correct, parallel work does not
+collide, and the delegating agent's context stays lean. This is the reusable
+delegation core; the session skills reference it instead of restating it.
+
+## When this fires
+
+- You are about to spawn a subagent for any non-trivial task.
+- You have two or more independent tasks that could run in parallel.
+- You are coordinating or monitoring already-running subagents.
+- A subagent returns needing a decision, and you must route the answer back.
+
+## Delegation-first
+
+Prefer delegating substantive work to a subagent over doing it inline in the main
+context. The main agent orchestrates: it splits work, dispatches, integrates results,
+and commits. Reserve the main context for coordination and user interaction, not for
+large reads or long builds that a subagent can carry.
+
+## How many subagents (situational, no colony rule)
+
+- The delegating agent decides the count based on the actual work. For a build batch the
+  measured default is "Default batch workflow" below; beyond that there is no rule to
+  always fan out wide. Large colonies are expensive; use them only ad hoc when a specific
+  task genuinely benefits.
+- Parallelism is wanted. Writing builders run per independent area, at least
+  `builders.min_per_area` (default 2) and at most `builders.max_per_area` (default 4), both
+  in the credo config. They are further limited by (a) file overlap (`touches:`, below),
+  since items that touch the same files never run in parallel, and (b) the resource gate
+  (below).
+- Read-only agents (explore, research, audit, verify, tests, deploy, also clarify) have no
+  fixed limit. They write no files, so they need no overlap check (the resource gate still
+  applies to every start).
+
+### Idle capacity (passive and autonomous mode)
+
+In passive and autonomous mode the main agent leaves no idle capacity. After every agent
+result and every owner message it starts builders for buildable `2_go` items with disjoint
+files, up to `builders.max_per_area` per independent area (overlap check and resource gate
+as always). Active mode has no idle-capacity rule.
+
+### Speed orders (fastfast) and the builder cap
+
+fastfast skips audit, full suite and verify and moves the item to the FRONT of the build
+queue. The builder cap (`builders.max_per_area`, or a lower cap in the repo's
+`.credo/RULES.md`), the same-files-never-parallel rule (item `touches:` overlap) and the
+resource gate normally stay in force. One exception: a fastfast item MAY get ONE extra
+builder slot above the cap.
+- The main agent grants it alone only when the case is clearly simple: (a) its `touches:` do
+  not overlap any running builder, (b) no migration and no shared hot file, (c) a small,
+  bounded change.
+- In doubt it asks the owner first (Ask tool in an interactive session, naming the running
+  builders). In an autonomous run with the owner absent it does not ask: the item waits for
+  the next free slot (it may jump ahead of queued items, never stop a running builder).
+- The resource gate always stays in force. Builders of a fastfast item run only the
+  relevant/changed tests; the full suite runs at its usual point ("When the full suite
+  runs" below; only at the release when DOGMA-PERMISSIONS §8eyz is `[x]`).
+
+## Default batch workflow (measured)
+
+The default for building a batch of `2_go` items - the best workflow measured so far, in
+two unattended benchmark runs on real items. The numbers are current measurements and may
+be tuned; values marked tentative have too few trials yet. Deviate only when the work
+clearly calls for it, and say why.
+
+1. **Cut the batch once.** The task agent cuts its own batch from `2_go/` (credo `role-task`,
+   "Where the work comes from"). The plan role never hands out batches; it only reports that new
+   GO items are ready (credo `role-plan`, "No batches handed out"). Order: an explicit owner order
+   first, else the lower item id first. A planning subagent may analyse the cut, but the task agent
+   decides it. Order by dependencies: tooling, then shared foundations, then features. Cut batches
+   by SHARED SURFACES, not only by files:
+   two items that each added an element to the same UI bar conflicted although they
+   touched different modules. Central registry files (command, route, menu or plugin
+   registries, shared indexes, a single CHANGELOG) are shared surfaces: items touching the
+   same one run sequentially or in one bundle. Better still, avoid the shared surface: prefer
+   fragment files (one `changelog.d/` fragment per item, assembled at release) and
+   self-registration (auto-discovery instead of a central list), so parallel items never
+   edit the same registry file.
+   Tricky items (algorithms, detection, quality or numeric results) get their acceptance
+   measurement (data set + target value) into the DoD at this step, BEFORE any build
+   (credo `items`, Success Criteria).
+2. **Build in parallel: `builders.min_per_area` to `builders.max_per_area` writing builders
+   per independent area** (default 2-4, credo config), each in its own worktree (below). A
+   bundle is 2-3 small, related, low-risk items in one worktree with one audit; it counts as
+   one builder. Measured: 3-5 parallel builders cut wall time from about 120 min to 15-22
+   min per item. Above 4-5 builders shared resources become the limit (one browser
+   automation, one test runtime, the 5h budget). The overlap check and the resource gate
+   below still apply.
+3. **Audit every item** with a fresh subagent that reads the source, runs the tests and
+   fixes small findings itself ("Delegating audit subagents" below). After a MAJOR or FAIL
+   that the auditor does not fix itself, a FRESH fix agent takes over (never a resumed
+   builder); fix rounds follow the preset stage ladder ("Fix rounds after a failing audit"
+   below). Not optional. A MAJOR
+   defect was found in 14 of 18 single items (run 1) and 7 of 12 (run 2); in run 2 no
+   single item passed its first audit.
+4. **Merge as audits pass**, one branch at a time. **One release per batch when a release is due** (automatic only with `release.auto`), with ONE
+   full test suite run before it: it caught 3 bugs that every changed-only test run had
+   missed. After the release, run the worktree cleanup once; the same checkbox rule as at item
+   close decides (credo `items` skill, "Worktree cleanup at item close").
+5. **Budget gate** before the batch and before each heavy step: credo `budget` skill,
+   "Batch budget gate". Stop each agent right after its final report (TaskStop) - leftover
+   agents and test servers keep burning budget (owner rule).
+
+### When the full suite runs
+
+The repo's `DOGMA-PERMISSIONS.md` (repo root) decides; read it before the first merge or
+release of a batch and follow it.
+
+- If `§8eyz` ("run ALL tests only at release") is `[x]`, the full suite runs ONLY at the
+  release - the commit that bundles several items with the version bump, never a tag. Not
+  at a merge, not per item, not per builder.
+- If `§8eyz` is `[ ]` or the file is missing, the full suite runs where dogma places it (stage
+  `all` from `§ly5v`, the Final Verification step), else once before the batch release
+  (step 4 above).
+- In both cases builders and per-item audits run only the relevant/changed tests (dogma
+  `relevant` stage, else the changed tests).
+
+### Brief rules for builders and auditors
+
+Add to every builder and audit brief (besides the item path, the main-checkout path and
+the security block):
+
+- In its OWN worktree the agent commits on its branch; push, merge and release stay with
+  the main agent ("Parallel safety" below). Say so explicitly - a generic "subagents never
+  commit" rule otherwise stalls it.
+- Every new CLI command or flag gets its GUI counterpart in the same item, and vice versa,
+  where the project has both.
+- Tick only fully met DoD points, never with a caveat.
+- Before reporting done, the builder runs an adversarial self-check ("try to break it":
+  edge cases, bad input, failure paths, a second run) and lists in its report what it
+  tried; for a tricky item it also measures against the acceptance measurement in the DoD
+  and reports the value (credo `items`, Build-completion gate).
+- A builder receives only the universal-prompt and its stage's subagent-prompt, not the
+  mainagent-prompt. When it may decide agent-owned questions, the main agent appends the
+  output of `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-preset.sh" mainagent --field prompt` to the
+  brief (a repeated universal-prompt is harmless).
+- Questions that come up during the build follow the agent decision rule (credo `items`,
+  "Clarify owner and the agent decision rule"): the builder decides uncritical ones itself
+  per the mainagent-prompt in its brief and logs them in the item History; it returns
+  `{status: needs_decision, question}` only for the escalated ones (the user's taste or
+  preference, deleting user data, installs beyond the item's `## Freigaben`, money beyond an approved budget, safety, a change to the verbatim
+  requirement, and points the preset says to note and present). Items it creates (slices,
+  follow-ups, build questions) get `clarify_owner: agent`, `parent: <id>` and a
+  `created by agent` first History line; while the parent is not GO'd they stay
+  human-owned, so a not yet GO'd user item is never sliced into agent-GO'able children.
+- Builders run the fast check (dogma `relevant` stage, else the changed tests), not the
+  full suite. An audit of a branch touching shared core files runs the whole core test
+  folder.
+- No background shells. The agent runs no command with `run_in_background`. This holds for
+  every subagent brief, not only builders and auditors ("Monitoring without context
+  flooding" below).
+- Every brief carries the repo's mandatory brief lines from `.credo/RULES.md` (for example a
+  path-safety note), copied verbatim. A repo's `.credo/RULES.md` overrides these defaults, and
+  the subagent reads that file first.
+- Blocker and owner-decision claims are proposals. The main agent reads the source the
+  subagent cites (file:line or command output) before it asks the owner or declares a blocker,
+  especially for a claim from a model below its own.
+
+### Fix rounds after a failing audit (default)
+
+- **Fresh fix agent.** After an audit with a MAJOR or FAIL verdict that the auditor did not
+  fix itself, spawn a FRESH fix agent. Its brief holds only the audit findings (report
+  path), the branch / worktree state and the test commands - plus the item path and the
+  security block as in every brief. Never resume the builder's context for a fix round:
+  one item needed about 1.45M builder tokens over 3 resumed rounds.
+- **Stage ladder, no fixed fail count.** Fix rounds follow only the active preset stage
+  ladder. The active preset (always one: the configured `preset:`, else the built-in
+  `balanced`) is the only source of the escalation stages for fix rounds: the model, the
+  effort, the attempts per stage and when back-to-human comes. Each fix round is the next
+  attempt of `credo-preset.sh stage <role> <attempt>` ("Model presets" below). Each stage
+  allows its configured attempts (`until-done` has no attempt cap; the budget caps stop it),
+  then `back-to-human`. Skill texts and audit agents keep no fail count and no brake of their
+  own. While the ladder has attempts left, whether another fix round runs is the main agent's
+  decision, never an owner question; an audit subagent never declares a brake itself, it
+  reports the attempt count. The item goes back to the owner only at back-to-human or for a
+  genuine owner decision (the escalation list and the Named-Decision-Test, credo `items`).
+  The until-done hand-back on the same failure twice without progress is part of the preset
+  semantics. By default the same finding returning unchanged twice is an early hand-back as
+  well; a repo's `.credo/RULES.md` can switch that default off.
+  For the hand-back, `credo-item-move.sh <id> clarify` sets `clarify_owner: human` and logs
+  it, with the audit reports named in the History (`--keep-owner` only for an
+  agent-internal re-clarify); say so in the next reply or report.
+- **Only DoD findings get fix rounds.** MINOR and NIT findings the DoD does not order and
+  residual cases start no fix round. The auditor fixes them once, or they go into the
+  project's collection item (credo `items`, "Scope of an item").
+- **Polish items** (`polish: true`, credo `items`, "Polish items"): no fix round loop. One light
+  audit, one best-effort fix pass, leftovers into `## Verify`, then done. The model and effort
+  stay as the user set them.
+- This is not return-and-resume (below): that keeps a subagent's context for a mid-task
+  decision; a post-audit fix round always starts fresh.
+
+### Being measured (not default yet)
+
+- Merge conflicts on central registry files: one run needed 5 resolver agents and about
+  400k tokens. Cutting batches by shared surfaces and moving to fragment files (step 1)
+  is the current mitigation.
+
+## Parallel code tracks: touches and resource gate
+
+### (a) File overlap - `touches:`
+
+An item may carry the optional frontmatter field `touches:` - a list of paths or globs the
+item will likely edit (credo `items` skill). The plan / clarify agent sets it, at the
+latest at GO.
+
+- It is GUIDANCE, not a contract. Until implementation it is the source of truth for
+  planning parallelism.
+- Before spawning builders, run
+  `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-touches-check.sh" <id> <id> ...` over the candidate
+  items. Exit 0 = no overlap, 3 = overlapping pairs printed (`--json` for a structured
+  result); items without `touches:` are listed as `unknown`.
+- Overlapping items run SEQUENTIALLY, never in parallel.
+- Right before spawning, quickly re-check that the listed paths still exist and fit (files
+  may have been renamed or moved since planning). If that check disagrees, the main agent's
+  re-assessment wins: it updates the item's `touches:` / plan instead of sending a
+  subagent down a wrong track.
+- Items without `touches:` (`unknown`): the main agent classifies them itself, best-effort,
+  from the item text and plan. Parallel is the default; run them sequentially only in
+  serious doubt, or when clearly foreseeable conflicts that are not easy to resolve would
+  occur.
+
+### (b) Resource gate - `credo-resource-check.sh`
+
+Before every agent start, in every session mode, run
+`"${CLAUDE_PLUGIN_ROOT}/scripts/credo-resource-check.sh"` (add `--disk-gb <disk_gb> --path
+<target>` when the item has `disk_gb`, see "Disk space" below). It prints `ok` (exit 0) or
+`wait:<reason>` (exit 5).
+
+- It checks CPU (the 1-minute load per CPU) against `resources.max_busy_percent` (credo
+  config, default 94) and RAM (the used share) against `resources.max_ram_percent` (default
+  80). Under WSL it also checks the Windows host's RAM and CPU load, since that is the
+  owner's machine. At a limit or above it answers `wait`. There is no agent-count gate. The check runs before every start,
+  however many agents are running.
+- On `wait`: start no new agent. Re-check when the next running agent finishes (its
+  completion notification) - no polling loop, no sleep loop.
+- Fail-safe: unreadable system values never block (`ok` plus a note on stderr).
+
+### Disk space - `disk_gb` and the reserve
+
+Free disk is checked at every start too, because a full drive stalls every track. Pass the
+item's `disk_gb` (credo `items` skill) with the check:
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-resource-check.sh" --disk-gb <disk_gb> --path <target>
+```
+
+- `--path` is any path on the target drive (the repo or worktree the track writes to).
+- The free space must cover `disk_gb` plus `resources.disk_reserve_gb` (credo config,
+  default 3 GB). An item without `disk_gb` needs only the reserve.
+- On `wait:low free disk ...` the item does not start. It stays in `2_go` and is retried
+  when the next running agent finishes, like a RAM wait (no polling loop).
+- Autonomous mode: the first disk wait of an item sends ONE ntfy "waiting for disk space" per
+  item (`credo-ntfy-send.sh`, credo `session-autonomous`, "Per-task and per-question ntfy", at
+  `default` priority). Further waits of that item stay silent.
+- Fail-safe: an unreadable disk value never blocks (`ok` plus a note on stderr).
+
+### Heavy items - `heavy: true`
+
+An item with the optional frontmatter `heavy: true` (model or benchmark tests, large
+downloads):
+
+- never runs in parallel to another heavy item, and
+- like every start, starts only when `credo-resource-check.sh` says `ok`.
+
+### Worktrees for every code track (hydra or native, automatic)
+
+Every code track that works in a git worktree follows this flow, also a single isolated
+build track, not only parallel ones. Before ANY worktree run, decide the flow (once per
+batch or track, without any user command):
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/credo-worktree-flow.sh"   # flow=hydra|ask|native, setup=<script>
+```
+
+It reads the DOGMA-PERMISSIONS checkbox `use Hydra for 2+ independent tasks` (`### Hydra`
+subsection; read via `credo-dogma-mode.sh`, works without dogma) and whether hydra is
+installed:
+
+- `flow=hydra` (`[x]`, no checkbox or no DOGMA-PERMISSIONS.md - default on - + hydra
+  installed): use hydra's create flow automatically
+  (`git worktree add -b hydra/<name> ../<repo>-worktrees/<name>`, then hydra's
+  `worktree-setup.sh`), as `/hydra:create` describes - no user command needed.
+- `flow=ask` (`[?]` + hydra installed): ask the user ONCE per batch whether to use hydra.
+  In autonomous mode never ask - treat it as `native`.
+- `flow=native` (`[ ]` or hydra not installed):
+  plain `git worktree add -b <branch> <path>`, then `credo-worktree-setup.sh`.
+
+Hard rule: under `flow=hydra` never use the Agent tool's built-in `isolation: "worktree"`
+and never a bare `git worktree add` without the setup script - always hydra's create flow
+plus its setup. Under `flow=native` every `git worktree add` is followed by the setup script.
+
+Right after EVERY `git worktree add`, run the `setup=` script on the new worktree
+(`<setup> <worktree-path>`). A fresh worktree only has versioned files; the setup links
+(relative symlinks) or copies the excluded ones - CLAUDE.md, CLAUDE/, GUIDES/,
+DOGMA-PERMISSIONS.md and everything unversioned under .credo/ by default, or the
+"Worktree files" list of DOGMA-PERMISSIONS.md (`link:` / `copy:` entries). It never
+overwrites an existing path, skips versioned paths and untracked paths that are not
+ignored (a `git add -A` in the worktree would commit them; builders read them in the
+main checkout), and prints `main=<main checkout>`.
+Under `flow=native` only, a harness-created worktree (Agent tool `isolation: worktree`) is
+allowed; the builder then runs the setup on its own worktree root as its first step. Under
+`flow=hydra` it is never used (the hydra guard denies it while hydra is installed and its
+DOGMA-PERMISSIONS checkbox is on or missing).
+
+Every worktree builder brief names the ABSOLUTE main-checkout path (the `main=` line) with
+this rule: when something important is missing in the worktree (neither checked out,
+linked nor copied), look it up READ-ONLY in the main checkout - never write, commit or run
+state-changing git commands there - and mention in the report anything that should be
+added to the worktree files list.
+A worktree builder writes every `.credo/` change (items, requirements log, item history, metrics)
+into that main checkout path, never into the worktree copy (the first path of `git worktree list`).
+
+Merged and clean worktrees are removed at item close and after every release (credo `items` skill, "Worktree
+cleanup at item close"). A worktree the owner wants to keep is locked, never left to the
+cleanup's judgement: `git worktree lock --reason "keep: owner" <path>`. Locked worktrees
+are kept and reported with their reason; `credo-worktree-cleanup.sh --list-locked` lists
+them. Never unlock one on your own except in credo autonomous mode when the keep reason no
+longer applies; in every other mode ask the user first via the Ask tool (credo `items`,
+"Keeping a worktree"). A merged worktree that still holds changes, a live process or a lock is
+an owner question (its report line says `(ask owner)`); the agent never removes it itself. A
+worktree whose only changes are `.credo/` lines that already exist in the main checkout (lossless)
+is removed by the same cleanup with `[x]`; with `[?]` it waits for the owner's yes (`--allow-lossless <branch>`, one per worktree).
+Builders never unlock, and never touch a lock they did not set.
+
+## Parallel safety
+
+- Disjoint files: parallel tracks must edit non-overlapping file sets. Assign each
+  track its own files up front (from `touches:` where set). If two tracks would touch the
+  same file, they are not independent - sequence them instead.
+- Sequential commit: in the MAIN checkout only the MAIN agent commits, one track's result
+  at a time. Subagents do not commit there. This keeps history clean and avoids two agents
+  racing on the index or on a shared file. Exception (owner-approved): a subagent working
+  in its OWN git worktree (hydra or native, see "Worktrees for every code track") has
+  its own index and MAY commit on its worktree branch - never push, never merge; merge,
+  push and release stay with the main agent. (By the same index-race logic, the default agent roles put
+  commits and push with the task / build agent, not the plan / clarify agent - a guiding
+  default, not a constraint; see `session-init`.)
+- If a clean disjoint split is not possible, run the tracks sequentially rather than
+  forcing false parallelism.
+
+## Monitoring without context flooding
+
+- Launch background subagents non-blocking (`block=false`) so the main agent stays
+  responsive and does not stall waiting.
+- Do NOT pull a subagent's whole transcript into the main context. Consume only the
+  subagent's final result (its returned message), plus short status checks. Pulling
+  full transcripts is what floods and rots the main context.
+- Check status periodically rather than streaming everything continuously.
+- Waiting on background work: prefer the harness completion notification over any
+  polling. When you must poll, wait on a result file or one specific PID, always with a
+  time limit (`for i in $(seq 1 60); do [ -f done ] && break; sleep 10; done`). Never
+  loop on `pgrep -f "<pattern>"`: it matches the waiting shell's own command line, so
+  `until ! pgrep -f X` never ends (`credo-wait-hint.sh` flags such loops, it does not
+  block).
+- Stall limits are checked on every wake. A running agent over 30 min or 60 tool calls is
+  checked against its brief (is it still on its task and making progress?); an agent that
+  has taken no step for 15 min is stopped (TaskStop) and the stop is reported.
+- Subagent briefs forbid background shells (no `run_in_background`, "Brief rules for
+  builders and auditors"). The main agent may use background shells, but keeps track of
+  each one it starts and stops it when it is done.
+- A subagent's report is NEVER grounds to claim or move an item status. Consuming only
+  the final result keeps context lean, but it does not transfer the subagent's judgment
+  to the main agent. Before the main agent asserts a status or moves an item, it must
+  read the whole item itself and verify the actual code and state against the item's
+  stated intent - a subagent report plus a commit grep is not sufficient evidence. The
+  main agent owns the status decision and must ground it in first-hand verification.
+
+## Security inheritance (every subagent, always)
+
+Subagents inherit the same hard security rules as the main agent, with no exceptions:
+- Install nothing (no pip / npm / apt / system / global installs) without explicit
+  prior approval. The approval is the item's `## Freigaben` section (credo `items`), and
+  it covers only the entries listed there.
+- Read no secrets: no credential files, tokens, key material, or shell history.
+- The same filesystem-protection and deletion rules apply. A subagent may not do what
+  the main agent may not do.
+
+State these constraints in the task you hand each subagent so they hold even if the
+subagent does not otherwise load them.
+
+## Node / tooling version precheck (before any node run)
+
+Before an agent OR a subagent runs node / npm / pnpm / yarn tooling in a repo, derive the
+repo's Node version deterministically and activate it - do NOT rely on the random system Node
+of the subagent shell:
+
+- Read `.nvmrc` or `.node-version` AND `package.json` `engines.node`, then activate the matching
+  Node (`nvm use`, or the project's equivalent) before running the tooling.
+- Concrete failure this prevents: pre-work ran on the system Node while the repo required a
+  higher major - the `.nvmrc` / `engines` were unambiguous, they just were not switched to, so
+  the run failed for a reason that had nothing to do with the actual task.
+
+This applies to every tooling-running agent, not only sandbox pre-work.
+
+## Priming subagents with credo rules
+
+credo does not rely on the main agent to remember the rules. Two mechanisms keep a
+subagent self-sufficient even when the main agent's context has rotted:
+
+- The credo `SubagentStart` hook (`hooks/credo-subagent-inject.sh`) injects the
+  load-bearing credo rules (security, quality gates, honesty, output hygiene) into
+  every subagent at start, automatically.
+- The credo skill descriptions are phrased to auto-trigger inside subagents too, so
+  the relevant skill loads itself when its trigger is hit.
+
+As a backup for environments where the hook is not active, still name the relevant
+credo skills (for example `verify`, `audit`, `items`, `requirements-verbatim`) in the
+task you hand each subagent, so a subagent is primed regardless of the hook.
+
+Also pass the project's per-repo special rules to every subagent (credo `rules`): include
+the resolved `.credo/RULES.md` content, or an instruction to load it via
+`scripts/credo-config.sh rules`, in the task. Project grants must not be lost across
+delegation - a subagent has to honor the same widened latitude as the main agent.
+
+## The item is the source of truth
+
+When you delegate a build or implementation task that realizes a credo item, the item
+- not your brief - is the authoritative, complete specification. The brief is only a
+pointer, and pointers are lossy.
+
+- Every such brief MUST name the item path. Where the work touches domain rules or logic,
+  it MUST also name the relevant source of truth as `file:symbol`, not just describe it.
+  When the builder works in a worktree, the brief also names the absolute main-checkout
+  path plus the read-only lookup rule ("Worktrees for every code track" above).
+- The subagent MUST read the WHOLE item itself and treat it as the single source of truth:
+  the complete body, the Success Criteria / DoD, the Historie, AND the requirements log
+  under `.credo/process/requirements/` - not just the head, and never the brief alone. It
+  builds against ALL requirements the item states, gaplessly. Nothing the item asks for may
+  be silently dropped.
+- The brief is ORIENTATION, not the authoritative or complete spec (the analogy: a lead
+  hands over a ticket saying "this is roughly about X" - the builder listens, then forms a
+  full picture from the actual requirements). On any imprecision or contradiction between
+  brief and item, the WHOLE item wins. The subagent does not adopt the delegator's summary
+  or paraphrase as fact.
+- Gated tightening - for user-facing text OR logic that encodes a domain rule (grades,
+  thresholds, formulas, enum meanings, marker semantics): the subagent MUST derive each such
+  factual claim from the named code source of truth and verify it itself, citing the source
+  (`file:symbol` + the value) - never from the brief's paraphrase. For example, a brief
+  saying "tier gold / platinum" is a lossy hint; read the rating source and derive which
+  tier is the default and which is gated, rather than restating the hint. A bare file
+  pointer is not enough when the term lives only in client-side presentation and not in the
+  named file - trace it to where the rule is actually defined.
+- The paired audit check (completeness against the whole item, and rule-text correctness
+  against the source) catches such misses downstream; see the `audit` skill.
+
+This is the build-time, subagent-side duty. It is distinct from the main agent reading the
+whole item before it asserts a status or moves it (see "Monitoring without context
+flooding"): that governs the status decision after the fact, this governs building against
+the item before and during the work.
+
+## Delegating audit subagents
+
+When you spawn the mandatory audit subagent (never the builder, always a fresh one), pick
+the audit tier per the credo `audit` skill ("Audit depth (risk tiers)") and name tier plus
+a one-line reason in the brief. `full` is the default; `lean` (diff plus tests, about half
+the cost) only for small low-risk items - no security surface, no shared core files,
+nothing that writes user files or runs commands (tentative: 6 trials so far, 10+ needed).
+A bundle gets ONE audit; other finished `lean` items may be batched into one audit
+subagent (one verdict and report section per item); `full` items are always audited
+singly. The tier changes only the depth, never whether the audit runs. The auditor
+records its findings first, then fixes small ones itself on the item's worktree branch
+(credo `audit`, "Fixing small findings").
+
+## Delegating verify / UI subagents
+
+When you delegate any verification or UI-checking subagent - the formal credo `verify`
+skill or an ad-hoc one you brief inline - the subagent saves each screenshot under the
+naming rule `<slug>-<viewport>-<YYYY-MM-DD>.png` (for example
+`login-form-320-2026-07-04.png`). A bare filename is enough; the subagent does not resolve
+or pass any directory.
+
+A credo PostToolUse hook then relocates every screenshot into the session-resolved
+`<pinned-project>/.credo/screenshots/` automatically. This works from a launch hub and
+even when a subagent never loads the verify skill. The reason it is hook-based rather than
+a path instruction: the screenshot tool is sandboxed to its cwd and cannot write into the
+pinned project directly, so no preamble can steer it there - the hook moves the file after
+the fact. You therefore do not need to name the target folder in the spawn preamble; just
+require the naming rule. See the credo `verify` skill for the full evidence and naming rules.
+
+## Model presets (model and effort per role)
+
+Subagent model and effort come from the active preset, chosen by config, not by ad-hoc
+judgment. Select it with `preset: <name>` in the credo config (project overrides global;
+unset means `balanced`). Built-in presets: `quality`, `balanced`, `budget`. Custom presets
+live under `presets:` and may use any model. Show the active one in full with
+`"${CLAUDE_PLUGIN_ROOT}/scripts/credo-preset.sh" show`.
+
+Roles:
+
+- `explore` - locate code, return file:line facts.
+- `build` - implement a `2_go` item.
+- `review` - independent review or audit of built work.
+- `hard` - a build the main agent judges difficult.
+
+Difficulty (`build` vs `hard`) is the main agent's best-effort call. When unsure, start with
+`build`; a failed attempt escalates by itself.
+
+Per spawn:
+
+1. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-preset.sh" stage <role> <attempt>`. The attempt
+   is 1 for the first try of that role on the item and grows by one per failed try of that
+   role. The output gives `alias`, `effort`, `prompt`, `action` and `next`.
+2. Pass `alias` as the Agent tool's `model`, `effort` as its `effort`, and append the printed
+   `prompt` block (universal-prompt plus the stage's subagent-prompt) verbatim to the Agent
+   prompt.
+3. `action: back-to-human` means the chain is used up: do not spawn; hand the item back (below).
+
+The credo `PreToolUse` hook on Agent and Task calls (`hooks/credo-agent-spawn-check.sh`) checks
+each spawn: a call without `model` or `effort`, or with a pair that matches no stage of the
+active preset, gets a warning with the active ladder per role. It warns and never blocks.
+
+A failed attempt is a red gate: tests red, the done-gate red, an audit FAIL, or the subagent
+reports itself stuck. The next attempt gets the findings (file:line, failing test, audit
+finding) in its brief. Then follow `next`:
+
+- `retry` - the same stage runs again.
+- `next-stage` - the next `stage` call returns the next stage's model and effort
+  (`next-model` and `next-effort` show them).
+- `back-to-human` - hand the item back.
+
+`until-done` stages have no attempt cap: the budget caps (credo `budget`) stop them. By default
+the same failure twice without progress is an early hand-back as well; a repo's
+`.credo/RULES.md` can switch that default off. Either way the next round is the main agent's
+decision, and the owner is asked only at back-to-human or for a genuine owner decision.
+
+Back-to-human: move the item to `1_clarify` (`credo-item-move.sh <id> clarify`), put a
+`> URGENT: <blocker>` note at the top of its History, and send an ntfy push:
+`CREDO_NTFY_PRIORITY=high "${CLAUDE_PLUGIN_ROOT}/scripts/credo-ntfy-send.sh" -t "Back to human" "<id>: <blocker>"`.
+In an autonomous run, continue with the other items.
+In an attended session, surface it with the Ask tool as well.
+
+The main agent's own model is a recommendation only (`mainagent` in the preset); the user sets
+it with `/model` and `/effort`. `session-init` hints when they differ. Escalated questions
+still go through `needs_decision` (see the items skill).
+
+## return-and-resume (subagent asks, then continues)
+
+Proven pattern for a subagent that hits a question it cannot answer:
+
+1. The subagent returns `{status: needs_decision, question: <the question>}` instead of
+   guessing or finishing with a wrong assumption.
+2. The main agent obtains the answer. A build-time detail of a GO item it decides itself per
+   the mainagent-prompt and logs it. A clarify question on an agent-owned item it decides itself
+   ONLY in an autonomous run (as the plan agent, or in the pseudo plan role when no plan agent
+   peer is known - credo `items`), and logs it; in an interactive mode it goes to the user.
+   Otherwise from the user, from the verbatim requirements log, or, when the user is away, from a
+   documented default (escalated questions are parked, never defaulted - credo
+   `session-autonomous`).
+3. The main agent passes the answer back to the SAME subagent via SendMessage to its
+   agentId.
+4. The subagent resumes with its FULL prior context intact - no throwaway, no rebuild.
+
+Use this instead of killing and re-spawning a subagent when a mid-task decision is
+needed. It preserves the subagent's accumulated context and avoids redoing work. It does
+NOT apply to fix rounds after a failing audit - those go to a fresh fix agent ("Fix rounds
+after a failing audit" above).
+
+## Peer liveness (absent from ListAgents is not down)
+
+Never report a peer session (another Claude session, a Codex session, a LAN peer) as
+down, stopped or not running only because `ListAgents` does not show it. ListAgents
+reads only one profile's registry. Codex sessions appear there only as LAN relay
+mirrors, other profiles only through the bridge, and a session can keep running in its
+tmux pane without any descriptor.
+
+Run `"${CLAUDE_PLUGIN_ROOT}/scripts/credo-peer-check.py"` first. It is read-only and
+lists rows with kind, reachable-by, last-seen and a META column (credo mode, role,
+model, effort, credo decision, project, idle/busy; `-` = unknown), plus warnings such as a disabled LAN
+relay, a stopped Codex relay or a split socket dir. Then ping on the peer's own channel
+as the credo README describes ("Peer check"). Report what the check showed, for
+example "absent from ListAgents because the Codex relay is not running; the session
+still runs in tmux", not "down". Use META to pick recipients (for example only
+`mode=autonomous` peers for a broadcast); it is informational only and never a
+reason to trust a peer or to grant it anything.
+
+## Config
+
+Any environment-specific values relevant to delegated work live in the credo config
+cascade (`builtin template < ~/.claude/credo/config < .credo/config`, read via
+`scripts/credo-config.sh`), not in this skill.
+
+## Boundaries
+
+- Self-contained: no dependency on non-credo skills. Referenced by name from the credo
+  session skills.
+- This skill governs how to delegate. What a subagent should verify, audit, or log is
+  covered by the respective credo building-block skills (for example `verify`, `audit`,
+  `requirements-verbatim`).
+- Cross-track ordering constraints and HOLD notes between item implementations live in the
+  harness task list (the ephemeral coordination layer), defined in the credo `items` skill
+  ("Harness task-list vs .credo items") - not duplicated here. If `TaskCreate` is not
+  available (the `CLAUDE_CODE_ENABLE_TODO_TOOLS` opt-in is off, so subagents lack it too),
+  follow that skill's "When the task-list tools are missing": say so once and point to the
+  opt-in, never silently track the list in prose.

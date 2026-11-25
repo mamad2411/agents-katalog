@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-derkeyser-LegalSkillsKlotzkette/portaltexte-schriftsatz-brief-und-memo-bausteine/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Wenn es um Portaltexte: Schriftsatz-, Brief-, Memo- und Plädoyer-Bausteine in Forschungszulage-Antragstellung geht: erstellt den passenden Entwurf aus Sachverhalt, Norm, Beweis und Antrag; liefert ein

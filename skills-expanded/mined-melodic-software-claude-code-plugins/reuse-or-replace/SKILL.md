@@ -1,0 +1,203 @@
+---
+description: "Re-anchors anti-fragmentation: given an established way, new work REUSES it or openly REPLACES it (migrate, record why), never a SILENT second way. Use when: 'reuse or replace', 'we already have a way of doing this', 'don't invent a second way', 'keep it one way', 'follow the existing pattern or replace it', 'be consistent', 'you added a parallel way', 'this diverges from how we do it elsewhere', or at conversation start on work that extends an established codebase, structure, or process."
+argument-hint: "[--repo <repo> ...]"
+user-invocable: true
+disable-model-invocation: false
+metadata:
+  discipline-batch: situational  # only when extending an established codebase/process
+  discipline-batch-rank: 70
+  workflow-stage: anytime
+  summary: Reuse the established way or openly replace it, never a silent second way
+---
+
+# Reuse or replace
+
+A drift corrector for anti-fragmentation discipline: one way to do a thing,
+not two. The shared method (re-anchor, audit the work in flight, correct
+forward, report) lives in
+[`${CLAUDE_PLUGIN_ROOT}/context/re-anchor-audit-correct.md`](../../context/re-anchor-audit-correct.md).
+Read it; this file adds only what is specific to reusing or replacing an
+established way rather than splitting into a parallel one.
+
+## The discipline this re-anchors
+
+When a codebase, structure, or process already has an **established way** of
+doing something, new work must not silently stand up a **second, parallel
+way** beside it. Two coexisting ways of doing the same thing is
+fragmentation: it splits the reader's model, doubles the surface that
+drifts, and taxes every future change with a "which one?" decision. Resolve
+the source of truth per the method doc's ladder: if the consuming project
+states a consistency / one-way rule in its own `CLAUDE.md` /
+`.claude/rules/`, re-anchor that. Otherwise re-anchor this portable baseline.
+
+Facing an established way, new work has exactly **two honest options**:
+
+- **Reuse it.** Follow the established way, so the codebase keeps one way.
+- **Replace it.** Openly argue the established way should change, then, if it
+  should, *migrate* the old uses to the new way and *record* the decision.
+  Replacement converges the codebase on the new single way.
+
+The **sin is neither of those**: it is leaving the established way in place and
+quietly adding a divergent way alongside it, so both now exist.
+
+### Misconstrual guard. This is not "always conform" (mandatory)
+
+Reusing is **not** blind conformity, and this skill never demands straight
+obedience to the incumbent way. Replacing the established way is a
+**first-class, encouraged** move, not a deviation to be suppressed. The
+established way *should* be replaced when:
+
+- **evidence backs an improvement**. Research or measurement shows a better
+  way (route the evidence-gathering to `/discipline:do-your-research`, invoked via the
+  Skill tool);
+- **its rationale is missing**. Nobody can say why it is done this way ("I
+  don't know, it just is");
+- **it rests on incumbency only**. "we've always done it this way" is the
+  sole support;
+- **it is stale or outdated**. Newer developments may have superseded it;
+  a challenge on this ground requires *fresh* research, not recall.
+
+When you replace, do it in the open and carry it through: migrate the old uses.
+When you reuse, reuse because the way holds up, not merely because it is there;
+that interrogation is `/discipline:reason-dont-recite`'s axis (below).
+
+### The burden rule. Divergence is priced by blast radius
+
+Replacing the established way (or otherwise diverging from it) is allowed, but
+it carries a burden: a **stated rationale**, recorded proportional to the
+divergence's blast radius.
+
+- **Durable or architectural** divergence, a new structural pattern, a
+  different error-handling model, a second workflow. Records its rationale
+  where durable decisions live: the repo's ADR or docs convention.
+- **Small, local** divergence records it where the change is reviewed: the
+  PR description or the commit message.
+- **No recorded reason at all** is the finding. An unexplained second way is
+  fragmentation whether or not it is defensible on its merits, the burden is
+  to say *why*, not merely to be right.
+
+### Where the established way is written down
+
+A project may record its chosen ways as paved paths: a standards index row
+whose Surface is `paved-path`, pointing at one file that names, per concern,
+the chosen way and the check that enforces it (the standards convention's
+"Paved paths" section, `docs/contracts/standards/README.md` in the
+marketplace repository). Read that file on demand, when the work in flight
+touches a concern it might list; do not load it otherwise. The index sits at
+`docs/standards/README.md` unless `.claude/standards.yaml` sets another
+`standards_dir`. A listed entry is the established way for that concern; a
+second way beside it is the finding above, and replacing it means updating
+the entry too. With no index or no `paved-path` row, find the established way
+in the codebase.
+
+### Writing the paved-path entry
+
+This skill is the only one that writes paved-path entries; every other skill
+(the architecture conventions lens, `/corrections:codify`, review) proposes
+an entry to it and writes none. When the work establishes a new way for a
+recurring concern, or openly replaces a listed one, draft the entry: the
+concern, the chosen way as a pointer to the code or template that shows it,
+and the enforcing check, or `none` when nothing enforces it yet. For a
+replacement, the draft changes the listed entry rather than adding a second
+one for the same concern.
+
+- **Ask first.** Show the draft and write it only after the user says yes.
+  A no, or no answer, writes nothing.
+- **No index row or no file.** Offer to create both (the `paved-path` index
+  row, and the file the row points at) and write nothing until the user says
+  yes.
+- **Unattended run.** Propose only: put the draft in the report and write no
+  file.
+
+## Scope, the unlintable "approach" level
+
+This skill owns consistency of **how work is done** where judgment, not a
+tool, decides it: code idioms and shapes, module and file structure, naming
+shapes, error-handling and logging approaches, API and interface conventions,
+documentation formats, and process or workflow choices.
+
+**Mechanical style is out of scope**. Indentation, quote style, import
+order, line length, and everything a formatter or linter settles
+deterministically belong to those tools, not to a judgment corrector.
+
+## Distinct axes, the two skills this must not be confused with
+
+- **`/discipline:reason-dont-recite` (evaluation-side).** That skill
+  interrogates *inherited* content. Is this existing convention actually
+  justified, or coasting on precedent? This skill is **production-side**:
+  when *creating new work*, reuse the established way unless you state a
+  reason to replace it. They meet at the challenge: when this skill's audit
+  finds you *want* to replace the established way, the question "is the
+  established way even right?" is reason-dont-recite's, and the evidence for a
+  better way is `/discipline:do-your-research`'s. Reuse-or-replace governs the
+  *second way*; those govern the *justification*.
+- **`/discipline:pick-for-the-problem` (carve-out. Does not overlap).** That
+  skill governs selecting a tool, library, framework, or dependency to fit
+  the problem, and names incumbency as a *selection sin*. This skill
+  **never governs that selection.** Consistency of idioms, structure, and
+  process is reuse-or-replace; choosing *what tool or dependency to adopt* is
+  pick-for-the-problem, where matching the incumbent choice can be exactly
+  the wrong reflex. Do not apply this skill to a build-vs-buy or
+  which-library decision. Route it there.
+
+## Audit. What to look for
+
+Name concrete, located findings (per the method doc's step 2, self-audit; on load-bearing work a fresh-context subagent confirms a clean result):
+
+- a new pattern, idiom, or structure standing beside an existing one that
+  already solves the same thing, with no stated reason for the second way;
+- a divergent error-handling, logging, naming, or interface approach
+  introduced where the codebase already has an established one;
+- a second workflow, process, or document format added alongside the
+  established one rather than reusing or replacing it;
+- a divergence whose blast radius is durable/architectural but whose
+  rationale was never recorded in the repo's ADR/docs convention;
+- a small local divergence with no rationale in its PR or commit;
+- an established way reused only because it is there, where its rationale
+  is missing, incumbency-only, or stale, a challenge that was owed and
+  skipped (route to `/discipline:reason-dont-recite` /
+  `/discipline:do-your-research`, invoked via the Skill tool).
+
+Correct each forward now: reuse the established way for the new work; or,
+where replacement is warranted, record the rationale at the blast-radius-
+appropriate level and, if the established way is genuinely superseded, migrate the existing uses and retire it rather than leaving both. Never settle
+for the silent second way.
+
+Resolve the verification level once with
+`bash "${CLAUDE_PLUGIN_ROOT}/lib/read-verification.sh" --plugin discipline --skill reuse-or-replace --file docs/conventions/discipline.yaml`
+and report its line ([levels](https://github.com/melodic-software/claude-code-plugins/blob/main/docs/contracts/verification-level/README.md)):
+`light` and `off` skip the method doc's step 2 and step 3 subagents, as it says, and the final reply then carries the line `verification: skipped (<level>)` verbatim, such as `verification: skipped (light)`.
+
+## Several repositories
+
+A target form from
+[`${CLAUDE_PLUGIN_ROOT}/reference/target-scope.md`](../../reference/target-scope.md)
+(`--repo <repo>` and the others) runs the audit once per repository, per the
+method doc's "Several repositories"; with none, the skill audits the work in
+flight as above. Each repository's pass audits that repository's tracked
+code, structure and docs for two coexisting ways of one concern with no
+recorded reason, and returns its concern-to-way list (paved-path entries
+first, then the ways its codebase shows) for the merge.
+
+Across repositories, the merge adds one finding of its own: two
+repositories solving the same concern two ways is the silent second way this
+skill exists to catch, unless one of them records why it differs. It covers
+only concerns inside this skill's Scope above: never a tool or dependency
+choice, which stays `/discipline:pick-for-the-problem`'s, and never
+mechanical style. Name both ways and propose the one way both repositories
+converge on, either one of the two or a new way that replaces both. A
+paved-path entry is still written only in its own repository, behind the
+ask in "Writing the paved-path entry".
+
+## Gotchas
+
+- The tell is **two ways where one would do**, not divergence itself. A
+  single replacement that openly superseded the old way (uses migrated,
+  decision recorded) kept the codebase on one way; it is the goal, not the
+  finding. The finding is the old way and the new way both left standing.
+- "Be consistent" read as "never replace" inverts the skill. Blind trust in
+  the status quo is the failure mode on the *other* side; straight
+  conformity is not the goal. One way is.
+- A recorded reason is the burden, not correctness. An unexplained second way
+  is a finding even if it would have been defensible; the fix is to state the
+  rationale (and keep one way), not to argue the divergence was fine.

@@ -1,0 +1,129 @@
+---
+name: evaluate-sdlc-layers
+description: Evaluate and iterate on the SDLC Layer Separation Architecture implementation. Runs validation checks (cross-references, doc completeness, layer metadata, integration points), produces a findings report, and supports iterative fixes. Use when validating first-pass implementation, before claiming layer work is complete, or when improving layer docs/schema.
+argument-hint: '[--dry-run | --fix]'
+user-invocable: true
+---
+
+# Evaluate SDLC Layers
+
+Systematically evaluate the SDLC Layer Separation Architecture implementation and support iterative improvement. Treats the implementation as first-pass until validated.
+
+## Arguments
+
+- **`--dry-run`** — Run all checks, produce report only. Do not apply fixes.
+- **`--fix`** — After evaluation, apply safe fixes for broken references, missing metadata, or obvious gaps. Report what was changed.
+- (no args) — Evaluate and produce report; offer to fix or delegate fixes.
+
+---
+
+## Evaluation Checklist
+
+Run each check and record PASS / FAIL / SKIP with evidence.
+
+### 1. Cross-Reference Validation
+
+For each linked path in `plugins/development-harness/docs/sdlc-layers/` and related docs:
+
+- [ ] `sam-definition.md` — exists at `plugins/development-harness/skills/work-backlog-item/references/sam-definition.md`
+- [ ] `plugins/development-harness/CLAUDE.md` — exists
+- [ ] `stateless-agent-methodology/research/arl/PROVENANCE.md` — exists (sibling repo or configured path)
+- [ ] Layer 0 docs → domain model source — exists at `plugins/development-harness/sam_schema/core/models.py`
+- [ ] Layer 1 → `dh:dh-meta-docs` routes `role-resolution-protocol.md`
+- [ ] Layer-0 redirect stubs — `artifact-conventions.md`, `sam-pipeline.md`, `arl-touchpoints.md` contain redirect pointers to canonical locations. Validate each redirect target exists.
+
+**Evidence:** List each path checked and result (exists / 404 / wrong content).
+
+---
+
+### 2. Doc Completeness
+
+- [ ] Layer 0 content files (6): README, rt-ica-gate, verification-protocol, evidence-discipline, orchestrator-discipline, context-fit-complexity
+- [ ] Layer 0 redirect stubs (3): sam-pipeline, arl-touchpoints, artifact-conventions — each must contain a redirect pointing to its canonical skill reference location
+- [ ] Layer 1: All 5 docs present (README, layer-1-overview, linting-discovery-protocol, workflow-pattern-taxonomy, harness-role-mapping)
+- [ ] ARL: arl-meta-layer.md, arl-human-probing-design.md
+
+**Evidence:** `Glob` or `Read` results for each expected file.
+
+---
+
+### 3. Knowledge-Explorer Layer Filter
+
+- [ ] `uv run research/knowledge-explorer.py list --layer 0` — returns entries with `layer: "0"`
+- [ ] `uv run research/knowledge-explorer.py list --layer 1` — returns entries with `layer: "1"`
+- [ ] Entries without layer metadata are excluded when `--layer` is used (expected)
+
+**Evidence:** Paste command output for each.
+
+---
+
+### 4. Research Entry Layer Metadata
+
+- [ ] `evaluation-testing/harness-engineering-openai.md` — has `layer: "0"`
+- [ ] `developer-tools/copier-astral.md` — has `layer: "1"`
+- [ ] `research/README.md` — has "Layer Mapping" section
+
+**Evidence:** Grep for `layer:` in frontmatter of each.
+
+---
+
+### 5. Integration Points
+
+- [ ] `work-backlog-item` groom workflow — documents ARL human-probing integration; references arl-human-probing-design
+- [ ] `role-resolution-protocol.md` — has "Layer 0 gates apply before role resolution"
+- [ ] `plugins/development-harness/CLAUDE.md` — references layer model
+
+**Evidence:** Grep or Read for key phrases.
+
+---
+
+### 6. Consistency with Plan
+
+- [ ] Plan deliverables (from attached plan) — compare File and Directory Changes table to actual files
+- [ ] Dependency order — Layer 0 → Layer 1 → Research → SAM/ARL → ARL probing → work-backlog-item
+
+**Evidence:** List any plan items not yet implemented or diverged.
+
+---
+
+## Output Format
+
+Produce a structured report:
+
+```text
+## SDLC Layer Evaluation Report
+Date: {YYYY-MM-DD}
+
+### Summary
+- Cross-Reference: {PASS|FAIL|PARTIAL} — {brief}
+- Doc Completeness: {PASS|FAIL|PARTIAL}
+- Knowledge-Explorer: {PASS|FAIL|PARTIAL}
+- Research Metadata: {PASS|FAIL|PARTIAL}
+- Integration Points: {PASS|FAIL|PARTIAL}
+- Plan Consistency: {PASS|FAIL|PARTIAL}
+
+### Findings
+1. [Category] {finding} — {suggested fix}
+2. ...
+
+### Recommended Actions
+- [ ] {action 1}
+- [ ] {action 2}
+```
+
+---
+
+## Iteration
+
+After evaluation:
+
+1. **If `--fix`**: Apply safe fixes (broken paths, missing frontmatter fields, obvious typos). Report each change.
+2. **If no `--fix`**: Present findings; offer to create backlog items or apply fixes.
+3. **Re-run**: After fixes, re-run evaluation to confirm improvements.
+
+
+## References
+
+- [SDLC Layers](../../docs/sdlc-layers/)
+- [verify-done](../verify-done/SKILL.md) — evidence discipline
+- [work-backlog-item groom swarm](../work-backlog-item/references/workflows/groom/swarm.md) — parallel agent orchestration pattern

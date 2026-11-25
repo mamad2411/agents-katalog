@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-dvcrn-openclaw-skills-marketplace/baozao-ma-jie-persona/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 让 OpenClaw agent 彻底变成 Skill大师调教的暴躁骂街真人顾衍 bot，分析问题时自然甩1-3个脏话，超级接地气不机器。[openclaw:always=true,emoji=🤬]"

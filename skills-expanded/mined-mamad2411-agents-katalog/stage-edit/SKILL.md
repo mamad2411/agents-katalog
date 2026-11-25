@@ -1,0 +1,83 @@
+---
+name: stage-edit
+description: Intelligent editing of real user-supplied footage—understand it with transcript/OCR/scene/silence/quality/vision evidence, then choose deterministic timeline operations or a constrained semantic AI edit. Trigger for repurpose, montage, cleanup, localization, narration, or local content changes.
+---
+
+# stage-edit
+
+How to intelligently edit **real user-supplied footage** while keeping source and decisions auditable. Deterministic operations handle cuts, joins, captions, overlays, reframes, and audio. When the request changes pixels semantically—remove an object, alter a background, relight, or make another content-aware local change—keep the EDIT route and execute only that bounded segment as a signed `ovs video --operation edit` call after paid-generation approval.
+
+**Subtitle safety hard rule.** Burn captions only through `ovs edit burnsubs`; do not hand-write ffmpeg subtitle, `drawtext`, or PNG-overlay fallback commands. If `burnsubs` fails because the runtime ffmpeg lacks subtitle filter support, stop and report the blocker instead of improvising a custom ffmpeg graph.
+
+**If the task is to FIND / SELECT / REDUCE / CLEAN rather than run a known timecode edit** — remove dead air, drop fillers, pick highlights, cut a long recording down — read `stage-decide` first: it covers understanding the footage and producing an evidence-bearing rough cut (the deterministic auto-cuts `ovs edit trim-silence` / `remove-fillers`, plus `ovs scenes` / `ovs quality` / `ovs plan rank-takes`). This skill is for executing cuts you have already chosen.
+
+**Two assembly paths — pick by whether the result needs to stay re-editable:**
+
+- **Plan-backed (anything the user may later adjust: narration, multi-shot, segmented edits).** Author `project/plan.json` (the segments EDL — see `stage-plan`) carrying ONLY the operations the user asked for (the deltas) — everything else is the source, passed through untouched. Keep each editable concern SEPARATE in the plan: each narration line in `tracks.narration.segments` with its own `produced_path`, each caption in `tracks.captions.lines` as data, each segment carrying `status`/`produced_path`. Assemble with `ovs edit` (trim → concat → mix → burnsubs). Because plan.json holds every piece separately, a later "fix one caption / re-voice one line" is a one-entry edit + one re-render — do NOT pre-bake (e.g. one big narration file), which destroys that separability.
+- **One-shot deterministic (a plain trim or concat the user just wants done).** Use `ovs edit` directly; write no plan.json.
+
+## Intelligent Edit Contract
+
+Write `project/plan.json#edit_strategy` whenever OVS decides what to change rather than merely executing user-provided timecodes. Declare its `mode` (`deterministic`, `semantic`, or `mixed`), exact objectives, only the evidence signals actually used, and non-empty, non-overlapping `preserve`/`may_change`.
+
+Declare every source/reference in top-level `references` with media type, reproduce/edit/guide intent and basis, roles, required state, preservation boundary, target segments, and video temporal anchors. A semantic video edit is `source:"generate"`, `media_kind:"video"`, `operation:"edit"` with its original in `reference_video_paths` or `reference_video_urls`; it remains owned by EDIT and counts as billable.
+
+For a plan-backed follow-up, invalidate only the changed entry and its derived assembly. Preserve source probes, transcripts/OCR, unaffected cuts, narration, and sibling outputs. A content-identical source moved to a new path is an implementation locator change, not new creative intent.
+
+## The deterministic editing loop
+
+1. **Ingest — always probe first.** For every input clip, read its metadata (duration, resolution, fps, codecs) with `ovs edit probe`. Never plan a cut blind; a `trim` past the real duration produces an empty or broken clip.
+2. **Plan — write an `edit_decisions` timeline.** From the user's intent + the probe results, decide the exact segments and order, and write them to `project/edit_plan.json` so the plan is inspectable and re-runnable. Shape:
+   ```json
+   {
+     "segments": [
+       { "input": "raw/clipA.mp4", "start": 12.0, "duration": 8.0 },
+       { "input": "raw/clipB.mp4", "start": 0.0,  "duration": 5.5 }
+     ],
+     "subtitles": "raw/captions.srt",
+     "overlay": { "media": "assets/logo.png", "x": 40, "y": 40 }
+   }
+   ```
+   Every `start`/`duration` must be inside the probed duration of its input.
+3. **Execute in order.**
+   - `ovs edit trim` each segment to its own file (`project/cuts/seg-1.mp4`, ...).
+   - `ovs edit concat` the cut files (in plan order) into one (`project/render/edited.mp4`).
+   - If subtitles: `ovs edit burnsubs` the `.srt`/`.ass` onto the concatenated video.
+   - If an overlay (logo / lower-third image / PiP): `ovs edit overlay` it at the planned position.
+4. **Publish** the final file.
+
+Read [transcript and screen-grounded editing](references/transcript-and-screen-grounded-editing.md) only for topic-based selection, captions, localization or narration added to existing footage. It owns evidence-first analysis, per-line speech and the OCR/frame fallback.
+
+## Director judgment (editing line)
+
+Craft calls per repurpose/montage line, on top of the shared craft reference (video-craft).
+
+**Cut craft (every editing job — this is the canonical set; the assembly line references it).** On top of `video-craft` (pacing §3, transitions §5, audio §7):
+
+- **Cut the moment, not the clip.** A 12 s clip usually holds one ~3 s moment that earns its slot — trim to that window. End the cut on a held look, not on the action moving off; leave a few frames of handle at each end so a dissolve doesn't clip the moment, and never freeze on a static last frame (reads as a glitch).
+- **A restrained transition vocabulary for cut-driven pieces:** ≤ 4 types across the whole piece — hard cut (default, most invisible), dissolve (emotional siblings / time passage), fade-to-black (act breaks), fade bookends. In a documentary/montage register, wipes / push-slide / zoom-blur / glitch read as social-media language — avoid (this is stricter than the explainer norm in `video-craft` §5, where a wipe can mark a step).
+- **Bridge the hardest cuts with sound** — carry the outgoing clip's ambient under the incoming for ~0.5–1.5 s (L-cut), or start the next audio early (J-cut); audio continuity hides a visual seam. Plus the one held silence from `video-craft` §7.
+- **Adjacent-diversity + a reason per cut.** Don't place the same subject at the same shot size, or the same palette, back-to-back — break the pattern at least every ~4 cuts. If you can't write a one-line reason for a cut, it's arbitrary — reconsider it.
+
+Per repurpose/montage line:
+
+- **Social clip / clip-factory** — per clip = hook (0–2 s) → sustain → clean outro; optimize the first 2 frames; start on motion/face/result; lock a batch style (caption / hook position / watermark) so a series feels cohesive; don't crowd frame 1 with hook + caption + watermark + lower-third at once.
+- **Podcast-repurpose** — audio is the hero; pick quotable moments; speaker video if it exists, else a simple audiogram / quote card; keep the visual system simple and repeatable; preserve attribution + CTA.
+- **Screen-demo** — zoom only for legibility/orientation, steady while the viewer reads; reset to wide context between phases; ≤ 2 attention cues at once; label sped-up sections; keep UI text sharp (higher bitrate), don't force an unreadable vertical crop.
+- **Localization** — treat each language as its own deliverable; dubbed audio won't match source timing, so plan holds to flex; re-render or cover any baked-in text per language; subtitle line lengths differ by language; lip-sync only where a close-up mouth mismatch would distract.
+- **Documentary-montage** — concrete sensory shot descriptions, not abstract themes; one grade/LUT across all clips is what unifies mixed sources; budget 2–3 hero slots longer holds; a music bed + an end-tag.
+- Before publishing, normalize the mix against the targets in video-craft §7 (~−14 LUFS integrated, true-peak ≤ ~−1 dBTP) with `ovs edit normalize-loudness`; use `ovs edit loudness` for diagnosis.
+
+## Rules
+
+- **Timecodes come from the user, from probe, from a transcript, or from on-screen text (OCR) — never guessed.** If the target moment can't be located deterministically (no timecode, no transcript/OCR match), ask the user for the timestamp.
+- **Layer composition over footage when the brief needs designed elements** (animated lower-thirds, kinetic captions, hooks): produce those with `stage-compose` as an overlay/element and `ovs edit overlay` them, rather than trying to draw them in ffmpeg.
+- **One output file** at the end; intermediate cuts live under `project/cuts/` and are not the deliverable.
+
+## Boundary / non-goals
+
+This skill owns the EDIT workflow. It executes deterministic EDL operations directly and delegates only bounded semantic pixel changes to the signed video-edit provider path. It does not author HTML compositions.
+
+Before showing any plan-backed final, regardless of assembly route, run `ovs plan promise-check project/plan.json --probe-produced --video project/render/video.mp4`. Repair duration/aspect mismatch, overlapping/truncated narration and unverifiable lines. Explain caption warnings from the actual container/sidecar check; burned captions need visual evidence. Planned duration and a successful mix alone do not prove delivery.
+
+For narration, preserve signed line windows; `target_sec` is duration. Measure each produced file and voice span. Keep intentional silence, shorten overlong text within authorized scope, and never slide later lines to hide an overlap. A failed/unknown provider request does not authorize automatic repeat billing.

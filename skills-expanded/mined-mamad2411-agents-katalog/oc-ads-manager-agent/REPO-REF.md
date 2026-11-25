@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-luokai0-ai-agent-skills-by-luo-kai/oc-ads-manager-agent/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: When the user wants to manage, automate, or analyze paid advertising campaigns on Google Ads, Meta.

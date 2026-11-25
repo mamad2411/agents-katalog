@@ -1,0 +1,165 @@
+---
+name: audit-html
+description: Scan a project's own markdown for files that would benefit from an HTML view. Report-only by default; opt-in static view generation. Treats HTML as additive (markdown stays canonical) and detects projects that already generate HTML.
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Write
+  - Bash
+  - "Bash(mktemp -d /tmp/*)"
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render-html.js *)"
+  - "Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render-html.js)"
+---
+
+# Audit HTML
+
+**Use this when:** You want to know which of *your own* long human-read markdown files (status trackers, dashboards, decision logs, runbooks) would benefit from an HTML view alongside the markdown source.
+
+**Don't use this when:** You want to render an existing toolkit output (`/tk:create-plan`, `/tk:document`, `/tk:review-*` already produce HTML themselves), generate an interactive playground (`/tk:playground`), or convert your markdown into HTML and throw away the source (this skill is additive and never converts).
+
+## Critical Rules
+
+<rules>
+
+1. **Report only, by default.** Generate no HTML view, edit no source markdown and change no file unless the user asks for it after seeing the report.
+2. **HTML is additive, never a migration.** The source markdown stays canonical. Any view generated reads from the markdown; it does not replace it.
+3. **Every project qualifies; not every project has a high-value candidate.** "Nothing here benefits from an HTML view" is a valid result. Do not invent candidates to fill the report.
+4. **Never rebuild what exists.** If the project already has HTML-generation infrastructure (a `package.json` dashboard script, a `.js` that reads markdown and emits/serves HTML), do not propose building a new view. Offer to align the existing output with toolkit visual tokens instead.
+
+</rules>
+
+## Principle and Signals (single source of truth)
+
+The two-layer principle, signals, and hard vetoes this skill applies are documented in the project's HTML output rules. Inline them so the skill, its docs, and the rules file never drift. How a page reaches the user is in the `html-viewing` skill, loaded by name only when this skill renders:
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/html-outputs.md"`
+
+!`cat "${CLAUDE_PLUGIN_ROOT}/skills/shared/html-own-files.md"`
+
+The "Your Own Files (downstream projects)" section above defines:
+- the two layers (toolkit outputs already HTML-render; your own markdown can get optional additive views)
+- the signals (read-every-session tracker, walls of text, hunt-not-read, existing hand-built view)
+- the hard vetoes (Claude-read, canonical/data-source, host-native, lives in `.claude/`)
+
+When in doubt during the audit, defer to those definitions rather than guessing.
+
+## Procedure
+
+<procedure>
+
+### 1. Gather the project's markdown
+
+Run `git ls-files -z '*.md' ':!.claude' ':!plans/PLAN-*' ':!artifacts' ':!node_modules' | xargs -0 wc -l --` once, then the same listing piped into `xargs -0 grep -c '^##' --` and into `xargs -0 grep -cE '✅|🟥|🟨|🟩|- \[x\]' --` (M16): the three outputs give every tracked markdown file its line count, `##` heading count and progress-marker count, which is both the inventory and the numbers step 3 scores, with no command substitution, so default permission mode never stops; `-z`, `-0` and `--` keep an awkward name (spaces, an apostrophe, an accent, a leading dash) in one piece, tracked files already honor `.gitignore`, and the listing drops `.claude/` (prompt files, vetoed anyway), `plans/PLAN-*.md` (Claude-read) and `artifacts/` (already HTML territory). Outside a git repository, fall back to `Glob` over `**/*.md` with the same three exclusions plus the common build/output directories (`node_modules`, `.git`, `dist`, `build`, `out`, `coverage`, `.next`, `.nuxt`, `vendor`, `target`, `__pycache__`) and whatever else the project's `.gitignore` lists, since Glob does not auto-respect it.
+
+If the project has a `CODEBASE_MAP.md`, read it once for context on which files are "trackers" vs "docs" vs "self-description data" - that map already labels file purposes and saves re-deriving them.
+
+### 2. Detect existing HTML-generation infrastructure
+
+Before evaluating individual files, scan for projects that already render markdown to HTML:
+
+- `package.json` scripts containing `dashboard`, `render`, `html`, `docs:build`, `pages`
+- `.js` / `.ts` / `.mjs` / `.cjs` files that `readFile` or `readFileSync` a `.md` and call `.write` or `res.send` with HTML
+- A `public/` or `dist/` folder with `.html` files whose names mirror `.md` files in the repo
+
+The first two are one command (M16): `grep -riE 'dashboard|render|html|docs:build|pages' --include=package.json --exclude-dir=node_modules . 2>/dev/null; grep -rl 'readFile' --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' . 2>/dev/null | grep -v node_modules | tr '\n' '\0' | xargs -0 grep -l '\.md' --`; no output means neither exists, and each line printed is a script or file to read before deciding, except a `package.json` line outside `scripts` (a dependency, the project's name), which does not count.
+
+If any of these exist, **stop the audit short**. Report the existing setup, do not propose building a new view, and offer two options:
+- Align the existing output with the toolkit visual tokens in `${CLAUDE_PLUGIN_ROOT}/skills/shared/html-look.md` (typography, color palette, severity badge colors)
+- Register the existing script as the project's "view-generator of record" by noting it in `CLAUDE.md` so future sessions know not to suggest rebuilding it
+
+### 3. Score each markdown file against signals and vetoes
+
+For every file not excluded by a hard veto, evaluate the signals from `html-own-files.md`, taking the line, heading and marker counts from step 1's output rather than opening each file (M16), and opening a file only for what the counts cannot show (nested tables, long sections without subheadings, a veto):
+
+- **Read-every-session tracker:** look for files in the project root or `docs/` whose contents are dense status tables, progress markers (`✅`, `🟥`, `🟨`, `🟩`, `- [x]`), or repeated section headers indicating tracked items.
+- **Markdown degrading into walls of text:** file is over ~200 lines, contains 3+ nested tables, or has long sections (>50 lines) without subheadings.
+- **File so long the human hunts instead of reads:** size over ~500 lines, OR the file has 10+ `##`/`###` sections (the human would Ctrl+F rather than scroll).
+- **Existing hand-built view:** if a `.html` file mirrors the markdown name, treat it as a strong signal that someone already values the view.
+
+Apply every hard veto from `html-own-files.md`. A vetoed file does not appear in the report, even if it would otherwise score high.
+
+### 4. Write the report
+
+Use the format below. For each candidate, state which signals fired and one short sentence of "why this file specifically." Do not include vetoed files. If no file scores, say so plainly.
+
+### 5. Offer (do not auto-run) the top-candidate view
+
+**If step 4 reported zero candidates, skip this step.** Close with one line like "No candidates this pass; rerun /tk:audit-html after adding new long-form docs." Do not ask about generating a view there is no source for.
+
+Otherwise, after the report, ask: "Want me to generate a static HTML view of the top candidate? It writes to `artifacts/html/`, publishes it to a private hosted page (or opens it in your browser when this session cannot publish), and leaves the markdown untouched. Otherwise this is report-only."
+
+Only generate when the user explicitly says yes.
+
+</procedure>
+
+## Output Format
+
+```markdown
+# /tk:audit-html report
+
+**Scanned:** N markdown files
+**Vetoed:** M files (Claude-read / canonical / host-native / .claude/)
+**Existing HTML-generation setup:** yes / no (path if yes)
+
+## Candidates
+
+### 1. `path/to/file.md` (top candidate)
+- **Signals:** read-every-session tracker, file so long the human hunts (812 lines, 14 sections)
+- **Why this file:** Lists every roadmap item with status; you open it weekly to find one specific row.
+- **Source stays markdown.** A view here would surface the table as a sortable, filterable grid alongside the source.
+
+### 2. `docs/runbook.md`
+- **Signals:** walls of text (no subheadings between L120-L240)
+- **Why this file:** Incident steps are buried in a single 120-line section; on-call scrolls past it under stress.
+
+(...up to 5 candidates...)
+
+## No-action files (vetoed or too short)
+
+A one-line summary of why nothing else scored. List vetoes by category, not by file.
+```
+
+If the scan finds an existing HTML-generation setup, the report instead leads with that finding and skips candidate listing:
+
+```markdown
+# /tk:audit-html report
+
+**Existing HTML-generation setup detected.** `package.json` script `dashboard` reads `STATUS.md` and emits `public/dashboard.html`.
+
+Two options:
+1. Align the existing output with the toolkit's visual tokens: typography, colors, severity badges. Want me to draft the changes?
+2. Register this as the project's view-generator in `CLAUDE.md` so future sessions know not to suggest rebuilding it.
+
+No new view will be built.
+```
+
+## HTML Report Judgement
+
+The audit report is itself a human-read multi-item report. Per `html-outputs.md`, render an HTML view of the audit report when 5 or more candidates are listed: audit candidates are softer than review findings, so a short list stays in markdown.
+
+Do NOT hand-write the HTML. Produce a JSON payload matching the schema documented at the top of `${CLAUDE_PLUGIN_ROOT}/skills/shared/shells/audit-shell.html` (read its header comment for the exact fields - each candidate has `file`, `verdict`, `signals`, `vetoes`, `reason`). Write the JSON as `data.json` in a fresh folder from `mktemp -d /tmp/audit-render.XXXXXX`, made and used per "Temporary folders" in `${CLAUDE_PLUGIN_ROOT}/skills/shared/html-outputs.md`; that folder is `<render-dir>` below. Load the viewing rules now, through the Skill tool (`Skill(tk:html-viewing)`), then check the publish gate (see **"Render for the viewport"** in them): if this session can publish, add `--no-abs` to the command below. Then run the helper from the project root (it computes the timestamped name, creates `artifacts/html/`, needs no read-before-write step, and prints the output path):
+
+`node ${CLAUDE_PLUGIN_ROOT}/scripts/render-html.js --shell audit --name audit-html --data <render-dir>/data.json`
+
+Then show it to the user per the **"Viewing the Artifact"** rules in `${CLAUDE_PLUGIN_ROOT}/skills/shared/html-viewing.md`: publish is the primary viewport, the local open is the fallback, and that section holds the whole decision.
+
+## Static View Generation (opt-in, on request only)
+
+When the user says "yes, generate the view" after seeing the report:
+
+1. Read the source markdown for the top candidate.
+2. Do NOT hand-write the HTML. Convert the markdown's structure into a JSON payload matching the schema documented in the header of `${CLAUDE_PLUGIN_ROOT}/skills/shared/shells/docview-shell.html` (sections with heading/level/blocks; block types: prose, list, table, code). The shell builds the viewing behaviors in once: tables are sortable, long sections collapse automatically (explicit `collapsed: true/false` overrides). Write the payload as `data.json` in a fresh folder from `mktemp -d /tmp/docview-render.XXXXXX`, made and used per "Temporary folders" in `${CLAUDE_PLUGIN_ROOT}/skills/shared/html-outputs.md`; that folder is `<render-dir>` in step 3.
+3. Load the viewing rules now, through the Skill tool (`Skill(tk:html-viewing)`), then check the publish gate (see **"Render for the viewport"** in them): if this session can publish, add `--no-abs` to the command below. Then run the helper from the project root:
+   `node ${CLAUDE_PLUGIN_ROOT}/scripts/render-html.js --shell docview --name <source-basename> --stable --data <render-dir>/data.json`
+   `--stable` writes exactly `artifacts/html/<source-basename>.html` (the default out dir). Do not modify the source markdown. A same-basename re-run overwrites the prior view (latest wins) - unlike the helper-rendered audit report (which is timestamped), this static view is intentionally not timestamped, because it is keyed to the source file's identity. Malformed JSON dies before any file write.
+4. Then show it to the user per the **"Viewing the Artifact"** rules in `${CLAUDE_PLUGIN_ROOT}/skills/shared/html-viewing.md`: publish is the primary viewport, the local open is the fallback, and that section holds the whole decision. This is a `--stable` type, so it updates its existing page rather than creating a new one.
+5. Confirm in chat, reporting the local path and, when the publish in step 4 succeeded, the link alongside it, per the "What to tell the user" line in `${CLAUDE_PLUGIN_ROOT}/skills/shared/html-viewing.md`. Always state that the source markdown is unchanged.
+
+The view is read-only and disposable. It can be regenerated any time the markdown changes; do not build any sync mechanism between them.
+
+<rules>
+
+## REMEMBER: Report only. Generate views only on explicit request. Never modify the source markdown.
+
+</rules>

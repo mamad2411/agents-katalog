@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-NeverSight-learn-skills.dev/backend-async-python/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Master Python asyncio, concurrent programming, and async/await patterns for high-performance FastAPI applications. Use when building async APIs, concurrent systems, or I/O-bound applications requiring

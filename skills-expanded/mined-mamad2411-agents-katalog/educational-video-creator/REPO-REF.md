@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/mamad2411/agents-katalog (path: skills-expanded/mined-skindhu-skind-skills/educational-video-creator/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Create educational videos using Remotion with Kurzgesagt/回形针 style. Use when users want to: (1) create teaching or educational videos, (2) design video storyboards, (3) produce animated explainer vide
