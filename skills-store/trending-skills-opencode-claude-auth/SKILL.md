@@ -1,4 +1,3 @@
-```markdown
 ---
 name: opencode-claude-auth
 description: OpenCode plugin that reuses Claude Code OAuth credentials for Anthropic API access — no separate API key needed
@@ -223,4 +222,3 @@ The plugin requires `~/.claude/.credentials.json` to exist (created by running `
 ## Disclaimer
 
 This plugin uses Claude Code's OAuth credentials. Anthropic's Terms of Service restrict Claude Pro/Max subscription tokens to official clients. This is a community workaround that may break if Anthropic changes their OAuth infrastructure. Use at your own discretion.
-```

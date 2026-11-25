@@ -1,4 +1,3 @@
-```markdown
 ---
 name: lil-agents-macos-dock
 description: Tiny AI companions (Bruce and Jazz) that live on your macOS dock and provide Claude Code, OpenAI Codex, and GitHub Copilot CLI access via animated characters
@@ -640,4 +639,3 @@ NSApp.setActivationPolicy(.accessory)
 ## License
 
 MIT — see [LICENSE](https://github.com/ryanstephen/lil-agents/blob/main/LICENSE).
-```

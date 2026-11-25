@@ -1,4 +1,3 @@
-```markdown
 ---
 name: ralph-autonomous-agent-loop
 description: Ralph is an autonomous AI agent loop that runs AI coding tools (Amp or Claude Code) repeatedly until all PRD items are complete, with memory persisting via git history, progress.txt, and prd.json.
@@ -418,4 +417,3 @@ watch -n 5 'cat prd.json | jq ".userStories[] | {id, title, passes}"'
 - [Amp documentation](https://ampcode.com/manual)
 - [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code)
 - [Interactive Ralph Flowchart](https://snarktank.github.io/ralph/)
-```

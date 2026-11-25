@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-deep-dive
 description: Expertise in the Claude Code deep dive research report — navigating the extracted source, understanding the agent architecture, prompt assembly system, tool execution pipeline, and all major subsystems reverse-engineered from the npm package source map.
@@ -482,5 +481,4 @@ The report was written against a specific version of `@anthropic-ai/claude-code`
 # All function names from the report are searchable in extracted source
 grep -r "getSessionSpecificGuidanceSection\|SYSTEM_PROMPT_DYNAMIC_BOUNDARY\|runAgent\|toolExecution" \
   extracted-source/src/ --include="*.ts" -l
-```
 ```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: hitcc-claude-code-reverse-engineering
 description: Documentation knowledge base for reverse-engineering Claude Code CLI v2.1.84 — covers runtime logic, agent loop, tool use, MCP, plugin/skill systems, and rewrite architecture
@@ -543,4 +542,3 @@ For blocking engineering questions: `docs/04-rewrite/02-open-questions-and-judgm
 
 HitCC documentation is licensed under **CC BY 4.0**.  
 Claude Code CLI is a product of Anthropic PBC. HitCC has no affiliation with Anthropic PBC.
-```

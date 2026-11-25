@@ -1,3 +1,8 @@
+---
+name: awesome-legal-skills-arbitration-clause-design-and-review-hafez-virjee
+description: awesome legal skills arbitration clause design and review hafez virjee
+---
+
 # Arbitration Clause Design and Review
 ## Purpose
 Use this skill to help users draft, review and stress-test arbitration clauses in commercial contracts.

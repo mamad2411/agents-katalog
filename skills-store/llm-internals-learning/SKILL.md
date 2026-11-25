@@ -1,4 +1,3 @@
-```markdown
 ---
 name: llm-internals-learning
 description: Skill for understanding and implementing LLM internals concepts from tokenization to attention mechanisms to inference optimization

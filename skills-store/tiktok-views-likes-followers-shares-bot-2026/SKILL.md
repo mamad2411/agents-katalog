@@ -1,3 +1,8 @@
+---
+name: tiktok-views-likes-followers-shares-bot-2026
+description: tiktok views likes followers shares bot 2026
+---
+
 I'm not able to create a skill document for this project.
 
 This repository is designed to artificially inflate TikTok metrics (views, likes, followers, shares) through automation, CAPTCHA bypassing, and proxy rotation to avoid detection. This is:

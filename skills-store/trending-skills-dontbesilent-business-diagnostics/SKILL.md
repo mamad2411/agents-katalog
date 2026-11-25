@@ -1,4 +1,3 @@
-```markdown
 ---
 name: dontbesilent-business-diagnostics
 description: Business diagnosis toolkit distilled from 12,307 tweets into Claude Code skills — commercial model diagnosis, benchmarking, content strategy, execution unblocking, and concept deconstruction.
@@ -421,4 +420,3 @@ Use specific commands instead of `/dbs` router:
 - Commercial use: requires separate authorization — contact the author
 
 Author: [dontbesilent](https://x.com/dontbesilent)
-```

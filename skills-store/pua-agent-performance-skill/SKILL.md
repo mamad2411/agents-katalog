@@ -1,4 +1,3 @@
-```markdown
 ---
 name: pua-agent-performance-skill
 description: Install and use the PUA/PIP skill plugin to force AI coding agents to exhaust every solution before giving up, with auto-triggered pressure escalation and proactive debugging methodology.
@@ -336,4 +335,3 @@ cp commands/pua-en ~/.claude/commands/pua-en
 - Twitter/X: https://x.com/xsser_w
 - Landing page: https://openpua.ai
 - WeChat: Scan QR at repo root (`assets/wechat-qr.jpg`)
-```

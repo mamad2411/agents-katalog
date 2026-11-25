@@ -1,4 +1,3 @@
-```markdown
 ---
 name: hermes-desktop-macos
 description: Native macOS SSH workspace for Hermes Agent — sessions, terminal, files, usage, and skills over direct SSH
@@ -513,4 +512,3 @@ lsof -i -n -P | grep HermesDesktop
 | Uses `/usr/bin/ssh` | Same path as Terminal — no novel auth surface |
 | `BatchMode=yes` on all non-terminal SSH calls | Prevents silent interactive prompt hangs |
 | Conflict check before every save | Protects against agent overwriting newer remote state |
-```

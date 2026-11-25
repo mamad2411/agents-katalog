@@ -1,4 +1,3 @@
-```markdown
 ---
 name: sbti-personality-test
 description: A single-page HTML personality/quiz test web app (SBTI Test mirror) with split image and HTML assets, deployable as a static site.
@@ -280,4 +279,3 @@ sbti.yourdomain.com
 - **Mirror repo**: [UnluckyNinja/SBTI-test](https://github.com/UnluckyNinja/SBTI-test)  
 - **Original creator**: Bilibili @蛆肉儿串儿  
 - **No license declared** — respect the original author's work.
-```

@@ -1,3 +1,8 @@
+---
+name: claude-skill-security-auditor-wrsmith108_claude-skill-security-auditor
+description: claude skill security auditor wrsmith108 claude skill security auditor
+---
+
 # Security Auditor Skill
 
 Run structured security audits with actionable remediation plans.

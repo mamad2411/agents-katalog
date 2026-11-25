@@ -1,4 +1,3 @@
-```markdown
 ---
 name: obsidian-skills-agent
 description: Teach AI coding agents to work with Obsidian vaults using Markdown, Bases, JSON Canvas, and the Obsidian CLI
@@ -632,4 +631,3 @@ export DEFUDDLE_API_KEY="your-key-here"
 - [Defuddle CLI](https://github.com/kepano/defuddle-cli)
 - [Agent Skills Specification](https://agentskills.io/specification)
 - [obsidian-skills GitHub](https://github.com/kepano/obsidian-skills)
-```

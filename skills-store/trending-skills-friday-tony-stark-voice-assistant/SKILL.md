@@ -1,4 +1,3 @@
-```markdown
 ---
 name: friday-tony-stark-voice-assistant
 description: Build and extend FRIDAY, a Tony Stark-inspired voice AI assistant using FastMCP, LiveKit Agents, Gemini LLM, Sarvam STT, and OpenAI TTS.
@@ -387,5 +386,4 @@ curl -N http://127.0.0.1:8000/sse
 # Add a tool: create friday/tools/mytool.py → register(mcp) → add to __init__.py
 
 # Switch providers: edit STT_PROVIDER / LLM_PROVIDER / TTS_PROVIDER in agent_friday.py
-```
 ```

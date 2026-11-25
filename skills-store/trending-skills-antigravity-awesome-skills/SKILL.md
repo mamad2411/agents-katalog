@@ -1,4 +1,3 @@
-```markdown
 ---
 name: antigravity-awesome-skills
 description: Install, browse, and use the 1,265+ agentic skills library for Claude Code, Gemini CLI, Cursor, Codex CLI, Kiro, and other AI coding assistants.
@@ -457,4 +456,3 @@ skill.write_text(content, encoding="utf-8")
 - **Full Catalog**: https://github.com/sickn33/antigravity-awesome-skills/blob/main/CATALOG.md
 - **Web App**: `apps/web-app` (run locally with `npm run dev`)
 - **npm package**: `antigravity-awesome-skills`
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-hermes-agent
 description: Curated ecosystem guide for Hermes Agent by Nous Research — a self-improving AI agent with skills, memory, multi-platform messaging, and MCP integration
@@ -601,4 +600,3 @@ hermes kill SESSION_ID
 | Cybersecurity Skills | https://github.com/mukul975/Anthropic-Cybersecurity-Skills |
 | GUI Dashboard | https://github.com/builderz-labs/mission-control |
 | Self-Evolution | https://github.com/NousResearch/hermes-agent-self-evolution |
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-design-md
 description: Use curated DESIGN.md files from popular websites to give AI coding agents instant design system context for building pixel-perfect UI.
@@ -514,4 +513,3 @@ git push origin add-newsite-design
 - **VoltAgent Framework:** https://github.com/VoltAgent/voltagent
 - **Discord:** https://s.voltagent.dev/discord
 - **License:** MIT
-```

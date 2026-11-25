@@ -1,4 +1,3 @@
-```markdown
 ---
 name: open-codesign-ai-design
 description: Open-source Claude Design alternative — turn prompts into prototypes/slides/PDFs locally with any AI model (Claude, GPT, Gemini, Ollama) via BYOK
@@ -485,4 +484,3 @@ OPEN_CODESIGN_CONFIG     # override config file path
 - **Contributing:** https://github.com/OpenCoworkAI/open-codesign/blob/main/CONTRIBUTING.md
 - **Security policy:** https://github.com/OpenCoworkAI/open-codesign/blob/main/SECURITY.md
 - **License:** MIT
-```

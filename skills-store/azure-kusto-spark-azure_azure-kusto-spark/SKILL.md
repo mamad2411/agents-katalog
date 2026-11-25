@@ -1,3 +1,8 @@
+---
+name: azure-kusto-spark-azure_azure-kusto-spark
+description: azure kusto spark azure azure kusto spark
+---
+
 # SKILL: Azure Kusto Spark Connector — Release Process
 
 ## Identity

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: sni-spoofing-dpi-bypass
 description: Bypass Deep Packet Inspection (DPI) firewalls using IP/TCP header manipulation and SNI spoofing techniques in Python
@@ -366,4 +365,3 @@ config = {
 ## Legal & Ethical Notice
 
 This tool is intended for research, circumventing censorship in restrictive regions, and legitimate privacy use cases. Misuse against systems you do not own or have permission to test is illegal. Always comply with local laws.
-```

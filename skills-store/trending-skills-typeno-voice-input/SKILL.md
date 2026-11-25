@@ -1,4 +1,3 @@
-```markdown
 ---
 name: typeno-voice-input
 description: TypeNo is a free, open source, privacy-first macOS menu bar app that captures voice via a Control key shortcut, transcribes locally using the coli speech engine, and pastes text into the active app.
@@ -483,4 +482,3 @@ ffmpeg -i input.ogg output.wav
 - Releases: [https://github.com/marswaveai/TypeNo/releases](https://github.com/marswaveai/TypeNo/releases)
 - coli engine: [https://github.com/marswaveai/coli](https://github.com/marswaveai/coli)
 - License: GNU GPL v3.0
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: phoneclaw-ios-ai-agent
 description: Build and extend PhoneClaw, an on-device iOS AI Agent powered by Gemma 4 running fully offline on iPhone
@@ -545,4 +544,3 @@ enum ToolError: Error {
 - [Gemma 4 E4B on ModelScope](https://modelscope.cn/models/mlx-community/gemma-4-e4b-it-4bit)
 - [Hugging Face CLI Docs](https://huggingface.co/docs/huggingface_hub/guides/cli)
 - [PhoneClaw GitHub](https://github.com/kellyvv/phoneclaw)
-```

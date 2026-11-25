@@ -1,4 +1,3 @@
-```markdown
 ---
 name: anti-distill-skill-sanitizer
 description: Strip core knowledge from AI Skill files before submitting to your company, while preserving a private backup of your real expertise.
@@ -286,4 +285,3 @@ The classifier will treat these as `CORE-KNOWLEDGE` regardless of intensity leve
 ## License
 
 MIT — use freely, submit confidently, keep what matters.
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: steve-jobs-skill-cognitive-framework
 description: Install and use the Steve Jobs cognitive operating system skill for AI coding agents — 6 mental models, 8 decision heuristics, and complete expression DNA for product thinking, strategy analysis, and sharp communication.
@@ -516,4 +515,3 @@ steve-jobs-skill/
 MIT — use it, fork it, distill it.
 
 *Go find your sleepless night.*
-```

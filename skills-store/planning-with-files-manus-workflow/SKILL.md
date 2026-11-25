@@ -1,4 +1,3 @@
-```markdown
 ---
 name: planning-with-files-manus-workflow
 description: Persistent markdown planning workflow for AI coding agents — the Manus-style 3-file pattern for context-aware, goal-tracking task execution.
@@ -450,4 +449,3 @@ if stats["pending"]:
 - **Changelog:** https://github.com/OthmanAdi/planning-with-files/blob/main/CHANGELOG.md
 - **Evals:** https://github.com/OthmanAdi/planning-with-files/blob/main/docs/evals.md
 - **Agent Skills spec:** https://agentskills.io
-```

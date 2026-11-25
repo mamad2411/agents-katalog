@@ -1,4 +1,3 @@
-```markdown
 ---
 name: auto-deep-researcher-24x7
 description: Autonomous AI agent that runs deep learning experiments 24/7 using a Leader-Worker architecture with zero-cost monitoring and constant-size memory.
@@ -520,4 +519,3 @@ export ANTHROPIC_API_KEY=$(cat ~/.secrets/anthropic_key)
 | Training time (any duration) | $0.00 |
 
 Cost is dominated by THINK + REFLECT phases. Training time is always free.
-```

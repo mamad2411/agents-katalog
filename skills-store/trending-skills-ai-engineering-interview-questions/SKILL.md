@@ -1,4 +1,3 @@
-```markdown
 ---
 name: ai-engineering-interview-questions
 description: Comprehensive cheat sheet and study guide for AI Engineering interview questions covering LLMs, RAG, agents, fine-tuning, quantization, and more.
@@ -668,4 +667,3 @@ Week 4: Practice
 - **Course**: https://outcomeschool.com/program/ai-and-machine-learning
 - **Video — Core concepts**: https://www.youtube.com/watch?v=lnfWvX66FUk
 - **Author**: [@amitiitbhu](https://twitter.com/amitiitbhu)
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: material-3-skill
 description: Claude Code skill for implementing Material Design 3 (Material You) UI — 30+ components, design tokens, theming, responsive layout, and MD3 compliance auditing across web, Flutter, and Jetpack Compose.

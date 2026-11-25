@@ -1,4 +1,3 @@
-```markdown
 ---
 name: opensquirrel-agent-control-plane
 description: Native Rust/GPUI control plane for running multiple AI coding agents (Claude Code, Codex, Cursor, OpenCode) side by side with coordinator/worker delegation, SSH targeting, and persistent sessions.
@@ -309,5 +308,4 @@ OpenSquirrel itself does not read API keys — those are consumed by the agent C
 export ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY        # for Claude Code
 export OPENAI_API_KEY=$OPENAI_API_KEY              # for Codex
 # Cursor Agent uses its own auth; log in via cursor CLI first
-```
 ```

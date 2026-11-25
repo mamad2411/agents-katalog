@@ -1,4 +1,3 @@
-```markdown
 ---
 name: guizang-ppt-skill
 description: Generate single-file HTML magazine-style horizontal swipe PPT presentations with WebGL fluid backgrounds, editorial typography, and 10 layout templates
@@ -590,4 +589,3 @@ Complete working 3-slide presentation:
 - Quality checklist: `~/.claude/skills/magazine-web-ppt/references/checklist.md`
 - GitHub: https://github.com/op7418/guizang-ppt-skill
 - Creator: [@op7418](https://x.com/op7418)
-```

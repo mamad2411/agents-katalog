@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-usage-dashboard
 description: Local dashboard for tracking Claude Code token usage, costs, and session history from JSONL logs
@@ -345,5 +344,4 @@ CREATE TABLE IF NOT EXISTS scanned_files (
     mtime REAL,
     last_scanned TEXT
 );
-```
 ```

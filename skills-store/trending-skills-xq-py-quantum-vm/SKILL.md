@@ -1,4 +1,3 @@
-```markdown
 ---
 name: xq-py-quantum-vm
 description: Python implementation of the Quip Network's quantum virtual machine (xqvm)
@@ -387,4 +386,3 @@ flake8 xqvm/
 - GitLab Repository: https://gitlab.com/piqued/xqvm-py
 - Quip Network: https://quipnetwork.io (check for official docs)
 - Open Issues: https://gitlab.com/piqued/xqvm-py/-/issues
-```

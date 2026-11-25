@@ -1,4 +1,3 @@
-```markdown
 ---
 name: fireworks-tech-graph
 description: Generate production-quality SVG+PNG technical diagrams from natural language using Claude Code. Supports 8 diagram types, 5 visual styles, and deep AI/Agent domain knowledge.
@@ -450,5 +449,4 @@ SHAPES:    circle=user  hexagon=agent  double-rect=LLM
 ARROWS:    solid=primary  dashed(5,3)=write  dashed(4,2)=async
 EXPORT:    rsvg-convert -w 1920 input.svg -o output.png
 CANVAS:    viewBox="0 0 1600 900"  padding=60px
-```
 ```

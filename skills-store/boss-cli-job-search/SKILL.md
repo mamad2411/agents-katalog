@@ -1,4 +1,3 @@
-```markdown
 ---
 name: boss-cli-job-search
 description: CLI tool for BOSS 直聘 job search, recommendations, applications, and recruiter messaging via reverse-engineered API
@@ -428,5 +427,4 @@ uv sync
 uv run pytest tests/ -v          # Unit tests
 uv run pytest tests/ -v -m smoke # Smoke tests (requires valid cookies)
 uv run ruff check .               # Lint
-```
 ```

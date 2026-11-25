@@ -1,4 +1,3 @@
-```markdown
 ---
 name: port-whisperer-cli
 description: CLI tool for visualizing and managing processes running on network ports with framework detection and Docker support
@@ -214,4 +213,3 @@ ports kill -f 3000   # sends SIGKILL instead of SIGTERM
 **Only macOS is supported**
 - Linux support is planned but not yet available
 - Windows is not planned — use WSL as a workaround
-```

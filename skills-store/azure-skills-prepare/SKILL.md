@@ -1,3 +1,8 @@
+---
+name: azure-skills-prepare
+description: azure skills prepare
+---
+
 # Prepare — Architecture Planning & Cost Estimation
 
 ## Quick Reference

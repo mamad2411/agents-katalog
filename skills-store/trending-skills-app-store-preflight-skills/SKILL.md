@@ -1,4 +1,3 @@
-```markdown
 ---
 name: app-store-preflight-skills
 description: AI agent skill for scanning iOS/macOS projects to catch App Store rejection patterns before submission
@@ -493,5 +492,4 @@ references/
     entitlements/
       unused_entitlements.md
 SKILL.md                               # Full AI agent instructions
-```
 ```

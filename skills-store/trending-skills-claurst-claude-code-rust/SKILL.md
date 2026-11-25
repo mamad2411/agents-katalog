@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claurst-claude-code-rust
 description: Clean-room Rust reimplementation of Claude Code CLI with multi-agent orchestration, tool system, and memory consolidation
@@ -521,4 +520,3 @@ This mirrors the Phoenix Technologies v. IBM (1984) clean-room BIOS precedent.
 - **Blog breakdown**: https://kuber.studio/blog/AI/Claude-Code's-Entire-Source-Code-Got-Leaked-via-a-Sourcemap-in-npm,-Let's-Talk-About-it
 - **Spec directory**: `spec/` — full behavioral specifications
 - **Anthropic API docs**: https://docs.anthropic.com
-```

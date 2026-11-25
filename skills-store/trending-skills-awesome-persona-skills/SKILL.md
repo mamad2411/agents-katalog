@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-persona-skills
 description: A curated collection of .skill files for distilling real people, personas, and archetypes into AI agents using the OpenSkills framework.
@@ -442,4 +441,3 @@ Fix:
 
 > 与其等着被别人蒸，不如先蒸自己。  
 > *Rather than wait to be distilled by others — distill yourself first.*
-```

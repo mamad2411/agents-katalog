@@ -1,4 +1,3 @@
-```markdown
 ---
 name: collection-claude-code-source-code
 description: A collection and analysis of Claude Code open source artifacts, including decompiled TypeScript source (v2.1.88) and a Python clean-room rewrite reference
@@ -427,4 +426,3 @@ async function fetchSystemPromptParts(ctx: AgentContext): Promise<string[]> {
 - `docs/claude-code-deep-dive-xelatex.pdf` — Full research report
 - [nano-claude-code](https://github.com/SafeRL-Lab/nano-claude-code) — ~3,400 line minimal Python reimplementation
 - [Hacker News Discussion](https://news.ycombinator.com/item?id=47586778) — Community analysis
-```

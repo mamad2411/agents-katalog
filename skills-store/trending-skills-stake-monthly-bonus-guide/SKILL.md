@@ -1,4 +1,3 @@
-```markdown
 ---
 name: stake-monthly-bonus-guide
 description: Expert knowledge on Stake casino monthly bonus system, VIP tiers, reward calculation, and loyalty optimization strategies.
@@ -402,5 +401,4 @@ Month Start → Receive and claim new bonus → repeat
 ```bash
 # Never hardcode promo codes — use environment variables
 export STAKE_PROMO_CODE="your_promo_code_here"
-```
 ```

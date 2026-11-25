@@ -1,4 +1,3 @@
-```markdown
 ---
 name: wecom-cli-enterprise-wechat
 description: CLI tool for operating WeCom (企业微信) from the terminal, designed for both humans and AI agents
@@ -405,5 +404,4 @@ wecom-cli todo create_todo '{"content": "my task"}'
 # For dynamic values, use printf or heredoc
 CONTENT="完成报告"
 wecom-cli todo create_todo "$(printf '{"content": "%s"}' "$CONTENT")"
-```
 ```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: learn-coding-agent
 description: Architecture reference and deep analysis skill for Claude Code CLI agent internals, patterns, and implementation details
@@ -630,5 +629,4 @@ const results = canParallelize
 // Persist permissions across sessions in settings file
 const sessionPermissions = await loadPermissions("~/.claude/permissions.json");
 // Only prompt if not already in approved list
-```
 ```

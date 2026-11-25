@@ -1,4 +1,3 @@
-```markdown
 ---
 name: mitm-domainfronting
 description: MITM proxy that receives unencrypted traffic locally then forwards it via Domain Fronting using Xray-core, enabling access to restricted services without a traditional proxy server.
@@ -302,4 +301,3 @@ The firewall/DPI only sees the outer SNI (`googleapis.com`), which is typically 
 - Xray-core integration PR: https://github.com/XTLS/Xray-core/issues/4348
 - v2rayN releases: https://github.com/2dust/v2rayN/releases
 - v2rayNG releases: https://github.com/2dust/v2rayNG/releases
-```

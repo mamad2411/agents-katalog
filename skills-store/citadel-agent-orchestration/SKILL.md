@@ -1,4 +1,3 @@
-```markdown
 ---
 name: citadel-agent-orchestration
 description: Agent orchestration harness for Claude Code with four-tier routing, campaign persistence, parallel fleet agents, and 25 skills for autonomous coding campaigns.
@@ -352,4 +351,3 @@ This is intentional. Tell Citadel the correct approach explicitly:
 - [docs/CAMPAIGNS.md](docs/CAMPAIGNS.md) — Campaign persistence spec
 - [docs/FLEET.md](docs/FLEET.md) — Fleet coordination protocol
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to submit skills and PRs
-```

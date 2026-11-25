@@ -1,4 +1,3 @@
-```markdown
 ---
 name: stake-monthly-bonus
 description: Guide for understanding and maximizing Stake casino monthly VIP loyalty bonus rewards
@@ -172,4 +171,3 @@ Promotional link referenced in repository:
 `https://winaspin.cc/auth/register?promo=2026`
 
 > Do not share personal financial credentials with unverified casino platforms. Verify licensing and legitimacy of any gambling platform before depositing funds.
-```

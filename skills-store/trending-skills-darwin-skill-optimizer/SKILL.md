@@ -1,4 +1,3 @@
-```markdown
 ---
 name: darwin-skill-optimizer
 description: Autonomous skill optimization loop for Claude Code — evaluates, improves, tests, and ratchets SKILL.md files using an autoresearch-inspired evolutionary cycle.
@@ -328,4 +327,3 @@ Workflow:
 **Sub-agent scoring seems inconsistent**
 - This is expected for borderline changes (±1–2 pts)
 - Darwin only keeps changes with a strict `>` improvement, so ties revert safely
-```

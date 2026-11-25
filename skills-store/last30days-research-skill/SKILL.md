@@ -1,4 +1,3 @@
-```markdown
 ---
 name: last30days-research-skill
 description: AI agent skill for researching any topic across Reddit, X, YouTube, HN, Polymarket, and the web to synthesize grounded, citation-backed summaries from the last 30 days
@@ -441,4 +440,3 @@ ls -la .claude/last30days.env
 - [ClawHub listing](https://clawhub.ai/skills/last30days-official)
 - [ScrapeCreators](https://scrapecreators.com) — Reddit + TikTok + Instagram API
 - [Open Claw](https://github.com/openclaw/openclaw) — always-on bot for watchlist scheduling
-```

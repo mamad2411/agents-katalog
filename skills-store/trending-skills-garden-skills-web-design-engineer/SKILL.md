@@ -1,4 +1,3 @@
-```markdown
 ---
 name: garden-skills-web-design-engineer
 description: AI agent skill that transforms AI-generated web pages from functional to stunning using design systems, oklch colors, curated typography, and anti-cliché rules
@@ -648,4 +647,3 @@ Check Safari version. Safari 15.4+ supports oklch. For Safari 15.3 and below, ad
 - `demo/demo1-with-skill.html` — Space museum with skill applied
 - `demo/demo2-with-skill.html` — Photographer portfolio with skill applied
 - `prompt/system.md` — Original Claude Design system prompt (reference only)
-```

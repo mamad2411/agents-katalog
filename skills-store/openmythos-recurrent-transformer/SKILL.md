@@ -1,4 +1,3 @@
-```markdown
 ---
 name: openmythos-recurrent-transformer
 description: Build and experiment with Recurrent-Depth Transformer (RDT) models using OpenMythos, a theoretical reconstruction of the Claude Mythos architecture with looped transformers, MLA/GQA attention, and sparse MoE.
@@ -467,5 +466,4 @@ OpenMythos/
 │   └── open_mythos.md   # Full API reference
 ├── requirements.txt
 └── README.md
-```
 ```

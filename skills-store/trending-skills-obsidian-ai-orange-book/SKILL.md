@@ -1,4 +1,3 @@
-```markdown
 ---
 name: obsidian-ai-orange-book
 description: Guide and methodology for building an AI-powered personal knowledge management system using Obsidian + Claude Code
@@ -426,4 +425,3 @@ echo 'export ANTHROPIC_API_KEY=your_key_here' >> ~/.zshrc
 - [Claude Code Orange Book](https://github.com/alchaincyf/claude-code-orange-book) — Deep dive into Claude Code itself
 - [Agent Skills Orange Book](https://github.com/alchaincyf/agent-skills-orange-book) — Building custom AI agent skills
 - [Claude Code Source Analysis](https://github.com/alchaincyf/claude-code-source-analysis-orange-book) — How Claude Code works internally
-```

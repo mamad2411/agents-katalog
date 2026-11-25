@@ -1,4 +1,3 @@
-```markdown
 ---
 name: openclaw-auto-dream
 description: Automatic cognitive memory consolidation for OpenClaw/MyClaw agents — sleep cycles, importance scoring, forgetting curves, knowledge graphs, and health dashboards.
@@ -502,5 +501,4 @@ Alternatives considered: [what else was evaluated]
 # On personal instance
 "Import memory bundle"
 # Select the procedures export — workflows sync across instances
-```
 ```

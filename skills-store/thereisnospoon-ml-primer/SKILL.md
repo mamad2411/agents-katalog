@@ -1,4 +1,3 @@
-```markdown
 ---
 name: thereisnospoon-ml-primer
 description: A machine learning primer built from first principles for engineers, covering fundamentals through transformers using engineering analogies and visualizations.
@@ -419,4 +418,3 @@ git push origin improve/section-name
 ## License
 
 MIT — see `LICENSE`.
-```

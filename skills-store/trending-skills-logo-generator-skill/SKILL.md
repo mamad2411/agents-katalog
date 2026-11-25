@@ -1,4 +1,3 @@
-```markdown
 ---
 name: logo-generator-skill
 description: Professional SVG logo generator with AI-powered showcase images using Claude Code skills workflow
@@ -485,5 +484,4 @@ cat ~/.claude/skills/logo-generator/SKILL.md | head -5
 └── assets/
     ├── showcase_template.html  # HTML presentation template
     └── background_library.html # Interactive WebGL backgrounds
-```
 ```

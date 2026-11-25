@@ -3,6 +3,10 @@ metadata:
   author: "Zacharie Laïk"
   license: "mit"
   version: "2026-04-10"
+name: awesome-legal-skills-multi-jurisdictional-research-zacharie-laik
+description: awesome legal skills multi jurisdictional research zacharie laik
+name: awesome-legal-skills-multi-jurisdictional-research-zacharie-laik
+description: awesome legal skills multi jurisdictional research zacharie laik
 ---
 
 # Multi-Jurisdictional Legal Research & Risk Assessment

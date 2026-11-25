@@ -1,4 +1,3 @@
-```markdown
 ---
 name: cangjie-skill-book-distillation
 description: Distill any book into a set of executable Agent Skills using the RIA-TV++ pipeline — structured extraction, triple verification, and Zettelkasten linking.
@@ -496,4 +495,3 @@ Skills produced by cangjie-skill are compatible with nuwa-skill and darwin-skill
 ## License
 
 MIT — see [LICENSE](https://github.com/kangarooking/cangjie-skill/blob/main/LICENSE).
-```

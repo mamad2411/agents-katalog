@@ -1,4 +1,3 @@
-```markdown
 ---
 name: maeil-mail-contents
 description: Archive of daily technical interview Q&A content (Frontend & Backend) from the maeil-mail.kr service
@@ -381,4 +380,3 @@ find maeil-mail-contents/ -name "*.md" | wc -l
 - **License**: Not specified — treat as reference/educational use
 - **No build step required** — clone and read directly
 - **Stars**: 311 (growing rapidly at ~103/day), indicating high community value
-```

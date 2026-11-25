@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-autoresearch
 description: Curated index of autonomous improvement loops, research agents, and autoresearch-style systems inspired by Karpathy's autoresearch.
@@ -425,4 +424,3 @@ my-autoresearch-project/
 - [HKUDS/AI-Researcher](https://github.com/HKUDS/AI-Researcher) — NeurIPS 2025 end-to-end research automation
 - [gepa-ai/gepa](https://github.com/gepa-ai/gepa) — genetic-pareto prompt evolution (ICLR 2026 Oral)
 - [snap-stanford/MLAgentBench](https://github.com/snap-stanford/MLAgentBench) — benchmark suite for research agents
-```

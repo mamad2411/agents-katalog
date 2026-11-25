@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-gpt-image-2-prompts
 description: Curated GPT-Image-2 prompt patterns and image examples for portraits, posters, UI mockups, character sheets, and community experiments via Evolink.
@@ -349,4 +348,3 @@ export OPENAI_BASE_URL="https://api.evolink.ai/v1"
 ## License
 
 Content in this repository is licensed under [CC BY 4.0](LICENSE). Individual prompts and images are attributed to their original creators.
-```

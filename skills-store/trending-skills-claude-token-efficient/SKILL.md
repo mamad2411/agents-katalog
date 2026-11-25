@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-token-efficient
 description: Drop-in CLAUDE.md file that reduces Claude output verbosity by ~63% through behavior rules targeting sycophancy, formatting noise, and scope creep
@@ -369,4 +368,3 @@ Accepted community rules are merged into the next version with credit.
 ## License
 
 MIT
-```

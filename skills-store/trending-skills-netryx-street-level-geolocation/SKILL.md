@@ -1,4 +1,3 @@
-```markdown
 ---
 name: netryx-street-level-geolocation
 description: Expert skill for using Netryx, the open-source local-first street-level geolocation engine that identifies GPS coordinates from street photos using CosPlace, ALIKED/DISK, and LightGlue.
@@ -525,4 +524,3 @@ export GEMINI_API_KEY="your_key_here"
 | [DISK](https://github.com/cvlab-epfl/disk) | Local keypoints — MPS/CPU | NeurIPS 2020 |
 | [LightGlue](https://github.com/cvg/LightGlue) | Deep feature matching | ICCV 2023 |
 | [LoFTR](https://github.com/zju3dv/LoFTR) | Dense detector-free matching (Ultra) | CVPR 2021 |
-```

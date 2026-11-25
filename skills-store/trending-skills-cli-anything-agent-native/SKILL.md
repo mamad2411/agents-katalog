@@ -1,4 +1,3 @@
-```markdown
 ---
 name: cli-anything-agent-native
 description: Make any software agent-controllable by generating a complete CLI harness with JSON output, REPL, tests, and docs in one command
@@ -672,4 +671,3 @@ BINARY_PATH = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
 | **Agent-first errors** | Errors include `code` + `message` in JSON |
 | **Composable** | Commands chain via pipes and scripting |
 | **Deterministic** | Same inputs → same outputs, no side effects |
-```

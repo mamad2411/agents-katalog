@@ -1,4 +1,3 @@
-```markdown
 ---
 name: x-algorithm-feed
 description: Rust implementation of X's For You feed ranking algorithm by xai-org
@@ -541,4 +540,3 @@ mod tests {
 - **License**: Apache-2.0
 - **Language**: Rust
 - **Issues**: Check GitHub Issues for known bugs and feature requests
-```

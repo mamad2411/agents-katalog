@@ -1,4 +1,3 @@
-```markdown
 ---
 name: agent-skills-context-engineering
 description: Comprehensive collection of Agent Skills for context engineering, multi-agent architectures, memory systems, and production agent systems using Claude Code, Cursor, and other AI platforms.
@@ -710,4 +709,3 @@ AGENT_MEMORY_PATH=          # Optional, JSONL memory file path (default: agent_m
 - [Cursor Plugin Directory](https://cursor.directory/plugins/context-engineering)
 - [Cited in: Meta Context Engineering via Agentic Skill Evolution](https://arxiv.org/pdf/2601.21557) — Peking University (2026)
 - [Open Plugins Standard](https://open-plugins.com)
-```

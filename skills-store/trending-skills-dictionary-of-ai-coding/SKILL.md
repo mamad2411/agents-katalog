@@ -1,4 +1,3 @@
-```markdown
 ---
 name: dictionary-of-ai-coding
 description: AI coding jargon dictionary with plain English explanations of models, tokens, agents, context windows, and more
@@ -304,4 +303,3 @@ for (const [name, content] of Object.entries(terms)) {
 
 **"What's an AGENTS.md file?"**
 > A markdown file your harness automatically injects into every session as standing instructions — like a persistent system prompt you check into version control.
-```

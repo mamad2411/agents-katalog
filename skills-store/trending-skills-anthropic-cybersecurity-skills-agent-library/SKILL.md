@@ -1,4 +1,3 @@
-```markdown
 ---
 name: anthropic-cybersecurity-skills-agent-library
 description: Use the 700+ agentskills.io-standard cybersecurity skills library for AI agents covering red team, blue team, cloud security, forensics, and more.
@@ -455,4 +454,3 @@ yaml.safe_load(match.group(1))  # will raise on invalid YAML
 - agentskills.io standard: https://agentskills.io
 - Project homepage: https://www.mahipal.engineer/Anthropic-Cybersecurity-Skills/
 - License: Apache 2.0
-```

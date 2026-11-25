@@ -1,4 +1,3 @@
-```markdown
 ---
 name: andrej-karpathy-skills-claude
 description: CLAUDE.md guidelines derived from Andrej Karpathy's LLM coding pitfalls observations — four principles to reduce AI coding mistakes
@@ -297,4 +296,3 @@ The Karpathy guidelines are additive. If conflicts arise, put project-specific r
 ## Tradeoff
 
 These guidelines bias toward **caution over speed**. For trivial one-liners, full rigor isn't needed. The value is on non-trivial work where silent wrong assumptions or overengineering create costly rework.
-```

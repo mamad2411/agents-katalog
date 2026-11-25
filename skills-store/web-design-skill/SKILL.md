@@ -1,4 +1,3 @@
-```markdown
 ---
 name: web-design-skill
 description: Transform AI-generated web pages from functional to stunning using structured design system prompts, oklch color theory, curated font pairings, and anti-cliché rules.
@@ -567,4 +566,3 @@ web-design-skill/
 ## License
 
 MIT — freely copy, modify, and embed in any project.
-```

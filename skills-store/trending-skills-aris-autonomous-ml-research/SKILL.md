@@ -1,4 +1,3 @@
-```markdown
 ---
 name: aris-autonomous-ml-research
 description: Autonomous ML research workflows using ARIS (Auto-Research-In-Sleep) — Markdown-only skills for cross-model paper review, idea discovery, experiment automation, and paper writing with Claude Code, Codex, or any LLM agent.
@@ -451,4 +450,3 @@ Claude Code = fast fluid execution. GPT-5.4/Gemini/GLM = slower, more deliberate
 Join the community: [GitHub Discussions](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep/discussions)
 
 Papers accepted using ARIS: CS Conference (8/10 "clear accept"), AAAI 2026 Main Technical (7/10 "good paper, accept").
-```

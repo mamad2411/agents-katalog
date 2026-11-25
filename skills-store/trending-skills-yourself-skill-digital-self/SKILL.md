@@ -1,4 +1,3 @@
-```markdown
 ---
 name: yourself-skill-digital-self
 description: Create a distilled AI "digital self" skill from your chat logs, diary entries, and photos — generating a two-part persona (Self Memory + Persona Model) that thinks and speaks like you.
@@ -310,4 +309,3 @@ create-yourself/
 ## License
 
 MIT © [Notdog](https://github.com/notdog1998)
-```

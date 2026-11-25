@@ -1,4 +1,3 @@
-```markdown
 ---
 name: sprite-pipeline-2d
 description: AI agent skill for the Sprite-Pipeline project — a reusable Python pipeline for turning video/frames into clean 256×256 horizontal sprite sheets with matting, review, and browser preview.
@@ -340,4 +339,3 @@ Keep out of the repo by default:
 - Final sprite sheets and game art
 
 Only commit tiny, intentional reference assets that are documented in code or tests.
-```

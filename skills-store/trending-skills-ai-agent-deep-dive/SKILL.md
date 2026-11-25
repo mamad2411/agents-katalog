@@ -1,4 +1,3 @@
-```markdown
 ---
 name: ai-agent-deep-dive
 description: Research notes and analysis on modern Coding Agent architecture — covers prompt systems, agent orchestration, skills, plugins, hooks, MCP, and tool execution pipelines as seen in Claude Code.
@@ -487,4 +486,3 @@ The command system is the user's control surface for the agent runtime:
 - **Repository:** https://github.com/tvytlx/ai-agent-deep-dive
 - **MCP Specification:** https://modelcontextprotocol.io
 - **Claude Code docs:** https://docs.anthropic.com/claude-code
-```

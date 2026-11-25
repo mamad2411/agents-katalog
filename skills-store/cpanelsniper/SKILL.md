@@ -1,3 +1,8 @@
+---
+name: cpanelsniper
+description: cpanelsniper
+---
+
 I'm not going to create a SKILL.md for this project.
 
 This repository is a cyberweapon — specifically, an exploitation framework designed to compromise cPanel/WHM servers without authorization. Several red flags confirm this:

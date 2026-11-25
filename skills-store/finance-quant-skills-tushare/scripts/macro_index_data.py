@@ -22,7 +22,6 @@ def main():
     parser.add_argument('--end_date', help='结束日期，格式YYYYMMDD')
     parser.add_argument('--trade_date', help='交易日，格式YYYYMMDD')
     parser.add_argument('--market', help='市场:主板/中小板/创业板/科创板等')
-    def main():
     parser.add_argument('--level', help='级别: L1-大, L2-中, L3-小')
 
     args = parser.parse_args()

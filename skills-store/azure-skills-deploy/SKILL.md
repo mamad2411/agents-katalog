@@ -1,3 +1,8 @@
+---
+name: azure-skills-deploy
+description: azure skills deploy
+---
+
 # Deploy — IaC Execution & Health Verification
 
 ## Quick Reference

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-book-agent-harness
 description: Deep architectural guide for building AI Agent Harnesses based on Claude Code's design patterns — covers conversation loops, tool systems, permission pipelines, context compression, memory, hooks, sub-agents, and MCP integration.
@@ -683,4 +682,3 @@ const isEnabled = (flag: string): boolean => {
 
 **Prompt cache misses on fork**
 → Ensure `CacheSafeParams` contains only stable content. Dynamic values (timestamps, request IDs, mutable file contents) must be excluded from the 5 cache-safe dimensions.
-```

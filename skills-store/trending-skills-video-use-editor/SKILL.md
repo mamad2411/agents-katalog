@@ -1,4 +1,3 @@
-```markdown
 ---
 name: video-use-editor
 description: Edit videos with AI coding agents using Claude Code, ffmpeg, and ElevenLabs transcription
@@ -494,4 +493,3 @@ Usually a seek precision issue. Use `-ss` before `-i` (input seek) rather than a
 | `<footage_dir>/edit/` | All outputs (segments, final, eval PNGs) |
 | `<footage_dir>/project.md` | Session memory — read at start of every session |
 | `<footage_dir>/edit/takes_packed.md` | Packed transcript — primary LLM reading surface |
-```

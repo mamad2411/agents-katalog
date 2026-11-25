@@ -1,4 +1,3 @@
-```markdown
 ---
 name: browser-harness-self-healing
 description: Self-healing browser harness that gives LLMs complete freedom to complete any browser task via CDP, with auto-written helpers.
@@ -340,4 +339,3 @@ python daemon.py
 - [Skills post](https://browser-use.com/posts/web-agents-that-actually-learn)
 - [cloud.browser-use.com](https://cloud.browser-use.com) — remote browsers
 - [docs.browser-use.com/llms.txt](https://docs.browser-use.com/llms.txt) — LLM-readable docs
-```

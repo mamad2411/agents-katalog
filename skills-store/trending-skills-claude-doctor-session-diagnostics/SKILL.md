@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-doctor-session-diagnostics
 description: Diagnose Claude Code sessions for behavioral anti-patterns and auto-generate CLAUDE.md rules from transcript history
@@ -292,5 +291,4 @@ chmod -R u+r ~/.claude/
 # Ensure you're on a compatible Node version
 node --version  # requires Node 18+
 pnpm build      # rebuild after pulling updates
-```
 ```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: jinguyuan-dumpling-skill
 description: AI Skill for 金谷园饺子馆 — query restaurant info, hours, delivery, Wi-Fi, and trigger Meituan queue-taking via MCP tools embedded in your AI coding agent.
@@ -413,4 +412,3 @@ git pull origin main
 | License | MIT |
 | Primary repo | https://gitee.com/JinGuYuan/jinguyuan-dumpling-skill |
 | Mirror | https://github.com/JinGuYuan/jinguyuan-dumpling-skill |
-```

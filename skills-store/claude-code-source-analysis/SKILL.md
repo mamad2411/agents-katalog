@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-source-analysis
 description: Expertise in exploring, understanding, and extending the Claude Code decompiled source archive and its Python reimplementation (claw-code)
@@ -631,5 +630,4 @@ const KEEP_LAST_N_MESSAGES = 20;
 ### Finding where a slash command is handled
 ```bash
 grep -r "name: 'commit'" claude-code-source-code/src/commands/ --include="*.ts"
-```
 ```

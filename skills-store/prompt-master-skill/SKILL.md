@@ -1,4 +1,3 @@
-```markdown
 ---
 name: prompt-master-skill
 description: Claude skill that generates accurate, token-efficient prompts for any AI tool — Claude, GPT, Midjourney, Cursor, and 30+ more.
@@ -431,4 +430,3 @@ Prompt Master asks ≤3 questions only when critical info is genuinely missing. 
 - **License:** MIT
 - **Topics:** claude-ai, claude-skills, llm, prompt-engineering
 - **Works with:** Claude.ai browser skill system, Claude Code skill directory
-```

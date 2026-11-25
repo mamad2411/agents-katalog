@@ -1,4 +1,3 @@
-```markdown
 ---
 name: simpleauthflow-chrome-extension
 description: Chrome extension that automates the ChatGPT OAuth registration and authorization flow with zero configuration required
@@ -380,4 +379,3 @@ SimpleAuthFlow/
 - Intended for **personal use only** — not designed for bulk/large-scale operation.
 - Default throughput: ~1 flow/minute, ~5 flows/day per IP.
 - License: MIT
-```

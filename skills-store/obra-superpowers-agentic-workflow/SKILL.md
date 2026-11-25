@@ -1,4 +1,3 @@
-```markdown
 ---
 name: obra-superpowers-agentic-workflow
 description: Agentic skills framework for coding agents providing structured workflows for TDD, planning, debugging, and subagent-driven development
@@ -409,4 +408,3 @@ Restart your agent session after updating — skills are loaded at session initi
 - **Issues**: https://github.com/obra/superpowers/issues
 - **Marketplace**: https://github.com/obra/superpowers-marketplace
 - **Sponsor**: https://github.com/sponsors/obra
-```

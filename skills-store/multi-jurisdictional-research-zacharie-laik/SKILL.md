@@ -3,6 +3,10 @@ metadata:
   author: "Zacharie Laïk"
   license: "mit"
   version: "2026-04-10"
+name: multi-jurisdictional-research-zacharie-laik
+description: multi jurisdictional research zacharie laik
+name: multi-jurisdictional-research-zacharie-laik
+description: multi jurisdictional research zacharie laik
 ---
 
 # Multi-Jurisdictional Legal Research & Risk Assessment

@@ -1,3 +1,8 @@
+---
+name: vantoan252003_mozi
+description: vantoan252003 mozi
+---
+
 # GoMove Client App — Master Architecture Guide
 
 > **AI Agent: Read this file first before touching any code.**

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: gpt-image-2-api-prompts
 description: Expertise in using the GPT-Image-2 API via Evolink, prompt engineering patterns, and curated visual workflows for image generation
@@ -495,4 +494,3 @@ def safe_get_url(response) -> str | None:
 - [gpt-image-2-gen-skill (callable skill)](https://github.com/EvoLinkAI/gpt-image-2-gen-skill)
 - [GPT-Image-2 × Seedance 2.0 Workflow](https://github.com/EvoLinkAI/GPT-Image-2-Seedance2-Workflow)
 - [Prompt JSON file](https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/blob/main/gpt_image_2_prompt.json)
-```

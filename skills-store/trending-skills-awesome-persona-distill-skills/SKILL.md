@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-persona-distill-skills
 description: Curated list of Agent Skills for persona distillation — extracting communication styles, decision frameworks, and interaction patterns from conversations, works, and digital traces of real or fictional personas.
@@ -355,4 +354,3 @@ console.log("Distilled patterns:", patterns);
 - [Agent Skills Platform](https://agentskills.io) — official skill registry and format spec
 - [Awesome List Guidelines](https://github.com/sindresorhus/awesome/blob/main/pull_request_template.md) — quality standards this list follows
 - [CONTRIBUTING.md](https://github.com/xixu-me/awesome-persona-distill-skills/blob/main/CONTRIBUTING.md) — detailed contribution conventions
-```

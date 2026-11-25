@@ -1,4 +1,3 @@
-```markdown
 ---
 name: codebase-to-course
 description: Generate beautiful, interactive single-page HTML courses from any codebase using Claude Code — teaching non-technical vibe coders how their code works through animations, quizzes, and plain-English translations.
@@ -372,4 +371,3 @@ No definition questions — only scenario questions."
 - **Repository:** https://github.com/zarazhangrui/codebase-to-course
 - **Built by:** [Zara Zhang Rui](https://x.com/zarazhangrui)
 - **Skill install path:** `~/.claude/skills/codebase-to-course/`
-```

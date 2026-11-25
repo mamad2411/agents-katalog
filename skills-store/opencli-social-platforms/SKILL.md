@@ -1,4 +1,3 @@
-```markdown
 ---
 name: opencli-social-platforms
 description: Use opencli CLI to control 16 social/content platforms (Bilibili, Twitter/X, YouTube, Zhihu, Reddit, HackerNews, Weibo, etc.) via natural language, reusing Chrome login sessions with no API keys required.
@@ -418,4 +417,3 @@ Risks to communicate to users:
 - Content is immediately public once posted; the AI cannot retract it
 - Avoid rapid repeated posting (risk of account suspension)
 - **Always confirm with the user before executing any write command**
-```

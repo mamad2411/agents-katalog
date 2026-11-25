@@ -1,4 +1,3 @@
-```markdown
 ---
 name: hyperagents-self-improving
 description: Self-referential self-improving agents from Meta Research that optimize for any computable task using meta-agents and task-agents in a recursive loop
@@ -384,4 +383,3 @@ unzip unsplit_outputs.zip -d logs/
 ```
 
 **Links**: [arXiv Paper](https://arxiv.org/abs/2603.19461) | [Meta AI Blog](https://ai.meta.com/research/publications/hyperagents/) | [License: CC BY-NC-SA 4.0](LICENSE.md)
-```

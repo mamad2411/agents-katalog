@@ -1,4 +1,3 @@
-```markdown
 ---
 name: qclaw-openclaw-desktop
 description: GUI desktop client for OpenClaw — lets non-technical users run and configure OpenClaw AI gateway without the command line
@@ -524,4 +523,3 @@ if (existingConfig) {
   - DingTalk: https://my.feishu.cn/wiki/NUJew2DzaipVsukUvPmcZ2yvnYb
   - QQ: https://my.feishu.cn/wiki/AvuSwchqviAO6dkwiZycmZeInPf
   - WeCom: https://my.feishu.cn/wiki/TsLTwplveiqbW8kH5XOclgvYn1d
-```

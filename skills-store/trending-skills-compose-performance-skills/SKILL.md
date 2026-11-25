@@ -1,4 +1,3 @@
-```markdown
 ---
 name: compose-performance-skills
 description: Install and use the skydoves/compose-performance-skills agent skill library to diagnose and fix Jetpack Compose performance issues including stability, recomposition, lazy layouts, modifiers, side effects, and build configuration.
@@ -403,4 +402,3 @@ chmod +x ~/.claude/skills-sources/compose-performance-skills/scripts/install-ski
 - Lock CPU clock speed on rooted device or use a Pixel with locked clocks
 - Run minimum 5 iterations (`iterations = 5`)
 - Use `CompilationMode.Full()` not `CompilationMode.None()` for production-representative results
-```

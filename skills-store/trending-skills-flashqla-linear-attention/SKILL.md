@@ -1,4 +1,3 @@
-```markdown
 ---
 name: flashqla-linear-attention
 description: High-performance linear attention kernel library for GDN Chunked Prefill built on TileLang, achieving 2-3x speedup over FLA Triton kernels on NVIDIA Hopper GPUs
@@ -370,4 +369,3 @@ assert cu_seqlens[-1] == total_tokens
 3. **Warp specialization**: The kernels use warpgroup specialization to overlap data movement, Tensor Core computation, and CUDA Core computation — no user configuration needed.
 
 4. **Best throughput scenarios**: Pretraining (long sequences, large batches) and agentic inference (repeated state updates) show the largest gains over FLA Triton baseline.
-```

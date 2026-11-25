@@ -1,4 +1,3 @@
-```markdown
 ---
 name: evanflow-tdd-loop
 description: Use EvanFlow's 16-skill TDD-driven iterative feedback loop for Claude Code to walk ideas from brainstorm through implementation with checkpoints and guardrails.
@@ -353,4 +352,3 @@ EvanFlow's hard rules cite their sources:
 - **Context drift watch** — ~65% of enterprise AI failures in 2025 attributed to context drift, not raw context exhaustion per [Alex Merced, "Context Management Strategies for OpenCode" (March 2026)](https://datalakehousehub.com/blog/2026-03-context-management-opencode/)
 
 Rules without citations (no auto-commit, no skill tax) are labeled as opinion from running the loop on real projects.
-```

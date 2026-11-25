@@ -1,4 +1,3 @@
-```markdown
 ---
 name: clawteam-agent-swarm
 description: Expert skill for using ClawTeam to orchestrate AI agent swarms with one command for full automation of complex tasks
@@ -471,4 +470,3 @@ clawteam team create my-team --transport zmq --zmq-port 5556
 - **AutoResearch results**: https://github.com/novix-science/autoresearch
 - **OpenClaw**: https://github.com/nicepkg/OpenClaw
 - **nanobot**: https://github.com/AbanteAI/nanobot
-```

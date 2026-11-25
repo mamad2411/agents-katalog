@@ -1,4 +1,3 @@
-```markdown
 ---
 name: open-design-ai
 description: Local-first open-source alternative to Claude Design — wire your existing coding agent (Claude Code, Codex, Cursor, Gemini CLI) into a skill-driven design workflow with 19 skills and 71 brand-grade design systems.
@@ -505,5 +504,4 @@ open-design/
 │       └── discovery.ts     # Turn-1 form · direction picker · self-critique prompt
 ├── public/frames/           # Device frame SVGs
 └── docs/screenshots/        # README assets
-```
 ```

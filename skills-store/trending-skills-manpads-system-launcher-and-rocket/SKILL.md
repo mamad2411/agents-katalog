@@ -1,4 +1,3 @@
-```markdown
 ---
 name: manpads-system-launcher-and-rocket
 description: Low-cost proof-of-concept MANPADS-style guided rocket and launcher prototype using ESP32, MPU6050, folding fins, canard stabilization, and consumer electronics
@@ -400,4 +399,3 @@ void i2cScan() {
 - [MPU6050 datasheet](https://invensense.tdk.com/products/motion-tracking/6-axis/mpu-6050/)
 - [30-second overview video](https://www.youtube.com/shorts/zFn__6_LdTc)
 - [Full 5-minute system overview](https://www.youtube.com/watch?v=DDO2EvXyncE&t=59s)
-```

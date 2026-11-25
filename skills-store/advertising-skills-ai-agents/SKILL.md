@@ -1,4 +1,3 @@
-```markdown
 ---
 name: advertising-skills-ai-agents
 description: Skill library for encoding direct-response advertising, copywriting, and funnel thinking into AI coding agents using the Agent Skills pattern.
@@ -407,4 +406,3 @@ Wait for explicit confirmation of each foundation skill output before proceeding
 - **Author:** Kim Barrett
 - **Compatible agents:** Claude Code, Cursor, Windsurf, Codex, Open Claw, custom frameworks
 - **License:** MIT
-```

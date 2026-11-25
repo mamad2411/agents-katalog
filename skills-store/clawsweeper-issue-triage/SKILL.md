@@ -1,4 +1,3 @@
-```markdown
 ---
 name: clawsweeper-issue-triage
 description: ClawSweeper is a conservative GitHub maintainer bot that scans all open issues and PRs, writes per-item markdown review records, and closes only when evidence meets strict criteria.
@@ -382,4 +381,3 @@ npm run reconcile               # apply
 ### Maintainer items being proposed for close
 
 ClawSweeper reads `author_association` from the GitHub API. Items authored by `OWNER`, `MEMBER`, or `COLLABORATOR` are excluded from automated close actions at both plan and apply time. If a maintainer item appears as `proposed_close`, verify that the GitHub token has sufficient scope to read association data, and re-run the review for that item.
-```

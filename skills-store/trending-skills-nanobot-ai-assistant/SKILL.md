@@ -1,4 +1,3 @@
-```markdown
 ---
 name: nanobot-ai-assistant
 description: Ultra-lightweight personal AI assistant framework with multi-channel support, MCP integration, and agent capabilities
@@ -614,4 +613,3 @@ Subagents are supported in both CLI and channel modes. The main agent can spawn 
 ```
 
 Leave `allowFrom` empty array `[]` for open access (not recommended for public bots).
-```

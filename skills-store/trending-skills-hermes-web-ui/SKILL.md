@@ -1,4 +1,3 @@
-```markdown
 ---
 name: hermes-web-ui
 description: Web dashboard for Hermes Agent — multi-platform AI chat, session management, scheduled jobs, usage analytics & channel configuration
@@ -667,5 +666,4 @@ chmod 644 ~/.hermes/.env
 cd node_modules/node-pty && npm rebuild
 # On macOS, may need Xcode CLI tools:
 xcode-select --install
-```
 ```

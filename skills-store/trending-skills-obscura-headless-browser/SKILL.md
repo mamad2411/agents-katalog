@@ -1,4 +1,3 @@
-```markdown
 ---
 name: obscura-headless-browser
 description: Use Obscura, the lightweight Rust-based headless browser for AI agents and web scraping with CDP, Puppeteer, and Playwright support.
@@ -452,4 +451,3 @@ obscura serve --port 9222 --proxy http://$PROXY_USER:$PROXY_PASS@proxy.example.c
 - Normal: first build ~5 min (V8 compiles from source)
 - Subsequent builds use cached V8 artifacts and are much faster
 - Use the pre-built binary for fastest setup
-```

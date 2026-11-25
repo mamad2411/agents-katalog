@@ -1,4 +1,3 @@
-```markdown
 ---
 name: vercel-agent-skills
 description: Create, publish, and install agent skills for AI coding agents using the Agent Skills format
@@ -312,4 +311,3 @@ No package publishing required — the `skills` CLI pulls directly from GitHub.
 - [Agent Skills format spec](https://agentskills.io/)
 - [Official skill collection](https://github.com/vercel-labs/agent-skills)
 - [skills.sh registry](https://skills.sh/vercel-labs/agent-skills)
-```

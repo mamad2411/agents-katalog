@@ -1,4 +1,3 @@
-```markdown
 ---
 name: boneyard-skeleton-loading
 description: Auto-generated pixel-perfect skeleton loading screens extracted from real DOM using boneyard-js
@@ -362,4 +361,3 @@ function Dashboard() {
 - [Homepage](https://boneyard.vercel.app/overview)
 - [npm](https://www.npmjs.com/package/boneyard-js)
 - [GitHub](https://github.com/0xGF/boneyard)
-```

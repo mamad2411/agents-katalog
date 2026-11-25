@@ -1,4 +1,3 @@
-```markdown
 ---
 name: colleague-skill-creator
 description: Generate AI skills that replicate departed colleagues — their technical style, communication patterns, and domain knowledge — from chat logs, docs, and descriptions.
@@ -353,4 +352,3 @@ create-colleague/
 **Version rollback fails:**
 - List available versions first: `vm.list_versions("slug")`
 - Versions are only created on write operations — a brand-new skill has only `v1`
-```

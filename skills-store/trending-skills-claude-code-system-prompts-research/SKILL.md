@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-system-prompts-research
 description: Research documentation of Claude Code's internal prompt architecture, agent directives, multi-agent orchestration patterns, and security classifiers
@@ -469,4 +468,3 @@ def classify_tool_call(tool_name: str, tool_args: dict, rules: dict) -> str:
 - [`prompts/12_yolo_auto_mode_classifier.md`](prompts/12_yolo_auto_mode_classifier.md) — Security classifier
 - [`prompts/21_compact_service.md`](prompts/21_compact_service.md) — Context window management
 - [`prompts/24_memory_instruction.md`](prompts/24_memory_instruction.md) — Memory/CLAUDE.md system
-```

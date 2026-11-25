@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-ai-research-writing
 description: A curated collection of battle-tested prompts and agent skills for AI-assisted academic research writing, translation, and polishing
@@ -509,5 +508,4 @@ Reviewer视角      : Prompt #9  — Pre-submission review
 图标题            : Prompt #10 — Figure captions
 表标题            : Prompt #11 — Table captions
 实验分析          : Prompt #12 — Results analysis paragraph
-```
 ```

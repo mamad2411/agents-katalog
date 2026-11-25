@@ -1,4 +1,3 @@
-```markdown
 ---
 name: nopua-ai-agent-skill
 description: Install and use the NoPUA skill to unlock better AI agent performance through trust-based prompting instead of fear-based PUA tactics.
@@ -578,4 +577,3 @@ nopua = open("SKILL.md").read()
 ```
 
 **The rule:** same rigorous engineering standards, zero fear. Pass `SKILL.md` as your system prompt and your AI agent will find more bugs, stop lying, and tell you what it doesn't know.
-```

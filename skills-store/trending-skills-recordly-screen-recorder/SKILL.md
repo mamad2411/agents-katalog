@@ -1,4 +1,3 @@
-```markdown
 ---
 name: recordly-screen-recorder
 description: Expertise in using and extending Recordly, an open-source Electron screen recorder and editor with auto-zoom, cursor animations, and cross-platform capture.
@@ -499,4 +498,3 @@ Keep PRs focused and modular. Test playback, editing, and export flows before su
 - Donate: https://ko-fi.com/webadderall/goal?g=0
 - Twitter/X: [@webadderall](https://x.com/webadderall)
 - Based on: [OpenScreen](https://github.com/siddharthvaddem/openscreen)
-```

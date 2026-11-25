@@ -1,4 +1,3 @@
-```markdown
 ---
 name: ai-website-cloner-template
 description: Clone any website into a pixel-perfect Next.js replica using AI coding agents with one command
@@ -406,4 +405,3 @@ cp my-image.webp public/images/hero-visual.webp
 ```
 
 Edit `src/app/page.tsx` to reorder, remove, or add sections. All components are standard React — no lock-in.
-```

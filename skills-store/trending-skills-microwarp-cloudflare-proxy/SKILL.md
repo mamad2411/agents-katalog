@@ -1,4 +1,3 @@
-```markdown
 ---
 name: microwarp-cloudflare-proxy
 description: Ultra-lightweight Cloudflare WARP SOCKS5 proxy in Docker using kernel-level WireGuard and microsocks, consuming under 800KB RAM
@@ -388,4 +387,3 @@ docker pull --platform linux/arm64 ghcr.io/ccbkkb/microwarp:latest
 - First-run script auto-calls Cloudflare WARP API to register and get keypair
 - SOCKS5 server binds inside container; map host port via Docker `-p`
 - Multi-arch: `linux/amd64` and `linux/arm64` supported natively
-```

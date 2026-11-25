@@ -1,4 +1,3 @@
-```markdown
 ---
 name: agent-sprite-forge
 description: Generate game-ready 2D sprite sheets, transparent PNG frames, and animated GIFs from natural-language prompts using the Codex agent skill $generate2dsprite.
@@ -362,4 +361,3 @@ Add explicit pixel dimensions to the prompt: `each frame 64x64 pixels, total she
 ## License
 
 MIT — see [LICENSE](https://github.com/0x0funky/agent-sprite-forge/blob/main/LICENSE).
-```

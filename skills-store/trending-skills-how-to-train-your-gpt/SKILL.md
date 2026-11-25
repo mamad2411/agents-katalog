@@ -1,4 +1,3 @@
-```markdown
 ---
 name: how-to-train-your-gpt
 description: A 12-chapter, 3671-line annotated textbook for building a modern LLaMA-style GPT from scratch in PyTorch — tokenizer through inference.
@@ -606,4 +605,3 @@ Read chapters sequentially — each builds on the previous:
 ```
 
 Chapter 05 (Attention) is the longest at 713 lines and the most important. Re-read it until the 8-step walkthrough is clear.
-```

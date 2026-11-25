@@ -1,4 +1,3 @@
-```markdown
 ---
 name: agent-reach-internet-access
 description: Give AI agents internet access to Twitter, Reddit, YouTube, GitHub, Bilibili, XiaoHongShu and more — one CLI, zero API fees.
@@ -555,4 +554,3 @@ agent-reach/
 | Web search | Exa via MCP (automatic) |
 | Update all tools | `agent-reach update` |
 | Configure platform | Tell agent: `"帮我配 [platform]"` |
-```

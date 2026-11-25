@@ -1,4 +1,3 @@
-```markdown
 ---
 name: kiro-auto-aws-builder-id
 description: Automate AWS Builder ID account registration and switching for Kiro IDE using Playwright browser automation with anti-detection mechanisms
@@ -324,4 +323,3 @@ npx tsc --watch
 ## Legal Notice
 
 This tool is for **learning and research purposes only**. Users must comply with AWS Terms of Service and applicable laws. The authors bear no responsibility for misuse.
-```

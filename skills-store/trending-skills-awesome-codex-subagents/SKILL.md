@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-codex-subagents
 description: Collection of 136+ specialized Codex subagents in TOML format covering core development, language specialists, infrastructure, quality/security, and more categories.
@@ -430,4 +429,3 @@ chmod +x install-codex-agents.sh
 - [GitHub Repository](https://github.com/VoltAgent/awesome-codex-subagents)
 - [OpenAI Codex Subagents Docs](https://developers.openai.com/codex/subagents)
 - [VoltAgent Discord](https://s.voltagent.dev/discord)
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: cc-skills-golang
 description: Install and use Go-specific AI agent skills for production-ready Golang projects. Covers code style, testing, security, observability, error handling, performance, concurrency, and popular Go libraries via the skills.sh plugin system.
@@ -330,4 +329,3 @@ Individual skill deltas range from -19% (`golang-samber-slog`) to -81% (`golang-
 - [Generic skills (non-Go)](https://github.com/samber/cc-skills)
 - [Agent Skills spec](https://agentskills.io)
 - [EVALUATIONS.md](https://github.com/samber/cc-skills-golang/blob/main/EVALUATIONS.md)
-```

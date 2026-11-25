@@ -1,4 +1,3 @@
-```markdown
 ---
 name: markdown-proxy-url-fetcher
 description: Fetch any URL as clean Markdown via proxy cascade (r.jina.ai / defuddle.md / agent-fetch) with built-in support for WeChat, Feishu/Lark docs, and login-required pages
@@ -325,5 +324,4 @@ User: "Summarize this paper: https://arxiv.org/abs/2401.12345"
 # 2. Use r.jina.ai proxy to fetch content
 # 3. Fall back through cascade if needed
 # 4. Return summary based on fetched Markdown
-```
 ```

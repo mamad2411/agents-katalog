@@ -1,4 +1,3 @@
-```markdown
 ---
 name: nuwa-skill-distiller
 description: AI skill for distilling any public figure's cognitive frameworks, mental models, and decision heuristics into runnable Claude Code perspective skills using the Nuwa methodology
@@ -428,4 +427,3 @@ MIT — use freely, modify freely, build freely.
 
 Project: [alchaincyf/nuwa-skill](https://github.com/alchaincyf/nuwa-skill)  
 Author: 花叔 (Huashu) — [@AlchainHust](https://x.com/AlchainHust)
-```

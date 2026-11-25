@@ -1,4 +1,3 @@
-```markdown
 ---
 name: oh-my-openagent-omo
 description: Expert skill for oh-my-openagent (omo) — the multi-model AI agent harness built on OpenCode with ultrawork orchestration, discipline agents, and multi-provider support
@@ -479,4 +478,3 @@ Switch mid-session with `/model <provider>/<model-id>`.
 - [Sisyphus Labs waitlist](https://sisyphuslabs.ai)
 - [Discord community](https://discord.gg/PUwSMR9XNk)
 - [DeepWiki docs](https://deepwiki.com/code-yeongyu/oh-my-openagent)
-```

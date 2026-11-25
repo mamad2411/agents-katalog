@@ -1,4 +1,3 @@
-```markdown
 ---
 name: open-agent-sdk-typescript
 description: TypeScript SDK for running Claude-powered agent loops in-process without CLI dependencies
@@ -398,4 +397,3 @@ if (message.type === "assistant") {
 
 **Custom base URL with OpenRouter**
 → Set `CODEANY_BASE_URL=https://openrouter.ai/api` and `CODEANY_MODEL=anthropic/claude-sonnet-4` alongside your OpenRouter API key
-```

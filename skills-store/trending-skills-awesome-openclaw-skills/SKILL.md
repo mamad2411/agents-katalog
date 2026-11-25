@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-openclaw-skills
 description: Curated collection of 5400+ community-built OpenClaw skills organized by category, with installation, discovery, and contribution guidance.
@@ -342,5 +341,4 @@ rm -rf ~/.openclaw/skills/<skill-name>
 Do not install. Open an issue at:
 ```
 https://github.com/VoltAgent/awesome-clawdbot-skills/issues
-```
 ```

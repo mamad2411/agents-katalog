@@ -1,4 +1,3 @@
-```markdown
 ---
 name: runbookhermes-aiops-agent
 description: Hermes-native AIOps agent for evidence-driven incident response, approval-gated remediation, and runbook learning on payment and production systems.
@@ -576,5 +575,4 @@ docker compose -f demo/payment_system/docker-compose.yml logs -f
 
 # Reset demo state
 python scripts/reset_demo_state.py
-```
 ```

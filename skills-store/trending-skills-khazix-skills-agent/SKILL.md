@@ -1,4 +1,3 @@
-```markdown
 ---
 name: khazix-skills-agent
 description: Expert in the Agent Skills open standard and the khazix-skills collection — installing, creating, and using structured AI skill modules for agents like Claude Code, Codex, and OpenClaw.
@@ -309,4 +308,3 @@ print('YAML is valid')
 - [khazix-skills Repository](https://github.com/KKKKhazix/khazix-skills)
 - [Releases / .skill Downloads](https://github.com/KKKKhazix/khazix-skills/releases)
 - [MIT License](https://github.com/KKKKhazix/khazix-skills/blob/main/LICENSE)
-```

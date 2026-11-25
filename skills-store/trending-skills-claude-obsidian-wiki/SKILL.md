@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-obsidian-wiki
 description: Claude Code skill for building and maintaining a persistent, compounding Obsidian wiki vault using AI-powered ingestion, querying, linting, and autonomous research.
@@ -450,5 +449,4 @@ claude-obsidian/
 │   ├── hot.md
 │   └── meta/
 └── WIKI.md                  # Standalone install instructions
-```
 ```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: star-office-ui-pixel-dashboard
 description: Deploy and integrate Star Office UI — a pixel-art AI agent status dashboard with multi-agent collaboration, Flask backend, and OpenClaw integration.
@@ -492,4 +491,3 @@ Generation is async — the frontend polls this until done. Ensure `GEMINI_API_K
 - **Art assets**: Non-commercial only (learning / demo / community use)
 
 For commercial use, replace all art assets with your own original work.
-```

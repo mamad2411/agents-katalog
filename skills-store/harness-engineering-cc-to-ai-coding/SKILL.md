@@ -1,4 +1,3 @@
-```markdown
 ---
 name: harness-engineering-cc-to-ai-coding
 description: Expert skill for reading, navigating, and applying insights from the "Harness Engineering" book — a deep technical analysis of Claude Code's architecture, agent loops, prompt engineering, context management, and AI coding best practices.
@@ -408,4 +407,3 @@ From **Part 7** of the book:
 - **mdBook docs:** https://rust-lang.github.io/mdBook/
 - **Claude Code (analyzed version):** v2.1.88
 - **License:** MIT
-```

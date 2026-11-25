@@ -1,4 +1,3 @@
-```markdown
 ---
 name: openbrand-asset-extraction
 description: Extract brand assets (logos, colors, backdrops, brand name) from any website URL using OpenBrand
@@ -381,4 +380,3 @@ const enriched = await Promise.all(
 - **Agent skill**: [skills.sh/ethanjyx/openbrand](https://skills.sh/ethanjyx/openbrand/openbrand)
 - **GitHub**: [github.com/ethanjyx/openbrand](https://github.com/ethanjyx/openbrand)
 - **License**: MIT
-```

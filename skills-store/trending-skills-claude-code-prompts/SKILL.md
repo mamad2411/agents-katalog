@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-prompts
 description: Independently authored prompt templates for AI coding agents — system prompts, tool prompts, agent delegation, memory management, and multi-agent coordination patterns informed by studying Claude Code.
@@ -665,4 +664,3 @@ Your verification prompt may be too permissive. Use the adversarial framing from
 
 ### Cursor skills not loading
 Skills must be in `~/.cursor/skills-cursor/` and each skill directory must contain a `SKILL.md` file. Restart Cursor after copying.
-```

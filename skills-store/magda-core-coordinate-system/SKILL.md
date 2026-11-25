@@ -1,3 +1,8 @@
+---
+name: magda-core-coordinate-system
+description: magda core coordinate system
+---
+
 # Coordinate System: Beats Are the Domain
 
 ## Rule

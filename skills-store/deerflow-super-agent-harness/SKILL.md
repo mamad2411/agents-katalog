@@ -1,4 +1,3 @@
-```markdown
 ---
 name: deerflow-super-agent-harness
 description: Install, configure, and extend DeerFlow 2.0 — an open-source super agent harness that orchestrates sub-agents, memory, sandboxes, and skills to handle complex multi-step tasks.
@@ -640,4 +639,3 @@ deer-flow/
 - **LangGraph Docs**: https://langchain-ai.github.io/langgraph/
 - **MCP Protocol**: https://modelcontextprotocol.io/
 - **License**: MIT
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: deepseek-v4-roleplay-instruct
 description: Control DeepSeek-V4 thinking mode during roleplay — switch between immersive character inner monologue and pure analytical reasoning using special prompt markers.
@@ -321,4 +320,3 @@ base_url="https://api.deepseek.com/v1"
 
 **Both markers show up in context — conflict:**
 - Use only one marker per conversation. The `build_messages` helper enforces this by appending only one based on `mode`.
-```

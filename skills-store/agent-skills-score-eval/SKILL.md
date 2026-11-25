@@ -1,6 +1,8 @@
 ---
 name: score-eval
 disable-model-invocation: true
+description: agent skills score eval
+description: agent skills score eval
 ---
 
 Score the eval diff at $ARGUMENTS against the eval rubric.

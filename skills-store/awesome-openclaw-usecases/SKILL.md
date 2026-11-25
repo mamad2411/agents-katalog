@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-openclaw-usecases
 description: Community collection of real-world OpenClaw (formerly ClawdBot/MoltBot) use cases, skills, and plugins for automating daily life tasks.
@@ -403,4 +402,3 @@ openclaw skill install github:owner/skill-repo --force
 - [OpenClaw Skills Registry](https://github.com/openclaw/skills)
 - [Community Discord](https://discord.gg/vtJykN3t)
 - [Maintainer on X](https://x.com/Hesamation)
-```

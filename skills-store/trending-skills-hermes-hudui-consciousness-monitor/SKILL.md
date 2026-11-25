@@ -1,4 +1,3 @@
-```markdown
 ---
 name: hermes-hudui-consciousness-monitor
 description: Web UI consciousness monitor for Hermes AI agent with persistent memory — FastAPI backend + React frontend dashboard
@@ -577,5 +576,4 @@ Install both side by side:
 ```bash
 pip install hermes-hud       # TUI version
 pip install hermes-hudui[tui] # Web UI + TUI bridge
-```
 ```

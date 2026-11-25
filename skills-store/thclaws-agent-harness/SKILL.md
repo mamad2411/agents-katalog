@@ -1,4 +1,3 @@
-```markdown
 ---
 name: thclaws-agent-harness
 description: Expert skill for using thClaws, the native Rust AI agent workspace platform with multi-provider support, skills, MCP servers, and agent orchestration.
@@ -673,5 +672,4 @@ thClaws/
 ├── AGENTS.md
 ├── Cargo.toml
 └── README.md
-```
 ```

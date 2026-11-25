@@ -1,4 +1,3 @@
-```markdown
 ---
 name: mckinsey-pptx-generator
 description: Generate McKinsey-style PowerPoint presentations via Claude Code plugin with 40 slide templates and intelligent template selection
@@ -412,4 +411,3 @@ deck.save("indonesia-strategy")
 - **Output:** always `output/<name>.pptx` relative to the Claude Code working directory
 - **Data privacy:** files are processed locally; only the conversation text reaches Anthropic servers
 - **No design knowledge required:** the subagent handles all template selection and layout decisions
-```

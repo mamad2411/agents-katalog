@@ -1,4 +1,3 @@
-```markdown
 ---
 name: tech-debt-skill
 description: Claude Code skill that produces a thorough, file-cited tech debt audit of an entire codebase across nine dimensions with severity ratings, effort estimates, and a ranked action list
@@ -305,5 +304,4 @@ The skill writes the file at the end of Phase 3. If Phase 3 was cut short, ask:
 
 ```
 Please write TECH_DEBT_AUDIT.md now using the findings from Phase 2.
-```
 ```

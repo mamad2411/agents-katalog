@@ -1,4 +1,3 @@
-```markdown
 ---
 name: graphify-knowledge-graph
 description: Build queryable knowledge graphs from code, docs, papers, and images using AI coding assistant skills
@@ -490,4 +489,3 @@ graphify prints a benchmark after every run. Typical results:
 | Small Python library | 6 | ~1x |
 
 Token reduction scales with corpus size. At 52 mixed files, querying `graph.json` uses 71x fewer tokens than reading raw files. The first run costs tokens to build the graph. Every subsequent query reads the compact graph instead — savings compound across sessions.
-```

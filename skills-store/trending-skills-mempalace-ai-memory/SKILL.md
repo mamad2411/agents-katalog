@@ -1,4 +1,3 @@
-```markdown
 ---
 name: mempalace-ai-memory
 description: MemPalace is a local-first AI memory system using palace-structure retrieval and AAAK compression, achieving 96.6%+ recall on LongMemEval benchmarks.
@@ -452,4 +451,3 @@ mempalace status
 | MemPalace + 5 searches/day | ~13,500 tokens | ~$10/yr |
 
 MemPalace is entirely free. API costs above apply only if using Claude for optional reranking.
-```

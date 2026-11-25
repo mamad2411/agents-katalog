@@ -1,4 +1,3 @@
-```markdown
 ---
 name: dontbesilent-dbskill
 description: Claude Code skill for dontbesilent's business diagnosis toolkit — routes to diagnosis, benchmark, content, unblock, and deconstruct skills built from 12,307 tweets
@@ -405,4 +404,3 @@ grep '"confidence": "high"' 知识库/原子库/atoms.jsonl | \
 ## License
 
 CC BY-NC 4.0. Free for personal use, learning, research, non-commercial projects. Commercial use requires separate authorization. Contact the author at [@dontbesilent](https://x.com/dontbesilent).
-```

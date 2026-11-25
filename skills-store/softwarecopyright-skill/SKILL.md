@@ -1,4 +1,3 @@
-```markdown
 ---
 name: softwarecopyright-skill
 description: Generate complete Chinese software copyright (软件著作权) application materials (DOCX/TXT) from real project source code using Codex AI agent skill
@@ -344,4 +343,3 @@ Then restart Codex completely.
 - **Auto-submit to the official website** — you must review and submit manually
 - **Guarantee approval** — always verify generated materials match your actual project before submission
 - **Replace legal advice** — consult a lawyer for complex copyright ownership questions (joint development, employer-employee, commissioned work)
-```

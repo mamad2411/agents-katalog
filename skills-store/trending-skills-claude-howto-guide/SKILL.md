@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-howto-guide
 description: Master Claude Code features — slash commands, memory, hooks, subagents, MCP, skills, plugins, checkpoints, and CLI — using the claude-howto structured tutorial guide.
@@ -668,4 +667,3 @@ Run directly inside Claude Code:
 - **Claude Code Docs:** https://code.claude.com
 - **Contributing:** `CONTRIBUTING.md`
 - **License:** MIT
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: pi-autoresearch-loop
 description: Autonomous experiment loop for pi that continuously tries optimizations, measures results, and keeps what works
@@ -393,4 +392,3 @@ The **extension** is domain-agnostic infrastructure. The **skill** encodes domai
 ## License
 
 MIT
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: vpn-detector-android
 description: Android library/app for detecting VPN usage, network tunneling signals, and split tunneling via NetworkCapabilities, interface inspection, and package enumeration.
@@ -328,4 +327,3 @@ fun analyzeSplitTunnel(context: Context): String {
 - `QUERY_ALL_PACKAGES` is restricted on Google Play — use a known-packages list instead for production
 - VPN apps using the `VpnService` API will always show `TRANSPORT_VPN` on their managed network
 - Root-level VPN implementations (kernel modules) may evade all Java-layer detection
-```

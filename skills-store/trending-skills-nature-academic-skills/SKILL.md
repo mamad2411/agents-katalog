@@ -1,4 +1,3 @@
-```markdown
 ---
 name: nature-academic-skills
 description: Generate publication-ready Nature-journal matplotlib figures and polish academic prose to Nature style standards using Claude skills.
@@ -460,4 +459,3 @@ nature-polishing/
 | `nature-methods` | Methods reproducibility checklist, forbidden phrases |
 | `nature-cover` | Cover letter ≤ 500 words, hook paragraph, fit-to-journal argument |
 | `nature-data` | Data availability statements, FAIR metadata standards |
-```

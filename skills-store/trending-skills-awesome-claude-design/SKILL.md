@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-claude-design
 description: Use 68 ready-to-use DESIGN.md files to scaffold full UI design systems with Claude Design in one shot
@@ -410,4 +409,3 @@ but replace all hardcoded colors, fonts, and spacing with token references.
 - [getdesign.md](https://getdesign.md/) — Full preview of all 68 design systems
 - [VoltAgent](https://github.com/VoltAgent/voltagent) — AI agent framework by the same team
 - [What is DESIGN.md?](https://getdesign.md/what-is-design-md) — Concept documentation
-```

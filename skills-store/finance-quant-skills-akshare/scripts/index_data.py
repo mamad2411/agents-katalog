@@ -42,7 +42,7 @@ def get_global_index():
             "data": df.to_dict('records'),
             "count": len(df)
         }
-    except Exception as as e:
+    except Exception as e:
         return {"error": f"获取全球指数失败: {str(e)}"}
 
 def get_index_value(symbol="000300"):

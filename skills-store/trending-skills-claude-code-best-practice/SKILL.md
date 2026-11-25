@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-best-practice
 description: Master Claude Code features, patterns, and agentic workflows using community best practices
@@ -513,4 +512,3 @@ claude mcp list                           # list MCP servers
 - [Prompt Engineering Tutorial](https://github.com/anthropics/prompt-eng-interactive-tutorial)
 - [Claude Code Hooks](https://github.com/shanraisshan/claude-code-hooks)
 - [Boris Cherny on X](https://x.com/bcherny)
-```

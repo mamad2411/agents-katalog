@@ -1,4 +1,3 @@
-```markdown
 ---
 name: seoul-world-model
 description: Skill for using the Seoul World Model — a world simulation model grounded in a real-world metropolis (Seoul) by Naver AI
@@ -363,4 +362,3 @@ pip install diffusers==0.27.0 transformers==4.39.0
 - [ ] Training scripts
 
 Stay tuned to the repository for updates as these are released.
-```

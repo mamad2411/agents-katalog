@@ -1,4 +1,3 @@
-```markdown
 ---
 name: hermes-agent-nous-research
 description: Practical guide skill for Hermes Agent, the open-source AI Agent framework by Nous Research featuring a self-improving learning loop, three-layer memory system, and automatic Skill creation and evolution.
@@ -495,4 +494,3 @@ hermes memory prune --older-than 30d
 - [GitHub Repo](https://github.com/NousResearch/hermes-agent)
 - [Hermes Agent Orange Book (PDF)](https://github.com/alchaincyf/hermes-agent-orange-book)
 - [Nous Research](https://nousresearch.com/)
-```

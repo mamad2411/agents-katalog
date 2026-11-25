@@ -1,4 +1,3 @@
-```markdown
 ---
 name: awesome-claude-skills
 description: Curated collection of Claude Skills for Claude.ai, Claude Code, and Claude API — plus Composio integration for connecting Claude to 500+ apps
@@ -467,5 +466,4 @@ git add skills/my-awesome-skill/
 git commit -m "Add my-awesome-skill: brief description"
 git push origin add-my-awesome-skill
 # Open PR at github.com/ComposioHQ/awesome-claude-skills
-```
 ```

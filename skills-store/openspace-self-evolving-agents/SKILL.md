@@ -1,4 +1,3 @@
-```markdown
 ---
 name: openspace-self-evolving-agents
 description: Skill for using OpenSpace to make AI agents smarter, lower-cost, and self-evolving through skill sharing and collective intelligence.
@@ -338,4 +337,3 @@ which openspace-mcp
 - [OpenClaw](https://github.com/openclaw/openclaw) — agent framework compatible with OpenSpace
 - [GDPVal dataset](https://huggingface.co/datasets/openai/gdpval) — 220 real-world professional tasks benchmark
 - Community & skill browser: [open-space.cloud](https://open-space.cloud)
-```

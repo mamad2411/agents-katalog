@@ -1,4 +1,3 @@
-```markdown
 ---
 name: chops-ai-skills-manager
 description: macOS app to browse, edit, and manage AI agent skills across Claude Code, Cursor, Codex, Windsurf, and Amp
@@ -346,4 +345,3 @@ Built with [Astro 6](https://astro.build/).
 - **Dedup via symlinks** — Skills identified by resolved symlink path; same file in multiple tool dirs = one skill, multiple tool badges.
 - **No automated tests** — Validate manually: build → trigger feature → observe result → test edge cases.
 - **SwiftData persistence** — `Skill` and `SkillCollection` models are persisted; scanning upserts (never duplicates) discovered skills.
-```

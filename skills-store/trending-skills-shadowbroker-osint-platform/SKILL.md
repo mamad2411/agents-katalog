@@ -1,4 +1,3 @@
-```markdown
 ---
 name: shadowbroker-osint-platform
 description: Real-time multi-domain OSINT dashboard aggregating aircraft, ships, satellites, earthquakes, CCTV, GPS jamming, and geopolitical events on a unified map interface.
@@ -451,4 +450,3 @@ kubectl rollout restart deployment/shadowbroker-backend -n shadowbroker
 ## License
 
 AGPL-3.0 — All modifications must be open-sourced under the same license if distributed.
-```

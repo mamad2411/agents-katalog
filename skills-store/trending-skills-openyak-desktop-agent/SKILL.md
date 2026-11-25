@@ -1,4 +1,3 @@
-```markdown
 ---
 name: openyak-desktop-agent
 description: OpenYak local-first AI agent desktop app with 100+ models, 16+ built-in tools, and MCP support
@@ -422,4 +421,3 @@ ALLOWED_ORIGINS=http://localhost:3000,app://openyak
 - **Download:** [https://open-yak.com/download/](https://open-yak.com/download/)
 - **GitHub:** [https://github.com/openyak/desktop](https://github.com/openyak/desktop)
 - **License:** AGPL-3.0
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: antivibe-code-learning
 description: Transform AI-generated code into educational deep dives with AntiVibe, a Claude Code skill that explains what code does, why it was written that way, and how to learn from it.
@@ -323,5 +322,4 @@ Extend:    reference/language-patterns.md
            reference/resource-curation.md
 Template:  templates/deep-dive.md
 Hooks:     hooks/hooks.json → .claude/hooks.json
-```
 ```

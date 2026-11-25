@@ -1,3 +1,8 @@
+---
+name: azure-skills-scaffold
+description: azure skills scaffold
+---
+
 # Azure App Onboard Scaffold — IaC Generation + Self-Review
 
 Generate deployment-ready infrastructure code from an architecture plan, verify it with adversarial self-review, and bridge to validation — all without deploying.

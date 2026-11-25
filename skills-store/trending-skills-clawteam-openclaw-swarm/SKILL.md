@@ -1,4 +1,3 @@
-```markdown
 ---
 name: clawteam-openclaw-swarm
 description: Multi-agent swarm coordination with OpenClaw as default agent — spawn, coordinate, and monitor CLI agent teams using git worktrees and tmux
@@ -590,4 +589,3 @@ rm -rf .clawteam/teams/myteam
 - **OpenClaw:** https://openclaw.ai
 - **Demo video:** https://youtu.be/aZT9d8qrirY
 - **Autoresearch use case:** https://github.com/novix-science/autoresearch
-```

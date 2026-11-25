@@ -1,4 +1,3 @@
-```markdown
 ---
 name: pm-skills-marketplace
 description: AI coding agent skill for using the PM Skills Marketplace — 65+ agentic PM skills and 36 chained workflows across 8 plugins for Claude Code, Cowork, and other AI assistants.
@@ -378,4 +377,3 @@ cd pm-skills
 - **Homepage / Full Guide**: https://www.productcompass.pm/p/pm-skills-marketplace-claude
 - **License**: MIT
 - **Contributing**: See `CONTRIBUTING.md` in the repo
-```

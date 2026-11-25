@@ -1,4 +1,3 @@
-```markdown
 ---
 name: goal-driven-multi-agent
 description: A framework for running multi-agent systems that sustain 100+ hours of continuous effort to solve complex coding or math problems with verifiable criteria
@@ -352,4 +351,3 @@ Always re-run verification independently.
 4. **Subagent** — works continuously; never trusted to self-terminate
 5. **Loop** — `while (criteria not met) { work }` — no exceptions
 6. **Do not add to skills/plugins** — this prompt contaminates context windows if reused as a persistent skill in the same session
-```

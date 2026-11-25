@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-code-game-studios
 description: Turn Claude Code into a full 49-agent game dev studio with 72 workflow skills, automated hooks, and a real studio hierarchy for Godot, Unity, and Unreal projects.
@@ -543,4 +542,3 @@ cat UPGRADING.md
 - [Godot 4 Docs](https://docs.godotengine.org/en/stable/)
 - [Unity Docs](https://docs.unity3d.com/)
 - [Unreal Engine 5 Docs](https://dev.epicgames.com/documentation/en-us/unreal-engine/)
-```

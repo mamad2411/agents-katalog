@@ -1,4 +1,3 @@
-```markdown
 ---
 name: aris-autonomous-research
 description: ARIS (Auto-Research-In-Sleep) — Markdown-only autonomous ML research workflows using cross-model review loops, idea discovery, experiment automation, and paper writing with Claude Code or any LLM agent.
@@ -479,4 +478,3 @@ When the user says "run my custom analysis"...
 ```
 
 Save as `.claude/skills/my-custom-skill/SKILL.md` and Claude Code will discover it automatically.
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: shichizip-macos-archiver
 description: ShichiZip is a 7-Zip derivative for macOS built in Swift, providing archive creation, extraction, and management with native macOS integration.
@@ -326,4 +325,3 @@ if url.startAccessingSecurityScopedResource() {
 ## License
 
 ShichiZip is licensed under **LGPL-2.1**, inherited from 7-Zip's licensing terms.
-```

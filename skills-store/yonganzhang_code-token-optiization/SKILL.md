@@ -1,5 +1,7 @@
 ---
 description: "TOP (Token Optimization Plan) — AI 编程助手 Token 优化体系，Rule+Skill联动、渐进式披露、按需加载，适用于 Claude Code 和 Codex"
+name: yonganzhang_code-token-optiization
+name: yonganzhang_code-token-optiization
 ---
 
 # Token Optimization Plan (TOP)

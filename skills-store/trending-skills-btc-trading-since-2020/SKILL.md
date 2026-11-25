@@ -1,4 +1,3 @@
-```markdown
 ---
 name: btc-trading-since-2020
 description: Work with the BTC-Trading-Since-2020 open dataset of real Bitcoin trading history (43k+ orders, 173k+ executions, 2020–2026) from a BitMEX account.
@@ -443,5 +442,4 @@ execs = pd.read_csv(
 
 ### `account` column missing
 Expected — it is intentionally redacted in the public release per the privacy policy.
-```
 ```

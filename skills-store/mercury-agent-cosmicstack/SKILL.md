@@ -1,4 +1,3 @@
-```markdown
 ---
 name: mercury-agent-cosmicstack
 description: Soul-driven AI agent with permission-hardened tools, token budgets, and multi-channel CLI/Telegram access
@@ -444,4 +443,3 @@ mercury setup           # Fresh wizard
 MIT © [Cosmic Stack](https://github.com/cosmicstack-labs)
 
 > **Disclaimer:** This is AI — it can break sometimes. Use at your own risk.
-```

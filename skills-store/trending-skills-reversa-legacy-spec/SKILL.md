@@ -1,4 +1,3 @@
-```markdown
 ---
 name: reversa-legacy-spec
 description: Use Reversa to reverse-engineer legacy codebases into executable AI-agent specifications
@@ -355,4 +354,3 @@ npm install
 Open an issue before submitting a PR to discuss the change.
 
 **License:** MIT
-```

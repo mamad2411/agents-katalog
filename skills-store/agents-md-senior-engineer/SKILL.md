@@ -1,4 +1,3 @@
-```markdown
 ---
 name: agents-md-senior-engineer
 description: Drop-in AGENTS.md that makes coding agents behave like senior engineers — kills sycophancy, stops drive-by refactors, forces verification loops.
@@ -289,4 +288,3 @@ Section 11 (Project Learnings) scales the system without scaling the file — on
 - [Claude Code best practices](https://code.claude.com/docs/en/best-practices)
 - Andrej Karpathy's four principles on LLM coding failure modes
 - Boris Cherny's Claude Code workflow (reactive pruning, accumulated learnings)
-```

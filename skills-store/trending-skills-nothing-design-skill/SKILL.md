@@ -1,4 +1,3 @@
-```markdown
 ---
 name: nothing-design-skill
 description: Generate UI in the Nothing design language — monochrome, typographic, industrial — using Space Grotesk/Mono/Doto fonts, OLED blacks, segmented components, and strict three-layer visual hierarchy.
@@ -646,4 +645,3 @@ Add font files to the Xcode project bundle and declare them in `Info.plist` unde
 
 **Too many hierarchy levels requested**
 Refuse politely. The system has exactly three: display, body, metadata. Push back and map the extra levels to one of the three.
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: context-mode-mcp
 description: Privacy-first MCP virtualization layer that sandboxes tool calls to save context window space and maintain session continuity across compaction
@@ -353,4 +352,3 @@ npm update -g context-mode
 - No account, no API key, no per-seat subscription
 - Sessions are ephemeral by default — data deleted unless `--continue` is passed
 - License: Elastic License v2 (ELv2)
-```

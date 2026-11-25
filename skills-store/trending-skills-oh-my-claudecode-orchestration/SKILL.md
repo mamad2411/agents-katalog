@@ -1,4 +1,3 @@
-```markdown
 ---
 name: oh-my-claudecode-orchestration
 description: Multi-agent orchestration for Claude Code using Teams, parallel execution, and specialized AI agents
@@ -380,4 +379,3 @@ cancelomc
 - `ralph` automatically includes `ultrawork` parallelism
 - Codex/Gemini MCP servers (`x`, `g` providers) were removed in v4.4.0 — use `omc team N:codex` or `omc team N:gemini` instead
 - Project skills (`.omc/skills/`) take priority over user skills (`~/.omc/skills/`)
-```

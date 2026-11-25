@@ -1,4 +1,3 @@
-```markdown
 ---
 name: taste-skill-frontend-design
 description: Gives AI coding agents premium frontend design taste — stops generic, boring, template-looking UI by enforcing modern layouts, typography, motion, and visual quality.
@@ -409,4 +408,3 @@ taste-skill/
 - GitHub: [github.com/Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill)
 - Author: [@lexnlin on X](https://x.com/lexnlin)
 - Contact: [hello@learn2vibecode.dev](mailto:hello@learn2vibecode.dev)
-```

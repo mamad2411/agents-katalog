@@ -1,3 +1,8 @@
+---
+name: ai-agent-book-curly-quote-sft
+description: ai agent book curly quote sft
+---
+
 # 中文技术文档符号与引用规范
 
 ## 何时加载

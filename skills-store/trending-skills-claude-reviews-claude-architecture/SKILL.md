@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-reviews-claude-architecture
 description: Skill for navigating and referencing the Claude Code architectural analysis — 17-part deep dive written by Claude about its own source code
@@ -289,4 +288,3 @@ No build step, no dependencies. Pure Markdown.
 
 **"I want the latest Claude Code analysis"**
 → Season 1 covers v2.1.88 and is complete (17 episodes). Watch the repo for Season 2 announcements.
-```

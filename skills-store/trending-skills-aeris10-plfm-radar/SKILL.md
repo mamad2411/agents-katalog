@@ -1,4 +1,3 @@
-```markdown
 ---
 name: aeris10-plfm-radar
 description: Open-source 10.5 GHz Pulse Linear Frequency Modulated phased array radar system (AERIS-10) with FPGA signal processing, STM32 control, and Python GUI

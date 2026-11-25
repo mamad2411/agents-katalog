@@ -1,3 +1,8 @@
+---
+name: duty1g_x64dbg-mcp-server
+description: duty1g x64dbg mcp server
+---
+
 # x64dbg Reverse Engineering — MCP Workflow Guide
 
 You are controlling x64dbg through MCP tools.

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: chromex-ai-chrome-assistant
 description: Chromex is a Chrome MV3 side-panel assistant that connects Chrome to OpenAI Codex through a local native bridge, enabling page context, tab, voice, image, and browser-control workflows.
@@ -527,4 +526,3 @@ export function seekTo(seconds: number): void {
 - Pre-release check: `npm run release:audit`
 - License: MIT
 - Built extension output: `packages/extension/dist`
-```

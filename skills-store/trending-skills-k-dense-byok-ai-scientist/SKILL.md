@@ -1,4 +1,3 @@
-```markdown
 ---
 name: k-dense-byok-ai-scientist
 description: AI co-scientist desktop app with Claude Scientific Skills, multi-model support, and 250+ scientific databases via BYOK API keys
@@ -283,4 +282,3 @@ git pull origin main
 ```
 
 Star the repo and follow [@k_dense_ai](https://x.com/k_dense_ai) for release notes. Planned additions include Ollama local model support, Claude Code as delegation backend, AutoResearch integration, and improved PDF parsing.
-```

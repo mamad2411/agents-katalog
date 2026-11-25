@@ -44,7 +44,7 @@ for f in files:
     if os.path.getsize(f) > 2_000_000:
         continue
     try:
-        with open(f, encoding="utf-8") as fh:
+        with open(f, encoding="utf-8-sig") as fh:
             json.load(fh)
     except Exception as e:
         bad.append(f"{f}: {str(e)[:80]}")

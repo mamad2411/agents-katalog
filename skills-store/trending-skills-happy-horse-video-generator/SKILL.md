@@ -1,4 +1,3 @@
-```markdown
 ---
 name: happy-horse-video-generator
 description: AI coding agent skill for Happy Horse 1.0 — native joint audio-video generation model with unified Transformer architecture
@@ -651,4 +650,3 @@ The anticipated release package includes:
 4. Inference code
 
 License terms have not yet been published. Confirm licensing at https://happyhorses.io/ before production use.
-```

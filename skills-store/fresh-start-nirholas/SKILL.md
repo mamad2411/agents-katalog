@@ -1,4 +1,3 @@
-```markdown
 ---
 name: fresh-start-nirholas
 description: A GitHub project by nirholas focused on fresh starts, with community following
@@ -255,4 +254,3 @@ git rebase upstream/main
 - **Issues:** https://github.com/nirholas/fresh-start/issues
 - **Pull Requests:** https://github.com/nirholas/fresh-start/pulls
 - **Author:** https://github.com/nirholas
-```

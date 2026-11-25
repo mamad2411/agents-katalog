@@ -1,4 +1,3 @@
-```markdown
 ---
 name: claude-watch-apple-watch
 description: Control Claude Code AI coding sessions from your Apple Watch — stream terminal output, approve permissions, and send voice commands from your wrist
@@ -551,4 +550,3 @@ claude
 | iOS | 17.0 |
 | watchOS | 10.0 |
 | Claude Code | 2.1+ |
-```

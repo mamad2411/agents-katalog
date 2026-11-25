@@ -1,4 +1,3 @@
-```markdown
 ---
 name: openclaude-portable
 description: Run Claude Code and other AI coding agents from a USB drive or any folder with zero installation required
@@ -410,4 +409,3 @@ The `data/` folder is platform-agnostic. Work on Windows, switch to Linux:
 - Normal Mode (option 1) asks for approval before every file write or shell command — use it on untrusted codebases.
 - Limitless Mode (option 2) is fully autonomous — only use it when you trust the codebase and the task.
 - All telemetry is disabled; traffic goes only to your chosen AI provider.
-```

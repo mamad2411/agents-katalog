@@ -1,4 +1,3 @@
-```markdown
 ---
 name: agentic-stack-portable-brain
 description: Portable .agent/ folder (memory + skills + protocols) that plugs into Claude Code, Cursor, Windsurf, OpenCode, OpenClaw, Hermes, Pi, or DIY Python and keeps knowledge across harness switches.
@@ -580,5 +579,4 @@ python3 .agent/memory/render_lessons.py
 
 # Manual reflection
 python3 .agent/tools/memory_reflect.py
-```
 ```

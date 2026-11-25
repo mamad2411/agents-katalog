@@ -1,4 +1,3 @@
-```markdown
 ---
 name: clawchief-openclaw-chief-of-staff
 description: Turn OpenClaw into a founder/chief-of-staff operating system with Todoist-backed tasks, Gmail/Calendar automation, and deterministic cron workflows
@@ -617,4 +616,3 @@ ls ~/.openclaw/skills/daily-task-prep/
 6. **Compile durable lessons into source-of-truth files**, not into chat history.
 7. **Use `auto-resolver.md` policy before escalating ambiguous decisions** to the user.
 8. **`workspace/HEARTBEAT.md` is a status file, not a workflow definition.**
-```

@@ -1,4 +1,3 @@
-```markdown
 ---
 name: slides-style-prompt-studio
 description: Generate multi-style PPT slide prompts for AI image generation via nanobanana2/Gemini
@@ -423,4 +422,3 @@ for style_name, prompt in target_styles.items():
 - **GitHub**: https://github.com/AAAAAAAJ/slides
 - **APImart / nanobanana2**: https://apimart.ai/
 - **Demo images**: `demos/yc-intro/images/` (22 samples across all styles)
-```

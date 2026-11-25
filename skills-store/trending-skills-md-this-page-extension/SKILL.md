@@ -1,4 +1,3 @@
-```markdown
 ---
 name: md-this-page-extension
 description: Browser extension that converts any webpage to clean, LLM-ready Markdown using Mozilla Readability and Turndown
@@ -521,4 +520,3 @@ Default: `Alt+M` on any page triggers conversion. Users can customize in:
 
 - [Chrome Web Store](https://chromewebstore.google.com/detail/md-this-page/banfcmclfmmlbkhionmemhibbjedhikm)
 - [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/md-this-page/)
-```

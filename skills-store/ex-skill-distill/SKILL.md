@@ -1,4 +1,3 @@
-```markdown
 ---
 name: ex-skill-distill
 description: Distill an ex-partner into an AI Skill using chat logs, photos, and descriptions — generates a persona-driven conversational skill that talks like them.
@@ -293,4 +292,3 @@ Skill  ❯ ...
 - This project is for personal reflection and emotional processing only
 - Do not use to harass, track, or contact real people
 - If you find yourself over-attached to the simulation, please seek real support
-```

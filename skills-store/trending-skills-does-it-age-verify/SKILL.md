@@ -1,4 +1,3 @@
-```markdown
 ---
 name: does-it-age-verify
 description: Track and contribute to the age verification compliance status list for open source operating systems
@@ -292,4 +291,3 @@ Prefer linking to official project pages, mailing lists, or GitHub issues when p
 ## License
 
 BSD-2-Clause — See [LICENSE](https://github.com/BryanLunduke/DoesItAgeVerify/blob/main/LICENSE)
-```

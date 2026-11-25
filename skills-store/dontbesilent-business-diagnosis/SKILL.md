@@ -1,4 +1,3 @@
-```markdown
 ---
 name: dontbesilent-business-diagnosis
 description: Business diagnosis toolkit for Claude Code — routes to diagnosis, benchmark, content, unblock, and deconstruct skills extracted from 12,307 tweets into 4,176 structured knowledge atoms.
@@ -368,4 +367,3 @@ Yes. The `knowledge` field contains the distilled insight. For English RAG, use 
 - Commercial use: requires separate authorization — contact the author
 
 Author: [dontbesilent](https://x.com/dontbesilent)
-```

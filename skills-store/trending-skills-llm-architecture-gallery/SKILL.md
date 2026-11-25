@@ -1,4 +1,3 @@
-```markdown
 ---
 name: llm-architecture-gallery
 description: Source data and metadata management for the LLM Architecture Gallery, a visual catalog of large language model architectures by Sebastian Raschka.
@@ -385,4 +384,3 @@ date: 2025-01-20
 | Validate YAML | `python3 -c "import yaml; yaml.safe_load(open('models.yml'))"` |
 | Primary data file | `models.yml` |
 | License | Apache-2.0 |
-```

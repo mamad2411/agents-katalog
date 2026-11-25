@@ -1,4 +1,3 @@
-```markdown
 ---
 name: world2agent-protocol
 description: Skill for using World2Agent (W2A) — the open protocol that standardizes how AI agents perceive the real world via structured sensor signals.
@@ -413,4 +412,3 @@ npm search w2a-sensor
 - [Build a sensor guide](./docs/build-a-sensor.md)
 - [Multi-sensor guide](./docs/multi-sensor.md)
 - [Discord community](https://discord.gg/hDjaD8pX)
-```
