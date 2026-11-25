@@ -1,0 +1,74 @@
+---
+name: explore-knowledge
+description: Use whenever the user asks about this project's decisions, architecture, conventions, or how something works in this codebase — do NOT answer from general knowledge, always look it up in docs/. Trigger on questions like "why did we choose X?", "how does Y work here?", "what's our convention for Z?", "what docs reference X?", or any question about this project's specific choices. Also use for explicit /autology:explore-knowledge commands (overview, neighborhood, path). Searches docs/, follows wikilinks, and synthesizes grounded answers from the knowledge base.
+---
+
+## Overview
+
+Answer user questions about the project by traversing the autology knowledge graph.
+Search docs/ for relevant nodes, follow wikilinks to build context, and return
+rich answers grounded in documented decisions, conventions, and architecture.
+
+Use explore instead of reading a doc directly when: the user asks a question (rather than requesting a specific doc), or when the topic may span multiple connected nodes.
+
+## Question-Answering (primary mode)
+
+When the user asks a question about the project (conventions, architecture, decisions, rationale):
+
+1. **Search**: Grep `docs/` for keywords from the question
+2. **Read**: Read matched nodes (frontmatter + body)
+3. **Follow**: For each wikilink in matched nodes, read the linked node (1-hop)
+4. **Synthesize**: Answer citing specific docs (e.g., "per [[redis-storage-decision]]")
+5. **False premise check**: If the search finds no doc that supports the question's premise, state this explicitly — give the actual documented state instead. Do not speculate or construct a rationale that isn't in docs.
+
+## Graph Operations
+
+The `<node>` argument is a **title-slug** — the filename without the `.md` extension (e.g., `redis-storage-decision` for `docs/redis-storage-decision.md`).
+
+### Overview (`/autology:explore-knowledge overview`)
+
+Process:
+- Glob `docs/*.md`, read each file's frontmatter and wikilinks
+- Count nodes, links, and disconnected components
+
+Output:
+- Total node count, link count, component count
+- Node type breakdown (count per type, e.g. 5 concept / 4 decision / 2 convention / 1 component)
+- Top 5 hub nodes (most wikilink connections)
+- Orphan node list (no incoming or outgoing links)
+
+### Neighborhood (`/autology:explore-knowledge <node>`)
+
+Process:
+- Read the target node
+- Find all nodes that link **to or from** the target (1-hop):
+  - **Outgoing**: wikilinks in the target node's body → `[[slug]]`
+  - **Incoming**: grep `docs/` for `[[target-slug]]` to find nodes that reference the target
+- Find their connections (2-hop BFS)
+
+Output: node title, type, tags, and connections for each hop
+
+### Path (`/autology:explore-knowledge path A B`)
+
+Process:
+- Find shortest wikilink path from node A to node B
+
+Output: `A → [intermediate] → B` with each hop labeled
+
+## Quick Reference
+
+```
+/autology:explore-knowledge overview     # graph overview
+/autology:explore-knowledge <node>       # neighborhood (2-hop BFS)
+/autology:explore-knowledge path A B     # shortest path
+```
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Answer from memory instead of docs | Always Read the actual doc nodes before answering |
+| Stop at 1-hop neighbors | Follow wikilinks to 2-hop for richer context |
+| Ignore node type and tags | Include type/tags in answers — they add classification context |
+| Only follow outgoing links in neighborhood | Also grep `docs/` for `[[node-name]]` to find nodes that link TO the target |
+| Speculate when question has false premise | State what IS documented; never construct a rationale not found in docs |

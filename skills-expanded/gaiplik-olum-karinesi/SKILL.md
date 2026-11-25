@@ -1,0 +1,84 @@
+---
+name: gaiplik-olum-karinesi
+description: "Bir kişi uzun süredir kayıpsa, ölüm tehlikesi içinde kaybolmuşsa ya da kişiliğin/ölümün ispatı sorun olduğunda gaiplik kararı veya nüfusa ölüm kaydı için kullanılır."
+---
+
+# Gaiplik ve Ölüm Karinesi
+
+## Görev
+Kayıp bir kişinin hukuki durumunu belirlemek: ölüm tehlikesi içinde kaybolma veya uzun süreli haber alınamama hâllerinde gaiplik kararı (TMK m.32 vd.) almak ya da ölüm karinesi/ölü olarak kaydı (TMK m.31, m.44) için doğru yolu kurmak.
+
+## Soğuk başlangıç (intake)
+- Kişi ölüm tehlikesi içinde mi (deprem, sel, kaza, savaş) kayboldu, yoksa uzun süredir haber mi alınamıyor?
+- Son haberin/kaybın üzerinden ne kadar zaman geçti?
+- Cesedi bulunamamasına rağmen ölümünde kuşku yok mu (ölüm karinesi), yoksa belirsizlik mi var (gaiplik)?
+- Talebi kim yapıyor; miras, evlilik, sigorta gibi hangi hak buna bağlı?
+
+## Denetim şeması
+1. **Ölüm karinesi** — TMK m.31: bir kimse ölümüne kesin gözle bakılmayı gerektiren durumlar içinde (ör. cesedi bulunamasa da) kaybolursa, gerçekten ölmüş gibi mirası açılır; nüfusa ölü kaydı için mahkeme/idari işlem gerekir (m.44).
+2. **Gaiplik sebepleri** — TMK m.32: ölüm tehlikesi içinde kaybolan veya kendisinden uzun süre haber alınamayan ve ölümü hakkında kuvvetli olasılık bulunan kişinin, hakları ölümüne bağlı olanların başvurusuyla gaipliğine karar verilir.
+3. **Süreler** — TMK m.33: ölüm tehlikesi içinde kaybolmada en az **bir yıl**, son haberden itibaren en az **beş yıl** geçmesi gerekir. Mahkeme ilanla araştırma yapar; bir yıl içinde haber gelmezse gaiplik kararı verir.
+4. **Görev ve yetki** — TMK m.32/2: gaiplik kararı, kişinin son yerleşim yeri ya da Türkiye'deki son yerleşim yeri mahkemesinden istenir; asliye hukuk mahkemesi görevlidir.
+5. **Sonuçlar** — Gaiplik kararıyla miras gaipliğe (kaybolma/son haber tarihine) göre açılır; mirasçılar teminat gösterir (TMK m.35). Evlilik kendiliğinden sona ermez; sona erdirme için ayrı talep/karar gerekir (TMK m.131).
+
+## Çıktı modülleri
+- Karine mi gaiplik mi ayrımı + dayanak.
+- Süre hesabı (kayıp/son haber tarihinden itibaren).
+- Başvuru iskeleti (görevli/yetkili mahkeme, ilan talebi, sonuç).
+- Bağlı hak notu (miras açılışı, sigorta, evlilik) ve `[doldurulacak]` tarih yerleri.
+
+## Plugin bağlamı
+
+Bu beceri `kisiler-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

@@ -1,0 +1,84 @@
+---
+name: genel-hukumlerin-kiyasen-uygulanmasi-tmk-5
+description: "Bir özel hukuk ilişkisinde doğrudan hüküm bulunmadığında, TMK ve TBK genel hükümlerinin bu ilişkiye kıyasen uygulanıp uygulanamayacağı tartışıldığında TMK m.5 köprüsünü kurmak için kullanılır."
+---
+
+# Genel Hükümlerin Kıyasen Uygulanması (TMK m.5)
+
+## Görev
+TMK ve TBK'nın genel nitelikli hükümlerinin, başka bir özel hukuk ilişkisine (aile, miras, eşya, ticaret, fikrî haklar) "uygun düştüğü ölçüde" kıyasen uygulanıp uygulanamayacağını belirlemek.
+
+## Soğuk başlangıç (intake)
+- Eldeki ilişkiyi düzenleyen özel hüküm gerçekten yok mu (önce o aranır)?
+- Taşınmak istenen hüküm "genel nitelikli" mi, yoksa kendi alanına özgü istisnai bir hüküm mü?
+- Hükmün amacı (ratio) eldeki ilişkiye uygun düşüyor mu, yoksa niteliği engelliyor mu?
+- İlişki TBK genel hükümlerine zaten tabi mi (ör. borç ilişkisiyse doğrudan uygulanır, kıyasa gerek yok)?
+
+## Denetim şeması
+1. **Köprü hükmü** — TMK m.5: TMK ve TBK'nın genel nitelikli hükümleri, *uygun düştükleri ölçüde* tüm özel hukuk ilişkilerine uygulanır. Bu, doğrudan uygulama değil, kıyasen (analojik) uygulamadır.
+2. **Önce boşluk kontrolü** — İlişkiyi düzenleyen özel norm varsa m.5 devreye girmez. Boşluk gerçek mi (kural yok) yoksa bilinçli susma mı (a contrario) ayrılır.
+3. **"Genel nitelik" testi** — Taşınacak hüküm, yalnızca borç ilişkilerine özgü teknik bir kural değil, tüm özel hukuka yayılabilecek genel bir ilke içermeli (ör. temsil, ehliyet, irade sakatlığı, ifa, temerrüt ilkeleri). İstisnai/özel amaçlı hükümler kural olarak taşınmaz.
+4. **"Uygun düşme" testi** — Hükmün amacı eldeki ilişkinin niteliğiyle bağdaşmalı; aile/miras gibi kişiye sıkı bağlı alanlarda borçlar hukuku mantığı her zaman taşınmaz (ör. irade sakatlığı hükümleri evlenme/vasiyette kendi özel rejimine tabidir).
+5. **Sonuç** — Şartlar sağlanırsa genel hükmün sonucu, gerekli uyarlamayla eldeki ilişkiye uygulanır; sağlanmazsa TMK m.1 sırasına (örf-âdet, hâkimin hukuk yaratması) geçilir.
+
+## Çıktı modülleri
+- Boşluk tespiti (özel norm var/yok).
+- Taşınacak hükmün "genel nitelik" ve "uygun düşme" analizi.
+- Kıyasen uygulama sonucu + gerekli uyarlama.
+- Uygulanamazsa m.1 yönlendirmesi + ilkesel içtihat `[doğrulanacak]`.
+
+## Plugin bağlamı
+
+Bu beceri `medeni-hukuk-baslangic` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

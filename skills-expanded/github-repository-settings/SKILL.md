@@ -1,0 +1,38 @@
+---
+name: github-repository-settings
+description: "Load to preview, render or check a repository's selected review instruction files and local review pointer."
+license: MIT
+user-invocable: true
+metadata:
+  author: "vanillagreen"
+  source: "kendex"
+  repository: "https://github.com/vanillagreencom/kendex"
+  bugs: "https://github.com/vanillagreencom/kendex/issues"
+---
+
+<!-- kendex:project-instructions:start -->
+## Project Instructions
+
+<!-- kendex:shared-instructions:start -->
+Problems with a kendex-owned skill go through `kendex report`; check ownership in the file first.
+<!-- kendex:shared-instructions:end -->
+<!-- kendex:project-instructions:end -->
+
+# GitHub repository settings
+
+```bash
+.agents/skills/github-repository-settings/scripts/github-repository-settings adopt --dry-run
+.agents/skills/github-repository-settings/scripts/github-repository-settings render
+.agents/skills/github-repository-settings/scripts/github-repository-settings check
+.agents/skills/github-repository-settings/scripts/github-repository-settings check --staged
+```
+
+Use `adopt --dry-run` to preview takeover without writes. Keep the existing [bot-instructions manifest](../bot-instructions/schemas/repo-toml.md). The library reports hand edits and refuses symlinked preview targets. `render` writes the selected outputs. `check` compares them without writes. `check --staged` reads tracked settings and review files from the index. Process and private-file settings keep their working values and normal precedence. A nested settings file keeps its working values only when it is absent from HEAD and the index. A staged deletion stays absent even if its working file remains. Exit codes: 0 clean, 1 findings, 2 could not complete. Options and the check report contract: `scripts/github-repository-settings --help`.
+
+Preview grants no write ownership. Use the existing [bot-instructions adoption operation](../bot-instructions/SKILL.md) to take unmanaged content over before rendering it.
+
+Before adoption, choose `hosted` or `local` for `GITHUB_STANDARD_CHECK_LOCATION` in the settings `[env]` table. It has no default. When both adoption keys are empty or absent, `check` reports not adopted and exits 0 without judging review files. This package reports the value during `check`; it installs no hosted CI. `GITHUB_STANDARD_BOT_REVIEW` defaults to `off`. Off selects the library's local output. On selects its full output and the bots enabled in the manifest. Local output requires the manifest's `codex` flag and an installed bot-instructions package inside the checkout. The [settings example](kendex.settings.toml.example) declares the settings.
+
+`bot-instructions` is the temporary renderer, schema and validator dependency. KEN-2362 removes that dependency after the ownership transition. `review-gate` provides the existing settings reader. Install these required packages beside this package. The catalog must pass its dependency and render checks with the latest released kendex engine. Release any required engine support before adopting catalog content that needs it.
+
+This package declares no repository effects. Installation does not transfer the existing bot-instructions effects. For staged review-file checker selection, follow `commit-guards/SKILL.md` § Git hooks.

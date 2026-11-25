@@ -1,0 +1,127 @@
+---
+name: gofastr-mcp-debug
+description: Live debug a running GoFastr app via its MCP endpoint, the combined entry point covering both the log_* tools (battery/log) and the app_* introspection tools (framework). Use when the user wants to "debug the live app", "see what's going on right now", "tell me about the running server", or any general "go look at the running app" prompt.
+---
+
+# Debug a running GoFastr app live (one-page guide)
+
+This skill is the **starting point** for any agent investigation of a
+running GoFastr app via MCP. For deep recipes, jump to:
+
+- `.claude/skills/log-debug/SKILL.md` covers the four `log_*` tools
+  (recent entries, structured filter, metrics, level mutation).
+- `.claude/skills/app-introspect/SKILL.md` covers the nine introspection
+  tools (`app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
+  `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`,
+  `app_unmounted`),
+  the `framework_docs_list` / `framework_docs_get` /
+  `framework_docs_search` tools an app adds with
+  `framework.WithMCPTools(mcptools.Register)` for the embedded
+  framework docs, and `contracts_list` / `contracts_explain` /
+  `contracts_capabilities` for the rules `gofastr verify` enforces. Under
+  `gofastr dev` only, `contracts_verify` runs those rules against the
+  app's source and `contracts_fix` applies one rule's autofixes; both
+  touch local files, so a deployed app does not register them.
+
+## When to use which
+
+| User asks…                                  | Reach for                                                |
+|---------------------------------------------|----------------------------------------------------------|
+| "What just happened?" / "Why is X failing?" | `log_recent`, `log_filter` (log-debug)                   |
+| "Trace request ID abc-123"                  | `log_filter` with `request_id` + `historical=true`       |
+| "Is the app ready?"                         | `app_readiness` (app-introspect)                         |
+| "What endpoints exist?"                     | `app_routes` (app-introspect)                            |
+| "What plugins / batteries are loaded?"      | `app_plugins`, `app_batteries` (app-introspect)          |
+| "What modules are enabled?"                 | `app_modules` (app-introspect)                           |
+| "Did my routine body change propagate?"     | `app_routines` (app-introspect); ledger_state=drifted flags it |
+| "Which framework packages did we unmount?"  | `app_unmounted` (app-introspect)                         |
+| "Is anything leaking goroutines?"           | `app_goroutine_leaks` (app-introspect)                   |
+| "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
+| "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |
+| "Why did `gofastr verify` flag this?"       | `contracts_explain`: the rule's why, fix, and example    |
+| "What does the framework require of me?"    | `contracts_capabilities` → `contracts_list`              |
+| "What's wrong with this app's code?"        | `contracts_verify` (dev loop), then `contracts_explain` per rule |
+| "Fix the GOFASTR#### findings for me"       | `contracts_fix` (dev loop, WRITES), one rule at a time   |
+| "Are the logs even working?"                | `log_metrics`: non-zero counters = lost entries           |
+| "Crank up DEBUG for 30 seconds, then back"  | `log_set_level DEBUG` (save `.previous_level`) → reproduce → `log_set_level <previous_level>` |
+
+## Getting started
+
+**Under `gofastr dev`, everything below is automatic**: the framework
+auto-mounts `/mcp` and enables introspection + control, every
+CRUD-enabled entity serves its `{entity}_*` data tools (no `mcp: true`
+needed), and battery/log (if registered) auto-enables its `log_*`
+tools. Opt-out: `GOFASTR_DEV_MCP=0`. The one exception is the
+`framework_docs_*` set: the dev loop never implies it, the app passes
+`framework.WithMCPTools(mcptools.Register)` (generated apps do). So for a
+dev-loop app there is nothing else to wire; just connect.
+
+Outside the dev loop, the app opts in explicitly:
+
+```go
+fwApp := framework.NewApp(
+    framework.WithConfig(framework.AppConfig{Name: "<your-app>"}),  // battery/log needs a non-empty app name for its state dir
+    framework.WithMCP(),                    // mounts /mcp (POST + GET SSE) + discovery wellknowns
+    framework.WithMCPIntrospection(),       // app_* tools (read-only)
+    framework.WithMCPTools(mcptools.Register), // framework_docs_* tools (framework/docs/mcptools)
+    framework.WithMCPControl(),             // app_module_enable/disable (mutating; trusted /mcp only)
+)
+fwApp.RegisterPlugin(log.New(log.Config{
+    EnableMCP:        true,                  // log_recent, log_filter, log_metrics (read-only)
+    AllowMCPMutation: true,                  // also registers log_set_level (mutating; trusted /mcp only)
+    MCPRingSize:      2000,
+}))
+```
+
+(`WithMCP()` replaces hand-mounting `/mcp`; doing both panics with a
+route conflict.) `examples/site` and generated apps already
+have `WithMCP` + `WithMCPIntrospection` + `framework.WithMCPTools(mcptools.Register)` + the log battery wired. Spin
+the site up with the repo's normal dev workflow:
+
+```bash
+./scripts/dev-watch.sh                    # examples/site on :8082, auto-rebuild, log_* tools on
+# or
+GOFASTR_DEV=1 go run ./examples/site      # :8083; plain `go run` exposes introspection but NOT log_* (dev-only)
+```
+
+Then point curl at `http://localhost:8082/mcp` (or `:8083` for the
+`GOFASTR_DEV=1` form) and use the log-debug + app-introspect skills'
+recipes.
+
+## The JSON-RPC envelope
+
+All tool calls are `POST /mcp` with body:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "<tool_name>",
+    "arguments": { ... }
+  }
+}
+```
+
+Response wraps the tool's return value as a JSON-encoded string in
+`.result.content[0].text`. Pipe through `jq -r '.result.content[0].text' | jq .`
+to get back to structured JSON. List available tools via
+`"method": "tools/list"` (no params).
+
+## Anti-patterns
+
+- **Don't reach for MCP when grepping the file directly is easier.** If
+  the user knows exactly what they're looking for and has shell access,
+  `tail -f ~/.local/state/<app>/server.log | grep …` may be the right
+  move (Linux honors `$XDG_STATE_HOME` before `~/.local/state`).
+  MCP wins when the agent (not the user) is the consumer.
+- **Don't curl tools you don't know the shape of.** `tools/list` first
+  if you're not sure what's registered; the descriptions are written
+  for agents.
+- **Don't forget to revert state mutations.** The mutating tools are
+  `log_set_level`, plus (when `WithMCPControl()` is wired)
+  `app_module_enable` / `app_module_disable`. Treat each like a
+  temporary debug toggle: flip on, reproduce, flip back. Capture
+  `previous_level` from `log_set_level` so you restore what was
+  actually there, not a hard-coded INFO.

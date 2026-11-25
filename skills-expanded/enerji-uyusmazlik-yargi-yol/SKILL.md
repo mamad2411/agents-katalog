@@ -1,0 +1,83 @@
+---
+name: enerji-uyusmazlik-yargi-yol
+description: "Bir enerji uyuşmazlığında idari yargı mı adli yargı mı tahkim mi gerektiği, görevli mahkeme, dava açma süresi ve yürütmenin durdurulması belirsiz olduğunda kullanılır."
+---
+
+# Enerji Uyuşmazlıklarında Yargı Yolu ve Görev-Yetki
+
+## Görev
+Enerji uyuşmazlığını doğru yargı koluna, görevli/yetkili mahkemeye veya tahkime yönlendirmek; dava açma süresini ve yürütmeyi durdurma ihtiyacını net biçimde tespit etmek.
+
+## Soğuk başlangıç (intake)
+1. Uyuşmazlığın kaynağı EPDK işlemi mi, sözleşme mi, haksız fiil/alacak mı?
+2. İlgili sözleşmede tahkim/yetki şartı var mı?
+3. Tebliğ/öğrenme tarihi nedir; süre işliyor mu?
+4. Acil koruma (yürütmenin durdurulması/ihtiyati tedbir) ihtiyacı var mı?
+
+## Denetim şeması
+1. **Yargı kolu ayrımı**: EPDK/idare işlemi → idari yargı (İYUK). Tarafların özel hukuk ilişkisinden doğan alacak/sözleşme → adli yargı; tahkim şartı varsa tahkim. Ara sonuç: hangi yargı kolu.
+2. **İdari yargı**: İYUK m.2 iptal/tam yargı; m.7 dava açma süresi (kural 60 gün, özel kanun süresi varsa o); m.27 yürütmenin durdurulması (telafisi güç zarar + açık hukuka aykırılık). Görevli yer kural olarak idare mahkemesi; konuya göre Danıştay ilk derece.
+3. **Adli yargı**: Ticari nitelikli enerji sözleşmelerinde asliye ticaret mahkemesi (TTK m.4-5); HMK m.6 yetki ve sözleşmedeki yetki şartı. İhtiyati tedbir HMK m.389 vd.
+4. **Tahkim**: Geçerli tahkim şartında (HMK m.412 / 4686) hakem yargılaması; hakem kararının iptali (HMK m.439) ve milletlerarası unsurlu işlemde tenfiz.
+5. **Süre disiplini**: İdari ve adli sürelerin ayrı işlediği, hak düşürücü süre/zamanaşımı karışıklığı en sık hata; süre takvimi sabitlenmeden dilekçe yazılmaz.
+
+## Çıktı modülleri
+- Yargı yolu ve görevli/yetkili merci tespiti.
+- Süre takvimi ve YD/ihtiyati tedbir ihtiyaç notu.
+- Yanlış mercie başvuru riski uyarısı.
+
+## Plugin bağlamı
+
+Bu beceri `enerji-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

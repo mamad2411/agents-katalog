@@ -1,0 +1,229 @@
+---
+name: dms-project
+description: Sets up and runs an AntelopeJS project that uses the DMS — template, `antelope.config.ts`, the `src/index.ts` lifecycle, `AddFrontendModule`, or the embedded mode of an AdonisJS app that calls `createRuntime` — and starts, stops or restarts its backend and frontend dev servers with a bundled script. Use when creating or configuring a DMS app, wiring or adding the modules it loads (including in an AdonisJS or other host app), running or restarting the dev servers, reading their logs, or when a change does not show live.
+icon: i-ph-folder-simple-plus
+category: setup
+tags: [project, setup, config, lifecycle, dev-server, restart]
+allowed-tools: Bash(bash:*), Bash(pgrep:*), Bash(tail:*), Bash(curl:*), Read, Write
+---
+
+# Setting up and running a DMS project
+
+This is the **most common** way to use the DMS: a normal AntelopeJS **project** (an app) that loads
+the DMS as a dependency and registers *its own* admin pages, data, and logic — rather than a
+distributable DMS module (to ship a reusable extension instead, see **dms-module** — same APIs,
+different packaging). For the model see **dms**; for `ajs` CLI / module-loading mechanics
+the **ajs-cli** skill; full walkthrough: `docs/02.building/01.project-setup.md`.
+
+## Starting a new application
+
+Use [template-dms](https://github.com/AntelopeJS/template-dms) for a new project: the DMS, the
+Builder and the AI assistant with no sample data, run with Docker Compose:
+`npx @antelopejs/core project init <dir> --template dms-starter` (needs Git on `PATH`).
+Follow `docs/01.getting-started/03.quickstart.md` through first-admin setup (the onboarding
+address with the setup token that the `dms` log prints) before adding pages. Use
+[template-dms-demo](https://github.com/AntelopeJS/template-dms-demo) (`--template dms-demo`)
+to explore Helio and every module; the tutorial in `docs/01.getting-started/04.tutorial.md` runs it. Use
+[template-dms-adonis](https://github.com/AntelopeJS/template-dms-adonis) only when
+AdonisJS must own the process (`--template dms-adonis`; **embedded** mode, below; walkthrough:
+`docs/01.getting-started/07.adonisjs.md`). Evaluate these existing templates before proposing another.
+
+Preserve the package names declared by the template. Both templates ship `.claude/settings.json`, which makes Claude Code offer the
+**antelopejs** plugin; elsewhere, install it once with `claude plugin marketplace add
+AntelopeJS/agent-skills` and `claude plugin install antelopejs@antelopejs`. In Codex, run
+`codex plugin marketplace add AntelopeJS/agent-skills` and `codex plugin add antelopejs@antelopejs`, and
+sync the skills with `npx -y github:AntelopeJS/agent-skills sync --target codex`.
+
+## What a project is
+
+An AntelopeJS app whose `antelope.config.ts` loads **`@antelopejs/dms`** (+ the
+infrastructure it needs) and whose own `src/` is the `local` module. It provides no interfaces, so
+its `package.json` has **no `antelopeJs.implements`** (that field marks a distributable module);
+deps are `@antelopejs/dms` + the interface libs, plus `@antelopejs/dms-frontend` (the
+`ajs dms` CLI) as a dependency — the template keeps it in `dependencies`; a devDependency also works
+since it is only a CLI. The frontend attaches with `AddFrontendModule` and a `dmsFrontend`
+declaration in `package.json` (below), and the DMS
+**auto-registers its base dashboard layer** (shell, login, component vocabulary) — a pages-only
+project needs no `frontend-vue/` of its own.
+
+## Wiring `antelope.config.ts`
+
+Declare the modules to load. Your code is the `local` module; the DMS and its infra are packages
+(or git, from a checkout). The `<latest>` pins below are placeholders, not installable versions.
+Copy the complete module stack and compatible ranges from `template-dms-demo/antelope.config.ts`;
+`docs/02.building/01.project-setup.md` explains the local module and lifecycle.
+
+```ts
+import { defineConfig } from "@antelopejs/interface-core/config";
+export default defineConfig({
+  name: "my-app",
+  modules: {
+    local: { source: { type: "local", path: ".", watchDir: ["src"],
+                       installCommand: ["pnpm install", "pnpm build"], reloadCommand: "pnpm exec tsc" },
+             config: { /* your project Config → construct(config) */ } },
+    dms: {
+      source: { type: "package", package: "@antelopejs/dms", version: "<latest>" }, // or type:"git" from a checkout
+      config: { apiBaseUrl: "http://localhost:5010", clientBaseUrl: "http://localhost:3001" } },
+    mongodb: { source: { type: "package", package: "@antelopejs/mongodb", version: "<latest>" },
+               config: { url: "mongodb://127.0.0.1:27017", database: "myapp" } },
+    // …plus @antelopejs/api (servers + cors) and @antelopejs/auth-jwt (secret) — same shape.
+  },
+});
+```
+
+The DMS needs an **API** (HTTP server), a **database** (e.g. mongodb), and **auth-jwt**. The DMS's
+`auth.jwtSecret` (its session tokens) and auth-jwt's `secret` are **independent secrets** — set
+both; remaining DMS keys: `docs/02.building/02.configuration.md`. Optional infrastructure (redis,
+file storage, email), the standalone `data-api` note, and `envOverrides` / `environments` are in
+[REFERENCE.md](REFERENCE.md).
+
+## Embedded mode (AdonisJS and other host apps)
+
+Everything above and below describes **standalone** mode, where the `ajs` CLI owns the process. In
+**embedded** mode a host application owns it and starts the runtime itself. Recognize it before
+you run any `ajs project` command: the project has **no `antelope.config.*`**, depends on
+`@antelopejs/core`, and a host file calls `createRuntime(...)` from it — in template-dms-adonis,
+`providers/antelope_provider.ts`, an AdonisJS provider that starts the runtime in `start()` and stops
+it in `shutdown()`.
+
+- **The module list is code.** Each module is a key of the `modules` map passed to `createRuntime`,
+  with its options under `config` (read from AdonisJS's `env`, not `envOverrides` / `environments`).
+- **Adding a module** (e.g. `@antelopejs/dms-lang`): `pnpm add` the package (modules resolve from
+  the app's `node_modules`, or a local path — not the `~/.antelopejs` cache), add
+  `'@antelopejs/dms-lang': {}` to the `modules` map, restart `pnpm dev`, then rebuild the dashboard
+  with `pnpm frontend:build` and restart `pnpm frontend:start`. Never `ajs project modules add`:
+  no `ajs project …` command applies here.
+- **No `ajs dms dev`.** The embedded runtime forces `dev: false`, so the DMS does not publish the
+  layer source paths the hot-reload server needs. The dashboard runs from `pnpm frontend:build` +
+  `pnpm frontend:start` (`:3001`), rebuilt after a module is added or removed; it reads
+  `DMS_BOOTSTRAP_SECRET` (the DMS `frontend.bootstrapSecret`) and `DMS_SESSION_SECRET` from `.env`.
+- **Separate API port.** `@antelopejs/api` listens on its own port (`DMS_API_PORT`, `5010`), not in
+  the AdonisJS server (`3333`), and needs `publicBaseUrl`.
+- **Host code calls `runtime.use()`**, never an `@antelopejs/interface-*` import (the template's
+  `GET /dms/info` route shows it). The `src/index.ts` lifecycle below applies to standalone projects.
+
+Mechanism and limitations: the framework's embedded runtime guide
+(<https://framework.antelopejs.com/docs/guides/embedded-runtime>).
+
+## The project lifecycle (`src/index.ts`)
+
+Your project is a module with the standard lifecycle. `construct(config)` gets the `local` config;
+register everything there. Side-effect imports run your decorators.
+
+```ts
+import "./data-types"; import "./db"; import "./pages"; import "./data-api"; import "./routes";
+import { resolve } from "node:path";
+import { AddFrontendModule } from "@antelopejs/interface-dms/page";
+import { Hook, RegisterHook } from "@antelopejs/interface-dms/hooks";
+import { registerAllPermissions } from "./permissions";
+
+export function construct(config: Config): void {
+  globalConfig = config;
+  registerAllPermissions();  // RegisterPermission(...) — see dms-auth
+  RegisterHook(Hook.DATABASE_INITIALIZED, async () => {
+    await initDatabase();
+  });
+}
+export async function start(): Promise<void> {
+  AddFrontendModule({       // OPTIONAL — only if you ship custom Vue
+    name: "my-app-frontend",
+    sourcePath: resolve(__dirname, "../frontend"),
+    renderer: { name: "vue", version: "3" },
+    options: {},
+    privateOptions: {},
+    // priority: 1,  // higher than the base module (0) to take one of its component names
+  });
+}
+export function stop(): void {}
+export function getConfig(): Config { return globalConfig; }
+```
+
+Frontend wiring is the `AddFrontendModule` call plus `"dmsFrontend": "dist/frontend-module.js"` in
+the project's `package.json` — no DMS config entry. `ajs dms dev`, `build` and `start` read the project,
+not the backend's registrations, and leave out a frontend that is not declared:
+move the registration into a pure `export function frontendModule()` in `src/frontend-module.ts`
+(no runtime imports), call `AddFrontendModule(frontendModule())` from `start()`, and declare it. A
+**project** attaches the layer from `start()`; a **distributable module** attaches it in `construct`
+(see **dms-module**).
+Full layer authoring: `docs/02.building/08.frontend-layer.md`.
+
+## What you register (delegates to the other skills)
+
+Pages and components → **dms-pages**; auth, permissions, tenants → **dms-auth**; backend services
+and custom Vue → the doc map in [REFERENCE.md](REFERENCE.md). Pages usually attach to a `Category`
+under the built-in `pagesCategory` (`RegisterModule` is for distributable modules). DB models use
+`@antelopejs/interface-database-decorators`; routes use `@antelopejs/interface-api`.
+
+## Running the dev servers
+
+A standalone DMS project runs two coupled processes, both started from the project's DMS backend
+package directory (embedded mode: `pnpm dev`, then build + start the dashboard, as above — the
+script below does not apply):
+
+- **Backend**: `ajs project dev -w` (`ajs project run` is the legacy alias; `-e STAGING` picks an
+  environment). Ready when its log prints `Server started, listening on <url>`;
+  `.antelope/dev.json` records the real endpoint (`http://localhost:5010` by default). Projects
+  often start Mongo / Redis in Docker first (`docker-compose up -d`).
+- **Frontend**: the `@antelopejs/dms-frontend` loader, `ajs dms dev`. It finds the running backend
+  through `.antelope/dev.json`, so `-b <apiBaseUrl>` is optional. Ready when its log prints
+  `Dev server ready` and a `Local: <url>` line (`http://localhost:3001` by default).
+
+Start the backend first and wait for its ready line, **then** the frontend: the loader copies the
+backend's layers into `~/.antelopejs/dms-frontend/` at startup, and a frontend started too early
+serves stale or empty copies. Every `ajs dms` command and flag, a frontend module's files, and
+building or deploying the frontend server belong to the **dms-frontend** skill (shipped by
+`@antelopejs/dms-frontend`); production is `docs/02.building/11.deployment.md`.
+
+### Never from inside the DMS
+
+An agent running inside the DMS (the dms-ai assistant, whose sidecar the backend spawns, or any
+process these dev servers started) **leaves the servers running**: stopping the backend takes the
+agent down with it. It relies on hot reload and, when a change needs a full restart, asks the user
+to run it. The script refuses to stop a process tree that contains its calling shell.
+
+### Hot reload first, restart when it cannot apply
+
+The watchers propagate most edits (backend `-w` recompile, live layer resync). Restart only when
+hot reload cannot apply the change: a new module or dependency, a config edit, a backend log
+showing a failed rebuild, or a behaviour still stale after the watcher reported the rebuild
+(`RegisterModule` "already registered", a layer edit not showing). Then restart both, backend
+first.
+
+### Drive the bundled script
+
+`scripts/dms-dev.sh` (under this skill's base directory, announced when the skill loads) does the
+work. It needs `DMS_BACK_DIR`, the absolute path of the DMS backend package directory: take it from
+the current repository when `package.json` and `antelope.config.ts` make it unambiguous, otherwise
+follow [DEV-SERVERS.md](DEV-SERVERS.md#resolve-the-backend-path).
+
+```sh
+DMS_BACK_DIR=<resolved-path> bash "<skill-base-dir>/scripts/dms-dev.sh" restart
+```
+
+| Command | Use when |
+| --- | --- |
+| `restart` | Hot reload cannot apply a change, or the state is unknown. |
+| `restart-front` | The frontend crashed or hangs while the backend runs: only the frontend is stopped (if it runs) and started again. |
+| `restart-back` | The backend crashed alone: only the backend is restarted, and the frontend keeps running. Run `restart-front` too if the frontend then serves stale layers. |
+| `start` | Nothing is running (fresh shell, after `stop`). |
+| `stop` | Before walking away, before destructive operations, on session cleanup. |
+| `status` | The user asks whether the DMS is running. |
+| `back-log [N]` / `front-log [N]` | A boot fails: read the last N (default 60) lines of `<DMS_BACK_DIR>/.antelope/logs/back.log` / `front.log`. |
+
+The call returns once both servers print their ready line and reports the URLs they listen on; it
+fails fast when a server exits early, otherwise after 180 s per server (`DMS_DEV_TIMEOUT`). The
+servers keep running detached. By default the script runs the project's `pnpm dev` and
+`pnpm frontend:dev` scripts (a project convention that expands to the two commands above);
+override them with `DMS_BACK_CMD` / `DMS_FRONT_CMD`. It runs in bash on Linux and macOS, and in
+Git Bash, MSYS2 or Cygwin on Windows ([DEV-SERVERS.md](DEV-SERVERS.md#windows)).
+
+Several worktrees or repos run side by side when each call gets its own ports: prefix the script
+with `pnpm exec antelopejs-lease run --` where the project's tooling-configs has it. The script
+hands `DMS_BACK_PORT` / `DMS_FRONT_PORT` to the backend / frontend process as its `PORT`, and
+logs under the project's own `.antelope/logs/`. A backend whose config pins the api port still
+starts: it falls back to the next free port and the script reports that one
+([DEV-SERVERS.md](DEV-SERVERS.md#several-worktrees-side-by-side)).
+
+When you hand off for manual testing, run `restart` yourself, wait for both ready lines, then tell
+the user what to click. Boot failures, stale frontends, a refused credential (401), stop scope and
+managed environments (Amp orbs): [DEV-SERVERS.md](DEV-SERVERS.md).

@@ -1,0 +1,114 @@
+---
+name: discolike
+description: Use when the task involves finding companies, building a target account or TAM list, lookalikes of existing customers, ICP research, company enrichment (firmographics, tech stack, growth), or finding decision-maker contacts at companies. Also use when the user mentions DiscoLike, "companies like X", "find businesses that", prospect lists, or B2B data. Covers MCP server, CLI, Python SDK, and creating the account from the agent.
+allowed-tools: Read, Grep
+---
+
+# DiscoLike
+
+DiscoLike is a search engine over 80M+ crawled business websites. It returns companies ranked by what they actually do on the web, including niche verticals and non-English markets. Every domain is re-validated by SSL certificate about every 30 days, so results never contain dead or parked domains and none are billed. Every record carries firmographics; contacts, technographics, growth metrics, enrichment, segmentation, and CRM push are one more call away.
+
+Requires a paid plan from $99/month. There is no free tier. Counting results is free.
+
+## Files in this skill
+
+| File                 | Read it when                                                                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flows.md`           | Running any end-to-end job: target list, CRM enrichment, name-to-domain matching, ICP segmentation, market map, ICP from a website, signal qualification, tech-stack targeting, scoring an existing list. |
+| `troubleshooting.md` | Results look noisy, counts do not add up, or the user says "these are wrong".                                                                                                                             |
+| `discogen.md`        | The question is research, not a filter ("do they sell to hospitals?", "estimated ad spend?").                                                                                                             |
+| `flows.md` Flow 10   | The user wants everything that matches, tens of thousands of companies or 100,000+ contacts, or asks to replicate an app search over the API.                                                             |
+| `flows.md` Flow 11   | The user wants a chat-driven prospecting run instead of a hand-tuned discover call, including check-in behavior at pauses and big-list targets.                                                           |
+
+Read a file when its row applies; do not load all three up front.
+
+## How to work
+
+- **Confirm the account once.** First DiscoLike call in a session: MCP `account-status`, CLI `discolike account usage`, or SDK `client.account.usage()`. Tell the user the plan and remaining quota in one line. If it fails on auth, run the `setup` skill.
+- **Narrate, then summarize.** Say what you are about to run and why; turn JSON into a count, a short table, or a sentence. Raw output only on request. Write full result sets to disk as JSON or CSV; chat output truncates.
+- **Position it as DiscoLike's product.** "DiscoLike lets you…", "you can…". Not "skills I have".
+- **Spend rule.** Counting is free; discovery, contacts, and enrichment bill per new record. Before any paid pull larger than a sample (about 100 records), state the estimated cost from the count and the plan's per-1,000 rate and get a yes. Reuse that approval for the same scope; ask again only if the scope or estimate grows. Do not volunteer the balance otherwise.
+- **Plain CLI calls.** One `discolike` command at a time, `--format json`, optionally piped to `jq`.
+
+## Pick the access mode
+
+1. **MCP server** if the client supports remote MCP (Claude Code, Claude Desktop, Codex, Cursor, VS Code, Windsurf). URL `https://api.discolike.com/v1/mcp`, OAuth 2.1, no key to manage. Tools appear in the client after one browser authorization. Install snippets: https://discolike.com/mcp.md
+2. **CLI** when shelling out. Ask the user to install it (`pip install discolike-cli`, 0.4.1 or later); do not install packages yourself. The `setup` skill walks through it. Sign in with `discolike auth login` (browser OAuth). With an API key, the user sets `DISCOLIKE_API_KEY` in their own shell or runs `discolike auth login --api-key` themselves; never ask for the key in chat. Always pass `--format json`. `discolike --help` prints the output contract and exit codes.
+3. **Python SDK** when writing a script. The user adds the `discolike` package to their project; `Discolike()` reads `DISCOLIKE_API_KEY`. Reference: https://docs.discolike.com/sdk/reference/
+4. **REST** as last resort: `GET https://api.discolike.com/v1/discover`, header `X-API-Key`. OpenAPI at https://api.discolike.com/v1/openapi.json. Auth summary: https://discolike.com/auth.md
+
+If neither MCP nor CLI is signed in, run the `setup` skill. Never paste an API key into a config file the user did not ask for.
+
+## No account yet
+
+Create it without a browser. No credential comes back; the person confirms by email, logs in, picks a plan, and issues the key or authorizes the MCP client. Before either method below, ask the user for any value you do not know, show them the exact email and name, and send only after they say yes.
+
+```
+POST https://api.discolike.com/v1/public/signup
+Content-Type: application/json
+
+{"email": "<work email>", "first_name": "<first>", "last_name": "<last>", "agent": "<your name>"}
+```
+
+CLI equivalent: `discolike signup --email 'jane@acme.com' --first-name 'Jane' --last-name 'Doe'`, every value single-quoted (double quotes for a name with an apostrophe). Relay the `next_step` text from the response. Free-mail and disposable domains are rejected. `409` means the account exists, send the user to log in. Guide: https://docs.discolike.com/guides/agent-signup/
+
+## How to search
+
+Three ways to describe the target, all on the same `discover` call. Combine them.
+
+| Want                 | Parameter                                                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plain-English ICP    | `icp_prompt`                                                                                                                             | Extracts filters and seed domains from the sentence. This is how an ICP is described on `discover`.                                                                                                                                                                                                                                            |
+| Companies like these | `domain` (up to 10)                                                                                                                      | Ranked by similarity to what the seed companies do. Confirm each one with `extract-website-text` before the first pull; a guessed domain that resolves to the wrong business drags the whole ranking with it.                                                                                                                                  |
+| Homepage says X      | `phrase_match` (up to 20)                                                                                                                | Exact text fragments, OR by default: every phrase added widens the set. Prefix with `+` to require one.                                                                                                                                                                                                                                        |
+| Narrow               | `country`, `state`, `employee_range` ("51,500"), `revenue_range`, `tech_stack`, `category`, `sub_industry`, `language`, `business_model` | Every filter has a `negate_` twin. `sub_industry` is a second-level label, bare or `PARENT/SUB` (`ROOFING`, `CONSTRUCTION/ROOFING`). `country` also takes region codes: `EUROPE`, `ASIA` and the other continents, or `EU` for the 27 member states only.                                                                                      |
+| Near a place         | `lat`, `lon`, `radius` (`50km`, `30mi`; default 50km) or `bbox` (`min_lat,min_lon,max_lat,max_lon`)                                      | Radius and bbox are mutually exclusive.                                                                                                                                                                                                                                                                                                        |
+| Size the set         | `count` with the same filters                                                                                                            | Free. Do this before a large `discover`. It sizes the hard market definition, not the lookalike ranking: it takes no seed `domain` and no ICP description, and defaults `exclude_leadgen` to false where `discover` defaults it to true, so it reads higher than the pull that follows. Pass `exclude_leadgen=true` to compare like with like. |
+| Cap spend            | `max_records`                                                                                                                            | Start with 100 to 500 to check fit, then scale.                                                                                                                                                                                                                                                                                                |
+
+Each search bills a query fee plus a fee per 1,000 new records. Records seen in the last 90 days are free. Results cap at 10,000 per call: 10,000 is a page size, not a total. For more, put what you have into an exclusion list and run the next call with `exclusion_query_id`, and keep turning pages until the results run dry; `discolike bulk companies` runs that loop (`flows.md` Flow 10). Exclusion lists hold up to 250,000 domains and 500,000 contacts on every plan. `max_records` has a floor of 20. Contacts pulled per domain list have no 10,000 ceiling; page them by slicing the domain list, since `offset` is ignored when `results_by_company` is set.
+
+Set `relevance` on discover (MCP, API, CLI, SDK) to stop the ranked list once estimated ICP fit drops too low: `BALANCED` by default for mapping a market, `MAX_RELEVANCE` when the user wants only the closest matches, `MAX_COVERAGE` when they want the whole market and accept a borderline tail. Leaving it out means no automatic stop. An empty later page means the search reached the edge of the market. `variance` is deprecated; old values map onto `relevance`.
+
+## After discovery
+
+- Contacts at the matched companies: contacts search with a persona description, seniority, or department. Returns email, phone, LinkedIn. Every email comes back unverified (`email_validated` is null). The `email_validated` filter is deprecated and now only means `has_email`, so do not set it; use `has_email` to require an address. For a proven address, run the names through the email finder (`flows.md` Flow 1 step 6); verifying an address the user already has is the in-app Verify button only.
+- Enrich a list you already have: bizdata, vendors, growth, score, redirects, subsidiaries per domain, or bulk append from CSV.
+- Find lookalikes of a customer list segment by segment: a prospecting run with `customer_domains` groups the customers and expands each group (Flow 11). Segment and run lookalikes per cluster by hand (Flow 4) only when the user wants to review clusters before any search.
+- Validate a list against an ICP description: fit yes/no with a confidence level and reasoning per domain.
+- Push to HubSpot, Salesforce, Pipedrive via the CRM tools.
+
+Every one of these is a numbered flow in `flows.md`. Async steps return a job; wait on it before the next step. Save intermediate result sets as queries so later steps reference an id instead of re-sending domains.
+
+## Examples
+
+CLI:
+
+```bash
+discolike count --phrase-match "managed detection and response" --country DE
+discolike discover --domain stripe.com --domain adyen.com --employee-range 51,500 --param relevance=BALANCED --max-records 500 --format json
+discolike discover --icp-prompt "cybersecurity for SMBs, managed IT, endpoint protection" --country US --param relevance=MAX_RELEVANCE --max-records 100 --format json
+```
+
+Python:
+
+```python
+from discolike import Discolike
+from discolike.requests import DiscoverParams, CountParams
+
+client = Discolike()
+n = client.count(CountParams(phrase_match=["managed detection and response"], country=["DE"])).count
+companies = client.discover(DiscoverParams(domain=["stripe.com", "adyen.com"], employee_range="51,500", relevance="BALANCED", max_records=500))
+```
+
+## Related skills
+
+- `setup`: get the CLI installed, sign in, verify the connection.
+- `feedback`: file a bug or product feedback with the DiscoLike team.
+
+## Pointers
+
+- MCP page and install snippets: https://discolike.com/mcp.md
+- API page with examples: https://discolike.com/api.md
+- Pricing for agents: https://discolike.com/pricing.md
+- Everything: https://discolike.com/llms.txt

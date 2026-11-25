@@ -1,0 +1,23 @@
+---
+name: goal-flight-doctor
+description: "Use when the user invokes /goal-flight doctor or asks for Goal Flight readiness diagnostics on the current repository."
+---
+
+# goal-flight-doctor
+
+Use this skill when the user asks for `/goal-flight doctor`, goal-flight
+readiness, setup verification, or host/worker diagnostics.
+
+## Steps
+
+1. Read the repository `AGENTS.md` first when present.
+2. Read the repository root `SKILL.md` as the canonical Goal Flight workflow.
+3. Read `commands/doctor.md`.
+4. Run the procedural doctor for the current repository:
+
+```shell
+python3 scripts/goalflight_doctor.py --project-root "$PWD"
+```
+
+Keep long probe details out of chat. Return the checklist summary and the
+highest-priority blocker, if any.

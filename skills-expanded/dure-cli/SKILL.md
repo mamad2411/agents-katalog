@@ -1,0 +1,314 @@
+---
+name: dure-cli
+description: Choose the right identifier for a `dure` command, control where a spawned agent's files land, and read, drive and wait on a session from the CLI. Use alongside the `dure` skill when asked to inspect sessions or Spaces, read or send to a pane, send keys, or wait for an agent to finish — and when a Run must land in its own worktree.
+---
+
+# Dure CLI
+
+The `dure` skill owns coordination and spawning — another agent, schedules,
+orchestration, client pane control — and `dure --help` lists every command.
+This covers what neither does: picking the identifier a command wants, the
+`dure run` options that decide where an agent's files land, and reading,
+driving and waiting on a session. Parse `--json` — `dure.sessions/v1`,
+`dure.wait/v1`, `dure.send/v1` are versioned; the text form is for a human.
+
+## Pick the identifier first — most failures are a mismatch, not a bad command
+
+- **Agent name** (`worker`, or `project/worker` when ambiguous) — `read`,
+  `send`, `send-keys`, `wait`, `logs`, `enter`, `stop`. Resolved through the client
+  registry, so only for an agent a client has seen.
+- **Agent id** (`agent-…`) — `stop` also accepts this exact identity; it is not
+  the Session ID consumed by `attach` or backend session reads.
+- **Session id + workspace id** (`session_…`, `agent-workspace:…`) — the
+  registry-free pair. `attach` requires both; `wait`, local `send`, `send-keys`, and `read` accept them in
+  place of a name, and `read` demands them once `--backend` or
+  `DURE_BACKEND_PROFILE` selects a backend. `inspect` needs only the session id.
+- **Space/pane id** (`desk-…`, `pane-…`) and **project id** — consumed by
+  `dure run --space`, `dure run --project` and `dure client`, all in the `dure` skill.
+
+```sh
+dure ls   # SESSION WORKSPACE PROVIDER PID LIVE CWD AGENTS ACCOUNT FAILURE
+dure spaces show desk-Jd7tlL   # pane id, type, title, state, workspace/session
+dure projects list             # project ids; dure spaces list gives desk ids
+```
+
+`FAILURE`, not `LIVE`, is the column that explains a broken session.
+
+For a full backend inventory, start with `dure ls --cursor start --json` and
+pass each `pagination.nextCursor` back to `--cursor` until it is `null`. Keep
+the same backend for every page. This includes sessions without client panes.
+`inventoryComplete` means no identities remain after this page;
+`observationComplete` means every returned session was probed. `complete` alone
+does not mean every session was returned. Pages use workspace/session ordering
+over the live catalog, not a frozen snapshot: restart from `start` to reconcile
+sessions created behind the cursor while traversing. Older runtimes without
+pagination support return an explicit capability error.
+
+To see every configured backend at once, use `dure ls --all-backends [--json]`.
+The table gains a `BACKEND` column; JSON rows carry `backendProfileId`, and
+`backends[]` gives each backend's `status` and `error`. Exit status is 2 only
+when no backend answered, so check `backends[]` or `complete`: an unreachable
+backend's sessions are unobserved, not gone. Page one backend with
+`--backend ID --cursor`.
+
+## Where `dure run` puts the files
+
+```sh
+dure run --path /repo --provider codex --worktree fix-890 "…"
+```
+
+**Without `--worktree NAME` the Run lands in the project root** — a checkout
+someone else may be editing. Name one whenever the agent will touch files; its
+branch defaults to `agent/<name>`, and `--base-commit`, `--branch` and
+`--setup-command` are rejected without it.
+
+Omit `--idempotency-key` and the CLI invents one, printing `Retry key: …` on
+**stderr**; keep it, because the same key resumes the one durable plan instead
+of creating a second agent. Exit 0 succeeded, 1 the receipt is not `succeeded`,
+2 the backend or pane placement failed — and success means setup and prompt
+delivery finished, never that the provider answered.
+
+With `--json` the receipt starts with `summary` — `agentId`, `sessionId`,
+`workspaceId`, `panelId`, `spaceId`, `state`, `presentation`,
+`interactionProfile` — so the identities the next command needs are the first
+keys in the output; a value the receipt cannot vouch for is `null`. The full
+`receipt`, `presentation` and `registration` follow unchanged. `source.backend`
+names the backend and its `capabilityCount`; pass `--verbose` when you need the
+full `capabilities` list (also on `dure projects … --json`).
+
+A Claude Run into a folder the selected account has not trusted stops at Claude
+Code's folder-trust prompt before it reads anything, including the prompt the
+launch command carried. The receipt ends `prompt_delivery_uncertain` with
+`agent_spawn_prompt_behind_workspace_trust`, its `runtime_launch` evidence
+carries `startup_gate`, and `dure ls` shows `input_required`. Answer the prompt
+in the session (`dure read`, `dure send-keys`): once the folder is trusted Claude
+submits the carried prompt itself, so never send it again. Dure does not answer
+trust prompts for you.
+
+A Codex Run whose selected account has no usable login, missing or expired,
+stops the same way at Codex's sign-in screen. The receipt ends
+`prompt_delivery_uncertain` with `agent_spawn_prompt_behind_login` and a
+`startup_gate` of kind `login`, and `dure ls` shows `input_required`. Someone
+has to sign the account in, in that session or before the next Run; once
+signed in Codex submits the carried prompt itself, so never send it again.
+
+## Choose a Run account
+
+A current connected app supplies the selected account for the requested provider,
+including headless Runs. Use `dure run --account ACCOUNT_ID ...` to pin an exact
+app account, or `--account default` for the provider default. A CLI without a
+connected app supporting account selection uses the provider default when the
+option is omitted; an explicit unavailable account fails before launch.
+The Run receipt's `plan.request.executionProfile` records the non-secret account
+reference and credential generation. Human output includes `account`; `dure ls`
+shows the account from a current client projection, or `unknown` when unavailable.
+
+## Switch an existing Agent's account
+
+Claude and Codex use the same backend transition as the UI account selector.
+It preserves the conversation and current Chat/Terminal mode. It works without
+an open app, with local or SSH backends; keep the same `--backend ID` throughout.
+
+```sh
+dure recovery get claude          # each login once: IDs, profile name, usage
+dure recovery get codex --json    # adds policy, generations and registeredAccounts
+dure runs switch-account worker --account ACCOUNT_ID --json  # preview only
+dure runs switch-account worker --account ACCOUNT_ID --confirm-restart --json
+```
+
+Agents launched, resumed or imported by the app have no Run record; select them
+by Agent ID, or by name or Session ID from `dure ls`. A closed, stopped Agent
+restarts with the selected account and its retained conversation. An ambiguous
+name is refused with each candidate's exact retry command; use the Agent ID.
+Accounts must be
+registered for that provider on the owning backend; display names are not IDs.
+An unregistered account needs preparation through Dure's account settings first.
+On a headless backend, sign in on that host with the provider's own CLI pointed
+at a directory like `~/.dure/accounts/codex-work`, then run
+`dure accounts register codex --dir codex-work --backend ID`. The directory name
+is the account ID, and running the command again keeps it. `dure accounts help`
+has the exact sign-in commands. Dure never copies credentials between machines.
+`--account default` explicitly selects the provider's default credentials and
+needs no registration.
+
+Preview returns `continuation.start`, `retry` and `status`: retain these exact
+commands. The apply/retry command pins the Agent, current mode, source revision,
+account generation and request key. After response loss, inspect status before
+retrying that command; do not repeat the name-based command with a new key.
+The backend protects busy turns and unsubmitted input. A switch does not resend
+failed work or enable automatic switching. A busy refusal is `refused`: nothing
+changed, and `error.reasonCode` says why (`agent_working`, `agent_background_work`,
+`agent_attention_required`, `controller_input_pending`). For Claude,
+`error.backgroundWork` lists the background shells, monitors, subagents and
+workflows its records show still running (kind, id and description; at most
+16, with complete counts). Wait for that work,
+then run the same retry command; never force-stop a source to change accounts.
+In Claude Code, exiting stops background tasks, and "Move to background and
+exit" keeps the conversation running without a pane on the old account.
+
+The lower-level equivalent is `dure runtime get AGENT_ID --json`, then:
+
+```sh
+dure runtime switch AGENT_ID terminal --account ACCOUNT_ID \
+  --credential-generation GENERATION --expected-revision REVISION \
+  --idempotency-key KEY --json
+```
+
+Use `chat` for a structured Chat source. Copy account/generation from `recovery
+get` on the same backend. For default credentials, pass `--account default` and
+omit `--credential-generation`.
+
+Automatic recovery is a separate opt-in backend policy. `dure recovery --help`
+describes `get`, revision-fenced `put`, and read-only `status AGENT_ID`. The policy
+uses only explicitly allowed accounts; configuring it may require Dure Pro.
+Never enable it or select additional accounts without the user's authorization.
+
+## Find and recover an existing Run
+
+`dure ls` observes Sessions. `dure runs list --json` reads durable Run records,
+including headless Runs after an app restart. Follow `nextCursor` with `--cursor`
+until null, keeping the same backend. `launchState` records the original launch;
+it does not prove that a process is still running.
+
+```sh
+dure runs show worker --json
+dure runs open worker --space desk-id --json
+dure runs resume worker --json                 # preview only
+dure runs resume worker --confirm-restart --json
+```
+
+Use the exact Agent or operation ID when names are ambiguous. `open` places the
+current existing runtime without launching another provider. `resume` preserves
+the conversation: a confirmed stopped source with a waiting deferred target uses
+backend wake; an existing native source uses the local recovery broker. Both work
+without an open app and publish the new binding. A retained Run record alone does
+not prove reboot recovery is possible.
+
+Keep the returned status/retry commands if a response is uncertain. Inspect first,
+then retry the exact request instead of repeating a name-based resume. Wake must
+retain its operation ID, journal revision and idempotency key; no separate publish
+is needed. Native rehost returns a separate publish command. Then use `open` to
+place the recovered Run. Remote resume requires execution on its host.
+For headless input/output, use the Session/workspace pair from `show` with
+`read`, local `send`, and `send-keys`; an Agent name requires client registration. Direct Session
+input verifies the current Host generation without requiring an app registry.
+It does not support `--backend`, `--window-label`, or broker idempotency keys.
+For a lookup failure, check the selected channel with `dure diagnostics --json`.
+For app connection failures, read its `recovery` checks before restarting.
+App reachability and Hmux executable compatibility do not prove session health.
+Use `dure backend health --json`, `dure runs ls --json` and exact-session
+`dure inspect` in the same channel/backend. Reopen a stopped app's own channel;
+managed sessions run independently. Preserve drafts and existing message
+receipts; do not reset sessions or resend an uncertain message automatically.
+
+## Stop and clean up an Agent
+
+To stop and clean up an Agent, use `dure stop <agent-name-or-id> --yes --json`.
+The selected running Dure app routes the stop to the Agent's owning backend,
+then removes its registration and panes while preserving its workspace and
+conversation history. `dure hmux stop --name ... --yes --json` uses the same path.
+Do not substitute `/exit`, Ctrl-C or PID killing for the lifecycle command.
+On uncertain results, retry the same Agent ID; success is `ok: true` and exit 0.
+See `dure stop --help`. This client-scoped command does not accept `--backend`.
+
+## Read a pane and send to it
+
+`dure client observe --json` lists connected app Spaces and panes.
+`dure client pane state <panel-id> --json` reports a pane's available actions.
+When `refresh` is offered, `dure client pane act <panel-id> refresh --json` uses
+the same conversation recovery as the UI Refresh and Resume session controls.
+These commands require a connected app; `dure runs resume` also works headlessly.
+
+```sh
+dure read worker -n 80            # snapshot; -f follows until interrupted
+dure read worker -n 80 --json     # one snapshot with lines[] and sequenceThrough; not with -f
+dure send worker "run the tests"  # text plus Enter
+dure send worker --stdin --no-enter
+dure send-keys worker Escape Up Enter
+dure send-keys SESSION Down Enter --workspace WORKSPACE --json  # headless, no pane required
+```
+
+A blank screen prints nothing and a note with its size on stderr. A full-screen
+agent such as Codex draws nothing while its pane is very short, so a blank read
+is not proof that it is idle.
+
+A `send` receipt proves bytes reached the PTY, not that the provider accepted
+them. `--no-enter` differs by surface: structured chat leaves an unsubmitted
+draft for a human to Send, while a native PTY agent gets the bytes at once — so
+there a following `read` should change, and an unchanged screen means the send
+did not land. `send-keys` needs a local managed terminal, not SSH or chat.
+
+After a restart or `runs switch-account`, the app's registry can still list the
+Agent's exited Session until the app re-projects it. `read` and `send` by Agent
+name then follow the Agent's current Session from its backend, with a stderr
+note naming both; `send --json` reports the Session used in `target`.
+
+Terminal `send` never merges into text a person has typed but not submitted. It
+waits up to `--draft-wait` seconds (default 30) for them to submit; otherwise it
+fails with `hmux_input_draft_pending` and nothing written. Only their Enter clears
+the draft; erased text does not. Retry later or send a `--track` message instead.
+Use `--ignore-draft` only when the user asks for it. A session started before the
+guard gets ordinary input and a stderr warning; restarting it enables the guard.
+
+## Wait rather than poll `read`
+
+```sh
+dure wait worker --timeout 900 --json  # seconds, default 600
+dure wait --operation-id <id> --json   # the run request, not its answer
+dure wait --task <id> --dispatch <id> --generation <n> --json  # delegated task
+dure wait --children all --json        # every Run this agent started has settled
+```
+
+The targets are exclusive, and each rejects the others' flags: with
+`--task` only `--backend`, `--timeout`, `--deadline-ms` and `--json` are
+allowed, all three of `--task`, `--dispatch` and `--generation` are required,
+and the generation must be a positive integer. That target completes when the
+worker calls `dure workflow done` for the same three values — see the `dure`
+skill.
+
+`wait <agent>` completes on the first Host-reported turn **after** it takes its
+own snapshot, so start it before or right after the `send` it should observe.
+To resume a wait, or make that first observation exact, pass `--after-turn` and
+`--terminal-epoch` from `dure inspect <session> --json`. A show report wraps its
+one session, so both fields nest under it:
+`session.runtime.agentRuntimeState.turnCompletedCount` and
+`session.runtime.generation.terminalEpoch`. A rehost changes the generation and
+the old wait then can never complete. Exit 0 met, 1 failure, 2 unknown, 124
+deadline, 130 interrupted; the last two stop only you.
+
+`--children all|any` waits for the Runs started from this agent's terminal
+(`dure run` records the caller as their parent) until every child, or the first,
+finished a turn and is idle, needs input or approval, exited, or failed to
+launch. Name another parent with `dure wait --children all <agent>` or
+`<session> --workspace ID`. The `dure` skill covers the states and exit codes.
+
+## If `dure` does not recognize something here
+
+This file installs separately from the binary, so it can be older or newer than
+the `dure` on PATH. When a command or flag named above is rejected as unknown, that
+mismatch is the likely cause — do not invent a different spelling, and do not
+abandon the task silently. Read the real grammar from `dure <command> --help`,
+check `dure skills status` for whether this skill reports `outdated`, and run
+`dure skills install --global` to bring every shipped skill back in step with
+the installed CLI.
+
+## Track a sent message
+
+Use `dure send <agent-or-session> --track "message" --json` for a durable inbox message.
+Use `--workspace ID` with an exact Session ID. This requires an observable managed
+Session and its orchestration context. The receipt contains `receiptPath`; keep that
+private local file, which holds the exact read capability but no message text.
+
+`dure wait --message <receiptPath> --json` waits for an authenticated inbox read.
+Use `--until acknowledged` for cursor acknowledgement, or `--until turn_started`
+for a supported native Codex wake turn. A wake turn does not prove inbox read,
+comprehension, or task success. Use the existing exact `--task`, `--dispatch`, and
+`--generation` wait for task completion. Do not resend after a timeout.
+
+`dure inspect <session> --workspace ID --json` and `dure ls --json` expose optional
+Host `agentRuntimeState.progress`: the last provider activity, tool/thinking phase,
+and `progress_unconfirmed` after five quiet minutes of thinking. This is attention,
+not an exit or failure. Old Hosts and unsupported providers omit this evidence.
+Read/acknowledgement remains durable; native turn history is bounded to the latest
+32 wake receipts in the current provider observation source and Host generation.
+Neither this observation nor its absence authorizes interruption.

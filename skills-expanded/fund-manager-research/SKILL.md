@@ -1,0 +1,92 @@
+---
+name: fund-manager-research
+description: 依托东方财富数据库，生成单名基金经理的全面、体系化深度研究报告及 Markdown 数据底稿。当用户提及“基金经理研究”“基金经理分析”“基金经理研究报告”“帮我研究一下这位基金经理”“基金经理全面分析”或要求全面研究某位基金经理时使用。研究基金产品时应使用 fund-research；普通单基金持有判断或快速诊断应使用 fund-diagnosis。
+version: 1.2.8
+category: investment-finance
+author: 东方财富
+license: proprietary
+agent_created: true
+---
+
+# 基金经理深度研究
+
+将用户原始问句作为 `query` 调用基金经理研究接口，生成单名基金经理的深度报告。不要自行编造人物识别结果或报告内容。
+
+## 使用边界
+
+- 用于基金经理个人的从业背景、管理产品、规模、投资风格、历史业绩和代表产品等全面研究。
+- 研究对象是基金产品时，改用 `fund-research`。
+- 用户只询问某只基金是否值得持有等轻量诊断时，改用 `fund-diagnosis`。
+- 用户没有提供基金经理姓名时，先请用户补充，不要调用接口。
+- 同一问句出现多位基金经理但未明确研究对象时，先请用户确认一位。
+
+## 授权与依赖
+
+本 Skill 依赖 `EM_API_KEY`。授权检查已内联到 `scripts/get_data.py`，直接执行研究查询，不要先运行 `auth.py ensure`。凭据按 `EM_API_KEY` 环境变量、`~/.mx-skills/em_api_key` 文件的顺序读取，不使用内置兜底 key。
+
+| 退出码 | 含义 | 处理方式 |
+|---|---|---|
+| `0` | 生成成功 | 读取正文、分享链接及附件路径 |
+| `10` | 需要授权 | 展示 `authUrl` 二维码并停止本轮调用 |
+| `2` | 网络或业务错误 | 返回失败原因，不编造报告 |
+| `1` | 缺少 query/stdin | 补充基金经理姓名 |
+
+授权、私有凭据持久化及 401 失效处理必须遵循 [授权协议](references/auth_protocol.md)。安装依赖时运行 `pip3 install -r requirements.txt`。
+
+## 调用
+
+```bash
+python3 scripts/get_data.py --query "生成张坤的基金经理深度研究报告"
+```
+
+接口响应可能较慢。必须在当前会话同步等待命令结束，禁止后台执行或承诺稍后汇报。
+脚本调用 SaaS 写作接口时会固定传入 `needFullContent=true`，以确保返回完整正文和溯源字段。
+
+参数：
+
+- `--query`：用户原始问句；也可由 stdin 传入。
+- `--no-save`：只输出正文和分享信息，不保存附件。
+
+代码调用：
+
+```python
+import asyncio
+from scripts.get_data import generate_fund_manager_research_report
+
+result = asyncio.run(generate_fund_manager_research_report("生成张坤的基金经理深度研究报告"))
+```
+
+## 返回字段
+
+- `title`：报告标题。
+- `article_id`：报告文章 ID。
+- `share_url`：分享链接。
+- `content`：报告正文。
+- `attachments`：报告附件列表，每项包含 `type`（`PDF` 或 `DOCX`）和本地 `path`。
+- `data_markdown`：接口 `data.dataMarkdown` 返回的数据底稿正文。
+- `data_md_path`：保存后的 Markdown 数据底稿路径；接口未返回底稿或使用 `--no-save` 时为 `None`。
+- `source_trace_path`：接口 `data.sourceTraceList` 原样保存后的 JSON 文件路径，固定保存到当前工作目录下 `miaoxiang/sourceTrace_<articleId>.json`；接口未返回 `articleId` 时使用随机 ID 兜底。
+- 命令行成功输出使用统一字段标签 `source_trace_path: <path>`，不得改写为 `SourceTrace` 或省略该字段。
+- `need_auth`、`authUrl`、`apiKeyUrl`：需要授权时返回。
+- `remember_api_key`、`api_key`：刚完成授权时返回；凭据只能写入平台私有存储，不得展示给用户。
+- `raw`：原始接口响应。
+- `error`：失败原因。
+
+## 用户可见输出
+
+以接口返回内容为准，可对正文做简短提炼，但不得改变事实或编造缺失信息。报告附件与 Markdown 数据底稿仍按原流程保存，并以产物卡片正常交付；对话正文不列出附件信息。除非用户主动询问，否则不展示文件地址。
+
+```text
+## {title}
+
+{content 或忠实提炼}
+
+**研究报告分享链接：**
+{share_url}
+```
+
+接口失败、正文为空或人物无法识别时，明确说明失败并请用户核对基金经理姓名；不得生成替代性报告。研究内容仅供参考，不构成投资建议。
+
+## 执行超时要求（必须遵守）
+
+本技能的脚本可能进入耗时较长的报告生成阶段。执行本技能下的任何脚本时，必须持续等待结果返回，并将工具层 `timeout` 设置为至少 `300000` 毫秒。

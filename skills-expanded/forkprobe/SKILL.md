@@ -1,0 +1,698 @@
+---
+name: forkprobe
+description: Recommend a small set of candidate skills or artifact-generation pipelines for an open-ended task, then compare their outputs so the user can decide what actually helps. Use when the user is unsure if a particular skill would improve their output, when comparing 2+ skills for the same task, when they naturally ask to compare skills without saying forkprobe, or when explicitly invoked with /forkprobe. Chinese examples include "我想比较几个科研写作 skill", "帮我看看哪个 skill 更适合这段", "比较几个去 AI 味写作 skill", "比较几个论文作图 skill", "比较几个市场调研/调研报告 skill", "比较几个网页制作 skill", "比较几个产品宣传片 skill", "比较几种动效视频路线", and "用几个 skill 对同一条口播做粗剪". Especially valuable for writing, PPTX, scientific figure, research report, finished webpage, product-promo video, motion-graphics video, and talking-head rough-cut comparison. Do NOT use for simple deterministic tasks where skill choice is obvious or for casual conversation.
+---
+
+# forkprobe
+
+> Stop guessing which AI skill works. See it side by side.
+
+## What this skill does
+
+Recommends a small candidate set for the user's task, then compares completing that task **with** each candidate skill or pipeline versus **without** a skill/pipeline baseline. Candidate recommendation combines ForkProbe's curated catalog, automatically indexed local Skills, EverMind Skill Hub, GitHub discovery, and explicit BYO sources, then dedupes and scores before asking the user to confirm. For text tasks, it spawns parallel subagents in the current platform (Claude Code, Codex, or DeepSeek Harness), collects outputs, generates a local HTML report, and lets the user pick the winner. For artifact tasks such as PPTX, scientific figures, research reports, image prompt/style packages, webpages, and videos, it compares artifact-generation pipelines and renders a report with file links, previews or playback.
+
+**v1.1 scope:** Adds image prompt/style comparison. For image-skill, image prompt, visual-style, style-card, poster, e-commerce image, social-cover, PPT illustration, or concept-art tasks, compare prompt/style pipelines first. The runner generates prompt packages and optional Codex host render queues; it never calls image APIs or requires an API key. In Codex environments with host image generation available, use `render-queue.json` for optional downstream render validation. In other Agents, compare prompt packages or let the user backfill externally rendered `rendered.png` files and refresh the report.
+
+**v1.0 scope retained:** ForkProbe's v0.10 capability set is the stable product baseline: all v0.9 workflows plus the installable `forkprobe-dsh` native DeepSeek Harness plugin. In DSH, prefer the `forkprobe_compare` tool for confirmed text comparisons: it fans candidates out through the registered native subagent provider, runs an optional judge, opens the local Report, waits for the user's Continue action, and returns the selected output to the same Agent. Use `forkprobe_resume` when the original wait window has ended. The plugin must not start nested `dsh` processes or copy credentials, and candidate subagents receive no tools. The existing `--platform deepseek_harness` runners remain the compatibility path for file-producing Artifact tasks.
+
+**v0.9 scope retained:** Text candidates, AI judging, and scientific-figure, research-report, webpage, and finished-video Artifact runners accept `--platform deepseek_harness` through the official `dsh --profile headless` profile. Use `FORKPROBE_PLATFORM=deepseek_harness` when invoking through an Agent that does not expose an unambiguous harness signal. Text compatibility runs default to `read-only`; file-producing runs default to `workspace-write`.
+
+**v0.8 scope retained:** The optional anonymous Winner feedback loop persists the local handoff and continues the Agent task in the same action. Share only the privacy-safe task type, compared Skill names, and final choice when the Report checkbox is enabled. Queue events locally, send them asynchronously to the official Cloudflare Worker, and keep community statistics separate from source quality and benchmark priors.
+
+**v0.7 scope retained:** Scan installed Skills under Codex, Agents, Claude, and project-local Skill directories; query EverMind Skill Hub and GitHub with sanitized scene terms; merge with curated and BYO candidates; dedupe by fingerprint/source; show source, license, installed state, and public quality signals; and preserve the confirmation gate before any candidate runs. `--local-only` keeps curated and installed-local discovery while skipping EverMind and live GitHub discovery.
+
+**v0.6 scope retained:** Finished-video comparison remains divided into product promos, motion graphics, and talking-head rough cuts. Never score candidates from different video scenes in one report.
+
+## When to invoke
+
+- User says: "should I use [skill]" / "is [skill] worth it" / "compare with and without skill"
+- User asks: "which skill is best for X" (we don't pick — we show)
+- User naturally asks to compare skills, even if they do not say "forkprobe"
+- User explicitly types `/forkprobe`
+- First time encountering a domain where multiple candidate skills exist
+- User says they already picked a forkprobe winner and wants to continue, e.g. "我选好了", "已经选好 skill 了", "继续吧", or "用我刚选的继续"
+
+Chinese trigger examples:
+- "我想比较几个科研写作 skill"
+- "帮我看看哪个 skill 更适合这段"
+- "先别直接改，并排试几个 skill"
+- "用几个不同 skill 跑一下看看差别"
+- "哪个 skill 改出来更自然"
+- "比较几个去 AI 味写作 skill"
+- "帮我评估一下这些 skill 哪个更好"
+- "先跑 baseline 和几个写作 skill 对比一下"
+- "基于一个文档，我想做一个 PPT，但是想多对比几个 skill 的效果"
+- "比较几个 PPT skill，看哪个做出来的 PPT 更好"
+- "比较几个论文作图 skill，看哪个机制图成品更好"
+- "比较几个调研报告 skill，看哪个报告证据链更可靠"
+- "比较几个网页制作 skill，看哪个 Landing Page 成品更好"
+- "用几个前端 skill 并排生成 Dashboard，让我看桌面端和移动端效果"
+- "比较几个图片风格 skill，看哪个生图提示词更好"
+- "比较几个 image prompt skill，并在 Codex 里可选渲染验证"
+- "比较几个产品宣传片 skill，看哪个 MP4 成片更好"
+- "把这组数据做成动效视频，并排比较 Remotion 和 HyperFrames"
+- "用几个 skill 对同一条口播原片做粗剪，让我选择切点最自然的一版"
+
+## When NOT to invoke
+
+- Simple deterministic tasks where skill choice is obvious
+- Conversational / exploratory requests (no comparable artifact)
+- User has already picked a skill and just wants to use it
+
+## How to invoke
+
+### Step 1: Understand the task and deliverable type
+
+If the user has not provided enough detail, ask for the task goal and the content to process:
+> "你想完成什么任务？请贴上原文或描述目标，我会先推荐一组可对比的 skill。"
+
+Do not require the user to know skill names. Natural task descriptions are enough.
+
+First classify the deliverable:
+
+| User intent | Deliverable type | Compare mode |
+|---|---|---|
+| polish/rewrite/summarize/rebuttal/PPT outline | `text` or `ppt_outline` | `text` |
+| "做一个 PPT", "生成 PPT", "PPTX", "比较 PPT skill 效果" | `pptx` | `artifact` |
+| "画图", "生成示意图", "生成科研图/论文 figure 成品" | `visual_artifact` | `artifact` |
+| "市场调研报告", "公司调研", "竞品分析", "用户研究报告", "文献综述", "投研报告" | `research_report` | `artifact` |
+| "图片 skill", "生图提示词", "图片风格", "style card", "image prompt", "Midjourney/ComfyUI/GPT Image prompt" | `image_prompt` | `prompt_artifact` |
+| "制作网页", "完整网站", "Landing Page", "Dashboard", "Web App", "HTML 成品" | `web_artifact` | `artifact` |
+| "产品宣传片", "产品视频", "动效视频", "口播粗剪", "视频成片" | `video_artifact` | `artifact` |
+
+Important PPT rule:
+- If the user says they want to "做一个 PPT" or compare PPT skills, assume they want a **PPTX artifact**.
+- Do **not** rewrite the task as "不要生成 PPTX" or "只比较 PPT 方案" unless the user explicitly asks for outline-only output.
+- If ambiguous, ask one short clarification: "你要比较最终 PPTX 成品，还是先只比较 PPT 方案/大纲?"
+
+### Step 2: Discover and recommend candidate skills or pipelines
+
+Before running the comparison, recommend 3-5 candidates and wait for user confirmation. Always include `baseline`.
+
+Hard interaction rule:
+- Do **not** run `compare.py`, `figure_artifact.py --run`, `research_artifact.py --run`, `web_artifact.py --run`, `video_artifact.py --run`, or any artifact-generation command before the user confirms the candidate shortlist.
+- For market research / research report tasks, `research_artifact.py` is only the runner. It must not be used as the first step. First run `scripts/recommend.py`, show the shortlist, and ask the user to confirm, remove, or add candidates.
+- For image prompt / visual style tasks, `image_prompt_artifact.py` is only the runner. First use `scripts/recommend.py`, show the prompt/style candidate differences, and wait for confirmation. The runner must not call image APIs; optional rendered images come from Codex host rendering or user backfill.
+- For finished webpage tasks, `web_artifact.py` is only the runner. First use `scripts/recommend.py`, explain the candidate differences, and wait for confirmation. A request for a brief, wireframe, or prompt without a finished page stays in text mode.
+- For finished-video tasks, `video_artifact.py` is only the runner. First use `scripts/recommend.py`, show candidates from exactly one video scene, and wait for confirmation. A request for only a script, storyboard, or video brief stays in text mode.
+- If a user says "use ForkProbe" and gives a task, stop after the recommendation message unless they have already explicitly confirmed the exact candidates in the same message.
+
+Default discovery flow:
+1. Start with local curated candidates from forkprobe's catalog.
+2. Automatically scan installed Skills under `~/.codex/skills`, `~/.agents/skills`, `~/.claude/skills`, `~/.dsh/skills`, and project-level Skill roots. Index `SKILL.md` metadata locally and never auto-install or auto-run a result.
+3. In parallel, query EverMind Skill Hub and GitHub discovery using sanitized scene terms such as `academic writing`, `PPTX`, `scientific figure`, `image prompt`, or `frontend website`. Do not send the user's raw task, document, or local path.
+4. Verify remote candidates have an exact runnable repository/subdirectory source when possible. Reject an ambiguous repository-root reference for a nested Skill.
+5. Merge explicit BYO candidates and dedupe by content fingerprint, source repository, or command argument.
+6. Score by task fit, installed state, `SKILL.md` availability, public quality signals, popularity, and current environment fit.
+7. Present the merged shortlist with source labels and ask the user to confirm, remove, or add candidates.
+
+Only skip EverMind/GitHub discovery when the user explicitly asks for local-only/offline candidates, e.g. "只要本地候选", "不要联网", "local only", or "offline". Local-only mode still scans installed local Skills.
+
+Use the local recommendation helper when task text is available:
+
+```bash
+python scripts/recommend.py --input <path_to_user_input>
+```
+
+If the user only gave a short task description, use:
+
+```bash
+python scripts/recommend.py --text "<task description>" --domain academic-writing
+```
+
+If the user explicitly asks for local-only candidates:
+
+```bash
+python scripts/recommend.py --text "<task description>" --domain academic-writing --local-only
+```
+
+Optional source controls:
+
+```bash
+python scripts/recommend.py --input <path_to_user_input> --no-evermind
+python scripts/recommend.py --input <path_to_user_input> --no-local-skills
+python scripts/recommend.py --input <path_to_user_input> --refresh-sources
+```
+
+Then present the recommendation in plain language:
+
+```text
+我可以并排比较。我会先合并 curated、本机已安装、EverMind Skill Hub、GitHub 和 BYO 候选，再让你确认。
+
+根据你的任务，我建议先跑这组：
+
+1. baseline：原始模型输出，作为参照
+2. writing-anti-ai：适合降低机器感、让中英文表达更自然
+3. humanizer-zh：适合中文去 AI 痕迹
+4. remove-ai-flavor-writing-skill：适合中文去模板句、假互动结尾和过度圆滑表达
+5. humanizer / stop-slop / avoid-ai-writing：适合英文 anti-AI / humanizer 对比
+
+确认按这组跑吗？你也可以删掉或加入别的 skill。
+```
+
+Recommendation rules:
+- If the user already named exact skills, respect that list and only add `baseline` unless they ask for suggestions.
+- If the user asks generally to compare skills, recommend first and do not start the run until they confirm.
+- If the user does not say local-only/offline, include EverMind and GitHub discovery alongside curated and installed-local candidates.
+- For Chinese SCI writing, default toward `baseline`, `writing-anti-ai`, `humanizer-zh`, `remove-ai-flavor-writing-skill`, `research-paper-writing-skills`, and `paper-writer-skill`.
+- For explicit anti-AI / humanizer writing tasks, prioritize dedicated anti-AI candidates before generic polishing: `writing-anti-ai`, `humanizer-zh`, `humanizer`, `stop-slop`, `avoid-ai-writing`, `remove-ai-flavor-writing-skill`, and academic variants when relevant.
+- For English/Nature-style polishing or translation, also consider BYO `https://github.com/Yuan1z0825/nature-skills#skills/nature-polishing`.
+- For reviewer response/rebuttal tasks, consider `paper-writer-skill` and BYO `https://github.com/Yuan1z0825/nature-skills#skills/nature-response`.
+- For PPT outline tasks, compare text plans with `nature-paper2ppt`, `paper-writer-skill`, and relevant writing skills.
+- For PPTX artifact tasks, run discovery first, then compare PPT generation pipelines, not writing-only skills.
+- For research report artifact tasks, compare research-report pipelines, not short-answer research summaries. Default candidates include `baseline-research-report`, `source-first-research`, `analyst-style-report`, and `evidence-table-report`; for specific domains, add `company-research-report`, `user-research-cookiy-report`, `literature-review-report`, or `investment-research-report`.
+- For image prompt/style tasks, compare prompt/style pipelines, not image API wrappers. Default candidates include `baseline-image-prompt`, `creative-director-prompt`, `style-system-prompt`, and `prompt-as-code`; for specific domains, add `reference-to-style`, `ecommerce-product-prompt`, `poster-key-visual-prompt`, `social-cover-prompt`, `ppt-visual-prompt`, `portrait-character-prompt`, or `concept-art-prompt`.
+- For image prompt/style tasks in Codex, optional render validation is a host-agent step: use the local `render-queue.json` to call Codex image generation, write each result to `artifacts/rendered.png`, then rerun `image_prompt_artifact.py --refresh-artifacts --render-report`. Do not add OpenAI API calls or require `OPENAI_API_KEY` in the runner.
+- For webpage artifact tasks, classify the page family before shortlisting. Always include `baseline-web`; then choose from `anthropic-frontend-design`, `hallmark-web`, `anthropic-web-artifacts`, `ui-ux-pro-max-web`, `garden-web-design-engineer`, `baoyu-design-web`, and `html-anything-prototype` according to landing/dashboard/app/report fit. Use `hallmark-web` for landing pages and general sites where structural variety and anti-template design matter; do not treat it as a business-logic pipeline. Do not include a conditional candidate that requires unavailable Stitch, SuperDesign, gstack, or other external tooling.
+- For product-promo video tasks, use `baseline-remotion-agent`, `hyperframes-product-launch`, and `video-shotcraft`.
+- For motion-graphics tasks, use `baseline-remotion-motion`, `hyperframes-motion-graphics`, and `remotion-bits-enhanced`.
+- For talking-head rough cuts, use `auto-editor`, `maxazure-video-editing`, `video-use-cut-only`, and experimental `chengfeng-cut-talking-head`. Require the same source video for every candidate and forbid B-roll, music, generated scenes, visual packaging, or script rewriting in cut-only mode.
+
+PPTX discovery:
+
+```bash
+python scripts/discover_skills.py \
+  --deliverable pptx \
+  --query "<task/domain, e.g. academic PPT from document>"
+```
+
+The discovery report must classify candidates as:
+- `strategy`: improves academic structure/style but needs a generator, e.g. `academic-pptx-skill`, `nature-paper2ppt`
+- `generator`: creates/edits PPTX, e.g. `Presentations`, `pptx`
+- `full_pipeline`: claims to produce PPTX directly, e.g. `ppt-master`, `md-slides`
+
+Only complete pipelines should enter artifact comparison. Typical scientific PPTX shortlist:
+- `baseline + presentations`
+- `academic-pptx-skill + presentations`
+- `nature-paper2ppt + presentations`
+- `ppt-master`
+- `md-slides`
+
+Before execution, mark GitHub/external candidates as `needs_verification` until clone/dependency/license/output-path checks pass.
+
+Artifact mode execution:
+1. Ask the user to confirm the PPT pipelines.
+2. Generate one separate PPTX per pipeline in a clearly named output folder.
+3. Render or capture representative previews when possible.
+4. Create an artifact manifest JSON and render the artifact report:
+
+```bash
+python scripts/render_artifact_report.py \
+  --manifest <artifact_manifest.json> \
+  --output ./artifact-report.html
+```
+
+The artifact report should show file links/previews, candidate summaries, AI judge notes when available, and winner selection.
+
+### Step 3: Confirm skills to compare
+
+Wait for the user to confirm, remove, or add candidates. Also support BYO: user provides a GitHub URL, local path, or `repo#subdir` reference such as:
+
+```text
+https://github.com/Yuan1z0825/nature-skills#skills/nature-polishing
+```
+
+### Step 4: Run text comparison
+
+Inside DeepSeek Harness with the native plugin installed, call `forkprobe_compare` only after showing the shortlist and obtaining explicit user confirmation. Set `confirmed=true`, pass the original task and selected Skill IDs/paths/URLs, and normally set `wait_for_verdict=true`. After the user chooses a Winner and clicks Continue, use the returned `selectedOutput` and `handoffText` to continue the original task in the same Agent. If the wait expires, call `forkprobe_resume` with the returned `logPath`.
+
+For Claude Code, Codex, or the DSH headless compatibility path, invoke:
+
+```bash
+python scripts/compare.py \
+  --platform <auto|claude_code|codex|deepseek_harness> \
+  --input <path_to_user_input> \
+  --skill <skill_id_1> --skill <skill_id_2> ... \
+  --judge \
+  --output ./report.html
+```
+
+The script:
+1. Detects platform (Claude Code, Codex, or DeepSeek Harness) via `platform_adapter.py`, unless `--platform` or `FORKPROBE_PLATFORM` overrides it
+2. Spawns N+1 parallel subagents (one per selected skill + baseline)
+   - Claude Code: prefers `claude-agent-sdk`, then Anthropic API fallback
+   - Codex: prefers native `codex exec` so it inherits Codex Desktop auth/model config, then OpenAI API fallback
+   - DeepSeek Harness compatibility mode: uses the official one-shot `dsh --profile headless "task"` entry; resolve the executable through `FORKPROBE_DSH_CLI`, global `dsh`, or official `npx @deepseek-ai/dsh`
+3. Each subagent runs the same task input through its respective system prompt
+4. Collects outputs, tokens, latency
+5. Optionally runs a judge subagent when `--judge` is present
+6. Renders HTML via `render_report.py` + `templates/report.html.j2`
+
+For `artifact` mode, do not use `compare.py` directly unless the artifact has first been converted into comparable text summaries. Generate artifacts per pipeline, then use `render_artifact_report.py`.
+
+### Scientific figure artifact mode
+
+Use this path when the user wants finished paper figures or scientific graphics, not just figure text. Examples:
+
+- real data -> plotting code -> PNG/SVG/PDF/TIFF
+- paper brief -> mechanism/schematic/architecture diagram -> PNG/SVG/draw.io or SVG source
+- paper brief -> graphical abstract -> PNG/SVG/PDF
+
+If the user only asks for `figure storyline`, caption, or plotting code draft, keep the task in text mode. If they ask for a final figure package, prepare the artifact workspace:
+
+```bash
+python scripts/figure_artifact.py \
+  --input <path_to_user_input> \
+  --pipeline baseline-python-figure \
+  --pipeline nature-figure-python \
+  --pipeline schematic-svg \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./figure-artifact-report.html
+```
+
+This creates:
+
+```text
+outputs/figure-runs/<run>/
+  task.md
+  artifact-manifest.json
+  candidates/<pipeline-id>/INSTRUCTIONS.md
+  candidates/<pipeline-id>/artifacts/
+```
+
+With `--run`, forkprobe invokes the selected figure pipelines in parallel through Codex native CLI and asks each candidate to write into its own `artifacts/` directory. You can omit `--run` to only prepare the workspace, then orchestrate each candidate manually. Expected figure package files include:
+
+- `preview.png` for report display
+- `figure.svg`, `figure.pdf`, and optionally `figure.tiff`
+- source files such as `source.py`, `figure.svg`, `figure.drawio`, or `layout.json`
+- `caption.md`
+- `qa.md`
+
+To compare a BYO figure skill, add one or more skill sources:
+
+```bash
+python scripts/figure_artifact.py \
+  --input <path_to_user_input> \
+  --pipeline baseline-python-figure \
+  --skill-source https://github.com/<owner>/<repo>#skills/<figure-skill> \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./figure-artifact-report.html
+```
+
+`--skill-source` accepts the same `repo#subdir` or local path format used by BYO text skills. forkprobe turns each source into its own figure pipeline, injects the skill instructions into that candidate run, and compares the generated artifact package in the report.
+
+After candidate artifacts exist, run the same command again or call:
+
+```bash
+python scripts/render_artifact_report.py \
+  --manifest <figure_run>/artifact-manifest.json \
+  --output <figure_run>/figure-artifact-report.html
+```
+
+The report should compare file links/previews, candidate summaries, captions, QA notes, and winner selection.
+
+### Research report artifact mode
+
+Use this path when the user wants a finished research report, not just a short answer, outline, interview guide, or research plan. Examples:
+
+- market research / industry analysis -> research report package
+- company research / competitive analysis -> report, sources, evidence table
+- user research -> research synthesis report, method limits, findings evidence
+- literature review -> structured review report and source/evidence table
+- investment research -> report with assumptions, risks, and non-advice limitations
+
+If the user only asks for a research outline, question list, interview guide, or survey draft, keep the task in text mode.
+
+If they ask for a final report, first recommend candidates and wait:
+
+```bash
+python scripts/recommend.py --input <path_to_user_input> --domain academic-writing
+```
+
+Present the shortlist in plain language, for example:
+
+```text
+我建议先比较这组 research report pipeline：
+
+1. baseline-research-report：成品基线
+2. source-first-research：先整理来源和 evidence table，再生成报告
+3. analyst-style-report：咨询/投研风格结构化报告
+4. evidence-table-report：先建 claim-evidence 表，再写报告
+
+确认按这组跑吗？你也可以删掉或加入 company-research、user-research-cookiy、literature-review 或 investment-research。
+```
+
+Only after the user confirms the shortlist, run the artifact pipelines:
+
+```bash
+python scripts/research_artifact.py \
+  --input <path_to_user_input> \
+  --pipeline baseline-research-report \
+  --pipeline source-first-research \
+  --pipeline analyst-style-report \
+  --pipeline evidence-table-report \
+  --confirmed \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./research-artifact-report.html
+```
+
+This creates:
+
+```text
+outputs/research-runs/<run>/
+  task.md
+  artifact-manifest.json
+  candidates/<pipeline-id>/INSTRUCTIONS.md
+  candidates/<pipeline-id>/artifacts/
+```
+
+Expected research package files include:
+
+- `candidate-report.md` and preferably `candidate-report.html`
+- `sources.json`
+- `evidence-table.md`
+- `claim-checks.md`
+- `limitations.md`
+- `summary.md`
+
+To compare a BYO research skill, first include it in the recommendation shortlist and ask the user to confirm. After confirmation, add one or more skill sources:
+
+```bash
+python scripts/research_artifact.py \
+  --input <path_to_user_input> \
+  --pipeline baseline-research-report \
+  --skill-source https://github.com/<owner>/<repo>#skills/<research-skill> \
+  --confirmed \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./research-artifact-report.html
+```
+
+`--skill-source` accepts the same `repo#subdir` or local path format used by BYO text skills. forkprobe turns each source into its own research-report pipeline, injects the skill instructions into that candidate run, and compares the generated research package in the report.
+
+### Image prompt/style artifact mode
+
+Use this path when the user asks to compare image skills, image prompts, visual style directions, style cards, poster/KV prompts, e-commerce product image prompts, social covers, PPT illustrations, portraits, or concept-art prompts. The deliverable is `image_prompt` and the compare mode is `prompt_artifact`.
+
+First recommend candidates and wait for confirmation:
+
+```bash
+python scripts/recommend.py --input <image_prompt_task.txt>
+```
+
+Default shortlist families:
+- `general`: `baseline-image-prompt`, `creative-director-prompt`, `style-system-prompt`, `prompt-as-code`
+- `ecommerce`: `baseline-image-prompt`, `ecommerce-product-prompt`, `style-system-prompt`, `prompt-as-code`
+- `poster`: `baseline-image-prompt`, `poster-key-visual-prompt`, `creative-director-prompt`, `style-system-prompt`
+- `social`: `baseline-image-prompt`, `social-cover-prompt`, `creative-director-prompt`, `style-system-prompt`
+- `ppt`: `baseline-image-prompt`, `ppt-visual-prompt`, `prompt-as-code`, `style-system-prompt`
+
+Only after the user confirms the shortlist, run prompt/style pipelines:
+
+```bash
+python scripts/image_prompt_artifact.py \
+  --input <image_prompt_task.txt> \
+  --pipeline baseline-image-prompt \
+  --pipeline creative-director-prompt \
+  --pipeline style-system-prompt \
+  --pipeline prompt-as-code \
+  --confirmed \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./image-prompt-artifact-report.html
+```
+
+Each candidate must write prompt artifacts under `candidates/<pipeline-id>/artifacts/`:
+- `prompt.md`
+- `style-card.md`
+- `composition.md`
+- `negative-prompt.md`
+- `render-notes.md`
+- `summary.md`
+
+Optional artifacts:
+- `prompt.json`
+- `reference-usage.md`
+- `render-request.json`
+- `rendered.png`
+- `qa.json`
+
+Render validation modes:
+- `--render-mode prompt-only`: compare prompt packages only.
+- `--render-mode auto`: writes a Codex host render queue when platform detection is Codex; otherwise stays prompt-only.
+- `--render-mode codex-host`: write `render-queue.json`; the host Codex Agent may call its image generation tool outside the runner and save each image to the requested `artifacts/rendered.png` path.
+- `--render-mode user-backfill`: user renders externally and drops images into candidate artifact folders, then refreshes the report.
+
+After Codex host rendering or user backfill, refresh the manifest and report:
+
+```bash
+python scripts/image_prompt_artifact.py \
+  --output-dir <image_prompt_run_dir> \
+  --refresh-artifacts \
+  --render-report \
+  --report-output ./image-prompt-artifact-report.html
+```
+
+Hard rule: `image_prompt_artifact.py` must not call OpenAI Images API, Gemini, Midjourney, ComfyUI, or any external renderer directly. It only creates prompt packages, render queues, reports, and backfill refreshes.
+
+### Web artifact mode
+
+Use this path when the user wants a finished, runnable website rather than a page brief, wireframe, prompt, or isolated code suggestion. Supported families include landing pages, product sites, dashboards, web apps, report pages, and general HTML deliverables.
+
+First recommend candidates and wait for confirmation:
+
+```bash
+python scripts/recommend.py --input <path_to_user_input> --domain academic-writing
+```
+
+Only after confirmation, run the selected web pipelines:
+
+```bash
+python scripts/web_artifact.py \
+  --input <path_to_user_input> \
+  --pipeline baseline-web \
+  --pipeline anthropic-frontend-design \
+  --pipeline hallmark-web \
+  --pipeline baoyu-design-web \
+  --confirmed \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./web-artifact-report.html
+```
+
+Each candidate must produce a runnable static entry at `artifacts/site/index.html`. ForkProbe then:
+
+1. normalizes the final static site
+2. captures `desktop.png` at `1440x1000`
+3. captures `mobile.png` at `390x844`
+4. writes `qa.json` for page load, viewport, responsiveness, interactions, local assets, basic accessibility, and real-browser mobile horizontal overflow when Python Playwright is available
+5. packages editable files as `source.zip`
+6. renders side-by-side previews, QA, metrics, files, and AI judge notes
+
+Expected candidate package:
+
+- `site/index.html` and local assets
+- `desktop.png`
+- `mobile.png`
+- `qa.json`
+- `source.zip`
+- `README.md` and candidate `summary.md`
+
+To compare a BYO web skill, add `--skill-source <repo#subdir-or-local-path>` after the user approves it. Never add conditional candidates whose required runtime is unavailable.
+
+### Video artifact mode
+
+Use this path when the user wants a playable video result rather than only a script, storyboard, motion brief, or edit suggestion. Classify every request into exactly one family:
+
+- `product_promo`: product launch, feature announcement, website showcase, or brand promo
+- `motion_graphics`: kinetic type, data/UI animation, logo sting, chart hit, or explanatory motion
+- `talking_head_cut`: rough cut of existing talking-head, interview, podcast, or vlog footage
+
+Do not mix these families in one comparison. Their inputs, artifact contracts, and judge rubrics are intentionally different.
+
+First recommend candidates and wait:
+
+```bash
+python scripts/recommend.py --input <path_to_video_task>
+```
+
+Only after confirmation, run the selected video pipelines:
+
+```bash
+python scripts/video_artifact.py \
+  --input <path_to_video_task> \
+  --pipeline baseline-remotion-agent \
+  --pipeline hyperframes-product-launch \
+  --pipeline video-shotcraft \
+  --confirmed \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./video-artifact-report.html
+```
+
+For a talking-head rough cut, pass the same source footage to every candidate:
+
+```bash
+python scripts/video_artifact.py \
+  --input <path_to_video_task> \
+  --asset <source-video.mp4> \
+  --pipeline auto-editor \
+  --pipeline maxazure-video-editing \
+  --pipeline video-use-cut-only \
+  --pipeline chengfeng-cut-talking-head \
+  --confirmed \
+  --run \
+  --judge \
+  --render-report \
+  --report-output ./video-artifact-report.html
+```
+
+Every candidate must write `artifacts/video.mp4`. ForkProbe then:
+
+1. probes duration, dimensions, codecs, file size, and audio with ffprobe
+2. creates `poster.png` with ffmpeg when missing
+3. packages editable source as `source.zip` when available
+4. applies product-promo, motion-graphics, or rough-cut-specific QA
+5. renders inline video playback, metrics, artifacts, QA, and AI judge notes
+
+Expected product-promo package:
+
+- `video.mp4`, `poster.png`, `subtitles.srt`
+- `script.md`, `storyboard.md`
+- `source.zip`, `qa.json`, `summary.md`
+
+Expected motion-graphics package:
+
+- `video.mp4`, `poster.png`
+- `motion-spec.md`
+- `source.zip`, `qa.json`, `summary.md`
+
+Expected talking-head rough-cut package:
+
+- `video.mp4`, `subtitles.srt`, `transcript.md`
+- `cut-list.json` and preferably `timeline.json`, EDL, or XML
+- `qa.json`, `summary.md`
+
+Use `--skill-source <repo#subdir-or-local-path>` only after the user approves a BYO video candidate. Talking-head `--run` must fail when no existing source video is supplied.
+
+### Step 5: Show report
+
+Tell the user:
+> "Comparison ready. Opening ./report.html — pick the output you prefer."
+
+Auto-open the report (or instruct user how to open it).
+
+### Step 6: Continue with the verdict
+
+After the user picks a candidate, the Report must show one combined continuation panel. Do not require a separate Submit action:
+
+```text
+Selected: Hallmark
+
+☑ Anonymously share this Skill choice to improve ForkProbe recommendations
+  Only uploads the task type, compared Skill names, and final choice
+
+[Back to comparison]                  [Continue with Hallmark]
+```
+
+The first-use sharing default is checked. Clicking Continue must persist the
+local verdict and handoff first, then resume the Agent workflow. Anonymous
+sharing is asynchronous and must never block continuation. If the user clears
+the checkbox, keep the verdict local and remember that preference for later
+reports.
+
+The verdict is written to:
+
+```
+./forkprobe-logs/<timestamp>-<uuid>.json
+```
+
+The report also generates a continuation handoff. If the local verdict server is connected, the handoff is written beside the log:
+
+```
+./forkprobe-logs/<timestamp>-<uuid>.handoff.md
+```
+
+The verdict server also writes stable latest pointers:
+
+```
+./forkprobe-logs/latest.json
+./forkprobe-logs/latest.handoff.md
+```
+
+When the user says they have already picked a winner, do **not** ask them to repeat the skill name first. Run:
+
+```bash
+python scripts/resume_verdict.py --latest
+```
+
+If a verdict exists, continue using the reported winner and handoff. If no verdict is found, tell the user the page may have been in demo mode, they may have selected a candidate without clicking Continue, or the verdict server may have timed out.
+
+Schema:
+```json
+{
+  "timestamp": "2026-05-28T12:34:56Z",
+  "task_type": "academic-polish",
+  "platform": "claude_code",
+  "task_input_hash": "sha256:...",
+  "candidates": [
+    {"id": "baseline", "tokens": 480, "latency_s": 3.2},
+    {"id": "humanizer", "tokens": 620, "latency_s": 4.1}
+  ],
+  "judge": {"winner_skill_id": "humanizer", "summary": "..."},
+  "verdict": {
+    "winner": "humanizer",
+    "reason": "...",
+    "handoff_text": "Please continue this task using humanizer (humanizer) for the rest of this task..."
+  },
+  "handoff_path": "./forkprobe-logs/<timestamp>-<uuid>.handoff.md"
+}
+```
+
+**Note:** `task_input_hash` is the SHA-256 of input, NOT the input itself. **The actual content of user task/output is NEVER stored beyond the local session.**
+
+## Privacy & Safety
+
+- User task content stays local. EverMind/GitHub discovery uses sanitized scene terms only, never raw task text, documents, or local paths.
+- Local discovery reads `SKILL.md` packages for indexing and matching only; it does not install or execute them automatically.
+- If the user asks for local-only/offline mode, skip EverMind/GitHub discovery while keeping curated and installed-local candidates.
+- Verdict logs contain hashes and metadata only — never user task content.
+- Handoff files contain the selected winner and user-provided reason, never the original task or candidate outputs.
+- Anonymous selection sharing uploads only the privacy-safe task category, all compared Skill names, and the final choice. A random event ID and schema version are technical deduplication fields.
+- Never upload raw task text, candidate output, generated files, reasons, local paths, or user identity.
+- Queue opted-in events under `~/.forkprobe/telemetry/outbox/`; network failure must not block local continuation.
+- `FORKPROBE_TELEMETRY=0` is a process-level force-off switch. ForkProbe uses its official Cloudflare Worker by default; `FORKPROBE_TELEMETRY_ENDPOINT` overrides it for self-hosting.
+- Community selection statistics are aggregate signals, distinct from EverMind Skill Hub quality and SkillsBench/public benchmark priors. Do not expose community rates below the configured minimum sample threshold.
+- For academic users: this is a comparison tool, not a writing assistant. Users are responsible for confirming AI use is permitted by their target journal.
+
+## Architecture
+
+```
+SKILL.md (this file)
+  ├─> dsh-plugin/lib/index.js (native DSH tools: forkprobe_compare / forkprobe_resume)
+  │     ├─> scripts/prepare_native_compare.py
+  │     └─> scripts/finalize_native_compare.py
+  └─> scripts/compare.py (cross-platform CLI and DSH compatibility path)
+        ├─> scripts/platform_adapter.py (Claude Code, Codex, and DeepSeek Harness)
+        ├─> scripts/recommend.py (multi-source candidate recommendation)
+        ├─> scripts/candidate_providers.py (installed-local and EverMind providers)
+        ├─> scripts/discover_skills.py (PPTX skill/pipeline discovery)
+        ├─> scripts/figure_artifact.py (scientific figure artifact pipeline runner)
+        ├─> scripts/image_prompt_artifact.py (image prompt/style package runner)
+        ├─> scripts/research_artifact.py (research report artifact pipeline runner)
+        ├─> scripts/web_artifact.py (webpage artifact runner, screenshots, and QA)
+        ├─> scripts/video_artifact.py (product promo, motion graphics, and rough-cut runner)
+        ├─> scripts/render_artifact_report.py (PPTX/file/image/web/video artifact report rendering)
+        ├─> catalog/academic-writing.json (skill metadata)
+        ├─> catalog/image-prompt-skills.json (curated image prompt/style candidates)
+        ├─> catalog/web-artifact-skills.json (curated webpage candidates)
+        ├─> catalog/video-artifact-skills.json (curated video pipelines)
+        └─> scripts/render_report.py
+              └─> templates/report.html.j2
+```
+
+## See also
+
+- `README.md` — installation and usage from end-user perspective
+- `catalog/academic-writing.json` — full curation criteria + selected skills
+- `../DESIGN.zh.md` — full project design doc

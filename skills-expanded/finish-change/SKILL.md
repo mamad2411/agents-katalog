@@ -1,0 +1,167 @@
+---
+name: finish-change
+description: Use when repository work is implemented and must be verified, committed, pushed, and submitted as a pull request.
+license: AGPL-3.0-only
+metadata:
+  author: Krzysztof Kasprowicz
+  repository: https://github.com/fathomise/MailFathom
+---
+
+# Finish Change
+
+`$start-task` resolved whether this is the **owner's checkout** or the **fork role**, and the steps
+below split on it in two places: the branch name, and the remote pushed to. The board is not one of
+them — it follows the access probe `$start-task` ran, which is a separate fact from the role.
+Everything else — the gates, the verification, the diff review, the pull request, and
+`Closes #<issue>` — is identical, because a contribution is judged by what it does rather than by
+where it came from.
+
+## Required Gates
+
+1. Confirm the work is on a branch based on the current base branch, never `main` or `master`. In the
+   owner's checkout that branch is `agent/<short-description>` and is isolated in a linked worktree;
+   in the fork role its name is the contributor's own.
+2. Inspect status, stage only task files, and inspect the staged diff. Stop if any untracked or
+   unrelated path remains.
+3. Invoke `$check-docs-licenses`. Fix every `fail` and repeat the gate until all three verdicts pass
+   or are `n/a`. Its changelog verdict is `n/a` for ordinary work: `CHANGELOG.md` is written by the
+   release pull request alone, so a diff that edits it here is a defect rather than diligence.
+4. Run `scripts/verify-fast.sh`. Fix failures and rerun the complete script; partial results do not
+   replace a successful one, and a run that failed records nothing, so the rerun is a real run. An
+   *unchanged* tree is the one case that answers in under a second, because the script records what
+   it verified and a second run over identical content would reprove it rather than prove it. A
+   whitespace slip is repaired by this same script, which rewrites the changed files' whitespace
+   before it builds, rather than by a hand-run `dotnet format` over the whole solution; a diagnostic
+   the repair does not fix is a build error and names its own file and line. The order of using
+   directives and `IDE0055` are not this script's to report: the full gate and `CI` verify the whole
+   formatting. A passing run that says its formatting pass rewrote files
+   and `no second run is needed` has recorded the formatted tree: stage the rewrite with the task files and go on to the commit and
+   the push without running the gate again — staging changes the digest, so a run after it would
+   rebuild for nothing. A diagnostic with no code fix stays the pull request's to report, exactly as
+   after a run that rewrote nothing.
+
+   This is the gate, and `scripts/verify-full.sh` is not part of it. `CI` asserts every verdict that
+   script produces — the coverage target, the workflow contract suite, the client's bundle, and the
+   whole solution's formatting — on the pull request this step is about to open, on a runner per job.
+   Run it here only where its answer is the one being waited on, and say so in the report when you
+   did. Say nothing when you did not: the pull request's checks are where that evidence arrives, and
+   presenting the fast loop as the full gate is the one way this step can lie.
+
+   The browser suite is not on that list and is not a reason to run the full gate: no local gate runs
+   it, `pnpm test:browser` reaches it, and `CI`'s `Frontend` job is the only thing that asserts it.
+5. Inspect status and the full diff for secrets, generated artifacts, unrelated edits, architecture
+   violations, and missing tests or documentation. `scripts/review-obligations.sh` is what answers the
+   last of those without reading the whole tree: it names the tests and pages the change obliges and
+   whether it touched them. It gates nothing, so a row it reports is answered — by the test, by the
+   page, or by saying why nothing is owed — rather than treated as a blocker or as a licence to skip
+   the reading.
+
+Do not proceed while a gate fails.
+
+## Publish
+
+1. Run `scripts/report-related-pull-requests.sh`. It prints one row for every open pull request to
+   `main` that touches a path `Coherence` would relate to this change, with that pull request's
+   related paths and every pair they make — its path, then the path here, and the relation. It gates
+   nothing: read each pull request it names and make this change agree with it, or say in the body
+   why nothing needed to change. An edit made here is part of the change, so it goes back through
+   the Required Gates before step 2. It needs only read access, so it runs in both roles, and it says
+   on stderr when its own limit of 100 open pull requests, or `gh`'s 100 files of one, cut the
+   reading short. Each row links its pull request by URL rather than by `#<n>`, so pasting the
+   section does not make the labelling steps read the related pull requests as issues this one
+   refers to.
+2. Confirm the staged diff still contains exactly the task files.
+3. Commit with a focused message.
+4. Fetch the base remote and confirm the branch remains safely based on its current `main`. Integrate
+   remote movement without discarding work, then repeat affected gates.
+5. Push the branch. In the owner's checkout that is `origin`; in the fork role it is the fork's own
+   `origin`, and nothing is ever pushed to `fathomise/MailFathom`.
+6. Create a pull request whose body contains `Closes #<issue>` for the issue the change
+   completes, and — when step 1 printed a `## Related open pull requests` section — that section as
+   printed. In the fork role it targets `main` on `fathomise/MailFathom` from the fork's branch.
+7. Confirm the reference is present in the published body. `gh pr edit` fails against this repository
+   with a Projects-classic GraphQL error and silently drops the edit, so correct a missing reference
+   through `gh api repos/<owner>/<repo>/pulls/<number> -X PATCH -f body=...`. That endpoint names the
+   *base* repository even for a fork's pull request, and it is the author who is allowed to patch it
+   rather than anyone with write access to that repository.
+8. **Wherever the board probe in `$start-task` returned write access:** set `Queue: Next` on the
+   issue the pull request closes, whether it was opened for this task or already existed, and
+   confirm the value landed. No project automation can
+   write that field, so a value that did not land is an incomplete gate in the same way a missing
+   `Closes #<issue>` is. It needs no clearing: the merge
+   closes the issue out of every view that reads `Queue`. It is not written on an issue carrying the
+   `parent` label, because a pull request closes the issue that does the work rather than the parent
+   grouping it, and a `Closes` reference pointing at a parent is the defect to correct rather than an
+   issue to move to `Next`.
+
+   **The same board write sets `Size`, and it takes it from the diff rather than from the placeholder
+   the issue was opened with.** The pull request exists by this step, so its own line count is
+   available:
+
+   ```bash
+   band=$(gh api repos/fathomise/MailFathom/pulls/<number> \
+     --jq '.additions + .deletions
+           | if . < 1000 then "S" elif . < 2500 then "M" elif . < 5000 then "L" else "XL" end')
+   ```
+
+   That endpoint names the base repository in both roles, exactly as the body patch above does. Write
+   the band it printed with one more `item-edit` against the `Size` field, and confirm it landed as
+   `Queue` is confirmed. `docs/operations/issue-tracking.md` § *Board fields* holds the boundaries and
+   why the value is taken here rather than argued over: this is the first moment the field can state a
+   measurement instead of a guess, and a review round that later carries the change across a boundary
+   leaves it one band out rather than wrong in kind. It is skipped on an issue carrying the `parent`
+   label for the reason `Queue` is — a parent's size is the sum of its children, and no pull request
+   closes one.
+
+   Without that access there is no board write and no gate here. The board is the owner's and a grant
+   on it is theirs to make, so this is not a step that failed or was skipped for convenience — it is a
+   step that does not exist in this session. Report it as `not applicable (no board write)` rather
+   than as incomplete.
+
+Confirm the issue is still placed, against `docs/operations/issue-tracking.md`, as far as this
+session's access reaches: its issue type, a `backend` or `frontend` label where the work
+landed in one of the two stacks, the `design` label exactly when the diff changes `design/`, and a
+milestone if the release rule assigns one, all of which need write access to the repository, and an
+`Area` and a `Size` on the board, the `Size` being what step 8 measured rather than the placeholder
+the issue was opened with. A change that grew past what the issue described may have outgrown its
+placement too.
+
+The `design` label is the one placement the diff can prove, so hold it against the design files the
+change touched, leaving out the directory's own page and authoring rules:
+
+```bash
+git diff --name-only <base>...HEAD -- design/ \
+  ':!design/README.md' ':!design/AGENTS.md' ':!design/CLAUDE.md'
+```
+
+Output with no label on the issue: add it. The label
+with no output: remove it when the design already showed what the change produces, and treat it as
+unfinished work instead when the client now shows something `design/` does not draw — the root
+`AGENTS.md` § *The design leads the client, never the other way round* puts that design half in this
+pull request.
+
+Preserve `Sprint`: publishing a pull request never assigns, changes, or clears the user's sprint.
+Leave review and merge statuses to the project automation. `Status: Needs decision` records an
+outstanding ADR, internal decision, or measurement; an unresolved one stops completion. Starting
+work may set `In progress` as the task flow specifies; retrospective closed issues take `Done`.
+
+Report:
+
+```text
+Role: <owner's checkout or fork, and the board access the probe returned>
+Docs: <pass or n/a with evidence>
+Changelog: <pass or n/a with evidence>
+Licenses: <pass or n/a with evidence>
+Verification: <scripts/verify-fast.sh and its result, naming the unit suites it ran; scripts/verify-full.sh and its result only where it was also run, and nothing about it otherwise>
+Diff review: <scope and exclusions>
+Commit: <hash and subject>
+Push: <remote and branch>
+Pull request: <URL, and the base repository it targets>
+Issue link: <Closes #N confirmed in the published body>
+Related pull requests: <the ones scripts/report-related-pull-requests.sh named and what each changed here, or none>
+Queue: <Next confirmed on the board after the pull request existed, or not applicable (no board write)>
+Size: <the band written from this pull request's own diff and confirmed, or not applicable (no board write, or a parent issue)>
+Placement: <issue type, stack label or neither, design label held against the diff under design/, Area, milestone or none — or what this session's access left to triage>
+```
+
+Never claim completion without fresh evidence for every line.

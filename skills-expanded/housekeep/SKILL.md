@@ -1,0 +1,449 @@
+---
+name: housekeep
+description: Local repo maintenance — clean stale worktrees, remove dirt files, sync with main, update codegraph, prune branches, and verify repo health
+argument-hint: "[--full | --dry-run | --skip-update]  (default: full cleanup)"
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+---
+
+# /housekeep — Local Repository Maintenance
+
+Clean up the local repo: remove stale worktrees, delete dirt/temp files, sync with main, update codegraph to latest, prune merged branches, and verify repo health. The "spring cleaning" routine.
+
+## Arguments
+
+- `$ARGUMENTS` may contain:
+  - `--full` — run all phases (default behavior)
+  - `--dry-run` — show what would be cleaned without actually doing it
+  - `--skip-update` — skip the codegraph npm update phase
+  - No arguments — full cleanup
+
+## Phase 0 — Pre-flight
+
+1. Confirm we're in the codegraph repo root (check `package.json` with `"name": "@optave/codegraph"`)
+2. Parse `$ARGUMENTS`:
+   - `DRY_RUN=true` if `--dry-run`
+   - `SKIP_UPDATE=true` if `--skip-update`
+3. Record current branch: `git branch --show-current`
+4. Record current git status: `git status --short`
+5. Warn the user if there are uncommitted changes — housekeeping works best from a clean state
+
+**Exit condition:** repo identity confirmed (`@optave/codegraph`); `DRY_RUN`/`SKIP_UPDATE` are known; current branch and status recorded.
+
+## Phase 1 — Audit & Clean Worktrees
+
+> **Always report disk usage first.** Worktree bloat (per-worktree `node_modules/`, `target/`, `dist/`) is the single largest source of disk waste in this repo — a fresh worktree with `npm install` + a Rust build is ~3GB. Even when no worktree is technically "stale" by branch criteria, the disk footprint must be surfaced so the user can decide what to keep.
+
+### 1a. Total worktree disk usage
+
+Always print this, even on `--dry-run`. Use `du -sk` (kilobytes) so the pipeline is portable across BSD (macOS) and GNU (Linux) — `sort -h` is a GNU coreutils extension and is rejected by stock macOS `sort`.
+
+```bash
+# 2>/dev/null suppress: .claude/worktrees/ may not exist yet on a fresh repo — zero worktrees, not an error
+du -sh .claude/worktrees 2>/dev/null
+# Portable per-worktree sort: kilobytes through sort -n, then format back to human-readable.
+du -sk .claude/worktrees/*/ 2>/dev/null | sort -n | awk '{
+  k=$1; $1=""; sub(/^ /, "");
+  if (k >= 1048576)      printf "%.1fG\t%s\n", k/1048576, $0;
+  else if (k >= 1024)    printf "%.1fM\t%s\n", k/1024, $0;
+  else                   printf "%dK\t%s\n", k, $0;
+}'
+```
+
+If the total exceeds **5GB**, raise it as a finding in the report regardless of whether any individual worktree is stale.
+
+### 1b. List git-tracked worktrees
+
+```bash
+git worktree list
+```
+
+Cross-reference against `.claude/worktrees/*` on disk — directories there that aren't in `git worktree list` are **orphaned** (prunable). Worktrees in the list whose directory is missing are also prunable.
+
+### 1c. Identify stale worktrees
+
+Staleness is decided by `.claude/scripts/gc-worktrees.sh`, which is the single source for this rule. Run it in dry-run to get the triage list:
+
+```bash
+bash .claude/scripts/gc-worktrees.sh --dry-run
+```
+
+It reports a worktree as collectable only when **all** of: its path is under `<repo-root>/.claude/worktrees/` (the scope guard, enforced in code); its branch belongs to a **settled** PR — merged or closed — with no open PR on that branch; its tree has no uncommitted changes; and it is not `git worktree lock`ed. Directories that vanished are handled by `git worktree prune` inside the script.
+
+> **Do not hand-roll this check with `git branch --merged origin/main`.** In a repo that **squash-merges**, a landed branch's tip is never an ancestor of the default branch, so `--merged` lists almost nothing — the check looks right, passes review, and silently reports every finished worktree as still in flight. The script resolves merged-ness from GitHub PR state for exactly this reason, and detects the default branch rather than assuming `main`.
+
+The script also reports an **orphan** bucket separately: worktrees whose branch has no PR at all. It never removes these (the work cannot be proven landed), but it names them, because they pin their branch names indefinitely and are usually the residue of an agent that improvised a local branch name after a checkout collision. Surface that list to the user.
+
+To remove what it found, after confirming with the user:
+
+```bash
+bash .claude/scripts/gc-worktrees.sh --prune-branches
+```
+
+`--prune-branches` also deletes each freed branch with `git branch -d` (safe delete — git refuses an unmerged branch); drop the flag to keep the branches. **If `DRY_RUN`:** stop after the `--dry-run` call above. The script never force-removes a worktree with uncommitted changes — it prints those as "has uncommitted work"; report that list rather than overriding it.
+
+### 1d. Identify bloated worktrees (NEW)
+
+A worktree is **bloated** if it is not stale (so we can't just remove it) but contains regeneratable build artifacts taking significant disk space. Check each non-stale worktree for:
+
+- `node_modules/` (typically ~1.8GB)
+- `target/` (Rust build cache, typically ~1.4GB)
+- `dist/` (compiled TS output)
+- `.codegraph/graph.db*` (rebuildable via `codegraph build`) — measure **only the `graph.db` and `graph.db-journal` files**, not the whole `.codegraph/` directory, because cleanup in §1e only removes those files. Measuring the whole directory would overstate the freed space.
+
+For each worktree, sum the artifact sizes and emit a per-worktree subtotal so the 500MB threshold can be evaluated without manually regrouping flat output. Uses `du -sk` (kilobytes) with `sort -n` for portability — `sort -h` is GNU-only and breaks on stock macOS.
+
+```bash
+for wt in .claude/worktrees/*/; do
+  total_kb=0
+  breakdown=""
+  for sub in node_modules target dist; do
+    if [ -d "$wt$sub" ]; then
+      # 2>/dev/null suppress: the dir can vanish between the glob and this du (e.g. concurrent cleanup) — skip it, don't fail the scan
+      sz=$(du -sk "$wt$sub" 2>/dev/null | awk '{print $1}')
+      [ -n "$sz" ] && total_kb=$((total_kb + sz)) && breakdown="$breakdown  $sub=${sz}K"
+    fi
+  done
+  # .codegraph: only measure the two files we will actually remove
+  for f in "$wt.codegraph/graph.db" "$wt.codegraph/graph.db-journal"; do
+    if [ -f "$f" ]; then
+      # 2>/dev/null suppress: same rationale as the node_modules/target/dist loop above — a vanished file mid-scan is skipped, not fatal
+      sz=$(du -sk "$f" 2>/dev/null | awk '{print $1}')
+      [ -n "$sz" ] && total_kb=$((total_kb + sz)) && breakdown="$breakdown  $(basename "$f")=${sz}K"
+    fi
+  done
+  [ "$total_kb" -gt 0 ] && printf "%d\t%s\t%s\n" "$total_kb" "$wt" "$breakdown"
+done | sort -n | awk -F'\t' '{
+  k=$1;
+  if (k >= 1048576)      printf "%.1fG\t%s%s\n", k/1048576, $2, $3;
+  else if (k >= 1024)    printf "%.1fM\t%s%s\n", k/1024, $2, $3;
+  else                   printf "%dK\t%s%s\n", k, $2, $3;
+}'
+```
+
+Flag any worktree whose combined build artifact size exceeds **500MB** (512000 kilobytes).
+
+### 1e. Clean up
+
+**For orphaned directories** (on disk but not in `git worktree list`):
+
+> **Critical: orphaned directories may still contain uncommitted work.** A worktree's git registration can be dropped (failed `git worktree add`, manual `git worktree prune`, etc.) while the user's source edits remain on disk. `rm -rf` on such a directory is permanent data loss.
+
+Before offering removal, run `git -C <path> status --short` to check for uncommitted changes:
+
+```bash
+# NOTE: iterate with `while IFS= read -r dir`, never `for dir in $ORPHANED_DIRS` —
+# the Bash tool in Claude Code runs under zsh, which does NOT word-split an
+# unquoted multi-line variable the way bash does. `for dir in $ORPHANED_DIRS`
+# would silently collapse every orphaned directory into a single iteration
+# whose $dir is the whole newline-joined blob, breaking `git -C "$dir"` the
+# moment more than one orphaned directory exists.
+printf '%s\n' "$ORPHANED_DIRS" | while IFS= read -r dir; do
+  [ -z "$dir" ] && continue
+  if [ -d "$dir/.git" ] || [ -f "$dir/.git" ]; then
+    # 2>/dev/null suppress: best-effort only — a failed git check on a non-worktree directory is expected and harmless here
+    changes=$(git -C "$dir" status --short 2>/dev/null)
+    if [ -n "$changes" ]; then
+      echo "SKIP $dir — has uncommitted changes:"
+      echo "$changes" | sed 's/^/    /'
+      continue
+    fi
+  fi
+  # Safe to offer removal — confirm with user first
+  echo "ORPHANED (clean): $dir"
+done
+```
+
+Only after confirming the directory is clean (no uncommitted changes) AND the user has explicitly approved removal, run `rm -rf <path>`. Then run `git worktree prune` to clear any dangling refs. Apply the same "Never force-remove a worktree with uncommitted changes" rule that protects stale worktrees in `git worktree list` — orphaned dirs get the same guardrail.
+
+**For prunable worktrees** (in list but directory missing):
+```bash
+git worktree prune
+```
+
+**For stale worktrees with merged branches:**
+- List them with their disk size and **always ask the user for confirmation before removing**, regardless of `--full`
+- If confirmed:
+  ```bash
+  git worktree remove "<path>"
+  git branch -D "<branch>"
+  ```
+  `-D`, not `-d`: this worktree was already classified "stale" via Phase 1c's GitHub-PR-state check, not git ancestry, so `-d`'s own ancestry test would wrongly refuse a genuinely squash/rebase-merged branch here — see Phase 4d's identical fix for why `-d` is the wrong tool once a more authoritative source already confirmed the merge (issue #2309). `gc-worktrees.sh`'s own `classify()` (which Phase 1c delegates to) now requires the same name-**and**-current-tip-SHA match against a MERGED PR that Phase 4a uses before treating a branch as `-D`-safe, closing the identical reused-branch-name gap here too (issue #2310).
+
+**For bloated (non-stale) worktrees:**
+- List them with a per-artifact size breakdown
+- Ask the user whether to **clean build artifacts only** (keep the source) — these regenerate on the next `npm install` / `cargo build` / `codegraph build`
+- If confirmed, for each selected worktree:
+  ```bash
+  rm -rf "<worktree>/node_modules"
+  rm -rf "<worktree>/target"
+  rm -rf "<worktree>/dist"
+  rm -f  "<worktree>/.codegraph/graph.db" "<worktree>/.codegraph/graph.db-journal"
+  ```
+- **Never run `npm install` / `cargo clean` inside the target worktree** — it may be in use by another Claude Code session
+
+> **Follow-on risk this creates: stripped worktrees now silently fall back to the root repo's `node_modules`.** Node's module resolution walks up the directory tree, so once `<worktree>/node_modules` is gone, anything run from inside that worktree resolves packages from the root repo's `node_modules` instead — until that worktree's own `node_modules` is reinstalled. This matters beyond this phase: if *any* later work in the same session manually copies, links, or patches something into `node_modules` for local testing (a rebuilt native addon, `npm link`, a manually patched dependency, a locally built package tarball), **never target the root repo's `node_modules`** — only the specific worktree that needs it, and only if that worktree still has (or is being given back) its own `node_modules`. Overwriting the root's shared copy silently changes behavior for every worktree currently falling back to it, including ones this exact cleanup just stripped and any other session using them. If this happens, restore the original immediately (e.g. `npm install <package>@<original-version> --no-save` for an npm-distributed package, or reinstall/relink whatever else was overwritten) and verify `git status --short` in the root repo shows no unexpected changes.
+
+**If `DRY_RUN`:** List everything that would be removed with sizes, don't do it.
+
+> **Never force-remove** a worktree with uncommitted changes. List it as "has uncommitted work" and skip — but still report its disk size so the user knows what it's costing.
+> **Never delete source files** in a bloated worktree — only delete the four regeneratable artifact paths above.
+
+**Exit condition:** worktree disk usage has been reported; every worktree is classified (orphaned / stale / bloated / active) with confirmed removals and artifact cleanups completed outside `DRY_RUN`.
+
+## Phase 2 — Delete Dirt Files
+
+Remove temporary and generated files that accumulate over time. There are two distinct categories of dirt that require different discovery commands:
+
+- **Gitignored dirt** (files matching `.gitignore` patterns — e.g. `coverage/`, `.DS_Store`, `*.log`, `.codegraph/graph.db-journal`): use `git clean -fdX --dry-run` to list them. `git ls-files --others --exclude-standard` silently omits these because `--exclude-standard` suppresses gitignored entries.
+- **Untracked non-ignored files** (stray files not in `.gitignore` — e.g. `*.tmp.*`, `*.bak`, `*.orig`): use `git ls-files --others --exclude-standard` to list them.
+
+Run both commands and union the results to get the full set of candidate dirt files.
+
+### 2a. Known dirt patterns
+
+Search for and remove files found by the two discovery commands above (never touch tracked files):
+- `*.tmp.*`, `*.bak`, `*.orig` files in the repo (but NOT in `node_modules/`)
+- `.DS_Store` files
+- `*.log` files in repo root (not in `node_modules/`)
+- Empty directories (except `.codegraph/`, `.claude/`, `node_modules/`)
+- `coverage/` directory (regenerated by `npm run test:coverage`)
+- `.codegraph/graph.db-journal` (SQLite WAL leftovers)
+
+**Stale lock files** (`.codegraph/*.lock` older than 1 hour): Before removing, first check if `lsof` is available (`command -v lsof`). If `lsof` is **not installed** (common in Docker/CI minimal containers where it exits 127), **skip lock file removal entirely** and print a warning: `"lsof not available — skipping lock file cleanup (cannot verify no process holds the file)"`. When `lsof` IS available, use `lsof "$f"` to verify no process holds the file. If the file is held, **skip it** and warn — concurrent Claude Code sessions may hold legitimate long-lived locks.
+
+```bash
+# > /dev/null 2>&1: suppress command path on success and shell's "not found" on failure — the else branch reports the skip explicitly
+if ! command -v lsof > /dev/null 2>&1; then
+  echo "lsof not available — skipping lock file cleanup (cannot verify no process holds the file)"
+else
+  for f in .codegraph/*.lock; do
+    [ -f "$f" ] || continue
+    # 2>/dev/null suppress: BSD vs GNU stat take different flags — try GNU syntax first, fall back to BSD
+    age=$(( $(date +%s) - $(stat --format='%Y' "$f" 2>/dev/null || stat -f '%m' "$f" 2>/dev/null) ))
+    [ -z "$age" ] && continue
+    # > /dev/null 2>&1: suppress lsof's own output — only its exit code (held vs free) matters here
+    if [ "$age" -gt 3600 ] && ! lsof "$f" > /dev/null 2>&1; then
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "[DRY RUN] Would remove stale lock: $f"
+      else
+        echo "Removing stale lock: $f"
+        rm "$f"
+      fi
+    elif [ "$age" -gt 3600 ]; then
+      echo "Lock file $f is old but still held by a process — ask user before removing"
+    fi
+  done
+fi
+```
+
+### 2b. Large untracked files
+
+Find untracked files (both gitignored and non-ignored) larger than 1MB. Use both discovery commands and union the paths:
+```bash
+# Non-ignored untracked files
+git ls-files --others --exclude-standard | while read f; do
+  # 2>/dev/null suppress: BSD vs GNU stat take different flags — try GNU syntax first, fall back to BSD; a genuine failure just yields empty $size and is skipped below
+  size=$(stat --format='%s' "$f" 2>/dev/null || stat -f '%z' "$f" 2>/dev/null)
+  [ -z "$size" ] && continue
+  if [ "$size" -gt 1048576 ]; then echo "$f ($size bytes)"; fi
+done
+# Gitignored files (strip the leading "Would remove " prefix from dry-run output)
+git clean -fdX --dry-run | sed 's/^Would remove //' | while read f; do
+  # Skip directory entries — stat returns inode size, not content size
+  [ -d "$f" ] && continue
+  # 2>/dev/null suppress: BSD vs GNU stat fallback, same rationale as above
+  size=$(stat --format='%s' "$f" 2>/dev/null || stat -f '%z' "$f" 2>/dev/null)
+  [ -z "$size" ] && continue
+  if [ "$size" -gt 1048576 ]; then echo "$f ($size bytes) [gitignored]"; fi
+done
+```
+
+Flag these for user review — they might be accidentally untracked binaries.
+
+### 2c. Clean up
+
+**If `DRY_RUN`:** List all files that would be removed with their sizes.
+
+**Otherwise:**
+- Remove known dirt patterns automatically
+- For large untracked files: list and ask the user
+
+> **Never delete** files that are tracked by git. Only clean untracked/ignored files.
+
+**Exit condition:** known dirt patterns have been removed (or listed, under `DRY_RUN`); large untracked files have been flagged for the user, never deleted automatically.
+
+## Phase 3 — Sync with Main
+
+### 3a. Fetch latest
+
+```bash
+git fetch origin
+```
+
+### 3b. Check main branch status
+
+```bash
+git log HEAD..origin/main --oneline
+```
+
+If main has new commits:
+- If on main: `git pull --no-rebase origin main`
+- If on a feature branch: inform the user how many commits behind main they are
+  - Suggest: `git merge origin/main` (never rebase — per project rules)
+
+### 3c. Check for diverged branches
+
+List local branches that have diverged from their remote tracking branch:
+```bash
+git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/
+```
+
+Flag any branches marked `[ahead N, behind M]` — these may need attention.
+
+**Exit condition:** the local branch's relationship to `origin/main` has been reported; `main` has been pulled only if it was already checked out and new commits exist; diverged branches have been flagged, not acted on.
+
+## Phase 4 — Prune Merged Branches
+
+### 4a. Find merged branches
+
+> **Do not hand-roll this with `git branch --merged origin/main`** — same reason as Phase 1c: in a repo that **squash-merges** (confirmed live in this repo, issue #2309), a landed branch's tip is never an ancestor of the default branch, so `--merged` reports almost nothing as merged even right after a run that squash-merged a dozen PRs. Resolve merged-ness from GitHub PR state instead, exactly like Phase 1c/`gc-worktrees.sh` already do:
+
+```bash
+# name + current tip SHA, not name alone: a branch name can be reused after its earlier
+# PR merged (a later /fixer-style run, or a human, creating a new branch of the same
+# name for unrelated work) — matching by name only would then classify that NEW, never-
+# merged work as "confirmed merged" and hand it straight to 4d's force-delete. Requiring
+# the local branch's CURRENT tip to equal the exact SHA GitHub recorded as the merged
+# PR's head closes that gap: any commit added since (a rename, a reused name, a new
+# unpushed commit) changes the tip SHA, so the pair no longer matches and 4d leaves the
+# branch alone instead of guessing (Greptile review, PR #2311).
+git branch --format='%(refname:short) %(objectname)' | grep -v '^main ' | sort > /tmp/housekeep-local-branches.txt
+gh pr list --state merged --limit 1000 --json headRefName,headRefOid \
+  --jq '.[] | "\(.headRefName) \(.headRefOid)"' | sort > /tmp/housekeep-merged-heads.txt
+comm -12 /tmp/housekeep-local-branches.txt /tmp/housekeep-merged-heads.txt
+```
+
+This lists local branches whose name **and current commit** match a PR GitHub reports as **merged** — true regardless of merge strategy (merge commit, squash, or rebase), unlike ancestry, and immune to name reuse since it's pinned to the exact commit GitHub recorded at merge time.
+
+### 4b. Safe to delete
+
+Branches that are:
+- Confirmed merged via 4a's name-**and**-SHA check against `gh pr list` (not the ancestry test, and not a name-only match)
+- Not `main` itself
+- Not the current branch
+- Not a worktree branch (check `git worktree list`)
+
+### 4c. Prune remote tracking refs
+
+```bash
+git remote prune origin
+```
+
+This removes local refs to branches that no longer exist on the remote.
+
+### 4d. Clean up
+
+**If `DRY_RUN`:** List branches that would be deleted.
+
+**Otherwise:** For each branch 4a confirmed merged, ask the user for confirmation before deleting:
+```
+Delete merged branch '<branch>'? (y/n)
+```
+If confirmed, delete the branch:
+```bash
+git branch -D "<branch>"
+```
+
+> **Use `-D` here, not `-d`.** This is not a blanket force-delete: 4a already established via authoritative GitHub PR state — not git's own ancestry heuristic — that this exact branch is merged. `-d`'s ancestry check is precisely the thing that's unreliable under squash/rebase merges (verified directly: it refuses a genuinely squash-merged branch once its stale remote-tracking ref has been pruned, e.g. by 4c), so requiring it to *also* agree before deleting is not an extra safety margin — it's reintroducing the exact bug 4a exists to fix. The safety boundary here is 4a's confirmed-merged check plus the per-branch confirmation prompt below, not `-d`'s ancestry test.
+> **Always confirm before deleting** — consistent with worktree removal in Phase 1c.
+
+**Exit condition:** every fully-merged, non-protected branch has had a confirmed delete decision (or been listed under `DRY_RUN`); stale remote-tracking refs have been pruned.
+
+## Phase 5 — Update Codegraph
+
+**Skip if `SKIP_UPDATE` is set.**
+
+> **Source-repo guard:** This phase is only meaningful when codegraph is installed as a *dependency* of a consumer project. Because the pre-flight confirms we are inside the codegraph *source* repo (`"name": "@optave/codegraph"`), comparing the dev version to the published release and running `npm install` would be a no-op — codegraph is not one of its own dependencies. **Skip this entire phase** when running inside the source repo and print:
+> `Codegraph: skipped (running inside source repo — update via git pull / branch sync instead)`
+
+**Exit condition:** either the phase was skipped (source-repo guard or `SKIP_UPDATE`) and that is printed, or codegraph's version status has been reported.
+
+## Phase 6 — Verify Repo Health
+
+Quick health checks to catch issues:
+
+### 6a. Graph integrity
+
+```bash
+npx codegraph stats
+```
+
+If the graph is stale (built from a different commit), rebuild:
+```bash
+npx codegraph build
+```
+
+### 6b. Node modules integrity
+
+```bash
+npm ls --depth=0 2>&1 | grep -cE "missing|invalid|WARN"
+```
+
+If issues found: `npm install` to fix.
+
+### 6c. Git integrity
+
+```bash
+git fsck --no-dangling 2>&1 | head -20
+```
+
+Flag any errors (rare but important).
+
+**Exit condition:** graph integrity, node-modules integrity, and git integrity have each produced a pass/fail result.
+
+## Phase 7 — Report
+
+Print a summary to the console (no file needed — this is a local maintenance task):
+
+```
+=== Housekeeping Report ===
+
+Worktrees:  total .claude/worktrees/ size 57G (32 worktrees)
+            removed 2 stale (4.2G freed), 1 has uncommitted work (skipped)
+            cleaned build artifacts in 3 active worktrees (9.6G freed)
+Dirt files: cleaned 5 temp files (12KB), 1 large untracked flagged
+Branches:   pruned 3 merged branches, 2 remote refs
+Main sync:  up to date (or: 4 commits behind — merge suggested)
+Codegraph:  v3.1.2 → v3.1.3 updated (or: already latest)
+Graph:      rebuilt (was stale) (or: fresh)
+Node mods:  OK (or: fixed 2 missing deps)
+Git:        OK
+
+Status: CLEAN ✓
+```
+
+> **Always include the worktree total** at the top of the Worktrees line, even when no worktrees were removed. This is the metric that surfaces hidden disk bloat — without it, multi-GB worktree accumulations go invisible to the user.
+
+**If `DRY_RUN`:** prefix with `[DRY RUN]` and show what would happen without doing it.
+
+**Exit condition:** the report above has been printed; nothing further runs after it.
+
+## Examples
+
+- `/housekeep` — full local cleanup: prune stale/bloated worktrees, remove regeneratable dirt, sync with main, prune merged branches, verify health.
+- `/housekeep --dry-run` — preview everything above with zero changes.
+- `/housekeep --skip-update` — run the cleanup phases but skip the codegraph-version-check phase.
+
+## Rules
+
+- **Never delete a branch without first confirming its *current tip commit* matches a merged PR's recorded head SHA via `gh pr list`** — not `git branch --merged`/`-d`'s ancestry test (unreliable under squash/rebase merges, issue #2309), and not a branch-*name* match alone (a reused name with new, never-merged commits would wrongly qualify, issue #2311). `-D` is correct, not reckless, once that name-and-SHA check confirms the exact commit was merged (see Phase 1c and Phase 4)
+- **Never rebase** — sync with main via merge only (per project rules)
+- **Never delete tracked files** — only clean untracked/ignored dirt
+- **Never delete worktrees with uncommitted changes** — warn and skip
+- **Always report worktree disk usage** — even when nothing is removed, the total must appear in the report. Worktree bloat is the #1 source of disk waste in this repo
+- **Bloated-but-active worktrees:** only delete the four regeneratable artifact paths (`node_modules/`, `target/`, `dist/`, `.codegraph/graph.db*`). Never touch source files in a worktree you don't own
+- **Never target the root repo's shared `node_modules`** when manually copying/linking something in for local testing (a rebuilt native addon, `npm link`, a patched dependency) — after stripping a worktree's own `node_modules` in this phase, that worktree silently falls back to the root's copy, so touching the root affects every worktree currently depending on that fallback, not just the one you're working on
+- **Ask before deleting large untracked files** — they might be intentional
+- **This is a local-only operation** — no pushes, no remote modifications, no PR creation
+- **Idempotent** — running twice should be safe (second run finds nothing to clean)
+- **`--dry-run` is sacred** — it must NEVER modify anything, only report

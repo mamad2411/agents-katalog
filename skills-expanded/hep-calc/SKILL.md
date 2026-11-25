@@ -1,0 +1,374 @@
+---
+name: hep-calc
+description: "General-purpose HEP calculation reproduction/audit runner that orchestrates Mathematica (FeynCalc/FeynArts/FormCalc/LoopTools/FeynRules) and/or Julia (LoopTools.jl). Supports: compute-only runs, LaTeX value auditing, auto-generation of Feynman diagrams + one-loop (unrenormalized) amplitudes (FeynRules→FeynArts→(optional)FormCalc), optional LaTeX-driven model_build scaffolding (agent-provided rewrite rules), and auditable out_dir + optional research-team sync."
+---
+
+# hep-calc
+
+## Agent quick summary
+
+Primary entry point:
+- `bash scripts/run_hep_calc.sh --job job.yml --out /absolute/path/outside/repo`
+
+Start here (compute-first):
+- Agent/tooling (SSOT): `out_dir/summary.json` + `out_dir/manifest.json` + `out_dir/analysis.json`
+- Human: `out_dir/report/audit_report.md`
+- Debug: `out_dir/logs/*.log` and per-step `status.json`
+
+As an agent, always clarify with the user:
+1) Goal: compute-only vs LaTeX audit vs auto_qft (diagrams/amplitude) vs model_build
+2) Inputs: model files / process / TeX sources / targets
+3) Deliverables: which artifacts to produce + where to point (paths under out_dir)
+
+## When to use this skill
+
+Use `hep-calc` when the primary need is an auditable computation run, optionally paired with TeX comparison or model_build scaffolding, including any of the following:
+- Orchestrate Mathematica (FeynCalc/FeynArts/FormCalc) and/or Julia (LoopTools.jl) for symbolic/numeric HEP calculations.
+- Auto-generate Feynman diagrams and one-loop (unrenormalized) amplitudes:
+  - FeynRules → FeynArts → (optional) FormCalc reduction.
+- Reproduce paper numbers and cross-check against LaTeX sources with tolerances (tex-audit).
+- Produce auditable artifacts: per-stage PASS/FAIL/SKIPPED/ERROR + full logs + manifest/summary/analysis.
+- Optionally: LaTeX-driven model_build scaffolding (extract/normalize/TeXForm-parse blocks) with agent-supplied rewrite rules.
+
+## When NOT to use (hard boundaries)
+
+Do NOT use this skill for:
+- Automatic generation of a renormalization prescription or counterterms. `auto_qft` produces bare one-loop amplitudes; a trusted user-supplied `mathematica.entry` may perform separate post-processing when every upstream artifact is declared through `mathematica.bound_inputs` and the target identities are exported as fail-closed assertions.
+- Cross-sections / phase-space integration / event generation (this skill outputs diagrams + amplitudes, not observables).
+- “Automatic physics understanding” of arbitrary LaTeX: model_build requires explicit agent rewrite rules; the skill does not guess physics.
+- Untrusted code execution environments: plugins/rewrite hooks run without sandboxing (see Safety).
+
+## Mode selection (job config → expected outputs)
+
+| Goal | Job keys to set | Key outputs |
+|---|---|---|
+| Compute-only (no TeX comparison) | leave `latex.targets: []` (or omit targets) | `report/*`, `symbolic/*`, `numeric/*` |
+| TeX audit (compare vs paper) | set `latex.tex_paths` + `latex.targets[]` (`id` + `label` or `regex`) | `tex/extracted.json`, `tex/comparison.json` |
+| auto_qft (FeynRules model) | `auto_qft.process.in/out` + `auto_qft.model_files` + `auto_qft.lagrangian_symbol` | `auto_qft/diagrams/*`, `auto_qft/amplitude/*` |
+| auto_qft (FeynArts-only) | `auto_qft.feynarts_model` + `process.in_fa/out_fa` | same (skips FeynRules export) |
+| LaTeX→model_build→auto_qft | `auto_qft.model_build.*` + `rewrite_wls` + `base_model_files` | `auto_qft/model_build/*` + `auto_qft/*` |
+| Custom FA/FC pipeline (scaffold) | `enable_fa_fc: true` + `feynarts_formcalc_spec.entry` | `feynarts_formcalc/status.json` |
+| Bound symbolic post-processing | `mathematica.entry` + `mathematica.bound_inputs[]` | `symbolic/input_bindings.json` + `symbolic/symbolic.json` |
+
+## Copy-paste snippets (common cases)
+
+Prefer starting from the demo jobs in `assets/` and editing them. These snippets are minimal, correct templates.
+
+### A) QED Bhabha (FeynArts-only, compute-only)
+
+Start from `assets/demo_auto_qft_qed_bhabha.yml`.
+
+```yaml
+schema_version: 1
+latex:
+  targets: []
+numeric:
+  enable: false
+auto_qft:
+  enable: true
+  feynarts_model: QED
+  feynarts_generic_model: QED
+  process:
+    in_fa:  ["-F[1,{1}]", "F[1,{1}]"]
+    out_fa: ["-F[1,{1}]", "F[1,{1}]"]
+```
+
+### B) TeX audit (compare extracted paper numbers)
+
+Start from `assets/demo_job.yml`. Minimal shape:
+
+```yaml
+latex:
+  tex_paths: [paper.tex]
+  targets:
+    - id: demo_x
+      label: eq:some_label   # OR provide regex instead of label
+      tolerance: { rel: 1e-4, abs: 1e-12 }
+```
+
+The per-target PASS/FAIL lives in `out_dir/tex/comparison.json`.
+
+### C) model_build (TeX → rewrite_wls → auto_qft)
+
+Start from `assets/demo_auto_qft_model_build_sm_identity.yml`. Minimal shape:
+
+```yaml
+auto_qft:
+  enable: true
+  lagrangian_symbol: LFromTeX
+  process:
+    in:  ["e-", "e+"]
+    out: ["mu-", "mu+"]
+  model_build:
+    enable: true
+    tex_paths: [paper.tex]      # OR use inline_tex: "..."
+    base_model_files: [path/to/base.fr]
+    rewrite_wls: path/to/rewrite.wls
+    parse_policy: best_effort   # best_effort: keep going with warnings; strict: fail on any parse error
+```
+
+model_build artifacts are under `out_dir/auto_qft/model_build/`.
+
+### D) Compute-only: verify a symbolic identity + hand off numbers to LoopTools.jl
+
+For "reproduce/verify this loop function or identity" jobs (no FeynArts model built, no TeX audit): a Mathematica entry
+does the symbolic work and calls `HepCalcExportSymbolic[<|...|>]` with four optional keys — `assertions` (fail-closed
+Boolean gates), `tasks` (handed to the Julia numeric stage), `checks` (uninterpreted anchor values), and `notes`
+(human-readable derivation strings). A `looptools` task is run by resolving its `fn` in the `LoopTools` module and calling it on `args`
+(e.g. `B0(p^2, m1^2, m2^2)`). The entry still runs in the FeynCalc/FeynArts/FormCalc-loaded kernel — those packages
+must be installed/loadable even for a pure-symbolic identity job; only *building* a FeynArts model is unnecessary.
+
+```yaml
+# job.yml
+schema_version: 1
+name: verify-loop
+mathematica:
+  entry: entry.wls
+numeric:
+  enable: true        # runs the Julia stage on data.tasks
+latex:
+  targets: []         # compute-only
+```
+
+```mathematica
+(* entry.wls — runs in the FeynCalc-loaded kernel from scripts/mma/run_job.wls *)
+ok = PossibleZeroQ[FullSimplify[
+       Integrate[1/Sqrt[m^2 + x (1-x) q^2], {x,0,1}, Assumptions -> m>0 && q>0]
+       - (2/q) ArcTan[q/(2 m)]]];
+HepCalcExportSymbolic[<|
+  "assertions" -> {
+    <|"id" -> "feyn_param_eq_arctan", "passed" -> ok|>
+  },
+  "checks" -> <|"feyn_param_eq_arctan" -> If[ok, 1, 0]|>,
+  "tasks"  -> {(* B0(p^2, m1^2, m2^2): the momentum invariant and masses are SQUARED (LoopTools/PV convention) *)
+    <|"id" -> "B0_s5", "kind" -> "looptools", "fn" -> "B0", "args" -> {5.0, 1.0, 1.0}|>},
+  "notes"  -> {"Mathematica Integrate confirms I(q)=(2/q)arctan(q/2m)."}
+|>];
+```
+
+Results: symbolic `assertions`/`checks`/`notes` land in `out_dir/symbolic/symbolic.json`; each task's value lands in
+`out_dir/numeric/numeric.json` (`results[].value`, complex as `{re,im}`). A false or invalid `data.assertions` entry
+makes the symbolic stage `FAIL`, makes the runner return nonzero, and is reflected in the overall status. The report
+shows assertion counts and failed IDs, but does not show `data.checks` values or numeric results — read the JSON files
+directly for those values (see the pitfall below, and
+`references/job_schema.md` → "symbolic.json contract" / `references/output_contract.md` → "Compute content contract").
+
+### E) Bind a bare amplitude to trusted symbolic post-processing
+
+Start from `assets/demo_bound_scalar_postprocess.yml`. A relative path is resolved against the job directory.
+`out://...` is reserved for runner-managed artifacts invalidated at the start of every run, for example the current
+auto-QFT amplitude:
+
+```yaml
+mathematica:
+  entry: postprocess.wls
+  bound_inputs:
+    - id: bare_amplitude
+      path: out://auto_qft/amplitude/amplitude_summed.m
+```
+
+For every invocation, the Mathematica wrapper asks the external validator to read each source without following
+symlinks, publish a fresh snapshot below `symbolic/bound_inputs/`, and record source and snapshot byte counts and
+SHA-256 hashes in `symbolic/input_bindings.json`. The wrapper then securely reads and verifies each snapshot into
+memory. The trusted entry must call `HepCalcBoundInputText[id]` for every declared ID before it exports, add
+user-supplied local terms, and export at least one target identity through `HepCalcExportSymbolic`. Only accessor calls
+are recorded as consumption. The external postcondition re-reads the job, source, snapshot, binding record, status,
+access witness, and assertions. Missing entry/access/assertions, changing the source or snapshot, returning nonzero,
+aborting, omitting the export, or failing an identity makes the run nonzero. This binds provenance and acceptance; it
+does not derive the prescription or establish that the chosen identities are sufficient.
+
+## Compatibility & common pitfalls (agent-facing)
+
+- `auto_qft.feynarts_model` + `auto_qft.model_build.*`: model_build is skipped in FeynArts-only mode. Choose one.
+- Path resolution: all file paths in `job.yml` (e.g., `mathematica.entry`, `latex.tex_paths`, `auto_qft.model_build.rewrite_wls`) are resolved relative to the job file directory; verify the resolved paths in `out_dir/job.resolved.json`.
+- `auto_qft.model_build.inline_tex` + `auto_qft.model_build.tex_paths`: ERROR (mutually exclusive).
+- `latex.targets: []` + `auto_qft.enable: true`: OK (compute-only; diagrams/amplitude still produced).
+- `enable_fa_fc: true` + `auto_qft.enable: true`: OK (both run; FA/FC stage is separate from auto_qft).
+- FeynArts-only mode uses `process.in_fa/out_fa` (explicit FeynArts field syntax). When using FeynArts-only, do not set `process.in/out`—they are ignored.
+- Missing dependencies are never silent: if `auto_qft` or `model_build` cannot run (e.g., missing `wolframscript`, FeynRules, or FeynArts), the stage writes `status.json` with `ERROR` + a `hint` describing what to install/fix.
+- A zero `wolframscript` exit is not sufficient for success. The shell runner validates symbolic and enabled-auto_qft
+  postconditions after the process exits, so an entry-level `Quit[0]`, top-level `$Aborted`, missing/unreadable status,
+  or missing required output makes the run nonzero.
+- Reusing `--out` cannot replay prior symbolic or auto_qft acceptance artifacts: the runner invalidates those exact
+  status/result files and the root SSOT surfaces before parsing the new job. Ancillary outputs outside these acceptance
+  surfaces may remain, so a unique out_dir is still preferred for provenance. Any pre-existing symlink anywhere below
+  the output root is rejected before the runner writes or cleans up files.
+- Explicit `auto_qft.enable` and `auto_qft.formcalc.enable` values must be strict JSON/YAML Booleans. Numbers, strings,
+  and null values are configuration errors and fail before environment checks or computation.
+- Enabled `auto_qft` requires readable `auto_qft/status.json` and `auto_qft/summary.json` with `PASS`, plus a nonempty
+  `auto_qft/amplitude/amplitude_summed.m`. If FormCalc was requested, both status surfaces must explicitly report
+  FormCalc `PASS`, `auto_qft/formcalc/status.json` must bind the current raw and reduced amplitudes by size and SHA-256,
+  and the amplitude level must be `formcalc`; a raw FeynArts fallback is not accepted as FormCalc success. Requested
+  FormCalc reduction runs in a fresh Wolfram kernel with `auto_qft.formcalc.memory_limit_mb` (default 2048).
+- No built-in timeouts. If a kernel hangs, abort the run and inspect `out_dir/logs/*.log` (consider wrapping with an external timeout tool if needed).
+- If a run is externally killed (e.g., via an OS signal or a timeout wrapper), `status.json` for the interrupted stage may be incomplete or missing; use `logs/*.log` to find the last activity.
+- For long, kill-prone runs (jobs that may be killed mid-run by contention or session limits), drive them through the `research-harness` skill's **Long-Running Compute Jobs** protocol: an append-per-unit checkpoint under a managed run dir, a self-re-arming heartbeat, and the SIGPIPE-safe `compute_job_probe.py` for liveness/livelock detection. `hep-calc` runs the kernel; surviving kills is the harness's job.
+- Prefer unique out_dir per run for auditability even though acceptance artifacts are fail-closed on reuse.
+- Numeric stage Julia environment: `scripts/julia/eval_numeric.jl` runs with `julia --startup-file=no` and **no
+  `--project`**, and the runner does not clear `JULIA_PROJECT` — so Julia uses its **default active project** (the
+  global env unless `JULIA_PROJECT` is set). Ensure `using LoopTools` works there (env_check verifies it); to use a
+  LoopTools.jl that lives only in a project, `export JULIA_PROJECT=/path/to/project` before `run_hep_calc.sh`. Note:
+  if the job has **any** numeric tasks, env-check must find both `julia` and LoopTools.jl or the whole numeric stage is
+  blocked (ERROR `missing_julia`, checked first, else `missing_looptools_jl`) — even for a `julia_expr`-only job.
+- Compute-only results location: symbolic `data.assertions` / `data.checks` / `data.notes` and numeric task `results` are written
+  to `out_dir/symbolic/symbolic.json` and `out_dir/numeric/numeric.json`. `report/audit_report.md` surfaces the
+  assertion counts, failed assertion IDs, stage statuses, and file pointers, but **not** uninterpreted check values or
+  numeric results — point users/tooling at the two JSON files.
+- Bound symbolic inputs are captured text, not live source paths. Each item contains exactly `id` and `path`, requires
+  `mathematica.entry`, and must be read through `HepCalcBoundInputText[id]` before export. Bound runs require at least
+  one valid assertion; the source, snapshot, exact access witness, and assertion contract are revalidated after the
+  entry exits.
+
+## Prerequisites (env_check)
+
+Recommended first step:
+
+```bash
+bash scripts/check_env.sh --json /tmp/hep_calc_env.json  # runs also write meta/env.json inside out_dir
+```
+
+Core requirements:
+- `python3` (reporting, extraction, comparison) with PyYAML importable (`python3 -c "import yaml"`); every run imports it to read the job file
+- `wolframscript` + Mathematica packages (FeynCalc/FeynArts/FormCalc; auto_qft also needs FeynRules for FeynRules mode)
+- `julia` + `using LoopTools` (only if numeric stage enabled)
+
+model_build (LaTeX→model) extra:
+- `latexpand` for multi-file TeX flattening (missing latexpand + detected `\\input/\\include` → ERROR).
+
+## Quick start
+
+Run from the skill directory:
+
+```bash
+bash scripts/run_hep_calc.sh --job assets/demo_job.yml --out /tmp/hep_calc_demo_job
+```
+
+Recommended: run env_check and write a machine-readable snapshot:
+
+```bash
+bash scripts/check_env.sh --json /tmp/hep_calc_env.json
+```
+
+auto_qft demo (FeynRules/SM): e- e+ -> mu- mu+:
+
+```bash
+bash scripts/run_hep_calc.sh --job assets/demo_auto_qft_ee_mumu.yml --out /tmp/hep_calc_demo_ee_mumu
+```
+
+auto_qft demo (FeynArts-only/QED): Bhabha scattering:
+
+```bash
+bash scripts/run_hep_calc.sh --job assets/demo_auto_qft_qed_bhabha.yml --out /tmp/hep_calc_demo_qed_bhabha
+```
+
+model_build plumbing demo (LaTeX→rewrite hook; reuses SM LSM):
+
+```bash
+bash scripts/run_hep_calc.sh --job assets/demo_auto_qft_model_build_sm_identity.yml --out /tmp/hep_calc_demo_model_build
+```
+
+Public runs must pass `--out` explicitly, and that directory must be outside the hep-calc repo.
+
+Re-export SSOT artifacts (manifest/summary/analysis) for an existing out_dir:
+
+```bash
+python3 scripts/export_artifacts.py --out <out_dir>
+```
+
+## Key defaults (SSOT)
+
+- Job format: YAML preferred; JSON supported. Resolved config is written to `out_dir/job.resolved.json`.
+- Public out dir: pass `--out /absolute/path/outside/repo`; repo-local fixture runs are not part of the public workflow.
+- Tolerance default: `rel=1e-4`, `abs=1e-12` (override per target).
+- Auditable guarantee: no silent failure. Every stage writes `status.json`; missing prerequisites are reported as `SKIPPED` or `ERROR` with a `reason` (and often a `hint`).
+- Notebook `.nb` is best-effort; prefer `.wls/.m`.
+- FeynArts→FormCalc pipeline (`enable_fa_fc`) is OFF by default (runs only with an explicit spec).
+- auto_qft runs when `auto_qft.enable: true`.
+- Implicit enable (when `enable` is omitted) triggers if BOTH:
+  1) `auto_qft.process` specifies particles: either `in_fa`+`out_fa` (FeynArts-only) or `in`+`out` (FeynRules mode)
+  2) A model source is provided: `feynarts_model`, `model_files`, or `model_build` input
+
+## Minimal workflow (recommended)
+
+1) Write a job (YAML preferred; JSON supported).
+2) Run: `bash scripts/run_hep_calc.sh --job job.yml --out /absolute/path/outside/repo`
+3) Read `out_dir/report/audit_report.md`; follow per-step `status.json` + `logs/*.log` on failures/skips.
+
+## Minimal job example (inline)
+
+This is a minimal **compute-only** job (no TeX comparison). Paths are resolved relative to the job file directory.
+
+```yaml
+schema_version: 1
+name: minimal-compute-only
+latex:
+  targets: []
+mathematica:
+  entry: path/to/entry.wls   # optional; omit to skip symbolic stage
+numeric:
+  enable: false              # optional; disable if not needed
+```
+
+For full schema/options: see `references/job_schema.md` and `assets/job_schema.json`.
+
+## Key artifacts (what to point users to)
+
+- Summary (agent): `out_dir/summary.json`
+- Full manifest/provenance (SSOT): `out_dir/manifest.json` + `out_dir/analysis.json`
+- Dirty source-byte closure (when run from a dirty Git worktree): `out_dir/report/source_tree_manifest.json`
+- Report (human): `out_dir/report/audit_report.md`
+- Logs: `out_dir/logs/*.log`
+- auto_qft (if enabled):
+  - diagrams: `out_dir/auto_qft/diagrams/diagrams.pdf`
+  - amplitude (full expr): `out_dir/auto_qft/amplitude/amplitude_summed.m`
+  - amplitude (human): `out_dir/auto_qft/amplitude/amplitude_summed.md`
+- model_build (if enabled):
+  - summary: `out_dir/auto_qft/model_build/summary.json`
+  - generated snippet: `out_dir/auto_qft/model_build/generated_lagrangian.fr`
+  - TeX preprocess: `out_dir/auto_qft/model_build/tex_preprocess/blocks_selected.json`
+
+  Input/template (not a produced artifact): `assets/model_build/rewrite_template.wls` is a template/example, user-provided input — supply your own via `model_build.rewrite_wls: path/to/rewrite.wls` in the job config.
+
+## Stage IDs (status.json debugging)
+
+Stages typically execute in this order (some are optional):
+`env_check` → `feynarts_formcalc` → `tex_model_preprocess` → `auto_qft_model_build` → `auto_qft_one_loop` → `mathematica_symbolic` → `julia_numeric` → `tex_compare`.
+Each stage writes a `status.json` with `PASS/FAIL/SKIPPED/ERROR/NOT_RUN`.
+(Typically: `SKIPPED` means the stage was reached but not executed due to config/prereqs; `NOT_RUN` means the stage was not reached because earlier stages failed.)
+
+## Safety (no sandbox)
+
+The following features execute user/agent code. Only use with trusted inputs:
+- `mathematica.entry` (including any evaluation of captured `mathematica.bound_inputs` text)
+- `latex.extractor_plugin` (Python import)
+- `julia_expr` (Julia eval)
+- `auto_qft.model_build.rewrite_wls` (Mathematica `Get[...]`)
+
+These hooks execute with full filesystem access (no sandbox).
+
+## research-team / research-writer integration
+
+If the job includes:
+
+```yaml
+integrations: [research-team]
+tag: <TAG>
+```
+
+hep-calc syncs core artifacts to `artifacts/runs/<TAG>/hep-calc/` and ensures
+`manifest.json` / `summary.json` / `analysis.json` exist for provenance.
+That sync target must live under an external project root for public work. Repo-local
+`skills/hep-calc/artifacts/` and `skills/hep-calc/process/` paths remain
+maintainer-local fixture/residue areas only; if they exist in a dev checkout, prune or
+recreate them locally instead of treating them as real-project output surfaces.
+
+See: `references/research_team_integration.md`.
+
+## References (progressive disclosure)
+
+- Job schema and examples: `references/job_schema.md`
+- out_dir contract: `references/output_contract.md`
+- Troubleshooting: `references/troubleshooting.md`
+- research-team integration: `references/research_team_integration.md`
+- LaTeX→model_build details: `references/model_build_latex.md`
+- Chinese translations: append `.zh.md` (e.g. `references/output_contract.zh.md`)

@@ -1,0 +1,114 @@
+---
+name: estimation-under-uncertainty
+description: >
+  Producing a software estimate that carries its own uncertainty instead of hiding it: a range
+  with explicit probability assumptions when supported, decomposition, PERT and the limits
+  of summing task estimates, calibrating against what
+  this team has actually done, and keeping estimate, target and commitment as three separate
+  things. Use when asked how long something will take, when a single date is being requested
+  for work that has not been broken down, when an estimate is being treated as a promise, when
+  padding is being added silently, when a plan is slipping and the message has not gone out
+  yet, or when someone asks for a number before the requirement is clear. Does not cover
+  clarifying the requirement itself (requirements-and-acceptance), how to deliver bad news
+  (engineering-communication), or trading quality for time (technical-debt-decisions).
+---
+
+# Estimation Under Uncertainty
+
+## Purpose
+
+An estimate predicts work or completion under assumptions. A single number without its
+uncertainty can be planned against as certainty. Even a numerical range can mislead when
+its coverage, scope or calendar assumptions are invented.
+
+The job is to support the planning decision with a forecast and its uncertainty when evidence
+permits, or identify what must be learned before a number is useful.
+
+## Workflow
+
+1. **Identify the decision and forecast event.** Reuse supplied scope, history and constraints;
+   ask only for missing information that changes the decision (requirements-and-acceptance).
+   Give a conditional range only when its bounds have a basis; pressure for a number does not
+   supply one. Otherwise state what prevents forecasting and the next useful investigation.
+   Define effort versus elapsed time, working versus calendar days, forecast date, start point,
+   total versus remaining work, completion criteria, capacity and dependencies.
+2. **Decompose where it exposes omitted work or a material dependency.** Comparable whole-change
+   history may already be sufficient. Stop when more detail would not change the decision;
+   unfamiliar work needs explicit assumptions or investigation, not endless subdivision.
+3. **Choose inputs supported by evidence**: comparable cycle-time samples or elicited
+   quantiles with explicit assumptions. Before using project history, follow the
+   [history procedure](references/methods.md#reference-class-forecasting-use-your-own-history)
+   to trace delivery records and check what their timestamps measure. A commit or merge is
+   not automatically the work's start or completion. If using PERT, distinguish bounds and
+   modal inputs from P10/P50/P90; they are not interchangeable. Without calibration, label
+   the range provisional and do not fabricate a coverage percentage.
+4. **Combine them with their dependencies.** For a sum, expected values add; variances add
+   when covariances are zero, as under independence. Shared uncertain productivity, outages or
+   integration risks can correlate durations. Shared people also constrain parallel work even
+   when task durations are independent. Model precedence, capacity and calendars separately
+   from statistical dependence; simulation does not infer them. A sum of effort is not
+   automatically elapsed project duration.
+   Task percentiles do not generally add, and the largest branch P80 is not automatically
+   the project's P80. Derive the completion-time distribution for the actual schedule first;
+   marginal task ranges alone do not determine it. Use the exact counterexample in
+   [Methods and arithmetic](references/methods.md#task-percentiles-are-not-project-percentiles)
+   when reviewing a deadline assembled from task percentiles.
+5. **Calibrate against comparable history.** Record sample count, start/end definitions,
+   changed team conditions and omissions. Three examples can anchor discussion, not establish
+   reliable tail percentiles. Preserve dated forecasts and compare later outcomes at comparable
+   horizons. Count known deadline misses even when delivery is unfinished; do not claim learning
+   from a correction fitted and evaluated on the same outcomes. Use the
+   [feedback procedure](references/methods.md#learn-from-outcomes-without-rewriting-history)
+   when checking calibration or changing the estimation method.
+6. **State the forecast event and assumptions**: a central P10–P90 interval has nominal 80%
+   coverage, while "by P80" is a model completion percentile, not an interval.
+   Discrete durations/rounding can change coverage; calibration requires actual outcomes.
+   Both require a stated model/basis. Otherwise report an uncalibrated scenario range.
+7. **Re-estimate when evidence arrives**, and say so immediately. An estimate is a statement
+   about what you knew when you made it. Update when new evidence changes the decision or
+   risk materially; retain the original forecast and explain the change. Use observed progress,
+   remaining scope and current capacity, not percentage of the original time budget consumed.
+   Updating one forecast does not demonstrate that the method is better calibrated.
+
+Deliver scope and completion criteria, estimate units/range and its basis, key assumptions,
+target versus commitment if supplied, and the next evidence/re-estimation trigger. When using
+history, retain source identifiers, selection criteria and material exclusions so the basis
+can be checked. Scale detail to the decision; do not invent a date, owner or probability
+merely to fill this shape.
+
+## Rules
+
+- Avoid a bare single number when uncertainty affects the decision. If supported, give the
+  range and explain the planning value selected from it for the decision's risk tolerance.
+  Keep assumptions and residual risks visible; an unsupported broad range is still a guess.
+- Distinguish a scenario span, a conditional model interval and an interval with coverage
+  checked against comparable outcomes. State calibration evidence or its absence; a nominal
+  model probability is not observed reliability. Say whether a quoted percentile is a deadline
+  or interval endpoint. A confidence interval for a mean does not describe the uncertainty of
+  one future delivery.
+- Estimate, target and commitment are three different things and must be named separately. An
+  estimate is what you predict, a target is what someone wants, a commitment is what you have
+  promised. Deriving an estimate from a target is how a project becomes late on day one.
+- Do not pad silently. Hidden padding obscures assumptions and calibration. Put contingency
+  where it can be managed: at the plan level, visible, owned.
+- The estimate covers the whole change, not the coding: tests, review, the review round trip,
+  migration, deployment and anticipated rework. Avoid counting these twice if historical
+  elapsed-time samples already include them.
+- Name the uncertainty an investigation could resolve and its timebox. A spike can reveal
+  more work and widen a range; do not promise a specific reduction without evidence.
+- Report a slip when you believe it, not when it becomes undeniable. The information is worth
+  most while there is still time to change something; overdue updates still matter for
+  downstream plans (engineering-communication).
+- Never resolve a schedule problem by silently lowering quality. If something must give, name
+  it and let the trade be decided (technical-debt-decisions).
+
+## References
+
+- **Methods and arithmetic** — `references/methods.md`. Three-point estimation and PERT with
+  worked numbers, when variances add, decomposition, reference-class
+  forecasting from your own history, the cone of uncertainty, and the failure modes of each
+  method. Read when selecting a method, combining work, forecasting remaining time or checking calibration.
+- **Estimates, targets and commitments** — `references/commitments.md`. Keeping the three
+  apart, what to do when a target is presented as an estimate, negotiating scope rather than
+  dates, communicating a slip, and the agent-specific version of the same discipline. Read when
+  an estimate is about to become a promise, or a plan is slipping.
